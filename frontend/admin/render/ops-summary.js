@@ -756,14 +756,100 @@ function renderDedupReviewActionButtons(tableKey, rowIndex, showActions) {
   if (!showActions) return "";
   return `
     <div class="admin-inline-actions" data-dedup-review-actions="${escapeHtml(tableKey)}:${Number(rowIndex)}">
-      <button type="button" class="admin-pill-button" data-dedup-review-action="reviewed_safe" data-dedup-review-table="${escapeHtml(tableKey)}" data-dedup-review-row="${Number(rowIndex)}">Mark reviewed safe</button>
-      <button type="button" class="admin-pill-button" data-dedup-review-action="confirmed_blocking" data-dedup-review-table="${escapeHtml(tableKey)}" data-dedup-review-row="${Number(rowIndex)}">Mark confirmed blocking</button>
-      <button type="button" class="admin-pill-button" data-dedup-review-action="clear_review" data-dedup-review-table="${escapeHtml(tableKey)}" data-dedup-review-row="${Number(rowIndex)}">Clear review</button>
+      <button type="button" class="admin-pill-button" title="Downgrade this exact disagreement from blocker to warning." data-dedup-review-action="reviewed_safe" data-dedup-review-table="${escapeHtml(tableKey)}" data-dedup-review-row="${Number(rowIndex)}">Safe duplicate</button>
+      <button type="button" class="admin-pill-button" title="Keep this exact disagreement blocking and record that it was reviewed." data-dedup-review-action="confirmed_blocking" data-dedup-review-table="${escapeHtml(tableKey)}" data-dedup-review-row="${Number(rowIndex)}">Real blocker</button>
+      <button type="button" class="admin-pill-button" title="Remove the manual decision and let the report classify it again." data-dedup-review-action="clear_review" data-dedup-review-table="${escapeHtml(tableKey)}" data-dedup-review-row="${Number(rowIndex)}">Reset review</button>
+      <span class="admin-muted">Local review only: no merge, registry, source, or job data is changed.</span>
     </div>
   `;
 }
 
-function formatProviderStaticDisagreementRows(rows, emptyText, options = {}) {
+function humanizeProviderStaticValue(value, fallback = "unknown") {
+  const text = String(value || "").trim();
+  return text ? text.replaceAll("_", " ") : fallback;
+}
+
+function formatProviderStaticList(values, limit = 2) {
+  const items = Array.isArray(values) ? values.filter(Boolean).slice(0, limit) : [];
+  return items.length ? items.join(" | ") : "none";
+}
+
+function providerStaticRecommendationLabel(row) {
+  const reviewStatus = String(row?.dedupReviewStatus || "");
+  if (reviewStatus === "reviewed_safe") return "Safe duplicate";
+  if (reviewStatus === "confirmed_blocking") return "Real blocker";
+  const recommendation = String(row?.operatorReviewRecommendation || "");
+  if (recommendation === "safe_duplicate") return "Safe duplicate";
+  if (recommendation === "real_blocker") return "Real blocker";
+  if (recommendation === "needs_review") return "Needs review";
+  const disposition = String(row?.disagreementGateDisposition || "");
+  if (disposition === "warning") return "Safe duplicate";
+  return "Needs review";
+}
+
+function providerStaticReasonLabel(row) {
+  const reviewStatus = String(row?.dedupReviewStatus || "");
+  if (reviewStatus === "reviewed_safe") return "Manually reviewed as safe.";
+  if (reviewStatus === "confirmed_blocking") return "Manually confirmed as a real blocker.";
+  const gateEvidence = Array.isArray(row?.disagreementGateEvidence) ? row.disagreementGateEvidence : [];
+  if (gateEvidence.some(item => String(item || "").startsWith("auto_safe_"))) {
+    return "Strong provider/static identity; safe URL variant.";
+  }
+  if (gateEvidence.some(item => String(item || "") === "carried_location_pollution")) {
+    return "Historical location text pollution; warning only.";
+  }
+  const reason = String(row?.operatorReviewReason || "");
+  const labels = {
+    auto_safe_provider_static_variant: "Strong provider/static identity; safe URL variant.",
+    carried_location_pollution_warning: "Historical location text pollution; warning only.",
+    different_locations_same_title_company: "Same title/company appears across different locations.",
+    manual_confirmed_blocking: "Manually confirmed as a real blocker.",
+    manual_reviewed_safe: "Manually reviewed as safe.",
+    warning_not_blocking: "Already warning-only.",
+    static_parser_url_variant_blocked: "Looks like a static URL variant but lacks concrete shared job identity.",
+    provider_redirect_or_canonical_url_blocked: "Looks like a canonical URL variant but lacks concrete shared job identity.",
+    same_job_different_urls_blocked: "Provider and static have different URLs and need human review.",
+    title_company_collision_blocked: "Title/company collision needs review.",
+    needs_manual_review_blocked: "Evidence is incomplete or ambiguous."
+  };
+  return labels[reason] || humanizeProviderStaticValue(reason, "Needs human review.");
+}
+
+function providerStaticReviewStatus(row) {
+  const status = humanizeProviderStaticValue(row?.dedupReviewStatus, "unreviewed");
+  const updatedBy = String(row?.dedupReviewUpdatedBy || "");
+  const updatedAt = String(row?.dedupReviewUpdatedAt || "");
+  return `${status}${updatedBy ? ` by ${updatedBy}` : ""}${updatedAt ? ` at ${updatedAt}` : ""}`;
+}
+
+function formatProviderStaticRawEvidence(row) {
+  const classificationEvidence = Array.isArray(row?.disagreementClassificationEvidence)
+    ? row.disagreementClassificationEvidence
+    : [];
+  const gateEvidence = Array.isArray(row?.disagreementGateEvidence)
+    ? row.disagreementGateEvidence
+    : [];
+  const disagreementEvidence = Array.isArray(row?.disagreementEvidence)
+    ? row.disagreementEvidence
+    : [];
+  const auditEvidence = Array.isArray(row?.carriedLocationPollutionEvidence)
+    ? row.carriedLocationPollutionEvidence
+    : [];
+  const raw = [
+    `classification evidence ${classificationEvidence.slice(0, 8).join(", ").replaceAll("_", " ") || "none"}`,
+    `gate evidence ${gateEvidence.slice(0, 8).join(", ").replaceAll("_", " ") || "none"}`,
+    `disagreement evidence ${disagreementEvidence.slice(0, 8).join(", ").replaceAll("_", " ") || "none"}`,
+    auditEvidence.length ? `audit evidence ${auditEvidence.slice(0, 8).join(", ").replaceAll("_", " ")}` : ""
+  ].filter(Boolean).join("; ");
+  return `
+    <details class="admin-dedup-raw-evidence">
+      <summary>Raw evidence</summary>
+      <div>${escapeHtml(raw)}</div>
+    </details>
+  `;
+}
+
+function formatProviderStaticGuidedRows(rows, emptyText, options = {}) {
   const disagreementRows = Array.isArray(rows) ? rows : [];
   if (!disagreementRows.length) return escapeHtml(emptyText);
   const showActions = typeof options?.onReviewAction === "function";
@@ -773,44 +859,54 @@ function formatProviderStaticDisagreementRows(rows, emptyText, options = {}) {
     .map((row, rowIndex) => {
       const title = String(row?.title || "Untitled");
       const company = String(row?.company || "Unknown company");
-      const origin = String(row?.bundleEvidenceOrigin || "unknown").replaceAll("_", " ");
-      const quality = String(row?.identityQuality || "unknown").replaceAll("_", " ");
-      const disposition = String(row?.disagreementGateDisposition || "blocked").replaceAll("_", " ");
-      const reviewStatus = String(row?.dedupReviewStatus || "unreviewed").replaceAll("_", " ");
-      const reviewUpdatedBy = String(row?.dedupReviewUpdatedBy || "");
-      const reviewUpdatedAt = String(row?.dedupReviewUpdatedAt || "");
+      const origin = humanizeProviderStaticValue(row?.bundleEvidenceOrigin);
+      const quality = humanizeProviderStaticValue(row?.identityQuality);
+      const disposition = humanizeProviderStaticValue(row?.disagreementGateDisposition, "blocked");
       const providerSources = Array.isArray(row?.providerSources) ? row.providerSources : [];
       const staticSources = Array.isArray(row?.staticSources) ? row.staticSources : [];
       const providerUrls = Array.isArray(row?.providerUrls) ? row.providerUrls : [];
       const staticUrls = Array.isArray(row?.staticUrls) ? row.staticUrls : [];
-      const evidence = Array.isArray(row?.disagreementEvidence) ? row.disagreementEvidence : [];
-      const classification = String(row?.disagreementClassification || "needs_manual_review").replaceAll("_", " ");
-      const classificationEvidence = Array.isArray(row?.disagreementClassificationEvidence)
-        ? row.disagreementClassificationEvidence
-        : [];
-      const gateEvidence = Array.isArray(row?.disagreementGateEvidence)
-        ? row.disagreementGateEvidence
-        : [];
-      const detail = [
+      const providerIds = Array.isArray(row?.providerSourceJobIds) ? row.providerSourceJobIds : [];
+      const staticIds = Array.isArray(row?.staticSourceJobIds) ? row.staticSourceJobIds : [];
+      const tokens = Array.isArray(row?.concreteSharedIdentifierTokens)
+        ? row.concreteSharedIdentifierTokens
+        : Array.isArray(row?.sharedIdentifierTokens)
+          ? row.sharedIdentifierTokens
+          : [];
+      const locations = Array.isArray(row?.sampleLocations) ? row.sampleLocations : [];
+      const classification = humanizeProviderStaticValue(row?.disagreementClassification, "needs manual review");
+      const hint = humanizeProviderStaticValue(row?.collisionReviewHint, "");
+      const audit = humanizeProviderStaticValue(row?.carriedLocationPollutionAudit, "");
+      const statusChips = [
+        `gate ${disposition}`,
+        `review ${providerStaticReviewStatus(row)}`,
         `origin ${origin}`,
         `classification ${classification}`,
-        `gate ${disposition}`,
-        `review ${reviewStatus}${reviewUpdatedBy ? ` by ${reviewUpdatedBy}` : ""}${reviewUpdatedAt ? ` at ${reviewUpdatedAt}` : ""}`,
+        hint ? `hint ${hint}` : "",
+        audit ? `audit ${audit}` : "",
         `quality ${quality}`,
-        `provider ${providerSources.slice(0, 2).join(" | ") || "none"}`,
-        `static ${staticSources.slice(0, 2).join(" | ") || "none"}`,
-        `provider URLs ${providerUrls.slice(0, 2).join(" | ") || "none"}`,
-        `static URLs ${staticUrls.slice(0, 2).join(" | ") || "none"}`,
-        `classification evidence ${classificationEvidence.slice(0, 5).join(", ").replaceAll("_", " ") || "none"}`,
-        `gate evidence ${gateEvidence.slice(0, 5).join(", ").replaceAll("_", " ") || "none"}`,
-        `evidence ${evidence.slice(0, 5).join(", ").replaceAll("_", " ") || "none"}`
+        `sources ${Number(row?.sourceBundleCount || 0).toLocaleString()}`,
+        `locations ${Number(row?.distinctLocationCount || 0).toLocaleString()}${locations.length ? ` (${locations.slice(0, 2).join(" | ")})` : ""}`,
+        tokens.length ? `shared job token ${tokens.slice(0, 2).join(", ")}` : "shared job token none"
+      ].filter(Boolean);
+      const providerEvidence = [
+        `source ${formatProviderStaticList(providerSources)}`,
+        `job IDs ${formatProviderStaticList(providerIds)}`,
+        `URLs ${formatProviderStaticList(providerUrls)}`
+      ].join("; ");
+      const staticEvidence = [
+        `source ${formatProviderStaticList(staticSources)}`,
+        `job IDs ${formatProviderStaticList(staticIds)}`,
+        `URLs ${formatProviderStaticList(staticUrls)}`
       ].join("; ");
       return `
         <tr>
           <td>${escapeHtml(title)}</td>
           <td>${escapeHtml(company)}</td>
-          <td>${Number(row?.sourceBundleCount || 0).toLocaleString()}</td>
-          <td>${escapeHtml(detail)}</td>
+          <td>${escapeHtml(statusChips.join("; "))}</td>
+          <td><strong>${escapeHtml(providerStaticRecommendationLabel(row))}</strong><br>${escapeHtml(providerStaticReasonLabel(row))}</td>
+          <td>${escapeHtml(providerEvidence)}</td>
+          <td>${escapeHtml(staticEvidence)}${formatProviderStaticRawEvidence(row)}</td>
           <td>${renderDedupReviewActionButtons(tableKey, rowIndex, showActions)}</td>
         </tr>
       `;
@@ -818,77 +914,24 @@ function formatProviderStaticDisagreementRows(rows, emptyText, options = {}) {
     .join("");
   return `
     <table class="admin-dedup-evidence-table">
-      <thead><tr><th>Title</th><th>Company</th><th>Sources</th><th>Provider/static evidence</th><th>Review</th></tr></thead>
+      <thead><tr><th>Job</th><th>Company</th><th>Gate</th><th>Recommended decision</th><th>Provider evidence</th><th>Static evidence</th><th>Actions</th></tr></thead>
       <tbody>${body}</tbody>
     </table>
   `;
 }
 
+function formatProviderStaticDisagreementRows(rows, emptyText, options = {}) {
+  return formatProviderStaticGuidedRows(rows, emptyText, {
+    ...options,
+    tableKey: String(options?.tableKey || "providerStatic")
+  });
+}
+
 function formatProviderStaticTitleCompanyCollisionRows(rows, emptyText, options = {}) {
-  const collisionRows = Array.isArray(rows) ? rows : [];
-  if (!collisionRows.length) return escapeHtml(emptyText);
-  const showActions = typeof options?.onReviewAction === "function";
-  const tableKey = String(options?.tableKey || "providerStaticTitleCompany");
-  const body = collisionRows
-    .slice(0, 5)
-    .map((row, rowIndex) => {
-      const title = String(row?.title || "Untitled");
-      const company = String(row?.company || "Unknown company");
-      const origin = String(row?.bundleEvidenceOrigin || "unknown").replaceAll("_", " ");
-      const hint = String(row?.collisionReviewHint || "unknown").replaceAll("_", " ");
-      const disposition = String(row?.disagreementGateDisposition || "blocked").replaceAll("_", " ");
-      const reviewStatus = String(row?.dedupReviewStatus || "unreviewed").replaceAll("_", " ");
-      const reviewUpdatedBy = String(row?.dedupReviewUpdatedBy || "");
-      const reviewUpdatedAt = String(row?.dedupReviewUpdatedAt || "");
-      const providerUrls = Array.isArray(row?.providerUrls) ? row.providerUrls : [];
-      const staticUrls = Array.isArray(row?.staticUrls) ? row.staticUrls : [];
-      const providerIds = Array.isArray(row?.providerSourceJobIds) ? row.providerSourceJobIds : [];
-      const staticIds = Array.isArray(row?.staticSourceJobIds) ? row.staticSourceJobIds : [];
-      const tokens = Array.isArray(row?.sharedIdentifierTokens) ? row.sharedIdentifierTokens : [];
-      const locations = Array.isArray(row?.sampleLocations) ? row.sampleLocations : [];
-      const classificationEvidence = Array.isArray(row?.disagreementClassificationEvidence)
-        ? row.disagreementClassificationEvidence
-        : [];
-      const audit = String(row?.carriedLocationPollutionAudit || "unknown").replaceAll("_", " ");
-      const auditEvidence = Array.isArray(row?.carriedLocationPollutionEvidence)
-        ? row.carriedLocationPollutionEvidence
-        : [];
-      const gateEvidence = Array.isArray(row?.disagreementGateEvidence)
-        ? row.disagreementGateEvidence
-        : [];
-      const detail = [
-        `origin ${origin}`,
-        `hint ${hint}`,
-        `gate ${disposition}`,
-        `review ${reviewStatus}${reviewUpdatedBy ? ` by ${reviewUpdatedBy}` : ""}${reviewUpdatedAt ? ` at ${reviewUpdatedAt}` : ""}`,
-        `audit ${audit}`,
-        `locations ${Number(row?.distinctLocationCount || 0).toLocaleString()} (${locations.slice(0, 3).join(" | ") || "none"})`,
-        `shared tokens ${tokens.slice(0, 3).join(", ") || "none"}`,
-        `provider IDs ${providerIds.slice(0, 2).join(" | ") || "none"}`,
-        `static IDs ${staticIds.slice(0, 2).join(" | ") || "none"}`,
-        `provider URLs ${providerUrls.slice(0, 2).join(" | ") || "none"}`,
-        `static URLs ${staticUrls.slice(0, 2).join(" | ") || "none"}`,
-        `classification evidence ${classificationEvidence.slice(0, 5).join(", ").replaceAll("_", " ") || "none"}`,
-        `audit evidence ${auditEvidence.slice(0, 5).join(", ").replaceAll("_", " ") || "none"}`,
-        `gate evidence ${gateEvidence.slice(0, 5).join(", ").replaceAll("_", " ") || "none"}`
-      ].join("; ");
-      return `
-        <tr>
-          <td>${escapeHtml(title)}</td>
-          <td>${escapeHtml(company)}</td>
-          <td>${Number(row?.sourceBundleCount || 0).toLocaleString()}</td>
-          <td>${escapeHtml(detail)}</td>
-          <td>${renderDedupReviewActionButtons(tableKey, rowIndex, showActions)}</td>
-        </tr>
-      `;
-    })
-    .join("");
-  return `
-    <table class="admin-dedup-evidence-table">
-      <thead><tr><th>Title</th><th>Company</th><th>Sources</th><th>Collision evidence</th><th>Review</th></tr></thead>
-      <tbody>${body}</tbody>
-    </table>
-  `;
+  return formatProviderStaticGuidedRows(rows, emptyText, {
+    ...options,
+    tableKey: String(options?.tableKey || "providerStaticTitleCompany")
+  });
 }
 
 function formatDedupIdentityQualityCounts(qualityCounts) {

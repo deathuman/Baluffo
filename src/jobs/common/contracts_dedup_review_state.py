@@ -175,20 +175,21 @@ def _carried_disagreement_auto_disposition(
     single_location: bool,
     same_host: bool,
     has_shared_tokens: bool,
+    has_concrete_shared_job_identity: bool = False,
 ) -> str:
     if (
         classification == "provider_redirect_or_canonical_url"
         and provider_backed
         and static_backed
         and single_location
-        and (same_host or has_shared_tokens)
+        and has_concrete_shared_job_identity
     ):
         return "auto_safe_carried_provider_redirect_or_canonical_url"
     if (
         classification == "static_parser_url_variant"
         and provider_backed
         and single_location
-        and has_shared_tokens
+        and has_concrete_shared_job_identity
     ):
         return "auto_safe_carried_static_parser_url_variant"
     if (
@@ -203,12 +204,86 @@ def _carried_disagreement_auto_disposition(
     return ""
 
 
+def _current_disagreement_auto_disposition(
+    classification: str,
+    provider_static_only: bool,
+    provider_backed: bool,
+    static_has_url: bool,
+    single_location: bool,
+    concrete_shared_token_count: int,
+) -> str:
+    if (
+        classification == "provider_redirect_or_canonical_url"
+        and provider_static_only
+        and provider_backed
+        and static_has_url
+        and single_location
+        and concrete_shared_token_count == 1
+    ):
+        return "auto_safe_current_provider_redirect_or_canonical_url"
+    if (
+        classification == "static_parser_url_variant"
+        and provider_static_only
+        and provider_backed
+        and static_has_url
+        and single_location
+        and concrete_shared_token_count == 1
+    ):
+        return "auto_safe_current_static_parser_url_variant"
+    return ""
+
+
 def _carried_disagreement_blocker_reason(classification: str) -> str:
     if classification == "same_job_different_urls":
         return "carried_same_job_different_urls_requires_review"
     if classification == "title_company_collision":
         return "possible_real_multi_location_conflict"
     return "carried_unresolved_disagreement"
+
+
+def dedup_operator_review_fields(row: Mapping[str, Any]) -> dict[str, str]:
+    classification = clean_text(row.get("disagreementClassification")) or "unknown"
+    disposition = clean_text(row.get("disagreementGateDisposition")) or "blocked"
+    review_status = clean_text(row.get("dedupReviewStatus"))
+    evidence = [clean_text(item) for item in row.get("disagreementGateEvidence") or []]
+    collision_hint = clean_text(row.get("collisionReviewHint"))
+    if review_status == "reviewed_safe":
+        return {
+            "operatorReviewRecommendation": "safe_duplicate",
+            "operatorReviewReason": "manual_reviewed_safe",
+        }
+    if review_status == "confirmed_blocking":
+        return {
+            "operatorReviewRecommendation": "real_blocker",
+            "operatorReviewReason": "manual_confirmed_blocking",
+        }
+    if disposition == "warning":
+        if any(item.startswith("auto_safe_") for item in evidence):
+            return {
+                "operatorReviewRecommendation": "safe_duplicate",
+                "operatorReviewReason": "auto_safe_provider_static_variant",
+            }
+        if "carried_location_pollution" in evidence:
+            return {
+                "operatorReviewRecommendation": "safe_duplicate",
+                "operatorReviewReason": "carried_location_pollution_warning",
+            }
+        return {
+            "operatorReviewRecommendation": "safe_duplicate",
+            "operatorReviewReason": "warning_not_blocking",
+        }
+    if (
+        classification == "title_company_collision"
+        and collision_hint == "different_locations_same_title_company"
+    ):
+        return {
+            "operatorReviewRecommendation": "real_blocker",
+            "operatorReviewReason": "different_locations_same_title_company",
+        }
+    return {
+        "operatorReviewRecommendation": "needs_review",
+        "operatorReviewReason": f"{classification}_blocked",
+    }
 
 
 def dedup_disagreement_gate_disposition(
@@ -221,14 +296,17 @@ def dedup_disagreement_gate_disposition(
     provider_ids = _clean_list(row.get("providerSourceJobIds"))
     static_ids = _clean_list(row.get("staticSourceJobIds"))
     shared_tokens = _clean_list(row.get("sharedIdentifierTokens"))
+    concrete_shared_tokens = _clean_list(row.get("concreteSharedIdentifierTokens"))
     provider_hosts = _clean_list(row.get("providerUrlHosts"))
     static_hosts = _clean_list(row.get("staticUrlHosts"))
+    static_urls = _clean_list(row.get("staticUrls"))
     location_count = max(0, int(row.get("distinctLocationCount") or 0))
     carried_location_pollution_audit = clean_text(row.get("carriedLocationPollutionAudit"))
     is_carried = origin == "carried_from_existing_output"
     same_host = bool(set(provider_hosts) & set(static_hosts))
     provider_backed = bool(provider_ids)
     static_backed = bool(static_ids)
+    provider_static_only = row.get("providerStaticOnly") is True
     single_location = location_count <= 1
     evidence = [
         f"classification:{classification or 'unknown'}",
@@ -237,8 +315,11 @@ def dedup_disagreement_gate_disposition(
         f"provider_ids:{len(provider_ids)}",
         f"static_ids:{len(static_ids)}",
         f"shared_tokens:{len(shared_tokens)}",
+        f"concrete_shared_tokens:{len(concrete_shared_tokens)}",
         f"locations:{location_count}",
     ]
+    if provider_static_only:
+        evidence.append("provider_static_only:true")
     if carried_location_pollution_audit:
         evidence.append(f"carried_location_audit:{carried_location_pollution_audit}")
     if review_status == "confirmed_blocking":
@@ -251,6 +332,16 @@ def dedup_disagreement_gate_disposition(
     ):
         return "warning", [*evidence, "carried_location_pollution"]
     if not is_carried:
+        auto_disposition = _current_disagreement_auto_disposition(
+            classification,
+            provider_static_only,
+            provider_backed,
+            bool(static_urls),
+            single_location,
+            len(concrete_shared_tokens),
+        )
+        if auto_disposition:
+            return "warning", [*evidence, auto_disposition]
         return "blocked", [*evidence, "current_run_or_unclassified_origin"]
     auto_disposition = _carried_disagreement_auto_disposition(
         classification,
@@ -260,6 +351,7 @@ def dedup_disagreement_gate_disposition(
         single_location,
         same_host,
         bool(shared_tokens),
+        len(concrete_shared_tokens) == 1,
     )
     if auto_disposition:
         return "warning", [*evidence, auto_disposition]
@@ -324,6 +416,7 @@ def merge_dedup_review_state_into_dedup_evidence(
             "disagreementGateDisposition": disposition,
             "disagreementGateEvidence": evidence,
         }
+        updated_row = {**updated_row, **dedup_operator_review_fields(updated_row)}
         for key, value in _gate_counter_fields(prior_row).items():
             gate_counts[key] = max(0, int(gate_counts.get(key, 0)) - value)
         for key, value in _gate_counter_fields(updated_row).items():

@@ -137,13 +137,19 @@ Provider/static disagreement examples include `title`, `company`, `dedupKey`,
 job IDs when present, provider/static URLs, provider/static URL host/path-prefix samples,
 `identityQuality`, `sharedIdentifierTokens`, `distinctLocationCount`, `sampleLocations`,
 `disagreementClassification`, `disagreementClassificationEvidence`, `collisionReviewHint`, and
-`disagreementEvidence`. Rows may also include `disagreementGateDisposition`,
-`disagreementGateEvidence`, `dedupReviewStatus`, `dedupReviewNote`, `dedupReviewUpdatedAt`, and
-`dedupReviewUpdatedBy`. Classification values are `same_job_different_urls`,
+`disagreementEvidence`. Rows may also include `concreteSharedIdentifierTokens`,
+`providerStaticOnly`, `disagreementGateDisposition`, `disagreementGateEvidence`,
+`operatorReviewRecommendation`, `operatorReviewReason`, `dedupReviewStatus`,
+`dedupReviewNote`, `dedupReviewUpdatedAt`, and `dedupReviewUpdatedBy`.
+`operatorReviewRecommendation` values are `safe_duplicate`, `real_blocker`, and
+`needs_review`; these are Admin presentation hints only and do not change review-state
+actions. Classification values are `same_job_different_urls`,
 `provider_redirect_or_canonical_url`, `static_parser_url_variant`, `title_company_collision`,
 `stale_carried_bundle`, and `needs_manual_review`. They expose cases where provider and static
 bundle entries do not share a primary URL, so operators can review whether the bundle is a safe
 duplicate or a carried historical collision before lifecycle labels rely on it.
+Provider/static URL variants are only auto-safe when backed by concrete shared job identity;
+same host, company slug, career/listing words, or capped display samples are not sufficient.
 `providerStaticTitleCompanyCollisionExamples` is a separate capped sample of only
 `title_company_collision` rows so lifecycle gate blockers are visible even when the general
 provider/static disagreement sample is filled by other classifications. `collisionReviewHint`

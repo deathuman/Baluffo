@@ -155,13 +155,14 @@ test("admin render: provider/static disagreement examples are read-only", () => 
   assert.match(metricsEl.innerHTML, /provider\/static carried 1/i);
   assert.match(metricsEl.innerHTML, /Executive Assistant/i);
   assert.match(metricsEl.innerHTML, /Animoca Brands/i);
-  assert.match(metricsEl.innerHTML, /provider lever_sources/i);
+  assert.match(metricsEl.innerHTML, /source lever_sources/i);
   assert.match(metricsEl.innerHTML, /classification same job different urls/i);
   assert.match(metricsEl.innerHTML, /gate blocked/i);
   assert.match(metricsEl.innerHTML, /review confirmed blocking by admin at 2026-05-02T10:00:00Z/i);
-  assert.match(metricsEl.innerHTML, /Mark reviewed safe/i);
-  assert.match(metricsEl.innerHTML, /Mark confirmed blocking/i);
-  assert.match(metricsEl.innerHTML, /Clear review/i);
+  assert.match(metricsEl.innerHTML, /Real blocker/i);
+  assert.match(metricsEl.innerHTML, /Safe duplicate/i);
+  assert.match(metricsEl.innerHTML, /Reset review/i);
+  assert.match(metricsEl.innerHTML, /Local review only: no merge, registry, source, or job data is changed/i);
   assert.match(metricsEl.innerHTML, /Dedup provider\/static title-company collisions/i);
   assert.match(metricsEl.innerHTML, /3D Character Artist/i);
   assert.match(metricsEl.innerHTML, /Epoch Games/i);
@@ -169,11 +170,12 @@ test("admin render: provider/static disagreement examples are read-only", () => 
   assert.match(metricsEl.innerHTML, /Audit: location pollution 1, location variants 1, provider identity location conflicts 1, possible real conflict 0, not carried 0, unknown 0/i);
   assert.match(metricsEl.innerHTML, /audit carried location pollution/i);
   assert.match(metricsEl.innerHTML, /gate warning/i);
+  assert.match(metricsEl.innerHTML, /Raw evidence/i);
   assert.match(metricsEl.innerHTML, /audit evidence origin:carried from existing output, sample location:illustrator/i);
-  assert.match(metricsEl.innerHTML, /shared tokens 744000018988355/i);
+  assert.match(metricsEl.innerHTML, /shared job token 744000018988355/i);
   assert.match(
     metricsEl.innerHTML,
-    /static static_source::static:listing_url:https:\/\/careers\.animocabrands\.com\/jobs/i
+    /source static_source::static:listing_url:https:\/\/careers\.animocabrands\.com\/jobs/i
   );
   assert.match(metricsEl.innerHTML, /shared primary url:false/i);
   assert.doesNotMatch(metricsEl.innerHTML, /merge-btn|unmerge-btn|cleanup-btn|lifecycle-btn/i);
@@ -197,4 +199,45 @@ test("admin render: missing provider/static disagreement examples render safely"
   assert.match(metricsEl.innerHTML, /No provider\/static disagreement examples/i);
   assert.match(metricsEl.innerHTML, /Dedup provider\/static title-company collisions/i);
   assert.match(metricsEl.innerHTML, /No provider\/static title\/company collision examples/i);
+});
+
+test("admin render: provider/static static URL variants render guided safe recommendation", () => {
+  const metricsEl = makeEl();
+  renderAdminOpsDedupLists(metricsEl, {
+    latestRun: {
+      dedupEvidence: {
+        providerStaticDisagreementExamples: [
+          {
+            title: "Character Concept Artist",
+            company: "Bonfire Studios",
+            sourceBundleCount: 2,
+            bundleEvidenceOrigin: "current_run",
+            identityQuality: "provider_id_strong",
+            providerSources: ["greenhouse:slug:bonfirestudiosinc"],
+            staticSources: ["static_source::static:listing_url:https://bonfirestudios.com/work-with-us"],
+            providerSourceJobIds: ["greenhouse:bonfirestudiosinc:4022147009"],
+            staticSourceJobIds: ["static:4022147009"],
+            providerUrls: ["https://job-boards.greenhouse.io/bonfirestudiosinc/jobs/4022147009"],
+            staticUrls: ["https://bonfirestudios.com/work-with-us/4022147009"],
+            concreteSharedIdentifierTokens: ["4022147009"],
+            distinctLocationCount: 1,
+            sampleLocations: ["remote"],
+            disagreementClassification: "static_parser_url_variant",
+            disagreementGateDisposition: "warning",
+            disagreementGateEvidence: ["auto_safe_current_static_parser_url_variant"],
+            operatorReviewRecommendation: "safe_duplicate",
+            operatorReviewReason: "auto_safe_provider_static_variant"
+          }
+        ]
+      }
+    },
+    history: {}
+  }, { onDedupReviewAction() {} });
+
+  assert.match(metricsEl.innerHTML, /Character Concept Artist/i);
+  assert.match(metricsEl.innerHTML, /Safe duplicate/i);
+  assert.match(metricsEl.innerHTML, /Strong provider\/static identity; safe URL variant/i);
+  assert.match(metricsEl.innerHTML, /shared job token 4022147009/i);
+  assert.match(metricsEl.innerHTML, /Raw evidence/i);
+  assert.doesNotMatch(metricsEl.innerHTML, /Mark reviewed safe/i);
 });

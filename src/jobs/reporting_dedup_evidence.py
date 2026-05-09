@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 from src.jobs.adapters.location_rules import classify_city_garbage
 from src.jobs.common.contracts_dedup_review_state import (
     dedup_disagreement_gate_disposition,
+    dedup_operator_review_fields,
     dedup_review_pair_public_fields,
     find_dedup_review_pair,
 )
@@ -407,11 +408,17 @@ def _items_for_source_class(
 def _sample_clean_values(
     items: Sequence[Mapping[str, Any]], field: str, *, normalize_urls: bool = False
 ) -> list[str]:
+    return _clean_values(items, field, normalize_urls=normalize_urls)[:5]
+
+
+def _clean_values(
+    items: Sequence[Mapping[str, Any]], field: str, *, normalize_urls: bool = False
+) -> list[str]:
     values = {
         normalize_url(item.get(field)) if normalize_urls else clean_text(item.get(field))
         for item in items
     }
-    return sorted(value for value in values if value)[:5]
+    return sorted(value for value in values if value)
 
 
 def _identifier_tokens(values: Sequence[str]) -> set[str]:
@@ -422,6 +429,54 @@ def _identifier_tokens(values: Sequence[str]) -> set[str]:
             if len(token) >= 6 or (len(token) >= 4 and any(char.isdigit() for char in token)):
                 tokens.add(token)
     return tokens
+
+
+def _concrete_identifier_tokens(values: Sequence[str]) -> set[str]:
+    generic_tokens = {
+        "application",
+        "career",
+        "careers",
+        "department",
+        "greenhouse",
+        "job",
+        "jobs",
+        "listing",
+        "opening",
+        "openings",
+        "position",
+        "positions",
+        "provider",
+        "recruiting",
+        "static",
+        "studio",
+        "work",
+    }
+    tokens: set[str] = set()
+    for token in _identifier_tokens(values):
+        if token in generic_tokens:
+            continue
+        if len(token) < 6:
+            continue
+        if not any(char.isdigit() for char in token):
+            continue
+        tokens.add(token)
+    return tokens
+
+
+def _concrete_shared_identifier_tokens(
+    *,
+    provider_ids: Sequence[str],
+    provider_urls: Sequence[str],
+    static_ids: Sequence[str],
+    static_urls: Sequence[str],
+) -> list[str]:
+    provider_tokens = _concrete_identifier_tokens(
+        [*provider_ids, *(_url_path(url) for url in provider_urls)]
+    )
+    static_tokens = _concrete_identifier_tokens(
+        [*static_ids, *(_url_path(url) for url in static_urls)]
+    )
+    return sorted(provider_tokens & static_tokens)
 
 
 def _non_provider_items(bundle: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
@@ -1244,35 +1299,56 @@ def _provider_static_disagreement_example(
 ) -> dict[str, Any]:
     provider_items = _items_for_source_class(bundle, "provider")
     static_items = _items_for_source_class(bundle, "static")
-    provider_urls = _sample_clean_values(provider_items, "jobLink", normalize_urls=True)
-    static_urls = _sample_clean_values(static_items, "jobLink", normalize_urls=True)
-    provider_hosts = sorted({_url_host(url) for url in provider_urls if _url_host(url)})
-    static_hosts = sorted({_url_host(url) for url in static_urls if _url_host(url)})
-    provider_prefixes = sorted({_path_prefix(url) for url in provider_urls if _path_prefix(url)})
-    static_prefixes = sorted({_path_prefix(url) for url in static_urls if _path_prefix(url)})
-    provider_ids = _sample_clean_values(provider_items, "sourceJobId")
-    static_ids = _sample_clean_values(static_items, "sourceJobId")
+    provider_urls_all = _clean_values(provider_items, "jobLink", normalize_urls=True)
+    static_urls_all = _clean_values(static_items, "jobLink", normalize_urls=True)
+    provider_urls = provider_urls_all[:5]
+    static_urls = static_urls_all[:5]
+    provider_hosts = sorted({_url_host(url) for url in provider_urls_all if _url_host(url)})
+    static_hosts = sorted({_url_host(url) for url in static_urls_all if _url_host(url)})
+    provider_prefixes = sorted(
+        {_path_prefix(url) for url in provider_urls_all if _path_prefix(url)}
+    )
+    static_prefixes = sorted({_path_prefix(url) for url in static_urls_all if _path_prefix(url)})
+    provider_ids_all = _clean_values(provider_items, "sourceJobId")
+    static_ids_all = _clean_values(static_items, "sourceJobId")
+    provider_ids = provider_ids_all[:5]
+    static_ids = static_ids_all[:5]
     shared_tokens = sorted(
-        _identifier_tokens([*provider_ids, *(_url_path(url) for url in provider_urls)])
-        & _identifier_tokens([*static_ids, *(_url_path(url) for url in static_urls)])
+        _identifier_tokens([*provider_ids_all, *(_url_path(url) for url in provider_urls_all)])
+        & _identifier_tokens([*static_ids_all, *(_url_path(url) for url in static_urls_all)])
+    )
+    concrete_shared_tokens = _concrete_shared_identifier_tokens(
+        provider_ids=provider_ids_all,
+        provider_urls=provider_urls_all,
+        static_ids=static_ids_all,
+        static_urls=static_urls_all,
+    )
+    source_classes = _source_class_counts(bundle)
+    provider_static_only = bool(
+        source_classes["provider"]
+        and source_classes["static"]
+        and not source_classes["social"]
+        and not source_classes["other"]
     )
     classification, classification_evidence = _provider_static_disagreement_classification(
         summary=summary,
-        provider_urls=provider_urls,
-        static_urls=static_urls,
+        provider_urls=provider_urls_all,
+        static_urls=static_urls_all,
         provider_hosts=provider_hosts,
         static_hosts=static_hosts,
-        provider_ids=provider_ids,
-        static_ids=static_ids,
+        provider_ids=provider_ids_all,
+        static_ids=static_ids_all,
     )
     evidence = [
         f"bundle_origin:{clean_text(summary.get('bundleEvidenceOrigin')) or 'unknown'}",
-        f"provider_sources:{len(_sample_clean_values(provider_items, 'source'))}",
-        f"static_sources:{len(_sample_clean_values(static_items, 'source'))}",
-        f"provider_urls:{len(provider_urls)}",
-        f"static_urls:{len(static_urls)}",
-        f"provider_ids:{len(provider_ids)}",
-        f"static_ids:{len(static_ids)}",
+        f"provider_sources:{len(_clean_values(provider_items, 'source'))}",
+        f"static_sources:{len(_clean_values(static_items, 'source'))}",
+        f"provider_urls:{len(provider_urls_all)}",
+        f"static_urls:{len(static_urls_all)}",
+        f"provider_ids:{len(provider_ids_all)}",
+        f"static_ids:{len(static_ids_all)}",
+        f"concrete_shared_tokens:{len(concrete_shared_tokens)}",
+        f"provider_static_only:{str(provider_static_only).lower()}",
         f"shared_primary_url:{str(bool(summary.get('sharedPrimaryUrl'))).lower()}",
         f"identity_quality:{clean_text(summary.get('identityQuality')) or 'unknown'}",
         f"classification:{classification}",
@@ -1294,6 +1370,8 @@ def _provider_static_disagreement_example(
         "providerUrlPathPrefixes": provider_prefixes[:5],
         "staticUrlPathPrefixes": static_prefixes[:5],
         "sharedIdentifierTokens": shared_tokens[:5],
+        "concreteSharedIdentifierTokens": concrete_shared_tokens[:5],
+        "providerStaticOnly": provider_static_only,
         "distinctLocationCount": max(0, int(summary.get("distinctLocationCount") or 0)),
         "sampleLocations": [
             clean_text(value) for value in summary.get("sampleLocations") or [] if clean_text(value)
@@ -1314,6 +1392,20 @@ def _provider_static_disagreement_example(
     }
 
 
+def _provider_static_row_with_gate_fields(
+    row: Mapping[str, Any], review_state: Any
+) -> dict[str, Any]:
+    review_pair = find_dedup_review_pair(review_state or {}, row)
+    disposition, gate_evidence = dedup_disagreement_gate_disposition(row, review_pair)
+    with_gate = {
+        **row,
+        **dedup_review_pair_public_fields(review_pair),
+        "disagreementGateDisposition": disposition,
+        "disagreementGateEvidence": gate_evidence,
+    }
+    return {**with_gate, **dedup_operator_review_fields(with_gate)}
+
+
 def _provider_static_disagreement_classification(
     *,
     summary: Mapping[str, Any],
@@ -1329,6 +1421,12 @@ def _provider_static_disagreement_classification(
     )
     static_tokens = _identifier_tokens([*static_ids, *(_url_path(url) for url in static_urls)])
     shared_tokens = sorted(provider_tokens & static_tokens)
+    concrete_shared_tokens = _concrete_shared_identifier_tokens(
+        provider_ids=provider_ids,
+        provider_urls=provider_urls,
+        static_ids=static_ids,
+        static_urls=static_urls,
+    )
     same_host = bool(set(provider_hosts) & set(static_hosts))
     origin = clean_text(summary.get("bundleEvidenceOrigin"))
     location_count = max(0, int(summary.get("distinctLocationCount") or 0))
@@ -1337,10 +1435,13 @@ def _provider_static_disagreement_classification(
         f"provider_hosts:{len(provider_hosts)}",
         f"static_hosts:{len(static_hosts)}",
         f"shared_identifier_tokens:{len(shared_tokens)}",
+        f"concrete_shared_identifier_tokens:{len(concrete_shared_tokens)}",
         f"locations:{location_count}",
     ]
     if shared_tokens:
         evidence.append(f"shared_token:{shared_tokens[0]}")
+    if concrete_shared_tokens:
+        evidence.append(f"concrete_shared_token:{concrete_shared_tokens[0]}")
     if location_count > 1:
         return "title_company_collision", evidence + ["multiple_locations"]
     if origin == "carried_from_existing_output" and (
@@ -2440,15 +2541,8 @@ def build_dedup_evidence(
         ]
     ]
     provider_static_disagreement_rows = [
-        {
-            **row,
-            **dedup_review_pair_public_fields(review_pair),
-            "disagreementGateDisposition": disposition,
-            "disagreementGateEvidence": gate_evidence,
-        }
+        _provider_static_row_with_gate_fields(row, review_state or {})
         for row in provider_static_disagreement_rows
-        for review_pair in [find_dedup_review_pair(review_state or {}, row)]
-        for disposition, gate_evidence in [dedup_disagreement_gate_disposition(row, review_pair)]
     ]
     disposition_order = {"blocked": 0, "warning": 1}
     provider_static_disagreement_rows.sort(
