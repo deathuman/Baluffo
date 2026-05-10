@@ -28,7 +28,7 @@ export function renderAdminOpsAlerts(alertsEl, alerts, handlers = {}) {
   if (canPatchInPlace && alertsEl.dataset.opsAlertsSig === signature) return;
   if (canPatchInPlace) alertsEl.dataset.opsAlertsSig = signature;
   if (!rows.length) {
-    alertsEl.innerHTML = '<div class="admin-alert-banner healthy">No active alerts.</div>';
+    alertsEl.innerHTML = "";
     return;
   }
   alertsEl.innerHTML = rows.map(alert => {
@@ -87,6 +87,47 @@ export function renderAdminOpsKpis(kpisEl, kpis, status) {
   const statusClass = status === "critical" ? "critical" : status === "warning" ? "warning" : "healthy";
   const lastSyncAt = String(registrySync?.lastSyncAt || "");
   const lastSyncLabel = lastSyncAt ? formatDateTime(lastSyncAt) : "Never";
+  const registryDiagnosticsHtml = `
+    <details class="admin-ops-metrics-details admin-ops-registry-sync-details admin-ops-full-row">
+      <summary>Registry and sync diagnostics</summary>
+      <div class="admin-ops-metrics-details-body">
+        <div class="admin-total-card">
+          <div class="admin-total-label">Active Sources</div>
+          <div class="admin-total-value">${Number(registrySync?.activeCount || 0).toLocaleString()}</div>
+        </div>
+        <div class="admin-total-card">
+          <div class="admin-total-label">Pending Review</div>
+          <div class="admin-total-value">${Number(registrySync?.pendingCount || 0).toLocaleString()}</div>
+        </div>
+        <div class="admin-ops-schedule-item admin-ops-full-row">
+          <strong>Registry &amp; Sync</strong>:
+          hidden ${Number(registrySync?.hiddenPendingCount || 0).toLocaleString()},
+          deferred ${Number(registrySync?.deferredPendingCount || 0).toLocaleString()},
+          rejected local-only ${Number(registrySync?.ignoredRejectedCount || 0).toLocaleString()},
+          tombstones local-only ${Number(registrySync?.ignoredTombstonedCount || 0).toLocaleString()}.
+        </div>
+        <div class="admin-ops-schedule-item admin-ops-full-row">
+          <strong>Last sync</strong>:
+          ${escapeHtml(String(registrySync?.lastSyncStatus || "never"))} @ ${escapeHtml(lastSyncLabel)};
+          pull ${Number(registrySync?.pulledCount || 0).toLocaleString()},
+          push ${Number(registrySync?.pushedCount || 0).toLocaleString()},
+          conflicts ${Number(registrySync?.conflictCount || 0).toLocaleString()},
+          invalid rows ${Number(registrySync?.invalidRowsCount || 0).toLocaleString()}.
+        </div>
+        <div class="admin-ops-schedule-item admin-ops-full-row">
+          <strong>Provider coverage</strong>:
+          validated ${Number(providerCoverage?.statusCounts?.validated_provider || 0).toLocaleString()},
+          probing ${Number((providerCoverage?.statusCounts?.probing || 0) + (providerCoverage?.statusCounts?.untested || 0)).toLocaleString()},
+          failed/unstable ${Number((providerCoverage?.statusCounts?.failed_provider || 0) + (providerCoverage?.statusCounts?.unstable_provider || 0)).toLocaleString()},
+          ready later ${Number((providerCoverage?.readyLaterProviders || []).length || 0).toLocaleString()}.
+          Static sources are retained.
+        </div>
+        <div class="admin-ops-schedule-item admin-ops-full-row">
+          <strong>Dedup review-state</strong>: ${escapeHtml(formatDedupReviewStateSummary(dedupReviewState))}
+        </div>
+      </div>
+    </details>
+  `;
   kpisEl.innerHTML = `
     <div class="admin-total-card">
       <div class="admin-total-label">Ops Status</div>
@@ -112,40 +153,7 @@ export function renderAdminOpsKpis(kpisEl, kpis, status) {
       <div class="admin-total-label">Pending Approvals</div>
       <div class="admin-total-value">${pending.toLocaleString()}</div>
     </div>
-    <div class="admin-total-card">
-      <div class="admin-total-label">Active Sources</div>
-      <div class="admin-total-value">${Number(registrySync?.activeCount || 0).toLocaleString()}</div>
-    </div>
-    <div class="admin-total-card">
-      <div class="admin-total-label">Pending Review</div>
-      <div class="admin-total-value">${Number(registrySync?.pendingCount || 0).toLocaleString()}</div>
-    </div>
-    <div class="admin-ops-schedule-item admin-ops-full-row">
-      <strong>Registry &amp; Sync</strong>:
-      hidden ${Number(registrySync?.hiddenPendingCount || 0).toLocaleString()},
-      deferred ${Number(registrySync?.deferredPendingCount || 0).toLocaleString()},
-      rejected local-only ${Number(registrySync?.ignoredRejectedCount || 0).toLocaleString()},
-      tombstones local-only ${Number(registrySync?.ignoredTombstonedCount || 0).toLocaleString()}.
-    </div>
-    <div class="admin-ops-schedule-item admin-ops-full-row">
-      <strong>Last sync</strong>:
-      ${escapeHtml(String(registrySync?.lastSyncStatus || "never"))} @ ${escapeHtml(lastSyncLabel)};
-      pull ${Number(registrySync?.pulledCount || 0).toLocaleString()},
-      push ${Number(registrySync?.pushedCount || 0).toLocaleString()},
-      conflicts ${Number(registrySync?.conflictCount || 0).toLocaleString()},
-      invalid rows ${Number(registrySync?.invalidRowsCount || 0).toLocaleString()}.
-    </div>
-    <div class="admin-ops-schedule-item admin-ops-full-row">
-      <strong>Provider coverage</strong>:
-      validated ${Number(providerCoverage?.statusCounts?.validated_provider || 0).toLocaleString()},
-      probing ${Number((providerCoverage?.statusCounts?.probing || 0) + (providerCoverage?.statusCounts?.untested || 0)).toLocaleString()},
-      failed/unstable ${Number((providerCoverage?.statusCounts?.failed_provider || 0) + (providerCoverage?.statusCounts?.unstable_provider || 0)).toLocaleString()},
-      ready later ${Number((providerCoverage?.readyLaterProviders || []).length || 0).toLocaleString()}.
-      Static sources are retained.
-    </div>
-    <div class="admin-ops-schedule-item admin-ops-full-row">
-      <strong>Dedup review-state</strong>: ${escapeHtml(formatDedupReviewStateSummary(dedupReviewState))}
-    </div>
+    ${registryDiagnosticsHtml}
   `;
 }
 
@@ -868,13 +876,30 @@ function formatProviderStaticEvidenceBlock(label, sources, ids, urls) {
   `;
 }
 
+function isProviderStaticBlockedRow(row) {
+  return String(row?.disagreementGateDisposition || "").toLowerCase() === "blocked";
+}
+
+function visibleProviderStaticRows(rows, limit = 5) {
+  const allRows = Array.isArray(rows) ? rows : [];
+  const cappedWarningSlots = Math.max(0, Number(limit) || 0);
+  const blockedCount = allRows.filter(isProviderStaticBlockedRow).length;
+  const warningLimit = Math.max(0, cappedWarningSlots - blockedCount);
+  let warningsAdded = 0;
+  return allRows.filter(row => {
+    if (isProviderStaticBlockedRow(row)) return true;
+    if (warningsAdded >= warningLimit) return false;
+    warningsAdded += 1;
+    return true;
+  });
+}
+
 function formatProviderStaticGuidedRows(rows, emptyText, options = {}) {
   const disagreementRows = Array.isArray(rows) ? rows : [];
   if (!disagreementRows.length) return escapeHtml(emptyText);
   const showActions = typeof options?.onReviewAction === "function";
   const tableKey = String(options?.tableKey || "providerStatic");
-  const cards = disagreementRows
-    .slice(0, 5)
+  const cards = visibleProviderStaticRows(disagreementRows)
     .map((row, rowIndex) => {
       const title = String(row?.title || "Untitled");
       const company = String(row?.company || "Unknown company");
@@ -1385,8 +1410,8 @@ function buildDedupListsContent(metrics, options = {}) {
       </section>
     `,
     rowGroups: {
-      providerStatic: providerStaticDisagreementRows.slice(0, 5),
-      providerStaticTitleCompany: providerStaticTitleCompanyCollisionRows.slice(0, 5)
+      providerStatic: visibleProviderStaticRows(providerStaticDisagreementRows),
+      providerStaticTitleCompany: visibleProviderStaticRows(providerStaticTitleCompanyCollisionRows)
     }
   };
 }
@@ -1845,15 +1870,23 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   if (options?.includeDedupSection === true) {
     sectionHtmlByKey.dedup = dedupSectionHtml;
   }
-  metricsEl.innerHTML = `${taskLaneHtml}${buildOpsFetcherMetricSections(
+  const sectionHtml = `${taskLaneHtml}${buildOpsFetcherMetricSections(
     sectionHtmlByKey,
     diagnosticsByKey
   ).map(formatOpsFetcherMetricSection).join("")}`;
+  metricsEl.innerHTML = `
+    <details class="admin-ops-metrics-details admin-ops-fetcher-diagnostics admin-ops-full-row">
+      <summary>Fetcher diagnostics</summary>
+      <div class="admin-ops-metrics-details-body admin-ops-fetcher-diagnostics-body">
+        ${sectionHtml}
+      </div>
+    </details>
+  `;
 
   if (typeof options?.onDedupReviewAction === "function") {
     const rowGroups = {
-      providerStatic: providerStaticDisagreementRows.slice(0, 5),
-      providerStaticTitleCompany: providerStaticTitleCompanyCollisionRows.slice(0, 5)
+      providerStatic: visibleProviderStaticRows(providerStaticDisagreementRows),
+      providerStaticTitleCompany: visibleProviderStaticRows(providerStaticTitleCompanyCollisionRows)
     };
     metricsEl.querySelectorAll("[data-dedup-review-action]").forEach(button => {
       button.addEventListener("click", () => {

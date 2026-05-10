@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from src.shared.json_io import read_json
 from src.shared.json_io import read_json_object as read_pipeline_json_object
 from src.source_registry import source_identity, static_listing_url_aliases
 from src.source_registry_policy import duplicate_family_conflict_cards
@@ -101,6 +102,8 @@ PROVIDER_ADAPTERS = {
     "workable",
     "workday",
 }
+INDEPENDENT_PROVIDER_BOARD_ADAPTERS = {"greenhouse"}
+INDEPENDENT_PROVIDER_BOARD_OVERLAP_THRESHOLD = 0.5
 
 PROVIDER_HOST_SUFFIX_ADAPTERS = {
     ".bamboohr.com": "bamboohr",
@@ -476,6 +479,108 @@ def _normalized_url_for_comparison(url: str) -> str:
         return ""
     path = parsed.path.rstrip("/") or "/"
     return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}{path}"
+
+
+def _provider_slug(row: dict[str, Any]) -> str:
+    slug = _clean_text(row.get("slug")).lower()
+    if slug:
+        return slug
+    row_id = _row_identity(row).lower()
+    prefix = f"{_row_adapter(row)}:slug:"
+    if row_id.startswith(prefix):
+        return row_id.removeprefix(prefix).split(":", 1)[0]
+    return ""
+
+
+def _provider_source_aliases(row: dict[str, Any]) -> set[str]:
+    adapter = _row_adapter(row)
+    aliases = {
+        _clean_text(row.get("id")).lower(),
+        _clean_text(row.get("sourceId")).lower(),
+        _clean_text(row.get("sourceIdentity")).lower(),
+        _row_identity(row).lower(),
+    }
+    slug = _provider_slug(row)
+    if adapter and slug:
+        aliases.update({slug, f"{adapter}:{slug}", f"{adapter}:slug:{slug}"})
+    return {alias for alias in aliases if alias}
+
+
+def _source_item_aliases(item: dict[str, Any]) -> set[str]:
+    aliases = {
+        _clean_text(item.get("source")).lower(),
+        _clean_text(item.get("sourceId")).lower(),
+        _clean_text(item.get("sourceIdentity")).lower(),
+    }
+    source_job_id = _clean_text(item.get("sourceJobId")).lower()
+    parts = [part for part in source_job_id.split(":") if part]
+    if len(parts) >= 2:
+        aliases.update({f"{parts[0]}:{parts[1]}", f"{parts[0]}:slug:{parts[1]}"})
+    return {alias for alias in aliases if alias}
+
+
+def _job_identity_keys(item: dict[str, Any]) -> set[str]:
+    keys: set[str] = set()
+    source_job_id = _clean_text(item.get("sourceJobId"))
+    job_link = _clean_text(item.get("jobLink") or item.get("url"))
+    if source_job_id:
+        keys.add(f"id:{source_job_id.lower()}")
+        for token in re.findall(r"\d{5,}", source_job_id):
+            keys.add(f"token:{token}")
+    if job_link:
+        normalized = _normalized_url_for_comparison(job_link)
+        if normalized:
+            keys.add(f"url:{normalized}")
+        for token in re.findall(r"\d{5,}", job_link):
+            keys.add(f"token:{token}")
+    return keys
+
+
+def _source_job_identity_index(job_rows: Any) -> dict[str, set[str]]:
+    index: dict[str, set[str]] = {}
+    for row in _as_list(job_rows):
+        if not isinstance(row, dict):
+            continue
+        items = [item for item in _as_list(row.get("sourceBundle")) if isinstance(item, dict)]
+        if not items:
+            items = [row]
+        for item in items:
+            keys = _job_identity_keys(item)
+            if not keys:
+                continue
+            for alias in _source_item_aliases(item):
+                index.setdefault(alias, set()).update(keys)
+    return index
+
+
+def _row_direct_job_identity_keys(row: dict[str, Any]) -> set[str]:
+    keys: set[str] = set()
+    for value in _as_list(row.get("jobIdentityKeys")):
+        text = _clean_text(value)
+        if text:
+            keys.add(text.lower())
+    for value in _as_list(row.get("sourceJobIds")):
+        keys.update(_job_identity_keys({"sourceJobId": value}))
+    for value in _as_list(row.get("jobLinks")):
+        keys.update(_job_identity_keys({"jobLink": value}))
+    return keys
+
+
+def _row_job_identity_keys(row: dict[str, Any], job_index: dict[str, set[str]]) -> set[str]:
+    keys = _row_direct_job_identity_keys(row)
+    for alias in _provider_source_aliases(row):
+        keys.update(job_index.get(alias, set()))
+    return keys
+
+
+def _identity_overlap_ratio(left: set[str], right: set[str]) -> float:
+    shared = left & right
+    if any(value.startswith("token:") for value in shared):
+        return 1.0
+    denominator = min(len(left), len(right))
+    if not denominator:
+        return 0.0
+    return len(shared) / denominator
 
 
 def _row_primary_url(row: dict[str, Any]) -> str:
@@ -930,6 +1035,104 @@ def _adjudicated_independent_provider_loser_ids(
     return independent_ids
 
 
+def _active_same_adapter_provider_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    active_rows = [row for row in rows if _row_state(row) == "active"]
+    if len(active_rows) < 2 or len(active_rows) != len(rows):
+        return []
+    if not all(_is_provider_row(row) for row in active_rows):
+        return []
+    adapters = {_row_adapter(row) for row in active_rows}
+    if len(adapters) != 1 or next(iter(adapters)) not in INDEPENDENT_PROVIDER_BOARD_ADAPTERS:
+        return []
+    row_ids = [_row_identity(row) for row in active_rows]
+    if any(not row_id for row_id in row_ids) or len(set(row_ids)) != len(row_ids):
+        return []
+    slugs = [_provider_slug(row) for row in active_rows]
+    if any(not slug for slug in slugs) or len(set(slugs)) != len(slugs):
+        return []
+    return active_rows
+
+
+def _adjudication_proves_independent_provider_boards(
+    rows: list[dict[str, Any]], family: dict[str, Any] | None
+) -> bool:
+    if not family:
+        return False
+    row_ids = {_row_identity(row) for row in rows if _row_identity(row)}
+    checked_ids = {
+        _clean_text(source_id)
+        for source_id in _as_list(family.get("checkedSourceIds"))
+        if _clean_text(source_id)
+    }
+    if not row_ids or not row_ids <= checked_ids:
+        return False
+    keep_both_ids = set()
+    for decision in _as_list(family.get("decisions")):
+        if not isinstance(decision, dict):
+            continue
+        source_id = _clean_text(decision.get("sourceId"))
+        status = _clean_text(decision.get("status")).lower()
+        reason = _clean_text(decision.get("reason")).lower()
+        if status == "keep_both" and "job sets differ" in reason and source_id:
+            keep_both_ids.add(source_id)
+    winner_id = _clean_text(family.get("winnerSourceId"))
+    expected_decisions = row_ids - {winner_id}
+    return bool(expected_decisions) and expected_decisions <= keep_both_ids
+
+
+def _current_jobs_prove_independent_provider_boards(
+    rows: list[dict[str, Any]], job_index: dict[str, set[str]]
+) -> bool:
+    row_job_keys = [_row_job_identity_keys(row, job_index) for row in rows]
+    if any(not keys for keys in row_job_keys):
+        return False
+    for index, left in enumerate(row_job_keys):
+        for right in row_job_keys[index + 1 :]:
+            if _identity_overlap_ratio(left, right) >= INDEPENDENT_PROVIDER_BOARD_OVERLAP_THRESHOLD:
+                return False
+    return True
+
+
+def _independent_provider_board_audit_row(
+    *,
+    family_key: str,
+    rows: list[dict[str, Any]],
+    evidence_reason: str,
+) -> dict[str, Any]:
+    return {
+        "familyKey": family_key,
+        "rowCount": len(rows),
+        "adapter": _row_adapter(rows[0]) if rows else "",
+        "sourceIds": [_row_identity(row) for row in rows if _row_identity(row)],
+        "evidenceReason": evidence_reason,
+    }
+
+
+def _independent_provider_board_suppression(
+    *,
+    family_key: str,
+    rows: list[dict[str, Any]],
+    family_adjudication: dict[str, Any] | None,
+    job_index: dict[str, set[str]],
+) -> dict[str, Any] | None:
+    provider_rows = _active_same_adapter_provider_rows(rows)
+    if not provider_rows:
+        return None
+    if _adjudication_proves_independent_provider_boards(provider_rows, family_adjudication):
+        return _independent_provider_board_audit_row(
+            family_key=family_key,
+            rows=provider_rows,
+            evidence_reason="live_adjudication_keep_both_job_sets_differ",
+        )
+    if _current_jobs_prove_independent_provider_boards(provider_rows, job_index):
+        return _independent_provider_board_audit_row(
+            family_key=family_key,
+            rows=provider_rows,
+            evidence_reason="current_fetch_job_identity_overlap_below_threshold",
+        )
+    return None
+
+
 def _row_with_live_adjudication(
     row: dict[str, Any], probe: dict[str, Any], *, observed_at: str = ""
 ) -> dict[str, Any]:
@@ -1132,18 +1335,6 @@ def _is_safe_pending_static_homepage_against_active_provider(
     )
 
 
-def _drop_adjudicated_independent_provider_losers(
-    winner: dict[str, Any],
-    losers: list[dict[str, Any]],
-    family_adjudication: dict[str, Any] | None,
-) -> list[dict[str, Any]]:
-    independent_provider_loser_ids = _adjudicated_independent_provider_loser_ids(
-        [winner, *losers],
-        family_adjudication or {},
-    )
-    return [row for row in losers if _row_identity(row) not in independent_provider_loser_ids]
-
-
 def _drop_safe_pending_homepage_static_losers(
     winner: dict[str, Any],
     losers: list[dict[str, Any]],
@@ -1201,6 +1392,54 @@ def _build_pending_audit_section(cards: list[dict[str, Any]]) -> dict[str, Any]:
         },
         "families": cards,
     }
+
+
+def _build_independent_provider_board_audit(cards: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "summary": {
+            "familyCount": len(cards),
+            "rowCount": sum(_int_value(card.get("rowCount")) for card in cards),
+        },
+        "families": cards,
+    }
+
+
+def _apply_independent_provider_board_suppression(
+    *,
+    family_key: str,
+    candidate_rows: list[dict[str, Any]],
+    losers: list[dict[str, Any]],
+    family_adjudication: dict[str, Any] | None,
+    job_index: dict[str, set[str]],
+    audit_rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], bool]:
+    suppression = _independent_provider_board_suppression(
+        family_key=family_key,
+        rows=candidate_rows,
+        family_adjudication=family_adjudication,
+        job_index=job_index,
+    )
+    if suppression:
+        audit_rows.append(suppression)
+        return losers, True
+
+    adjudicated_independent_ids = _adjudicated_independent_provider_loser_ids(
+        candidate_rows,
+        family_adjudication or {},
+    )
+    if not adjudicated_independent_ids:
+        return losers, False
+
+    audit_rows.append(
+        _independent_provider_board_audit_row(
+            family_key=family_key,
+            rows=[
+                row for row in candidate_rows if _row_identity(row) in adjudicated_independent_ids
+            ],
+            evidence_reason="live_adjudication_keep_both_job_sets_differ",
+        )
+    )
+    return [row for row in losers if _row_identity(row) not in adjudicated_independent_ids], False
 
 
 def _build_pending_conflict_audit(
@@ -2877,7 +3116,10 @@ def _compare_registry_rows(winner: dict[str, Any], loser: dict[str, Any]) -> lis
 
 
 def derive_registry_conflict_queue(
-    registry_state: Any, source_state_payload: Any = None, adjudication_payload: Any = None
+    registry_state: Any,
+    source_state_payload: Any = None,
+    adjudication_payload: Any = None,
+    job_rows: Any = None,
 ) -> dict[str, Any]:
     registry = _as_dict(registry_state)
     registry_rows = [
@@ -2887,6 +3129,7 @@ def derive_registry_conflict_queue(
         if isinstance(row, dict)
     ]
     source_state_rows = _source_state_rows_by_name(source_state_payload)
+    job_index = _source_job_identity_index(job_rows)
     ambiguous_names = _ambiguous_registry_row_names(registry_rows)
     adjudication_by_family = _adjudication_families_by_key(adjudication_payload)
     family_cards = duplicate_family_conflict_cards(
@@ -2897,6 +3140,7 @@ def derive_registry_conflict_queue(
     safe_auto_demoted_pending_audit: list[dict[str, Any]] = []
     safe_pending_static_alias_audit: list[dict[str, Any]] = []
     safe_pending_provider_lower_jobs_audit: list[dict[str, Any]] = []
+    independent_provider_board_audit: list[dict[str, Any]] = []
     for card in family_cards:
         family_key = _clean_text(card.get("familyKey"))
         family_adjudication = adjudication_by_family.get(family_key)
@@ -2927,11 +3171,17 @@ def derive_registry_conflict_queue(
                 }
             )
             losers = [row for row in losers if not _is_safe_auto_demoted_pending(row)]
-        losers = _drop_adjudicated_independent_provider_losers(
-            winner,
-            losers,
-            family_adjudication,
+        candidate_rows = [winner, *losers]
+        losers, skip_conflict = _apply_independent_provider_board_suppression(
+            family_key=family_key,
+            candidate_rows=candidate_rows,
+            losers=losers,
+            family_adjudication=family_adjudication,
+            job_index=job_index,
+            audit_rows=independent_provider_board_audit,
         )
+        if skip_conflict:
+            continue
         candidate_rows = [winner, *losers]
         suppressed_pending_provider_losers = _safe_pending_provider_lower_jobs_rows(candidate_rows)
         if suppressed_pending_provider_losers:
@@ -3057,6 +3307,9 @@ def derive_registry_conflict_queue(
         "triage": _build_triage_summary(conflicts),
         "review": _build_review_summary(conflicts),
         "automation": automation,
+        "suppressedIndependentProviderBoards": _build_independent_provider_board_audit(
+            independent_provider_board_audit
+        ),
         "conflicts": conflicts,
     }
 
@@ -3073,6 +3326,7 @@ def load_registry_conflicts_payload(
     fetch_report_payload = load_json_object(
         Path(source_state_path).with_name("jobs-fetch-report.json"), {}
     )
+    job_rows = read_json(Path(source_state_path).with_name("jobs-unified.json"), [])
     source_state_payload = _merge_fetch_report_source_details(
         source_state_payload,
         fetch_report_payload,
@@ -3081,6 +3335,7 @@ def load_registry_conflicts_payload(
         registry_state,
         source_state_payload,
         adjudication_payload,
+        job_rows,
     )
     warnings: list[str] = []
     if not Path(source_state_path).exists():

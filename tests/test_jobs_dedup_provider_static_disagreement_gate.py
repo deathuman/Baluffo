@@ -105,30 +105,39 @@ def test_dedup_evidence_downgrades_current_run_static_parser_variant_to_warning(
     assert evidence["providerStaticDisagreementGateCounts"]["autoSafeWarning"] == 1
 
 
-def test_dedup_evidence_blocks_current_run_static_parser_variant_with_extra_source() -> None:
+def test_dedup_evidence_downgrades_current_run_known_gracklehq_gamesjobsdirect_mirror() -> None:
     evidence = build_dedup_evidence(
         {"mergedCount": 1},
         [
             _row(
+                company="Guerrilla Games",
+                title="Senior Character Animator",
+                locations=[{"city": "Amsterdam", "country": "NL"}],
                 sourceBundleCount=3,
                 sourceBundle=[
                     {
-                        "source": "greenhouse:slug:studio-one",
-                        "sourceJobId": "greenhouse:studio-one:4022147009",
-                        "jobLink": "https://job-boards.greenhouse.io/studioone/jobs/4022147009",
+                        "source": "greenhouse_boards",
+                        "sourceJobId": "greenhouse:guerrilla-games:5791939004",
+                        "jobLink": "https://job-boards.greenhouse.io/guerrilla-games/jobs/5791939004",
                         "adapter": "greenhouse",
                     },
                     {
-                        "source": "static_source::static:listing_url:https://studio.example/careers",
-                        "sourceJobId": "static-1",
-                        "jobLink": "https://studio.example/work-with-us/4022147009",
-                        "adapter": "static",
+                        "source": "gracklehq",
+                        "sourceJobId": "gracklehq:https://gracklehq.com/rd/376431",
+                        "jobLink": "https://gracklehq.com/rd/376431",
+                        "adapter": "",
                     },
                     {
-                        "source": "mastodon:studio-one",
-                        "sourceJobId": "social-4022147009",
-                        "jobLink": "https://social.example/studio-one/4022147009",
-                        "adapter": "mastodon",
+                        "source": (
+                            "static_source::static:listing_url:"
+                            "https://www.gamesjobsdirect.com/jobs-with-8608_guerrilla-games?page=1"
+                        ),
+                        "sourceJobId": "static-1",
+                        "jobLink": (
+                            "https://www.gamesjobsdirect.com/job/"
+                            "sony-interactive-entertainment/senior-character-animator/336629"
+                        ),
+                        "adapter": "static",
                     },
                 ],
             )
@@ -136,33 +145,42 @@ def test_dedup_evidence_blocks_current_run_static_parser_variant_with_extra_sour
     )
 
     row = evidence["providerStaticDisagreementExamples"][0]
-    assert row["disagreementClassification"] == "static_parser_url_variant"
-    assert row["providerStaticOnly"] is False
-    assert row["disagreementGateDisposition"] == "blocked"
-    assert evidence["providerStaticDisagreementGateCounts"]["blocked"] == 1
+    assert row["disagreementClassification"] == "same_job_different_urls"
+    assert row["concreteSharedIdentifierTokens"] == []
+    assert (
+        "known_gracklehq_gamesjobsdirect_mirror_pair" in row["disagreementClassificationEvidence"]
+    )
+    assert row["disagreementGateDisposition"] == "warning"
+    assert "auto_safe_current_known_mirror_pair" in row["disagreementGateEvidence"]
+    assert evidence["providerStaticDisagreementGateCounts"]["blocked"] == 0
+    assert evidence["providerStaticDisagreementGateCounts"]["autoSafeWarning"] == 1
 
 
-def test_dedup_evidence_blocks_current_run_variant_with_multiple_concrete_tokens() -> None:
+def test_dedup_evidence_blocks_no_concrete_token_without_known_mirror_evidence() -> None:
     evidence = build_dedup_evidence(
         {"mergedCount": 1},
         [
             _row(
+                company="Guerrilla Games",
+                title="Senior Character Animator",
+                locations=[{"city": "Amsterdam", "country": "NL"}],
                 sourceBundleCount=2,
                 sourceBundle=[
                     {
-                        "source": "greenhouse:slug:studio-one",
-                        "sourceJobId": "greenhouse:studio-one:4022147009:4022147010",
-                        "jobLink": (
-                            "https://job-boards.greenhouse.io/studioone/jobs/"
-                            "4022147009/related/4022147010"
-                        ),
+                        "source": "greenhouse_boards",
+                        "sourceJobId": "greenhouse:guerrilla-games:5791939004",
+                        "jobLink": "https://job-boards.greenhouse.io/guerrilla-games/jobs/5791939004",
                         "adapter": "greenhouse",
                     },
                     {
-                        "source": "static_source::static:listing_url:https://studio.example/careers",
+                        "source": (
+                            "static_source::static:listing_url:"
+                            "https://www.gamesjobsdirect.com/jobs-with-8608_guerrilla-games?page=1"
+                        ),
                         "sourceJobId": "static-1",
                         "jobLink": (
-                            "https://studio.example/work-with-us/4022147009/related/4022147010"
+                            "https://www.gamesjobsdirect.com/job/"
+                            "sony-interactive-entertainment/senior-character-animator/336629"
                         ),
                         "adapter": "static",
                     },
@@ -172,10 +190,9 @@ def test_dedup_evidence_blocks_current_run_variant_with_multiple_concrete_tokens
     )
 
     row = evidence["providerStaticDisagreementExamples"][0]
-    assert row["disagreementClassification"] == "static_parser_url_variant"
-    assert row["concreteSharedIdentifierTokens"] == ["4022147009", "4022147010"]
+    assert row["concreteSharedIdentifierTokens"] == []
     assert row["disagreementGateDisposition"] == "blocked"
-    assert evidence["providerStaticDisagreementGateCounts"]["blocked"] == 1
+    assert "auto_safe_current_known_mirror_pair" not in row["disagreementGateEvidence"]
 
 
 def test_dedup_evidence_confirmed_blocking_overrides_current_run_auto_safe_variant() -> None:

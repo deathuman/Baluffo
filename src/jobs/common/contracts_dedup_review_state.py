@@ -206,30 +206,39 @@ def _carried_disagreement_auto_disposition(
 
 def _current_disagreement_auto_disposition(
     classification: str,
+    classification_evidence: list[str],
     provider_static_only: bool,
     provider_backed: bool,
     static_has_url: bool,
     single_location: bool,
     concrete_shared_token_count: int,
 ) -> str:
+    has_concrete_single_job_identity = concrete_shared_token_count == 1
     if (
         classification == "provider_redirect_or_canonical_url"
-        and provider_static_only
         and provider_backed
         and static_has_url
         and single_location
-        and concrete_shared_token_count == 1
+        and has_concrete_single_job_identity
     ):
         return "auto_safe_current_provider_redirect_or_canonical_url"
     if (
         classification == "static_parser_url_variant"
-        and provider_static_only
         and provider_backed
         and static_has_url
         and single_location
-        and concrete_shared_token_count == 1
+        and has_concrete_single_job_identity
     ):
         return "auto_safe_current_static_parser_url_variant"
+    if (
+        classification in {"same_job_different_urls", "static_parser_url_variant"}
+        and provider_backed
+        and static_has_url
+        and single_location
+        and concrete_shared_token_count == 0
+        and "known_gracklehq_gamesjobsdirect_mirror_pair" in classification_evidence
+    ):
+        return "auto_safe_current_known_mirror_pair"
     return ""
 
 
@@ -297,6 +306,7 @@ def dedup_disagreement_gate_disposition(
     static_ids = _clean_list(row.get("staticSourceJobIds"))
     shared_tokens = _clean_list(row.get("sharedIdentifierTokens"))
     concrete_shared_tokens = _clean_list(row.get("concreteSharedIdentifierTokens"))
+    classification_evidence = _clean_list(row.get("disagreementClassificationEvidence"))
     provider_hosts = _clean_list(row.get("providerUrlHosts"))
     static_hosts = _clean_list(row.get("staticUrlHosts"))
     static_urls = _clean_list(row.get("staticUrls"))
@@ -307,7 +317,9 @@ def dedup_disagreement_gate_disposition(
     provider_backed = bool(provider_ids)
     static_backed = bool(static_ids)
     provider_static_only = row.get("providerStaticOnly") is True
-    single_location = location_count <= 1
+    single_location = (
+        location_count <= 1 or "single_effective_location_variant" in classification_evidence
+    )
     evidence = [
         f"classification:{classification or 'unknown'}",
         f"origin:{origin or 'unknown'}",
@@ -334,6 +346,7 @@ def dedup_disagreement_gate_disposition(
     if not is_carried:
         auto_disposition = _current_disagreement_auto_disposition(
             classification,
+            classification_evidence,
             provider_static_only,
             provider_backed,
             bool(static_urls),

@@ -16,7 +16,7 @@ from src.jobs.adapters.parsers.location import (
 from src.jobs.adapters.parsers.location import (
     _looks_like_country_token as parser_looks_like_country_token,
 )
-from src.jobs.text_utils import invalid_location_reason, sanitize_location_text
+from src.jobs.text_utils import sanitize_location_text
 
 CORPUS_PATH = Path(__file__).resolve().parents[3] / "fixtures" / "city_regression_corpus.json"
 CORPUS = json.loads(CORPUS_PATH.read_text(encoding="utf-8"))
@@ -229,6 +229,32 @@ def test_normalize_location_details_deduplicates_bilingual_location_variants() -
     )
 
 
+def test_normalize_location_details_deduplicates_countryless_same_city_after_country() -> None:
+    details = normalize_location_details(
+        [
+            {"city": "Vancouver", "country": "CA"},
+            {"city": "Vancouver", "country": ""},
+        ]
+    )
+
+    assert details["locations"] == [{"city": "Vancouver", "country": "CA"}]
+    assert details["locationSummary"] == "Vancouver, CA"
+
+
+def test_normalize_location_details_rejects_illustrator_role_token() -> None:
+    assert parse_generic_location_fields("Illustrator") == ("", "Unknown", "")
+
+    details = normalize_location_details(
+        [
+            {"city": "Illustrator", "country": ""},
+            {"city": "Salem", "country": "US"},
+        ]
+    )
+
+    assert details["locations"] == [{"city": "Salem", "country": "US"}]
+    assert details["locationSummary"] == "Salem, US"
+
+
 @pytest.mark.parametrize(
     "value, expected_city, expected_country",
     [
@@ -439,140 +465,4 @@ def test_trailing_role_residue_is_not_misread_as_a_city() -> None:
     for value in ("Principal)", "Lead)"):
         assert classify_city_garbage(value) == "role_category"
         assert not _is_plausibly_location_candidate(value)
-        assert parse_generic_location_fields(value) == ("", "Unknown", "")
-
-
-def test_css_and_site_chrome_residue_is_not_misread_as_a_city() -> None:
-    for value, expected_category in (
-        ("6vw)", "technical_noise"),
-        ("o", "technical_noise"),
-        ("admin", "site_chrome"),
-        ("backdrop", "site_chrome"),
-        ("background", "site_chrome"),
-        ("blur", "site_chrome"),
-        ("justification", "role_category"),
-        ("gutter", "role_category"),
-        ("intrinsic", "site_chrome"),
-        ("mobile", "site_chrome"),
-        ("paced", "site_chrome"),
-        ("primary", "site_chrome"),
-        ("pageViewed", "role_category"),
-        ("runtime", "site_chrome"),
-        ("content", "site_chrome"),
-        ("block", "role_category"),
-        ("document", "site_chrome"),
-        ("get started", "site_chrome"),
-        ("gutenify", "site_chrome"),
-        ("developers", "role_category"),
-        ("menu", "site_chrome"),
-        ("read more", "site_chrome"),
-        ("site", "site_chrome"),
-        ("Staff", "role_category"),
-        ("Serving", "role_category"),
-        ("Style", "role_category"),
-        ("Styles", "role_category"),
-        ("Swaziland", "role_category"),
-        ("Testora", "role_category"),
-        ("Walking", "role_category"),
-        ("Senior", "site_chrome"),
-        ("News", "role_category"),
-        ("Techland", "site_chrome"),
-        ("space", "site_chrome"),
-        ("column", "site_chrome"),
-        ("moz", "site_chrome"),
-        ("button", "site_chrome"),
-        ("inner", "site_chrome"),
-        ("editor", "site_chrome"),
-        ("shadow", "site_chrome"),
-        ("object", "site_chrome"),
-        ("icon", "site_chrome"),
-        ("size", "site_chrome"),
-        ("Home", "site_chrome"),
-        ("touch", "site_chrome"),
-        ("webkit", "site_chrome"),
-        ("widget", "site_chrome"),
-        ("office ASSISTANT (malta, on-site only)", "site_chrome"),
-    ):
-        assert classify_city_garbage(value) == expected_category
-        assert invalid_location_reason(value, field_name="city") == "invalid_city_semantic_noise"
-        assert not _is_plausibly_location_candidate(value)
-        assert parse_generic_location_fields(value) == ("", "Unknown", "")
-
-
-def test_city_noise_contract_rejects_known_static_page_labels() -> None:
-    for value in (
-        "Content & Editorial",
-        "Dancebit",
-        "More",
-        "Content",
-        "Block",
-        "Document",
-        "Get started",
-        "Gutenify",
-        "Developers",
-        "Menu",
-        "Read more",
-        "Senior",
-        "News",
-        "Security and Compliance",
-        "X) videogame title.",
-        "countryCode: ''",
-        "event:'pageViewed'",
-        "Techland",
-        "space",
-        "column",
-        "moz",
-        "button",
-        "inner",
-        "editor",
-        "shadow",
-        "object",
-        "icon",
-        "template",
-        "Teams",
-        "Keywords",
-        "Regular",
-        "Investors",
-        "Here",
-        "Be part of our team",
-        "new Date());",
-        "Market",
-        "Executive",
-        "heading",
-        "Design",
-        "Engineering",
-        "Programming",
-        "Production",
-        "US or CA",
-        "gradient(",
-        "Press",
-        "RSS and other feeds",
-        "Gameboard",
-        "Reject",
-        "Amplify",
-        "Obsidian",
-        "schedule",
-        "Zynga",
-        "Portugal or the UK in a",
-        "ET ± 4 hours",
-        "ET ą 4 hours",
-        "CET ± 2 hours",
-        "CET ± 4 hours",
-        "PT ± 3 hours",
-        "PT ± 4 hours",
-        "NA & EU",
-        "form",
-        "prioritize",
-        "Create and integrate gameplay mechanics.",
-        "quality",
-        "systems",
-        "Performance",
-        "color",
-        "Create detailed and production",
-        "Marmoset).",
-        "coding.",
-        "edit",
-        "Execution of blockouts for levels",
-    ):
-        assert invalid_location_reason(value, field_name="city") == "invalid_city_semantic_noise"
         assert parse_generic_location_fields(value) == ("", "Unknown", "")

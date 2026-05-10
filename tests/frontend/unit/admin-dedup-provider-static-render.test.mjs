@@ -2,11 +2,22 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { renderAdminOpsDedupLists } from "../../../frontend/admin/render.js";
 
-function makeEl() {
+function makeEl(buttonsBySelector = {}) {
   return {
     innerHTML: "",
     textContent: "",
-    querySelectorAll: () => []
+    querySelectorAll: selector => buttonsBySelector[selector] || []
+  };
+}
+
+function makeAttrButton(attrs) {
+  return {
+    getAttribute(name) {
+      return attrs[name] || "";
+    },
+    addEventListener(_event, handler) {
+      this.click = handler;
+    }
   };
 }
 
@@ -244,4 +255,64 @@ test("admin render: provider/static static URL variants render guided safe recom
   assert.match(metricsEl.innerHTML, /shared job token 4022147009/i);
   assert.match(metricsEl.innerHTML, /Raw evidence/i);
   assert.doesNotMatch(metricsEl.innerHTML, /Mark reviewed safe/i);
+});
+
+test("admin render: provider/static blockers are not hidden behind compact card cap", () => {
+  const sixthButton = makeAttrButton({
+    "data-dedup-review-action": "confirmed_blocking",
+    "data-dedup-review-table": "providerStatic",
+    "data-dedup-review-row": "5"
+  });
+  const metricsEl = makeEl({
+    "[data-dedup-review-action]": [sixthButton]
+  });
+  const calls = [];
+  const blockedRows = Array.from({ length: 6 }, (_, index) => ({
+    title: `Blocked Role ${index}`,
+    company: "Studio One",
+    dedupKey: `blocked-${index}`,
+    sourceBundleCount: 2,
+    bundleEvidenceOrigin: "current_run",
+    identityQuality: "provider_id_strong",
+    providerSources: ["greenhouse:slug:studio-one"],
+    staticSources: ["static_source::static:listing_url:https://studio.example/careers"],
+    providerSourceJobIds: [`greenhouse:studio-one:${index}`],
+    staticSourceJobIds: [`static-${index}`],
+    providerUrls: [`https://provider.example/jobs/${index}`],
+    staticUrls: [`https://static.example/jobs/${index}`],
+    distinctLocationCount: 1,
+    sampleLocations: ["amsterdam, nl"],
+    disagreementClassification: "same_job_different_urls",
+    disagreementGateDisposition: "blocked",
+    disagreementGateEvidence: ["current_run_or_unclassified_origin"]
+  }));
+  renderAdminOpsDedupLists(metricsEl, {
+    latestRun: {
+      dedupEvidence: {
+        providerStaticDisagreementExamples: [
+          ...blockedRows,
+          {
+            title: "Warning Role",
+            company: "Studio One",
+            dedupKey: "warning-0",
+            disagreementGateDisposition: "warning",
+            disagreementClassification: "static_parser_url_variant"
+          }
+        ]
+      }
+    },
+    history: {}
+  }, {
+    onDedupReviewAction: (row, action) => calls.push({ row, action })
+  });
+
+  assert.match(metricsEl.innerHTML, /Blocked Role 0/i);
+  assert.match(metricsEl.innerHTML, /Blocked Role 5/i);
+  assert.doesNotMatch(metricsEl.innerHTML, /Warning Role/i);
+
+  sixthButton.click();
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].action, "confirmed_blocking");
+  assert.equal(calls[0].row.dedupKey, "blocked-5");
 });

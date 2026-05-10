@@ -6,6 +6,8 @@ const ACTION_TOKEN = UI_TOKENS.admin.registryConflictActionBtn;
 const CHECK_TOKEN = UI_TOKENS.admin.registryConflictCheckBtn;
 const TRIAGE_FILTER_SELECTOR = ".admin-registry-conflict-filter-btn";
 const REVIEW_FILTER_SELECTOR = ".admin-registry-conflict-review-filter-btn";
+const TRIAGE_FILTER_SELECT_SELECTOR = ".admin-registry-conflict-filter-select";
+const REVIEW_FILTER_SELECT_SELECTOR = ".admin-registry-conflict-review-filter-select";
 const SAFE_AUTOMATION_SELECTOR = ".admin-registry-conflict-safe-automation-btn";
 const TRIAGE_BUCKET_FALLBACKS = [
   {
@@ -282,83 +284,76 @@ function eligibleSafeAutomations(conflicts) {
     .filter(row => row.safeAutomation.eligible && row.safeAutomation.targetIds.length);
 }
 
-function renderTriageFilterButton(bucket, activeFilter) {
+function renderTriageFilterOption(bucket, activeFilter) {
   const token = stringValue(bucket?.bucket, "ambiguous_manual_review");
   const label = stringValue(bucket?.label, token);
   const count = Number(bucket?.count || 0);
   const selected = activeFilter === token;
   return `
-    <button
-      type="button"
-      class="btn back-btn admin-registry-conflict-filter-btn"
-      data-registry-conflict-filter-bucket="${escapeHtml(token)}"
-      aria-pressed="${selected ? "true" : "false"}"
+    <option
+      value="${escapeHtml(token)}"
+      ${selected ? "selected" : ""}
       title="${escapeHtml(stringValue(bucket?.description, label))}"
-    >${escapeHtml(label)} · ${count.toLocaleString()}</button>
+    >${escapeHtml(label)} · ${count.toLocaleString()}</option>
   `;
 }
 
-function renderReviewFilterButton(queue, activeFilter) {
+function renderReviewFilterOption(queue, activeFilter) {
   const token = stringValue(queue?.queue, "p3_low_signal_manual");
   const label = stringValue(queue?.label, token);
   const count = Number(queue?.count || 0);
   const selected = activeFilter === token;
   return `
-    <button
-      type="button"
-      class="btn back-btn admin-registry-conflict-review-filter-btn"
-      data-registry-conflict-review-filter-queue="${escapeHtml(token)}"
-      aria-pressed="${selected ? "true" : "false"}"
+    <option
+      value="${escapeHtml(token)}"
+      ${selected ? "selected" : ""}
       title="${escapeHtml(stringValue(queue?.description, label))}"
-    >${escapeHtml(label)} · ${count.toLocaleString()}</button>
+    >${escapeHtml(label)} · ${count.toLocaleString()}</option>
   `;
 }
 
-function renderTriageSummary(triage, activeFilter) {
-  const total = Number(triage?.summary?.totalConflictCount || 0);
+function renderAllTriageFilterOption(total, activeFilter) {
+  const allSelected = activeFilter === "all";
+  return `
+    <option value="all" ${allSelected ? "selected" : ""}>All · ${total.toLocaleString()}</option>
+  `;
+}
+
+function renderAllReviewFilterOption(total, activeFilter) {
+  const allSelected = activeFilter === "all";
+  return `
+    <option value="all" ${allSelected ? "selected" : ""}>All queues · ${total.toLocaleString()}</option>
+  `;
+}
+
+function renderConflictFilterToolbar(triage, review, activeTriageFilter, activeReviewFilter) {
+  const triageTotal = Number(triage?.summary?.totalConflictCount || 0);
+  const reviewTotal = Number(review?.summary?.totalConflictCount || 0);
   const buckets = listValue(triage?.buckets);
-  const allSelected = activeFilter === "all";
-  return `
-    <div class="admin-registry-conflict-triage">
-      <div class="admin-registry-conflict-triage-head">
-        <div>
-          <div class="admin-registry-conflict-family">Triage report</div>
-          <div class="admin-registry-conflict-summary">${total.toLocaleString()} conflict families classified.</div>
-        </div>
-        <button
-          type="button"
-          class="btn back-btn admin-registry-conflict-filter-btn"
-          data-registry-conflict-filter-bucket="all"
-          aria-pressed="${allSelected ? "true" : "false"}"
-        >All · ${total.toLocaleString()}</button>
-      </div>
-      <div class="admin-registry-conflict-filters">
-        ${buckets.map(bucket => renderTriageFilterButton(bucket, activeFilter)).join("")}
-      </div>
-    </div>
-  `;
-}
-
-function renderReviewSummary(review, activeFilter) {
-  const total = Number(review?.summary?.totalConflictCount || 0);
   const queues = listValue(review?.queues);
-  const allSelected = activeFilter === "all";
   return `
-    <div class="admin-registry-conflict-triage">
-      <div class="admin-registry-conflict-triage-head">
-        <div>
-          <div class="admin-registry-conflict-family">Review queue</div>
-          <div class="admin-registry-conflict-summary">${total.toLocaleString()} conflict families ranked by operator priority.</div>
-        </div>
-        <button
-          type="button"
-          class="btn back-btn admin-registry-conflict-review-filter-btn"
-          data-registry-conflict-review-filter-queue="all"
-          aria-pressed="${allSelected ? "true" : "false"}"
-        >All queues · ${total.toLocaleString()}</button>
+    <div class="admin-registry-conflict-toolbar" aria-label="Registry conflict filters">
+      <div class="admin-registry-conflict-filter-group" role="group" aria-label="Triage filter">
+        <label class="admin-registry-conflict-filter-label" for="admin-registry-conflict-triage-filter">Triage</label>
+        <select
+          id="admin-registry-conflict-triage-filter"
+          class="admin-registry-conflict-filter-select"
+          data-registry-conflict-filter-bucket="${escapeHtml(activeTriageFilter)}"
+        >
+          ${renderAllTriageFilterOption(triageTotal, activeTriageFilter)}
+          ${buckets.map(bucket => renderTriageFilterOption(bucket, activeTriageFilter)).join("")}
+        </select>
       </div>
-      <div class="admin-registry-conflict-filters">
-        ${queues.map(queue => renderReviewFilterButton(queue, activeFilter)).join("")}
+      <div class="admin-registry-conflict-filter-group" role="group" aria-label="Review queue filter">
+        <label class="admin-registry-conflict-filter-label" for="admin-registry-conflict-review-filter">Review queue</label>
+        <select
+          id="admin-registry-conflict-review-filter"
+          class="admin-registry-conflict-review-filter-select"
+          data-registry-conflict-review-filter-queue="${escapeHtml(activeReviewFilter)}"
+        >
+          ${renderAllReviewFilterOption(reviewTotal, activeReviewFilter)}
+          ${queues.map(queue => renderReviewFilterOption(queue, activeReviewFilter)).join("")}
+        </select>
       </div>
     </div>
   `;
@@ -397,29 +392,67 @@ function renderRowActions(cardIndex, rowIndex, row) {
     .join("");
 }
 
-function renderRowMeta(row) {
+function getRowMetaItems(row) {
   const lastJobsKept = row?.lastJobsKept ?? row?.lastKeptCount;
   const jobsFound = row?.jobsFound ?? row?.sampleCount ?? row?.lastJobsFound ?? lastJobsKept;
   const registryJobsFound = row?.registryJobsFound;
   const liveJobsFound = row?.liveJobsFound;
-  const items = [
-    ["State", stringValue(row?.registryState, stringValue(row?.candidateState, "unknown"))],
-    ["Transition", stringValue(row?.transitionReason, "—")],
-    ["Health", stringValue(row?.health, "unknown")],
-    ["Health reason", stringValue(row?.healthReason, "—")],
-    ["Last success", formatFieldValue("lastSuccessfulFetchAt", row?.lastSuccessfulFetchAt)],
-    ["Last seen", formatFieldValue("lastSeenInFetchAt", row?.lastSeenInFetchAt)],
-    [row?.liveJobsFound === undefined ? "Jobs found" : "Effective jobs found", jobsFound === undefined || jobsFound === null ? "—" : stringValue(jobsFound, "0")],
-    ["Registry jobs found", registryJobsFound === undefined || registryJobsFound === null ? null : stringValue(registryJobsFound, "0")],
-    ["Live jobs found", liveJobsFound === undefined || liveJobsFound === null ? null : stringValue(liveJobsFound, "0")],
-    ["Last jobs kept", lastJobsKept === undefined || lastJobsKept === null ? "—" : stringValue(lastJobsKept, "0")],
-    ["Failure count", stringValue(row?.failureCount ?? row?.consecutiveFailures, "0")],
-    ["Zero-job streak", stringValue(row?.zeroJobStreak ?? row?.consecutiveZeroKept, "0")]
+  return [
+    { label: "State", value: stringValue(row?.registryState, stringValue(row?.candidateState, "unknown")), compact: true },
+    { label: "Transition", value: stringValue(row?.transitionReason, "—"), compact: false },
+    { label: "Health", value: stringValue(row?.health, "unknown"), compact: true },
+    { label: "Health reason", value: stringValue(row?.healthReason, "—"), compact: false },
+    { label: "Last success", value: formatFieldValue("lastSuccessfulFetchAt", row?.lastSuccessfulFetchAt), compact: true },
+    { label: "Last seen", value: formatFieldValue("lastSeenInFetchAt", row?.lastSeenInFetchAt), compact: false },
+    {
+      label: row?.liveJobsFound === undefined ? "Jobs found" : "Effective jobs found",
+      value: jobsFound === undefined || jobsFound === null ? "—" : stringValue(jobsFound, "0"),
+      compact: true
+    },
+    {
+      label: "Registry jobs found",
+      value: registryJobsFound === undefined || registryJobsFound === null ? null : stringValue(registryJobsFound, "0"),
+      compact: true
+    },
+    {
+      label: "Live jobs found",
+      value: liveJobsFound === undefined || liveJobsFound === null ? null : stringValue(liveJobsFound, "0"),
+      compact: true
+    },
+    {
+      label: "Last jobs kept",
+      value: lastJobsKept === undefined || lastJobsKept === null ? "—" : stringValue(lastJobsKept, "0"),
+      compact: true
+    },
+    { label: "Failure count", value: stringValue(row?.failureCount ?? row?.consecutiveFailures, "0"), compact: false },
+    { label: "Zero-job streak", value: stringValue(row?.zeroJobStreak ?? row?.consecutiveZeroKept, "0"), compact: false }
   ];
+}
+
+function renderRowMetaItems(items) {
   return items
-    .filter(([, value]) => value !== null)
-    .map(([label, value]) => `<span><strong>${escapeHtml(label)}</strong> ${escapeHtml(String(value))}</span>`)
+    .filter(item => item.value !== null)
+    .map(item => `<span><strong>${escapeHtml(item.label)}</strong> ${escapeHtml(String(item.value))}</span>`)
     .join("");
+}
+
+function renderRowMeta(row, options = {}) {
+  const compactOnly = Boolean(options?.compactOnly);
+  const items = getRowMetaItems(row).filter(item => !compactOnly || item.compact);
+  return renderRowMetaItems(items);
+}
+
+function renderRowMoreDetails(row) {
+  const items = getRowMetaItems(row).filter(item => !item.compact && item.value !== null);
+  if (!items.length) return "";
+  return `
+    <details class="admin-registry-conflict-row-details">
+      <summary>More row evidence</summary>
+      <div class="admin-registry-conflict-meta admin-registry-conflict-meta-secondary">
+        ${renderRowMetaItems(items)}
+      </div>
+    </details>
+  `;
 }
 
 function renderAdjudicationProbe(probe) {
@@ -451,14 +484,13 @@ function renderAdjudicationCard(card) {
   const probes = listValue(adjudication?.probes);
   const decisions = listValue(adjudication?.decisions);
   return `
-    <div class="admin-registry-conflict-adjudication">
-      <div class="admin-registry-conflict-triage-card">
-        <span class="admin-registry-conflict-triage-badge">Adjudication · ${escapeHtml(stringValue(adjudication?.status, "checked"))}</span>
-        <span>winner ${escapeHtml(stringValue(adjudication?.winnerSourceId, "unknown"))}</span>
+    <details class="admin-registry-conflict-detail admin-registry-conflict-adjudication">
+      <summary>Adjudication · ${escapeHtml(stringValue(adjudication?.status, "checked"))} · winner ${escapeHtml(stringValue(adjudication?.winnerSourceId, "unknown"))}</summary>
+      <div class="admin-registry-conflict-detail-body">
+        ${probes.map(renderAdjudicationProbe).join("")}
+        ${decisions.map(renderAdjudicationDecision).join("")}
       </div>
-      ${probes.map(renderAdjudicationProbe).join("")}
-      ${decisions.map(renderAdjudicationDecision).join("")}
-    </div>
+    </details>
   `;
 }
 
@@ -475,9 +507,10 @@ function renderConflictRow(row, cardIndex, rowIndex, role) {
           <div class="admin-registry-conflict-name">${escapeHtml(title)}</div>
           <div class="admin-registry-conflict-id">${escapeHtml(identifier)}</div>
         </div>
-        <div class="admin-registry-conflict-id">${escapeHtml(role)}</div>
+        <div class="admin-registry-conflict-role">${escapeHtml(role)}</div>
       </div>
-      <div class="admin-registry-conflict-meta">${renderRowMeta(row)}</div>
+      <div class="admin-registry-conflict-meta">${renderRowMeta(row, { compactOnly: true })}</div>
+      ${renderRowMoreDetails(row)}
       <div class="admin-registry-conflict-actions">${renderRowActions(cardIndex, rowIndex, row)}</div>
     </div>
   `;
@@ -505,9 +538,10 @@ function renderConflictDiff(cardIndex, diff, winner) {
         .join("")
     : `<tr><td colspan="3" class="muted">No differing fields.</td></tr>`;
   const winnerLabel = stringValue(winner?.name, stringValue(winner?.id || winner?.sourceId, "winner"));
+  const fieldCount = fields.length;
   return `
-    <details class="admin-registry-conflict-diff" open data-registry-conflict-card-index="${cardIndex}">
-      <summary>${escapeHtml(loserName)} vs ${escapeHtml(winnerLabel)}</summary>
+    <details class="admin-registry-conflict-diff" data-registry-conflict-card-index="${cardIndex}">
+      <summary>Diffs · ${fieldCount.toLocaleString()} fields · ${escapeHtml(loserName)} vs ${escapeHtml(winnerLabel)}</summary>
       <div class="admin-registry-conflict-diff-body">
         <table class="admin-registry-conflict-diff-table">
           <thead>
@@ -558,41 +592,60 @@ function renderConflictCard(card, cardIndex, options = {}) {
   const reviewReason = stringValue(card?.reviewReason, "No review reason available.");
   const suggestedDisposition = stringValue(card?.suggestedDisposition, "Manual review");
   const suggestedConfidence = stringValue(card?.suggestedConfidence, "low");
+  const reviewPriority = Number(card?.reviewPriority ?? 3);
+  const winnerHealth = stringValue(winner?.health, "unknown");
+  const winnerHealthReason = stringValue(winner?.healthReason, "");
   const effectiveWinnerSource = stringValue(card?.effectiveWinnerSource, "registry");
   const winnerSourceNote = effectiveWinnerSource === "live_adjudication"
-    ? `<div class="admin-registry-conflict-triage-card">
+    ? `<div class="admin-registry-conflict-inline-note">
         <span class="admin-registry-conflict-triage-badge">Live counts applied</span>
         <span>Winner selected from completed source-check counts; registry counts remain visible on each row.</span>
       </div>`
     : "";
+  const detailCount = rationale.length + diffs.reduce((total, diff) => total + listValue(diff?.fields).length, 0);
   return `
     <section class="admin-registry-conflict-card" data-registry-conflict-card="${cardIndex}">
       <div class="admin-registry-conflict-card-head">
-        <div>
+        <div class="admin-registry-conflict-card-title">
           <div class="admin-registry-conflict-family">${escapeHtml(familyKey)}</div>
           <div class="admin-registry-conflict-summary">${escapeHtml(
             `${rowCount.toLocaleString()} rows · winner ${winnerName}`
           )}</div>
         </div>
-        <div class="admin-registry-conflict-summary">
-          ${escapeHtml(stringValue(winner?.health, "unknown"))}
-          ${winner?.healthReason ? ` · ${escapeHtml(stringValue(winner.healthReason))}` : ""}
+        <div class="admin-registry-conflict-card-badges" aria-label="Conflict classification">
+          <span class="admin-registry-conflict-triage-badge">${escapeHtml(triageLabel)} · ${escapeHtml(triageRisk)}</span>
+          <span class="admin-registry-conflict-triage-badge">P${Number.isFinite(reviewPriority) ? reviewPriority : 3}</span>
+          <span class="admin-registry-conflict-triage-badge">${escapeHtml(reviewLabel)} · ${escapeHtml(suggestedConfidence)}</span>
+          <span class="admin-registry-conflict-triage-badge">${escapeHtml(winnerHealth)}</span>
         </div>
       </div>
-      <div class="admin-registry-conflict-triage-card">
-        <span class="admin-registry-conflict-triage-badge">${escapeHtml(triageLabel)} · ${escapeHtml(triageRisk)}</span>
-        <span>${escapeHtml(triageReason)}</span>
-      </div>
-      <div class="admin-registry-conflict-triage-card">
-        <span class="admin-registry-conflict-triage-badge">${escapeHtml(reviewLabel)} · ${escapeHtml(suggestedConfidence)}</span>
-        <span>${escapeHtml(suggestedDisposition)} · ${escapeHtml(reviewReason)}</span>
+      <div class="admin-registry-conflict-recommendation">
+        <strong>${escapeHtml(suggestedDisposition)}</strong>
+        <span>${escapeHtml(reviewReason)}</span>
       </div>
       ${winnerSourceNote}
+      <details class="admin-registry-conflict-detail">
+        <summary>Decision details · ${detailCount.toLocaleString()} signals</summary>
+        <div class="admin-registry-conflict-detail-body">
+          <div class="admin-registry-conflict-triage-card">
+            <span class="admin-registry-conflict-triage-badge">${escapeHtml(triageLabel)} · ${escapeHtml(triageRisk)}</span>
+            <span>${escapeHtml(triageReason)}</span>
+          </div>
+          <div class="admin-registry-conflict-triage-card">
+            <span class="admin-registry-conflict-triage-badge">${escapeHtml(reviewLabel)} · ${escapeHtml(suggestedConfidence)}</span>
+            <span>${escapeHtml(suggestedDisposition)} · ${escapeHtml(reviewReason)}</span>
+          </div>
+          ${winnerHealthReason ? `<div class="admin-registry-conflict-triage-card">
+            <span class="admin-registry-conflict-triage-badge">Winner health</span>
+            <span>${escapeHtml(winnerHealthReason)}</span>
+          </div>` : ""}
+          <div class="admin-registry-conflict-rationale">
+            ${rationale.length ? rationale.map(renderRationaleChip).join("") : `<span class="muted">No rationale available.</span>`}
+          </div>
+        </div>
+      </details>
       ${renderAdjudicationCard(card)}
       ${renderSafeAutomationCard(card, cardIndex, Boolean(options?.disableSafeAutomation))}
-      <div class="admin-registry-conflict-rationale">
-        ${rationale.length ? rationale.map(renderRationaleChip).join("") : `<span class="muted">No rationale available.</span>`}
-      </div>
       <div class="admin-registry-conflict-rows">
         ${rows.length
           ? rows.map((row, rowIndex) => renderConflictRow(row, cardIndex, rowIndex, rowIndex === 0 ? "winner" : "loser")).join("")
@@ -636,14 +689,12 @@ function renderSafeAutomationToolbar(visibleConflicts, disabled = false) {
     >${escapeHtml(entry.label)} · ${entry.targetIds.length.toLocaleString()}</button>
   `).join("");
   return `
-    <div class="admin-registry-conflict-triage">
-      <div class="admin-registry-conflict-triage-head">
-        <div>
-          <div class="admin-registry-conflict-family">Safe automation</div>
-          <div class="admin-registry-conflict-summary">${eligible.length.toLocaleString()} visible conflict family can be auto-demoted safely; ${totalTargetCount.toLocaleString()} row target.</div>
-        </div>
-        <div class="admin-registry-conflict-actions">${buttons}</div>
+    <div class="admin-registry-conflict-action-group">
+      <div>
+        <div class="admin-registry-conflict-action-title">Safe automation</div>
+        <div class="admin-registry-conflict-action-summary">${eligible.length.toLocaleString()} visible conflict family can be auto-demoted safely; ${totalTargetCount.toLocaleString()} row target.</div>
       </div>
+      <div class="admin-registry-conflict-actions">${buttons}</div>
     </div>
   `;
 }
@@ -664,32 +715,73 @@ function renderAdjudicationToolbar(payload, visibleConflicts, checkingConflicts)
     ? renderRunningAdjudicationStatus(adjudication)
     : `${checkedAt ? `Last checked ${escapeHtml(formatFieldValue("finishedAt", checkedAt))}; ` : "No conflict source check has run yet. "}${demoted.toLocaleString()} demoted, ${recommended.toLocaleString()} recommended.`;
   return `
-    <div class="admin-registry-conflict-triage">
-      <div class="admin-registry-conflict-triage-head">
-        <div>
-          <div class="admin-registry-conflict-family">Conflict source checks</div>
-          <div class="admin-registry-conflict-summary">
-            ${statusCopy}
-          </div>
-        </div>
-        <div class="admin-registry-conflict-actions">
-          <button
-            type="button"
-            class="btn back-btn"
-            data-ui="${CHECK_TOKEN}"
-            data-registry-conflict-apply-autopilot="false"
-            ${disabled ? "disabled" : ""}
-          >${escapeHtml(checkLabel)}</button>
-          <button
-            type="button"
-            class="btn back-btn"
-            data-ui="${CHECK_TOKEN}"
-            data-registry-conflict-apply-autopilot="true"
-            ${disabled ? "disabled" : ""}
-          >${escapeHtml(applyLabel)}</button>
+    <div class="admin-registry-conflict-action-group">
+      <div>
+        <div class="admin-registry-conflict-action-title">Conflict source checks</div>
+        <div class="admin-registry-conflict-action-summary">
+          ${statusCopy}
         </div>
       </div>
+      <div class="admin-registry-conflict-actions">
+        <button
+          type="button"
+          class="btn back-btn"
+          data-ui="${CHECK_TOKEN}"
+          data-registry-conflict-apply-autopilot="false"
+          ${disabled ? "disabled" : ""}
+        >${escapeHtml(checkLabel)}</button>
+        <button
+          type="button"
+          class="btn back-btn"
+          data-ui="${CHECK_TOKEN}"
+          data-registry-conflict-apply-autopilot="true"
+          ${disabled ? "disabled" : ""}
+        >${escapeHtml(applyLabel)}</button>
+      </div>
     </div>
+  `;
+}
+
+function renderRegistryConflictActionStrip(payload, visibleConflicts, checkingConflicts) {
+  return `
+    <div class="admin-registry-conflict-action-strip">
+      ${renderAdjudicationToolbar(payload, visibleConflicts, checkingConflicts)}
+      ${renderSafeAutomationToolbar(visibleConflicts, checkingConflicts)}
+    </div>
+  `;
+}
+
+function renderSuppressedIndependentProviderBoards(payload) {
+  const audit = objectValue(payload?.suppressedIndependentProviderBoards);
+  const summary = objectValue(audit?.summary);
+  const families = Array.isArray(audit?.families) ? audit.families : [];
+  const familyCount = numberValue(summary?.familyCount || families.length);
+  const rowCount = numberValue(summary?.rowCount);
+  if (!familyCount || !families.length) return "";
+  const rows = families
+    .slice(0, 12)
+    .map(family => {
+      const sourceIds = Array.isArray(family?.sourceIds) ? family.sourceIds : [];
+      const sourceText = sourceIds.length ? sourceIds.join(" | ") : "none";
+      const adapter = stringValue(family?.adapter, "provider");
+      const reason = stringValue(family?.evidenceReason, "independent job-set evidence")
+        .replaceAll("_", " ");
+      return `
+        <div class="admin-registry-conflict-triage-card">
+          <span class="admin-registry-conflict-triage-badge">${escapeHtml(stringValue(family?.familyKey, "unknown family"))}</span>
+          <p>${escapeHtml(adapter)} sources suppressed from duplicate review: ${escapeHtml(sourceText)}.</p>
+          <p>${escapeHtml(reason)}</p>
+        </div>
+      `;
+    })
+    .join("");
+  return `
+    <details class="admin-registry-conflict-detail admin-registry-conflict-suppressed-independent">
+      <summary>${escapeHtml(familyCount.toLocaleString())} independent provider board ${familyCount === 1 ? "family" : "families"} suppressed · ${escapeHtml(rowCount.toLocaleString())} source ${rowCount === 1 ? "row" : "rows"}</summary>
+      <div class="admin-registry-conflict-detail-body">
+        ${rows}
+      </div>
+    </details>
   `;
 }
 
@@ -731,6 +823,7 @@ export function renderAdminRegistryConflicts(reviewEl, payload, options = {}) {
   const summary = objectValue(payload?.summary);
   const triage = getTriagePayload(payload, conflicts);
   const review = getReviewPayload(payload, conflicts);
+  const suppressedIndependentProviderBoards = objectValue(payload?.suppressedIndependentProviderBoards);
   const canPatchInPlace = Boolean(reviewEl && reviewEl.dataset);
   const activeTriageFilter = stringValue(reviewEl?.dataset?.registryConflictTriageFilter, "all");
   const activeReviewFilter = stringValue(reviewEl?.dataset?.registryConflictReviewFilter, "all");
@@ -751,20 +844,17 @@ export function renderAdminRegistryConflicts(reviewEl, payload, options = {}) {
     activeTriageFilter,
     activeReviewFilter,
     checkingConflicts,
-    conflicts
+    conflicts,
+    suppressedIndependentProviderBoards
   });
   if (canPatchInPlace && reviewEl.dataset.registryConflictsSig === signature) return;
   if (canPatchInPlace) reviewEl.dataset.registryConflictsSig = signature;
 
   const conflictCount = Number(summary?.conflictCount || conflicts.length || 0);
   reviewEl.innerHTML = `
-    <div class="admin-registry-conflicts-copy">
-      Registry conflicts are read from the current registry snapshot and the latest jobs source-state history. Winner selection follows the duplicate-family score order and the row actions reuse the existing registry lifecycle routes.
-    </div>
-    ${renderTriageSummary(triage, activeTriageFilter)}
-    ${renderReviewSummary(review, activeReviewFilter)}
-    ${renderAdjudicationToolbar(payload, visibleConflicts, checkingConflicts)}
-    ${renderSafeAutomationToolbar(visibleConflicts, checkingConflicts)}
+    ${renderConflictFilterToolbar(triage, review, activeTriageFilter, activeReviewFilter)}
+    ${renderRegistryConflictActionStrip(payload, visibleConflicts, checkingConflicts)}
+    ${renderSuppressedIndependentProviderBoards(payload)}
     <div class="admin-registry-conflicts-list">
       ${visibleConflicts.length
         ? renderConflictGroups(visibleConflicts, review, { disableSafeAutomation: checkingConflicts })
@@ -777,24 +867,40 @@ export function renderAdminRegistryConflicts(reviewEl, payload, options = {}) {
   `;
 
   if (typeof reviewEl.querySelectorAll !== "function") return;
+  const applyTriageFilter = bucket => {
+    if (canPatchInPlace) {
+      reviewEl.dataset.registryConflictTriageFilter = bucket;
+      reviewEl.dataset.registryConflictsSig = "";
+    }
+    renderAdminRegistryConflicts(reviewEl, payload, options);
+  };
+  const applyReviewFilter = queue => {
+    if (canPatchInPlace) {
+      reviewEl.dataset.registryConflictReviewFilter = queue;
+      reviewEl.dataset.registryConflictsSig = "";
+    }
+    renderAdminRegistryConflicts(reviewEl, payload, options);
+  };
+  reviewEl.querySelectorAll(TRIAGE_FILTER_SELECT_SELECTOR).forEach(select => {
+    select.addEventListener("change", () => {
+      applyTriageFilter(stringValue(select.value, "all"));
+    });
+  });
+  reviewEl.querySelectorAll(REVIEW_FILTER_SELECT_SELECTOR).forEach(select => {
+    select.addEventListener("change", () => {
+      applyReviewFilter(stringValue(select.value, "all"));
+    });
+  });
   reviewEl.querySelectorAll(TRIAGE_FILTER_SELECTOR).forEach(button => {
     button.addEventListener("click", () => {
       const bucket = stringValue(button.dataset?.registryConflictFilterBucket, "all");
-      if (canPatchInPlace) {
-        reviewEl.dataset.registryConflictTriageFilter = bucket;
-        reviewEl.dataset.registryConflictsSig = "";
-      }
-      renderAdminRegistryConflicts(reviewEl, payload, options);
+      applyTriageFilter(bucket);
     });
   });
   reviewEl.querySelectorAll(REVIEW_FILTER_SELECTOR).forEach(button => {
     button.addEventListener("click", () => {
       const queue = stringValue(button.dataset?.registryConflictReviewFilterQueue, "all");
-      if (canPatchInPlace) {
-        reviewEl.dataset.registryConflictReviewFilter = queue;
-        reviewEl.dataset.registryConflictsSig = "";
-      }
-      renderAdminRegistryConflicts(reviewEl, payload, options);
+      applyReviewFilter(queue);
     });
   });
   reviewEl.querySelectorAll(SAFE_AUTOMATION_SELECTOR).forEach(button => {

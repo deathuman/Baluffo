@@ -590,7 +590,7 @@ def _fragment_to_location(fragment: str) -> tuple[str, str] | None:
         )
     ):
         return clean_text(fragment), inferred_country
-    if not city and not country:
+    if not city and (not country or country == "Unknown"):
         return None
     return city, country
 
@@ -635,6 +635,12 @@ def _append_location_entry(
     key = "|".join([city_key, country_key])
     if key in seen:
         return False
+    if city_key and not country_key:
+        if any(
+            _normalize_city_key(item.get("city")) == city_key and clean_text(item.get("country"))
+            for item in locations
+        ):
+            return False
     if _merge_location_with_existing_blank_country(
         locations=locations,
         seen=seen,

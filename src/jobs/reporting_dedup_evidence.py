@@ -21,6 +21,11 @@ from src.shared.json_shapes import json_object_rows
 
 TOP_MERGED_LIMIT = 10
 RISKY_EXAMPLE_LIMIT = 10
+GRACKLEHQ_SOURCE_NAME = "gracklehq"
+GUERRILLA_GAMESJOBSDIRECT_STATIC_SOURCE = (
+    "static_source::static:listing_url:https://www.gamesjobsdirect.com/jobs-with-"
+    "8608_guerrilla-games?page=1"
+)
 OUTLIER_REASON_KEYS = (
     "multi_location_strong_identity",
     "location_divergence_without_strong_identity",
@@ -73,6 +78,28 @@ PROVIDER_STATIC_TITLE_COMPANY_COLLISION_AUDIT_KEYS = (
     "not_carried",
     "unknown",
 )
+
+
+def _limit_provider_static_examples(
+    rows: Sequence[Mapping[str, Any]], limit: int
+) -> list[Mapping[str, Any]]:
+    capped_warning_slots = max(0, int(limit))
+    blocked_count = sum(
+        1 for row in rows if clean_text(row.get("disagreementGateDisposition")) == "blocked"
+    )
+    warning_slots = max(0, capped_warning_slots - blocked_count)
+    warnings_added = 0
+    selected: list[Mapping[str, Any]] = []
+    for row in rows:
+        if clean_text(row.get("disagreementGateDisposition")) == "blocked":
+            selected.append(row)
+            continue
+        if warnings_added < warning_slots:
+            selected.append(row)
+            warnings_added += 1
+    return selected
+
+
 DEDUP_AUDIT_GATE_BLOCKER_CAUSES = frozenset(
     {
         "provider_static_disagreement",
@@ -1339,6 +1366,11 @@ def _provider_static_disagreement_example(
         provider_ids=provider_ids_all,
         static_ids=static_ids_all,
     )
+    if _is_known_gracklehq_gamesjobsdirect_mirror_bundle(bundle):
+        classification_evidence = [
+            *classification_evidence,
+            "known_gracklehq_gamesjobsdirect_mirror_pair",
+        ]
     evidence = [
         f"bundle_origin:{clean_text(summary.get('bundleEvidenceOrigin')) or 'unknown'}",
         f"provider_sources:{len(_clean_values(provider_items, 'source'))}",
@@ -1406,6 +1438,15 @@ def _provider_static_row_with_gate_fields(
     return {**with_gate, **dedup_operator_review_fields(with_gate)}
 
 
+def _is_known_gracklehq_gamesjobsdirect_mirror_bundle(
+    bundle: Sequence[Mapping[str, Any]],
+) -> bool:
+    sources = {clean_text(item.get("source")) for item in bundle if clean_text(item.get("source"))}
+    return bool(
+        GRACKLEHQ_SOURCE_NAME in sources and GUERRILLA_GAMESJOBSDIRECT_STATIC_SOURCE in sources
+    )
+
+
 def _provider_static_disagreement_classification(
     *,
     summary: Mapping[str, Any],
@@ -1442,7 +1483,13 @@ def _provider_static_disagreement_classification(
         evidence.append(f"shared_token:{shared_tokens[0]}")
     if concrete_shared_tokens:
         evidence.append(f"concrete_shared_token:{concrete_shared_tokens[0]}")
-    if location_count > 1:
+    if (
+        location_count > 1
+        and origin != "carried_from_existing_output"
+        and _provider_static_locations_are_single_effective_place(summary)
+    ):
+        evidence.append("single_effective_location_variant")
+    elif location_count > 1:
         return "title_company_collision", evidence + ["multiple_locations"]
     if origin == "carried_from_existing_output" and (
         not provider_urls or not static_urls or not provider_ids or not static_ids
@@ -1455,6 +1502,35 @@ def _provider_static_disagreement_classification(
     if provider_ids and static_ids and provider_urls and static_urls:
         return "same_job_different_urls", evidence + ["both_sides_have_ids_and_urls"]
     return "needs_manual_review", evidence
+
+
+def _provider_static_locations_are_single_effective_place(summary: Mapping[str, Any]) -> bool:
+    labels = [
+        clean_text(value) for value in summary.get("sampleLocations") or [] if clean_text(value)
+    ]
+    if len(labels) <= 1:
+        return False
+    plausible_city_keys: set[str] = set()
+    polluted_count = 0
+    for label in labels:
+        city, country = _location_label_parts(label)
+        city_key = _location_city_key(label)
+        if not city_key and not country:
+            continue
+        if country:
+            plausible_city_keys.add(city_key or norm_text(country))
+            continue
+        if (city and classify_city_garbage(city)) or _location_token_overlaps_title_or_company(
+            city, summary
+        ):
+            polluted_count += 1
+            continue
+        plausible_city_keys.add(city_key)
+    return (
+        bool(plausible_city_keys)
+        and len(plausible_city_keys) == 1
+        and (polluted_count > 0 or len(plausible_city_keys) < len(labels))
+    )
 
 
 def _provider_static_collision_review_hint(
@@ -2755,11 +2831,13 @@ def build_dedup_evidence(
             key: int(review_queue_cause_counts.get(key, 0)) for key in REVIEW_QUEUE_CAUSE_KEYS
         },
         "reviewQueue": review_queue_rows[: max(0, int(risky_limit))],
-        "providerStaticDisagreementExamples": provider_static_disagreement_rows[
-            : max(0, int(risky_limit))
-        ],
+        "providerStaticDisagreementExamples": _limit_provider_static_examples(
+            provider_static_disagreement_rows, risky_limit
+        ),
         "providerStaticTitleCompanyCollisionExamples": (
-            provider_static_title_company_collision_rows[: max(0, int(risky_limit))]
+            _limit_provider_static_examples(
+                provider_static_title_company_collision_rows, risky_limit
+            )
         ),
         "carriedBundleExamples": carried_bundle_rows[: max(0, int(risky_limit))],
         "carriedBundleReconciliationRecommendation": {

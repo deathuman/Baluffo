@@ -296,6 +296,7 @@ _CITY_GARBAGE_SINGLE_TOKEN_KEYWORDS = {
     "document",
     "developers",
     "hardware",
+    "illustrator",
     "google",
     "gutenify",
     "grid",

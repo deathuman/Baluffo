@@ -41,6 +41,12 @@
             <button id="admin-refresh-ops-btn" data-ui="admin-refresh-ops-btn" class="btn clear-filters-btn">Refresh Ops Health</button>
           </div>
         </div>
+        <h4 class="admin-section-title">Operations Activity</h4>
+        <div id="admin-ops-history" data-ui="admin-ops-history" class="jobs-list"></div>
+        <details class="admin-ops-trends-details">
+          <summary>Run trends</summary>
+          <div id="admin-ops-trends" data-ui="admin-ops-trends" class="results-summary">No run trend data yet.</div>
+        </details>
         <div class="admin-ops-tabs" role="tablist" aria-label="Operations health sections">
           <button id="admin-ops-tab-overview-btn" data-ui="admin-ops-tab-btn" data-ops-tab="overview" class="btn clear-filters-btn admin-ops-tab-btn active" type="button" role="tab" aria-selected="true" aria-controls="admin-ops-tab-overview"><span class="admin-ops-tab-label">Overview</span><span class="admin-ops-tab-badge" data-ui="admin-ops-tab-badge" data-ops-tab="overview" aria-hidden="true">0</span></button>
           <button id="admin-ops-tab-discovery-btn" data-ui="admin-ops-tab-btn" data-ops-tab="discovery" class="btn clear-filters-btn admin-ops-tab-btn" type="button" role="tab" aria-selected="false" aria-controls="admin-ops-tab-discovery"><span class="admin-ops-tab-label">Discovery Review</span><span class="admin-ops-tab-badge" data-ui="admin-ops-tab-badge" data-ops-tab="discovery" aria-hidden="true">0</span></button>
@@ -73,9 +79,6 @@
           <h4 class="admin-section-title">Dedup Lists</h4>
           <div id="admin-ops-dedup-lists" data-ui="admin-ops-dedup-lists" class="admin-ops-kpis admin-ops-dedup-lists"></div>
         </div>
-        <div id="admin-ops-trends" data-ui="admin-ops-trends" class="results-summary">No run trend data yet.</div>
-        <h4 class="admin-section-title">Run History</h4>
-        <div id="admin-ops-history" data-ui="admin-ops-history" class="jobs-list"></div>
       </section>
 
       <section class="admin-fetcher-panel">

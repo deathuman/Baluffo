@@ -343,6 +343,7 @@ test("admin smoke: direct admin load shows bucketed fetch failure summary", asyn
   await expect(page.locator("#admin-ops-tab-registry-conflicts-btn .admin-ops-tab-badge")).toBeVisible();
   await expect(page.locator("#admin-ops-tab-dedup-btn .admin-ops-tab-badge")).toBeVisible();
   await expect(metrics).not.toContainText(/Loading/i, { timeout: 15000 });
+  await metrics.getByText("Fetcher diagnostics", { exact: true }).click();
   await expect(metrics.getByText("Task Status", { exact: true })).toBeVisible();
   await expect(metrics.getByRole("heading", { name: "Runtime" })).toBeVisible();
   await expect(metrics.getByRole("heading", { name: "Failures" })).toBeVisible();

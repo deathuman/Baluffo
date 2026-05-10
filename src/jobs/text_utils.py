@@ -27,7 +27,7 @@ LOCATION_NOISE_PATTERNS = (
     re.compile(r"(?i)\b(report this post|view all jobs|job postings?|all jobs)\b"),
     re.compile(r"(?i)\b(admin|backdrop|blur|gutter|site|webkit)\b"),
     re.compile(
-        r"(?i)\b(job|jobs|career|careers|hiring|quiz|game|artist|animator|designer|developer|engineer|programmer|producer|director|writer|specialist|manager|intern|freelanc(?:e|ing)|technical)\b"
+        r"(?i)\b(job|jobs|career|careers|hiring|quiz|game|artist|illustrator|animator|designer|developer|engineer|programmer|producer|director|writer|specialist|manager|intern|freelanc(?:e|ing)|technical)\b"
     ),
     re.compile(r"(?i)(?:https?://|www\.)"),
     re.compile(r"(キャリア登録|ポジション|ご案内|応募|職務経歴|ビジネスレベルの日本語能力)"),

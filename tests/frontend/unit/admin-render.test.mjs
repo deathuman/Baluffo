@@ -27,7 +27,7 @@ function makeEl() {
 test("admin render: alerts and kpis render healthy/critical states", () => {
   const alertsEl = makeEl();
   renderAdminOpsAlerts(alertsEl, []);
-  assert.match(alertsEl.innerHTML, /No active alerts/i);
+  assert.equal(alertsEl.innerHTML, "");
 
   const kpisEl = makeEl();
   renderAdminOpsKpis(kpisEl, {
@@ -116,6 +116,8 @@ test("admin render: schedule/trends/history render deterministic core text", () 
   assert.match(historyEl.innerHTML, /admin-ops-history-row/);
   assert.match(historyEl.innerHTML, /Current Runs/);
   assert.match(historyEl.innerHTML, /Recent Runs/);
+  assert.match(historyEl.innerHTML, /admin-ops-history-recent/);
+  assert.doesNotMatch(historyEl.innerHTML, /<details[^>]*admin-ops-history-recent[^>]*open/i);
   assert.match(historyEl.innerHTML, /Older runs \(2\)/);
   assert.match(historyEl.innerHTML, /running/);
   assert.match(historyEl.innerHTML, /critical/);
@@ -244,6 +246,8 @@ test("admin render: fetcher metrics render failure buckets and examples", () => 
   });
 
   assert.match(metricsEl.innerHTML, /Top-level failed sources/i);
+  assert.match(metricsEl.innerHTML, /admin-ops-fetcher-diagnostics/i);
+  assert.doesNotMatch(metricsEl.innerHTML, /<details[^>]*admin-ops-fetcher-diagnostics[^>]*open/i);
   assert.match(metricsEl.innerHTML, /admin-ops-metrics-section-runtime/i);
   assert.match(metricsEl.innerHTML, /admin-ops-metrics-section-failures/i);
   assert.match(metricsEl.innerHTML, />Failures</i);
@@ -359,10 +363,7 @@ test("admin render: pending source table separates approval jobs from fetch heal
       }
     ],
     "pending",
-    row => {
-      const value = getSourceDiscoveryJobsCount(row);
-      return Number.isFinite(value) ? value.toLocaleString() : "N/A";
-    },
+    row => Number.isFinite(getSourceDiscoveryJobsCount(row)) ? getSourceDiscoveryJobsCount(row).toLocaleString() : "N/A",
     row => deriveSourceStatus(row),
     (row, mode) => deriveSourceApprovalStatus(row, mode)
   );
@@ -387,10 +388,7 @@ test("admin render: active approval uses canonical stateChangedBy actor", () => 
       }
     ],
     "active",
-    row => {
-      const value = getSourceJobsFoundCount(row);
-      return Number.isFinite(value) ? value.toLocaleString() : "N/A";
-    },
+    row => Number.isFinite(getSourceJobsFoundCount(row)) ? getSourceJobsFoundCount(row).toLocaleString() : "N/A",
     row => deriveSourceStatus(row),
     (row, mode) => deriveSourceApprovalStatus(row, mode)
   );

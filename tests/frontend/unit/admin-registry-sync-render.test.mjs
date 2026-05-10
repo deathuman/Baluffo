@@ -27,6 +27,8 @@ test("admin render: ops KPI panel renders registry sync confidence", () => {
     }
   }, "healthy");
 
+  assert.match(el.innerHTML, /admin-ops-registry-sync-details/i);
+  assert.doesNotMatch(el.innerHTML, /<details[^>]*admin-ops-registry-sync-details[^>]*open/i);
   assert.match(el.innerHTML, /Registry &amp; Sync/i);
   assert.match(el.innerHTML, /Active Sources/i);
   assert.match(el.innerHTML, /Pending Review/i);
@@ -50,6 +52,8 @@ test("admin render: ops KPI panel renders provider coverage confidence", () => {
     }
   }, "healthy");
 
+  assert.match(el.innerHTML, /admin-ops-registry-sync-details/i);
+  assert.doesNotMatch(el.innerHTML, /<details[^>]*admin-ops-registry-sync-details[^>]*open/i);
   assert.match(el.innerHTML, /Provider coverage/i);
   assert.match(el.innerHTML, /validated 1/i);
   assert.match(el.innerHTML, /probing 1/i);

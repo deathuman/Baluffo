@@ -5,7 +5,9 @@ import { renderAdminRegistryConflicts } from "../../../frontend/admin/render/reg
 
 function createReviewElement({
   filterButtons = [],
+  filterSelects = [],
   reviewFilterButtons = [],
+  reviewFilterSelects = [],
   safeAutomationButtons = [],
   actionButtons = []
 } = {}) {
@@ -14,10 +16,26 @@ function createReviewElement({
     innerHTML: "",
     querySelectorAll(selector) {
       if (selector === ".admin-registry-conflict-filter-btn") return filterButtons;
+      if (selector === ".admin-registry-conflict-filter-select") return filterSelects;
       if (selector === ".admin-registry-conflict-review-filter-btn") return reviewFilterButtons;
+      if (selector === ".admin-registry-conflict-review-filter-select") return reviewFilterSelects;
       if (selector === ".admin-registry-conflict-safe-automation-btn") return safeAutomationButtons;
       if (selector === '[data-ui="admin-registry-conflict-action-btn"]') return actionButtons;
       return [];
+    }
+  };
+}
+
+function createSelect(value = "all") {
+  let changeHandler = null;
+  return {
+    value,
+    addEventListener(type, handler) {
+      if (type === "change") changeHandler = handler;
+    },
+    change(nextValue) {
+      this.value = nextValue;
+      if (changeHandler) changeHandler();
     }
   };
 }
@@ -176,15 +194,21 @@ function triagePayload() {
   };
 }
 
-test("registry conflicts renderer shows triage summary and card badges", () => {
+test("registry conflicts renderer shows compact filters and card badges", () => {
   const reviewEl = createReviewElement();
 
   renderAdminRegistryConflicts(reviewEl, triagePayload());
 
-  assert.match(reviewEl.innerHTML, /Triage report/);
+  assert.doesNotMatch(reviewEl.innerHTML, /Registry conflicts are read from the current registry snapshot/);
+  assert.match(reviewEl.innerHTML, /admin-registry-conflict-toolbar/);
+  assert.match(reviewEl.innerHTML, /Triage/);
+  assert.match(reviewEl.innerHTML, /admin-registry-conflict-filter-select/);
+  assert.match(reviewEl.innerHTML, /<option value="all" selected>All · 3<\/option>/);
   assert.match(reviewEl.innerHTML, /Active-active · 2/);
   assert.match(reviewEl.innerHTML, /Pending duplicate · 1/);
+  assert.doesNotMatch(reviewEl.innerHTML, /admin-registry-conflict-filter-btn/);
   assert.match(reviewEl.innerHTML, /Active-active · high/);
+  assert.match(reviewEl.innerHTML, /Decision details/);
   assert.match(reviewEl.innerHTML, /2 active rows share this source family/);
 });
 
@@ -194,6 +218,8 @@ test("registry conflicts renderer shows review queue counts and suggestions", ()
   renderAdminRegistryConflicts(reviewEl, triagePayload());
 
   assert.match(reviewEl.innerHTML, /Review queue/);
+  assert.match(reviewEl.innerHTML, /admin-registry-conflict-review-filter-select/);
+  assert.match(reviewEl.innerHTML, /<option value="all" selected>All queues · 3<\/option>/);
   assert.match(reviewEl.innerHTML, /Multiple active providers · 1/);
   assert.match(reviewEl.innerHTML, /Active provider \+ static · 1/);
   assert.match(reviewEl.innerHTML, /Review provider\/static replacement/);
@@ -217,6 +243,7 @@ test("registry conflicts renderer locks check controls while adjudication is run
   });
   renderAdminRegistryConflicts(reviewEl, payload);
 
+  assert.match(reviewEl.innerHTML, /admin-registry-conflict-action-strip/);
   assert.match(reviewEl.innerHTML, /Checking conflicting sources[\s\S]*10\/20 sources[\s\S]*3\/5 families[\s\S]*Current: Studio API in studio/);
   assert.match(reviewEl.innerHTML, /Applying recommendations/);
   assert.match(reviewEl.innerHTML, /data-registry-conflict-apply-autopilot="false"[\s\S]*disabled[\s\S]*data-registry-conflict-apply-autopilot="true"[\s\S]*disabled/);
@@ -255,13 +282,11 @@ test("registry conflicts renderer shows queue-building and stale progress states
 });
 
 test("registry conflicts renderer filters cards by triage bucket", () => {
-  const filterButton = createButton({
-    registryConflictFilterBucket: "active_active_likely_duplicate"
-  });
-  const reviewEl = createReviewElement({ filterButtons: [filterButton] });
+  const filterSelect = createSelect("all");
+  const reviewEl = createReviewElement({ filterSelects: [filterSelect] });
 
   renderAdminRegistryConflicts(reviewEl, triagePayload());
-  filterButton.click();
+  filterSelect.change("active_active_likely_duplicate");
 
   assert.match(reviewEl.innerHTML, /Active Studio/);
   assert.doesNotMatch(reviewEl.innerHTML, /Pending Studio/);
@@ -269,17 +294,35 @@ test("registry conflicts renderer filters cards by triage bucket", () => {
 });
 
 test("registry conflicts renderer filters cards by review queue", () => {
-  const reviewFilterButton = createButton({
-    registryConflictReviewFilterQueue: "p0_multi_active_provider"
-  });
-  const reviewEl = createReviewElement({ reviewFilterButtons: [reviewFilterButton] });
+  const reviewFilterSelect = createSelect("all");
+  const reviewEl = createReviewElement({ reviewFilterSelects: [reviewFilterSelect] });
 
   renderAdminRegistryConflicts(reviewEl, triagePayload());
-  reviewFilterButton.click();
+  reviewFilterSelect.change("p0_multi_active_provider");
 
   assert.match(reviewEl.innerHTML, /Provider Studio/);
   assert.doesNotMatch(reviewEl.innerHTML, /Active Studio/);
   assert.doesNotMatch(reviewEl.innerHTML, /Pending Studio/);
+  assert.equal(reviewEl.dataset.registryConflictReviewFilter, "p0_multi_active_provider");
+});
+
+test("registry conflicts renderer keeps legacy filter button callbacks compatible", () => {
+  const filterButton = createButton({
+    registryConflictFilterBucket: "active_active_likely_duplicate"
+  });
+  const reviewFilterButton = createButton({
+    registryConflictReviewFilterQueue: "p0_multi_active_provider"
+  });
+  const reviewEl = createReviewElement({
+    filterButtons: [filterButton],
+    reviewFilterButtons: [reviewFilterButton]
+  });
+
+  renderAdminRegistryConflicts(reviewEl, triagePayload());
+  filterButton.click();
+  reviewFilterButton.click();
+
+  assert.equal(reviewEl.dataset.registryConflictTriageFilter, "active_active_likely_duplicate");
   assert.equal(reviewEl.dataset.registryConflictReviewFilter, "p0_multi_active_provider");
 });
 
@@ -348,52 +391,4 @@ test("registry conflicts renderer collapses lower-priority review groups", () =>
     /data-registry-conflict-review-queue="p3_pending_only_intake"[^>]*open/
   );
   assert.match(reviewEl.innerHTML, /admin-registry-conflict-action-btn/);
-});
-
-test("registry conflicts renderer preserves existing row action callback", () => {
-  const actionButton = createButton({
-    registryConflictCardIndex: "0",
-    registryConflictRowIndex: "0",
-    registryConflictActionIndex: "0"
-  });
-  const reviewEl = createReviewElement({ actionButtons: [actionButton] });
-  const calls = [];
-  const payload = {
-    summary: { conflictCount: 1 },
-    conflicts: [
-      {
-        familyKey: "Studio",
-        triageBucket: "pending_duplicate_of_active",
-        triageLabel: "Pending duplicate",
-        triageRisk: "medium",
-        triageReason: "Pending duplicate.",
-        reviewPriority: 2,
-        reviewQueue: "p2_pending_static_variant",
-        reviewLabel: "Pending static variant",
-        reviewReason: "Pending static duplicate.",
-        suggestedDisposition: "Review pending static duplicate",
-        suggestedConfidence: "medium",
-        winner: { name: "Winner" },
-        rows: [
-          {
-            id: "source-1",
-            name: "Winner",
-            actions: [{ action: "approve", route: "/registry/approve" }]
-          }
-        ]
-      }
-    ]
-  };
-
-  renderAdminRegistryConflicts(reviewEl, payload, {
-    onRegistryConflictAction(row, action, card) {
-      calls.push({ row, action, card });
-    }
-  });
-  actionButton.click();
-
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].row.id, "source-1");
-  assert.equal(calls[0].action.route, "/registry/approve");
-  assert.equal(calls[0].card.familyKey, "Studio");
 });

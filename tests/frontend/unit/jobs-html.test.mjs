@@ -65,5 +65,7 @@ test("admin html groups operations health into overview discovery source-policy 
   assert.match(adminHtml, /id="admin-discovery-review"/);
   assert.match(adminHtml, /id="admin-ops-tab-source-policy"[^>]+hidden/);
   assert.match(adminHtml, /id="admin-ops-tab-dedup"[^>]+hidden/);
-  assert.match(adminHtml, /<h4 class="admin-section-title">Run History<\/h4>\s*<div id="admin-ops-history"/);
+  assert.match(adminHtml, /<h4 class="admin-section-title">Operations Activity<\/h4>\s*<div id="admin-ops-history"/);
+  assert.ok(adminHtml.indexOf('id="admin-ops-history"') < adminHtml.indexOf('role="tablist" aria-label="Operations health sections"'));
+  assert.match(adminHtml, /<details class="admin-ops-trends-details">\s*<summary>Run trends<\/summary>\s*<div id="admin-ops-trends"/);
 });

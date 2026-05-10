@@ -208,7 +208,7 @@ test("admin ops history: selected run analysis renders bounded read-only evidenc
   assert.doesNotMatch(historyEl.innerHTML, /<button[^>]*>(?:Start|Stop|Retry|Clear|Cleanup|Lifecycle)/i);
 });
 
-test("admin ops history: selected run analysis has safe empty state without selection", () => {
+test("admin ops history: selected run analysis stays hidden without selection", () => {
   const historyEl = makeEl();
   renderAdminOpsHistory(historyEl, {
     currentRows: [
@@ -226,8 +226,8 @@ test("admin ops history: selected run analysis has safe empty state without sele
     olderCompletedRows: []
   });
 
-  assert.match(historyEl.innerHTML, /Selected Run Analysis/);
-  assert.match(historyEl.innerHTML, /Select a run row to inspect bounded run evidence/);
+  assert.doesNotMatch(historyEl.innerHTML, /Selected Run Analysis/);
+  assert.doesNotMatch(historyEl.innerHTML, /Select a run row to inspect bounded run evidence/);
   assert.doesNotMatch(historyEl.innerHTML, /Timeline/);
   assert.doesNotMatch(historyEl.innerHTML, /admin-ops-history-row-selected/);
   assert.doesNotMatch(historyEl.innerHTML, /admin-ops-run-card/);

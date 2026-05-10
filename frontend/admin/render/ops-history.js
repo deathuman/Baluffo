@@ -428,12 +428,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
   };
   const renderSelectedRunAnalysis = view => {
     if (!view) {
-      return `
-        <div class="admin-ops-selected-run-analysis" data-ops-selected-run-analysis>
-          <div class="admin-ops-history-title">Selected Run Analysis</div>
-          <div class="muted">Select a run row to inspect bounded run evidence.</div>
-        </div>
-      `;
+      return "";
     }
     const analysis = view.analysisPayload || {};
     const timingItems = [
@@ -491,11 +486,11 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
         if (event?.target?.closest?.("[data-ops-run-diagnostics-copy]")) return;
         if (historyEl.dataset) historyEl.dataset.opsSelectedRunKey = key;
         rows.forEach(item => item.classList?.toggle?.("admin-ops-history-row-selected", item === rowEl));
-        const panel = typeof historyEl.querySelector === "function"
-          ? historyEl.querySelector("[data-ops-selected-run-analysis]")
+        const slot = typeof historyEl.querySelector === "function"
+          ? historyEl.querySelector("[data-ops-selected-run-analysis-slot]")
           : null;
         const view = viewByKey.get(key) || null;
-        if (panel) panel.outerHTML = renderSelectedRunAnalysis(view);
+        if (slot) slot.innerHTML = renderSelectedRunAnalysis(view);
         if (view && onSelectRun) onSelectRun(view.analysisPayload);
       };
       rowEl.onkeydown = event => {
@@ -516,6 +511,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
   }
 
   const olderOpen = canPatchInPlace ? Boolean(historyEl.querySelector(".admin-ops-history-older")?.open) : false;
+  const recentOpen = canPatchInPlace ? Boolean(historyEl.querySelector(".admin-ops-history-recent")?.open) : false;
   if (canPatchInPlace) {
     historyEl.dataset.opsStructureSig = structureSignature;
   }
@@ -618,8 +614,8 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
             : '<div class="no-results">No current runs.</div>')}
       </div>
     </div>
-    <div class="admin-ops-completed-runs">
-      <div class="admin-ops-history-title">Recent Runs</div>
+    <details class="admin-ops-history-recent admin-ops-completed-runs">
+      <summary>Recent Runs${visibleCompletedViews.length ? ` (${visibleCompletedViews.length})` : ""}</summary>
       <div class="jobs-table-header">
         <div class="admin-row-header admin-ops-history-header">
           <div>Type</div>
@@ -635,7 +631,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
           ? renderCappedRows(visibleCompletedViews, 5, { renderRows: renderCompletedRows })
           : '<div class="no-results">No completed runs yet.</div>'}
       </div>
-    </div>
+    </details>
     ${olderCompletedViews.length ? `
       <details class="admin-ops-history-older admin-ops-completed-runs">
         <summary>Older runs (${olderCompletedViews.length})</summary>
@@ -644,9 +640,11 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
         </div>
       </details>
     ` : ""}
-    ${renderSelectedRunAnalysis(selectedView)}
+    <div data-ops-selected-run-analysis-slot>${renderSelectedRunAnalysis(selectedView)}</div>
   `;
   if (canPatchInPlace) {
+    const recentDetailsEl = historyEl.querySelector(".admin-ops-history-recent");
+    if (recentDetailsEl) recentDetailsEl.open = recentOpen;
     const detailsEl = historyEl.querySelector(".admin-ops-history-older");
     if (detailsEl) detailsEl.open = olderOpen;
   }
