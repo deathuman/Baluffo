@@ -14,6 +14,7 @@ from src.jobs.common.config import (
     DEFAULT_TIMEOUT_S,
     SUPPORTED_REDIRECT_HOSTS,
 )
+from src.jobs.common.greenhouse_identity import greenhouse_job_identity_from_url
 from src.jobs.text_utils import normalize_url
 
 
@@ -25,6 +26,9 @@ def canonical_url_fingerprint_seed(url: Any) -> str:
     host = parsed.netloc.lower()
     path = parsed.path or "/"
     query = parsed.query
+
+    if greenhouse_identity := greenhouse_job_identity_from_url(normalized):
+        return greenhouse_identity
 
     if host in {"jobs.smartrecruiters.com", "api.smartrecruiters.com"}:
         jobs_match = re.match(r"^/([^/]+)/(\d+)(?:-[^/]+)?$", path)

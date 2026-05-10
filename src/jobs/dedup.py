@@ -25,6 +25,10 @@ from src.jobs.text_utils import sanitize_location_text
 from .common import config as common_config
 from .common import social as common_social
 from .common import url as common_url
+from .common.smartrecruiters_identity import (
+    is_smartrecruiters_title_location_alias_match,
+    smartrecruiters_title_location_alias_keys,
+)
 
 fingerprint_url = common_url.fingerprint_url
 SOCIAL_SOURCE_NAMES = common_social.SOCIAL_SOURCE_NAMES
@@ -575,6 +579,7 @@ def _find_merge_target(
     by_secondary: dict[str, int],
     by_social: dict[str, int],
     by_sparse_identity: dict[str, int],
+    by_smartrecruiters_title_location_alias: dict[str, int],
     google_sheets_generic_role_guard_samples: list[dict[str, str]],
     google_sheets_generic_role_guard_counts: dict[str, int],
 ) -> tuple[int | None, str]:
@@ -619,7 +624,31 @@ def _find_merge_target(
             return None, ""
         if not _has_meaningful_locations(sparse_target) or not current_has_meaningful_locations:
             return sparse_target_idx, "sparse_identity"
+    alias_target_idx = _find_smartrecruiters_title_location_alias_target(
+        current=current,
+        merged_rows=merged_rows,
+        by_smartrecruiters_title_location_alias=by_smartrecruiters_title_location_alias,
+    )
+    if alias_target_idx is not None:
+        return alias_target_idx, "secondary_key"
     return None, ""
+
+
+def _find_smartrecruiters_title_location_alias_target(
+    *,
+    current: CanonicalJob,
+    merged_rows: list[CanonicalJob],
+    by_smartrecruiters_title_location_alias: dict[str, int],
+) -> int | None:
+    current_payload = current.to_dict()
+    for alias_key in smartrecruiters_title_location_alias_keys(current_payload):
+        alias_target_idx = by_smartrecruiters_title_location_alias.get(alias_key)
+        if alias_target_idx is None:
+            continue
+        alias_target = merged_rows[alias_target_idx]
+        if is_smartrecruiters_title_location_alias_match(current_payload, alias_target.to_dict()):
+            return alias_target_idx
+    return None
 
 
 def _blocks_google_sheets_generic_role_url_merge(
@@ -692,6 +721,17 @@ def _index_row_keys(
         by_social[social_key] = idx
 
 
+def _index_smartrecruiters_title_location_alias_keys(
+    *,
+    idx: int,
+    row: CanonicalJob | dict[str, Any],
+    by_smartrecruiters_title_location_alias: dict[str, int],
+) -> None:
+    payload = row.to_dict() if isinstance(row, CanonicalJob) else dict(row)
+    for key in smartrecruiters_title_location_alias_keys(payload):
+        by_smartrecruiters_title_location_alias[key] = idx
+
+
 def _append_new_dedup_row(
     *,
     payload: dict[str, Any],
@@ -704,6 +744,7 @@ def _append_new_dedup_row(
     by_secondary: dict[str, int],
     by_sparse_identity: dict[str, int],
     by_social: dict[str, int],
+    by_smartrecruiters_title_location_alias: dict[str, int],
 ) -> None:
     item = dict(payload)
     item["dedupKey"] = _dedup_key(
@@ -725,6 +766,11 @@ def _append_new_dedup_row(
         by_secondary=by_secondary,
         by_sparse_identity=by_sparse_identity,
         by_social=by_social,
+    )
+    _index_smartrecruiters_title_location_alias_keys(
+        idx=len(merged_rows) - 1,
+        row=merged_rows[-1],
+        by_smartrecruiters_title_location_alias=by_smartrecruiters_title_location_alias,
     )
 
 
@@ -758,6 +804,7 @@ def _merge_into_target(
     by_secondary: dict[str, int],
     by_sparse_identity: dict[str, int],
     by_social: dict[str, int],
+    by_smartrecruiters_title_location_alias: dict[str, int],
 ) -> None:
     merged = merge_records(merged_rows[target_idx], current)
     merged_payload = merged.to_dict()
@@ -782,6 +829,11 @@ def _merge_into_target(
         by_secondary=by_secondary,
         by_sparse_identity=by_sparse_identity,
         by_social=by_social,
+    )
+    _index_smartrecruiters_title_location_alias_keys(
+        idx=target_idx,
+        row=merged_rows[target_idx],
+        by_smartrecruiters_title_location_alias=by_smartrecruiters_title_location_alias,
     )
 
 
@@ -818,6 +870,7 @@ def deduplicate_jobs(
     by_secondary: dict[str, int] = {}
     by_sparse_identity: dict[str, int] = {}
     by_social: dict[str, int] = {}
+    by_smartrecruiters_title_location_alias: dict[str, int] = {}
     merges = 0
     merged_by_primary = 0
     merged_by_secondary = 0
@@ -848,6 +901,7 @@ def deduplicate_jobs(
             by_secondary=by_secondary,
             by_social=by_social,
             by_sparse_identity=by_sparse_identity,
+            by_smartrecruiters_title_location_alias=by_smartrecruiters_title_location_alias,
             google_sheets_generic_role_guard_samples=(google_sheets_generic_role_guard_samples),
             google_sheets_generic_role_guard_counts=google_sheets_generic_role_guard_counts,
         )
@@ -863,6 +917,7 @@ def deduplicate_jobs(
                 by_secondary=by_secondary,
                 by_sparse_identity=by_sparse_identity,
                 by_social=by_social,
+                by_smartrecruiters_title_location_alias=(by_smartrecruiters_title_location_alias),
             )
             continue
 
@@ -888,6 +943,7 @@ def deduplicate_jobs(
             by_secondary=by_secondary,
             by_sparse_identity=by_sparse_identity,
             by_social=by_social,
+            by_smartrecruiters_title_location_alias=by_smartrecruiters_title_location_alias,
         )
         merged_key = clean_text(merged_rows[target_idx].dedupKey)
         if merged_key:

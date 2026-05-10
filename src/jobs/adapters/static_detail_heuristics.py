@@ -18,6 +18,7 @@ from src.jobs.adapters.parsers.location import parse_generic_location_fields
 from src.jobs.adapters.plugins.static._rendered_cards import (
     extract_rendered_card_jobs as _extract_rendered_card_jobs,
 )
+from src.jobs.common.greenhouse_identity import greenhouse_job_identity_from_url
 from src.jobs.models import RawJob
 from src.jobs.page_gating import (
     classify_job_page,
@@ -57,6 +58,21 @@ KNOWN_NON_JOB_DETAIL_PATH_TOKENS = (
     "/legal",
     "/privacy",
     "/terms",
+)
+GREENHOUSE_APPLY_TEXT_TOKENS = (
+    "apply",
+    "apply now",
+    "submit application",
+    "start application",
+)
+GREENHOUSE_OPEN_APPLICATION_TEXT_TOKENS = (
+    "general application",
+    "open application",
+    "spontaneous application",
+    "submit your application",
+    "talent community",
+    "future opportunities",
+    "no job that suits you",
 )
 MALFORMED_DETAIL_URL_TOKENS = (
     "{{",
@@ -112,6 +128,29 @@ def is_malformed_or_self_detail_url(url: str, *, page_url: str = "") -> bool:
         ):
             return True
     return False
+
+
+def _greenhouse_apply_target_url(detail_html: str, *, base_url: str) -> str:
+    candidates: dict[str, str] = {}
+    for match in re.finditer(
+        r'(?is)<a\b(?P<attrs>[^>]*)href=["\'](?P<href>[^"\']+)["\'][^>]*>(?P<body>.*?)</a>',
+        detail_html or "",
+    ):
+        absolute = normalize_url(urljoin(base_url, clean_text(match.group("href")))) or ""
+        identity = greenhouse_job_identity_from_url(absolute)
+        if not identity:
+            continue
+        anchor_text = norm_text(strip_html_text(match.group("body") or ""))
+        attrs_text = norm_text(match.group("attrs") or "")
+        haystack = f"{anchor_text} {attrs_text}"
+        if any(token in haystack for token in GREENHOUSE_OPEN_APPLICATION_TEXT_TOKENS):
+            continue
+        if not any(token in haystack for token in GREENHOUSE_APPLY_TEXT_TOKENS):
+            continue
+        candidates.setdefault(identity, absolute)
+    if len(candidates) != 1:
+        return ""
+    return next(iter(candidates.values()))
 
 
 def source_detail_concurrency_for(
@@ -648,6 +687,7 @@ def _fallback_detail_rows(
     detail: str,
     detail_title: str,
     detail_html: str,
+    apply_target_url: str,
     company: str,
     source_name: str,
     source: dict[str, Any],
@@ -678,7 +718,7 @@ def _fallback_detail_rows(
     row = {
         "sourceJobId": f"static:{source_name}:{hashlib.sha1(detail.encode('utf-8')).hexdigest()[:10]}",
         "company": company,
-        "jobLink": detail,
+        "jobLink": apply_target_url or detail,
         "sector": "Game",
         "postedAt": "",
         "adapter": "static",
@@ -749,6 +789,7 @@ def process_detail_html(
     inferred_city, inferred_country, inferred_work_type, inferred_contract_type = (
         _infer_detail_page_fields(detail_html, detail_title)
     )
+    apply_target_url = _greenhouse_apply_target_url(detail_html, base_url=detail)
     inferred_city, inferred_country = _sanitize_inferred_detail_location(
         inferred_city, inferred_country, company=company, source_name=source_name, source=source
     )
@@ -764,6 +805,8 @@ def process_detail_html(
                 source_name=source_name,
                 source=source,
             )
+            if apply_target_url:
+                row["jobLink"] = apply_target_url
     parse_ms = int((time.perf_counter() - parse_started) * 1000)
     rejected_classification = ""
     rejected_example = ""
@@ -784,6 +827,7 @@ def process_detail_html(
             source_name=source_name,
             source=source,
             ignored_link_titles=ignored_link_titles,
+            apply_target_url=apply_target_url,
             inferred_city=inferred_city,
             inferred_country=inferred_country,
             inferred_work_type=inferred_work_type,

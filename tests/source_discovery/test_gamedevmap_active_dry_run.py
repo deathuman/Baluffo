@@ -218,6 +218,7 @@ def test_gamedevmap_active_audit_uses_split_fetch_limits() -> None:
                 "total": kwargs["total_concurrency"],
                 "perHost": kwargs["per_host_concurrency"],
                 "label": kwargs["progress_label"],
+                "emitLog": kwargs.get("emit_progress_log", True),
                 "jobs": len(jobs),
             }
         )
@@ -250,6 +251,7 @@ def test_gamedevmap_active_audit_uses_split_fetch_limits() -> None:
         "total": 11,
         "perHost": 2,
         "label": "GameDevMap active dry run homepage fetch",
+        "emitLog": False,
         "jobs": 1,
     }
     assert calls[1]["timeout"] == 3
@@ -400,7 +402,15 @@ def test_gamedevmap_no_careers_recovery_can_create_active_candidate() -> None:
         "https://recover.example.com/company/careers": "<html>No openings here</html>",
         "https://recover.example.com/about/careers": "<html>No openings here</html>",
         "https://boards-api.greenhouse.io/v1/boards/recoverstudio/jobs?content=true": json.dumps(
-            {"jobs": [{"id": 1}]}
+            {
+                "jobs": [
+                    {
+                        "id": 1,
+                        "title": "Gameplay Engineer",
+                        "absolute_url": "https://job-boards.greenhouse.io/recoverstudio/jobs/1",
+                    }
+                ]
+            }
         ),
     }
 
@@ -498,7 +508,15 @@ def test_gamedevmap_dry_run_rerun_reasons_select_prior_rejections() -> None:
         "https://recover.example.com/company/careers": "<html>No openings here</html>",
         "https://recover.example.com/about/careers": "<html>No openings here</html>",
         "https://boards-api.greenhouse.io/v1/boards/recoverstudio/jobs?content=true": json.dumps(
-            {"jobs": [{"id": 1}]}
+            {
+                "jobs": [
+                    {
+                        "id": 1,
+                        "title": "Gameplay Engineer",
+                        "absolute_url": "https://job-boards.greenhouse.io/recoverstudio/jobs/1",
+                    }
+                ]
+            }
         ),
     }
     with workspace_tmpdir("gamedevmap-active-dry-run-rerun") as root:

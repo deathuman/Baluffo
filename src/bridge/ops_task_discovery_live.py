@@ -29,6 +29,26 @@ DISCOVERY_STAGE_LABELS = {
 }
 
 
+GAMEDEVMAP_ACTIVE_AUDIT_FETCH_PHASE_LABELS = {
+    "homepage_fetch": "homepage fetch",
+    "recovery_wave1_fetch": "recovery wave 1 fetch",
+    "recovery_wave2_fetch": "recovery wave 2 fetch",
+}
+
+
+def _gamedevmap_fetch_phase_message(
+    phase: str,
+    phase_completed: int,
+    phase_total: int,
+) -> str | None:
+    fetch_label = GAMEDEVMAP_ACTIVE_AUDIT_FETCH_PHASE_LABELS.get(phase)
+    if not fetch_label:
+        return None
+    if phase_total > 0:
+        return f"GameDevMap active dry run: {fetch_label} {phase_completed}/{phase_total} pages."
+    return f"GameDevMap active dry run: {fetch_label}."
+
+
 def _stage_work_items(
     *,
     counts: dict[str, Any],
@@ -250,7 +270,8 @@ def build_discovery_recent_events(
         subtask_key = str(counts.get("subtaskKey") or "").strip()
         if subtask_key == "gamedevmap_active_audit":
             subtask_label = str(counts.get("subtaskLabel") or "GameDevMap active audit").strip()
-            audit_phase = str(counts.get("activeAuditPhase") or "").strip().replace("_", " ")
+            audit_phase_key = str(counts.get("activeAuditPhase") or "").strip()
+            audit_phase = audit_phase_key.replace("_", " ")
             audit_completed = _ops_live_payload.coerce_non_negative_int(
                 counts.get("activeAuditCompletedUrls")
             )
@@ -264,6 +285,24 @@ def build_discovery_recent_events(
             phase_total = _ops_live_payload.coerce_non_negative_int(
                 counts.get("activeAuditPhaseTotal")
             )
+            fetch_phase_message = _gamedevmap_fetch_phase_message(
+                audit_phase_key,
+                phase_completed,
+                phase_total,
+            )
+            if fetch_phase_message:
+                events = append_live_task_event(
+                    events,
+                    {
+                        "timestamp": heartbeat_at,
+                        "level": "muted",
+                        "taskType": "discovery",
+                        "runId": run_id,
+                        "phaseKey": str(task_progress.get("phaseKey") or ""),
+                        "message": fetch_phase_message,
+                    },
+                )
+                return events
             audit_tail = f"{audit_completed}/{audit_total} URLs" if audit_total > 0 else "preparing"
             batch_tail = f", batch {audit_batch}" if audit_batch > 0 else ""
             phase_tail = (

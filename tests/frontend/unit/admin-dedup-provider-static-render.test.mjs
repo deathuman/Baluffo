@@ -216,7 +216,7 @@ test("admin render: missing provider/static disagreement examples render safely"
   assert.match(metricsEl.innerHTML, /No provider\/static title\/company collision examples/i);
 });
 
-test("admin render: provider/static static URL variants render guided safe recommendation", () => {
+test("admin render: provider/static static URL variants are hidden from actionable cards", () => {
   const metricsEl = makeEl();
   renderAdminOpsDedupLists(metricsEl, {
     latestRun: {
@@ -249,12 +249,53 @@ test("admin render: provider/static static URL variants render guided safe recom
     history: {}
   }, { onDedupReviewAction() {} });
 
-  assert.match(metricsEl.innerHTML, /Character Concept Artist/i);
-  assert.match(metricsEl.innerHTML, /Safe duplicate/i);
-  assert.match(metricsEl.innerHTML, /Strong provider\/static identity; safe URL variant/i);
-  assert.match(metricsEl.innerHTML, /shared job token 4022147009/i);
-  assert.match(metricsEl.innerHTML, /Raw evidence/i);
+  assert.match(metricsEl.innerHTML, /No provider\/static disagreement examples/i);
+  assert.match(metricsEl.innerHTML, /Hidden safe provider\/static URL variants: 1/i);
+  assert.doesNotMatch(metricsEl.innerHTML, /Character Concept Artist/i);
+  assert.doesNotMatch(metricsEl.innerHTML, /Safe duplicate/i);
+  assert.doesNotMatch(metricsEl.innerHTML, /shared job token 4022147009/i);
   assert.doesNotMatch(metricsEl.innerHTML, /Mark reviewed safe/i);
+});
+
+test("admin render: A Thinking Ape shared Greenhouse duplicates are hidden as safe variants", () => {
+  const metricsEl = makeEl();
+  renderAdminOpsDedupLists(metricsEl, {
+    latestRun: {
+      dedupEvidence: {
+        providerStaticDisagreementExamples: [
+          {
+            title: "Associate 2D Game Artist",
+            company: "A Thinking Ape",
+            sourceBundleCount: 5,
+            bundleEvidenceOrigin: "current_run",
+            identityQuality: "provider_id_strong",
+            providerSources: ["greenhouse_boards"],
+            staticSources: [
+              "static_source::static:listing_url:https://athinkingape.com/careers/",
+              "static_source::static:listing_url:https://www.athinkingape.com/careers/#positions"
+            ],
+            providerSourceJobIds: ["greenhouse:athinkingape:7839485"],
+            staticSourceJobIds: ["static:A Thinking Ape (GameDevMap):6a0b6690c5"],
+            providerUrls: ["https://job-boards.greenhouse.io/athinkingape/jobs/7839485"],
+            staticUrls: ["https://job-boards.greenhouse.io/athinkingape/jobs/7839485"],
+            concreteSharedIdentifierTokens: ["7839485"],
+            distinctLocationCount: 1,
+            sampleLocations: ["vancouver, ca"],
+            disagreementClassification: "provider_redirect_or_canonical_url",
+            disagreementGateDisposition: "warning",
+            disagreementGateEvidence: ["auto_safe_current_provider_redirect_or_canonical_url"],
+            operatorReviewRecommendation: "safe_duplicate",
+            operatorReviewReason: "auto_safe_provider_static_variant"
+          }
+        ]
+      }
+    },
+    history: {}
+  }, { onDedupReviewAction() {} });
+
+  assert.match(metricsEl.innerHTML, /Hidden safe provider\/static URL variants: 1/i);
+  assert.doesNotMatch(metricsEl.innerHTML, /Associate 2D Game Artist/i);
+  assert.doesNotMatch(metricsEl.innerHTML, /A Thinking Ape/i);
 });
 
 test("admin render: provider/static blockers are not hidden behind compact card cap", () => {

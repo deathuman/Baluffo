@@ -1414,6 +1414,7 @@ def _fetch_gamedevmap_active_homepages(
         total_concurrency=total_concurrency,
         per_host_concurrency=per_host_concurrency,
         progress_label="GameDevMap active dry run homepage fetch",
+        emit_progress_log=False,
         progress_callback=(
             (
                 lambda progress: progress_callback(

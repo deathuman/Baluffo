@@ -150,6 +150,14 @@ bundle entries do not share a primary URL, so operators can review whether the b
 duplicate or a carried historical collision before lifecycle labels rely on it.
 Provider/static URL variants are only auto-safe when backed by concrete shared job identity;
 same host, company slug, career/listing words, or capped display samples are not sufficient.
+Greenhouse public job URLs normalize `boards.greenhouse.io/{board}/jobs/{id}` and
+`job-boards.greenhouse.io/{board}/jobs/{id}` to the same job identity. Static detail pages may
+promote a single explicit Greenhouse apply CTA to `jobLink`; ambiguous multiple apply targets and
+open/general application CTAs must remain on the static detail URL for review.
+SmartRecruiters provider/static rows may also be downgraded to an auto-safe warning when both
+sides are same-board job-detail URLs, the final title exposes a strong slash-separated title alias,
+and the row has a single effective location; this is intentionally narrower than fuzzy
+cross-language title matching.
 `providerStaticTitleCompanyCollisionExamples` is a separate capped sample of only
 `title_company_collision` rows so lifecycle gate blockers are visible even when the general
 provider/static disagreement sample is filled by other classifications. `collisionReviewHint`

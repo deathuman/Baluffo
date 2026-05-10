@@ -186,7 +186,29 @@ def test_discovery_live_payload_uses_stage_work_items_and_events() -> None:
     assert str(failure_event.get("target") or "") == "https://codemount.studio"
 
 
-def test_discovery_live_payload_reports_gamedevmap_active_audit_event() -> None:
+@pytest.mark.parametrize(
+    ("phase", "completed", "total", "expected_message"),
+    [
+        (
+            "homepage_fetch",
+            553,
+            1000,
+            "GameDevMap active dry run: homepage fetch 553/1000 pages.",
+        ),
+        (
+            "recovery_wave1_fetch",
+            1275,
+            1277,
+            "GameDevMap active dry run: recovery wave 1 fetch 1275/1277 pages.",
+        ),
+    ],
+)
+def test_discovery_live_payload_reports_gamedevmap_dry_run_fetch_event(
+    phase: str,
+    completed: int,
+    total: int,
+    expected_message: str,
+) -> None:
     run_id = "discovery_gamedevmap_progress_1"
     started_at = "2026-03-08T10:00:00.000Z"
     heartbeat_at = "2026-03-08T10:00:05.000Z"
@@ -198,12 +220,70 @@ def test_discovery_live_payload_reports_gamedevmap_active_audit_event() -> None:
             "stageTotal": 11,
             "subtaskKey": "gamedevmap_active_audit",
             "subtaskLabel": "GameDevMap active audit",
-            "activeAuditPhase": "recovery_wave1_fetch",
+            "activeAuditPhase": phase,
+            "activeAuditCompletedUrls": 0,
+            "activeAuditTotalUrls": 7524,
+            "activeAuditBatch": 2,
+            "activeAuditPhaseCompleted": completed,
+            "activeAuditPhaseTotal": total,
+        },
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.TASK_STATE_PATH,
+        {
+            "discovery": {
+                **task_state_entry("discovery", run_id=run_id, started_at=started_at),
+                "heartbeatAt": heartbeat_at,
+            },
+        },
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.DISCOVERY_REPORT_PATH,
+        {
+            **discovery_report(
+                run_id=run_id,
+                started_at=started_at,
+                summary={"stageIndex": 7, "stageTotal": 11},
+                task_progress=progress,
+            ),
+            "runtime": {"lifecycle": {"heartbeatAt": heartbeat_at}},
+        },
+    )
+    admin_bridge.start_lifecycle_run(
+        run_id=run_id,
+        task_type="discovery",
+        started_at=started_at,
+        owner_kind="process",
+        owner_pid=111,
+        progress=progress,
+        summary={"stageIndex": 7, "stageTotal": 11},
+    )
+
+    payload = task_live_payload("discovery")
+
+    recent_events = payload.get("recentEvents") or []
+    message = str(recent_events[0].get("message") or "")
+    assert message == expected_message
+    assert "active audit" not in message
+    assert "0/7524 URLs" not in message
+
+
+def test_discovery_live_payload_reports_gamedevmap_active_audit_event() -> None:
+    run_id = "discovery_gamedevmap_progress_2"
+    started_at = "2026-03-08T10:00:00.000Z"
+    heartbeat_at = "2026-03-08T10:00:05.000Z"
+    progress = active_progress(
+        "scanning_sources",
+        "Scanning GameDevMap directory",
+        {
+            "stageIndex": 7,
+            "stageTotal": 11,
+            "subtaskKey": "gamedevmap_active_audit",
+            "subtaskLabel": "GameDevMap active audit",
+            "activeAuditPhase": "batch_start",
             "activeAuditCompletedUrls": 2000,
             "activeAuditTotalUrls": 7524,
             "activeAuditBatch": 2,
-            "activeAuditPhaseCompleted": 1275,
-            "activeAuditPhaseTotal": 1277,
         },
     )
     admin_bridge.save_json_atomic(
@@ -241,5 +321,5 @@ def test_discovery_live_payload_reports_gamedevmap_active_audit_event() -> None:
 
     recent_events = payload.get("recentEvents") or []
     assert str(recent_events[0].get("message") or "") == (
-        "GameDevMap active audit, batch 2: 2000/7524 URLs, recovery wave1 fetch 1275/1277."
+        "GameDevMap active audit, batch 2: 2000/7524 URLs, batch start."
     )

@@ -880,13 +880,26 @@ function isProviderStaticBlockedRow(row) {
   return String(row?.disagreementGateDisposition || "").toLowerCase() === "blocked";
 }
 
+function isProviderStaticAutoSafeVariantRow(row) {
+  const disposition = String(row?.disagreementGateDisposition || "").toLowerCase();
+  if (disposition !== "warning") return false;
+  const reviewStatus = String(row?.dedupReviewStatus || "").toLowerCase();
+  if (reviewStatus === "confirmed_blocking") return false;
+  const gateEvidence = Array.isArray(row?.disagreementGateEvidence) ? row.disagreementGateEvidence : [];
+  const hasAutoSafeEvidence = gateEvidence.some(item => String(item || "").startsWith("auto_safe_"));
+  const recommendation = String(row?.operatorReviewRecommendation || "").toLowerCase();
+  const reason = String(row?.operatorReviewReason || "").toLowerCase();
+  return hasAutoSafeEvidence || recommendation === "safe_duplicate" || reason === "auto_safe_provider_static_variant";
+}
+
 function visibleProviderStaticRows(rows, limit = 5) {
   const allRows = Array.isArray(rows) ? rows : [];
+  const candidateRows = allRows.filter(row => !isProviderStaticAutoSafeVariantRow(row));
   const cappedWarningSlots = Math.max(0, Number(limit) || 0);
-  const blockedCount = allRows.filter(isProviderStaticBlockedRow).length;
+  const blockedCount = candidateRows.filter(isProviderStaticBlockedRow).length;
   const warningLimit = Math.max(0, cappedWarningSlots - blockedCount);
   let warningsAdded = 0;
-  return allRows.filter(row => {
+  return candidateRows.filter(row => {
     if (isProviderStaticBlockedRow(row)) return true;
     if (warningsAdded >= warningLimit) return false;
     warningsAdded += 1;
@@ -899,7 +912,15 @@ function formatProviderStaticGuidedRows(rows, emptyText, options = {}) {
   if (!disagreementRows.length) return escapeHtml(emptyText);
   const showActions = typeof options?.onReviewAction === "function";
   const tableKey = String(options?.tableKey || "providerStatic");
-  const cards = visibleProviderStaticRows(disagreementRows)
+  const visibleRows = visibleProviderStaticRows(disagreementRows);
+  const hiddenSafeCount = disagreementRows.filter(isProviderStaticAutoSafeVariantRow).length;
+  const hiddenSafeSummary = hiddenSafeCount
+    ? `<div class="admin-muted">Hidden safe provider/static URL variants: ${Number(hiddenSafeCount).toLocaleString()}.</div>`
+    : "";
+  if (!visibleRows.length) {
+    return `${escapeHtml(emptyText)}${hiddenSafeSummary ? ` ${hiddenSafeSummary}` : ""}`;
+  }
+  const cards = visibleRows
     .map((row, rowIndex) => {
       const title = String(row?.title || "Untitled");
       const company = String(row?.company || "Unknown company");
@@ -959,6 +980,7 @@ function formatProviderStaticGuidedRows(rows, emptyText, options = {}) {
     })
     .join("");
   return `
+    ${hiddenSafeSummary}
     <div class="admin-dedup-provider-static-list">${cards}</div>
   `;
 }

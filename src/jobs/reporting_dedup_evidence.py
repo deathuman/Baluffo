@@ -15,6 +15,11 @@ from src.jobs.common.contracts_dedup_review_state import (
     dedup_review_pair_public_fields,
     find_dedup_review_pair,
 )
+from src.jobs.common.smartrecruiters_identity import (
+    smartrecruiters_company_slugs_from_values,
+    smartrecruiters_title_aliases,
+    smartrecruiters_title_has_alias_separator,
+)
 from src.jobs.models import CanonicalJob
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
 from src.shared.json_shapes import json_object_rows
@@ -1366,6 +1371,16 @@ def _provider_static_disagreement_example(
         provider_ids=provider_ids_all,
         static_ids=static_ids_all,
     )
+    classification_evidence = [
+        *classification_evidence,
+        *_smartrecruiters_same_board_title_location_alias_evidence(
+            summary=summary,
+            provider_urls=provider_urls_all,
+            static_urls=static_urls_all,
+            provider_ids=provider_ids_all,
+            static_ids=static_ids_all,
+        ),
+    ]
     if _is_known_gracklehq_gamesjobsdirect_mirror_bundle(bundle):
         classification_evidence = [
             *classification_evidence,
@@ -1502,6 +1517,35 @@ def _provider_static_disagreement_classification(
     if provider_ids and static_ids and provider_urls and static_urls:
         return "same_job_different_urls", evidence + ["both_sides_have_ids_and_urls"]
     return "needs_manual_review", evidence
+
+
+def _smartrecruiters_same_board_title_location_alias_evidence(
+    *,
+    summary: Mapping[str, Any],
+    provider_urls: Sequence[str],
+    static_urls: Sequence[str],
+    provider_ids: Sequence[str],
+    static_ids: Sequence[str],
+) -> list[str]:
+    title_aliases = smartrecruiters_title_aliases(summary.get("title"))
+    if not smartrecruiters_title_has_alias_separator(summary.get("title")):
+        return []
+    if not title_aliases:
+        return []
+    location_count = max(0, int(summary.get("distinctLocationCount") or 0))
+    if location_count > 1 and not _provider_static_locations_are_single_effective_place(summary):
+        return []
+    provider_slugs = smartrecruiters_company_slugs_from_values([*provider_ids, *provider_urls])
+    static_slugs = smartrecruiters_company_slugs_from_values([*static_ids, *static_urls])
+    shared_slugs = sorted(provider_slugs & static_slugs)
+    if not shared_slugs:
+        return []
+    return [
+        "smartrecruiters_same_board_title_location_alias",
+        f"smartrecruiters_board:{shared_slugs[0]}",
+        f"title_aliases:{len(title_aliases)}",
+        f"locations:{location_count}",
+    ]
 
 
 def _provider_static_locations_are_single_effective_place(summary: Mapping[str, Any]) -> bool:

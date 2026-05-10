@@ -24,6 +24,38 @@ function compactCount(value) {
   return Number(value || 0).toLocaleString();
 }
 
+const GAMEDEVMAP_ACTIVE_AUDIT_FETCH_PHASE_LABELS = {
+  homepage_fetch: "homepage fetch",
+  recovery_wave1_fetch: "recovery wave 1 fetch",
+  recovery_wave2_fetch: "recovery wave 2 fetch"
+};
+
+export function formatDiscoverySubtaskProgress(counts) {
+  const subtaskKey = String(counts?.subtaskKey || "").trim();
+  if (subtaskKey !== "gamedevmap_active_audit") return "";
+  const subtaskLabel = String(counts?.subtaskLabel || "").trim();
+  const auditPhaseKey = String(counts?.activeAuditPhase || "").trim();
+  const auditPhase = auditPhaseKey.replace(/_/g, " ");
+  const auditCompleted = Math.max(0, Number(counts?.activeAuditCompletedUrls || 0));
+  const auditTotal = Math.max(0, Number(counts?.activeAuditTotalUrls || 0));
+  const auditBatch = Math.max(0, Number(counts?.activeAuditBatch || 0));
+  const auditPhaseCompleted = Math.max(0, Number(counts?.activeAuditPhaseCompleted || 0));
+  const auditPhaseTotal = Math.max(0, Number(counts?.activeAuditPhaseTotal || 0));
+  const auditFetchPhaseLabel = GAMEDEVMAP_ACTIVE_AUDIT_FETCH_PHASE_LABELS[auditPhaseKey] || "";
+  if (auditFetchPhaseLabel) {
+    return [
+      "GameDevMap active dry run",
+      `${auditFetchPhaseLabel}${auditPhaseTotal > 0 ? ` ${compactCount(auditPhaseCompleted)}/${compactCount(auditPhaseTotal)} pages` : ""}`
+    ].filter(Boolean).join(" | ");
+  }
+  return [
+    subtaskLabel || "GameDevMap active audit",
+    auditBatch > 0 ? `batch ${compactCount(auditBatch)}` : "",
+    auditTotal > 0 ? `${compactCount(auditCompleted)}/${compactCount(auditTotal)} URLs` : "",
+    auditPhase ? `${auditPhase}${auditPhaseTotal > 0 ? ` ${compactCount(auditPhaseCompleted)}/${compactCount(auditPhaseTotal)}` : ""}` : ""
+  ].filter(Boolean).join(" | ");
+}
+
 export function formatScrapyStaticSourcesTailBadge(workItems) {
   if (!Array.isArray(workItems) || workItems.length === 0) return "";
   const activeQueueItem = workItems.find(item => {
@@ -72,22 +104,7 @@ function formatDiscoveryCounts(counts, progress) {
   const stageLabel = stageIndex > 0 && stageTotal > 0
     ? `stage ${compactCount(stageIndex)}/${compactCount(stageTotal)}`
     : "";
-  const subtaskKey = String(counts?.subtaskKey || "").trim();
-  const subtaskLabel = String(counts?.subtaskLabel || "").trim();
-  const auditPhase = String(counts?.activeAuditPhase || "").trim().replace(/_/g, " ");
-  const auditCompleted = Math.max(0, Number(counts?.activeAuditCompletedUrls || 0));
-  const auditTotal = Math.max(0, Number(counts?.activeAuditTotalUrls || 0));
-  const auditBatch = Math.max(0, Number(counts?.activeAuditBatch || 0));
-  const auditPhaseCompleted = Math.max(0, Number(counts?.activeAuditPhaseCompleted || 0));
-  const auditPhaseTotal = Math.max(0, Number(counts?.activeAuditPhaseTotal || 0));
-  const auditSubtask = subtaskKey === "gamedevmap_active_audit"
-    ? [
-        subtaskLabel || "GameDevMap active audit",
-        auditBatch > 0 ? `batch ${compactCount(auditBatch)}` : "",
-        auditTotal > 0 ? `${compactCount(auditCompleted)}/${compactCount(auditTotal)} URLs` : "",
-        auditPhase ? `${auditPhase}${auditPhaseTotal > 0 ? ` ${compactCount(auditPhaseCompleted)}/${compactCount(auditPhaseTotal)}` : ""}` : ""
-      ].filter(Boolean).join(" | ")
-    : "";
+  const auditSubtask = formatDiscoverySubtaskProgress(counts);
   const probedLabel = String(progress?.mode || "").toLowerCase() === "determinate" && probeTotal > 0
     ? `${compactCount(probed)}/${compactCount(probeTotal)}`
     : compactCount(probed);

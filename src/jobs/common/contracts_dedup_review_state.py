@@ -169,6 +169,7 @@ def dedup_review_pair_public_fields(row: Any) -> dict[str, Any]:
 
 def _carried_disagreement_auto_disposition(
     classification: str,
+    classification_evidence: list[str],
     carried_location_pollution_audit: str,
     provider_backed: bool,
     static_backed: bool,
@@ -201,6 +202,19 @@ def _carried_disagreement_auto_disposition(
         and (same_host or has_shared_tokens)
     ):
         return carried_location_pollution_audit
+    if (
+        classification
+        in {
+            "same_job_different_urls",
+            "provider_redirect_or_canonical_url",
+            "static_parser_url_variant",
+        }
+        and provider_backed
+        and static_backed
+        and single_location
+        and "smartrecruiters_same_board_title_location_alias" in classification_evidence
+    ):
+        return "auto_safe_carried_smartrecruiters_title_location_alias"
     return ""
 
 
@@ -239,6 +253,19 @@ def _current_disagreement_auto_disposition(
         and "known_gracklehq_gamesjobsdirect_mirror_pair" in classification_evidence
     ):
         return "auto_safe_current_known_mirror_pair"
+    if (
+        classification
+        in {
+            "same_job_different_urls",
+            "provider_redirect_or_canonical_url",
+            "static_parser_url_variant",
+        }
+        and provider_backed
+        and static_has_url
+        and single_location
+        and "smartrecruiters_same_board_title_location_alias" in classification_evidence
+    ):
+        return "auto_safe_current_smartrecruiters_title_location_alias"
     return ""
 
 
@@ -358,6 +385,7 @@ def dedup_disagreement_gate_disposition(
         return "blocked", [*evidence, "current_run_or_unclassified_origin"]
     auto_disposition = _carried_disagreement_auto_disposition(
         classification,
+        classification_evidence,
         carried_location_pollution_audit,
         provider_backed,
         static_backed,

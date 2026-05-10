@@ -5,6 +5,7 @@ import {
   buildTaskRunView
 } from "../../shared/task-run-view-model.js?v=9";
 import {
+  formatDiscoverySubtaskProgress,
   formatScrapyStaticSourcesTailBadge,
   formatTaskProgressDetail
 } from "../../shared/task-progress.js";
@@ -215,7 +216,15 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
     const currentRunStageBadge = row?.isLive && type === "discovery"
       ? formatDiscoveryStageBadge(taskProgress)
       : "";
-    const liveRunDetail = [currentRunDetail, currentRunStageBadge, currentRunTailBadge].filter(Boolean).join(" | ");
+    const currentRunSubtaskBadge = row?.isLive && type === "discovery"
+      ? formatDiscoverySubtaskProgress(taskProgress?.counts)
+      : "";
+    const liveRunDetail = [
+      currentRunDetail,
+      currentRunSubtaskBadge,
+      currentRunStageBadge,
+      currentRunTailBadge
+    ].filter(Boolean).join(" | ");
     const pipelineChildDetail = row?.type === "pipeline" && row?.isLive && summary?.activeChildTaskType
       ? currentRunDetail
       : "";

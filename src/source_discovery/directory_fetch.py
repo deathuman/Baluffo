@@ -52,6 +52,7 @@ def fetch_directory_pages(
     progress_label: str,
     progress_every: int = 25,
     progress_callback: Any | None = None,
+    emit_progress_log: bool = True,
 ) -> list[dict[str, Any]]:
     from .reporting import emit_log
 
@@ -59,7 +60,12 @@ def fetch_directory_pages(
     progress_name = str(progress_label or "").strip()
 
     def _progress(completed: int, total: int) -> None:
-        if progress_name and report_every and (completed == total or completed % report_every == 0):
+        if (
+            emit_progress_log
+            and progress_name
+            and report_every
+            and (completed == total or completed % report_every == 0)
+        ):
             emit_log(f"{progress_name}: fetched {completed}/{total} pages.")
         if progress_callback is not None:
             progress_callback({"completed": completed, "total": total, "label": progress_name})

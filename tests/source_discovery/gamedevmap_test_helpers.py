@@ -38,7 +38,20 @@ def gamedevmap_payloads() -> dict[str, str]:
         "https://homepage-static.example.com": _fixture_text("gamedevmap_homepage_static.html"),
         "https://duplicate.example.com": _fixture_text("gamedevmap_homepage_no_jobs.html"),
         "https://boards-api.greenhouse.io/v1/boards/providerfeedstudio/jobs?content=true": json.dumps(
-            {"jobs": [{}, {}]}
+            {
+                "jobs": [
+                    {
+                        "id": 1,
+                        "title": "Gameplay Engineer",
+                        "absolute_url": "https://job-boards.greenhouse.io/providerfeedstudio/jobs/1",
+                    },
+                    {
+                        "id": 2,
+                        "title": "Technical Artist",
+                        "absolute_url": "https://job-boards.greenhouse.io/providerfeedstudio/jobs/2",
+                    },
+                ]
+            }
         ),
         "https://boards-api.greenhouse.io/v1/boards/homepageproviderstudio/jobs?content=true": json.dumps(
             {"jobs": []}
