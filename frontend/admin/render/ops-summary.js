@@ -767,6 +767,7 @@ function formatDedupReviewStateSummary(summary, readWarning = "", gate = {}) {
   const providerStaticBlockers = providerStaticBlockerCountsFromGate(gate);
   const warningAction = warning
     ? [
+        `warning ${warning}`,
         `Review-state file missing/malformed (${warning})`,
         providerStaticBlockers.total > 0
           ? `provider/static blockers current-run ${providerStaticBlockers.current.toLocaleString()}, carried ${providerStaticBlockers.carried.toLocaleString()}`
