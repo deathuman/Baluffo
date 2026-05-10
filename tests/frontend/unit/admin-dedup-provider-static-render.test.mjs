@@ -153,9 +153,12 @@ test("admin render: provider/static disagreement examples are read-only", () => 
   assert.match(metricsEl.innerHTML, /same job\/different URLs 1/i);
   assert.match(metricsEl.innerHTML, /provider\/static current 0/i);
   assert.match(metricsEl.innerHTML, /provider\/static carried 1/i);
+  assert.match(metricsEl.innerHTML, /admin-dedup-provider-static-list/i);
+  assert.match(metricsEl.innerHTML, /admin-dedup-provider-static-card/i);
   assert.match(metricsEl.innerHTML, /Executive Assistant/i);
   assert.match(metricsEl.innerHTML, /Animoca Brands/i);
-  assert.match(metricsEl.innerHTML, /source lever_sources/i);
+  assert.match(metricsEl.innerHTML, /Provider evidence/i);
+  assert.match(metricsEl.innerHTML, /lever_sources/i);
   assert.match(metricsEl.innerHTML, /classification same job different urls/i);
   assert.match(metricsEl.innerHTML, /gate blocked/i);
   assert.match(metricsEl.innerHTML, /review confirmed blocking by admin at 2026-05-02T10:00:00Z/i);
@@ -175,9 +178,10 @@ test("admin render: provider/static disagreement examples are read-only", () => 
   assert.match(metricsEl.innerHTML, /shared job token 744000018988355/i);
   assert.match(
     metricsEl.innerHTML,
-    /source static_source::static:listing_url:https:\/\/careers\.animocabrands\.com\/jobs/i
+    /static_source::static:listing_url:https:\/\/careers\.animocabrands\.com\/jobs/i
   );
   assert.match(metricsEl.innerHTML, /shared primary url:false/i);
+  assert.doesNotMatch(metricsEl.innerHTML, /<th>Job<\/th><th>Company<\/th><th>Gate<\/th>/i);
   assert.doesNotMatch(metricsEl.innerHTML, /merge-btn|unmerge-btn|cleanup-btn|lifecycle-btn/i);
 });
 

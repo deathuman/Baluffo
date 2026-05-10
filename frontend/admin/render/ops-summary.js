@@ -849,12 +849,31 @@ function formatProviderStaticRawEvidence(row) {
   `;
 }
 
+function formatProviderStaticEvidenceBlock(label, sources, ids, urls) {
+  const rows = [
+    ["Source", formatProviderStaticList(sources)],
+    ["Job IDs", formatProviderStaticList(ids)],
+    ["URLs", formatProviderStaticList(urls)]
+  ];
+  return `
+    <section class="admin-dedup-provider-static-evidence-block">
+      <h5>${escapeHtml(label)}</h5>
+      ${rows.map(([rowLabel, value]) => `
+        <div class="admin-dedup-provider-static-evidence-row">
+          <span>${escapeHtml(rowLabel)}</span>
+          <code>${escapeHtml(value)}</code>
+        </div>
+      `).join("")}
+    </section>
+  `;
+}
+
 function formatProviderStaticGuidedRows(rows, emptyText, options = {}) {
   const disagreementRows = Array.isArray(rows) ? rows : [];
   if (!disagreementRows.length) return escapeHtml(emptyText);
   const showActions = typeof options?.onReviewAction === "function";
   const tableKey = String(options?.tableKey || "providerStatic");
-  const body = disagreementRows
+  const cards = disagreementRows
     .slice(0, 5)
     .map((row, rowIndex) => {
       const title = String(row?.title || "Untitled");
@@ -889,34 +908,33 @@ function formatProviderStaticGuidedRows(rows, emptyText, options = {}) {
         `locations ${Number(row?.distinctLocationCount || 0).toLocaleString()}${locations.length ? ` (${locations.slice(0, 2).join(" | ")})` : ""}`,
         tokens.length ? `shared job token ${tokens.slice(0, 2).join(", ")}` : "shared job token none"
       ].filter(Boolean);
-      const providerEvidence = [
-        `source ${formatProviderStaticList(providerSources)}`,
-        `job IDs ${formatProviderStaticList(providerIds)}`,
-        `URLs ${formatProviderStaticList(providerUrls)}`
-      ].join("; ");
-      const staticEvidence = [
-        `source ${formatProviderStaticList(staticSources)}`,
-        `job IDs ${formatProviderStaticList(staticIds)}`,
-        `URLs ${formatProviderStaticList(staticUrls)}`
-      ].join("; ");
       return `
-        <tr>
-          <td>${escapeHtml(title)}</td>
-          <td>${escapeHtml(company)}</td>
-          <td>${escapeHtml(statusChips.join("; "))}</td>
-          <td><strong>${escapeHtml(providerStaticRecommendationLabel(row))}</strong><br>${escapeHtml(providerStaticReasonLabel(row))}</td>
-          <td>${escapeHtml(providerEvidence)}</td>
-          <td>${escapeHtml(staticEvidence)}${formatProviderStaticRawEvidence(row)}</td>
-          <td>${renderDedupReviewActionButtons(tableKey, rowIndex, showActions)}</td>
-        </tr>
+        <article class="admin-dedup-provider-static-card">
+          <div class="admin-dedup-provider-static-card-head">
+            <div>
+              <h5>${escapeHtml(title)}</h5>
+              <div class="admin-dedup-provider-static-company">${escapeHtml(company)}</div>
+            </div>
+            <div class="admin-dedup-provider-static-recommendation">
+              <span>${escapeHtml(providerStaticRecommendationLabel(row))}</span>
+              <p>${escapeHtml(providerStaticReasonLabel(row))}</p>
+            </div>
+          </div>
+          <div class="admin-dedup-provider-static-chips">
+            ${statusChips.map(chip => `<span>${escapeHtml(chip)}</span>`).join("")}
+          </div>
+          <div class="admin-dedup-provider-static-evidence-grid">
+            ${formatProviderStaticEvidenceBlock("Provider evidence", providerSources, providerIds, providerUrls)}
+            ${formatProviderStaticEvidenceBlock("Static evidence", staticSources, staticIds, staticUrls)}
+          </div>
+          ${formatProviderStaticRawEvidence(row)}
+          ${renderDedupReviewActionButtons(tableKey, rowIndex, showActions)}
+        </article>
       `;
     })
     .join("");
   return `
-    <table class="admin-dedup-evidence-table">
-      <thead><tr><th>Job</th><th>Company</th><th>Gate</th><th>Recommended decision</th><th>Provider evidence</th><th>Static evidence</th><th>Actions</th></tr></thead>
-      <tbody>${body}</tbody>
-    </table>
+    <div class="admin-dedup-provider-static-list">${cards}</div>
   `;
 }
 

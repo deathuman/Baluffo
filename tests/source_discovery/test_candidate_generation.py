@@ -100,7 +100,7 @@ def test_async_probe_candidate_mirrors_sync_probe_count() -> None:
 
     async def fake_async_fetch(url: str, _timeout: int) -> str:
         assert "boards-api.greenhouse.io" in url
-        return json.dumps({"jobs": [{}, {}, {}]})
+        return '{"jobs":[{"id":1,"title":"Gameplay Role 1","absolute_url":"https://job-boards.greenhouse.io/example/jobs/1"},{"id":2,"title":"Gameplay Role 2","absolute_url":"https://job-boards.greenhouse.io/example/jobs/2"},{"id":3,"title":"Gameplay Role 3","absolute_url":"https://job-boards.greenhouse.io/example/jobs/3"}]}'
 
     ok, count, error = asyncio.run(
         sd.async_probe_candidate(greenhouse, timeout_s=5, fetcher=fake_async_fetch)
@@ -731,12 +731,15 @@ def test_probe_candidate_maps_jobs_found_for_greenhouse_and_teamtailor() -> None
         "api_url": "https://boards-api.greenhouse.io/v1/boards/example/jobs?content=true",
     }
     ok, count, error = sd.probe_candidate(
-        greenhouse, timeout_s=5, fetcher=lambda *_: json.dumps({"jobs": [{}, {}]})
+        greenhouse,
+        timeout_s=5,
+        fetcher=lambda *_: (
+            '{"jobs":[{"id":1,"title":"Gameplay Role 1","absolute_url":"https://job-boards.greenhouse.io/example/jobs/1"},{"id":2,"title":"Gameplay Role 2","absolute_url":"https://job-boards.greenhouse.io/example/jobs/2"}]}'
+        ),
     )
     assert ok
     assert count == 2
     assert error == ""
-
     teamtailor = {"adapter": "teamtailor", "listing_url": "https://example.teamtailor.com/jobs"}
     html = """
     <a href="https://example.teamtailor.com/jobs/123-role-a">A</a>

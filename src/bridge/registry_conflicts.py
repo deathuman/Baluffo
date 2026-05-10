@@ -895,6 +895,41 @@ def _adjudication_complete_for_rows(rows: list[dict[str, Any]], family: dict[str
     )
 
 
+def _adjudicated_independent_provider_loser_ids(
+    rows: list[dict[str, Any]], family: dict[str, Any]
+) -> set[str]:
+    if not family:
+        return set()
+    active_provider_ids = {
+        _row_identity(row)
+        for row in rows
+        if _row_state(row) == "active" and _is_provider_row(row) and _row_identity(row)
+    }
+    if len(active_provider_ids) < 2:
+        return set()
+    checked_ids = {
+        _clean_text(source_id)
+        for source_id in _as_list(family.get("checkedSourceIds"))
+        if _clean_text(source_id)
+    }
+    if not active_provider_ids <= checked_ids:
+        return set()
+    independent_ids: set[str] = set()
+    for decision in _as_list(family.get("decisions")):
+        if not isinstance(decision, dict):
+            continue
+        source_id = _clean_text(decision.get("sourceId"))
+        status = _clean_text(decision.get("status")).lower()
+        reason = _clean_text(decision.get("reason")).lower()
+        if (
+            source_id in active_provider_ids
+            and status == "keep_both"
+            and "job sets differ" in reason
+        ):
+            independent_ids.add(source_id)
+    return independent_ids
+
+
 def _row_with_live_adjudication(
     row: dict[str, Any], probe: dict[str, Any], *, observed_at: str = ""
 ) -> dict[str, Any]:
@@ -1075,6 +1110,62 @@ def _is_safe_pending_static_weaker_alias(
         _row_jobs_evidence(winner) >= _row_jobs_evidence(loser)
         and _positive_evidence_score(winner) >= _positive_evidence_score(loser) + 20
     )
+
+
+def _is_safe_pending_static_homepage_against_active_provider(
+    row: dict[str, Any], rows: list[dict[str, Any]]
+) -> bool:
+    if _row_state(row) != "pending" or not _is_static_row(row):
+        return False
+    host_paths = _static_url_host_paths(row)
+    if not host_paths or not any(_is_homepage_path(path) for _host, path in host_paths):
+        return False
+    provider_jobs = [
+        _row_jobs_evidence(candidate)
+        for candidate in rows
+        if _row_state(candidate) == "active" and _is_provider_row(candidate)
+    ]
+    return (
+        bool(provider_jobs)
+        and max(provider_jobs) > 0
+        and _row_jobs_evidence(row) <= max(provider_jobs)
+    )
+
+
+def _drop_adjudicated_independent_provider_losers(
+    winner: dict[str, Any],
+    losers: list[dict[str, Any]],
+    family_adjudication: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    independent_provider_loser_ids = _adjudicated_independent_provider_loser_ids(
+        [winner, *losers],
+        family_adjudication or {},
+    )
+    return [row for row in losers if _row_identity(row) not in independent_provider_loser_ids]
+
+
+def _drop_safe_pending_homepage_static_losers(
+    winner: dict[str, Any],
+    losers: list[dict[str, Any]],
+    family_key: str,
+    audit_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    candidate_rows = [winner, *losers]
+    suppressed_losers = [
+        row
+        for row in losers
+        if _is_safe_pending_static_homepage_against_active_provider(row, candidate_rows)
+    ]
+    if suppressed_losers:
+        audit_rows.append(
+            {
+                "familyKey": family_key,
+                "rowCount": len(suppressed_losers),
+                "rows": [_safe_auto_demoted_pending_audit_row(row) for row in suppressed_losers],
+            }
+        )
+    suppressed_ids = {_row_identity(row) for row in suppressed_losers}
+    return [row for row in losers if _row_identity(row) not in suppressed_ids]
 
 
 def _safe_pending_provider_lower_jobs_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -2836,6 +2927,11 @@ def derive_registry_conflict_queue(
                 }
             )
             losers = [row for row in losers if not _is_safe_auto_demoted_pending(row)]
+        losers = _drop_adjudicated_independent_provider_losers(
+            winner,
+            losers,
+            family_adjudication,
+        )
         candidate_rows = [winner, *losers]
         suppressed_pending_provider_losers = _safe_pending_provider_lower_jobs_rows(candidate_rows)
         if suppressed_pending_provider_losers:
@@ -2864,6 +2960,12 @@ def derive_registry_conflict_queue(
                 losers = [row for row in candidate_rows if _row_identity(row) != winner_id]
             else:
                 losers = []
+        losers = _drop_safe_pending_homepage_static_losers(
+            winner,
+            losers,
+            family_key,
+            safe_pending_static_alias_audit,
+        )
         suppressed_static_alias_losers = [
             row for row in losers if _is_safe_pending_static_weaker_alias(winner, row, family_key)
         ]

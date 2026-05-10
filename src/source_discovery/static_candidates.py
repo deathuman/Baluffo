@@ -4,9 +4,18 @@ from __future__ import annotations
 
 import re
 from typing import Any
+from urllib.parse import urlparse
 
 from .scoring import careers_keyword_count, studio_domain_match, unique_string_list
 from .web_search import is_blocked_generic_static_url
+
+
+def _is_homepage_url(url: str) -> bool:
+    try:
+        parsed = urlparse(str(url or ""))
+    except ValueError:
+        return False
+    return (parsed.path or "").strip().rstrip("/") in {"", "/"}
 
 
 def build_known_careers_url_candidate(
@@ -64,6 +73,8 @@ def build_static_candidate_from_page(
     probe_evidence = static_probe_evidence(html, page_url)
     detail_links = list(probe_evidence.sample_urls)
     jsonld_hits = re.findall(r'"@type"\s*:\s*"JobPosting"', str(html or ""), flags=re.I)
+    if _is_homepage_url(page_url) and len(detail_links) < 2 and not jsonld_hits:
+        return None
     if not detail_links and not jsonld_hits:
         return None
     evidence_types = ["careers_keyword"]

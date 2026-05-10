@@ -711,6 +711,169 @@
   font-size: 0.8rem;
 }
 
+.admin-dedup-provider-static-list {
+  display: grid;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.admin-dedup-provider-static-card {
+  display: grid;
+  gap: 0.55rem;
+  min-width: 0;
+  padding: 0.62rem 0.68rem;
+  border: 1px solid var(--surface-11);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--table-row-even) 62%, transparent);
+  overflow: hidden;
+}
+
+.admin-dedup-provider-static-card-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(170px, 0.48fr);
+  gap: 0.65rem;
+  align-items: start;
+  min-width: 0;
+}
+
+.admin-dedup-provider-static-card h5,
+.admin-dedup-provider-static-evidence-block h5 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 0.86rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.admin-dedup-provider-static-company,
+.admin-dedup-provider-static-recommendation p {
+  margin: 0.16rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.admin-dedup-provider-static-recommendation {
+  min-width: 0;
+}
+
+.admin-dedup-provider-static-recommendation span {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 0.12rem 0.42rem;
+  border: 1px solid color-mix(in srgb, #c9a86c 55%, var(--surface-11));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--table-row-odd) 65%, transparent);
+  color: var(--text-primary);
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.admin-dedup-provider-static-chips {
+  display: flex;
+  gap: 0.32rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.admin-dedup-provider-static-chips span {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 0.12rem 0.42rem;
+  border: 1px solid var(--surface-11);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--table-row-odd) 65%, transparent);
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.admin-dedup-provider-static-evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.admin-dedup-provider-static-evidence-block {
+  display: grid;
+  gap: 0.34rem;
+  min-width: 0;
+  padding: 0.48rem 0.52rem;
+  border: 1px solid var(--surface-11);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--table-row-odd) 70%, transparent);
+}
+
+.admin-dedup-provider-static-evidence-row {
+  display: grid;
+  grid-template-columns: 4.2rem minmax(0, 1fr);
+  gap: 0.45rem;
+  min-width: 0;
+  align-items: baseline;
+}
+
+.admin-dedup-provider-static-evidence-row span {
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.admin-dedup-provider-static-evidence-row code {
+  min-width: 0;
+  color: var(--text-primary);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.admin-dedup-raw-evidence {
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.admin-dedup-raw-evidence summary {
+  cursor: pointer;
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.admin-dedup-provider-static-card .admin-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.admin-dedup-provider-static-card .admin-pill-button {
+  flex: 0 0 auto;
+  white-space: normal;
+}
+
+.admin-dedup-provider-static-card .admin-muted {
+  flex: 1 1 14rem;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .admin-dedup-provider-static-card-head,
+  .admin-dedup-provider-static-evidence-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .admin-source-policy-review {
   display: grid;
   gap: 0.6rem;
@@ -811,6 +974,12 @@
 .admin-registry-conflicts-list {
   display: grid;
   gap: 0.75rem;
+  max-height: min(64vh, 46rem);
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.35rem;
+  scrollbar-gutter: stable;
 }
 
 .admin-registry-conflict-card {

@@ -46,6 +46,48 @@ def test_conflict_adjudication_provider_probe_reconstructs_compact_source_id(
     assert probe["jobsFound"] == 1
 
 
+def test_conflict_adjudication_greenhouse_open_application_board_is_not_positive(
+    monkeypatch,
+) -> None:
+    payload = """
+    {
+      "jobs": [
+        {
+          "id": 4345814007,
+          "title": "Open Applications",
+          "absolute_url": "https://job-boards.greenhouse.io/azragamesoa/jobs/4345814007"
+        }
+      ]
+    }
+    """
+
+    monkeypatch.setattr(
+        registry_conflict_adjudication,
+        "probe_source_evidence",
+        lambda row, timeout_s, **_kwargs: probe_source_evidence(
+            row,
+            timeout_s,
+            fetcher=lambda url, _timeout_s, **_fetch_kwargs: ProbeFetchResponse(200, url, payload),
+        ),
+    )
+
+    probe = _probe_row(
+        {
+            "id": "greenhouse:slug:azragamesoa",
+            "adapter": "greenhouse",
+            "slug": "azragamesoa",
+            "api_url": "https://boards-api.greenhouse.io/v1/boards/azragamesoa/jobs?content=true",
+            "name": "Azra Games (Greenhouse)",
+        },
+        5,
+    )
+
+    assert probe["ok"] is True
+    assert probe["jobsFound"] == 0
+    assert probe["sampleJobs"] == []
+    assert probe["_jobIds"] == []
+
+
 def test_conflict_adjudication_smartrecruiters_count_uses_provider_total(
     monkeypatch,
 ) -> None:

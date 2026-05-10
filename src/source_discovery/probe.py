@@ -13,6 +13,7 @@ from typing import Any
 from urllib.parse import parse_qsl, urljoin, urlparse
 from xml.etree import ElementTree as ET
 
+from src.jobs.adapters.parsers.json_payloads import parse_greenhouse_jobs_payload
 from src.jobs.adapters.parsers.provider_html import parse_jazzhr_jobs_html
 from src.jobs.parsers import parse_jobpostings_from_html
 
@@ -422,6 +423,10 @@ def _parse_provider_probe_count(adapter: str, text: str) -> int | None:
             total = payload.get("totalFound")
             if isinstance(total, int):
                 return max(0, total)
+    if adapter == "greenhouse" and text.strip().startswith("{"):
+        payload = json.loads(text)
+        if isinstance(payload, dict):
+            return len(parse_greenhouse_jobs_payload(payload, ""))
     provider_specs = {
         "lever": (None, r'(?is)href=["\'][^"\']+/jobs/[^"\']+["\']'),
         "greenhouse": ("jobs", r'(?is)href=["\'][^"\']+/jobs/\d+[^"\']*["\']'),

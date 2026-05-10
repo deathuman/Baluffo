@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 from src.source_discovery import probe as probe_module
 from src.source_discovery import probe_runtime
@@ -89,6 +90,31 @@ def test_candidate_with_probe_evidence_can_mark_prevalidated_discovery() -> None
     assert "prevalidatedDiscovery" not in normal
     assert prevalidated["prevalidatedDiscovery"] is True
     assert prevalidated["id"] == normal["id"]
+
+
+def test_probe_candidate_does_not_count_greenhouse_open_application_only_board() -> None:
+    greenhouse = {
+        "adapter": "greenhouse",
+        "slug": "azragamesoa",
+        "api_url": "https://boards-api.greenhouse.io/v1/boards/azragamesoa/jobs?content=true",
+    }
+    payload = {
+        "jobs": [
+            {
+                "id": 4345814007,
+                "title": "Open Applications",
+                "absolute_url": "https://job-boards.greenhouse.io/azragamesoa/jobs/4345814007",
+            }
+        ]
+    }
+
+    ok, count, error = probe_module.probe_candidate(
+        greenhouse, timeout_s=5, fetcher=lambda *_: json.dumps(payload)
+    )
+
+    assert ok
+    assert count == 0
+    assert error == ""
 
 
 def test_classify_probe_results_splits_positive_zero_and_failed_rows() -> None:

@@ -75,3 +75,72 @@ def test_discovery_auto_approval_does_not_reactivate_conflict_demoted_pending_ro
         assert all("approvedBy" not in row for row in report["candidates"])
         assert all("liveAt" not in row for row in report["candidates"])
         assert not approval_path.exists()
+
+
+def test_discovery_auto_approval_does_not_activate_static_url_alias_duplicate() -> None:
+    with workspace_tmpdir("source-registry") as tmp:
+        approval_path = Path(tmp) / "source-approval-state.json"
+        active_id = "static:listing_url:https://www.bandainamcoent.com/careers"
+        pending_id = "static:listing_url:https://www.bandainamcoent.com/careers#join"
+        state = {
+            "active": [
+                {
+                    "id": active_id,
+                    "adapter": "static",
+                    "name": "Bandai Namco Entertainment America Inc. (Sheet)",
+                    "studio": "Bandai Namco Entertainment America Inc.",
+                    "jobsFound": 7,
+                    "registryState": "active",
+                    "candidateState": "live",
+                }
+            ],
+            "pending": [
+                {
+                    "id": pending_id,
+                    "adapter": "static",
+                    "name": "Bandai Namco Entertainment America Inc. (Sheet)",
+                    "studio": "Bandai Namco Entertainment America Inc.",
+                    "jobsFound": 7,
+                    "status": "healthy",
+                    "registryState": "pending",
+                    "candidateState": "validated",
+                }
+            ],
+            "rejected": [],
+        }
+        report = {
+            "summary": {
+                "queuedCandidateCount": 1,
+                "approvedCandidateCount": 0,
+                "liveCandidateCount": 0,
+            },
+            "runtime": {},
+            "candidates": [
+                {
+                    "id": pending_id,
+                    "adapter": "static",
+                    "name": "Bandai Namco Entertainment America Inc. (Sheet)",
+                    "studio": "Bandai Namco Entertainment America Inc.",
+                    "jobsFound": 7,
+                    "status": "healthy",
+                    "candidateState": "validated",
+                }
+            ],
+        }
+
+        next_state, approved = sr.apply_discovery_auto_approval(
+            state,
+            report,
+            auto_approve_enabled=True,
+            approval_state_path=approval_path,
+            now_iso_fn=lambda: "2026-05-10T14:00:00+02:00",
+        )
+
+        assert approved == 0
+        assert [row["id"] for row in next_state["active"]] == [active_id]
+        assert [row["id"] for row in next_state["pending"]] == [pending_id]
+        assert report["summary"]["approvedCandidateCount"] == 0
+        assert report["runtime"]["autoApproval"] == {"enabled": True, "approvedCount": 0}
+        assert report["candidates"][0]["candidateState"] == "validated"
+        assert "approvedBy" not in report["candidates"][0]
+        assert "liveAt" not in report["candidates"][0]

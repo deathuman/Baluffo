@@ -8,7 +8,12 @@ from typing import Any, cast
 
 from src.shared.json_shapes import as_json_list, as_json_object, json_object_rows
 from src.shared.utils import now_iso
-from src.source_registry_identity import source_identity, unique_sources
+from src.source_registry_identity import (
+    source_family_key,
+    source_identity,
+    static_listing_url_aliases,
+    unique_sources,
+)
 from src.source_registry_io import load_json_object, save_json_atomic
 from src.source_registry_state import (
     REGISTRY_REASON_DISCOVERY_AUTO_APPROVE,
@@ -100,6 +105,63 @@ def _row_has_blocked_auto_approval_reason(row: dict[str, Any]) -> bool:
         str(row.get("approvedBy") or "").strip().lower(),
     }
     return bool(reason_tokens & AUTO_APPROVAL_BLOCKED_PENDING_REASONS)
+
+
+def _static_alias_keys(row: dict[str, Any]) -> set[str]:
+    family_key = source_family_key(row)
+    if not family_key:
+        return set()
+    return {f"{family_key}\t{alias}" for alias in static_listing_url_aliases(row)}
+
+
+def _has_active_static_alias(
+    row: dict[str, Any],
+    *,
+    active_aliases: set[str],
+    moved_aliases: set[str],
+) -> bool:
+    aliases = _static_alias_keys(row)
+    return bool(aliases and (aliases & active_aliases or aliases & moved_aliases))
+
+
+def _static_alias_blocks_auto_approval(
+    row: dict[str, Any],
+    row_id: str,
+    *,
+    active_aliases: set[str],
+    moved_aliases: set[str],
+    blocked_ids: set[str],
+) -> bool:
+    if not _has_active_static_alias(
+        row,
+        active_aliases=active_aliases,
+        moved_aliases=moved_aliases,
+    ):
+        return False
+    if row_id:
+        blocked_ids.add(row_id)
+    return True
+
+
+def _append_auto_approved_row(
+    moved: list[dict[str, Any]],
+    moved_ids: set[str],
+    moved_static_aliases: set[str],
+    row: dict[str, Any],
+    *,
+    row_id: str,
+    approved_at: str,
+    promotion_reason: str,
+) -> None:
+    moved_ids.add(row_id)
+    approved_row = _stamp_live_transition(
+        row,
+        approved_by="discovery_auto_approve",
+        approved_at=approved_at,
+        promotion_reason=promotion_reason,
+    )
+    moved.append(approved_row)
+    moved_static_aliases.update(_static_alias_keys(approved_row))
 
 
 def _pending_row_is_auto_approvable(
@@ -207,6 +269,89 @@ def _promotion_reason_for_candidate(row: dict[str, Any]) -> str:
     return "manual_review_only"
 
 
+def _active_static_alias_keys(rows: list[dict[str, Any]]) -> set[str]:
+    return {alias for row in rows if isinstance(row, dict) for alias in _static_alias_keys(row)}
+
+
+def _auto_approve_pending_rows(
+    pending_rows: list[dict[str, Any]],
+    *,
+    report_candidates_by_id: dict[str, dict[str, Any]],
+    approved_at: str,
+    active_static_aliases: set[str],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], set[str], set[str], set[str]]:
+    moved: list[dict[str, Any]] = []
+    remaining: list[dict[str, Any]] = []
+    moved_ids: set[str] = set()
+    moved_static_aliases: set[str] = set()
+    blocked_ids: set[str] = set()
+    for row in pending_rows:
+        row_id = source_identity(row)
+        report_row = report_candidates_by_id.get(row_id)
+        merged_row = dict(report_row or row)
+        promotion_reason = _promotion_reason_for_candidate(merged_row)
+        if row_id and _row_has_blocked_auto_approval_reason(row):
+            blocked_ids.add(row_id)
+        if _static_alias_blocks_auto_approval(
+            row,
+            row_id,
+            active_aliases=active_static_aliases,
+            moved_aliases=moved_static_aliases,
+            blocked_ids=blocked_ids,
+        ):
+            remaining.append(dict(row))
+            continue
+        if _pending_row_is_auto_approvable(row, report_row=report_row):
+            _append_auto_approved_row(
+                moved,
+                moved_ids,
+                moved_static_aliases,
+                row,
+                row_id=row_id,
+                approved_at=approved_at,
+                promotion_reason=promotion_reason,
+            )
+        else:
+            remaining.append(dict(row))
+    return moved, remaining, moved_ids, moved_static_aliases, blocked_ids
+
+
+def _auto_approve_report_candidates(
+    report_candidate_rows: list[dict[str, Any]],
+    *,
+    active_ids: set[str],
+    moved_ids: set[str],
+    moved: list[dict[str, Any]],
+    moved_static_aliases: set[str],
+    blocked_ids: set[str],
+    approved_at: str,
+    active_static_aliases: set[str],
+) -> None:
+    for row in report_candidate_rows:
+        row_id = source_identity(row)
+        if not row_id or row_id in active_ids or row_id in moved_ids:
+            continue
+        if _static_alias_blocks_auto_approval(
+            row,
+            row_id,
+            active_aliases=active_static_aliases,
+            moved_aliases=moved_static_aliases,
+            blocked_ids=blocked_ids,
+        ):
+            continue
+        if not _cap_deferred_candidate_is_auto_approvable(row):
+            continue
+        _append_auto_approved_row(
+            moved,
+            moved_ids,
+            moved_static_aliases,
+            row,
+            row_id=row_id,
+            approved_at=approved_at,
+            promotion_reason=_promotion_reason_for_candidate(row),
+        )
+
+
 def apply_discovery_auto_approval(
     state: dict[str, list[dict[str, Any]]],
     report: dict[str, Any],
@@ -235,43 +380,31 @@ def apply_discovery_auto_approval(
     active_ids = {
         source_identity(row) for row in normalized_state["active"] if source_identity(row)
     }
+    active_static_aliases = _active_static_alias_keys(normalized_state["active"])
 
     if auto_approve_enabled:
-        for row in normalized_state["pending"]:
-            row_id = source_identity(row)
-            report_row = report_candidates_by_id.get(row_id)
-            merged_row = dict(report_row or row)
-            promotion_reason = _promotion_reason_for_candidate(merged_row)
-            if row_id and _row_has_blocked_auto_approval_reason(row):
-                blocked_auto_approval_ids.add(row_id)
-            if _pending_row_is_auto_approvable(row, report_row=report_row):
-                moved_ids.add(row_id)
-                moved.append(
-                    _stamp_live_transition(
-                        row,
-                        approved_by="discovery_auto_approve",
-                        approved_at=approved_at,
-                        promotion_reason=promotion_reason,
-                    )
-                )
-            else:
-                remaining.append(dict(row))
-        for row in report_candidate_rows:
-            row_id = source_identity(row)
-            if not row_id or row_id in active_ids or row_id in moved_ids:
-                continue
-            if not _cap_deferred_candidate_is_auto_approvable(row):
-                continue
-            promotion_reason = _promotion_reason_for_candidate(row)
-            moved_ids.add(row_id)
-            moved.append(
-                _stamp_live_transition(
-                    row,
-                    approved_by="discovery_auto_approve",
-                    approved_at=approved_at,
-                    promotion_reason=promotion_reason,
-                )
-            )
+        (
+            moved,
+            remaining,
+            moved_ids,
+            moved_static_aliases,
+            blocked_auto_approval_ids,
+        ) = _auto_approve_pending_rows(
+            normalized_state["pending"],
+            report_candidates_by_id=report_candidates_by_id,
+            approved_at=approved_at,
+            active_static_aliases=active_static_aliases,
+        )
+        _auto_approve_report_candidates(
+            report_candidate_rows,
+            active_ids=active_ids,
+            moved_ids=moved_ids,
+            moved=moved,
+            moved_static_aliases=moved_static_aliases,
+            blocked_ids=blocked_auto_approval_ids,
+            approved_at=approved_at,
+            active_static_aliases=active_static_aliases,
+        )
         remaining = [row for row in remaining if source_identity(row) not in moved_ids]
         next_state = {
             "active": unique_sources([*normalized_state["active"], *moved]),

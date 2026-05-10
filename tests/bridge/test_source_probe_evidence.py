@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from urllib.error import HTTPError
 
 from src.bridge.source_probe_evidence import (
@@ -222,6 +223,36 @@ def test_static_probe_counts_ubisoft_algolia_search_page() -> None:
     assert evidence.jobs_found == 136
     assert evidence.count_reason == "provider_embed:ubisoft_algolia"
     assert evidence.sample_urls == ("https://www.ubisoft.com/en-us/company/careers/search/744-job",)
+
+
+def test_greenhouse_probe_evidence_ignores_open_application_only_board() -> None:
+    payload = {
+        "jobs": [
+            {
+                "id": 4345814007,
+                "title": "Open Applications",
+                "absolute_url": "https://job-boards.greenhouse.io/azragamesoa/jobs/4345814007",
+            }
+        ]
+    }
+
+    evidence = probe_source_evidence(
+        {
+            "id": "greenhouse:slug:azragamesoa",
+            "adapter": "greenhouse",
+            "slug": "azragamesoa",
+            "api_url": "https://boards-api.greenhouse.io/v1/boards/azragamesoa/jobs?content=true",
+        },
+        5,
+        fetcher=lambda url, _timeout_s, **_kwargs: ProbeFetchResponse(
+            200, url, json.dumps(payload)
+        ),
+    )
+
+    assert evidence.ok is True
+    assert evidence.jobs_found == 0
+    assert evidence.count_confidence == "high"
+    assert evidence.count_reason == "provider_payload"
 
 
 def test_provider_compact_id_reconstructs_api_and_skips_browser_fallback() -> None:
