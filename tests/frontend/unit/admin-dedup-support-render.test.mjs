@@ -26,6 +26,25 @@ test("admin render: fetcher metrics render dedup review-state summary", () => {
         unresolvedBlockingCount: 1
       },
       dedupEvidence: {
+        dedupAuditGate: {
+          status: "blocked",
+          lifecycleUxReady: false,
+          providerStaticDisagreementBlockedCount: 2,
+          blockers: ["provider_static_disagreement_needs_review"],
+          warnings: [],
+          blockerDetails: [
+            {
+              key: "provider_static_disagreement_needs_review",
+              label: "Provider/static disagreements",
+              count: 2,
+              whyBlocked: "Provider and static rows disagree on URL evidence.",
+              nextAction: "Review current-run blockers separately from carried review-state rows.",
+              counts: { blocked: 2, currentRunBlocked: 1, carriedBlocked: 1, warning: 1 },
+              examples: []
+            }
+          ],
+          warningDetails: []
+        },
         providerStaticDisagreementGateCounts: {
           blocked: 1,
           warning: 1,
@@ -81,7 +100,10 @@ test("admin render: fetcher metrics render dedup review-state summary", () => {
   assert.match(metricsEl.innerHTML, /reviewed safe 1/i);
   assert.match(metricsEl.innerHTML, /confirmed blocking 1/i);
   assert.match(metricsEl.innerHTML, /unresolved blocking 1/i);
-  assert.match(metricsEl.innerHTML, /warning malformed dedup review state artifact/i);
+  assert.match(metricsEl.innerHTML, /Review-state file missing\/malformed \(malformed dedup review state artifact\)/i);
+  assert.match(metricsEl.innerHTML, /provider\/static blockers current-run 1, carried 1/i);
+  assert.match(metricsEl.innerHTML, /restoring old review state alone will not clear current-run blockers/i);
+  assert.match(metricsEl.innerHTML, /restore or re-review carried rows/i);
   assert.match(metricsEl.innerHTML, /review reviewed safe by admin at 2026-05-02T10:00:00Z/i);
   assert.doesNotMatch(metricsEl.innerHTML, /merge-btn|unmerge-btn|cleanup-btn|lifecycle-btn/i);
 });
@@ -97,9 +119,10 @@ test("admin render: fetcher metrics tolerate missing dedup evidence", () => {
   assert.match(metricsEl.innerHTML, /Dedup Audit Gate/i);
   assert.match(metricsEl.innerHTML, /admin-dedup-audit-gate-card/i);
   assert.match(metricsEl.innerHTML, /status unknown/i);
-  assert.match(metricsEl.innerHTML, /Blockers/i);
+  assert.match(metricsEl.innerHTML, /Blocking Issues/i);
   assert.match(metricsEl.innerHTML, /Warnings/i);
-  assert.match(metricsEl.innerHTML, /No gate examples/i);
+  assert.match(metricsEl.innerHTML, /No blocking issues/i);
+  assert.match(metricsEl.innerHTML, /No warning issues/i);
   assert.match(metricsEl.innerHTML, /No carried bundle examples/i);
   assert.match(metricsEl.innerHTML, /No merged canonical jobs/i);
   assert.match(metricsEl.innerHTML, /No carried source-bundle collision outliers/i);

@@ -5,7 +5,7 @@
 > - **Canonical for:** data contracts between pipeline, bridge, frontend, and local user data flows
 > - **Not canonical for:** subsystem ownership or route wiring
 > - **Then inspect:** `src/core/schemas.py`, `src/core/contracts.py`, the owning `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py` modules, relevant tests, and the owning runtime docs
-> - **Last updated:** 2026-05-03
+> - **Last updated:** 2026-05-10
 > - **Also update when changing contract shape:** `src/core/schemas.py`, `src/core/contracts.py`, the owning `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py` modules, relevant tests, and any affected UI/runtime docs
 
 This document serves as the absolute boundary and source of truth for data structures passed between the Python pipeline (`src/jobs/`) and the Vanilla JS frontend (`frontend/`).
@@ -98,6 +98,10 @@ trustworthy before user-facing lifecycle labels are expanded.
 | `googleSheetsWeakGroupingAuditCounts` | `Object` | Aggregate Google Sheets weak title/company grouping audit counts before sample capping. |
 | `reviewQueueCounts` | `Object` | Aggregate advisory dedup review queue counts by recommended review action before sample capping. |
 | `reviewQueueCauseCounts` | `Object` | Aggregate advisory dedup review counts by suspected root cause before sample capping. |
+| `currentRunBlockingReviewQueueCauseCounts` | `Object` | Current-run blocker-only review queue counts by suspected root cause. |
+| `carriedBlockingReviewQueueCauseCounts` | `Object` | Carried blocker-family review queue counts by suspected root cause; these warn instead of blocking lifecycle UX by themselves. |
+| `currentRunMonitorReviewQueueCauseCounts` | `Object` | Current-run monitor-only review queue counts by suspected root cause. |
+| `carriedMonitorReviewQueueCauseCounts` | `Object` | Carried monitor-only review queue counts by suspected root cause. |
 | `dedupAuditGate` | `Object` | Read-only lifecycle-readiness gate derived from current-run merges, carried source-bundle collisions, review queue causes, provider/static disagreement, and Google Sheets guard status. |
 | `providerStaticDisagreementCounts` | `Object` | Dedicated counts for provider/static disagreement rows: `total`, `currentRun`, and `carried`. |
 | `providerStaticDisagreementGateCounts` | `Object` | Dedicated blocker-vs-warning counts for provider/static disagreement rows after carried-safe URL-variant downgrades, carried location-pollution/location-variant downgrades, and local dedup review-state overrides. |
@@ -206,7 +210,12 @@ carried high-risk review counts, `providerStaticDisagreementCount`,
 `providerStaticDisagreementCurrentRunCount`, `providerStaticDisagreementCarriedCount`,
 `providerStaticDisagreementBlockedCount`, `providerStaticDisagreementWarningCount`,
 `googleSheetsGenericRoleGuardActive`, `carriedCollisionLikelyHistoricalCount`,
-`reviewQueueCauseCounts`, `currentRunNonPrimaryMergeCounts`, `blockers`, `warnings`, and capped `examples`. Carried historical
+`reviewQueueCauseCounts`, origin-split blocker/monitor cause counts,
+`currentRunNonPrimaryMergeCounts`, `blockers`, `warnings`, `blockerDetails`,
+`warningDetails`, and capped `examples`. `blockerDetails` and `warningDetails` are
+operator-facing summaries with `key`, `label`, `count`, `whyBlocked`, `nextAction`, `counts`,
+and capped `examples`; they explain the actionable gate families without replacing the stable
+raw `blockers` and `warnings` arrays. Carried historical
 source-bundle collisions may warn without blocking, while current-run non-primary merges,
 current-run high-risk causes, and provider/static disagreement block lifecycle readiness until
 reviewed. Narrow current-run `knownMirrorPair` merges are excluded from the fresh non-primary merge

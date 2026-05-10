@@ -516,17 +516,94 @@ function formatDedupAuditGateExampleDetails(row) {
   `;
 }
 
+function formatDedupAuditGateDetailCounts(counts) {
+  const values = counts && typeof counts === "object" ? counts : {};
+  const labels = Object.entries(values)
+    .filter(([, value]) => Number(value || 0) > 0)
+    .slice(0, 8)
+    .map(([key, value]) => `${key.replaceAll("_", " ").replaceAll(".", " ")} ${Number(value || 0).toLocaleString()}`);
+  return labels.length ? labels.join(", ") : "none";
+}
+
+function fallbackDedupGateDetails(auditGate, keys, type) {
+  const labels = {
+    current_run_non_primary_merges_need_review: "Current-run non-primary merges",
+    provider_static_disagreement_needs_review: "Provider/static disagreements",
+    high_risk_review_queue_causes_need_review: "Current-run high-risk review queue",
+    current_run_primary_url_merges_present: "Current-run primary URL merges",
+    carried_provider_static_location_pollution_present: "Carried provider/static location pollution",
+    carried_provider_static_auto_safe_variants_present: "Carried provider/static auto-safe variants",
+    carried_provider_static_reviewed_safe_present: "Carried provider/static reviewed-safe rows",
+    carried_high_risk_review_queue_causes_present: "Carried high-risk review queue",
+    monitor_review_queue_diagnostics_present: "Monitor-only review diagnostics",
+    carried_source_bundle_collisions_present: "Carried source-bundle collisions"
+  };
+  const countsByKey = {
+    current_run_non_primary_merges_need_review: Number(auditGate?.currentRunNonPrimaryMergeCounts?.blocking || 0),
+    provider_static_disagreement_needs_review: Number(auditGate?.providerStaticDisagreementBlockedCount || 0),
+    high_risk_review_queue_causes_need_review: Number(auditGate?.currentRunBlockingReviewQueueCount || 0),
+    current_run_primary_url_merges_present: Number(auditGate?.currentRunMergedCount || 0),
+    carried_high_risk_review_queue_causes_present: Number(auditGate?.carriedBlockingReviewQueueCount || 0),
+    monitor_review_queue_diagnostics_present: Number(auditGate?.monitorReviewQueueCount || 0),
+    carried_source_bundle_collisions_present: Number(auditGate?.carriedCollisionLikelyHistoricalCount || 0)
+  };
+  return keys.map(key => ({
+    key,
+    label: labels[key] || key.replaceAll("_", " "),
+    count: countsByKey[key] || 0,
+    whyBlocked: type === "blocker"
+      ? "This legacy gate payload marks the family as blocking but does not include detailed cause metadata."
+      : "This legacy gate payload marks the family as warning-only.",
+    nextAction: "Open supporting diagnostics for examples and rerun with a report that includes gate detail fields.",
+    counts: {},
+    examples: []
+  }));
+}
+
+function formatDedupAuditGateDetailCard(detail, type) {
+  const item = detail && typeof detail === "object" ? detail : {};
+  const label = String(item?.label || item?.key || "Unknown issue");
+  const count = Number(item?.count || 0);
+  const why = String(item?.whyBlocked || "No explanation available.");
+  const action = String(item?.nextAction || "Inspect supporting diagnostics.");
+  const counts = formatDedupAuditGateDetailCounts(item?.counts);
+  const examples = Array.isArray(item?.examples) ? item.examples.slice(0, 5) : [];
+  return `
+    <article class="admin-dedup-audit-gate-detail admin-dedup-audit-gate-detail-${escapeHtml(type)}">
+      <div class="admin-dedup-audit-gate-detail-head">
+        <strong>${escapeHtml(label)}</strong>
+        <span class="admin-dedup-audit-gate-chip">${count.toLocaleString()}</span>
+      </div>
+      <div class="admin-dedup-audit-gate-detail-meta">${escapeHtml(counts)}</div>
+      <div class="admin-dedup-audit-gate-detail-copy"><strong>Why ${type === "blocker" ? "blocked" : "visible"}</strong>: ${escapeHtml(why)}</div>
+      <div class="admin-dedup-audit-gate-detail-copy"><strong>Next action</strong>: ${escapeHtml(action)}</div>
+      <div class="admin-dedup-audit-gate-examples">
+        <div><strong>Examples</strong></div>
+        ${examples.length ? examples.map(row => formatDedupAuditGateExampleDetails(row)).join("") : `<div class="admin-dedup-audit-gate-empty">${escapeHtml("No capped examples for this family.")}</div>`}
+      </div>
+    </article>
+  `;
+}
+
 function formatDedupAuditGateCard(gate) {
   const auditGate = gate && typeof gate === "object" ? gate : {};
   const status = String(auditGate?.status || "unknown").replaceAll("_", " ");
   const ready = auditGate?.lifecycleUxReady === true ? "yes" : "no";
   const blockers = Array.isArray(auditGate?.blockers) ? auditGate.blockers : [];
   const warnings = Array.isArray(auditGate?.warnings) ? auditGate.warnings : [];
-  const blockerText = blockers.length ? blockers.slice(0, 4).join(", ").replaceAll("_", " ") : "none";
-  const warningText = warnings.length ? warnings.slice(0, 4).join(", ").replaceAll("_", " ") : "none";
+  const blockerDetails = Array.isArray(auditGate?.blockerDetails) && auditGate.blockerDetails.length
+    ? auditGate.blockerDetails
+    : fallbackDedupGateDetails(auditGate, blockers, "blocker");
+  const warningDetails = Array.isArray(auditGate?.warningDetails) && auditGate.warningDetails.length
+    ? auditGate.warningDetails
+    : fallbackDedupGateDetails(auditGate, warnings, "warning");
+  const blockerSummary = blockerDetails.length
+    ? `${blockerDetails.length.toLocaleString()} blocking issue${blockerDetails.length === 1 ? "" : "s"}`
+    : "no blocking issues";
+  const warningSummary = warningDetails.length
+    ? `${warningDetails.length.toLocaleString()} warning issue${warningDetails.length === 1 ? "" : "s"}`
+    : "no warning issues";
   const gateChips = [
-    `status ${status}`,
-    `lifecycle UX ready ${ready}`,
     `current-run merges ${Number(auditGate?.currentRunMergedCount || 0).toLocaleString()}`,
     `current-run collisions ${Number(auditGate?.currentRunSourceBundleCollisionCount || 0).toLocaleString()}`,
     `carried collisions ${Number(auditGate?.carriedSourceBundleCollisionCount || auditGate?.sourceBundleCollisionCount || 0).toLocaleString()}`,
@@ -548,7 +625,11 @@ function formatDedupAuditGateCard(gate) {
     `Sheets guard-blocked ${Number(auditGate?.googleSheetsRoleBucketGuardBlockedCount || 0).toLocaleString()}`,
     `Sheets historical ${Number(auditGate?.googleSheetsRoleBucketHistoricalCount || 0).toLocaleString()}`
   ];
-  const examples = Array.isArray(auditGate?.examples) ? auditGate.examples.slice(0, 5) : [];
+  const gateMetricsHtml = `
+    <div class="admin-dedup-audit-gate-chips">
+      ${gateChips.map(label => `<span class="admin-dedup-audit-gate-chip">${escapeHtml(label)}</span>`).join("")}
+    </div>
+  `;
   return `
     <section class="admin-ops-schedule-item admin-ops-full-row admin-dedup-audit-gate-card">
       <div class="admin-dedup-audit-gate-header">
@@ -556,26 +637,22 @@ function formatDedupAuditGateCard(gate) {
           <strong>Dedup Audit Gate</strong>
           <span class="admin-dedup-audit-gate-status">status ${escapeHtml(status)}</span>
           <span class="admin-dedup-audit-gate-ready">lifecycle UX ready ${escapeHtml(ready)}</span>
+          <span class="admin-dedup-audit-gate-chip">${escapeHtml(blockerSummary)}</span>
+          <span class="admin-dedup-audit-gate-chip">${escapeHtml(warningSummary)}</span>
         </div>
-        <div class="admin-dedup-audit-gate-summary">${escapeHtml(formatDedupAuditGate(auditGate))}</div>
-      </div>
-      <div class="admin-dedup-audit-gate-flags">
-        <div class="admin-dedup-audit-gate-flag">
-          <span class="admin-dedup-audit-gate-flag-label">Blockers</span>
-          <span class="admin-dedup-audit-gate-flag-value">${escapeHtml(blockerText)}</span>
-        </div>
-        <div class="admin-dedup-audit-gate-flag">
-          <span class="admin-dedup-audit-gate-flag-label">Warnings</span>
-          <span class="admin-dedup-audit-gate-flag-value">${escapeHtml(warningText)}</span>
+        <div class="admin-dedup-audit-gate-summary">
+          ${escapeHtml(blockerDetails.length ? "Lifecycle UX is paused by the blocking issues below." : "No blocking issues are reported by the gate.")}
         </div>
       </div>
-      <div class="admin-dedup-audit-gate-chips">
-        ${gateChips.map(label => `<span class="admin-dedup-audit-gate-chip">${escapeHtml(label)}</span>`).join("")}
+      <div class="admin-dedup-audit-gate-detail-section">
+        <div><strong>Blocking Issues</strong></div>
+        ${blockerDetails.length ? blockerDetails.map(detail => formatDedupAuditGateDetailCard(detail, "blocker")).join("") : `<div class="admin-dedup-audit-gate-empty">${escapeHtml("No blocking issues.")}</div>`}
       </div>
-      <div class="admin-dedup-audit-gate-examples">
-        <div><strong>Examples</strong></div>
-        ${examples.length ? examples.map(row => formatDedupAuditGateExampleDetails(row)).join("") : `<div class="admin-dedup-audit-gate-empty">${escapeHtml("No gate examples.")}</div>`}
+      <div class="admin-dedup-audit-gate-detail-section">
+        <div><strong>Warnings</strong></div>
+        ${warningDetails.length ? warningDetails.map(detail => formatDedupAuditGateDetailCard(detail, "warning")).join("") : `<div class="admin-dedup-audit-gate-empty">${escapeHtml("No warning issues.")}</div>`}
       </div>
+      ${formatOpsMetricsDetails("Gate metrics", gateMetricsHtml, "admin-dedup-audit-gate-metrics")}
     </section>
   `;
 }
@@ -666,7 +743,19 @@ function formatOpsTaskLane(rows, diagnostics = null) {
   `;
 }
 
-function formatDedupReviewStateSummary(summary, readWarning = "") {
+function providerStaticBlockerCountsFromGate(gate) {
+  const auditGate = gate && typeof gate === "object" ? gate : {};
+  const details = Array.isArray(auditGate?.blockerDetails) ? auditGate.blockerDetails : [];
+  const providerDetail = details.find(detail => detail?.key === "provider_static_disagreement_needs_review");
+  const counts = providerDetail?.counts && typeof providerDetail.counts === "object" ? providerDetail.counts : {};
+  return {
+    current: Number(counts?.currentRunBlocked || 0),
+    carried: Number(counts?.carriedBlocked || 0),
+    total: Number(counts?.blocked || auditGate?.providerStaticDisagreementBlockedCount || 0)
+  };
+}
+
+function formatDedupReviewStateSummary(summary, readWarning = "", gate = {}) {
   const state = summary && typeof summary === "object" ? summary : {};
   const artifactPath = String(state?.artifactPath || "data/dedup-review-state.json");
   const status = String(state?.status || (readWarning ? "warning" : "ok")).replaceAll("_", " ");
@@ -675,6 +764,21 @@ function formatDedupReviewStateSummary(summary, readWarning = "") {
   const reviewedSafe = Number(state?.reviewedSafeCount || 0);
   const confirmedBlocking = Number(state?.confirmedBlockingCount || 0);
   const unresolvedBlocking = Number(state?.unresolvedBlockingCount || 0);
+  const providerStaticBlockers = providerStaticBlockerCountsFromGate(gate);
+  const warningAction = warning
+    ? [
+        `Review-state file missing/malformed (${warning})`,
+        providerStaticBlockers.total > 0
+          ? `provider/static blockers current-run ${providerStaticBlockers.current.toLocaleString()}, carried ${providerStaticBlockers.carried.toLocaleString()}`
+          : "",
+        providerStaticBlockers.current > 0
+          ? "restoring old review state alone will not clear current-run blockers"
+          : "",
+        providerStaticBlockers.carried > 0
+          ? "restore or re-review carried rows to downgrade reviewed-safe blockers"
+          : ""
+      ].filter(Boolean).join("; ")
+    : "";
   return [
     `path ${artifactPath}`,
     `status ${status}`,
@@ -682,7 +786,7 @@ function formatDedupReviewStateSummary(summary, readWarning = "") {
     `reviewed safe ${reviewedSafe.toLocaleString()}`,
     `confirmed blocking ${confirmedBlocking.toLocaleString()}`,
     `unresolved blocking ${unresolvedBlocking.toLocaleString()}`,
-    warning ? `warning ${warning}` : ""
+    warningAction || (warning ? `warning ${warning}` : "")
   ].filter(Boolean).join(", ");
 }
 
@@ -1426,7 +1530,7 @@ function buildDedupListsContent(metrics, options = {}) {
         <div class="admin-ops-metrics-section-body">
           <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup evidence</strong>: read-only diagnostics. Current-run merges by reason: primary URL ${Number(mergeReasonCounts?.primaryUrl || 0).toLocaleString()}, secondary key ${Number(mergeReasonCounts?.secondaryKey || 0).toLocaleString()}, known mirror pair ${Number(mergeReasonCounts?.knownMirrorPair || 0).toLocaleString()}, social key ${Number(mergeReasonCounts?.socialKey || 0).toLocaleString()}, sparse identity ${Number(mergeReasonCounts?.sparseIdentity || 0).toLocaleString()}, unknown ${Number(mergeReasonCounts?.unknown || 0).toLocaleString()}. Carried source-bundle collision rows: ${Number(dedupEvidence?.sourceBundleCollisionCount || 0).toLocaleString()}.</div>
           ${formatDedupAuditGateCard(dedupAuditGate)}
-          <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review-state</strong>: ${escapeHtml(formatDedupReviewStateSummary(dedupReviewStateSummary, dedupReviewStateReadWarning))}</div>
+          <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review-state</strong>: ${escapeHtml(formatDedupReviewStateSummary(dedupReviewStateSummary, dedupReviewStateReadWarning, dedupAuditGate))}</div>
           ${formatOpsMetricsDetails("Dedup supporting diagnostics", supportingHtml, "admin-ops-dedup-details")}
         </div>
       </section>
@@ -1841,7 +1945,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const dedupSectionHtml = `
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup evidence</strong>: read-only diagnostics. Current-run merges by reason: primary URL ${Number(mergeReasonCounts?.primaryUrl || 0).toLocaleString()}, secondary key ${Number(mergeReasonCounts?.secondaryKey || 0).toLocaleString()}, known mirror pair ${Number(mergeReasonCounts?.knownMirrorPair || 0).toLocaleString()}, social key ${Number(mergeReasonCounts?.socialKey || 0).toLocaleString()}, sparse identity ${Number(mergeReasonCounts?.sparseIdentity || 0).toLocaleString()}, unknown ${Number(mergeReasonCounts?.unknown || 0).toLocaleString()}. Carried source-bundle collision rows: ${Number(dedupEvidence?.sourceBundleCollisionCount || 0).toLocaleString()}.</div>
     ${formatDedupAuditGateCard(dedupAuditGate)}
-    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review-state</strong>: ${escapeHtml(formatDedupReviewStateSummary(dedupReviewStateSummary, dedupReviewStateReadWarning))}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review-state</strong>: ${escapeHtml(formatDedupReviewStateSummary(dedupReviewStateSummary, dedupReviewStateReadWarning, dedupAuditGate))}</div>
     ${formatOpsMetricsDetails("Dedup supporting diagnostics", dedupSecondaryHtml, "admin-ops-dedup-details")}
   `;
 

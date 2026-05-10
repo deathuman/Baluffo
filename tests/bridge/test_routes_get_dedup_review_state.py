@@ -77,6 +77,10 @@ def test_ops_fetch_report_merges_dedup_review_state_at_read_time(tmp_path: Path)
             "carriedSourceBundleCollisionCount": 0,
             "currentRunHighRiskReviewQueueCount": 0,
             "carriedHighRiskReviewQueueCount": 0,
+            "currentRunBlockingReviewQueueCauseCounts": {},
+            "carriedBlockingReviewQueueCauseCounts": {},
+            "currentRunMonitorReviewQueueCauseCounts": {},
+            "carriedMonitorReviewQueueCauseCounts": {},
         }
     }
     api.DEDUP_REVIEW_STATE_PATH.write_text(
@@ -109,6 +113,10 @@ def test_ops_fetch_report_merges_dedup_review_state_at_read_time(tmp_path: Path)
     assert row["disagreementGateDisposition"] == "warning"
     assert payload["dedupEvidence"]["providerStaticDisagreementGateCounts"]["blocked"] == 0
     assert payload["dedupEvidence"]["dedupAuditGate"]["lifecycleUxReady"] is True
+    assert payload["dedupEvidence"]["dedupAuditGate"]["blockerDetails"] == []
+    warning_details = payload["dedupEvidence"]["dedupAuditGate"]["warningDetails"]
+    assert warning_details[0]["key"] == "provider_static_disagreement_warnings_present"
+    assert warning_details[0]["counts"]["reviewedSafeWarning"] == 1
 
 
 def test_ops_fetch_report_tolerates_malformed_dedup_review_state(tmp_path: Path) -> None:

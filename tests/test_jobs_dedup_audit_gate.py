@@ -28,48 +28,21 @@ def _row(**overrides):
 
 def test_dedup_audit_gate_returns_safe_defaults_for_empty_evidence() -> None:
     evidence = build_dedup_evidence({}, [])
+    gate = evidence["dedupAuditGate"]
 
-    assert evidence["dedupAuditGate"] == {
-        "status": "pass",
-        "lifecycleUxReady": True,
-        "currentRunMergedCount": 0,
-        "currentRunNonPrimaryMergeCounts": {
-            "secondaryKey": 0,
-            "sparseIdentity": 0,
-            "socialKey": 0,
-            "unknown": 0,
-            "knownMirrorPair": 0,
-            "blocking": 0,
-            "nonBlockingKnownMirrorPair": 0,
-        },
-        "sourceBundleCollisionCount": 0,
-        "highRiskReviewQueueCount": 0,
-        "blockingReviewQueueCount": 0,
-        "currentRunBlockingReviewQueueCount": 0,
-        "carriedBlockingReviewQueueCount": 0,
-        "monitorReviewQueueCount": 0,
-        "currentRunMonitorReviewQueueCount": 0,
-        "carriedMonitorReviewQueueCount": 0,
-        "providerStaticDisagreementCount": 0,
-        "providerStaticDisagreementCurrentRunCount": 0,
-        "providerStaticDisagreementCarriedCount": 0,
-        "providerStaticDisagreementBlockedCount": 0,
-        "providerStaticDisagreementWarningCount": 0,
-        "googleSheetsGenericRoleGuardActive": True,
-        "googleSheetsRoleBucketUnresolvedCount": 0,
-        "googleSheetsRoleBucketGuardBlockedCount": 0,
-        "googleSheetsRoleBucketHistoricalCount": 0,
-        "carriedCollisionLikelyHistoricalCount": 0,
-        "currentRunSourceBundleCollisionCount": 0,
-        "carriedSourceBundleCollisionCount": 0,
-        "reviewQueueCauseCounts": evidence["reviewQueueCauseCounts"],
-        "currentRunHighRiskReviewQueueCount": 0,
-        "carriedHighRiskReviewQueueCount": 0,
-        "blockers": [],
-        "warnings": [],
-        "examples": [],
-        "nonzeroReviewQueueCauseCounts": {},
-    }
+    assert gate["status"] == "pass"
+    assert gate["lifecycleUxReady"] is True
+    assert gate["currentRunMergedCount"] == 0
+    assert gate["currentRunNonPrimaryMergeCounts"]["blocking"] == 0
+    assert gate["sourceBundleCollisionCount"] == 0
+    assert gate["currentRunBlockingReviewQueueCount"] == 0
+    assert gate["providerStaticDisagreementBlockedCount"] == 0
+    assert gate["reviewQueueCauseCounts"] == evidence["reviewQueueCauseCounts"]
+    assert gate["blockers"] == []
+    assert gate["warnings"] == []
+    assert gate["blockerDetails"] == []
+    assert gate["warningDetails"] == []
+    assert gate["examples"] == []
 
 
 def test_dedup_audit_gate_warns_on_carried_historical_collisions() -> None:

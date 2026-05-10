@@ -664,6 +664,43 @@
   gap: 0.35rem;
 }
 
+.admin-dedup-audit-gate-detail-section {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.admin-dedup-audit-gate-detail {
+  display: grid;
+  gap: 0.42rem;
+  padding: 0.52rem 0.58rem;
+  border: 1px solid var(--surface-11);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--table-row-odd) 72%, transparent);
+}
+
+.admin-dedup-audit-gate-detail-blocker {
+  border-color: color-mix(in srgb, #c96c6c 48%, var(--surface-11));
+}
+
+.admin-dedup-audit-gate-detail-warning {
+  border-color: color-mix(in srgb, #c9a86c 42%, var(--surface-11));
+}
+
+.admin-dedup-audit-gate-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.admin-dedup-audit-gate-detail-meta,
+.admin-dedup-audit-gate-detail-copy {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
 .admin-dedup-audit-gate-example {
   padding: 0.4rem 0.55rem;
   border: 1px solid var(--surface-11);
