@@ -41,7 +41,7 @@ Upstream references:
 Codex is a first-class client for this repo. Prefer Codex's MCP command flow instead of hand-editing config files:
 
 ```powershell
-codex mcp add serena -- serena start-mcp-server --context=codex --project-from-cwd
+codex mcp add serena -- uvx -p 3.13 --from git+https://github.com/oraios/serena serena start-mcp-server --context ide --project-from-cwd
 codex mcp list
 codex mcp get serena
 ```
@@ -52,12 +52,11 @@ registration should report:
 
 - `enabled: true`
 - `transport: stdio`
-- `command: $env:USERPROFILE\.local\bin\serena.exe` or another user-local Serena executable path
-- `args: start-mcp-server --context=codex --project-from-cwd`
-- `env: SERENA_HOME=...`
+- `command: uvx` or another user-local Serena executable path
+- `args: -p 3.13 --from git+https://github.com/oraios/serena serena start-mcp-server --context ide --project-from-cwd`
 
-That means Codex can keep working even if a fresh PowerShell session still does not resolve the bare
-`serena` command on `PATH`.
+That means Codex starts Serena through the pinned `uvx` launch path and activates the current
+workspace instead of relying on a stale registered project.
 
 ### OpenCode
 
@@ -229,6 +228,16 @@ mcp__serena__.find_symbol name_path_pattern="createAdminDispatcher" relative_pat
 ```
 
 If any step fails, continue with the existing health and install checks; avoid repeating ad-hoc discovery in a loop.
+
+### Stale Registered Project Cleanup
+
+If Serena tries to activate an old temporary worktree path instead of the current Baluffo clone,
+inspect `$env:USERPROFILE\.serena\serena_config.yml` and remove any stale path under the global
+`projects:` list. The only Baluffo project entry should point to:
+
+```text
+C:\Users\Andrea\Documents\GitHubRepository\Baluffo
+```
 
 ## Repo Rules
 

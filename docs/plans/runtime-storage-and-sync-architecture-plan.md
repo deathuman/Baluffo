@@ -472,7 +472,7 @@ The exact numbers can move. The invariant is that hot-path payload growth must b
 
 ## Performance Measurements To Add
 
-The discovery and fetch sanity benchmark payloads include a `storageMetrics` object so the migration can start collecting storage-pressure data before SQLite work begins. Repeated perf CI summaries preserve median/min/max values for these metrics across runs.
+The discovery and fetch sanity benchmark payloads do not yet include a complete `storageMetrics` object. Milestone 0 should add write-size/write-duration instrumentation and then preserve median/min/max values for these metrics across repeated perf CI summaries.
 
 Before large migrations, collect and compare:
 
@@ -497,7 +497,7 @@ Use the existing performance/benchmark workflow as the baseline source. For ever
 - Full discovery/fetch wall-clock time must not regress by more than 5% without an explicit acceptance note.
 - Admin live progress route latency should improve or remain within baseline noise; any route that regresses by more than 10% needs a root-cause note.
 - The number of large artifact rewrites per run should decrease for the migrated surface.
-- Benchmark `storageMetrics` must show equal or lower hot artifact bytes, registry journal bytes, and source-sync snapshot pressure for migrated surfaces unless a migration note explains the tradeoff.
+- Once Milestone 0 adds storage instrumentation, benchmark `storageMetrics` must show equal or lower hot artifact bytes, registry journal bytes, and source-sync snapshot pressure for migrated surfaces unless a migration note explains the tradeoff.
 - Compatibility exports must remain byte-contract compatible where the existing frontend or docs require them.
 
 ## Acceptance Criteria

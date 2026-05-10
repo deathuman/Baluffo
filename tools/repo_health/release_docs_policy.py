@@ -190,8 +190,9 @@ def test_serena_tooling_is_first_class_for_codex_and_opencode(repo_root: Path) -
     assert "repo docs stay canonical" in serena_text
     assert ".serena/" in serena_text
     assert (
-        "codex mcp add serena -- serena start-mcp-server --context=codex --project-from-cwd"
-        in serena_text
+        "codex mcp add serena -- uvx -p 3.13 --from "
+        "git+https://github.com/oraios/serena serena start-mcp-server "
+        "--context ide --project-from-cwd" in serena_text
     )
     assert "serena project create --language python --language typescript" in serena_text
     assert "There is no separate JavaScript Serena language key; use `typescript`" in serena_text

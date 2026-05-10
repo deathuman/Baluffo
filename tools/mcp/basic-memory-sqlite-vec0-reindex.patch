@@ -1,0 +1,56 @@
+diff --git a/basic_memory/repository/sqlite_search_repository.py b/basic_memory/repository/sqlite_search_repository.py
+index 0000000..0000000 100644
+--- a/basic_memory/repository/sqlite_search_repository.py
++++ b/basic_memory/repository/sqlite_search_repository.py
+@@
+     async def _ensure_sqlite_vec_loaded(self, session) -> None:
+         try:
+             await session.execute(text("SELECT vec_version()"))
+             return
+@@
+             await driver_connection.load_extension(sqlite_vec.loadable_path())
+             await driver_connection.enable_load_extension(False)
+             await session.execute(text("SELECT vec_version()"))
++
++    async def purge_stale_vector_embeddings(self) -> None:
++        """Delete stale SQLite vec0 rows after loading sqlite-vec on this connection.
++
++        sqlite-vec registers the vec0 module per SQLite connection. Generic repository
++        utility queries open their own session, so touching search_vector_embeddings
++        there can fail with "no such module: vec0" even when sqlite-vec is installed.
++        """
++        async with db.scoped_session(self.session_maker) as session:
++            await self._ensure_sqlite_vec_loaded(session)
++            await session.execute(
++                text(
++                    "DELETE FROM search_vector_embeddings WHERE rowid IN ("
++                    "SELECT id FROM search_vector_chunks "
++                    "WHERE project_id = :project_id "
++                    "AND entity_id NOT IN ("
++                    "SELECT id FROM entity WHERE project_id = :project_id))"
++                ),
++                {"project_id": self.project_id},
++            )
+
+     # ------------------------------------------------------------------
+     # Abstract hook implementations (vector/semantic, SQLite-specific)
+     # ------------------------------------------------------------------
+diff --git a/basic_memory/services/search_service.py b/basic_memory/services/search_service.py
+index 0000000..0000000 100644
+--- a/basic_memory/services/search_service.py
++++ b/basic_memory/services/search_service.py
+@@
+         # SQLite vec has no CASCADE — must delete embeddings before chunks
+         if isinstance(self.repository, SQLiteSearchRepository):
+-            await self.repository.execute_query(
+-                text(
+-                    "DELETE FROM search_vector_embeddings WHERE rowid IN ("
+-                    "SELECT id FROM search_vector_chunks "
+-                    f"WHERE project_id = :project_id AND {stale_entity_filter})"
+-                ),
+-                params,
+-            )
++            await self.repository.purge_stale_vector_embeddings()
+
+         # Postgres CASCADE handles embedding deletion automatically
+         await self.repository.execute_query(

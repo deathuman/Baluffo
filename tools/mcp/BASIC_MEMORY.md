@@ -10,7 +10,7 @@ It is never a Baluffo runtime, Python, Node, packaging, release, or CI dependenc
 ## Prerequisites
 
 - `uv` installed: <https://docs.astral.sh/uv/getting-started/installation/>
-- Python 3.12+ (the same 3.13 toolchain used by Serena)
+- Python 3.13+ (the same 3.13 toolchain used by Serena)
 - A private `BaluffoMemory` Git repo cloned alongside the main Baluffo repo (see [Memory Vault Layout](#memory-vault-layout))
 
 Upstream references:
@@ -30,6 +30,18 @@ If `basic-memory` or `bm` is not found after install, restart your shell so the 
 For direct CLI use on Windows, the `uv`-managed executable is typically available at
 `$env:USERPROFILE\.local\bin\basic-memory.exe`.
 
+### Certified Local Baseline
+
+This setup was validated on Windows with:
+
+- `basic-memory` 0.20.3
+- Python 3.13
+- `sqlite-vec` 0.1.9
+- `fastembed` 0.8.0
+
+For deterministic MCP sessions, keep Basic Memory auto-update disabled in
+`$env:USERPROFILE\.basic-memory\config.json` and update manually with a health check.
+
 ## Register the BaluffoMemory Vault
 
 After cloning `BaluffoMemory` alongside the main Baluffo repo, register it as a Basic Memory project:
@@ -43,7 +55,7 @@ basic-memory project add baluffo-memory "../BaluffoMemory" --default
 
 # Verify the project picks up existing notes
 basic-memory status --project baluffo-memory
-basic-memory reindex --project baluffo-memory
+basic-memory reindex --project baluffo-memory --search
 ```
 
 ## First-Class Clients
@@ -53,7 +65,7 @@ basic-memory reindex --project baluffo-memory
 Codex is a first-class client for this repo. Use Codex's MCP command flow instead of hand-editing config files:
 
 ```powershell
-codex mcp add basic-memory -- basic-memory mcp
+codex mcp add basic-memory -- "$env:USERPROFILE\.local\bin\basic-memory.exe" mcp --project baluffo-memory
 codex mcp list
 codex mcp get basic-memory
 ```
@@ -64,7 +76,11 @@ A working `codex mcp get basic-memory` registration should report:
 - `enabled: true`
 - `transport: stdio`
 - `command: $env:USERPROFILE\.local\bin\basic-memory.exe` or another user-local basic-memory executable path
-- `args: mcp`
+- `args: mcp --project baluffo-memory`
+
+The `--project baluffo-memory` lock is intentional. It constrains the MCP server with
+`BASIC_MEMORY_MCP_PROJECT`, preventing accidental cross-project reads or writes if another
+Basic Memory default project exists.
 
 ### OpenCode
 
@@ -76,7 +92,7 @@ Baluffo already commits the `basic-memory` entry in `opencode.json`:
   "mcp": {
     "basic-memory": {
       "type": "local",
-      "command": ["basic-memory", "mcp"],
+      "command": ["basic-memory", "mcp", "--project", "baluffo-memory"],
       "enabled": true
     }
   }
@@ -111,7 +127,7 @@ Edit `claude_desktop_config.json` (Windows: `%APPDATA%\Claude\claude_desktop_con
 {
   "name": "baluffo-basic-memory",
   "command": "basic-memory",
-  "args": ["mcp"]
+        "args": ["mcp", "--project", "baluffo-memory"]
 }
 ```
 
@@ -122,7 +138,7 @@ Edit `claude_desktop_config.json` (Windows: `%APPDATA%\Claude\claude_desktop_con
   "mcpServers": {
     "baluffo-basic-memory": {
       "command": "basic-memory",
-      "args": ["mcp"]
+      "args": ["mcp", "--project", "baluffo-memory"]
     }
   }
 }
@@ -139,7 +155,7 @@ Add to User Settings JSON (`Ctrl+Shift+P`, `Preferences: Open User Settings (JSO
     "servers": {
       "basic-memory": {
         "command": "uvx",
-        "args": ["basic-memory", "mcp"]
+        "args": ["basic-memory", "mcp", "--project", "baluffo-memory"]
       }
     }
   }
@@ -266,10 +282,31 @@ Before a session, quickly verify vault integrity:
 # In BaluffoMemory directory
 git status                    # Any uncommitted drift from last session?
 git log --oneline -5          # Recent activity
-basic-memory doctor           # File <-> database consistency
+cmd /c "chcp 65001>nul&& set PYTHONIOENCODING=utf-8&& set NO_COLOR=1&& basic-memory doctor --local"
+cmd /c "chcp 65001>nul&& set PYTHONIOENCODING=utf-8&& set NO_COLOR=1&& basic-memory status --project baluffo-memory"
+cmd /c "chcp 65001>nul&& set PYTHONIOENCODING=utf-8&& set NO_COLOR=1&& basic-memory reindex --project baluffo-memory --search"
 ```
 
-If `basic-memory doctor` reports inconsistencies, run `basic-memory reindex --project baluffo-memory` to rebuild indexes.
+Plain `basic-memory doctor` can fail in Windows console hosts because Rich output and the
+legacy console renderer disagree. Use the UTF-8/no-color `cmd /c` form above for reliable checks.
+
+If `basic-memory doctor --local` reports inconsistencies, run the search-only reindex command above.
+
+### Semantic Search Status
+
+Text search is the supported reliability baseline for this repo. Semantic/vector search is
+currently degraded on this Windows install: direct `sqlite-vec` loading works, but
+`basic-memory reindex --project baluffo-memory --embeddings` fails with
+`sqlite3.OperationalError: no such module: vec0`.
+
+The failure is not vault corruption and not a missing `sqlite-vec` package. The observed issue is
+that Basic Memory's embedding reindex path touches the SQLite `search_vector_embeddings` virtual
+table before loading `sqlite_vec` on that connection. Treat embeddings as a separate upstream/tool
+repair and keep MCP reliability based on project-pinned text-searchable Markdown notes until fixed.
+
+Prepared patch artifact: [`basic-memory-sqlite-vec0-reindex.patch`](basic-memory-sqlite-vec0-reindex.patch).
+The patch moves stale `vec0` embedding cleanup behind a SQLite repository helper that loads
+`sqlite_vec` on the same session before deleting from `search_vector_embeddings`.
 
 ## When to Skip
 

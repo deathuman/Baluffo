@@ -17,7 +17,9 @@
       "type": "local",
       "command": [
         "basic-memory",
-        "mcp"
+        "mcp",
+        "--project",
+        "baluffo-memory"
       ],
       "enabled": true
     }
