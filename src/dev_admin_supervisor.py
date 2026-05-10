@@ -131,46 +131,36 @@ def _terminate_pid(pid: int) -> None:
     if os.name == "nt":
         _terminate_pid_tree_nt(int(pid))
         return
+    _terminate_pid_tree_posix(int(pid))
+
+
+def _terminate_pid_tree_posix(pid: int) -> None:
     with subprocess.Popen(
         ["kill", "-TERM", str(int(pid))],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         text=True,
     ) as process:
-        process.wait(timeout=5)
+        try:
+            process.wait(timeout=float(STOP_PID_TERMINATION_TIMEOUT_S))
+        except subprocess.TimeoutExpired:
+            with contextlib.suppress(Exception):
+                process.kill()
 
 
-if os.name == "nt":
-
-    def _terminate_pid_tree_nt(pid: int) -> None:
-        current_pid = int(os.getpid())
-        if int(pid or 0) <= 0 or int(pid) == current_pid:
-            return
-        with contextlib.suppress(subprocess.TimeoutExpired, OSError):
-            subprocess.run(
-                ["taskkill", "/PID", str(int(pid)), "/T", "/F"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                stdin=subprocess.DEVNULL,
-                check=False,
-                timeout=float(STOP_PID_TERMINATION_TIMEOUT_S),
-            )
-else:
-
-    def _terminate_pid_tree_nt(pid: int) -> None:
-        if int(pid or 0) <= 0:
-            return
-        with subprocess.Popen(
-            ["kill", "-TERM", str(int(pid))],
+def _terminate_pid_tree_nt(pid: int) -> None:
+    current_pid = int(os.getpid())
+    if int(pid or 0) <= 0 or int(pid) == current_pid:
+        return
+    with contextlib.suppress(subprocess.TimeoutExpired, OSError):
+        subprocess.run(
+            ["taskkill", "/PID", str(int(pid)), "/T", "/F"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            text=True,
-        ) as process:
-            try:
-                process.wait(timeout=float(STOP_PID_TERMINATION_TIMEOUT_S))
-            except subprocess.TimeoutExpired:
-                with contextlib.suppress(Exception):
-                    process.kill()
+            stdin=subprocess.DEVNULL,
+            check=False,
+            timeout=float(STOP_PID_TERMINATION_TIMEOUT_S),
+        )
 
 
 def load_session_state(data_dir: Path) -> dict[str, Any]:

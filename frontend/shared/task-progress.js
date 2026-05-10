@@ -21,7 +21,7 @@ export function normalizeTaskProgressPayload(progress) {
 }
 
 function compactCount(value) {
-  return Number(value || 0).toLocaleString();
+  return Number(value || 0).toLocaleString("en-US");
 }
 
 const GAMEDEVMAP_ACTIVE_AUDIT_FETCH_PHASE_LABELS = {

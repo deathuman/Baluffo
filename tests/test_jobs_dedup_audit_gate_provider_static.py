@@ -55,14 +55,14 @@ def test_dedup_audit_gate_allows_lifecycle_when_only_carried_auto_safe_disagreem
                 sourceBundle=[
                     {
                         "source": "greenhouse:slug:studio-one",
-                        "sourceJobId": "gh-1",
-                        "jobLink": "https://studio.example/provider/jobs/1",
+                        "sourceJobId": "gh-123456",
+                        "jobLink": "https://studio.example/provider/jobs/123456",
                         "adapter": "greenhouse",
                     },
                     {
                         "source": "static_source::static:listing_url:https://studio.example/careers",
-                        "sourceJobId": "static-1",
-                        "jobLink": "https://studio.example/careers/jobs/1",
+                        "sourceJobId": "static-123456",
+                        "jobLink": "https://studio.example/careers/jobs/123456",
                         "adapter": "static",
                     },
                 ],

@@ -613,7 +613,20 @@ def test_run_discovery_gamedevmap_candidates_flow_into_report_and_queue() -> Non
                     "gamedevmap_data.csv"
                 ),
                 "https://boards-api.greenhouse.io/v1/boards/providerfeedstudio/jobs?content=true": json.dumps(
-                    {"jobs": [{}, {}]}
+                    {
+                        "jobs": [
+                            {
+                                "id": 1,
+                                "title": "Gameplay Engineer",
+                                "absolute_url": "https://job-boards.greenhouse.io/providerfeedstudio/jobs/1",
+                            },
+                            {
+                                "id": 2,
+                                "title": "Technical Artist",
+                                "absolute_url": "https://job-boards.greenhouse.io/providerfeedstudio/jobs/2",
+                            },
+                        ]
+                    }
                 ),
             }
 

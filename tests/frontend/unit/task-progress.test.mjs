@@ -101,7 +101,7 @@ test("formatTaskProgressCounts renders GameDevMap dry-run fetch subtask counts",
       deferredCandidates: 0,
       failedProbes: 0
     }),
-    "stage 7/11 | GameDevMap active dry run | recovery wave 1 fetch 1.275/1.277 pages | generated 0 | endpoints 0 | survived 0 | probed 0 | queued 0 | deferred 0 | failed 0"
+    "stage 7/11 | GameDevMap active dry run | recovery wave 1 fetch 1,275/1,277 pages | generated 0 | endpoints 0 | survived 0 | probed 0 | queued 0 | deferred 0 | failed 0"
   );
 });
 
@@ -124,6 +124,6 @@ test("formatTaskProgressCounts renders GameDevMap active audit subtask counts", 
       deferredCandidates: 0,
       failedProbes: 0
     }),
-    "stage 7/11 | GameDevMap active audit | batch 2 | 2.000/7.524 URLs | batch start | generated 0 | endpoints 0 | survived 0 | probed 0 | queued 0 | deferred 0 | failed 0"
+    "stage 7/11 | GameDevMap active audit | batch 2 | 2,000/7,524 URLs | batch start | generated 0 | endpoints 0 | survived 0 | probed 0 | queued 0 | deferred 0 | failed 0"
   );
 });

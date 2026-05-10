@@ -5,10 +5,17 @@ from src import source_registry as sr
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULTS_DIR = REPO_ROOT / "data" / "defaults"
+TOMBSTONES_FIXTURE_PATH = REPO_ROOT / "tests/fixtures/source-registry-tombstones.json"
 
 
 def _load_seed_registry(name: str) -> list[dict]:
     return json.loads((DEFAULTS_DIR / f"source-registry-{name}.seed.json").read_text())
+
+
+def _load_tombstones_fixture() -> dict:
+    runtime_path = REPO_ROOT / "data/source-registry-tombstones.json"
+    source_path = runtime_path if runtime_path.is_file() else TOMBSTONES_FIXTURE_PATH
+    return json.loads(source_path.read_text())
 
 
 UNSUPPORTED_STATIC_IDS = {
@@ -243,7 +250,7 @@ def test_static_residual_cleanup_preserves_rows_outside_active_defaults() -> Non
 def test_static_narrow_cleanup_preserves_dead_and_redundant_rows_as_hidden() -> None:
     active = _load_seed_registry("active")
     pending = _load_seed_registry("pending")
-    tombstones = json.loads((REPO_ROOT / "data/source-registry-tombstones.json").read_text())
+    tombstones = _load_tombstones_fixture()
 
     active_by_id = {row["id"]: row for row in active}
     pending_by_id = {row["id"]: row for row in pending}
@@ -292,7 +299,7 @@ def test_static_narrow_cleanup_preserves_dead_and_redundant_rows_as_hidden() -> 
 def test_static_site_changed_cleanup_preserves_rows_as_hidden_pending() -> None:
     active = _load_seed_registry("active")
     pending = _load_seed_registry("pending")
-    tombstones = json.loads((REPO_ROOT / "data/source-registry-tombstones.json").read_text())
+    tombstones = _load_tombstones_fixture()
 
     active_by_id = {row["id"]: row for row in active}
     pending_by_id = {row["id"]: row for row in pending}

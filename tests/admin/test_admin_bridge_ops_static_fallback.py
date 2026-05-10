@@ -190,7 +190,7 @@ window.__PAGE_DATA__ = {"jobs":["/careers/senior-gameplay-programmer","/careers/
 """
 _SMARTRECRUITERS_HTML = """
 <script>
-var data = {"jobs":["https://jobs.smartrecruiters.com/CDPROJEKTRED/743999834254914-spontaneous-application"]};
+var data = {"jobs":["https://jobs.smartrecruiters.com/CDPROJEKTRED/744000112115839-environment-artist"]};
 </script>
 """
 _PERSONIO_LISTING_HTML = """

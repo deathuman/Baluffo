@@ -51,6 +51,7 @@ from .probe_runtime import (
 )
 from .provider_inference_filters import split_bad_provider_inferences
 from .reporting import emit_log
+from .static_candidates import build_known_careers_url_candidate
 from .web_search import (
     extract_jobish_links,
     fetch_text,
@@ -962,7 +963,45 @@ def _append_analyzed_candidates(
     )
     provider_candidates.extend(outcome.provider_candidates)
     static_candidates.extend(outcome.static_candidates)
-    return outcome.found_candidates
+    found_candidates = outcome.found_candidates
+    if (
+        recovery_source == "browser_rendered_homepage"
+        and not found_candidates
+        and _rendered_page_has_static_job_evidence(page_url, html)
+    ):
+        static_candidates.append(
+            _apply_gamedevmap_provenance(
+                build_known_careers_url_candidate(
+                    page_url,
+                    studio=str(row.get("studio") or "").strip(),
+                    name_suffix="GameDevMap",
+                    nl_priority=False,
+                    discovery_method="gamedevmap",
+                    evidence_source="gamedevmap",
+                    evidence_types=[
+                        "gamedevmap_careers_url",
+                        "gamedevmap_browser_rendered_job_links",
+                    ],
+                    evidence_score=44,
+                    enabled_by_default=False,
+                    weak_signal=False,
+                ),
+                row,
+                index_url=index_url,
+                include_homepage_fetch=True,
+            )
+        )
+        found_candidates = True
+    return found_candidates
+
+
+def _rendered_page_has_static_job_evidence(page_url: str, html: str) -> bool:
+    try:
+        from .probe import static_probe_evidence
+
+        return int(static_probe_evidence(html, page_url).count or 0) > 0
+    except (TypeError, ValueError):
+        return False
 
 
 def _queue_no_careers_recovery(
