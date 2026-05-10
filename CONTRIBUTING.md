@@ -3,7 +3,7 @@
 ## Quick start for contributors
 
 1. **Start here:** Read [`docs/AI_ASSISTANT_GUIDE.md`](docs/AI_ASSISTANT_GUIDE.md) - the primary entry point for all code work
-2. **Run setup:** For AI-assisted repo work, install `uv`, install Serena, and configure Codex CLI or OpenCode using [`tools/mcp/SERENA.md`](tools/mcp/SERENA.md). Then run `npm install && npm run setup:hooks`
+2. **Run setup:** For AI-assisted repo work, install `uv`, install Serena and Basic Memory, and configure Codex CLI or OpenCode using [`tools/mcp/SERENA.md`](tools/mcp/SERENA.md) and [`tools/mcp/BASIC_MEMORY.md`](tools/mcp/BASIC_MEMORY.md). Then run `npm install && npm run setup:hooks`
 3. **Make changes:** Create a branch, edit code, add tests
 4. **Verify:** Run the smallest relevant check for your change:
    - `npm run test:py` - Python/backend tests

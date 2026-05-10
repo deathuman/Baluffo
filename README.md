@@ -64,8 +64,9 @@ npm run dev:pipeline
 ### AI Tooling
 
 - Serena MCP is the required AI dev tool for Baluffo repo work.
+- Basic Memory MCP is the required AI continuity memory for planning, handoff, gotchas, and stale-memory corrections.
 - Codex CLI and OpenCode are the first-class client paths.
-- Setup guide: [Serena MCP Setup](tools/mcp/SERENA.md)
+- Setup guides: [Serena MCP Setup](tools/mcp/SERENA.md), [Basic Memory MCP Setup](tools/mcp/BASIC_MEMORY.md)
 
 ### Documentation
 

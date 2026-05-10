@@ -1,10 +1,10 @@
-# Basic Memory MCP for Baluffo (External / Optional)
+# Basic Memory MCP for Baluffo (Required Continuity)
 
-> Optional external AI continuity memory. Local-first, not part of Baluffo runtime or CI.
+> Required external AI continuity memory. Local-first, not part of Baluffo runtime or CI.
 
 ## Status
 
-Basic Memory is an optional, external, local-first MCP tool for durable cross-client AI handoff.
+Basic Memory is the required external local-first MCP tool for durable cross-client AI handoff.
 It is never a Baluffo runtime, Python, Node, packaging, release, or CI dependency.
 
 ## Prerequisites
@@ -48,7 +48,7 @@ After cloning `BaluffoMemory` alongside the main Baluffo repo, register it as a 
 
 ```powershell
 # Clone the private memory vault (first time only)
-git clone https://github.com/<your-org>/BaluffoMemory.git ../BaluffoMemory
+git clone https://github.com/deathuman/BaluffoMemory.git ../BaluffoMemory
 
 # Register as a basic-memory project
 basic-memory project add baluffo-memory "../BaluffoMemory" --default
@@ -103,6 +103,14 @@ Install Basic Memory once, then run OpenCode from the repo root so it can use th
 The committed config expects `basic-memory` on `PATH`.
 If OpenCode cannot resolve `basic-memory`, restart your shell/session or change the local command to the
 explicit `basic-memory.exe` path.
+
+Verified OpenCode health should show both required MCPs connected:
+
+```powershell
+opencode mcp list
+# basic-memory connected: basic-memory mcp --project baluffo-memory
+# serena connected: serena start-mcp-server --context ide --project-from-cwd
+```
 
 ## Secondary Clients
 
@@ -219,27 +227,21 @@ __pycache__/
 
 ## Session End Workflow
 
-1. AI proposes memory updates
-2. Human approves or edits them
-3. Commit only durable notes to BaluffoMemory
-4. `git push` BaluffoMemory
+1. AI updates useful durable memory as normal task maintenance.
+2. Keep notes concise, sourced, and future-session relevant.
+3. Commit only durable notes to BaluffoMemory when the task includes Git publishing.
+4. `git push` BaluffoMemory only when the task includes pushing memory changes.
 
 ## Merge-Conflict Handling
 
-If `git pull` hits a merge conflict, resolve manually or discard local:
-
-```
-git checkout -- .
-git pull
-```
-
-Never auto-merge memory files speculatively.
+If `git pull` hits a merge conflict, stop, inspect the conflicting notes, and resolve manually or ask the user how to proceed.
+Never auto-merge or discard memory files speculatively.
 
 ## Permissions
 
 - Reads are free and automated.
-- Writes require explicit user approval before committing.
-- Never commit or push memory writes without the user explicitly asking.
+- Writes are normal AI task maintenance when they improve future-session continuity.
+- Commit or push memory writes only when the task includes Git publishing.
 
 ## Canonical Source Rule
 
@@ -327,10 +329,7 @@ Recovery helper:
 The helper is intentionally check-only by default. `-Apply` backs up the two installed Basic Memory
 source files under `C:\tmp\basic-memory-vec0-backup-<timestamp>` before modifying them.
 
-## When to Skip
+## Required Use
 
-Skip Basic Memory for:
-- One-shot tasks with no recurring value
-- Read-only exploration or code review
-- Sessions where no handoff continuity is needed
-- Tasks where all decisions are already captured in repo docs or commit messages
+Use Basic Memory for AI-assisted Baluffo planning, handoff, recurring gotchas, current focus, and stale-memory corrections.
+If a task produces no durable continuity value, no memory note is required, but Basic Memory remains the configured continuity MCP.

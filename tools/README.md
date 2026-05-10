@@ -9,7 +9,7 @@ This directory contains standalone analysis and measurement tools that are separ
 
 ```
 tools/
-  mcp/               # Serena standard plus optional local MCP tooling
+  mcp/               # Required Serena and Basic Memory setup plus optional local MCP tooling
   repo_health/       # Repository readiness and refactorability analysis
   measurements/      # Pipeline and source performance measurement
   reports/           # Generated outputs (not tracked in git)
@@ -33,6 +33,7 @@ Tools that run Baluffo or its pipeline and measure behavior:
 Repo AI tooling guidance plus local MCP servers for editor-assisted workflows.
 Use `tools/mcp/INDEX.md` as the MCP tooling entrypoint.
 Use `tools/mcp/SERENA.md` for the required Serena setup used by Codex CLI and OpenCode.
+Use `tools/mcp/BASIC_MEMORY.md` for the required Basic Memory continuity setup used by Codex CLI and OpenCode.
 The Playwright server entrypoint is `tools/mcp/playwright-server.cjs` and setup notes live in `tools/mcp/PLAYWRIGHT.md`.
 
 ### `reports/`
@@ -45,6 +46,7 @@ is typically gitignored - do not commit generated files here.
 |------|---------------|
 | Browse MCP tooling docs | `tools/mcp/INDEX.md` |
 | Set up required Serena MCP tooling | `tools/mcp/SERENA.md` |
+| Set up required Basic Memory continuity | `tools/mcp/BASIC_MEMORY.md` |
 | Analyze repo maturity | `tools/repo_health/bin/analyze_repo.py` |
 | Analyze refactorability | `tools/repo_health/bin/analyze_refactorability.py` |
 | Run the optional Playwright MCP server | `tools/mcp/PLAYWRIGHT.md` / `node tools/mcp/playwright-server.cjs` |
