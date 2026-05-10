@@ -295,18 +295,37 @@ If `basic-memory doctor --local` reports inconsistencies, run the search-only re
 ### Semantic Search Status
 
 Text search is the supported reliability baseline for this repo. Semantic/vector search is
-currently degraded on this Windows install: direct `sqlite-vec` loading works, but
-`basic-memory reindex --project baluffo-memory --embeddings` fails with
-`sqlite3.OperationalError: no such module: vec0`.
+locally restored in this Codex IDE by a patch to the installed Basic Memory `0.20.3`
+uv tool environment.
 
-The failure is not vault corruption and not a missing `sqlite-vec` package. The observed issue is
-that Basic Memory's embedding reindex path touches the SQLite `search_vector_embeddings` virtual
-table before loading `sqlite_vec` on that connection. Treat embeddings as a separate upstream/tool
-repair and keep MCP reliability based on project-pinned text-searchable Markdown notes until fixed.
+The repaired failure was not vault corruption and not a missing `sqlite-vec` package. Basic Memory's
+embedding reindex path touched the SQLite `search_vector_embeddings` virtual table before loading
+`sqlite_vec` on that connection, and before vector tables were guaranteed initialized in the stale
+cleanup path.
 
 Prepared patch artifact: [`basic-memory-sqlite-vec0-reindex.patch`](basic-memory-sqlite-vec0-reindex.patch).
-The patch moves stale `vec0` embedding cleanup behind a SQLite repository helper that loads
-`sqlite_vec` on the same session before deleting from `search_vector_embeddings`.
+The patch moves stale `vec0` embedding cleanup behind a SQLite repository helper that first ensures
+vector tables, then loads `sqlite_vec` on the same session before deleting from
+`search_vector_embeddings`.
+
+This is a local tool patch, not an upstream release. Reinstalling or upgrading Basic Memory will
+replace the patched files. Before reapplying, confirm `basic-memory --version` is still `0.20.3`
+and the installed source still contains `_purge_stale_search_rows()` and
+`_ensure_sqlite_vec_loaded()`. If the source shape changed, re-check the fix instead of forcing the
+patch.
+
+Recovery helper:
+
+```powershell
+# Check whether the local Basic Memory 0.20.3 install still has the vec0 patch.
+.\tools\mcp\apply-basic-memory-vec0-patch.ps1
+
+# Reapply after reinstall/upgrade only when the helper reports the patch is missing.
+.\tools\mcp\apply-basic-memory-vec0-patch.ps1 -Apply
+```
+
+The helper is intentionally check-only by default. `-Apply` backs up the two installed Basic Memory
+source files under `C:\tmp\basic-memory-vec0-backup-<timestamp>` before modifying them.
 
 ## When to Skip
 

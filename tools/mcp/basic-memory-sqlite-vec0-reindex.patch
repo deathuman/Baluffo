@@ -13,12 +13,13 @@ index 0000000..0000000 100644
              await session.execute(text("SELECT vec_version()"))
 +
 +    async def purge_stale_vector_embeddings(self) -> None:
-+        """Delete stale SQLite vec0 rows after loading sqlite-vec on this connection.
++        """Delete stale SQLite vec0 rows after vector tables and extension are ready.
 +
 +        sqlite-vec registers the vec0 module per SQLite connection. Generic repository
 +        utility queries open their own session, so touching search_vector_embeddings
 +        there can fail with "no such module: vec0" even when sqlite-vec is installed.
 +        """
++        await self._ensure_vector_tables()
 +        async with db.scoped_session(self.session_maker) as session:
 +            await self._ensure_sqlite_vec_loaded(session)
 +            await session.execute(
