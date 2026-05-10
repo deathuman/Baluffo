@@ -236,6 +236,41 @@ When a memory note becomes durable, generally useful, canonical guidance, promot
 into the owning Baluffo doc following `docs/DOCS_WORKFLOW.md`. Then remove or update
 the memory note to link to the canonical doc.
 
+## Vault Maintenance
+
+### Consolidation Checklist
+
+Periodically review the vault to keep it lean and useful:
+
+- Merge overlapping decisions — if two notes cover the same topic, consolidate into the more recent one and link from the older one
+- Review gotchas — if a gotcha is no longer relevant (pattern eliminated, convention changed), archive it with a `**Resolved**` date
+- Prune stale focus — `current-focus.md` should only track what's active; move completed items to the session handoff note
+- Check for orphaned notes — search for notes that no longer link to active code or conventions
+
+### Git Tag Snapshots
+
+Before major refactors or risky changes, snapshot the vault state with a git tag:
+
+```powershell
+git tag arch-$(Get-Date -Format 'yyyy-MM-dd') -m "Vault snapshot before [describe change]"
+git push origin arch-$(Get-Date -Format 'yyyy-MM-dd')
+```
+
+This gives you a restore point — diff against the tag to see what the AI changed, or revert if needed. Tags are lightweight and don't affect normal git operations.
+
+### Health Check
+
+Before a session, quickly verify vault integrity:
+
+```powershell
+# In BaluffoMemory directory
+git status                    # Any uncommitted drift from last session?
+git log --oneline -5          # Recent activity
+basic-memory doctor           # File <-> database consistency
+```
+
+If `basic-memory doctor` reports inconsistencies, run `basic-memory reindex --project baluffo-memory` to rebuild indexes.
+
 ## When to Skip
 
 Skip Basic Memory for:
