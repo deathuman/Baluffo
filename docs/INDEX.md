@@ -99,6 +99,8 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`archive/read-only-lifecycle-ux-closeout.md`](archive/read-only-lifecycle-ux-closeout.md) | Archived closeout | Closed first read-only lifecycle UX tracker after implementing conservative labels and filters |
 | [`archive/source-sync-production-readiness-closeout.md`](archive/source-sync-production-readiness-closeout.md) | Archived closeout | Closed private BaluffoSync source-sync production-readiness tracker after documenting private-repo operating controls |
 | [`archive/task-progress-operational-console-closeout.md`](archive/task-progress-operational-console-closeout.md) | Archived pointer | Historical Admin task/progress console closeout; active lifecycle/progress closeout is consolidated in [`plans/task-lifecycle-ledger-plan.md`](plans/task-lifecycle-ledger-plan.md) |
+| [`archive/source-discovery-adapter-follow-ups-closeout.md`](archive/source-discovery-adapter-follow-ups-closeout.md) | Archived closeout | Closed source-discovery adapter follow-ups tracker |
+| [`archive/external-memory-mcp-policy-closeout.md`](archive/external-memory-mcp-policy-closeout.md) | Archived closeout | Completed external memory MCP policy and setup implementation |
 
 ## Quick Routing by Goal
 

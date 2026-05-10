@@ -12,6 +12,14 @@
         "--project-from-cwd"
       ],
       "enabled": true
+    },
+    "basic-memory": {
+      "type": "local",
+      "command": [
+        "basic-memory",
+        "mcp"
+      ],
+      "enabled": true
     }
   }
 }

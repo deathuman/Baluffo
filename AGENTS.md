@@ -21,3 +21,30 @@ These are the non-negotiable repo rules.
 - `docs/archive/` holds refactor records and historical notes. Do not load archived docs by default.
 - If Serena memory and repo docs diverge, repo docs win and the stale Serena memory should be corrected.
 - For doc ownership or maintenance changes, follow `docs/DOCS_WORKFLOW.md`.
+
+## External MCP Memory Policy
+
+This section covers optional memory MCPs such as Basic Memory.
+Serena's own project memory is covered in Docs Routing above.
+
+- Repo source, tests, docs, and AGENTS.md are canonical.
+- Serena MCP remains the required code-intelligence MCP for repo work.
+- External memory MCPs are optional workflow tools for AI-coder continuity only.
+- External memory may store durable decisions, recurring gotchas, handoff notes,
+  current focus, and stale-memory corrections.
+- External memory must not become a source of truth for current implementation
+  behavior.
+- Do not store current implementation facts unless they include a source path,
+  date observed, and reason they matter.
+- If external memory conflicts with repo state, ignore memory and update or
+  delete the stale note.
+- Promote durable, generally useful memory into the owning Baluffo doc when it
+  becomes canonical guidance, following docs/DOCS_WORKFLOW.md.
+- External AI-coder memory, when used, is maintained in a separate private
+  Git-backed Markdown vault such as `BaluffoMemory`.
+- Memory writes require explicit user approval before committing.
+- Never store secrets, tokens, credentials, private keys, or sensitive data.
+- If a secret is accidentally committed to the memory repo, treat the repo as
+  compromised and rotate all affected credentials.
+- Do not add memory MCPs as Baluffo runtime, Python, Node, packaging, release,
+  or CI dependencies.
