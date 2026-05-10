@@ -60,7 +60,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md) | Documentation maintenance | You are deciding where docs belong, updating docs after code changes, or adding a new documentation page |
 | [`source-policy-runbook.md`](source-policy-runbook.md) | Operator runbook | You are running discovery/fetch/soak/Admin migration-link validation or checking provider/static source-policy release readiness |
 | [`environments.md`](environments.md) | Release / Environments | You are choosing source-sync writer auth, staging/prod separation, or the repository-side write policy |
-| [`plans/end-to-end-benchmarking-plan.md`](plans/end-to-end-benchmarking-plan.md) | Plans / Follow-Ups | You are adding frontend/backend instrumentation, profiling pipeline operations, fixing UI stalling (especially Admin page), or setting up CI performance regression detection |
+| [`archive/end-to-end-benchmarking-plan.md`](archive/end-to-end-benchmarking-plan.md) | Archived plan with closeout | Completed end-to-end benchmarking instrumentation; run `npm run perf:fetch:static-outliers` for fresh optimization targets |
 | [`plans/runtime-storage-and-sync-architecture-plan.md`](plans/runtime-storage-and-sync-architecture-plan.md) | Plans / Follow-Ups | You are reducing runtime artifact bloat, migrating hot state to SQLite/WAL, or replacing monolithic source-sync snapshots with sharded exports |
 | [`plans/task-lifecycle-ledger-plan.md`](plans/task-lifecycle-ledger-plan.md) | Plans / Follow-Ups | You are finalizing Admin task lifecycle authority, task progress projection, runtime evidence IO, pipeline child ownership, or the last packaged lifecycle smoke |
 | [`plans/saved-job-tracker-improvements-plan.md`](plans/saved-job-tracker-improvements-plan.md) | Plans / Follow-Ups | You are improving saved-job phase/outcome modeling, activity semantics, sorting, or Saved page operations |
@@ -100,7 +100,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`archive/source-sync-production-readiness-closeout.md`](archive/source-sync-production-readiness-closeout.md) | Archived closeout | Closed private BaluffoSync source-sync production-readiness tracker after documenting private-repo operating controls |
 | [`archive/task-progress-operational-console-closeout.md`](archive/task-progress-operational-console-closeout.md) | Archived pointer | Historical Admin task/progress console closeout; active lifecycle/progress closeout is consolidated in [`plans/task-lifecycle-ledger-plan.md`](plans/task-lifecycle-ledger-plan.md) |
 | [`archive/source-discovery-adapter-follow-ups-closeout.md`](archive/source-discovery-adapter-follow-ups-closeout.md) | Archived closeout | Closed source-discovery adapter follow-ups tracker |
-| [`archive/external-memory-mcp-policy-closeout.md`](archive/external-memory-mcp-policy-closeout.md) | Archived closeout | Completed external memory MCP policy and setup implementation |
+| [`archive/external-memory-mcp-policy-plan.md`](archive/external-memory-mcp-policy-plan.md) | Archived plan with closeout | Completed external memory MCP policy and setup implementation |
 
 ## Quick Routing by Goal
 

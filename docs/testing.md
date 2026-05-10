@@ -75,6 +75,25 @@ Notes:
 - `npm run perf:discovery:benchmark` is the default discovery perf entrypoint because it keeps artifacts under `_out/`; use `python scripts/benchmark_discovery_probe.py` separately when tuning discovery probe concurrency.
 - Do not add `pytest-benchmark` or `py-spy` by default here. If dependency approval happens later, benchmark deterministic Python leaf logic first and keep desktop startup analysis on the existing startup-trace pipeline.
 
+### Playwright perf traces
+
+Opt-in Playwright performance traces capture boot traces for Jobs, Admin, and Saved pages:
+
+```powershell
+npm run test:frontend:perf
+```
+
+Output goes to `_out/perf-traces/`:
+
+| Artifact | Description |
+|----------|-------------|
+| `_out/perf-traces/{pageName}-boot-trace.zip` | Standard Playwright trace archive (open with `playwright show-trace` or trace.playwright.dev) |
+| `_out/perf-traces/{pageName}-boot-summary.json` | Navigation timings, paint events, user-timing marks/measures per page |
+
+To attach traces to a performance investigation, run `npm run test:frontend:perf`, collect the `.zip` traces from `_out/perf-traces/`, and open them in Chrome DevTools (Performance tab) or at `https://trace.playwright.dev`. Compare warm-vs-cold boot runs or before-vs-after a suspected performance regression change.
+
+The perf-trace spec lives at `tests/frontend/perf-trace.spec.js` with config at `playwright.perf.config.js`.
+
 ## Python dependency security audit
 
 Run the Python dependency vulnerability audit with:

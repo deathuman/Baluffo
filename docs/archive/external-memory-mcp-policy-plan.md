@@ -1,33 +1,73 @@
-# External Memory MCP Policy and Setup Plan
+# External Memory MCP Policy Plan (Archived with Closeout)
 
-> Canonical for the AGENTS.md policy addition, Basic Memory MCP documentation, and BaluffoMemory vault conventions.
->
-> Not canonical for Serena setup, runtime dependency decisions, packaging, or CI. See `tools/mcp/SERENA.md` and `docs/RELEASE.md` for those.
+> - **Status:** Completed (2026-05-10)
+> - **Canonical for:** historical reference only
+> - **Not canonical for:** current implementation behavior; use `tools/mcp/BASIC_MEMORY.md` and `AGENTS.md` for the live policy
+> - **Then inspect:** [`tools/mcp/BASIC_MEMORY.md`](../../tools/mcp/BASIC_MEMORY.md), [`AGENTS.md`](../../AGENTS.md), [`tools/mcp/INDEX.md`](../../tools/mcp/INDEX.md)
 
-## Intent
+## Closeout Summary
+
+### What Was Done
+
+Implemented a controlled external Memory MCP workflow for AI-coder continuity without making memory a source of truth and without adding Baluffo runtime dependencies.
+
+#### Policy (Baluffo repo)
+
+- `AGENTS.md` — appended `## External MCP Memory Policy` (13 rules), disambiguated from Serena project memory
+- `tools/mcp/BASIC_MEMORY.md` — 280-line setup guide: prerequisites, install, project registration, first-class clients (Codex CLI, OpenCode), secondary clients (Claude Desktop, Cursor, Cline, VS Code), vault layout, session workflow, permissions, canonical-source rule, promotion path, maintenance, health check
+- `tools/mcp/INDEX.md` — added BASIC_MEMORY.md to "What Lives Here" paragraph, Start Here table, and Which MCP Tool table
+- `opencode.json` — registered `basic-memory` MCP server alongside `serena`
+
+#### External Vault
+
+- Created private GitHub repo `deathuman/BaluffoMemory` with vault layout per plan
+- Installed `basic-memory` v0.20.3 via `uv tool install -p 3.13 basic-memory@latest`
+- Registered project `baluffo-memory` pointing to vault directory
+- Populated vault with 5 architecture decisions and 7 recurring gotchas about Baluffo
+- Verified MCP connectivity after OpenCode restart
+- Created session handoff note documenting setup completion
+
+#### Verifications Passed
+
+- No runtime, dependency, packaging, release, or CI files modified
+- No new Python or Node dependencies added to Baluffo
+- Existing docs routing and Serena preflight text untouched
+- `AGENTS.md` Repo Guardrails and Docs Routing sections unchanged
+
+### Key Decisions
+
+1. Basic Memory MCP chosen as the external memory tool
+2. Private GitHub repo `BaluffoMemory` cloned alongside Baluffo as the vault
+3. Both Codex CLI and OpenCode treated as first-class clients
+4. Memory writes require explicit user approval (policy rule)
+5. Repo source/docs always win over memory when they conflict
+
+### Where to Look Next
+
+- `tools/mcp/BASIC_MEMORY.md` for setup and client config
+- `AGENTS.md` for the 13-rule policy
+- `https://github.com/deathuman/BaluffoMemory` for the live vault
+
+---
+
+## Original Plan
+
+> The following sections are the original implementation plan, preserved as historical reference.
+
+### Intent
 
 Add a controlled external Memory MCP workflow for AI-coder continuity without making memory a source of truth and without adding runtime dependencies to Baluffo.
 
 This supports cross-machine AI handoff: durable decisions, gotchas, current focus, and session continuity across any MCP-compatible client (Codex CLI, OpenCode, Cline, etc.).
 
-## Current Status
-
-- `AGENTS.md` has 2 sections: Repo Guardrails (lines 1-11) and Docs Routing (lines 13-23). Line 22 already covers Serena memory divergence ("repo docs win").
-- `docs/AI_ASSISTANT_GUIDE.md` has Serena Session Preflight (lines 66-78) and AI Editing Rules (lines 80-89). Line 42 covers the same "repo docs win" principle.
-- `tools/mcp/INDEX.md` has 2 entries: SERENA.md (required) and PLAYWRIGHT.md (optional). No external memory MCP is registered.
-- `tools/mcp/SERENA.md` has 238 lines covering install, setup, client config, health checks, session bootstrap, and repo rules.
-- No Basic Memory, Engram, or external memory MCP reference exists anywhere in the repo.
-- BaluffoMemory private repo does not yet exist.
-- `docs/plans/` contains 9 existing plans covering benchmarking, storage, dedup, lifecycle, and source-conflict topics.
-
-## Constraints
+### Constraints
 
 1. **No runtime changes**: Do not modify `package.json`, `pyproject.toml`, `requirements*.txt`, `src/`, `frontend/`, packaging/release files, or CI files.
 2. **No new dependencies**: Do not add Python or Node dependencies to Baluffo.
 3. **Preserve existing docs**: Do not change `docs/AI_ASSISTANT_GUIDE.md`, `docs/INDEX.md`, `tools/mcp/SERENA.md`, or the existing `AGENTS.md` guardrails/docs-routing sections.
 4. **No secrets**: Memory policy must prohibit secrets, tokens, credentials, and sensitive data.
 
-## Files to Change
+### Files to Change
 
 | File | Action | Rationale |
 |------|--------|-----------|
@@ -36,7 +76,7 @@ This supports cross-machine AI handoff: durable decisions, gotchas, current focu
 | `tools/mcp/BASIC_MEMORY.md` | Create new file | Setup, vault layout, session workflow, rules |
 | Everything else | No changes | Enforced by constraints above |
 
-## AGENTS.md Policy — 13 Rules
+### AGENTS.md Policy — 13 Rules
 
 The new section after `## Docs Routing`. Note the preamble disambiguates Serena's
 project memory (Docs Routing line 22) from external MCP memory:
@@ -70,7 +110,7 @@ Serena's own project memory is covered in Docs Routing above.
   or CI dependencies.
 ```
 
-## BASIC_MEMORY.md Sections (new file under tools/mcp/)
+### BASIC_MEMORY.md Sections (new file under tools/mcp/)
 
 - Header: "Basic Memory MCP for Baluffo (External / Optional)"
 - Status note (optional, external, local-first, not runtime/CI)
@@ -84,7 +124,7 @@ Serena's own project memory is covered in Docs Routing above.
 - Promotion path — memory -> Baluffo doc when durable enough, following DOCS_WORKFLOW.md.
 - When to skip — one-shot tasks, read-only exploration, no handoff needed.
 
-## INDEX.md Changes
+### INDEX.md Changes
 
 **Start Here table** — add third row:
 
@@ -101,7 +141,7 @@ Serena's own project memory is covered in Docs Routing above.
 | ...existing rows... |
 | Cross-client AI handoff memory | BASIC_MEMORY.md |
 
-## BaluffoMemory Private Repo (external, created separately)
+### BaluffoMemory Private Repo (external, created separately)
 
 Recommended layout:
 
@@ -123,7 +163,7 @@ BaluffoMemory/
 
 `.gitignore` patterns: `*.db`, `*.sqlite*`, `.cache/`, `index/`, `embeddings/`, `node_modules/`, `__pycache__/`, `.env`, `*.local.*`.
 
-## Session Workflow (for AI coders)
+### Session Workflow (for AI coders)
 
 **Start:**
 1. `git pull` in Baluffo
@@ -140,7 +180,7 @@ BaluffoMemory/
 3. Commit only durable notes to BaluffoMemory
 4. `git push BaluffoMemory`
 
-## Verification
+### Verification
 
 After implementation:
 1. Run `git diff --stat` — confirm exactly 3 files changed (AGENTS.md, INDEX.md, + BASIC_MEMORY.md)
@@ -149,10 +189,14 @@ After implementation:
 4. Read `tools/mcp/INDEX.md` — confirm 2 new rows, existing content unchanged
 5. Run `git diff` — confirm no accidental whitespace or content changes to unrelated files
 
-## Acceptance Criteria
+### Acceptance Criteria
 
 - AGENTS.md has a compact `## External MCP Memory Policy` section with all 13 rules, disambiguated from Serena project memory
 - tools/mcp/BASIC_MEMORY.md exists and covers setup, vault layout, session workflow, canonical-source rule, and promotion path
 - tools/mcp/INDEX.md has discovery entries for BASIC_MEMORY.md
 - Zero changes to runtime, dependency, packaging, release, or CI files
 - Existing docs routing and Serena preflight text are untouched
+
+### Implementation
+
+Completed in commit `f9fd49b`. All acceptance criteria met. See closeout summary above for details.
