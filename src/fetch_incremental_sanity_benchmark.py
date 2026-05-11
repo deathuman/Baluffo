@@ -1090,6 +1090,7 @@ def main(argv: list[str] | None = None) -> int:
     if missing:
         raise SystemExit(f"Unknown sources for benchmark: {', '.join(missing)}")
     os.environ["BALUFFO_DATA_DIR"] = str(output_dir)
+    from src.storage_metrics import snapshot_storage_metrics
 
     first = _run_pass(output_dir, selected_loaders, args)
     second = _run_pass(output_dir, selected_loaders, args)
@@ -1142,6 +1143,7 @@ def main(argv: list[str] | None = None) -> int:
             "runtime": dict(second.get("runtime") or {}),
             "familySummary": _family_summary(second, selected_names),
         },
+        "storageMetrics": snapshot_storage_metrics(output_dir),
     }
     (output_dir / "benchmark-summary.json").write_text(
         json.dumps(payload, indent=2, ensure_ascii=False),

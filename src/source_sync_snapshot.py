@@ -19,6 +19,7 @@ from src.source_registry import (
     source_identity,
 )
 from src.source_sync_runtime import parse_iso
+from src.storage_metrics import record_source_sync_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -766,6 +767,12 @@ def push_sources_snapshot(
     )
     size_warning = snapshot_size_bytes > module.SNAPSHOT_SIZE_WARN_BYTES
     would_change = not remote_exists or snapshot_fingerprint != remote_fingerprint
+    record_source_sync_snapshot(
+        size_bytes=snapshot_size_bytes,
+        max_snapshot_size_bytes=max_snapshot_size_bytes,
+        size_warning=size_warning,
+        would_change=would_change,
+    )
     if dry_run:
         return {
             "pushed": False,

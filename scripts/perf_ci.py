@@ -156,6 +156,62 @@ def _stage_durations(payload: dict[str, Any]) -> dict[str, int]:
     return result
 
 
+def _nested_int(payload: dict[str, Any], path: tuple[str, ...]) -> int:
+    current: Any = payload
+    for key in path:
+        if not isinstance(current, dict):
+            return 0
+        current = current.get(key)
+    try:
+        return max(0, int(float(current)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _storage_metric_points(payload: dict[str, Any]) -> dict[str, int]:
+    metrics = payload.get("storageMetrics")
+    if not isinstance(metrics, dict):
+        return {}
+    points = {
+        "writeCount": _nested_int(metrics, ("writes", "writeCount")),
+        "serializationDurationTotalMs": _nested_int(
+            metrics, ("writes", "totals", "serializationDurationMs", "total")
+        ),
+        "atomicReplaceDurationTotalMs": _nested_int(
+            metrics, ("writes", "totals", "atomicReplaceDurationMs", "total")
+        ),
+        "compressedBytesTotal": _nested_int(
+            metrics, ("writes", "totals", "compressedSizeBytes", "total")
+        ),
+        "uncompressedBytesTotal": _nested_int(
+            metrics, ("writes", "totals", "uncompressedSizeBytes", "total")
+        ),
+        "registryJsonlJournalBytes": _nested_int(
+            metrics, ("registryJournals", "registryJsonlJournalBytes")
+        ),
+        "sourceSyncLatestSizeBytes": _nested_int(
+            metrics, ("sourceSyncSnapshots", "latestSizeBytes")
+        ),
+    }
+    return {key: value for key, value in points.items() if value > 0}
+
+
+def _summarize_storage_metrics(payloads: list[dict[str, Any]]) -> dict[str, Any]:
+    grouped: dict[str, list[int]] = {}
+    for payload in payloads:
+        for key, value in _storage_metric_points(payload).items():
+            grouped.setdefault(key, []).append(value)
+    return {
+        key: {
+            "min": min(values),
+            "median": _median(values),
+            "max": max(values),
+        }
+        for key, values in sorted(grouped.items())
+        if values
+    }
+
+
 def _summarize_runs(mode: str, payloads: list[dict[str, Any]]) -> dict[str, Any]:
     durations = [benchmark_duration_ms(payload, mode=mode) for payload in payloads]
     durations = [duration for duration in durations if duration > 0]
@@ -175,6 +231,9 @@ def _summarize_runs(mode: str, payloads: list[dict[str, Any]]) -> dict[str, Any]
         summary["stageMedianDurationsMs"] = {
             stage: _median(values) for stage, values in sorted(stage_totals.items())
         }
+    storage_metrics = _summarize_storage_metrics(payloads)
+    if storage_metrics:
+        summary["storageMetrics"] = storage_metrics
     return summary
 
 
@@ -194,6 +253,7 @@ def _record_median_summary(
         total_duration_ms=int(benchmark_summary.get("medianDurationMs") or 0),
         status="pass" if record_baseline else status,
         stage_durations_ms=dict(benchmark_summary.get("stageMedianDurationsMs") or {}),
+        storage_metrics=dict(benchmark_summary.get("storageMetrics") or {}),
         artifact=str(output_dir / "summary.json"),
     )
     if record_baseline:

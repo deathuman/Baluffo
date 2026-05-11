@@ -216,6 +216,7 @@ def main(argv: list[str] | None = None) -> int:
 
     from src.source_discovery.config import load_discovery_config
     from src.source_discovery.orchestrator import run_discovery
+    from src.storage_metrics import snapshot_storage_metrics
 
     discovery_config = dict(load_discovery_config())
     discovery_config["autoApproveHealthyPendingOnComplete"] = False
@@ -256,6 +257,7 @@ def main(argv: list[str] | None = None) -> int:
         "deferredReasons": dict(summary.get("deferredReasons") or {}),
         "totalDurationMs": int(runtime.get("totalDurationMs") or 0),
         "stageDurationsMs": _stage_durations_ms(runtime),
+        "storageMetrics": snapshot_storage_metrics(data_dir),
     }
     print(json.dumps(payload, indent=2, ensure_ascii=False))
     return 0

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from src.baluffo_config import get_storage_defaults
+from src.storage_metrics import duration_ms, record_json_write, record_jsonl_write
 
 _STORAGE_DEFAULTS = get_storage_defaults()
 _DEFAULT_DATA_DIR = _STORAGE_DEFAULTS["data_dir"]
@@ -427,6 +428,16 @@ def _replace_path_with_retry(
     return _finish_write_failure(last_error, policy)
 
 
+def _storage_metrics_data_dir_for(path: Path) -> Path:
+    candidate = Path(path).expanduser().resolve()
+    data_dir = Path(DATA_DIR).expanduser().resolve()
+    try:
+        candidate.relative_to(data_dir)
+        return data_dir
+    except ValueError:
+        return candidate.parent
+
+
 def _write_json_payload_atomic(
     path: Path,
     payload: Any,
@@ -440,13 +451,32 @@ def _write_json_payload_atomic(
     # Use a unique temp file per write to avoid collisions across threads/processes.
     tmp = target.with_suffix(target.suffix + f".{os.getpid()}.{time.time_ns()}.tmp")
     try:
+        serialization_started_at = time.perf_counter()
         serialized = json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
+        serialization_duration_ms = duration_ms(serialization_started_at)
+        uncompressed_size_bytes = len(serialized.encode("utf-8"))
         if target.suffix == ".gz":
             with gzip.open(tmp, mode="wt", encoding="utf-8") as handle:
                 handle.write(serialized)
         else:
             tmp.write_text(serialized, encoding="utf-8")
+        try:
+            compressed_size_bytes = tmp.stat().st_size
+        except OSError:
+            compressed_size_bytes = uncompressed_size_bytes
+        replace_started_at = time.perf_counter()
         replaced = _replace_path_with_retry(tmp, target, policy=policy)
+        record_json_write(
+            path=path,
+            target=target,
+            storage_kind="gzip" if target.suffix == ".gz" else "json",
+            serialization_duration_ms=serialization_duration_ms,
+            atomic_replace_duration_ms=duration_ms(replace_started_at),
+            compressed_size_bytes=compressed_size_bytes,
+            uncompressed_size_bytes=uncompressed_size_bytes,
+            replaced=replaced,
+            data_dir=_storage_metrics_data_dir_for(path),
+        )
         if replaced and target.suffix == ".gz" and path.suffix != ".gz":
             _remove_stale_plain_json_storage_file(path)
         return replaced
@@ -598,8 +628,18 @@ def _write_text_atomic(
     ensure_data_dir()
     tmp = path.with_suffix(path.suffix + f".{os.getpid()}.{time.time_ns()}.tmp")
     try:
+        write_started_at = time.perf_counter()
         tmp.write_text(text, encoding="utf-8")
-        _replace_path_with_retry(tmp, path, policy=policy)
+        replaced = _replace_path_with_retry(tmp, path, policy=policy)
+        record_jsonl_write(
+            path=path,
+            operation="rewrite",
+            bytes_written=len(text.encode("utf-8")),
+            duration_ms=duration_ms(write_started_at),
+            row_count=sum(1 for line in text.splitlines() if line.strip()),
+            replaced=replaced,
+            data_dir=_storage_metrics_data_dir_for(path),
+        )
     finally:
         try:
             if tmp.exists():
@@ -626,7 +666,16 @@ def _append_json_journal_record(path: Path, payload: Any) -> None:
         with journal_path.open("a", encoding="utf-8") as handle:
             handle.write(record_text)
 
+    append_started_at = time.perf_counter()
     _run_write_with_retries(_append_record, policy=_WRITE_POLICY_REQUIRED)
+    record_jsonl_write(
+        path=journal_path,
+        operation="append",
+        bytes_written=len(record_text.encode("utf-8")),
+        duration_ms=duration_ms(append_started_at),
+        row_count=1,
+        data_dir=_storage_metrics_data_dir_for(path),
+    )
 
 
 def _compact_json_journal_if_needed(path: Path, payload: Any) -> None:

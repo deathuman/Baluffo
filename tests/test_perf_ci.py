@@ -99,6 +99,69 @@ def test_summarize_runs_uses_median_and_stage_medians() -> None:
     assert summary["stageMedianDurationsMs"] == {"fetchAndParse": 100}
 
 
+def test_summarize_runs_preserves_storage_metric_min_median_max() -> None:
+    summary = perf_ci._summarize_runs(
+        "fetch",
+        [
+            {
+                "totalDurationMs": 300,
+                "storageMetrics": {
+                    "writes": {
+                        "writeCount": 2,
+                        "totals": {
+                            "compressedSizeBytes": {"total": 200},
+                            "serializationDurationMs": {"total": 20},
+                        },
+                    },
+                    "registryJournals": {"registryJsonlJournalBytes": 30},
+                },
+            },
+            {
+                "totalDurationMs": 100,
+                "storageMetrics": {
+                    "writes": {
+                        "writeCount": 6,
+                        "totals": {
+                            "compressedSizeBytes": {"total": 600},
+                            "serializationDurationMs": {"total": 60},
+                        },
+                    },
+                    "registryJournals": {"registryJsonlJournalBytes": 90},
+                },
+            },
+            {
+                "totalDurationMs": 200,
+                "storageMetrics": {
+                    "writes": {
+                        "writeCount": 4,
+                        "totals": {
+                            "compressedSizeBytes": {"total": 400},
+                            "serializationDurationMs": {"total": 40},
+                        },
+                    },
+                    "registryJournals": {"registryJsonlJournalBytes": 60},
+                },
+            },
+        ],
+    )
+
+    assert summary["storageMetrics"]["writeCount"] == {
+        "min": 2,
+        "median": 4,
+        "max": 6,
+    }
+    assert summary["storageMetrics"]["compressedBytesTotal"] == {
+        "min": 200,
+        "median": 400,
+        "max": 600,
+    }
+    assert summary["storageMetrics"]["registryJsonlJournalBytes"] == {
+        "min": 30,
+        "median": 60,
+        "max": 90,
+    }
+
+
 def test_parse_args_accepts_median_recording_options(tmp_path: Path) -> None:
     args = perf_ci.parse_args(
         [

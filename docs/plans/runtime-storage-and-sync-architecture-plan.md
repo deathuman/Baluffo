@@ -40,13 +40,14 @@ The 2026-05-11 validation found that several lifecycle closeout items are alread
 - Frontend task-run view-model coverage exists for non-stale recent progress.
 - Generic object journal-overlay coverage now uses `source-approval-state.json` instead of `jobs-fetch-report.json`, so fetch reports remain runtime evidence in tests too.
 - Sync push byte-budget fields (`sizeBytes`, `maxSnapshotSizeBytes`, `sizeWarning`) propagate through service results, timing records, task summaries, run history, no-op pushes, and `snapshot_too_large` failure metadata.
-- Targeted validation passed: lifecycle/storage-adjacent Python tests, journal/source-sync/build tests, the narrow frontend task-run view-model test, and focused sync-size propagation tests.
+- Storage metrics foundation exists: JSON/gzip writes emit serialization, byte-size, and replace-duration diagnostics, registry journals expose byte/row telemetry, source-sync push sizing records snapshot pressure, `/ops/storage-metrics` exposes the combined diagnostic payload, and sanity benchmark payloads plus repeated `perf_ci.py` summaries preserve storage metric min/median/max.
+- Targeted validation passed: lifecycle/storage-adjacent Python tests, journal/source-sync/build tests, the narrow frontend task-run view-model test, focused sync-size propagation tests, and focused storage-metrics route/module/benchmark tests.
 
 The remaining risks are not those old lifecycle read-path gaps. The open architecture risks are:
 
 - Registry journals still store full payload records, so compaction cannot shrink a large registry below one full record.
 - BEST_EFFORT journal compaction can silently leave unbounded accumulated records.
-- Storage write metrics do not yet exist, so SQLite migration cost/benefit is still unproven.
+- Storage metrics still need real local discovery/fetch sanity evidence before using them for the M0/M0.5 SQLite go/no-go decision.
 - The previous "push proposed manifest first" sharded-sync design can hide the last committed manifest from readers and is not acceptable.
 
 ## Strategy Corrections
@@ -350,13 +351,14 @@ Gate: complete. Sync history and timing records expose the same byte-budget info
 
 Purpose: create the evidence gate for broader migration.
 
-- Add leaf storage metrics instrumentation for JSON/gzip writes, registry journals, source-sync payloads, and key routes.
-- Aggregate metrics across subprocess pipeline writers.
-- Expose `/ops/storage-metrics`.
-- Preserve median/min/max in `perf_ci.py` trend output.
-- Include `registryJsonlJournalBytes` and row counts before journal repair so the repair can be measured.
+- **Done:** Add a leaf `src/storage_metrics.py` module importable by registry IO, source-sync, bridge routes, benchmarks, and scripts without importing bridge composition roots.
+- **Done:** Instrument JSON/gzip writes with serialization duration, compressed/uncompressed bytes, atomic replace duration, write count, and failed-write count.
+- **Done:** Aggregate metrics across subprocess writers through `data/storage-metrics.jsonl` while retaining an in-memory fallback; the metrics writer uses plain JSONL append and does not call instrumented JSON save helpers.
+- **Done:** Expose `/ops/storage-metrics` with storage write metrics, registry journal telemetry, source-sync snapshot pressure, and existing route timing counters.
+- **Done:** Include benchmark `storageMetrics` in discovery/fetch sanity payloads and preserve min/median/max in repeated `perf_ci.py` summaries/trend records.
+- **Done:** Include `registryJsonlJournalBytes` and row counts before journal repair so the repair can be measured.
 
-Gate: metrics are visible for at least one local discovery/fetch sanity run and do not recursively write through instrumented JSON paths.
+Gate: implementation is unit-validated and metrics writes do not recurse through instrumented JSON paths. Before the M0/M0.5 go/no-go decision, collect at least one local discovery/fetch sanity run and confirm the emitted `storageMetrics` payload is populated.
 
 ### Milestone 0.5 - Registry Journal Repair
 

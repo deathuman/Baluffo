@@ -47,6 +47,7 @@ def build_baseline_record(
     adapter_count: int | None = None,
     wall_clock_ms: int | None = None,
     stage_durations_ms: dict[str, Any] | None = None,
+    storage_metrics: dict[str, Any] | None = None,
     artifact: str = "",
     commit_sha: str = "",
     timestamp: str = "",
@@ -72,6 +73,8 @@ def build_baseline_record(
             str(key): _parse_non_negative_int(value, field=f"stageDurationsMs.{key}")
             for key, value in stage_durations_ms.items()
         }
+    if storage_metrics:
+        record["storageMetrics"] = storage_metrics
     artifact_text = str(artifact or "").strip()
     if artifact_text:
         record["artifact"] = artifact_text

@@ -115,6 +115,7 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
 | GET | `/ops/task-state` | Current summary task projection; top-level `tasks` array remains the current-run contract |
 | GET | `/ops/fetch-report` | Last fetch summary |
 | GET | `/ops/fetcher-metrics?windowRuns=` | Fetcher metrics |
+| GET | `/ops/storage-metrics` | Runtime storage write, registry journal, source-sync size, and route timing diagnostics |
 | POST | `/ops/alerts/ack` | Acknowledge alert (`{id: ""}`); active non-dismissible alerts return `{ok: true, ignored: true}` |
 | GET | `/desktop-local-data/startup-metrics?limit=` | Startup performance data |
 | POST | `/desktop-local-data/startup-metric` | Record startup event |
@@ -160,6 +161,7 @@ Known sensitive field names such as tokens, passwords, secrets, API keys, and au
   - `timestamp`, `level`, `taskType`, `runId`, `workItemId`, `phaseKey`, and `message`: compatibility fields used by Admin Ops and support diagnostics.
 - `taskProgress`, `workItems`, and `recentEvents` are the support-ready live task contract for fetch/discovery/sync. They should be extended through the shared normalizers rather than by adding task-specific parallel event formats. Discovery uses these fields for wave-level progress, including current stage, stage index/total, generated/survived counts, probe counts, and bounded stage events.
 - `/desktop-local-data/startup-metrics?limit=` returns retained startup diagnostic rows from `data/desktop-startup-metrics.jsonl`. Rows use `schemaVersion: 1`, `ts`, `event`, `category`, and either `fields` for runtime traces or `payload` for browser/page metrics; `browserTsMs` is preserved when browser-created timing is available.
+- `/ops/storage-metrics` is read-only diagnostics. It returns additive `storageMetrics` for JSON/gzip write counts, serialization and replace durations, compressed/uncompressed byte sizes, registry `.jsonl` journal bytes/rows, and source-sync snapshot size pressure, plus existing route timing counters under `routeCounters`.
 - `/ops/task-state` is unchanged. Its top-level `tasks` array remains the compact current-task summary contract used by Ops and Jobs.
 - Saved-page bridge consumers should keep route calls inside slice-local `frontend/saved/services.js`; page behavior now fans out through `frontend/saved/app/runtime/*.js` and `frontend/saved/app/admin-bridge-state.js`, not through new root facades.
 - Long-running admin tasks are now **runId-owned**. `runId` is the only lifecycle identity for fetch, discovery, sync, and pipeline rows. Timestamp-only matching is not part of the runtime lifecycle model anymore.

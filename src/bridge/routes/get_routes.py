@@ -34,6 +34,7 @@ from src.jobs.common.contracts_source_policy_review_state import (
 from src.shared.timing_counters import snapshot_counters
 from src.source_registry import is_hidden_from_default
 from src.source_registry_io import load_runtime_evidence_array
+from src.storage_metrics import snapshot_storage_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,13 @@ def _compact_live_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any
 def _source_policy_soak_report_path(api: BridgeApi) -> Path:
     data_dir = Path(api.SOURCE_POLICY_RECOMMENDATIONS_PATH).parent
     return data_dir.parent / "_out" / "source-policy-soak-report.json"
+
+
+def _storage_metrics_data_dir(api: BridgeApi) -> Path:
+    data_dir = getattr(api.runtime_config, "data_dir", None)
+    if data_dir:
+        return Path(data_dir).expanduser().resolve()
+    return Path(api.JOBS_FETCH_REPORT_PATH).expanduser().resolve().parent
 
 
 def _load_provider_coverage_link_backfill(api: BridgeApi) -> tuple[dict[str, Any], str]:
@@ -971,6 +979,16 @@ def handle_get(
 
     if path == "/ops/perf-counters":
         handler.send_json({"ok": True, "counters": snapshot_counters()})
+        return True
+
+    if path == "/ops/storage-metrics":
+        handler.send_json(
+            {
+                "ok": True,
+                "storageMetrics": snapshot_storage_metrics(_storage_metrics_data_dir(api)),
+                "routeCounters": snapshot_counters(),
+            }
+        )
         return True
 
     if path == "/ops/fetch-report":
