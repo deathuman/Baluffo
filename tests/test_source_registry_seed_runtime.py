@@ -76,8 +76,10 @@ def test_registry_writes_target_runtime_file_without_mutating_seed() -> None:
         journal_path = root / "source-registry-pending.jsonl"
         assert journal_path.exists()
         journal_record = json.loads(journal_path.read_text(encoding="utf-8"))
-        assert journal_record["schemaVersion"] == 1
-        assert journal_record["payload"] == [runtime_row]
+        assert (journal_record["schemaVersion"], journal_record["kind"]) == (2, "array_delta")
+        assert journal_record["changed"] == [runtime_row]
+        assert journal_record["removed"] == ["seed-pending"]
+        assert journal_record["rowIds"] == ["runtime-pending"]
         assert len(journal_record["contentHash"]) == 64
         assert (root / "source-registry-metadata.json.gz").exists()
         assert sr.load_json_array(runtime_path, [])[0] == runtime_row
@@ -150,8 +152,10 @@ def test_save_json_atomic_splits_lean_registry_storage() -> None:
                 "company_id": "Gameloft",
             }
         }
-        assert journal_record["schemaVersion"] == 1
-        assert journal_record["payload"] == payload
+        assert (journal_record["schemaVersion"], journal_record["kind"]) == (2, "array_delta")
+        assert journal_record["changed"] == payload
+        assert journal_record["removed"] == []
+        assert journal_record["rowIds"] == ["smartrecruiters:company_id:Gameloft"]
         assert len(journal_record["contentHash"]) == 64
         assert sr.load_json_array(path, []) == payload
 
@@ -292,8 +296,9 @@ def test_save_json_atomic_compacts_json_journal_for_object_payload(
         journal_path = root / "source-registry-tombstones.jsonl"
         journal_record = json.loads(journal_path.read_text(encoding="utf-8"))
         assert journal_path.read_text(encoding="utf-8").count("\n") == 1
-        assert journal_record["schemaVersion"] == 1
-        assert journal_record["payload"] == payload_three
+        assert (journal_record["schemaVersion"], journal_record["kind"]) == (2, "object_delta")
+        assert journal_record["changed"] == {}
+        assert journal_record["removed"] == []
         assert len(journal_record["contentHash"]) == 64
         assert sr.load_json_object(path, {}) == payload_three
 

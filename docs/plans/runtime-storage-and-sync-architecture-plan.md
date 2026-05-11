@@ -42,11 +42,11 @@ The 2026-05-11 validation found that several lifecycle closeout items are alread
 - Sync push byte-budget fields (`sizeBytes`, `maxSnapshotSizeBytes`, `sizeWarning`) propagate through service results, timing records, task summaries, run history, no-op pushes, and `snapshot_too_large` failure metadata.
 - Storage metrics foundation exists: JSON/gzip writes emit serialization, byte-size, and replace-duration diagnostics, registry journals expose byte/row telemetry, source-sync push sizing records snapshot pressure, `/ops/storage-metrics` exposes the combined diagnostic payload, and sanity benchmark payloads plus repeated `perf_ci.py` summaries preserve storage metric min/median/max.
 - Registry journal maintenance foundation exists: append-time hard caps rewrite oversized registry journals instead of appending, oversized startup journals are compacted before lifecycle cleanup/startup sync, and post-write journal compaction uses REQUIRED policy instead of silent BEST_EFFORT replacement.
+- Registry journals now write schema-v2 delta records for array and object payloads, including `rowIds` for exact registry array order reconstruction and content hashes for base/current validation. Legacy schema-v1 full-payload records remain readable during transition.
 - Targeted validation passed: lifecycle/storage-adjacent Python tests, journal/source-sync/build tests, the narrow frontend task-run view-model test, focused sync-size propagation tests, and focused storage-metrics route/module/benchmark tests.
 
 The remaining risks are not those old lifecycle read-path gaps. The open architecture risks are:
 
-- Registry journals still store full payload records, so compaction cannot shrink a large registry below one full record; delta journals or journal elimination remain the next journal-repair decision.
 - Storage metrics still need real local discovery/fetch sanity evidence before using them for the M0/M0.5 SQLite go/no-go decision.
 - The previous "push proposed manifest first" sharded-sync design can hide the last committed manifest from readers and is not acceptable.
 
@@ -366,10 +366,10 @@ Purpose: make registry journal growth provably bounded before SQLite work.
 
 - **Done:** Add per-journal byte and row-count telemetry through `storageMetrics.registryJsonlJournals`.
 - **Done:** Replace BEST_EFFORT compaction with REQUIRED rewrite/repair policy for registry journal compaction.
-- **Done:** Add append-time hard-cap behavior that rewrites a registry journal to the latest full-payload record instead of appending when the append would exceed the cap.
+- **Done:** Add append-time hard-cap behavior that rewrites a registry journal to the latest delta/full-payload-compatible record instead of appending when the append would exceed the cap.
 - **Done:** Add startup maintenance that compacts oversized registry journals before lifecycle cleanup and startup sync scheduling, with bridge diagnostics for compacted/error counts.
-- Implement registry-only delta journals with the constraints in this plan, or eliminate registry journals for lean gzip-backed registries.
-- Add tests for delta correctness, canonical hash mismatch, corrupt canonical fallback, and legacy full-payload v1 read compatibility if transition support is retained.
+- **Done:** Implement registry-only schema-v2 delta journals for registry arrays and tombstone objects. Array deltas include `rowIds` so changed/removed rows cannot lose ordering semantics.
+- **Done:** Add tests for delta correctness, canonical hash mismatch, corrupt canonical fallback, compaction failure, startup repair, hard-cap append refusal, and legacy full-payload v1 read compatibility.
 
 Gate: repeated registry writes cannot grow any journal unboundedly, even when replace fails.
 

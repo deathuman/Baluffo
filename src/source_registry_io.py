@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +49,7 @@ _GZIP_REGISTRY_NAMES = {
 }
 
 _JSON_JOURNAL_SCHEMA_VERSION = 1
+_JSON_JOURNAL_DELTA_SCHEMA_VERSION = 2
 _JSON_JOURNAL_COMPACT_MAX_BYTES = 1_048_576
 _JSON_JOURNAL_HARD_MAX_BYTES = _JSON_JOURNAL_COMPACT_MAX_BYTES * 4
 _WRITE_POLICY_REQUIRED = "required"
@@ -262,6 +264,32 @@ def _load_json_array_from_file(path: Path, fallback: list[dict[str, Any]]) -> li
         return [dict(row) for row in fallback]
 
 
+def _load_json_object_from_storage(
+    path: Path,
+    fallback: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        source_path = Path(path)
+        existing = next(
+            (
+                candidate
+                for candidate in _json_storage_candidates(source_path)
+                if candidate.exists()
+            ),
+            None,
+        )
+        if existing is None:
+            return dict(fallback)
+        if existing.suffix == ".gz":
+            with gzip.open(existing, mode="rt", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        else:
+            payload = json.loads(existing.read_text(encoding="utf-8"))
+        return dict(payload) if isinstance(payload, dict) else dict(fallback)
+    except (OSError, json.JSONDecodeError):
+        return dict(fallback)
+
+
 def _load_json_payload_from_file(path: Path) -> Any | None:
     try:
         if path.suffix == ".gz":
@@ -342,7 +370,7 @@ def load_json_array(
         None,
     )
     if _uses_json_journal(path) and _json_journal_should_overlay_base(path, existing):
-        journal_rows = _load_json_journal_latest_payload(path)
+        journal_rows = _load_json_journal_latest_payload(path, base_payload=rows)
         if isinstance(journal_rows, list):
             return [dict(row) for row in journal_rows if isinstance(row, dict)]
     return rows
@@ -352,28 +380,32 @@ def load_json_object(path: Path, default: dict[str, Any] | None = None) -> dict[
     fallback = dict(default or {})
     try:
         source_path = Path(path)
-        candidates = _json_storage_candidates(source_path)
-        existing = next((candidate for candidate in candidates if candidate.exists()), None)
-        if existing is None:
-            base_payload = fallback
-        elif existing.suffix == ".gz":
-            with gzip.open(existing, mode="rt", encoding="utf-8") as handle:
-                payload = json.load(handle)
-            base_payload = payload if isinstance(payload, dict) else fallback
-        else:
-            payload = json.loads(existing.read_text(encoding="utf-8"))
-            base_payload = payload if isinstance(payload, dict) else fallback
+        existing = next(
+            (
+                candidate
+                for candidate in _json_storage_candidates(source_path)
+                if candidate.exists()
+            ),
+            None,
+        )
+        base_payload = _load_json_object_from_storage(source_path, fallback)
         if _uses_json_journal(source_path) and _json_journal_should_overlay_base(
             source_path, existing
         ):
-            journal_payload = _load_json_journal_latest_payload(source_path)
+            journal_payload = _load_json_journal_latest_payload(
+                source_path,
+                base_payload=base_payload,
+            )
             if isinstance(journal_payload, dict):
                 return dict(journal_payload)
         return dict(base_payload)
     except (OSError, json.JSONDecodeError):
         source_path = Path(path)
         if _uses_json_journal(source_path):
-            journal_payload = _load_json_journal_latest_payload(source_path)
+            journal_payload = _load_json_journal_latest_payload(
+                source_path,
+                base_payload=fallback,
+            )
             if isinstance(journal_payload, dict):
                 return dict(journal_payload)
         return fallback
@@ -612,7 +644,7 @@ def compact_registry_journals(data_dir: Path | None = None) -> dict[str, Any]:
             payload = _registry_journal_repair_payload(path)
             _write_text_atomic(
                 journal_path,
-                _json_journal_record_text(payload),
+                _registry_journal_record_text(path, payload),
                 policy=_WRITE_POLICY_REQUIRED,
             )
             compacted_size = journal_path.stat().st_size
@@ -692,6 +724,104 @@ def _json_journal_record_text(payload: Any) -> str:
     )
 
 
+def _json_journal_timestamp() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def _registry_journal_base_payload(path: Path) -> Any:
+    if _registry_journal_expects_array(path):
+        rows = _load_json_array_from_storage(path, [])
+        return rows if rows is not None else []
+    return _load_json_object_from_storage(path, {})
+
+
+def _registry_rows_by_id(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]] | None:
+    rows_by_id: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        row_id = row.get("id")
+        if not isinstance(row_id, str) or not row_id or row_id in rows_by_id:
+            return None
+        rows_by_id[row_id] = dict(row)
+    return rows_by_id
+
+
+def _json_journal_array_delta_record(
+    base_payload: Any,
+    current_payload: Any,
+) -> dict[str, Any] | None:
+    if not isinstance(base_payload, list) or not isinstance(current_payload, list):
+        return None
+    base_rows = [dict(row) for row in base_payload if isinstance(row, dict)]
+    current_rows = [dict(row) for row in current_payload if isinstance(row, dict)]
+    if len(base_rows) != len(base_payload) or len(current_rows) != len(current_payload):
+        return None
+    base_by_id = _registry_rows_by_id(base_rows)
+    current_by_id = _registry_rows_by_id(current_rows)
+    if base_by_id is None or current_by_id is None:
+        return None
+    row_ids = [str(row["id"]) for row in current_rows]
+    return {
+        "schemaVersion": _JSON_JOURNAL_DELTA_SCHEMA_VERSION,
+        "kind": "array_delta",
+        "baseContentHash": _json_journal_payload_hash(base_rows),
+        "contentHash": _json_journal_payload_hash(current_rows),
+        "changed": [dict(row) for row in current_rows if base_by_id.get(str(row["id"])) != row],
+        "removed": [row_id for row_id in base_by_id if row_id not in current_by_id],
+        "rowIds": row_ids,
+        "rowCount": len(current_rows),
+        "timestamp": _json_journal_timestamp(),
+    }
+
+
+def _json_journal_object_delta_record(
+    base_payload: Any,
+    current_payload: Any,
+) -> dict[str, Any] | None:
+    if not isinstance(base_payload, dict) or not isinstance(current_payload, dict):
+        return None
+    if not all(isinstance(key, str) for key in base_payload) or not all(
+        isinstance(key, str) for key in current_payload
+    ):
+        return None
+    base_object = dict(base_payload)
+    current_object = dict(current_payload)
+    return {
+        "schemaVersion": _JSON_JOURNAL_DELTA_SCHEMA_VERSION,
+        "kind": "object_delta",
+        "baseContentHash": _json_journal_payload_hash(base_object),
+        "contentHash": _json_journal_payload_hash(current_object),
+        "changed": {
+            key: value for key, value in current_object.items() if base_object.get(key) != value
+        },
+        "removed": [key for key in base_object if key not in current_object],
+        "rowCount": len(current_object),
+        "timestamp": _json_journal_timestamp(),
+    }
+
+
+def _registry_journal_record(path: Path, payload: Any) -> dict[str, Any]:
+    image_payload = _json_journal_image_payload(payload)
+    base_payload = _registry_journal_base_payload(path)
+    if isinstance(image_payload, list):
+        delta_record = _json_journal_array_delta_record(base_payload, image_payload)
+    elif isinstance(image_payload, dict):
+        delta_record = _json_journal_object_delta_record(base_payload, image_payload)
+    else:
+        delta_record = None
+    return delta_record if delta_record is not None else _json_journal_record(image_payload)
+
+
+def _registry_journal_record_text(path: Path, payload: Any) -> str:
+    return (
+        json.dumps(
+            _registry_journal_record(path, payload),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        + "\n"
+    )
+
+
 def _write_text_atomic(
     path: Path,
     text: str,
@@ -741,7 +871,7 @@ def _append_json_journal_record(path: Path, payload: Any) -> None:
     journal_path = _json_journal_path_for(path)
     journal_path.parent.mkdir(parents=True, exist_ok=True)
     ensure_data_dir()
-    record_text = _json_journal_record_text(payload)
+    record_text = _registry_journal_record_text(path, payload)
     record_bytes = len(record_text.encode("utf-8"))
     try:
         journal_bytes = journal_path.stat().st_size if journal_path.exists() else 0
@@ -785,28 +915,111 @@ def _compact_json_journal_if_needed(path: Path, payload: Any) -> None:
         return
     _write_text_atomic(
         journal_path,
-        _json_journal_record_text(payload),
+        _registry_journal_record_text(path, payload),
         policy=_WRITE_POLICY_REQUIRED,
     )
 
 
-def _load_json_journal_record_payload(record: Any) -> Any | None:
+def _load_json_journal_array_delta_payload(
+    record: dict[str, Any],
+    base_payload: Any,
+) -> list[dict[str, Any]] | None:
+    if not isinstance(base_payload, list):
+        return None
+    base_rows = [dict(row) for row in base_payload if isinstance(row, dict)]
+    if len(base_rows) != len(base_payload):
+        return None
+    if str(record.get("baseContentHash") or "") != _json_journal_payload_hash(base_rows):
+        return None
+    rows_by_id = _registry_rows_by_id(base_rows)
+    if rows_by_id is None:
+        return None
+    removed = record.get("removed")
+    changed = record.get("changed")
+    row_ids = record.get("rowIds")
+    if not isinstance(removed, list) or not all(isinstance(row_id, str) for row_id in removed):
+        return None
+    if not isinstance(changed, list):
+        return None
+    if not isinstance(row_ids, list) or not all(isinstance(row_id, str) for row_id in row_ids):
+        return None
+    for row_id in removed:
+        rows_by_id.pop(row_id, None)
+    for row in changed:
+        if not isinstance(row, dict):
+            return None
+        row_id = row.get("id")
+        if not isinstance(row_id, str) or not row_id:
+            return None
+        rows_by_id[row_id] = dict(row)
+    if set(rows_by_id) != set(row_ids):
+        return None
+    payload = [rows_by_id[row_id] for row_id in row_ids]
+    if _json_journal_record_row_count(record) != len(payload):
+        return None
+    if str(record.get("contentHash") or "") != _json_journal_payload_hash(payload):
+        return None
+    return payload
+
+
+def _load_json_journal_object_delta_payload(
+    record: dict[str, Any],
+    base_payload: Any,
+) -> dict[str, Any] | None:
+    if not isinstance(base_payload, dict):
+        return None
+    if str(record.get("baseContentHash") or "") != _json_journal_payload_hash(base_payload):
+        return None
+    removed = record.get("removed")
+    changed = record.get("changed")
+    if not isinstance(removed, list) or not all(isinstance(key, str) for key in removed):
+        return None
+    if not isinstance(changed, dict):
+        return None
+    payload = dict(base_payload)
+    for key in removed:
+        payload.pop(key, None)
+    payload.update(changed)
+    if _json_journal_record_row_count(record) != len(payload):
+        return None
+    if str(record.get("contentHash") or "") != _json_journal_payload_hash(payload):
+        return None
+    return payload
+
+
+def _json_journal_record_row_count(record: dict[str, Any]) -> int | None:
+    try:
+        return int(record.get("rowCount"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _load_json_journal_record_payload(
+    record: Any,
+    base_payload: Any | None = None,
+) -> Any | None:
     if not isinstance(record, dict):
         return None
     try:
         schema_version = int(record.get("schemaVersion") or 0)
     except (TypeError, ValueError):
         return None
-    if schema_version != _JSON_JOURNAL_SCHEMA_VERSION:
+    if schema_version == _JSON_JOURNAL_SCHEMA_VERSION:
+        payload = record.get("payload")
+        try:
+            content_hash = _json_journal_payload_hash(payload)
+        except (TypeError, ValueError):
+            return None
+        if str(record.get("contentHash") or "") != content_hash:
+            return None
+        return payload
+    if schema_version != _JSON_JOURNAL_DELTA_SCHEMA_VERSION:
         return None
-    payload = record.get("payload")
-    try:
-        content_hash = _json_journal_payload_hash(payload)
-    except (TypeError, ValueError):
-        return None
-    if str(record.get("contentHash") or "") != content_hash:
-        return None
-    return payload
+    if record.get("kind") == "array_delta":
+        return _load_json_journal_array_delta_payload(record, base_payload or [])
+    if record.get("kind") == "object_delta":
+        return _load_json_journal_object_delta_payload(record, base_payload or {})
+    return None
 
 
 def _load_json_array_rows_from_path(
@@ -834,10 +1047,15 @@ def _load_json_array_from_storage(
     return None
 
 
-def _load_json_journal_latest_payload(path: Path) -> Any | None:
+def _load_json_journal_latest_payload(
+    path: Path,
+    *,
+    base_payload: Any | None = None,
+) -> Any | None:
     journal_path = _json_journal_path_for(path)
     if not journal_path.exists():
         return None
+    current_base = _registry_journal_base_payload(path) if base_payload is None else base_payload
     latest_payload: Any | None = None
     try:
         with journal_path.open("r", encoding="utf-8") as handle:
@@ -848,9 +1066,13 @@ def _load_json_journal_latest_payload(path: Path) -> Any | None:
                     record = json.loads(raw_line)
                 except json.JSONDecodeError:
                     break
-                payload = _load_json_journal_record_payload(record)
+                payload = _load_json_journal_record_payload(
+                    record,
+                    base_payload=current_base,
+                )
                 if payload is not None:
                     latest_payload = payload
+                    current_base = payload
     except OSError:
         return None
     return latest_payload
