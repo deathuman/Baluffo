@@ -31,6 +31,7 @@ class PipelineService:
         sync_task_running: Callable[[], bool],
         current_fetch_output_count: Callable[[], int],
         load_json_object: Callable[[Any, Any], Any],
+        load_runtime_evidence: Callable[[Any, Any], Any] | None = None,
         wait_for_sync_completion: Callable[[str, float], dict[str, Any]],
         discovery_report_path: Any,
         fetch_report_path: Any,
@@ -59,6 +60,10 @@ class PipelineService:
         self._sync_task_running = sync_task_running
         self._current_fetch_output_count = current_fetch_output_count
         self._load_json_object = load_json_object
+        if load_runtime_evidence is None:
+            self._load_runtime_evidence = self._load_json_object
+        else:
+            self._load_runtime_evidence = load_runtime_evidence
         self._wait_for_sync_completion = wait_for_sync_completion
         self._discovery_report_path = discovery_report_path
         self._fetch_report_path = fetch_report_path
@@ -378,7 +383,7 @@ class PipelineService:
         snapshot = self._get_child_task_snapshot("fetch")
         child_run_id = str(getattr(snapshot, "run_id", "") or "").strip()
         child_started_at = str(getattr(snapshot, "started_at", "") or "").strip()
-        report = self._load_json_object(self._fetch_report_path, {})
+        report = self._load_runtime_evidence(self._fetch_report_path, {})
         if not isinstance(report, dict):
             return
         if not child_run_id:
@@ -532,7 +537,7 @@ class PipelineService:
             started_at=discovery_started_at,
             timeout_s=900.0,
             report_name="discovery report",
-            load_json_object=self._load_json_object,
+            load_json_object=self._load_runtime_evidence,
             report_is_stale_in_progress=lambda *_args, **_kwargs: False,
             task_type="discovery",
             task_run_id=discovery_run_id,
@@ -576,7 +581,7 @@ class PipelineService:
                 label=wait_label,
             )
             self._heartbeat_pipeline_wait()
-            latest = self._load_json_object(self._discovery_report_path, {})
+            latest = self._load_runtime_evidence(self._discovery_report_path, {})
             latest_report = latest if isinstance(latest, dict) else {}
             runtime = (
                 latest_report.get("runtime")
@@ -628,7 +633,7 @@ class PipelineService:
             started_at=fetch_started_at,
             timeout_s=1200.0,
             report_name="fetch report",
-            load_json_object=self._load_json_object,
+            load_json_object=self._load_runtime_evidence,
             report_is_stale_in_progress=lambda *_args, **_kwargs: False,
             task_type="fetch",
             task_run_id=fetch_run_id,

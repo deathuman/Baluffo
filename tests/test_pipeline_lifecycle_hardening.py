@@ -107,6 +107,7 @@ def test_run_worker_skips_registry_adjudication_before_sync_by_default(
         sync_task_running=lambda: False,
         current_fetch_output_count=lambda: 12,
         load_json_object=load_json_object,
+        load_runtime_evidence=load_json_object,
         wait_for_sync_completion=lambda x, y: {"status": "ok", "summary": {}},
         discovery_report_path=discovery_report_path,
         fetch_report_path=fetch_report_path,

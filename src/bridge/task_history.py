@@ -132,10 +132,8 @@ class TaskHistoryManager:
             self._clear_task_state_locked(task_type)
 
     def _clear_task_state_locked(self, task_type: str) -> None:
-        state = self._load_json_object(self._task_state_path, {})
-        if not isinstance(state, dict):
-            return
-        if str(task_type) in state:
-            state.pop(str(task_type), None)
-            self._task_state_path.parent.mkdir(parents=True, exist_ok=True)
-            self._save_json_atomic(self._task_state_path, state)
+        # admin-task-state.json writes are deprecated in favor of the
+        # lifecycle ledger (data/admin-task-lifecycle.json).  No production
+        # task launch path calls clear_task_state; the lifecycle ledger APIs
+        # manage state transitions directly.
+        pass

@@ -161,13 +161,8 @@ def cleanup_orphaned_startup_tasks(
     stale_keys: set[tuple[str, str]] = set()
     stale_parent_run_ids: set[str] = set()
 
-    for task_type, entry in list(task_state.items()):
-        if not isinstance(entry, dict):
-            continue
-        run_id = str(entry.get("runId") or "").strip()
-        if run_id and _pid_dead(entry, pid_is_running):
-            stale_keys.add((str(task_type).strip().lower(), run_id))
-
+    # Stale row detection now uses lifecycle ledger ownerPid exclusively.
+    # The legacy admin-task-state.json pass has been removed.
     for row in _running_lifecycle_rows(lifecycle_payload):
         task_type, run_id = _run_key(row)
         if not task_type or not run_id:

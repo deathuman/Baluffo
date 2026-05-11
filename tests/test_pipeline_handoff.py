@@ -100,6 +100,7 @@ def make_service(
         sync_task_running=lambda: False,
         current_fetch_output_count=lambda: 5,
         load_json_object=load_json_object,
+        load_runtime_evidence=load_json_object,
         wait_for_sync_completion=lambda x, y: {"status": "ok", "summary": {}},
         discovery_report_path=tmp_path / "discovery-report.json",
         fetch_report_path=tmp_path / "fetch-report.json",

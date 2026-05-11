@@ -33,6 +33,7 @@ def _make_pipeline_service(**overrides: Any) -> PipelineService:
         "sync_task_running": lambda: False,
         "current_fetch_output_count": lambda: 0,
         "load_json_object": lambda _path, default: default,
+        "load_runtime_evidence": lambda path, default=None: default or {},
         "wait_for_sync_completion": lambda _run_id, _timeout_s: {},
         "discovery_report_path": Path("source-discovery-report.json"),
         "fetch_report_path": Path("jobs-fetch-report.json"),
@@ -172,6 +173,7 @@ def test_status_payload_recovers_inactive_pipeline_worker_after_terminal_fetch_r
         pipeline_status=status,
         current_fetch_output_count=lambda: 42,
         load_json_object=lambda _path, _default: dict(finished_fetch_report),
+        load_runtime_evidence=lambda _path, _default: dict(finished_fetch_report),
         get_projected_run_history=lambda: LifecycleProjection(
             rows=[],
             child_tasks={
@@ -315,7 +317,7 @@ def _project_discovery_history(
         }
     ]
 
-    def load_json_object(path: Any, default: dict[str, Any]) -> dict[str, Any]:
+    def load_json_sync(path: Any, default: dict[str, Any]) -> dict[str, Any]:
         token = str(path)
         if token == "discovery-report":
             return discovery_report
@@ -335,7 +337,8 @@ def _project_discovery_history(
             upsert_run_history=lambda entry, **_kwargs: entry,
             task_running_from_state=lambda _task_type: False,
             report_is_stale_in_progress=lambda *_args, **_kwargs: False,
-            load_json_object=load_json_object,
+            load_json_object=load_json_sync,
+            load_runtime_evidence=load_json_sync,
             normalize_fetch_report_contract=lambda payload: payload,
             normalize_discovery_report_contract=lambda payload: payload,
             summarize_fetch_report=lambda _report: {},

@@ -254,6 +254,16 @@ def test_load_json_array_ignores_trailing_partial_journal_record() -> None:
         with journal_path.open("a", encoding="utf-8") as handle:
             handle.write('{"schemaVersion":1,"contentHash":"broken"')
 
+        # Ensure the journal mtime is newer than the corrupt snapshot so the
+        # mtime guard in load_json_array allows the journal overlay to win.
+        import os as _os
+
+        _snap_stat = snapshot_path.stat()
+        _os.utime(
+            journal_path,
+            (_snap_stat.st_atime + 1, _snap_stat.st_mtime + 1),
+        )
+
         assert sr.load_json_array(path, []) == payload
 
 

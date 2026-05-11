@@ -66,6 +66,7 @@ class DiscoveryDeps:
     finish_lifecycle_run: Callable[..., dict[str, Any]] = lambda *_args, **_kwargs: {}
     fail_lifecycle_run: Callable[..., dict[str, Any]] = lambda *_args, **_kwargs: {}
     get_lifecycle_current_runs: Callable[[], list[dict[str, Any]]] = lambda: []
+    load_runtime_evidence: Callable[[Any, Any], Any] | None = None
 
 
 class DiscoveryService:
@@ -132,11 +133,17 @@ class DiscoveryService:
             "savedConfig": self.get_saved_discovery_config_payload(),
         }
 
+    def _read_discovery_report(self) -> dict[str, Any]:
+        reader = (
+            self._deps.load_runtime_evidence
+            if callable(self._deps.load_runtime_evidence)
+            else self._deps.load_json_object
+        )
+        return reader(self._paths.report, {})
+
     def _refresh_discovery_task_heartbeat(self, *, run_id: str, pid: int, started_at: str) -> None:
         now = self._deps.now_iso()
-        report = self._deps.normalize_discovery_report_contract(
-            self._deps.load_json_object(self._paths.report, {})
-        )
+        report = self._deps.normalize_discovery_report_contract(self._read_discovery_report())
         report_run_id = str(report.get("runId") or "").strip()
         report_started_at = str(report.get("startedAt") or "").strip()
         report_started_dt = self._deps.parse_iso(report_started_at)
@@ -180,9 +187,7 @@ class DiscoveryService:
         started_dt = self._deps.parse_iso(started_at) or self._deps.now_utc()
         report: dict[str, Any] = {}
         while True:
-            report = self._deps.normalize_discovery_report_contract(
-                self._deps.load_json_object(self._paths.report, {})
-            )
+            report = self._deps.normalize_discovery_report_contract(self._read_discovery_report())
             finished_at = str(report.get("finishedAt") or "")
             finished_dt = self._deps.parse_iso(finished_at)
             if finished_dt and finished_dt >= started_dt:

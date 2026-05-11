@@ -53,7 +53,9 @@ def test_on_bridge_started_runs_lifecycle_cleanup_before_startup_sync_without_le
         return {"ok": True, "scheduled": True}
 
     with (
-        mock.patch.object(admin_bridge, "reconcile_lifecycle_legacy_state", side_effect=reconcile),
+        mock.patch.object(
+            admin_bridge, "migrate_legacy_task_state_to_lifecycle", side_effect=reconcile
+        ),
         mock.patch.object(admin_bridge, "cleanup_stale_startup_tasks", side_effect=cleanup),
         mock.patch.object(admin_bridge, "schedule_startup_sync_pull", side_effect=startup_sync),
     ):
