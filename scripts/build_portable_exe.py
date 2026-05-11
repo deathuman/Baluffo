@@ -22,6 +22,7 @@ OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES = tuple(
     for package_name in ("certifi",)
     if importlib.util.find_spec(package_name) is not None
 )
+STORAGE_RUNTIME_COLLECT_DATA_PACKAGES = ("src.storage",)
 OPTIONAL_SCRAPY_RUNTIME_PACKAGES = tuple(
     package_name
     for package_name in (
@@ -79,7 +80,10 @@ MAIN_RUNTIME_HIDDEN_IMPORTS = (
     "tkinter",
     "tkinter.ttk",
 )
-MAIN_RUNTIME_COLLECT_DATA_PACKAGES = OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES
+MAIN_RUNTIME_COLLECT_DATA_PACKAGES = (
+    *OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES,
+    *STORAGE_RUNTIME_COLLECT_DATA_PACKAGES,
+)
 MAIN_RUNTIME_COLLECT_ALL_PACKAGES = tuple(
     package_name
     for package_name in OPTIONAL_SCRAPY_RUNTIME_PACKAGES

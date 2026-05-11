@@ -399,13 +399,16 @@ Purpose: land SQLite infrastructure without changing data authority.
 
 - **Done:** Add `"sqlite3"` to `MAIN_RUNTIME_HIDDEN_IMPORTS` and test it.
 - **Done:** Add `docs/storage-contract.md`.
-- Add `src/storage/baluffo_store.py`, migrations, health state, backup/restore, and migration runner.
-- Validate WAL, `BEGIN IMMEDIATE`, busy retry deadline, batch insert partitioning, quick_check, backup/restore, and checkpoint failure handling.
+- **Done:** Add `src/storage/baluffo_store.py`, migrations, health state, backup/restore, and migration runner.
+- **Done:** Validate WAL, `BEGIN IMMEDIATE`, busy retry deadline, batch insert partitioning, quick_check, backup/restore, and checkpoint failure handling at the storage-layer test level.
+- Add a bridge storage health endpoint backed by `BaluffoStore.health()`.
 - Do not shadow-write task, sync, source-run, or jobs data in this milestone.
 
 M1.1 implementation note: the packaged runtime now includes `sqlite3` in the main PyInstaller hidden imports, with a packaging guard test. This does not start the SQLite authority migration and does not satisfy the packaged fetch evidence gate by itself.
 
 M1.2 implementation note: `docs/storage-contract.md` now captures target authority boundaries, SQLite/WAL discipline, migration safety, compatibility exports, source-sync push/pull contract, evidence archive retention, size budgets, and benchmark expectations. This is a contract/documentation slice only; storage implementation still remains gated.
+
+M1.3 implementation note: the SQLite storage package now contains the core store class, idempotent SQL migrations, JSON-authority default state, WAL/foreign-key/quick-check startup validation, bounded `BEGIN IMMEDIATE` write retry, batch execution, required checkpoint handling, and SQLite backup/restore round-trip coverage. Portable packaging now collects `src.storage` data files so SQL migration resources are available once the store is imported in packaged runtime. No bridge route reads or runtime authority moved in this slice.
 
 Gate: SQLite health endpoint works, migration tests pass, packaged build can import `sqlite3`, and no runtime authority has moved.
 

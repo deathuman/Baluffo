@@ -16,6 +16,7 @@ from scripts.build_portable_exe import (
     MAIN_RUNTIME_HIDDEN_IMPORTS,
     OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES,
     OPTIONAL_SCRAPY_RUNTIME_PACKAGES,
+    STORAGE_RUNTIME_COLLECT_DATA_PACKAGES,
     UPDATER_HELPER_COLLECT_DATA_PACKAGES,
     UPDATER_HELPER_HIDDEN_IMPORTS,
     build_portable_layout,
@@ -180,10 +181,16 @@ def test_main_runtime_collect_all_packages_include_scrapy_runtime_when_available
 
 
 def test_portable_build_collects_optional_github_tls_runtime_data() -> None:
-    assert MAIN_RUNTIME_COLLECT_DATA_PACKAGES == OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES
+    for package_name in OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES:
+        assert package_name in MAIN_RUNTIME_COLLECT_DATA_PACKAGES
     assert UPDATER_HELPER_COLLECT_DATA_PACKAGES == OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES
     if OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES:
         assert "certifi" in OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES
+
+
+def test_portable_build_collects_storage_migration_resources() -> None:
+    assert STORAGE_RUNTIME_COLLECT_DATA_PACKAGES == ("src.storage",)
+    assert "src.storage" in MAIN_RUNTIME_COLLECT_DATA_PACKAGES
 
 
 def test_portable_build_excludes_test_only_pyinstaller_dependency_trees() -> None:
