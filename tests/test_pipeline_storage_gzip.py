@@ -24,6 +24,7 @@ from src.shared.json_io import (
     write_json_text,
 )
 from src.ship import runtime_launcher as rl
+from src.storage_metrics import reset_storage_metrics, snapshot_storage_metrics
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -59,6 +60,21 @@ def test_pipeline_json_writer_round_trips_gzip_backed_output() -> None:
         assert write_atomic_if_changed(path, payload) is False
 
 
+def test_pipeline_json_writer_records_storage_metrics() -> None:
+    with workspace_tmpdir("pipeline-gzip-writer-metrics") as tmp:
+        reset_storage_metrics(data_dir=tmp, remove_file=True)
+        path = Path(tmp) / "jobs-unified-light.json"
+
+        assert write_atomic_if_changed(path, '[{"title":"Pipeline Engineer"}]\n') is True
+        metrics = snapshot_storage_metrics(tmp)
+
+        assert metrics["writes"]["writeCount"] == 1
+        artifact = metrics["writes"]["artifacts"][0]
+        assert artifact["artifact"] == "jobs-unified-light.json"
+        assert artifact["storageKind"] == "gzip"
+        assert artifact["lastCompressedSizeBytes"] > 0
+
+
 def test_shared_json_copy_helper_compresses_policy_backed_plain_source() -> None:
     with workspace_tmpdir("shared-json-copy-gzip") as tmp:
         source = Path(tmp) / "source.json"
@@ -83,6 +99,23 @@ def test_shared_json_write_helper_leaves_non_policy_json_plain() -> None:
         assert written == path
         assert gzip_backed_json_storage_path(path) == path
         assert path.read_text(encoding="utf-8") == '{"ok":true}'
+
+
+def test_shared_json_write_helper_records_storage_metrics() -> None:
+    with workspace_tmpdir("shared-json-write-metrics") as tmp:
+        reset_storage_metrics(data_dir=tmp, remove_file=True)
+        path = Path(tmp) / "jobs-unified.json"
+
+        written = write_json_text(path, '[{"ok":true}]')
+        metrics = snapshot_storage_metrics(tmp)
+
+        assert written == _gzip_path(path)
+        assert metrics["writes"]["writeCount"] == 1
+        artifact = metrics["writes"]["artifacts"][0]
+        assert artifact["artifact"] == "jobs-unified.json"
+        assert artifact["storageKind"] == "gzip"
+        assert artifact["uncompressedSizeBytes"]["total"] == len('[{"ok":true}]')
+        assert artifact["compressedSizeBytes"]["total"] > 0
 
 
 def test_source_state_helpers_round_trip_gzip_storage() -> None:

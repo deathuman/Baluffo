@@ -377,6 +377,12 @@ Gate: repeated registry writes cannot grow any journal unboundedly, even when re
 
 Run at least three realistic packaged fetches after M0A-M0C and M0.5.
 
+Local preflight evidence collected on 2026-05-11 with `npm run perf:ci:median`:
+
+- Discovery quick benchmark: 3 runs, median 2017ms, storage write count median 51, serialization median total 4ms, atomic/write median total 18ms, registry journal bytes 31700.
+- Fetch smoke benchmark: 3 runs, median 6906ms, storage write count median 39, atomic/write median total 501ms, compressed bytes median 2036676, uncompressed bytes median 26888413.
+- This is local sanity evidence only. It confirms discovery and fetch benchmark payloads now carry populated `storageMetrics`, but it does not replace the required packaged fetch gate.
+
 Proceed to SQLite skeleton only if the evidence still supports it:
 
 - JSON serialization plus atomic replace is a material cost, or large artifact rewrites are a reliability problem even if wall-clock cost is low.

@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from src.shared.json_io import gzip_backed_json_storage_path, read_json
+from src.storage_metrics import duration_ms, record_json_write
 
 RawJob = dict[str, Any]
 
@@ -28,6 +29,37 @@ def _read_text_path(path: Path) -> str:
         with gzip.open(path, mode="rt", encoding="utf-8") as handle:
             return handle.read()
     return path.read_text(encoding="utf-8")
+
+
+def _records_json_storage_metrics(target: Path) -> bool:
+    return target.suffix == ".json" or target.name.endswith(".json.gz")
+
+
+def _record_text_write_metrics(
+    *,
+    path: Path,
+    target: Path,
+    text: str,
+    write_started_at: float,
+) -> None:
+    if not _records_json_storage_metrics(target):
+        return
+    uncompressed_size_bytes = len(text.encode("utf-8"))
+    try:
+        compressed_size_bytes = target.stat().st_size
+    except OSError:
+        compressed_size_bytes = uncompressed_size_bytes
+    record_json_write(
+        path=path,
+        target=target,
+        storage_kind="gzip" if target.suffix == ".gz" else "json",
+        serialization_duration_ms=0,
+        atomic_replace_duration_ms=duration_ms(write_started_at),
+        compressed_size_bytes=compressed_size_bytes,
+        uncompressed_size_bytes=uncompressed_size_bytes,
+        replaced=True,
+        data_dir=target.parent,
+    )
 
 
 def read_existing_output(
@@ -90,7 +122,14 @@ def write_text_if_changed(path: Path, text: str) -> bool:
             return False
     except OSError:
         pass
+    write_started_at = time.perf_counter()
     _write_atomic_text(target, text, attempts=18, sleep_base_s=0.012)
+    _record_text_write_metrics(
+        path=path,
+        target=target,
+        text=text,
+        write_started_at=write_started_at,
+    )
     return True
 
 
@@ -168,5 +207,12 @@ def write_hot_text_if_changed(path: Path, text: str) -> bool:
             return False
     except OSError:
         pass
+    write_started_at = time.perf_counter()
     _write_atomic_text(path, text, attempts=18, sleep_base_s=0.012, fallback_to_in_place=True)
+    _record_text_write_metrics(
+        path=path,
+        target=path,
+        text=text,
+        write_started_at=write_started_at,
+    )
     return True
