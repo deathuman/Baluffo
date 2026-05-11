@@ -444,6 +444,8 @@ M2.2 implementation note: the sharding leaf now builds and validates committed s
 
 M2.3 implementation note: the sharding leaf now compares candidate shards against the last trusted committed manifest by remote path plus shard SHA-256, so a shard is skipped only when the exact referenced path already exists with the same payload hash. It also has immutable shard PUT helpers that validate payload SHA-256 before upload, omit an overwrite `sha`, and return pushed-byte/row metadata. Focused tests cover changed-shard detection, untrusted manifest fallback, immutable shard payload uploads, SHA mismatch rejection, and pushing only missing or changed shards.
 
+M2.4 implementation note: the sharding leaf now has v3 read helpers that fetch each committed manifest shard, verify base64 content, compressed byte size, SHA-256, gzip JSON schema, bucket/key, and row count before returning active/pending rows. `read_sharded_snapshot()` returns `None` when no committed manifest is available, preserving the existing v2 monolithic pull fallback boundary until the live pull path is deliberately wired. Focused tests cover single-shard reads, hash mismatch rejection, absent-manifest fallback, and merging active plus pending shards from a committed manifest.
+
 ### Milestone 3 - Move Task Runs, Events, and Sync Runs
 
 Purpose: migrate the lowest-risk live runtime authority first.

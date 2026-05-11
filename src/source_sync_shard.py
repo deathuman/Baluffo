@@ -338,6 +338,70 @@ def push_changed_shards(
     }
 
 
+def read_shard(
+    module: Any,
+    config: Any,
+    entry: dict[str, Any],
+    *,
+    opener: Callable[..., Any],
+) -> dict[str, Any]:
+    module.validate_sync_config(config)
+    shard_entry = _validate_manifest_shard_entry(entry)
+    status, payload, _headers = module._request_json(
+        method="GET",
+        url=_content_api_url(module, config, shard_entry["path"], with_ref=True),
+        config=config,
+        timeout_s=config.timeout_s,
+        opener=opener,
+    )
+    if status == 404:
+        raise SourceSyncShardError(f"source-sync shard missing: {shard_entry['path']}")
+    if status >= 400:
+        message = str(payload.get("message") or f"GitHub GET failed with HTTP {status}")
+        raise RuntimeError(message)
+    raw_bytes = _decode_content_bytes(payload, context=f"source-sync shard {shard_entry['path']}")
+    if hashlib.sha256(raw_bytes).hexdigest() != shard_entry["sha256"]:
+        raise SourceSyncShardError(f"source-sync shard sha256 mismatch: {shard_entry['path']}")
+    if len(raw_bytes) != shard_entry["sizeBytes"]:
+        raise SourceSyncShardError(f"source-sync shard size mismatch: {shard_entry['path']}")
+    try:
+        parsed = json.loads(gzip.decompress(raw_bytes).decode("utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        raise SourceSyncShardError(
+            f"invalid source-sync shard payload {shard_entry['path']}: {exc}"
+        ) from exc
+    shard_payload = _validate_shard_payload(parsed, shard_entry)
+    return {"entry": shard_entry, "payload": shard_payload, "rows": shard_payload["rows"]}
+
+
+def read_sharded_snapshot(
+    module: Any,
+    config: Any,
+    *,
+    opener: Callable[..., Any],
+) -> dict[str, Any] | None:
+    manifest_result = read_manifest(module, config, opener=opener)
+    if manifest_result is None:
+        return None
+    manifest = manifest_result["manifest"]
+    rows_by_bucket: dict[str, list[dict[str, Any]]] = {"active": [], "pending": []}
+    for entry in manifest["shards"]:
+        shard_result = read_shard(module, config, entry, opener=opener)
+        bucket = str(shard_result["entry"]["bucket"])
+        rows_by_bucket.setdefault(bucket, []).extend(shard_result["rows"])
+    snapshot: dict[str, Any] = {
+        "schemaVersion": SHARD_SCHEMA_VERSION,
+        "generatedAt": manifest["generatedAt"],
+        "source": dict(manifest.get("source") or {"name": "admin_bridge"}),
+        "active": rows_by_bucket.pop("active", []),
+        "pending": rows_by_bucket.pop("pending", []),
+        "manifest": manifest,
+    }
+    for bucket in sorted(rows_by_bucket):
+        snapshot[bucket] = rows_by_bucket[bucket]
+    return snapshot
+
+
 def _build_bounded_shards(
     rows: list[dict[str, Any]],
     *,
@@ -402,6 +466,38 @@ def _validate_manifest_shard_entry(entry: Any) -> dict[str, Any]:
         "rowCount": row_count,
         "sizeBytes": size_bytes,
         "sha256": sha256,
+    }
+
+
+def _decode_content_bytes(payload: dict[str, Any], *, context: str) -> bytes:
+    encoded_content = str(payload.get("content") or "").strip()
+    if not encoded_content:
+        raise SourceSyncShardError(f"{context} content is empty")
+    try:
+        return base64.b64decode(encoded_content.replace("\n", ""))
+    except ValueError as exc:
+        raise SourceSyncShardError(f"{context} content is not valid base64: {exc}") from exc
+
+
+def _validate_shard_payload(payload: Any, entry: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise SourceSyncShardError("source-sync shard payload must be a JSON object")
+    if int(payload.get("schemaVersion") or 0) != SHARD_SCHEMA_VERSION:
+        raise SourceSyncShardError("source-sync shard schemaVersion must be 3")
+    if str(payload.get("bucket") or "") != entry["bucket"]:
+        raise SourceSyncShardError(f"source-sync shard bucket mismatch: {entry['path']}")
+    if str(payload.get("key") or "") != entry["key"]:
+        raise SourceSyncShardError(f"source-sync shard key mismatch: {entry['path']}")
+    rows = payload.get("rows")
+    if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+        raise SourceSyncShardError(f"source-sync shard rows must be objects: {entry['path']}")
+    if len(rows) != entry["rowCount"]:
+        raise SourceSyncShardError(f"source-sync shard rowCount mismatch: {entry['path']}")
+    return {
+        "schemaVersion": SHARD_SCHEMA_VERSION,
+        "bucket": entry["bucket"],
+        "key": entry["key"],
+        "rows": [dict(row) for row in rows],
     }
 
 
