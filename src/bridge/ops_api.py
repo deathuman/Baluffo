@@ -21,6 +21,7 @@ from src.bridge import report_normalizer
 from src.bridge import run_history_api as _run_history_api
 from src.bridge.fetch_report_review_state import load_fetch_report_with_dedup_review_state
 from src.shared.json_shapes import as_json_object
+from src.source_registry_io import load_runtime_evidence
 
 
 @dataclass(frozen=True)
@@ -70,6 +71,7 @@ class OpsDeps:
     get_lifecycle_recent_runs: Callable[[], list[dict[str, Any]]] = field(
         default_factory=lambda: lambda: []
     )
+    load_runtime_evidence: Callable[[Any, Any], Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -231,6 +233,63 @@ def _enrich_pipeline_row_with_child(
     }
 
 
+def _enrich_active_row_for_type(
+    route_row: dict[str, Any],
+    *,
+    task_type: str,
+    run_id: str,
+    row: dict[str, Any],
+    pipeline_row: dict[str, Any],
+    pipeline_run_id: str,
+    pipeline_stage: str,
+    fetch_live: dict[str, Any],
+    fetch_run_id: str,
+    discovery_live: dict[str, Any],
+    discovery_run_id: str,
+    sync_live: dict[str, Any],
+    sync_run_id: str,
+) -> dict[str, Any]:
+    if task_type == "pipeline" and pipeline_run_id and run_id == pipeline_run_id:
+        route_row = {**route_row, **pipeline_row, "active": True, "finishedAt": ""}
+        route_row["stage"] = pipeline_stage or str(route_row.get("stage") or "")
+        route_row["summary"] = {
+            **as_json_object(pipeline_row.get("summary")),
+            **as_json_object(row.get("summary")),
+            "stage": pipeline_stage or str(as_json_object(row.get("summary")).get("stage") or ""),
+        }
+    elif task_type in ("fetch", "discovery", "sync"):
+        live = {
+            "fetch": fetch_live,
+            "discovery": discovery_live,
+            "sync": sync_live,
+        }.get(task_type, {})
+        live_run_id = {
+            "fetch": fetch_run_id,
+            "discovery": discovery_run_id,
+            "sync": sync_run_id,
+        }.get(task_type, "")
+        if live_run_id and run_id == live_run_id and bool(live.get("active", False)):
+            route_row = {
+                **route_row,
+                **live,
+                "id": run_id,
+                "runId": run_id,
+                "type": task_type,
+                "taskType": task_type,
+                "active": True,
+                "finishedAt": "",
+                "lifecycleStatus": str(
+                    row.get("lifecycleStatus") or row.get("status") or ""
+                ).strip(),
+                "parentRunId": str(row.get("parentRunId") or "").strip(),
+                "parentTaskType": str(row.get("parentTaskType") or "").strip().lower(),
+                "ownerKind": str(row.get("ownerKind") or "").strip().lower(),
+                "ownerPid": row.get("ownerPid"),
+                "stage": str(row.get("stage") or "").strip(),
+            }
+    return route_row
+
+
 def _enrich_pipeline_rows_with_children(
     task_by_key: dict[tuple[str, str], dict[str, Any]],
 ) -> None:
@@ -306,7 +365,7 @@ class OpsApi:
         allowed_names: set[str] | None = None,
     ) -> list[str]:
         report = self._deps.normalize_fetch_report_contract(
-            self._deps.load_json_object(self._paths.jobs_fetch_report, {})
+            load_runtime_evidence(self._paths.jobs_fetch_report, {})
         )
         return report_normalizer.failed_source_names_from_report(
             report,
@@ -375,7 +434,6 @@ class OpsApi:
 
     def _load_fetch_report_with_dedup_review_state(self) -> dict[str, Any]:
         payload, warning = load_fetch_report_with_dedup_review_state(
-            load_json_object=self._deps.load_json_object,
             normalize_fetch_report_contract=self._deps.normalize_fetch_report_contract,
             jobs_fetch_report_path=self._paths.jobs_fetch_report,
             dedup_review_state_path=self._paths.dedup_review_state,
@@ -498,6 +556,18 @@ class OpsApi:
             projection=projection,
         )
         fetch_live_run_id = _run_id(fetch_live_payload)
+        discovery_live_payload = _ops_task_live.get_task_live_payload(
+            self._task_live_context(),
+            "discovery",
+            projection=projection,
+        )
+        discovery_live_run_id = _run_id(discovery_live_payload)
+        sync_live_payload = _ops_task_live.get_task_live_payload(
+            self._task_live_context(),
+            "sync",
+            projection=projection,
+        )
+        sync_live_run_id = _run_id(sync_live_payload)
         pipeline_status = self._deps.get_jobs_pipeline_status_payload()
         pipeline_row = (
             _pipeline_status_to_task_row(pipeline_status)
@@ -543,39 +613,21 @@ class OpsApi:
                     )
                     continue
             route_row = {**row, "active": True, "finishedAt": ""}
-            if task_type == "pipeline" and pipeline_run_id and run_id == pipeline_run_id:
-                route_row = {**route_row, **pipeline_row, "active": True, "finishedAt": ""}
-                route_row["stage"] = pipeline_stage or str(route_row.get("stage") or "")
-                route_row["summary"] = {
-                    **as_json_object(pipeline_row.get("summary")),
-                    **as_json_object(row.get("summary")),
-                    "stage": pipeline_stage
-                    or str(as_json_object(row.get("summary")).get("stage") or ""),
-                }
-            elif (
-                task_type == "fetch"
-                and fetch_live_run_id
-                and run_id == fetch_live_run_id
-                and bool(fetch_live_payload.get("active"))
-            ):
-                route_row = {
-                    **route_row,
-                    **fetch_live_payload,
-                    "id": run_id,
-                    "runId": run_id,
-                    "type": "fetch",
-                    "taskType": "fetch",
-                    "active": True,
-                    "finishedAt": "",
-                    "lifecycleStatus": str(
-                        row.get("lifecycleStatus") or row.get("status") or ""
-                    ).strip(),
-                    "parentRunId": parent_run_id,
-                    "parentTaskType": parent_task_type,
-                    "ownerKind": owner_kind,
-                    "ownerPid": row.get("ownerPid"),
-                    "stage": str(row.get("stage") or "").strip(),
-                }
+            route_row = _enrich_active_row_for_type(
+                route_row,
+                task_type=task_type,
+                run_id=run_id,
+                row=row,
+                pipeline_row=pipeline_row,
+                pipeline_run_id=pipeline_run_id,
+                pipeline_stage=pipeline_stage,
+                fetch_live=fetch_live_payload,
+                fetch_run_id=fetch_live_run_id,
+                discovery_live=discovery_live_payload,
+                discovery_run_id=discovery_live_run_id,
+                sync_live=sync_live_payload,
+                sync_run_id=sync_live_run_id,
+            )
             task_by_key[(task_type, run_id)] = route_row
         if pipeline_row and pipeline_run_id:
             key = ("pipeline", pipeline_run_id)

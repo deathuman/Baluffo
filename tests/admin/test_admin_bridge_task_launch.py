@@ -458,3 +458,51 @@ def test_start_fetcher_task_returns_conflict_for_active_fetch():
     spawn.assert_not_called()
     assert admin_bridge.load_run_history() == []
     assert not admin_bridge.JOBS_FETCH_REPORT_PATH.exists()
+
+
+def test_ops_routes_show_completed_for_fetch_with_failed_sources():
+    """/ops/task-state and /ops/history must show succeeded/completed when a fetch
+    report has failedSources > 0 but no terminal error status."""
+    ops_api = admin_bridge._get_ops_api()  # noqa: SLF001
+    lifecycle_service = admin_bridge._TASK_LIFECYCLE  # noqa: SLF001
+
+    fetch_run_id = "fetch_failed_src_1"
+    started = "2026-05-11T11:00:00Z"
+    finished = "2026-05-11T11:20:00Z"
+
+    # Start a lifecycle run.
+    lifecycle_service.start_run(
+        run_id=fetch_run_id,
+        task_type="fetch",
+        started_at=started,
+        owner_kind="standalone",
+        owner_pid=99998,
+    )
+
+    # Close out via the task launch API with a report having failedSources.
+    terminal_report = {
+        "runId": fetch_run_id,
+        "startedAt": started,
+        "finishedAt": finished,
+        "status": "ok",
+        "summary": {"outputCount": 1000, "failedSources": 42, "sourceCount": 200},
+    }
+    task_launch = admin_bridge._get_task_launch_api()  # noqa: SLF001
+    task_launch._close_fetch_lifecycle_from_report(  # noqa: SLF001
+        run_id=fetch_run_id,
+        normalize_fetch_report_contract=lambda p: p,
+        load_json_object=lambda _p, _d: terminal_report,
+        finish_lifecycle_run=lifecycle_service.finish_run,
+        fail_lifecycle_run=lifecycle_service.fail_run,
+    )
+
+    # Verify via /ops/history.
+    history_payload = ops_api.get_lifecycle_run_history_rows()
+    history_rows = [r for r in history_payload if str(r.get("runId") or "") == fetch_run_id]
+    assert len(history_rows) >= 1, f"expected fetch row in history, got {history_rows}"
+    row = history_rows[0]
+    status = str(row.get("lifecycleStatus") or row.get("status") or "").strip().lower()
+    assert status in {"completed", "succeeded", "ok"}, (
+        f"expected completed/succeeded/ok, got {status}"
+    )
+    assert str(row.get("finishedAt") or "").strip() == finished

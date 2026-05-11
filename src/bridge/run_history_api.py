@@ -209,6 +209,11 @@ class SyncHistoryDeps:
     now_iso: Callable[[], str]
     now_utc: Callable[[], datetime]
     get_jobs_pipeline_status_payload: Callable[[], dict[str, Any]] = lambda: {}
+    load_runtime_evidence: Callable[[Any, dict[str, Any]], dict[str, Any]] = (
+        lambda path, default=None: dict(default or {})
+    )
+    pid_is_running: Callable[[int], bool] | None = None
+    get_lifecycle_current_runs: Callable[[], list[dict[str, Any]]] | None = None
 
 
 def _row_score(row: dict[str, Any]) -> tuple[int, int, int]:
@@ -313,12 +318,41 @@ def _payload_has_live_run_identity(payload: dict[str, Any], run_id: str = "") ->
     )
 
 
+def _check_lifecycle_ledger_liveness(
+    task_type: str,
+    run_id: str,
+    get_lifecycle_current_runs: Callable[[], list[dict[str, Any]]] | None,
+    pid_is_running: Callable[[int], bool] | None,
+) -> bool:
+    if not callable(get_lifecycle_current_runs) or not callable(pid_is_running):
+        return False
+    clean_task_type = str(task_type or "").strip().lower()
+    clean_run_id = str(run_id or "").strip()
+    for lr_row in get_lifecycle_current_runs():
+        if not isinstance(lr_row, dict):
+            continue
+        lr_type = str(lr_row.get("type") or lr_row.get("taskType") or "").strip().lower()
+        lr_run_id = str(lr_row.get("runId") or lr_row.get("id") or "").strip()
+        if lr_type != clean_task_type or lr_run_id != clean_run_id:
+            continue
+        if str(lr_row.get("finishedAt") or "").strip():
+            break
+        try:
+            owner_pid = int(lr_row.get("ownerPid") or 0)
+        except (TypeError, ValueError):
+            owner_pid = 0
+        if owner_pid > 0 and pid_is_running(owner_pid):
+            return True
+        break
+    return False
+
+
 def _build_child_task_snapshot(
     *,
     task_type: str,
     report: dict[str, Any],
     report_path: Path,
-    task_state_path: Path,
+    task_state_path: Path | None = None,
     load_json_object: Callable[[Any, dict[str, Any]], dict[str, Any]],
     task_running_from_state: Callable[[str], bool],
     parse_iso: Callable[[Any], datetime | None],
@@ -331,6 +365,8 @@ def _build_child_task_snapshot(
     parent_owner_active: bool = False,
     max_idle_minutes: float = 2.0,
     dead_age_minutes: float = 5.0,
+    pid_is_running: Callable[[int], bool] | None = None,
+    get_lifecycle_current_runs: Callable[[], list[dict[str, Any]]] | None = None,
 ) -> ChildTaskSnapshot:
     diagnostics: list[dict[str, Any]] = []
     run_id = str(report.get("runId") or "").strip()
@@ -338,7 +374,15 @@ def _build_child_task_snapshot(
     finished_at = str(report.get("finishedAt") or "").strip()
     outputs = dict(report.get("outputs") or {})
     task_progress = dict(report.get("taskProgress") or {})
-    state_entry = _load_task_state_entry(task_type, load_json_object, task_state_path)
+    lifecycle_state_active = _check_lifecycle_ledger_liveness(
+        task_type,
+        run_id,
+        get_lifecycle_current_runs,
+        pid_is_running,
+    )
+    state_entry: dict[str, Any] = {}
+    if task_state_path is not None:
+        state_entry = _load_task_state_entry(task_type, load_json_object, task_state_path)
     state_run_id = str(state_entry.get("runId") or "").strip()
     state_matches = bool(run_id and state_run_id and state_run_id == run_id)
     state_heartbeat_at = str(state_entry.get("heartbeatAt") or "").strip()
@@ -351,7 +395,10 @@ def _build_child_task_snapshot(
             max_idle_minutes=max_idle_minutes,
         )
     )
-    state_active = bool(state_matches and (task_running_from_state(task_type) or state_recent))
+    state_active = bool(
+        lifecycle_state_active
+        or (state_matches and (task_running_from_state(task_type) or state_recent))
+    )
 
     artifact = task_artifact if isinstance(task_artifact, dict) else {}
     artifact_run_id = str(artifact.get("runId") or "").strip()
@@ -577,8 +624,12 @@ def _replace_run_row(
 
 
 def reconcile_sync_history_locked(deps: SyncHistoryDeps) -> None:
-    history = _collapse_duplicate_history_rows(deps.load_run_history())
-    deps.save_run_history(history)
+    # Only collapse duplicates for the read path; do not persist.
+    # Writes to admin-run-history.json are deprecated in favor of the
+    # lifecycle ledger (data/admin-task-lifecycle.json).  The startup
+    # projection path (sync_history_from_reports) still persists a
+    # reconciled history until the cutover is complete.
+    _collapse_duplicate_history_rows(deps.load_run_history())
 
 
 def project_run_history(deps: SyncHistoryDeps) -> LifecycleProjection:
@@ -592,9 +643,9 @@ def project_run_history(deps: SyncHistoryDeps) -> LifecycleProjection:
         pipeline_status = {}
 
     fetch_report = deps.normalize_fetch_report_contract(
-        deps.load_json_object(deps.jobs_fetch_report_path, {})
+        deps.load_runtime_evidence(deps.jobs_fetch_report_path, {})
     )
-    fetch_task_artifact = deps.load_json_object(deps.jobs_fetch_tasks_path, {})
+    fetch_task_artifact = deps.load_runtime_evidence(deps.jobs_fetch_tasks_path, {})
     fetch_snapshot = _build_child_task_snapshot(
         task_type="fetch",
         report=fetch_report,
@@ -614,6 +665,8 @@ def project_run_history(deps: SyncHistoryDeps) -> LifecycleProjection:
             pipeline_status=pipeline_status,
             parse_iso=deps.parse_iso,
         ),
+        pid_is_running=deps.pid_is_running,
+        get_lifecycle_current_runs=deps.get_lifecycle_current_runs,
     )
     diagnostics.extend(fetch_snapshot.diagnostics)
     if fetch_snapshot.run_id and (
@@ -629,7 +682,7 @@ def project_run_history(deps: SyncHistoryDeps) -> LifecycleProjection:
         )
 
     discovery_report = deps.normalize_discovery_report_contract(
-        deps.load_json_object(deps.discovery_report_path, {})
+        deps.load_runtime_evidence(deps.discovery_report_path, {})
     )
     discovery_snapshot = _build_child_task_snapshot(
         task_type="discovery",
@@ -647,6 +700,8 @@ def project_run_history(deps: SyncHistoryDeps) -> LifecycleProjection:
             pipeline_status=pipeline_status,
             parse_iso=deps.parse_iso,
         ),
+        pid_is_running=deps.pid_is_running,
+        get_lifecycle_current_runs=deps.get_lifecycle_current_runs,
     )
     diagnostics.extend(discovery_snapshot.diagnostics)
     if discovery_snapshot.run_id and (
@@ -677,5 +732,8 @@ def project_run_history(deps: SyncHistoryDeps) -> LifecycleProjection:
 def sync_history_from_reports(deps: SyncHistoryDeps) -> list[dict[str, Any]]:
     with deps.ops_state_lock:
         projection = project_run_history(deps)
-        deps.save_run_history(projection.rows)
+        # Writes to admin-run-history.json are deprecated in favor of the
+        # lifecycle ledger (data/admin-task-lifecycle.json).  This function
+        # still builds the projection for route consumers but no longer
+        # persists it.
         return projection.rows

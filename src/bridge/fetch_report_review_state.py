@@ -9,6 +9,7 @@ from src.jobs.common.contracts_dedup_review_state import (
     read_dedup_review_state_artifact,
 )
 from src.jobs.reporting_dedup_evidence import build_dedup_audit_gate
+from src.source_registry_io import load_runtime_evidence
 
 
 def merge_dedup_review_state_into_fetch_report(
@@ -28,11 +29,10 @@ def merge_dedup_review_state_into_fetch_report(
 
 def load_fetch_report_with_dedup_review_state(
     *,
-    load_json_object: Callable[[Path, Any], Any],
     normalize_fetch_report_contract: Callable[[dict[str, Any]], dict[str, Any]],
     jobs_fetch_report_path: Path,
     dedup_review_state_path: Path,
 ) -> tuple[dict[str, Any], str]:
-    payload = normalize_fetch_report_contract(load_json_object(jobs_fetch_report_path, {}))
+    payload = normalize_fetch_report_contract(load_runtime_evidence(jobs_fetch_report_path, {}))
     review_state, warning = read_dedup_review_state_artifact(dedup_review_state_path)
     return merge_dedup_review_state_into_fetch_report(payload, review_state), warning

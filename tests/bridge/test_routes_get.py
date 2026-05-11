@@ -459,7 +459,7 @@ def test_ops_fetch_report(tmp_path: Path) -> None:
 def test_ops_fetch_report_live_view_omits_source_details(tmp_path: Path) -> None:
     store = FakeDesktopLocalDataStore()
     api = make_stub_bridge_api(tmp_path, store)
-    api.load_json_object = lambda path, default: {
+    report = {
         "runId": "fetch_live_1",
         "summary": {"outputCount": 12, "failedSources": 0, "sourceCount": 1},
         "taskProgress": {"active": True, "counts": {"resolvedSources": 1, "sourceCount": 1}},
@@ -472,6 +472,9 @@ def test_ops_fetch_report_live_view_omits_source_details(tmp_path: Path) -> None
             }
         ],
     }
+    import json
+
+    (tmp_path / "jobs-fetch-report.json").write_text(json.dumps(report), encoding="utf-8")
 
     handler = FakeHandler()
     result = handle_get(handler, api=api, path="/ops/fetch-report", query={"view": ["live"]})

@@ -53,6 +53,15 @@ _WRITE_POLICY_BEST_EFFORT = "best_effort"
 _WRITE_RETRY_ATTEMPTS = 18
 _WRITE_RETRY_BACKOFF_BASE_S = 0.012
 
+# Files that must never use load_json_array; they are runtime evidence artifacts
+# that should be read via load_runtime_evidence instead.
+_RUNTIME_EVIDENCE_FILE_NAMES = {
+    "jobs-fetch-report.json",
+    "jobs-fetch-tasks.json",
+    "source-discovery-report.json",
+    "sync-live-task.json",
+}
+
 
 def ensure_data_dir() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -243,17 +252,59 @@ def _load_json_payload_from_file(path: Path) -> Any | None:
         return None
 
 
+def load_runtime_evidence(path: Any, default: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Read canonical runtime evidence JSON directly with no journal overlay.
+
+    Runtime evidence files (fetch reports, fetch tasks, discovery reports,
+    sync live task files, etc.) must never be shadowed by .jsonl journals.
+    This function reads only the canonical file; it does not check for
+    adjacent journals, apply mtime comparison, or fall through to journal data.
+
+    Args:
+        path: Path to the canonical JSON file.
+        default: Fallback dict returned when the file is absent or corrupt.
+
+    Returns:
+        A dict copy of the parsed payload, or a copy of *default* on failure.
+    """
+    fallback = dict(default or {})
+    try:
+        source_path = Path(path)
+        candidates = _json_storage_candidates(source_path)
+        existing = next((candidate for candidate in candidates if candidate.exists()), None)
+        if existing is None:
+            return fallback
+        payload = _load_json_payload_from_file(existing)
+        if isinstance(payload, dict):
+            return dict(payload)
+        return fallback
+    except (OSError, json.JSONDecodeError):
+        return fallback
+
+
 def load_json_array(
     path: Path, default: list[dict[str, Any]] | None = None
 ) -> list[dict[str, Any]]:
     fallback = default or []
     path = Path(path)
+    base_name = _storage_base_name(path)
+    if base_name in _RUNTIME_EVIDENCE_FILE_NAMES:
+        raise RuntimeError(
+            f"load_json_array must not be used for runtime evidence files. "
+            f'Use load_runtime_evidence for "{base_name}" instead.'
+        )
     rows = _load_json_array_from_storage(path, fallback)
     if rows is None:
         rows = [dict(row) for row in fallback]
-    journal_rows = _load_json_journal_latest_payload(path)
-    if isinstance(journal_rows, list):
-        return [dict(row) for row in journal_rows if isinstance(row, dict)]
+    # Determine the canonical file that was loaded so we can compare mtimes.
+    existing = next(
+        (candidate for candidate in _json_storage_candidates(path) if candidate.exists()),
+        None,
+    )
+    if _json_journal_should_overlay_base(path, existing):
+        journal_rows = _load_json_journal_latest_payload(path)
+        if isinstance(journal_rows, list):
+            return [dict(row) for row in journal_rows if isinstance(row, dict)]
     return rows
 
 

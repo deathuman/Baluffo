@@ -30,6 +30,9 @@ ignore = [
 "**/__init__.py" = [
   "F401",  # unused imports in __init__.py - re-exports for downstream
 ]
+"src/admin_bridge.py" = [
+  "F401",  # re-export hub - imports used by downstream consumers via module attribute
+]
 "whitelist.py" = [
   "B018",
   "F821",

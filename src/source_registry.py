@@ -33,6 +33,7 @@ TOMBSTONES_PATH = _io.TOMBSTONES_PATH
 URL_PATCH_MANIFEST_PATH = _io.URL_PATCH_MANIFEST_PATH
 load_json_array = _io.load_json_array
 load_json_object = _io.load_json_object
+load_runtime_evidence = _io.load_runtime_evidence
 registry_seed_path_for = _io.registry_seed_path_for
 
 AUTO_APPROVAL_CAP_DEFER_REASONS = _auto.AUTO_APPROVAL_CAP_DEFER_REASONS

@@ -47,6 +47,7 @@ class TaskLaunchDeps:
     failed_source_names_from_latest_report: Callable[[set[str] | None], list[str]]
     safe_int: Callable[[Any, int, int, int], int]
     pid_is_running: Callable[[int], bool] = lambda _pid: False
+    load_runtime_evidence: Callable[[Path, Any], Any] | None = None
 
 
 class TaskLaunchApi:
@@ -426,10 +427,10 @@ class TaskLaunchApi:
         load_json_object: Callable[[Path, Any], Any],
         finish_lifecycle_run: Callable[..., dict[str, Any]],
         fail_lifecycle_run: Callable[..., dict[str, Any]],
+        load_runtime_evidence: Callable[[Path, Any], Any] | None = None,
     ) -> bool:
-        report = normalize_fetch_report_contract(
-            load_json_object(self._paths.jobs_fetch_report, {})
-        )
+        reader = load_runtime_evidence if callable(load_runtime_evidence) else load_json_object
+        report = normalize_fetch_report_contract(reader(self._paths.jobs_fetch_report, {}))
         finished = str(report.get("finishedAt") or "").strip()
         if str(report.get("runId") or "").strip() != run_id or not finished:
             return False
@@ -458,10 +459,12 @@ class TaskLaunchApi:
         run_id: str,
         load_json_object: Callable[[Path, Any], Any],
         heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None],
+        load_runtime_evidence: Callable[[Path, Any], Any] | None = None,
     ) -> None:
         if not callable(heartbeat_lifecycle_run):
             return
-        tasks = load_json_object(self._paths.jobs_fetch_tasks, {})
+        reader = load_runtime_evidence if callable(load_runtime_evidence) else load_json_object
+        tasks = reader(self._paths.jobs_fetch_tasks, {})
         if not isinstance(tasks, dict):
             return
         if str(tasks.get("runId") or "").strip() != str(run_id or "").strip():
@@ -492,6 +495,7 @@ class TaskLaunchApi:
         finish_lifecycle_run: Callable[..., dict[str, Any]],
         fail_lifecycle_run: Callable[..., dict[str, Any]],
         heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None],
+        load_runtime_evidence: Callable[[Path, Any], Any] | None = None,
     ) -> None:
         while True:
             if self._close_fetch_lifecycle_from_report(
@@ -500,6 +504,7 @@ class TaskLaunchApi:
                 load_json_object=load_json_object,
                 finish_lifecycle_run=finish_lifecycle_run,
                 fail_lifecycle_run=fail_lifecycle_run,
+                load_runtime_evidence=load_runtime_evidence,
             ):
                 return
             if self._deps.pid_is_running(int(pid)):
@@ -507,6 +512,7 @@ class TaskLaunchApi:
                     run_id=run_id,
                     load_json_object=load_json_object,
                     heartbeat_lifecycle_run=heartbeat_lifecycle_run,
+                    load_runtime_evidence=load_runtime_evidence,
                 )
                 time.sleep(2.0)
                 continue
@@ -517,6 +523,7 @@ class TaskLaunchApi:
             load_json_object=load_json_object,
             finish_lifecycle_run=finish_lifecycle_run,
             fail_lifecycle_run=fail_lifecycle_run,
+            load_runtime_evidence=load_runtime_evidence,
         ):
             return
         fail_lifecycle_run(
@@ -537,6 +544,7 @@ class TaskLaunchApi:
         finish_lifecycle_run: Callable[..., dict[str, Any]],
         fail_lifecycle_run: Callable[..., dict[str, Any]],
         heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None],
+        load_runtime_evidence: Callable[[Path, Any], Any] | None = None,
     ) -> None:
         threading.Thread(
             target=self._watch_fetch_lifecycle,
@@ -548,6 +556,7 @@ class TaskLaunchApi:
                 "finish_lifecycle_run": finish_lifecycle_run,
                 "fail_lifecycle_run": fail_lifecycle_run,
                 "heartbeat_lifecycle_run": heartbeat_lifecycle_run,
+                "load_runtime_evidence": load_runtime_evidence,
             },
             name=f"fetch-lifecycle-watch-{run_id}",
             daemon=True,
@@ -656,6 +665,7 @@ class TaskLaunchApi:
                 finish_lifecycle_run=finish_lifecycle_run,
                 fail_lifecycle_run=fail_lifecycle_run,
                 heartbeat_lifecycle_run=heartbeat_lifecycle_run,
+                load_runtime_evidence=self._deps.load_runtime_evidence,
             )
             self._deps.bridge_log(
                 "info",

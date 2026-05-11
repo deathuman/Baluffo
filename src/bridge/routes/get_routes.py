@@ -214,7 +214,9 @@ def _find_static_row_name(state: dict[str, list[dict[str, Any]]], static_source_
 
 
 def _provider_coverage_rows(api: BridgeApi) -> list[dict[str, Any]]:
-    payload = api.load_json_object(api.JOBS_FETCH_REPORT_PATH, {})
+    from src.source_registry_io import load_runtime_evidence
+
+    payload = load_runtime_evidence(api.JOBS_FETCH_REPORT_PATH, {})
     provider_coverage = _as_dict(payload.get("providerCoverage"))
     rows: list[dict[str, Any]] = []
     for key in (
@@ -635,12 +637,9 @@ def handle_get(
         # This route must never "silently" drop the connection; the admin UI
         # treats network errors as bridge-availability failures.
         def _send_discovery_report() -> None:
-            load_fn = getattr(api, "load_json_object", None)
-            raw = (
-                load_fn(getattr(api, "DISCOVERY_REPORT_PATH", None), {})
-                if callable(load_fn)
-                else {}
-            )
+            from src.source_registry_io import load_runtime_evidence
+
+            raw = load_runtime_evidence(getattr(api, "DISCOVERY_REPORT_PATH", None), {})
 
             normalizer_fn = getattr(api, "normalize_discovery_report_contract", None)
             report = normalizer_fn(raw) if callable(normalizer_fn) else raw
@@ -985,7 +984,6 @@ def handle_get(
     if path == "/ops/fetch-report":
         view = str((query.get("view") or [""])[0] or "").strip().lower()
         payload, dedup_review_state_warning = load_fetch_report_with_dedup_review_state(
-            load_json_object=api.load_json_object,
             normalize_fetch_report_contract=api.normalize_fetch_report_contract,
             jobs_fetch_report_path=api.JOBS_FETCH_REPORT_PATH,
             dedup_review_state_path=api.DEDUP_REVIEW_STATE_PATH,

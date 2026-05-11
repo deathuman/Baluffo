@@ -356,3 +356,56 @@ test("task run analysis timeline uses progress and work items when event evidenc
   assert.equal(analysis.timelineEntries[2].timestamp, "");
   assert.match(analysis.timelineEntries[2].label, /Running probe/);
 });
+
+test("task run view model progressStale is false when progress is recent", () => {
+  const now = new Date("2026-03-08T10:10:00.000Z");
+  // progress updated 30 seconds ago — well within the stall threshold
+  const progressUpdated = new Date(now.getTime() - 30_000).toISOString();
+
+  const view = buildTaskRunView({
+    taskType: "fetch",
+    active: true,
+    startedAt: "2026-03-08T10:00:00.000Z",
+    heartbeatAt: "2026-03-08T10:09:55.000Z",
+    summary: { outputCount: 42 },
+    taskProgress: {
+      active: true,
+      phaseKey: "executing_sources",
+      phaseLabel: "Executing sources",
+      mode: "determinate",
+      ratio: 0.5,
+      updatedAt: progressUpdated,
+      counts: { outputCount: 42, resolvedSources: 6, sourceCount: 12 }
+    }
+  }, {
+    rowArea: "current",
+    nowMs: now.getTime()
+  });
+
+  assert.equal(view.progressStale, false);
+
+  // progress updated 10 minutes ago — exceeds the stall threshold
+  const oldProgress = new Date(now.getTime() - 600_000).toISOString();
+  const staleView = buildTaskRunView({
+    taskType: "fetch",
+    active: true,
+    startedAt: "2026-03-08T10:00:00.000Z",
+    heartbeatAt: "2026-03-08T10:09:55.000Z",
+    summary: { outputCount: 42 },
+    taskProgress: {
+      active: true,
+      phaseKey: "executing_sources",
+      phaseLabel: "Executing sources",
+      mode: "determinate",
+      ratio: 0.5,
+      updatedAt: oldProgress,
+      counts: { outputCount: 42, resolvedSources: 6, sourceCount: 12 }
+    }
+  }, {
+    rowArea: "current",
+    nowMs: now.getTime()
+  });
+
+  assert.equal(staleView.progressStale, true);
+  assert.match(staleView.progressStaleLabel, /Progress stale/i);
+});

@@ -11,6 +11,7 @@ from src.shared.live_task import (
     normalize_live_task_payload,
     normalize_live_task_progress,
 )
+from src.source_registry_io import load_runtime_evidence
 
 from . import ops_task_projection as ops_task_projection_mod
 
@@ -370,7 +371,7 @@ def build_discovery_live_payload(
 ) -> dict[str, Any]:
     discovery_state = as_json_object(task_state.get("discovery"))
     discovery_report = context.deps.normalize_discovery_report_contract(
-        context.deps.load_json_object(context.paths.discovery_report, {})
+        load_runtime_evidence(context.paths.discovery_report, {})
     )
     discovery_snapshot = projection.child_tasks.get("discovery")
     discovery_context = ops_task_projection_mod.resolve_projected_live_context(

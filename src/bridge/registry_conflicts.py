@@ -3321,9 +3321,11 @@ def load_registry_conflicts_payload(
     source_state_path: Path,
     adjudication_payload: Any = None,
 ) -> dict[str, Any]:
+    from src.source_registry_io import load_runtime_evidence
+
     registry_state = load_state()
     source_state_payload = read_pipeline_json_object(Path(source_state_path), {})
-    fetch_report_payload = load_json_object(
+    fetch_report_payload = load_runtime_evidence(
         Path(source_state_path).with_name("jobs-fetch-report.json"), {}
     )
     job_rows = read_json(Path(source_state_path).with_name("jobs-unified.json"), [])

@@ -10,6 +10,7 @@ from src.shared.live_task import (
     normalize_live_task_payload,
     normalize_live_task_progress,
 )
+from src.source_registry_io import load_runtime_evidence
 
 from . import ops_task_projection as ops_task_projection_mod
 
@@ -128,7 +129,7 @@ def build_fetch_live_payload(
 ) -> dict[str, Any]:
     fetch_state = as_json_object(task_state.get("fetch"))
     fetch_report = context.deps.normalize_fetch_report_contract(
-        context.deps.load_json_object(context.paths.jobs_fetch_report, {})
+        load_runtime_evidence(context.paths.jobs_fetch_report, {})
     )
     fetch_snapshot = projection.child_tasks.get("fetch")
     projected = ops_task_projection_mod.resolve_projected_live_context(
@@ -139,7 +140,7 @@ def build_fetch_live_payload(
         snapshot=fetch_snapshot,
     )
     current_run_id = str(projected.get("runId") or "").strip()
-    fetch_tasks_raw = context.deps.load_json_object(context.paths.jobs_fetch_tasks, {})
+    fetch_tasks_raw = load_runtime_evidence(context.paths.jobs_fetch_tasks, {})
     fetch_tasks = normalize_live_task_payload(
         as_json_object(fetch_tasks_raw),
         task_type="fetch",

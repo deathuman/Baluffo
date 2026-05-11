@@ -6,6 +6,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol, cast
 
+from src.source_registry_io import load_runtime_evidence
+
 root: Any | None = None
 
 JsonObject = dict[str, Any]
@@ -203,6 +205,7 @@ def sync_task_running() -> bool:
                 task_running_from_state=root_mod.task_running_from_state,
                 report_is_stale_in_progress=root_mod.report_is_stale_in_progress,
                 load_json_object=root_mod.load_json_object,
+                load_runtime_evidence=root_mod.load_runtime_evidence,
                 normalize_fetch_report_contract=root_mod.normalize_fetch_report_contract,
                 normalize_discovery_report_contract=root_mod.normalize_discovery_report_contract,
                 summarize_fetch_report=root_mod.summarize_fetch_report,
@@ -215,6 +218,8 @@ def sync_task_running() -> bool:
                 parse_iso=root_mod.parse_iso,
                 now_iso=root_mod.now_iso,
                 now_utc=root_mod.now_utc,
+                pid_is_running=root_mod.pid_is_running,
+                get_lifecycle_current_runs=root_mod.get_lifecycle_current_runs,
             )
         )
     return root_mod._get_sync_service().sync_task_running()
@@ -242,7 +247,13 @@ def maybe_trigger_auto_sync_push(reason: str) -> bool:
     )
 
 
-def reconcile_lifecycle_legacy_state() -> JsonObject:
+def migrate_legacy_task_state_to_lifecycle() -> JsonObject:
+    """Migration function: import legacy task state/run-history into the lifecycle ledger.
+
+    This is an explicit migration function, not a normal lifecycle path.  Call
+    it once after upgrading from a version that used admin-task-state.json /
+    admin-run-history.json as lifecycle authority.
+    """
     root_mod = _require_root()
     history_rows = root_mod.load_run_history()
     task_state = root_mod.load_json_object(root_mod.TASK_STATE_PATH, {})
@@ -303,7 +314,7 @@ def run_sync_task_worker(
 def current_fetch_output_count() -> int:
     root_mod = _require_root()
     report = root_mod.normalize_fetch_report_contract(
-        root_mod.load_json_object(root_mod.JOBS_FETCH_REPORT_PATH, {})
+        load_runtime_evidence(root_mod.JOBS_FETCH_REPORT_PATH, {})
     )
     summary = root_mod.summarize_fetch_report(report)
     return int(summary.get("outputCount") or 0)

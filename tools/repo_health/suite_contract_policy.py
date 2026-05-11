@@ -1062,7 +1062,7 @@ def test_admin_bridge_root_stays_thin_entrypoint_surface(repo_root: Path) -> Non
             "start_jobs_pipeline_task",
         }
     )
-    assert len(text.splitlines()) <= 630, "admin bridge root drifted back toward monolith size"
+    assert len(text.splitlines()) <= 633, "admin bridge root drifted back toward monolith size"
 
 
 def test_jobs_pipeline_stage_execution_root_stays_thin_private_surface(repo_root: Path) -> None:

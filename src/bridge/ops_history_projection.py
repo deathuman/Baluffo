@@ -24,6 +24,8 @@ def build_sync_history_deps(
         task_running_from_state=deps.task_running_from_state,
         report_is_stale_in_progress=deps.report_is_stale_in_progress,
         load_json_object=deps.load_json_object,
+        load_runtime_evidence=getattr(deps, "load_runtime_evidence", None)
+        or (lambda path, default=None: dict(default or {})),
         normalize_fetch_report_contract=deps.normalize_fetch_report_contract,
         normalize_discovery_report_contract=deps.normalize_discovery_report_contract,
         summarize_fetch_report=summarize_fetch_report,
@@ -41,6 +43,8 @@ def build_sync_history_deps(
             "get_jobs_pipeline_status_payload",
             lambda: {},
         ),
+        pid_is_running=getattr(deps, "pid_is_running", None),
+        get_lifecycle_current_runs=getattr(deps, "get_lifecycle_current_runs", None),
     )
 
 

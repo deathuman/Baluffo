@@ -7,6 +7,7 @@ from typing import Any, Protocol, cast
 
 from src.bridge import run_history_api as _run_history_api
 from src.bridge.server import runtime_state as bridge_runtime_state
+from src.source_registry_io import load_runtime_evidence
 
 root: Any | None = None
 
@@ -120,7 +121,7 @@ def _matching_live_report_progress(
     run_id: str,
     started_at: str,
 ) -> tuple[JsonObject, JsonObject]:
-    report = root_mod.load_json_object(report_path, {})
+    report = load_runtime_evidence(report_path, {})
     if not isinstance(report, dict):
         return {}, {}
     report_run_id = str(report.get("runId") or "").strip()
@@ -328,6 +329,7 @@ def _build_pipeline_smoke_overrides(root_mod: Any) -> dict[str, Callable[..., An
 
     return {
         "load_json_object": pipeline_load_json_object,
+        "load_runtime_evidence": pipeline_load_json_object,
         "trigger_discovery_task": pipeline_trigger_discovery_task,
         "start_fetcher_task": pipeline_start_fetcher_task,
         "start_sync_task": pipeline_start_sync_task,
@@ -423,6 +425,7 @@ def get_discovery_service() -> _DiscoveryServiceLike:
                     pid_is_running=root_mod.pid_is_running,
                     bridge_log=root_mod.bridge_log,
                     load_json_object=root_mod.load_json_object,
+                    load_runtime_evidence=root_mod.load_runtime_evidence,
                     save_json_atomic=root_mod.save_json_atomic,
                     run_background_script=root_mod.run_background_script,
                     append_run_history=root_mod.append_run_history,
@@ -476,6 +479,7 @@ def get_task_launch_api() -> _TaskLaunchApiLike:
                 ),
                 safe_int=root_mod._safe_int,
                 pid_is_running=root_mod.pid_is_running,
+                load_runtime_evidence=root_mod.load_runtime_evidence,
             ),
         ),
     )
@@ -530,6 +534,7 @@ def get_ops_api() -> _OpsApiLike:
                 app_version=root_mod.get_app_version(),
                 get_lifecycle_current_runs=root_mod.get_lifecycle_current_runs,
                 get_lifecycle_recent_runs=root_mod.get_lifecycle_recent_runs,
+                load_runtime_evidence=root_mod.load_runtime_evidence,
             ),
         ),
     )
@@ -546,6 +551,7 @@ def get_pipeline_service() -> _PipelineServiceLike:
             )
             stub_success_mode = smoke_mode == "stub-success"
             pipeline_load_json_object = root_mod.load_json_object
+            pipeline_load_runtime_evidence = root_mod.load_runtime_evidence
             pipeline_trigger_discovery_task = root_mod.trigger_discovery_task
             pipeline_start_fetcher_task = root_mod.start_fetcher_task
             pipeline_start_sync_task = root_mod.start_sync_task
@@ -556,6 +562,7 @@ def get_pipeline_service() -> _PipelineServiceLike:
             if stub_success_mode:
                 smoke_overrides = _build_pipeline_smoke_overrides(root_mod)
                 pipeline_load_json_object = smoke_overrides["load_json_object"]
+                pipeline_load_runtime_evidence = smoke_overrides["load_runtime_evidence"]
                 pipeline_trigger_discovery_task = smoke_overrides["trigger_discovery_task"]
                 pipeline_start_fetcher_task = smoke_overrides["start_fetcher_task"]
                 pipeline_start_sync_task = smoke_overrides["start_sync_task"]
@@ -640,6 +647,7 @@ def get_pipeline_service() -> _PipelineServiceLike:
                 sync_task_running=root_mod.sync_task_running,
                 current_fetch_output_count=pipeline_current_fetch_output_count,
                 load_json_object=pipeline_load_json_object,
+                load_runtime_evidence=pipeline_load_runtime_evidence,
                 wait_for_sync_completion=pipeline_wait_for_sync_completion,
                 discovery_report_path=root_mod.DISCOVERY_REPORT_PATH,
                 fetch_report_path=root_mod.JOBS_FETCH_REPORT_PATH,

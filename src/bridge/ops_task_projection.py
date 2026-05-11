@@ -10,6 +10,7 @@ from src.shared.live_task import (
     build_live_task_progress_payload,
     normalize_live_task_payload,
 )
+from src.source_registry_io import load_runtime_evidence
 
 
 def load_task_state(context: Any) -> dict[str, Any]:
@@ -117,7 +118,7 @@ def build_sync_live_payload(
 ) -> dict[str, Any]:
     active_sync_runs = context.deps.get_active_sync_runs()
     sync_payload = normalize_live_task_payload(
-        context.deps.load_json_object(context.paths.sync_live_task, {}),
+        load_runtime_evidence(context.paths.sync_live_task, {}),
         task_type="sync",
     )
     if active_sync_runs:
