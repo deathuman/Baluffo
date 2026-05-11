@@ -680,11 +680,38 @@ def _copy_app_version(version_dir: Path) -> None:
 
 def validate_app_version_python_imports(version_dir: Path) -> None:
     imports = "; ".join(f"import {module}" for module in APP_VERSION_IMPORT_CHECK_MODULES)
+    _run_app_version_python_validation(version_dir, imports, "import validation")
+    storage_probe = """
+import sqlite3
+import tempfile
+from pathlib import Path
+from src.storage import BaluffoStore
+
+sqlite3.connect(":memory:").close()
+with tempfile.TemporaryDirectory() as tmp:
+    store = BaluffoStore(Path(tmp))
+    try:
+        health = store.health()
+        if health.get("migrationVersion") != "004":
+            raise RuntimeError(f"unexpected migration version: {health!r}")
+        if health.get("walMode") != "wal":
+            raise RuntimeError(f"unexpected WAL mode: {health!r}")
+        if health.get("quickCheck") != "ok":
+            raise RuntimeError(f"unexpected quick_check result: {health!r}")
+        if (health.get("authorityModes") or {}).get("taskRuns") != "json":
+            raise RuntimeError(f"unexpected authority modes: {health!r}")
+    finally:
+        store.close()
+"""
+    _run_app_version_python_validation(version_dir, storage_probe, "storage validation")
+
+
+def _run_app_version_python_validation(version_dir: Path, script: str, label: str) -> None:
     env = os.environ.copy()
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["PYTHONPATH"] = str(version_dir)
     result = subprocess.run(
-        [sys.executable, "-c", imports],
+        [sys.executable, "-c", script],
         cwd=version_dir,
         env=env,
         text=True,
@@ -697,7 +724,7 @@ def validate_app_version_python_imports(version_dir: Path) -> None:
         part for part in (result.stdout.strip(), result.stderr.strip()) if part
     ).strip()
     raise RuntimeError(
-        "Ship bundle Python import validation failed for "
+        f"Ship bundle Python {label} failed for "
         f"{version_dir}: {details or f'exit code {result.returncode}'}"
     )
 

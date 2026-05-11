@@ -417,6 +417,8 @@ M1.5 implementation note: packaged smoke runtime snapshots now preserve `/ops/st
 
 M1.6 implementation note: the ship bundle runtime closure now includes `src/storage_metrics.py` and `src/storage`, and packaging tests verify the SQLite store module plus migration SQL resources are present in versioned packaged app roots. This closes the resource-copy side of the packaged import gate before any runtime authority moves.
 
+M1.7 implementation note: ship bundle import validation now runs a storage probe from the versioned packaged app root. The probe imports stdlib `sqlite3`, initializes `BaluffoStore` in a temporary data directory, and verifies migration version `004`, WAL mode, `quick_check`, and JSON-backed authority modes. Missing migration resources now fail bundle validation before a packaged runtime is shipped.
+
 Gate: SQLite health endpoint works, migration tests pass, packaged build can import `sqlite3`, and no runtime authority has moved.
 
 ### Milestone 2 - Sharded Source Sync

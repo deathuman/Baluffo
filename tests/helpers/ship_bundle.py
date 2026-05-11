@@ -13,6 +13,7 @@ def copy_minimal_app_version(version_dir: Path) -> None:
     ship_dir = src_dir / "ship"
     ship_dir.mkdir(parents=True, exist_ok=True)
     (version_dir / "packaging").mkdir(parents=True, exist_ok=True)
+    shutil.copytree(build_ship_bundle.ROOT / "src" / "storage", src_dir / "storage")
     for path, text in (
         (src_dir / "__init__.py", ""),
         (src_dir / "admin_bridge.py", "# test stub\n"),
