@@ -382,6 +382,7 @@ Local preflight evidence collected on 2026-05-11 with `npm run perf:ci:median`:
 - Discovery quick benchmark: 3 runs, median 2017ms, storage write count median 51, serialization median total 4ms, atomic/write median total 18ms, registry journal bytes 31700.
 - Fetch smoke benchmark: 3 runs, median 6906ms, storage write count median 39, atomic/write median total 501ms, compressed bytes median 2036676, uncompressed bytes median 26888413.
 - This is local sanity evidence only. It confirms discovery and fetch benchmark payloads now carry populated `storageMetrics`, but it does not replace the required packaged fetch gate.
+- Packaged smoke runtime snapshots capture `/ops/storage-metrics` as `storage-metrics.json`, so the packaged fetch gate can preserve the same storage evidence without manual API scraping.
 
 Proceed to SQLite skeleton only if the evidence still supports it:
 

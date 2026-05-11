@@ -22,6 +22,7 @@ def capture_runtime_snapshot(
         "opsHealthSnapshot": artifacts_dir / "ops-health.json",
         "sessionSnapshot": artifacts_dir / "session.json",
         "startupMetricsSnapshot": artifacts_dir / "startup-metrics.json",
+        "storageMetricsSnapshot": artifacts_dir / "storage-metrics.json",
     }
     deps.write_json(
         snapshots["opsHealthSnapshot"], _snapshot_json(deps, f"{bridge_base_url}/ops/health")
@@ -34,6 +35,8 @@ def capture_runtime_snapshot(
         deps, f"{bridge_base_url}/desktop-local-data/startup-metrics?limit=1000"
     )
     deps.write_json(snapshots["startupMetricsSnapshot"], metrics_payload)
+    storage_metrics_payload = _snapshot_json(deps, f"{bridge_base_url}/ops/storage-metrics")
+    deps.write_json(snapshots["storageMetricsSnapshot"], storage_metrics_payload)
     return {key: str(path) for key, path in snapshots.items()}
 
 
