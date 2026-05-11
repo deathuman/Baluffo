@@ -440,6 +440,8 @@ Gate: unchanged sync push is a no-op, large registry sync does not hit the globa
 
 M2.1 implementation note: `src/source_sync_shard.py` now provides deterministic local shard construction without changing remote sync writes. `shard_key()` hashes stable source identity prefixes; `build_shards()` groups rows into gzip JSON schema-v3 shard payloads, computes path-ready manifest metadata, enforces a caller-supplied per-shard byte cap, recursively splits oversized shards by longer hash prefixes, and raises a clear error for a single row that cannot fit under the cap. The ship bundle now carries the sharding leaf module. Focused tests cover deterministic metadata/payloads, canonical row ordering, overflow splitting, oversize errors, and remote-path validation.
 
+M2.2 implementation note: the sharding leaf now builds and validates committed schema-v3 manifests, derives `baluffo/source-sync/manifest.json` from the existing v2 snapshot path, reads only trusted committed manifests, and refuses to push uncommitted/proposed manifests. The helper writes target the manifest path separately from the existing v2 monolith and do not change `push_sources_snapshot()` yet. Focused tests cover manifest totals, path validation, proposed-manifest distrust, committed manifest read/write requests, and decoded PUT payloads.
+
 ### Milestone 3 - Move Task Runs, Events, and Sync Runs
 
 Purpose: migrate the lowest-risk live runtime authority first.
