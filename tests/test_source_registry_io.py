@@ -245,6 +245,109 @@ def test_append_json_journal_record_rejects_non_registry_artifact(tmp_path: Path
         registry_io._append_json_journal_record(path, {"approvedSinceLastRun": 1})
 
 
+def test_append_json_journal_record_rewrites_before_hard_cap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "source-registry-active.json"
+    journal_path = tmp_path / "source-registry-active.jsonl"
+    stale_payload = [{"id": "stale", "name": "Stale" * 20}]
+    current_payload = [{"id": "current", "name": "Current"}]
+    monkeypatch.setattr(registry_io, "_JSON_JOURNAL_HARD_MAX_BYTES", 128)
+    journal_path.write_text(
+        registry_io._json_journal_record_text(stale_payload) * 2,
+        encoding="utf-8",
+    )
+
+    registry_io._append_json_journal_record(path, current_payload)
+
+    assert journal_path.read_text(encoding="utf-8").count("\n") == 1
+    assert registry_io._load_json_journal_latest_payload(path) == current_payload
+
+
+def test_append_json_journal_record_hard_cap_failure_does_not_append(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "source-registry-active.json"
+    journal_path = tmp_path / "source-registry-active.jsonl"
+    original_journal = registry_io._json_journal_record_text(
+        [{"id": "stale", "name": "Stale" * 20}]
+    )
+    journal_path.write_text(original_journal, encoding="utf-8")
+    monkeypatch.setattr(registry_io, "_JSON_JOURNAL_HARD_MAX_BYTES", 128)
+    monkeypatch.setattr(registry_io, "_WRITE_RETRY_ATTEMPTS", 1)
+    monkeypatch.setattr(registry_io, "_WRITE_RETRY_BACKOFF_BASE_S", 0)
+    monkeypatch.setattr(
+        registry_io.os,
+        "replace",
+        lambda _src, _dst: (_ for _ in ()).throw(PermissionError("journal locked")),
+    )
+
+    with pytest.raises(PermissionError, match="journal locked"):
+        registry_io._append_json_journal_record(
+            path,
+            [{"id": "current", "name": "Current"}],
+        )
+
+    assert journal_path.read_text(encoding="utf-8") == original_journal
+
+
+def test_compact_json_journal_if_needed_uses_required_policy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "source-registry-tombstones.json"
+    journal_path = tmp_path / "source-registry-tombstones.jsonl"
+    journal_path.write_text(
+        registry_io._json_journal_record_text({"source-1": {"deletedAt": "old"}}),
+        encoding="utf-8",
+    )
+    calls: list[str] = []
+
+    def write_text_atomic(
+        _path: Path,
+        _text: str,
+        *,
+        policy: str = registry_io._WRITE_POLICY_REQUIRED,
+    ) -> bool:
+        calls.append(policy)
+        return True
+
+    monkeypatch.setattr(registry_io, "_JSON_JOURNAL_COMPACT_MAX_BYTES", 1)
+    monkeypatch.setattr(registry_io, "_write_text_atomic", write_text_atomic)
+
+    registry_io._compact_json_journal_if_needed(
+        path,
+        {"source-1": {"deletedAt": "current"}},
+    )
+
+    assert calls == [registry_io._WRITE_POLICY_REQUIRED]
+
+
+def test_compact_registry_journals_rewrites_oversized_registry_journal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "source-registry-tombstones.json"
+    journal_path = tmp_path / "source-registry-tombstones.jsonl"
+    payload_one = {"source-1": {"deletedAt": "2026-04-01T00:00:00+00:00"}}
+    payload_two = {"source-1": {"deletedAt": "2026-04-01T00:01:00+00:00"}}
+    journal_path.write_text(
+        registry_io._json_journal_record_text(payload_one)
+        + registry_io._json_journal_record_text(payload_two),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(registry_io, "_JSON_JOURNAL_COMPACT_MAX_BYTES", 1)
+
+    result = registry_io.compact_registry_journals(tmp_path)
+
+    assert result["ok"] is True
+    assert len(result["compacted"]) == 1
+    assert journal_path.read_text(encoding="utf-8").count("\n") == 1
+    assert registry_io._load_json_journal_latest_payload(path) == payload_two
+
+
 def test_cleanup_runtime_evidence_journals_quarantines_known_stale_journals(
     tmp_path: Path,
 ) -> None:

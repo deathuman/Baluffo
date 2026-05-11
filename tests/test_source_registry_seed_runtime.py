@@ -351,7 +351,7 @@ def test_required_json_snapshot_replace_persistent_failure_raises(
             sr.save_json_atomic(path, payload)
 
 
-def test_best_effort_journal_compaction_failure_preserves_latest_payload(
+def test_required_journal_compaction_failure_raises_after_latest_payload_written(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     with workspace_tmpdir("source-registry") as tmp:
@@ -365,19 +365,20 @@ def test_best_effort_journal_compaction_failure_preserves_latest_payload(
         }
         real_replace = srio.os.replace
 
-        monkeypatch.setattr(srio, "_JSON_JOURNAL_COMPACT_MAX_BYTES", 1)
-        monkeypatch.setattr(srio, "_WRITE_RETRY_ATTEMPTS", 1)
-        monkeypatch.setattr(srio, "_WRITE_RETRY_BACKOFF_BASE_S", 0)
+        sr.save_json_atomic(path, payload_one)
 
         def fail_journal_compaction_replace(src: object, dst: object) -> None:
             if Path(dst).suffix == ".jsonl":
                 raise PermissionError("journal locked")
             real_replace(src, dst)
 
+        monkeypatch.setattr(srio, "_JSON_JOURNAL_COMPACT_MAX_BYTES", 1)
+        monkeypatch.setattr(srio, "_WRITE_RETRY_ATTEMPTS", 1)
+        monkeypatch.setattr(srio, "_WRITE_RETRY_BACKOFF_BASE_S", 0)
         monkeypatch.setattr(srio.os, "replace", fail_journal_compaction_replace)
 
-        sr.save_json_atomic(path, payload_one)
-        sr.save_json_atomic(path, payload_two)
+        with pytest.raises(PermissionError, match="journal locked"):
+            sr.save_json_atomic(path, payload_two)
 
         journal_path = root / "source-registry-tombstones.jsonl"
         assert journal_path.read_text(encoding="utf-8").count("\n") == 2

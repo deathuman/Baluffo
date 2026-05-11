@@ -52,6 +52,10 @@ def test_on_bridge_started_runs_lifecycle_cleanup_before_startup_sync_without_le
         calls.append("runtime_cleanup")
         return {"ok": True, "checked": 5, "quarantined": [], "errors": []}
 
+    def registry_compact(_data_dir) -> dict[str, object]:
+        calls.append("registry_compact")
+        return {"ok": True, "checked": 4, "compacted": [], "skipped": [], "errors": []}
+
     def startup_sync() -> dict[str, object]:
         calls.append("startup_sync")
         return {"ok": True, "scheduled": True}
@@ -64,17 +68,28 @@ def test_on_bridge_started_runs_lifecycle_cleanup_before_startup_sync_without_le
             "src.bridge.admin_task_runtime.cleanup_runtime_evidence_journals",
             side_effect=runtime_cleanup,
         ),
+        mock.patch(
+            "src.bridge.admin_task_runtime.compact_registry_journals",
+            side_effect=registry_compact,
+        ),
         mock.patch.object(admin_bridge, "cleanup_stale_startup_tasks", side_effect=cleanup),
         mock.patch.object(admin_bridge, "schedule_startup_sync_pull", side_effect=startup_sync),
     ):
         result = admin_bridge.on_bridge_started()
 
-    assert calls == ["runtime_cleanup", "cleanup", "startup_sync"]
+    assert calls == ["runtime_cleanup", "registry_compact", "cleanup", "startup_sync"]
     assert result == {
         "runtimeEvidenceJournals": {
             "ok": True,
             "checked": 5,
             "quarantined": [],
+            "errors": [],
+        },
+        "registryJournals": {
+            "ok": True,
+            "checked": 4,
+            "compacted": [],
+            "skipped": [],
             "errors": [],
         },
         "cleanup": {"ok": True, "orphaned": 2},

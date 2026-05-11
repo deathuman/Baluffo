@@ -49,6 +49,7 @@ _GZIP_REGISTRY_NAMES = {
 
 _JSON_JOURNAL_SCHEMA_VERSION = 1
 _JSON_JOURNAL_COMPACT_MAX_BYTES = 1_048_576
+_JSON_JOURNAL_HARD_MAX_BYTES = _JSON_JOURNAL_COMPACT_MAX_BYTES * 4
 _WRITE_POLICY_REQUIRED = "required"
 _WRITE_POLICY_BEST_EFFORT = "best_effort"
 _WRITE_RETRY_ATTEMPTS = 18
@@ -407,6 +408,7 @@ def _replace_path_with_retry(
     target: Path,
     *,
     policy: str = _WRITE_POLICY_REQUIRED,
+    allow_target_unlink: bool = True,
 ) -> bool:
     last_error: OSError | None = None
     for attempt in range(_WRITE_RETRY_ATTEMPTS):
@@ -416,7 +418,12 @@ def _replace_path_with_retry(
         except OSError as exc:
             last_error = exc
             _sleep_after_write_failure(attempt)
-    if last_error is not None and policy == _WRITE_POLICY_REQUIRED and target.exists():
+    if (
+        last_error is not None
+        and policy == _WRITE_POLICY_REQUIRED
+        and target.exists()
+        and allow_target_unlink
+    ):
         try:
             target.unlink()
             os.replace(tmp, target)
@@ -560,6 +567,74 @@ def cleanup_runtime_evidence_journals(data_dir: Path | None = None) -> dict[str,
     return result
 
 
+def _registry_journal_expects_array(path: Path) -> bool:
+    return _storage_base_name(path) != "source-registry-tombstones.json"
+
+
+def _registry_journal_repair_payload(path: Path) -> Any:
+    latest_payload = _load_json_journal_latest_payload(path)
+    if _registry_journal_expects_array(path):
+        if isinstance(latest_payload, list):
+            return [dict(row) for row in latest_payload if isinstance(row, dict)]
+        return load_json_array(path, [])
+    if isinstance(latest_payload, dict):
+        return dict(latest_payload)
+    return load_json_object(path, {})
+
+
+def compact_registry_journals(data_dir: Path | None = None) -> dict[str, Any]:
+    root = Path(data_dir or DATA_DIR)
+    result: dict[str, Any] = {
+        "ok": True,
+        "checked": 0,
+        "compacted": [],
+        "skipped": [],
+        "errors": [],
+    }
+    for file_name in sorted(_REGISTRY_JOURNAL_FILE_NAMES):
+        path = root / file_name
+        journal_path = _json_journal_path_for(path)
+        result["checked"] += 1
+        try:
+            if not journal_path.exists():
+                result["skipped"].append({"path": str(journal_path), "reason": "missing"})
+                continue
+            byte_size = journal_path.stat().st_size
+            if byte_size <= _JSON_JOURNAL_COMPACT_MAX_BYTES:
+                result["skipped"].append(
+                    {
+                        "path": str(journal_path),
+                        "reason": "below_threshold",
+                        "byteSize": byte_size,
+                    }
+                )
+                continue
+            payload = _registry_journal_repair_payload(path)
+            _write_text_atomic(
+                journal_path,
+                _json_journal_record_text(payload),
+                policy=_WRITE_POLICY_REQUIRED,
+            )
+            compacted_size = journal_path.stat().st_size
+            result["compacted"].append(
+                {
+                    "path": str(journal_path),
+                    "byteSizeBefore": byte_size,
+                    "byteSizeAfter": compacted_size,
+                }
+            )
+        except Exception as exc:
+            result["ok"] = False
+            result["errors"].append(
+                {
+                    "path": str(journal_path),
+                    "errorType": type(exc).__name__,
+                    "error": str(exc),
+                }
+            )
+    return result
+
+
 def _path_mtime_ns(path: Path) -> int | None:
     try:
         return path.stat().st_mtime_ns
@@ -622,7 +697,7 @@ def _write_text_atomic(
     text: str,
     *,
     policy: str = _WRITE_POLICY_REQUIRED,
-) -> None:
+) -> bool:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     ensure_data_dir()
@@ -630,7 +705,12 @@ def _write_text_atomic(
     try:
         write_started_at = time.perf_counter()
         tmp.write_text(text, encoding="utf-8")
-        replaced = _replace_path_with_retry(tmp, path, policy=policy)
+        replaced = _replace_path_with_retry(
+            tmp,
+            path,
+            policy=policy,
+            allow_target_unlink=False,
+        )
         record_jsonl_write(
             path=path,
             operation="rewrite",
@@ -640,6 +720,7 @@ def _write_text_atomic(
             replaced=replaced,
             data_dir=_storage_metrics_data_dir_for(path),
         )
+        return replaced
     finally:
         try:
             if tmp.exists():
@@ -661,6 +742,18 @@ def _append_json_journal_record(path: Path, payload: Any) -> None:
     journal_path.parent.mkdir(parents=True, exist_ok=True)
     ensure_data_dir()
     record_text = _json_journal_record_text(payload)
+    record_bytes = len(record_text.encode("utf-8"))
+    try:
+        journal_bytes = journal_path.stat().st_size if journal_path.exists() else 0
+    except OSError:
+        journal_bytes = 0
+    if journal_bytes + record_bytes > _JSON_JOURNAL_HARD_MAX_BYTES:
+        _write_text_atomic(
+            journal_path,
+            record_text,
+            policy=_WRITE_POLICY_REQUIRED,
+        )
+        return
 
     def _append_record() -> None:
         with journal_path.open("a", encoding="utf-8") as handle:
@@ -671,7 +764,7 @@ def _append_json_journal_record(path: Path, payload: Any) -> None:
     record_jsonl_write(
         path=journal_path,
         operation="append",
-        bytes_written=len(record_text.encode("utf-8")),
+        bytes_written=record_bytes,
         duration_ms=duration_ms(append_started_at),
         row_count=1,
         data_dir=_storage_metrics_data_dir_for(path),
@@ -693,7 +786,7 @@ def _compact_json_journal_if_needed(path: Path, payload: Any) -> None:
     _write_text_atomic(
         journal_path,
         _json_journal_record_text(payload),
-        policy=_WRITE_POLICY_BEST_EFFORT,
+        policy=_WRITE_POLICY_REQUIRED,
     )
 
 

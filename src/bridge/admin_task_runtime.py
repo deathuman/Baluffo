@@ -6,7 +6,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol, cast
 
-from src.source_registry_io import cleanup_runtime_evidence_journals, load_runtime_evidence
+from src.source_registry_io import (
+    cleanup_runtime_evidence_journals,
+    compact_registry_journals,
+    load_runtime_evidence,
+)
 
 root: Any | None = None
 
@@ -202,8 +206,18 @@ def on_bridge_started() -> JsonObject:
             quarantined=len(runtime_journals.get("quarantined") or []),
             errors=len(runtime_journals.get("errors") or []),
         )
+    registry_journals = compact_registry_journals(Path(root_mod.RUNTIME_CONFIG.data_dir).resolve())
+    if registry_journals.get("compacted") or registry_journals.get("errors"):
+        root_mod.bridge_log(
+            "info" if not registry_journals.get("errors") else "warn",
+            "registry_journal_startup_maintenance",
+            checked=registry_journals.get("checked", 0),
+            compacted=len(registry_journals.get("compacted") or []),
+            errors=len(registry_journals.get("errors") or []),
+        )
     return {
         "runtimeEvidenceJournals": runtime_journals,
+        "registryJournals": registry_journals,
         "cleanup": root_mod.cleanup_stale_startup_tasks(),
         "startupSync": root_mod.schedule_startup_sync_pull(),
     }
