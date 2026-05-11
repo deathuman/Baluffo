@@ -419,6 +419,8 @@ M1.6 implementation note: the ship bundle runtime closure now includes `src/stor
 
 M1.7 implementation note: ship bundle import validation now runs a storage probe from the versioned packaged app root. The probe imports stdlib `sqlite3`, initializes `BaluffoStore` in a temporary data directory, and verifies migration version `004`, WAL mode, `quick_check`, and JSON-backed authority modes. Missing migration resources now fail bundle validation before a packaged runtime is shipped.
 
+M1.8 validation note: `npm run build:portable-exe` passed on 2026-05-12, producing `dist/baluffo-portable/Baluffo.exe`, `dist/baluffo-portable/BaluffoUpdater.exe`, `dist/baluffo-portable-0.1.33.zip`, and the `_out/latest/build/portable` mirror. The build exercised the ship-bundle import/storage validation and PyInstaller processed the stdlib `sqlite3` hook. `npm run test:frontend:packaged:orchestrated` then passed against `_out/latest/build/portable/Baluffo.exe`; the packaged smoke snapshot at `.tmp/packaged-desktop-smoke/20260511-222732-930580-930582400/storage-health.json` reported `ok=true`, migration version `004`, WAL mode `wal`, `quick_check=ok`, and JSON-backed authority modes for task runs, task events, sync runs, source runs, jobs feed, and source registry.
+
 Gate: SQLite health endpoint works, migration tests pass, packaged build can import `sqlite3`, and no runtime authority has moved.
 
 ### Milestone 2 - Sharded Source Sync
