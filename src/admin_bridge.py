@@ -550,10 +550,7 @@ def cleanup_stale_startup_tasks() -> dict[str, Any]:
     )
 
 
-def on_bridge_started() -> dict[str, Any]:
-    cleanup_result = cleanup_stale_startup_tasks()
-    sync_result = schedule_startup_sync_pull()
-    return {"cleanup": cleanup_result, "startupSync": sync_result}
+on_bridge_started = admin_task_runtime_mod.on_bridge_started
 
 
 def _run_sync_task_worker(

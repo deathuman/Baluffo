@@ -33,6 +33,7 @@ from src.jobs.common.contracts_source_policy_review_state import (
 )
 from src.shared.timing_counters import snapshot_counters
 from src.source_registry import is_hidden_from_default
+from src.source_registry_io import load_runtime_evidence_array
 
 logger = logging.getLogger(__name__)
 
@@ -503,12 +504,7 @@ def _read_discovery_candidate_rows(api: BridgeApi) -> list[dict[str, Any]]:
     candidates_path = getattr(api, "DISCOVERY_CANDIDATES_PATH", None)
     if candidates_path is None:
         return []
-    try:
-        raw = json.loads(Path(candidates_path).read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return []
-    rows = _as_list(raw)
-    return [row for row in rows if isinstance(row, dict)]
+    return load_runtime_evidence_array(candidates_path, [])
 
 
 def _overlay_discovery_candidate_fields(
@@ -694,11 +690,7 @@ def handle_get(
             if candidates_path is None:
                 return {"candidates": [], "count": 0}
             else:
-                try:
-                    raw = json.loads(Path(candidates_path).read_text(encoding="utf-8"))
-                except FileNotFoundError:
-                    raw = []
-                candidates = [row for row in _as_list(raw) if isinstance(row, dict)]
+                candidates = load_runtime_evidence_array(candidates_path, [])
                 return {"candidates": candidates, "count": len(candidates)}
 
         def _error(exc: Exception) -> dict[str, Any]:

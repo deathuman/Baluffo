@@ -54,13 +54,16 @@ _WRITE_RETRY_ATTEMPTS = 18
 _WRITE_RETRY_BACKOFF_BASE_S = 0.012
 
 # Files that must never use load_json_array; they are runtime evidence artifacts
-# that should be read via load_runtime_evidence instead.
+# that should be read via load_runtime_evidence or load_runtime_evidence_array.
 _RUNTIME_EVIDENCE_FILE_NAMES = {
     "jobs-fetch-report.json",
     "jobs-fetch-tasks.json",
+    "source-discovery-candidates.json",
     "source-discovery-report.json",
     "sync-live-task.json",
 }
+
+_RUNTIME_EVIDENCE_JOURNAL_QUARANTINE_DIR = "runtime-evidence-journal-quarantine"
 
 
 def ensure_data_dir() -> None:
@@ -69,6 +72,10 @@ def ensure_data_dir() -> None:
 
 def _storage_base_name(path: Path) -> str:
     return Path(path).name.removesuffix(".gz")
+
+
+def _is_runtime_evidence_file(path: Path) -> bool:
+    return _storage_base_name(Path(path)) in _RUNTIME_EVIDENCE_FILE_NAMES
 
 
 def _uses_gzip_storage(path: Path) -> bool:
@@ -282,16 +289,36 @@ def load_runtime_evidence(path: Any, default: dict[str, Any] | None = None) -> d
         return fallback
 
 
+def load_runtime_evidence_array(
+    path: Any, default: list[dict[str, Any]] | None = None
+) -> list[dict[str, Any]]:
+    """Read canonical runtime evidence array JSON directly with no journal overlay."""
+
+    fallback = [dict(row) for row in (default or []) if isinstance(row, dict)]
+    try:
+        source_path = Path(path)
+        candidates = _json_storage_candidates(source_path)
+        existing = next((candidate for candidate in candidates if candidate.exists()), None)
+        if existing is None:
+            return fallback
+        payload = _load_json_payload_from_file(existing)
+        if isinstance(payload, list):
+            return [dict(row) for row in payload if isinstance(row, dict)]
+        return fallback
+    except (OSError, json.JSONDecodeError):
+        return fallback
+
+
 def load_json_array(
     path: Path, default: list[dict[str, Any]] | None = None
 ) -> list[dict[str, Any]]:
     fallback = default or []
     path = Path(path)
     base_name = _storage_base_name(path)
-    if base_name in _RUNTIME_EVIDENCE_FILE_NAMES:
+    if _is_runtime_evidence_file(path):
         raise RuntimeError(
             f"load_json_array must not be used for runtime evidence files. "
-            f'Use load_runtime_evidence for "{base_name}" instead.'
+            f'Use load_runtime_evidence or load_runtime_evidence_array for "{base_name}" instead.'
         )
     rows = _load_json_array_from_storage(path, fallback)
     if rows is None:
@@ -439,6 +466,55 @@ def _json_journal_path_for(path: Path) -> Path:
     return Path(path).with_name(f"{base_name}.jsonl")
 
 
+def _runtime_evidence_journal_paths(data_dir: Path) -> list[Path]:
+    return [
+        _json_journal_path_for(Path(data_dir) / file_name)
+        for file_name in sorted(_RUNTIME_EVIDENCE_FILE_NAMES)
+    ]
+
+
+def _unique_quarantine_path(quarantine_dir: Path, journal_path: Path) -> Path:
+    stem = journal_path.stem
+    suffix = journal_path.suffix
+    for attempt in range(100):
+        target = quarantine_dir / f"{stem}.{time.time_ns()}.{attempt}{suffix}"
+        if not target.exists():
+            return target
+    return quarantine_dir / f"{stem}.{os.getpid()}.{time.time_ns()}{suffix}"
+
+
+def cleanup_runtime_evidence_journals(data_dir: Path | None = None) -> dict[str, Any]:
+    """Quarantine stale journals that must not participate in runtime evidence reads."""
+
+    root = Path(data_dir) if data_dir is not None else DATA_DIR
+    result: dict[str, Any] = {
+        "checked": 0,
+        "quarantined": [],
+        "errors": [],
+    }
+    quarantine_dir = root / _RUNTIME_EVIDENCE_JOURNAL_QUARANTINE_DIR
+    for journal_path in _runtime_evidence_journal_paths(root):
+        result["checked"] += 1
+        if not journal_path.exists():
+            continue
+        try:
+            byte_size = journal_path.stat().st_size
+            quarantine_dir.mkdir(parents=True, exist_ok=True)
+            target = _unique_quarantine_path(quarantine_dir, journal_path)
+            journal_path.replace(target)
+            result["quarantined"].append(
+                {
+                    "path": str(journal_path),
+                    "quarantinePath": str(target),
+                    "byteSize": byte_size,
+                }
+            )
+        except OSError as exc:
+            result["errors"].append({"path": str(journal_path), "error": str(exc)})
+    result["ok"] = not result["errors"]
+    return result
+
+
 def _path_mtime_ns(path: Path) -> int | None:
     try:
         return path.stat().st_mtime_ns
@@ -518,6 +594,10 @@ def _write_text_atomic(
 
 
 def _append_json_journal_record(path: Path, payload: Any) -> None:
+    if _is_runtime_evidence_file(path):
+        raise ValueError(
+            f"Runtime evidence files must not be journaled: {_storage_base_name(path)}"
+        )
     journal_path = _json_journal_path_for(path)
     journal_path.parent.mkdir(parents=True, exist_ok=True)
     ensure_data_dir()
@@ -632,8 +712,26 @@ def _json_payload_matches_existing(path: Path, payload: Any) -> bool:
     return _load_json_payload_from_file(target) == payload
 
 
+def _canonical_json_payload_matches_existing(path: Path, payload: Any) -> bool:
+    existing = next(
+        (candidate for candidate in _json_storage_candidates(path) if candidate.exists()),
+        None,
+    )
+    if existing is None:
+        return False
+    try:
+        return _load_json_payload_from_file(existing) == _json_journal_image_payload(payload)
+    except (OSError, json.JSONDecodeError):
+        return False
+
+
 def save_json_atomic(path: Path, payload: Any) -> None:
     path = Path(path)
+    if _is_runtime_evidence_file(path):
+        if _canonical_json_payload_matches_existing(path, payload):
+            return
+        _write_json_payload_atomic(path, _json_journal_image_payload(payload))
+        return
     if _json_payload_matches_existing(path, payload):
         if _uses_gzip_storage(path) and _gzip_path_for(path).exists():
             _remove_stale_plain_json_storage_file(path)

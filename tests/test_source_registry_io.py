@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 import src.source_registry_io as registry_io
 
 
@@ -53,7 +55,7 @@ def test_lean_registry_metadata_write_lock_does_not_fail_required_registry_write
 
 
 def test_load_json_object_uses_newer_json_when_stale_journal_exists(tmp_path: Path) -> None:
-    path = tmp_path / "jobs-fetch-report.json"
+    path = tmp_path / "source-approval-state.json"
     stale_journal_payload = {
         "runId": "fetch_1",
         "finishedAt": "",
@@ -67,7 +69,7 @@ def test_load_json_object_uses_newer_json_when_stale_journal_exists(tmp_path: Pa
 
     registry_io._append_json_journal_record(path, stale_journal_payload)
     path.write_text(json.dumps(current_payload), encoding="utf-8")
-    journal_path = path.with_name("jobs-fetch-report.jsonl")
+    journal_path = path.with_name("source-approval-state.jsonl")
     os.utime(journal_path, (1000, 1000))
     os.utime(path, (2000, 2000))
 
@@ -75,7 +77,7 @@ def test_load_json_object_uses_newer_json_when_stale_journal_exists(tmp_path: Pa
 
 
 def test_load_json_object_uses_newer_journal_when_base_json_is_stale(tmp_path: Path) -> None:
-    path = tmp_path / "jobs-fetch-report.json"
+    path = tmp_path / "source-approval-state.json"
     stale_base_payload = {
         "runId": "fetch_1",
         "finishedAt": "",
@@ -89,7 +91,7 @@ def test_load_json_object_uses_newer_journal_when_base_json_is_stale(tmp_path: P
 
     path.write_text(json.dumps(stale_base_payload), encoding="utf-8")
     registry_io._append_json_journal_record(path, current_journal_payload)
-    journal_path = path.with_name("jobs-fetch-report.jsonl")
+    journal_path = path.with_name("source-approval-state.jsonl")
     os.utime(path, (1000, 1000))
     os.utime(journal_path, (2000, 2000))
 
@@ -136,7 +138,10 @@ def test_load_runtime_evidence_reads_canonical_only_ignores_journal(tmp_path: Pa
     }
 
     path.write_text(json.dumps(canonical_payload), encoding="utf-8")
-    registry_io._append_json_journal_record(path, journal_payload)
+    path.with_name("jobs-fetch-report.jsonl").write_text(
+        registry_io._json_journal_record_text(journal_payload),
+        encoding="utf-8",
+    )
     # Make journal newer than canonical
     journal_path = path.with_name("jobs-fetch-report.jsonl")
     os.utime(path, (1000, 1000))
@@ -144,3 +149,116 @@ def test_load_runtime_evidence_reads_canonical_only_ignores_journal(tmp_path: Pa
 
     # load_runtime_evidence must return canonical content, ignoring the newer journal
     assert registry_io.load_runtime_evidence(path, {}) == canonical_payload
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "jobs-fetch-report.json",
+        "jobs-fetch-tasks.json",
+        "sync-live-task.json",
+        "source-discovery-report.json",
+    ],
+)
+def test_save_json_atomic_does_not_journal_runtime_evidence(
+    tmp_path: Path,
+    filename: str,
+) -> None:
+    path = tmp_path / filename
+    payload = {"runId": "runtime_1", "status": "running"}
+
+    registry_io.save_json_atomic(path, payload)
+
+    assert path.exists()
+    assert not path.with_suffix(".jsonl").exists()
+    assert registry_io.load_runtime_evidence(path, {}) == payload
+
+
+def test_save_json_atomic_does_not_journal_runtime_evidence_array(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "source-discovery-candidates.json"
+    payload = [{"id": "candidate-1", "name": "Candidate"}, "ignored"]
+
+    registry_io.save_json_atomic(path, payload)
+
+    assert path.exists()
+    assert not path.with_suffix(".jsonl").exists()
+    assert registry_io.load_runtime_evidence_array(path, []) == [
+        {"id": "candidate-1", "name": "Candidate"}
+    ]
+
+
+def test_load_json_array_rejects_discovery_candidates_runtime_evidence(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "source-discovery-candidates.json"
+    path.write_text(json.dumps([{"id": "candidate-1"}]), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="load_runtime_evidence_array"):
+        registry_io.load_json_array(path, [])
+
+
+def test_save_json_atomic_runtime_evidence_noop_ignores_stale_journal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "jobs-fetch-report.json"
+    canonical_payload = {"runId": "fetch_1", "finishedAt": "done"}
+    stale_journal_payload = {"runId": "fetch_1", "finishedAt": ""}
+    path.write_text(json.dumps(canonical_payload), encoding="utf-8")
+    path.with_name("jobs-fetch-report.jsonl").write_text(
+        registry_io._json_journal_record_text(stale_journal_payload),
+        encoding="utf-8",
+    )
+    os.utime(path, (1000, 1000))
+    os.utime(path.with_name("jobs-fetch-report.jsonl"), (2000, 2000))
+    writes: list[tuple[Path, object]] = []
+    monkeypatch.setattr(
+        registry_io,
+        "_write_json_payload_atomic",
+        lambda write_path, write_payload: writes.append((Path(write_path), write_payload)),
+    )
+
+    registry_io.save_json_atomic(path, canonical_payload)
+
+    assert writes == []
+
+
+def test_append_json_journal_record_rejects_runtime_evidence(tmp_path: Path) -> None:
+    path = tmp_path / "jobs-fetch-report.json"
+
+    with pytest.raises(ValueError, match="Runtime evidence files must not be journaled"):
+        registry_io._append_json_journal_record(path, {"runId": "fetch_1"})
+
+
+def test_cleanup_runtime_evidence_journals_quarantines_known_stale_journals(
+    tmp_path: Path,
+) -> None:
+    stale_report_journal = tmp_path / "jobs-fetch-report.jsonl"
+    stale_candidates_journal = tmp_path / "source-discovery-candidates.jsonl"
+    stale_sync_journal = tmp_path / "sync-live-task.jsonl"
+    registry_journal = tmp_path / "source-approval-state.jsonl"
+    stale_report_journal.write_text('{"payload":{"status":"stale"}}\n', encoding="utf-8")
+    stale_candidates_journal.write_text('{"payload":[{"id":"stale"}]}\n', encoding="utf-8")
+    stale_sync_journal.write_text('{"payload":{"status":"stale"}}\n', encoding="utf-8")
+    registry_journal.write_text('{"payload":{"status":"keep"}}\n', encoding="utf-8")
+
+    result = registry_io.cleanup_runtime_evidence_journals(tmp_path)
+
+    assert result["ok"] is True
+    assert result["checked"] == 5
+    assert len(result["quarantined"]) == 3
+    assert not stale_report_journal.exists()
+    assert not stale_candidates_journal.exists()
+    assert not stale_sync_journal.exists()
+    assert registry_journal.exists()
+    quarantined_names = {
+        Path(row["quarantinePath"]).name.split(".", maxsplit=1)[0] for row in result["quarantined"]
+    }
+    assert quarantined_names == {
+        "jobs-fetch-report",
+        "source-discovery-candidates",
+        "sync-live-task",
+    }
+    assert all(Path(row["quarantinePath"]).exists() for row in result["quarantined"])

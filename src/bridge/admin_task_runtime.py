@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol, cast
 
-from src.source_registry_io import load_runtime_evidence
+from src.source_registry_io import cleanup_runtime_evidence_journals, load_runtime_evidence
 
 root: Any | None = None
 
@@ -187,6 +187,26 @@ def startup_sync_pull() -> None:
 
 def schedule_startup_sync_pull() -> JsonObject:
     return _require_root()._get_sync_service().schedule_startup_sync_pull()
+
+
+def on_bridge_started() -> JsonObject:
+    root_mod = _require_root()
+    runtime_journals = cleanup_runtime_evidence_journals(
+        Path(root_mod.RUNTIME_CONFIG.data_dir).resolve()
+    )
+    if runtime_journals.get("quarantined") or runtime_journals.get("errors"):
+        root_mod.bridge_log(
+            "info" if not runtime_journals.get("errors") else "warn",
+            "runtime_evidence_journal_startup_cleanup",
+            checked=runtime_journals.get("checked", 0),
+            quarantined=len(runtime_journals.get("quarantined") or []),
+            errors=len(runtime_journals.get("errors") or []),
+        )
+    return {
+        "runtimeEvidenceJournals": runtime_journals,
+        "cleanup": root_mod.cleanup_stale_startup_tasks(),
+        "startupSync": root_mod.schedule_startup_sync_pull(),
+    }
 
 
 def sync_task_running() -> bool:

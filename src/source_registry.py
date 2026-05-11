@@ -34,6 +34,7 @@ URL_PATCH_MANIFEST_PATH = _io.URL_PATCH_MANIFEST_PATH
 load_json_array = _io.load_json_array
 load_json_object = _io.load_json_object
 load_runtime_evidence = _io.load_runtime_evidence
+load_runtime_evidence_array = _io.load_runtime_evidence_array
 registry_seed_path_for = _io.registry_seed_path_for
 
 AUTO_APPROVAL_CAP_DEFER_REASONS = _auto.AUTO_APPROVAL_CAP_DEFER_REASONS
@@ -122,6 +123,11 @@ def _sync_io_paths() -> None:
 def ensure_data_dir() -> None:
     _sync_io_paths()
     _io.ensure_data_dir()
+
+
+def cleanup_runtime_evidence_journals(data_dir: Path | None = None) -> dict[str, Any]:
+    _sync_io_paths()
+    return _io.cleanup_runtime_evidence_journals(DATA_DIR if data_dir is None else data_dir)
 
 
 def save_json_atomic(path: Path, payload: Any) -> None:

@@ -48,6 +48,10 @@ def test_on_bridge_started_runs_lifecycle_cleanup_before_startup_sync_without_le
         calls.append("cleanup")
         return {"ok": True, "orphaned": 2}
 
+    def runtime_cleanup(_data_dir) -> dict[str, object]:
+        calls.append("runtime_cleanup")
+        return {"ok": True, "checked": 5, "quarantined": [], "errors": []}
+
     def startup_sync() -> dict[str, object]:
         calls.append("startup_sync")
         return {"ok": True, "scheduled": True}
@@ -56,13 +60,23 @@ def test_on_bridge_started_runs_lifecycle_cleanup_before_startup_sync_without_le
         mock.patch.object(
             admin_bridge, "migrate_legacy_task_state_to_lifecycle", side_effect=reconcile
         ),
+        mock.patch(
+            "src.bridge.admin_task_runtime.cleanup_runtime_evidence_journals",
+            side_effect=runtime_cleanup,
+        ),
         mock.patch.object(admin_bridge, "cleanup_stale_startup_tasks", side_effect=cleanup),
         mock.patch.object(admin_bridge, "schedule_startup_sync_pull", side_effect=startup_sync),
     ):
         result = admin_bridge.on_bridge_started()
 
-    assert calls == ["cleanup", "startup_sync"]
+    assert calls == ["runtime_cleanup", "cleanup", "startup_sync"]
     assert result == {
+        "runtimeEvidenceJournals": {
+            "ok": True,
+            "checked": 5,
+            "quarantined": [],
+            "errors": [],
+        },
         "cleanup": {"ok": True, "orphaned": 2},
         "startupSync": {"ok": True, "scheduled": True},
     }

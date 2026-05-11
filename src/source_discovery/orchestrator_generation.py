@@ -9,6 +9,7 @@ from src import source_registry as source_registry_module
 from src.bridge.registry_tombstones import filter_tombstoned_rows, load_tombstones
 from src.source_registry import (
     load_json_array,
+    load_runtime_evidence_array,
     source_family_key,
     source_identity,
     static_listing_url_aliases,
@@ -287,7 +288,9 @@ def _prepare_runtime_registry(
     state.active = filter_tombstoned_rows(state.active, state.tombstones)
     state.pending_existing = filter_tombstoned_rows(state.pending_existing, state.tombstones)
     state.rejected = filter_tombstoned_rows(state.rejected, state.tombstones)
-    prior_review_candidates = load_json_array(source_registry_module.DISCOVERY_CANDIDATES_PATH, [])
+    prior_review_candidates = load_runtime_evidence_array(
+        source_registry_module.DISCOVERY_CANDIDATES_PATH, []
+    )
     state.prior_review_candidates_by_id = {
         source_identity(row): dict(row) for row in prior_review_candidates if isinstance(row, dict)
     }
