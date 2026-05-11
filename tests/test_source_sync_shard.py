@@ -11,8 +11,11 @@ from src.source_sync_shard import (
     SourceSyncShardError,
     build_manifest,
     build_shards,
+    changed_shards,
     manifest_path,
+    push_changed_shards,
     push_manifest,
+    push_shard,
     read_manifest,
     shard_key,
     trusted_committed_manifest,
@@ -246,3 +249,104 @@ def test_read_and_push_manifest_use_committed_manifest_path() -> None:
     assert put_call["payload"]["sha"] == "oldsha"
     decoded_manifest = json.loads(base64.b64decode(put_call["payload"]["content"]))
     assert decoded_manifest == manifest
+
+
+def test_changed_shards_compare_committed_path_and_sha() -> None:
+    shards = build_shards(
+        [_row(index) for index in range(8)],
+        max_size=10_000,
+        bucket="active",
+        base_path="baluffo/source-sync/shards/stable",
+    )
+    committed = build_manifest(shards, generated_at="2026-05-12T10:00:00+00:00")
+    committed["shards"][1] = {**committed["shards"][1], "sha256": "0" * 64}
+    committed["shards"] = committed["shards"][:-1]
+    committed["shardCount"] = len(committed["shards"])
+    committed["totalRowCount"] = sum(entry["rowCount"] for entry in committed["shards"])
+    committed["totalSizeBytes"] = sum(entry["sizeBytes"] for entry in committed["shards"])
+
+    changed = changed_shards(shards, committed)
+
+    assert [shard.path for shard in changed] == [shards[1].path, shards[-1].path]
+
+
+def test_changed_shards_treat_untrusted_manifest_as_all_changed() -> None:
+    shards = build_shards([_row(1), _row(2)], max_size=10_000)
+    proposed = {
+        **build_manifest(shards, generated_at="2026-05-12T10:00:00+00:00"),
+        "phase": "proposed",
+    }
+
+    assert changed_shards(shards, proposed) == shards
+
+
+def test_push_shard_writes_payload_to_immutable_shard_path() -> None:
+    shard = build_shards([_row(1)], max_size=10_000, base_path="baluffo/source-sync/shards/stable")[
+        0
+    ]
+    module = _FakeSyncModule([(201, {"content": {"sha": "blobsha"}})])
+
+    result = push_shard(module, _config(), shard, opener=object())
+
+    assert result == {
+        "ok": True,
+        "path": shard.path,
+        "sha256": shard.sha256,
+        "remoteSha": "blobsha",
+        "sizeBytes": shard.size_bytes,
+        "rowCount": shard.row_count,
+    }
+    put_call = module.calls[0]
+    assert put_call["method"] == "PUT"
+    assert put_call["url"] == f"https://api.github.test/repos/owner/repo/contents/{shard.path}"
+    assert put_call["payload"]["branch"] == "main"
+    assert (
+        hashlib.sha256(base64.b64decode(put_call["payload"]["content"])).hexdigest() == shard.sha256
+    )
+    assert "sha" not in put_call["payload"]
+
+
+def test_push_shard_rejects_payload_sha_mismatch() -> None:
+    shard = build_shards([_row(1)], max_size=10_000)[0]
+    tampered = type(shard)(
+        bucket=shard.bucket,
+        key=shard.key,
+        path=shard.path,
+        row_count=shard.row_count,
+        size_bytes=shard.size_bytes,
+        sha256="0" * 64,
+        payload_bytes=shard.payload_bytes,
+    )
+
+    with pytest.raises(SourceSyncShardError, match="sha256"):
+        push_shard(_FakeSyncModule([]), _config(), tampered, opener=object())
+
+
+def test_push_changed_shards_only_puts_missing_or_changed_shards() -> None:
+    old_shards = build_shards(
+        [_row(index) for index in range(5)],
+        max_size=10_000,
+        bucket="active",
+        base_path="baluffo/source-sync/shards/stable",
+    )
+    new_shards = build_shards(
+        [_row(index) for index in range(6)],
+        max_size=10_000,
+        bucket="active",
+        base_path="baluffo/source-sync/shards/stable",
+    )
+    committed = build_manifest(old_shards, generated_at="2026-05-12T10:00:00+00:00")
+    expected_changed = changed_shards(new_shards, committed)
+    module = _FakeSyncModule(
+        [(201, {"content": {"sha": f"blob{index}"}}) for index in range(len(expected_changed))]
+    )
+
+    result = push_changed_shards(module, _config(), new_shards, committed, opener=object())
+
+    assert result["shardCount"] == len(new_shards)
+    assert result["changedShardCount"] == len(expected_changed)
+    assert result["shardsPushedBytes"] == sum(shard.size_bytes for shard in expected_changed)
+    assert result["changedShards"] == [shard.manifest_entry() for shard in expected_changed]
+    assert [call["url"].rsplit("/contents/", 1)[1] for call in module.calls] == [
+        shard.path for shard in expected_changed
+    ]

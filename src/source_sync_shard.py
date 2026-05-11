@@ -252,6 +252,92 @@ def push_manifest(
     return {"ok": True, "sha": str(content.get("sha") or "")}
 
 
+def changed_shards(shards: list[Shard], committed_manifest: dict[str, Any] | None) -> list[Shard]:
+    if committed_manifest is None:
+        return sorted(shards, key=lambda shard: (shard.bucket, shard.key, shard.path))
+    trusted = trusted_committed_manifest(committed_manifest)
+    if trusted is None:
+        return sorted(shards, key=lambda shard: (shard.bucket, shard.key, shard.path))
+    previous_by_path = {
+        str(entry.get("path") or ""): str(entry.get("sha256") or "").lower()
+        for entry in trusted.get("shards", [])
+        if isinstance(entry, dict)
+    }
+    changed = [
+        shard for shard in shards if previous_by_path.get(shard.path) != shard.sha256.lower()
+    ]
+    return sorted(changed, key=lambda shard: (shard.bucket, shard.key, shard.path))
+
+
+def push_shard(
+    module: Any,
+    config: Any,
+    shard: Shard,
+    *,
+    message: str = "Update Baluffo source sync shard",
+    opener: Callable[..., Any],
+) -> dict[str, Any]:
+    module.validate_sync_config(config)
+    expected_sha256 = hashlib.sha256(shard.payload_bytes).hexdigest()
+    if shard.sha256.lower() != expected_sha256:
+        raise SourceSyncShardError(
+            f"source-sync shard {shard.path} sha256 does not match payload bytes"
+        )
+    payload: dict[str, Any] = {
+        "message": str(message or "Update Baluffo source sync shard"),
+        "content": base64.b64encode(shard.payload_bytes).decode("ascii"),
+        "branch": config.branch,
+    }
+    status, body, _headers = module._request_json(
+        method="PUT",
+        url=_content_api_url(module, config, shard.path, with_ref=False),
+        config=config,
+        timeout_s=config.timeout_s,
+        payload=payload,
+        opener=opener,
+    )
+    if status >= 400:
+        message_text = str(body.get("message") or f"GitHub PUT failed with HTTP {status}")
+        raise RuntimeError(message_text)
+    content = body.get("content") if isinstance(body.get("content"), dict) else {}
+    return {
+        "ok": True,
+        "path": shard.path,
+        "sha256": shard.sha256,
+        "remoteSha": str(content.get("sha") or ""),
+        "sizeBytes": shard.size_bytes,
+        "rowCount": shard.row_count,
+    }
+
+
+def push_changed_shards(
+    module: Any,
+    config: Any,
+    shards: list[Shard],
+    committed_manifest: dict[str, Any] | None,
+    *,
+    opener: Callable[..., Any],
+) -> dict[str, Any]:
+    changed = changed_shards(shards, committed_manifest)
+    results = [
+        push_shard(
+            module,
+            config,
+            shard,
+            message=f"Update Baluffo source sync shard {shard.bucket}/{shard.key}",
+            opener=opener,
+        )
+        for shard in changed
+    ]
+    return {
+        "shardCount": len(shards),
+        "changedShardCount": len(changed),
+        "shardsPushedBytes": sum(shard.size_bytes for shard in changed),
+        "changedShards": [shard.manifest_entry() for shard in changed],
+        "pushResults": results,
+    }
+
+
 def _build_bounded_shards(
     rows: list[dict[str, Any]],
     *,

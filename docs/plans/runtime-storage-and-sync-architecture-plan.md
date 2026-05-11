@@ -442,6 +442,8 @@ M2.1 implementation note: `src/source_sync_shard.py` now provides deterministic 
 
 M2.2 implementation note: the sharding leaf now builds and validates committed schema-v3 manifests, derives `baluffo/source-sync/manifest.json` from the existing v2 snapshot path, reads only trusted committed manifests, and refuses to push uncommitted/proposed manifests. The helper writes target the manifest path separately from the existing v2 monolith and do not change `push_sources_snapshot()` yet. Focused tests cover manifest totals, path validation, proposed-manifest distrust, committed manifest read/write requests, and decoded PUT payloads.
 
+M2.3 implementation note: the sharding leaf now compares candidate shards against the last trusted committed manifest by remote path plus shard SHA-256, so a shard is skipped only when the exact referenced path already exists with the same payload hash. It also has immutable shard PUT helpers that validate payload SHA-256 before upload, omit an overwrite `sha`, and return pushed-byte/row metadata. Focused tests cover changed-shard detection, untrusted manifest fallback, immutable shard payload uploads, SHA mismatch rejection, and pushing only missing or changed shards.
+
 ### Milestone 3 - Move Task Runs, Events, and Sync Runs
 
 Purpose: migrate the lowest-risk live runtime authority first.
