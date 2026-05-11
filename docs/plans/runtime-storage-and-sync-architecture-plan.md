@@ -4,7 +4,7 @@
 > - **Use this when:** reducing runtime artifact bloat, planning SQLite/WAL storage, changing live task/report persistence, or replacing monolithic source-sync snapshots
 > - **Canonical for:** long-term storage direction, journal-scope policy, source-sync sharding target, storage metrics gate, hot-path payload budgets, migration sequencing, SQLite connection/transaction discipline, and rollback expectations
 > - **Not canonical for:** current endpoint response fields, current source-sync snapshot schema, or existing fetch report compatibility requirements
-> - **Then inspect:** [`DATA_CONTRACT.md`](../DATA_CONTRACT.md), [`admin-bridge-api.md`](../admin-bridge-api.md), [`fetcher-runtime-contracts.md`](../fetcher-runtime-contracts.md), [`sync-contract.md`](../sync-contract.md), [`task-lifecycle-ledger-plan.md`](task-lifecycle-ledger-plan.md), and [`LOCAL_SETUP.md`](../LOCAL_SETUP.md)
+> - **Then inspect:** [`../storage-contract.md`](../storage-contract.md), [`DATA_CONTRACT.md`](../DATA_CONTRACT.md), [`admin-bridge-api.md`](../admin-bridge-api.md), [`fetcher-runtime-contracts.md`](../fetcher-runtime-contracts.md), [`sync-contract.md`](../sync-contract.md), [`task-lifecycle-ledger-plan.md`](task-lifecycle-ledger-plan.md), and [`LOCAL_SETUP.md`](../LOCAL_SETUP.md)
 > - **Last updated:** 2026-05-11
 
 ## Verdict
@@ -398,12 +398,14 @@ If JSON serialization plus atomic replace is below 5% of fetch wall clock and ro
 Purpose: land SQLite infrastructure without changing data authority.
 
 - **Done:** Add `"sqlite3"` to `MAIN_RUNTIME_HIDDEN_IMPORTS` and test it.
-- Add `docs/storage-contract.md`.
+- **Done:** Add `docs/storage-contract.md`.
 - Add `src/storage/baluffo_store.py`, migrations, health state, backup/restore, and migration runner.
 - Validate WAL, `BEGIN IMMEDIATE`, busy retry deadline, batch insert partitioning, quick_check, backup/restore, and checkpoint failure handling.
 - Do not shadow-write task, sync, source-run, or jobs data in this milestone.
 
 M1.1 implementation note: the packaged runtime now includes `sqlite3` in the main PyInstaller hidden imports, with a packaging guard test. This does not start the SQLite authority migration and does not satisfy the packaged fetch evidence gate by itself.
+
+M1.2 implementation note: `docs/storage-contract.md` now captures target authority boundaries, SQLite/WAL discipline, migration safety, compatibility exports, source-sync push/pull contract, evidence archive retention, size budgets, and benchmark expectations. This is a contract/documentation slice only; storage implementation still remains gated.
 
 Gate: SQLite health endpoint works, migration tests pass, packaged build can import `sqlite3`, and no runtime authority has moved.
 

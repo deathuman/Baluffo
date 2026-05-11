@@ -36,6 +36,7 @@ These documents are the closest thing to source-of-truth references for stable i
 | [`admin-bridge-api.md`](admin-bridge-api.md) | **Canonical contract** | Admin Bridge endpoint surface and request/response routing expectations |
 | [`fetcher-runtime-contracts.md`](fetcher-runtime-contracts.md) | **Canonical contract** | Fetcher presets, runtime files, and fetch execution expectations |
 | [`sync-contract.md`](sync-contract.md) | **Canonical contract** | Source-sync snapshot shape, GitHub API versioning, and release-path notes |
+| [`storage-contract.md`](storage-contract.md) | **Canonical contract** | Target runtime storage authority boundaries, SQLite/WAL discipline, compatibility exports, evidence archives, and storage migration safety |
 | [`game-studios-sheet.md`](game-studios-sheet.md) | Narrow contract | Google Sheet input contract for the game studios directory funnel |
 
 ## Subsystem Deep Dives

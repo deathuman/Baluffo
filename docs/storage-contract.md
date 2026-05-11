@@ -1,0 +1,181 @@
+# Storage Contract
+
+> - **Status:** Proposed
+> - **Use this when:** implementing or validating runtime SQLite/WAL storage, storage authority migration, compatibility exports, evidence archives, or source-sync sharding
+> - **Canonical for:** target storage authority boundaries, SQLite connection and transaction discipline, migration safety, export and rollback behavior, and hot-path size budgets
+> - **Not canonical for:** current endpoint payload fields, current JSON artifact schemas, source-sync v2 schema details, or Jobs frontend row fields
+> - **Then inspect:** [`plans/runtime-storage-and-sync-architecture-plan.md`](plans/runtime-storage-and-sync-architecture-plan.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`admin-bridge-api.md`](admin-bridge-api.md), [`fetcher-runtime-contracts.md`](fetcher-runtime-contracts.md), [`sync-contract.md`](sync-contract.md), and [`LOCAL_SETUP.md`](LOCAL_SETUP.md)
+> - **Last updated:** 2026-05-11
+
+This document defines the target runtime storage contract. It is intentionally narrower than the implementation plan: it states the invariants future code must preserve, while the plan tracks sequencing and open gates.
+
+## Scope
+
+Runtime storage covers bridge-owned hot state, terminal compatibility exports, registry/source-sync payloads, and filesystem-backed evidence archives.
+
+The target shape is:
+
+```text
+SQLite/WAL local runtime database for hot state
++ compact compatibility JSON exports
++ registry-only bounded journal recovery
++ sharded GitHub source-sync snapshots
++ bounded filesystem-backed evidence archives
+```
+
+The Jobs frontend boot path remains static JSON plus IndexedDB. Desktop local user data remains JSON-backed through the existing local-data contract. BaluffoSync remains source-registry sync, not a job feed and not a remote database.
+
+## Authority Split
+
+| Category | Target authority | Compatibility/export surface | Notes |
+|---|---|---|---|
+| Current task liveness | SQLite `task_runs` after cutover | `/ops/task-state` JSON projection | JSON lifecycle files remain authority until the task-run surface cuts over. |
+| Live task events | SQLite `task_events` after cutover | `/ops/task-live/<taskType>` | Recent bounded event windows only. |
+| Sync runs/history | SQLite `sync_runs` after cutover | Existing history/task summaries | Includes sync size and shard metrics. |
+| Fetch source progress | SQLite `source_runs` after cutover | `jobs-fetch-tasks.json` compatibility while needed | Live UI needs compact current progress, not full terminal reports. |
+| Jobs feed | SQLite `jobs` and `job_sources` server-side after cutover | `jobs-unified-light.json` permanent export | Frontend continues static JSON plus IndexedDB. |
+| Full fetch/dedup/source evidence | Filesystem archive plus JSON manifest | Lazy detail/export APIs | Not SQLite. Enforce retention budgets. |
+| Source registry | SQLite-backed rows or staged registry service after later cutover | Sharded source-sync export | Registry journal repair must remain bounded before migration. |
+| Bridge diagnostics | Bounded JSONL or SQLite table | Support artifact | Diagnostics are not lifecycle authority. |
+| Desktop local user data | Existing JSON files | `LOCAL_DATA_RUNTIME_METHODS` | No SQLite migration. |
+
+## SQLite Runtime Store
+
+The database lives under the configured data directory on the same volume as runtime artifacts, for example:
+
+```text
+data/baluffo-runtime.db
+```
+
+It must not live under `_out/`.
+
+SQLite uses Python stdlib `sqlite3`. No new Python or Node dependency is allowed for the runtime store. Packaged builds must keep `sqlite3` in the main PyInstaller hidden imports.
+
+Connection initialization must apply and verify:
+
+```sql
+PRAGMA journal_mode=WAL;
+PRAGMA synchronous=NORMAL;
+PRAGMA busy_timeout=30000;
+PRAGMA foreign_keys=ON;
+```
+
+All writes use `BEGIN IMMEDIATE`:
+
+```python
+connection.execute("BEGIN IMMEDIATE")
+try:
+    # writes
+    connection.commit()
+except Exception:
+    connection.rollback()
+    raise
+```
+
+Store rules:
+
+- Keep one bridge/runtime write-owner abstraction. Narrow helpers must not open ad hoc SQLite write connections.
+- Retry `SQLITE_BUSY` with bounded exponential backoff and a total deadline.
+- Bulk writes default to 500 rows per transaction.
+- Migrations are idempotent and tracked in a migration table.
+- Startup verifies schema version, WAL mode, foreign keys, and `quick_check`.
+- Backups use SQLite backup APIs, then validate the restored database with `quick_check`.
+- WAL checkpointing is required only at controlled points: after large terminal writes, explicit maintenance, backup preparation, and clean shutdown. Do not checkpoint on hot heartbeats.
+
+The storage health payload must include migration version, WAL mode, last write error, busy count/rate, `quick_check` status, and current authority mode per surface.
+
+## Migration Safety
+
+Milestone 1 is skeleton-only. It must not shadow-write lifecycle, sync, source-run, or jobs data.
+
+Each later authority migration follows this surface-by-surface sequence:
+
+1. JSON remains read authority.
+2. Writes are mirrored into SQLite.
+3. SQLite projection is compared with the existing JSON/API compatibility shape.
+4. Cutover state advances only after the required consecutive matching packaged runs.
+5. Reads switch to SQLite while compatibility exports continue.
+
+Cutover and rollback state must be persisted, not just held in memory.
+
+Rollback triggers include failed migration, failed `quick_check` or integrity check, repeated busy timeout, or projection mismatch. On rollback, reads stay on or return to the JSON path, the store is marked unhealthy, and the SQLite file is retained for diagnosis. Runtime code must not auto-delete the database.
+
+## Compatibility Exports
+
+Compatibility JSON exports remain generated until the owning frontend/API surface is separately retired.
+
+Rules:
+
+- Runtime evidence files are canonical JSON or gzip JSON artifacts, not journal-overlay artifacts.
+- Registry journaling is registry-only and bounded.
+- `jobs-unified-light.json` remains the permanent Jobs frontend boot export.
+- Do not add cache hashes inside `jobs-unified-light.json` rows. Use sidecar metadata or bridge metadata.
+- Full fetch/dedup/source evidence moves to filesystem-backed archives with a JSON manifest, not SQLite.
+
+## Source Sync
+
+The source-sync target is a committed v3 manifest plus immutable shard payloads. The committed manifest must not point at shards before every referenced shard exists and validates.
+
+Push protocol contract:
+
+1. Read the last committed manifest if present.
+2. Build shards from the current registry projection.
+3. Push only changed immutable shard paths.
+4. Validate pushed shards by hash and read-back where needed.
+5. Update the committed manifest only after all referenced shards validate.
+6. Leave the old committed manifest untouched if shard push fails.
+7. Garbage-collect old unreferenced generations only after a successful commit.
+
+Pull protocol contract:
+
+- Read only the committed v3 manifest.
+- Validate schema, content hash, shard list, and per-shard SHA-256.
+- Fall back to v2 monolithic `source-sync.json` only when v3 is absent.
+- During transition, either dual-write v2 while under cap or explicitly accept that v2-only clients stop receiving updates.
+
+Source sync must not include jobs, fetch reports, local source-policy review state, or evidence archives.
+
+## Evidence Archives
+
+Evidence archives are filesystem-backed and tracked by:
+
+```text
+data/evidence-archive-manifest.json
+```
+
+Default policy:
+
+- total archive budget: 500 MiB
+- per-run compressed debug archive warning: 25 MiB
+- default retention window: 90 days
+- never evict current active-run evidence
+- evict unpinned oldest first, then largest non-pinned archives if still over budget
+
+Compatibility exports such as `jobs-unified-light.json` are not debug archives.
+
+## Size Budgets
+
+Hot-path payload growth must be impossible by test.
+
+| Payload | Suggested budget |
+|---|---:|
+| single task row | 32 KiB |
+| task history row | 64 KiB |
+| live task summary | 256 KiB |
+| compact fetch report | 1 MiB |
+| `/ops/task-state` response | 256 KiB |
+| `/ops/task-live/fetch` response | 1 MiB unless paginated |
+| per sync shard | 5-10 MiB |
+| compressed debug archive | warning at 25 MiB |
+
+## Benchmark Contract
+
+For every milestone that changes runtime storage authority:
+
+- Capture a JSON-baseline run before migration.
+- Capture an equivalent shadow or authoritative run with the same source set and comparable artifact sizes.
+- Full discovery/fetch wall-clock time must not regress by more than 5% without an explicit acceptance note.
+- Admin live progress route latency must not regress by more than 10% without a root-cause note.
+- Large artifact rewrites must decrease for the migrated surface or the tradeoff must be documented.
+- `storageMetrics` must show equal or lower hot artifact bytes, registry journal bytes, and source-sync pressure for migrated surfaces unless a migration note explains otherwise.
+- Compatibility exports must remain byte-contract compatible where existing frontend or docs require them.
