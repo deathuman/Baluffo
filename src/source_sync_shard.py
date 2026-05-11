@@ -422,6 +422,55 @@ def push_changed_shards(
     }
 
 
+def push_sharded_snapshot(
+    module: Any,
+    config: Any,
+    snapshot: dict[str, Any],
+    *,
+    max_shard_size: int,
+    committed_manifest: dict[str, Any] | None = None,
+    opener: Callable[..., Any],
+) -> dict[str, Any]:
+    bundle = build_sharded_snapshot_bundle(
+        snapshot,
+        max_shard_size=max_shard_size,
+        committed_manifest=committed_manifest,
+    )
+    metrics = dict(bundle["metrics"])
+    if not bundle["changedShards"]:
+        return {
+            "ok": True,
+            "pushed": False,
+            "skipped": True,
+            "skipReason": "no_changed_shards",
+            "manifest": bundle["manifest"],
+            "metrics": metrics,
+        }
+    shard_result = push_changed_shards(
+        module,
+        config,
+        bundle["shards"],
+        committed_manifest,
+        opener=opener,
+    )
+    manifest_result = push_manifest(module, config, bundle["manifest"], opener=opener)
+    metrics.update(
+        {
+            "changedShardCount": int(shard_result.get("changedShardCount") or 0),
+            "shardsPushedBytes": int(shard_result.get("shardsPushedBytes") or 0),
+        }
+    )
+    return {
+        "ok": True,
+        "pushed": True,
+        "skipped": False,
+        "remoteSha": str(manifest_result.get("sha") or ""),
+        "manifest": bundle["manifest"],
+        "metrics": metrics,
+        "shardResult": shard_result,
+    }
+
+
 def read_shard(
     module: Any,
     config: Any,

@@ -450,6 +450,8 @@ M2.5 prep note: shard bundles now use content-addressed remote paths (`bucket/ke
 
 M2.6 implementation note: sync pull now prefers a trusted committed v3 manifest and validates every referenced shard before merging, while a missing/untrusted manifest still falls back to the existing v2 monolithic `source-sync.json` reader. The v3 path is deliberately pull-only for this slice so push conflict handling keeps using the v2 monolith SHA until sharded push orchestration is wired separately. Focused tests cover v2 fallback after manifest 404, committed v3 pull without touching the monolith, manifest SHA propagation, and preservation of the existing v2 unexpected-key warning contract.
 
+M2.7 prep note: the sharding leaf now exposes `push_sharded_snapshot()` as the single orchestration boundary for the later live push cutover. It builds the content-addressed bundle, no-ops when the committed manifest already references identical shard hashes, pushes changed immutable shard objects first, and only then updates the committed manifest. Focused tests verify shard-before-manifest write order and unchanged-shard no-op behavior without changing the live v2 monolith push path yet.
+
 ### Milestone 3 - Move Task Runs, Events, and Sync Runs
 
 Purpose: migrate the lowest-risk live runtime authority first.
