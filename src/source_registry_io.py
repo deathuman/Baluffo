@@ -63,6 +63,13 @@ _RUNTIME_EVIDENCE_FILE_NAMES = {
     "sync-live-task.json",
 }
 
+_REGISTRY_JOURNAL_FILE_NAMES = {
+    "source-registry-active.json",
+    "source-registry-pending.json",
+    "source-registry-rejected.json",
+    "source-registry-tombstones.json",
+}
+
 _RUNTIME_EVIDENCE_JOURNAL_QUARANTINE_DIR = "runtime-evidence-journal-quarantine"
 
 
@@ -76,6 +83,10 @@ def _storage_base_name(path: Path) -> str:
 
 def _is_runtime_evidence_file(path: Path) -> bool:
     return _storage_base_name(Path(path)) in _RUNTIME_EVIDENCE_FILE_NAMES
+
+
+def _uses_json_journal(path: Path) -> bool:
+    return _storage_base_name(Path(path)) in _REGISTRY_JOURNAL_FILE_NAMES
 
 
 def _uses_gzip_storage(path: Path) -> bool:
@@ -328,7 +339,7 @@ def load_json_array(
         (candidate for candidate in _json_storage_candidates(path) if candidate.exists()),
         None,
     )
-    if _json_journal_should_overlay_base(path, existing):
+    if _uses_json_journal(path) and _json_journal_should_overlay_base(path, existing):
         journal_rows = _load_json_journal_latest_payload(path)
         if isinstance(journal_rows, list):
             return [dict(row) for row in journal_rows if isinstance(row, dict)]
@@ -350,15 +361,19 @@ def load_json_object(path: Path, default: dict[str, Any] | None = None) -> dict[
         else:
             payload = json.loads(existing.read_text(encoding="utf-8"))
             base_payload = payload if isinstance(payload, dict) else fallback
-        if _json_journal_should_overlay_base(source_path, existing):
+        if _uses_json_journal(source_path) and _json_journal_should_overlay_base(
+            source_path, existing
+        ):
             journal_payload = _load_json_journal_latest_payload(source_path)
             if isinstance(journal_payload, dict):
                 return dict(journal_payload)
         return dict(base_payload)
     except (OSError, json.JSONDecodeError):
-        journal_payload = _load_json_journal_latest_payload(Path(path))
-        if isinstance(journal_payload, dict):
-            return dict(journal_payload)
+        source_path = Path(path)
+        if _uses_json_journal(source_path):
+            journal_payload = _load_json_journal_latest_payload(source_path)
+            if isinstance(journal_payload, dict):
+                return dict(journal_payload)
         return fallback
 
 
@@ -598,6 +613,10 @@ def _append_json_journal_record(path: Path, payload: Any) -> None:
         raise ValueError(
             f"Runtime evidence files must not be journaled: {_storage_base_name(path)}"
         )
+    if not _uses_json_journal(path):
+        raise ValueError(
+            f"JSON journaling is registry-only; unsupported artifact: {_storage_base_name(path)}"
+        )
     journal_path = _json_journal_path_for(path)
     journal_path.parent.mkdir(parents=True, exist_ok=True)
     ensure_data_dir()
@@ -611,6 +630,8 @@ def _append_json_journal_record(path: Path, payload: Any) -> None:
 
 
 def _compact_json_journal_if_needed(path: Path, payload: Any) -> None:
+    if not _uses_json_journal(path):
+        return
     journal_path = _json_journal_path_for(path)
     try:
         if (
@@ -694,6 +715,8 @@ def _load_json_journal_latest_payload(path: Path) -> Any | None:
 
 
 def _json_payload_matches_existing(path: Path, payload: Any) -> bool:
+    if not _uses_json_journal(path):
+        return _canonical_json_payload_matches_existing(path, payload)
     if isinstance(payload, list):
         if not any(candidate.exists() for candidate in _json_storage_candidates(path)) and not (
             _json_journal_path_for(path).exists()
@@ -728,6 +751,11 @@ def _canonical_json_payload_matches_existing(path: Path, payload: Any) -> bool:
 def save_json_atomic(path: Path, payload: Any) -> None:
     path = Path(path)
     if _is_runtime_evidence_file(path):
+        if _canonical_json_payload_matches_existing(path, payload):
+            return
+        _write_json_payload_atomic(path, _json_journal_image_payload(payload))
+        return
+    if not _uses_json_journal(path):
         if _canonical_json_payload_matches_existing(path, payload):
             return
         _write_json_payload_atomic(path, _json_journal_image_payload(payload))

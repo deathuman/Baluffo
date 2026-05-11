@@ -34,10 +34,7 @@ def test_save_json_atomic_and_load_array() -> None:
         sr.save_json_atomic(path, payload)
         assert path.read_text(encoding="utf-8").endswith("\n")
         journal_path = Path(tmp) / "registry.jsonl"
-        journal_record = json.loads(journal_path.read_text(encoding="utf-8"))
-        assert journal_record["schemaVersion"] == 1
-        assert journal_record["payload"] == payload
-        assert len(journal_record["contentHash"]) == 64
+        assert not journal_path.exists()
         loaded = sr.load_json_array(path, [])
         assert loaded == payload
 
@@ -51,10 +48,7 @@ def test_save_json_atomic_and_load_object() -> None:
         }
         sr.save_json_atomic(path, payload)
         journal_path = Path(tmp) / "source-approval-state.jsonl"
-        journal_record = json.loads(journal_path.read_text(encoding="utf-8"))
-        assert journal_record["schemaVersion"] == 1
-        assert journal_record["payload"] == payload
-        assert len(journal_record["contentHash"]) == 64
+        assert not journal_path.exists()
         assert sr.load_json_object(path, {}) == payload
 
 

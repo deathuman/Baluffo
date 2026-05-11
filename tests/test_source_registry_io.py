@@ -54,7 +54,7 @@ def test_lean_registry_metadata_write_lock_does_not_fail_required_registry_write
     assert "url" not in result[0]
 
 
-def test_load_json_object_uses_newer_json_when_stale_journal_exists(tmp_path: Path) -> None:
+def test_load_json_object_ignores_stale_non_registry_journal(tmp_path: Path) -> None:
     path = tmp_path / "source-approval-state.json"
     stale_journal_payload = {
         "runId": "fetch_1",
@@ -67,7 +67,10 @@ def test_load_json_object_uses_newer_json_when_stale_journal_exists(tmp_path: Pa
         "summary": {"outputCount": 34879},
     }
 
-    registry_io._append_json_journal_record(path, stale_journal_payload)
+    path.with_name("source-approval-state.jsonl").write_text(
+        registry_io._json_journal_record_text(stale_journal_payload),
+        encoding="utf-8",
+    )
     path.write_text(json.dumps(current_payload), encoding="utf-8")
     journal_path = path.with_name("source-approval-state.jsonl")
     os.utime(journal_path, (1000, 1000))
@@ -76,7 +79,7 @@ def test_load_json_object_uses_newer_json_when_stale_journal_exists(tmp_path: Pa
     assert registry_io.load_json_object(path, {}) == current_payload
 
 
-def test_load_json_object_uses_newer_journal_when_base_json_is_stale(tmp_path: Path) -> None:
+def test_load_json_object_ignores_newer_non_registry_journal(tmp_path: Path) -> None:
     path = tmp_path / "source-approval-state.json"
     stale_base_payload = {
         "runId": "fetch_1",
@@ -90,12 +93,15 @@ def test_load_json_object_uses_newer_journal_when_base_json_is_stale(tmp_path: P
     }
 
     path.write_text(json.dumps(stale_base_payload), encoding="utf-8")
-    registry_io._append_json_journal_record(path, current_journal_payload)
+    path.with_name("source-approval-state.jsonl").write_text(
+        registry_io._json_journal_record_text(current_journal_payload),
+        encoding="utf-8",
+    )
     journal_path = path.with_name("source-approval-state.jsonl")
     os.utime(path, (1000, 1000))
     os.utime(journal_path, (2000, 2000))
 
-    assert registry_io.load_json_object(path, {}) == current_journal_payload
+    assert registry_io.load_json_object(path, {}) == stale_base_payload
 
 
 def test_load_json_array_uses_newer_canonical_when_stale_journal_exists(tmp_path: Path) -> None:
@@ -230,6 +236,13 @@ def test_append_json_journal_record_rejects_runtime_evidence(tmp_path: Path) -> 
 
     with pytest.raises(ValueError, match="Runtime evidence files must not be journaled"):
         registry_io._append_json_journal_record(path, {"runId": "fetch_1"})
+
+
+def test_append_json_journal_record_rejects_non_registry_artifact(tmp_path: Path) -> None:
+    path = tmp_path / "source-approval-state.json"
+
+    with pytest.raises(ValueError, match="JSON journaling is registry-only"):
+        registry_io._append_json_journal_record(path, {"approvedSinceLastRun": 1})
 
 
 def test_cleanup_runtime_evidence_journals_quarantines_known_stale_journals(

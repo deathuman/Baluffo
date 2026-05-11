@@ -272,27 +272,24 @@ def test_save_json_atomic_compacts_json_journal_for_object_payload(
 ) -> None:
     with workspace_tmpdir("source-registry") as tmp:
         root = Path(tmp)
-        path = root / "source-approval-state.json"
+        path = root / "source-registry-tombstones.json"
         monkeypatch.setattr(srio, "_JSON_JOURNAL_COMPACT_MAX_BYTES", 1)
 
         payload_one = {
-            "approvedSinceLastRun": 1,
-            "updatedAt": "2026-04-01T00:00:00+00:00",
+            "source-1": {"deletedAt": "2026-04-01T00:00:00+00:00"},
         }
         payload_two = {
-            "approvedSinceLastRun": 2,
-            "updatedAt": "2026-04-01T00:01:00+00:00",
+            "source-1": {"deletedAt": "2026-04-01T00:01:00+00:00"},
         }
         payload_three = {
-            "approvedSinceLastRun": 3,
-            "updatedAt": "2026-04-01T00:02:00+00:00",
+            "source-1": {"deletedAt": "2026-04-01T00:02:00+00:00"},
         }
 
         sr.save_json_atomic(path, payload_one)
         sr.save_json_atomic(path, payload_two)
         sr.save_json_atomic(path, payload_three)
 
-        journal_path = root / "source-approval-state.jsonl"
+        journal_path = root / "source-registry-tombstones.jsonl"
         journal_record = json.loads(journal_path.read_text(encoding="utf-8"))
         assert journal_path.read_text(encoding="utf-8").count("\n") == 1
         assert journal_record["schemaVersion"] == 1
@@ -359,14 +356,12 @@ def test_best_effort_journal_compaction_failure_preserves_latest_payload(
 ) -> None:
     with workspace_tmpdir("source-registry") as tmp:
         root = Path(tmp)
-        path = root / "source-approval-state.json"
+        path = root / "source-registry-tombstones.json"
         payload_one = {
-            "approvedSinceLastRun": 1,
-            "updatedAt": "2026-04-01T00:00:00+00:00",
+            "source-1": {"deletedAt": "2026-04-01T00:00:00+00:00"},
         }
         payload_two = {
-            "approvedSinceLastRun": 2,
-            "updatedAt": "2026-04-01T00:01:00+00:00",
+            "source-1": {"deletedAt": "2026-04-01T00:01:00+00:00"},
         }
         real_replace = srio.os.replace
 
@@ -384,7 +379,7 @@ def test_best_effort_journal_compaction_failure_preserves_latest_payload(
         sr.save_json_atomic(path, payload_one)
         sr.save_json_atomic(path, payload_two)
 
-        journal_path = root / "source-approval-state.jsonl"
+        journal_path = root / "source-registry-tombstones.jsonl"
         assert journal_path.read_text(encoding="utf-8").count("\n") == 2
         assert sr.load_json_object(path, {}) == payload_two
 
@@ -393,11 +388,10 @@ def test_required_journal_append_retries_and_succeeds(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     with workspace_tmpdir("source-registry") as tmp:
-        path = Path(tmp) / "source-approval-state.json"
-        journal_path = Path(tmp) / "source-approval-state.jsonl"
+        path = Path(tmp) / "source-registry-tombstones.json"
+        journal_path = Path(tmp) / "source-registry-tombstones.jsonl"
         payload = {
-            "approvedSinceLastRun": 1,
-            "updatedAt": "2026-04-01T00:00:00+00:00",
+            "source-1": {"deletedAt": "2026-04-01T00:00:00+00:00"},
         }
         real_open = Path.open
         calls = 0
@@ -425,11 +419,10 @@ def test_required_journal_append_persistent_failure_raises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     with workspace_tmpdir("source-registry") as tmp:
-        path = Path(tmp) / "source-approval-state.json"
-        journal_path = Path(tmp) / "source-approval-state.jsonl"
+        path = Path(tmp) / "source-registry-tombstones.json"
+        journal_path = Path(tmp) / "source-registry-tombstones.jsonl"
         payload = {
-            "approvedSinceLastRun": 1,
-            "updatedAt": "2026-04-01T00:00:00+00:00",
+            "source-1": {"deletedAt": "2026-04-01T00:00:00+00:00"},
         }
         real_open = Path.open
 

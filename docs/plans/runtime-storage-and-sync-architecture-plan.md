@@ -34,6 +34,7 @@ The 2026-05-11 validation found that several lifecycle closeout items are alread
 - `_append_json_journal_record()` rejects runtime evidence filenames with a clear error.
 - Bridge startup quarantines stale `.jsonl` siblings for current runtime evidence filenames before lifecycle cleanup and startup sync scheduling.
 - `source-discovery-candidates.json` is classified as array-shaped runtime evidence and uses canonical-only `load_runtime_evidence_array()` reads.
+- JSON journaling is registry opt-in: generic JSON writes use canonical atomic writes, and journal append/overlay is restricted to explicit registry artifacts.
 - `/ops/task-state` enriches fetch, discovery, and sync active rows from shared live projections.
 - Route-level coverage exists for source-level `failedSources > 0` terminalizing as completed/succeeded when the report has no task-level error.
 - Frontend task-run view-model coverage exists for non-stale recent progress.
@@ -42,7 +43,6 @@ The 2026-05-11 validation found that several lifecycle closeout items are alread
 
 The remaining risks are not those old lifecycle read-path gaps. The open architecture risks are:
 
-- Generic `save_json_atomic()` still journals non-runtime, non-registry JSON writes unless journal behavior is made opt-in.
 - Registry journals still store full payload records, so compaction cannot shrink a large registry below one full record.
 - BEST_EFFORT journal compaction can silently leave unbounded accumulated records.
 - Sync size fields are logged in some paths but are not consistently returned into task summaries, timing history, and run history.
@@ -53,8 +53,8 @@ The remaining risks are not those old lifecycle read-path gaps. The open archite
 
 This plan supersedes older versions of the runtime storage roadmap.
 
-- **Journal scope:** Journaling must become registry opt-in. Runtime evidence, lifecycle ledgers, run history, bridge diagnostics, and compatibility exports must not inherit adjacent `.jsonl` overlay semantics.
-- **Runtime evidence writes:** The writer hardening slice is complete for existing runtime evidence filenames: canonical writes skip journaling, no-op checks ignore stale journals, private journal append rejects those paths, startup cleanup quarantines stale runtime journals, and discovery candidates use canonical-only array reads. Registry opt-in journaling remains open.
+- **Journal scope:** Journaling is now registry opt-in. Runtime evidence, lifecycle ledgers, run history, bridge diagnostics, and compatibility exports do not inherit adjacent `.jsonl` overlay semantics.
+- **Runtime evidence writes:** The writer hardening slice is complete for existing runtime evidence filenames: canonical writes skip journaling, no-op checks ignore stale journals, private journal append rejects those paths, startup cleanup quarantines stale runtime journals, and discovery candidates use canonical-only array reads.
 - **Metrics gate:** Always fix registry journaling first. Then collect `storageMetrics` from at least three realistic packaged fetches and decide whether full SQLite remains justified. If JSON serialization plus atomic replace is below 5% of wall clock and route latencies are within budget, prefer lighter alternatives over broad SQLite migration.
 - **Source-sync atomicity:** Do not overwrite the committed manifest with a `"proposed"` manifest. Push immutable, content-addressed or generation-scoped shards first; update the committed manifest only after every referenced shard exists and validates.
 - **v2 compatibility:** A v3 reader fallback to monolithic v2 only helps upgraded clients. During transition, either dual-write v2 while under cap or explicitly accept that v2-only clients stop receiving updates.
@@ -104,11 +104,11 @@ The registry journal design is unsafe for large registries:
 
 Journaling must become an explicit registry recovery mechanism, not the default behavior of `save_json_atomic()`.
 
-- `save_json_atomic()` should write generic JSON atomically without journal append.
-- Registry entrypoints should opt into registry journaling through a registry-specific path.
+- `save_json_atomic()` writes generic JSON atomically without journal append.
+- Registry entrypoints opt into registry journaling through a registry-specific path.
 - Runtime evidence filenames must never be journaled. If a private journal append helper receives a runtime evidence path, it should raise a clear error. New runtime evidence artifacts must be added to `_RUNTIME_EVIDENCE_FILE_NAMES` before using public JSON save helpers.
 - Startup maintenance quarantines stale runtime `.jsonl` artifacts next to runtime evidence files.
-- Registry journal readers may overlay canonical JSON only for explicit registry artifacts.
+- Registry journal readers overlay canonical JSON only for explicit registry artifacts.
 
 ### Delta Journal Constraints
 
@@ -329,10 +329,10 @@ Purpose: stop non-registry artifacts from inheriting registry journal semantics.
 - **Done:** Move generic object journal-overlay tests to `source-approval-state.json` so runtime evidence files are not treated as registry-like journal fixtures.
 - **Done:** Add bridge startup quarantine for stale `.jsonl` artifacts adjacent to current runtime evidence filenames, with startup wrapper coverage.
 - **Done:** Classify `source-discovery-candidates.json` as array-shaped runtime evidence, add `load_runtime_evidence_array()`, route discovery/bridge readers through it, and test stale journal resistance.
-- **Remaining:** Make journaling registry opt-in rather than default for all remaining non-runtime JSON artifacts.
-- **Remaining:** Keep registry journal overlay only for explicit registry artifacts after the broader opt-in change.
+- **Done:** Make journaling registry opt-in rather than default for all remaining non-runtime JSON artifacts.
+- **Done:** Keep registry journal overlay only for explicit registry artifacts after the broader opt-in change.
 
-Gate: no runtime evidence file can be journaled through public JSON save helpers, and all remaining non-registry journal users are either migrated to non-journal writes or explicitly justified.
+Gate: complete. No runtime evidence file can be journaled through public JSON save helpers, and non-registry JSON artifacts use canonical atomic writes without journal overlay.
 
 ### Milestone 0B - Sync Size Propagation
 
@@ -502,6 +502,7 @@ For every milestone that changes runtime storage authority:
 - Existing runtime evidence writes do not create `.jsonl` journals, and stale adjacent journals do not affect canonical runtime evidence no-op checks.
 - `source-discovery-candidates.json` uses canonical-only array reads and cannot be shadowed by adjacent journals.
 - Bridge startup quarantines stale runtime evidence `.jsonl` siblings for the current runtime evidence filename set.
+- Non-registry JSON artifacts are not journaled by `save_json_atomic()`, and stale adjacent journals do not overlay their canonical JSON.
 - Registry journal size is bounded and cannot grow unboundedly across repeated writes or replace failures.
 - Sync size and shard metrics are present in logs, timing, summaries, and history.
 - Storage metrics prove whether SQLite migration is still justified after journal repair.
