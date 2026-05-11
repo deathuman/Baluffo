@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from src.bridge.api import BridgeApi
+from src.bridge.storage_health import get_storage_health_payload
 
 
 @dataclass
@@ -214,6 +215,14 @@ def make_stub_bridge_api(tmp_path: Path, store: FakeDesktopLocalDataStore) -> Br
     api.move_entries = move_entries
     api.unique_sources = unique_sources
     api.compute_ops_health = lambda: {"ok": True, "detail": "unit-test", "alerts": []}
+    api.get_storage_health_payload = lambda: {
+        "ok": True,
+        "storage": {
+            "healthy": True,
+            "migrationVersion": "004",
+            "authorityModes": {},
+        },
+    }
     api.compute_fetcher_metrics = lambda **kw: {"windowRuns": 20, "runs": [], "aggregates": {}}
     api.sync_history_from_reports = lambda: []
     api.get_lifecycle_run_history_rows = lambda: []
@@ -350,6 +359,9 @@ def build_admin_bridge_api(config: Any | None = None) -> BridgeApi:
         update_saved_discovery_settings=admin_bridge.update_saved_discovery_settings,
         compute_ops_health=admin_bridge.compute_ops_health,
         compute_ops_dashboard_health=admin_bridge.compute_ops_dashboard_health,
+        get_storage_health_payload=lambda: get_storage_health_payload(
+            Path(runtime_config.data_dir).resolve()
+        ),
         compute_fetcher_metrics=admin_bridge.compute_fetcher_metrics,
         sync_history_from_reports=admin_bridge.sync_history_from_reports,
         get_projected_run_history=admin_bridge._get_ops_api().get_projected_run_history,

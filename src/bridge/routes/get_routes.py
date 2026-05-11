@@ -991,6 +991,10 @@ def handle_get(
         )
         return True
 
+    if path == "/ops/storage-health":
+        handler.send_json(api.get_storage_health_payload())
+        return True
+
     if path == "/ops/fetch-report":
         view = str((query.get("view") or [""])[0] or "").strip().lower()
         payload, dedup_review_state_warning = load_fetch_report_with_dedup_review_state(

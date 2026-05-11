@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from src.bridge import bootstrap as bridge_bootstrap
+from src.bridge import storage_health as storage_health_mod
 from src.bridge.api import BridgeApi
 
 root: Any | None = None
@@ -63,6 +65,9 @@ def build_bridge_api(config: Any) -> BridgeApi:
         update_saved_discovery_settings=root_mod.update_saved_discovery_settings,
         compute_ops_health=root_mod.compute_ops_health,
         compute_ops_dashboard_health=root_mod.compute_ops_dashboard_health,
+        get_storage_health_payload=lambda: storage_health_mod.get_storage_health_payload(
+            Path(config.data_dir).resolve()
+        ),
         compute_fetcher_metrics=root_mod.compute_fetcher_metrics,
         sync_history_from_reports=root_mod.sync_history_from_reports,
         get_projected_run_history=ops_api.get_projected_run_history,

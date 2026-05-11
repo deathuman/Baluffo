@@ -82,7 +82,7 @@ Store rules:
 - Backups use SQLite backup APIs, then validate the restored database with `quick_check`.
 - WAL checkpointing is required only at controlled points: after large terminal writes, explicit maintenance, backup preparation, and clean shutdown. Do not checkpoint on hot heartbeats.
 
-The storage health payload must include migration version, WAL mode, last write error, busy count/rate, `quick_check` status, and current authority mode per surface.
+`GET /ops/storage-health` exposes the storage health payload. It must include migration version, WAL mode, foreign-key state, last write error, busy count/rate, `quick_check` status, and current authority mode per surface.
 
 ## Migration Safety
 

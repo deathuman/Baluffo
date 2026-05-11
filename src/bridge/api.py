@@ -318,6 +318,7 @@ class BridgeApi:
 
     compute_ops_health: Callable[[], JsonObject] = _ok_payload
     compute_ops_dashboard_health: Callable[[], JsonObject] = _ok_payload
+    get_storage_health_payload: Callable[[], JsonObject] = _ok_payload
     compute_fetcher_metrics: Callable[..., JsonObject] = _ok_payload_with_kwargs
     sync_history_from_reports: Callable[[], list[JsonObject]] = _empty_startup_metrics
     get_projected_run_history: Callable[[], JsonObject] = _empty_rows_payload
