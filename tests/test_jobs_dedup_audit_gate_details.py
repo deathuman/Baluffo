@@ -7,19 +7,8 @@ from tests.test_jobs_dedup_audit_gate import _row
 def test_dedup_audit_gate_details_cover_all_current_blocker_families() -> None:
     evidence = build_dedup_evidence(
         {
-            "mergedCount": 2,
+            "mergedCount": 1,
             "mergedByPrimaryUrl": 1,
-            "mergedBySparseIdentity": 1,
-            "collisionSamples": [
-                {
-                    "reason": "sparse_identity",
-                    "existingDedupKey": "key-existing",
-                    "incomingSource": "static_source::studio",
-                    "incomingTitle": "Senior Engineer",
-                    "incomingCompany": "Studio One",
-                    "incomingJobLink": "https://static.example/jobs/1",
-                }
-            ],
         },
         [
             _row(
@@ -43,21 +32,13 @@ def test_dedup_audit_gate_details_cover_all_current_blocker_families() -> None:
     )
 
     gate = evidence["dedupAuditGate"]
-    assert gate["blockers"] == [
-        "current_run_non_primary_merges_need_review",
-        "provider_static_disagreement_needs_review",
-        "high_risk_review_queue_causes_need_review",
-    ]
+    assert gate["blockers"] == ["provider_static_disagreement_needs_review"]
     details = {item["key"]: item for item in gate["blockerDetails"]}
-    assert details["current_run_non_primary_merges_need_review"]["count"] == 1
     assert details["provider_static_disagreement_needs_review"]["count"] == 1
-    assert details["high_risk_review_queue_causes_need_review"]["count"] == 1
-    assert details["high_risk_review_queue_causes_need_review"]["counts"] == {
-        "provider_static_disagreement": 1
-    }
+    assert "high_risk_review_queue_causes_need_review" not in details
 
 
-def test_dedup_audit_gate_details_use_current_run_cause_counts() -> None:
+def test_dedup_audit_gate_details_do_not_duplicate_provider_static_in_review_queue() -> None:
     evidence = build_dedup_evidence(
         {"mergedCount": 1, "mergedByPrimaryUrl": 1},
         [
@@ -82,16 +63,12 @@ def test_dedup_audit_gate_details_use_current_run_cause_counts() -> None:
     )
 
     gate = evidence["dedupAuditGate"]
-    detail = next(
-        item
-        for item in gate["blockerDetails"]
-        if item["key"] == "high_risk_review_queue_causes_need_review"
-    )
-    assert gate["currentRunBlockingReviewQueueCauseCounts"]["provider_static_disagreement"] == 1
-    assert detail["counts"] == {"provider_static_disagreement": 1}
+    assert "provider_static_disagreement_needs_review" in gate["blockers"]
+    assert "high_risk_review_queue_causes_need_review" not in gate["blockers"]
+    assert gate["currentRunBlockingReviewQueueCauseCounts"]["provider_static_disagreement"] == 0
 
 
-def test_dedup_audit_gate_details_warn_for_carried_high_risk_causes() -> None:
+def test_dedup_audit_gate_details_warn_for_carried_monitor_causes() -> None:
     evidence = build_dedup_evidence(
         {"mergedCount": 0},
         [
@@ -122,11 +99,9 @@ def test_dedup_audit_gate_details_warn_for_carried_high_risk_causes() -> None:
     detail = next(
         item
         for item in gate["warningDetails"]
-        if item["key"] == "carried_high_risk_review_queue_causes_present"
+        if item["key"] == "monitor_review_queue_diagnostics_present"
     )
     assert "high_risk_review_queue_causes_need_review" not in gate["blockers"]
-    assert (
-        gate["carriedBlockingReviewQueueCauseCounts"]["spreadsheet_role_bucket_needs_review"] == 1
-    )
+    assert gate["carriedMonitorReviewQueueCauseCounts"]["spreadsheet_role_bucket_needs_review"] == 1
     assert detail["count"] == 1
-    assert detail["counts"] == {"spreadsheet_role_bucket_needs_review": 1}
+    assert detail["counts"] == {"carried.spreadsheet_role_bucket_needs_review": 1}

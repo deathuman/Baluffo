@@ -1,71 +1,94 @@
 # Dedup Pressure Reduction Plan
 
-> - **Status:** Active plan
-> - **Use this when:** reducing registry/dedup conflict volume after the sheet role-bucket guard and actionable badge split
-> - **Canonical for:** next-step dedup pressure reduction priorities
-> - **Not canonical for:** data payload contracts or current runtime evidence
-> - **Then inspect:** [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md), [`../scraping-pipeline.md`](../scraping-pipeline.md), and the latest fresh `data/jobs-fetch-report.json` generated after the relevant build
-> - **Last updated:** 2026-05-09
+> - **Status:** Active plan, lifecycle gate unblocked; monitor debt remains
+> - **Use this when:** reducing dedup gate pressure without chasing individual static source failures
+> - **Canonical for:** next-step dedup pressure strategy and latest measured evidence
+> - **Not canonical for:** data payload contracts or source registry policy
+> - **Then inspect:** [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md), [`../scraping-pipeline.md`](../scraping-pipeline.md), and the latest fresh `data/jobs-fetch-report.json` from `npm run dev:pipeline`
+> - **Last updated:** 2026-05-11
 
 ## Summary
 
-The previous dedup work separated actionable blockers from monitor-only diagnostics and blocked weak Google Sheets role-bucket merges. The next reductions should focus on preventing bad or duplicate sources from entering the registry and preventing inflated static job counts from defeating better provider sources.
+The plan has pivoted away from fixing one static source family at a time. That approach exposed an endless sequence of weak static/parser/non-provider samples without changing the underlying gate pressure.
 
-Success means the next full pipeline shows fewer active conflicts, fewer provider/static blockers, fewer duplicate static URL variants, and a smaller actionable Dedup tab badge without hiding monitor diagnostics.
+Current strategy: keep diagnostics intact, but gate lifecycle readiness only on high-confidence identity risk. Weak non-provider/static/parser identity pressure is monitor debt, not a lifecycle blocker. Trusted provider/static/provider-vs-provider weak-key collisions are avoided when primary URLs or provider IDs differ, preserving separate output rows instead of forcing risky non-primary merges.
 
-## Priority Steps
+## Fresh Evidence
 
-1. **Normalize static source URLs before conflict creation**
-   - Strip fragments such as `#opening`, collapse `/index.html`, normalize trailing slashes, and canonicalize known careers host aliases before registry identity/conflict grouping.
-   - Keep exact same concrete job-detail URLs mergeable; do not collapse unrelated career pages across different hosts.
-   - Expected effect: remove same-source conflicts caused only by URL variants.
+Latest validation:
 
-2. **Make provider/static auto-demotion decisive**
-   - When a trusted provider and static source compete for the same company, automatically prefer the provider if it has equal or greater verified live jobs.
-   - Demote static sources with no reliable live evidence, no job-detail URLs, or only weak listing-page evidence.
-   - Keep unresolved cases reviewable when static has more verified live jobs or provider evidence is missing/stale.
+```powershell
+python -m pytest -q tests/test_jobs_dedup_evidence_current_run.py tests/test_jobs_dedup_confidence_gate.py tests/test_dedup_pressure_report.py tests/test_pipeline_storage_gzip.py
+npm run dev:pipeline
+python tools/measurements/pipeline/dedup_pressure_report.py --fetch-report data/jobs-fetch-report.json --json --limit 10
+npm run lint:precommit:changed
+```
 
-3. **Fix static job-count inflation**
-   - Tighten static extraction so counts come only from visible, current job rows/cards or verified job-detail links.
-   - Reject inactive sections, stale embedded JSON/JSON-LD, duplicate cards, hidden templates, unrelated page navigation, and homepage text as job evidence.
-   - Add regression cases for known failures such as Azra-style inflated static counts.
-   - Preserve stored registry `jobsFound`, but prevent weak static counts from beating provider counts when `lastReliableJobsFound` or live adjudication says otherwise.
+Measured fetch window: `2026-05-11T16:09:27.672442+00:00` to `2026-05-11T16:32:53.256271+00:00`.
 
-4. **Reject homepage and non-career static sources earlier**
-   - Block discovery/promotion of homepage URLs unless the page exposes a careers/jobs route or provider-backed evidence.
-   - Prefer promoting the discovered careers/jobs URL over the homepage when both exist.
-   - Expected effect: reduce pending-vs-active and active static URL variant conflicts.
+Result:
 
-5. **Persist cleanup decisions**
-   - After safe URL-variant or provider/static decisions, write demotion/rejection state so the same conflict does not recur on the next full pipeline.
-   - Keep manual-review paths for cases that fail the safe-demotion predicates.
+- Gate is `warning`, with `lifecycleUxReady=true` and no blockers.
+- Current-run non-primary merge gate now separates `blocking=0` from `monitor=3714`.
+- Blocking non-primary merge reasons are empty; monitor-only non-primary merges are `secondaryKey=3395` and `sparseIdentity=319`.
+- Current-run review queue remains monitor-only: `blocking=0`, `monitor=2665`.
+- Provider/static gate has `0` blocked disagreements and `13` warning-only auto-safe variants.
+- Provider/static review rows remain visible as diagnostics (`provider_static_disagreement=13`) but no longer duplicate-block through the generic high-risk review queue.
+- Google Sheets role-bucket pressure remains visible as monitor debt: `1389` unresolved, `1143` review causes, `17047` guard-blocked rows.
+- `dedup_pressure_report.py` now reconfigures stdout to UTF-8, so Windows JSON output no longer needs `PYTHONIOENCODING=utf-8`.
+- Blocking examples are now exposed through `currentRunBlockingMergeExamplesByReason`, so capped monitor samples can no longer hide the trusted blocker families.
+- Trusted weak-key collisions are now handled by preserving separate rows when primary URLs or provider IDs differ. This covers provider/provider rows, provider/static rows, and SmartRecruiters title/location aliases with distinct provider IDs. The GrackleHQ redirect alias remains a monitor-only exception.
+- Windows `WinError 5` output replace during full pipeline finalize is mitigated by retry/backoff on normal atomic output writes.
 
-6. **Add a fresh post-run dedup pressure report**
-   - After a new build/full pipeline, summarize blocking dedupe, monitor diagnostics, provider/static blockers, static URL variants, pending duplicates, same-normalized-URL duplicates, and top suspected causes.
-   - Use this report to choose the next slice instead of using stale artifacts.
+Conclusion: the confidence gate achieved the intended strategic shift and the lifecycle gate is unblocked. Weak families such as cross-board static Teamtailor rows, On5 reply URLs, YC auth URLs, GameJobs search buckets, and weak Google Sheets role buckets remain visible as monitor debt, but they no longer drive lifecycle readiness blockers. Future work should not chase monitor debt unless a separate output-quality plan chooses a bounded slice.
 
-7. **Prefer completed live source-check evidence in conflict cards**
-   - When conflict source checks cover every row in a family, use their live job counts for winner selection and safe automation.
-   - Show `registryJobsFound` and `liveJobsFound` separately so stale registry counts remain visible without silently driving decisions.
-   - Fall back to registry counts if source-check evidence is missing, partial, running, or failed.
+## Key Strategy
 
-8. **Make conflict source checks visibly progressive**
-   - While `Check conflicting sources` is running, persist compact `heartbeatAt`, `taskProgress`, and `progress` diagnostics to the existing adjudication artifact.
-   - Keep running payloads diagnostic-only with `families: []` so partial probes cannot influence winners or automation.
-   - Render source/family counters, current target, and stale-heartbeat warnings in Admin/Ops without introducing a separate task route.
+- Treat provider-backed, social/trusted, provider/static disagreement, and other strong identity risks as blocking.
+- Treat static, Google Sheets, directory/search/listing URLs, parser pollution, title/company-only bundles, and untrusted non-provider IDs as monitor-only unless stronger identity evidence is present.
+- Record aggregate gate-tier counts in dedup stats so capped examples cannot hide true blocker volume.
+- Preserve separate trusted rows instead of merging by weak secondary/sparse identity when primary URLs or provider IDs differ.
+- Keep all monitor diagnostics in reports; do not delete jobs or silently suppress weak evidence.
+- Do not continue source-by-source cleanup unless a later plan chooses a specific output-quality slice separate from lifecycle readiness.
+
+## Next Priority Steps
+
+1. **Hold the gate steady**
+   - Treat the current state as the stop point: lifecycle gate is unblocked and monitor debt remains visible.
+   - Do not chase monitor-only samples automatically.
+   - If blockers reappear, inspect `currentRunBlockingMergeExamplesByReason` first and prefer preserving separate trusted rows over adding broad aliases.
+
+2. **Keep provider/static as monitored diagnostics**
+   - Current fresh run has `0` blocked provider/static disagreements and `13` warning-only variants.
+   - Do not reopen provider/static work unless a future fresh run introduces a blocked dedicated provider/static gate row.
+
+3. **Keep weak-noise cleanup separate**
+   - Static/parser cleanup is now output-quality work, not lifecycle readiness work.
+   - If pursued, choose one bounded family and do not use gate closure as the acceptance criterion.
+
+4. **Maintain report clarity**
+   - Keep `dedup_pressure_report.py` showing both blocking pressure and monitor debt.
+   - Future plan updates must include the latest fetch window, blocking counts, monitor counts, and next decision point.
 
 ## Test Plan
 
-- Add focused backend tests for static source URL canonicalization: fragment stripping, `/index.html` collapse, trailing slash normalization, and non-equivalent host preservation.
-- Add registry/conflict tests proving same normalized static URLs do not create duplicate active conflicts.
-- Add provider/static adjudication tests for provider wins on equal-or-greater verified jobs, static remains reviewable when it has stronger verified evidence, and zero-evidence static loses.
-- Add static parser/count tests for stale hidden content, duplicate cards, homepage text, and known inflated-count examples.
-- Add Admin/Ops or report tests for the fresh post-run pressure summary once its payload shape is introduced.
-- Run the relevant focused Python/frontend tests plus `npm run lint:precommit`.
+- Focused confidence-gate tests:
+  - static/static `secondary_key` and `sparse_identity` merges are monitor-only.
+  - distinct provider/provider, provider/static, and SmartRecruiters alias rows do not merge on weak non-primary identity.
+  - provider-backed non-primary merges with missing primary URLs remain blocking.
+  - weak Google Sheets review summaries are monitor-only.
+  - legacy reports without tier counts fall back safely.
+- Pressure report tests:
+  - blocking and monitor non-primary counts are reported separately.
+  - blocking and monitor review queue causes are reported separately.
+- Validation sequence before shipping:
+  - `python -m pytest -q tests/test_jobs_dedup_evidence_current_run.py tests/test_jobs_dedup_confidence_gate.py tests/test_dedup_pressure_report.py tests/test_pipeline_storage_gzip.py`
+  - `npm run dev:pipeline`
+  - `python tools/measurements/pipeline/dedup_pressure_report.py --fetch-report data/jobs-fetch-report.json --json --limit 10`
+  - `npm run lint:precommit:changed`
 
 ## Assumptions
 
-- Existing report artifacts are not rewritten manually; count changes are validated only after a fresh pipeline run.
-- Provider/static conflict cleanup remains separate from Google Sheets role-bucket merge guarding.
-- Static sources can still win when they have stronger verified live job evidence than the provider.
-- Monitor diagnostics remain visible, but only actionable blockers drive the Dedup tab badge and readiness pressure.
+- Lifecycle readiness should block only on high-confidence identity risks.
+- Weak non-provider/static/parser pressure is accepted monitor debt.
+- Registry state, tombstones, provider adapters, and source-policy automation remain unchanged by this strategy.

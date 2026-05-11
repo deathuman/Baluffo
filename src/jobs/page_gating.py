@@ -233,6 +233,75 @@ def looks_like_job_title_candidate(text: str) -> bool:
     return any(token in lowered for token in _JOB_TITLE_HINT_TOKENS)
 
 
+def looks_like_static_parser_noise_title(text: str) -> bool:
+    lowered = _lower(text)
+    if not lowered:
+        return True
+    if lowered in {"reply", "vacancies"}:
+        return True
+    return any(
+        fragment in lowered
+        for fragment in (
+            "browser does not support",
+            "dev insights",
+            "find a thrilling career",
+            "have an account? log in",
+            "join the community",
+            "skip to main content",
+            "welcome to talentnetwork",
+            ".css-",
+        )
+    )
+
+
+def _source_specific_words(text: str) -> set[str]:
+    normalized = "".join(char if char.isalnum() else " " for char in _lower(text))
+    return {
+        token
+        for token in normalized.split()
+        if len(token) > 1
+        and not token.isdigit()
+        and token not in {"a", "an", "and", "for", "in", "mfd", "of", "the", "to"}
+    }
+
+
+def _job_link_slug_words(candidate_url: str) -> set[str]:
+    parsed = urlparse(clean_text(candidate_url) or "")
+    host = parsed.netloc.lower()
+    parts = [part for part in parsed.path.lower().split("/") if part]
+    if host == "itch.io" and len(parts) >= 3 and parts[0] == "j":
+        return _source_specific_words(parts[2])
+    if host.endswith(".teamtailor.com") and len(parts) >= 2 and parts[0] == "jobs":
+        slug = parts[1]
+        slug_parts = slug.split("-", 1)
+        if len(slug_parts) == 2 and slug_parts[0].isdigit():
+            slug = slug_parts[1]
+        return _source_specific_words(slug)
+    return set()
+
+
+def looks_like_source_specific_static_noise_row(
+    *,
+    title: str,
+    job_link: str,
+    source_name: str,
+) -> bool:
+    source_lower = _lower(source_name)
+    parsed = urlparse(clean_text(job_link) or "")
+    host = parsed.netloc.lower()
+    if "itch.io/jobs" in source_lower and host == "itch.io":
+        title_words = _source_specific_words(title)
+        slug_words = _job_link_slug_words(job_link)
+        return bool(title_words and slug_words and not title_words.issubset(slug_words))
+    if (
+        "stillfront.com/en/career/join-the-team" in source_lower
+        and host.endswith(".teamtailor.com")
+        and host != "stillfront.teamtailor.com"
+    ):
+        return True
+    return False
+
+
 def _has_jsonld_jobposting(html_text: str) -> bool:
     for block in extract_json_ld_blocks(html_text):
         decoded = unescape(block.strip())

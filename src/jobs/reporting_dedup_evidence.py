@@ -107,7 +107,6 @@ def _limit_provider_static_examples(
 
 DEDUP_AUDIT_GATE_BLOCKER_CAUSES = frozenset(
     {
-        "provider_static_disagreement",
         "unknown",
         "non_provider_url_identity_needs_review",
         "parser_or_directory_text_pollution",
@@ -1124,6 +1123,38 @@ def _identity_quality_evidence(
     return evidence
 
 
+def _is_weak_non_provider_review_summary(summary: Mapping[str, Any]) -> bool:
+    if str(summary.get("outlierReason") or "") == "provider_static_disagreement":
+        return False
+    dominant_source_class = str(summary.get("dominantSourceClass") or "")
+    if dominant_source_class in {"provider", "social"}:
+        return False
+    if max(0, int(summary.get("providerSourceJobIdCount") or 0)) > 0:
+        return False
+    identity_quality = str(summary.get("identityQuality") or "")
+    if identity_quality == "provider_id_strong":
+        return False
+    cause = str(summary.get("suspectedCause") or "")
+    if cause in {
+        "category_or_department_bucket",
+        "google_sheets_role_bucket_needs_review",
+        "listing_page_bundle",
+        "non_provider_url_identity_needs_review",
+        "parser_or_directory_text_pollution",
+        "spreadsheet_role_bucket_needs_review",
+    }:
+        return True
+    if cause == "unknown" and identity_quality in {
+        "missing_identity",
+        "many_urls_many_hosts_weak",
+        "many_urls_same_host_weak",
+        "other_source_id_untrusted",
+        "shared_listing_url_weak",
+    }:
+        return True
+    return False
+
+
 def _recommended_review_action(summary: Mapping[str, Any]) -> str:
     caveats = {str(caveat) for caveat in summary.get("identityCaveats") or []}
     identity_shape = str(summary.get("identityShape") or "")
@@ -1131,6 +1162,8 @@ def _recommended_review_action(summary: Mapping[str, Any]) -> str:
     outlier_reason = str(summary.get("outlierReason") or "")
     if outlier_reason == "provider_static_disagreement":
         return "review_provider_static_disagreement"
+    if _is_weak_non_provider_review_summary(summary):
+        return "monitor"
     if identity_shape == "shared_listing_or_category_url":
         return "review_listing_url_bundle"
     if title_shape == "category_like" or "category_like_title" in caveats:
@@ -1463,6 +1496,24 @@ def _is_known_gracklehq_gamesjobsdirect_mirror_bundle(
     )
 
 
+def _is_wargaming_greenhouse_careers_vacancy_alias(
+    *,
+    provider_urls: Sequence[str],
+    static_urls: Sequence[str],
+    provider_ids: Sequence[str],
+) -> bool:
+    provider_values = [*provider_ids, *provider_urls]
+    has_wargaming_greenhouse = any(
+        "wargamingen" in norm_text(value) for value in provider_values
+    ) and any("greenhouse.io" in _url_host(url) for url in provider_urls)
+    has_wargaming_vacancy_detail = any(
+        _url_host(url) == "wargaming.com"
+        and _url_path(url).lower().startswith("/en/careers/vacancy_")
+        for url in static_urls
+    )
+    return has_wargaming_greenhouse and has_wargaming_vacancy_detail
+
+
 def _provider_static_disagreement_classification(
     *,
     summary: Mapping[str, Any],
@@ -1516,6 +1567,12 @@ def _provider_static_disagreement_classification(
     if shared_tokens and static_urls:
         return "static_parser_url_variant", evidence + ["provider_static_shared_identifier"]
     if provider_ids and static_ids and provider_urls and static_urls:
+        if _is_wargaming_greenhouse_careers_vacancy_alias(
+            provider_urls=provider_urls,
+            static_urls=static_urls,
+            provider_ids=provider_ids,
+        ):
+            evidence.append("wargaming_greenhouse_careers_vacancy_alias")
         return "same_job_different_urls", evidence + ["both_sides_have_ids_and_urls"]
     return "needs_manual_review", evidence
 
@@ -2038,29 +2095,40 @@ def _merge_reason_counts(dedup_stats: Mapping[str, Any]) -> dict[str, int]:
 def _current_run_merge_examples(dedup_stats: Mapping[str, Any]) -> list[dict[str, Any]]:
     examples: list[dict[str, Any]] = []
     for row in json_object_rows(dedup_stats.get("collisionSamples")):
-        merge_reason = clean_text(row.get("reason")) or "unknown"
-        blocks_lifecycle = merge_reason not in {"primary_url", "known_mirror_pair"}
-        example = {
-            "mergeReason": merge_reason,
-            "existingDedupKey": clean_text(row.get("existingDedupKey")),
-            "incomingSource": clean_text(row.get("incomingSource")),
-            "title": clean_text(row.get("incomingTitle")),
-            "company": clean_text(row.get("incomingCompany")),
-            "incomingJobLink": normalize_url(row.get("incomingJobLink")),
-            "bundleEvidenceOrigin": "current_run",
-            "blocksLifecycle": blocks_lifecycle,
-            "nonBlockingReason": "",
-            "recommendedReviewAction": (
-                "review_current_run_merge" if blocks_lifecycle else "monitor"
-            ),
-            "suspectedCause": (
-                "current_run_non_primary_merge" if blocks_lifecycle else "known_mirror_pair"
-            ),
-        }
-        if merge_reason == "known_mirror_pair":
-            example["nonBlockingReason"] = "known_gracklehq_gamesjobsdirect_mirror_pair"
-        examples.append(example)
+        examples.append(_current_run_merge_example(row))
     return examples
+
+
+def _current_run_merge_example(row: Mapping[str, Any]) -> dict[str, Any]:
+    merge_reason = clean_text(row.get("reason")) or "unknown"
+    gate_tier = clean_text(row.get("gateTier"))
+    gate_tier_reason = clean_text(row.get("gateTierReason"))
+    blocks_lifecycle = (
+        gate_tier == "blocking"
+        if gate_tier
+        else merge_reason not in {"primary_url", "known_mirror_pair"}
+    )
+    example = {
+        "mergeReason": merge_reason,
+        "existingDedupKey": clean_text(row.get("existingDedupKey")),
+        "incomingSource": clean_text(row.get("incomingSource")),
+        "title": clean_text(row.get("incomingTitle")),
+        "company": clean_text(row.get("incomingCompany")),
+        "incomingJobLink": normalize_url(row.get("incomingJobLink")),
+        "bundleEvidenceOrigin": "current_run",
+        "blocksLifecycle": blocks_lifecycle,
+        "nonBlockingReason": "" if blocks_lifecycle else gate_tier_reason,
+        "recommendedReviewAction": "review_current_run_merge" if blocks_lifecycle else "monitor",
+        "suspectedCause": (
+            "current_run_non_primary_merge"
+            if blocks_lifecycle
+            else gate_tier_reason or "known_mirror_pair"
+        ),
+    }
+    if merge_reason == "known_mirror_pair":
+        example["nonBlockingReason"] = "known_gracklehq_gamesjobsdirect_mirror_pair"
+        example["suspectedCause"] = "known_mirror_pair"
+    return example
 
 
 def _current_run_merge_examples_by_reason(
@@ -2069,6 +2137,7 @@ def _current_run_merge_examples_by_reason(
     by_reason = {
         "secondaryKey": [],
         "sparseIdentity": [],
+        "socialKey": [],
         "knownMirrorPair": [],
         "primaryUrl": [],
         "unknown": [],
@@ -2076,9 +2145,20 @@ def _current_run_merge_examples_by_reason(
     reason_keys = {
         "secondary_key": "secondaryKey",
         "sparse_identity": "sparseIdentity",
+        "social_key": "socialKey",
         "known_mirror_pair": "knownMirrorPair",
         "primary_url": "primaryUrl",
     }
+    samples_by_reason = dedup_stats.get("collisionSamplesByReason")
+    if isinstance(samples_by_reason, Mapping):
+        for raw_reason, raw_rows in samples_by_reason.items():
+            reason = clean_text(raw_reason)
+            key = reason_keys.get(reason, "unknown")
+            for row in json_object_rows(raw_rows):
+                if len(by_reason[key]) >= max(0, int(limit_per_reason)):
+                    break
+                by_reason[key].append(_current_run_merge_example(row))
+        return by_reason
     for example in _current_run_merge_examples(dedup_stats):
         reason = clean_text(example.get("mergeReason"))
         key = reason_keys.get(reason, "unknown")
@@ -2087,7 +2167,77 @@ def _current_run_merge_examples_by_reason(
     return by_reason
 
 
-def _current_run_non_primary_merge_counts(merge_reason_counts: Mapping[str, Any]) -> dict[str, int]:
+def _current_run_blocking_merge_examples_by_reason(
+    dedup_stats: Mapping[str, Any], *, limit_per_reason: int = 5
+) -> dict[str, list[dict[str, Any]]]:
+    by_reason = {
+        "secondaryKey": [],
+        "sparseIdentity": [],
+        "socialKey": [],
+        "unknown": [],
+    }
+    reason_keys = {
+        "secondary_key": "secondaryKey",
+        "sparse_identity": "sparseIdentity",
+        "social_key": "socialKey",
+    }
+    samples_by_reason = dedup_stats.get("currentRunBlockingMergeSamplesByReason")
+    if isinstance(samples_by_reason, Mapping):
+        for raw_reason, raw_rows in samples_by_reason.items():
+            reason = clean_text(raw_reason)
+            key = reason_keys.get(reason, "unknown")
+            for row in json_object_rows(raw_rows):
+                if len(by_reason[key]) >= max(0, int(limit_per_reason)):
+                    break
+                example = _current_run_merge_example(row)
+                if example.get("blocksLifecycle") is True:
+                    by_reason[key].append(example)
+        return by_reason
+    for reason, rows in _current_run_merge_examples_by_reason(
+        dedup_stats, limit_per_reason=limit_per_reason
+    ).items():
+        if reason not in by_reason:
+            continue
+        for row in rows:
+            if len(by_reason[reason]) >= max(0, int(limit_per_reason)):
+                break
+            if row.get("blocksLifecycle") is True:
+                by_reason[reason].append(row)
+    return by_reason
+
+
+def _current_run_non_primary_merge_counts(
+    merge_reason_counts: Mapping[str, Any],
+    *,
+    blocking_reason_counts: Mapping[str, Any] | None = None,
+    monitor_reason_counts: Mapping[str, Any] | None = None,
+) -> dict[str, int]:
+    if blocking_reason_counts is not None or monitor_reason_counts is not None:
+        blocking_counts = dict(blocking_reason_counts or {})
+        monitor_counts = dict(monitor_reason_counts or {})
+        secondary = max(0, int(blocking_counts.get("secondaryKey") or 0))
+        sparse = max(0, int(blocking_counts.get("sparseIdentity") or 0))
+        social = max(0, int(blocking_counts.get("socialKey") or 0))
+        unknown = max(0, int(blocking_counts.get("unknown") or 0))
+        monitor_secondary = max(0, int(monitor_counts.get("secondaryKey") or 0))
+        monitor_sparse = max(0, int(monitor_counts.get("sparseIdentity") or 0))
+        monitor_social = max(0, int(monitor_counts.get("socialKey") or 0))
+        monitor_unknown = max(0, int(monitor_counts.get("unknown") or 0))
+        known_mirror_pair = max(0, int(merge_reason_counts.get("knownMirrorPair") or 0))
+        return {
+            "secondaryKey": secondary,
+            "sparseIdentity": sparse,
+            "socialKey": social,
+            "unknown": unknown,
+            "knownMirrorPair": known_mirror_pair,
+            "blocking": secondary + sparse + social + unknown,
+            "monitor": monitor_secondary + monitor_sparse + monitor_social + monitor_unknown,
+            "monitorSecondaryKey": monitor_secondary,
+            "monitorSparseIdentity": monitor_sparse,
+            "monitorSocialKey": monitor_social,
+            "monitorUnknown": monitor_unknown,
+            "nonBlockingKnownMirrorPair": known_mirror_pair,
+        }
     secondary = max(0, int(merge_reason_counts.get("secondaryKey") or 0))
     sparse = max(0, int(merge_reason_counts.get("sparseIdentity") or 0))
     social = max(0, int(merge_reason_counts.get("socialKey") or 0))
@@ -2682,6 +2832,13 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
         0, int(dedup_evidence.get("carriedMonitorReviewQueueCount") or 0)
     )
     merge_reason_counts = _mapping_value(dedup_evidence, "mergeReasonCounts")
+    blocking_non_primary_reason_counts = _mapping_value(
+        dedup_evidence, "currentRunBlockingNonPrimaryMergeReasonCounts"
+    )
+    monitor_non_primary_reason_counts = _mapping_value(
+        dedup_evidence, "currentRunMonitorNonPrimaryMergeReasonCounts"
+    )
+    merge_gate_tier_counts = _mapping_value(dedup_evidence, "currentRunMergeGateTierCounts")
     review_queue_cause_counts = _mapping_value(dedup_evidence, "reviewQueueCauseCounts")
     current_run_blocking_review_queue_cause_counts = _mapping_value(
         dedup_evidence, "currentRunBlockingReviewQueueCauseCounts"
@@ -2752,14 +2909,31 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
         current_run_blocking_review_queue_count = current_run_high_risk_review_queue_count
         carried_blocking_review_queue_count = carried_high_risk_review_queue_count
         blocking_review_queue_count = high_risk_review_queue_count
-    current_run_non_primary_merges = max(
-        0,
-        merged_count - int(merge_reason_counts.get("primaryUrl") or 0),
-    )
-    current_run_non_primary_merges = max(
-        0, current_run_non_primary_merges - int(merge_reason_counts.get("knownMirrorPair") or 0)
-    )
     primary_url_merge_count = max(0, int(merge_reason_counts.get("primaryUrl") or 0))
+    if (
+        "currentRunBlockingNonPrimaryMergeReasonCounts" in dedup_evidence
+        or "currentRunMonitorNonPrimaryMergeReasonCounts" in dedup_evidence
+    ):
+        current_run_non_primary_merge_counts = _current_run_non_primary_merge_counts(
+            merge_reason_counts,
+            blocking_reason_counts=blocking_non_primary_reason_counts,
+            monitor_reason_counts=monitor_non_primary_reason_counts,
+        )
+        current_run_non_primary_merges = max(
+            0, int(current_run_non_primary_merge_counts.get("blocking") or 0)
+        )
+    else:
+        current_run_non_primary_merges = max(
+            0,
+            merged_count - int(merge_reason_counts.get("primaryUrl") or 0),
+        )
+        current_run_non_primary_merges = max(
+            0,
+            current_run_non_primary_merges - int(merge_reason_counts.get("knownMirrorPair") or 0),
+        )
+        current_run_non_primary_merge_counts = _current_run_non_primary_merge_counts(
+            merge_reason_counts
+        )
     carried_collision_likely_historical_count = (
         carried_source_bundle_collision_count
         if carried_source_bundle_collision_count
@@ -2785,9 +2959,6 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
         carried_monitor_review_queue_count=carried_monitor_review_queue_count,
         carried_collision_likely_historical_count=carried_collision_likely_historical_count,
         blocking_review_queue_count=blocking_review_queue_count,
-    )
-    current_run_non_primary_merge_counts = _current_run_non_primary_merge_counts(
-        merge_reason_counts
     )
     blocker_details, warning_details = _build_audit_gate_details(
         dedup_evidence=dedup_evidence,
@@ -2825,6 +2996,19 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
         "lifecycleUxReady": not blockers,
         "currentRunMergedCount": merged_count,
         "currentRunNonPrimaryMergeCounts": current_run_non_primary_merge_counts,
+        "currentRunMergeGateTierCounts": {
+            key: int(merge_gate_tier_counts.get(key, 0))
+            for key in (
+                "blocking",
+                "monitor",
+                "blockingTrustedIdentity",
+                "blockingTrustedSocialIdentity",
+                "monitorWeakNonProviderIdentity",
+                "monitorPrimaryUrl",
+                "monitorKnownMirrorPair",
+                "monitorProviderGracklehqRedirectAlias",
+            )
+        },
         "sourceBundleCollisionCount": source_bundle_collision_count,
         "currentRunSourceBundleCollisionCount": current_run_source_bundle_collision_count,
         "carriedSourceBundleCollisionCount": carried_source_bundle_collision_count,
@@ -3216,14 +3400,45 @@ def build_dedup_evidence(
         guard_blocked_count=google_sheets_guard_blocked_count,
         limit=risky_limit,
     )
+    blocking_non_primary_reason_counts = (
+        dedup_stats.get("currentRunBlockingNonPrimaryMergeReasonCounts") or {}
+    )
+    monitor_non_primary_reason_counts = (
+        dedup_stats.get("currentRunMonitorNonPrimaryMergeReasonCounts") or {}
+    )
+    merge_gate_tier_counts = dedup_stats.get("currentRunMergeGateTierCounts") or {}
 
     payload = {
         "schemaVersion": 1,
         "mergedCount": max(0, int(dedup_stats.get("mergedCount") or 0)),
         "collisionSamplesCount": max(0, int(dedup_stats.get("collisionSamplesCount") or 0)),
         "mergeReasonCounts": _merge_reason_counts(dedup_stats),
+        "currentRunMergeGateTierCounts": {
+            key: int(merge_gate_tier_counts.get(key, 0))
+            for key in (
+                "blocking",
+                "monitor",
+                "blockingTrustedIdentity",
+                "blockingTrustedSocialIdentity",
+                "monitorWeakNonProviderIdentity",
+                "monitorPrimaryUrl",
+                "monitorKnownMirrorPair",
+                "monitorProviderGracklehqRedirectAlias",
+            )
+        },
+        "currentRunBlockingNonPrimaryMergeReasonCounts": {
+            key: int(blocking_non_primary_reason_counts.get(key, 0))
+            for key in ("secondaryKey", "sparseIdentity", "socialKey", "unknown")
+        },
+        "currentRunMonitorNonPrimaryMergeReasonCounts": {
+            key: int(monitor_non_primary_reason_counts.get(key, 0))
+            for key in ("secondaryKey", "sparseIdentity", "socialKey", "unknown")
+        },
         "currentRunMergeExamples": _current_run_merge_examples(dedup_stats),
         "currentRunMergeExamplesByReason": _current_run_merge_examples_by_reason(dedup_stats),
+        "currentRunBlockingMergeExamplesByReason": (
+            _current_run_blocking_merge_examples_by_reason(dedup_stats)
+        ),
         "sheetRoleBucketGuardBlockedCount": google_sheets_guard_blocked_count,
         "sheetRoleBucketGuardBlockedReasonCounts": {
             "secondaryKey": max(0, int(sheet_guard_reason_counts.get("secondaryKey") or 0)),

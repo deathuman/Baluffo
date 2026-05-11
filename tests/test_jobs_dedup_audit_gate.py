@@ -201,8 +201,8 @@ def test_dedup_audit_gate_blocks_provider_static_disagreement() -> None:
     assert gate["providerStaticDisagreementCount"] == 1
     assert gate["providerStaticDisagreementCurrentRunCount"] == 0
     assert gate["providerStaticDisagreementCarriedCount"] == 1
-    assert gate["highRiskReviewQueueCount"] == 1
-    assert gate["carriedHighRiskReviewQueueCount"] == 1
+    assert gate["highRiskReviewQueueCount"] == 0
+    assert gate["carriedHighRiskReviewQueueCount"] == 0
     assert "provider_static_disagreement_needs_review" in gate["blockers"]
     assert gate["examples"][0]["suspectedCause"] == "provider_static_disagreement"
     assert gate["examples"][0]["recommendedReviewAction"] == ("review_provider_static_disagreement")

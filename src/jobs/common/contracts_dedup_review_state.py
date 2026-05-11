@@ -254,6 +254,15 @@ def _current_disagreement_auto_disposition(
     ):
         return "auto_safe_current_known_mirror_pair"
     if (
+        classification == "same_job_different_urls"
+        and provider_backed
+        and static_has_url
+        and single_location
+        and concrete_shared_token_count == 0
+        and "wargaming_greenhouse_careers_vacancy_alias" in classification_evidence
+    ):
+        return "auto_safe_current_wargaming_greenhouse_careers_vacancy_alias"
+    if (
         classification
         in {
             "same_job_different_urls",

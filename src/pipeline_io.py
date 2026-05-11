@@ -90,7 +90,7 @@ def write_text_if_changed(path: Path, text: str) -> bool:
             return False
     except OSError:
         pass
-    _write_atomic_text(target, text)
+    _write_atomic_text(target, text, attempts=18, sleep_base_s=0.012)
     return True
 
 

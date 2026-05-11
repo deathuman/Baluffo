@@ -20,6 +20,10 @@ from src.jobs.common.taxonomy import (
     map_error_to_failure_bucket,
 )
 from src.jobs.models import RawJob
+from src.jobs.page_gating import (
+    looks_like_source_specific_static_noise_row,
+    looks_like_static_parser_noise_title,
+)
 from src.jobs.registry import registry_entries
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
 from src.shared.utils import coerce_int, env_flag
@@ -156,6 +160,14 @@ def _normalize_job(raw: Any, source_row: dict[str, Any]) -> RawJob | None:
     if not job_link and not strict_validation:
         job_link = _job_link_from_source_bundle(raw.get("sourceBundle"))
     if not job_link:
+        return None
+    if looks_like_static_parser_noise_title(title):
+        return None
+    if looks_like_source_specific_static_noise_row(
+        title=title,
+        job_link=job_link,
+        source_name=source_name,
+    ):
         return None
     if not source_job_id:
         source_job_id = hashlib.sha1(f"{title}|{company}|{job_link}".encode()).hexdigest()[:12]

@@ -25,6 +25,7 @@ from src.jobs.page_gating import (
     looks_like_job_title_candidate,
     looks_like_regular_navigation_text,
     looks_like_regular_page_url,
+    looks_like_static_parser_noise_title,
 )
 from src.jobs.text_utils import clean_text, norm_text, normalize_url, sanitize_location_text
 
@@ -57,7 +58,9 @@ KNOWN_NON_JOB_DETAIL_PATH_TOKENS = (
     "/data-privacy-policy",
     "/legal",
     "/privacy",
+    "/search?",
     "/terms",
+    "replytocom=",
 )
 GREENHOUSE_APPLY_TEXT_TOKENS = (
     "apply",
@@ -97,6 +100,8 @@ def is_known_non_job_detail_url(url: str) -> bool:
     ):
         return True
     if host == "docs.google.com" and parsed.path.lower().startswith("/forms"):
+        return True
+    if host == "account.ycombinator.com" and parsed.path.lower().startswith("/authenticate"):
         return True
     path_and_query = f"{parsed.path or ''}?{parsed.query or ''}".lower()
     return any(token in path_and_query for token in KNOWN_NON_JOB_DETAIL_PATH_TOKENS)
@@ -698,6 +703,8 @@ def _fallback_detail_rows(
     inferred_contract_type: str,
 ) -> tuple[list[RawJob], str, str]:
     parsed_title = clean_text(detail_title)
+    if looks_like_static_parser_noise_title(parsed_title):
+        return [], "dead_listing_page", f"{detail} | {parsed_title}" if parsed_title else detail
     job_like, gate_reason = classify_job_page(
         detail_html,
         detail,

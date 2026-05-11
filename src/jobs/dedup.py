@@ -541,6 +541,40 @@ def _is_gracklehq_gamesjobsdirect_known_mirror_pair(
     return _GUERRILLA_GAMESJOBSDIRECT_STATIC_SOURCE in source_pair
 
 
+def _has_provider_identity(payload: dict[str, Any]) -> bool:
+    return _merge_source_class(payload) == "provider"
+
+
+def _blocks_trusted_distinct_non_primary_merge(
+    *,
+    current: CanonicalJob,
+    target: CanonicalJob,
+    current_primary: str,
+) -> bool:
+    current_payload = current.to_dict()
+    target_payload = target.to_dict()
+    if "provider" not in {
+        _merge_source_class(current_payload),
+        _merge_source_class(target_payload),
+    }:
+        return False
+    if _is_provider_gracklehq_redirect_alias(existing=target, payload=current_payload):
+        return False
+    target_primary = fingerprint_url(target_payload.get("jobLink"))
+    if current_primary and target_primary and current_primary == target_primary:
+        return False
+    current_source_job_id = norm_text(current_payload.get("sourceJobId"))
+    target_source_job_id = norm_text(target_payload.get("sourceJobId"))
+    if (
+        _has_provider_identity(current_payload)
+        and _has_provider_identity(target_payload)
+        and current_source_job_id
+        and target_source_job_id
+    ):
+        return current_source_job_id != target_source_job_id
+    return bool(current_primary and target_primary and current_primary != target_primary)
+
+
 def _social_key(payload: dict[str, Any]) -> str:
     if clean_text(payload.get("source")) in SOCIAL_SOURCE_NAMES and clean_text(
         payload.get("sourceJobId")
@@ -603,6 +637,12 @@ def _find_merge_target(
         else:
             if _is_gracklehq_gamesjobsdirect_known_mirror_pair(current, secondary_target):
                 return secondary_target_idx, "known_mirror_pair"
+            if _blocks_trusted_distinct_non_primary_merge(
+                current=current,
+                target=secondary_target,
+                current_primary=primary,
+            ):
+                return None, ""
             return secondary_target_idx, "secondary_key"
     if social_key and social_key in by_social:
         return by_social[social_key], "social_key"
@@ -623,6 +663,12 @@ def _find_merge_target(
             )
             return None, ""
         if not _has_meaningful_locations(sparse_target) or not current_has_meaningful_locations:
+            if _blocks_trusted_distinct_non_primary_merge(
+                current=current,
+                target=sparse_target,
+                current_primary=primary,
+            ):
+                return None, ""
             return sparse_target_idx, "sparse_identity"
     alias_target_idx = _find_smartrecruiters_title_location_alias_target(
         current=current,
@@ -630,6 +676,12 @@ def _find_merge_target(
         by_smartrecruiters_title_location_alias=by_smartrecruiters_title_location_alias,
     )
     if alias_target_idx is not None:
+        if _blocks_trusted_distinct_non_primary_merge(
+            current=current,
+            target=merged_rows[alias_target_idx],
+            current_primary=primary,
+        ):
+            return None, ""
         return alias_target_idx, "secondary_key"
     return None, ""
 
@@ -774,25 +826,195 @@ def _append_new_dedup_row(
     )
 
 
-def _record_merge_sample(
+_PROVIDER_MERGE_ADAPTERS = frozenset(
+    {
+        "ashby",
+        "bamboohr",
+        "breezy",
+        "greenhouse",
+        "jazzhr",
+        "lever",
+        "personio",
+        "pinpoint",
+        "recruitee",
+        "smartrecruiters",
+        "teamtailor",
+        "workable",
+    }
+)
+_PROVIDER_MERGE_SOURCE_PREFIXES = tuple(f"{adapter}:" for adapter in _PROVIDER_MERGE_ADAPTERS)
+_SOCIAL_MERGE_ADAPTERS = frozenset({"mastodon", "reddit", "social", "twitter", "x"})
+
+
+def _merge_source_class(payload: dict[str, Any]) -> str:
+    adapter = norm_text(payload.get("adapter"))
+    source = norm_text(payload.get("source"))
+    source_job_id = norm_text(payload.get("sourceJobId"))
+    if (
+        adapter in _PROVIDER_MERGE_ADAPTERS
+        or source.startswith(_PROVIDER_MERGE_SOURCE_PREFIXES)
+        or source_job_id.startswith(_PROVIDER_MERGE_SOURCE_PREFIXES)
+    ):
+        return "provider"
+    if adapter in _SOCIAL_MERGE_ADAPTERS or source.startswith(("social_", "reddit", "mastodon")):
+        return "social"
+    if adapter == "static" or source.startswith(("static_source::", "static:listing_url:")):
+        return "static"
+    if source.startswith("google_sheets"):
+        return "other"
+    return "other"
+
+
+def _is_gracklehq_redirect_identity(payload: dict[str, Any]) -> bool:
+    source = norm_text(payload.get("source"))
+    source_job_id = norm_text(payload.get("sourceJobId"))
+    job_link = normalize_url(payload.get("jobLink")).lower()
+    return (
+        source == _GRACKLEHQ_SOURCE_NAME
+        or source_job_id.startswith(f"{_GRACKLEHQ_SOURCE_NAME}:")
+        or "gracklehq.com/rd/" in job_link
+    )
+
+
+def _is_provider_gracklehq_redirect_alias(
     *,
-    merge_samples: list[dict[str, str]],
+    existing: CanonicalJob,
+    payload: dict[str, Any],
+) -> bool:
+    existing_payload = existing.to_dict()
+    classes = {_merge_source_class(existing_payload), _merge_source_class(payload)}
+    if "provider" not in classes:
+        return False
+    return _is_gracklehq_redirect_identity(existing_payload) or _is_gracklehq_redirect_identity(
+        payload
+    )
+
+
+def _merge_reason_count_key(merge_reason: str) -> str:
+    return {
+        "primary_url": "primaryUrl",
+        "secondary_key": "secondaryKey",
+        "social_key": "socialKey",
+        "known_mirror_pair": "knownMirrorPair",
+        "sparse_identity": "sparseIdentity",
+    }.get(clean_text(merge_reason), "unknown")
+
+
+def _merge_gate_tier(
+    *,
     merge_reason: str,
     existing: CanonicalJob,
     payload: dict[str, Any],
+) -> tuple[str, str]:
+    reason = clean_text(merge_reason)
+    if reason == "primary_url":
+        return "monitor", "primary_url"
+    if reason == "known_mirror_pair":
+        return "monitor", "known_gracklehq_gamesjobsdirect_mirror_pair"
+    if reason == "social_key":
+        return "blocking", "trusted_social_identity"
+    existing_class = _merge_source_class(existing.to_dict())
+    incoming_class = _merge_source_class(payload)
+    if reason in {"secondary_key", "sparse_identity"} and _is_provider_gracklehq_redirect_alias(
+        existing=existing,
+        payload=payload,
+    ):
+        return "monitor", "provider_gracklehq_redirect_alias"
+    if "provider" in {existing_class, incoming_class} or "social" in {
+        existing_class,
+        incoming_class,
+    }:
+        return "blocking", "trusted_identity"
+    return "monitor", "weak_non_provider_identity"
+
+
+def _increment_count(mapping: dict[str, int], key: str) -> None:
+    mapping[key] = int(mapping.get(key) or 0) + 1
+
+
+def _merge_reason_payload(counts: dict[str, int]) -> dict[str, int]:
+    return {
+        "secondaryKey": int(counts.get("secondaryKey") or 0),
+        "sparseIdentity": int(counts.get("sparseIdentity") or 0),
+        "socialKey": int(counts.get("socialKey") or 0),
+        "unknown": int(counts.get("unknown") or 0),
+    }
+
+
+def _merge_gate_tier_payload(counts: dict[str, int]) -> dict[str, int]:
+    return {
+        "blocking": int(counts.get("blocking") or 0),
+        "monitor": int(counts.get("monitor") or 0),
+        "blockingTrustedIdentity": int(counts.get("blockingTrustedIdentity") or 0),
+        "blockingTrustedSocialIdentity": int(counts.get("blockingTrustedSocialIdentity") or 0),
+        "monitorWeakNonProviderIdentity": int(counts.get("monitorWeakNonProviderIdentity") or 0),
+        "monitorPrimaryUrl": int(counts.get("monitorPrimaryUrl") or 0),
+        "monitorKnownMirrorPair": int(counts.get("monitorKnownMirrorPair") or 0),
+        "monitorProviderGracklehqRedirectAlias": int(
+            counts.get("monitorProviderGracklehqRedirectAlias") or 0
+        ),
+    }
+
+
+def _merge_gate_tier_reason_count_key(gate_tier: str, gate_tier_reason: str) -> str:
+    return {
+        ("blocking", "trusted_identity"): "blockingTrustedIdentity",
+        ("blocking", "trusted_social_identity"): "blockingTrustedSocialIdentity",
+        ("monitor", "weak_non_provider_identity"): "monitorWeakNonProviderIdentity",
+        ("monitor", "primary_url"): "monitorPrimaryUrl",
+        (
+            "monitor",
+            "known_gracklehq_gamesjobsdirect_mirror_pair",
+        ): "monitorKnownMirrorPair",
+        ("monitor", "provider_gracklehq_redirect_alias"): ("monitorProviderGracklehqRedirectAlias"),
+    }.get((clean_text(gate_tier), clean_text(gate_tier_reason)), "")
+
+
+def _record_merge_sample(
+    *,
+    merge_samples: list[dict[str, str]],
+    merge_samples_by_reason: dict[str, list[dict[str, str]]],
+    blocking_merge_samples_by_reason: dict[str, list[dict[str, str]]],
+    merge_reason: str,
+    existing: CanonicalJob,
+    payload: dict[str, Any],
+    gate_tier: str,
+    gate_tier_reason: str,
+    limit_per_reason: int = 5,
 ) -> None:
+    sample = {
+        "reason": merge_reason or "unknown",
+        "existingDedupKey": clean_text(existing.dedupKey),
+        "existingSource": clean_text(existing.source),
+        "existingJobLink": normalize_url(existing.jobLink),
+        "existingSourceJobId": clean_text(existing.sourceJobId),
+        "incomingSource": clean_text(payload.get("source")),
+        "incomingTitle": clean_text(payload.get("title")),
+        "incomingCompany": clean_text(payload.get("company")),
+        "incomingJobLink": normalize_url(payload.get("jobLink")),
+        "incomingSourceJobId": clean_text(payload.get("sourceJobId")),
+        "gateTier": clean_text(gate_tier),
+        "gateTierReason": clean_text(gate_tier_reason),
+    }
+    bucket = clean_text(merge_reason) if clean_text(merge_reason) else "unknown"
+    if bucket not in {
+        "secondary_key",
+        "sparse_identity",
+        "social_key",
+        "known_mirror_pair",
+        "primary_url",
+    }:
+        bucket = "unknown"
+    bucket_samples = merge_samples_by_reason.setdefault(bucket, [])
+    if len(bucket_samples) < max(0, int(limit_per_reason)):
+        bucket_samples.append(dict(sample))
+    if gate_tier == "blocking" and bucket not in {"known_mirror_pair", "primary_url"}:
+        blocking_bucket_samples = blocking_merge_samples_by_reason.setdefault(bucket, [])
+        if len(blocking_bucket_samples) < max(0, int(limit_per_reason)):
+            blocking_bucket_samples.append(dict(sample))
     if len(merge_samples) >= 10:
         return
-    merge_samples.append(
-        {
-            "reason": merge_reason or "unknown",
-            "existingDedupKey": clean_text(existing.dedupKey),
-            "incomingSource": clean_text(payload.get("source")),
-            "incomingTitle": clean_text(payload.get("title")),
-            "incomingCompany": clean_text(payload.get("company")),
-            "incomingJobLink": normalize_url(payload.get("jobLink")),
-        }
-    )
+    merge_samples.append(sample)
 
 
 def _merge_into_target(
@@ -837,12 +1059,13 @@ def _merge_into_target(
     )
 
 
-def _merge_reason_counts(merge_reason: str) -> tuple[int, int, int, int]:
+def _merge_reason_counts(merge_reason: str) -> tuple[int, int, int, int, int]:
     return (
         1 if merge_reason == "primary_url" else 0,
         1 if merge_reason == "secondary_key" else 0,
         1 if merge_reason == "social_key" else 0,
         1 if merge_reason == "known_mirror_pair" else 0,
+        1 if merge_reason == "sparse_identity" else 0,
     )
 
 
@@ -876,7 +1099,25 @@ def deduplicate_jobs(
     merged_by_secondary = 0
     merged_by_social = 0
     merged_by_known_mirror_pair = 0
+    merged_by_sparse_identity = 0
     merge_samples: list[dict[str, str]] = []
+    merge_samples_by_reason: dict[str, list[dict[str, str]]] = {
+        "secondary_key": [],
+        "sparse_identity": [],
+        "social_key": [],
+        "known_mirror_pair": [],
+        "primary_url": [],
+        "unknown": [],
+    }
+    blocking_merge_samples_by_reason: dict[str, list[dict[str, str]]] = {
+        "secondary_key": [],
+        "sparse_identity": [],
+        "social_key": [],
+        "unknown": [],
+    }
+    merge_gate_tier_counts: dict[str, int] = {}
+    blocking_non_primary_reason_counts: dict[str, int] = {}
+    monitor_non_primary_reason_counts: dict[str, int] = {}
     current_run_merged_dedup_keys: set[str] = set()
     current_run_known_mirror_pair_dedup_keys: set[str] = set()
     google_sheets_generic_role_guard_samples: list[dict[str, str]] = []
@@ -922,18 +1163,42 @@ def deduplicate_jobs(
             continue
 
         merges += 1
-        primary_inc, secondary_inc, social_inc, known_mirror_inc = _merge_reason_counts(
-            merge_reason
-        )
+        (
+            primary_inc,
+            secondary_inc,
+            social_inc,
+            known_mirror_inc,
+            sparse_identity_inc,
+        ) = _merge_reason_counts(merge_reason)
         merged_by_primary += primary_inc
         merged_by_secondary += secondary_inc
         merged_by_social += social_inc
         merged_by_known_mirror_pair += known_mirror_inc
-        _record_merge_sample(
-            merge_samples=merge_samples,
+        merged_by_sparse_identity += sparse_identity_inc
+        gate_tier, gate_tier_reason = _merge_gate_tier(
             merge_reason=merge_reason,
             existing=merged_rows[target_idx],
             payload=payload,
+        )
+        _increment_count(merge_gate_tier_counts, gate_tier)
+        gate_tier_reason_count_key = _merge_gate_tier_reason_count_key(gate_tier, gate_tier_reason)
+        if gate_tier_reason_count_key:
+            _increment_count(merge_gate_tier_counts, gate_tier_reason_count_key)
+        reason_count_key = _merge_reason_count_key(merge_reason)
+        if reason_count_key not in {"primaryUrl", "knownMirrorPair"}:
+            if gate_tier == "blocking":
+                _increment_count(blocking_non_primary_reason_counts, reason_count_key)
+            else:
+                _increment_count(monitor_non_primary_reason_counts, reason_count_key)
+        _record_merge_sample(
+            merge_samples=merge_samples,
+            merge_samples_by_reason=merge_samples_by_reason,
+            blocking_merge_samples_by_reason=blocking_merge_samples_by_reason,
+            merge_reason=merge_reason,
+            existing=merged_rows[target_idx],
+            payload=payload,
+            gate_tier=gate_tier,
+            gate_tier_reason=gate_tier_reason,
         )
         _merge_into_target(
             target_idx=target_idx,
@@ -960,8 +1225,18 @@ def deduplicate_jobs(
         "mergedBySecondaryKey": merged_by_secondary,
         "mergedBySocialKey": merged_by_social,
         "mergedByKnownMirrorPair": merged_by_known_mirror_pair,
+        "mergedBySparseIdentity": merged_by_sparse_identity,
         "collisionSamplesCount": len(merge_samples),
         "collisionSamples": merge_samples,
+        "collisionSamplesByReason": merge_samples_by_reason,
+        "currentRunBlockingMergeSamplesByReason": blocking_merge_samples_by_reason,
+        "currentRunMergeGateTierCounts": _merge_gate_tier_payload(merge_gate_tier_counts),
+        "currentRunBlockingNonPrimaryMergeReasonCounts": _merge_reason_payload(
+            blocking_non_primary_reason_counts
+        ),
+        "currentRunMonitorNonPrimaryMergeReasonCounts": _merge_reason_payload(
+            monitor_non_primary_reason_counts
+        ),
         "currentRunMergedDedupKeys": sorted(current_run_merged_dedup_keys),
         "currentRunKnownMirrorPairDedupKeys": sorted(current_run_known_mirror_pair_dedup_keys),
         "sheetRoleBucketGuardBlockedCount": int(
