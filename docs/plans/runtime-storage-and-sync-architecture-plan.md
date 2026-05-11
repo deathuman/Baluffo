@@ -397,11 +397,13 @@ If JSON serialization plus atomic replace is below 5% of fetch wall clock and ro
 
 Purpose: land SQLite infrastructure without changing data authority.
 
-- Add `"sqlite3"` to `MAIN_RUNTIME_HIDDEN_IMPORTS` and test it.
+- **Done:** Add `"sqlite3"` to `MAIN_RUNTIME_HIDDEN_IMPORTS` and test it.
 - Add `docs/storage-contract.md`.
 - Add `src/storage/baluffo_store.py`, migrations, health state, backup/restore, and migration runner.
 - Validate WAL, `BEGIN IMMEDIATE`, busy retry deadline, batch insert partitioning, quick_check, backup/restore, and checkpoint failure handling.
 - Do not shadow-write task, sync, source-run, or jobs data in this milestone.
+
+M1.1 implementation note: the packaged runtime now includes `sqlite3` in the main PyInstaller hidden imports, with a packaging guard test. This does not start the SQLite authority migration and does not satisfy the packaged fetch evidence gate by itself.
 
 Gate: SQLite health endpoint works, migration tests pass, packaged build can import `sqlite3`, and no runtime authority has moved.
 

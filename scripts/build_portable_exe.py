@@ -75,6 +75,7 @@ MAIN_RUNTIME_HIDDEN_IMPORTS = (
     "src.source_sync",
     *OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES,
     *OPTIONAL_SCRAPY_RUNTIME_PACKAGES,
+    "sqlite3",
     "tkinter",
     "tkinter.ttk",
 )

@@ -164,6 +164,7 @@ def test_main_runtime_hidden_imports_preserve_packaged_browser_fallback_support(
     assert "src.local_data_store_saved_jobs" in MAIN_RUNTIME_HIDDEN_IMPORTS
     assert "src.local_data_store_shared" in MAIN_RUNTIME_HIDDEN_IMPORTS
     assert "src.source_sync_runtime" in MAIN_RUNTIME_HIDDEN_IMPORTS
+    assert "sqlite3" in MAIN_RUNTIME_HIDDEN_IMPORTS
 
 
 def test_main_runtime_collect_all_packages_include_scrapy_runtime_when_available() -> None:
