@@ -7,7 +7,9 @@ import pytest
 from scripts import build_ship_bundle
 from src.source_sync_shard import (
     SourceSyncShardError,
+    build_sharded_snapshot_bundle,
     build_shards,
+    content_addressed_shards,
     shard_key,
 )
 
@@ -102,6 +104,76 @@ def test_build_shards_rejects_unsafe_paths() -> None:
 
     with pytest.raises(ValueError, match="base_path"):
         build_shards([_row(1)], max_size=10_000, base_path="sync//")
+
+
+def test_content_addressed_shards_use_payload_hash_paths() -> None:
+    shards = build_shards([_row(1), _row(2)], max_size=10_000, base_path="sync/shards")
+
+    addressed = content_addressed_shards(shards, base_path="sync/shards")
+
+    assert [shard.manifest_entry() for shard in addressed] != [
+        shard.manifest_entry() for shard in shards
+    ]
+    assert all(
+        shard.path == f"sync/shards/{shard.bucket}/{shard.key}/{shard.sha256}.json.gz"
+        for shard in addressed
+    )
+    assert all(
+        shard.payload_bytes == original.payload_bytes
+        for shard, original in zip(addressed, shards, strict=True)
+    )
+
+
+def test_build_sharded_snapshot_bundle_tracks_noop_and_changed_metrics() -> None:
+    snapshot = {
+        "schemaVersion": 2,
+        "generatedAt": "2026-05-12T10:00:00+00:00",
+        "source": {"name": "admin_bridge"},
+        "active": [_row(1), _row(2)],
+        "pending": [_row(3)],
+    }
+
+    first = build_sharded_snapshot_bundle(
+        snapshot,
+        max_shard_size=10_000,
+        base_path="sync/shards",
+    )
+    second = build_sharded_snapshot_bundle(
+        {**snapshot, "generatedAt": "2026-05-12T10:01:00+00:00"},
+        max_shard_size=10_000,
+        committed_manifest=first["manifest"],
+        base_path="sync/shards",
+    )
+    changed = build_sharded_snapshot_bundle(
+        {**snapshot, "active": [_row(1), _row(22)], "generatedAt": "2026-05-12T10:02:00+00:00"},
+        max_shard_size=10_000,
+        committed_manifest=first["manifest"],
+        base_path="sync/shards",
+    )
+
+    assert first["metrics"]["changedShardCount"] == len(first["shards"])
+    assert second["metrics"]["changedShardCount"] == 0
+    assert [shard.path for shard in second["shards"]] == [shard.path for shard in first["shards"]]
+    assert changed["metrics"]["changedShardCount"] == len(changed["changedShards"])
+    assert changed["metrics"]["changedShardCount"] >= 1
+    assert changed["metrics"]["shardsPushedBytes"] == sum(
+        shard.size_bytes for shard in changed["changedShards"]
+    )
+    assert changed["metrics"]["manifestSizeBytes"] > 0
+    assert changed["manifest"]["shardCapBytes"] == 10_000
+
+
+def test_build_sharded_snapshot_bundle_rejects_invalid_snapshot_rows() -> None:
+    with pytest.raises(SourceSyncShardError, match="active rows"):
+        build_sharded_snapshot_bundle(
+            {
+                "generatedAt": "2026-05-12T10:00:00+00:00",
+                "source": {"name": "admin_bridge"},
+                "active": ["bad-row"],
+                "pending": [],
+            },
+            max_shard_size=10_000,
+        )
 
 
 def test_ship_bundle_includes_shard_module() -> None:

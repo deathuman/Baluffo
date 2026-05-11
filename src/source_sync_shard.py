@@ -84,6 +84,89 @@ def build_shards(
     return sorted(shards, key=lambda shard: (shard.bucket, shard.key, shard.path))
 
 
+def content_addressed_shards(
+    shards: list[Shard],
+    *,
+    base_path: str = DEFAULT_BASE_PATH,
+) -> list[Shard]:
+    normalized_base_path = _normalize_base_path(base_path)
+    addressed: list[Shard] = []
+    for shard in sorted(shards, key=lambda item: (item.bucket, item.key, item.path)):
+        expected_sha256 = hashlib.sha256(shard.payload_bytes).hexdigest()
+        if shard.sha256.lower() != expected_sha256:
+            raise SourceSyncShardError(
+                f"source-sync shard {shard.path} sha256 does not match payload bytes"
+            )
+        sha256 = shard.sha256.lower()
+        addressed.append(
+            Shard(
+                bucket=shard.bucket,
+                key=shard.key,
+                path=f"{normalized_base_path}/{shard.bucket}/{shard.key}/{sha256}.json.gz",
+                row_count=shard.row_count,
+                size_bytes=shard.size_bytes,
+                sha256=sha256,
+                payload_bytes=shard.payload_bytes,
+            )
+        )
+    return addressed
+
+
+def build_sharded_snapshot_bundle(
+    snapshot: dict[str, Any],
+    *,
+    max_shard_size: int,
+    committed_manifest: dict[str, Any] | None = None,
+    base_path: str = DEFAULT_BASE_PATH,
+) -> dict[str, Any]:
+    if not isinstance(snapshot, dict):
+        raise SourceSyncShardError("source-sync snapshot must be a JSON object")
+    if max_shard_size <= 0:
+        raise ValueError(f"max_shard_size must be positive: {max_shard_size}")
+
+    generated_at = str(snapshot.get("generatedAt") or "").strip()
+    if not generated_at:
+        raise SourceSyncShardError("source-sync snapshot generatedAt is required")
+
+    source_label = _manifest_source(snapshot.get("source"))["name"]
+    shards: list[Shard] = []
+    for bucket in ("active", "pending"):
+        shards.extend(
+            build_shards(
+                _snapshot_bucket_rows(snapshot, bucket),
+                max_size=max_shard_size,
+                bucket=bucket,
+                base_path=base_path,
+            )
+        )
+    shards = content_addressed_shards(shards, base_path=base_path)
+    manifest = build_manifest(
+        shards,
+        generated_at=generated_at,
+        source_label=source_label,
+        shard_cap_bytes=max_shard_size,
+    )
+    changed = changed_shards(shards, committed_manifest)
+    manifest_size_bytes = len(
+        json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    )
+    return {
+        "manifest": manifest,
+        "shards": shards,
+        "changedShards": changed,
+        "metrics": {
+            "snapshotSchemaVersion": SHARD_SCHEMA_VERSION,
+            "shardCount": len(shards),
+            "changedShardCount": len(changed),
+            "shardsPushedBytes": sum(shard.size_bytes for shard in changed),
+            "manifestSizeBytes": manifest_size_bytes,
+            "shardCapBytes": int(max_shard_size),
+            "totalSizeBytes": sum(shard.size_bytes for shard in shards),
+            "shardHashes": {shard.path: shard.sha256 for shard in shards},
+        },
+    }
+
+
 def manifest_path(snapshot_path: str) -> str:
     normalized = str(snapshot_path or "").replace("\\", "/").strip()
     if not normalized:
@@ -499,6 +582,13 @@ def _validate_shard_payload(payload: Any, entry: dict[str, Any]) -> dict[str, An
         "key": entry["key"],
         "rows": [dict(row) for row in rows],
     }
+
+
+def _snapshot_bucket_rows(snapshot: dict[str, Any], bucket: str) -> list[dict[str, Any]]:
+    rows = snapshot.get(bucket) or []
+    if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+        raise SourceSyncShardError(f"source-sync snapshot {bucket} rows must be objects")
+    return [dict(row) for row in rows]
 
 
 def _manifest_source(value: Any) -> dict[str, Any]:
