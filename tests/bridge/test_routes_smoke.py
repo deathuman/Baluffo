@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 from src.bridge.api import BridgeApi
 from src.bridge.registry_service import RegistryPaths, RegistryService
@@ -263,9 +264,8 @@ def test_get_routes_discovery_report_never_drops_connection_on_error(tmp_path: P
     def _broken_loader(*_a: Any, **_kw: Any) -> dict[str, Any]:  # noqa: ANN001
         raise RuntimeError("boom")
 
-    api.load_json_object = _broken_loader  # type: ignore[assignment]
-
-    assert handle_get(handler, api=api, path="/discovery/report", query={}) is True
+    with patch("src.source_registry_io.load_runtime_evidence", side_effect=_broken_loader):
+        assert handle_get(handler, api=api, path="/discovery/report", query={}) is True
     assert handler.sent[-1]["status"] == 500
     assert handler.sent[-1]["payload"]["error"] == "failed_to_load_discovery_report"
 

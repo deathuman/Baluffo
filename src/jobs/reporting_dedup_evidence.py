@@ -1178,6 +1178,29 @@ def _recommended_review_action(summary: Mapping[str, Any]) -> str:
     return "monitor"
 
 
+def _should_include_review_queue_row(summary: Mapping[str, Any], review_action: str) -> bool:
+    if review_action != "monitor":
+        return True
+    cause = str(summary.get("suspectedCause") or "")
+    if cause in {
+        "category_or_department_bucket",
+        "google_sheets_role_bucket_needs_review",
+        "listing_page_bundle",
+        "non_provider_url_identity_needs_review",
+        "parser_or_directory_text_pollution",
+        "spreadsheet_role_bucket_needs_review",
+    }:
+        return True
+    identity_quality = str(summary.get("identityQuality") or "")
+    return cause == "unknown" and identity_quality in {
+        "missing_identity",
+        "many_urls_many_hosts_weak",
+        "many_urls_same_host_weak",
+        "other_source_id_untrusted",
+        "shared_listing_url_weak",
+    }
+
+
 def _suspected_cause(summary: Mapping[str, Any]) -> str:
     caveats = {str(caveat) for caveat in summary.get("identityCaveats") or []}
     pollution = {str(signal) for signal in summary.get("titleCompanyPollutionSignals") or []}
@@ -3229,7 +3252,7 @@ def build_dedup_evidence(
                     carried_monitor_review_queue_cause_counts
                 ),
             )
-            if review_action != "monitor":
+            if _should_include_review_queue_row(summary, review_action):
                 review_queue_rows.append({**summary, "recommendedReviewAction": review_action})
             if int(summary.get("distinctLocationCount") or 0) > 1:
                 location_divergence_rows.append(summary)
@@ -3429,19 +3452,28 @@ def build_dedup_evidence(
         guard_blocked_count=google_sheets_guard_blocked_count,
         limit=risky_limit,
     )
+    merge_reason_counts = _merge_reason_counts(dedup_stats)
+    has_non_primary_tier_counts = (
+        "currentRunBlockingNonPrimaryMergeReasonCounts" in dedup_stats
+        or "currentRunMonitorNonPrimaryMergeReasonCounts" in dedup_stats
+    )
     blocking_non_primary_reason_counts = (
         dedup_stats.get("currentRunBlockingNonPrimaryMergeReasonCounts") or {}
     )
     monitor_non_primary_reason_counts = (
         dedup_stats.get("currentRunMonitorNonPrimaryMergeReasonCounts") or {}
     )
+    if not has_non_primary_tier_counts:
+        blocking_non_primary_reason_counts = _current_run_non_primary_merge_counts(
+            merge_reason_counts
+        )
     merge_gate_tier_counts = dedup_stats.get("currentRunMergeGateTierCounts") or {}
 
     payload = {
         "schemaVersion": 1,
         "mergedCount": max(0, int(dedup_stats.get("mergedCount") or 0)),
         "collisionSamplesCount": max(0, int(dedup_stats.get("collisionSamplesCount") or 0)),
-        "mergeReasonCounts": _merge_reason_counts(dedup_stats),
+        "mergeReasonCounts": merge_reason_counts,
         "currentRunMergeGateTierCounts": {
             key: int(merge_gate_tier_counts.get(key, 0))
             for key in (

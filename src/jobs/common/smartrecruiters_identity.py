@@ -90,13 +90,13 @@ def smartrecruiters_title_aliases(title: Any) -> list[str]:
     if not raw_title:
         return []
     aliases = {_strong_title_alias(raw_title)}
-    if "/" in raw_title:
-        aliases.update(_strong_title_alias(part) for part in raw_title.split("/"))
+    if smartrecruiters_title_has_alias_separator(raw_title):
+        aliases.update(_strong_title_alias(part) for part in re.split(r"\s+/\s+", raw_title))
     return sorted(alias for alias in aliases if alias)
 
 
 def smartrecruiters_title_has_alias_separator(title: Any) -> bool:
-    return "/" in clean_text(title)
+    return bool(re.search(r"\s+/\s+", clean_text(title)))
 
 
 def smartrecruiters_location_key(job: Mapping[str, Any]) -> str:

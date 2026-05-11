@@ -94,9 +94,9 @@ def test_dedup_evidence_reports_shared_listing_url_identity_and_caveats() -> Non
     assert "category_like_title" in outlier["identityCaveats"]
     assert evidence["identityShapeCounts"]["shared_listing_or_category_url"] == 1
     assert evidence["identityQualityCounts"]["shared_listing_url_weak"] == 1
-    assert evidence["reviewQueueCounts"]["review_listing_url_bundle"] == 1
+    assert evidence["reviewQueueCounts"]["monitor"] == 1
     assert evidence["reviewQueueCauseCounts"]["category_or_department_bucket"] == 1
-    assert evidence["reviewQueue"][0]["recommendedReviewAction"] == "review_listing_url_bundle"
+    assert evidence["reviewQueue"][0]["recommendedReviewAction"] == "monitor"
     assert evidence["reviewQueue"][0]["suspectedCause"] == "category_or_department_bucket"
     assert "caveat:category_like_title" in evidence["reviewQueue"][0]["causeEvidence"]
     assert evidence["reviewQueue"][0]["sampleSources"] == ["kforce-a", "kforce-b"]
@@ -133,9 +133,9 @@ def test_dedup_evidence_reports_many_unique_urls_same_title() -> None:
     assert "many_unique_urls_same_title" in outlier["identityCaveats"]
     assert evidence["identityShapeCounts"]["many_unique_urls_same_title"] == 1
     assert evidence["identityQualityCounts"]["many_urls_many_hosts_weak"] == 1
-    assert evidence["reviewQueueCounts"]["review_many_urls_same_title"] == 1
+    assert evidence["reviewQueueCounts"]["monitor"] == 1
     assert evidence["reviewQueueCauseCounts"]["unknown"] == 1
-    assert evidence["reviewQueue"][0]["recommendedReviewAction"] == "review_many_urls_same_title"
+    assert evidence["reviewQueue"][0]["recommendedReviewAction"] == "monitor"
     assert evidence["reviewQueue"][0]["suspectedCause"] == "unknown"
 
 
@@ -198,8 +198,8 @@ def test_dedup_evidence_review_queue_counts_category_titles() -> None:
         ],
     )
 
-    assert evidence["reviewQueueCounts"]["review_category_title_bundle"] == 1
-    assert evidence["reviewQueue"][0]["recommendedReviewAction"] == ("review_category_title_bundle")
+    assert evidence["reviewQueueCounts"]["monitor"] == 1
+    assert evidence["reviewQueue"][0]["recommendedReviewAction"] == "monitor"
     assert evidence["reviewQueue"][0]["suspectedCause"] == "category_or_department_bucket"
 
 
@@ -259,7 +259,7 @@ def test_dedup_evidence_classifies_listing_page_bundle_without_category_title() 
     )
 
     row = evidence["reviewQueue"][0]
-    assert row["recommendedReviewAction"] == "review_listing_url_bundle"
+    assert row["recommendedReviewAction"] == "monitor"
     assert row["suspectedCause"] == "listing_page_bundle"
     assert "identity:shared_listing_or_category_url" in row["causeEvidence"]
     assert evidence["reviewQueueCauseCounts"]["listing_page_bundle"] == 1
@@ -358,7 +358,7 @@ def test_dedup_evidence_review_queue_is_capped_and_stable() -> None:
 
     evidence = build_dedup_evidence({"mergedCount": 0}, list(reversed(rows)))
 
-    assert evidence["reviewQueueCounts"]["review_many_urls_same_title"] == 12
+    assert evidence["reviewQueueCounts"]["monitor"] == 12
     assert len(evidence["reviewQueue"]) == 10
     assert [row["dedupKey"] for row in evidence["reviewQueue"][:3]] == [
         "key-00",

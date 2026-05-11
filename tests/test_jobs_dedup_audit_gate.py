@@ -113,7 +113,7 @@ def test_dedup_audit_gate_warns_on_carried_google_sheets_role_buckets() -> None:
     assert gate["currentRunHighRiskReviewQueueCount"] == 0
     assert evidence["googleSheetsRoleBucketAudit"]["likelyHistoricalCollisionCount"] == 1
     assert evidence["googleSheetsRoleBucketAudit"]["unresolvedRoleBucketCount"] == 0
-    assert "carried_high_risk_review_queue_causes_present" in gate["warnings"]
+    assert "monitor_review_queue_diagnostics_present" in gate["warnings"]
     assert evidence["carriedBundleExamples"][0]["bundleEvidenceOrigin"] == (
         "carried_from_existing_output"
     )

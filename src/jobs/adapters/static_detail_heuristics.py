@@ -412,18 +412,21 @@ def add_detail_link(
     if host == "linkedin.com" or host.endswith(".linkedin.com") or host.endswith(".linkedin.cn"):
         link_rejections["dead_listing_page"] += 1
         return
-    if is_known_non_job_detail_url(absolute):
-        link_rejections["non_job_url"] += 1
-        return
-    if looks_like_regular_navigation_text(anchor_text) or looks_like_regular_page_url(absolute):
-        link_rejections["dead_listing_page"] += 1
-        return
-    if enforce_heuristics and not is_probable_job_detail_url(
+    probable_job_detail = is_probable_job_detail_url(
         absolute,
         source,
         default_path_tokens=default_path_tokens,
         default_query_keys=default_query_keys,
+    )
+    if is_known_non_job_detail_url(absolute) and not probable_job_detail:
+        link_rejections["non_job_url"] += 1
+        return
+    if looks_like_regular_navigation_text(anchor_text) or (
+        looks_like_regular_page_url(absolute) and not probable_job_detail
     ):
+        link_rejections["dead_listing_page"] += 1
+        return
+    if enforce_heuristics and not probable_job_detail:
         link_rejections["non_job_url"] += 1
         return
     if absolute in detail_seen or absolute in seen_links:

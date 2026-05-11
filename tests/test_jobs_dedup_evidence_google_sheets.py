@@ -265,8 +265,9 @@ def test_dedup_evidence_reports_google_sheets_role_category_bucket() -> None:
     assert evidence["googleSheetsRoleBucketAudit"]["examples"][0]["classification"] == (
         "parser_or_sheet_category_noise"
     )
-    assert evidence["dedupAuditGate"]["status"] == "blocked"
-    assert evidence["dedupAuditGate"]["lifecycleUxReady"] is False
+    assert row["recommendedReviewAction"] == "monitor"
+    assert evidence["dedupAuditGate"]["status"] == "warning"
+    assert evidence["dedupAuditGate"]["lifecycleUxReady"] is True
 
 
 def test_dedup_evidence_reports_google_sheets_multi_location_many_urls() -> None:

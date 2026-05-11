@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from src.bridge.routes.get_routes import handle_get
@@ -10,10 +11,16 @@ from tests.bridge.test_routes_get import (
 )
 
 
+def _write_fetch_report(api: object, payload: dict[str, object]) -> None:
+    path = api.JOBS_FETCH_REPORT_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
 def test_ops_fetch_report_merges_dedup_review_state_at_read_time(tmp_path: Path) -> None:
     store = FakeDesktopLocalDataStore()
     api = make_stub_bridge_api(tmp_path, store)
-    api.load_json_object = lambda path, default: {
+    fetch_report = {
         "dedupEvidence": {
             "providerStaticDisagreementGateCounts": {
                 "blocked": 1,
@@ -83,6 +90,7 @@ def test_ops_fetch_report_merges_dedup_review_state_at_read_time(tmp_path: Path)
             "carriedMonitorReviewQueueCauseCounts": {},
         }
     }
+    _write_fetch_report(api, fetch_report)
     api.DEDUP_REVIEW_STATE_PATH.write_text(
         """
 {
@@ -122,9 +130,7 @@ def test_ops_fetch_report_merges_dedup_review_state_at_read_time(tmp_path: Path)
 def test_ops_fetch_report_tolerates_malformed_dedup_review_state(tmp_path: Path) -> None:
     store = FakeDesktopLocalDataStore()
     api = make_stub_bridge_api(tmp_path, store)
-    api.load_json_object = lambda path, default: {
-        "dedupEvidence": {"providerStaticDisagreementExamples": []}
-    }
+    _write_fetch_report(api, {"dedupEvidence": {"providerStaticDisagreementExamples": []}})
     api.DEDUP_REVIEW_STATE_PATH.write_text("{bad json", encoding="utf-8")
 
     handler = FakeHandler()
@@ -139,9 +145,7 @@ def test_ops_fetch_report_tolerates_malformed_dedup_review_state(tmp_path: Path)
 def test_ops_fetch_report_tolerates_missing_dedup_review_state(tmp_path: Path) -> None:
     store = FakeDesktopLocalDataStore()
     api = make_stub_bridge_api(tmp_path, store)
-    api.load_json_object = lambda path, default: {
-        "dedupEvidence": {"providerStaticDisagreementExamples": []}
-    }
+    _write_fetch_report(api, {"dedupEvidence": {"providerStaticDisagreementExamples": []}})
     api.DEDUP_REVIEW_STATE_PATH.unlink(missing_ok=True)
 
     handler = FakeHandler()

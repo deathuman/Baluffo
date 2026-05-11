@@ -650,12 +650,6 @@ def _find_merge_target(
         by_smartrecruiters_title_location_alias=by_smartrecruiters_title_location_alias,
     )
     if alias_target_idx is not None:
-        if _blocks_trusted_distinct_non_primary_merge(
-            current=current,
-            target=merged_rows[alias_target_idx],
-            current_primary=primary,
-        ):
-            return None, ""
         return alias_target_idx, "secondary_key"
     return None, ""
 
