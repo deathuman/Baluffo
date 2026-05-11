@@ -223,30 +223,14 @@ def validate_manifest(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(raw_shards, list):
         raise SourceSyncShardError("source-sync manifest shards must be a list")
     shards = [_validate_manifest_shard_entry(entry) for entry in raw_shards]
-    shard_count = int(payload.get("shardCount") if "shardCount" in payload else len(shards))
-    total_row_count = int(
-        payload.get("totalRowCount")
-        if "totalRowCount" in payload
-        else sum(entry["rowCount"] for entry in shards)
-    )
-    total_size_bytes = int(
-        payload.get("totalSizeBytes")
-        if "totalSizeBytes" in payload
-        else sum(entry["sizeBytes"] for entry in shards)
-    )
-    if shard_count != len(shards):
-        raise SourceSyncShardError("source-sync manifest shardCount does not match shards")
-    if total_row_count != sum(entry["rowCount"] for entry in shards):
-        raise SourceSyncShardError("source-sync manifest totalRowCount does not match shards")
-    if total_size_bytes != sum(entry["sizeBytes"] for entry in shards):
-        raise SourceSyncShardError("source-sync manifest totalSizeBytes does not match shards")
+    totals = _validate_manifest_totals(payload, shards)
     normalized: dict[str, Any] = {
         "schemaVersion": SHARD_SCHEMA_VERSION,
         "generatedAt": generated_at,
         "source": _manifest_source(payload.get("source")),
-        "shardCount": shard_count,
-        "totalRowCount": total_row_count,
-        "totalSizeBytes": total_size_bytes,
+        "shardCount": totals["shardCount"],
+        "totalRowCount": totals["totalRowCount"],
+        "totalSizeBytes": totals["totalSizeBytes"],
         "shards": sorted(shards, key=lambda entry: (entry["bucket"], entry["key"], entry["path"])),
     }
     if "shardCapBytes" in payload:
@@ -254,6 +238,23 @@ def validate_manifest(payload: dict[str, Any]) -> dict[str, Any]:
     if phase:
         normalized["phase"] = phase
     return normalized
+
+
+def _validate_manifest_totals(
+    payload: dict[str, Any], shards: list[dict[str, Any]]
+) -> dict[str, int]:
+    expected = {
+        "shardCount": len(shards),
+        "totalRowCount": sum(entry["rowCount"] for entry in shards),
+        "totalSizeBytes": sum(entry["sizeBytes"] for entry in shards),
+    }
+    totals = {
+        key: int(payload.get(key) if key in payload else value) for key, value in expected.items()
+    }
+    for key, value in expected.items():
+        if totals[key] != value:
+            raise SourceSyncShardError(f"source-sync manifest {key} does not match shards")
+    return totals
 
 
 def trusted_committed_manifest(payload: dict[str, Any]) -> dict[str, Any] | None:

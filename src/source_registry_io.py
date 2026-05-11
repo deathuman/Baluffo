@@ -924,30 +924,22 @@ def _load_json_journal_array_delta_payload(
     record: dict[str, Any],
     base_payload: Any,
 ) -> list[dict[str, Any]] | None:
-    if not isinstance(base_payload, list):
-        return None
-    base_rows = [dict(row) for row in base_payload if isinstance(row, dict)]
-    if len(base_rows) != len(base_payload):
+    base_rows = _json_journal_dict_rows(base_payload)
+    if base_rows is None:
         return None
     if str(record.get("baseContentHash") or "") != _json_journal_payload_hash(base_rows):
         return None
     rows_by_id = _registry_rows_by_id(base_rows)
     if rows_by_id is None:
         return None
-    removed = record.get("removed")
-    changed = record.get("changed")
-    row_ids = record.get("rowIds")
-    if not isinstance(removed, list) or not all(isinstance(row_id, str) for row_id in removed):
-        return None
-    if not isinstance(changed, list):
-        return None
-    if not isinstance(row_ids, list) or not all(isinstance(row_id, str) for row_id in row_ids):
+    removed = _json_journal_string_list(record.get("removed"))
+    changed = _json_journal_dict_rows(record.get("changed"))
+    row_ids = _json_journal_string_list(record.get("rowIds"))
+    if removed is None or changed is None or row_ids is None:
         return None
     for row_id in removed:
         rows_by_id.pop(row_id, None)
     for row in changed:
-        if not isinstance(row, dict):
-            return None
         row_id = row.get("id")
         if not isinstance(row_id, str) or not row_id:
             return None
@@ -955,11 +947,29 @@ def _load_json_journal_array_delta_payload(
     if set(rows_by_id) != set(row_ids):
         return None
     payload = [rows_by_id[row_id] for row_id in row_ids]
+    return payload if _json_journal_array_delta_matches_record(record, payload) else None
+
+
+def _json_journal_dict_rows(value: Any) -> list[dict[str, Any]] | None:
+    if not isinstance(value, list):
+        return None
+    rows = [dict(row) for row in value if isinstance(row, dict)]
+    return rows if len(rows) == len(value) else None
+
+
+def _json_journal_string_list(value: Any) -> list[str] | None:
+    if not isinstance(value, list):
+        return None
+    rows = [row for row in value if isinstance(row, str)]
+    return rows if len(rows) == len(value) else None
+
+
+def _json_journal_array_delta_matches_record(
+    record: dict[str, Any], payload: list[dict[str, Any]]
+) -> bool:
     if _json_journal_record_row_count(record) != len(payload):
-        return None
-    if str(record.get("contentHash") or "") != _json_journal_payload_hash(payload):
-        return None
-    return payload
+        return False
+    return str(record.get("contentHash") or "") == _json_journal_payload_hash(payload)
 
 
 def _load_json_journal_object_delta_payload(

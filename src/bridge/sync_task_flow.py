@@ -66,6 +66,81 @@ def _sync_size_fields(payload: Any) -> dict[str, Any]:
     return fields
 
 
+def _sync_finished_phase_key(status: str) -> str:
+    return "error" if status == "error" else "completed"
+
+
+def _sync_finished_phase_label(action: str, status: str) -> str:
+    return f"Sync {action} failed" if status == "error" else f"Sync {action} completed"
+
+
+def _sync_finished_level(status: str) -> str:
+    levels = {"warning": "warn", "error": "error"}
+    return levels.get(status, "success")
+
+
+def _sync_finished_message(action: str, status: str, error: Any) -> str:
+    error_text = str(error or "")
+    if error_text:
+        return f"Sync {action} finished with status {status}: {error_text}"
+    return f"Sync {action} finished with status {status}."
+
+
+def _warning_status_from_result(result: dict[str, Any], summary: dict[str, Any], error: str) -> str:
+    if bool(result.get("ok")):
+        return "ok"
+    summary["error"] = str(result.get("error") or error)
+    return "warning"
+
+
+def _apply_pull_result_summary(result: dict[str, Any], summary: dict[str, Any]) -> str:
+    status = _warning_status_from_result(result, summary, "sync pull not executed")
+    summary.update(
+        {
+            "changed": bool(result.get("changed")),
+            "remoteFound": bool(result.get("remoteFound")),
+            "remoteSha": str(result.get("remoteSha") or ""),
+            "remoteGeneratedAt": str(result.get("remoteGeneratedAt") or ""),
+        }
+    )
+    timing = as_json_object(result.get("timing"))
+    if timing:
+        summary["timing"] = timing
+    state_summary = as_json_object(result.get("summary"))
+    summary.update(
+        {
+            "activeCount": int(state_summary.get("activeCount") or 0),
+            "pendingCount": int(state_summary.get("pendingCount") or 0),
+            "rejectedCount": int(state_summary.get("rejectedCount") or 0),
+        }
+    )
+    return status
+
+
+def _apply_push_result_summary(result: dict[str, Any], summary: dict[str, Any]) -> str:
+    status = _warning_status_from_result(result, summary, "sync push not executed")
+    summary.update(
+        {
+            "remoteSha": str(result.get("remoteSha") or ""),
+            "remotePreviouslyExisted": bool(result.get("remotePreviouslyExisted")),
+            "pushed": bool(result.get("pushed")),
+        }
+    )
+    summary.update(_sync_size_fields(result))
+    timing = as_json_object(result.get("timing"))
+    if timing:
+        summary["timing"] = timing
+    counts = as_json_object(result.get("counts"))
+    summary.update(
+        {
+            "activeCount": int(counts.get("active") or 0),
+            "pendingCount": int(counts.get("pending") or 0),
+            "rejectedCount": int(counts.get("rejected") or 0),
+        }
+    )
+    return status
+
+
 def run_sync_task_worker(
     *,
     run_id: str,
@@ -203,54 +278,12 @@ def run_sync_task_worker(
             result = _run_sync_action_with_optional_progress(
                 run_sync_pull, progress_callback=progress_callback
             )
-            if not bool(result.get("ok")):
-                status = "warning"
-                summary["error"] = str(result.get("error") or "sync pull not executed")
-            summary.update(
-                {
-                    "changed": bool(result.get("changed")),
-                    "remoteFound": bool(result.get("remoteFound")),
-                    "remoteSha": str(result.get("remoteSha") or ""),
-                    "remoteGeneratedAt": str(result.get("remoteGeneratedAt") or ""),
-                }
-            )
-            timing = as_json_object(result.get("timing"))
-            if timing:
-                summary["timing"] = timing
-            state_summary = as_json_object(result.get("summary"))
-            summary.update(
-                {
-                    "activeCount": int(state_summary.get("activeCount") or 0),
-                    "pendingCount": int(state_summary.get("pendingCount") or 0),
-                    "rejectedCount": int(state_summary.get("rejectedCount") or 0),
-                }
-            )
+            status = _apply_pull_result_summary(result, summary)
         else:
             result = _run_sync_action_with_optional_progress(
                 run_sync_push, progress_callback=progress_callback
             )
-            if not bool(result.get("ok")):
-                status = "warning"
-                summary["error"] = str(result.get("error") or "sync push not executed")
-            summary.update(
-                {
-                    "remoteSha": str(result.get("remoteSha") or ""),
-                    "remotePreviouslyExisted": bool(result.get("remotePreviouslyExisted")),
-                    "pushed": bool(result.get("pushed")),
-                }
-            )
-            summary.update(_sync_size_fields(result))
-            timing = as_json_object(result.get("timing"))
-            if timing:
-                summary["timing"] = timing
-            counts = as_json_object(result.get("counts"))
-            summary.update(
-                {
-                    "activeCount": int(counts.get("active") or 0),
-                    "pendingCount": int(counts.get("pending") or 0),
-                    "rejectedCount": int(counts.get("rejected") or 0),
-                }
-            )
+            status = _apply_push_result_summary(result, summary)
     except Exception as exc:  # noqa: BLE001
         status = "error"
         summary["error"] = str(exc)
@@ -273,20 +306,16 @@ def run_sync_task_worker(
     finished_dt = now_utc()
     duration_ms = int(max(0.0, (finished_dt - started_dt).total_seconds() * 1000))
     write_live_task(
-        phase_key="completed" if status != "error" else "error",
-        phase_label=f"Sync {action} completed" if status != "error" else f"Sync {action} failed",
+        phase_key=_sync_finished_phase_key(status),
+        phase_label=_sync_finished_phase_label(action, status),
         counts={
             "action": action,
             "activeCount": int(summary.get("activeCount") or 0),
             "pendingCount": int(summary.get("pendingCount") or 0),
             "rejectedCount": int(summary.get("rejectedCount") or 0),
         },
-        level="warn" if status == "warning" else ("error" if status == "error" else "success"),
-        message=(
-            f"Sync {action} finished with status {status}."
-            if not summary.get("error")
-            else f"Sync {action} finished with status {status}: {summary.get('error')}"
-        ),
+        level=_sync_finished_level(status),
+        message=_sync_finished_message(action, status, summary.get("error")),
         finished_at=finished_dt.isoformat(),
     )
     prune_started_rows_for_type("sync", finished_at=finished_dt.isoformat())
