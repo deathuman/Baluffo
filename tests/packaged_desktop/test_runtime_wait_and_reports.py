@@ -244,6 +244,14 @@ def test_capture_runtime_snapshot_preserves_versioned_startup_metrics() -> None:
                 {"ok": True, "desktopSession": {}},
                 metrics_payload,
                 {"storageMetrics": {"writes": {"writeCount": 3}}},
+                {
+                    "ok": True,
+                    "storage": {
+                        "migrationVersion": "004",
+                        "walMode": "wal",
+                        "authorityModes": {"taskRuns": "json"},
+                    },
+                },
             ],
         ):
             snapshots = smoke.capture_runtime_snapshot("http://127.0.0.1:8877", artifacts_dir)
@@ -252,10 +260,16 @@ def test_capture_runtime_snapshot_preserves_versioned_startup_metrics() -> None:
         storage_metrics = json.loads(
             Path(snapshots["storageMetricsSnapshot"]).read_text(encoding="utf-8")
         )
+        storage_health = json.loads(
+            Path(snapshots["storageHealthSnapshot"]).read_text(encoding="utf-8")
+        )
         assert saved == metrics_payload
         assert saved["rows"][0]["schemaVersion"] == 1
         assert saved["rows"][0]["category"] == "handoff"
         assert storage_metrics["storageMetrics"]["writes"]["writeCount"] == 3
+        assert storage_health["ok"] is True
+        assert storage_health["storage"]["migrationVersion"] == "004"
+        assert storage_health["storage"]["authorityModes"]["taskRuns"] == "json"
 
 
 def test_run_embedded_runtime_probe_writes_versioned_startup_metrics_snapshot() -> None:

@@ -5,7 +5,7 @@
 > - **Canonical for:** long-term storage direction, journal-scope policy, source-sync sharding target, storage metrics gate, hot-path payload budgets, migration sequencing, SQLite connection/transaction discipline, and rollback expectations
 > - **Not canonical for:** current endpoint response fields, current source-sync snapshot schema, or existing fetch report compatibility requirements
 > - **Then inspect:** [`../storage-contract.md`](../storage-contract.md), [`DATA_CONTRACT.md`](../DATA_CONTRACT.md), [`admin-bridge-api.md`](../admin-bridge-api.md), [`fetcher-runtime-contracts.md`](../fetcher-runtime-contracts.md), [`sync-contract.md`](../sync-contract.md), [`task-lifecycle-ledger-plan.md`](task-lifecycle-ledger-plan.md), and [`LOCAL_SETUP.md`](../LOCAL_SETUP.md)
-> - **Last updated:** 2026-05-11
+> - **Last updated:** 2026-05-12
 
 ## Verdict
 
@@ -383,6 +383,7 @@ Local preflight evidence collected on 2026-05-11 with `npm run perf:ci:median`:
 - Fetch smoke benchmark: 3 runs, median 6906ms, storage write count median 39, atomic/write median total 501ms, compressed bytes median 2036676, uncompressed bytes median 26888413.
 - This is local sanity evidence only. It confirms discovery and fetch benchmark payloads now carry populated `storageMetrics`, but it does not replace the required packaged fetch gate.
 - Packaged smoke runtime snapshots capture `/ops/storage-metrics` as `storage-metrics.json`, so the packaged fetch gate can preserve the same storage evidence without manual API scraping.
+- Packaged smoke runtime snapshots capture `/ops/storage-health` as `storage-health.json`, so M1 gate runs can verify packaged `sqlite3` import, migration resource loading, WAL health, and JSON-backed authority modes.
 
 Proceed to SQLite skeleton only if the evidence still supports it:
 
@@ -411,6 +412,8 @@ M1.2 implementation note: `docs/storage-contract.md` now captures target authori
 M1.3 implementation note: the SQLite storage package now contains the core store class, idempotent SQL migrations, JSON-authority default state, WAL/foreign-key/quick-check startup validation, bounded `BEGIN IMMEDIATE` write retry, batch execution, required checkpoint handling, and SQLite backup/restore round-trip coverage. Portable packaging now collects `src.storage` data files so SQL migration resources are available once the store is imported in packaged runtime. No bridge route reads or runtime authority moved in this slice.
 
 M1.4 implementation note: `GET /ops/storage-health` now returns the cached runtime store health payload, including migration version, WAL mode, foreign-key state, quick_check status, busy counters, last write error, and per-surface authority modes. The endpoint initializes the SQLite skeleton if needed but leaves every authority mode JSON-backed.
+
+M1.5 implementation note: packaged smoke runtime snapshots now preserve `/ops/storage-health` as `storage-health.json` next to `/ops/storage-metrics`. A packaged gate run can therefore prove `sqlite3` imports in the packaged runtime and that migration SQL resources initialize the SQLite skeleton without moving authority.
 
 Gate: SQLite health endpoint works, migration tests pass, packaged build can import `sqlite3`, and no runtime authority has moved.
 
