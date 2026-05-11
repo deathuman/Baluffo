@@ -67,6 +67,7 @@ def test_bundle_contains_python_import_closure_modules() -> None:
             "src/source_registry_io.py",
             "src/source_registry_policy.py",
             "src/source_registry_state.py",
+            "src/storage_metrics.py",
             "src/ship/runtime_launcher.py",
             "src/ship/update_manager.py",
             "src/ship/update_manager_apply.py",
@@ -76,6 +77,11 @@ def test_bundle_contains_python_import_closure_modules() -> None:
             "src/ship/update_manager_recovery.py",
             "src/ship/update_manager_state.py",
             "src/ship/update_manager_validation.py",
+            "src/storage/baluffo_store.py",
+            "src/storage/migrations/001_initial.sql",
+            "src/storage/migrations/002_task_events.sql",
+            "src/storage/migrations/003_fetch_source_runs.sql",
+            "src/storage/migrations/004_jobs_feed.sql",
         )
 
         assert all((version_root / rel_path).exists() for rel_path in required_modules)

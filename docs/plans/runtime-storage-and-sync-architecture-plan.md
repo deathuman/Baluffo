@@ -415,6 +415,8 @@ M1.4 implementation note: `GET /ops/storage-health` now returns the cached runti
 
 M1.5 implementation note: packaged smoke runtime snapshots now preserve `/ops/storage-health` as `storage-health.json` next to `/ops/storage-metrics`. A packaged gate run can therefore prove `sqlite3` imports in the packaged runtime and that migration SQL resources initialize the SQLite skeleton without moving authority.
 
+M1.6 implementation note: the ship bundle runtime closure now includes `src/storage_metrics.py` and `src/storage`, and packaging tests verify the SQLite store module plus migration SQL resources are present in versioned packaged app roots. This closes the resource-copy side of the packaged import gate before any runtime authority moves.
+
 Gate: SQLite health endpoint works, migration tests pass, packaged build can import `sqlite3`, and no runtime authority has moved.
 
 ### Milestone 2 - Sharded Source Sync
