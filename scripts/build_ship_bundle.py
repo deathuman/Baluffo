@@ -76,6 +76,7 @@ APP_RUNTIME_SCRIPTS = (
     "source_sync_config.py",
     "source_sync_crypto.py",
     "source_sync_runtime.py",
+    "source_sync_shard.py",
     "source_sync_snapshot.py",
     "source_sync.py",
     "storage_metrics.py",

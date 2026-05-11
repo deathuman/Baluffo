@@ -438,6 +438,8 @@ Purpose: remove the monolithic source-sync cap failure mode before data authorit
 
 Gate: unchanged sync push is a no-op, large registry sync does not hit the global monolith cap, partial shard push leaves old committed state readable, and v2 fallback behavior is explicit.
 
+M2.1 implementation note: `src/source_sync_shard.py` now provides deterministic local shard construction without changing remote sync writes. `shard_key()` hashes stable source identity prefixes; `build_shards()` groups rows into gzip JSON schema-v3 shard payloads, computes path-ready manifest metadata, enforces a caller-supplied per-shard byte cap, recursively splits oversized shards by longer hash prefixes, and raises a clear error for a single row that cannot fit under the cap. The ship bundle now carries the sharding leaf module. Focused tests cover deterministic metadata/payloads, canonical row ordering, overflow splitting, oversize errors, and remote-path validation.
+
 ### Milestone 3 - Move Task Runs, Events, and Sync Runs
 
 Purpose: migrate the lowest-risk live runtime authority first.
