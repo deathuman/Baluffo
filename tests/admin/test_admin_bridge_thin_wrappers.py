@@ -157,6 +157,49 @@ def test_sync_worker_failure_writes_error_row(admin_bridge_entrypoint_root):
         admin_bridge.sync_push_sources = original_push
 
 
+def test_sync_worker_over_cap_summary_keeps_size_fields(admin_bridge_entrypoint_root):
+    started_at = admin_bridge.now_iso()
+    admin_bridge.start_lifecycle_run(
+        run_id="sync_test_large",
+        task_type="sync",
+        started_at=started_at,
+        owner_kind="bridge_thread",
+        summary={"action": "push"},
+    )
+    original_push = admin_bridge.sync_push_sources
+
+    class SnapshotTooLarge(RuntimeError):
+        code = "snapshot_too_large"
+        fields = {
+            "sizeBytes": 12_000_000,
+            "maxSnapshotSizeBytes": 10_000_000,
+            "sizeWarning": True,
+        }
+
+    try:
+
+        def _too_large():
+            raise SnapshotTooLarge("Snapshot too large")
+
+        admin_bridge.sync_push_sources = _too_large
+        admin_bridge._run_sync_task_worker("sync_test_large", "push", started_at)  # noqa: SLF001
+        rows = admin_bridge.get_lifecycle_recent_runs()
+        finished = [
+            row
+            for row in rows
+            if str(row.get("runId") or "") == "sync_test_large" and str(row.get("finishedAt") or "")
+        ]
+        assert len(finished) == 1
+        assert str(finished[0].get("lifecycleStatus") or "") == "failed"
+        summary = finished[0].get("summary") or {}
+        assert summary["errorCode"] == "snapshot_too_large"
+        assert summary["sizeBytes"] == 12_000_000
+        assert summary["maxSnapshotSizeBytes"] == 10_000_000
+        assert summary["sizeWarning"] is True
+    finally:
+        admin_bridge.sync_push_sources = original_push
+
+
 def test_wait_for_report_completion_ignores_stale_flag_until_report_finishes(
     admin_bridge_entrypoint_root,
 ):

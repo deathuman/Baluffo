@@ -53,6 +53,19 @@ def _run_sync_action_with_optional_progress(
         return action_func(progress_callback=progress_callback)
 
 
+def _sync_size_fields(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    fields: dict[str, Any] = {}
+    if "sizeBytes" in payload:
+        fields["sizeBytes"] = int(payload.get("sizeBytes") or 0)
+    if "maxSnapshotSizeBytes" in payload:
+        fields["maxSnapshotSizeBytes"] = int(payload.get("maxSnapshotSizeBytes") or 0)
+    if "sizeWarning" in payload:
+        fields["sizeWarning"] = bool(payload.get("sizeWarning"))
+    return fields
+
+
 def run_sync_task_worker(
     *,
     run_id: str,
@@ -223,8 +236,10 @@ def run_sync_task_worker(
                 {
                     "remoteSha": str(result.get("remoteSha") or ""),
                     "remotePreviouslyExisted": bool(result.get("remotePreviouslyExisted")),
+                    "pushed": bool(result.get("pushed")),
                 }
             )
+            summary.update(_sync_size_fields(result))
             timing = as_json_object(result.get("timing"))
             if timing:
                 summary["timing"] = timing
@@ -239,6 +254,10 @@ def run_sync_task_worker(
     except Exception as exc:  # noqa: BLE001
         status = "error"
         summary["error"] = str(exc)
+        error_code = str(getattr(exc, "code", "") or "").strip()
+        if error_code:
+            summary["errorCode"] = error_code
+        summary.update(_sync_size_fields(getattr(exc, "fields", {})))
         set_sync_status(action=action, result="error", error=str(exc))
         write_live_task(
             phase_key="error",

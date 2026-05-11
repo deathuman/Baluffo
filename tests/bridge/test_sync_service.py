@@ -13,6 +13,7 @@ class _FakeSourceSync:
         self.pull_calls: int = 0
         self.push_calls: int = 0
         self.remote_reads: int = 0
+        self.push_result_extra: dict[str, Any] = {}
         self._enabled = True
         self._ready = True
         self.rate_limit = {
@@ -49,7 +50,12 @@ class _FakeSourceSync:
 
     def push_sources_snapshot(self, config: Any, state: dict[str, Any]) -> dict[str, Any]:
         self.push_calls += 1
-        return {"remoteSha": "abc", "remotePreviouslyExisted": True, "snapshot": state}
+        return {
+            "remoteSha": "abc",
+            "remotePreviouslyExisted": True,
+            "snapshot": state,
+            **dict(self.push_result_extra),
+        }
 
     def rate_limit_payload(self) -> dict[str, Any]:
         return dict(self.rate_limit)
@@ -207,9 +213,15 @@ def test_sync_service_push_returns_and_persists_timing() -> None:
             ACTIVE_SYNC_RUNS.clear()
             ACTIVE_SYNC_THREADS.clear()
         source_sync = _FakeSourceSync()
+        source_sync.push_result_extra = {
+            "sizeBytes": 6_000_000,
+            "maxSnapshotSizeBytes": 100_000_000,
+            "sizeWarning": True,
+        }
         history = _RunHistory()
         lifecycle = _TaskLifecycle()
         ops_lock = threading.RLock()
+        logs: list[tuple[str, str, dict[str, Any]]] = []
 
         def load_state() -> dict[str, list[dict[str, Any]]]:
             return {
@@ -233,7 +245,7 @@ def test_sync_service_push_returns_and_persists_timing() -> None:
         svc = SyncService(
             data_dir=data_dir,
             source_sync=source_sync,
-            bridge_log=lambda _level, _message, **_fields: None,
+            bridge_log=lambda level, message, **fields: logs.append((level, message, fields)),
             load_state=load_state,
             persist_state=persist_state,
             summarize_state=summarize_state,
@@ -250,14 +262,66 @@ def test_sync_service_push_returns_and_persists_timing() -> None:
         assert isinstance(timing, dict)
         assert timing["action"] == "push"
         assert timing["pushed"] is True
+        assert timing["sizeBytes"] == 6_000_000
+        assert timing["maxSnapshotSizeBytes"] == 100_000_000
+        assert timing["sizeWarning"] is True
         assert timing["stageTotalsMs"]["loadLocalRegistry"] >= 0
         assert timing["stageTotalsMs"]["pushRemote"] >= 0
         assert timing["stageTotalsMs"]["summarizeSnapshot"] >= 0
         assert any(row["stage"] == "pushRemote" for row in timing["stageTop"])
+        assert result["sizeBytes"] == 6_000_000
+        assert result["maxSnapshotSizeBytes"] == 100_000_000
+        assert result["sizeWarning"] is True
+        assert logs[-1] == (
+            "warn",
+            "sync_push_snapshot_size_warning",
+            {"sizeBytes": 6_000_000, "maxSnapshotSizeBytes": 100_000_000},
+        )
 
         status = svc.get_sync_status_payload()
         assert status["timing"]["action"] == "push"
+        assert status["timing"]["sizeBytes"] == 6_000_000
         assert status["timingHistory"][-1]["action"] == "push"
+        assert status["timingHistory"][-1]["maxSnapshotSizeBytes"] == 100_000_000
+
+
+def test_sync_service_push_noop_returns_size_fields() -> None:
+    with workspace_tmpdir("sync-service") as data_dir:
+        with SYNC_STATE_LOCK:
+            ACTIVE_SYNC_RUNS.clear()
+            ACTIVE_SYNC_THREADS.clear()
+        source_sync = _FakeSourceSync()
+        source_sync.push_result_extra = {
+            "pushed": False,
+            "sizeBytes": 1234,
+            "maxSnapshotSizeBytes": 100_000_000,
+            "sizeWarning": False,
+        }
+
+        svc = SyncService(
+            data_dir=data_dir,
+            source_sync=source_sync,
+            bridge_log=lambda _level, _message, **_fields: None,
+            load_state=lambda: {"active": [], "pending": [], "rejected": []},
+            persist_state=lambda state: state,
+            summarize_state=lambda state: {
+                "activeCount": len(state["active"]),
+                "pendingCount": len(state["pending"]),
+                "rejectedCount": len(state["rejected"]),
+            },
+            ops_state_lock=threading.RLock(),
+            get_security_defaults=lambda: {"github_app_enabled_default": True},
+        )
+
+        svc.update_saved_sync_settings({"enabled": True})
+        result = svc.sync_push_sources()
+
+        assert result["pushed"] is False
+        assert result["sizeBytes"] == 1234
+        assert result["maxSnapshotSizeBytes"] == 100_000_000
+        assert result["sizeWarning"] is False
+        assert result["timing"]["noOp"] is True
+        assert result["timing"]["sizeBytes"] == 1234
 
 
 def test_sync_service_start_task_runs_and_finishes() -> None:

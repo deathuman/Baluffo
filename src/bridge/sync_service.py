@@ -494,13 +494,15 @@ class SyncService:
             )
         snapshot = as_json_object(result.get("snapshot"))
         pushed = bool(result.get("pushed", True))
+        size_bytes = int(result.get("sizeBytes") or 0)
+        max_snapshot_size_bytes = int(result.get("maxSnapshotSizeBytes") or 0)
         size_warning = bool(result.get("sizeWarning"))
         if size_warning:
             self._bridge_log(
                 "warn",
                 "sync_push_snapshot_size_warning",
-                sizeBytes=int(result.get("sizeBytes") or 0),
-                maxSnapshotSizeBytes=int(result.get("maxSnapshotSizeBytes") or 0),
+                sizeBytes=size_bytes,
+                maxSnapshotSizeBytes=max_snapshot_size_bytes,
             )
 
         self.set_sync_status(
@@ -527,6 +529,8 @@ class SyncService:
                 "pushed": pushed,
                 "pulled": False,
                 "noOp": not pushed,
+                "sizeBytes": size_bytes,
+                "maxSnapshotSizeBytes": max_snapshot_size_bytes,
                 "sizeWarning": size_warning,
             }
         )
@@ -551,6 +555,8 @@ class SyncService:
             "remoteSha": str(result.get("remoteSha") or ""),
             "remotePreviouslyExisted": bool(result.get("remotePreviouslyExisted")),
             "pushed": pushed,
+            "sizeBytes": size_bytes,
+            "maxSnapshotSizeBytes": max_snapshot_size_bytes,
             "sizeWarning": size_warning,
             "counters": counters,
             "counts": counts,

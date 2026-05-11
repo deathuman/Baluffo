@@ -99,9 +99,10 @@ def _github_api_base() -> str:
 
 
 class SyncOperationError(RuntimeError):
-    def __init__(self, code: str, message: str):
+    def __init__(self, code: str, message: str, **fields: Any):
         super().__init__(str(message or code or "sync error"))
         self.code = str(code or "").strip().lower() or "sync_error"
+        self.fields = dict(fields)
 
 
 _RUNTIME_STATE_LOCK = _source_sync_runtime._RUNTIME_STATE_LOCK

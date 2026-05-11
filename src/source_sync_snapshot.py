@@ -231,6 +231,9 @@ def _push_sources_snapshot_after_conflict(
                 f"Snapshot size {retry_snapshot_size_bytes} bytes exceeds configured limit "
                 f"{retry_max_snapshot_size_bytes} bytes"
             ),
+            sizeBytes=retry_snapshot_size_bytes,
+            maxSnapshotSizeBytes=retry_max_snapshot_size_bytes,
+            sizeWarning=retry_size_warning,
         ) from exc
     write_result = write_remote_snapshot(
         module,
@@ -317,6 +320,9 @@ def _push_sources_snapshot_after_transient(
                 f"Snapshot size {retry_snapshot_size_bytes} bytes exceeds configured limit "
                 f"{retry_max_snapshot_size_bytes} bytes"
             ),
+            sizeBytes=retry_snapshot_size_bytes,
+            maxSnapshotSizeBytes=retry_max_snapshot_size_bytes,
+            sizeWarning=retry_size_warning,
         ) from exc
     write_result = write_remote_snapshot(
         module,
@@ -797,6 +803,9 @@ def push_sources_snapshot(
                 f"Snapshot size {snapshot_size_bytes} bytes exceeds configured limit "
                 f"{max_snapshot_size_bytes} bytes"
             ),
+            sizeBytes=snapshot_size_bytes,
+            maxSnapshotSizeBytes=max_snapshot_size_bytes,
+            sizeWarning=size_warning,
         )
     try:
         write_result = write_remote_snapshot(

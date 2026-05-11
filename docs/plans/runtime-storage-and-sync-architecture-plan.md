@@ -39,13 +39,13 @@ The 2026-05-11 validation found that several lifecycle closeout items are alread
 - Route-level coverage exists for source-level `failedSources > 0` terminalizing as completed/succeeded when the report has no task-level error.
 - Frontend task-run view-model coverage exists for non-stale recent progress.
 - Generic object journal-overlay coverage now uses `source-approval-state.json` instead of `jobs-fetch-report.json`, so fetch reports remain runtime evidence in tests too.
-- Targeted validation passed: lifecycle/storage-adjacent Python tests, journal/source-sync/build tests, and the narrow frontend task-run view-model test.
+- Sync push byte-budget fields (`sizeBytes`, `maxSnapshotSizeBytes`, `sizeWarning`) propagate through service results, timing records, task summaries, run history, no-op pushes, and `snapshot_too_large` failure metadata.
+- Targeted validation passed: lifecycle/storage-adjacent Python tests, journal/source-sync/build tests, the narrow frontend task-run view-model test, and focused sync-size propagation tests.
 
 The remaining risks are not those old lifecycle read-path gaps. The open architecture risks are:
 
 - Registry journals still store full payload records, so compaction cannot shrink a large registry below one full record.
 - BEST_EFFORT journal compaction can silently leave unbounded accumulated records.
-- Sync size fields are logged in some paths but are not consistently returned into task summaries, timing history, and run history.
 - Storage write metrics do not yet exist, so SQLite migration cost/benefit is still unproven.
 - The previous "push proposed manifest first" sharded-sync design can hide the last committed manifest from readers and is not acceptable.
 
@@ -68,7 +68,7 @@ This plan supersedes older versions of the runtime storage roadmap.
 |---|---|---|---|
 | Current task liveness | SQLite `task_runs` after M3 cutover | `/ops/task-state` JSON projection | Until cutover, `admin-task-lifecycle.json` remains authority. |
 | Live task events | SQLite `task_events` after M3 cutover | `/ops/task-live/<taskType>` | Recent bounded window only. |
-| Sync runs/history | SQLite `sync_runs` after M3 cutover | Existing history/task summaries | Sync size/shard metrics must be present before migration. |
+| Sync runs/history | SQLite `sync_runs` after M3 cutover | Existing history/task summaries | Sync size metrics are present; shard metrics land in M2 before migration. |
 | Fetch source progress | SQLite `source_runs` after M4 cutover | `jobs-fetch-tasks.json` compatibility while needed | Active progress needs a streaming/live path; terminal-only bulk insert is not enough for live UI. |
 | Jobs feed | SQLite `jobs` and `job_sources` server-side after M5 cutover | `jobs-unified-light.json` permanent export | Frontend continues static JSON plus IndexedDB. |
 | Full fetch/dedup/source evidence | Filesystem archive plus JSON manifest | Lazy detail/export APIs | Not SQLite; enforce retention budget. |
@@ -338,12 +338,13 @@ Gate: complete. No runtime evidence file can be journaled through public JSON sa
 
 Purpose: make sync byte-budget data available beyond bridge logs.
 
-- Return `sizeBytes`, `maxSnapshotSizeBytes`, and `sizeWarning` from sync push service results.
-- Include those fields in sync timing records.
-- Propagate them into sync task run summaries/history rows.
-- Add tests for no-op, warning, and over-cap paths.
+- **Done:** Return `sizeBytes`, `maxSnapshotSizeBytes`, and `sizeWarning` from sync push service results.
+- **Done:** Include those fields in sync timing records.
+- **Done:** Propagate them into sync task run summaries/history rows.
+- **Done:** Preserve size metadata on `snapshot_too_large` errors so failed sync tasks retain byte-budget evidence.
+- **Done:** Add tests for no-op, warning, and over-cap paths.
 
-Gate: sync history and timing records expose the same byte-budget information as bridge warning logs.
+Gate: complete. Sync history and timing records expose the same byte-budget information as bridge warning logs, and over-cap failures carry the same fields into task summaries.
 
 ### Milestone 0C - Storage Metrics
 
@@ -504,7 +505,7 @@ For every milestone that changes runtime storage authority:
 - Bridge startup quarantines stale runtime evidence `.jsonl` siblings for the current runtime evidence filename set.
 - Non-registry JSON artifacts are not journaled by `save_json_atomic()`, and stale adjacent journals do not overlay their canonical JSON.
 - Registry journal size is bounded and cannot grow unboundedly across repeated writes or replace failures.
-- Sync size and shard metrics are present in logs, timing, summaries, and history.
+- Sync size metrics are present in logs, timing, summaries, and history; shard metrics are added with the sharded sync milestone.
 - Storage metrics prove whether SQLite migration is still justified after journal repair.
 - Sync cap failures terminalize with explicit `snapshot_too_large` evidence.
 - Sharded source sync can grow by adding shards without overwriting committed state before shards exist.

@@ -149,6 +149,9 @@ def test_snapshot_size_warning_and_rejection(source_sync_test_root, monkeypatch)
     finally:
         sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
     assert ctx.value.code == "snapshot_too_large"
+    assert ctx.value.fields["sizeBytes"] == snapshot_size_bytes
+    assert ctx.value.fields["maxSnapshotSizeBytes"] == snapshot_size_bytes - 1
+    assert ctx.value.fields["sizeWarning"] is True
     assert len(rejection_opener.calls) == 2
 
 
