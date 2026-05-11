@@ -480,6 +480,7 @@ def read_sharded_snapshot(
         "active": rows_by_bucket.pop("active", []),
         "pending": rows_by_bucket.pop("pending", []),
         "manifest": manifest,
+        "manifestSha": str(manifest_result.get("sha") or ""),
     }
     for bucket in sorted(rows_by_bucket):
         snapshot[bucket] = rows_by_bucket[bucket]

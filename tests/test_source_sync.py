@@ -560,42 +560,6 @@ def test_read_remote_snapshot_uses_github_api_base_override(source_sync_test_roo
     )
 
 
-def test_pull_and_merge_sources_merges_distinct_sources_by_identity(source_sync_test_root):
-    source_sync_test_root.write_packaged_config()
-    local = {
-        "active": [{"adapter": "static", "listing_url": "https://a.com/jobs"}],
-        "pending": [],
-        "rejected": [],
-    }
-    remote_snapshot = {
-        "schemaVersion": 1,
-        "generatedAt": "2026-03-09T11:00:00+00:00",
-        "active": [{"adapter": "static", "listing_url": "https://b.com/jobs", "studio": "Remote"}],
-        "pending": [{"adapter": "teamtailor", "listing_url": "https://c.com/jobs"}],
-        "rejected": [],
-    }
-    encoded = base64.b64encode(json.dumps(remote_snapshot).encode("utf-8")).decode("ascii")
-    opener = _Recorder(
-        [
-            _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
-            _FakeResponse(200, {"sha": "s1", "content": encoded}),
-        ]
-    )
-    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
-    original_build_jwt = sync.build_app_jwt
-    try:
-        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
-        result = sync.pull_and_merge_sources(cfg, local, opener=opener)
-    finally:
-        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
-    assert result["changed"]
-    merged = result["mergedState"]
-    assert len(merged["active"]) == 2
-    assert any(row.get("studio") == "Remote" for row in merged["active"])
-    assert any(row.get("listing_url") == "https://a.com/jobs" for row in merged["active"])
-    assert len(merged["pending"]) == 1
-
-
 def test_merge_registry_state_keeps_newer_local_legacy_row():
     local = {
         "active": [

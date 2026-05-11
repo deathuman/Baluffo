@@ -19,6 +19,7 @@ from src.source_registry import (
     source_identity,
 )
 from src.source_sync_runtime import parse_iso
+from src.source_sync_shard import read_sharded_snapshot
 from src.storage_metrics import record_source_sync_snapshot
 
 logger = logging.getLogger(__name__)
@@ -487,6 +488,117 @@ def normalize_snapshot(module: Any, payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _remote_snapshot_payload_view(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "schemaVersion": int(payload.get("schemaVersion") or 1),
+        "generatedAt": str(payload.get("generatedAt") or ""),
+        "source": payload.get("source") if isinstance(payload.get("source"), dict) else {},
+        "active": list(payload.get("active") or []),
+        "pending": list(payload.get("pending") or []),
+        "rejected": list(payload.get("rejected") or []),
+    }
+
+
+def _normalized_remote_snapshot_result(
+    module: Any,
+    payload: dict[str, Any],
+    *,
+    sha: str,
+    snapshot_format: str,
+) -> dict[str, Any]:
+    snapshot = normalize_snapshot(module, _validate_remote_snapshot_payload(payload))
+    _validate_normalized_remote_snapshot(snapshot)
+    module._clear_runtime_state(module.RUNTIME_STATE_REMOTE_CONFLICT)
+    return {
+        "exists": True,
+        "sha": str(sha or ""),
+        "snapshot": snapshot,
+        "snapshotFormat": snapshot_format,
+    }
+
+
+def _read_sharded_remote_snapshot(
+    module: Any,
+    config: Any,
+    *,
+    opener: Callable[..., Any],
+) -> dict[str, Any] | None:
+    sharded_snapshot = read_sharded_snapshot(module, config, opener=opener)
+    if sharded_snapshot is None:
+        return None
+    return _normalized_remote_snapshot_result(
+        module,
+        _remote_snapshot_payload_view(sharded_snapshot),
+        sha=str(sharded_snapshot.get("manifestSha") or ""),
+        snapshot_format="sharded-v3",
+    )
+
+
+def _read_remote_snapshot_download_url(
+    module: Any,
+    config: Any,
+    payload: dict[str, Any],
+    *,
+    opener: Callable[..., Any],
+) -> dict[str, Any]:
+    download_url = str(payload.get("download_url") or "").strip()
+    if not download_url:
+        return {"exists": False, "sha": str(payload.get("sha") or ""), "snapshot": None}
+    raw_status, raw_body, _raw_headers = module._request_raw_json(
+        method="GET",
+        url=download_url,
+        headers=module._github_json_headers(
+            f"Bearer {module._get_auth_manager(config).get_installation_token(opener=opener)}"
+        ),
+        timeout_s=config.timeout_s,
+        opener=opener,
+    )
+    if raw_status == 200 and isinstance(raw_body, dict):
+        return _normalized_remote_snapshot_result(
+            module,
+            raw_body,
+            sha=str(payload.get("sha") or ""),
+            snapshot_format="monolithic-v2",
+        )
+    return {"exists": False, "sha": str(payload.get("sha") or ""), "snapshot": None}
+
+
+def _read_monolithic_remote_snapshot(
+    module: Any,
+    config: Any,
+    *,
+    opener: Callable[..., Any],
+) -> dict[str, Any]:
+    url = module._content_api_url(config, with_ref=True)
+    status, payload, _headers = module._request_json(
+        method="GET",
+        url=url,
+        config=config,
+        timeout_s=config.timeout_s,
+        opener=opener,
+    )
+    if status == 404:
+        module._clear_runtime_state(module.RUNTIME_STATE_REMOTE_CONFLICT)
+        return {"exists": False, "sha": "", "snapshot": None}
+    if status >= 400:
+        message = str(payload.get("message") or f"GitHub GET failed with HTTP {status}")
+        raise RuntimeError(message)
+    encoded_content = str(payload.get("content") or "").strip()
+    if not encoded_content:
+        return _read_remote_snapshot_download_url(module, config, payload, opener=opener)
+    try:
+        raw_bytes = base64.b64decode(encoded_content.replace("\n", ""))
+        parsed = json.loads(raw_bytes.decode("utf-8"))
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise _remote_snapshot_error(f"invalid JSON payload: {exc}") from exc
+    return _normalized_remote_snapshot_result(
+        module,
+        parsed,
+        sha=str(payload.get("sha") or ""),
+        snapshot_format="monolithic-v2",
+    )
+
+
 def merge_registry_state(
     module: Any, local_state: dict[str, Any], remote_snapshot: dict[str, Any]
 ) -> dict[str, list[dict[str, Any]]]:
@@ -549,61 +661,16 @@ def read_remote_snapshot(
     config: Any,
     *,
     opener: Callable[..., Any],
+    prefer_sharded: bool = False,
 ) -> dict[str, Any]:
     module.validate_sync_config(config)
 
     def _read_once() -> dict[str, Any]:
-        url = module._content_api_url(config, with_ref=True)
-        status, payload, _headers = module._request_json(
-            method="GET",
-            url=url,
-            config=config,
-            timeout_s=config.timeout_s,
-            opener=opener,
-        )
-        if status == 404:
-            module._clear_runtime_state(module.RUNTIME_STATE_REMOTE_CONFLICT)
-            return {"exists": False, "sha": "", "snapshot": None}
-        if status >= 400:
-            message = str(payload.get("message") or f"GitHub GET failed with HTTP {status}")
-            raise RuntimeError(message)
-        encoded_content = str(payload.get("content") or "").strip()
-        if not encoded_content:
-            download_url = str(payload.get("download_url") or "").strip()
-            if download_url:
-                raw_status, raw_body, _raw_headers = module._request_raw_json(
-                    method="GET",
-                    url=download_url,
-                    headers=module._github_json_headers(
-                        f"Bearer {module._get_auth_manager(config).get_installation_token(opener=opener)}"
-                    ),
-                    timeout_s=config.timeout_s,
-                    opener=opener,
-                )
-                if raw_status == 200 and isinstance(raw_body, dict):
-                    snapshot = normalize_snapshot(
-                        module, _validate_remote_snapshot_payload(raw_body)
-                    )
-                    _validate_normalized_remote_snapshot(snapshot)
-                    module._clear_runtime_state(module.RUNTIME_STATE_REMOTE_CONFLICT)
-                    return {
-                        "exists": True,
-                        "sha": str(payload.get("sha") or ""),
-                        "snapshot": snapshot,
-                    }
-
-        if not encoded_content:
-            return {"exists": False, "sha": str(payload.get("sha") or ""), "snapshot": None}
-        normalized_b64 = encoded_content.replace("\n", "")
-        try:
-            raw_bytes = base64.b64decode(normalized_b64)
-            parsed = json.loads(raw_bytes.decode("utf-8"))
-        except (ValueError, json.JSONDecodeError) as exc:
-            raise _remote_snapshot_error(f"invalid JSON payload: {exc}") from exc
-        snapshot = normalize_snapshot(module, _validate_remote_snapshot_payload(parsed))
-        _validate_normalized_remote_snapshot(snapshot)
-        module._clear_runtime_state(module.RUNTIME_STATE_REMOTE_CONFLICT)
-        return {"exists": True, "sha": str(payload.get("sha") or ""), "snapshot": snapshot}
+        if prefer_sharded:
+            sharded_result = _read_sharded_remote_snapshot(module, config, opener=opener)
+            if sharded_result is not None:
+                return sharded_result
+        return _read_monolithic_remote_snapshot(module, config, opener=opener)
 
     return _retry_transient_get(_read_once)
 
@@ -688,7 +755,7 @@ def pull_and_merge_sources(
     opener: Callable[..., Any],
 ) -> dict[str, Any]:
     module.record_sync_counters(totalPulls=1)
-    remote = read_remote_snapshot(module, config, opener=opener)
+    remote = read_remote_snapshot(module, config, opener=opener, prefer_sharded=True)
     empty_remote = {
         "schemaVersion": module.SYNC_SCHEMA_VERSION,
         "generatedAt": "",

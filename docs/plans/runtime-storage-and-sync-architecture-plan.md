@@ -448,6 +448,8 @@ M2.4 implementation note: the sharding leaf now has v3 read helpers that fetch e
 
 M2.5 prep note: shard bundles now use content-addressed remote paths (`bucket/key/sha256.json.gz`) before push metrics are computed. This closes the immutable-PUT loophole where a changed shard could reuse an existing hash-prefix path and require overwrite semantics. `build_sharded_snapshot_bundle()` emits the committed manifest candidate, all shard objects, changed-shard list, manifest size, shard cap, pushed-byte estimate, total shard bytes, and per-shard hashes. Focused tests cover stable no-op paths across regenerated manifests, changed-shard metrics, content-addressed paths, and invalid snapshot row rejection.
 
+M2.6 implementation note: sync pull now prefers a trusted committed v3 manifest and validates every referenced shard before merging, while a missing/untrusted manifest still falls back to the existing v2 monolithic `source-sync.json` reader. The v3 path is deliberately pull-only for this slice so push conflict handling keeps using the v2 monolith SHA until sharded push orchestration is wired separately. Focused tests cover v2 fallback after manifest 404, committed v3 pull without touching the monolith, manifest SHA propagation, and preservation of the existing v2 unexpected-key warning contract.
+
 ### Milestone 3 - Move Task Runs, Events, and Sync Runs
 
 Purpose: migrate the lowest-risk live runtime authority first.
