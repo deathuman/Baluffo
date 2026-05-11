@@ -619,57 +619,31 @@ def _find_merge_target(
 ) -> tuple[int | None, str]:
     if primary and primary in by_primary:
         return by_primary[primary], "primary_url"
-    if secondary and secondary in by_secondary:
-        secondary_target_idx = by_secondary[secondary]
-        secondary_target = merged_rows[secondary_target_idx]
-        if _blocks_google_sheets_generic_role_url_merge(
-            current=current,
-            target=secondary_target,
-            current_primary=primary,
-        ):
-            _record_google_sheets_generic_role_guard_sample(
-                samples=google_sheets_generic_role_guard_samples,
-                counts=google_sheets_generic_role_guard_counts,
-                blocked_merge_reason="secondary_key",
-                current=current,
-                target=secondary_target,
-            )
-        else:
-            if _is_gracklehq_gamesjobsdirect_known_mirror_pair(current, secondary_target):
-                return secondary_target_idx, "known_mirror_pair"
-            if _blocks_trusted_distinct_non_primary_merge(
-                current=current,
-                target=secondary_target,
-                current_primary=primary,
-            ):
-                return None, ""
-            return secondary_target_idx, "secondary_key"
+    secondary_target_idx, secondary_reason, secondary_blocked = _find_secondary_merge_target(
+        primary=primary,
+        secondary=secondary,
+        current=current,
+        merged_rows=merged_rows,
+        by_secondary=by_secondary,
+        google_sheets_generic_role_guard_samples=(google_sheets_generic_role_guard_samples),
+        google_sheets_generic_role_guard_counts=(google_sheets_generic_role_guard_counts),
+    )
+    if secondary_blocked or secondary_target_idx is not None:
+        return secondary_target_idx, secondary_reason
     if social_key and social_key in by_social:
         return by_social[social_key], "social_key"
-    if sparse_identity and sparse_identity in by_sparse_identity:
-        sparse_target_idx = by_sparse_identity[sparse_identity]
-        sparse_target = merged_rows[sparse_target_idx]
-        if _blocks_google_sheets_generic_role_url_merge(
-            current=current,
-            target=sparse_target,
-            current_primary=primary,
-        ):
-            _record_google_sheets_generic_role_guard_sample(
-                samples=google_sheets_generic_role_guard_samples,
-                counts=google_sheets_generic_role_guard_counts,
-                blocked_merge_reason="sparse_identity",
-                current=current,
-                target=sparse_target,
-            )
-            return None, ""
-        if not _has_meaningful_locations(sparse_target) or not current_has_meaningful_locations:
-            if _blocks_trusted_distinct_non_primary_merge(
-                current=current,
-                target=sparse_target,
-                current_primary=primary,
-            ):
-                return None, ""
-            return sparse_target_idx, "sparse_identity"
+    sparse_target_idx, sparse_reason, sparse_blocked = _find_sparse_merge_target(
+        primary=primary,
+        sparse_identity=sparse_identity,
+        current=current,
+        current_has_meaningful_locations=current_has_meaningful_locations,
+        merged_rows=merged_rows,
+        by_sparse_identity=by_sparse_identity,
+        google_sheets_generic_role_guard_samples=google_sheets_generic_role_guard_samples,
+        google_sheets_generic_role_guard_counts=google_sheets_generic_role_guard_counts,
+    )
+    if sparse_blocked or sparse_target_idx is not None:
+        return sparse_target_idx, sparse_reason
     alias_target_idx = _find_smartrecruiters_title_location_alias_target(
         current=current,
         merged_rows=merged_rows,
@@ -749,6 +723,83 @@ def _record_google_sheets_generic_role_guard_sample(
             "incomingSourceJobId": clean_text(current_payload.get("sourceJobId")),
         }
     )
+
+
+def _find_secondary_merge_target(
+    *,
+    primary: str,
+    secondary: str,
+    current: CanonicalJob,
+    merged_rows: list[CanonicalJob],
+    by_secondary: dict[str, int],
+    google_sheets_generic_role_guard_samples: list[dict[str, str]],
+    google_sheets_generic_role_guard_counts: dict[str, int],
+) -> tuple[int | None, str, bool]:
+    if not secondary or secondary not in by_secondary:
+        return None, "", False
+    target_idx = by_secondary[secondary]
+    target = merged_rows[target_idx]
+    if _blocks_google_sheets_generic_role_url_merge(
+        current=current,
+        target=target,
+        current_primary=primary,
+    ):
+        _record_google_sheets_generic_role_guard_sample(
+            samples=google_sheets_generic_role_guard_samples,
+            counts=google_sheets_generic_role_guard_counts,
+            blocked_merge_reason="secondary_key",
+            current=current,
+            target=target,
+        )
+        return None, "", False
+    if _is_gracklehq_gamesjobsdirect_known_mirror_pair(current, target):
+        return target_idx, "known_mirror_pair", False
+    if _blocks_trusted_distinct_non_primary_merge(
+        current=current,
+        target=target,
+        current_primary=primary,
+    ):
+        return None, "", True
+    return target_idx, "secondary_key", False
+
+
+def _find_sparse_merge_target(
+    *,
+    primary: str,
+    sparse_identity: str,
+    current: CanonicalJob,
+    current_has_meaningful_locations: bool,
+    merged_rows: list[CanonicalJob],
+    by_sparse_identity: dict[str, int],
+    google_sheets_generic_role_guard_samples: list[dict[str, str]],
+    google_sheets_generic_role_guard_counts: dict[str, int],
+) -> tuple[int | None, str, bool]:
+    if not sparse_identity or sparse_identity not in by_sparse_identity:
+        return None, "", False
+    target_idx = by_sparse_identity[sparse_identity]
+    target = merged_rows[target_idx]
+    if _blocks_google_sheets_generic_role_url_merge(
+        current=current,
+        target=target,
+        current_primary=primary,
+    ):
+        _record_google_sheets_generic_role_guard_sample(
+            samples=google_sheets_generic_role_guard_samples,
+            counts=google_sheets_generic_role_guard_counts,
+            blocked_merge_reason="sparse_identity",
+            current=current,
+            target=target,
+        )
+        return None, "", True
+    if _has_meaningful_locations(target) and current_has_meaningful_locations:
+        return None, "", False
+    if _blocks_trusted_distinct_non_primary_merge(
+        current=current,
+        target=target,
+        current_primary=primary,
+    ):
+        return None, "", True
+    return target_idx, "sparse_identity", False
 
 
 def _index_row_keys(

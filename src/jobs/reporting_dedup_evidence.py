@@ -2167,43 +2167,72 @@ def _current_run_merge_examples_by_reason(
     return by_reason
 
 
-def _current_run_blocking_merge_examples_by_reason(
-    dedup_stats: Mapping[str, Any], *, limit_per_reason: int = 5
-) -> dict[str, list[dict[str, Any]]]:
-    by_reason = {
+def _empty_blocking_merge_examples_by_reason() -> dict[str, list[dict[str, Any]]]:
+    return {
         "secondaryKey": [],
         "sparseIdentity": [],
         "socialKey": [],
         "unknown": [],
     }
+
+
+def _blocking_merge_reason_key(raw_reason: Any) -> str:
     reason_keys = {
         "secondary_key": "secondaryKey",
         "sparse_identity": "sparseIdentity",
         "social_key": "socialKey",
     }
-    samples_by_reason = dedup_stats.get("currentRunBlockingMergeSamplesByReason")
-    if isinstance(samples_by_reason, Mapping):
-        for raw_reason, raw_rows in samples_by_reason.items():
-            reason = clean_text(raw_reason)
-            key = reason_keys.get(reason, "unknown")
-            for row in json_object_rows(raw_rows):
-                if len(by_reason[key]) >= max(0, int(limit_per_reason)):
-                    break
-                example = _current_run_merge_example(row)
-                if example.get("blocksLifecycle") is True:
-                    by_reason[key].append(example)
-        return by_reason
-    for reason, rows in _current_run_merge_examples_by_reason(
+    return reason_keys.get(clean_text(raw_reason), "unknown")
+
+
+def _append_blocking_merge_example(
+    bucket: list[dict[str, Any]], row: Mapping[str, Any], *, limit: int
+) -> None:
+    if len(bucket) >= max(0, int(limit)):
+        return
+    example = _current_run_merge_example(row)
+    if example.get("blocksLifecycle") is True:
+        bucket.append(example)
+
+
+def _blocking_merge_examples_from_sample_map(
+    samples_by_reason: Mapping[str, Any], *, limit_per_reason: int
+) -> dict[str, list[dict[str, Any]]]:
+    by_reason = _empty_blocking_merge_examples_by_reason()
+    for raw_reason, raw_rows in samples_by_reason.items():
+        key = _blocking_merge_reason_key(raw_reason)
+        for row in json_object_rows(raw_rows):
+            _append_blocking_merge_example(by_reason[key], row, limit=limit_per_reason)
+    return by_reason
+
+
+def _blocking_merge_examples_from_legacy_samples(
+    dedup_stats: Mapping[str, Any], *, limit_per_reason: int
+) -> dict[str, list[dict[str, Any]]]:
+    by_reason = _empty_blocking_merge_examples_by_reason()
+    rows_by_reason = _current_run_merge_examples_by_reason(
         dedup_stats, limit_per_reason=limit_per_reason
-    ).items():
+    )
+    for reason, rows in rows_by_reason.items():
         if reason not in by_reason:
             continue
         for row in rows:
-            if len(by_reason[reason]) >= max(0, int(limit_per_reason)):
-                break
             if row.get("blocksLifecycle") is True:
                 by_reason[reason].append(row)
     return by_reason
+
+
+def _current_run_blocking_merge_examples_by_reason(
+    dedup_stats: Mapping[str, Any], *, limit_per_reason: int = 5
+) -> dict[str, list[dict[str, Any]]]:
+    samples_by_reason = dedup_stats.get("currentRunBlockingMergeSamplesByReason")
+    if isinstance(samples_by_reason, Mapping):
+        return _blocking_merge_examples_from_sample_map(
+            samples_by_reason, limit_per_reason=limit_per_reason
+        )
+    return _blocking_merge_examples_from_legacy_samples(
+        dedup_stats, limit_per_reason=limit_per_reason
+    )
 
 
 def _current_run_non_primary_merge_counts(
