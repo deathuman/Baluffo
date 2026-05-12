@@ -4,7 +4,7 @@
 > - **Use this when:** improving saved-job persistence semantics, application tracking, filtering, activity logging, or source-lifecycle visibility in the Saved page
 > - **Canonical for:** saved-job data model refinements, phase/outcome ergonomics, activity semantics, Saved page operations UX, and milestone sequencing toward Saved Jobs Tracker v1
 > - **Not canonical for:** backend job discovery/fetch contracts, local data storage internals, or deployment/packaging behavior
-> - **Then inspect:** [`../AI_ASSISTANT_GUIDE.md`](../AI_ASSISTANT_GUIDE.md), [`../architecture-ai-map.md`](../architecture-ai-map.md), [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md), [`../../frontend/local-data/constants.js`](../../frontend/local-data/constants.js), and [`../testing.md`](../testing.md)
+> - **Then inspect:** [`../AI_ASSISTANT_GUIDE.md`](../AI_ASSISTANT_GUIDE.md), [`../architecture-ai-map.md`](../architecture-ai-map.md), [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md), [`../../frontend/local-data/constants.js`](../../frontend/local-data/constants.js), [`../../frontend/local-data/phase.js`](../../frontend/local-data/phase.js), [`../../src/local_data_store_shared.py`](../../src/local_data_store_shared.py), [`../../src/core/schemas.py`](../../src/core/schemas.py), and [`../testing.md`](../testing.md)
 > - **Last updated:** 2026-05-12
 
 ## Current save-job flow
@@ -349,6 +349,105 @@ Add a flexible `tracking` object:
 Render first-class fields first: priority, next action, next action date.
 
 ## Best next milestone
+
+## Implementation guardrails
+
+These constraints are part of the v1 scope. Do not treat them as optional cleanup after the UI work.
+
+### Contract, schema, and versioning
+
+- Update [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md) when saved-row fields, backup payloads, activity details, or local-data route payloads change.
+- Update Pydantic schemas in [`../../src/core/schemas.py`](../../src/core/schemas.py), including `SavedJobSchema`, `LocalSavedJobRowSchema`, `LocalDataActivityRowSchema`, and `LocalDataBackupPayloadSchema`.
+- Update frontend typedefs in [`../../frontend/shared/types.js`](../../frontend/shared/types.js).
+- Bump `DB_VERSION` when IndexedDB object-store migration is required.
+- Bump `BACKUP_SCHEMA_VERSION` when export/import shape changes in a way new clients should distinguish.
+- Keep old exports/imports tolerant: schema v1/v2 payloads with only `applicationStatus`, `phaseTimestamps`, `updatedAt`, and no split fields must still import.
+- Define default normalization explicitly: missing or invalid `pipelinePhase` becomes `bookmark`; missing or invalid `outcomeStatus` becomes `active`.
+- Do not leave `assertLocalDataRuntime()` broken. Either keep a compatibility `APPLICATION_STATUSES` export for old callers or update the runtime validator and every caller in the same change.
+
+### Browser and desktop parity
+
+- Implement phase/outcome constants, normalization, transition rules, and migration in both browser IndexedDB local data and desktop bridge-backed local data.
+- Browser-owned code currently routes through `frontend/local-data/*`; desktop-owned code currently routes through `src/local_data_store_*.py` and bridge local-data routes.
+- Do not let browser and desktop disagree on allowed phases, terminal outcomes, timestamp semantics, backup payloads, or activity details.
+- Add parity tests or shared fixtures that exercise both runtimes for the same legacy row and the same new split-row payload.
+
+### Compatibility API boundary
+
+- Keep compatibility wrappers for current public methods and routes unless a separate compatibility break is explicitly approved.
+- Current public names include `canTransitionPhase`, `updateApplicationStatus`, and `/saved-jobs/status`; they may delegate to new split-model helpers but must not silently reinterpret terminal outcomes as phase steps.
+- Prefer new internal names that encode the split, such as `normalizePipelinePhase`, `normalizeOutcomeStatus`, `canTransitionPipelinePhase`, `canSetOutcomeStatus`, and `updateApplicationTracking`.
+- If a new route is added, keep the old route accepting legacy status payloads and normalize them through the migration path.
+- Keep Jobs page saved-state callers working; saving/removing a job should still update saved keys and subscribers without needing to know the new tracking model.
+
+### Migration ordering
+
+- Read legacy rows first and derive the split shape in memory without losing the original `applicationStatus`.
+- On the next successful write/export/import, persist the new shape and keep legacy-compatible fields only as explicit compatibility mirrors if needed.
+- Import old backups by deriving `pipelinePhase`, `outcomeStatus`, phase timestamps, and outcome timestamps from legacy fields.
+- Export new backups with the split fields and, if compatibility mirrors are kept, document whether old clients may ignore the new fields.
+- Migration must be idempotent: running it twice must not move timestamps, duplicate activity, or alter terminal outcomes.
+
+### Outcome timestamps and terminal events
+
+- Do not store terminal outcomes without a timestamp.
+- Add an explicit timestamp strategy, either `outcomeTimestamps`, `outcomeUpdatedAt`, or a durable tracking-event model.
+- Preserve `phaseTimestamps` for pipeline phases only.
+- Define timestamp behavior for new phases (`screening`, `assignment`, `final`) before implementation. Default to current time unless the UI intentionally requests a user-entered timestamp.
+- Add activity event types for `outcome_changed` and, if undo/revert is supported, `outcome_reverted`.
+- Keep `phase_changed` and `phase_reverted` for pipeline phase movement only.
+- Activity details should distinguish `previousPhase` / `nextPhase` from `previousOutcome` / `nextOutcome` to avoid another ambiguous `status` field.
+- Update `lastActivityAt` atomically when durable activity rows are written. Do not rely only on cached frontend activity to compute persisted sort keys.
+
+### Timeline and formatting
+
+- Update activity labels and detail formatting for new event types: `note_updated`, `phase_reverted`, `outcome_changed`, and `outcome_reverted`.
+- Update timeline scoping so outcome events appear in the application-tracking scope instead of falling through to generic "Event" rows.
+- If the UI keeps the label "phase activity", either rename it to "application activity" or include both phase and outcome events explicitly.
+
+### Source lifecycle overlay semantics
+
+- Treat source lifecycle as read-only overlay data, separate from user application tracking.
+- Do not persist source lifecycle into saved rows as user-owned state unless a separate sync/cache policy is defined.
+- Saved rows should display `sourceStatus`, `lastSeenAt`, and `removedAt` derived from current lifecycle overlay data when available, with `unknown` when overlay data is absent.
+- User outcomes such as `closed`, `withdrawn`, or `ghosted` must not be inferred automatically from source lifecycle unless a separate explicit user action exists.
+- Match saved rows to lifecycle rows through the same `generateJobKey` identity logic used by saved-job storage. Avoid title/company fuzzy matching for lifecycle overlays because it can attach source state to the wrong saved row.
+
+### Filters, sorts, and persisted preferences
+
+- Update filter/sort validation and persistence for the expanded filter set.
+- Old persisted filter/sort preferences must fall back safely when the key no longer exists.
+- The view model must own derived flags such as `needsAction`, `hasNotes`, `hasAttachments`, source lifecycle bucket, and outcome bucket so table rendering, filters, and timeline do not reimplement conflicting rules.
+
+### Lazy attachment hydration
+
+- Lazy loading must preserve the existing upload/delete/open/download behavior.
+- Use `attachmentsCount` for collapsed summaries, but do not treat it as authoritative file metadata.
+- Opening the Attachments tab for an unloaded job must show loading state, then real rows or an empty state after the list call completes.
+- Upload/delete must refresh the singular job attachment list and update loaded/loading state for that job.
+- Attachment previews and object URLs must still be revoked when a list is refreshed or a job row is removed from the DOM.
+- Loaded/loading attachment state is profile-scoped; clear it on sign-out, profile switch, or saved-runtime reset so one profile never reuses another profile's attachment cache.
+
+### Remove/restore and soft delete
+
+- Decide before implementation whether soft delete belongs in v1 or is explicitly deferred.
+- If soft delete is in v1, define how `deletedAt` affects saved keys, saved count, filters, subscriptions, backup/export, import, activity, attachment listing, and hard cleanup.
+- If soft delete is deferred, keep current hard-remove behavior and make attachment orphan policy explicit in the plan before changing restore semantics.
+
+### Minimum regression coverage
+
+Add focused tests for:
+
+- Legacy `applicationStatus` rows migrate to `pipelinePhase` + `outcomeStatus`.
+- Legacy rejected rows retain the best available previous phase and become terminal rejected outcomes.
+- Terminal outcomes cannot transition to another terminal outcome through phase transition logic.
+- Old backups import and new backups export with expected version and field shape.
+- Browser and desktop local-data runtimes produce equivalent normalized rows for the same input.
+- `phase_changed`, `phase_reverted`, `outcome_changed`, `outcome_reverted`, and `note_updated` render readable activity details.
+- Outcome events appear in the intended timeline scope.
+- Source lifecycle overlay preserves `lastSeenAt` and does not mutate user-owned application tracking.
+- Lazy attachment loading shows loading state, avoids duplicate reads, refreshes after upload/delete, and leaves collapsed counts usable.
+- Remove/restore behavior preserves or intentionally cleans attachment links according to the chosen delete policy.
 
 ### Saved Jobs Tracker v1
 
