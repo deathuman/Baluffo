@@ -142,6 +142,13 @@ def record_source_sync_snapshot(
     max_snapshot_size_bytes: int,
     size_warning: bool,
     would_change: bool,
+    snapshot_format: str = "",
+    shard_count: int = 0,
+    changed_shard_count: int = 0,
+    shards_pushed_bytes: int = 0,
+    manifest_size_bytes: int = 0,
+    shard_cap_bytes: int = 0,
+    shard_hashes: dict[str, Any] | None = None,
     data_dir: Path | str | None = None,
 ) -> None:
     _append_event(
@@ -152,6 +159,13 @@ def record_source_sync_snapshot(
             "maxSnapshotSizeBytes": max(0, int(max_snapshot_size_bytes or 0)),
             "sizeWarning": bool(size_warning),
             "wouldChange": bool(would_change),
+            "snapshotFormat": str(snapshot_format or ""),
+            "shardCount": max(0, int(shard_count or 0)),
+            "changedShardCount": max(0, int(changed_shard_count or 0)),
+            "shardsPushedBytes": max(0, int(shards_pushed_bytes or 0)),
+            "manifestSizeBytes": max(0, int(manifest_size_bytes or 0)),
+            "shardCapBytes": max(0, int(shard_cap_bytes or 0)),
+            "shardHashes": dict(shard_hashes or {}),
         },
         data_dir=data_dir,
     )
@@ -302,6 +316,13 @@ def _summarize_source_sync(events: list[dict[str, Any]]) -> dict[str, Any]:
         "latestSizeBytes": _int_value(latest.get("sizeBytes")),
         "latestSizeWarning": bool(latest.get("sizeWarning")) if latest else False,
         "latestWouldChange": bool(latest.get("wouldChange")) if latest else False,
+        "snapshotFormat": str(latest.get("snapshotFormat") or ""),
+        "shardCount": _int_value(latest.get("shardCount")),
+        "changedShardCount": _int_value(latest.get("changedShardCount")),
+        "shardsPushedBytes": _int_value(latest.get("shardsPushedBytes")),
+        "manifestSizeBytes": _int_value(latest.get("manifestSizeBytes")),
+        "shardCapBytes": _int_value(latest.get("shardCapBytes")),
+        "shardHashes": dict(latest.get("shardHashes") or {}),
     }
 
 

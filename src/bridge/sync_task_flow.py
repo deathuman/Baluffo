@@ -66,6 +66,30 @@ def _sync_size_fields(payload: Any) -> dict[str, Any]:
     return fields
 
 
+def _sync_shard_fields(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    fields: dict[str, Any] = {}
+    if "snapshotFormat" in payload:
+        fields["snapshotFormat"] = str(payload.get("snapshotFormat") or "")
+    for key in (
+        "shardCount",
+        "changedShardCount",
+        "shardsPushedBytes",
+        "manifestSizeBytes",
+        "shardCapBytes",
+    ):
+        if key in payload:
+            fields[key] = int(payload.get(key) or 0)
+    if "shardHashes" in payload:
+        fields["shardHashes"] = dict(payload.get("shardHashes") or {})
+    return fields
+
+
+def _sync_observability_fields(payload: Any) -> dict[str, Any]:
+    return {**_sync_size_fields(payload), **_sync_shard_fields(payload)}
+
+
 def _sync_finished_phase_key(status: str) -> str:
     return "error" if status == "error" else "completed"
 
@@ -126,7 +150,7 @@ def _apply_push_result_summary(result: dict[str, Any], summary: dict[str, Any]) 
             "pushed": bool(result.get("pushed")),
         }
     )
-    summary.update(_sync_size_fields(result))
+    summary.update(_sync_observability_fields(result))
     timing = as_json_object(result.get("timing"))
     if timing:
         summary["timing"] = timing
@@ -290,7 +314,7 @@ def run_sync_task_worker(
         error_code = str(getattr(exc, "code", "") or "").strip()
         if error_code:
             summary["errorCode"] = error_code
-        summary.update(_sync_size_fields(getattr(exc, "fields", {})))
+        summary.update(_sync_observability_fields(getattr(exc, "fields", {})))
         set_sync_status(action=action, result="error", error=str(exc))
         write_live_task(
             phase_key="error",

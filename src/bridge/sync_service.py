@@ -38,6 +38,31 @@ from src.shared.json_shapes import as_json_object
 from src.shared.profile_utils import run_profiled
 from src.source_registry import load_json_object, save_json_atomic
 
+_SYNC_SHARD_FIELD_NAMES = (
+    "snapshotFormat",
+    "shardCount",
+    "changedShardCount",
+    "shardsPushedBytes",
+    "manifestSizeBytes",
+    "shardCapBytes",
+    "shardHashes",
+)
+
+
+def _sync_shard_fields(payload: Mapping[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload, Mapping):
+        return {}
+    fields: dict[str, Any] = {}
+    if "snapshotFormat" in payload:
+        fields["snapshotFormat"] = str(payload.get("snapshotFormat") or "")
+    for key in _SYNC_SHARD_FIELD_NAMES:
+        if key in {"snapshotFormat", "shardHashes"} or key not in payload:
+            continue
+        fields[key] = int(payload.get(key) or 0)
+    if "shardHashes" in payload:
+        fields["shardHashes"] = dict(payload.get("shardHashes") or {})
+    return fields
+
 
 class SourceSyncModule(Protocol):
     """Protocol for the source_sync module interface."""
@@ -497,6 +522,7 @@ class SyncService:
         size_bytes = int(result.get("sizeBytes") or 0)
         max_snapshot_size_bytes = int(result.get("maxSnapshotSizeBytes") or 0)
         size_warning = bool(result.get("sizeWarning"))
+        shard_fields = _sync_shard_fields(result)
         if size_warning:
             self._bridge_log(
                 "warn",
@@ -532,6 +558,7 @@ class SyncService:
                 "sizeBytes": size_bytes,
                 "maxSnapshotSizeBytes": max_snapshot_size_bytes,
                 "sizeWarning": size_warning,
+                **shard_fields,
             }
         )
         append_sync_timing_record(self._sync_timing_history_path, timing_record)
@@ -558,6 +585,7 @@ class SyncService:
             "sizeBytes": size_bytes,
             "maxSnapshotSizeBytes": max_snapshot_size_bytes,
             "sizeWarning": size_warning,
+            **shard_fields,
             "counters": counters,
             "counts": counts,
             "timing": timing_record,

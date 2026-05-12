@@ -189,6 +189,13 @@ def test_sync_worker_over_cap_summary_keeps_size_fields(admin_bridge_entrypoint_
             "sizeBytes": 12_000_000,
             "maxSnapshotSizeBytes": 10_000_000,
             "sizeWarning": True,
+            "snapshotFormat": "sharded-v3",
+            "shardCount": 1,
+            "changedShardCount": 1,
+            "shardsPushedBytes": 12_000_000,
+            "manifestSizeBytes": 400,
+            "shardCapBytes": 10_000_000,
+            "shardHashes": {"shard-path": "sha"},
         }
 
     try:
@@ -211,6 +218,13 @@ def test_sync_worker_over_cap_summary_keeps_size_fields(admin_bridge_entrypoint_
         assert summary["sizeBytes"] == 12_000_000
         assert summary["maxSnapshotSizeBytes"] == 10_000_000
         assert summary["sizeWarning"] is True
+        assert summary["snapshotFormat"] == "sharded-v3"
+        assert summary["shardCount"] == 1
+        assert summary["changedShardCount"] == 1
+        assert summary["shardsPushedBytes"] == 12_000_000
+        assert summary["manifestSizeBytes"] == 400
+        assert summary["shardCapBytes"] == 10_000_000
+        assert summary["shardHashes"] == {"shard-path": "sha"}
     finally:
         admin_bridge.sync_push_sources = original_push
 

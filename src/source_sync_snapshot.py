@@ -19,7 +19,12 @@ from src.source_registry import (
     source_identity,
 )
 from src.source_sync_runtime import parse_iso
-from src.source_sync_shard import SourceSyncShardError, push_sharded_snapshot, read_sharded_snapshot
+from src.source_sync_shard import (
+    SourceSyncShardError,
+    build_sharded_snapshot_bundle,
+    push_sharded_snapshot,
+    read_sharded_snapshot,
+)
 from src.storage_metrics import record_source_sync_snapshot
 
 logger = logging.getLogger(__name__)
@@ -195,8 +200,28 @@ def _remote_committed_manifest(remote: Mapping[str, Any]) -> dict[str, Any] | No
     return dict(manifest) if isinstance(manifest, dict) else None
 
 
+def _sharded_snapshot_bundle(
+    module: Any,
+    snapshot: dict[str, Any],
+    remote: Mapping[str, Any],
+) -> dict[str, Any]:
+    return build_sharded_snapshot_bundle(
+        snapshot,
+        max_shard_size=_shard_size_bytes(module),
+        committed_manifest=_remote_committed_manifest(remote),
+    )
+
+
 def _shard_push_metadata(result: Mapping[str, Any]) -> dict[str, Any]:
     metrics = _as_dict(result.get("metrics"))
+    return _shard_metrics_payload(metrics)
+
+
+def _shard_bundle_metadata(bundle: Mapping[str, Any]) -> dict[str, Any]:
+    return _shard_metrics_payload(_as_dict(bundle.get("metrics")))
+
+
+def _shard_metrics_payload(metrics: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "snapshotFormat": "sharded-v3",
         "shardCount": int(metrics.get("shardCount") or 0),
@@ -231,6 +256,7 @@ def _push_sharded_snapshot_result(
     snapshot: dict[str, Any],
     remote: Mapping[str, Any],
     *,
+    bundle: dict[str, Any] | None = None,
     opener: Callable[..., Any],
 ) -> dict[str, Any]:
     return push_sharded_snapshot(
@@ -242,6 +268,7 @@ def _push_sharded_snapshot_result(
         committed_manifest_sha=str(remote.get("sha") or "")
         if str(remote.get("snapshotFormat") or "") == "sharded-v3"
         else "",
+        bundle=bundle,
         opener=opener,
     )
 
@@ -255,10 +282,12 @@ def _push_sources_snapshot_after_conflict(
     snapshot_size_bytes: int,
     size_warning: bool,
     max_snapshot_size_bytes: int,
+    shard_fields: Mapping[str, Any],
     remote: Mapping[str, Any],
     opener: Callable[..., Any],
     exc: Exception,
 ) -> dict[str, Any]:
+    base_shard_fields = dict(shard_fields or {"snapshotFormat": "sharded-v3"})
     module.record_sync_counters(conflictsDetected=1)
     module._clear_runtime_state(module.RUNTIME_STATE_REMOTE_CONFLICT)
     refreshed_remote = read_remote_snapshot(module, config, opener=opener, prefer_sharded=True)
@@ -276,7 +305,7 @@ def _push_sources_snapshot_after_conflict(
             "sizeBytes": snapshot_size_bytes,
             "sizeWarning": size_warning,
             "maxSnapshotSizeBytes": max_snapshot_size_bytes,
-            "snapshotFormat": "sharded-v3",
+            **base_shard_fields,
             "counters": counters,
         }
     retry_state = merge_registry_state(module, local_state, refreshed_snapshot)
@@ -323,11 +352,13 @@ def _push_sources_snapshot_after_transient(
     snapshot_size_bytes: int,
     size_warning: bool,
     max_snapshot_size_bytes: int,
+    shard_fields: Mapping[str, Any],
     remote: Mapping[str, Any],
     remote_sha: str,
     opener: Callable[..., Any],
     exc: Exception,
 ) -> dict[str, Any]:
+    base_shard_fields = dict(shard_fields or {"snapshotFormat": "sharded-v3"})
     refreshed_remote = read_remote_snapshot(module, config, opener=opener, prefer_sharded=True)
     refreshed_snapshot = _as_dict(refreshed_remote.get("snapshot"))
     refreshed_sha = str(refreshed_remote.get("sha") or "")
@@ -361,7 +392,7 @@ def _push_sources_snapshot_after_transient(
             "sizeBytes": snapshot_size_bytes,
             "sizeWarning": size_warning,
             "maxSnapshotSizeBytes": max_snapshot_size_bytes,
-            "snapshotFormat": "sharded-v3",
+            **base_shard_fields,
             "counters": module.sync_counters_payload(),
         }
     retry_state = merge_registry_state(module, local_state, refreshed_snapshot)
@@ -893,11 +924,29 @@ def push_sources_snapshot(
         or snapshot_fingerprint != remote_fingerprint
         or remote_format != "sharded-v3"
     )
+    try:
+        shard_bundle = _sharded_snapshot_bundle(module, snapshot, remote)
+    except SourceSyncShardError as exc:
+        raise _snapshot_too_large_error(
+            module,
+            exc,
+            snapshot_size_bytes=snapshot_size_bytes,
+            max_snapshot_size_bytes=max_snapshot_size_bytes,
+            size_warning=size_warning,
+        ) from exc
+    shard_fields = _shard_bundle_metadata(shard_bundle)
     record_source_sync_snapshot(
         size_bytes=snapshot_size_bytes,
         max_snapshot_size_bytes=max_snapshot_size_bytes,
         size_warning=size_warning,
         would_change=would_change,
+        snapshot_format=str(shard_fields.get("snapshotFormat") or ""),
+        shard_count=int(shard_fields.get("shardCount") or 0),
+        changed_shard_count=int(shard_fields.get("changedShardCount") or 0),
+        shards_pushed_bytes=int(shard_fields.get("shardsPushedBytes") or 0),
+        manifest_size_bytes=int(shard_fields.get("manifestSizeBytes") or 0),
+        shard_cap_bytes=int(shard_fields.get("shardCapBytes") or 0),
+        shard_hashes=dict(shard_fields.get("shardHashes") or {}),
     )
     if dry_run:
         return {
@@ -912,7 +961,7 @@ def push_sources_snapshot(
             "sizeBytes": snapshot_size_bytes,
             "sizeWarning": size_warning,
             "maxSnapshotSizeBytes": max_snapshot_size_bytes,
-            "snapshotFormat": "sharded-v3",
+            **shard_fields,
             "counters": module.sync_counters_payload(),
         }
     module.record_sync_counters(totalPushes=1)
@@ -932,12 +981,12 @@ def push_sources_snapshot(
             "sizeBytes": snapshot_size_bytes,
             "sizeWarning": size_warning,
             "maxSnapshotSizeBytes": max_snapshot_size_bytes,
-            "snapshotFormat": "sharded-v3",
+            **shard_fields,
             "counters": counters,
         }
     try:
         write_result = _push_sharded_snapshot_result(
-            module, config, snapshot, remote, opener=opener
+            module, config, snapshot, remote, bundle=shard_bundle, opener=opener
         )
     except SourceSyncShardError as exc:
         raise _snapshot_too_large_error(
@@ -959,6 +1008,7 @@ def push_sources_snapshot(
             snapshot_size_bytes,
             size_warning,
             max_snapshot_size_bytes,
+            shard_fields,
             remote,
             opener,
             exc,
@@ -975,6 +1025,7 @@ def push_sources_snapshot(
             snapshot_size_bytes,
             size_warning,
             max_snapshot_size_bytes,
+            shard_fields,
             remote,
             remote_sha,
             opener,

@@ -69,6 +69,13 @@ def test_source_sync_snapshot_metrics_are_visible(tmp_path: Path) -> None:
         max_snapshot_size_bytes=10_000,
         size_warning=False,
         would_change=True,
+        snapshot_format="sharded-v3",
+        shard_count=3,
+        changed_shard_count=2,
+        shards_pushed_bytes=2048,
+        manifest_size_bytes=512,
+        shard_cap_bytes=10 * 1024 * 1024,
+        shard_hashes={"shard-path": "sha"},
         data_dir=tmp_path,
     )
 
@@ -77,6 +84,13 @@ def test_source_sync_snapshot_metrics_are_visible(tmp_path: Path) -> None:
     assert metrics["sourceSyncSnapshots"]["snapshotCount"] == 1
     assert metrics["sourceSyncSnapshots"]["latestSizeBytes"] == 1234
     assert metrics["sourceSyncSnapshots"]["maxSnapshotSizeBytes"] == 10_000
+    assert metrics["sourceSyncSnapshots"]["snapshotFormat"] == "sharded-v3"
+    assert metrics["sourceSyncSnapshots"]["shardCount"] == 3
+    assert metrics["sourceSyncSnapshots"]["changedShardCount"] == 2
+    assert metrics["sourceSyncSnapshots"]["shardsPushedBytes"] == 2048
+    assert metrics["sourceSyncSnapshots"]["manifestSizeBytes"] == 512
+    assert metrics["sourceSyncSnapshots"]["shardCapBytes"] == 10 * 1024 * 1024
+    assert metrics["sourceSyncSnapshots"]["shardHashes"] == {"shard-path": "sha"}
 
 
 def test_save_json_atomic_records_storage_metrics_without_recursing(tmp_path: Path) -> None:

@@ -462,13 +462,15 @@ def push_sharded_snapshot(
     max_shard_size: int,
     committed_manifest: dict[str, Any] | None = None,
     committed_manifest_sha: str = "",
+    bundle: dict[str, Any] | None = None,
     opener: Callable[..., Any],
 ) -> dict[str, Any]:
-    bundle = build_sharded_snapshot_bundle(
-        snapshot,
-        max_shard_size=max_shard_size,
-        committed_manifest=committed_manifest,
-    )
+    if bundle is None:
+        bundle = build_sharded_snapshot_bundle(
+            snapshot,
+            max_shard_size=max_shard_size,
+            committed_manifest=committed_manifest,
+        )
     metrics = dict(bundle["metrics"])
     if committed_manifest is not None and not bundle["changedShards"]:
         return {

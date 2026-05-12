@@ -217,6 +217,13 @@ def test_sync_service_push_returns_and_persists_timing() -> None:
             "sizeBytes": 6_000_000,
             "maxSnapshotSizeBytes": 100_000_000,
             "sizeWarning": True,
+            "snapshotFormat": "sharded-v3",
+            "shardCount": 4,
+            "changedShardCount": 2,
+            "shardsPushedBytes": 40_000,
+            "manifestSizeBytes": 900,
+            "shardCapBytes": 10 * 1024 * 1024,
+            "shardHashes": {"baluffo/source-sync/shards/active/a/hash.json.gz": "hash"},
         }
         history = _RunHistory()
         lifecycle = _TaskLifecycle()
@@ -265,6 +272,13 @@ def test_sync_service_push_returns_and_persists_timing() -> None:
         assert timing["sizeBytes"] == 6_000_000
         assert timing["maxSnapshotSizeBytes"] == 100_000_000
         assert timing["sizeWarning"] is True
+        assert timing["snapshotFormat"] == "sharded-v3"
+        assert timing["shardCount"] == 4
+        assert timing["changedShardCount"] == 2
+        assert timing["shardsPushedBytes"] == 40_000
+        assert timing["manifestSizeBytes"] == 900
+        assert timing["shardCapBytes"] == 10 * 1024 * 1024
+        assert timing["shardHashes"] == {"baluffo/source-sync/shards/active/a/hash.json.gz": "hash"}
         assert timing["stageTotalsMs"]["loadLocalRegistry"] >= 0
         assert timing["stageTotalsMs"]["pushRemote"] >= 0
         assert timing["stageTotalsMs"]["summarizeSnapshot"] >= 0
@@ -272,6 +286,8 @@ def test_sync_service_push_returns_and_persists_timing() -> None:
         assert result["sizeBytes"] == 6_000_000
         assert result["maxSnapshotSizeBytes"] == 100_000_000
         assert result["sizeWarning"] is True
+        assert result["snapshotFormat"] == "sharded-v3"
+        assert result["shardCount"] == 4
         assert logs[-1] == (
             "warn",
             "sync_push_snapshot_size_warning",
@@ -281,8 +297,10 @@ def test_sync_service_push_returns_and_persists_timing() -> None:
         status = svc.get_sync_status_payload()
         assert status["timing"]["action"] == "push"
         assert status["timing"]["sizeBytes"] == 6_000_000
+        assert status["timing"]["shardCount"] == 4
         assert status["timingHistory"][-1]["action"] == "push"
         assert status["timingHistory"][-1]["maxSnapshotSizeBytes"] == 100_000_000
+        assert status["timingHistory"][-1]["snapshotFormat"] == "sharded-v3"
 
 
 def test_sync_service_push_noop_returns_size_fields() -> None:
@@ -374,3 +392,50 @@ def test_sync_service_start_task_runs_and_finishes() -> None:
         assert timing["action"] == "pull"
         assert "stageTotalsMs" in timing
         assert "stageTop" in timing
+
+
+def test_sync_service_push_task_summary_includes_shard_fields() -> None:
+    with workspace_tmpdir("sync-service") as data_dir:
+        with SYNC_STATE_LOCK:
+            ACTIVE_SYNC_RUNS.clear()
+            ACTIVE_SYNC_THREADS.clear()
+        source_sync = _FakeSourceSync()
+        source_sync.push_result_extra = {
+            "snapshotFormat": "sharded-v3",
+            "shardCount": 2,
+            "changedShardCount": 1,
+            "shardsPushedBytes": 2048,
+            "manifestSizeBytes": 512,
+            "shardCapBytes": 10 * 1024 * 1024,
+            "shardHashes": {"shard-path": "sha"},
+        }
+        lifecycle = _TaskLifecycle()
+
+        svc = SyncService(
+            data_dir=data_dir,
+            source_sync=source_sync,
+            bridge_log=lambda _level, _message, **_fields: None,
+            load_state=lambda: {"active": [], "pending": [], "rejected": []},
+            persist_state=lambda state: state,
+            summarize_state=lambda _state: {
+                "activeCount": 0,
+                "pendingCount": 0,
+                "rejectedCount": 0,
+            },
+            ops_state_lock=threading.RLock(),
+            get_security_defaults=lambda: {"github_app_enabled_default": True},
+            task_lifecycle=lifecycle,
+        )
+        svc.update_saved_sync_settings({"enabled": True})
+
+        started = svc.start_sync_task("push", reason="test", automatic=False)
+        assert bool(started.get("started")) is True
+        svc.wait_for_sync_tasks(timeout_s=2.0)
+        summary = lifecycle.finished[-1]["summary"]
+        assert summary["snapshotFormat"] == "sharded-v3"
+        assert summary["shardCount"] == 2
+        assert summary["changedShardCount"] == 1
+        assert summary["shardsPushedBytes"] == 2048
+        assert summary["manifestSizeBytes"] == 512
+        assert summary["shardCapBytes"] == 10 * 1024 * 1024
+        assert summary["shardHashes"] == {"shard-path": "sha"}

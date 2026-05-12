@@ -85,6 +85,13 @@ def test_sync_push_serializes_expected_snapshot_counts(admin_bridge_entrypoint_r
             "pushed": True,
             "remotePreviouslyExisted": True,
             "remoteSha": "newsha",
+            "snapshotFormat": "sharded-v3",
+            "shardCount": 2,
+            "changedShardCount": 2,
+            "shardsPushedBytes": 4096,
+            "manifestSizeBytes": 512,
+            "shardCapBytes": 10 * 1024 * 1024,
+            "shardHashes": {"shard-path": "sha"},
             "snapshot": {
                 "active": list(local_state.get("active") or []),
                 "pending": list(local_state.get("pending") or []),
@@ -100,6 +107,10 @@ def test_sync_push_serializes_expected_snapshot_counts(admin_bridge_entrypoint_r
     assert int(counts.get("active") or 0) == 1
     assert int(counts.get("pending") or 0) == 1
     assert int(counts.get("rejected") or 0) == 1
+    assert result["snapshotFormat"] == "sharded-v3"
+    assert result["shardCount"] == 2
+    assert result["changedShardCount"] == 2
+    assert result["shardHashes"] == {"shard-path": "sha"}
 
 
 def test_start_sync_task_creates_started_lifecycle_row(admin_bridge_entrypoint_root, monkeypatch):
