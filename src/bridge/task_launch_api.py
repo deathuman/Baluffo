@@ -798,6 +798,67 @@ class TaskLaunchApi:
             "outputs": {"report": str(self._paths.jobs_fetch_report)},
         }
 
+    def _packaged_smoke_jobs_feed_rows(self, *, finished_at: str) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": 1,
+                "title": "Packaged Smoke Job",
+                "company": "Packaged Smoke Studio",
+                "city": "Remote",
+                "country": "Worldwide",
+                "workType": "Remote",
+                "contractType": "Full-time",
+                "jobLink": "https://example.com/jobs/packaged-smoke",
+                "sector": "Games",
+                "profession": "Engineering",
+                "companyType": "Studio",
+                "description": "Packaged smoke job used for jobs-feed SQLite parity.",
+                "source": "Packaged Smoke Source",
+                "sourceJobId": "packaged-smoke-job",
+                "fetchedAt": finished_at,
+                "postedAt": "",
+                "status": "active",
+                "firstSeenAt": finished_at,
+                "lastSeenAt": finished_at,
+                "removedAt": "",
+                "lifecycleEvent": "",
+                "lifecycleReason": "",
+                "dedupKey": "packaged-smoke-job",
+                "qualityScore": 100,
+                "focusScore": 100,
+                "sourceBundleCount": 1,
+                "sourceBundle": [
+                    {
+                        "sourceName": "Packaged Smoke Source",
+                        "sourceJobId": "packaged-smoke-job",
+                        "jobLink": "https://example.com/jobs/packaged-smoke",
+                    }
+                ],
+                "locations": [{"city": "Remote", "country": "Worldwide"}],
+                "locationSummary": "Remote, Worldwide",
+            }
+        ]
+
+    def _prepare_packaged_smoke_jobs_feed(self, *, finished_at: str) -> None:
+        runtime_store = self._job_runtime_store()
+        if runtime_store is None:
+            return
+        try:
+            runtime_store.store.set_authority_mode(
+                "jobsFeed", "sqlite", reason="packaged_smoke_jobs_feed_parity"
+            )
+            rows = self._packaged_smoke_jobs_feed_rows(finished_at=finished_at)
+            write_atomic_if_changed(
+                self._jobs_feed_path(),
+                serialize_rows_for_json(rows, jobs_common_config.OUTPUT_FIELDS),
+            )
+        except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
+            self._record_jobs_feed_diagnostic(
+                code="packaged_smoke_jobs_feed_prepare_failed",
+                ok=False,
+                message=str(exc),
+            )
+
     def _start_packaged_smoke_source_runs_fetch(
         self,
         *,
@@ -824,6 +885,7 @@ class TaskLaunchApi:
             self._paths.jobs_fetch_report,
             normalize_fetch_report_contract(report),
         )
+        self._prepare_packaged_smoke_jobs_feed(finished_at=finished_at)
         self._reset_fetch_approval_state(
             load_json_object=load_json_object,
             save_json_atomic=save_json_atomic,

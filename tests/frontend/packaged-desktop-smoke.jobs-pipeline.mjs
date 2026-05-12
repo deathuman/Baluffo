@@ -142,6 +142,18 @@ async function assertPackagedSourceRunsParity(apiRequest) {
     "sqlite",
     "packaged storage health should show sourceRuns=sqlite"
   );
+  assert.equal(
+    storageHealth?.storage?.authorityModes?.jobsFeed,
+    "sqlite",
+    "packaged storage health should show jobsFeed=sqlite"
+  );
+  const jobsDiagnostics = Array.isArray(storageHealth?.storage?.diagnostics)
+    ? storageHealth.storage.diagnostics.filter(row => row?.surface === "jobsFeed")
+    : [];
+  assert.ok(
+    jobsDiagnostics.some(row => row?.ok === true && row?.code === "jobs_feed_projection_match"),
+    "storage diagnostics should include a passing jobs-feed parity diagnostic"
+  );
 
   const fetchReport = await fetchBridgeJson(apiRequest, "/ops/fetch-report", "fetch report");
   assert.equal(fetchReport?.runId, runId, "fetch report should belong to the packaged source-runs fetch");
@@ -169,6 +181,14 @@ async function assertPackagedSourceRunsParity(apiRequest) {
     "Packaged Smoke Job",
     "bounded source query should include hydrated normalized details"
   );
+
+  const feedResponse = await apiRequest.get(
+    `${BASE_URL}/data/jobs-unified-light.json?m5=${encodeURIComponent(runId)}`
+  );
+  assert.equal(feedResponse.ok(), true, "sqlite-exported jobs feed should be served as static JSON");
+  const feedRows = await feedResponse.json();
+  assert.equal(feedRows?.[0]?.title, "Packaged Smoke Job");
+  assert.equal(feedRows?.[0]?.company, "Packaged Smoke Studio");
 }
 
 async function main() {

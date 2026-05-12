@@ -10,7 +10,8 @@ from src.bridge.task_launch_api import (
     TaskLaunchPaths,
     TaskLaunchRuntime,
 )
-from src.storage import BaluffoStore, SourceRuntimeStore
+from src.shared.json_io import read_json
+from src.storage import BaluffoStore, JobRuntimeStore, SourceRuntimeStore
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -18,6 +19,7 @@ def _task_launch_api(
     data_dir: Path,
     *,
     source_runtime_store: Any,
+    job_runtime_store: Any | None = None,
     diagnostics: list[dict[str, Any]],
     save_json_atomic: Any | None = None,
 ) -> TaskLaunchApi:
@@ -44,6 +46,7 @@ def _task_launch_api(
                 floor, min(ceil, int(value or default))
             ),
             source_runtime_store=source_runtime_store,
+            job_runtime_store=job_runtime_store,
             record_storage_diagnostic=lambda **fields: diagnostics.append(dict(fields)),
         ),
     )
@@ -206,11 +209,16 @@ def test_packaged_smoke_fetch_mode_exercises_source_run_closeout(monkeypatch: An
                 store,
                 now_iso=lambda: "2026-05-12T12:00:00+00:00",
             )
+            jobs_runtime = JobRuntimeStore(
+                store,
+                now_iso=lambda: "2026-05-12T12:00:00+00:00",
+            )
             diagnostics: list[dict[str, Any]] = []
             finished: list[dict[str, Any]] = []
             api = _task_launch_api(
                 data_dir,
                 source_runtime_store=lambda: runtime,
+                job_runtime_store=lambda: jobs_runtime,
                 diagnostics=diagnostics,
                 save_json_atomic=save_json_atomic,
             )
@@ -242,3 +250,13 @@ def test_packaged_smoke_fetch_mode_exercises_source_run_closeout(monkeypatch: An
             stored_row = runtime.source_runs(run_id=str(result["runId"]))[0]
             assert stored_row["details"][0]["url"] == "https://example.com/jobs/packaged-smoke"
             assert stored_row["evidenceRefs"]["sourceDetailsArchive"]["path"] == archive_ref["path"]
+            assert store.get_authority_modes()["jobsFeed"] == "sqlite"
+            assert jobs_runtime.current_rows()[0]["title"] == "Packaged Smoke Job"
+            light_rows = read_json(data_dir / "jobs-unified-light.json", [])
+            assert light_rows[0]["title"] == "Packaged Smoke Job"
+            assert any(
+                row.get("surface") == "jobsFeed"
+                and row.get("code") == "jobs_feed_projection_match"
+                and row.get("ok") is True
+                for row in diagnostics
+            )
