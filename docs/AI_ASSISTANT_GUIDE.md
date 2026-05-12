@@ -5,7 +5,7 @@
 > - **Canonical for:** task routing, minimal read order, common repo misconceptions, and AI editing rules
 > - **Not canonical for:** data contracts, endpoint payloads, or deep subsystem ownership detail
 > - **Then inspect:** [`architecture-ai-map.md`](architecture-ai-map.md) for task-to-files routing, plus one matching contract or workflow doc
-> - **Last updated:** 2026-04-26
+> - **Last updated:** 2026-05-13
 
 Read this first. Then load only the smallest additional docs needed.
 
@@ -87,3 +87,13 @@ See [`testing.md`](testing.md) for the full verification matrix.
 - Update implementation, schemas, tests, and docs together when contracts or workflow move.
 - When the task is documentation maintenance or doc ownership, follow [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md).
 - Archive notes and git history are supporting context, not default routing sources.
+
+### AI Operating Boundaries
+
+- Use Serena for repo/code navigation and symbol-aware inspection; use Basic Memory only for continuity, handoff, recurring gotchas, current focus, and stale-memory correction.
+- Verify memory claims against repo files before acting, and do not let external memory override source, tests, docs, or `AGENTS.md`.
+- Do not add a new MCP, tool, or plugin until the failure mode is clear and the existing Serena/Basic Memory setup is insufficient.
+- Keep narrow tasks narrow; do not broaden a bug fix into a refactor or cross more than one subsystem boundary without a short edit plan.
+- Do not create a parallel workflow unless the old workflow is removed or intentionally preserved as compatibility.
+- For implementation changes, run the narrowest relevant verification from this guide or [`testing.md`](testing.md) before claiming completion; if verification cannot run, state why and name the next command.
+- Do not claim a behavior is fixed from inspection alone when a relevant test or syntax check exists, and do not hide partial failures behind a broad success summary.

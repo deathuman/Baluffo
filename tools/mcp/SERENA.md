@@ -245,3 +245,10 @@ C:\Users\Andrea\Documents\GitHubRepository\Baluffo
 - Use Serena to accelerate symbol-aware navigation, cross-file reasoning, and refactors; use the repo's normal shell/file tools for small direct edits and verification.
 - If Serena memory and repo docs disagree, repo docs win.
 - Do not commit `.serena/`.
+
+### Usage Boundary
+
+- Use Serena for code intelligence, symbol-aware navigation, cross-file reasoning, and refactor support.
+- Do not treat Serena memory as canonical when it conflicts with repo docs or source.
+- Use direct file/shell tools for small deterministic edits and verification when that is simpler.
+- Do not loop through repeated Serena discovery calls when a direct file path or contract doc already answers the question.

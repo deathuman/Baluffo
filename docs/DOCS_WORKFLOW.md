@@ -5,7 +5,7 @@
 > - **Canonical for:** documentation discovery, ownership, freshness checks, and maintenance workflow
 > - **Not canonical for:** subsystem behavior, data contracts, release notes, or runtime behavior outside this guide's process scope
 > - **Then inspect:** [`INDEX.md`](INDEX.md), then the smallest authoritative doc set for the task
-> - **Last updated:** 2026-04-28
+> - **Last updated:** 2026-05-13
 
 ## Core Rules
 
@@ -15,6 +15,14 @@
 - Prefer extending an existing authoritative doc over adding a new page.
 - Use markdown links for checked-in repo targets and inline code for generated or usually-absent artifact paths such as `_out/`.
 - Keep doc updates in the same change as the code or workflow change that made them necessary.
+
+## Rule Placement
+
+- Root [`AGENTS.md`](../AGENTS.md) owns always-loaded repo guardrails.
+- [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) owns AI-coder workflow and editing behavior.
+- [`tools/mcp/`](../tools/mcp/) owns MCP setup and tool-specific usage boundaries.
+- Contract docs own stable payload/API rules.
+- Subsystem docs own subsystem-specific workflow.
 
 ## Discovery and Update Loop
 

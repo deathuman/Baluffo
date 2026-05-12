@@ -248,6 +248,14 @@ Never auto-merge or discard memory files speculatively.
 Repo source, tests, docs, and AGENTS.md are canonical. If external memory conflicts
 with repo state, ignore memory and update or delete the stale note.
 
+## Boundary Rules
+
+- Basic Memory is not source of truth for current implementation behavior.
+- Store durable continuity only: handoffs, recurring gotchas, project focus, decisions, and stale-memory corrections.
+- Do not store transient failed attempts, unsourced implementation facts, secrets, credentials, or broad summaries that belong in repo docs.
+- Any implementation fact stored in memory must include source path, date observed, and why it matters.
+- If a memory note becomes canonical guidance, promote it to the owning Baluffo doc and update or remove the note.
+
 ## Promotion Path
 
 When a memory note becomes durable, generally useful, canonical guidance, promote it

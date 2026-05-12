@@ -10,6 +10,13 @@ These are the non-negotiable repo rules.
 - Treat packaging, installer, release, and tag work as high risk; verify the release-critical path explicitly and never move or recreate release tags unless the user explicitly asks.
 - Preserve public job text, locations, and other persisted or user-facing data contracts when changing normalization, adapters, or report payloads.
 
+## Rule Placement
+
+- Add always-loaded rules here only for known recurring or high-risk failures.
+- Prefer concise negative constraints over broad positive style advice.
+- Do not add one-off preferences or task-specific workflow details to this file.
+- Move detailed tool, memory, workflow, or subsystem guidance to the owning doc.
+
 ## Docs Routing
 
 - Start docs discovery at `docs/INDEX.md`.
