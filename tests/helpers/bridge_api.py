@@ -219,7 +219,7 @@ def make_stub_bridge_api(tmp_path: Path, store: FakeDesktopLocalDataStore) -> Br
         "ok": True,
         "storage": {
             "healthy": True,
-            "migrationVersion": "007",
+            "migrationVersion": "008",
             "authorityModes": {},
         },
     }

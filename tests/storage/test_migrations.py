@@ -17,7 +17,7 @@ def test_migrations_are_idempotent_and_create_expected_tables() -> None:
                 )
             }
 
-        assert first_applied == ["001", "002", "003", "004", "005", "006", "007"]
+        assert first_applied == ["001", "002", "003", "004", "005", "006", "007", "008"]
         assert second_applied_now == []
         assert second_applied == first_applied
         assert {
@@ -32,4 +32,7 @@ def test_migrations_are_idempotent_and_create_expected_tables() -> None:
             "jobs",
             "job_sources",
             "job_feed_state",
+            "source_registry_rows",
+            "source_registry_tombstones",
+            "source_registry_state",
         }.issubset(table_names)
