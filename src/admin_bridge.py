@@ -225,6 +225,7 @@ _TASK_LIFECYCLE = AdminTaskLifecycle(
     save_json_atomic=save_json_atomic,
     now_iso=lambda: now_iso(),
     parse_iso=lambda value: parse_iso(value),
+    storage_data_dir=lambda: Path(RUNTIME_CONFIG.data_dir),
 )
 
 

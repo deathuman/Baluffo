@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from src.bridge.task_lifecycle import TaskLifecycleService
+from src.storage import BaluffoStore, TaskRuntimeStore
 
 
 def _parse_iso(value: Any) -> datetime | None:
@@ -267,3 +268,82 @@ def test_lifecycle_fail_reason_distinguishes_quiet_timeout_and_safety_cap(
         "fetch_quiet": "quiet_timeout_no_live_evidence",
         "fetch_cap": "absolute_safety_cap_exceeded",
     }
+
+
+def test_lifecycle_shadow_writes_task_runs_when_storage_mode_enabled(tmp_path: Path) -> None:
+    diagnostics: list[dict[str, Any]] = []
+    with BaluffoStore(tmp_path / "data") as store:
+        store.set_authority_mode("taskRuns", "shadow", reason="test-shadow")
+        runtime = TaskRuntimeStore(store, now_iso=lambda: "2026-05-06T19:00:00+00:00")
+        service = TaskLifecycleService(
+            path=tmp_path / "admin-task-lifecycle.json",
+            lock=threading.RLock(),
+            load_json_object=_load_json_object,
+            save_json_atomic=_save_json_atomic,
+            now_iso=lambda: "2026-05-06T19:00:00+00:00",
+            parse_iso=_parse_iso,
+            task_runtime_store=lambda: runtime,
+            record_storage_diagnostic=lambda **fields: diagnostics.append(dict(fields)),
+        )
+
+        service.start_run(
+            run_id="sync_1",
+            task_type="sync",
+            started_at="2026-05-06T18:00:00+00:00",
+            stage="push",
+            summary={"action": "push"},
+        )
+        service.finish_run(
+            "sync_1",
+            "sync",
+            finished_at="2026-05-06T18:00:05+00:00",
+            summary={"action": "push", "shardCount": 2},
+        )
+
+        assert service.get_recent_runs() == runtime.recent_task_runs()
+        assert diagnostics[-1]["code"] == "task_runs_projection_match"
+        assert diagnostics[-1]["ok"] is True
+
+
+def test_lifecycle_shadow_mismatch_rolls_task_runs_back_to_json(tmp_path: Path) -> None:
+    diagnostics: list[dict[str, Any]] = []
+
+    class _MismatchedRuntime:
+        def __init__(self) -> None:
+            self.store: BaluffoStore | None = None
+            self.rows: list[dict[str, Any]] = []
+
+        def upsert_task_run(self, row: dict[str, Any]) -> dict[str, Any]:
+            self.rows.append(dict(row))
+            return dict(row)
+
+        def current_task_runs(self) -> list[dict[str, Any]]:
+            return []
+
+        def recent_task_runs(self) -> list[dict[str, Any]]:
+            return []
+
+    with BaluffoStore(tmp_path / "data") as store:
+        store.set_authority_mode("taskRuns", "shadow", reason="test-shadow")
+        runtime = _MismatchedRuntime()
+        runtime.store = store
+        service = TaskLifecycleService(
+            path=tmp_path / "admin-task-lifecycle.json",
+            lock=threading.RLock(),
+            load_json_object=_load_json_object,
+            save_json_atomic=_save_json_atomic,
+            now_iso=lambda: "2026-05-06T19:00:00+00:00",
+            parse_iso=_parse_iso,
+            task_runtime_store=lambda: runtime,
+            record_storage_diagnostic=lambda **fields: diagnostics.append(dict(fields)),
+        )
+
+        service.start_run(
+            run_id="fetch_1",
+            task_type="fetch",
+            started_at="2026-05-06T18:00:00+00:00",
+        )
+
+        assert store.get_authority_modes()["taskRuns"] == "json"
+        assert diagnostics[-1]["code"] == "task_runs_projection_mismatch"
+        assert diagnostics[-1]["ok"] is False

@@ -7,7 +7,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from src.bridge import storage_health as storage_health_mod
 from src.bridge.task_lifecycle import TaskLifecycleService
+from src.storage import TaskRuntimeStore
 
 
 class AdminTaskLifecycle:
@@ -23,6 +25,9 @@ class AdminTaskLifecycle:
         save_json_atomic: Callable[[Path, Any], None],
         now_iso: Callable[[], str],
         parse_iso: Callable[[Any], Any],
+        task_runtime_store: Callable[[], Any] | None = None,
+        record_storage_diagnostic: Callable[..., None] | None = None,
+        storage_data_dir: Callable[[], Path] | None = None,
     ) -> None:
         self._lifecycle_path = lifecycle_path
         self._max_rows = max_rows
@@ -31,16 +36,43 @@ class AdminTaskLifecycle:
         self._save_json_atomic = save_json_atomic
         self._now_iso = now_iso
         self._parse_iso = parse_iso
+        self._task_runtime_store = task_runtime_store
+        self._record_storage_diagnostic = record_storage_diagnostic
+        self._storage_data_dir = storage_data_dir
         self._service: TaskLifecycleService | None = None
         self._service_key: tuple[Path, int] | None = None
 
     def _current_key(self) -> tuple[Path, int]:
         return (Path(self._lifecycle_path()), max(1, int(self._max_rows())))
 
+    def _default_task_runtime_store(self) -> TaskRuntimeStore:
+        if self._storage_data_dir is None:
+            raise RuntimeError("storage data directory is not configured")
+        return TaskRuntimeStore(
+            storage_health_mod.get_storage_store(Path(self._storage_data_dir())),
+            now_iso=self._now_iso,
+            task_row_limit=max(1, int(self._max_rows())),
+        )
+
+    def _default_storage_diagnostic(self, **fields: Any) -> None:
+        if self._storage_data_dir is None:
+            return
+        storage_health_mod.record_storage_diagnostic(
+            Path(self._storage_data_dir()),
+            **fields,
+        )
+
     def _get_service(self) -> TaskLifecycleService:
         key = self._current_key()
         if self._service is None or self._service_key != key:
             self._service_key = key
+            task_runtime_store = self._task_runtime_store
+            record_storage_diagnostic = self._record_storage_diagnostic
+            if task_runtime_store is None and self._storage_data_dir is not None:
+                task_runtime_store = self._default_task_runtime_store
+                record_storage_diagnostic = (
+                    record_storage_diagnostic or self._default_storage_diagnostic
+                )
             self._service = TaskLifecycleService(
                 path=key[0],
                 lock=self._lock,
@@ -48,6 +80,8 @@ class AdminTaskLifecycle:
                 save_json_atomic=self._save_json_atomic,
                 now_iso=self._now_iso,
                 parse_iso=self._parse_iso,
+                task_runtime_store=task_runtime_store,
+                record_storage_diagnostic=record_storage_diagnostic,
                 max_rows=key[1],
             )
         return self._service
