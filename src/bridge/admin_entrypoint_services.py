@@ -534,6 +534,7 @@ def get_ops_api() -> _OpsApiLike:
                 app_version=root_mod.get_app_version(),
                 get_lifecycle_current_runs=root_mod.get_lifecycle_current_runs,
                 get_lifecycle_recent_runs=root_mod.get_lifecycle_recent_runs,
+                get_lifecycle_task_events=root_mod._TASK_LIFECYCLE.task_events,
                 load_runtime_evidence=root_mod.load_runtime_evidence,
             ),
         ),

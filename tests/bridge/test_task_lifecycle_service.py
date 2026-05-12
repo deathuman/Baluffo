@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from src.bridge.admin_task_lifecycle import AdminTaskLifecycle
 from src.bridge.task_lifecycle import TaskLifecycleService
 from src.storage import BaluffoStore, TaskRuntimeStore
 
@@ -347,3 +348,71 @@ def test_lifecycle_shadow_mismatch_rolls_task_runs_back_to_json(tmp_path: Path) 
         assert store.get_authority_modes()["taskRuns"] == "json"
         assert diagnostics[-1]["code"] == "task_runs_projection_mismatch"
         assert diagnostics[-1]["ok"] is False
+
+
+def test_admin_lifecycle_reads_task_runs_from_sqlite_when_authoritative(
+    tmp_path: Path,
+) -> None:
+    lifecycle_path = tmp_path / "admin-task-lifecycle.json"
+    with BaluffoStore(tmp_path / "data") as store:
+        store.set_authority_mode("taskRuns", "shadow", reason="test-shadow")
+        runtime = TaskRuntimeStore(store, now_iso=lambda: "2026-05-06T19:00:00+00:00")
+        lifecycle = AdminTaskLifecycle(
+            lifecycle_path=lambda: lifecycle_path,
+            max_rows=lambda: 240,
+            lock=threading.RLock(),
+            load_json_object=_load_json_object,
+            save_json_atomic=_save_json_atomic,
+            now_iso=lambda: "2026-05-06T19:00:00+00:00",
+            parse_iso=_parse_iso,
+            task_runtime_store=lambda: runtime,
+        )
+
+        lifecycle.start_run(
+            run_id="sync_sqlite",
+            task_type="sync",
+            started_at="2026-05-06T18:00:00+00:00",
+        )
+        store.set_authority_mode("taskRuns", "sqlite", reason="test-cutover")
+        _save_json_atomic(lifecycle_path, {"schemaVersion": 1, "updatedAt": "", "rows": []})
+
+        current = lifecycle.get_current_runs()
+
+        assert len(current) == 1
+        assert current[0]["runId"] == "sync_sqlite"
+        assert current[0]["taskType"] == "sync"
+
+
+def test_admin_lifecycle_reads_task_events_from_sqlite_when_authoritative(
+    tmp_path: Path,
+) -> None:
+    with BaluffoStore(tmp_path / "data") as store:
+        store.set_authority_mode("taskEvents", "sqlite", reason="test-cutover")
+        runtime = TaskRuntimeStore(store, now_iso=lambda: "2026-05-06T19:00:00+00:00")
+        lifecycle = AdminTaskLifecycle(
+            lifecycle_path=lambda: tmp_path / "admin-task-lifecycle.json",
+            max_rows=lambda: 240,
+            lock=threading.RLock(),
+            load_json_object=_load_json_object,
+            save_json_atomic=_save_json_atomic,
+            now_iso=lambda: "2026-05-06T19:00:00+00:00",
+            parse_iso=_parse_iso,
+            task_runtime_store=lambda: runtime,
+        )
+        runtime.append_task_event(
+            {
+                "timestamp": "2026-05-06T18:00:00+00:00",
+                "level": "info",
+                "event": "sync_push",
+                "taskType": "sync",
+                "runId": "sync_events",
+                "phaseKey": "sync_push",
+                "message": "Pushing sources.",
+            }
+        )
+
+        events = lifecycle.task_events(run_id="sync_events", task_type="sync")
+
+        assert len(events) == 1
+        assert events[0]["event"] == "sync_push"
+        assert events[0]["message"] == "Pushing sources."

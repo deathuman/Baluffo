@@ -71,6 +71,9 @@ class OpsDeps:
     get_lifecycle_recent_runs: Callable[[], list[dict[str, Any]]] = field(
         default_factory=lambda: lambda: []
     )
+    get_lifecycle_task_events: Callable[..., list[dict[str, Any]]] = field(
+        default_factory=lambda: lambda **_kwargs: []
+    )
     load_runtime_evidence: Callable[[Any, Any], Any] | None = None
 
 
