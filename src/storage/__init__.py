@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from src.storage.baluffo_store import BaluffoStore, BaluffoStoreError
-from src.storage.evidence_archive import EvidenceArchiveStore
-from src.storage.source_runtime import SourceRuntimeStore
-from src.storage.task_runtime import TaskRuntimeStore
 
 __all__ = [
     "BaluffoStore",
@@ -14,3 +13,19 @@ __all__ = [
     "SourceRuntimeStore",
     "TaskRuntimeStore",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    if name == "EvidenceArchiveStore":
+        from src.storage.evidence_archive import EvidenceArchiveStore
+
+        return EvidenceArchiveStore
+    if name == "SourceRuntimeStore":
+        from src.storage.source_runtime import SourceRuntimeStore
+
+        return SourceRuntimeStore
+    if name == "TaskRuntimeStore":
+        from src.storage.task_runtime import TaskRuntimeStore
+
+        return TaskRuntimeStore
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

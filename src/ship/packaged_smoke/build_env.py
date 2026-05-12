@@ -355,6 +355,7 @@ def packaged_runtime_env_overrides(
         mode = deps.packaged_pipeline_smoke_mode(node_smoke_script)
         if mode:
             overrides["BALUFFO_PACKAGED_SMOKE_PIPELINE_MODE"] = mode
+            overrides["BALUFFO_PACKAGED_SMOKE_FETCH_MODE"] = "source-runs"
     if artifacts_dir is not None:
         local_app_data = deps.packaged_desktop_local_appdata_root(
             artifacts_dir,

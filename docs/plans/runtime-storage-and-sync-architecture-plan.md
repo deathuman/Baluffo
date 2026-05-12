@@ -496,7 +496,17 @@ Purpose: stop loading full terminal reports for Admin source details.
 - Compact `jobs-fetch-report.json` to summary plus artifact refs after compatibility tests are updated.
 - Keep `jobs-fetch-tasks.json` compatibility until dependent Admin surfaces no longer need it.
 
-Gate: active progress remains correct, terminal source detail queries do not require full report loads, evidence archives stay under budget, and JSON fallback works.
+Gate: complete. Active fetch progress remains on compact live evidence, terminal source details are queryable from SQLite without loading a full report, bridge-started terminal reports compact bulky `details` into gzip evidence archives, and read/write/parity failures roll `sourceRuns` back to JSON while retaining SQLite/archive diagnostics.
+
+M4.1 implementation note: migration `006_source_run_runtime.sql` extends `source_runs` for source identity, adapter/fetch strategy/studio fields, error and low-confidence counts, evidence refs, schema version, and update timestamps. `SourceRuntimeStore` owns 500-row source-run bulk upsert/query/summary, and `EvidenceArchiveStore` owns gzip JSON writes, SHA-256/size tracking, path-prefix validation, and retention enforcement.
+
+M4.2 implementation note: terminal bridge fetch lifecycle closeout mirrors normalized `jobs-fetch-report.json` source rows into SQLite when `sourceRuns` is shadow or SQLite, records parity diagnostics through `/ops/storage-health`, and rolls `sourceRuns` back to JSON on write/parity failure. New stores seeded `sourceRuns=shadow` only during the shadow slice.
+
+M4.3 implementation note: `/ops/fetch-report` hydrates terminal `sources` from SQLite when `sourceRuns=sqlite`, keeps `?view=live` compact, and `/ops/fetch-report/sources` adds bounded source-row querying with JSON fallback.
+
+M4.4 implementation note: after successful SQLite mirroring in authoritative mode, bridge-started terminal fetch reports move bulky source `details` into gzip evidence archives, write `sourceRuns.sourceDetailsArchive` refs into the compact report, and keep lean source rows for static/browser fallback.
+
+M4.5 closeout note: new stores now seed `sourceRuns=sqlite`. Migration/package expectations are at schema version `006`, packaged jobs/admin smoke exercises a tiny source-run fetch through the real closeout path, and compact report hydration is validated through both `/ops/fetch-report` and `/ops/fetch-report/sources`.
 
 ### Milestone 5 - Move Jobs Feed Server-Side Authority
 

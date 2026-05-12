@@ -5,7 +5,7 @@
 > - **Canonical for:** fetcher runtime options, admin preset wiring, and fetch-run artifacts consumed by admin flows
 > - **Not canonical for:** full jobs pipeline ownership or broad testing strategy
 > - **Then inspect:** `src/jobs_fetcher.py`, `src/jobs/fetcher_compat_{exports,runtime}.py`, `src/jobs/pipeline*.py`, `src/jobs/state*.py`, and [`testing.md`](testing.md)
-> - **Last updated:** 2026-04-26
+> - **Last updated:** 2026-05-12
 
 ## CLI runtime options
 
@@ -74,6 +74,13 @@ Optional overrides:
   - `summary.okCleanSources` and `summary.okWithWarningSources` are additive success diagnostics; source rows still use `status: "ok"` for both.
   - `summary.needsReviewBreakdown` includes both shaped static diagnostic counts and raw comparison counters: `rawMarkerCount` and `includedCount`.
   - `summary.sizeGuardrails` reports per-artifact byte counts and limits for `json`, `lightJson`, and `csv`; `summary.sizeGuardrailExceeded` remains the aggregate compatibility flag.
+  - after M4, bridge-started terminal reports are compact compatibility/debug exports when `sourceRuns=sqlite`: lean `sources` rows remain, bulky per-source `details` move to SQLite-backed source rows plus gzip evidence archives, and `sourceRuns.sourceDetailsArchive` references the archive. Direct CLI and old full reports remain valid JSON fallback.
+- `GET /ops/fetch-report`
+  - keeps the current payload shape.
+  - when `sourceRuns=sqlite`, terminal source rows are hydrated from SQLite/archive; `?view=live` remains compact and omits bulky `details`.
+- `GET /ops/fetch-report/sources`
+  - additive bounded terminal-source query with `runId`, `limit`, `offset`, and optional `status`.
+  - falls back to `jobs-fetch-report.json` rows when `sourceRuns` is not authoritative.
 - Output size policy:
   - `jobs-unified.json`, `jobs-unified-light.json`, `jobs-source-state.json`, and `jobs-lifecycle-state.json` are stored through transparent gzip-backed paths while preserving their logical `.json` URLs and row fields.
   - `source-registry-active.json` and `source-registry-pending.json` store lean core rows with sparse metadata in `source-registry-metadata.json.gz`; readers reconstruct the full row shape on load, legacy monolithic registry files remain backward-compatible, and unchanged payloads now skip the rewrite path to reduce churn.
@@ -98,6 +105,7 @@ Optional overrides:
 - `data/jobs-fetch-tasks.json`
   - live task/heartbeat state for source execution lifecycle.
   - includes task `status`, `startedAt`, `finishedAt`, `heartbeatAt`, and summary counters.
+  - remains the active-run progress surface after M4; source-run bulk insert is terminal postprocessing, not streaming live progress.
 
 ## Source-state and circuit-breaker lifecycle
 

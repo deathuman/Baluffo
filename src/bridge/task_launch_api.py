@@ -546,6 +546,133 @@ class TaskLaunchApi:
             "outputs": {"report": str(self._paths.jobs_fetch_report)},
         }
 
+    def _packaged_smoke_fetch_source_runs_enabled(self) -> bool:
+        return (
+            str(os.getenv("BALUFFO_PACKAGED_SMOKE_FETCH_MODE") or "").strip().lower()
+            == "source-runs"
+        )
+
+    def _packaged_smoke_fetch_source_runs_report(
+        self,
+        *,
+        run_id: str,
+        started_at: str,
+        finished_at: str,
+        schema_version: int,
+    ) -> dict[str, Any]:
+        source = {
+            "name": "Packaged Smoke Source",
+            "sourceKey": "packaged-smoke-source",
+            "status": "ok",
+            "adapter": "static",
+            "fetchStrategy": "http",
+            "studio": "Packaged Smoke Studio",
+            "fetchedCount": 1,
+            "keptCount": 1,
+            "durationMs": 5,
+            "details": [
+                {
+                    "name": "Packaged Smoke Job",
+                    "url": "https://example.com/jobs/packaged-smoke",
+                    "status": "ok",
+                    "keptCount": 1,
+                }
+            ],
+        }
+        return {
+            "runId": run_id,
+            "schemaVersion": schema_version,
+            "startedAt": started_at,
+            "finishedAt": finished_at,
+            "status": "ok",
+            "runtime": {
+                "lifecycle": {
+                    "owner": "fetch_report",
+                    "heartbeatAt": finished_at,
+                }
+            },
+            "summary": {"outputCount": 1, "failedSources": 0, "sourceCount": 1},
+            "sources": [source],
+            "outputs": {"report": str(self._paths.jobs_fetch_report)},
+        }
+
+    def _start_packaged_smoke_source_runs_fetch(
+        self,
+        *,
+        run_id: str,
+        started_at: str,
+        preset: str,
+        spawn_args: list[str],
+        schema_version: int,
+        normalize_fetch_report_contract: Callable[[dict[str, Any]], dict[str, Any]],
+        load_json_object: Callable[[Path, Any], Any],
+        save_json_atomic: Callable[[Path, Any], None],
+        start_lifecycle_run: Callable[..., dict[str, Any]],
+        finish_lifecycle_run: Callable[..., dict[str, Any]],
+        fail_lifecycle_run: Callable[..., dict[str, Any]],
+    ) -> dict[str, Any]:
+        finished_at = self._deps.now_iso()
+        report = self._packaged_smoke_fetch_source_runs_report(
+            run_id=run_id,
+            started_at=started_at,
+            finished_at=finished_at,
+            schema_version=schema_version,
+        )
+        save_json_atomic(
+            self._paths.jobs_fetch_report,
+            normalize_fetch_report_contract(report),
+        )
+        self._reset_fetch_approval_state(
+            load_json_object=load_json_object,
+            save_json_atomic=save_json_atomic,
+        )
+        pid = os.getpid()
+        start_lifecycle_run(
+            run_id=run_id,
+            task_type="fetch",
+            started_at=started_at,
+            stage="completed",
+            owner_kind="packaged_smoke",
+            owner_pid=pid,
+            progress={
+                "active": False,
+                "phaseKey": "completed",
+                "phaseLabel": "Fetch complete",
+                "mode": "determinate",
+                "ratio": 1.0,
+                "counts": {"sources": 1, "outputs": 1},
+                "updatedAt": finished_at,
+            },
+            summary=dict(report["summary"]),
+        )
+        self._close_fetch_lifecycle_from_report(
+            run_id=run_id,
+            normalize_fetch_report_contract=normalize_fetch_report_contract,
+            load_json_object=lambda _path, _default: report,
+            finish_lifecycle_run=finish_lifecycle_run,
+            fail_lifecycle_run=fail_lifecycle_run,
+        )
+        self._deps.bridge_log(
+            "info",
+            "task_started",
+            runId=run_id,
+            task="jobs_fetcher",
+            preset=preset,
+            pid=pid,
+            args=" ".join(spawn_args),
+            smokeMode="source-runs",
+        )
+        return {
+            "started": True,
+            "runId": run_id,
+            "task": "jobs_fetcher",
+            "preset": preset,
+            "args": spawn_args,
+            "pid": pid,
+            "startedAt": started_at,
+            "smokeMode": "source-runs",
+        }
+
     def _write_fetch_launch_failure(
         self,
         *,
@@ -818,6 +945,20 @@ class TaskLaunchApi:
             report_shell = self._fetch_report_shell(
                 run_id=run_id, started_at=started_at, schema_version=schema_version
             )
+            if self._packaged_smoke_fetch_source_runs_enabled():
+                return self._start_packaged_smoke_source_runs_fetch(
+                    run_id=run_id,
+                    started_at=started_at,
+                    preset=preset,
+                    spawn_args=spawn_args,
+                    schema_version=schema_version,
+                    normalize_fetch_report_contract=normalize_fetch_report_contract,
+                    load_json_object=load_json_object,
+                    save_json_atomic=save_json_atomic,
+                    start_lifecycle_run=start_lifecycle_run,
+                    finish_lifecycle_run=finish_lifecycle_run,
+                    fail_lifecycle_run=fail_lifecycle_run,
+                )
             save_json_atomic(
                 self._paths.jobs_fetch_report,
                 normalize_fetch_report_contract(report_shell),

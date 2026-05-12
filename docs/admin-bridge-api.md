@@ -5,7 +5,7 @@
 > - **Canonical for:** endpoint surface, route naming, and high-level request intent
 > - **Not canonical for:** backend business logic internals or service ownership
 > - **Then inspect:** `src/bridge/routes/{get_routes,post_routes,post_routes_admin,post_routes_local_data,post_routes_update}.py`, `src/bridge/*.py`, `frontend/*/services.js`
-> - **Last updated:** 2026-05-11
+> - **Last updated:** 2026-05-12
 > - **Ownership note:** ops/task-state internals now compose through `src/bridge/ops_api.py`, `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, `src/bridge/ops_task_{fetch_live,discovery_live,projection}.py`, and `src/bridge/ops_live_payload.py`
 > - **Local-data ownership note:** desktop local-data storage now routes through `src/local_data_store.py` as a thin facade over `src/local_data_store_{shared,profiles,saved_jobs,attachments,backup}.py`, while the shared desktop runtime stays rooted at `frontend/shared/local-data/desktop-client.js` over `frontend/shared/local-data/desktop/{api,lifecycle,navigation,state}.js`
 > - **Desktop update ownership note:** the helper executable stays rooted at `src/ship/desktop_updater.py` over `src/ship/desktop_updater_{ui,release,install}.py`, while the Jobs desktop update UI stays rooted at `frontend/jobs/app/desktop-update.js` over `frontend/jobs/app/desktop-update-{model,dom,controller}.js`
@@ -86,6 +86,7 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
 |--------|------|---------|
 | GET | `/fetcher/log` | Fetcher log (supports `?offset=`) |
 | GET | `/ops/fetch-report` | Last fetch report |
+| GET | `/ops/fetch-report/sources?runId=&limit=&offset=&status=` | Bounded terminal fetch source rows |
 | GET | `/ops/fetcher-metrics?windowRuns=` | Fetcher performance metrics |
 | POST | `/tasks/run-fetcher` | Run fetcher with presets (`{preset: "default"|"incremental"|"retry_failed"|"force_full"|"uncapped", ...}`) |
 | POST | `/tasks/run-jobs-pipeline` | Run jobs pipeline task |
@@ -114,6 +115,7 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
 | GET | `/ops/task-live/<taskType>` | Detailed live task payload for `fetch`, `discovery`, or `sync` |
 | GET | `/ops/task-state` | Current summary task projection; top-level `tasks` array remains the current-run contract |
 | GET | `/ops/fetch-report` | Last fetch summary |
+| GET | `/ops/fetch-report/sources?runId=&limit=&offset=&status=` | Bounded terminal fetch source rows |
 | GET | `/ops/fetcher-metrics?windowRuns=` | Fetcher metrics |
 | GET | `/ops/storage-metrics` | Runtime storage write, registry journal, source-sync size, and route timing diagnostics |
 | GET | `/ops/storage-health` | SQLite runtime storage health, migration version, authority modes, WAL mode, busy counters, and quick_check status |
@@ -163,13 +165,15 @@ Known sensitive field names such as tokens, passwords, secrets, API keys, and au
 - `taskProgress`, `workItems`, and `recentEvents` are the support-ready live task contract for fetch/discovery/sync. They should be extended through the shared normalizers rather than by adding task-specific parallel event formats. Discovery uses these fields for wave-level progress, including current stage, stage index/total, generated/survived counts, probe counts, and bounded stage events.
 - `/desktop-local-data/startup-metrics?limit=` returns retained startup diagnostic rows from `data/desktop-startup-metrics.jsonl`. Rows use `schemaVersion: 1`, `ts`, `event`, `category`, and either `fields` for runtime traces or `payload` for browser/page metrics; `browserTsMs` is preserved when browser-created timing is available.
 - `/ops/storage-metrics` is read-only diagnostics. It returns additive `storageMetrics` for JSON/gzip write counts, serialization and replace durations, compressed/uncompressed byte sizes, registry `.jsonl` journal bytes/rows, and source-sync snapshot size pressure, plus existing route timing counters under `routeCounters`.
-- `/ops/storage-health` is read-only diagnostics for the SQLite runtime store. It returns `{ok, storage}` with migration version, WAL mode, foreign-key state, quick_check status, busy counters, last write error, diagnostics, and current per-surface authority modes. After M3, `taskRuns`, `taskEvents`, and `syncRuns` are SQLite-backed unless a persisted rollback returns the affected surface to JSON.
+- `/ops/storage-health` is read-only diagnostics for the SQLite runtime store. It returns `{ok, storage}` with migration version, WAL mode, foreign-key state, quick_check status, busy counters, last write error, diagnostics, and current per-surface authority modes. After M4, `taskRuns`, `taskEvents`, `syncRuns`, and `sourceRuns` are SQLite-backed unless a persisted rollback returns the affected surface to JSON.
+- `/ops/fetch-report` keeps its report payload shape. With `sourceRuns=sqlite`, terminal source rows are hydrated from SQLite/archive while `?view=live` remains compact and omits bulky `details`.
+- `/ops/fetch-report/sources` is additive and bounded. It returns `{ok, runId, sources, count, limit, offset, source, warning}` and uses SQLite only while `sourceRuns=sqlite`; otherwise it falls back to the JSON report rows.
 - `/ops/task-state` is unchanged. Its top-level `tasks` array remains the compact current-task summary contract used by Ops and Jobs.
 - Saved-page bridge consumers should keep route calls inside slice-local `frontend/saved/services.js`; page behavior now fans out through `frontend/saved/app/runtime/*.js` and `frontend/saved/app/admin-bridge-state.js`, not through new root facades.
 - Long-running admin tasks are now **runId-owned**. `runId` is the only lifecycle identity for fetch, discovery, sync, and pipeline rows. Timestamp-only matching is not part of the runtime lifecycle model anymore.
-- Current Runs and `/ops/history` are projected from `data/admin-task-lifecycle.json`.
+- Current Runs and `/ops/history` are projected from SQLite task runtime rows when their authority modes are SQLite, with JSON lifecycle exports retained for rollback/debug.
 - Authoritative owners by task type:
-  - `fetch`: lifecycle row identity/liveness plus `data/jobs-fetch-report.json` and `data/jobs-fetch-tasks.json` as progress/evidence
+  - `fetch`: lifecycle row identity/liveness, `source_runs` for terminal source rows after M4, `data/jobs-fetch-tasks.json` for active progress, and compact `data/jobs-fetch-report.json`/evidence archives as compatibility/debug evidence
   - `discovery`: lifecycle row identity/liveness plus `data/source-discovery-report.json` as progress/evidence
   - `sync`: `SyncState` in the bridge runtime
   - `pipeline`: bridge pipeline runtime state

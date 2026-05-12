@@ -58,6 +58,18 @@ async function fetchPipelineStatus(apiRequest) {
   return response.json();
 }
 
+async function fetchBridgeJson(apiRequest, relativePath, label) {
+  const response = await apiRequest.get(`${BRIDGE_BASE}${relativePath}`);
+  assert.equal(response.ok(), true, `${label} request should succeed`);
+  return response.json();
+}
+
+async function postBridgeJson(apiRequest, relativePath, data, label) {
+  const response = await apiRequest.post(`${BRIDGE_BASE}${relativePath}`, { data });
+  assert.equal(response.ok(), true, `${label} request should succeed`);
+  return response.json();
+}
+
 async function waitForPipelineRunStart(apiRequest, timeoutMs = 120_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -112,6 +124,53 @@ async function waitForPipelineButtonBusyState(pipelineButton, timeoutMs = 30_000
   throw new Error("Jobs pipeline button never entered a visible busy/progress state.");
 }
 
+async function assertPackagedSourceRunsParity(apiRequest) {
+  const startPayload = await postBridgeJson(
+    apiRequest,
+    "/tasks/run-fetcher",
+    { preset: "default", quiet: true, socialEnabled: false },
+    "packaged source-runs fetch"
+  );
+  assert.equal(Boolean(startPayload?.started), true, "packaged source-runs fetch should start");
+  assert.equal(startPayload?.smokeMode, "source-runs", "packaged fetch should use source-runs smoke mode");
+  const runId = String(startPayload?.runId || "").trim();
+  assert.match(runId, /^fetch_[a-f0-9]{10}$/i, "source-runs fetch id should look like a fetch run");
+
+  const storageHealth = await fetchBridgeJson(apiRequest, "/ops/storage-health", "storage health");
+  assert.equal(
+    storageHealth?.storage?.authorityModes?.sourceRuns,
+    "sqlite",
+    "packaged storage health should show sourceRuns=sqlite"
+  );
+
+  const fetchReport = await fetchBridgeJson(apiRequest, "/ops/fetch-report", "fetch report");
+  assert.equal(fetchReport?.runId, runId, "fetch report should belong to the packaged source-runs fetch");
+  assert.match(
+    String(fetchReport?.sourceRuns?.sourceDetailsArchive?.path || ""),
+    /source-details\.json\.gz$/,
+    "compact report should reference archived source details"
+  );
+  assert.equal(fetchReport?.sources?.[0]?.name, "Packaged Smoke Source");
+  assert.equal(
+    fetchReport?.sources?.[0]?.details?.[0]?.name,
+    "Packaged Smoke Job",
+    "fetch report should hydrate normalized source details from SQLite"
+  );
+
+  const sourcesPayload = await fetchBridgeJson(
+    apiRequest,
+    `/ops/fetch-report/sources?runId=${encodeURIComponent(runId)}&limit=10`,
+    "fetch report sources"
+  );
+  assert.equal(sourcesPayload?.source, "sqlite", "bounded source query should read SQLite");
+  assert.equal(sourcesPayload?.count, 1, "bounded source query should return one smoke source");
+  assert.equal(
+    sourcesPayload?.sources?.[0]?.details?.[0]?.name,
+    "Packaged Smoke Job",
+    "bounded source query should include hydrated normalized details"
+  );
+}
+
 async function main() {
   const scenarios = [];
   const errors = [];
@@ -138,6 +197,13 @@ async function main() {
     const pipelineRun = {
       name: "Jobs pipeline button fills while running",
       slug: "jobs-pipeline-button-fills-while-running",
+      status: "passed",
+      durationMs: 0,
+      error: ""
+    };
+    const sourceRunsParity = {
+      name: "Packaged fetch source-runs SQLite parity",
+      slug: "packaged-fetch-source-runs-sqlite-parity",
       status: "passed",
       durationMs: 0,
       error: ""
@@ -208,6 +274,18 @@ async function main() {
     } finally {
       pipelineRun.durationMs = Date.now() - pipelineStartedAt;
       scenarios.push(pipelineRun);
+    }
+
+    const sourceRunsStartedAt = Date.now();
+    try {
+      await assertPackagedSourceRunsParity(apiRequest);
+    } catch (error) {
+      sourceRunsParity.status = "failed";
+      sourceRunsParity.error = error instanceof Error ? error.message : String(error);
+      throw error;
+    } finally {
+      sourceRunsParity.durationMs = Date.now() - sourceRunsStartedAt;
+      scenarios.push(sourceRunsParity);
     }
   } catch (error) {
     errors.push(error instanceof Error ? error.message : String(error));

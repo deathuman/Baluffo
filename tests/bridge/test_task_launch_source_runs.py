@@ -49,7 +49,7 @@ def _task_launch_api(
     )
 
 
-def test_fetch_lifecycle_close_shadow_writes_source_runs() -> None:
+def test_fetch_lifecycle_close_mirrors_source_runs() -> None:
     with workspace_tmpdir("task-launch-source-runs") as data_dir:
         with BaluffoStore(data_dir) as store:
             runtime = SourceRuntimeStore(
@@ -94,7 +94,7 @@ def test_fetch_lifecycle_close_shadow_writes_source_runs() -> None:
 
             assert closed is True
             assert runtime.source_runs(run_id="fetch_1")[0]["name"] == "Studio A"
-            assert store.get_authority_modes()["sourceRuns"] == "shadow"
+            assert store.get_authority_modes()["sourceRuns"] == "sqlite"
             assert diagnostics[-1]["code"] == "source_runs_projection_match"
             assert finished[0]["terminal_reason"] == "completed"
 
@@ -144,7 +144,6 @@ def test_fetch_lifecycle_close_compacts_report_when_source_runs_are_authoritativ
 
     with workspace_tmpdir("task-launch-source-runs-compact") as data_dir:
         with BaluffoStore(data_dir) as store:
-            store.set_authority_mode("sourceRuns", "sqlite", reason="test")
             runtime = SourceRuntimeStore(
                 store,
                 now_iso=lambda: "2026-05-12T12:00:00+00:00",
@@ -190,3 +189,56 @@ def test_fetch_lifecycle_close_compacts_report_when_source_runs_are_authoritativ
             stored_row = runtime.source_runs(run_id="fetch_compact_1")[0]
             assert stored_row["evidenceRefs"]["sourceDetailsArchive"]["path"] == archive_ref["path"]
             assert diagnostics[-1]["code"] == "fetch_report_compacted"
+
+
+def test_packaged_smoke_fetch_mode_exercises_source_run_closeout(monkeypatch: Any) -> None:
+    monkeypatch.setenv("BALUFFO_PACKAGED_SMOKE_FETCH_MODE", "source-runs")
+    saved_reports: list[dict[str, Any]] = []
+
+    def save_json_atomic(path: Path, payload: Any) -> None:
+        if path.name == "jobs-fetch-report.json":
+            saved_reports.append(dict(payload))
+        path.write_text("{}", encoding="utf-8")
+
+    with workspace_tmpdir("task-launch-source-runs-smoke") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            runtime = SourceRuntimeStore(
+                store,
+                now_iso=lambda: "2026-05-12T12:00:00+00:00",
+            )
+            diagnostics: list[dict[str, Any]] = []
+            finished: list[dict[str, Any]] = []
+            api = _task_launch_api(
+                data_dir,
+                source_runtime_store=lambda: runtime,
+                diagnostics=diagnostics,
+                save_json_atomic=save_json_atomic,
+            )
+
+            result = api.start_fetcher_task(
+                {"preset": "default", "quiet": True, "socialEnabled": False},
+                append_run_history=lambda row: row,
+                normalize_fetch_report_contract=lambda payload: payload,
+                prune_started_rows_for_type=lambda *_args, **_kwargs: None,
+                run_background_script=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                    AssertionError("smoke mode must not spawn the fetcher")
+                ),
+                save_json_atomic=save_json_atomic,
+                schema_version=1,
+                load_json_object=lambda _path, default: dict(default or {}),
+                start_lifecycle_run=lambda **kwargs: kwargs,
+                finish_lifecycle_run=lambda run_id, task_type, **kwargs: (
+                    finished.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+                ),
+                fail_lifecycle_run=lambda *_args, **_kwargs: {},
+            )
+
+            assert result["started"] is True
+            assert result["smokeMode"] == "source-runs"
+            assert finished[0]["terminal_reason"] == "completed"
+            compact_report = saved_reports[-1]
+            archive_ref = compact_report["sourceRuns"]["sourceDetailsArchive"]
+            assert archive_ref["path"].endswith("source-details.json.gz")
+            stored_row = runtime.source_runs(run_id=str(result["runId"]))[0]
+            assert stored_row["details"][0]["url"] == "https://example.com/jobs/packaged-smoke"
+            assert stored_row["evidenceRefs"]["sourceDetailsArchive"]["path"] == archive_ref["path"]

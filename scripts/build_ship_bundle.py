@@ -686,7 +686,7 @@ def validate_app_version_python_imports(version_dir: Path) -> None:
 import sqlite3
 import tempfile
 from pathlib import Path
-from src.storage import BaluffoStore
+from src.storage.baluffo_store import BaluffoStore
 
 sqlite3.connect(":memory:").close()
 with tempfile.TemporaryDirectory() as tmp:
@@ -706,6 +706,8 @@ with tempfile.TemporaryDirectory() as tmp:
         if health.get("quickCheck") != "ok":
             raise RuntimeError(f"unexpected quick_check result: {health!r}")
         if (health.get("authorityModes") or {}).get("taskRuns") != "sqlite":
+            raise RuntimeError(f"unexpected authority modes: {health!r}")
+        if (health.get("authorityModes") or {}).get("sourceRuns") != "sqlite":
             raise RuntimeError(f"unexpected authority modes: {health!r}")
     finally:
         store.close()

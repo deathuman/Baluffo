@@ -17,6 +17,12 @@ def test_ops_fetch_report_hydrates_sources_from_sqlite_when_authoritative(
     report = {
         "runId": "fetch_sqlite_1",
         "summary": {"outputCount": 12, "failedSources": 0, "sourceCount": 1},
+        "sourceRuns": {
+            "format": "sqlite",
+            "sourceDetailsArchive": {
+                "path": "artifacts/fetch/fetch_sqlite_1/source-details.json.gz"
+            },
+        },
         "sources": [
             {
                 "name": "studio_a",
@@ -51,6 +57,9 @@ def test_ops_fetch_report_hydrates_sources_from_sqlite_when_authoritative(
         assert result is True
         payload = handler.sent[-1]["payload"]
         assert payload["sources"][0]["details"] == [{"url": "https://example.com/job/1"}]
+        assert payload["sourceRuns"]["sourceDetailsArchive"]["path"].endswith(
+            "source-details.json.gz"
+        )
 
         live_handler = FakeHandler()
         handle_get(live_handler, api=api, path="/ops/fetch-report", query={"view": ["live"]})

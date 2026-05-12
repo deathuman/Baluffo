@@ -603,6 +603,7 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
         "redundantStaticProposals": redundant_static_proposals,
         "sourcePolicyRecommendationExport": source_policy_recommendation_export,
         "outputs": _as_dict(src.get("outputs")),
+        "sourceRuns": _as_dict(src.get("sourceRuns")),
     }
     finished_at = str(normalized.get("finishedAt") or "").strip()
     if finished_at:

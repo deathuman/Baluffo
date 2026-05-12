@@ -9,7 +9,7 @@ from src.storage import BaluffoStore, BaluffoStoreError
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
-def test_store_initializes_wal_mode_health_and_json_authority_defaults() -> None:
+def test_store_initializes_wal_mode_health_and_authority_defaults() -> None:
     with workspace_tmpdir("baluffo-store") as data_dir:
         with BaluffoStore(data_dir) as store:
             health = store.health()
@@ -24,7 +24,7 @@ def test_store_initializes_wal_mode_health_and_json_authority_defaults() -> None
             "taskRuns": "sqlite",
             "taskEvents": "sqlite",
             "syncRuns": "sqlite",
-            "sourceRuns": "shadow",
+            "sourceRuns": "sqlite",
             "jobsFeed": "json",
             "sourceRegistry": "json",
         }

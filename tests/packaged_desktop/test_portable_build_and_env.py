@@ -351,7 +351,8 @@ def test_packaged_pipeline_smoke_mode_is_enabled_only_for_jobs_pipeline_script()
     )
     assert smoke.packaged_pipeline_smoke_mode(smoke.DEFAULT_NODE_SMOKE_SCRIPT) == ""
     assert smoke.packaged_runtime_env_overrides(smoke.JOBS_PIPELINE_NODE_SMOKE_SCRIPT) == {
-        "BALUFFO_PACKAGED_SMOKE_PIPELINE_MODE": "stub-success"
+        "BALUFFO_PACKAGED_SMOKE_FETCH_MODE": "source-runs",
+        "BALUFFO_PACKAGED_SMOKE_PIPELINE_MODE": "stub-success",
     }
     assert smoke.packaged_runtime_env_overrides(smoke.DEFAULT_NODE_SMOKE_SCRIPT) == {}
 
@@ -366,6 +367,7 @@ def test_packaged_runtime_env_overrides_can_isolate_local_appdata_per_run() -> N
         )
 
         assert overrides["BALUFFO_PACKAGED_SMOKE_PIPELINE_MODE"] == "stub-success"
+        assert overrides["BALUFFO_PACKAGED_SMOKE_FETCH_MODE"] == "source-runs"
         assert Path(overrides["LOCALAPPDATA"]).resolve() == (
             smoke.packaged_desktop_local_appdata_root(
                 artifacts_dir, session_scope="jobs-pipeline"
