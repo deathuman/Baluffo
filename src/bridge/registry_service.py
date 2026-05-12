@@ -6,6 +6,7 @@ source registry state.
 
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +14,13 @@ from typing import Any
 
 from src.bridge.registry_conflicts import apply_registry_conflict_safe_demotions
 from src.bridge.registry_tombstones import filter_tombstoned_rows
+from src.bridge.registry_tombstones import load_tombstones as load_registry_tombstones
+from src.bridge.storage_health import (
+    get_storage_store,
+)
+from src.bridge.storage_health import (
+    record_storage_diagnostic as default_record_storage_diagnostic,
+)
 from src.source_registry import (
     canonicalize_registry_row,
     demote_duplicate_active_variants,
@@ -27,8 +35,16 @@ from src.source_registry import (
     source_url_fingerprint,
     unique_sources,
 )
+from src.storage.baluffo_store import BaluffoStoreError
+from src.storage.source_registry_runtime import (
+    SourceRegistryRuntimeStore,
+    source_registry_state_hash,
+    source_registry_tombstone_hash,
+)
 
 NormalizeManualStaticFunc = Callable[[dict[str, Any]], dict[str, Any]]
+RuntimeStoreFactory = Callable[[], SourceRegistryRuntimeStore]
+StorageDiagnosticRecorder = Callable[..., None]
 
 _DUPLICATE_STATE_FIELDS = {
     "id",
@@ -50,6 +66,15 @@ _DUPLICATE_STATE_FIELDS = {
     "liveAt",
 }
 
+_STORAGE_OPERATION_ERRORS = (
+    BaluffoStoreError,
+    OSError,
+    RuntimeError,
+    sqlite3.Error,
+    TypeError,
+    ValueError,
+)
+
 
 @dataclass(frozen=True)
 class RegistryPaths:
@@ -65,18 +90,75 @@ class RegistryService:
         paths: RegistryPaths,
         default_active: list[dict[str, Any]],
         normalize_manual_static: NormalizeManualStaticFunc,
+        runtime_store_factory: RuntimeStoreFactory | None = None,
+        record_storage_diagnostic: StorageDiagnosticRecorder | None = None,
     ) -> None:
         self._paths = paths
+        self._data_dir = Path(paths.active).expanduser().resolve().parent
         self._default_active = [
             dict(row) for row in (default_active or []) if isinstance(row, dict)
         ]
         self._normalize_manual_static = normalize_manual_static
+        self._runtime_store_factory = runtime_store_factory
+        self._record_storage_diagnostic = (
+            record_storage_diagnostic or default_record_storage_diagnostic
+        )
         self._last_auto_heal_report: dict[str, Any] = {
             "autoHealed": False,
             "duplicateSourceIdCount": 0,
             "duplicates": [],
             "safeAutomation": self._empty_safe_automation_report(),
         }
+
+    def _runtime_store(self) -> SourceRegistryRuntimeStore:
+        if self._runtime_store_factory is not None:
+            return self._runtime_store_factory()
+        return SourceRegistryRuntimeStore(get_storage_store(self._data_dir))
+
+    def _record_registry_diagnostic(
+        self,
+        code: str,
+        *,
+        ok: bool,
+        message: str = "",
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        self._record_storage_diagnostic(
+            self._data_dir,
+            surface="sourceRegistry",
+            code=code,
+            ok=ok,
+            message=message,
+            details=details or {},
+        )
+
+    def _authority_mode(self) -> str:
+        try:
+            mode = self._runtime_store().store.get_authority_modes().get("sourceRegistry")
+        except _STORAGE_OPERATION_ERRORS as exc:
+            self._record_registry_diagnostic(
+                "source_registry_authority_read_failed",
+                ok=False,
+                message=str(exc),
+            )
+            return "json"
+        return str(mode or "json").strip().lower()
+
+    def _force_json_authority(self, reason: str) -> None:
+        try:
+            self._runtime_store().store.set_authority_mode(
+                "sourceRegistry",
+                "json",
+                reason=reason,
+            )
+        except _STORAGE_OPERATION_ERRORS:
+            return
+
+    def _tombstones_path(self) -> Path:
+        return Path(self._paths.active).with_name("source-registry-tombstones.json")
+
+    def _load_tombstones_json(self) -> dict[str, dict[str, Any]]:
+        return load_registry_tombstones(self._tombstones_path())
 
     @staticmethod
     def _value_is_missing(value: Any) -> bool:
@@ -276,6 +358,66 @@ class RegistryService:
             self._paths.rejected,
             state,
         )
+        mode = self._authority_mode()
+        if mode in {"shadow", "sqlite"}:
+            self._mirror_state_to_sqlite(state, reason=f"source_registry_{mode}_mirror")
+
+    def _mirror_state_to_sqlite(
+        self,
+        state: dict[str, list[dict[str, Any]]],
+        *,
+        reason: str,
+    ) -> None:
+        tombstones = self._load_tombstones_json()
+        try:
+            runtime_store = self._runtime_store()
+            summary = runtime_store.replace_state(
+                state=state,
+                tombstones=tombstones,
+                reason=reason,
+            )
+            sqlite_hashes = runtime_store.parity_hash()
+            json_state_hash = source_registry_state_hash(state)
+            json_tombstone_hash = source_registry_tombstone_hash(tombstones)
+            if (
+                sqlite_hashes["stateHash"] != json_state_hash
+                or sqlite_hashes["tombstoneHash"] != json_tombstone_hash
+            ):
+                runtime_store.store.set_authority_mode(
+                    "sourceRegistry",
+                    "json",
+                    reason="source_registry_projection_mismatch",
+                )
+                self._record_registry_diagnostic(
+                    "source_registry_projection_mismatch",
+                    ok=False,
+                    message="SQLite source-registry projection did not match JSON authority",
+                    details={
+                        "generation": summary.generation,
+                        "jsonStateHash": json_state_hash,
+                        "sqliteStateHash": sqlite_hashes["stateHash"],
+                        "jsonTombstoneHash": json_tombstone_hash,
+                        "sqliteTombstoneHash": sqlite_hashes["tombstoneHash"],
+                    },
+                )
+                return
+            deleted_generations = runtime_store.cleanup_old_generations()
+            self._record_registry_diagnostic(
+                "source_registry_projection_match",
+                ok=True,
+                message="SQLite source-registry projection matched JSON authority",
+                details={
+                    **summary.to_dict(),
+                    "deletedOldGenerations": deleted_generations,
+                },
+            )
+        except _STORAGE_OPERATION_ERRORS as exc:
+            self._force_json_authority("source_registry_shadow_write_failed")
+            self._record_registry_diagnostic(
+                "source_registry_shadow_write_failed",
+                ok=False,
+                message=str(exc),
+            )
 
     @staticmethod
     def move_entries(

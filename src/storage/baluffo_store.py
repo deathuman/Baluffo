@@ -30,7 +30,7 @@ DEFAULT_AUTHORITY_MODES = {
     "syncRuns": "sqlite",
     "sourceRuns": "sqlite",
     "jobsFeed": "sqlite",
-    "sourceRegistry": "json",
+    "sourceRegistry": "shadow",
 }
 
 _T = TypeVar("_T")

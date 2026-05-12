@@ -2,9 +2,16 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from src import source_registry as sr
 from src.bridge.registry_service import RegistryPaths, RegistryService
+from src.bridge.storage_health import (
+    close_storage_stores,
+    get_storage_health_payload,
+    get_storage_store,
+)
+from src.storage.source_registry_runtime import SourceRegistryRuntimeStore
 
 
 def _write_json(path: Path, payload: object) -> None:
@@ -190,3 +197,98 @@ def test_registry_service_auto_demotes_safe_static_listing_variant_on_load(
             "action": "auto_demote_static_same_host_listing_variant",
         }
     ]
+
+
+def test_registry_service_shadow_writes_sqlite_projection(tmp_path: Path) -> None:
+    active_path = tmp_path / "source-registry-active.json"
+    pending_path = tmp_path / "source-registry-pending.json"
+    rejected_path = tmp_path / "source-registry-rejected.json"
+    state = {
+        "active": [{"id": "active", "name": "Active", "adapter": "static"}],
+        "pending": [{"id": "pending", "name": "Pending", "adapter": "lever"}],
+        "rejected": [],
+    }
+    try:
+        store = get_storage_store(tmp_path)
+        service = RegistryService(
+            paths=RegistryPaths(
+                active=active_path,
+                pending=pending_path,
+                rejected=rejected_path,
+            ),
+            default_active=[],
+            normalize_manual_static=lambda row: row,
+        )
+
+        normalized = service.persist_state(state)
+        runtime = SourceRegistryRuntimeStore(store)
+        health = get_storage_health_payload(tmp_path)["storage"]
+
+        assert store.get_authority_modes()["sourceRegistry"] == "shadow"
+        assert runtime.current_state() == normalized
+        assert [
+            row["code"] for row in health["diagnostics"] if row["surface"] == "sourceRegistry"
+        ] == ["source_registry_projection_match"]
+    finally:
+        close_storage_stores()
+
+
+def test_registry_service_shadow_projection_mismatch_rolls_back_to_json(tmp_path: Path) -> None:
+    class _FakeAuthorityStore:
+        def __init__(self) -> None:
+            self.mode = "shadow"
+
+        def get_authority_modes(self) -> dict[str, str]:
+            return {"sourceRegistry": self.mode}
+
+        def set_authority_mode(self, surface: str, mode: str, *, reason: str = "") -> None:
+            assert surface == "sourceRegistry"
+            assert reason == "source_registry_projection_mismatch"
+            self.mode = mode
+
+    class _FakeRuntimeStore:
+        def __init__(self) -> None:
+            self.store = _FakeAuthorityStore()
+
+        def replace_state(self, **_: Any) -> Any:
+            return type(
+                "Summary",
+                (),
+                {
+                    "generation": "bad",
+                    "to_dict": lambda _self: {"generation": "bad"},
+                },
+            )()
+
+        def parity_hash(self) -> dict[str, str]:
+            return {"stateHash": "bad", "tombstoneHash": "bad"}
+
+        def cleanup_old_generations(self) -> int:
+            return 0
+
+    active_path = tmp_path / "source-registry-active.json"
+    pending_path = tmp_path / "source-registry-pending.json"
+    rejected_path = tmp_path / "source-registry-rejected.json"
+    fake_runtime = _FakeRuntimeStore()
+    diagnostics: list[dict[str, Any]] = []
+
+    def _record_diagnostic(_data_dir: Path, **kwargs: Any) -> None:
+        diagnostics.append(dict(kwargs))
+
+    service = RegistryService(
+        paths=RegistryPaths(
+            active=active_path,
+            pending=pending_path,
+            rejected=rejected_path,
+        ),
+        default_active=[],
+        normalize_manual_static=lambda row: row,
+        runtime_store_factory=lambda: fake_runtime,  # type: ignore[arg-type]
+        record_storage_diagnostic=_record_diagnostic,
+    )
+
+    service.persist_state({"active": [{"id": "a", "name": "A"}], "pending": [], "rejected": []})
+
+    assert fake_runtime.store.mode == "json"
+    assert diagnostics[-1]["code"] == "source_registry_projection_mismatch"
+    assert diagnostics[-1]["ok"] is False
