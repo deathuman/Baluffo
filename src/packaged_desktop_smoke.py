@@ -88,6 +88,9 @@ DEFAULT_NODE_SMOKE_SCRIPT = ROOT / "tests" / "frontend" / "packaged-desktop-smok
 JOBS_PIPELINE_NODE_SMOKE_SCRIPT = (
     ROOT / "tests" / "frontend" / "packaged-desktop-smoke.jobs-pipeline.mjs"
 )
+FETCH_EVIDENCE_NODE_SMOKE_SCRIPT = (
+    ROOT / "tests" / "frontend" / "packaged-desktop-smoke.fetch-evidence.mjs"
+)
 _PORTABLE_EXE_FRESHNESS_MARKERS = (
     ROOT / "scripts" / "build_portable_exe.py",
     ROOT / "scripts" / "build_ship_bundle.py",
@@ -194,6 +197,7 @@ collect_packaged_smoke_env_diagnostics = (
 )
 build_packaged_smoke_env = packaged_smoke_build_env_mod.build_packaged_smoke_env
 packaged_pipeline_smoke_mode = packaged_smoke_build_env_mod.packaged_pipeline_smoke_mode
+packaged_fetch_evidence_smoke_mode = packaged_smoke_build_env_mod.packaged_fetch_evidence_smoke_mode
 packaged_runtime_env_overrides = packaged_smoke_build_env_mod.packaged_runtime_env_overrides
 ensure_portable_exe = packaged_smoke_build_env_mod.ensure_portable_exe
 
@@ -294,6 +298,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--fail-on-threshold", action="store_true")
     parser.add_argument("--open-path", default="jobs.html")
     parser.add_argument("--node-smoke-script", default=str(DEFAULT_NODE_SMOKE_SCRIPT))
+    parser.add_argument(
+        "--fetch-evidence-mode",
+        choices=("deterministic", "real"),
+        default="deterministic",
+    )
     return parser.parse_args(argv)
 
 

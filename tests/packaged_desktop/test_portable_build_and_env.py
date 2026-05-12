@@ -357,6 +357,19 @@ def test_packaged_pipeline_smoke_mode_is_enabled_only_for_jobs_pipeline_script()
     assert smoke.packaged_runtime_env_overrides(smoke.DEFAULT_NODE_SMOKE_SCRIPT) == {}
 
 
+def test_packaged_fetch_evidence_smoke_mode_is_deterministic_by_default() -> None:
+    assert smoke.packaged_runtime_env_overrides(smoke.FETCH_EVIDENCE_NODE_SMOKE_SCRIPT) == {
+        "BALUFFO_PACKAGED_SMOKE_FETCH_MODE": "source-runs",
+    }
+    assert (
+        smoke.packaged_runtime_env_overrides(
+            smoke.FETCH_EVIDENCE_NODE_SMOKE_SCRIPT,
+            fetch_evidence_mode="real",
+        )
+        == {}
+    )
+
+
 def test_packaged_runtime_env_overrides_can_isolate_local_appdata_per_run() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         artifacts_dir = Path(tmp) / "artifacts"

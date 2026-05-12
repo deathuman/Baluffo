@@ -270,6 +270,9 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
             session_scope="runtime",
             startup_probe=startup_probe,
             profile_mode=profile_mode,
+            fetch_evidence_mode=str(
+                getattr(args, "fetch_evidence_mode", "deterministic") or "deterministic"
+            ),
         )
     )
     deps.clear_packaged_desktop_session_state(runtime_env)

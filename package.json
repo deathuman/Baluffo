@@ -34,6 +34,7 @@
     "test:frontend:packaged:orphan-reclaim-rehearsal": "npm run check:python-version && python src/packaged_desktop_smoke.py --orphan-reclaim-rehearsal --rebuild --runtime-timeout 60",
     "test:frontend:packaged:browser-job-rehearsal": "npm run check:python-version && python src/packaged_desktop_smoke.py --browser-job-rehearsal --rebuild --runtime-timeout 60",
     "test:frontend:packaged:jobs-pipeline": "npm run check:python-version && python src/packaged_desktop_smoke.py --node-smoke-script tests/frontend/packaged-desktop-smoke.jobs-pipeline.mjs --playwright-timeout 300",
+    "test:frontend:packaged:fetch-evidence": "npm run check:python-version && python src/packaged_desktop_smoke.py --node-smoke-script tests/frontend/packaged-desktop-smoke.fetch-evidence.mjs --playwright-timeout 300",
     "test:frontend:packaged:orchestrated": "npm run check:python-version && python src/packaged_desktop_smoke.py --exe-path _out/latest/build/portable/Baluffo.exe",
     "test:frontend:packaged:headed": "npm run check:python-version && python src/packaged_desktop_smoke.py --headed --pause-on-failure",
     "probe:desktop:startup:cold": "npm run check:python-version && python src/packaged_desktop_smoke.py --rebuild --startup-probe --profile-only --profile-mode cold --runtime-timeout 60",

@@ -341,6 +341,23 @@ def packaged_pipeline_smoke_mode(node_smoke_script: Path) -> str:
     return ""
 
 
+def packaged_fetch_evidence_smoke_mode(
+    node_smoke_script: Path,
+    *,
+    fetch_evidence_mode: str = "deterministic",
+) -> str:
+    deps = _root()
+    resolved = Path(node_smoke_script).expanduser().resolve()
+    if resolved == deps.JOBS_PIPELINE_NODE_SMOKE_SCRIPT.resolve():
+        return "source-runs"
+    if (
+        resolved == deps.FETCH_EVIDENCE_NODE_SMOKE_SCRIPT.resolve()
+        and str(fetch_evidence_mode or "").strip().lower() != "real"
+    ):
+        return "source-runs"
+    return ""
+
+
 def packaged_runtime_env_overrides(
     node_smoke_script: Path | None = None,
     *,
@@ -348,6 +365,7 @@ def packaged_runtime_env_overrides(
     session_scope: str = "runtime",
     startup_probe: bool = False,
     profile_mode: str = "cold",
+    fetch_evidence_mode: str = "deterministic",
 ) -> dict[str, str]:
     deps = _root()
     overrides: dict[str, str] = {}
@@ -355,7 +373,12 @@ def packaged_runtime_env_overrides(
         mode = deps.packaged_pipeline_smoke_mode(node_smoke_script)
         if mode:
             overrides["BALUFFO_PACKAGED_SMOKE_PIPELINE_MODE"] = mode
-            overrides["BALUFFO_PACKAGED_SMOKE_FETCH_MODE"] = "source-runs"
+        fetch_mode = deps.packaged_fetch_evidence_smoke_mode(
+            node_smoke_script,
+            fetch_evidence_mode=fetch_evidence_mode,
+        )
+        if fetch_mode:
+            overrides["BALUFFO_PACKAGED_SMOKE_FETCH_MODE"] = fetch_mode
     if artifacts_dir is not None:
         local_app_data = deps.packaged_desktop_local_appdata_root(
             artifacts_dir,
