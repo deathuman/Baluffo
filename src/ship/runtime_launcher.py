@@ -141,39 +141,62 @@ class ProbeAwareSimpleHTTPRequestHandler(QuietSimpleHTTPRequestHandler):
             raise ValueError("Request handler directory was not configured.")
         super().__init__(*args, directory=str(directory), **kwargs)
 
+    def _existing_data_candidate(self, base_dir: Path | None, rel_parts: list[str]) -> str | None:
+        if base_dir is None:
+            return None
+        base = Path(base_dir).resolve()
+        candidate = base.joinpath(*rel_parts).resolve()
+        try:
+            candidate.relative_to(base)
+        except ValueError:
+            return None
+        if candidate.name.removesuffix(".gz") in PIPELINE_GZIP_JSON_NAMES:
+            gzip_candidate = (
+                candidate
+                if candidate.suffix == ".gz"
+                else candidate.with_name(candidate.name + ".gz")
+            )
+            if gzip_candidate.exists():
+                self._serve_gzip_json = True
+                return str(gzip_candidate.resolve())
+        if candidate.exists():
+            return str(candidate)
+        return None
+
+    def _missing_data_candidate(self, base_dir: Path | None, rel_parts: list[str]) -> str | None:
+        if base_dir is None:
+            return None
+        base = Path(base_dir).resolve()
+        candidate = base.joinpath(*rel_parts).resolve()
+        try:
+            candidate.relative_to(base)
+        except ValueError:
+            return None
+        return str(candidate)
+
+    def _resolve_data_path(self, rel_parts: list[str]) -> str | None:
+        runtime_data_dir = self.__class__._runtime_data_dir
+        static_data_dir = self.__class__._static_data_dir
+        for base_dir in (runtime_data_dir, static_data_dir):
+            candidate = self._existing_data_candidate(base_dir, rel_parts)
+            if candidate:
+                return candidate
+        return self._missing_data_candidate(
+            static_data_dir, rel_parts
+        ) or self._missing_data_candidate(runtime_data_dir, rel_parts)
+
     def _resolve_static_data_path(self, normalized: str) -> str:
         self._serve_gzip_json = False
-        static_data_dir = self.__class__._static_data_dir
-        if static_data_dir is None:
-            return super().translate_path(normalized)
         if normalized in ROOT_DATA_FILE_ALIASES:
-            candidate = (static_data_dir / normalized).resolve()
-            if candidate.name.removesuffix(".gz") in PIPELINE_GZIP_JSON_NAMES:
-                gzip_candidate = (
-                    candidate
-                    if candidate.suffix == ".gz"
-                    else candidate.with_name(candidate.name + ".gz")
-                )
-                if gzip_candidate.exists():
-                    self._serve_gzip_json = True
-                    return str(gzip_candidate.resolve())
-            return str(candidate)
+            candidate = self._resolve_data_path([normalized])
+            return candidate or super().translate_path(normalized)
         if normalized.startswith("data/"):
             rel = normalized[5:]
             safe_parts = [
                 token for token in PurePosixPath(rel).parts if token not in {"", ".", ".."}
             ]
-            candidate = static_data_dir.joinpath(*safe_parts).resolve()
-            if candidate.name.removesuffix(".gz") in PIPELINE_GZIP_JSON_NAMES:
-                gzip_candidate = (
-                    candidate
-                    if candidate.suffix == ".gz"
-                    else candidate.with_name(candidate.name + ".gz")
-                )
-                if gzip_candidate.exists():
-                    self._serve_gzip_json = True
-                    return str(gzip_candidate.resolve())
-            return str(candidate)
+            candidate = self._resolve_data_path(list(safe_parts))
+            return candidate or super().translate_path(normalized)
         return super().translate_path(normalized)
 
     def translate_path(self, path: str) -> str:

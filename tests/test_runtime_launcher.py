@@ -308,11 +308,13 @@ def test_build_site_request_handler_serves_data_requests_from_runtime_data_dir()
         _write(root / "jobs.html", "<html>jobs</html>\n")
         data_dir = Path(tmp) / "data"
         _write(data_dir / "jobs-unified-startup.json", '{"ok":true}\n')
+        static_dir = Path(tmp) / "static-data"
+        _write(static_dir / "jobs-unified-startup.json", '{"ok":false}\n')
 
         handler = rl.build_site_request_handler(
             root,
             runtime_data_dir=data_dir,
-            static_data_dir=data_dir,
+            static_data_dir=static_dir,
             startup_probe=False,
         )
         server = ThreadingHTTPServer(("127.0.0.1", 0), handler)

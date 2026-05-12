@@ -512,14 +512,25 @@ M4.5 closeout note: new stores now seed `sourceRuns=sqlite`. Migration/package e
 
 Purpose: move server-side job authority while keeping the frontend's static JSON contract.
 
-- Add jobs and job_sources APIs with idempotent batched upserts.
-- Store normalized job source rows rather than large nested bundles where practical.
-- Generate `jobs-unified-light.json` and `jobs-unified.json` as terminal compatibility exports.
-- Keep frontend unchanged: `fetch()` plus IndexedDB from static JSON.
-- If an export hash is needed, write it to sidecar metadata or route metadata, not inside job rows.
-- Document future paginated Jobs API design in `docs/storage-contract.md` only if measurements show JSON parse cost above the threshold.
+- **Done:** Add generation-scoped `jobs` and `job_sources` APIs with idempotent batched upserts.
+- **Done:** Store normalized source-bundle rows in `job_sources` while reconstructing exact canonical rows for export.
+- **Done:** Publish a jobs-feed generation only after all rows insert and parity passes.
+- **Done:** Generate `jobs-unified-light.json`, `jobs-unified.json`, and `jobs-unified.csv` as terminal compatibility exports from SQLite when `jobsFeed=sqlite`.
+- **Done:** Keep frontend unchanged: `fetch()` plus IndexedDB from static JSON.
+- **Done:** Keep export hashes out of job rows; storage-health diagnostics carry parity evidence.
+- **Done:** Leave future paginated Jobs API design out of scope because M5 keeps static export boot.
 
-Gate: three packaged runs with job parity, compatibility exports match row contract, and frontend loads from exported JSON.
+Gate: complete. New stores seed `jobsFeed=sqlite`, terminal bridge-managed fetch closeout writes a published SQLite generation before regenerating compatibility exports, direct CLI output remains JSON fallback, packaged jobs-pipeline smoke proves SQLite parity plus static JSON loading, and rollback returns `jobsFeed` to JSON on storage/parity/export failure.
+
+M5.1 implementation note: migration `007_jobs_feed_runtime.sql` rebuilds `jobs` and `job_sources` as generation-scoped tables and adds `job_feed_state` as the published-generation pointer. `JobRuntimeStore` owns staged generation writes, publish-time hash/count checks, current-row reconstruction, summary reads, and bounded old-generation cleanup.
+
+M5.2 implementation note: bridge terminal fetch closeout mirrors `jobs-unified.json` into SQLite when `jobsFeed` is shadow or SQLite, compares the staged generation to the JSON export, publishes only after parity passes, and rolls `jobsFeed` back to JSON on write/parity failure.
+
+M5.3 implementation note: when `jobsFeed=sqlite`, authoritative closeout regenerates `jobs-unified.json`, `jobs-unified-light.json`, and `jobs-unified.csv` from the current SQLite generation using the existing output field lists and gzip-aware writers. Export failures roll the surface back to JSON.
+
+M5.4 implementation note: packaged source-runs smoke now writes a deterministic jobs row, forces `jobsFeed=sqlite` inside the isolated smoke data directory, and proves storage-health parity plus static `jobs-unified-light.json` serving without frontend changes.
+
+M5.5 closeout note: new stores now seed `jobsFeed=sqlite`. Migration/package expectations are at schema version `007`, and compatibility exports remain the permanent Jobs frontend boot path.
 
 ## Size Budgets
 

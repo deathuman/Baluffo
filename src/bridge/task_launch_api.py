@@ -356,20 +356,14 @@ class TaskLaunchApi:
         run_id = str(report.get("runId") or "").strip()
         if not run_id:
             return False
+        rows = self._read_jobs_feed_rows()
+        if rows is None:
+            return False
         runtime_store = self._job_runtime_store()
         if runtime_store is None:
             return False
         mode = self._jobs_feed_mode(runtime_store)
         if mode not in {"shadow", "sqlite"}:
-            return False
-        rows = self._read_jobs_feed_rows()
-        if rows is None:
-            if mode == "sqlite":
-                self._rollback_jobs_feed_to_json(
-                    runtime_store,
-                    code="jobs_feed_output_missing",
-                    message="jobs-unified.json was unavailable during SQLite-authoritative fetch closeout",
-                )
             return False
         try:
             expected_hash = jobs_feed_rows_hash(rows)

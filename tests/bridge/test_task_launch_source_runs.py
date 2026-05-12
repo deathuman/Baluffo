@@ -55,6 +55,7 @@ def _task_launch_api(
 def test_fetch_lifecycle_close_mirrors_source_runs() -> None:
     with workspace_tmpdir("task-launch-source-runs") as data_dir:
         with BaluffoStore(data_dir) as store:
+            store.set_authority_mode("jobsFeed", "json", reason="source-run-test")
             runtime = SourceRuntimeStore(
                 store,
                 now_iso=lambda: "2026-05-12T12:00:00+00:00",
@@ -112,6 +113,7 @@ def test_fetch_lifecycle_close_rolls_source_runs_back_on_shadow_failure() -> Non
 
     with workspace_tmpdir("task-launch-source-runs-failure") as data_dir:
         with BaluffoStore(data_dir) as store:
+            store.set_authority_mode("jobsFeed", "json", reason="source-run-test")
             diagnostics: list[dict[str, Any]] = []
             api = _task_launch_api(
                 data_dir,
@@ -147,6 +149,7 @@ def test_fetch_lifecycle_close_compacts_report_when_source_runs_are_authoritativ
 
     with workspace_tmpdir("task-launch-source-runs-compact") as data_dir:
         with BaluffoStore(data_dir) as store:
+            store.set_authority_mode("jobsFeed", "json", reason="source-run-test")
             runtime = SourceRuntimeStore(
                 store,
                 now_iso=lambda: "2026-05-12T12:00:00+00:00",

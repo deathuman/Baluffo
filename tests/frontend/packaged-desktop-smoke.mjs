@@ -116,7 +116,12 @@ function eventElapsedMs(row) {
 }
 
 async function assertFacadeStartupOrdering(apiRequest) {
-  const rows = await fetchStartupMetricRows(apiRequest, 600);
+  let rows = [];
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    rows = await fetchStartupMetricRows(apiRequest, 600);
+    if (["desktop_browser_launch_selected", "desktop_shell_window_shown", "jobs_first_render", "jobs_first_interactive"].every(eventName => firstEventIndex(rows, eventName) >= 0)) break;
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
   const sessionPayload = await fetchDesktopSession(apiRequest);
   const desktopSession = sessionPayload?.desktopSession && typeof sessionPayload.desktopSession === "object"
     ? sessionPayload.desktopSession

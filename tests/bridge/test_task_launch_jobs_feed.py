@@ -86,6 +86,7 @@ def test_fetch_lifecycle_close_shadow_writes_jobs_feed() -> None:
     rows = [_job_row()]
     with workspace_tmpdir("task-launch-jobs-feed") as data_dir:
         with BaluffoStore(data_dir) as store:
+            store.set_authority_mode("jobsFeed", "shadow", reason="test-shadow")
             runtime = JobRuntimeStore(store, now_iso=lambda: "2026-05-12T12:00:00+00:00")
             diagnostics: list[dict[str, Any]] = []
             api = _task_launch_api(

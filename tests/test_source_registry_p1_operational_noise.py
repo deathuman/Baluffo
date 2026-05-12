@@ -13,9 +13,7 @@ def _load_seed_registry(name: str) -> list[dict]:
 
 
 def _load_tombstones_fixture() -> dict:
-    runtime_path = REPO_ROOT / "data/source-registry-tombstones.json"
-    source_path = runtime_path if runtime_path.is_file() else TOMBSTONES_FIXTURE_PATH
-    return json.loads(source_path.read_text())
+    return json.loads(TOMBSTONES_FIXTURE_PATH.read_text())
 
 
 UNSUPPORTED_STATIC_IDS = {

@@ -33,7 +33,7 @@ The Jobs frontend boot path remains static JSON plus IndexedDB. Desktop local us
 | Live task events | SQLite `task_events` after M3 cutover | `/ops/task-live/<taskType>` | Recent bounded event windows only. |
 | Sync runs/history | SQLite `sync_runs` after M3 cutover | Existing history/task summaries | Includes sync size and shard metrics. |
 | Fetch source progress | SQLite `source_runs` after M4 cutover | `jobs-fetch-tasks.json` compatibility while needed | Live UI keeps compact current progress; terminal source details hydrate from SQLite/archive. |
-| Jobs feed | SQLite `jobs` and `job_sources` server-side after cutover | `jobs-unified-light.json` permanent export | Frontend continues static JSON plus IndexedDB. |
+| Jobs feed | SQLite `jobs` and `job_sources` server-side after M5 cutover | `jobs-unified-light.json` permanent export | Frontend continues static JSON plus IndexedDB. |
 | Full fetch/dedup/source evidence | Filesystem archive plus JSON manifest | Lazy detail/export APIs | Not SQLite. Enforce retention budgets. |
 | Source registry | SQLite-backed rows or staged registry service after later cutover | Sharded source-sync export | Registry journal repair must remain bounded before migration. |
 | Bridge diagnostics | Bounded JSONL or SQLite table | Support artifact | Diagnostics are not lifecycle authority. |
@@ -104,6 +104,8 @@ Milestone 3 cutover is complete for `taskRuns`, `taskEvents`, and `syncRuns`: ne
 
 Milestone 4 cutover is complete for `sourceRuns`: new stores seed `sourceRuns=sqlite`, terminal bridge-started fetch reports mirror source rows into `source_runs`, and source-run read/write/parity failures persistently roll the surface back to `json`.
 
+Milestone 5 cutover is complete for `jobsFeed`: new stores seed `jobsFeed=sqlite`, bridge-managed terminal fetch closeout mirrors canonical jobs rows into generation-scoped SQLite tables, and successful authoritative closeout regenerates `jobs-unified.json`, `jobs-unified-light.json`, and `jobs-unified.csv` as compatibility exports. Jobs-feed read/write/parity/export failures persistently roll the surface back to `json` while retaining SQLite generations for diagnosis.
+
 ## Compatibility Exports
 
 Compatibility JSON exports remain generated until the owning frontend/API surface is separately retired.
@@ -114,6 +116,7 @@ Rules:
 - Registry journaling is registry-only and bounded.
 - `jobs-unified-light.json` remains the permanent Jobs frontend boot export.
 - Do not add cache hashes inside `jobs-unified-light.json` rows. Use sidecar metadata or bridge metadata.
+- After M5, `jobs-unified.json`, `jobs-unified-light.json`, and `jobs-unified.csv` are generated from the published SQLite jobs-feed generation during bridge-managed terminal fetch closeout when `jobsFeed=sqlite`; direct CLI outputs remain JSON fallback until bridge postprocessing runs.
 - Full fetch/dedup/source evidence moves to filesystem-backed archives with a JSON manifest, not SQLite.
 - After M4, bridge-started terminal `jobs-fetch-report.json` is a compact compatibility/debug export with lean source rows and `sourceRuns.sourceDetailsArchive` refs; direct CLI or old full reports remain valid JSON fallback.
 

@@ -48,7 +48,7 @@ def test_storage_health_payload_initializes_sqlite_store(tmp_path: Path) -> None
     assert storage["authorityModes"]["taskEvents"] == "sqlite"
     assert storage["authorityModes"]["syncRuns"] == "sqlite"
     assert storage["authorityModes"]["sourceRuns"] == "sqlite"
-    assert storage["authorityModes"]["jobsFeed"] == "shadow"
+    assert storage["authorityModes"]["jobsFeed"] == "sqlite"
     assert Path(str(storage["databasePath"])).parent == tmp_path.resolve()
     assert (tmp_path / "baluffo-runtime.db").exists()
 
