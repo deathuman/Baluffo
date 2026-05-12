@@ -79,6 +79,7 @@ def test_push_sharded_snapshot_pushes_shards_before_manifest() -> None:
             (200, {"content": {"sha": "shard-sha"}}),
             (200, {"content": _encoded_bytes(shard.payload_bytes)}),
             (200, {"content": {"sha": "manifest-sha"}}),
+            (404, {"message": "Not Found"}),
         ]
     )
 
@@ -93,11 +94,12 @@ def test_push_sharded_snapshot_pushes_shards_before_manifest() -> None:
     assert result["pushed"] is True
     assert result["remoteSha"] == "manifest-sha"
     assert result["metrics"]["changedShardCount"] == 1
-    assert len(module.calls) == 3
+    assert len(module.calls) == 4
     assert "/shards/" in module.calls[0]["url"]
     assert module.calls[0]["method"] == "PUT"
     assert module.calls[1]["method"] == "GET"
     assert module.calls[2]["url"].endswith("baluffo/source-sync/manifest.json")
+    assert module.calls[3]["method"] == "GET"
 
 
 def test_push_sharded_snapshot_updates_manifest_with_committed_sha() -> None:
@@ -117,6 +119,7 @@ def test_push_sharded_snapshot_updates_manifest_with_committed_sha() -> None:
             (200, {"content": {"sha": "shard-sha"}}),
             (200, {"content": _encoded_bytes(shard.payload_bytes)}),
             (200, {"content": {"sha": "manifest-sha"}}),
+            (404, {"message": "Not Found"}),
         ]
     )
 
@@ -131,9 +134,76 @@ def test_push_sharded_snapshot_updates_manifest_with_committed_sha() -> None:
     )
 
     assert result["remoteSha"] == "manifest-sha"
-    manifest_call = module.calls[-1]
+    manifest_call = module.calls[-2]
     assert manifest_call["url"].endswith("baluffo/source-sync/manifest.json")
     assert manifest_call["payload"]["sha"] == "old-manifest-sha"
+
+
+def test_push_sharded_snapshot_prunes_unreferenced_shards_after_manifest() -> None:
+    bundle = build_sharded_snapshot_bundle(_snapshot(), max_shard_size=10_000)
+    shard = bundle["changedShards"][0]
+    old_path = "baluffo/source-sync/shards/active/old/oldsha.json.gz"
+    module = _FakeSyncModule(
+        [
+            (200, {"content": {"sha": "shard-sha"}}),
+            (200, {"content": _encoded_bytes(shard.payload_bytes)}),
+            (200, {"content": {"sha": "manifest-sha"}}),
+            (
+                200,
+                [
+                    {"type": "file", "path": old_path, "sha": "old-remote-sha"},
+                    {"type": "file", "path": shard.path, "sha": "current-remote-sha"},
+                ],
+            ),
+            (200, {"content": None}),
+        ]
+    )
+
+    result = push_sharded_snapshot(
+        module,
+        _config(),
+        _snapshot(),
+        max_shard_size=10_000,
+        opener=object(),
+    )
+
+    assert result["pushed"] is True
+    assert result["gc"]["deletedCount"] == 1
+    assert result["gc"]["deletedPaths"] == [old_path]
+    assert result["warnings"] == []
+    assert [call["method"] for call in module.calls] == ["PUT", "GET", "PUT", "GET", "DELETE"]
+    delete_call = module.calls[-1]
+    assert delete_call["url"].endswith(old_path)
+    assert delete_call["payload"]["sha"] == "old-remote-sha"
+    assert delete_call["payload"]["branch"] == "main"
+
+
+def test_push_sharded_snapshot_reports_gc_failure_without_rollback() -> None:
+    bundle = build_sharded_snapshot_bundle(_snapshot(), max_shard_size=10_000)
+    shard = bundle["changedShards"][0]
+    old_path = "baluffo/source-sync/shards/active/old/oldsha.json.gz"
+    module = _FakeSyncModule(
+        [
+            (200, {"content": {"sha": "shard-sha"}}),
+            (200, {"content": _encoded_bytes(shard.payload_bytes)}),
+            (200, {"content": {"sha": "manifest-sha"}}),
+            (200, [{"type": "file", "path": old_path, "sha": "old-remote-sha"}]),
+            (500, {"message": "delete denied"}),
+        ]
+    )
+
+    result = push_sharded_snapshot(
+        module,
+        _config(),
+        _snapshot(),
+        max_shard_size=10_000,
+        opener=object(),
+    )
+
+    assert result["pushed"] is True
+    assert result["remoteSha"] == "manifest-sha"
+    assert result["gc"]["deletedCount"] == 0
+    assert result["warnings"] == ["delete denied"]
 
 
 def test_push_manifest_maps_conflict_to_sync_operation_error() -> None:

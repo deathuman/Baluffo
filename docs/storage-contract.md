@@ -114,7 +114,7 @@ Rules:
 
 ## Source Sync
 
-The source-sync target is a committed v3 manifest plus immutable shard payloads. The committed manifest must not point at shards before every referenced shard exists and validates.
+The source-sync write contract is a committed v3 manifest plus immutable shard payloads. The v2 monolith remains a read fallback only when no trusted committed v3 manifest exists. The committed manifest must not point at shards before every referenced shard exists and validates.
 
 Push protocol contract:
 
@@ -124,14 +124,16 @@ Push protocol contract:
 4. Validate pushed shards by hash and read-back where needed.
 5. Update the committed manifest only after all referenced shards validate.
 6. Leave the old committed manifest untouched if shard push fails.
-7. Garbage-collect old unreferenced generations only after a successful commit.
+7. Garbage-collect old unreferenced shard objects only after a successful commit, with path-prefix validation and a per-run deletion cap.
+8. Report garbage-collection warnings after a successful commit without rolling the commit back.
 
 Pull protocol contract:
 
 - Read only the committed v3 manifest.
 - Validate schema, content hash, shard list, and per-shard SHA-256.
 - Fall back to v2 monolithic `source-sync.json` only when v3 is absent.
-- During transition, either dual-write v2 while under cap or explicitly accept that v2-only clients stop receiving updates.
+
+Sync result, task-summary, timing-history, and `storageMetrics` payloads keep legacy size fields for compatibility and add authoritative v3 pressure fields: `snapshotFormat`, `shardCount`, `changedShardCount`, `shardsPushedBytes`, `manifestSizeBytes`, `shardCapBytes`, and `shardHashes`.
 
 Source sync must not include jobs, fetch reports, local source-policy review state, or evidence archives.
 

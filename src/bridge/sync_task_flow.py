@@ -151,6 +151,9 @@ def _apply_push_result_summary(result: dict[str, Any], summary: dict[str, Any]) 
         }
     )
     summary.update(_sync_observability_fields(result))
+    warnings = [str(item) for item in list(result.get("warnings") or []) if str(item or "")]
+    if warnings:
+        summary["warnings"] = warnings
     timing = as_json_object(result.get("timing"))
     if timing:
         summary["timing"] = timing

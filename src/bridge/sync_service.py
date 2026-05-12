@@ -523,6 +523,7 @@ class SyncService:
         max_snapshot_size_bytes = int(result.get("maxSnapshotSizeBytes") or 0)
         size_warning = bool(result.get("sizeWarning"))
         shard_fields = _sync_shard_fields(result)
+        warnings = [str(item) for item in list(result.get("warnings") or []) if str(item or "")]
         if size_warning:
             self._bridge_log(
                 "warn",
@@ -559,6 +560,7 @@ class SyncService:
                 "maxSnapshotSizeBytes": max_snapshot_size_bytes,
                 "sizeWarning": size_warning,
                 **shard_fields,
+                "warnings": warnings,
             }
         )
         append_sync_timing_record(self._sync_timing_history_path, timing_record)
@@ -586,6 +588,7 @@ class SyncService:
             "maxSnapshotSizeBytes": max_snapshot_size_bytes,
             "sizeWarning": size_warning,
             **shard_fields,
+            "warnings": warnings,
             "counters": counters,
             "counts": counts,
             "timing": timing_record,

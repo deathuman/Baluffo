@@ -41,6 +41,8 @@ class _Recorder:
                 "body": body,
             }
         )
+        if method == "GET" and url.split("?ref=", 1)[0].endswith("/source-sync/shards"):
+            return _FakeResponse(404, {"message": "Not Found"})
         if "/source-sync/shards/" in url:
             key = url.split("?ref=", 1)[0]
             if method == "PUT":

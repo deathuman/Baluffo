@@ -58,7 +58,7 @@ This plan supersedes older versions of the runtime storage roadmap.
 - **Runtime evidence writes:** The writer hardening slice is complete for existing runtime evidence filenames: canonical writes skip journaling, no-op checks ignore stale journals, private journal append rejects those paths, startup cleanup quarantines stale runtime journals, and discovery candidates use canonical-only array reads.
 - **Metrics gate:** Always fix registry journaling first. Then collect `storageMetrics` from at least three realistic packaged fetches and decide whether full SQLite remains justified. If JSON serialization plus atomic replace is below 5% of wall clock and route latencies are within budget, prefer lighter alternatives over broad SQLite migration.
 - **Source-sync atomicity:** Do not overwrite the committed manifest with a `"proposed"` manifest. Push immutable, content-addressed or generation-scoped shards first; update the committed manifest only after every referenced shard exists and validates.
-- **v2 compatibility:** A v3 reader fallback to monolithic v2 only helps upgraded clients. During transition, either dual-write v2 while under cap or explicitly accept that v2-only clients stop receiving updates.
+- **v2 compatibility:** The cutover policy is v3-only writes. Upgraded clients keep monolithic v2 as a read fallback only when no trusted committed v3 manifest exists; v2-only clients stop receiving updates after cutover.
 - **SQLite sequencing:** Milestone 1 is skeleton-only. Do not shadow-write lifecycle, sync, source-run, or jobs data in M1; those migrations belong to M3-M5.
 - **Metric module placement:** Storage metrics must live in a leaf module that can be imported by registry IO and bridge code without importing composition-root modules.
 - **Jobs export contract:** Do not add cache hashes inside `jobs-unified-light.json` rows. Use a sidecar metadata file or bridge metadata to avoid changing frontend row shape/order.
@@ -69,7 +69,7 @@ This plan supersedes older versions of the runtime storage roadmap.
 |---|---|---|---|
 | Current task liveness | SQLite `task_runs` after M3 cutover | `/ops/task-state` JSON projection | Until cutover, `admin-task-lifecycle.json` remains authority. |
 | Live task events | SQLite `task_events` after M3 cutover | `/ops/task-live/<taskType>` | Recent bounded window only. |
-| Sync runs/history | SQLite `sync_runs` after M3 cutover | Existing history/task summaries | Sync size metrics are present; shard metrics land in M2 before migration. |
+| Sync runs/history | SQLite `sync_runs` after M3 cutover | Existing history/task summaries | Sync size and shard metrics are present before migration. |
 | Fetch source progress | SQLite `source_runs` after M4 cutover | `jobs-fetch-tasks.json` compatibility while needed | Active progress needs a streaming/live path; terminal-only bulk insert is not enough for live UI. |
 | Jobs feed | SQLite `jobs` and `job_sources` server-side after M5 cutover | `jobs-unified-light.json` permanent export | Frontend continues static JSON plus IndexedDB. |
 | Full fetch/dedup/source evidence | Filesystem archive plus JSON manifest | Lazy detail/export APIs | Not SQLite; enforce retention budget. |
@@ -212,9 +212,8 @@ with a committed manifest pointer plus immutable shard payloads:
 
 ```text
 baluffo/source-sync/manifest.json
-baluffo/source-sync/shards/<generation-or-content-hash>/active/00.json.gz
-baluffo/source-sync/shards/<generation-or-content-hash>/pending/00.json.gz
-baluffo/source-sync/shards/<generation-or-content-hash>/metadata/00.json.gz
+baluffo/source-sync/shards/active/<key>/<sha256>.json.gz
+baluffo/source-sync/shards/pending/<key>/<sha256>.json.gz
 ```
 
 Committed manifest example:
@@ -223,15 +222,15 @@ Committed manifest example:
 {
   "schemaVersion": 3,
   "generatedAt": "2026-05-11T12:00:00+02:00",
-  "contentHash": "...",
-  "activeCount": 2102,
-  "pendingCount": 315,
-  "generation": "20260511T100000Z-abc123",
+  "shardCount": 1,
+  "totalRowCount": 2102,
+  "totalSizeBytes": 421322,
+  "shardCapBytes": 10485760,
   "shards": [
     {
       "bucket": "active",
       "key": "00",
-      "path": "baluffo/source-sync/shards/20260511T100000Z-abc123/active/00.json.gz",
+      "path": "baluffo/source-sync/shards/active/00/<sha256>.json.gz",
       "rowCount": 148,
       "sizeBytes": 421322,
       "sha256": "..."
@@ -248,23 +247,23 @@ Push protocol:
 4. Validate every pushed shard by returned SHA and by read-back when needed.
 5. Push `manifest.json` only after every referenced shard exists and validates.
 6. If shard push fails, leave the old committed manifest untouched.
-7. Run bounded garbage collection for old unreferenced shard generations after a successful commit.
+7. Run bounded garbage collection for old unreferenced shard objects after a successful commit.
 
 Pull protocol:
 
 - Read only committed `manifest.json`.
 - Validate schema, content hash, shard list, and per-shard SHA-256.
 - If v3 manifest is absent, fall back to v2 monolithic `source-sync.json`.
-- During transition, either dual-write v2 while under cap or document that v2-only clients will not receive v3-only updates.
+- Write policy is v3-only. The v2 monolith is a read fallback only when no trusted committed v3 manifest exists; v2-only clients do not receive v3-only updates after cutover.
 
 Rules:
 
 - shard by stable source identity hash prefix
-- enforce 5-10 MiB per shard
+- enforce a 10 MiB default per-shard cap
 - split oversized shards by longer hash prefix
 - sync active/pending/core metadata and source health only
 - do not sync jobs, fetch reports, local source-policy review state, or evidence archives
-- track shard count, changed shard count, pushed bytes, manifest bytes, shard cap, schema version, and shard hashes in sync history
+- track shard count, changed shard count, pushed bytes, manifest bytes, shard cap, schema version, and shard hashes in sync results, task summaries, timing history, and storage metrics
 
 ## Evidence Archive Retention
 
@@ -427,16 +426,16 @@ Gate: SQLite health endpoint works, migration tests pass, packaged build can imp
 
 Purpose: remove the monolithic source-sync cap failure mode before data authority migration.
 
-- Implement source registry projection to active/pending/core metadata and source health.
-- Implement stable hash-prefix sharding with per-shard caps and overflow splitting.
-- Implement immutable shard push followed by committed manifest update.
-- Push changed shards only.
-- Validate pull with v3 sharded sync and v2 fallback.
-- Define and test transition policy: dual-write v2 while under cap, or document v3-only updates for upgraded clients.
-- Add shard metrics to sync summaries and timing records.
-- Add shard garbage collection for unreferenced old generations.
+- **Done:** Implement source registry projection to active/pending/core metadata and source health.
+- **Done:** Implement stable hash-prefix sharding with per-shard caps and overflow splitting.
+- **Done:** Implement immutable shard push followed by committed manifest update.
+- **Done:** Push changed shards only and read back changed shard payloads before committing the manifest.
+- **Done:** Validate pull with v3 sharded sync and v2 fallback when no trusted v3 manifest exists.
+- **Done:** Cut live push over to v3-only writes; the v2 monolith is read fallback only and is not updated by push.
+- **Done:** Add shard metrics to sync results, task summaries, timing records, and storage metrics.
+- **Done:** Add bounded shard garbage collection for unreferenced objects after successful manifest commit.
 
-Gate: unchanged sync push is a no-op, large registry sync does not hit the global monolith cap, partial shard push leaves old committed state readable, and v2 fallback behavior is explicit.
+Gate: complete. Unchanged committed-v3 sync push is a no-op, matching v2-only remote state creates the first v3 manifest, large registry sync no longer fails on aggregate monolith size, partial shard push leaves old committed state readable, v2 fallback behavior is explicit, and GC failures are reported as warnings after successful commits.
 
 M2.1 implementation note: `src/source_sync_shard.py` now provides deterministic local shard construction without changing remote sync writes. `shard_key()` hashes stable source identity prefixes; `build_shards()` groups rows into gzip JSON schema-v3 shard payloads, computes path-ready manifest metadata, enforces a caller-supplied per-shard byte cap, recursively splits oversized shards by longer hash prefixes, and raises a clear error for a single row that cannot fit under the cap. The ship bundle now carries the sharding leaf module. Focused tests cover deterministic metadata/payloads, canonical row ordering, overflow splitting, oversize errors, and remote-path validation.
 
@@ -451,6 +450,14 @@ M2.5 prep note: shard bundles now use content-addressed remote paths (`bucket/ke
 M2.6 implementation note: sync pull now prefers a trusted committed v3 manifest and validates every referenced shard before merging, while a missing/untrusted manifest still falls back to the existing v2 monolithic `source-sync.json` reader. The v3 path is deliberately pull-only for this slice so push conflict handling keeps using the v2 monolith SHA until sharded push orchestration is wired separately. Focused tests cover v2 fallback after manifest 404, committed v3 pull without touching the monolith, manifest SHA propagation, and preservation of the existing v2 unexpected-key warning contract.
 
 M2.7 prep note: the sharding leaf now exposes `push_sharded_snapshot()` as the single orchestration boundary for the later live push cutover. It builds the content-addressed bundle, no-ops when the committed manifest already references identical shard hashes, pushes changed immutable shard objects first, and only then updates the committed manifest. Focused tests verify shard-before-manifest write order and unchanged-shard no-op behavior without changing the live v2 monolith push path yet.
+
+M2.8 implementation note: v3 shard writes now use the committed manifest SHA for manifest updates, treat existing content-addressed shard paths as idempotent only after reading back and validating SHA/size/payload, verify changed shards by read-back before manifest commit, and map manifest 409 conflicts to the existing sync conflict path.
+
+M2.9 implementation note: live `push_sources_snapshot()` now reads remote state with v3 preference, keeps v2 as read fallback only when no trusted v3 manifest exists, writes through `push_sharded_snapshot()`, and no longer writes `baluffo/source-sync.json`. Matching v2-only remote content still creates the first v3 manifest, while matching committed-v3 remote content remains the no-op path. `snapshot_too_large` now represents unsplittable shard/row failures rather than aggregate monolith size.
+
+M2.10 implementation note: v3 shard metrics now flow through source-sync results, `SyncService`, task summaries, timing history, and `storageMetrics`. Legacy `sizeBytes`, `maxSnapshotSizeBytes`, and `sizeWarning` remain present for compatibility, while `snapshotFormat`, `shardCount`, `changedShardCount`, `shardsPushedBytes`, `manifestSizeBytes`, `shardCapBytes`, and `shardHashes` describe v3 pressure.
+
+M2.11 closeout note: committed v3 manifest writes now run bounded post-commit garbage collection under `baluffo/source-sync/shards/`. GC deletes only path-validated `.json.gz` shard files not referenced by the current committed manifest, applies a per-run deletion cap, and reports warnings after successful commits without rolling back the manifest.
 
 ### Milestone 3 - Move Task Runs, Events, and Sync Runs
 

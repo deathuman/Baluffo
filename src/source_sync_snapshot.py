@@ -329,6 +329,7 @@ def _push_sources_snapshot_after_conflict(
             size_warning=retry_size_warning,
         ) from exc
     counters = module.record_sync_counters(conflictsResolved=1)
+    warnings = list(write_result.get("warnings") or [])
     return {
         "pushed": True,
         "remotePreviouslyExisted": bool(remote.get("exists")),
@@ -339,6 +340,7 @@ def _push_sources_snapshot_after_conflict(
         "sizeWarning": retry_size_warning,
         "maxSnapshotSizeBytes": retry_max_snapshot_size_bytes,
         **_shard_push_metadata(write_result),
+        "warnings": warnings,
         "counters": counters,
     }
 
@@ -370,6 +372,7 @@ def _push_sources_snapshot_after_transient(
         write_result = _push_sharded_snapshot_result(
             module, config, snapshot, refreshed_remote, opener=opener
         )
+        warnings = list(write_result.get("warnings") or [])
         return {
             "pushed": True,
             "remotePreviouslyExisted": bool(remote.get("exists")),
@@ -380,6 +383,7 @@ def _push_sources_snapshot_after_transient(
             "sizeWarning": size_warning,
             "maxSnapshotSizeBytes": max_snapshot_size_bytes,
             **_shard_push_metadata(write_result),
+            "warnings": warnings,
             "counters": module.sync_counters_payload(),
         }
     if refreshed_fingerprint == snapshot_fingerprint:
@@ -415,6 +419,7 @@ def _push_sources_snapshot_after_transient(
             max_snapshot_size_bytes=retry_max_snapshot_size_bytes,
             size_warning=retry_size_warning,
         ) from exc
+    warnings = list(write_result.get("warnings") or [])
     return {
         "pushed": True,
         "remotePreviouslyExisted": bool(remote.get("exists")),
@@ -425,6 +430,7 @@ def _push_sources_snapshot_after_transient(
         "sizeWarning": retry_size_warning,
         "maxSnapshotSizeBytes": retry_max_snapshot_size_bytes,
         **_shard_push_metadata(write_result),
+        "warnings": warnings,
         "counters": module.sync_counters_payload(),
     }
 
@@ -1031,6 +1037,7 @@ def push_sources_snapshot(
             opener,
             exc,
         )
+    warnings = list(write_result.get("warnings") or [])
     return {
         "pushed": bool(write_result.get("pushed", True)),
         "remotePreviouslyExisted": bool(remote.get("exists")),
@@ -1042,5 +1049,6 @@ def push_sources_snapshot(
         "sizeWarning": size_warning,
         "maxSnapshotSizeBytes": max_snapshot_size_bytes,
         **_shard_push_metadata(write_result),
+        "warnings": warnings,
         "counters": module.sync_counters_payload(),
     }

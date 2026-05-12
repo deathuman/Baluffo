@@ -14,25 +14,27 @@ The canonical remote snapshot is intentionally narrow:
 
 That shape is enforced by the source-sync schema validator and should remain the normal apply/input contract for production writes.
 
-## Planned: Sharded Sync Migration (schema v3)
+## Sharded Sync (schema v3)
 
-The monolithic `baluffo/source-sync.json` will be replaced with sharded gzip files:
+Source-sync writes are v3-only. A write commits a schema-v3 manifest plus immutable gzip shard files:
 
 ```text
 baluffo/source-sync/manifest.json
-baluffo/source-sync/active/00.json.gz
-baluffo/source-sync/pending/00.json.gz
-baluffo/source-sync/metadata/00.json.gz
+baluffo/source-sync/shards/active/<key>/<sha256>.json.gz
+baluffo/source-sync/shards/pending/<key>/<sha256>.json.gz
 ```
 
 Key details:
 
 - **Schema version:** 3
 - **Shard key:** stable source identity hash prefix
-- **Per-shard cap:** 5-10 MiB; split by longer hash prefix if exceeded
-- **Push protocol:** Two-phase manifest commit (propose → push changed shards → commit)
+- **Per-shard cap:** 10 MiB by default; split by longer hash prefix if exceeded
+- **Push protocol:** push changed shards, verify them, then update committed `manifest.json`
 - **Changed-shard detection:** Compare SHA-256 against last committed manifest
-- **Backwards compatibility:** Schema v2 monolithic read support kept during migration
+- **Write compatibility:** do not update the v2 monolith
+- **Read compatibility:** fall back to v2 `source-sync.json` only when no trusted committed v3 manifest exists
+- **Garbage collection:** after a successful manifest commit, delete a bounded number of unreferenced shard files under `baluffo/source-sync/shards/`; GC warnings are reported after success and do not roll back the commit
+- **Metrics:** sync results, task summaries, timing history, and storage metrics include additive shard fields: `snapshotFormat`, `shardCount`, `changedShardCount`, `shardsPushedBytes`, `manifestSizeBytes`, `shardCapBytes`, and `shardHashes`
 
 Full design in [`docs/plans/runtime-storage-and-sync-architecture-plan.md`](plans/runtime-storage-and-sync-architecture-plan.md).
 
