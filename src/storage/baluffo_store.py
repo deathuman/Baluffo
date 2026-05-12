@@ -29,7 +29,7 @@ DEFAULT_AUTHORITY_MODES = {
     "taskEvents": "sqlite",
     "syncRuns": "sqlite",
     "sourceRuns": "sqlite",
-    "jobsFeed": "json",
+    "jobsFeed": "shadow",
     "sourceRegistry": "json",
 }
 

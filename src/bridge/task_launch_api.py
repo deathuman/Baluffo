@@ -19,7 +19,9 @@ from src.bridge.task_admission import (
     get_active_lifecycle_task_metadata,
 )
 from src.jobs.common import config as jobs_common_config
-from src.storage import EvidenceArchiveStore, SourceRuntimeStore
+from src.shared.json_io import existing_json_candidate, read_json
+from src.storage import EvidenceArchiveStore, JobRuntimeStore, SourceRuntimeStore
+from src.storage.job_runtime import jobs_feed_rows_hash
 
 
 @dataclass(frozen=True)
@@ -52,6 +54,7 @@ class TaskLaunchDeps:
     pid_is_running: Callable[[int], bool] = lambda _pid: False
     load_runtime_evidence: Callable[[Path, Any], Any] | None = None
     source_runtime_store: Callable[[], Any] | None = None
+    job_runtime_store: Callable[[], Any] | None = None
     record_storage_diagnostic: Callable[..., None] | None = None
 
 
@@ -90,6 +93,33 @@ class TaskLaunchApi:
             details=dict(details or {}),
         )
 
+    def _record_jobs_feed_diagnostic(
+        self,
+        *,
+        code: str,
+        ok: bool,
+        message: str = "",
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        recorder = self._deps.record_storage_diagnostic
+        if recorder is not None:
+            recorder(
+                surface="jobsFeed",
+                code=code,
+                ok=ok,
+                message=message,
+                details=dict(details or {}),
+            )
+            return
+        storage_health_mod.record_storage_diagnostic(
+            self._runtime.data_dir,
+            surface="jobsFeed",
+            code=code,
+            ok=ok,
+            message=message,
+            details=dict(details or {}),
+        )
+
     def _source_runtime_store(self) -> Any | None:
         store_factory = self._deps.source_runtime_store
         if store_factory is not None:
@@ -112,6 +142,28 @@ class TaskLaunchApi:
             )
             return None
 
+    def _job_runtime_store(self) -> Any | None:
+        store_factory = self._deps.job_runtime_store
+        if store_factory is not None:
+            try:
+                return store_factory()
+            except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
+                self._record_jobs_feed_diagnostic(
+                    code="jobs_feed_store_unavailable",
+                    ok=False,
+                    message=str(exc),
+                )
+                return None
+        try:
+            return JobRuntimeStore(storage_health_mod.get_storage_store(self._runtime.data_dir))
+        except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
+            self._record_jobs_feed_diagnostic(
+                code="jobs_feed_store_unavailable",
+                ok=False,
+                message=str(exc),
+            )
+            return None
+
     def _source_runs_mode(self, runtime_store: Any) -> str:
         try:
             modes = runtime_store.store.get_authority_modes()
@@ -123,6 +175,18 @@ class TaskLaunchApi:
             )
             return "json"
         return str((modes or {}).get("sourceRuns") or "json").strip().lower()
+
+    def _jobs_feed_mode(self, runtime_store: Any) -> str:
+        try:
+            modes = runtime_store.store.get_authority_modes()
+        except (AttributeError, RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
+            self._record_jobs_feed_diagnostic(
+                code="jobs_feed_authority_mode_unavailable",
+                ok=False,
+                message=str(exc),
+            )
+            return "json"
+        return str((modes or {}).get("jobsFeed") or "json").strip().lower()
 
     def _rollback_source_runs_to_json(
         self,
@@ -137,6 +201,25 @@ class TaskLaunchApi:
         except (AttributeError, RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
             message = f"{message}; rollback failed: {exc}"
         self._record_source_run_diagnostic(
+            code=code,
+            ok=False,
+            message=message,
+            details=dict(details or {}),
+        )
+
+    def _rollback_jobs_feed_to_json(
+        self,
+        runtime_store: Any,
+        *,
+        code: str,
+        message: str,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        try:
+            runtime_store.store.set_authority_mode("jobsFeed", "json", reason=code)
+        except (AttributeError, RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
+            message = f"{message}; rollback failed: {exc}"
+        self._record_jobs_feed_diagnostic(
             code=code,
             ok=False,
             message=message,
@@ -206,6 +289,78 @@ class TaskLaunchApi:
             self._rollback_source_runs_to_json(
                 runtime_store,
                 code="source_runs_shadow_write_failed",
+                message=str(exc),
+            )
+            return False
+
+    def _jobs_feed_path(self) -> Path:
+        return self._paths.jobs_fetch_report.with_name("jobs-unified.json")
+
+    def _read_jobs_feed_rows(self) -> list[dict[str, Any]] | None:
+        path = self._jobs_feed_path()
+        if existing_json_candidate(path) is None:
+            return None
+        payload = read_json(path, None)
+        if isinstance(payload, list):
+            return [dict(row) for row in payload if isinstance(row, dict)]
+        if isinstance(payload, dict) and isinstance(payload.get("jobs"), list):
+            return [dict(row) for row in payload["jobs"] if isinstance(row, dict)]
+        return None
+
+    def _mirror_jobs_feed_rows(self, report: dict[str, Any]) -> bool:
+        run_id = str(report.get("runId") or "").strip()
+        if not run_id:
+            return False
+        runtime_store = self._job_runtime_store()
+        if runtime_store is None:
+            return False
+        mode = self._jobs_feed_mode(runtime_store)
+        if mode not in {"shadow", "sqlite"}:
+            return False
+        rows = self._read_jobs_feed_rows()
+        if rows is None:
+            if mode == "sqlite":
+                self._rollback_jobs_feed_to_json(
+                    runtime_store,
+                    code="jobs_feed_output_missing",
+                    message="jobs-unified.json was unavailable during SQLite-authoritative fetch closeout",
+                )
+            return False
+        try:
+            expected_hash = jobs_feed_rows_hash(rows)
+            staged = runtime_store.stage_feed(run_id=run_id, rows=rows)
+            staged_rows = runtime_store.rows_for_generation(staged.generation)
+            if len(staged_rows) != len(rows) or jobs_feed_rows_hash(staged_rows) != expected_hash:
+                self._rollback_jobs_feed_to_json(
+                    runtime_store,
+                    code="jobs_feed_projection_mismatch",
+                    message="SQLite jobs feed projection did not match jobs-unified.json",
+                    details={
+                        "jsonCount": len(rows),
+                        "sqliteCount": len(staged_rows),
+                    },
+                )
+                return False
+            runtime_store.publish_generation(
+                staged.generation,
+                expected_row_count=len(rows),
+                expected_row_hash=expected_hash,
+            )
+            runtime_store.cleanup_old_generations()
+            self._record_jobs_feed_diagnostic(
+                code="jobs_feed_projection_match",
+                ok=True,
+                details={
+                    "rowCount": len(rows),
+                    "generation": staged.generation,
+                    "mode": mode,
+                },
+            )
+            return True
+        except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
+            self._rollback_jobs_feed_to_json(
+                runtime_store,
+                code="jobs_feed_shadow_write_failed",
                 message=str(exc),
             )
             return False
@@ -782,6 +937,7 @@ class TaskLaunchApi:
                 summary=summary,
             )
             return True
+        self._mirror_jobs_feed_rows(report)
         finish_lifecycle_run(
             run_id,
             "fetch",
