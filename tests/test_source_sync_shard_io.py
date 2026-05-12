@@ -221,6 +221,7 @@ def test_push_shard_writes_payload_to_immutable_shard_path() -> None:
         "remoteSha": "blobsha",
         "sizeBytes": shard.size_bytes,
         "rowCount": shard.row_count,
+        "alreadyExisted": False,
     }
     put_call = module.calls[0]
     assert put_call["method"] == "PUT"
@@ -229,6 +230,26 @@ def test_push_shard_writes_payload_to_immutable_shard_path() -> None:
     decoded_sha = hashlib.sha256(base64.b64decode(put_call["payload"]["content"])).hexdigest()
     assert decoded_sha == shard.sha256
     assert "sha" not in put_call["payload"]
+
+
+def test_push_shard_treats_existing_content_addressed_path_as_idempotent() -> None:
+    shard = build_shards(
+        [_row(1)],
+        max_size=10_000,
+        base_path="baluffo/source-sync/shards/stable",
+    )[0]
+    module = _FakeSyncModule(
+        [
+            (422, {"message": "Invalid request. sha was not supplied."}),
+            (200, {"content": _encoded_bytes(shard.payload_bytes)}),
+        ]
+    )
+
+    result = push_shard(module, _config(), shard, opener=object())
+
+    assert result["ok"] is True
+    assert result["alreadyExisted"] is True
+    assert [call["method"] for call in module.calls] == ["PUT", "GET"]
 
 
 def test_push_shard_rejects_payload_sha_mismatch() -> None:
@@ -263,7 +284,14 @@ def test_push_changed_shards_only_puts_missing_or_changed_shards() -> None:
     committed = build_manifest(old_shards, generated_at="2026-05-12T10:00:00+00:00")
     expected_changed = changed_shards(new_shards, committed)
     module = _FakeSyncModule(
-        [(201, {"content": {"sha": f"blob{index}"}}) for index in range(len(expected_changed))]
+        [
+            response
+            for index, shard in enumerate(expected_changed)
+            for response in (
+                (201, {"content": {"sha": f"blob{index}"}}),
+                (200, {"content": _encoded_bytes(shard.payload_bytes)}),
+            )
+        ]
     )
 
     result = push_changed_shards(module, _config(), new_shards, committed, opener=object())
@@ -272,9 +300,15 @@ def test_push_changed_shards_only_puts_missing_or_changed_shards() -> None:
     assert result["changedShardCount"] == len(expected_changed)
     assert result["shardsPushedBytes"] == sum(shard.size_bytes for shard in expected_changed)
     assert result["changedShards"] == [shard.manifest_entry() for shard in expected_changed]
-    assert [call["url"].rsplit("/contents/", 1)[1] for call in module.calls] == [
-        shard.path for shard in expected_changed
+    assert result["verifiedShards"] == [
+        {"path": shard.path, "sha256": shard.sha256, "rowCount": shard.row_count}
+        for shard in expected_changed
     ]
+    assert [call["method"] for call in module.calls] == ["PUT", "GET"] * len(expected_changed)
+    called_paths = [
+        call["url"].rsplit("/contents/", 1)[1].split("?ref=", 1)[0] for call in module.calls
+    ]
+    assert called_paths == [shard.path for shard in expected_changed for _ in range(2)]
 
 
 def test_read_shard_validates_payload_and_returns_rows() -> None:

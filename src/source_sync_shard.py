@@ -331,8 +331,15 @@ def push_manifest(
     )
     if status >= 400:
         message_text = str(body.get("message") or f"GitHub PUT failed with HTTP {status}")
+        if int(status or 0) == 409 and hasattr(module, "SyncOperationError"):
+            conflict_code = getattr(module, "RUNTIME_STATE_REMOTE_CONFLICT", "remote_conflict")
+            if hasattr(module, "_set_runtime_state"):
+                module._set_runtime_state(conflict_code, message_text)
+            raise module.SyncOperationError(conflict_code, message_text)
         raise RuntimeError(message_text)
     content = body.get("content") if isinstance(body.get("content"), dict) else {}
+    if hasattr(module, "_clear_runtime_state") and hasattr(module, "RUNTIME_STATE_REMOTE_CONFLICT"):
+        module._clear_runtime_state(module.RUNTIME_STATE_REMOTE_CONFLICT)
     return {"ok": True, "sha": str(content.get("sha") or "")}
 
 
@@ -382,6 +389,20 @@ def push_shard(
     )
     if status >= 400:
         message_text = str(body.get("message") or f"GitHub PUT failed with HTTP {status}")
+        if int(status or 0) in {409, 422}:
+            try:
+                read_shard(module, config, shard.manifest_entry(), opener=opener)
+            except Exception as exc:
+                raise RuntimeError(message_text) from exc
+            return {
+                "ok": True,
+                "path": shard.path,
+                "sha256": shard.sha256,
+                "remoteSha": "",
+                "sizeBytes": shard.size_bytes,
+                "rowCount": shard.row_count,
+                "alreadyExisted": True,
+            }
         raise RuntimeError(message_text)
     content = body.get("content") if isinstance(body.get("content"), dict) else {}
     return {
@@ -391,6 +412,7 @@ def push_shard(
         "remoteSha": str(content.get("sha") or ""),
         "sizeBytes": shard.size_bytes,
         "rowCount": shard.row_count,
+        "alreadyExisted": False,
     }
 
 
@@ -403,22 +425,32 @@ def push_changed_shards(
     opener: Callable[..., Any],
 ) -> dict[str, Any]:
     changed = changed_shards(shards, committed_manifest)
-    results = [
-        push_shard(
+    results: list[dict[str, Any]] = []
+    verifications: list[dict[str, Any]] = []
+    for shard in changed:
+        result = push_shard(
             module,
             config,
             shard,
             message=f"Update Baluffo source sync shard {shard.bucket}/{shard.key}",
             opener=opener,
         )
-        for shard in changed
-    ]
+        verified = read_shard(module, config, shard.manifest_entry(), opener=opener)
+        results.append(result)
+        verifications.append(
+            {
+                "path": shard.path,
+                "sha256": shard.sha256,
+                "rowCount": len(verified.get("rows") or []),
+            }
+        )
     return {
         "shardCount": len(shards),
         "changedShardCount": len(changed),
         "shardsPushedBytes": sum(shard.size_bytes for shard in changed),
         "changedShards": [shard.manifest_entry() for shard in changed],
         "pushResults": results,
+        "verifiedShards": verifications,
     }
 
 
@@ -429,6 +461,7 @@ def push_sharded_snapshot(
     *,
     max_shard_size: int,
     committed_manifest: dict[str, Any] | None = None,
+    committed_manifest_sha: str = "",
     opener: Callable[..., Any],
 ) -> dict[str, Any]:
     bundle = build_sharded_snapshot_bundle(
@@ -453,7 +486,13 @@ def push_sharded_snapshot(
         committed_manifest,
         opener=opener,
     )
-    manifest_result = push_manifest(module, config, bundle["manifest"], opener=opener)
+    manifest_result = push_manifest(
+        module,
+        config,
+        bundle["manifest"],
+        sha=committed_manifest_sha,
+        opener=opener,
+    )
     metrics.update(
         {
             "changedShardCount": int(shard_result.get("changedShardCount") or 0),
