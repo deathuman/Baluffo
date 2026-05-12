@@ -19,7 +19,7 @@ from src.bridge.task_admission import (
     get_active_lifecycle_task_metadata,
 )
 from src.jobs.common import config as jobs_common_config
-from src.storage import SourceRuntimeStore
+from src.storage import EvidenceArchiveStore, SourceRuntimeStore
 
 
 @dataclass(frozen=True)
@@ -161,17 +161,17 @@ class TaskLaunchApi:
             if isinstance(row, dict)
         ]
 
-    def _mirror_fetch_source_runs(self, report: dict[str, Any]) -> None:
+    def _mirror_fetch_source_runs(self, report: dict[str, Any]) -> bool:
         run_id = str(report.get("runId") or "").strip()
         source_rows = [row for row in report.get("sources") or [] if isinstance(row, dict)]
         if not run_id or not source_rows:
-            return
+            return False
         runtime_store = self._source_runtime_store()
         if runtime_store is None:
-            return
+            return False
         mode = self._source_runs_mode(runtime_store)
         if mode not in {"shadow", "sqlite"}:
-            return
+            return False
         try:
             runtime_store.upsert_source_runs(
                 run_id=run_id,
@@ -189,16 +189,82 @@ class TaskLaunchApi:
                         "sqliteCount": len(sqlite_rows),
                     },
                 )
-                return
+                return False
             self._record_source_run_diagnostic(
                 code="source_runs_projection_match",
                 ok=True,
                 details={"rowCount": len(source_rows)},
             )
+            if mode == "sqlite":
+                self._archive_and_compact_fetch_report(
+                    report,
+                    runtime_store=runtime_store,
+                    source_rows=source_rows,
+                )
+            return mode == "sqlite"
         except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
             self._rollback_source_runs_to_json(
                 runtime_store,
                 code="source_runs_shadow_write_failed",
+                message=str(exc),
+            )
+            return False
+
+    def _archive_and_compact_fetch_report(
+        self,
+        report: dict[str, Any],
+        *,
+        runtime_store: Any,
+        source_rows: list[dict[str, Any]],
+    ) -> None:
+        if not any(
+            isinstance(row.get("details"), list) and row.get("details") for row in source_rows
+        ):
+            return
+        run_id = str(report.get("runId") or "").strip()
+        try:
+            archive = EvidenceArchiveStore(self._runtime.data_dir)
+            archive_entry = archive.write_archive(
+                run_id=run_id,
+                kind="source-details",
+                payload={
+                    "schemaVersion": 1,
+                    "runId": run_id,
+                    "sources": source_rows,
+                },
+            )
+            runtime_store.upsert_source_runs(
+                run_id=run_id,
+                rows=source_rows,
+                evidence_ref={"sourceDetailsArchive": archive_entry},
+            )
+            compact_sources = [
+                {key: value for key, value in row.items() if key != "details"}
+                for row in source_rows
+            ]
+            compact_report = {
+                **dict(report),
+                "sources": compact_sources,
+                "sourceRuns": {
+                    "format": "sqlite",
+                    "rowCount": len(source_rows),
+                    "sourceDetailsArchive": archive_entry,
+                },
+            }
+            self._deps.save_json_atomic(self._paths.jobs_fetch_report, compact_report)
+            self._record_source_run_diagnostic(
+                code="fetch_report_compacted",
+                ok=True,
+                details={
+                    "rowCount": len(source_rows),
+                    "archivePath": str(archive_entry.get("path") or ""),
+                    "archiveSizeBytes": int(archive_entry.get("sizeBytes") or 0),
+                },
+            )
+        except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
+            self._record_source_run_diagnostic(
+                code="fetch_report_compaction_failed",
+                ok=False,
                 message=str(exc),
             )
 
