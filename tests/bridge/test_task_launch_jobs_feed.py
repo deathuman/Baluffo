@@ -11,6 +11,7 @@ from src.bridge.task_launch_api import (
     TaskLaunchRuntime,
 )
 from src.pipeline_io import serialize_rows_for_json, write_atomic_if_changed
+from src.shared.json_io import read_json
 from src.storage import BaluffoStore, JobRuntimeStore
 from tests.helpers.temp_paths import workspace_tmpdir
 
@@ -142,6 +143,85 @@ def test_fetch_lifecycle_close_rolls_jobs_feed_back_on_shadow_failure() -> None:
 
             assert store.get_authority_modes()["jobsFeed"] == "json"
             assert diagnostics[-1]["code"] == "jobs_feed_shadow_write_failed"
+
+
+def test_fetch_lifecycle_close_writes_exports_when_jobs_feed_is_authoritative() -> None:
+    rows = [_job_row()]
+    with workspace_tmpdir("task-launch-jobs-feed-sqlite") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            store.set_authority_mode("jobsFeed", "sqlite", reason="test-cutover")
+            runtime = JobRuntimeStore(store, now_iso=lambda: "2026-05-12T12:00:00+00:00")
+            diagnostics: list[dict[str, Any]] = []
+            api = _task_launch_api(
+                data_dir,
+                job_runtime_store=lambda: runtime,
+                diagnostics=diagnostics,
+            )
+            write_atomic_if_changed(
+                data_dir / "jobs-unified.json",
+                serialize_rows_for_json(rows, list(rows[0].keys())),
+            )
+            report = {
+                "runId": "fetch_jobs_1",
+                "finishedAt": "2026-05-12T12:00:00+00:00",
+                "summary": {"outputCount": 1},
+                "sources": [],
+            }
+
+            assert _close_fetch(api, report) is True
+
+            full_rows = read_json(data_dir / "jobs-unified.json", [])
+            light_rows = read_json(data_dir / "jobs-unified-light.json", [])
+            assert full_rows[0]["title"] == "Tools Programmer"
+            assert full_rows[0]["sourceBundle"] == rows[0]["sourceBundle"]
+            assert light_rows[0]["title"] == "Tools Programmer"
+            assert "sourceBundle" not in light_rows[0]
+            assert (
+                (data_dir / "jobs-unified.csv")
+                .read_text(encoding="utf-8")
+                .startswith("id,title,company")
+            )
+            assert store.get_authority_modes()["jobsFeed"] == "sqlite"
+            assert [row["code"] for row in diagnostics if row["surface"] == "jobsFeed"] == [
+                "jobs_feed_sqlite_export_written",
+                "jobs_feed_projection_match",
+            ]
+
+
+def test_fetch_lifecycle_close_rolls_back_jobs_feed_when_sqlite_export_fails(
+    monkeypatch: Any,
+) -> None:
+    rows = [_job_row()]
+    with workspace_tmpdir("task-launch-jobs-feed-export-failure") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            store.set_authority_mode("jobsFeed", "sqlite", reason="test-cutover")
+            runtime = JobRuntimeStore(store, now_iso=lambda: "2026-05-12T12:00:00+00:00")
+            diagnostics: list[dict[str, Any]] = []
+            api = _task_launch_api(
+                data_dir,
+                job_runtime_store=lambda: runtime,
+                diagnostics=diagnostics,
+            )
+            write_atomic_if_changed(
+                data_dir / "jobs-unified.json",
+                serialize_rows_for_json(rows, list(rows[0].keys())),
+            )
+
+            def fail_export(*_args: Any, **_kwargs: Any) -> bool:
+                raise OSError("disk full")
+
+            monkeypatch.setattr("src.bridge.task_launch_api.write_atomic_if_changed", fail_export)
+            report = {
+                "runId": "fetch_jobs_1",
+                "finishedAt": "2026-05-12T12:00:00+00:00",
+                "summary": {"outputCount": 1},
+                "sources": [],
+            }
+
+            assert _close_fetch(api, report) is True
+
+            assert store.get_authority_modes()["jobsFeed"] == "json"
+            assert diagnostics[-1]["code"] == "jobs_feed_sqlite_export_failed"
 
 
 def test_failed_fetch_does_not_publish_jobs_feed_generation() -> None:

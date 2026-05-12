@@ -19,6 +19,11 @@ from src.bridge.task_admission import (
     get_active_lifecycle_task_metadata,
 )
 from src.jobs.common import config as jobs_common_config
+from src.pipeline_io import (
+    serialize_rows_for_csv,
+    serialize_rows_for_json,
+    write_atomic_if_changed,
+)
 from src.shared.json_io import existing_json_candidate, read_json
 from src.storage import EvidenceArchiveStore, JobRuntimeStore, SourceRuntimeStore
 from src.storage.job_runtime import jobs_feed_rows_hash
@@ -296,6 +301,12 @@ class TaskLaunchApi:
     def _jobs_feed_path(self) -> Path:
         return self._paths.jobs_fetch_report.with_name("jobs-unified.json")
 
+    def _jobs_feed_light_path(self) -> Path:
+        return self._paths.jobs_fetch_report.with_name("jobs-unified-light.json")
+
+    def _jobs_feed_csv_path(self) -> Path:
+        return self._paths.jobs_fetch_report.with_name("jobs-unified.csv")
+
     def _read_jobs_feed_rows(self) -> list[dict[str, Any]] | None:
         path = self._jobs_feed_path()
         if existing_json_candidate(path) is None:
@@ -306,6 +317,40 @@ class TaskLaunchApi:
         if isinstance(payload, dict) and isinstance(payload.get("jobs"), list):
             return [dict(row) for row in payload["jobs"] if isinstance(row, dict)]
         return None
+
+    def _export_jobs_feed_from_sqlite(self, runtime_store: Any) -> bool:
+        try:
+            rows = runtime_store.current_rows()
+            write_atomic_if_changed(
+                self._jobs_feed_path(),
+                serialize_rows_for_json(rows, jobs_common_config.OUTPUT_FIELDS),
+            )
+            write_atomic_if_changed(
+                self._jobs_feed_light_path(),
+                serialize_rows_for_json(rows, jobs_common_config.LIGHTWEIGHT_OUTPUT_FIELDS),
+            )
+            write_atomic_if_changed(
+                self._jobs_feed_csv_path(),
+                serialize_rows_for_csv(rows, jobs_common_config.OUTPUT_FIELDS),
+            )
+            self._record_jobs_feed_diagnostic(
+                code="jobs_feed_sqlite_export_written",
+                ok=True,
+                details={
+                    "rowCount": len(rows),
+                    "json": str(self._jobs_feed_path()),
+                    "lightJson": str(self._jobs_feed_light_path()),
+                    "csv": str(self._jobs_feed_csv_path()),
+                },
+            )
+            return True
+        except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
+            self._rollback_jobs_feed_to_json(
+                runtime_store,
+                code="jobs_feed_sqlite_export_failed",
+                message=str(exc),
+            )
+            return False
 
     def _mirror_jobs_feed_rows(self, report: dict[str, Any]) -> bool:
         run_id = str(report.get("runId") or "").strip()
@@ -346,6 +391,8 @@ class TaskLaunchApi:
                 expected_row_count=len(rows),
                 expected_row_hash=expected_hash,
             )
+            if mode == "sqlite" and not self._export_jobs_feed_from_sqlite(runtime_store):
+                return False
             runtime_store.cleanup_old_generations()
             self._record_jobs_feed_diagnostic(
                 code="jobs_feed_projection_match",
