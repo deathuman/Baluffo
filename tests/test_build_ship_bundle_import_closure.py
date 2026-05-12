@@ -68,7 +68,7 @@ def test_bundle_version_storage_validation_fails_for_missing_migration_resource(
 
         message = str(exc_info.value)
         assert "Ship bundle Python storage validation failed" in message
-        assert "migration version" in message or "004_jobs_feed" in message
+        assert "migration sequence" in message or "004_jobs_feed" in message
 
 
 def test_bundle_contains_python_import_closure_modules() -> None:
@@ -97,6 +97,7 @@ def test_bundle_contains_python_import_closure_modules() -> None:
             "src/storage/migrations/002_task_events.sql",
             "src/storage/migrations/003_fetch_source_runs.sql",
             "src/storage/migrations/004_jobs_feed.sql",
+            "src/storage/migrations/005_task_sync_runtime.sql",
         )
 
         assert all((version_root / rel_path).exists() for rel_path in required_modules)
