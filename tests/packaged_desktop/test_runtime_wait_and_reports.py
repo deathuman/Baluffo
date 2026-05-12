@@ -247,7 +247,7 @@ def test_capture_runtime_snapshot_preserves_versioned_startup_metrics() -> None:
                 {
                     "ok": True,
                     "storage": {
-                        "migrationVersion": "005",
+                        "migrationVersion": "006",
                         "walMode": "wal",
                         "authorityModes": {"taskRuns": "sqlite"},
                     },
@@ -268,7 +268,7 @@ def test_capture_runtime_snapshot_preserves_versioned_startup_metrics() -> None:
         assert saved["rows"][0]["category"] == "handoff"
         assert storage_metrics["storageMetrics"]["writes"]["writeCount"] == 3
         assert storage_health["ok"] is True
-        assert storage_health["storage"]["migrationVersion"] == "005"
+        assert storage_health["storage"]["migrationVersion"] == "006"
         assert storage_health["storage"]["authorityModes"]["taskRuns"] == "sqlite"
 
 

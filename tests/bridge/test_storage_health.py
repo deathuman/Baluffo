@@ -20,7 +20,7 @@ def test_ops_storage_health_route_returns_storage_payload(tmp_path: Path) -> Non
     api = make_stub_bridge_api(tmp_path, store)
     api.get_storage_health_payload = lambda: {
         "ok": True,
-        "storage": {"healthy": True, "migrationVersion": "005"},
+        "storage": {"healthy": True, "migrationVersion": "006"},
     }
 
     handler = FakeHandler()
@@ -29,7 +29,7 @@ def test_ops_storage_health_route_returns_storage_payload(tmp_path: Path) -> Non
     assert result is True
     assert handler.sent[-1]["status"] == 200
     assert handler.sent[-1]["payload"]["ok"] is True
-    assert handler.sent[-1]["payload"]["storage"]["migrationVersion"] == "005"
+    assert handler.sent[-1]["payload"]["storage"]["migrationVersion"] == "006"
 
 
 def test_storage_health_payload_initializes_sqlite_store(tmp_path: Path) -> None:
@@ -41,7 +41,7 @@ def test_storage_health_payload_initializes_sqlite_store(tmp_path: Path) -> None
     storage = payload["storage"]
     assert payload["ok"] is True
     assert storage["healthy"] is True
-    assert storage["migrationVersion"] == "005"
+    assert storage["migrationVersion"] == "006"
     assert storage["walMode"] == "wal"
     assert storage["quickCheck"] == "ok"
     assert storage["authorityModes"]["taskRuns"] == "sqlite"

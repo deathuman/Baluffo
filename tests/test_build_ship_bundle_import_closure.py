@@ -98,6 +98,9 @@ def test_bundle_contains_python_import_closure_modules() -> None:
             "src/storage/migrations/003_fetch_source_runs.sql",
             "src/storage/migrations/004_jobs_feed.sql",
             "src/storage/migrations/005_task_sync_runtime.sql",
+            "src/storage/migrations/006_source_run_runtime.sql",
+            "src/storage/source_runtime.py",
+            "src/storage/evidence_archive.py",
         )
 
         assert all((version_root / rel_path).exists() for rel_path in required_modules)

@@ -15,7 +15,7 @@ def test_store_initializes_wal_mode_health_and_json_authority_defaults() -> None
             health = store.health()
 
         assert Path(str(health["databasePath"])).parent == data_dir.resolve()
-        assert health["migrationVersion"] == "005"
+        assert health["migrationVersion"] == "006"
         assert health["walMode"] == "wal"
         assert health["foreignKeys"] == 1
         assert health["quickCheck"] == "ok"

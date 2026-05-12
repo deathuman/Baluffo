@@ -17,7 +17,7 @@ def test_migrations_are_idempotent_and_create_expected_tables() -> None:
                 )
             }
 
-        assert first_applied == ["001", "002", "003", "004", "005"]
+        assert first_applied == ["001", "002", "003", "004", "005", "006"]
         assert second_applied_now == []
         assert second_applied == first_applied
         assert {

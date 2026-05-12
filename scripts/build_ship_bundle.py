@@ -693,13 +693,13 @@ with tempfile.TemporaryDirectory() as tmp:
     store = BaluffoStore(Path(tmp))
     try:
         health = store.health()
-        expected_migrations = ["001", "002", "003", "004", "005"]
+        expected_migrations = ["001", "002", "003", "004", "005", "006"]
         applied_migrations = store.applied_migrations()
         if applied_migrations != expected_migrations:
             raise RuntimeError(
                 f"unexpected migration sequence: {applied_migrations!r} health={health!r}"
             )
-        if health.get("migrationVersion") != "005":
+        if health.get("migrationVersion") != "006":
             raise RuntimeError(f"unexpected migration version: {health!r}")
         if health.get("walMode") != "wal":
             raise RuntimeError(f"unexpected WAL mode: {health!r}")
