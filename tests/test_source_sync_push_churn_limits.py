@@ -18,6 +18,13 @@ def test_dry_run_returns_diff_without_side_effects(source_sync_test_root):
         [
             _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
             HTTPError(
+                url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync/manifest.json?ref=main",
+                code=404,
+                msg="Not Found",
+                hdrs={},
+                fp=None,
+            ),
+            HTTPError(
                 url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync.json?ref=main",
                 code=404,
                 msg="Not Found",
@@ -42,7 +49,7 @@ def test_dry_run_returns_diff_without_side_effects(source_sync_test_root):
     assert result["wouldChange"] is True
     assert result["remoteSha"] == ""
     assert result["skipReason"] == "dryRun"
-    assert len(opener.calls) == 2
+    assert len(opener.calls) == 3
 
 
 def test_daily_counters_reset_on_date_boundary(source_sync_test_root, monkeypatch):
@@ -103,6 +110,13 @@ def test_snapshot_size_warning_and_rejection(source_sync_test_root, monkeypatch)
         [
             _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
             HTTPError(
+                url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync/manifest.json?ref=main",
+                code=404,
+                msg="Not Found",
+                hdrs={},
+                fp=None,
+            ),
+            HTTPError(
                 url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync.json?ref=main",
                 code=404,
                 msg="Not Found",
@@ -124,13 +138,21 @@ def test_snapshot_size_warning_and_rejection(source_sync_test_root, monkeypatch)
     assert result["sizeWarning"] is True
     assert result["sizeBytes"] == snapshot_size_bytes
     assert result["maxSnapshotSizeBytes"] == snapshot_size_bytes + 1
-    assert len(opener.calls) == 3
+    assert result["snapshotFormat"] == "sharded-v3"
 
     with sync._AUTH_MANAGER_LOCK:  # noqa: SLF001
         sync._AUTH_MANAGER.clear()  # noqa: SLF001
+    monkeypatch.setattr(sync, "DEFAULT_SOURCE_SYNC_SHARD_SIZE_BYTES", 100)
     rejection_opener = _Recorder(
         [
             _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
+            HTTPError(
+                url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync/manifest.json?ref=main",
+                code=404,
+                msg="Not Found",
+                hdrs={},
+                fp=None,
+            ),
             HTTPError(
                 url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync.json?ref=main",
                 code=404,
@@ -152,7 +174,7 @@ def test_snapshot_size_warning_and_rejection(source_sync_test_root, monkeypatch)
     assert ctx.value.fields["sizeBytes"] == snapshot_size_bytes
     assert ctx.value.fields["maxSnapshotSizeBytes"] == snapshot_size_bytes - 1
     assert ctx.value.fields["sizeWarning"] is True
-    assert len(rejection_opener.calls) == 2
+    assert len(rejection_opener.calls) == 3
 
 
 def test_default_snapshot_limit_allows_large_runtime_snapshot(source_sync_test_root, monkeypatch):
@@ -183,6 +205,13 @@ def test_default_snapshot_limit_allows_large_runtime_snapshot(source_sync_test_r
     opener = _Recorder(
         [
             _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
+            HTTPError(
+                url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync/manifest.json?ref=main",
+                code=404,
+                msg="Not Found",
+                hdrs={},
+                fp=None,
+            ),
             HTTPError(
                 url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync.json?ref=main",
                 code=404,

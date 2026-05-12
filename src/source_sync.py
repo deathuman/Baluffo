@@ -44,8 +44,7 @@ Request = _Request
 load_tombstones = _load_tombstones
 filter_tombstoned_rows = _filter_tombstoned_rows
 source_identity = _source_identity
-# Re-exported for extracted leaves that still import clock helpers from the
-# stable sync facade.
+# Re-exported for extracted leaves that still import clock helpers from the facade.
 now_iso = _now_iso
 REGISTRY_MIGRATION_V2 = _REGISTRY_MIGRATION_V2
 REGISTRY_REASON_PENDING_DEFAULT = _REGISTRY_REASON_PENDING_DEFAULT
@@ -54,6 +53,7 @@ DEFAULT_BRANCH = str(_SYNC_DEFAULTS["default_branch"])
 DEFAULT_PATH = str(_SYNC_DEFAULTS["default_path"])
 DEFAULT_TIMEOUT_S = 20
 DEFAULT_MAX_SNAPSHOT_SIZE_BYTES = 100 * 1024 * 1024
+DEFAULT_SOURCE_SYNC_SHARD_SIZE_BYTES = 10 * 1024 * 1024
 SNAPSHOT_SIZE_WARN_BYTES = 5 * 1024 * 1024
 PACKAGED_SYNC_CONFIG_ENV = "BALUFFO_SYNC_APP_CONFIG_PATH"
 PACKAGED_SYNC_BUILD_CONFIG_ENV = "BALUFFO_SYNC_BUILD_CONFIG_PATH"
@@ -77,7 +77,7 @@ KEY_DERIVATION_PLAINTEXT = "plaintext"
 RUNTIME_STATE_RATE_LIMITED = "rate_limited"
 RUNTIME_STATE_REMOTE_CONFLICT = "remote_conflict"
 RATE_LIMIT_WINDOW_S = 60
-RATE_LIMIT_MAX_REQUESTS = 45
+RATE_LIMIT_MAX_REQUESTS = 1200
 RATE_LIMIT_BACKOFF_BASE_S = 6
 RATE_LIMIT_BACKOFF_MAX_S = 180
 EMBEDDED_KEY_VERSION_DEFAULT = "v1"
@@ -158,7 +158,8 @@ def _set_runtime_state(code: str = "", message: str = "", *, until: datetime | N
 
 def _clear_runtime_state(*codes: str) -> None:
     _source_sync_runtime.clear_runtime_state(_self_module(), *codes)
-    _source_sync_runtime.clear_sync_counters(_self_module())
+    if not codes:
+        _source_sync_runtime.clear_sync_counters(_self_module())
 
 
 def sync_counters_payload() -> dict[str, Any]:

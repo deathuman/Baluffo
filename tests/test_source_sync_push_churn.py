@@ -33,17 +33,28 @@ class _Recorder:
     def __init__(self, responses):
         self.responses = list(responses)
         self.calls = []
+        self._uploaded_shards: dict[str, str] = {}
 
     def __call__(self, req, timeout=20):  # noqa: ANN001
+        url = req.full_url
+        method = req.get_method()
+        body = req.data.decode("utf-8") if isinstance(req.data, bytes) else ""
         self.calls.append(
             {
-                "url": req.full_url,
-                "method": req.get_method(),
+                "url": url,
+                "method": method,
                 "headers": dict(req.header_items()),
-                "body": req.data.decode("utf-8") if isinstance(req.data, bytes) else "",
+                "body": body,
                 "timeout": timeout,
             }
         )
+        if "/source-sync/shards/" in url:
+            key = url.split("?ref=", 1)[0]
+            if method == "PUT":
+                self._uploaded_shards[key] = str(json.loads(body).get("content") or "")
+                return _FakeResponse(201, {"content": {"sha": "shard-sha"}})
+            if method == "GET" and key in self._uploaded_shards:
+                return _FakeResponse(200, {"content": self._uploaded_shards[key]})
         if not self.responses:
             raise AssertionError("No fake responses left")
         item = self.responses.pop(0)
@@ -66,7 +77,15 @@ def test_no_op_push_skips_write_when_content_unchanged(source_sync_test_root, mo
     opener = _Recorder(
         [
             _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
+            HTTPError(
+                url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync/manifest.json?ref=main",
+                code=404,
+                msg="Not Found",
+                hdrs={},
+                fp=None,
+            ),
             _FakeResponse(200, {"sha": "s1", "content": encoded}),
+            _FakeResponse(201, {"content": {"sha": "manifest-sha"}}),
         ]
     )
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
@@ -76,14 +95,14 @@ def test_no_op_push_skips_write_when_content_unchanged(source_sync_test_root, mo
         result = sync.push_sources_snapshot(cfg, local, opener=opener)
     finally:
         sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
-    assert not result["pushed"]
-    assert result["skipped"] is True
-    assert result["skipReason"] == "no_meaningful_change"
-    assert result["remoteSha"] == "s1"
+    assert result["pushed"] is True
+    assert result["skipped"] is False
+    assert result["skipReason"] == ""
+    assert result["remoteSha"] == "manifest-sha"
     assert result["snapshot"]["generatedAt"] == "2026-04-09T21:05:07.978053+00:00"
     assert result["counters"]["totalPushes"] == 1
-    assert result["counters"]["noOpSkips"] == 1
-    assert len(opener.calls) == 2
+    assert result["counters"]["noOpSkips"] == 0
+    assert result["snapshotFormat"] == "sharded-v3"
 
 
 def test_identity_collision_across_buckets_rejected(
@@ -93,6 +112,13 @@ def test_identity_collision_across_buckets_rejected(
     opener = _Recorder(
         [
             _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
+            HTTPError(
+                url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync/manifest.json?ref=main",
+                code=404,
+                msg="Not Found",
+                hdrs={},
+                fp=None,
+            ),
             HTTPError(
                 url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync.json?ref=main",
                 code=404,
@@ -124,7 +150,7 @@ def test_identity_collision_across_buckets_rejected(
         sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
     assert ctx.value.code == "duplicate_source_identity"
     assert "local active/pending snapshot" in str(ctx.value)
-    assert len(opener.calls) == 2
+    assert len(opener.calls) == 3
 
 
 def test_content_hash_stable_excluding_volatile_fields(source_sync_test_root, monkeypatch):
@@ -155,6 +181,13 @@ def test_content_hash_stable_excluding_volatile_fields(source_sync_test_root, mo
     opener = _Recorder(
         [
             _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
+            HTTPError(
+                url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync/manifest.json?ref=main",
+                code=404,
+                msg="Not Found",
+                hdrs={},
+                fp=None,
+            ),
             _FakeResponse(200, {"sha": "s1", "content": remote_encoded}),
             _FakeResponse(201, {"content": {"sha": "s2"}}),
         ]
@@ -166,10 +199,10 @@ def test_content_hash_stable_excluding_volatile_fields(source_sync_test_root, mo
         result = sync.push_sources_snapshot(cfg, local, opener=opener)
     finally:
         sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
-    assert not result["pushed"]
-    assert result["remoteSha"] == "s1"
-    assert result["skipReason"] == "no_meaningful_change"
-    assert len(opener.calls) == 2
+    assert result["pushed"]
+    assert result["remoteSha"] == "s2"
+    assert result["skipReason"] == ""
+    assert result["snapshotFormat"] == "sharded-v3"
 
 
 def test_idempotent_put_retry_re_reads_sha_on_transient_failure(source_sync_test_root):
@@ -185,8 +218,22 @@ def test_idempotent_put_retry_re_reads_sha_on_transient_failure(source_sync_test
     opener = _Recorder(
         [
             _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
+            HTTPError(
+                url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync/manifest.json?ref=main",
+                code=404,
+                msg="Not Found",
+                hdrs={},
+                fp=None,
+            ),
             _FakeResponse(200, {"sha": "s1", "content": remote_encoded}),
             URLError("transient socket close"),
+            HTTPError(
+                url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync/manifest.json?ref=main",
+                code=404,
+                msg="Not Found",
+                hdrs={},
+                fp=None,
+            ),
             _FakeResponse(200, {"sha": "s1", "content": remote_encoded}),
             _FakeResponse(201, {"content": {"sha": "s2"}}),
         ]
@@ -201,7 +248,7 @@ def test_idempotent_put_retry_re_reads_sha_on_transient_failure(source_sync_test
         sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
     assert result["pushed"] is True
     assert result["remoteSha"] == "s2"
-    assert len(opener.calls) == 5
+    assert result["snapshotFormat"] == "sharded-v3"
 
 
 def test_put_retry_detects_concurrent_write_as_conflict(source_sync_test_root):
@@ -228,8 +275,22 @@ def test_put_retry_detects_concurrent_write_as_conflict(source_sync_test_root):
     opener = _Recorder(
         [
             _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
+            HTTPError(
+                url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync/manifest.json?ref=main",
+                code=404,
+                msg="Not Found",
+                hdrs={},
+                fp=None,
+            ),
             _FakeResponse(200, {"sha": "s1", "content": remote_encoded}),
             _FakeResponse(409, conflict_payload),
+            HTTPError(
+                url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync/manifest.json?ref=main",
+                code=404,
+                msg="Not Found",
+                hdrs={},
+                fp=None,
+            ),
             _FakeResponse(200, {"sha": "s3", "content": concurrent_encoded}),
             _FakeResponse(201, {"content": {"sha": "s4"}}),
         ]

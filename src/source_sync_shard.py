@@ -470,7 +470,7 @@ def push_sharded_snapshot(
         committed_manifest=committed_manifest,
     )
     metrics = dict(bundle["metrics"])
-    if not bundle["changedShards"]:
+    if committed_manifest is not None and not bundle["changedShards"]:
         return {
             "ok": True,
             "pushed": False,

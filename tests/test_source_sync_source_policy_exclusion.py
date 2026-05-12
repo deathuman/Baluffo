@@ -1,4 +1,3 @@
-import base64
 import json
 from urllib.error import HTTPError
 
@@ -29,14 +28,26 @@ class _Recorder:
     def __init__(self, responses):
         self.responses = list(responses)
         self.calls = []
+        self._uploaded_shards: dict[str, str] = {}
 
     def __call__(self, req, timeout=20):  # noqa: ANN001
+        url = req.full_url
+        method = req.get_method()
+        body = req.data.decode("utf-8") if isinstance(req.data, bytes) else ""
         self.calls.append(
             {
-                "method": req.get_method(),
-                "body": req.data.decode("utf-8") if isinstance(req.data, bytes) else "",
+                "url": url,
+                "method": method,
+                "body": body,
             }
         )
+        if "/source-sync/shards/" in url:
+            key = url.split("?ref=", 1)[0]
+            if method == "PUT":
+                self._uploaded_shards[key] = str(json.loads(body).get("content") or "")
+                return _FakeResponse(201, {"content": {"sha": "shard-sha"}})
+            if method == "GET" and key in self._uploaded_shards:
+                return _FakeResponse(200, {"content": self._uploaded_shards[key]})
         item = self.responses.pop(0)
         if isinstance(item, Exception):
             raise item
@@ -108,6 +119,13 @@ def test_push_sources_snapshot_excludes_source_policy_payload(source_sync_test_r
         [
             _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
             HTTPError(
+                url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync/manifest.json?ref=main",
+                code=404,
+                msg="Not Found",
+                hdrs={},
+                fp=None,
+            ),
+            HTTPError(
                 url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync.json?ref=main",
                 code=404,
                 msg="Not Found",
@@ -126,8 +144,7 @@ def test_push_sources_snapshot_excludes_source_policy_payload(source_sync_test_r
         sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
 
     assert result["pushed"]
-    body = json.loads(opener.calls[2]["body"])
-    decoded = json.loads(base64.b64decode(body["content"]).decode("utf-8"))
+    decoded = result["snapshot"]
     assert "sourcePolicy" not in decoded
     assert "reviewState" not in decoded
     assert "recommendations" not in decoded

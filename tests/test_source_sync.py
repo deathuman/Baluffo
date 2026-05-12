@@ -35,17 +35,28 @@ class _Recorder:
     def __init__(self, responses):
         self.responses = list(responses)
         self.calls = []
+        self._uploaded_shards: dict[str, str] = {}
 
     def __call__(self, req, timeout=20):  # noqa: ANN001
+        url = req.full_url
+        method = req.get_method()
+        body = req.data.decode("utf-8") if isinstance(req.data, bytes) else ""
         self.calls.append(
             {
-                "url": req.full_url,
-                "method": req.get_method(),
+                "url": url,
+                "method": method,
                 "headers": dict(req.header_items()),
-                "body": req.data.decode("utf-8") if isinstance(req.data, bytes) else "",
+                "body": body,
                 "timeout": timeout,
             }
         )
+        if "/source-sync/shards/" in url:
+            key = url.split("?ref=", 1)[0]
+            if method == "PUT":
+                self._uploaded_shards[key] = str(json.loads(body).get("content") or "")
+                return _FakeResponse(201, {"content": {"sha": "shard-sha"}})
+            if method == "GET" and key in self._uploaded_shards:
+                return _FakeResponse(200, {"content": self._uploaded_shards[key]})
         if not self.responses:
             raise AssertionError("No fake responses left")
         item = self.responses.pop(0)
@@ -599,6 +610,13 @@ def test_push_sources_snapshot_serializes_expected_payload(source_sync_test_root
         [
             _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
             HTTPError(
+                url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync/manifest.json?ref=main",
+                code=404,
+                msg="Not Found",
+                hdrs={},
+                fp=None,
+            ),
+            HTTPError(
                 url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync.json?ref=main",
                 code=404,
                 msg="Not Found",
@@ -622,10 +640,12 @@ def test_push_sources_snapshot_serializes_expected_payload(source_sync_test_root
         sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
     assert result["pushed"]
     assert result["remoteSha"] == "newsha"
-    put_call = opener.calls[2]
-    assert put_call["method"] == "PUT"
-    body = json.loads(put_call["body"])
-    decoded = json.loads(base64.b64decode(body["content"]).decode("utf-8"))
+    assert result["snapshotFormat"] == "sharded-v3"
+    assert not any(
+        call["method"] == "PUT" and call["url"].endswith("baluffo/source-sync.json")
+        for call in opener.calls
+    )
+    decoded = result["snapshot"]
     assert decoded["schemaVersion"] == 2
     assert "active" in decoded
     assert "pending" in decoded
@@ -654,6 +674,13 @@ def test_push_sources_snapshot_preserves_remote_active_and_pending(source_sync_t
     opener = _Recorder(
         [
             _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
+            HTTPError(
+                url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync/manifest.json?ref=main",
+                code=404,
+                msg="Not Found",
+                hdrs={},
+                fp=None,
+            ),
             _FakeResponse(200, {"sha": "s1", "content": encoded}),
             _FakeResponse(201, {"content": {"sha": "newsha"}}),
         ]
@@ -667,9 +694,7 @@ def test_push_sources_snapshot_preserves_remote_active_and_pending(source_sync_t
     finally:
         sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
     assert result["pushed"]
-    put_call = opener.calls[2]
-    body = json.loads(put_call["body"])
-    decoded = json.loads(base64.b64decode(body["content"]).decode("utf-8"))
+    decoded = result["snapshot"]
     assert len(decoded["active"]) == 1
     assert len(decoded["pending"]) == 1
     assert decoded["schemaVersion"] == 2
@@ -717,6 +742,13 @@ def test_push_sources_snapshot_allows_local_rejected_to_remove_remote_source(sou
     opener = _Recorder(
         [
             _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
+            HTTPError(
+                url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync/manifest.json?ref=main",
+                code=404,
+                msg="Not Found",
+                hdrs={},
+                fp=None,
+            ),
             _FakeResponse(200, {"sha": "s1", "content": encoded}),
             _FakeResponse(201, {"content": {"sha": "newsha"}}),
         ]
@@ -734,9 +766,7 @@ def test_push_sources_snapshot_allows_local_rejected_to_remove_remote_source(sou
     finally:
         sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
     assert result["pushed"]
-    put_call = opener.calls[2]
-    body = json.loads(put_call["body"])
-    decoded = json.loads(base64.b64decode(body["content"]).decode("utf-8"))
+    decoded = result["snapshot"]
     assert len(decoded["active"]) == 0
     assert "rejected" not in decoded
 
