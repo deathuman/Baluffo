@@ -5,7 +5,7 @@
 > - **Canonical for:** saved-job data model refinements, phase/outcome ergonomics, activity semantics, Saved page operations UX, and milestone sequencing toward Saved Jobs Tracker v1
 > - **Not canonical for:** backend job discovery/fetch contracts, local data storage internals, or deployment/packaging behavior
 > - **Then inspect:** [`../AI_ASSISTANT_GUIDE.md`](../AI_ASSISTANT_GUIDE.md), [`../architecture-ai-map.md`](../architecture-ai-map.md), [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md), [`../../frontend/local-data/constants.js`](../../frontend/local-data/constants.js), and [`../testing.md`](../testing.md)
-> - **Last updated:** 2026-05-03
+> - **Last updated:** 2026-05-12
 
 ## Current save-job flow
 
@@ -125,7 +125,22 @@ pipelinePhase: bookmark | applied | screening | assignment | interview_1 | inter
 outcomeStatus: active | rejected | withdrawn | ghosted | closed | accepted
 ```
 
-If staged, first add `withdrawn`, `ghosted`, `closed`, `accepted` as terminal outcome statuses.
+Do **not** stage this by appending `withdrawn`, `ghosted`, `closed`, and `accepted` to the current linear `APPLICATION_STATUSES` list. The current transition helper treats that list as a one-step phase ladder and only special-cases `rejected` as terminal; adding more terminal values there would allow invalid terminal-to-terminal movement and would render every status as a phase button.
+
+Required first implementation:
+
+```text
+pipelinePhase: bookmark | applied | screening | assignment | interview_1 | interview_2 | final | offer
+outcomeStatus: active | rejected | withdrawn | ghosted | closed | accepted
+```
+
+Migration requirements:
+
+- Existing `applicationStatus` rows migrate into `pipelinePhase` plus `outcomeStatus`.
+- Existing `rejected` rows become `outcomeStatus="rejected"` with the best available previous active phase retained as `pipelinePhase`, falling back to `applied` only when no better phase evidence exists.
+- Phase UI renders only pipeline phases.
+- Outcome UI is separate and treats every non-`active` outcome as terminal unless a contextual override is confirmed.
+- Transition logic uses explicit phase order plus a `TERMINAL_OUTCOME_STATUSES` set; terminal outcomes must not be modeled as phase steps.
 
 ### 2. `updatedAt` behavior is inconsistent
 
@@ -139,6 +154,10 @@ Recommended split fields:
 - `trackingUpdatedAt` (phase/reminder/contact/outcome)
 - `notesUpdatedAt` (notes updates)
 - `lastActivityAt` (any user-visible activity)
+
+Backup/import requirement:
+
+- Update `areSavedRowsEquivalent()` whenever these fields are added. It currently uses a hardcoded saved-row equivalence list, so new timestamp fields would otherwise be ignored during import merge checks.
 
 Then Saved page sorting modes can be explicit:
 
@@ -162,6 +181,12 @@ details: { previousLength, nextLength, debounceWindow: true }
 ```
 
 Log after idle/blur, not every keystroke.
+
+Implementation requirement:
+
+- Capture `previousLength` when the first debounced note save is queued, using the current row in `viewState.lastSavedJobsByKey`.
+- Do not fetch the previous note body from IndexedDB during autosave just to compute the activity detail; that adds latency to the write path.
+- Clear the captured previous-length state after the queued save succeeds or fails.
 
 ### 4. Phase timeline vs stored timestamps can drift semantically
 
@@ -204,6 +229,12 @@ Display separately from application status, e.g.:
 Application: Interview 1
 Source: likely removed 3 days ago
 ```
+
+Implementation note:
+
+- This is mostly an overlay/view-model task, not a new lifecycle badge system. `frontend/shared/lifecycle-badges.js` already handles `reappeared`, `preserved/source_failed`, `likely_removed`, and `archived`.
+- Preserve and expose `lastSeenAt` in `toLifecycleOverlayRecord()`; current overlay construction already carries `removedAt` but drops `lastSeenAt`.
+- Use the existing Saved relative-time formatter for copy such as "last seen 3d ago" or "removed 3d ago".
 
 ### 6. Filters are too coarse
 
@@ -261,11 +292,24 @@ overrideReason
 overrideUsed
 ```
 
+Implementation requirement:
+
+- The current confirmation dialog is boolean-only. Add a dedicated reason dialog or extend the dialog layer with an optional text-input mode before removing the global override.
+- The override reason is optional for the user, but the activity detail shape must explicitly record whether a reason was supplied.
+
 ### 8. Attachment hydration is correct but can be inefficient
 
 Current flow hydrates attachment lists for visible rows and calls `listAttachmentsForJob()` after render. This is acceptable for small sets but expensive for many saved jobs.
 
 Recommendation: lazy load attachments only when Attachment tab opens, using stored `attachmentsCount` for collapsed summaries.
+
+Required lazy-load behavior:
+
+- Track loaded attachment job keys in view state.
+- Track loading attachment job keys so repeated clicks do not fan out duplicate reads.
+- Render a "Loading..." state when the Attachments tab is opened for an unloaded job.
+- Add a singular per-job hydrate path and call it from the details-tab switch when `tab === "attachments"`.
+- Keep upload/delete paths refreshing that job's attachment list and marking it loaded.
 
 ### 9. Remove/restore flow is mostly good but not undo-safe
 
@@ -308,25 +352,28 @@ Render first-class fields first: priority, next action, next action date.
 
 ### Saved Jobs Tracker v1
 
-1. Add terminal outcomes: `accepted`, `withdrawn`, `ghosted`, `closed`.
-2. Add `lastActivityAt` and `trackingUpdatedAt` so sort semantics match user intent.
-3. Add saved-job source lifecycle overlay: active / likely removed / archived / unknown.
-4. Add phase/outcome-based filters: Applied, Interviewing, Offer, Rejected/Closed, Needs Action.
-5. Persist note activity with debounce.
-6. Replace global phase override with per-transition override reason.
-7. Lazy-load attachment lists on attachment tab open.
-8. Add tests covering save → phase update → note update → attachment update → remove/restore.
+1. Split saved-job tracking into `pipelinePhase` and `outcomeStatus`, including migration from legacy `applicationStatus`.
+2. Add terminal outcomes through `outcomeStatus`: `accepted`, `withdrawn`, `ghosted`, `closed`, and legacy `rejected`.
+3. Add `lastActivityAt`, `trackingUpdatedAt`, `contentUpdatedAt`, and `notesUpdatedAt`, and update backup/import equivalence checks.
+4. Add saved-job source lifecycle overlay with `lastSeenAt` and `removedAt` relative-time copy.
+5. Add phase/outcome-based filters: Applied, Interviewing, Offer, Rejected/Closed, Needs Action.
+6. Persist note activity with debounce and captured previous/next note lengths.
+7. Replace global phase override with per-transition override reason capture.
+8. Lazy-load attachment lists on attachment tab open with loading/loaded state.
+9. Add tests covering save → phase update → note update → attachment update → remove/restore.
 
 ## Implementation order
 
 ```text
-1. Extend status contract carefully
+1. Split phase/outcome contract and migrate legacy rows
 2. Add derived saved-job view model
-3. Add lifecycle/source overlay display
-4. Improve filters/sorts
-5. Improve activity logging
-6. Refine remove/restore semantics
-7. Add tests
+3. Add explicit activity timestamps and backup equivalence coverage
+4. Add lifecycle/source overlay display with `lastSeenAt`
+5. Improve filters/sorts
+6. Improve activity logging and override reason capture
+7. Lazy attachments / performance polish
+8. Refine remove/restore semantics
+9. Add tests
 ```
 
 The highest-impact change is a shared saved-job view model to normalize:
