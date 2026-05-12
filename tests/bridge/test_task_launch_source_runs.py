@@ -1,0 +1,134 @@
+from __future__ import annotations
+
+import sqlite3
+from pathlib import Path
+from typing import Any
+
+from src.bridge.task_launch_api import (
+    TaskLaunchApi,
+    TaskLaunchDeps,
+    TaskLaunchPaths,
+    TaskLaunchRuntime,
+)
+from src.storage import BaluffoStore, SourceRuntimeStore
+from tests.helpers.temp_paths import workspace_tmpdir
+
+
+def _task_launch_api(
+    data_dir: Path,
+    *,
+    source_runtime_store: Any,
+    diagnostics: list[dict[str, Any]],
+) -> TaskLaunchApi:
+    return TaskLaunchApi(
+        runtime=TaskLaunchRuntime(root=data_dir, data_dir=data_dir),
+        paths=TaskLaunchPaths(
+            discovery_log=data_dir / "source-discovery.log",
+            discovery_report=data_dir / "source-discovery-report.json",
+            fetcher_log=data_dir / "jobs-fetcher.log",
+            task_state=data_dir / "admin-task-state.json",
+            jobs_fetch_report=data_dir / "jobs-fetch-report.json",
+            jobs_fetch_tasks=data_dir / "jobs-fetch-tasks.json",
+            approval_state=data_dir / "source-approval-state.json",
+        ),
+        deps=TaskLaunchDeps(
+            now_iso=lambda: "2026-05-12T12:00:00+00:00",
+            bridge_log=lambda *_args, **_kwargs: None,
+            load_json_object=lambda _path, default: dict(default or {}),
+            save_json_atomic=lambda _path, _payload: None,
+            task_state_lock=None,
+            default_source_loaders=lambda: [],
+            failed_source_names_from_latest_report=lambda _allowed: [],
+            safe_int=lambda value, default, floor, ceil: max(
+                floor, min(ceil, int(value or default))
+            ),
+            source_runtime_store=source_runtime_store,
+            record_storage_diagnostic=lambda **fields: diagnostics.append(dict(fields)),
+        ),
+    )
+
+
+def test_fetch_lifecycle_close_shadow_writes_source_runs() -> None:
+    with workspace_tmpdir("task-launch-source-runs") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            runtime = SourceRuntimeStore(
+                store,
+                now_iso=lambda: "2026-05-12T12:00:00+00:00",
+            )
+            diagnostics: list[dict[str, Any]] = []
+            api = _task_launch_api(
+                data_dir,
+                source_runtime_store=lambda: runtime,
+                diagnostics=diagnostics,
+            )
+            finished: list[dict[str, Any]] = []
+            report = {
+                "runId": "fetch_1",
+                "startedAt": "2026-05-12T11:00:00+00:00",
+                "finishedAt": "2026-05-12T11:02:00+00:00",
+                "summary": {"outputCount": 2, "failedSources": 0, "sourceCount": 1},
+                "sources": [
+                    {
+                        "name": "Studio A",
+                        "status": "ok",
+                        "adapter": "static",
+                        "fetchStrategy": "http",
+                        "studio": "Studio A",
+                        "fetchedCount": 3,
+                        "keptCount": 2,
+                        "durationMs": 120,
+                    }
+                ],
+            }
+
+            closed = api._close_fetch_lifecycle_from_report(  # noqa: SLF001
+                run_id="fetch_1",
+                normalize_fetch_report_contract=lambda payload: payload,
+                load_json_object=lambda _path, _default: report,
+                finish_lifecycle_run=lambda run_id, task_type, **kwargs: (
+                    finished.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+                ),
+                fail_lifecycle_run=lambda *_args, **_kwargs: {},
+            )
+
+            assert closed is True
+            assert runtime.source_runs(run_id="fetch_1")[0]["name"] == "Studio A"
+            assert store.get_authority_modes()["sourceRuns"] == "shadow"
+            assert diagnostics[-1]["code"] == "source_runs_projection_match"
+            assert finished[0]["terminal_reason"] == "completed"
+
+
+def test_fetch_lifecycle_close_rolls_source_runs_back_on_shadow_failure() -> None:
+    class FailingSourceRuntime:
+        def __init__(self, store: BaluffoStore) -> None:
+            self.store = store
+
+        def upsert_source_runs(self, **_kwargs: Any) -> int:
+            raise sqlite3.OperationalError("database is locked")
+
+    with workspace_tmpdir("task-launch-source-runs-failure") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            diagnostics: list[dict[str, Any]] = []
+            api = _task_launch_api(
+                data_dir,
+                source_runtime_store=lambda: FailingSourceRuntime(store),
+                diagnostics=diagnostics,
+            )
+            report = {
+                "runId": "fetch_1",
+                "finishedAt": "2026-05-12T11:02:00+00:00",
+                "summary": {"outputCount": 0},
+                "sources": [{"name": "Studio A", "status": "ok"}],
+            }
+
+            closed = api._close_fetch_lifecycle_from_report(  # noqa: SLF001
+                run_id="fetch_1",
+                normalize_fetch_report_contract=lambda payload: payload,
+                load_json_object=lambda _path, _default: report,
+                finish_lifecycle_run=lambda *_args, **_kwargs: {},
+                fail_lifecycle_run=lambda *_args, **_kwargs: {},
+            )
+
+            assert closed is True
+            assert store.get_authority_modes()["sourceRuns"] == "json"
+            assert diagnostics[-1]["code"] == "source_runs_shadow_write_failed"

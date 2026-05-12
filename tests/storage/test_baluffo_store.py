@@ -24,7 +24,7 @@ def test_store_initializes_wal_mode_health_and_json_authority_defaults() -> None
             "taskRuns": "sqlite",
             "taskEvents": "sqlite",
             "syncRuns": "sqlite",
-            "sourceRuns": "json",
+            "sourceRuns": "shadow",
             "jobsFeed": "json",
             "sourceRegistry": "json",
         }

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 import threading
 import time
 import uuid
@@ -12,11 +13,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from src.bridge import storage_health as storage_health_mod
 from src.bridge.task_admission import (
     build_duplicate_start_payload,
     get_active_lifecycle_task_metadata,
 )
 from src.jobs.common import config as jobs_common_config
+from src.storage import SourceRuntimeStore
 
 
 @dataclass(frozen=True)
@@ -48,6 +51,8 @@ class TaskLaunchDeps:
     safe_int: Callable[[Any, int, int, int], int]
     pid_is_running: Callable[[int], bool] = lambda _pid: False
     load_runtime_evidence: Callable[[Path, Any], Any] | None = None
+    source_runtime_store: Callable[[], Any] | None = None
+    record_storage_diagnostic: Callable[..., None] | None = None
 
 
 class TaskLaunchApi:
@@ -57,6 +62,145 @@ class TaskLaunchApi:
         self._runtime = runtime
         self._paths = paths
         self._deps = deps
+
+    def _record_source_run_diagnostic(
+        self,
+        *,
+        code: str,
+        ok: bool,
+        message: str = "",
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        recorder = self._deps.record_storage_diagnostic
+        if recorder is not None:
+            recorder(
+                surface="sourceRuns",
+                code=code,
+                ok=ok,
+                message=message,
+                details=dict(details or {}),
+            )
+            return
+        storage_health_mod.record_storage_diagnostic(
+            self._runtime.data_dir,
+            surface="sourceRuns",
+            code=code,
+            ok=ok,
+            message=message,
+            details=dict(details or {}),
+        )
+
+    def _source_runtime_store(self) -> Any | None:
+        store_factory = self._deps.source_runtime_store
+        if store_factory is not None:
+            try:
+                return store_factory()
+            except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
+                self._record_source_run_diagnostic(
+                    code="source_runs_store_unavailable",
+                    ok=False,
+                    message=str(exc),
+                )
+                return None
+        try:
+            return SourceRuntimeStore(storage_health_mod.get_storage_store(self._runtime.data_dir))
+        except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
+            self._record_source_run_diagnostic(
+                code="source_runs_store_unavailable",
+                ok=False,
+                message=str(exc),
+            )
+            return None
+
+    def _source_runs_mode(self, runtime_store: Any) -> str:
+        try:
+            modes = runtime_store.store.get_authority_modes()
+        except (AttributeError, RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
+            self._record_source_run_diagnostic(
+                code="source_runs_authority_mode_unavailable",
+                ok=False,
+                message=str(exc),
+            )
+            return "json"
+        return str((modes or {}).get("sourceRuns") or "json").strip().lower()
+
+    def _rollback_source_runs_to_json(
+        self,
+        runtime_store: Any,
+        *,
+        code: str,
+        message: str,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        try:
+            runtime_store.store.set_authority_mode("sourceRuns", "json", reason=code)
+        except (AttributeError, RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
+            message = f"{message}; rollback failed: {exc}"
+        self._record_source_run_diagnostic(
+            code=code,
+            ok=False,
+            message=message,
+            details=dict(details or {}),
+        )
+
+    def _source_parity_rows(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [
+            {
+                "name": str(row.get("name") or "").strip(),
+                "status": str(row.get("status") or "").strip().lower(),
+                "adapter": str(row.get("adapter") or "").strip(),
+                "fetchStrategy": str(row.get("fetchStrategy") or "").strip(),
+                "studio": str(row.get("studio") or "").strip(),
+                "fetchedCount": int(row.get("fetchedCount") or 0),
+                "keptCount": int(row.get("keptCount") or 0),
+                "lowConfidenceDropped": int(row.get("lowConfidenceDropped") or 0),
+                "error": str(row.get("error") or "").strip(),
+                "durationMs": int(row.get("durationMs") or 0),
+            }
+            for row in rows
+            if isinstance(row, dict)
+        ]
+
+    def _mirror_fetch_source_runs(self, report: dict[str, Any]) -> None:
+        run_id = str(report.get("runId") or "").strip()
+        source_rows = [row for row in report.get("sources") or [] if isinstance(row, dict)]
+        if not run_id or not source_rows:
+            return
+        runtime_store = self._source_runtime_store()
+        if runtime_store is None:
+            return
+        mode = self._source_runs_mode(runtime_store)
+        if mode not in {"shadow", "sqlite"}:
+            return
+        try:
+            runtime_store.upsert_source_runs(
+                run_id=run_id,
+                rows=source_rows,
+                evidence_ref={"reportPath": str(self._paths.jobs_fetch_report)},
+            )
+            sqlite_rows = runtime_store.source_runs(run_id=run_id, limit=max(1, len(source_rows)))
+            if self._source_parity_rows(sqlite_rows) != self._source_parity_rows(source_rows):
+                self._rollback_source_runs_to_json(
+                    runtime_store,
+                    code="source_runs_projection_mismatch",
+                    message="SQLite source_runs projection did not match fetch report JSON",
+                    details={
+                        "jsonCount": len(source_rows),
+                        "sqliteCount": len(sqlite_rows),
+                    },
+                )
+                return
+            self._record_source_run_diagnostic(
+                code="source_runs_projection_match",
+                ok=True,
+                details={"rowCount": len(source_rows)},
+            )
+        except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
+            self._rollback_source_runs_to_json(
+                runtime_store,
+                code="source_runs_shadow_write_failed",
+                message=str(exc),
+            )
 
     def run_background_script(
         self,
@@ -434,6 +578,7 @@ class TaskLaunchApi:
         finished = str(report.get("finishedAt") or "").strip()
         if str(report.get("runId") or "").strip() != run_id or not finished:
             return False
+        self._mirror_fetch_source_runs(report)
         summary = dict(report.get("summary") or {})
         if self._fetch_summary_is_failed(summary):
             fail_lifecycle_run(
