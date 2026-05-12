@@ -367,30 +367,29 @@ class BridgeApi:
             return False
         return current is default
 
+    def _wire_registry_defaults(self) -> None:
+        if self.registry is None:
+            return
+        registry_bindings = (
+            ("load_state", self.registry.load_state),
+            ("summarize_state", self.registry.summarize_state),
+            ("get_registry_auto_heal_report", self.registry.get_auto_heal_report),
+            ("load_tombstones", self.registry.load_tombstones),
+            ("save_tombstones", self.registry.save_tombstones),
+            ("move_entries", self.registry.move_entries),
+            ("unique_sources", self.registry.unique_sources),
+            ("source_identity", self.registry.source_identity),
+            ("source_url_fingerprint", self.registry.source_url_fingerprint),
+            ("normalize_source_url", self.registry.normalize_source_url),
+        )
+        for field_name, value in registry_bindings:
+            if self._field_is_default(field_name):
+                setattr(self, field_name, value)
+
     def __post_init__(self) -> None:
         # Prefer typed services when provided, but only override behaviors that
         # were left at the default stubs.
-        if self.registry is not None:
-            if self._field_is_default("load_state"):
-                self.load_state = self.registry.load_state
-            if self._field_is_default("summarize_state"):
-                self.summarize_state = self.registry.summarize_state
-            if self._field_is_default("get_registry_auto_heal_report"):
-                self.get_registry_auto_heal_report = self.registry.get_auto_heal_report
-            if self._field_is_default("load_tombstones"):
-                self.load_tombstones = self.registry.load_tombstones
-            if self._field_is_default("save_tombstones"):
-                self.save_tombstones = self.registry.save_tombstones
-            if self._field_is_default("move_entries"):
-                self.move_entries = self.registry.move_entries
-            if self._field_is_default("unique_sources"):
-                self.unique_sources = self.registry.unique_sources
-            if self._field_is_default("source_identity"):
-                self.source_identity = self.registry.source_identity
-            if self._field_is_default("source_url_fingerprint"):
-                self.source_url_fingerprint = self.registry.source_url_fingerprint
-            if self._field_is_default("normalize_source_url"):
-                self.normalize_source_url = self.registry.normalize_source_url
+        self._wire_registry_defaults()
         if self.sync is not None:
             if self._field_is_default("get_sync_status_payload"):
                 self.get_sync_status_payload = self.sync.get_sync_status_payload

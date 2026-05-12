@@ -1,6 +1,6 @@
 # Storage Contract
 
-> - **Status:** Proposed
+> - **Status:** Active
 > - **Use this when:** implementing or validating runtime SQLite/WAL storage, storage authority migration, compatibility exports, evidence archives, or source-sync sharding
 > - **Canonical for:** target storage authority boundaries, SQLite connection and transaction discipline, migration safety, export and rollback behavior, and hot-path size budgets
 > - **Not canonical for:** current endpoint payload fields, current JSON artifact schemas, source-sync v2 schema details, or Jobs frontend row fields
@@ -35,7 +35,7 @@ The Jobs frontend boot path remains static JSON plus IndexedDB. Desktop local us
 | Fetch source progress | SQLite `source_runs` after M4 cutover | `jobs-fetch-tasks.json` compatibility while needed | Live UI keeps compact current progress; terminal source details hydrate from SQLite/archive. |
 | Jobs feed | SQLite `jobs` and `job_sources` server-side after M5 cutover | `jobs-unified-light.json` permanent export | Frontend continues static JSON plus IndexedDB. |
 | Full fetch/dedup/source evidence | Filesystem archive plus JSON manifest | Lazy detail/export APIs | Not SQLite. Enforce retention budgets. |
-| Source registry | SQLite-backed rows or staged registry service after later cutover | Sharded source-sync export | Registry journal repair must remain bounded before migration. |
+| Source registry | SQLite `source_registry_rows`, `source_registry_tombstones`, and `source_registry_state` after M6 cutover | Active/pending/rejected/tombstone JSON exports plus sharded source-sync export | Route payloads remain shape-compatible; rollback returns reads to JSON while retaining SQLite for diagnosis. |
 | Bridge diagnostics | Bounded JSONL or SQLite table | Support artifact | Diagnostics are not lifecycle authority. |
 | Desktop local user data | Existing JSON files | `LOCAL_DATA_RUNTIME_METHODS` | No SQLite migration. |
 
@@ -106,6 +106,8 @@ Milestone 4 cutover is complete for `sourceRuns`: new stores seed `sourceRuns=sq
 
 Milestone 5 cutover is complete for `jobsFeed`: new stores seed `jobsFeed=sqlite`, bridge-managed terminal fetch closeout mirrors canonical jobs rows into generation-scoped SQLite tables, and successful authoritative closeout regenerates `jobs-unified.json`, `jobs-unified-light.json`, and `jobs-unified.csv` as compatibility exports. Jobs-feed read/write/parity/export failures persistently roll the surface back to `json` while retaining SQLite generations for diagnosis.
 
+Milestone 6 cutover is complete for `sourceRegistry`: new stores seed `sourceRegistry=sqlite`, registry active/pending/rejected rows and tombstones publish through generation-scoped SQLite tables, and successful authoritative publishes regenerate compatibility JSON/gzip exports. Source-registry read/write/parity/export failures, missing published generations, or direct JSON drift persistently roll the surface back to `json` while retaining SQLite generations and diagnostics.
+
 ## Compatibility Exports
 
 Compatibility JSON exports remain generated until the owning frontend/API surface is separately retired.
@@ -117,6 +119,7 @@ Rules:
 - `jobs-unified-light.json` remains the permanent Jobs frontend boot export.
 - Do not add cache hashes inside `jobs-unified-light.json` rows. Use sidecar metadata or bridge metadata.
 - After M5, `jobs-unified.json`, `jobs-unified-light.json`, and `jobs-unified.csv` are generated from the published SQLite jobs-feed generation during bridge-managed terminal fetch closeout when `jobsFeed=sqlite`; direct CLI outputs remain JSON fallback until bridge postprocessing runs.
+- After M6, `source-registry-active.json`, `source-registry-pending.json`, `source-registry-rejected.json`, and `source-registry-tombstones.json` remain compatibility/debug exports. When `sourceRegistry=sqlite`, bridge-owned registry routes publish SQLite first, then regenerate those exports; direct CLI JSON writes are treated as JSON fallback/drift and trigger rollback rather than silently overwriting SQLite.
 - Full fetch/dedup/source evidence moves to filesystem-backed archives with a JSON manifest, not SQLite.
 - After M4, bridge-started terminal `jobs-fetch-report.json` is a compact compatibility/debug export with lean source rows and `sourceRuns.sourceDetailsArchive` refs; direct CLI or old full reports remain valid JSON fallback.
 

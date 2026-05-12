@@ -68,6 +68,8 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
 | POST | `/registry/delete` | Local-only delete; writes tombstones and removes sources from the registry (`{ids: [], urls: []}`) |
 | POST | `/sources/manual` | Add manual source (`{url: ""}`) |
 
+When `sourceRegistry=sqlite`, the registry GET routes and POST mutations read and publish through the SQLite source-registry generation before regenerating active/pending/rejected/tombstone compatibility exports. Payload shapes stay unchanged. Storage, busy-timeout, missing-generation, parity, export, or direct-JSON-drift failures persist `sourceRegistry=json` and return the JSON artifact path while leaving SQLite rows available for diagnostics.
+
 ## Discovery
 
 | Method | Path | Purpose |
@@ -165,7 +167,7 @@ Known sensitive field names such as tokens, passwords, secrets, API keys, and au
 - `taskProgress`, `workItems`, and `recentEvents` are the support-ready live task contract for fetch/discovery/sync. They should be extended through the shared normalizers rather than by adding task-specific parallel event formats. Discovery uses these fields for wave-level progress, including current stage, stage index/total, generated/survived counts, probe counts, and bounded stage events.
 - `/desktop-local-data/startup-metrics?limit=` returns retained startup diagnostic rows from `data/desktop-startup-metrics.jsonl`. Rows use `schemaVersion: 1`, `ts`, `event`, `category`, and either `fields` for runtime traces or `payload` for browser/page metrics; `browserTsMs` is preserved when browser-created timing is available.
 - `/ops/storage-metrics` is read-only diagnostics. It returns additive `storageMetrics` for JSON/gzip write counts, serialization and replace durations, compressed/uncompressed byte sizes, registry `.jsonl` journal bytes/rows, and source-sync snapshot size pressure, plus existing route timing counters under `routeCounters`.
-- `/ops/storage-health` is read-only diagnostics for the SQLite runtime store. It returns `{ok, storage}` with migration version, WAL mode, foreign-key state, quick_check status, busy counters, last write error, diagnostics, and current per-surface authority modes. After M4, `taskRuns`, `taskEvents`, `syncRuns`, and `sourceRuns` are SQLite-backed unless a persisted rollback returns the affected surface to JSON.
+- `/ops/storage-health` is read-only diagnostics for the SQLite runtime store. It returns `{ok, storage}` with migration version, WAL mode, foreign-key state, quick_check status, busy counters, last write error, diagnostics, and current per-surface authority modes. After M6, new stores seed `taskRuns`, `taskEvents`, `syncRuns`, `sourceRuns`, `jobsFeed`, and `sourceRegistry` as SQLite-backed unless a persisted rollback returns the affected surface to JSON.
 - `/ops/fetch-report` keeps its report payload shape. With `sourceRuns=sqlite`, terminal source rows are hydrated from SQLite/archive while `?view=live` remains compact and omits bulky `details`.
 - `/ops/fetch-report/sources` is additive and bounded. It returns `{ok, runId, sources, count, limit, offset, source, warning}` and uses SQLite only while `sourceRuns=sqlite`; otherwise it falls back to the JSON report rows.
 - `/ops/task-state` is unchanged. Its top-level `tasks` array remains the compact current-task summary contract used by Ops and Jobs.

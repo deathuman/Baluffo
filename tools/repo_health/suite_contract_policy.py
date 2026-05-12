@@ -1257,10 +1257,10 @@ def test_bridge_api_prefers_registry_service_identity_helpers_when_present(repo_
     registry_service = (repo_root / "src" / "bridge" / "registry_service.py").read_text(
         encoding="utf-8"
     )
-    assert 'if self._field_is_default("unique_sources"):' in bridge_api
-    assert 'if self._field_is_default("source_identity"):' in bridge_api
-    assert 'if self._field_is_default("source_url_fingerprint"):' in bridge_api
-    assert 'if self._field_is_default("normalize_source_url"):' in bridge_api
+    assert '("unique_sources", self.registry.unique_sources)' in bridge_api
+    assert '("source_identity", self.registry.source_identity)' in bridge_api
+    assert '("source_url_fingerprint", self.registry.source_url_fingerprint)' in bridge_api
+    assert '("normalize_source_url", self.registry.normalize_source_url)' in bridge_api
     assert (
         "def unique_sources(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:"
         in registry_service

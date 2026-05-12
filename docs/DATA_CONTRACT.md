@@ -5,7 +5,7 @@
 > - **Canonical for:** data contracts between pipeline, bridge, frontend, and local user data flows
 > - **Not canonical for:** subsystem ownership or route wiring
 > - **Then inspect:** `src/core/schemas.py`, `src/core/contracts.py`, the owning `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py` modules, relevant tests, and the owning runtime docs
-> - **Last updated:** 2026-05-10
+> - **Last updated:** 2026-05-12
 > - **Also update when changing contract shape:** `src/core/schemas.py`, `src/core/contracts.py`, the owning `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py` modules, relevant tests, and any affected UI/runtime docs
 
 This document serves as the absolute boundary and source of truth for data structures passed between the Python pipeline (`src/jobs/`) and the Vanilla JS frontend (`frontend/`).
@@ -467,7 +467,9 @@ The orchestrator generates a machine-readable HUD in `_out/LATEST_MANIFEST.json`
 
 Baluffo's source registry has tracked seed defaults plus local runtime bucket files.
 The seed files are reviewable defaults bundled with the app; runtime files are local
-operational state and are ignored by Git.
+operational state and are ignored by Git. After the M6 runtime-storage cutover,
+bridge-owned registry authority is SQLite when `sourceRegistry=sqlite`; the files
+below remain compatibility/debug exports and JSON fallback inputs.
 
 | File | Purpose |
 |---|---|
@@ -479,9 +481,13 @@ operational state and are ignored by Git.
 | `data/source-registry-rejected.json` | Local rejected sources; a normal registry bucket, not a delete sentinel |
 | `data/source-registry-tombstones.json` | Local delete ledger keyed by `source_identity()` |
 
-Registry reads use the runtime active/pending file when it exists, then the tracked
-seed file, then the in-code fallback. Registry writes always target the runtime
-active/pending paths and never mutate seed files.
+When `sourceRegistry=json`, registry reads use the runtime active/pending file when
+it exists, then the tracked seed file, then the in-code fallback. When
+`sourceRegistry=sqlite`, registry GET routes, POST mutations, and tombstone
+load/save publish through generation-scoped SQLite rows first and regenerate the
+active/pending/rejected/tombstone exports afterward. Seed files are never mutated.
+Direct CLI JSON writes or JSON/SQLite drift trigger JSON fallback/rollback rather
+than silent SQLite overwrite.
 
 ### Canonical registry row
 

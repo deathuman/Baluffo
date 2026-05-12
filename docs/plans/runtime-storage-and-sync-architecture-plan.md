@@ -1,6 +1,6 @@
 # Runtime Storage and Source Sync Architecture Plan
 
-> - **Status:** Proposed (revised 2026-05-11 after validation loop)
+> - **Status:** Completed (M0-M6 closed on 2026-05-12)
 > - **Use this when:** reducing runtime artifact bloat, planning SQLite/WAL storage, changing live task/report persistence, or replacing monolithic source-sync snapshots
 > - **Canonical for:** long-term storage direction, journal-scope policy, source-sync sharding target, storage metrics gate, hot-path payload budgets, migration sequencing, SQLite connection/transaction discipline, and rollback expectations
 > - **Not canonical for:** current endpoint response fields, current source-sync snapshot schema, or existing fetch report compatibility requirements
@@ -19,7 +19,7 @@ SQLite/WAL local runtime database for hot state
 + bounded filesystem-backed evidence archives
 ```
 
-Large JSON artifacts should become exports, evidence, and diagnostics, not live runtime authority. The migration must still be evidence-gated: Milestone 0 adds storage metrics, Milestone 0.5 fixes registry journal growth, and only then should the project decide whether the full SQLite migration is still justified.
+Large JSON artifacts should be exports, evidence, and diagnostics, not live runtime authority. The migration was evidence-gated: Milestone 0 added storage metrics, Milestone 0.5 fixed registry journal growth, M1-M5 moved task/source/jobs runtime authority, and M6 closed the remaining source-registry and packaged-evidence gaps.
 
 The jobs feed remains JSON-exported permanently. The current static-file plus IndexedDB frontend pattern is the canonical frontend boot path. Paginated Jobs bridge APIs are a separate future decision gated on measured page-load parsing cost, not part of this migration.
 
@@ -45,10 +45,11 @@ The 2026-05-11 validation found that several lifecycle closeout items are alread
 - Registry journals now write schema-v2 delta records for array and object payloads, including `rowIds` for exact registry array order reconstruction and content hashes for base/current validation. Legacy schema-v1 full-payload records remain readable during transition.
 - Targeted validation passed: lifecycle/storage-adjacent Python tests, journal/source-sync/build tests, the narrow frontend task-run view-model test, focused sync-size propagation tests, and focused storage-metrics route/module/benchmark tests.
 
-The remaining risks are not those old lifecycle read-path gaps. The open architecture risks are:
+The remaining-risk audit is closed as part of M6:
 
-- Storage metrics still need real local discovery/fetch sanity evidence before using them for the M0/M0.5 SQLite go/no-go decision.
-- The previous "push proposed manifest first" sharded-sync design can hide the last committed manifest from readers and is not acceptable.
+- The M0/M0.5 packaged fetch evidence gate is reconciled by `test:frontend:packaged:fetch-evidence`, which writes deterministic post-fetch evidence artifacts and passed three consecutive times on the final portable build.
+- Source registry authority is in scope for this plan: `sourceRegistry=sqlite` is the new-store default after migration `008`, with compatibility JSON/tombstone exports and JSON rollback on storage/parity/export failure.
+- The acceptance matrix below maps every closeout criterion to implementation evidence, tests, packaged evidence, or the explicit optional real-network corroboration note.
 
 ## Strategy Corrections
 
@@ -73,7 +74,7 @@ This plan supersedes older versions of the runtime storage roadmap.
 | Fetch source progress | SQLite `source_runs` after M4 cutover | `jobs-fetch-tasks.json` compatibility while needed | Active progress needs a streaming/live path; terminal-only bulk insert is not enough for live UI. |
 | Jobs feed | SQLite `jobs` and `job_sources` server-side after M5 cutover | `jobs-unified-light.json` permanent export | Frontend continues static JSON plus IndexedDB. |
 | Full fetch/dedup/source evidence | Filesystem archive plus JSON manifest | Lazy detail/export APIs | Not SQLite; enforce retention budget. |
-| Source registry | SQLite-backed rows or staged registry service after later cutover | Sharded source-sync export | Registry journal repair lands before SQLite. |
+| Source registry | SQLite `source_registry_rows`, `source_registry_tombstones`, and `source_registry_state` after M6 cutover | Active/pending/rejected/tombstone JSON exports plus sharded source-sync export | Registry journals remain bounded compatibility/recovery artifacts; route payloads stay shape-compatible. |
 | Bridge diagnostics | Bounded JSONL or SQLite table | Support artifact | Not lifecycle authority. |
 | Desktop local user data | Existing JSON files | `LOCAL_DATA_RUNTIME_METHODS` contract | No SQLite migration. |
 
@@ -161,6 +162,10 @@ src/storage/
     002_task_events.sql
     003_fetch_source_runs.sql
     004_jobs_feed.sql
+    005_task_sync_runtime.sql
+    006_source_run_runtime.sql
+    007_jobs_feed_runtime.sql
+    008_source_registry_runtime.sql
   runtime_evidence.py
 ```
 
@@ -532,6 +537,29 @@ M5.4 implementation note: packaged source-runs smoke now writes a deterministic 
 
 M5.5 closeout note: new stores now seed `jobsFeed=sqlite`. Migration/package expectations are at schema version `007`, and compatibility exports remain the permanent Jobs frontend boot path.
 
+### Milestone 6 - Source Registry SQLite Authority and Evidence Closeout
+
+Purpose: close this architecture plan end to end by adding the missing source-registry SQLite authority surface, proving deterministic packaged fetch evidence after the M5 cutover, and recording the final acceptance matrix.
+
+- **Done:** Add migration `008_source_registry_runtime.sql` plus `SourceRegistryRuntimeStore` with generation-scoped active/pending/rejected rows, generation-scoped tombstones, a published `source_registry_state` pointer, parity hashes, and bounded old-generation cleanup.
+- **Done:** Mirror normalized registry state and tombstones into SQLite in shadow/sqlite modes, compare JSON and SQLite projections, expose diagnostics through `/ops/storage-health`, and roll `sourceRegistry` back to JSON on write/parity failure.
+- **Done:** Cut registry reads, summaries, tombstone load/save, POST mutation flows, and sync-service registry persistence to SQLite when `sourceRegistry=sqlite`; regenerate compatibility JSON/tombstone exports after successful authoritative publishes.
+- **Done:** Add deterministic packaged fetch evidence smoke command `npm run test:frontend:packaged:fetch-evidence`. The smoke writes post-fetch `storage-health`, `storage-metrics`, fetch report, source-details query, registry summary, static jobs-feed sample, and `m6-fetch-evidence-summary.json` artifacts under the smoke output directory.
+- **Done:** Keep the optional real-network corroboration path documented but non-blocking: `python src/packaged_desktop_smoke.py --node-smoke-script tests/frontend/packaged-desktop-smoke.fetch-evidence.mjs --fetch-evidence-mode real --playwright-timeout 600`.
+- **Done:** Update package/schema expectations to migration `008`; new stores seed `sourceRegistry=sqlite` along with the M3-M5 SQLite authority modes.
+
+Gate: complete. Three consecutive deterministic packaged fetch evidence passes ran against the final portable build, and the final gate passed: `cmd /c npm run test:py`, `cmd /c npm run lint:precommit`, `cmd /c npm run test:frontend:packaged`, and `cmd /c npm run test:frontend:packaged:jobs-pipeline`. Optional real-network evidence remains a local corroboration command, not a completion blocker.
+
+M6.1 implementation note: migration `008_source_registry_runtime.sql` adds generation-scoped source-registry rows/tombstones and `source_registry_state`. `SourceRegistryRuntimeStore` owns staged generation writes, publish, replace, current-state reads, summaries, parity hashing, and bounded cleanup without importing bridge composition roots.
+
+M6.2 implementation note: `RegistryService` mirrors JSON-authority writes into SQLite in shadow/sqlite modes and persists `sourceRegistry=json` on write/parity failure so route payloads remain JSON-compatible while retaining SQLite rows for diagnosis.
+
+M6.3 implementation note: `/registry/active`, `/registry/pending`, `/registry/rejected`, `/registry/summary`, tombstone helpers, registry POST mutations, and sync-service persistence read/publish through SQLite when `sourceRegistry=sqlite`. Compatibility exports continue for active/pending/rejected/tombstones, and direct JSON drift triggers rollback instead of silent overwrite.
+
+M6.4 implementation note: the packaged fetch-evidence smoke proves `sourceRuns=sqlite`, `jobsFeed=sqlite`, `sourceRegistry=sqlite`, migration `008`, passing source/job/registry diagnostics, bounded registry journal metrics, compact fetch-report hydration, `/ops/fetch-report/sources` SQLite details, and static `jobs-unified-light.json` serving.
+
+M6.5 closeout note: the plan is completed. M6 made source registry a first-class SQLite authority surface inside this plan, recorded deterministic packaged evidence, and kept real-network evidence optional because the required gate must be repeatable without external network availability.
+
 ## Size Budgets
 
 Tests should enforce hot payload budgets:
@@ -575,6 +603,7 @@ For every milestone that changes runtime storage authority:
 | M3 | Reads revert to `admin-task-lifecycle.json` and compatibility history JSON. SQLite retained for diagnosis. |
 | M4 | Reads revert to `jobs-fetch-tasks.json` and full fetch report. SQLite/evidence archives retained for diagnosis. |
 | M5 | Reads/exports revert to existing jobs JSON pipeline output. SQLite retained for diagnosis. |
+| M6 | `sourceRegistry` rolls back to JSON on storage, busy-timeout, missing-generation, parity, or compatibility-export failure. Deterministic packaged evidence failure blocks plan completion until fixed; SQLite rows remain for diagnosis. |
 
 ## Acceptance Criteria
 
@@ -595,3 +624,28 @@ For every milestone that changes runtime storage authority:
 - SQLite health checks and backup/restore flows are validated before any user data authority moves.
 - All SQLite write transactions use `BEGIN IMMEDIATE`; busy contention has bounded retry behavior.
 - WAL checkpoint failures are logged and mark the store unhealthy at controlled checkpoint points.
+- M6 closeout maps each criterion above to concrete evidence and removes or links any remaining out-of-scope future work before the plan status becomes completed.
+
+## M6 Acceptance Matrix
+
+| Criterion | Evidence |
+|---|---|
+| Runtime evidence is never shadowed by stale `.jsonl` journals. | M0A writer hardening plus focused runtime-evidence tests in `npm run test:py`. |
+| Existing runtime evidence writes do not create `.jsonl` journals, and stale adjacent journals do not affect canonical runtime evidence no-op checks. | M0A tests and storage-metrics/runtime-evidence coverage in `npm run test:py`. |
+| `source-discovery-candidates.json` uses canonical-only array reads and cannot be shadowed by adjacent journals. | M0A discovery-candidate coverage in `npm run test:py`. |
+| Bridge startup quarantines stale runtime evidence `.jsonl` siblings for the current runtime evidence filename set. | M0A startup cleanup coverage in `npm run test:py`. |
+| Non-registry JSON artifacts are not journaled by `save_json_atomic()`, and stale adjacent journals do not overlay their canonical JSON. | M0A/M0.5 registry-journal tests plus `lint:precommit` import/contract policy. |
+| Registry journal size is bounded and cannot grow unboundedly across repeated writes or replace failures. | M0.5 bounded journal implementation; M6 packaged fetch evidence asserts bounded registry journal metrics. |
+| Sync size metrics are present in logs, timing, summaries, and history; shard metrics are added with the sharded sync milestone. | M0B/M2.10 sync propagation tests and bridge sync tests in `npm run test:py`. |
+| Storage metrics prove whether SQLite migration is still justified after journal repair. | M0C metrics plus M6 deterministic packaged evidence artifacts: `storage-metrics.post-fetch.json` and `m6-fetch-evidence-summary.json`. |
+| Sync cap failures terminalize with explicit `snapshot_too_large` evidence. | M2 sharded push/source-sync tests in `npm run test:py`. |
+| Sharded source sync can grow by adding shards without overwriting committed state before shards exist. | M2.8-M2.11 shard IO/push tests and v3-only contract docs. |
+| Admin live progress reads compact current state, not full terminal reports. | M3/M4 task runtime and source-run route tests plus packaged jobs-pipeline smoke. |
+| JSON exports are compatibility/debug artifacts, except the jobs feed export which remains the permanent frontend boot path. | M4/M5 closeout notes, storage contract, and packaged jobs/feed static-serving assertions. |
+| Full fetch/discovery evidence remains available through lazy detail APIs or compressed filesystem archives. | M4 evidence archive tests and M6 `/ops/fetch-report/sources` packaged evidence artifact. |
+| Hot-path payload budgets are enforced in tests. | Storage/source-run/task route tests and packaged fetch-evidence assertions for compact fetch report hydration. |
+| SQLite health checks and backup/restore flows are validated before any user data authority moves. | M1 storage skeleton tests, migration/package expectations through `008`, and `/ops/storage-health` packaged evidence. |
+| All SQLite write transactions use `BEGIN IMMEDIATE`; busy contention has bounded retry behavior. | `BaluffoStore` tests, storage package tests, and `lint:precommit` contract checks. |
+| WAL checkpoint failures are logged and mark the store unhealthy at controlled checkpoint points. | Storage health/store tests and `/ops/storage-health` diagnostics contract. |
+| Source registry SQLite authority is no longer dangling future scope. | M6.1-M6.3 implementation, `sourceRegistry=sqlite` default, registry route tests, and packaged fetch evidence asserting `sourceRegistry=sqlite`. |
+| Final deterministic packaged evidence and gates passed. | `build:portable-exe`; `test:frontend:packaged:fetch-evidence` x3; `test:py`; `lint:precommit`; `test:frontend:packaged`; `test:frontend:packaged:jobs-pipeline`. Optional real-network evidence is documented but not required. |

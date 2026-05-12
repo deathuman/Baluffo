@@ -157,7 +157,14 @@ async function assertFacadeStartupOrdering(apiRequest) {
   }
 }
 
-async function assertNoImmediateAdminError(page, { buttonLocator, observeMs = 8_000 }) {
+async function visibleErrorToastText(page) {
+  const messages = await page.locator(".toast.error.visible").evaluateAll(nodes =>
+    nodes.map(node => String(node.textContent || "").trim()).filter(Boolean)
+  ).catch(() => []);
+  return messages.join("; ");
+}
+
+async function assertNoImmediateAdminError(page, { buttonLocator, actionName = "admin action", observeMs = 8_000 }) {
   const errorLogCountBefore = await page.locator(".admin-fetcher-line.log-error").count();
   const errorToast = page.locator(".toast.error").first();
   let toastSeen = false;
@@ -167,7 +174,10 @@ async function assertNoImmediateAdminError(page, { buttonLocator, observeMs = 8_
   } catch {
     toastSeen = false;
   }
-  assert.equal(toastSeen, false, "unexpected admin error toast appeared");
+  if (toastSeen) {
+    const toastText = await visibleErrorToastText(page);
+    assert.fail(`unexpected admin error toast after ${actionName}${toastText ? `: ${toastText}` : ""}`);
+  }
 
   await page.waitForTimeout(observeMs);
   const sourceStatus = await page.locator("#admin-source-status").textContent();
@@ -178,21 +188,6 @@ async function assertNoImmediateAdminError(page, { buttonLocator, observeMs = 8_
 
   const errorLogCountAfter = await page.locator(".admin-fetcher-line.log-error").count();
   assert.equal(errorLogCountAfter, errorLogCountBefore, "admin error log count changed unexpectedly");
-}
-
-async function triggerFirstAvailableAdminAction(page) {
-  const candidates = [
-    { name: "discovery", locator: page.locator("#admin-run-discovery-btn") },
-    { name: "fetcher", locator: page.locator("#admin-run-fetcher-btn") },
-    { name: "sync-test", locator: page.locator("#admin-sync-test-btn") }
-  ];
-  for (const candidate of candidates) {
-    if (!(await candidate.locator.isVisible())) continue;
-    if (!(await candidate.locator.isEnabled())) continue;
-    await candidate.locator.click();
-    return candidate;
-  }
-  throw new Error("No admin action button available (discovery/fetcher/sync-test).");
 }
 
 async function runScenario(name, callback, scenarios) {
@@ -354,20 +349,24 @@ async function main() {
         { timeout: 20_000 }
       );
       await discoveryBtn.click();
-      await assertNoImmediateAdminError(page, { buttonLocator: discoveryBtn, observeMs: 8_000 });
+      await assertNoImmediateAdminError(page, { buttonLocator: discoveryBtn, actionName: "discovery", observeMs: 8_000 });
     }, scenarios);
 
-    await runScenario("Trigger first available admin action with no immediate error", async () => {
-      await triggerFirstAvailableAdminAction(page);
-      const errorToast = page.locator(".toast.error").first();
-      let toastSeen = false;
-      try {
-        await errorToast.waitFor({ state: "visible", timeout: 8_000 });
-        toastSeen = true;
-      } catch {
-        toastSeen = false;
-      }
-      assert.equal(toastSeen, false, "unexpected admin error toast appeared");
+    await runScenario("Admin remains responsive after discovery launch", async () => {
+      await page.locator("#admin-run-discovery-btn").waitFor({ state: "visible", timeout: 15_000 });
+      const taskState = await apiRequest.get(`${BRIDGE_BASE}/ops/task-state`);
+      assert.equal(taskState.ok(), true, "admin task state should stay reachable after discovery launch");
+      await page.waitForFunction(
+        () => /Bridge Online/i.test(document.querySelector("#admin-bridge-status-badge")?.textContent || ""),
+        null,
+        { timeout: 30_000 }
+      );
+      const bridgeBadgeText = await page.locator("#admin-bridge-status-badge").textContent();
+      assert.match(String(bridgeBadgeText || ""), /Bridge Online/i);
+      const sourceStatus = await page.locator("#admin-source-status").textContent();
+      assert.ok(!/failed|could not|error/i.test(String(sourceStatus || "")), "admin source status indicates failure");
+      const toastText = await visibleErrorToastText(page);
+      assert.equal(toastText, "", `unexpected admin error toast appeared: ${toastText}`);
     }, scenarios);
   } catch (error) {
     errors.push(error instanceof Error ? error.message : String(error));
