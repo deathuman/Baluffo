@@ -13,6 +13,7 @@ The SyncService class provides:
 from __future__ import annotations
 
 import os
+import sqlite3
 import threading
 import uuid
 from collections.abc import Callable, Mapping
@@ -21,6 +22,7 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 
 from src import source_sync_runtime
+from src.bridge import storage_health as storage_health_mod
 from src.bridge import sync_task_flow as _sync_task_flow
 from src.bridge.sync_state import (
     SYNC_CONFIG_LOCK,
@@ -37,6 +39,7 @@ from src.bridge.sync_timing import (
 from src.shared.json_shapes import as_json_object
 from src.shared.profile_utils import run_profiled
 from src.source_registry import load_json_object, save_json_atomic
+from src.storage import TaskRuntimeStore
 
 _SYNC_SHARD_FIELD_NAMES = (
     "snapshotFormat",
@@ -138,6 +141,7 @@ class SyncService:
         sync_state: SyncState | None = None,
         get_registry_auto_heal_report: Callable[[], dict[str, Any]] | None = None,
         task_lifecycle: Any | None = None,
+        task_runtime_store: Callable[[], TaskRuntimeStore] | None = None,
     ):
         """Initialize SyncService with dependencies.
 
@@ -175,6 +179,7 @@ class SyncService:
             }
         )
         self._task_lifecycle = task_lifecycle
+        self._task_runtime_store = task_runtime_store
 
         # Initialize sync state
         self._sync_state = sync_state or SyncState(data_dir=data_dir)
@@ -186,6 +191,100 @@ class SyncService:
 
         # Initialize sync config
         self._sync_config = self._resolve_effective_sync_config()
+
+    def _runtime_store(self) -> TaskRuntimeStore:
+        if self._task_runtime_store is not None:
+            return self._task_runtime_store()
+        return TaskRuntimeStore(
+            storage_health_mod.get_storage_store(self._data_dir),
+            now_iso=now_iso,
+        )
+
+    def _storage_mode(self, runtime_store: TaskRuntimeStore, surface: str) -> str:
+        return str(runtime_store.store.get_authority_modes().get(surface) or "json").strip().lower()
+
+    def _record_storage_diagnostic(
+        self,
+        *,
+        surface: str,
+        code: str,
+        ok: bool = False,
+        message: str = "",
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        storage_health_mod.record_storage_diagnostic(
+            self._data_dir,
+            surface=surface,
+            code=code,
+            ok=ok,
+            message=message,
+            details=dict(details or {}),
+        )
+
+    def _rollback_storage_surface(
+        self, runtime_store: TaskRuntimeStore, surface: str, code: str
+    ) -> None:
+        try:
+            runtime_store.store.set_authority_mode(surface, "json", reason=code)
+        except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
+            self._record_storage_diagnostic(
+                surface=surface,
+                code=f"{code}_rollback_failed",
+                ok=False,
+                message=str(exc),
+            )
+
+    def _record_sync_task_event(self, event: dict[str, Any]) -> None:
+        surface = "taskEvents"
+        runtime_store: TaskRuntimeStore | None = None
+        try:
+            runtime_store = self._runtime_store()
+            if self._storage_mode(runtime_store, surface) not in {"shadow", "sqlite"}:
+                return
+            runtime_store.append_task_event(event)
+            self._record_storage_diagnostic(
+                surface=surface,
+                code="task_event_shadow_write_ok",
+                ok=True,
+                details={"runId": str(event.get("runId") or "")},
+            )
+        except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
+            if runtime_store is not None:
+                self._rollback_storage_surface(
+                    runtime_store, surface, "task_event_shadow_write_failed"
+                )
+            self._record_storage_diagnostic(
+                surface=surface,
+                code="task_event_shadow_write_failed",
+                ok=False,
+                message=str(exc),
+            )
+
+    def _upsert_sync_run(self, entry: dict[str, Any]) -> None:
+        surface = "syncRuns"
+        runtime_store: TaskRuntimeStore | None = None
+        try:
+            runtime_store = self._runtime_store()
+            if self._storage_mode(runtime_store, surface) not in {"shadow", "sqlite"}:
+                return
+            runtime_store.upsert_sync_run(entry)
+            self._record_storage_diagnostic(
+                surface=surface,
+                code="sync_run_shadow_write_ok",
+                ok=True,
+                details={"runId": str(entry.get("runId") or "")},
+            )
+        except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
+            if runtime_store is not None:
+                self._rollback_storage_surface(
+                    runtime_store, surface, "sync_run_shadow_write_failed"
+                )
+            self._record_storage_diagnostic(
+                surface=surface,
+                code="sync_run_shadow_write_failed",
+                ok=False,
+                message=str(exc),
+            )
 
     # === Configuration Methods ===
 
@@ -781,6 +880,8 @@ class SyncService:
             bridge_log=self._bridge_log,
             save_json_atomic=save_json_atomic,
             live_task_path=self._sync_live_task_path,
+            record_task_event=self._record_sync_task_event,
+            upsert_sync_run=self._upsert_sync_run,
         )
 
     def start_sync_task(

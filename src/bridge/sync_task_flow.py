@@ -25,6 +25,8 @@ RemoveActiveSyncRunFunc = Callable[[str], None]
 RemoveActiveSyncThreadFunc = Callable[[str], None]
 BridgeLogFunc = Callable[..., None]
 SaveJsonAtomicFunc = Callable[[Path, Any], None]
+RecordTaskEventFunc = Callable[[dict[str, Any]], None]
+UpsertSyncRunFunc = Callable[[dict[str, Any]], None]
 
 
 class PruneStartedRowsFunc(Protocol):
@@ -187,6 +189,8 @@ def run_sync_task_worker(
     bridge_log: BridgeLogFunc,
     save_json_atomic: SaveJsonAtomicFunc,
     live_task_path: Path,
+    record_task_event: RecordTaskEventFunc | None = None,
+    upsert_sync_run: UpsertSyncRunFunc | None = None,
 ) -> None:
     started_dt = parse_iso(started_at) or now_utc()
     status = "ok"
@@ -219,18 +223,21 @@ def run_sync_task_worker(
             updated_at=timestamp,
         )
         if message:
+            event_payload = {
+                "timestamp": timestamp,
+                "level": level,
+                "taskType": "sync",
+                "runId": run_id,
+                "workItemId": action,
+                "phaseKey": str(phase_key or "").strip(),
+                "message": str(message or "").strip(),
+            }
             recent_events = append_live_task_event(
                 recent_events,
-                {
-                    "timestamp": timestamp,
-                    "level": level,
-                    "taskType": "sync",
-                    "runId": run_id,
-                    "workItemId": action,
-                    "phaseKey": str(phase_key or "").strip(),
-                    "message": str(message or "").strip(),
-                },
+                event_payload,
             )
+            if record_task_event is not None and recent_events:
+                record_task_event(recent_events[-1])
         duration_ms = int(
             max(
                 0.0,
@@ -346,18 +353,19 @@ def run_sync_task_worker(
         finished_at=finished_dt.isoformat(),
     )
     prune_started_rows_for_type("sync", finished_at=finished_dt.isoformat())
-    upsert_run_history(
-        {
-            "id": run_id,
-            "runId": run_id,
-            "type": "sync",
-            "status": status,
-            "startedAt": started_at,
-            "finishedAt": finished_dt.isoformat(),
-            "durationMs": duration_ms,
-            "summary": summary,
-        }
-    )
+    history_entry = {
+        "id": run_id,
+        "runId": run_id,
+        "type": "sync",
+        "status": status,
+        "startedAt": started_at,
+        "finishedAt": finished_dt.isoformat(),
+        "durationMs": duration_ms,
+        "summary": summary,
+    }
+    upsert_run_history(history_entry)
+    if upsert_sync_run is not None:
+        upsert_sync_run(history_entry)
     bridge_log(
         "info" if status != "error" else "error",
         "sync_task_finished",

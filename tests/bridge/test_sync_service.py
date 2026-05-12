@@ -5,6 +5,7 @@ from typing import Any
 
 from src.bridge.sync_service import SyncService
 from src.bridge.sync_state import ACTIVE_SYNC_RUNS, ACTIVE_SYNC_THREADS, SYNC_STATE_LOCK
+from src.storage import BaluffoStore, TaskRuntimeStore
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -439,3 +440,57 @@ def test_sync_service_push_task_summary_includes_shard_fields() -> None:
         assert summary["manifestSizeBytes"] == 512
         assert summary["shardCapBytes"] == 10 * 1024 * 1024
         assert summary["shardHashes"] == {"shard-path": "sha"}
+
+
+def test_sync_service_shadow_writes_sync_events_and_runs() -> None:
+    with workspace_tmpdir("sync-service-storage") as data_dir:
+        with SYNC_STATE_LOCK:
+            ACTIVE_SYNC_RUNS.clear()
+            ACTIVE_SYNC_THREADS.clear()
+        source_sync = _FakeSourceSync()
+        source_sync.push_result_extra = {
+            "snapshotFormat": "sharded-v3",
+            "shardCount": 2,
+            "changedShardCount": 1,
+            "shardsPushedBytes": 2048,
+            "manifestSizeBytes": 512,
+            "shardCapBytes": 10 * 1024 * 1024,
+            "shardHashes": {"shard-path": "sha"},
+        }
+
+        with BaluffoStore(data_dir) as store:
+            store.set_authority_mode("taskEvents", "shadow", reason="test-shadow")
+            store.set_authority_mode("syncRuns", "shadow", reason="test-shadow")
+            runtime = TaskRuntimeStore(store)
+            svc = SyncService(
+                data_dir=data_dir,
+                source_sync=source_sync,
+                bridge_log=lambda _level, _message, **_fields: None,
+                load_state=lambda: {"active": [], "pending": [], "rejected": []},
+                persist_state=lambda state: state,
+                summarize_state=lambda _state: {
+                    "activeCount": 0,
+                    "pendingCount": 0,
+                    "rejectedCount": 0,
+                },
+                ops_state_lock=threading.RLock(),
+                get_security_defaults=lambda: {"github_app_enabled_default": True},
+                task_runtime_store=lambda: runtime,
+            )
+            svc.update_saved_sync_settings({"enabled": True})
+
+            started = svc.start_sync_task("push", reason="test", automatic=False)
+            assert bool(started.get("started")) is True
+            run_id = str(started.get("runId") or "")
+            svc.wait_for_sync_tasks(timeout_s=2.0)
+
+            events = runtime.task_events(run_id=run_id, task_type="sync")
+            sync_runs = runtime.sync_runs()
+
+        assert source_sync.push_calls == 1
+        assert events[0]["message"] == "Starting sync push."
+        assert events[-1]["message"] == "Sync push finished with status ok."
+        assert sync_runs[-1]["runId"] == run_id
+        assert sync_runs[-1]["status"] == "ok"
+        assert sync_runs[-1]["summary"]["snapshotFormat"] == "sharded-v3"
+        assert sync_runs[-1]["summary"]["shardHashes"] == {"shard-path": "sha"}
