@@ -1,5 +1,12 @@
 # Static Outlier Source Conflict Decisions
 
+> - **Status:** Archived operator decision record
+> - **Use this when:** reviewing historical Super Lucky and Koei static-outlier source conflict decisions
+> - **Canonical for:** historical operator intent only
+> - **Not canonical for:** runtime behavior, registry edits, source suppression, timeout tuning, persisted-job behavior, or source-output behavior
+> - **Then inspect:** [`../source-policy-runbook.md`](../source-policy-runbook.md), [`../scraping-pipeline.md`](../scraping-pipeline.md), and current source-policy reports if fresh behavior matters
+> - **Last updated:** 2026-05-12
+
 This record documents operator review intent only. It does not authorize runtime behavior changes, registry edits, source suppression, timeout tuning, persisted-job changes, or source-output behavior changes until a separate implementation change is made.
 
 ## Summary

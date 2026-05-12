@@ -413,7 +413,11 @@ def test_index_routes_current_process_docs_only(repo_root: Path) -> None:
         "docs/archive/runtime-storage-and-sync-architecture-plan.md",
         "docs/archive/source-discovery-adapter-follow-ups-closeout.md",
         "docs/archive/source-sync-production-readiness-closeout.md",
+        "docs/archive/static-outlier-source-conflict-decisions.md",
+        "docs/archive/static-scope-conflict-dry-run-decisions.md",
+        "docs/archive/task-lifecycle-ledger-plan.md",
         "docs/archive/task-progress-operational-console-closeout.md",
+        "docs/archive/task_lifecycle_ledger_closeout_plan.md",
     ]
 
 

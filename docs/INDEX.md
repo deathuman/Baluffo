@@ -62,7 +62,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`source-policy-runbook.md`](source-policy-runbook.md) | Operator runbook | You are running discovery/fetch/soak/Admin migration-link validation or checking provider/static source-policy release readiness |
 | [`environments.md`](environments.md) | Release / Environments | You are choosing source-sync writer auth, staging/prod separation, or the repository-side write policy |
 | [`archive/end-to-end-benchmarking-plan.md`](archive/end-to-end-benchmarking-plan.md) | Archived plan with closeout | Completed end-to-end benchmarking instrumentation; run `npm run perf:fetch:static-outliers` for fresh optimization targets |
-| [`plans/task-lifecycle-ledger-plan.md`](plans/task-lifecycle-ledger-plan.md) | Plans / Follow-Ups | You are finalizing Admin task lifecycle authority, task progress projection, runtime evidence IO, pipeline child ownership, or the last packaged lifecycle smoke |
+| [`archive/task-lifecycle-ledger-plan.md`](archive/task-lifecycle-ledger-plan.md) | Archived closeout | You are reviewing completed Admin task lifecycle authority, task progress projection, runtime evidence IO, pipeline child ownership, or packaged lifecycle smoke evidence |
 | [`plans/saved-job-tracker-improvements-plan.md`](plans/saved-job-tracker-improvements-plan.md) | Plans / Follow-Ups | You are improving saved-job phase/outcome modeling, activity semantics, sorting, or Saved page operations |
 | [`plans/dedup-pressure-reduction-plan.md`](plans/dedup-pressure-reduction-plan.md) | Plans / Follow-Ups | You are reducing registry/dedup conflict volume after the sheet role-bucket guard and actionable Dedup badge split |
 
@@ -100,7 +100,11 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`archive/read-only-lifecycle-ux-closeout.md`](archive/read-only-lifecycle-ux-closeout.md) | Archived closeout | Closed first read-only lifecycle UX tracker after implementing conservative labels and filters |
 | [`archive/runtime-storage-and-sync-architecture-plan.md`](archive/runtime-storage-and-sync-architecture-plan.md) | Archived plan with closeout | Completed runtime SQLite/WAL storage and sharded source-sync rollout; current behavior is canonical in [`storage-contract.md`](storage-contract.md) and [`sync-contract.md`](sync-contract.md) |
 | [`archive/source-sync-production-readiness-closeout.md`](archive/source-sync-production-readiness-closeout.md) | Archived closeout | Closed private BaluffoSync source-sync production-readiness tracker after documenting private-repo operating controls |
-| [`archive/task-progress-operational-console-closeout.md`](archive/task-progress-operational-console-closeout.md) | Archived pointer | Historical Admin task/progress console closeout; active lifecycle/progress closeout is consolidated in [`plans/task-lifecycle-ledger-plan.md`](plans/task-lifecycle-ledger-plan.md) |
+| [`archive/task-progress-operational-console-closeout.md`](archive/task-progress-operational-console-closeout.md) | Archived pointer | Historical Admin task/progress console closeout; later lifecycle/progress closeout is archived in [`archive/task-lifecycle-ledger-plan.md`](archive/task-lifecycle-ledger-plan.md) |
+| [`archive/task-lifecycle-ledger-plan.md`](archive/task-lifecycle-ledger-plan.md) | Archived closeout | Completed Admin task lifecycle authority, task progress projection, runtime evidence IO, pipeline child ownership, and packaged lifecycle smoke closeout |
+| [`archive/task_lifecycle_ledger_closeout_plan.md`](archive/task_lifecycle_ledger_closeout_plan.md) | Archived superseded pointer | Old underscore-named lifecycle closeout note; use [`archive/task-lifecycle-ledger-plan.md`](archive/task-lifecycle-ledger-plan.md) instead |
+| [`archive/static-outlier-source-conflict-decisions.md`](archive/static-outlier-source-conflict-decisions.md) | Archived operator record | Historical Super Lucky and Koei static-outlier source conflict decisions |
+| [`archive/static-scope-conflict-dry-run-decisions.md`](archive/static-scope-conflict-dry-run-decisions.md) | Archived operator record | Historical static scope conflict dry-run decisions and Arrowhead apply-safe evidence |
 | [`archive/source-discovery-adapter-follow-ups-closeout.md`](archive/source-discovery-adapter-follow-ups-closeout.md) | Archived closeout | Closed source-discovery adapter follow-ups tracker |
 | [`archive/external-memory-mcp-policy-plan.md`](archive/external-memory-mcp-policy-plan.md) | Archived plan with closeout | Completed external memory MCP policy and setup implementation |
 
@@ -119,7 +123,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | Validate provider/static source-policy workflow | [`source-policy-runbook.md`](source-policy-runbook.md) | [`scraping-pipeline.md`](scraping-pipeline.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md) |
 | Review read-only lifecycle UX | [`archive/read-only-lifecycle-ux-closeout.md`](archive/read-only-lifecycle-ux-closeout.md) | [`snapshots/read-only-lifecycle-ux-implementation-2026-05-03.md`](snapshots/read-only-lifecycle-ux-implementation-2026-05-03.md), [`source-policy-runbook.md`](source-policy-runbook.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md) |
 | Review source-sync production readiness | [`archive/source-sync-production-readiness-closeout.md`](archive/source-sync-production-readiness-closeout.md) | [`environments.md`](environments.md), [`sync-contract.md`](sync-contract.md), [`testing.md`](testing.md) |
-| Finalize task/progress lifecycle closeout | [`plans/task-lifecycle-ledger-plan.md`](plans/task-lifecycle-ledger-plan.md) | [`admin-bridge-api.md`](admin-bridge-api.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`testing.md`](testing.md) |
+| Review completed task/progress lifecycle closeout | [`archive/task-lifecycle-ledger-plan.md`](archive/task-lifecycle-ledger-plan.md) | [`admin-bridge-api.md`](admin-bridge-api.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`testing.md`](testing.md) |
 
 ## Recommended AI read sequence
 

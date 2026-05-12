@@ -1,11 +1,11 @@
-# Task Lifecycle Ledger Closeout Plan
+# Task Lifecycle Ledger Closeout
 
-> - **Status:** Complete
-> - **Use this when:** finalizing Admin task lifecycle authority, Current Runs / Recent Runs consistency, task progress projection, pipeline child ownership, or the last packaged lifecycle smoke before moving on
-> - **Canonical for:** the remaining task lifecycle ledger closeout work and the consolidated task/progress operational console follow-up
+> - **Status:** Archived
+> - **Use this when:** reviewing historical closeout evidence for Admin task lifecycle authority, Current Runs / Recent Runs consistency, task progress projection, pipeline child ownership, or packaged lifecycle smoke validation
+> - **Canonical for:** historical lifecycle ledger closeout evidence only
 > - **Not canonical for:** route payload contracts, report schemas, fetch/discovery output contracts, or release procedures
 > - **Then inspect:** [`admin-bridge-api.md`](../admin-bridge-api.md), [`DATA_CONTRACT.md`](../DATA_CONTRACT.md), [`storage-contract.md`](../storage-contract.md), [`testing.md`](../testing.md), `src/bridge/task_lifecycle.py`, `src/bridge/ops_api.py`, and `src/bridge/pipeline_service.py`
-> - **Last updated:** 2026-05-11
+> - **Last updated:** 2026-05-12
 
 ## Implementation Status
 
@@ -25,7 +25,7 @@ discovery→fetch→completion flow using the stub-success mode.
 
 ## Summary
 
-This page is the single active tracker for closing the Admin task/progress lifecycle work.
+This page is the archived tracker for the completed Admin task/progress lifecycle closeout.
 
 The older task/progress operational console tracker is closed: Admin task/progress logs now use the shared task-run presenter for run-state labels, compact history remains compact, and detailed operator evidence stays behind analysis/disclosure surfaces. That work has no active follow-up here except where it depends on correct lifecycle rows and progress evidence.
 
@@ -237,4 +237,4 @@ This work is done when:
 ## Historical Routing
 
 - The old operational console closeout is now a short historical pointer at [`../archive/task-progress-operational-console-closeout.md`](../archive/task-progress-operational-console-closeout.md).
-- The unindexed underscore note [`task_lifecycle_ledger_closeout_plan.md`](task_lifecycle_ledger_closeout_plan.md) is superseded by this page and should not be extended.
+- The unindexed underscore note [`task_lifecycle_ledger_closeout_plan.md`](task_lifecycle_ledger_closeout_plan.md) is superseded by this archived closeout and should not be extended.

@@ -1,5 +1,12 @@
 # Static Scope Conflict Dry-Run Decisions
 
+> - **Status:** Archived operator decision record
+> - **Use this when:** reviewing historical static scope conflict dry-run decisions and the Arrowhead apply-safe exercise
+> - **Canonical for:** historical operator intent and dry-run/apply-safe evidence only
+> - **Not canonical for:** current registry state, runtime source-policy behavior, persisted-job behavior, source-sync behavior, or future Admin apply actions
+> - **Then inspect:** [`../source-policy-runbook.md`](../source-policy-runbook.md), [`../scraping-pipeline.md`](../scraping-pipeline.md), and current source-policy reports if fresh behavior matters
+> - **Last updated:** 2026-05-12
+
 This record documents operator review intent only. It does not authorize registry edits, source suppression, timeout tuning, source-sync changes, fetch behavior changes, persisted-job changes, or Admin apply actions.
 
 ## Summary

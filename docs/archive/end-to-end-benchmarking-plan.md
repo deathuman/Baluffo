@@ -103,9 +103,9 @@ Implemented:
 - `BALUFFO_PROFILE=1` profiling hooks and pstats summaries via `src/shared/profile_utils.py` (used in sync pull/push production paths).
 - Sync operation timing parity with discovery/fetch timing via `src/bridge/sync_timing.py`: pull/push stage totals, sorted `stageTop`, `/sync/status` latest/history payloads, and completed sync task summaries.
 - Note: `storageMetrics` in benchmark payloads was planned but not implemented; the runtime-storage architecture plan (milestone 0 item 4) will add write-size/write-duration instrumentation.
-- Decision-first source conflict record for Super Lucky and Koei: `docs/plans/static-outlier-source-conflict-decisions.md`.
+- Decision-first source conflict record for Super Lucky and Koei: `docs/archive/static-outlier-source-conflict-decisions.md`.
 - Generic static registry scope conflict audit in the source-policy soak report: `sections.staticRegistryScopeConflicts`, including dry-run-only `patchProposals` and explicit CLI apply-safe support for selected `shadowed_cross_host` rows.
-- Dry-run decision checkpoint for the current generic patch proposal result: `docs/plans/static-scope-conflict-dry-run-decisions.md`.
+- Dry-run decision checkpoint for the current generic patch proposal result: `docs/archive/static-scope-conflict-dry-run-decisions.md`.
 - Guarded apply-safe CLI exercised once for Capcom; the current generic scope conflict verification shows `conflictCount=0` and `patchProposalCount=0`.
 - Full uncapped pipeline benchmark evidence collected and used to steer optimization work.
 
@@ -153,7 +153,7 @@ Important interpretation:
 
 Highest-value next work:
 
-1. Use `sections.staticRegistryScopeConflicts` and `docs/plans/static-scope-conflict-dry-run-decisions.md` to review source-scope conflicts before any apply-safe registry edit.
+1. Use `sections.staticRegistryScopeConflicts` and `docs/archive/static-scope-conflict-dry-run-decisions.md` to review source-scope conflicts before any apply-safe registry edit.
 2. Review Maliyo timeout diagnostics before lowering any budget.
 3. Add a concise trend report that compares latest full lifecycle, storage-pressure, and static-outlier runs against previous artifacts.
 4. Keep perf traces opt-in but document how to attach `_out/perf-traces/` artifacts to investigations.
