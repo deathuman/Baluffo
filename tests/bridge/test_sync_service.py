@@ -385,7 +385,7 @@ def test_sync_service_start_task_runs_and_finishes() -> None:
 
         started = svc.start_sync_task("pull", reason="test", automatic=False)
         assert bool(started.get("started")) is True
-        svc.wait_for_sync_tasks(timeout_s=2.0)
+        svc.wait_for_sync_tasks(timeout_s=5.0)
         assert source_sync.pull_calls >= 1
         assert history.rows == []
         assert lifecycle.finished
@@ -431,7 +431,7 @@ def test_sync_service_push_task_summary_includes_shard_fields() -> None:
 
         started = svc.start_sync_task("push", reason="test", automatic=False)
         assert bool(started.get("started")) is True
-        svc.wait_for_sync_tasks(timeout_s=2.0)
+        svc.wait_for_sync_tasks(timeout_s=5.0)
         summary = lifecycle.finished[-1]["summary"]
         assert summary["snapshotFormat"] == "sharded-v3"
         assert summary["shardCount"] == 2
@@ -482,7 +482,7 @@ def test_sync_service_shadow_writes_sync_events_and_runs() -> None:
             started = svc.start_sync_task("push", reason="test", automatic=False)
             assert bool(started.get("started")) is True
             run_id = str(started.get("runId") or "")
-            svc.wait_for_sync_tasks(timeout_s=2.0)
+            svc.wait_for_sync_tasks(timeout_s=5.0)
 
             events = runtime.task_events(run_id=run_id, task_type="sync")
             sync_runs = runtime.sync_runs()

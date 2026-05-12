@@ -463,15 +463,25 @@ M2.11 closeout note: committed v3 manifest writes now run bounded post-commit ga
 
 Purpose: migrate the lowest-risk live runtime authority first.
 
-- Add task run APIs: upsert, heartbeat, terminalize, current runs, recent runs.
-- Add task event append/query APIs with bounded recent windows.
-- Add sync run APIs including size and shard metrics.
-- Shadow-write SQLite alongside existing JSON.
-- Compare SQLite projections to JSON/API compatibility shapes after writes.
-- Persist cutover and rollback state per surface.
-- After three consecutive packaged runs with parity, switch reads to SQLite while continuing JSON compatibility exports.
+- **Done:** Add task run APIs: upsert, heartbeat, terminalize, current runs, recent runs.
+- **Done:** Add task event append/query APIs with bounded recent windows.
+- **Done:** Add sync run APIs including size and shard metrics.
+- **Done:** Shadow-write SQLite alongside existing JSON.
+- **Done:** Compare SQLite projections to JSON/API compatibility shapes after writes.
+- **Done:** Persist cutover and rollback state per surface.
+- **Done:** Switch reads to SQLite while continuing JSON compatibility exports.
 
-Gate: `/ops/task-state`, `/ops/history`, and `/ops/task-live/<taskType>` match pre-migration shapes; rollback to JSON is tested.
+Gate: complete. `/ops/task-state`, `/ops/history`, and `/ops/task-live/<taskType>` preserve their route shapes, `taskRuns`/`taskEvents`/`syncRuns` seed as SQLite authority on new stores, generated JSON compatibility exports remain in place, and parity/read failures roll affected surfaces back to JSON while retaining SQLite for diagnosis.
+
+M3.1 implementation note: migration `005_task_sync_runtime.sql` extends `task_runs`, `task_events`, and `sync_runs` for current lifecycle fields, bounded event lookup, sync action/duration, snapshot format, and shard hashes. `TaskRuntimeStore` owns task run, event, and sync-run SQLite APIs without importing bridge composition roots.
+
+M3.2 implementation note: `AdminTaskLifecycle` mirrors lifecycle JSON writes into SQLite when `taskRuns` is in shadow or SQLite mode, compares JSON route rows to SQLite projections, reports diagnostics through `/ops/storage-health`, and rolls `taskRuns` back to JSON on write/parity failures.
+
+M3.3 implementation note: sync worker progress and final messages mirror into `task_events`, and final sync task summaries mirror into `sync_runs` with v3 shard metrics. Existing `sync-live-task.json`, timing history, and lifecycle JSON exports continue to be written.
+
+M3.4 implementation note: task run reads switch to SQLite behind the persisted `taskRuns=sqlite` mode, while shadow mode keeps JSON reads and records parity diagnostics. `/ops/task-live/<taskType>` uses SQLite bounded event windows when `taskEvents=sqlite` has matching events.
+
+M3.5 closeout note: new stores now seed `taskRuns`, `taskEvents`, and `syncRuns` as SQLite authority. If an upgraded runtime has JSON rows that are not present in SQLite, route reads roll the affected surface back to JSON instead of dropping visible task state.
 
 ### Milestone 4 - Move Per-Source Fetch Details and Evidence Archives
 

@@ -249,7 +249,7 @@ def test_capture_runtime_snapshot_preserves_versioned_startup_metrics() -> None:
                     "storage": {
                         "migrationVersion": "005",
                         "walMode": "wal",
-                        "authorityModes": {"taskRuns": "json"},
+                        "authorityModes": {"taskRuns": "sqlite"},
                     },
                 },
             ],
@@ -269,7 +269,7 @@ def test_capture_runtime_snapshot_preserves_versioned_startup_metrics() -> None:
         assert storage_metrics["storageMetrics"]["writes"]["writeCount"] == 3
         assert storage_health["ok"] is True
         assert storage_health["storage"]["migrationVersion"] == "005"
-        assert storage_health["storage"]["authorityModes"]["taskRuns"] == "json"
+        assert storage_health["storage"]["authorityModes"]["taskRuns"] == "sqlite"
 
 
 def test_run_embedded_runtime_probe_writes_versioned_startup_metrics_snapshot() -> None:

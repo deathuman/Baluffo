@@ -7,6 +7,7 @@ from typing import Any
 
 from src import admin_bridge
 from src.bridge import ACTIVE_SYNC_RUNS, ACTIVE_SYNC_THREADS, SYNC_STATE_LOCK
+from src.bridge.storage_health import close_storage_stores
 
 
 @dataclass(frozen=True)
@@ -96,6 +97,7 @@ def patch_admin_bridge_paths(monkeypatch: Any, paths: AdminBridgeTestPaths) -> N
     monkeypatch.setattr(admin_bridge, "SYNC_CONFIG_PATH", paths.sync_config)
     monkeypatch.setattr(admin_bridge, "SYNC_RUNTIME_PATH", paths.sync_runtime)
     monkeypatch.setattr(admin_bridge, "MAX_HISTORY_ROWS", 5)
+    monkeypatch.setattr(admin_bridge.RUNTIME_CONFIG, "data_dir", paths.root)
 
 
 def seed_admin_bridge_state(paths: AdminBridgeTestPaths) -> None:
@@ -153,4 +155,5 @@ def configure_admin_bridge_entrypoint_root(monkeypatch: Any, root: Path) -> Path
 
 def cleanup_admin_bridge_entrypoint_root(monkeypatch: Any) -> None:
     admin_bridge.wait_for_sync_tasks(timeout_s=2.0)
+    close_storage_stores()
     reset_admin_bridge_services(monkeypatch)

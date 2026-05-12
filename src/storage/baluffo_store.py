@@ -25,9 +25,9 @@ MIGRATIONS_PACKAGE = "src.storage.migrations"
 STORAGE_SCHEMA_VERSION = 1
 
 DEFAULT_AUTHORITY_MODES = {
-    "taskRuns": "json",
-    "taskEvents": "json",
-    "syncRuns": "json",
+    "taskRuns": "sqlite",
+    "taskEvents": "sqlite",
+    "syncRuns": "sqlite",
     "sourceRuns": "json",
     "jobsFeed": "json",
     "sourceRegistry": "json",

@@ -383,6 +383,52 @@ def test_admin_lifecycle_reads_task_runs_from_sqlite_when_authoritative(
         assert current[0]["taskType"] == "sync"
 
 
+def test_admin_lifecycle_sqlite_read_mismatch_rolls_back_to_json(
+    tmp_path: Path,
+) -> None:
+    lifecycle_path = tmp_path / "admin-task-lifecycle.json"
+    diagnostics: list[dict[str, Any]] = []
+    _save_json_atomic(
+        lifecycle_path,
+        {
+            "schemaVersion": 1,
+            "updatedAt": "2026-05-06T19:00:00+00:00",
+            "rows": [
+                {
+                    "schemaVersion": 1,
+                    "runId": "fetch_json_only",
+                    "taskType": "fetch",
+                    "status": "running",
+                    "startedAt": "2026-05-06T18:00:00+00:00",
+                    "heartbeatAt": "2026-05-06T18:00:00+00:00",
+                    "progress": {},
+                    "summary": {},
+                }
+            ],
+        },
+    )
+    with BaluffoStore(tmp_path / "data") as store:
+        assert store.get_authority_modes()["taskRuns"] == "sqlite"
+        runtime = TaskRuntimeStore(store, now_iso=lambda: "2026-05-06T19:00:00+00:00")
+        lifecycle = AdminTaskLifecycle(
+            lifecycle_path=lambda: lifecycle_path,
+            max_rows=lambda: 240,
+            lock=threading.RLock(),
+            load_json_object=_load_json_object,
+            save_json_atomic=_save_json_atomic,
+            now_iso=lambda: "2026-05-06T19:00:00+00:00",
+            parse_iso=_parse_iso,
+            task_runtime_store=lambda: runtime,
+            record_storage_diagnostic=lambda **fields: diagnostics.append(dict(fields)),
+        )
+
+        current = lifecycle.get_current_runs()
+
+        assert current[0]["runId"] == "fetch_json_only"
+        assert store.get_authority_modes()["taskRuns"] == "json"
+        assert diagnostics[-1]["code"] == "taskRuns_sqlite_parity_failed"
+
+
 def test_admin_lifecycle_reads_task_events_from_sqlite_when_authoritative(
     tmp_path: Path,
 ) -> None:

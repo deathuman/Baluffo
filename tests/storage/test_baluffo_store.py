@@ -21,9 +21,9 @@ def test_store_initializes_wal_mode_health_and_json_authority_defaults() -> None
         assert health["quickCheck"] == "ok"
         assert health["healthy"] is True
         assert health["authorityModes"] == {
-            "taskRuns": "json",
-            "taskEvents": "json",
-            "syncRuns": "json",
+            "taskRuns": "sqlite",
+            "taskEvents": "sqlite",
+            "syncRuns": "sqlite",
             "sourceRuns": "json",
             "jobsFeed": "json",
             "sourceRegistry": "json",

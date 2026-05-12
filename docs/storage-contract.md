@@ -5,7 +5,7 @@
 > - **Canonical for:** target storage authority boundaries, SQLite connection and transaction discipline, migration safety, export and rollback behavior, and hot-path size budgets
 > - **Not canonical for:** current endpoint payload fields, current JSON artifact schemas, source-sync v2 schema details, or Jobs frontend row fields
 > - **Then inspect:** [`plans/runtime-storage-and-sync-architecture-plan.md`](plans/runtime-storage-and-sync-architecture-plan.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`admin-bridge-api.md`](admin-bridge-api.md), [`fetcher-runtime-contracts.md`](fetcher-runtime-contracts.md), [`sync-contract.md`](sync-contract.md), and [`LOCAL_SETUP.md`](LOCAL_SETUP.md)
-> - **Last updated:** 2026-05-11
+> - **Last updated:** 2026-05-12
 
 This document defines the target runtime storage contract. It is intentionally narrower than the implementation plan: it states the invariants future code must preserve, while the plan tracks sequencing and open gates.
 
@@ -29,9 +29,9 @@ The Jobs frontend boot path remains static JSON plus IndexedDB. Desktop local us
 
 | Category | Target authority | Compatibility/export surface | Notes |
 |---|---|---|---|
-| Current task liveness | SQLite `task_runs` after cutover | `/ops/task-state` JSON projection | JSON lifecycle files remain authority until the task-run surface cuts over. |
-| Live task events | SQLite `task_events` after cutover | `/ops/task-live/<taskType>` | Recent bounded event windows only. |
-| Sync runs/history | SQLite `sync_runs` after cutover | Existing history/task summaries | Includes sync size and shard metrics. |
+| Current task liveness | SQLite `task_runs` after M3 cutover | `/ops/task-state` JSON projection | JSON lifecycle files remain compatibility exports and rollback fallback. |
+| Live task events | SQLite `task_events` after M3 cutover | `/ops/task-live/<taskType>` | Recent bounded event windows only. |
+| Sync runs/history | SQLite `sync_runs` after M3 cutover | Existing history/task summaries | Includes sync size and shard metrics. |
 | Fetch source progress | SQLite `source_runs` after cutover | `jobs-fetch-tasks.json` compatibility while needed | Live UI needs compact current progress, not full terminal reports. |
 | Jobs feed | SQLite `jobs` and `job_sources` server-side after cutover | `jobs-unified-light.json` permanent export | Frontend continues static JSON plus IndexedDB. |
 | Full fetch/dedup/source evidence | Filesystem archive plus JSON manifest | Lazy detail/export APIs | Not SQLite. Enforce retention budgets. |
@@ -99,6 +99,8 @@ Each later authority migration follows this surface-by-surface sequence:
 Cutover and rollback state must be persisted, not just held in memory.
 
 Rollback triggers include failed migration, failed `quick_check` or integrity check, repeated busy timeout, or projection mismatch. On rollback, reads stay on or return to the JSON path, the store is marked unhealthy, and the SQLite file is retained for diagnosis. Runtime code must not auto-delete the database.
+
+Milestone 3 cutover is complete for `taskRuns`, `taskEvents`, and `syncRuns`: new stores seed those authority modes as `sqlite`, while projection mismatches or SQLite read/write failures persistently roll the affected surface back to `json`.
 
 ## Compatibility Exports
 

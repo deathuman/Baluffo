@@ -333,47 +333,48 @@ def run_sync_task_worker(
             level="error",
             message=f"Sync {action} failed: {exc}",
         )
-    finally:
-        remove_active_sync_run(str(run_id or ""))
-        remove_active_sync_thread(str(run_id or ""))
 
     finished_dt = now_utc()
     duration_ms = int(max(0.0, (finished_dt - started_dt).total_seconds() * 1000))
-    write_live_task(
-        phase_key=_sync_finished_phase_key(status),
-        phase_label=_sync_finished_phase_label(action, status),
-        counts={
-            "action": action,
-            "activeCount": int(summary.get("activeCount") or 0),
-            "pendingCount": int(summary.get("pendingCount") or 0),
-            "rejectedCount": int(summary.get("rejectedCount") or 0),
-        },
-        level=_sync_finished_level(status),
-        message=_sync_finished_message(action, status, summary.get("error")),
-        finished_at=finished_dt.isoformat(),
-    )
-    prune_started_rows_for_type("sync", finished_at=finished_dt.isoformat())
-    history_entry = {
-        "id": run_id,
-        "runId": run_id,
-        "type": "sync",
-        "status": status,
-        "startedAt": started_at,
-        "finishedAt": finished_dt.isoformat(),
-        "durationMs": duration_ms,
-        "summary": summary,
-    }
-    upsert_run_history(history_entry)
-    if upsert_sync_run is not None:
-        upsert_sync_run(history_entry)
-    bridge_log(
-        "info" if status != "error" else "error",
-        "sync_task_finished",
-        runId=run_id,
-        action=action,
-        reason=reason,
-        automatic=automatic,
-        status=status,
-        durationMs=duration_ms,
-        error=str(summary.get("error") or ""),
-    )
+    try:
+        write_live_task(
+            phase_key=_sync_finished_phase_key(status),
+            phase_label=_sync_finished_phase_label(action, status),
+            counts={
+                "action": action,
+                "activeCount": int(summary.get("activeCount") or 0),
+                "pendingCount": int(summary.get("pendingCount") or 0),
+                "rejectedCount": int(summary.get("rejectedCount") or 0),
+            },
+            level=_sync_finished_level(status),
+            message=_sync_finished_message(action, status, summary.get("error")),
+            finished_at=finished_dt.isoformat(),
+        )
+        prune_started_rows_for_type("sync", finished_at=finished_dt.isoformat())
+        history_entry = {
+            "id": run_id,
+            "runId": run_id,
+            "type": "sync",
+            "status": status,
+            "startedAt": started_at,
+            "finishedAt": finished_dt.isoformat(),
+            "durationMs": duration_ms,
+            "summary": summary,
+        }
+        upsert_run_history(history_entry)
+        if upsert_sync_run is not None:
+            upsert_sync_run(history_entry)
+        bridge_log(
+            "info" if status != "error" else "error",
+            "sync_task_finished",
+            runId=run_id,
+            action=action,
+            reason=reason,
+            automatic=automatic,
+            status=status,
+            durationMs=duration_ms,
+            error=str(summary.get("error") or ""),
+        )
+    finally:
+        remove_active_sync_run(str(run_id or ""))
+        remove_active_sync_thread(str(run_id or ""))

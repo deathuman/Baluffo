@@ -103,7 +103,7 @@ class AdminTaskLifecycle:
         surface: str,
         json_rows: list[dict[str, Any]],
         sqlite_rows: list[dict[str, Any]],
-    ) -> None:
+    ) -> bool:
         selected_fields = (
             "runId",
             "taskType",
@@ -147,13 +147,14 @@ class AdminTaskLifecycle:
                     "sqliteCount": len(sqlite_projection),
                 },
             )
-            return
+            return False
         self._record_diagnostic(
             surface=surface,
             code=f"{surface}_read_projection_match",
             ok=True,
             details={"rowCount": len(json_projection)},
         )
+        return True
 
     def _read_task_rows(
         self,
@@ -194,6 +195,13 @@ class AdminTaskLifecycle:
                 json_rows=json_rows,
                 sqlite_rows=sqlite_rows,
             )
+            return json_rows
+        if json_rows and not self._compare_route_projection(
+            surface=surface,
+            json_rows=json_rows,
+            sqlite_rows=sqlite_rows,
+        ):
+            self._rollback_surface(runtime_store, surface, f"{surface}_sqlite_parity_failed")
             return json_rows
         return sqlite_rows
 

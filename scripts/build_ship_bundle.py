@@ -705,7 +705,7 @@ with tempfile.TemporaryDirectory() as tmp:
             raise RuntimeError(f"unexpected WAL mode: {health!r}")
         if health.get("quickCheck") != "ok":
             raise RuntimeError(f"unexpected quick_check result: {health!r}")
-        if (health.get("authorityModes") or {}).get("taskRuns") != "json":
+        if (health.get("authorityModes") or {}).get("taskRuns") != "sqlite":
             raise RuntimeError(f"unexpected authority modes: {health!r}")
     finally:
         store.close()
