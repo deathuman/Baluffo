@@ -49,6 +49,8 @@ SaveJsonAtomicFunc = Callable[[Path, Any], None]
 LoadStateFunc = Callable[[], RegistryState]
 SummarizeStateFunc = Callable[[RegistryState], StateSummary]
 PersistStateFunc = Callable[[RegistryState], RegistryState]
+LoadTombstonesFunc = Callable[[], JsonObject]
+SaveTombstonesFunc = Callable[[JsonObject], JsonObject]
 
 BridgeLogFunc = Callable[..., None]
 
@@ -152,6 +154,14 @@ def _empty_registry_auto_heal_report() -> JsonObject:
 
 def _identity_registry_state(state: RegistryState, **_kw: Any) -> RegistryState:
     return state
+
+
+def _empty_tombstones() -> JsonObject:
+    return {}
+
+
+def _identity_tombstones(tombstones: JsonObject) -> JsonObject:
+    return dict(tombstones or {})
 
 
 def _invalid_manual_source(_url: str) -> JsonObject:
@@ -293,6 +303,8 @@ class BridgeApi:
     summarize_state: SummarizeStateFunc = _empty_state_summary
     get_registry_auto_heal_report: Callable[[], JsonObject] = _empty_registry_auto_heal_report
     persist_state_and_auto_sync: Callable[..., RegistryState] = _identity_registry_state
+    load_tombstones: LoadTombstonesFunc = _empty_tombstones
+    save_tombstones: SaveTombstonesFunc = _identity_tombstones
     add_manual_source: Callable[[str], dict[str, Any]] = _invalid_manual_source
     trigger_source_check: Callable[..., dict[str, Any]] = _not_started_result
     check_registry_conflicts: Callable[[JsonObject | None], JsonObject] = _not_started_result
@@ -365,6 +377,10 @@ class BridgeApi:
                 self.summarize_state = self.registry.summarize_state
             if self._field_is_default("get_registry_auto_heal_report"):
                 self.get_registry_auto_heal_report = self.registry.get_auto_heal_report
+            if self._field_is_default("load_tombstones"):
+                self.load_tombstones = self.registry.load_tombstones
+            if self._field_is_default("save_tombstones"):
+                self.save_tombstones = self.registry.save_tombstones
             if self._field_is_default("move_entries"):
                 self.move_entries = self.registry.move_entries
             if self._field_is_default("unique_sources"):

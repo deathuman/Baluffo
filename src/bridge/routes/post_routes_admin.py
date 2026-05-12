@@ -13,9 +13,7 @@ from src.bridge.registry_conflicts import (
 )
 from src.bridge.registry_tombstones import (
     add_tombstone,
-    load_tombstones,
     remove_tombstone,
-    save_tombstones,
     tombstone_source_row,
 )
 from src.bridge.routes.error_boundary import (
@@ -366,7 +364,7 @@ def handle_post(handler: BridgeResponseWriter, *, api: BridgeApi, path: str, pay
             for item in urls
             if api.normalize_source_url(str(item))
         }
-        tombstones = load_tombstones()
+        tombstones = api.load_tombstones()
         matched = []
         for source_id, record in list(tombstones.items()):
             if selected and source_id in selected:
@@ -411,7 +409,7 @@ def handle_post(handler: BridgeResponseWriter, *, api: BridgeApi, path: str, pay
                 )
                 state["pending"] = api.unique_sources([*state["pending"], restored])
             tombstones, _removed = remove_tombstone(source_id, tombstones)
-        save_tombstones(tombstones)
+        api.save_tombstones(tombstones)
         state = api.persist_state_and_auto_sync(state, reason=REGISTRY_REASON_RESTORE_DELETED)
         handler.send_json({"restored": len(matched), "summary": api.summarize_state(state)})
         return True
@@ -432,7 +430,7 @@ def handle_post(handler: BridgeResponseWriter, *, api: BridgeApi, path: str, pay
         if not selected and not selected_urls:
             handler.send_json({"deleted": 0, "summary": api.summarize_state(state)})
             return True
-        tombstones = load_tombstones()
+        tombstones = api.load_tombstones()
         deleted_count = 0
 
         def _is_selected_row(row: dict[str, Any]) -> bool:
@@ -461,7 +459,7 @@ def handle_post(handler: BridgeResponseWriter, *, api: BridgeApi, path: str, pay
                     )
                     continue
                 next_state[bucket].append(row)
-        save_tombstones(tombstones)
+        api.save_tombstones(tombstones)
         state = api.persist_state_and_auto_sync(next_state, reason=REGISTRY_REASON_DELETE)
         handler.send_json({"deleted": deleted_count, "summary": api.summarize_state(state)})
         return True

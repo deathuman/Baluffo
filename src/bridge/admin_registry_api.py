@@ -15,6 +15,8 @@ class _RegistryServiceLike(Protocol):
     def load_state(self) -> RegistryState: ...
     def persist_state(self, state: RegistryState) -> RegistryState: ...
     def get_auto_heal_report(self) -> JsonObject: ...
+    def load_tombstones(self) -> JsonObject: ...
+    def save_tombstones(self, tombstones: JsonObject) -> JsonObject: ...
 
 
 class _RegistryServiceClassLike(Protocol):
@@ -138,6 +140,14 @@ def summarize_state(state: RegistryState) -> dict[str, int]:
 
 def get_registry_auto_heal_report() -> JsonObject:
     return _require_root()._get_registry_service().get_auto_heal_report()
+
+
+def load_tombstones() -> JsonObject:
+    return _require_root()._get_registry_service().load_tombstones()
+
+
+def save_tombstones(tombstones: JsonObject) -> JsonObject:
+    return _require_root()._get_registry_service().save_tombstones(tombstones)
 
 
 def persist_state(state: RegistryState) -> RegistryState:

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from src.bridge import registry_tombstones
 from src.bridge.api import BridgeApi
 from src.bridge.storage_health import get_storage_health_payload
 
@@ -212,6 +213,8 @@ def make_stub_bridge_api(tmp_path: Path, store: FakeDesktopLocalDataStore) -> Br
     api.persist_state_and_auto_sync = persist_state_and_auto_sync
     api.source_identity = source_identity
     api.source_url_fingerprint = source_url_fingerprint
+    api.load_tombstones = registry_tombstones.load_tombstones
+    api.save_tombstones = registry_tombstones.save_tombstones
     api.move_entries = move_entries
     api.unique_sources = unique_sources
     api.compute_ops_health = lambda: {"ok": True, "detail": "unit-test", "alerts": []}

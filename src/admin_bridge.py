@@ -68,9 +68,6 @@ from src.bridge.registry_service import RegistryService
 from src.bridge.registry_tombstones import (
     is_tombstoned as _is_tombstoned,
 )
-from src.bridge.registry_tombstones import (
-    load_tombstones as _load_tombstones,
-)
 from src.bridge.server import runtime_state as _bridge_runtime_state
 from src.bridge.source_helpers import (
     find_existing_source_by_url as _find_existing_source_by_url,
@@ -159,7 +156,6 @@ default_source_loaders = _default_source_loaders
 find_existing_source_by_url = _find_existing_source_by_url
 find_existing_static_source_by_studio_domain = _find_existing_static_source_by_studio_domain
 infer_studio_name_from_host = _infer_studio_name_from_host
-load_tombstones = _load_tombstones
 is_tombstoned = _is_tombstoned
 parse_jobpostings_from_html = _parse_jobpostings_from_html
 normalize_job_url = _normalize_job_url
@@ -170,6 +166,9 @@ unique_sources = _unique_sources
 REGISTRY_REASON_MANUAL_SOURCE = _REGISTRY_REASON_MANUAL_SOURCE
 REGISTRY_REASON_MANUAL_SOURCE_VARIANT = _REGISTRY_REASON_MANUAL_SOURCE_VARIANT
 now_iso = _now_iso
+load_tombstones = admin_registry_api_mod.load_tombstones
+save_tombstones = admin_registry_api_mod.save_tombstones
+
 
 OPS_HISTORY_PATH = ROOT / "data" / "admin-run-history.json"
 TASK_LIFECYCLE_PATH = ROOT / "data" / "admin-task-lifecycle.json"

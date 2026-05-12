@@ -210,6 +210,7 @@ def test_registry_service_shadow_writes_sqlite_projection(tmp_path: Path) -> Non
     }
     try:
         store = get_storage_store(tmp_path)
+        store.set_authority_mode("sourceRegistry", "shadow", reason="test-shadow")
         service = RegistryService(
             paths=RegistryPaths(
                 active=active_path,
@@ -292,3 +293,99 @@ def test_registry_service_shadow_projection_mismatch_rolls_back_to_json(tmp_path
     assert fake_runtime.store.mode == "json"
     assert diagnostics[-1]["code"] == "source_registry_projection_mismatch"
     assert diagnostics[-1]["ok"] is False
+
+
+def test_registry_service_sqlite_authority_seeds_and_exports_json(tmp_path: Path) -> None:
+    active_path = tmp_path / "source-registry-active.json"
+    pending_path = tmp_path / "source-registry-pending.json"
+    rejected_path = tmp_path / "source-registry-rejected.json"
+    _write_json(active_path, [{"id": "a", "name": "Active", "adapter": "static"}])
+    _write_json(pending_path, [])
+    _write_json(rejected_path, [])
+    try:
+        store = get_storage_store(tmp_path)
+        service = RegistryService(
+            paths=RegistryPaths(
+                active=active_path,
+                pending=pending_path,
+                rejected=rejected_path,
+            ),
+            default_active=[],
+            normalize_manual_static=lambda row: row,
+        )
+
+        state = service.load_state()
+        runtime = SourceRegistryRuntimeStore(store)
+
+        assert store.get_authority_modes()["sourceRegistry"] == "sqlite"
+        assert runtime.current_state() == state
+        assert [row["id"] for row in sr.load_json_array(active_path, [])] == ["a"]
+        assert any(
+            row["code"] == "source_registry_seeded_from_json"
+            for row in get_storage_health_payload(tmp_path)["storage"]["diagnostics"]
+        )
+    finally:
+        close_storage_stores()
+
+
+def test_registry_service_sqlite_tombstones_update_generation_and_export_json(
+    tmp_path: Path,
+) -> None:
+    active_path = tmp_path / "source-registry-active.json"
+    pending_path = tmp_path / "source-registry-pending.json"
+    rejected_path = tmp_path / "source-registry-rejected.json"
+    try:
+        store = get_storage_store(tmp_path)
+        service = RegistryService(
+            paths=RegistryPaths(
+                active=active_path,
+                pending=pending_path,
+                rejected=rejected_path,
+            ),
+            default_active=[{"id": "a", "name": "Active", "adapter": "static"}],
+            normalize_manual_static=lambda row: row,
+        )
+        service.load_state()
+
+        saved = service.save_tombstones(
+            {"a": {"sourceId": "a", "reason": "manual", "bucket": "active"}}
+        )
+
+        runtime = SourceRegistryRuntimeStore(store)
+        assert runtime.current_tombstones() == saved
+        assert sr.load_json_object(tmp_path / "source-registry-tombstones.json", {}) == saved
+    finally:
+        close_storage_stores()
+
+
+def test_registry_service_sqlite_json_drift_rolls_back_to_json(tmp_path: Path) -> None:
+    active_path = tmp_path / "source-registry-active.json"
+    pending_path = tmp_path / "source-registry-pending.json"
+    rejected_path = tmp_path / "source-registry-rejected.json"
+    try:
+        store = get_storage_store(tmp_path)
+        service = RegistryService(
+            paths=RegistryPaths(
+                active=active_path,
+                pending=pending_path,
+                rejected=rejected_path,
+            ),
+            default_active=[{"id": "a", "name": "Active", "adapter": "static"}],
+            normalize_manual_static=lambda row: row,
+        )
+        service.load_state()
+        sr.save_json_atomic(
+            active_path,
+            [{"id": "json-only", "name": "JSON", "adapter": "static"}],
+        )
+
+        state = service.load_state()
+
+        assert store.get_authority_modes()["sourceRegistry"] == "json"
+        assert [row["id"] for row in state["active"]] == ["json-only"]
+        assert any(
+            row["code"] == "source_registry_json_sqlite_mismatch"
+            for row in get_storage_health_payload(tmp_path)["storage"]["diagnostics"]
+        )
+    finally:
+        close_storage_stores()

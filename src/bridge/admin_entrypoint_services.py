@@ -503,7 +503,7 @@ def get_ops_api() -> _OpsApiLike:
                 load_json_object=root_mod.load_json_object,
                 save_json_atomic=root_mod.save_json_atomic,
                 load_state=root_mod.load_state,
-                load_tombstones=lambda: root_mod.load_tombstones(root_mod.TOMBSTONES_PATH),
+                load_tombstones=root_mod.load_tombstones,
                 now_iso=root_mod.now_iso,
                 now_utc=root_mod.now_utc,
                 parse_iso=root_mod.parse_iso,

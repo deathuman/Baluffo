@@ -52,9 +52,7 @@ def load_tombstones(path: Path | None = None) -> dict[str, dict[str, Any]]:
     return records
 
 
-def save_tombstones(
-    tombstones: dict[str, dict[str, Any]], *, path: Path | None = None
-) -> dict[str, dict[str, Any]]:
+def normalize_tombstones(tombstones: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
     normalized: dict[str, dict[str, Any]] = {}
     for key, value in (tombstones or {}).items():
         if not isinstance(value, dict):
@@ -63,6 +61,13 @@ def save_tombstones(
         if not source_id:
             continue
         normalized[source_id] = _normalize_tombstone_record(source_id, value)
+    return normalized
+
+
+def save_tombstones(
+    tombstones: dict[str, dict[str, Any]], *, path: Path | None = None
+) -> dict[str, dict[str, Any]]:
+    normalized = normalize_tombstones(tombstones)
     save_json_atomic(Path(path or TOMBSTONES_PATH), normalized)
     return normalized
 
