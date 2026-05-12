@@ -37,7 +37,7 @@ Key details:
 - **Metrics:** sync results, task summaries, timing history, and storage metrics include additive shard fields: `snapshotFormat`, `shardCount`, `changedShardCount`, `shardsPushedBytes`, `manifestSizeBytes`, `shardCapBytes`, and `shardHashes`
 - **Runtime history:** after the runtime-storage M3 cutover, sync task events and final sync-run rows are mirrored into SQLite `task_events` and `sync_runs`; compatibility JSON timing/live-task exports remain present.
 
-Full design in [`docs/plans/runtime-storage-and-sync-architecture-plan.md`](plans/runtime-storage-and-sync-architecture-plan.md).
+Current storage and runtime authority behavior is canonical in [`storage-contract.md`](storage-contract.md). The completed rollout history is archived in [`archive/runtime-storage-and-sync-architecture-plan.md`](archive/runtime-storage-and-sync-architecture-plan.md).
 
 ## GitHub API versioning
 

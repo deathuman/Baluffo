@@ -1,10 +1,10 @@
 # Runtime Storage and Source Sync Architecture Plan
 
-> - **Status:** Completed (M0-M6 closed on 2026-05-12)
-> - **Use this when:** reducing runtime artifact bloat, planning SQLite/WAL storage, changing live task/report persistence, or replacing monolithic source-sync snapshots
-> - **Canonical for:** long-term storage direction, journal-scope policy, source-sync sharding target, storage metrics gate, hot-path payload budgets, migration sequencing, SQLite connection/transaction discipline, and rollback expectations
-> - **Not canonical for:** current endpoint response fields, current source-sync snapshot schema, or existing fetch report compatibility requirements
-> - **Then inspect:** [`../storage-contract.md`](../storage-contract.md), [`DATA_CONTRACT.md`](../DATA_CONTRACT.md), [`admin-bridge-api.md`](../admin-bridge-api.md), [`fetcher-runtime-contracts.md`](../fetcher-runtime-contracts.md), [`sync-contract.md`](../sync-contract.md), [`task-lifecycle-ledger-plan.md`](task-lifecycle-ledger-plan.md), and [`LOCAL_SETUP.md`](../LOCAL_SETUP.md)
+> - **Status:** Archived (M0-M6 closed on 2026-05-12)
+> - **Use this when:** reviewing historical rollout context for the runtime SQLite/WAL migration, source-sync sharding, evidence archive closeout, or the final M6 acceptance matrix
+> - **Canonical for:** historical migration sequencing and closeout evidence only
+> - **Not canonical for:** current runtime storage/source-sync contracts, endpoint fields, artifact schemas, compatibility requirements, or implementation behavior
+> - **Then inspect:** [`../storage-contract.md`](../storage-contract.md), [`../sync-contract.md`](../sync-contract.md), [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md), [`../admin-bridge-api.md`](../admin-bridge-api.md), [`../fetcher-runtime-contracts.md`](../fetcher-runtime-contracts.md), and [`../LOCAL_SETUP.md`](../LOCAL_SETUP.md)
 > - **Last updated:** 2026-05-12
 
 ## Verdict

@@ -4,7 +4,7 @@
 > - **Use this when:** finalizing Admin task lifecycle authority, Current Runs / Recent Runs consistency, task progress projection, pipeline child ownership, or the last packaged lifecycle smoke before moving on
 > - **Canonical for:** the remaining task lifecycle ledger closeout work and the consolidated task/progress operational console follow-up
 > - **Not canonical for:** route payload contracts, report schemas, fetch/discovery output contracts, or release procedures
-> - **Then inspect:** [`admin-bridge-api.md`](../admin-bridge-api.md), [`DATA_CONTRACT.md`](../DATA_CONTRACT.md), [`testing.md`](../testing.md), [`runtime-storage-and-sync-architecture-plan.md`](runtime-storage-and-sync-architecture-plan.md), `src/bridge/task_lifecycle.py`, `src/bridge/ops_api.py`, and `src/bridge/pipeline_service.py`
+> - **Then inspect:** [`admin-bridge-api.md`](../admin-bridge-api.md), [`DATA_CONTRACT.md`](../DATA_CONTRACT.md), [`storage-contract.md`](../storage-contract.md), [`testing.md`](../testing.md), `src/bridge/task_lifecycle.py`, `src/bridge/ops_api.py`, and `src/bridge/pipeline_service.py`
 > - **Last updated:** 2026-05-11
 
 ## Implementation Status
@@ -31,7 +31,7 @@ The older task/progress operational console tracker is closed: Admin task/progre
 
 The lifecycle ledger work is mostly implemented. In the current JSON-backed runtime, `data/admin-task-lifecycle.json` is the backend authority for task identity, liveness, parent/child ownership, start/end timestamps, and terminal state. Reports, live task artifacts, logs, and sync runtime files are evidence sources for display progress and operator detail; they do not own lifecycle state.
 
-The final goal is to remove the remaining ambiguity between lifecycle authority and operational evidence, add the last regression coverage for the 2026-05-08 packaged findings, and perform one real packaged pipeline validation before this plan is archived. This closeout does not block the later SQLite/WAL migration in [`runtime-storage-and-sync-architecture-plan.md`](runtime-storage-and-sync-architecture-plan.md); that plan may move the same lifecycle authority from JSON into SQLite `task_runs` after its own cutover gates pass.
+The final goal was to remove the remaining ambiguity between lifecycle authority and operational evidence, add the last regression coverage for the 2026-05-08 packaged findings, and perform one real packaged pipeline validation before this plan is archived. Current SQLite/WAL runtime authority behavior is owned by [`storage-contract.md`](../storage-contract.md).
 
 ## Current State
 
@@ -215,7 +215,7 @@ Build the portable app and run a full jobs pipeline long enough to exceed the ol
 ### 7. Close the docs after validation
 
 - Update [`admin-bridge-api.md`](../admin-bridge-api.md), [`DATA_CONTRACT.md`](../DATA_CONTRACT.md), and [`testing.md`](../testing.md) only if the final IO/projection changes alter their contracts or verification commands.
-- Archive this page after the packaged validation passes and no production lifecycle authority remains outside the current lifecycle backend. For the present closeout that backend is `data/admin-task-lifecycle.json`; a later storage migration may replace it with SQLite `task_runs` through the runtime-storage plan.
+- Archive this page after the packaged validation passes and no production lifecycle authority remains outside the current lifecycle backend. Current SQLite/WAL runtime authority behavior is owned by [`../storage-contract.md`](../storage-contract.md).
 
 ## Closure Criteria
 

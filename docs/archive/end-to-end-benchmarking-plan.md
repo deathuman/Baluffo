@@ -3,7 +3,7 @@
 > - **Status:** Completed (2026-05-10)
 > - **Canonical for:** historical reference only
 > - **Not canonical for:** current optimization targets; run `npm run perf:fetch:static-outliers` for fresh evidence
-> - **Then inspect:** [`docs/testing.md`](../testing.md) for perf-trace docs, `scripts/perf_trend.py` for trend reporting, `src/fetch_incremental_sanity_benchmark.py` for benchmark artifacts, [`runtime-storage-and-sync-architecture-plan.md`](../plans/runtime-storage-and-sync-architecture-plan.md) for storage pressure work
+> - **Then inspect:** [`docs/testing.md`](../testing.md) for perf-trace docs, `scripts/perf_trend.py` for trend reporting, `src/fetch_incremental_sanity_benchmark.py` for benchmark artifacts, [`runtime-storage-and-sync-architecture-plan.md`](runtime-storage-and-sync-architecture-plan.md) for archived storage pressure rollout history
 
 ## Closeout Summary
 
@@ -59,7 +59,7 @@ Added a dedicated "Playwright perf traces" section to [`docs/testing.md`](../tes
 
 | Gap | Disposition |
 |-----|-------------|
-| `storageMetrics` in benchmark payloads | Never implemented. Deferred to `runtime-storage-and-sync-architecture-plan.md` milestone 0 item 4 (write-size/write-duration instrumentation). Removed from plan's "Implemented" list. |
+| `storageMetrics` in benchmark payloads | Never implemented in this benchmarking slice. Deferred to the runtime storage/source-sync rollout, now archived in [`runtime-storage-and-sync-architecture-plan.md`](runtime-storage-and-sync-architecture-plan.md). Removed from plan's "Implemented" list. |
 | Full NDJSON trend gate and PR annotations | Deferred work; correctly deferred. |
 | Virtualized jobs-feed rendering / workerized CSV parsing | Deferred work; correctly deferred pending long-task/render counter justification. |
 | CI smoke benchmark | Intentionally deferred until signals are stable. |
@@ -71,7 +71,7 @@ Added a dedicated "Playwright perf traces" section to [`docs/testing.md`](../tes
 - `scripts/perf_trend.py` for cross-run lifecycle/storage/outlier trend comparison
 - `npm run test:frontend:perf` for Playwright boot-trace collection
 - [`docs/testing.md`](../testing.md) for perf-trace attachment docs
-- [`docs/plans/runtime-storage-and-sync-architecture-plan.md`](../plans/runtime-storage-and-sync-architecture-plan.md) for `storageMetrics` / write-size instrumentation work
+- [`runtime-storage-and-sync-architecture-plan.md`](runtime-storage-and-sync-architecture-plan.md) for archived `storageMetrics` / write-size instrumentation rollout history
 
 ---
 
