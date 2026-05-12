@@ -99,6 +99,8 @@ def test_bundle_contains_python_import_closure_modules() -> None:
             "src/storage/migrations/004_jobs_feed.sql",
             "src/storage/migrations/005_task_sync_runtime.sql",
             "src/storage/migrations/006_source_run_runtime.sql",
+            "src/storage/migrations/007_jobs_feed_runtime.sql",
+            "src/storage/job_runtime.py",
             "src/storage/source_runtime.py",
             "src/storage/evidence_archive.py",
         )

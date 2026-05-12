@@ -10,6 +10,7 @@ __all__ = [
     "BaluffoStore",
     "BaluffoStoreError",
     "EvidenceArchiveStore",
+    "JobRuntimeStore",
     "SourceRuntimeStore",
     "TaskRuntimeStore",
 ]
@@ -20,6 +21,10 @@ def __getattr__(name: str) -> Any:
         from src.storage.evidence_archive import EvidenceArchiveStore
 
         return EvidenceArchiveStore
+    if name == "JobRuntimeStore":
+        from src.storage.job_runtime import JobRuntimeStore
+
+        return JobRuntimeStore
     if name == "SourceRuntimeStore":
         from src.storage.source_runtime import SourceRuntimeStore
 
