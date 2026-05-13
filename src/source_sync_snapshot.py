@@ -257,6 +257,7 @@ def _push_sharded_snapshot_result(
     remote: Mapping[str, Any],
     *,
     bundle: dict[str, Any] | None = None,
+    progress_callback: Callable[..., None] | None = None,
     opener: Callable[..., Any],
 ) -> dict[str, Any]:
     return push_sharded_snapshot(
@@ -269,6 +270,7 @@ def _push_sharded_snapshot_result(
         if str(remote.get("snapshotFormat") or "") == "sharded-v3"
         else "",
         bundle=bundle,
+        progress_callback=progress_callback,
         opener=opener,
     )
 
@@ -285,6 +287,7 @@ def _push_sources_snapshot_after_conflict(
     shard_fields: Mapping[str, Any],
     remote: Mapping[str, Any],
     opener: Callable[..., Any],
+    progress_callback: Callable[..., None] | None,
     exc: Exception,
 ) -> dict[str, Any]:
     base_shard_fields = dict(shard_fields or {"snapshotFormat": "sharded-v3"})
@@ -318,7 +321,12 @@ def _push_sources_snapshot_after_conflict(
     retry_size_warning = retry_snapshot_size_bytes > module.SNAPSHOT_SIZE_WARN_BYTES
     try:
         write_result = _push_sharded_snapshot_result(
-            module, config, retry_snapshot, refreshed_remote, opener=opener
+            module,
+            config,
+            retry_snapshot,
+            refreshed_remote,
+            progress_callback=progress_callback,
+            opener=opener,
         )
     except SourceSyncShardError as shard_exc:
         raise _snapshot_too_large_error(
@@ -358,6 +366,7 @@ def _push_sources_snapshot_after_transient(
     remote: Mapping[str, Any],
     remote_sha: str,
     opener: Callable[..., Any],
+    progress_callback: Callable[..., None] | None,
     exc: Exception,
 ) -> dict[str, Any]:
     base_shard_fields = dict(shard_fields or {"snapshotFormat": "sharded-v3"})
@@ -370,7 +379,12 @@ def _push_sources_snapshot_after_transient(
         and str(refreshed_remote.get("snapshotFormat") or "") == "sharded-v3"
     ):
         write_result = _push_sharded_snapshot_result(
-            module, config, snapshot, refreshed_remote, opener=opener
+            module,
+            config,
+            snapshot,
+            refreshed_remote,
+            progress_callback=progress_callback,
+            opener=opener,
         )
         warnings = list(write_result.get("warnings") or [])
         return {
@@ -409,7 +423,12 @@ def _push_sources_snapshot_after_transient(
     retry_size_warning = retry_snapshot_size_bytes > module.SNAPSHOT_SIZE_WARN_BYTES
     try:
         write_result = _push_sharded_snapshot_result(
-            module, config, retry_snapshot, refreshed_remote, opener=opener
+            module,
+            config,
+            retry_snapshot,
+            refreshed_remote,
+            progress_callback=progress_callback,
+            opener=opener,
         )
     except SourceSyncShardError as shard_exc:
         raise _snapshot_too_large_error(
@@ -897,6 +916,7 @@ def push_sources_snapshot(
     local_state: dict[str, Any],
     *,
     dry_run: bool = False,
+    progress_callback: Callable[..., None] | None = None,
     opener: Callable[..., Any],
 ) -> dict[str, Any]:
     remote = read_remote_snapshot(module, config, opener=opener, prefer_sharded=True)
@@ -992,7 +1012,13 @@ def push_sources_snapshot(
         }
     try:
         write_result = _push_sharded_snapshot_result(
-            module, config, snapshot, remote, bundle=shard_bundle, opener=opener
+            module,
+            config,
+            snapshot,
+            remote,
+            bundle=shard_bundle,
+            progress_callback=progress_callback,
+            opener=opener,
         )
     except SourceSyncShardError as exc:
         raise _snapshot_too_large_error(
@@ -1017,6 +1043,7 @@ def push_sources_snapshot(
             shard_fields,
             remote,
             opener,
+            progress_callback,
             exc,
         )
     except RuntimeError as exc:
@@ -1035,6 +1062,7 @@ def push_sources_snapshot(
             remote,
             remote_sha,
             opener,
+            progress_callback,
             exc,
         )
     warnings = list(write_result.get("warnings") or [])

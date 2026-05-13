@@ -384,3 +384,48 @@ def request_raw_json(
         raise wrap_github_request_error(exc, prefix="Sync request failed") from exc
     except URLError as exc:
         raise wrap_github_request_error(exc, prefix="Sync request failed") from exc
+
+
+def request_raw_bytes(
+    module: Any,
+    *,
+    url: str,
+    headers: dict[str, str],
+    timeout_s: int,
+    opener: Callable[..., Any] | None = None,
+) -> tuple[int, bytes, dict[str, str]]:
+    request = module.Request(url=url, method="GET", headers=headers)
+    try:
+        active_opener = opener or module.urlopen
+        uses_default_opener = opener is None or opener is module.urlopen
+        if uses_default_opener:
+            try:
+                ssl_context = build_github_ssl_context(
+                    ca_bundle_envs=(module.SYNC_CA_BUNDLE_ENV, GITHUB_CA_BUNDLE_ENV)
+                )
+            except RuntimeError as exc:
+                raise RuntimeError(f"Sync request failed: {exc}") from exc
+            response_ctx = active_opener(
+                request,
+                timeout=timeout_s,
+                context=ssl_context,
+            )
+        else:
+            response_ctx = active_opener(request, timeout=timeout_s)
+        with response_ctx as response:
+            return (
+                int(response.getcode() or 200),
+                response.read(),
+                {key.lower(): str(value) for key, value in response.headers.items()},
+            )
+    except module.HTTPError as exc:
+        raw = exc.read() if hasattr(exc, "read") else b""
+        return (
+            int(exc.code or 500),
+            raw,
+            {key.lower(): str(value) for key, value in (exc.headers or {}).items()},
+        )
+    except ssl.SSLError as exc:
+        raise wrap_github_request_error(exc, prefix="Sync request failed") from exc
+    except URLError as exc:
+        raise wrap_github_request_error(exc, prefix="Sync request failed") from exc

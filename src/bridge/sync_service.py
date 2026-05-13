@@ -615,6 +615,7 @@ class SyncService:
                 self._sync_config,
                 state,
                 profile_name="sync_push_remote",
+                progress_callback=emit_progress,
             )
         snapshot = as_json_object(result.get("snapshot"))
         pushed = bool(result.get("pushed", True))

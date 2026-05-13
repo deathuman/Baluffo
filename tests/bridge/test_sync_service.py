@@ -15,6 +15,8 @@ class _FakeSourceSync:
         self.push_calls: int = 0
         self.remote_reads: int = 0
         self.push_result_extra: dict[str, Any] = {}
+        self.push_progress_payloads: list[dict[str, Any]] = []
+        self.progress_callback: Any | None = None
         self._enabled = True
         self._ready = True
         self.rate_limit = {
@@ -49,8 +51,18 @@ class _FakeSourceSync:
             "mergedState": {"active": [], "pending": [], "rejected": []},
         }
 
-    def push_sources_snapshot(self, config: Any, state: dict[str, Any]) -> dict[str, Any]:
+    def push_sources_snapshot(
+        self,
+        config: Any,
+        state: dict[str, Any],
+        *,
+        progress_callback: Any | None = None,
+    ) -> dict[str, Any]:
         self.push_calls += 1
+        self.progress_callback = progress_callback
+        if progress_callback is not None:
+            for payload in self.push_progress_payloads:
+                progress_callback(**payload)
         return {
             "remoteSha": "abc",
             "remotePreviouslyExisted": True,
@@ -341,6 +353,60 @@ def test_sync_service_push_noop_returns_size_fields() -> None:
         assert result["sizeWarning"] is False
         assert result["timing"]["noOp"] is True
         assert result["timing"]["sizeBytes"] == 1234
+
+
+def test_sync_service_push_forwards_remote_progress_callback() -> None:
+    with workspace_tmpdir("sync-service") as data_dir:
+        with SYNC_STATE_LOCK:
+            ACTIVE_SYNC_RUNS.clear()
+            ACTIVE_SYNC_THREADS.clear()
+        source_sync = _FakeSourceSync()
+        source_sync.push_progress_payloads = [
+            {
+                "phase_key": "remote_write",
+                "phase_label": "Verified shard 1 of 2",
+                "mode": "determinate",
+                "ratio": 0.5,
+                "counts": {
+                    "action": "push",
+                    "changedShardCount": 2,
+                    "completedShardCount": 1,
+                    "verifiedShardCount": 1,
+                },
+            }
+        ]
+        progress_rows: list[dict[str, Any]] = []
+
+        svc = SyncService(
+            data_dir=data_dir,
+            source_sync=source_sync,
+            bridge_log=lambda _level, _message, **_fields: None,
+            load_state=lambda: {"active": [], "pending": [], "rejected": []},
+            persist_state=lambda state: state,
+            summarize_state=lambda state: {
+                "activeCount": len(state["active"]),
+                "pendingCount": len(state["pending"]),
+                "rejectedCount": len(state["rejected"]),
+            },
+            ops_state_lock=threading.RLock(),
+            get_security_defaults=lambda: {"github_app_enabled_default": True},
+        )
+
+        svc.update_saved_sync_settings({"enabled": True})
+        result = svc.sync_push_sources(
+            progress_callback=lambda **kwargs: progress_rows.append(kwargs)
+        )
+
+        assert bool(result.get("ok")) is True
+        assert callable(source_sync.progress_callback)
+        remote_progress = next(
+            row
+            for row in progress_rows
+            if row.get("phase_key") == "remote_write" and row.get("mode") == "determinate"
+        )
+        assert remote_progress["mode"] == "determinate"
+        assert remote_progress["ratio"] == 0.5
+        assert remote_progress["counts"]["verifiedShardCount"] == 1
 
 
 def test_sync_service_start_task_runs_and_finishes() -> None:

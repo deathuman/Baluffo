@@ -537,10 +537,7 @@ def pull_and_merge_sources(
     opener: Callable[..., Any] = urlopen,
 ) -> dict[str, Any]:
     return _source_sync_snapshot.pull_and_merge_sources(
-        _self_module(),
-        config,
-        local_state,
-        opener=opener,
+        _self_module(), config, local_state, opener=opener
     )
 
 
@@ -549,6 +546,7 @@ def push_sources_snapshot(
     local_state: dict[str, Any],
     *,
     dry_run: bool = False,
+    progress_callback: Callable[..., None] | None = None,
     opener: Callable[..., Any] = urlopen,
 ) -> dict[str, Any]:
     return _source_sync_snapshot.push_sources_snapshot(
@@ -556,5 +554,6 @@ def push_sources_snapshot(
         config,
         local_state,
         dry_run=dry_run,
+        progress_callback=progress_callback,
         opener=opener,
     )

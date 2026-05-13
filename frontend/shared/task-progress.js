@@ -122,6 +122,31 @@ function formatDiscoveryCounts(counts, progress) {
 }
 
 function formatSyncCounts(counts, summary) {
+  const hasShardProgress = [
+    "shardCount",
+    "changedShardCount",
+    "completedShardCount",
+    "verifiedShardCount",
+    "manifestCommitted",
+    "gcDeletedCount"
+  ].some(key => Object.prototype.hasOwnProperty.call(counts || {}, key));
+  if (hasShardProgress) {
+    const changed = Math.max(0, Number(counts?.changedShardCount || 0));
+    const total = changed || Math.max(0, Number(counts?.shardCount || 0));
+    const completed = Math.max(0, Number(counts?.completedShardCount || 0));
+    const verified = Math.max(0, Number(counts?.verifiedShardCount || 0));
+    const current = String(counts?.currentShardLabel || "").trim();
+    const parts = [
+      total > 0 ? `shards ${compactCount(completed)}/${compactCount(total)}` : "",
+      total > 0 ? `verified ${compactCount(verified)}/${compactCount(total)}` : "",
+      current ? `current ${current}` : "",
+      counts?.manifestCommitted ? "manifest committed" : "",
+      (counts?.manifestCommitted || Number(counts?.gcDeletedCount || 0) > 0)
+        ? `gc deleted ${compactCount(counts?.gcDeletedCount)}`
+        : ""
+    ];
+    return parts.filter(Boolean).join(" | ");
+  }
   const active = Math.max(0, Number(counts?.activeCount ?? summary?.activeCount ?? 0));
   const pending = Math.max(0, Number(counts?.pendingCount ?? summary?.pendingCount ?? 0));
   const rejected = Math.max(0, Number(counts?.rejectedCount ?? summary?.rejectedCount ?? 0));

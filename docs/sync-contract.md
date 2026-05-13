@@ -35,6 +35,7 @@ Key details:
 - **Read compatibility:** fall back to v2 `source-sync.json` only when no trusted committed v3 manifest exists
 - **Garbage collection:** after a successful manifest commit, delete a bounded number of unreferenced shard files under `baluffo/source-sync/shards/`; GC warnings are reported after success and do not roll back the commit
 - **Metrics:** sync results, task summaries, timing history, and storage metrics include additive shard fields: `snapshotFormat`, `shardCount`, `changedShardCount`, `shardsPushedBytes`, `manifestSizeBytes`, `shardCapBytes`, and `shardHashes`
+- **Live progress:** sharded pushes emit additive `/ops/task-live/sync` progress while uploading/verifying shards, committing the manifest, and pruning old shards. These heartbeat counters are display-only and do not change the write protocol or committed snapshot contract.
 - **Runtime history:** after the runtime-storage M3 cutover, sync task events and final sync-run rows are mirrored into SQLite `task_events` and `sync_runs`; compatibility JSON timing/live-task exports remain present.
 
 Current storage and runtime authority behavior is canonical in [`storage-contract.md`](storage-contract.md). The completed rollout history is archived in [`archive/runtime-storage-and-sync-architecture-plan.md`](archive/runtime-storage-and-sync-architecture-plan.md).

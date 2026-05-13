@@ -102,6 +102,74 @@ def test_push_sharded_snapshot_pushes_shards_before_manifest() -> None:
     assert module.calls[3]["method"] == "GET"
 
 
+def test_push_sharded_snapshot_emits_remote_write_progress() -> None:
+    bundle = build_sharded_snapshot_bundle(_snapshot(), max_shard_size=10_000)
+    shard = bundle["changedShards"][0]
+    module = _FakeSyncModule(
+        [
+            (200, {"content": {"sha": "shard-sha"}}),
+            (200, {"content": _encoded_bytes(shard.payload_bytes)}),
+            (200, {"content": {"sha": "manifest-sha"}}),
+            (404, {"message": "Not Found"}),
+        ]
+    )
+    progress: list[dict] = []
+
+    result = push_sharded_snapshot(
+        module,
+        _config(),
+        _snapshot(),
+        max_shard_size=10_000,
+        progress_callback=lambda **kwargs: progress.append(kwargs),
+        opener=object(),
+    )
+
+    assert result["pushed"] is True
+    assert [row["phase_label"] for row in progress] == [
+        "Uploading shard 1 of 1",
+        "Verified shard 1 of 1",
+        "Committing sync manifest",
+        "Pruning old sync shards",
+        "Pruned old sync shards",
+    ]
+    assert progress[0]["mode"] == "determinate"
+    assert progress[0]["ratio"] == 0.0
+    assert progress[0]["counts"]["changedShardCount"] == 1
+    assert progress[0]["counts"]["completedShardCount"] == 0
+    assert progress[1]["ratio"] == 1.0
+    assert progress[1]["counts"]["verifiedShardCount"] == 1
+    assert progress[-1]["counts"]["manifestCommitted"] is True
+    assert progress[-1]["counts"]["gcDeletedCount"] == 0
+
+
+def test_push_sharded_snapshot_ignores_progress_callback_failure() -> None:
+    bundle = build_sharded_snapshot_bundle(_snapshot(), max_shard_size=10_000)
+    shard = bundle["changedShards"][0]
+    module = _FakeSyncModule(
+        [
+            (200, {"content": {"sha": "shard-sha"}}),
+            (200, {"content": _encoded_bytes(shard.payload_bytes)}),
+            (200, {"content": {"sha": "manifest-sha"}}),
+            (404, {"message": "Not Found"}),
+        ]
+    )
+
+    def fail_progress(**_kwargs) -> None:
+        raise RuntimeError("progress sink unavailable")
+
+    result = push_sharded_snapshot(
+        module,
+        _config(),
+        _snapshot(),
+        max_shard_size=10_000,
+        progress_callback=fail_progress,
+        opener=object(),
+    )
+
+    assert result["pushed"] is True
+    assert result["remoteSha"] == "manifest-sha"
+
+
 def test_push_sharded_snapshot_updates_manifest_with_committed_sha() -> None:
     snapshot = _snapshot()
     committed = build_sharded_snapshot_bundle(
@@ -226,6 +294,7 @@ def test_push_sharded_snapshot_noops_when_committed_manifest_matches() -> None:
     snapshot = _snapshot()
     bundle = build_sharded_snapshot_bundle(snapshot, max_shard_size=10_000)
     module = _FakeSyncModule([])
+    progress: list[dict] = []
 
     result = push_sharded_snapshot(
         module,
@@ -233,6 +302,7 @@ def test_push_sharded_snapshot_noops_when_committed_manifest_matches() -> None:
         snapshot,
         max_shard_size=10_000,
         committed_manifest=bundle["manifest"],
+        progress_callback=lambda **kwargs: progress.append(kwargs),
         opener=object(),
     )
 
@@ -241,3 +311,4 @@ def test_push_sharded_snapshot_noops_when_committed_manifest_matches() -> None:
     assert result["skipReason"] == "no_changed_shards"
     assert result["metrics"]["changedShardCount"] == 0
     assert module.calls == []
+    assert progress == []

@@ -8,10 +8,12 @@ import hashlib
 import json
 import re
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import quote
 
+from src import source_sync_config as _source_sync_config
 from src.source_registry_identity import source_identity
 
 SHARD_SCHEMA_VERSION = 3
@@ -417,18 +419,95 @@ def push_shard(
     }
 
 
+def _shard_progress_counts(
+    *,
+    shard_count: int,
+    changed_shard_count: int,
+    completed_shard_count: int = 0,
+    verified_shard_count: int = 0,
+    current_shard_index: int = 0,
+    current_shard_label: str = "",
+    shards_pushed_bytes: int = 0,
+    total_shard_bytes: int = 0,
+    manifest_committed: bool = False,
+    gc_deleted_count: int = 0,
+) -> dict[str, Any]:
+    return {
+        "action": "push",
+        "shardCount": max(0, int(shard_count or 0)),
+        "changedShardCount": max(0, int(changed_shard_count or 0)),
+        "completedShardCount": max(0, int(completed_shard_count or 0)),
+        "verifiedShardCount": max(0, int(verified_shard_count or 0)),
+        "currentShardIndex": max(0, int(current_shard_index or 0)),
+        "currentShardLabel": str(current_shard_label or ""),
+        "shardsPushedBytes": max(0, int(shards_pushed_bytes or 0)),
+        "totalShardBytes": max(0, int(total_shard_bytes or 0)),
+        "manifestCommitted": bool(manifest_committed),
+        "gcDeletedCount": max(0, int(gc_deleted_count or 0)),
+    }
+
+
+def _emit_push_progress(
+    progress_callback: Callable[..., None] | None,
+    *,
+    phase_label: str,
+    counts: dict[str, Any],
+    ratio: float,
+    message: str = "",
+    event_level: str = "muted",
+) -> None:
+    if not callable(progress_callback):
+        return
+    with suppress(Exception):
+        progress_callback(
+            phase_key="remote_write",
+            phase_label=phase_label,
+            mode="determinate",
+            ratio=max(0.0, min(1.0, float(ratio or 0.0))),
+            counts=counts,
+            target_url="",
+            event_level=event_level,
+            message=message,
+        )
+
+
 def push_changed_shards(
     module: Any,
     config: Any,
     shards: list[Shard],
     committed_manifest: dict[str, Any] | None,
     *,
+    progress_callback: Callable[..., None] | None = None,
     opener: Callable[..., Any],
 ) -> dict[str, Any]:
     changed = changed_shards(shards, committed_manifest)
     results: list[dict[str, Any]] = []
     verifications: list[dict[str, Any]] = []
-    for shard in changed:
+    changed_count = len(changed)
+    total_bytes = sum(shard.size_bytes for shard in changed)
+    completed_count = 0
+    verified_count = 0
+    pushed_bytes = 0
+    for index, shard in enumerate(changed, start=1):
+        shard_label = f"{shard.bucket}/{shard.key}"
+        _emit_push_progress(
+            progress_callback,
+            phase_label=f"Uploading shard {index} of {changed_count}",
+            ratio=(completed_count / changed_count) if changed_count else 0.0,
+            counts=_shard_progress_counts(
+                shard_count=len(shards),
+                changed_shard_count=changed_count,
+                completed_shard_count=completed_count,
+                verified_shard_count=verified_count,
+                current_shard_index=index,
+                current_shard_label=shard_label,
+                shards_pushed_bytes=pushed_bytes,
+                total_shard_bytes=total_bytes,
+            ),
+            message=(
+                f"Uploading source-sync shard {index} of {changed_count}." if index == 1 else ""
+            ),
+        )
         result = push_shard(
             module,
             config,
@@ -437,6 +516,29 @@ def push_changed_shards(
             opener=opener,
         )
         verified = read_shard(module, config, shard.manifest_entry(), opener=opener)
+        completed_count += 1
+        verified_count += 1
+        pushed_bytes += shard.size_bytes
+        _emit_push_progress(
+            progress_callback,
+            phase_label=f"Verified shard {index} of {changed_count}",
+            ratio=(completed_count / changed_count) if changed_count else 1.0,
+            counts=_shard_progress_counts(
+                shard_count=len(shards),
+                changed_shard_count=changed_count,
+                completed_shard_count=completed_count,
+                verified_shard_count=verified_count,
+                current_shard_index=index,
+                current_shard_label=shard_label,
+                shards_pushed_bytes=pushed_bytes,
+                total_shard_bytes=total_bytes,
+            ),
+            message=(
+                f"Verified {verified_count} of {changed_count} source-sync shards."
+                if verified_count % 25 == 0 or verified_count == changed_count
+                else ""
+            ),
+        )
         results.append(result)
         verifications.append(
             {
@@ -532,6 +634,7 @@ def push_sharded_snapshot(
     committed_manifest_sha: str = "",
     bundle: dict[str, Any] | None = None,
     gc_delete_limit: int = DEFAULT_GC_DELETE_LIMIT,
+    progress_callback: Callable[..., None] | None = None,
     opener: Callable[..., Any],
 ) -> dict[str, Any]:
     if bundle is None:
@@ -555,7 +658,25 @@ def push_sharded_snapshot(
         config,
         bundle["shards"],
         committed_manifest,
+        progress_callback=progress_callback,
         opener=opener,
+    )
+    changed_count = int(shard_result.get("changedShardCount") or 0)
+    total_bytes = int(shard_result.get("shardsPushedBytes") or 0)
+    manifest_counts = _shard_progress_counts(
+        shard_count=len(bundle["shards"]),
+        changed_shard_count=changed_count,
+        completed_shard_count=changed_count,
+        verified_shard_count=changed_count,
+        shards_pushed_bytes=total_bytes,
+        total_shard_bytes=total_bytes,
+    )
+    _emit_push_progress(
+        progress_callback,
+        phase_label="Committing sync manifest",
+        ratio=1.0,
+        counts=manifest_counts,
+        message="Committing sync manifest.",
     )
     manifest_result = push_manifest(
         module,
@@ -566,6 +687,17 @@ def push_sharded_snapshot(
     )
     gc_result: dict[str, Any] = {}
     gc_warnings: list[str] = []
+    gc_counts = {
+        **manifest_counts,
+        "manifestCommitted": True,
+    }
+    _emit_push_progress(
+        progress_callback,
+        phase_label="Pruning old sync shards",
+        ratio=1.0,
+        counts=gc_counts,
+        message="Pruning old sync shards.",
+    )
     try:
         gc_result = prune_unreferenced_shards(
             module,
@@ -586,6 +718,21 @@ def push_sharded_snapshot(
             "deletedPaths": [],
             "warnings": gc_warnings,
         }
+    _emit_push_progress(
+        progress_callback,
+        phase_label="Pruned old sync shards",
+        ratio=1.0,
+        counts={
+            **gc_counts,
+            "gcDeletedCount": int(gc_result.get("deletedCount") or 0),
+        },
+        event_level="warn" if gc_warnings else "muted",
+        message=(
+            f"Pruned {int(gc_result.get('deletedCount') or 0)} old sync shards."
+            if not gc_warnings
+            else "; ".join(gc_warnings)
+        ),
+    )
     metrics.update(
         {
             "changedShardCount": int(shard_result.get("changedShardCount") or 0),
@@ -626,7 +773,13 @@ def read_shard(
     if status >= 400:
         message = str(payload.get("message") or f"GitHub GET failed with HTTP {status}")
         raise RuntimeError(message)
-    raw_bytes = _decode_content_bytes(payload, context=f"source-sync shard {shard_entry['path']}")
+    raw_bytes = _decode_content_bytes(
+        module,
+        config,
+        payload,
+        context=f"source-sync shard {shard_entry['path']}",
+        opener=opener,
+    )
     if hashlib.sha256(raw_bytes).hexdigest() != shard_entry["sha256"]:
         raise SourceSyncShardError(f"source-sync shard sha256 mismatch: {shard_entry['path']}")
     if len(raw_bytes) != shard_entry["sizeBytes"]:
@@ -811,14 +964,52 @@ def _validate_manifest_shard_entry(entry: Any) -> dict[str, Any]:
     }
 
 
-def _decode_content_bytes(payload: dict[str, Any], *, context: str) -> bytes:
+def _decode_content_bytes(
+    module: Any,
+    config: Any,
+    payload: dict[str, Any],
+    *,
+    context: str,
+    opener: Callable[..., Any],
+) -> bytes:
     encoded_content = str(payload.get("content") or "").strip()
     if not encoded_content:
-        raise SourceSyncShardError(f"{context} content is empty")
+        download_url = str(payload.get("download_url") or "").strip()
+        if not download_url:
+            raise SourceSyncShardError(f"{context} content is empty")
+        status, raw_bytes, _headers = _request_download_bytes(
+            module, config, download_url=download_url, opener=opener
+        )
+        if status == 404:
+            raise SourceSyncShardError(f"{context} download URL is missing")
+        if status >= 400:
+            raise RuntimeError(f"{context} download failed with HTTP {status}")
+        if not raw_bytes:
+            raise SourceSyncShardError(f"{context} download is empty")
+        return raw_bytes
     try:
         return base64.b64decode(encoded_content.replace("\n", ""))
     except ValueError as exc:
         raise SourceSyncShardError(f"{context} content is not valid base64: {exc}") from exc
+
+
+def _request_download_bytes(
+    module: Any,
+    config: Any,
+    *,
+    download_url: str,
+    opener: Callable[..., Any],
+) -> tuple[int, bytes, dict[str, str]]:
+    kwargs = {
+        "url": download_url,
+        "headers": {"Accept": "application/octet-stream"},
+        "timeout_s": config.timeout_s,
+        "opener": opener,
+    }
+    request_raw_bytes = getattr(module, "_request_raw_bytes", None)
+    if callable(request_raw_bytes):
+        return request_raw_bytes(**kwargs)
+    return _source_sync_config.request_raw_bytes(module, **kwargs)
 
 
 def _validate_shard_payload(payload: Any, entry: dict[str, Any]) -> dict[str, Any]:

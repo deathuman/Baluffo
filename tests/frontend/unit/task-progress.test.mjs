@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 
 import {
   formatScrapyStaticSourcesTailBadge,
-  formatTaskProgressCounts
+  formatTaskProgressCounts,
+  formatTaskProgressDetail
 } from "../../../frontend/shared/task-progress.js";
 
 test("formatScrapyStaticSourcesTailBadge returns empty when queue item is absent", () => {
@@ -77,6 +78,41 @@ test("formatTaskProgressCounts renders pipeline step and output counts", () => {
       finalOutputCount: 256
     }),
     "step 3/7 | output 256 (baseline 128)"
+  );
+});
+
+test("formatTaskProgressDetail renders sync shard progress", () => {
+  assert.equal(
+    formatTaskProgressDetail("sync", {
+      active: true,
+      phaseKey: "remote_write",
+      phaseLabel: "Verified shard 25 of 501",
+      mode: "determinate",
+      ratio: 25 / 501,
+      counts: {
+        action: "push",
+        shardCount: 501,
+        changedShardCount: 501,
+        completedShardCount: 25,
+        verifiedShardCount: 25,
+        currentShardIndex: 25,
+        currentShardLabel: "active/97",
+        manifestCommitted: false,
+        gcDeletedCount: 0
+      }
+    }),
+    "Verified shard 25 of 501 (5%) | shards 25/501 | verified 25/501 | current active/97"
+  );
+  assert.equal(
+    formatTaskProgressCounts("sync", {
+      shardCount: 501,
+      changedShardCount: 501,
+      completedShardCount: 501,
+      verifiedShardCount: 501,
+      manifestCommitted: true,
+      gcDeletedCount: 3
+    }),
+    "shards 501/501 | verified 501/501 | manifest committed | gc deleted 3"
   );
 });
 
