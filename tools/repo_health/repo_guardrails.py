@@ -26,10 +26,13 @@ if str(ROOT) not in sys.path:
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 
+from bridge_route_inventory import check_bridge_route_inventory
+
 GROUPS = (
     "docs",
     "workflow",
     "compat",
+    "routes",
     "frontend",
     "repo-root",
     "test-shape",
@@ -502,6 +505,13 @@ def run_compat_group() -> list[GuardFailure]:
     return _run_python_checks("compat", checks)
 
 
+def run_routes_group() -> list[GuardFailure]:
+    failure = _failure_from_messages(
+        "routes", "check_bridge_route_inventory", check_bridge_route_inventory()
+    )
+    return [failure] if failure else []
+
+
 def run_frontend_group() -> list[GuardFailure]:
     completed = subprocess.run(
         ["node", "--test", "--test-reporter=dot", str(FRONTEND_GUARDRAILS)],
@@ -563,6 +573,7 @@ GROUP_RUNNERS: dict[str, Callable[[], list[GuardFailure]]] = {
     "docs": run_docs_group,
     "workflow": run_workflow_group,
     "compat": run_compat_group,
+    "routes": run_routes_group,
     "frontend": run_frontend_group,
     "repo-root": run_repo_root_group,
     "test-shape": run_test_shape_group,

@@ -25,6 +25,15 @@ def test_repo_guardrails_group_selection_runs_only_requested_group(monkeypatch) 
     assert called == ["workflow"]
 
 
+def test_routes_group_reports_inventory_failures(monkeypatch) -> None:
+    monkeypatch.setattr(repo_guardrails, "check_bridge_route_inventory", lambda: ["route drift"])
+    assert "routes" in repo_guardrails.GROUPS
+    assert repo_guardrails.GROUP_RUNNERS["routes"] is repo_guardrails.run_routes_group
+    assert repo_guardrails.run_routes_group() == [
+        repo_guardrails.GuardFailure("routes", "check_bridge_route_inventory", "route drift")
+    ]
+
+
 def test_line_budget_fails_new_unbaselined_large_test(tmp_path: Path, monkeypatch) -> None:
     baseline = tmp_path / "baseline.json"
     baseline.write_text(

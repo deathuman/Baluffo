@@ -5,7 +5,7 @@
 > - **Canonical for:** endpoint surface, route naming, and high-level request intent
 > - **Not canonical for:** backend business logic internals or service ownership
 > - **Then inspect:** `src/bridge/routes/{get_routes,post_routes,post_routes_admin,post_routes_local_data,post_routes_update}.py`, `src/bridge/*.py`, `frontend/*/services.js`
-> - **Last updated:** 2026-05-12
+> - **Last updated:** 2026-05-13
 > - **Ownership note:** ops/task-state internals now compose through `src/bridge/ops_api.py`, `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, `src/bridge/ops_task_{fetch_live,discovery_live,projection}.py`, and `src/bridge/ops_live_payload.py`
 > - **Local-data ownership note:** desktop local-data storage now routes through `src/local_data_store.py` as a thin facade over `src/local_data_store_{shared,profiles,saved_jobs,attachments,backup}.py`, while the shared desktop runtime stays rooted at `frontend/shared/local-data/desktop-client.js` over `frontend/shared/local-data/desktop/{api,lifecycle,navigation,state}.js`
 > - **Desktop update ownership note:** the helper executable stays rooted at `src/ship/desktop_updater.py` over `src/ship/desktop_updater_{ui,release,install}.py`, while the Jobs desktop update UI stays rooted at `frontend/jobs/app/desktop-update.js` over `frontend/jobs/app/desktop-update-{model,dom,controller}.js`
@@ -61,6 +61,7 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
 | POST | `/registry/approve` | Approve pending sources (`{ids: []}`) |
 | POST | `/registry/reject` | Reject pending sources (`{ids: []}`) |
 | POST | `/registry/rollback` | Rollback active to pending (`{ids: []}`) |
+| POST | `/registry/demote-active` | Demote active sources back to pending for reversible operator triage (`{ids: []}`) |
 | POST | `/registry/conflicts/auto-demote-safe` | Re-check and apply guarded duplicate-family safe demotions/replacements (`{action: "", ids: []}`), including same-provider aliases, weaker provider/static pairs, higher-yield pending providers, and exact normalized static URL aliases |
 | POST | `/registry/conflicts/check-sources` | Check only active sources currently in duplicate conflict cards and persist comparison evidence (`{familyKeys: [], sourceIds: [], applyAutopilot: false}`); writes compact running progress to `registry-conflict-adjudication.json`; with `applyAutopilot: true`, high-confidence losers are demoted to pending |
 | POST | `/registry/restore-rejected` | Restore rejected to pending (`{ids: []}`) |
@@ -94,6 +95,15 @@ When `sourceRegistry=sqlite`, the registry GET routes and POST mutations read an
 | POST | `/tasks/run-jobs-pipeline` | Run jobs pipeline task |
 | GET | `/tasks/run-jobs-pipeline-status` | Pipeline task status |
 
+## Source Policy / Review State
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/source-policy/recommendations` | Source-policy review recommendations and migration-link candidates for the Admin Ops source-policy panel |
+| POST | `/source-policy/review-action` | Persist local source-policy review decisions for recommendation rows |
+| POST | `/source-policy/migration-link-action` | Persist local source-policy migration-link review decisions |
+| POST | `/dedup/review-action` | Persist local dedup review-state decisions for fetch-report dedup evidence rows |
+
 ## Sync
 
 | Method | Path | Purpose |
@@ -113,6 +123,7 @@ When `sourceRegistry=sqlite`, the registry GET routes and POST mutations read an
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/ops/health` | Bridge health check |
+| GET | `/ops/dashboard-health` | Admin dashboard health summary with alerts, KPIs, schedule state, and source-policy/dedup review indicators |
 | GET | `/ops/history?limit=` | Run history (sync/fetcher/discovery) |
 | GET | `/ops/task-live/<taskType>` | Detailed live task payload for `fetch`, `discovery`, or `sync` |
 | GET | `/ops/task-state` | Current summary task projection; top-level `tasks` array remains the current-run contract |
