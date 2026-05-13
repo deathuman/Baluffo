@@ -1,11 +1,19 @@
 # Bridge Route Inventory Guardrail Plan
 
-> - **Status:** Active plan, immediate next work
-> - **Use this when:** starting bridge route inventory, route drift, or bridge/frontend observability hardening work
-> - **Canonical for:** the immediate next-step scope for route inventory and route guardrail work
+> - **Status:** Archived plan with closeout
+> - **Use this when:** reviewing why the bridge route inventory guardrail exists or how it was scoped
+> - **Canonical for:** historical route inventory scope and closeout rationale
 > - **Not canonical for:** current endpoint payloads, CORS policy, runtime behavior, task lifecycle authority, storage authority, or release behavior
 > - **Then inspect:** [`../admin-bridge-api.md`](../admin-bridge-api.md), [`../architecture-ai-map.md`](../architecture-ai-map.md), [`../testing.md`](../testing.md), `../../src/bridge/routes/`, and `../../frontend/shared/api-client.js`
 > - **Last updated:** 2026-05-13
+
+## Closeout
+
+Completed on 2026-05-13 by adding `tools/repo_health/bridge_route_inventory.py`,
+the `routes` group in `tools/repo_health/repo_guardrails.py`, focused inventory
+tests, and the missing public/support Admin Bridge API entries. Current route
+behavior remains owned by `src/bridge/routes/`; this archive is historical
+context only.
 
 ## Summary
 

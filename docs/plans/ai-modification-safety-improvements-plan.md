@@ -178,9 +178,12 @@ Each marker should state:
 
 Keep the marker short. It should prevent wrong edits, not duplicate the architecture map.
 
-### 2. Create A Route Contract Inventory
+### 2. Maintain The Route Contract Inventory
 
-Create a dependency-free route inventory for bridge paths. Start as a small checked-in source file or doc-backed test fixture, not a generator.
+Completed 2026-05-13. The dependency-free route inventory now lives in
+`tools/repo_health/bridge_route_inventory.py`, and `npm run lint:repo-guardrails`
+runs the `routes` group to catch handler/inventory/API-doc drift. Keep this
+section as maintenance guidance for future route edits, not as new-build work.
 
 The inventory should map:
 
@@ -191,7 +194,7 @@ The inventory should map:
 - contract doc owner
 - focused verification lane
 
-Initial focus:
+Current focus:
 
 - `/tasks/run-fetcher`
 - `/tasks/run-jobs-pipeline`
@@ -206,7 +209,8 @@ Initial focus:
 - `/desktop-local-data/*`
 - `/sync/*`
 
-Add a repo guardrail or focused test that catches a route added to handlers without a route-inventory entry. Keep exceptions explicit for low-value diagnostics if needed.
+Keep exceptions explicit for low-value diagnostics: internal routes should carry
+an inventory rationale rather than being forced into the public API reference.
 
 ### 3. Add Lightweight Typed Payload Contracts
 
