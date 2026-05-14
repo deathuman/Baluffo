@@ -216,9 +216,22 @@ export function renderQuickFiltersHtml(visibleQuickFilterKeys, quickFilters) {
       const isClear = item.type === "clear";
       const classes = isClear ? "btn quick-btn quick-clear" : "btn quick-btn quick-chip";
       const ariaPressed = isClear ? "" : ' aria-pressed="false"';
-      return `<button class="${classes}" data-quick="${item.key}"${ariaPressed}>${item.label}</button>`;
+      return `<button class="${classes}" data-quick="${item.key}"${ariaPressed}>${getQuickFilterDisplayLabel(item)}</button>`;
     })
     .join("");
+}
+
+function getQuickFilterDisplayLabel(item) {
+  if (item.key === "remote") return "Remote";
+  if (item.key === "new-only") return "New";
+  if (item.key === "exclude-internship") return "No internships";
+  if (item.key === "clear") return "Clear filters";
+  if (item.type === "workType" && typeof item.label === "string") {
+    return item.label.replace(/\s+Only$/i, "");
+  }
+  if (item.key === "sector-game") return "Game";
+  if (item.key === "sector-tech") return "Tech";
+  return item.label;
 }
 
 export function renderQuickFilterOptionsHtml(visibleQuickFilterKeys, quickFilters) {

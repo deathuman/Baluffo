@@ -12,7 +12,7 @@ import {
   renderQuickFilterOptionsHtml,
   renderQuickFiltersHtml,
   sanitizeQuickFilterKeys
-} from "../filters.js?v=4";
+} from "../filters.js?v=6";
 import { fullCountryName as fullCountryNameForJobs, getAvailableRegionOptions as getAvailableRegionOptionsForJobs, getCountryFilterOptionLabel as getCountryFilterOptionLabelForJobs, resolveCountryCode as resolveCountryCodeForJobs } from "../countries.js";
 import { capitalizeFirst } from "../runtime-utils.js";
 
@@ -292,6 +292,26 @@ export function createJobsFiltersController({
   function renderQuickFilterOptions() {
     if (!refs.quickFiltersOptionsEl) return;
     refs.quickFiltersOptionsEl.innerHTML = renderQuickFilterOptionsHtml(visibleQuickFilterKeys, quickFilters);
+    updateQuickFiltersResetButtonState();
+  }
+
+  function areDefaultQuickFiltersVisible() {
+    const defaults = getDefaultQuickFilterKeys(quickFilters);
+    return defaults.length === visibleQuickFilterKeys.length
+      && defaults.every((key, index) => key === visibleQuickFilterKeys[index]);
+  }
+
+  function updateQuickFiltersResetButtonState() {
+    if (!refs.quickFiltersResetBtn) return;
+    const isDefault = areDefaultQuickFiltersVisible();
+    refs.quickFiltersResetBtn.disabled = isDefault;
+    refs.quickFiltersResetBtn.setAttribute("aria-disabled", isDefault ? "true" : "false");
+    refs.quickFiltersResetBtn.setAttribute(
+      "data-tooltip",
+      isDefault
+        ? "Default quick filter presets are already shown."
+        : "Restore the default quick filter presets."
+    );
   }
 
   function initializeQuickFilters() {

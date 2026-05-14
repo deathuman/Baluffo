@@ -170,8 +170,8 @@ test("jobs URL persistence keeps the non-desktop remember and replace flow canon
   });
 });
 
-test("jobs URL persistence does not preserve removed row preview parameters", () => {
-  const harness = createHarness({ desktop: false, search: "?rowPreview=1&jobsRowPreview=1" });
+test("jobs URL persistence does not preserve removed preview parameters", () => {
+  const harness = createHarness({ desktop: false, search: "?rowPreview=1&jobsRowPreview=1&quickFiltersPreview=1" });
 
   harness.persistence.writeStateToUrl({
     currentPage: 2,

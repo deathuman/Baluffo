@@ -25,7 +25,7 @@ test("desktop html meaningful operational buttons expose polished tooltips", () 
 
   [
     [jobsHtml, /id="country-picker-clear-btn"[^>]+data-tooltip="Clear the current country selection\."/],
-    [jobsHtml, /id="customize-quick-filters-btn"[^>]+data-tooltip="Choose which quick filter presets are shown\."/],
+    [jobsHtml, /id="customize-quick-filters-btn"[^>]+data-tooltip="Choose which preset filters are shown\."/],
     [jobsHtml, /id="quick-filters-reset-btn"[^>]+data-tooltip="Restore the default quick filter presets\."/],
     [jobsHtml, /id="refresh-jobs-btn"[^>]+data-tooltip="Reload the current jobs feed from local data\."/],
     [savedHtml, /id="add-custom-job-btn"[^>]+data-tooltip="Create a personal saved job entry\."/],
@@ -60,7 +60,7 @@ test("jobs html exposes first-slice read-only lifecycle filters", () => {
   assert.match(html, /value="likely_removed">Recently removed<\/option>/);
   assert.match(html, /value="reappeared">Reappeared<\/option>/);
   assert.match(html, /value="preserved_source_failed">Preserved because source failed<\/option>/);
-  assert.match(html, /frontend\/jobs\/index\.js\?v=4/);
+  assert.match(html, /frontend\/jobs\/index\.js\?v=7/);
   assert.doesNotMatch(html, /preserved_source_skipped/);
 });
 

@@ -1,7 +1,7 @@
 import "../shared/local-data/app-client.js";
 import "./state.js?v=4";
 import "./parsing-utils.js";
-import { boot as bootJobsPage } from "./app.js?v=5";
+import { boot as bootJobsPage } from "./app.js?v=7";
 import { installGlobalTooltipController } from "../shared/ui/tooltip-controller.js";
 import { observeLongTasks } from "../../probes/long-task-observer.js";
 import { emitStartupProbeMetric, resolveStartupProbeEnabled } from "../../probes/startup-probe.js";

@@ -43,7 +43,7 @@ import {
   markSeenJob,
   isJobsCacheStale
 } from "./cache.js";
-import { normalizeLifecycleStatus } from "./filters.js?v=4";
+import { normalizeLifecycleStatus } from "./filters.js?v=6";
 import {
   isDesktopRuntimeMode as isDesktopRuntimeModeFromStartup,
   buildJobsPageUrl,
@@ -68,7 +68,7 @@ import {
   fetchJsonFromCandidates as fetchJsonFromCandidatesFromSources,
   renderDataSources as renderDataSourcesFromSources
 } from "./sources.js";
-import { composeJobsRuntime } from "./runtime/composition.js?v=4";
+import { composeJobsRuntime } from "./runtime/composition.js?v=7";
 import { createJobsBoot } from "./runtime/boot.js";
 import { createJobsPageFlow } from "./runtime/page-flow.js?v=5";
 

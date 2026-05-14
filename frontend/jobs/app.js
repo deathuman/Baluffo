@@ -1,4 +1,4 @@
-import "./app/runtime.js?v=5";
+import "./app/runtime.js?v=7";
 
 export function boot() {
   globalThis.__baluffoBootJobsPage?.();
