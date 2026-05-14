@@ -280,6 +280,69 @@ def _job_link_slug_words(candidate_url: str) -> set[str]:
     return set()
 
 
+def _itch_noise(source_lower: str, title: str, job_link: str, host: str) -> bool:
+    if "itch.io/jobs" not in source_lower or host != "itch.io":
+        return False
+    title_words = _source_specific_words(title)
+    slug_words = _job_link_slug_words(job_link)
+    return bool(title_words and slug_words and not title_words.issubset(slug_words))
+
+
+def _stardock_noise(source_lower: str, title_lower: str, host: str, path: str) -> bool:
+    if "stardock.com/careers" not in source_lower:
+        return False
+    if host.endswith("stardock.com") and path.startswith("/products"):
+        return True
+    external_non_job = (
+        host and not host.endswith("stardock.com") and "careers" not in path and "jobs" not in path
+    )
+    title_noise = (
+        "corporate software solutions" in title_lower
+        or "create a character and lead" in title_lower
+    )
+    return bool(external_non_job or title_noise)
+
+
+def _immutable_noise(source_lower: str, title_lower: str, host: str, path: str) -> bool:
+    if "immutable.com/jobs" not in source_lower:
+        return False
+    product_page = host.endswith("immutable.com") and not path.startswith("/jobs")
+    marketing_title = (
+        "purpose-built for gaming" in title_lower or "automated marketing" in title_lower
+    )
+    return product_page or marketing_title
+
+
+def _wbd_noise(source_lower: str, path: str) -> bool:
+    return (
+        "careers.wbd.com/global/en/wb-games-jobs" in source_lower
+        and "/global/en/c/" in path
+        and path.endswith("-jobs")
+    )
+
+
+def _gs_studio_noise(source_lower: str, title_lower: str, path: str) -> bool:
+    return "gs-studio.eu/career" in source_lower and (
+        "no-open-positions" in path or title_lower == "job offers"
+    )
+
+
+def _flix_noise(source_lower: str, title_lower: str, path: str) -> bool:
+    return "flixinteractive.com" in source_lower and (
+        "speculative-application" in path
+        or "don't see" in title_lower
+        or "don’t see" in title_lower
+    )
+
+
+def _stillfront_noise(source_lower: str, host: str) -> bool:
+    return (
+        "stillfront.com/en/career/join-the-team" in source_lower
+        and host.endswith(".teamtailor.com")
+        and host != "stillfront.teamtailor.com"
+    )
+
+
 def looks_like_source_specific_static_noise_row(
     *,
     title: str,
@@ -291,50 +354,17 @@ def looks_like_source_specific_static_noise_row(
     parsed = urlparse(clean_text(job_link) or "")
     host = parsed.netloc.lower()
     path = parsed.path.lower()
-    if "itch.io/jobs" in source_lower and host == "itch.io":
-        title_words = _source_specific_words(title)
-        slug_words = _job_link_slug_words(job_link)
-        return bool(title_words and slug_words and not title_words.issubset(slug_words))
-    if "stardock.com/careers" in source_lower:
-        if host.endswith("stardock.com") and path.startswith("/products"):
-            return True
-        if (
-            host
-            and not host.endswith("stardock.com")
-            and "careers" not in path
-            and "jobs" not in path
-        ):
-            return True
-        if (
-            "corporate software solutions" in title_lower
-            or "create a character and lead" in title_lower
-        ):
-            return True
-    if "immutable.com/jobs" in source_lower:
-        if host.endswith("immutable.com") and not path.startswith("/jobs"):
-            return True
-        if "purpose-built for gaming" in title_lower or "automated marketing" in title_lower:
-            return True
-    if "careers.wbd.com/global/en/wb-games-jobs" in source_lower:
-        if "/global/en/c/" in path and path.endswith("-jobs"):
-            return True
-    if "gs-studio.eu/career" in source_lower:
-        if "no-open-positions" in path or title_lower == "job offers":
-            return True
-    if "flixinteractive.com" in source_lower:
-        if (
-            "speculative-application" in path
-            or "don't see" in title_lower
-            or "don’t see" in title_lower
-        ):
-            return True
-    if (
-        "stillfront.com/en/career/join-the-team" in source_lower
-        and host.endswith(".teamtailor.com")
-        and host != "stillfront.teamtailor.com"
-    ):
-        return True
-    return False
+    return any(
+        (
+            _itch_noise(source_lower, title, job_link, host),
+            _stardock_noise(source_lower, title_lower, host, path),
+            _immutable_noise(source_lower, title_lower, host, path),
+            _wbd_noise(source_lower, path),
+            _gs_studio_noise(source_lower, title_lower, path),
+            _flix_noise(source_lower, title_lower, path),
+            _stillfront_noise(source_lower, host),
+        )
+    )
 
 
 def _has_jsonld_jobposting(html_text: str) -> bool:
