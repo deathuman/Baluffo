@@ -125,6 +125,8 @@ test("admin source policy review renders required row fields and non-destructive
   assert.match(reviewEl.innerHTML, /Provider unstable runs/);
   assert.match(reviewEl.innerHTML, /safe redundant static/);
   assert.match(reviewEl.innerHTML, /Last audit/);
+  assert.match(reviewEl.innerHTML, /admin-source-policy-action-btn[\s\S]*data-tooltip="Acknowledge: apply this source-policy review decision\."/);
+  assert.doesNotMatch(reviewEl.innerHTML, /\stitle=/);
 });
 
 test("admin source policy review filters use deterministic row sets", () => {
@@ -256,6 +258,26 @@ test("admin source policy review renders migration link review candidates", () =
   assert.match(reviewEl.innerHTML, /source state disambiguation/);
   assert.match(reviewEl.innerHTML, /Ignored alternatives/);
   assert.match(reviewEl.innerHTML, />Apply link</);
+  assert.match(reviewEl.innerHTML, /admin-source-policy-migration-link-action-btn[\s\S]*data-tooltip="Apply link: update this migration-link review state\."/);
+  assert.doesNotMatch(reviewEl.innerHTML, /\stitle=/);
+});
+
+test("admin source policy review renders linked migration action tooltips", () => {
+  const reviewEl = makeEl();
+  renderAdminSourcePolicyReview(reviewEl, {
+    providerCoverageLinkBackfill: {
+      linkedCandidates: [
+        makeMigrationLinkCandidate({
+          migrationSourceIdentity: "static:listing_url:https://studio.example/jobs",
+          migrationLinkedBy: "admin_provider_link_backfill",
+          adminBackfillOwned: true
+        })
+      ]
+    }
+  });
+
+  assert.match(reviewEl.innerHTML, /admin-source-policy-migration-link-action-btn[\s\S]*data-tooltip="Clear link: update this linked migration identity\."/);
+  assert.doesNotMatch(reviewEl.innerHTML, /\stitle=/);
 });
 
 test("admin source policy review renders high-confidence migration copy", () => {

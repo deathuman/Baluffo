@@ -188,6 +188,7 @@ test("jobs smoke: filters + refresh + pagination + save/unsave + guest warning",
   await page.selectOption("#work-type-filter", "Remote");
   await expect(page.locator(".save-job-btn").first()).toBeVisible({ timeout: 20000 });
   await expectTooltipText(page, page.locator("#jobs-pipeline-run-btn"), "Runs discovery");
+  await expectTooltipText(page, page.locator("#refresh-jobs-btn"), "Reload the current jobs feed");
   const companyTooltipTarget = page.locator(".job-company-compact[data-tooltip]").first();
   await expect(companyTooltipTarget).toBeVisible();
   await expectTooltipText(
@@ -264,6 +265,7 @@ test("saved smoke: export stays available for signed-in browser users and guest 
   await seedBridgeRuntimeBase(page);
   await page.goto("/saved.html");
   await expectTooltipText(page, page.locator("#history-panel-toggle-btn"), "Show activity timeline");
+  await expectTooltipText(page, page.locator("#add-custom-job-btn"), "Create a personal saved job entry");
 
   await signInWithProfile(page, "#saved-auth-sign-in-btn", "Smoke User", "#add-custom-job-btn");
   await expect(page.locator("#saved-auth-status")).not.toContainText(/Guest/i);
@@ -343,6 +345,7 @@ test("admin smoke: direct admin load shows bucketed fetch failure summary", asyn
   await expect(page.locator("#admin-content")).toBeVisible();
   await expect(page.locator("h1")).toContainText(/Administration/i);
   await expectTooltipText(page, page.locator("#admin-sync-test-btn"), "Verify GitHub App access");
+  await expectTooltipText(page, page.locator("#admin-refresh-btn"), "Reload users");
 
   // Load the fetch report - requires bridge to be running
   await page.click("#admin-refresh-report-btn");

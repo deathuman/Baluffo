@@ -124,7 +124,7 @@
         <div id="country-picker-panel" data-ui="country-picker-panel" class="country-picker-panel hidden" role="dialog" aria-label="Country filter options">
           <input id="country-picker-search" data-ui="country-picker-search" type="text" class="country-picker-search" placeholder="Search countries...">
           <div id="country-picker-options" data-ui="country-picker-options" class="country-picker-options"></div>
-          <button id="country-picker-clear-btn" data-ui="country-picker-clear-btn" type="button" class="country-picker-clear-btn">Clear</button>
+          <button id="country-picker-clear-btn" data-ui="country-picker-clear-btn" type="button" class="country-picker-clear-btn" data-tooltip="Clear the current country selection.">Clear</button>
         </div>
         <select id="country-filter" data-ui="country-filter" multiple size="5" class="country-filter-multi hidden" aria-hidden="true"></select>
         <span id="country-selection-badge" data-ui="country-selection-badge" class="country-selection-badge">All countries</span>
@@ -183,11 +183,11 @@
     <div class="quick-actions-wrap">
       <div id="quick-actions" data-ui="quick-actions" class="quick-actions" aria-label="Quick filter actions"></div>
       <div class="quick-actions-settings">
-        <button id="customize-quick-filters-btn" data-ui="customize-quick-filters-btn" type="button" class="btn quick-btn quick-customize-btn" aria-haspopup="dialog" aria-expanded="false">Customize</button>
+        <button id="customize-quick-filters-btn" data-ui="customize-quick-filters-btn" type="button" class="btn quick-btn quick-customize-btn" aria-haspopup="dialog" aria-expanded="false" data-tooltip="Choose which quick filter presets are shown.">Customize</button>
         <div id="quick-filters-panel" data-ui="quick-filters-panel" class="quick-filters-panel hidden" role="dialog" aria-label="Customize quick filters">
           <p class="quick-filters-title">Show quick filters</p>
           <div id="quick-filters-options" data-ui="quick-filters-options" class="quick-filters-options"></div>
-          <button id="quick-filters-reset-btn" data-ui="quick-filters-reset-btn" type="button" class="btn quick-btn quick-filters-reset-btn">Reset defaults</button>
+          <button id="quick-filters-reset-btn" data-ui="quick-filters-reset-btn" type="button" class="btn quick-btn quick-filters-reset-btn" data-tooltip="Restore the default quick filter presets.">Reset defaults</button>
         </div>
       </div>
     </div>
@@ -196,7 +196,7 @@
     <div class="jobs-toolbar">
       <p id="results-summary" data-ui="results-summary" class="results-summary" aria-live="polite"></p>
       <div class="toolbar-actions">
-        <button id="refresh-jobs-btn" data-ui="refresh-jobs-btn" class="btn clear-filters-btn">Refresh Jobs</button>
+        <button id="refresh-jobs-btn" data-ui="refresh-jobs-btn" class="btn clear-filters-btn" data-tooltip="Reload the current jobs feed from local data.">Refresh Jobs</button>
         <button id="jobs-pipeline-run-btn" data-ui="jobs-pipeline-run-btn" class="btn clear-filters-btn jobs-pipeline-btn" type="button" data-tooltip="Runs discovery, fetch, and sync pipeline. Can take more than 5 minutes.">Run Discovery + Fetch + Sync</button>
         <span id="refresh-jobs-needed-badge" data-ui="refresh-jobs-needed-badge" class="refresh-jobs-needed-badge hidden" aria-live="polite">Updates found</span>
         <span id="jobs-last-updated" data-ui="jobs-last-updated" class="jobs-last-updated" aria-live="polite"></span>

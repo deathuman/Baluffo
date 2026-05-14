@@ -18,6 +18,35 @@ test("jobs html pipeline button includes tooltip about long-running pipeline", (
   assert.doesNotMatch(html, /id="jobs-pipeline-run-btn"[^>]+title=/);
 });
 
+test("desktop html meaningful operational buttons expose polished tooltips", () => {
+  const jobsHtml = fs.readFileSync(path.join(repoRoot, "jobs.html"), "utf8");
+  const savedHtml = fs.readFileSync(path.join(repoRoot, "saved.html"), "utf8");
+  const adminHtml = fs.readFileSync(path.join(repoRoot, "admin.html"), "utf8");
+
+  [
+    [jobsHtml, /id="country-picker-clear-btn"[^>]+data-tooltip="Clear the current country selection\."/],
+    [jobsHtml, /id="customize-quick-filters-btn"[^>]+data-tooltip="Choose which quick filter presets are shown\."/],
+    [jobsHtml, /id="quick-filters-reset-btn"[^>]+data-tooltip="Restore the default quick filter presets\."/],
+    [jobsHtml, /id="refresh-jobs-btn"[^>]+data-tooltip="Reload the current jobs feed from local data\."/],
+    [savedHtml, /id="add-custom-job-btn"[^>]+data-tooltip="Create a personal saved job entry\."/],
+    [savedHtml, /id="global-phase-override-btn"[^>]+data-tooltip="Temporarily allow phase changes that are normally locked\."/],
+    [savedHtml, /id="export-backup-btn"[^>]+data-tooltip="Export saved jobs, notes, and optional files to a backup\."/],
+    [savedHtml, /id="import-backup-btn"[^>]+data-tooltip="Import a saved jobs backup into the current local profile\."/],
+    [savedHtml, /id="activity-refresh-btn"[^>]+data-tooltip="Reload the activity timeline\."/],
+    [adminHtml, /id="admin-refresh-btn"[^>]+data-tooltip="Reload users, totals, sources, and operational panels\."/],
+    [adminHtml, /id="admin-refresh-ops-btn"[^>]+data-tooltip="Refresh operations health, run history, and alert summaries\."/],
+    [adminHtml, /id="admin-run-discovery-btn"[^>]+data-tooltip="Run source discovery with the default bridge preset\."/],
+    [adminHtml, /id="admin-load-discovery-btn"[^>]+data-tooltip="Load the latest source discovery report\."/],
+    [adminHtml, /id="admin-add-manual-source-btn"[^>]+data-tooltip="Add the entered source URL to the review queue\."/],
+    [adminHtml, /id="admin-approve-sources-btn"[^>]+data-tooltip="Move selected pending sources to active\."/],
+    [adminHtml, /id="admin-reject-sources-btn"[^>]+data-tooltip="Move selected pending sources to rejected\."/],
+    [adminHtml, /id="admin-restore-rejected-btn"[^>]+data-tooltip="Restore selected rejected sources to pending\."/],
+    [adminHtml, /id="admin-delete-sources-btn"[^>]+data-tooltip="Delete selected reviewed sources from the local registry\."/]
+  ].forEach(([html, pattern]) => assert.match(html, pattern));
+
+  assert.doesNotMatch(`${jobsHtml}\n${savedHtml}\n${adminHtml}`, /id="(?:country-picker-clear-btn|customize-quick-filters-btn|quick-filters-reset-btn|refresh-jobs-btn|add-custom-job-btn|global-phase-override-btn|export-backup-btn|import-backup-btn|activity-refresh-btn|admin-refresh-btn|admin-refresh-ops-btn|admin-run-discovery-btn|admin-load-discovery-btn|admin-add-manual-source-btn|admin-approve-sources-btn|admin-reject-sources-btn|admin-restore-rejected-btn|admin-delete-sources-btn)"[^>]+\stitle=/);
+});
+
 test("jobs html exposes desktop update controls in the header shell", () => {
   const html = fs.readFileSync(path.join(repoRoot, "jobs.html"), "utf8");
   assert.match(html, /id="desktop-update-toggle-btn"/);

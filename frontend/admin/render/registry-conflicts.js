@@ -386,6 +386,7 @@ function renderRowActions(cardIndex, rowIndex, row) {
           data-registry-conflict-card-index="${cardIndex}"
           data-registry-conflict-row-index="${rowIndex}"
           data-registry-conflict-action-index="${actionIndex}"
+          ${tooltipAttrs(`${label}: apply this registry conflict action.`)}
         >${escapeHtml(label)}</button>
       `;
     })
@@ -571,6 +572,7 @@ function renderSafeAutomationCard(card, cardIndex, disabled = false) {
         data-registry-conflict-safe-automation-card-index="${cardIndex}"
         data-registry-conflict-safe-automation-action="${escapeHtml(safeAutomation.action)}"
         data-registry-conflict-safe-automation-ids="${escapeHtml(safeAutomation.targetIds.join(","))}"
+        ${tooltipAttrs(`${safeAutomation.label}: ${safeAutomation.reason || "apply this safe registry-conflict automation."}`)}
         ${disabled ? "disabled" : ""}
       >${escapeHtml(safeAutomation.label)}</button>
     </div>
@@ -685,6 +687,7 @@ function renderSafeAutomationToolbar(visibleConflicts, disabled = false) {
       data-registry-conflict-safe-automation-action="${escapeHtml(entry.action)}"
       data-registry-conflict-safe-automation-route="${escapeHtml(entry.route)}"
       data-registry-conflict-safe-automation-ids="${escapeHtml(entry.targetIds.join(","))}"
+      ${tooltipAttrs(`${entry.label}: apply this safe automation to ${entry.targetIds.length.toLocaleString()} visible source rows.`)}
       ${disabled ? "disabled" : ""}
     >${escapeHtml(entry.label)} · ${entry.targetIds.length.toLocaleString()}</button>
   `).join("");
@@ -711,6 +714,18 @@ function renderAdjudicationToolbar(payload, visibleConflicts, checkingConflicts)
   const applyLabel = running && applyAutopilot
     ? "Applying recommendations..."
     : "Apply high-confidence recommendations";
+  const checkTooltip = running
+    ? "Conflict source check is already running."
+    : !visibleConflicts.length
+      ? "No visible conflicts to check."
+      : "Check whether visible conflict sources can be resolved safely.";
+  const applyTooltip = running && applyAutopilot
+    ? "Conflict recommendation apply is already running."
+    : running
+      ? "Conflict source check is already running."
+      : !visibleConflicts.length
+      ? "No visible conflicts to apply."
+      : "Apply only high-confidence conflict recommendations.";
   const statusCopy = running
     ? renderRunningAdjudicationStatus(adjudication)
     : `${checkedAt ? `Last checked ${escapeHtml(formatFieldValue("finishedAt", checkedAt))}; ` : "No conflict source check has run yet. "}${demoted.toLocaleString()} demoted, ${recommended.toLocaleString()} recommended.`;
@@ -728,6 +743,7 @@ function renderAdjudicationToolbar(payload, visibleConflicts, checkingConflicts)
           class="btn back-btn"
           data-ui="${CHECK_TOKEN}"
           data-registry-conflict-apply-autopilot="false"
+          ${tooltipAttrs(checkTooltip)}
           ${disabled ? "disabled" : ""}
         >${escapeHtml(checkLabel)}</button>
         <button
@@ -735,6 +751,7 @@ function renderAdjudicationToolbar(payload, visibleConflicts, checkingConflicts)
           class="btn back-btn"
           data-ui="${CHECK_TOKEN}"
           data-registry-conflict-apply-autopilot="true"
+          ${tooltipAttrs(applyTooltip)}
           ${disabled ? "disabled" : ""}
         >${escapeHtml(applyLabel)}</button>
       </div>

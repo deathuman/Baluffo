@@ -27,7 +27,7 @@
       <div class="admin-toolbar">
         <h2 class="admin-section-title">Stored Profiles Overview</h2>
         <div class="admin-toolbar-actions">
-          <button id="admin-refresh-btn" data-ui="admin-refresh-btn" class="btn clear-filters-btn">Refresh</button>
+          <button id="admin-refresh-btn" data-ui="admin-refresh-btn" class="btn clear-filters-btn" data-tooltip="Reload users, totals, sources, and operational panels.">Refresh</button>
         </div>
       </div>
 
@@ -38,7 +38,7 @@
         <div class="admin-fetcher-header">
           <h3 class="admin-fetcher-title">Operations Health</h3>
           <div class="admin-fetcher-actions">
-            <button id="admin-refresh-ops-btn" data-ui="admin-refresh-ops-btn" class="btn clear-filters-btn">Refresh Ops Health</button>
+            <button id="admin-refresh-ops-btn" data-ui="admin-refresh-ops-btn" class="btn clear-filters-btn" data-tooltip="Refresh operations health, run history, and alert summaries.">Refresh Ops Health</button>
           </div>
         </div>
         <h4 class="admin-section-title">Operations Activity</h4>
@@ -123,9 +123,9 @@
           <div class="admin-discovery-top-row">
             <div class="admin-discovery-card admin-discovery-run-card">
               <div class="admin-fetcher-actions">
-                <button id="admin-run-discovery-btn" data-ui="admin-run-discovery-btn" class="btn clear-filters-btn">Run Discovery</button>
+                <button id="admin-run-discovery-btn" data-ui="admin-run-discovery-btn" class="btn clear-filters-btn" data-tooltip="Run source discovery with the default bridge preset.">Run Discovery</button>
                 <button id="admin-run-discovery-uncapped-btn" data-ui="admin-run-discovery-uncapped-btn" class="btn clear-filters-btn" data-tooltip="Run discovery with the uncapped bridge preset.">Uncapped Run</button>
-                <button id="admin-load-discovery-btn" data-ui="admin-load-discovery-btn" class="btn clear-filters-btn">Load Discovery Report</button>
+                <button id="admin-load-discovery-btn" data-ui="admin-load-discovery-btn" class="btn clear-filters-btn" data-tooltip="Load the latest source discovery report.">Load Discovery Report</button>
               </div>
               <label class="backup-toggle admin-zero-toggle admin-sync-toggle">
                 <input id="admin-discovery-auto-approve-toggle" data-ui="admin-discovery-auto-approve-toggle" type="checkbox" checked>
@@ -151,7 +151,7 @@
                   placeholder="https://company.teamtailor.com/jobs"
                   autocomplete="off"
                 >
-                <button id="admin-add-manual-source-btn" data-ui="admin-add-manual-source-btn" class="btn clear-filters-btn" type="button">Add Source</button>
+                <button id="admin-add-manual-source-btn" data-ui="admin-add-manual-source-btn" class="btn clear-filters-btn" type="button" data-tooltip="Add the entered source URL to the review queue.">Add Source</button>
               </div>
               <div id="admin-manual-source-feedback" data-ui="admin-manual-source-feedback" class="results-summary admin-manual-source-feedback"></div>
             </div>
@@ -180,13 +180,13 @@
             <div class="admin-discovery-card admin-discovery-bulk-card">
               <h4 class="admin-section-title">Bulk Actions</h4>
               <div class="admin-fetcher-actions">
-                <button id="admin-approve-sources-btn" data-ui="admin-approve-sources-btn" class="btn clear-filters-btn">Approve Selected</button>
-                <button id="admin-reject-sources-btn" data-ui="admin-reject-sources-btn" class="btn clear-filters-btn">Reject Selected</button>
-                <button id="admin-restore-rejected-btn" data-ui="admin-restore-rejected-btn" class="btn clear-filters-btn" type="button">Restore Selected</button>
+                <button id="admin-approve-sources-btn" data-ui="admin-approve-sources-btn" class="btn clear-filters-btn" data-tooltip="Move selected pending sources to active.">Approve Selected</button>
+                <button id="admin-reject-sources-btn" data-ui="admin-reject-sources-btn" class="btn clear-filters-btn" data-tooltip="Move selected pending sources to rejected.">Reject Selected</button>
+                <button id="admin-restore-rejected-btn" data-ui="admin-restore-rejected-btn" class="btn clear-filters-btn" type="button" data-tooltip="Restore selected rejected sources to pending.">Restore Selected</button>
               </div>
               <div class="admin-fetcher-actions">
                 <button id="admin-demote-active-btn" data-ui="admin-demote-active-btn" class="btn clear-filters-btn" type="button" data-tooltip="Demote all active sources with zero jobs found to pending">Demote zero-jobs to Pending</button>
-                <button id="admin-delete-sources-btn" data-ui="admin-delete-sources-btn" class="btn clear-filters-btn admin-delete-sources-btn">Delete Selected</button>
+                <button id="admin-delete-sources-btn" data-ui="admin-delete-sources-btn" class="btn clear-filters-btn admin-delete-sources-btn" data-tooltip="Delete selected reviewed sources from the local registry.">Delete Selected</button>
               </div>
             </div>
 

@@ -1,4 +1,4 @@
-import { escapeHtml } from "../../shared/ui/index.js";
+import { escapeHtml, tooltipAttrs } from "../../shared/ui/index.js";
 
 export function renderTotalsHtml(totals, formatBytes) {
   if (!totals) return "";
@@ -45,7 +45,7 @@ function renderUserRowHtml(user, formatBytes) {
       <div class="admin-cell" data-label="Attachment Size">${formatBytes(user.attachmentsBytes || 0)}</div>
       <div class="admin-cell" data-label="Total Size">${formatBytes(user.totalBytes || 0)}</div>
       <div class="admin-cell" data-label="Actions">
-        <button class="btn back-btn admin-wipe-btn" data-ui="admin-wipe-btn" data-uid="${uid}" data-name="${name}">Wipe Account</button>
+        <button class="btn back-btn admin-wipe-btn" data-ui="admin-wipe-btn" data-uid="${uid}" data-name="${name}" ${tooltipAttrs("Wipe this local account's saved jobs, notes, and attachments.")}>Wipe Account</button>
       </div>
     </div>
   `;

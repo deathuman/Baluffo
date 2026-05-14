@@ -247,6 +247,8 @@ test("registry conflicts renderer locks check controls while adjudication is run
   assert.match(reviewEl.innerHTML, /Checking conflicting sources[\s\S]*10\/20 sources[\s\S]*3\/5 families[\s\S]*Current: Studio API in studio/);
   assert.match(reviewEl.innerHTML, /Applying recommendations/);
   assert.match(reviewEl.innerHTML, /data-registry-conflict-apply-autopilot="false"[\s\S]*disabled[\s\S]*data-registry-conflict-apply-autopilot="true"[\s\S]*disabled/);
+  assert.match(reviewEl.innerHTML, /data-registry-conflict-apply-autopilot="false"[\s\S]*data-tooltip="Conflict source check is already running\."/);
+  assert.match(reviewEl.innerHTML, /data-registry-conflict-apply-autopilot="true"[\s\S]*data-tooltip="Conflict recommendation apply is already running\."/);
   assert.match(reviewEl.innerHTML, /admin-registry-conflict-safe-automation-btn[\s\S]*disabled/);
 });
 
@@ -391,4 +393,6 @@ test("registry conflicts renderer collapses lower-priority review groups", () =>
     /data-registry-conflict-review-queue="p3_pending_only_intake"[^>]*open/
   );
   assert.match(reviewEl.innerHTML, /admin-registry-conflict-action-btn/);
+  assert.match(reviewEl.innerHTML, /admin-registry-conflict-action-btn[\s\S]*data-tooltip="reject: apply this registry conflict action\."/);
+  assert.doesNotMatch(reviewEl.innerHTML, /\stitle=/);
 });

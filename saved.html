@@ -77,8 +77,8 @@
           <span id="saved-custom-filter-count" data-ui="saved-custom-filter-count" class="saved-custom-filter-count"></span>
         </div>
         <div class="saved-actions-group saved-actions-quick">
-          <button id="add-custom-job-btn" data-ui="add-custom-job-btn" class="btn clear-filters-btn" aria-label="Add custom job">+ Add Custom Job</button>
-          <button id="global-phase-override-btn" data-ui="global-phase-override-btn" class="btn clear-filters-btn" disabled>Override Phase Lock</button>
+          <button id="add-custom-job-btn" data-ui="add-custom-job-btn" class="btn clear-filters-btn" aria-label="Add custom job" data-tooltip="Create a personal saved job entry.">+ Add Custom Job</button>
+          <button id="global-phase-override-btn" data-ui="global-phase-override-btn" class="btn clear-filters-btn" disabled data-tooltip="Temporarily allow phase changes that are normally locked.">Override Phase Lock</button>
         </div>
         <section id="custom-job-panel" data-ui="custom-job-panel" class="custom-job-panel hidden" aria-hidden="true">
           <div class="custom-job-panel-header">
@@ -165,13 +165,13 @@
               <section class="saved-backup-section" aria-label="Backup and restore">
                 <div class="saved-backup-head">Backup & Restore</div>
                 <div class="saved-backup-row">
-                  <button id="export-backup-btn" data-ui="export-backup-btn" class="btn back-btn" disabled>Export Backup</button>
+                  <button id="export-backup-btn" data-ui="export-backup-btn" class="btn back-btn" disabled data-tooltip="Export saved jobs, notes, and optional files to a backup.">Export Backup</button>
                   <label class="backup-toggle">
                     <input id="export-include-files" data-ui="export-include-files" type="checkbox">
                     <span class="backup-toggle-label">Include attachments</span>
                     <span class="backup-toggle-hint">Exports a `.zip` package with files.</span>
                   </label>
-                  <button id="import-backup-btn" data-ui="import-backup-btn" class="btn back-btn" disabled>Import Backup</button>
+                  <button id="import-backup-btn" data-ui="import-backup-btn" class="btn back-btn" disabled data-tooltip="Import a saved jobs backup into the current local profile.">Import Backup</button>
                 </div>
               </section>
             </div>
@@ -183,7 +183,7 @@
         <div class="activity-panel-header">
           <h2>Activity Timeline</h2>
           <div class="activity-panel-actions">
-            <button id="activity-refresh-btn" data-ui="activity-refresh-btn" class="btn back-btn" aria-label="Refresh activity">Refresh</button>
+            <button id="activity-refresh-btn" data-ui="activity-refresh-btn" class="btn back-btn" aria-label="Refresh activity" data-tooltip="Reload the activity timeline.">Refresh</button>
           </div>
         </div>
         <div id="activity-scope-bar" class="activity-scope-bar" role="group" aria-label="Activity scope filters">

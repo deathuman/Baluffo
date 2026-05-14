@@ -53,6 +53,7 @@ test("saved render: phase bar and history rows render expected markup", () => {
   assert.match(phaseHtml, /phase-bar/);
   assert.match(phaseHtml, /override-enabled/);
   assert.match(phaseHtml, /Set phase to Applied/);
+  assert.match(phaseHtml, /data-tooltip="Set phase to Saved\."/);
   assert.match(phaseHtml, /data-job-key="job-1"/);
 
   const historyHtml = getJobHistoryEntries("job-1", {
@@ -116,8 +117,52 @@ test("saved render shows lifecycle overlay badges read-only", () => {
   assert.match(html, /data-tooltip="Gameplay Engineer"/);
   assert.match(html, /data-tooltip="Studio"/);
   assert.match(html, /data-tooltip="Recently removed since Mar 7, 2026"/);
+  assert.match(html, /remove-saved-btn[\s\S]*data-tooltip="Remove this job from Saved Jobs\."/);
+  assert.match(html, /details-toggle-btn[\s\S]*data-tooltip="Show notes, files, and history for this job\."/);
+  assert.match(html, /attach-upload-btn[\s\S]*data-tooltip="Attach files to this saved job\."/);
+  assert.match(html, /job-history-refresh-btn[\s\S]*data-tooltip="Reload activity history for this job\."/);
   assert.doesNotMatch(html, /\stitle="/);
   assert.doesNotMatch(html, /save-job-btn/);
+});
+
+test("saved render exposes custom job action tooltips", () => {
+  const html = renderSavedJobBlockHtml({
+    jobKey: "custom_1",
+    title: "Personal lead",
+    company: "Studio",
+    city: "Paris",
+    country: "France",
+    applicationStatus: "bookmark",
+    phaseTimestamps: {},
+    savedAt: "2026-03-08T09:00:00.000Z",
+    notes: ""
+  }, {
+    isCustomJob: () => true,
+    customSourceLabel: "Custom",
+    normalizeSavedSector: () => "Custom",
+    fullCountryName: value => value,
+    sanitizeUrl: value => value,
+    toContractClass: () => "unknown",
+    normalizePhase: value => value || "bookmark",
+    expandedJobKey: "",
+    selectedJobKey: "",
+    getJobDetailsTab: () => "notes",
+    renderDetailsSummary: () => "",
+    getReminderMeta: () => ({ isSoon: false, label: "" }),
+    renderMissingInfoChips: () => "",
+    renderUpdatedHint: () => "",
+    getJobHistoryEntries: () => "",
+    renderWebIcon: () => "",
+    renderPhaseBar: () => "",
+    lifecycleOverlay: null,
+    currentUser: { uid: "u1" },
+    maxAttachmentsPerJob: 10,
+    maxAttachmentBytes: 1024
+  });
+
+  assert.match(html, /personal-edit-btn[\s\S]*data-tooltip="Edit this custom saved job\."/);
+  assert.match(html, /personal-duplicate-btn[\s\S]*data-tooltip="Duplicate this custom job as a new entry\."/);
+  assert.doesNotMatch(html, /\stitle="/);
 });
 
 test("saved render uses compact location display without repeated unknowns", () => {

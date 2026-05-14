@@ -72,6 +72,9 @@ test("registry conflicts renderer shows safe automation controls for eligible ca
   assert.match(reviewEl.innerHTML, /Auto-demote safe duplicate/);
   assert.match(reviewEl.innerHTML, /Auto-demote safe duplicate · 1/);
   assert.match(reviewEl.innerHTML, /Provider Studio has a safe duplicate provider alias/);
+  assert.match(reviewEl.innerHTML, /data-tooltip="Auto-demote safe duplicate: Provider Studio has a safe duplicate provider alias\."/);
+  assert.match(reviewEl.innerHTML, /data-tooltip="Auto-demote safe duplicate: apply this safe automation to 1 visible source rows\."/);
+  assert.doesNotMatch(reviewEl.innerHTML, /\stitle=/);
 });
 
 test("registry conflicts renderer calls safe automation callback", () => {

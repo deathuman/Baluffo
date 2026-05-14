@@ -40,7 +40,7 @@ export function renderAdminOpsAlerts(alertsEl, alerts, handlers = {}) {
       <div class="admin-alert-banner ${cls}">
         <div class="admin-alert-message">${escapeHtml(String(alert?.message || id))}</div>
         ${dismissible
-          ? `<button class="btn back-btn admin-alert-ack-btn" data-ui="admin-alert-ack-btn" data-alert-id="${id}">Dismiss</button>`
+          ? `<button class="btn back-btn admin-alert-ack-btn" data-ui="admin-alert-ack-btn" data-alert-id="${id}" ${tooltipAttrs("Dismiss this operations alert.")}>Dismiss</button>`
           : ""}
       </div>
     `;

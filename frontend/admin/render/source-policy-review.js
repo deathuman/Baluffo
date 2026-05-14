@@ -1,4 +1,4 @@
-import { escapeHtml } from "../../shared/ui/index.js";
+import { escapeHtml, tooltipAttrs } from "../../shared/ui/index.js";
 import { UI_TOKENS, ui } from "../../shared/ui/selectors.js";
 import { formatDateTime, stableOpsSignature } from "./ops-shared.js";
 
@@ -258,6 +258,7 @@ function renderSourcePolicyReviewRow(row, index) {
       data-ui="${ACTION_TOKEN}"
       data-source-policy-action="${escapeHtml(rowAction.key)}"
       data-source-policy-index="${index}"
+      ${tooltipAttrs(`${rowAction.label}: apply this source-policy review decision.`)}
     >${escapeHtml(rowAction.label)}</button>
   `).join("");
   return `
@@ -339,6 +340,7 @@ function renderMigrationLinkReviewCandidate(candidate, index) {
       data-source-policy-migration-link-action="${escapeHtml(action.key)}"
       data-source-policy-migration-link-kind="review"
       data-source-policy-migration-link-index="${index}"
+      ${tooltipAttrs(`${action.label}: update this migration-link review state.`)}
     >${escapeHtml(action.label)}</button>
   `).join("");
   const unavailableReason = migrationLinkActionUnavailableReason(candidate);
@@ -435,6 +437,7 @@ function renderLinkedMigrationIdentityRow(candidate, index) {
       data-source-policy-migration-link-action="${escapeHtml(action.key)}"
       data-source-policy-migration-link-kind="linked"
       data-source-policy-migration-link-index="${index}"
+      ${tooltipAttrs(`${action.label}: update this linked migration identity.`)}
     >${escapeHtml(action.label)}</button>
   `).join("");
   return `
