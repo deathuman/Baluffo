@@ -62,13 +62,38 @@ function isImageAttachmentMeta(attachment) {
 }
 
 async function requestJson(path, options = {}) {
-  const response = await fetch(`${BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {})
+  const { timeoutMs, ...fetchOptions } = options || {};
+  const timeout = Math.max(0, Number(timeoutMs) || 0);
+  const controller = timeout > 0 && !fetchOptions.signal && typeof AbortController !== "undefined"
+    ? new AbortController()
+    : null;
+  let timeoutId = null;
+  if (controller) {
+    timeoutId = window.setTimeout(() => {
+      controller.abort();
+    }, timeout);
+    timeoutId?.unref?.();
+    fetchOptions.signal = controller.signal;
+  }
+  let response;
+  try {
+    response = await fetch(`${BASE_URL}${path}`, {
+      ...fetchOptions,
+      headers: {
+        "Content-Type": "application/json",
+        ...(fetchOptions.headers || {})
+      }
+    });
+  } catch (error) {
+    if (controller?.signal?.aborted) {
+      throw new Error("Desktop local-data request timed out.");
     }
-  });
+    throw error;
+  } finally {
+    if (timeoutId !== null) {
+      window.clearTimeout(timeoutId);
+    }
+  }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload?.ok === false) {
     throw new Error(String(payload?.error || response.statusText || "Request failed."));
@@ -389,10 +414,11 @@ export function createDesktopLocalDataApi() {
       await pollSavedSubscriptions();
       return response.result || {};
     },
-    async getAdminOverview() {
+    async getAdminOverview(options = {}) {
       const payload = await requestJson("/admin/overview", {
         method: "POST",
-        body: JSON.stringify({})
+        body: JSON.stringify({}),
+        timeoutMs: options?.timeoutMs
       });
       return payload.overview || { users: [], totals: {} };
     },

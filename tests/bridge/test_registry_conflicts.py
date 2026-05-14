@@ -3,7 +3,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from src.bridge.registry_conflicts import derive_registry_conflict_queue
+from src.bridge.registry_conflicts import (
+    derive_registry_conflict_queue,
+    summarize_registry_conflicts_payload,
+)
 from src.bridge.routes.get_routes import handle_get
 from tests.helpers.bridge_api import FakeDesktopLocalDataStore, FakeHandler, make_stub_bridge_api
 
@@ -82,6 +85,113 @@ def test_registry_conflicts_route_joins_source_health_aliases(tmp_path: Path) ->
     assert payload["triage"]["summary"]["totalConflictCount"] == 1
     assert payload["review"]["summary"]["totalConflictCount"] == 1
     assert "priorityCounts" in payload["review"]["summary"]
+
+
+def test_registry_conflicts_summary_route_omits_heavy_conflict_detail(tmp_path: Path) -> None:
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
+    api.load_state = lambda: {
+        "active": [
+            {
+                "id": "winner-1",
+                "name": "Winner Source",
+                "studio": "Studio",
+                "adapter": "greenhouse",
+                "registryState": "active",
+            }
+        ],
+        "pending": [
+            {
+                "id": "loser-1",
+                "name": "Loser Source",
+                "studio": "Studio",
+                "adapter": "static",
+                "registryState": "pending",
+            }
+        ],
+        "rejected": [],
+    }
+
+    handler = FakeHandler()
+    result = handle_get(
+        handler,
+        api=api,
+        path="/registry/conflicts",
+        query={"view": ["summary"]},
+    )
+
+    assert result is True
+    payload = handler.sent[-1]["payload"]
+    assert payload["ok"] is True
+    assert payload["summaryView"] is True
+    assert payload["summary"]["conflictCount"] == 1
+    assert payload["conflicts"][0]["familyKey"]
+    assert "winner" not in payload["conflicts"][0]
+    assert payload["detailRoute"] == "/registry/conflicts"
+
+
+def test_registry_conflicts_summary_payload_stays_bounded_for_large_cards() -> None:
+    payload = {
+        "ok": True,
+        "summary": {"conflictCount": 500, "familyCount": 500, "rowCount": 1000},
+        "triage": {"summary": {"totalConflictCount": 500}},
+        "review": {"summary": {"totalConflictCount": 500}},
+        "automation": {
+            "summary": {"eligibleCount": 500, "demotableCount": 1000},
+            "actions": [
+                {
+                    "action": "auto_demote_same_adapter_provider_alias",
+                    "label": "Auto-demote safe duplicate",
+                    "route": "/registry/conflicts/auto-demote-safe",
+                    "count": 1000,
+                    "targetIds": [f"target-{index}" for index in range(1000)],
+                }
+            ],
+            "audit": {
+                "safeAutoDemotedCards": [
+                    {"familyKey": f"family-{index}", "rows": [{"details": "x" * 1000}]}
+                    for index in range(500)
+                ]
+            },
+        },
+        "adjudication": {},
+        "registrySummary": {"activeCount": 500, "pendingCount": 500},
+        "registryAutoHeal": {},
+        "warnings": [],
+        "conflicts": [
+            {
+                "familyKey": f"family-{index}",
+                "rowCount": 2,
+                "triageBucket": "pending_duplicate_of_active",
+                "triageLabel": "Pending duplicate of active",
+                "reviewPriority": 1,
+                "reviewQueue": "p1_pending_provider_against_active",
+                "reviewLabel": "Pending provider vs active",
+                "suggestedDisposition": "review",
+                "safeAutomation": {
+                    "eligible": True,
+                    "action": "auto_demote_same_adapter_provider_alias",
+                    "label": "Auto-demote safe duplicate",
+                    "route": "/registry/conflicts/auto-demote-safe",
+                    "targetIds": [f"target-{index}-{offset}" for offset in range(50)],
+                },
+                "winner": {"name": "Winner", "details": "x" * 5000},
+                "losers": [{"name": "Loser", "details": "x" * 5000}],
+                "diffs": [{"fields": [{"winnerValue": "x" * 5000, "loserValue": "y" * 5000}]}],
+            }
+            for index in range(500)
+        ],
+    }
+
+    summary = summarize_registry_conflicts_payload(payload)
+
+    assert summary["summaryView"] is True
+    assert len(summary["conflicts"]) == 5
+    assert summary["conflictsTruncated"] is True
+    assert "winner" not in summary["conflicts"][0]
+    assert summary["automation"]["actions"][0]["targetIdsTruncated"] is True
+    assert summary["automation"]["audit"]["safeAutoDemotedCards"]["count"] == 500
+    assert len(json.dumps(summary).encode("utf-8")) < 256 * 1024
 
 
 def test_registry_conflicts_prefers_stable_source_state_identity_over_duplicate_name() -> None:

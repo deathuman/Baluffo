@@ -21,7 +21,10 @@ export function createJobsPipelineUiState() {
     pendingStart: false,
     bridgeOnline: false,
     startedAt: "",
-    statusPollFailureCount: 0
+    statusPollFailureCount: 0,
+    updateTooltipBridgeError: "",
+    updateTooltipFirstRun: false,
+    updateTooltipFirstRunKnown: false
   };
 }
 

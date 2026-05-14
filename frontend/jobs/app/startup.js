@@ -104,5 +104,5 @@ export function getAutoRefreshStatusText(signal) {
     ? completedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     : "";
   const statusTail = completedLabel ? ` (${completedLabel})` : "";
-  return `New feed available from admin fetcher${statusTail}. Refreshing jobs...`;
+  return `New feed available from admin fetcher${statusTail}. Reloading jobs...`;
 }

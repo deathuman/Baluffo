@@ -45,9 +45,9 @@ test("admin ops controller copies run diagnostics through renderer callback", as
     getBridge: async path => {
       if (path === "/ops/dashboard-health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
       if (path === "/ops/history?limit=80") return { runs: [] };
-      if (path === "/ops/task-state") return { tasks: [] };
+      if (path === "/ops/task-state?view=summary") return { tasks: [] };
       if (path === "/ops/fetcher-metrics?windowRuns=80") return {};
-      if (path === "/registry/conflicts") return { summary: { conflictCount: 0 }, conflicts: [] };
+      if (path === "/registry/conflicts?view=summary") return { summary: { conflictCount: 0 }, conflicts: [], summaryView: true };
       if (path === "/source-policy/recommendations") return { recommendations: { pairs: [] } };
       throw new Error(`unexpected path ${path}`);
     },

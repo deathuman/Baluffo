@@ -16,8 +16,11 @@ Use these repo-native entrypoints for packaged startup timing:
 - `npm run perf:startup:cold`
 - `npm run perf:startup:warm`
 - `npm run perf:startup:pair`
+- `npm run perf:startup:admin:cold`
+- `npm run perf:startup:admin:warm`
+- `npm run perf:startup:admin:pair`
 
-The `perf:*` aliases are the contributor-facing surface. The lower-level `probe:desktop:startup:*` commands exist, but docs should prefer the `perf:*` names unless a release checklist specifically needs the probe form.
+The unqualified startup aliases keep measuring the Jobs page for compatibility. Use the `perf:startup:admin:*` aliases when validating the Admin non-blocking startup flow. The lower-level `probe:desktop:startup:*` commands exist, but docs should prefer the `perf:*` names unless a release checklist specifically needs the probe form.
 
 ## Ownership Boundaries
 
@@ -68,6 +71,7 @@ The packaged startup measurement path is:
 1. The desktop launcher emits runtime startup events.
 2. Browser pages emit startup metrics once `startupProbe=1` enables the browser-side transport.
 3. The bridge stores those browser-origin metrics under the runtime data directory.
+4. Jobs startup profiles use `jobs_first_render` and `jobs_first_interactive`; Admin startup profiles use `admin_ready` and `admin_first_interactive`.
 4. Packaged smoke collects startup metrics from the runtime data and bridge endpoints.
 5. Startup profile analysis renders the stage timings and summary report.
 

@@ -1,7 +1,7 @@
 import { AdminConfig } from "../../config/admin-config.js";
 
 export const BASE_URL = `${AdminConfig.ADMIN_BRIDGE_BASE}/desktop-local-data`;
-export const TASKS_URL = `${AdminConfig.ADMIN_BRIDGE_BASE}/ops/task-state`;
+export const TASKS_URL = `${AdminConfig.ADMIN_BRIDGE_BASE}/ops/task-state?view=summary`;
 export const UPDATE_STATUS_URL = `${AdminConfig.ADMIN_BRIDGE_BASE}/app/update-status`;
 export const DESKTOP_SESSION_LIFECYCLE_URL = `${AdminConfig.ADMIN_BRIDGE_BASE}/app/desktop-session-lifecycle`;
 export const SESSION_KEY = "baluffo_current_profile_id";

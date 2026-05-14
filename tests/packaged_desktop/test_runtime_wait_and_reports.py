@@ -708,6 +708,87 @@ def test_run_packaged_smoke_fail_on_threshold_sets_startup_failure() -> None:
         assert "19000ms > 18000ms" in payload["failure"]["message"]
 
 
+def test_run_packaged_smoke_profile_record_only_keeps_thresholds_informational() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp)
+        report_path = root / "data" / "latest.json"
+        artifacts_dir = root / "artifacts"
+        exe_path = root / "Baluffo.exe"
+        exe_path.write_text("exe", encoding="utf-8")
+        process = mock.Mock()
+        process.pid = 999
+        process.poll.return_value = None
+        stdout_handle = mock.Mock()
+        stderr_handle = mock.Mock()
+        args = smoke.parse_args(
+            [
+                "--exe-path",
+                str(exe_path),
+                "--report-path",
+                str(report_path),
+                "--artifacts-dir",
+                str(artifacts_dir),
+                "--startup-probe",
+                "--profile-only",
+                "--profile-record-only",
+                "--open-path",
+                "admin.html",
+            ]
+        )
+        startup_metrics = [
+            {"event": "desktop_launch_start", "fields": {"elapsedMs": 0}},
+            {"event": "desktop_site_ready", "fields": {"elapsedMs": 400}},
+            {"event": "desktop_window_created", "fields": {"elapsedMs": 2000}},
+            {"event": "desktop_shell_window_shown", "fields": {"elapsedMs": 2004}},
+            {"event": "admin_module_boot_start", "payload": {"elapsedMs": 2200}},
+            {"event": "admin_ready", "payload": {"elapsedMs": 2500}},
+            {"event": "admin_first_interactive", "payload": {"elapsedMs": 2502}},
+        ]
+        with (
+            mock.patch.object(
+                smoke,
+                "select_startup_probe_browser",
+                return_value={
+                    "browserName": "chrome",
+                    "browserPath": "C:/Chrome/chrome.exe",
+                },
+            ),
+            mock.patch.object(smoke, "ensure_portable_exe", return_value=exe_path),
+            mock.patch.object(
+                smoke, "launch_packaged_exe", return_value=(process, stdout_handle, stderr_handle)
+            ),
+            mock.patch.object(
+                smoke,
+                "wait_for_packaged_runtime",
+                return_value={
+                    "health": {"ok": True},
+                    "session": {"ok": True},
+                    "startupMetrics": startup_metrics,
+                },
+            ),
+            mock.patch.object(smoke, "wait_for_runtime_events", return_value=startup_metrics),
+            mock.patch.object(
+                smoke,
+                "summarize_startup_metrics",
+                return_value={
+                    "status": "failed",
+                    "classification": "browser launch / app-window creation delayed",
+                    "firstUsableEvent": "admin_first_interactive",
+                    "firstUsableMs": 2502,
+                    "stages": [],
+                    "perfRegressions": [{"stage": "site_ready_to_window_created"}],
+                },
+            ),
+            mock.patch.object(smoke, "write_startup_summary"),
+            mock.patch.object(smoke, "terminate_process_tree"),
+        ):
+            payload = smoke.run_packaged_smoke(args)
+
+        assert payload["ok"] is True
+        assert not payload["failure"]
+        assert payload["startupProfile"]["status"] == "failed"
+
+
 def test_run_packaged_smoke_fails_startup_probe_when_no_managed_browser_is_available() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         root = Path(tmp)

@@ -419,7 +419,7 @@ def _load_active_critical_desktop_tasks(
 ) -> list[dict[str, str]]:
     try:
         payload = fetch_json(
-            f"http://127.0.0.1:{int(bridge_port)}/ops/task-state",
+            f"http://127.0.0.1:{int(bridge_port)}/ops/task-state?view=summary",
             timeout_s=timeout_s,
         )
     except (OSError, ValueError, urllib.error.URLError, json.JSONDecodeError):

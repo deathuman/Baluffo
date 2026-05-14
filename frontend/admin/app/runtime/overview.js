@@ -1,7 +1,25 @@
-import { bindAsyncClick } from "../../../shared/ui/index.js";
+import { bindAsyncClick } from "../../../shared/ui/index.js?v=6";
 import { UI_TOKENS, ui } from "../../../shared/ui/selectors.js";
 
 const ADMIN_WIPE_BUTTON_SELECTOR = ui(UI_TOKENS.admin.wipeBtn);
+const DEFAULT_ADMIN_OVERVIEW_TIMEOUT_MS = 5000;
+
+function withTimeout(promise, timeoutMs, message) {
+  const waitMs = Math.max(0, Number(timeoutMs) || 0);
+  if (!waitMs) return promise;
+  let timeoutId = null;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = globalThis.setTimeout(() => {
+      reject(new Error(message));
+    }, waitMs);
+    timeoutId?.unref?.();
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutId !== null) {
+      globalThis.clearTimeout(timeoutId);
+    }
+  });
+}
 
 export function createAdminOverviewController({
   refs,
@@ -15,7 +33,8 @@ export function createAdminOverviewController({
   formatBytes,
   renderTotalsHtml,
   renderUsersTableHtml,
-  renderUsersEmptyHtml
+  renderUsersEmptyHtml,
+  overviewTimeoutMs = DEFAULT_ADMIN_OVERVIEW_TIMEOUT_MS
 }) {
   function renderTotals(totals) {
     if (refs.adminTotalsEl) refs.adminTotalsEl.innerHTML = renderTotalsHtml(totals, formatBytes);
@@ -58,9 +77,14 @@ export function createAdminOverviewController({
     });
   }
 
-  async function refreshOverview() {
+  async function refreshOverview(options = {}) {
     try {
-      const overviewResult = await adminService.getAdminOverview();
+      const timeoutMs = Math.max(0, Number(options?.timeoutMs ?? overviewTimeoutMs) || 0);
+      const overviewResult = await withTimeout(
+        adminService.getAdminOverview({ timeoutMs }),
+        timeoutMs,
+        "Admin overview request timed out."
+      );
       if (!overviewResult.ok) throw new Error(overviewResult.error || "Could not load admin overview.");
       const overview = overviewResult.data || {};
       renderTotals(overview?.totals || {});

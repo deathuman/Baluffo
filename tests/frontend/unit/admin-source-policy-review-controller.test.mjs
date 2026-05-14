@@ -87,9 +87,9 @@ function createOpsReviewQueueFixture({
       calls.push(path);
       if (path === "/ops/dashboard-health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
       if (path === "/ops/history?limit=80") return { runs: [] };
-      if (path === "/ops/task-state") return { tasks: [] };
+      if (path === "/ops/task-state?view=summary") return { tasks: [] };
       if (path === "/ops/fetcher-metrics?windowRuns=80") return {};
-      if (path === "/registry/conflicts") return { summary: { conflictCount: 0 }, conflicts: [] };
+      if (path === "/registry/conflicts?view=summary") return { summary: { conflictCount: 0 }, conflicts: [], summaryView: true };
       if (path === "/source-policy/recommendations") {
         return {
           ok: true,
@@ -156,15 +156,21 @@ function createOpsReviewQueueFixture({
   };
 }
 
+async function loadSourcePolicyPanel(fixture) {
+  await fixture.controller.loadOpsHealthData();
+  await fixture.controller.selectOpsTab("source-policy");
+  fixture.flushRenders();
+  return fixture.rendered.at(-1);
+}
+
 test("admin ops controller loads source policy recommendations for the review queue", async () => {
   const fixture = createOpsReviewQueueFixture();
   try {
-    await fixture.controller.loadOpsHealthData();
-    fixture.flushRenders();
+    const rendered = await loadSourcePolicyPanel(fixture);
 
     assert.ok(fixture.calls.includes("/source-policy/recommendations"));
-    assert.equal(fixture.rendered.length, 1);
-    assert.equal(fixture.rendered[0].payload.recommendations.pairs[0].staticSourceId, "static:studio");
+    assert.ok(fixture.rendered.length >= 1);
+    assert.equal(rendered.payload.recommendations.pairs[0].staticSourceId, "static:studio");
   } finally {
     fixture.restore();
   }
@@ -173,9 +179,8 @@ test("admin ops controller loads source policy recommendations for the review qu
 test("admin ops controller posts source policy review action payloads", async () => {
   const fixture = createOpsReviewQueueFixture();
   try {
-    await fixture.controller.loadOpsHealthData();
-    fixture.flushRenders();
-    await fixture.rendered[0].handlers.onSourcePolicyAction(fixture.rows[0], "clear_override");
+    const rendered = await loadSourcePolicyPanel(fixture);
+    await rendered.handlers.onSourcePolicyAction(fixture.rows[0], "clear_override");
 
     assert.equal(fixture.posts.length, 1);
     assert.deepEqual(fixture.posts[0], {
@@ -197,9 +202,8 @@ test("admin ops controller posts snooze with a future snoozedUntil", async () =>
   const nowMs = Date.parse("2026-05-01T10:00:00.000Z");
   const fixture = createOpsReviewQueueFixture({ nowMs });
   try {
-    await fixture.controller.loadOpsHealthData();
-    fixture.flushRenders();
-    await fixture.rendered[0].handlers.onSourcePolicyAction(fixture.rows[0], "snooze");
+    const rendered = await loadSourcePolicyPanel(fixture);
+    await rendered.handlers.onSourcePolicyAction(fixture.rows[0], "snooze");
 
     assert.equal(fixture.posts.length, 1);
     assert.equal(fixture.posts[0].path, "/source-policy/review-action");
@@ -214,9 +218,8 @@ test("admin ops controller posts snooze with a future snoozedUntil", async () =>
 test("admin ops controller posts migration link apply payload and reloads", async () => {
   const fixture = createOpsReviewQueueFixture();
   try {
-    await fixture.controller.loadOpsHealthData();
-    fixture.flushRenders();
-    await fixture.rendered[0].handlers.onMigrationLinkAction(
+    const rendered = await loadSourcePolicyPanel(fixture);
+    await rendered.handlers.onMigrationLinkAction(
       fixture.reviewCandidates[0],
       "apply_migration_identity_link"
     );
@@ -239,9 +242,8 @@ test("admin ops controller posts migration link apply payload and reloads", asyn
 test("admin ops controller posts migration link clear payload", async () => {
   const fixture = createOpsReviewQueueFixture();
   try {
-    await fixture.controller.loadOpsHealthData();
-    fixture.flushRenders();
-    await fixture.rendered[0].handlers.onMigrationLinkAction(
+    const rendered = await loadSourcePolicyPanel(fixture);
+    await rendered.handlers.onMigrationLinkAction(
       fixture.reviewCandidates[0],
       "clear_migration_identity_link"
     );
@@ -263,9 +265,8 @@ test("admin ops controller posts migration link clear payload", async () => {
 test("admin ops controller posts linked migration identity clear payload", async () => {
   const fixture = createOpsReviewQueueFixture();
   try {
-    await fixture.controller.loadOpsHealthData();
-    fixture.flushRenders();
-    await fixture.rendered[0].handlers.onMigrationLinkAction(
+    const rendered = await loadSourcePolicyPanel(fixture);
+    await rendered.handlers.onMigrationLinkAction(
       fixture.linkedCandidates[0],
       "clear_migration_identity_link"
     );
@@ -287,9 +288,8 @@ test("admin ops controller posts linked migration identity clear payload", async
 test("admin ops controller surfaces migration link backend errors", async () => {
   const fixture = createOpsReviewQueueFixture({ failMigrationPost: true });
   try {
-    await fixture.controller.loadOpsHealthData();
-    fixture.flushRenders();
-    await fixture.rendered[0].handlers.onMigrationLinkAction(
+    const rendered = await loadSourcePolicyPanel(fixture);
+    await rendered.handlers.onMigrationLinkAction(
       fixture.reviewCandidates[0],
       "apply_migration_identity_link"
     );

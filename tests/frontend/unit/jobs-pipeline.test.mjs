@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import {
   buildJobsPipelineButtonView,
   formatPipelineElapsed,
+  getJobsUpdateTooltip,
   getPipelineRunningLabel,
+  JOBS_UPDATE_COPY,
   updateJobsPipelineUi
 } from "../../../frontend/jobs/app/pipeline.js";
 
@@ -46,11 +48,14 @@ function createElementMock(tagName) {
     textContent: "",
     setAttribute(name, value) {
       this[name] = value;
+    },
+    removeAttribute(name) {
+      delete this[name];
     }
   };
 }
 
-function createButtonMock(textContent = "Run Discovery + Fetch + Sync") {
+function createButtonMock(textContent = "Update jobs") {
   const button = {
     dataset: {},
     style: createStyle(),
@@ -82,10 +87,33 @@ function createButtonMock(textContent = "Run Discovery + Fetch + Sync") {
     },
     setAttribute(name, value) {
       this[name] = value;
+    },
+    removeAttribute(name) {
+      delete this[name];
     }
   };
   return button;
 }
+
+test("jobs update tooltip copy covers default, warm, first-run, and unavailable states", () => {
+  assert.equal(getJobsUpdateTooltip(), JOBS_UPDATE_COPY.tooltipDefault);
+  assert.equal(
+    getJobsUpdateTooltip({ firstRunKnown: true }),
+    JOBS_UPDATE_COPY.tooltipWarm
+  );
+  assert.equal(
+    getJobsUpdateTooltip({ firstRunKnown: true, firstRun: true }),
+    JOBS_UPDATE_COPY.tooltipFirstRun
+  );
+  assert.equal(
+    getJobsUpdateTooltip({ bridgeError: "Bridge request timed out" }),
+    JOBS_UPDATE_COPY.tooltipBridgeTimedOut
+  );
+  assert.equal(
+    getJobsUpdateTooltip({ bridgeError: "Network error: bridge unreachable" }),
+    JOBS_UPDATE_COPY.tooltipBridgeUnavailable
+  );
+});
 
 test("pipeline label formats running stage with elapsed seconds", () => {
   const now = Date.parse("2026-03-12T12:00:12.000Z");
@@ -93,7 +121,7 @@ test("pipeline label formats running stage with elapsed seconds", () => {
     progress: { label: "Running discovery..." },
     startedAt: "2026-03-12T12:00:00.000Z"
   }, now);
-  assert.equal(label, "Discovery running... 12s");
+  assert.equal(label, "Checking sources... 12s");
 });
 
 test("pipeline label falls back to stage and minute formatting", () => {
@@ -102,14 +130,14 @@ test("pipeline label falls back to stage and minute formatting", () => {
     stage: "sync_push",
     startedAt: "2026-03-12T12:00:00.000Z"
   }, now);
-  assert.equal(label, "Sync Push running... 1m 1s");
+  assert.equal(label, "Updating local jobs... 1m 1s");
 });
 
 test("pipeline label works without startedAt", () => {
   const label = getPipelineRunningLabel({
     progress: { label: "Running fetch..." }
   }, Date.parse("2026-03-12T12:00:10.000Z"));
-  assert.equal(label, "Fetch running...");
+  assert.equal(label, "Fetching job listings...");
 });
 
 test("formatPipelineElapsed handles invalid and short durations", () => {
@@ -129,12 +157,12 @@ test("buildJobsPipelineButtonView keeps the starting state indeterminate", () =>
         currentStep: 0,
         totalSteps: 3,
         percent: 0,
-        label: "Starting pipeline..."
+        label: "Updating jobs..."
       }
     },
     {
       running: true,
-      buttonLabel: "Starting Pipeline...",
+      buttonLabel: "Updating jobs...",
       nowMs: Date.parse("2026-03-12T12:00:00.000Z")
     }
   );
@@ -142,7 +170,7 @@ test("buildJobsPipelineButtonView keeps the starting state indeterminate", () =>
   assert.equal(view.active, true);
   assert.equal(view.progressMode, "indeterminate");
   assert.equal(view.progressFill, 0);
-  assert.equal(view.label, "Starting Pipeline...");
+  assert.equal(view.label, "Updating jobs...");
 });
 
 test("buildJobsPipelineButtonView derives determinate fill from pipeline steps", () => {
@@ -168,7 +196,7 @@ test("buildJobsPipelineButtonView derives determinate fill from pipeline steps",
 
   assert.equal(view.progressMode, "determinate");
   assert.equal(view.progressFill, 0.67);
-  assert.equal(view.label, "Fetch running... 7m 27s");
+  assert.equal(view.label, "Fetching job listings... 7m 27s");
 });
 
 test("updateJobsPipelineUi updates button background progress", () => {
@@ -179,7 +207,8 @@ test("updateJobsPipelineUi updates button background progress", () => {
     {
       running: true,
       disabled: true,
-      buttonLabel: "Fetch running... 7m 27s",
+      buttonLabel: "Fetching job listings... 7m 27s",
+      buttonTooltip: JOBS_UPDATE_COPY.tooltipWarm,
       pipelinePayload: {
         active: true,
         startedAt: "2026-03-12T12:00:00.000Z",
@@ -195,7 +224,9 @@ test("updateJobsPipelineUi updates button background progress", () => {
     }
   );
 
-  assert.equal(button.textContent, "Fetch running... 7m 27s");
+  assert.equal(button.textContent, "Fetching job listings... 7m 27s");
+  assert.equal(button.dataset.tooltip, JOBS_UPDATE_COPY.tooltipWarm);
+  assert.equal(button["data-tooltip"], JOBS_UPDATE_COPY.tooltipWarm);
   assert.equal(button.disabled, true);
   assert.equal(button["aria-disabled"], "true");
   assert.equal(button["aria-busy"], "true");
@@ -210,12 +241,13 @@ test("updateJobsPipelineUi updates button background progress", () => {
   assert.equal(button.children[0].style.width, "67%");
   assert.equal(button.children[0].style.opacity, "1");
   assert.equal(button.children[1].dataset.ui, "jobs-pipeline-label");
-  assert.equal(button.children[1].textContent, "Fetch running... 7m 27s");
+  assert.equal(button.children[1].textContent, "Fetching job listings... 7m 27s");
 });
 
 test("updateJobsPipelineUi clears progress state when idle or errored", () => {
   const button = createButtonMock();
   button.disabled = true;
+  button.title = "legacy tooltip";
 
   updateJobsPipelineUi(
     { jobsPipelineRunBtn: button },
@@ -223,11 +255,14 @@ test("updateJobsPipelineUi clears progress state when idle or errored", () => {
       running: false,
       disabled: false,
       buttonLabel: "",
+      buttonTooltip: JOBS_UPDATE_COPY.tooltipDefault,
       isError: true
     }
   );
 
-  assert.equal(button.textContent, "Run Discovery + Fetch + Sync");
+  assert.equal(button.textContent, "Update jobs");
+  assert.equal(button.dataset.tooltip, JOBS_UPDATE_COPY.tooltipDefault);
+  assert.equal(button.title, undefined);
   assert.equal(button.disabled, false);
   assert.equal(button["aria-disabled"], "false");
   assert.equal(button["aria-busy"], "false");
@@ -239,5 +274,5 @@ test("updateJobsPipelineUi clears progress state when idle or errored", () => {
   assert.equal(button.children[0].dataset.progressMode, undefined);
   assert.equal(button.children[0].style.width, "0%");
   assert.equal(button.children[0].style.opacity, "0");
-  assert.equal(button.children[1].textContent, "Run Discovery + Fetch + Sync");
+  assert.equal(button.children[1].textContent, "Update jobs");
 });

@@ -110,7 +110,10 @@ def test_startup_profile_required_events_include_window_and_page_ready_markers()
         "jobs_first_render",
         "jobs_first_interactive",
     )
-    assert smoke.startup_profile_required_events("admin")[-1] == "admin_ready"
+    assert smoke.startup_profile_required_events("admin")[-2:] == (
+        "admin_ready",
+        "admin_first_interactive",
+    )
     assert smoke.startup_profile_required_events("desktop-probe") == (
         "desktop_launch_start",
         "desktop_site_ready",

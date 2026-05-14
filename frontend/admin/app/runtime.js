@@ -4,12 +4,12 @@ import { resolveDesktopRuntimeMode } from "../../shared/local-data/runtime-conte
 import {
   showToast,
   setText
-} from "../../shared/ui/index.js";
+} from "../../shared/ui/index.js?v=6";
 import { emitStartupMetric, logError, markFirstInteractive } from "../../shared/app-boot.js";
 import { createPerfMarks } from "../../shared/perf-marks.js";
 import {
   appendAdminLogRow
-} from "../render.js?v=12";
+} from "../render.js?v=13";
 import {
   getErrorMessage as getErrorMessageFromDomain,
   normalizeLogLevel as normalizeLogLevelFromDomain,
@@ -50,13 +50,13 @@ import {
 } from "./sources.js";
 import {
   FETCHER_PRESET_META
-} from "./fetcher.js";
+} from "./fetcher.js?v=13";
 import { createAdminRuntimeState } from "./runtime/state.js";
-import { composeAdminControllers } from "./runtime/composition.js?v=12";
+import { composeAdminControllers } from "./runtime/composition.js?v=13";
 import { createAdminStartupMetrics } from "./runtime/effects.js";
 import { createBridgeCaller } from "./runtime/actions.js";
 import { setStatusText, toLocalTime } from "./runtime/view.js";
-import { bindAdminRuntimeEvents } from "./runtime/events.js";
+import { bindAdminRuntimeEvents } from "./runtime/events.js?v=13";
 
 const JOBS_LAST_URL_KEY = adminConfig.JOBS_LAST_URL_KEY || "baluffo_jobs_last_url";
 const JOBS_FETCHER_COMMAND = adminConfig.JOBS_FETCHER_COMMAND || "python -m src.jobs_fetcher --social-enabled";

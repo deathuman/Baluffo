@@ -162,11 +162,11 @@ export const backupService = {
 };
 
 export const adminService = {
-  async getAdminOverview() {
+  async getAdminOverview(options = {}) {
     try {
       const api = getLocalDataApi();
       ensureApi(api, "getAdminOverview");
-      const data = await api.getAdminOverview();
+      const data = await api.getAdminOverview(options);
       return toResult(data || { users: [], totals: {} });
     } catch (err) {
       return toResult({ users: [], totals: {} }, err?.message || "Could not load admin overview.");

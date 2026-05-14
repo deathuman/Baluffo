@@ -191,6 +191,7 @@ def test_startup_summary_extracts_first_usable_and_runtime_memory(tmp_path: Path
 
     summary = perf_complete._startup_summary(
         mode="cold",
+        page="jobs",
         report_path=report_path,
         artifacts_dir=artifacts_dir,
         command_result={"exitCode": 0},
@@ -198,6 +199,8 @@ def test_startup_summary_extracts_first_usable_and_runtime_memory(tmp_path: Path
     )
 
     assert summary["durationMs"] == 1234
+    assert summary["mode"] == "startup-jobs-cold"
+    assert summary["page"] == "jobs"
     assert summary["status"] == "baseline_missing"
     assert summary["startupProfileStatus"] == "passed"
     assert summary["stageDurationsMs"] == {"total_launch_to_first_usable_ui": 1234}
@@ -269,6 +272,68 @@ def test_sync_rehearsal_extracts_push_pull_timing(tmp_path: Path, monkeypatch) -
     assert summary["comparisons"]["push"]["status"] == "baseline_missing"
 
 
+def test_run_startup_pair_passes_page_target_and_reuses_exe(tmp_path: Path, monkeypatch) -> None:
+    commands: list[list[str]] = []
+    fake_exe_path = tmp_path / "Baluffo.exe"
+    fake_exe_path.write_bytes(b"MZ")
+
+    def _fake_run(command, *, stdout_path: Path, stderr_path: Path, env=None):
+        commands.append(command)
+        report_path = Path(command[command.index("--report-path") + 1])
+        artifacts_dir = Path(command[command.index("--artifacts-dir") + 1])
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        profile_mode = command[command.index("--profile-mode") + 1]
+        report_path.write_text(
+            json.dumps(
+                {
+                    "ok": True,
+                    "exePath": str(fake_exe_path),
+                    "startupProfile": {
+                        "status": "passed",
+                        "firstUsableMs": 1000 if profile_mode == "cold" else 800,
+                        "firstUsableEvent": "admin_first_interactive",
+                        "classification": "",
+                        "stages": [
+                            {
+                                "key": "total_launch_to_first_usable_ui",
+                                "durationMs": 1000 if profile_mode == "cold" else 800,
+                            }
+                        ],
+                    },
+                    "memoryMetrics": {},
+                    "artifacts": {},
+                }
+            ),
+            encoding="utf-8",
+        )
+        return {"exitCode": 0, "memoryMetrics": {}, "stdoutPath": str(stdout_path)}
+
+    monkeypatch.setattr(perf_complete, "run_monitored_command", _fake_run)
+
+    summary, exit_code, reused_exe = perf_complete.run_startup_pair(
+        output_dir=tmp_path,
+        runtime_timeout_s=5,
+        baseline_dir=tmp_path / "baseline",
+        page="admin",
+        open_path="admin.html",
+        exe_path=fake_exe_path,
+        profile_record_only=True,
+    )
+
+    assert exit_code == 0
+    assert reused_exe == fake_exe_path
+    assert summary["page"] == "admin"
+    assert summary["cold"]["mode"] == "startup-admin-cold"
+    assert summary["warm"]["mode"] == "startup-admin-warm"
+    assert commands[0][commands[0].index("--open-path") + 1] == "admin.html"
+    assert commands[1][commands[1].index("--open-path") + 1] == "admin.html"
+    assert "--exe-path" in commands[0]
+    assert "--exe-path" in commands[1]
+    assert "--profile-record-only" in commands[0]
+    assert "--profile-record-only" in commands[1]
+
+
 def test_record_complete_rows_writes_baselines(tmp_path: Path) -> None:
     summary = {
         "summaryPath": str(tmp_path / "summary.json"),
@@ -289,15 +354,29 @@ def test_record_complete_rows_writes_baselines(tmp_path: Path) -> None:
                 "comparison": {"status": "baseline_missing"},
             },
             "startup": {
-                "cold": {
-                    "durationMs": 400,
-                    "stageDurationsMs": {"total": 400},
-                    "comparison": {"status": "baseline_missing"},
+                "jobs": {
+                    "cold": {
+                        "durationMs": 400,
+                        "stageDurationsMs": {"total": 400},
+                        "comparison": {"status": "baseline_missing"},
+                    },
+                    "warm": {
+                        "durationMs": 500,
+                        "stageDurationsMs": {"total": 500},
+                        "comparison": {"status": "baseline_missing"},
+                    },
                 },
-                "warm": {
-                    "durationMs": 500,
-                    "stageDurationsMs": {"total": 500},
-                    "comparison": {"status": "baseline_missing"},
+                "admin": {
+                    "cold": {
+                        "durationMs": 450,
+                        "stageDurationsMs": {"total": 450},
+                        "comparison": {"status": "baseline_missing"},
+                    },
+                    "warm": {
+                        "durationMs": 550,
+                        "stageDurationsMs": {"total": 550},
+                        "comparison": {"status": "baseline_missing"},
+                    },
                 },
             },
             "sync": {
@@ -326,6 +405,7 @@ def test_record_complete_rows_writes_baselines(tmp_path: Path) -> None:
     )
 
     assert (tmp_path / "baseline" / "startup-cold-baseline.json").is_file()
+    assert (tmp_path / "baseline" / "startup-admin-cold-baseline.json").is_file()
     assert (tmp_path / "baseline" / "sync-push-baseline.json").is_file()
     assert (tmp_path / "trend.ndjson").is_file()
 
@@ -342,21 +422,41 @@ def test_console_summary_reports_comparison_status_for_startup_and_sync(capsys) 
             "fetch": {"medianDurationMs": 2, **empty_section},
             "frontendBoot": {"durationMs": 3, **empty_section},
             "startup": {
-                "cold": {
-                    "durationMs": 4,
-                    "status": "baseline_missing",
-                    "startupProfileStatus": "failed",
-                    "artifactSizes": {"totalBytes": 40},
-                    "memoryMetrics": {"peakWorkingSetBytes": 400},
-                    "comparison": {"status": "baseline_missing"},
+                "jobs": {
+                    "cold": {
+                        "durationMs": 4,
+                        "status": "baseline_missing",
+                        "startupProfileStatus": "failed",
+                        "artifactSizes": {"totalBytes": 40},
+                        "memoryMetrics": {"peakWorkingSetBytes": 400},
+                        "comparison": {"status": "baseline_missing"},
+                    },
+                    "warm": {
+                        "durationMs": 5,
+                        "status": "baseline_missing",
+                        "startupProfileStatus": "failed",
+                        "artifactSizes": {"totalBytes": 50},
+                        "memoryMetrics": {"peakWorkingSetBytes": 500},
+                        "comparison": {"status": "baseline_missing"},
+                    },
                 },
-                "warm": {
-                    "durationMs": 5,
-                    "status": "baseline_missing",
-                    "startupProfileStatus": "failed",
-                    "artifactSizes": {"totalBytes": 50},
-                    "memoryMetrics": {"peakWorkingSetBytes": 500},
-                    "comparison": {"status": "baseline_missing"},
+                "admin": {
+                    "cold": {
+                        "durationMs": 6,
+                        "status": "baseline_missing",
+                        "startupProfileStatus": "failed",
+                        "artifactSizes": {"totalBytes": 60},
+                        "memoryMetrics": {"peakWorkingSetBytes": 600},
+                        "comparison": {"status": "baseline_missing"},
+                    },
+                    "warm": {
+                        "durationMs": 7,
+                        "status": "baseline_missing",
+                        "startupProfileStatus": "failed",
+                        "artifactSizes": {"totalBytes": 70},
+                        "memoryMetrics": {"peakWorkingSetBytes": 700},
+                        "comparison": {"status": "baseline_missing"},
+                    },
                 },
             },
             "sync": {
@@ -387,6 +487,7 @@ def test_console_summary_reports_comparison_status_for_startup_and_sync(capsys) 
     perf_complete._print_console_summary(summary)
 
     output = capsys.readouterr().out
-    assert "startup.cold,4,400,40,baseline_missing" in output
+    assert "startup.jobs.cold,4,400,40,baseline_missing" in output
+    assert "startup.admin.cold,6,600,60,baseline_missing" in output
     assert "sync.push,6,600,60,baseline_missing" in output
     assert "chrome.exe[browser]=2.0MiB" in output

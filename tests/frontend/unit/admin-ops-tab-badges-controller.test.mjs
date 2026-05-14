@@ -85,7 +85,7 @@ test("admin ops controller updates tab badges from loaded review payloads", asyn
         };
       }
       if (path === "/ops/history?limit=80") return { runs: [] };
-      if (path === "/ops/task-state") return { tasks: [] };
+      if (path === "/ops/task-state?view=summary") return { tasks: [] };
       if (path === "/ops/fetcher-metrics?windowRuns=80") {
         return {
           latestRun: {
@@ -146,10 +146,11 @@ test("admin ops controller updates tab badges from loaded review payloads", asyn
           }
         };
       }
-      if (path === "/registry/conflicts") {
+      if (path === "/registry/conflicts?view=summary") {
         return {
           summary: { conflictCount: 1 },
-          conflicts: [{ familyKey: "Studio", winner: { name: "Winner" }, rows: [] }]
+          conflicts: [{ familyKey: "Studio", winner: { name: "Winner" }, rows: [] }],
+          summaryView: true
         };
       }
       throw new Error(`unexpected path ${path}`);
@@ -188,6 +189,8 @@ test("admin ops controller updates tab badges from loaded review payloads", asyn
   });
 
   await controller.loadOpsHealthData();
+  await controller.selectOpsTab("source-policy");
+  await new Promise(resolve => setTimeout(resolve, 0));
   renderScheduler.flush();
   controller.stopOpsHealthPolling();
 

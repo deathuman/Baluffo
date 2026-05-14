@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { JOBS_UPDATE_COPY } from "../../../frontend/jobs/app/pipeline.js";
 import { createJobsPipelineController } from "../../../frontend/jobs/app/runtime/pipeline-controller.js";
 import { createJobsPipelineUiState } from "../../../frontend/jobs/app/runtime/state.js";
 
@@ -43,11 +44,14 @@ function createElementMock(tagName) {
     textContent: "",
     setAttribute(name, value) {
       this[name] = value;
+    },
+    removeAttribute(name) {
+      delete this[name];
     }
   };
 }
 
-function createButtonMock(textContent = "Run Discovery + Fetch + Sync") {
+function createButtonMock(textContent = "Update jobs") {
   return {
     dataset: {},
     style: createStyle(),
@@ -79,6 +83,9 @@ function createButtonMock(textContent = "Run Discovery + Fetch + Sync") {
     },
     setAttribute(name, value) {
       this[name] = value;
+    },
+    removeAttribute(name) {
+      delete this[name];
     }
   };
 }
@@ -147,7 +154,7 @@ test("pollJobsPipelineStatus keeps the Jobs button busy while fetch is still act
 
     assert.equal(uiState.active, true);
     assert.equal(button.disabled, true);
-    assert.match(String(button.textContent || ""), /^Fetch running\.\.\./);
+    assert.match(String(button.textContent || ""), /^Fetching job listings\.\.\./);
     assert.equal(refreshNeedsAttention, false);
     assert.deepEqual(toasts, []);
   } finally {
@@ -182,6 +189,9 @@ test("pollJobsPipelineStatus announces completion only after blocking tasks clea
         if (path === "/ops/task-state") {
           return { tasks: [] };
         }
+        if (path === "/ops/dashboard-health") {
+          return { alerts: [] };
+        }
         throw new Error(`Unexpected bridge path: ${path}`);
       },
       getAllJobs: () => [],
@@ -203,10 +213,91 @@ test("pollJobsPipelineStatus announces completion only after blocking tasks clea
     assert.equal(refreshNeedsAttention, true);
     assert.deepEqual(toasts, [
       {
-        message: "Pipeline completed. Refresh jobs to load updated listings.",
+        message: "Job update completed. Reload jobs to load updated listings.",
         kind: "success"
       }
     ]);
+  } finally {
+    restoreTimers();
+  }
+});
+
+test("pollJobsPipelineStatus uses fetch_never_run alert for first-update tooltip", async () => {
+  const restoreTimers = installFakeTimers();
+  try {
+    const button = createButtonMock();
+    const uiState = createJobsPipelineUiState();
+
+    const controller = createJobsPipelineController({
+      refs: { jobsPipelineRunBtn: button },
+      jobsPipelineUiState: uiState,
+      callJobsBridge: async path => {
+        if (path === "/tasks/run-jobs-pipeline-status") {
+          return { active: false, stage: "idle" };
+        }
+        if (path === "/ops/task-state") {
+          return { tasks: [] };
+        }
+        if (path === "/ops/dashboard-health") {
+          return {
+            alerts: [
+              { id: "fetch_never_run", severity: "warning" }
+            ]
+          };
+        }
+        throw new Error(`Unexpected bridge path: ${path}`);
+      },
+      getAllJobs: () => [],
+      showToast: () => {},
+      setRefreshJobsNeedsAttention: () => {},
+      isErrorStage: payload => Boolean(payload?.error),
+      pollDelayMs: 25,
+      idlePollDelayMs: 50
+    });
+
+    await controller.pollJobsPipelineStatus();
+
+    assert.equal(button.disabled, false);
+    assert.equal(button.dataset.tooltip, JOBS_UPDATE_COPY.tooltipFirstRun);
+    assert.equal(uiState.updateTooltipFirstRun, true);
+    assert.equal(uiState.updateTooltipFirstRunKnown, true);
+  } finally {
+    restoreTimers();
+  }
+});
+
+test("pollJobsPipelineStatus disables Update jobs with bridge timeout tooltip", async () => {
+  const restoreTimers = installFakeTimers();
+  try {
+    const button = createButtonMock();
+    const uiState = createJobsPipelineUiState();
+
+    const controller = createJobsPipelineController({
+      refs: { jobsPipelineRunBtn: button },
+      jobsPipelineUiState: uiState,
+      callJobsBridge: async path => {
+        if (path === "/tasks/run-jobs-pipeline-status") {
+          throw new Error("Bridge request timed out");
+        }
+        if (path === "/ops/task-state") {
+          return { tasks: [] };
+        }
+        throw new Error(`Unexpected bridge path: ${path}`);
+      },
+      getAllJobs: () => [],
+      showToast: () => {},
+      setRefreshJobsNeedsAttention: () => {},
+      isErrorStage: payload => Boolean(payload?.error),
+      pollDelayMs: 25,
+      idlePollDelayMs: 50
+    });
+
+    await controller.pollJobsPipelineStatus();
+
+    assert.equal(button.disabled, true);
+    assert.equal(button.textContent, "Update jobs");
+    assert.equal(button.dataset.tooltip, JOBS_UPDATE_COPY.tooltipBridgeTimedOut);
+    assert.equal(uiState.bridgeOnline, false);
   } finally {
     restoreTimers();
   }

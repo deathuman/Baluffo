@@ -1,4 +1,4 @@
-import { escapeHtml, tooltipAttrs } from "../../shared/ui/index.js";
+import { escapeHtml, tooltipAttrs } from "../../shared/ui/index.js?v=6";
 import {
   buildOpsFetcherDiagnosticsSections,
   buildOpsFetcherMetricSections,

@@ -19,6 +19,16 @@ PAIR_RETENTION_RUNS = 2
 DEFAULT_RUNTIME_TIMEOUT_S = 60.0
 
 
+def normalize_startup_open_path(open_path: str = "jobs.html") -> str:
+    token = str(open_path or "jobs.html").strip().lstrip("/") or "jobs.html"
+    return token
+
+
+def startup_page_key(open_path: str = "jobs.html") -> str:
+    stem = Path(normalize_startup_open_path(open_path)).stem.strip().lower()
+    return stem.replace("-", "_") or "jobs"
+
+
 def generate_pair_run_token(*, now: datetime | None = None) -> str:
     resolved_now = now if isinstance(now, datetime) else datetime.now(UTC)
     return resolved_now.strftime("%Y%m%d-%H%M%S-%f")
@@ -67,25 +77,42 @@ def startup_pair_paths(
     *,
     artifact_root: Path = PAIR_ARTIFACT_ROOT,
     run_token: str = "",
+    open_path: str = "jobs.html",
 ) -> dict[str, Path]:
     token = str(run_token or generate_pair_run_token()).strip()
     run_root = Path(artifact_root) / token
+    page = startup_page_key(open_path)
+    prefix = "" if page == "jobs" else f"{page}-"
     return {
         "runRoot": run_root,
-        "coldArtifactsDir": run_root / "cold",
-        "warmArtifactsDir": run_root / "warm",
-        "coldReportPath": run_root / "cold-report.json",
-        "warmReportPath": run_root / "warm-report.json",
+        "coldArtifactsDir": run_root / f"{prefix}cold",
+        "warmArtifactsDir": run_root / f"{prefix}warm",
+        "coldReportPath": run_root / f"{prefix}cold-report.json",
+        "warmReportPath": run_root / f"{prefix}warm-report.json",
+        "openPath": Path(normalize_startup_open_path(open_path)),
+        "page": Path(page),
     }
 
 
-def cold_startup_probe_args(paths: dict[str, Path], *, runtime_timeout_s: float) -> list[str]:
+def cold_startup_probe_args(
+    paths: dict[str, Path],
+    *,
+    runtime_timeout_s: float,
+    open_path: str = "jobs.html",
+    exe_path: Path | None = None,
+    profile_record_only: bool = False,
+) -> list[str]:
+    launch_args = ["--exe-path", str(exe_path)] if exe_path is not None else ["--rebuild"]
+    record_args = ["--profile-record-only"] if profile_record_only else []
     return [
-        "--rebuild",
+        *launch_args,
         "--startup-probe",
         "--profile-only",
+        *record_args,
         "--profile-mode",
         "cold",
+        "--open-path",
+        normalize_startup_open_path(open_path),
         "--runtime-timeout",
         str(runtime_timeout_s),
         "--artifacts-dir",
@@ -100,14 +127,20 @@ def warm_startup_probe_args(
     *,
     reused_exe: Path,
     runtime_timeout_s: float,
+    open_path: str = "jobs.html",
+    profile_record_only: bool = False,
 ) -> list[str]:
+    record_args = ["--profile-record-only"] if profile_record_only else []
     return [
         "--exe-path",
         str(reused_exe),
         "--startup-probe",
         "--profile-only",
+        *record_args,
         "--profile-mode",
         "warm",
+        "--open-path",
+        normalize_startup_open_path(open_path),
         "--runtime-timeout",
         str(runtime_timeout_s),
         "--artifacts-dir",
@@ -138,6 +171,8 @@ def write_startup_pair_summary(
     payload = {
         "ok": int(cold_exit_code or 0) == 0 and int(warm_exit_code or 0) == 0,
         "runRoot": str(paths["runRoot"]),
+        "page": str(paths.get("page") or "jobs"),
+        "openPath": str(paths.get("openPath") or "jobs.html"),
         "coldReportPath": str(paths["coldReportPath"]),
         "warmReportPath": str(paths["warmReportPath"]),
         "coldArtifactsDir": str(paths["coldArtifactsDir"]),
@@ -154,15 +189,26 @@ def run_startup_probe_pair(
     runtime_timeout_s: float = DEFAULT_RUNTIME_TIMEOUT_S,
     artifact_root: Path = PAIR_ARTIFACT_ROOT,
     summary_path: Path | None = None,
+    open_path: str = "jobs.html",
+    exe_path: Path | None = None,
+    profile_record_only: bool = False,
 ) -> int:
-    paths = startup_pair_paths(artifact_root=artifact_root)
+    resolved_open_path = normalize_startup_open_path(open_path)
+    paths = startup_pair_paths(artifact_root=artifact_root, open_path=resolved_open_path)
     run_root = paths["runRoot"]
     run_root.mkdir(parents=True, exist_ok=True)
     prune_pair_artifacts(artifact_root, current_run_dir=run_root)
 
-    print("Running cold startup probe with a single rebuild...")
+    page = startup_page_key(resolved_open_path)
+    print(f"Running {page} cold startup probe...")
     cold_result = run_packaged_probe(
-        cold_startup_probe_args(paths, runtime_timeout_s=runtime_timeout_s)
+        cold_startup_probe_args(
+            paths,
+            runtime_timeout_s=runtime_timeout_s,
+            open_path=resolved_open_path,
+            exe_path=exe_path,
+            profile_record_only=profile_record_only,
+        )
     )
 
     reused_exe: Path | None = None
@@ -180,12 +226,14 @@ def run_startup_probe_pair(
             )
         return int(cold_result.returncode or 1)
 
-    print(f"Reusing packaged exe for warm startup probe: {reused_exe}")
+    print(f"Reusing packaged exe for {page} warm startup probe: {reused_exe}")
     warm_result = run_packaged_probe(
         warm_startup_probe_args(
             paths,
             reused_exe=reused_exe,
             runtime_timeout_s=runtime_timeout_s,
+            open_path=resolved_open_path,
+            profile_record_only=profile_record_only,
         )
     )
 
@@ -209,6 +257,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--runtime-timeout", type=float, default=DEFAULT_RUNTIME_TIMEOUT_S)
     parser.add_argument("--artifact-root", default=str(PAIR_ARTIFACT_ROOT))
     parser.add_argument("--summary-path", default="")
+    parser.add_argument("--open-path", default="jobs.html")
+    parser.add_argument("--exe-path", default="")
+    parser.add_argument("--profile-record-only", action="store_true")
     return parser.parse_args(argv)
 
 
@@ -219,6 +270,11 @@ def main(argv: list[str] | None = None) -> int:
         runtime_timeout_s=float(args.runtime_timeout),
         artifact_root=Path(str(args.artifact_root)),
         summary_path=summary_path,
+        open_path=str(args.open_path or "jobs.html"),
+        exe_path=Path(str(args.exe_path)).expanduser().resolve()
+        if str(args.exe_path or "").strip()
+        else None,
+        profile_record_only=bool(args.profile_record_only),
     )
 
 

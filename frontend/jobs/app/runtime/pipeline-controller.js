@@ -1,10 +1,12 @@
 import {
   clearJobsPipelinePolling as clearJobsPipelinePollingFromModule,
   formatBlockingTaskProgressLabel,
+  getJobsUpdateTooltip,
   getPipelineRunningLabel,
+  JOBS_UPDATE_COPY,
   scheduleJobsPipelineStatusPoll as scheduleJobsPipelineStatusPollFromModule,
   updateJobsPipelineUi as updateJobsPipelineUiFromModule
-} from "../pipeline.js";
+} from "../pipeline.js?v=7";
 
 const BLOCKING_TASK_TYPES = new Set(["pipeline", "fetch", "discovery", "sync"]);
 
@@ -104,8 +106,27 @@ export function createJobsPipelineController({
       disabled,
       buttonLabel,
       progressLabel,
+      buttonTooltip: getJobsUpdateTooltip({
+        bridgeError: jobsPipelineUiState.updateTooltipBridgeError,
+        firstRun: jobsPipelineUiState.updateTooltipFirstRun,
+        firstRunKnown: jobsPipelineUiState.updateTooltipFirstRunKnown
+      }),
       isError
     });
+  }
+
+  async function refreshJobsUpdateTooltipFromHealth() {
+    try {
+      const payload = await callJobsBridge("/ops/dashboard-health");
+      const alerts = Array.isArray(payload?.alerts) ? payload.alerts : [];
+      jobsPipelineUiState.updateTooltipFirstRun = alerts.some(alert => (
+        String(alert?.id || "").trim() === "fetch_never_run"
+      ));
+      jobsPipelineUiState.updateTooltipFirstRunKnown = true;
+    } catch {
+      jobsPipelineUiState.updateTooltipFirstRun = false;
+      jobsPipelineUiState.updateTooltipFirstRunKnown = false;
+    }
   }
 
   function clearJobsPipelinePolling() {
@@ -137,9 +158,9 @@ export function createJobsPipelineController({
       isError: hasError
     });
     if (updatesFound) {
-      showToast("Pipeline completed. Refresh jobs to load updated listings.", "success");
+      showToast(JOBS_UPDATE_COPY.completedWithUpdates, "success");
     } else if (payload?.error) {
-      showToast(`Pipeline failed: ${String(payload.error)}`, "error");
+      showToast(`Job update failed: ${String(payload.error)}`, "error");
     }
   }
 
@@ -157,6 +178,7 @@ export function createJobsPipelineController({
         ? taskStateResult.value
         : { tasks: [] };
       jobsPipelineUiState.bridgeOnline = true;
+      jobsPipelineUiState.updateTooltipBridgeError = "";
       resetPipelineStatusPollFailures(jobsPipelineUiState);
 
       const active = Boolean(payload?.active);
@@ -185,7 +207,7 @@ export function createJobsPipelineController({
         updateJobsPipelineUi({
           running: true,
           disabled: true,
-          buttonLabel: "Starting Pipeline...",
+          buttonLabel: JOBS_UPDATE_COPY.updatingLabel,
           pipelinePayload: payload
         });
         scheduleJobsPipelineStatusPoll(pollDelayMs);
@@ -208,8 +230,10 @@ export function createJobsPipelineController({
         return;
       }
       if ((trackedRunId && trackedRunId === runId) || jobsPipelineUiState.active) {
+        await refreshJobsUpdateTooltipFromHealth();
         handlePipelineCompletionStatus(payload);
       } else {
+        await refreshJobsUpdateTooltipFromHealth();
         updateJobsPipelineUi({
           running: false,
           disabled: false,
@@ -218,9 +242,12 @@ export function createJobsPipelineController({
         });
       }
       scheduleJobsPipelineStatusPoll(idlePollDelayMs);
-    } catch {
-      const failureCount = markPipelineStatusPollFailure(jobsPipelineUiState);
+    } catch (err) {
+      markPipelineStatusPollFailure(jobsPipelineUiState);
       jobsPipelineUiState.bridgeOnline = false;
+      jobsPipelineUiState.updateTooltipBridgeError = String(err?.message || err || "bridge unavailable");
+      jobsPipelineUiState.updateTooltipFirstRun = false;
+      jobsPipelineUiState.updateTooltipFirstRunKnown = false;
       jobsPipelineUiState.active = false;
       jobsPipelineUiState.pendingStart = false;
       jobsPipelineUiState.runId = "";
@@ -228,7 +255,7 @@ export function createJobsPipelineController({
       updateJobsPipelineUi({
         running: false,
         disabled: true,
-        buttonLabel: failureCount <= 1 ? "Checking..." : "Bridge Starting...",
+        buttonLabel: JOBS_UPDATE_COPY.idleLabel,
         pipelinePayload: null,
         isError: false
       });
@@ -240,7 +267,7 @@ export function createJobsPipelineController({
     updateJobsPipelineUi({
       running: false,
       disabled: true,
-      buttonLabel: "Checking...",
+      buttonLabel: JOBS_UPDATE_COPY.idleLabel,
       pipelinePayload: null
     });
     pollJobsPipelineStatus().catch(() => {});
@@ -252,7 +279,7 @@ export function createJobsPipelineController({
     updateJobsPipelineUi({
       running: true,
       disabled: true,
-      buttonLabel: "Starting Pipeline...",
+      buttonLabel: JOBS_UPDATE_COPY.updatingLabel,
       pipelinePayload: null
     });
     try {
@@ -271,6 +298,7 @@ export function createJobsPipelineController({
         throw new Error(String(payload?.error || "pipeline did not start"));
       }
       jobsPipelineUiState.bridgeOnline = true;
+      jobsPipelineUiState.updateTooltipBridgeError = "";
       resetPipelineStatusPollFailures(jobsPipelineUiState);
       jobsPipelineUiState.active = true;
       jobsPipelineUiState.pendingStart = false;
@@ -285,10 +313,10 @@ export function createJobsPipelineController({
         }),
         pipelinePayload: payload
       });
-      showToast("Jobs pipeline started.", "success");
+      showToast(JOBS_UPDATE_COPY.startedToast, "success");
       scheduleJobsPipelineStatusPoll(pollDelayMs);
     } catch (err) {
-      const message = String(err?.message || "Could not start jobs pipeline.");
+      const message = String(err?.message || JOBS_UPDATE_COPY.startFailed);
       const normalizedMessage = message.toLowerCase();
       jobsPipelineUiState.active = false;
       jobsPipelineUiState.pendingStart = false;
@@ -303,10 +331,10 @@ export function createJobsPipelineController({
       });
       showToast(
         normalizedMessage.includes("already running")
-          ? "Pipeline already running."
+          ? "Job update already running."
           : normalizedMessage.includes("another fetch/discovery/sync task is already running")
             ? "Another background task is still running."
-            : "Could not start jobs pipeline.",
+            : JOBS_UPDATE_COPY.startFailed,
         "error"
       );
       scheduleJobsPipelineStatusPoll(idlePollDelayMs);

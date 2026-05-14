@@ -115,11 +115,57 @@ function eventElapsedMs(row) {
   return null;
 }
 
+function eventInstanceKey(row) {
+  const payloadValue = row?.payload?.browserCreatedAtMs;
+  if (payloadValue !== undefined && payloadValue !== null && String(payloadValue).trim()) {
+    return `browser-created:${String(payloadValue)}`;
+  }
+  const fieldValue = row?.fields?.browserCreatedAtMs;
+  if (fieldValue !== undefined && fieldValue !== null && String(fieldValue).trim()) {
+    return `browser-created:${String(fieldValue)}`;
+  }
+  const browserTsValue = row?.browserTsMs;
+  if (browserTsValue !== undefined && browserTsValue !== null && String(browserTsValue).trim()) {
+    return `browser-ts:${String(browserTsValue)}`;
+  }
+  return "";
+}
+
+function findStartupMetricPair(rows, firstEventName, secondEventName) {
+  const firstRows = rows
+    .map((row, index) => ({ row, index }))
+    .filter(entry => String(entry.row?.event || "") === String(firstEventName || ""));
+  const secondRows = rows
+    .map((row, index) => ({ row, index }))
+    .filter(entry => String(entry.row?.event || "") === String(secondEventName || ""));
+  for (let firstIndex = firstRows.length - 1; firstIndex >= 0; firstIndex -= 1) {
+    const firstEntry = firstRows[firstIndex];
+    const key = eventInstanceKey(firstEntry.row);
+    if (!key) continue;
+    const secondEntry = secondRows.find(entry =>
+      entry.index >= firstEntry.index && eventInstanceKey(entry.row) === key
+    );
+    if (secondEntry) {
+      return {
+        firstRow: firstEntry.row,
+        firstIndex: firstEntry.index,
+        secondRow: secondEntry.row,
+        secondIndex: secondEntry.index
+      };
+    }
+  }
+  return null;
+}
+
 async function assertFacadeStartupOrdering(apiRequest) {
   let rows = [];
   for (let attempt = 0; attempt < 50; attempt += 1) {
     rows = await fetchStartupMetricRows(apiRequest, 600);
-    if (["desktop_browser_launch_selected", "desktop_shell_window_shown", "jobs_first_render", "jobs_first_interactive"].every(eventName => firstEventIndex(rows, eventName) >= 0)) break;
+    const jobsStartupPair = findStartupMetricPair(rows, "jobs_first_render", "jobs_first_interactive");
+    if (
+      ["desktop_browser_launch_selected", "desktop_shell_window_shown"].every(eventName => firstEventIndex(rows, eventName) >= 0)
+      && jobsStartupPair
+    ) break;
     await new Promise(resolve => setTimeout(resolve, 200));
   }
   const sessionPayload = await fetchDesktopSession(apiRequest);
@@ -131,6 +177,8 @@ async function assertFacadeStartupOrdering(apiRequest) {
   assert.equal(hasEvent("desktop_shell_window_shown"), true, "desktop shell shown event missing");
   assert.equal(hasEvent("jobs_first_render"), true, "jobs first render missing");
   assert.equal(hasEvent("jobs_first_interactive"), true, "jobs first interactive missing");
+  const jobsStartupPair = findStartupMetricPair(rows, "jobs_first_render", "jobs_first_interactive");
+  assert.ok(jobsStartupPair, "jobs first render/interactive pair missing for the same page instance");
   assert.ok(String(desktopSession.sessionId || "").trim(), "desktop session id missing");
   assert.ok(String(desktopSession.ownerToken || "").trim(), "desktop owner token missing");
   assert.ok(
@@ -139,8 +187,8 @@ async function assertFacadeStartupOrdering(apiRequest) {
   );
   const browserLaunchRow = rows.find(row => String(row?.event || "") === "desktop_browser_launch_selected");
   const shellLoadedRow = rows.find(row => String(row?.event || "") === "desktop_shell_window_shown");
-  const firstRenderRow = rows.find(row => String(row?.event || "") === "jobs_first_render");
-  const firstInteractiveRow = rows.find(row => String(row?.event || "") === "jobs_first_interactive");
+  const firstRenderRow = jobsStartupPair.firstRow;
+  const firstInteractiveRow = jobsStartupPair.secondRow;
   assert.ok(browserLaunchRow, "desktop browser launch row missing");
   assert.ok(shellLoadedRow, "desktop shell shown row missing");
   assert.ok(firstRenderRow, "jobs first render row missing");
@@ -152,6 +200,7 @@ async function assertFacadeStartupOrdering(apiRequest) {
   if (browserLaunchElapsedMs !== null && shellLoadedElapsedMs !== null) {
     assert.ok(shellLoadedElapsedMs <= browserLaunchElapsedMs, "desktop shell shown should not lag browser launch selection");
   }
+  assert.ok(jobsStartupPair.firstIndex <= jobsStartupPair.secondIndex, "jobs first render should be recorded before jobs interactive");
   if (firstRenderElapsedMs !== null && firstInteractiveElapsedMs !== null) {
     assert.ok(firstRenderElapsedMs <= firstInteractiveElapsedMs, "jobs first render should happen before jobs interactive");
   }
@@ -188,6 +237,25 @@ async function assertNoImmediateAdminError(page, { buttonLocator, actionName = "
 
   const errorLogCountAfter = await page.locator(".admin-fetcher-line.log-error").count();
   assert.equal(errorLogCountAfter, errorLogCountBefore, "admin error log count changed unexpectedly");
+}
+
+async function assertAdminStartupSettled(page) {
+  await page.waitForFunction(
+    () => !/Loading admin overview/i.test(document.querySelector("#admin-source-status")?.textContent || ""),
+    null,
+    { timeout: 30_000 }
+  );
+  await page.waitForFunction(
+    () => /Bridge Online/i.test(document.querySelector("#admin-bridge-status-badge")?.textContent || ""),
+    null,
+    { timeout: 30_000 }
+  );
+  const sourceStatus = await page.locator("#admin-source-status").textContent();
+  assert.doesNotMatch(String(sourceStatus || ""), /Loading admin overview/i);
+  assert.match(String(sourceStatus || ""), /Loaded \d+ user account/i);
+  const bridgeBadgeText = await page.locator("#admin-bridge-status-badge").textContent();
+  assert.match(String(bridgeBadgeText || ""), /Bridge Online/i);
+  assert.doesNotMatch(String(bridgeBadgeText || ""), /Bridge Checking/i);
 }
 
 async function runScenario(name, callback, scenarios) {
@@ -325,6 +393,7 @@ async function main() {
       }
       await page.waitForURL(/admin\.html/, { timeout: 15_000 });
       await page.locator("#admin-content").waitFor({ state: "visible", timeout: 15_000 });
+      await assertAdminStartupSettled(page);
     }, scenarios);
 
     await runScenario("Bridge badge reaches online", async () => {
@@ -335,6 +404,8 @@ async function main() {
         null,
         { timeout: 30_000 }
       );
+      const bridgeBadgeText = await bridgeBadge.textContent();
+      assert.doesNotMatch(String(bridgeBadgeText || ""), /Bridge Checking/i);
     }, scenarios);
 
     await runScenario("Admin discovery run launches without immediate error", async () => {

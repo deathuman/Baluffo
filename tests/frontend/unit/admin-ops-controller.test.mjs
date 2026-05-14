@@ -159,7 +159,7 @@ test("admin ops controller preserves optimistic rows while history lags", async 
       getBridge: async path => {
         if (path === "/ops/dashboard-health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
         if (path === "/ops/history?limit=80") return { runs: [] };
-        if (path === "/ops/task-state") return { tasks: [] };
+        if (path === "/ops/task-state?view=summary") return { tasks: [] };
         if (path === "/ops/fetcher-metrics?windowRuns=80") return {};
         throw new Error(`unexpected path ${path}`);
       },
@@ -207,6 +207,87 @@ test("admin ops controller preserves optimistic rows while history lags", async 
     assert.equal(runModels.length, 1, label);
     assert.equal(runModels[0].currentRows.length, 0, label);
   }
+});
+
+test("admin ops controller startup uses summary ops routes before deferred detail", async () => {
+  const state = {
+    latestOpsHealthCache: null,
+    adminBusyState: {
+      opsLoad: false,
+      liveFetchRunning: false,
+      liveDiscoveryRunning: false,
+      liveSyncRunning: false,
+      livePipelineRunning: false
+    }
+  };
+  const refs = {
+    adminSyncStatusEl: createElement(),
+    adminSyncConfigHintEl: createElement(),
+    adminOpsAlertsEl: createElement(),
+    adminOpsKpisEl: createElement(),
+    adminOpsScheduleEl: createElement(),
+    adminOpsFetcherMetricsEl: createElement(),
+    adminOpsHistoryEl: createElement(),
+    adminOpsTrendsEl: createElement(),
+    adminRegistryConflictsReviewEl: createElement()
+  };
+  const calls = [];
+  let historyRenderCount = 0;
+  const renderScheduler = createDeferredRenderScheduler();
+  const controller = createAdminOpsController({
+    state,
+    refs,
+    getBridge: async path => {
+      calls.push(path);
+      if (path === "/ops/dashboard-health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
+      if (path === "/ops/task-state?view=summary") return { tasks: [], count: 0, summary: true };
+      if (path === "/registry/conflicts?view=summary") return { summary: { conflictCount: 0 }, conflicts: [], summaryView: true };
+      if (path === "/ops/history?limit=80") return new Promise(() => {});
+      if (path === "/ops/fetcher-metrics?windowRuns=80") return new Promise(() => {});
+      throw new Error(`unexpected path ${path}`);
+    },
+    postBridge: async () => ({}),
+    deriveAdminRunsModel: () => ({
+      currentRows: [],
+      visibleCompletedRows: [],
+      olderCompletedRows: [],
+      hasLiveRuns: false,
+      liveTypes: []
+    }),
+    getOpsPollIntervalMs: () => 5000,
+    renderAdminOpsAlerts() {},
+    renderAdminOpsKpis() {},
+    renderAdminOpsSchedule() {},
+    renderAdminOpsFetcherMetrics() {},
+    renderAdminOpsTrends() {},
+    renderAdminOpsHistory() {
+      historyRenderCount += 1;
+    },
+    renderAdminRegistryConflicts() {},
+    setBusyFlag(key, value) {
+      state.adminBusyState[key] = value;
+    },
+    showToast() {},
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    adminDispatch: { dispatch() {} },
+    adminActions: { OPS_REFRESHED: "ops/refreshed" },
+    escapeHtml: value => String(value || ""),
+    onBridgeStatusChange() {},
+    bridgeStatusPollIntervalMs: 1000,
+    idlePollIntervalMs: 1000,
+    renderScheduler: renderScheduler.schedule
+  });
+
+  await controller.loadOpsHealthData();
+  renderScheduler.flush();
+  controller.stopOpsHealthPolling();
+
+  assert.deepEqual(calls, [
+    "/ops/dashboard-health",
+    "/ops/task-state?view=summary",
+    "/registry/conflicts?view=summary"
+  ]);
+  assert.equal(historyRenderCount, 1);
 });
 
 test("admin ops controller renders bridge task-state without reattaching from history-only rows", async () => {
@@ -265,7 +346,7 @@ test("admin ops controller renders bridge task-state without reattaching from hi
         getBridge: async path => {
           if (path === "/ops/dashboard-health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
           if (path === "/ops/history?limit=80") return { runs: [] };
-          if (path === "/ops/task-state") return {
+          if (path === "/ops/task-state?view=summary") return {
             tasks: [
               {
                 taskType,
@@ -362,7 +443,7 @@ test("admin ops controller quietly auto-attaches active fetch and discovery task
     getBridge: async path => {
       if (path === "/ops/dashboard-health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
       if (path === "/ops/history?limit=80") return { runs: [] };
-      if (path === "/ops/task-state") {
+      if (path === "/ops/task-state?view=summary") {
         return {
           tasks: [
             {
@@ -489,7 +570,7 @@ test("admin ops controller trusts empty lifecycle task-state samples immediately
     getBridge: async path => {
       if (path === "/ops/dashboard-health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
       if (path === "/ops/history?limit=80") return { runs: [] };
-      if (path === "/ops/task-state") return taskStatePayloads.shift() || { tasks: [] };
+      if (path === "/ops/task-state?view=summary") return taskStatePayloads.shift() || { tasks: [] };
       if (path === "/ops/fetcher-metrics?windowRuns=80") return {};
       throw new Error(`unexpected path ${path}`);
     },
@@ -561,18 +642,18 @@ test("admin ops controller clears live rows on task-state polling failure", asyn
     adminOpsHistoryEl: createElement(),
     adminOpsTrendsEl: createElement()
   };
-  let callCount = 0;
+  let taskStateCallCount = 0;
   const renderedCurrentCounts = [];
   const renderScheduler = createDeferredRenderScheduler();
   const controller = createAdminOpsController({
     state,
     refs,
     getBridge: async path => {
-      callCount += 1;
       if (path === "/ops/dashboard-health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
       if (path === "/ops/history?limit=80") return { runs: [] };
-      if (path === "/ops/task-state") {
-        if (callCount > 8) {
+      if (path === "/ops/task-state?view=summary") {
+        taskStateCallCount += 1;
+        if (taskStateCallCount > 1) {
           throw new Error("transient task-state error");
         }
         return {
@@ -669,7 +750,7 @@ test("admin ops controller skips stale deferred detail renders after a newer ref
     getBridge: async path => {
       if (path === "/ops/dashboard-health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
       if (path === "/ops/history?limit=80") return histories.shift() || { runs: [] };
-      if (path === "/ops/task-state") return { tasks: [] };
+      if (path === "/ops/task-state?view=summary") return { tasks: [] };
       if (path === "/ops/fetcher-metrics?windowRuns=80") return {};
       throw new Error(`unexpected path ${path}`);
     },
@@ -707,8 +788,10 @@ test("admin ops controller skips stale deferred detail renders after a newer ref
 
   await controller.loadOpsHealthData();
   await controller.loadOpsHealthData();
+  await new Promise(resolve => setTimeout(resolve, 0));
   renderScheduler.flush();
   controller.stopOpsHealthPolling();
 
-  assert.deepEqual(renderedRunIds, ["new_run"]);
+  assert.equal(renderedRunIds.at(-1), "new_run");
+  assert.equal(renderedRunIds.includes("old_run"), false);
 });

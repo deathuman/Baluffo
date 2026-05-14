@@ -435,11 +435,13 @@ def _startup_stage_durations(report: dict[str, Any]) -> dict[str, int]:
 def _startup_summary(
     *,
     mode: str,
+    page: str,
     report_path: Path,
     artifacts_dir: Path,
     command_result: dict[str, Any],
     baseline_dir: Path,
 ) -> dict[str, Any]:
+    page_key = str(page or "jobs").strip().lower() or "jobs"
     report = _read_json(report_path)
     profile = report.get("startupProfile") if isinstance(report.get("startupProfile"), dict) else {}
     duration_ms = int(profile.get("firstUsableMs") or 0)
@@ -449,13 +451,13 @@ def _startup_summary(
         token = str(value or "").strip()
         if token:
             key_paths.append(Path(token))
+    comparison_mode = f"startup-{mode}" if page_key == "jobs" else f"startup-{page_key}-{mode}"
     comparison = _comparison(
-        mode=f"startup-{mode}",
-        duration_ms=duration_ms,
-        baseline_dir=baseline_dir,
+        mode=comparison_mode, duration_ms=duration_ms, baseline_dir=baseline_dir
     )
     return {
-        "mode": f"startup-{mode}",
+        "mode": f"startup-{page_key}-{mode}",
+        "page": page_key,
         "durationMs": duration_ms,
         "status": str(comparison.get("status") or ""),
         "startupProfileStatus": str(
@@ -479,11 +481,22 @@ def run_startup_pair(
     output_dir: Path,
     runtime_timeout_s: float,
     baseline_dir: Path,
+    page: str = "jobs",
+    open_path: str = "jobs.html",
+    exe_path: Path | None = None,
+    profile_record_only: bool = False,
 ) -> tuple[dict[str, Any], int, Path | None]:
-    paths = startup_pair_paths(artifact_root=output_dir / "startup")
+    page_key = str(page or "jobs").strip().lower() or "jobs"
+    paths = startup_pair_paths(artifact_root=output_dir / "startup" / page_key, open_path=open_path)
     paths["runRoot"].mkdir(parents=True, exist_ok=True)
     cold_command = packaged_probe_command(
-        cold_startup_probe_args(paths, runtime_timeout_s=runtime_timeout_s)
+        cold_startup_probe_args(
+            paths,
+            runtime_timeout_s=runtime_timeout_s,
+            open_path=open_path,
+            exe_path=exe_path,
+            profile_record_only=profile_record_only,
+        )
     )
     cold_result = run_monitored_command(
         cold_command,
@@ -508,6 +521,8 @@ def run_startup_pair(
                 paths,
                 reused_exe=reused_exe,
                 runtime_timeout_s=runtime_timeout_s,
+                open_path=open_path,
+                profile_record_only=profile_record_only,
             )
         )
         warm_result = run_monitored_command(
@@ -519,6 +534,7 @@ def run_startup_pair(
             startup_exit = int(warm_result.get("exitCode") or 1)
     cold_summary = _startup_summary(
         mode="cold",
+        page=page_key,
         report_path=paths["coldReportPath"],
         artifacts_dir=paths["coldArtifactsDir"],
         command_result=cold_result,
@@ -526,6 +542,7 @@ def run_startup_pair(
     )
     warm_summary = _startup_summary(
         mode="warm",
+        page=page_key,
         report_path=paths["warmReportPath"],
         artifacts_dir=paths["warmArtifactsDir"],
         command_result=warm_result,
@@ -537,6 +554,7 @@ def run_startup_pair(
     ):
         startup_exit = 0
     summary = {
+        "page": page_key,
         "cold": cold_summary,
         "warm": warm_summary,
         "reusedExe": str(reused_exe or ""),
@@ -667,6 +685,7 @@ def _format_top_contributors(memory: dict[str, Any], *, limit: int = 3) -> str:
 def _print_console_summary(summary: dict[str, Any]) -> None:
     print("\nComplete benchmark summary", flush=True)
     sync = summary["benchmarks"]["sync"]
+    startup = summary["benchmarks"]["startup"]
     rows = [
         (
             "discovery",
@@ -687,15 +706,27 @@ def _print_console_summary(summary: dict[str, Any]) -> None:
             None,
         ),
         (
-            "startup.cold",
-            summary["benchmarks"]["startup"]["cold"].get("durationMs", 0),
-            summary["benchmarks"]["startup"]["cold"],
+            "startup.jobs.cold",
+            startup["jobs"]["cold"].get("durationMs", 0),
+            startup["jobs"]["cold"],
             None,
         ),
         (
-            "startup.warm",
-            summary["benchmarks"]["startup"]["warm"].get("durationMs", 0),
-            summary["benchmarks"]["startup"]["warm"],
+            "startup.jobs.warm",
+            startup["jobs"]["warm"].get("durationMs", 0),
+            startup["jobs"]["warm"],
+            None,
+        ),
+        (
+            "startup.admin.cold",
+            startup["admin"]["cold"].get("durationMs", 0),
+            startup["admin"]["cold"],
+            None,
+        ),
+        (
+            "startup.admin.warm",
+            startup["admin"]["warm"].get("durationMs", 0),
+            startup["admin"]["warm"],
             None,
         ),
         (
@@ -770,15 +801,27 @@ def _record_complete_rows(
         ),
         (
             "startup-cold",
-            startup["cold"].get("durationMs"),
-            startup["cold"].get("stageDurationsMs"),
-            startup["cold"].get("comparison", {}).get("status"),
+            startup["jobs"]["cold"].get("durationMs"),
+            startup["jobs"]["cold"].get("stageDurationsMs"),
+            startup["jobs"]["cold"].get("comparison", {}).get("status"),
         ),
         (
             "startup-warm",
-            startup["warm"].get("durationMs"),
-            startup["warm"].get("stageDurationsMs"),
-            startup["warm"].get("comparison", {}).get("status"),
+            startup["jobs"]["warm"].get("durationMs"),
+            startup["jobs"]["warm"].get("stageDurationsMs"),
+            startup["jobs"]["warm"].get("comparison", {}).get("status"),
+        ),
+        (
+            "startup-admin-cold",
+            startup["admin"]["cold"].get("durationMs"),
+            startup["admin"]["cold"].get("stageDurationsMs"),
+            startup["admin"]["cold"].get("comparison", {}).get("status"),
+        ),
+        (
+            "startup-admin-warm",
+            startup["admin"]["warm"].get("durationMs"),
+            startup["admin"]["warm"].get("stageDurationsMs"),
+            startup["admin"]["warm"].get("comparison", {}).get("status"),
         ),
         (
             "sync-push",
@@ -841,18 +884,37 @@ def main(argv: list[str] | None = None) -> int:
         baseline_dir=baseline_dir,
     )
     frontend, frontend_exit = run_frontend_boot(output_dir=run_dir, baseline_dir=baseline_dir)
-    startup, startup_exit, reused_exe = run_startup_pair(
+    startup_jobs, startup_jobs_exit, reused_exe = run_startup_pair(
         output_dir=run_dir,
         runtime_timeout_s=float(args.runtime_timeout),
         baseline_dir=baseline_dir,
+        page="jobs",
+        open_path="jobs.html",
     )
+    startup_admin, startup_admin_exit, admin_reused_exe = run_startup_pair(
+        output_dir=run_dir,
+        runtime_timeout_s=float(args.runtime_timeout),
+        baseline_dir=baseline_dir,
+        page="admin",
+        open_path="admin.html",
+        exe_path=reused_exe,
+        profile_record_only=True,
+    )
+    reused_exe = reused_exe or admin_reused_exe
     sync, sync_exit = run_sync_rehearsal(
         output_dir=run_dir,
         runtime_timeout_s=float(args.runtime_timeout),
         baseline_dir=baseline_dir,
         exe_path=reused_exe,
     )
-    for value in (discovery_exit, fetch_exit, frontend_exit, startup_exit, sync_exit):
+    for value in (
+        discovery_exit,
+        fetch_exit,
+        frontend_exit,
+        startup_jobs_exit,
+        startup_admin_exit,
+        sync_exit,
+    ):
         if int(value or 0) != 0 and exit_code == 0:
             exit_code = int(value or 1)
 
@@ -868,7 +930,10 @@ def main(argv: list[str] | None = None) -> int:
             "discovery": discovery,
             "fetch": fetch,
             "frontendBoot": frontend,
-            "startup": startup,
+            "startup": {
+                "jobs": startup_jobs,
+                "admin": startup_admin,
+            },
             "sync": sync,
         },
         "overallArtifactSizes": summarize_artifacts(roots=[run_dir], key_paths=[summary_path]),

@@ -3345,3 +3345,92 @@ def load_registry_conflicts_payload(
     if warnings:
         payload["warnings"] = warnings
     return payload
+
+
+def _summary_conflict_card(card: dict[str, Any]) -> dict[str, Any]:
+    safe_automation = _as_dict(card.get("safeAutomation"))
+    target_ids = [
+        _clean_text(target_id)
+        for target_id in _as_list(safe_automation.get("targetIds"))[:10]
+        if _clean_text(target_id)
+    ]
+    return {
+        "familyKey": _clean_text(card.get("familyKey")),
+        "rowCount": int(card.get("rowCount") or 0),
+        "triageBucket": _clean_text(card.get("triageBucket")),
+        "triageLabel": _clean_text(card.get("triageLabel")),
+        "reviewPriority": int(card.get("reviewPriority") or 0),
+        "reviewQueue": _clean_text(card.get("reviewQueue")),
+        "reviewLabel": _clean_text(card.get("reviewLabel")),
+        "suggestedDisposition": _clean_text(card.get("suggestedDisposition")),
+        "safeAutomation": {
+            key: value
+            for key, value in safe_automation.items()
+            if key in {"eligible", "action", "label", "route"}
+        },
+        "safeAutomationTargetIds": target_ids,
+        "safeAutomationTargetIdsTruncated": len(_as_list(safe_automation.get("targetIds"))) > 10,
+    }
+
+
+def _summary_action(action: dict[str, Any]) -> dict[str, Any]:
+    target_ids = [
+        _clean_text(target_id)
+        for target_id in _as_list(action.get("targetIds"))[:20]
+        if _clean_text(target_id)
+    ]
+    return {
+        "action": _clean_text(action.get("action")),
+        "label": _clean_text(action.get("label")),
+        "route": _clean_text(action.get("route")),
+        "count": int(action.get("count") or len(_as_list(action.get("targetIds"))) or 0),
+        "targetIds": target_ids,
+        "targetIdsTruncated": len(_as_list(action.get("targetIds"))) > len(target_ids),
+    }
+
+
+def _summary_audit(value: Any) -> Any:
+    if isinstance(value, list):
+        return {"count": len(value)}
+    if isinstance(value, dict):
+        return {str(key): _summary_audit(row) for key, row in value.items()}
+    return value
+
+
+def _summary_automation(value: Any) -> dict[str, Any]:
+    automation = _as_dict(value)
+    return {
+        "summary": _as_dict(automation.get("summary")),
+        "actions": [
+            _summary_action(action)
+            for action in _as_list(automation.get("actions"))
+            if isinstance(action, dict)
+        ],
+        "audit": _summary_audit(automation.get("audit")),
+    }
+
+
+def summarize_registry_conflicts_payload(
+    payload: dict[str, Any],
+    *,
+    sample_limit: int = 5,
+) -> dict[str, Any]:
+    conflicts = [row for row in _as_list(payload.get("conflicts")) if isinstance(row, dict)]
+    limit = max(0, int(sample_limit or 0))
+    sampled_conflicts = [_summary_conflict_card(row) for row in conflicts[:limit]]
+    return {
+        "ok": bool(payload.get("ok", True)),
+        "summary": _as_dict(payload.get("summary")),
+        "triage": _as_dict(payload.get("triage")),
+        "review": _as_dict(payload.get("review")),
+        "automation": _summary_automation(payload.get("automation")),
+        "adjudication": _as_dict(payload.get("adjudication")),
+        "registrySummary": _as_dict(payload.get("registrySummary")),
+        "registryAutoHeal": _as_dict(payload.get("registryAutoHeal")),
+        "warnings": _as_list(payload.get("warnings")),
+        "conflicts": sampled_conflicts,
+        "conflictSampleCount": len(sampled_conflicts),
+        "conflictsTruncated": len(conflicts) > len(sampled_conflicts),
+        "detailRoute": "/registry/conflicts",
+        "summaryView": True,
+    }

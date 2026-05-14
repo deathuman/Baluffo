@@ -212,6 +212,10 @@ def _default_current_task_state_payload() -> JsonObject:
     return {"tasks": [], "count": 0}
 
 
+def _default_current_task_state_summary_payload() -> JsonObject:
+    return {"tasks": [], "count": 0, "summary": True}
+
+
 def _disabled_sync_config_status() -> JsonObject:
     return {"enabled": False, "ready": False}
 
@@ -337,6 +341,10 @@ class BridgeApi:
     get_lifecycle_run_history_rows: Callable[[], list[JsonObject]] = _empty_startup_metrics
     get_task_live_payload: Callable[[str], JsonObject] = _default_task_live_payload
     get_current_task_state_payload: Callable[[], JsonObject] = _default_current_task_state_payload
+    get_current_task_state_summary_payload: Callable[
+        [],
+        JsonObject,
+    ] = _default_current_task_state_summary_payload
     should_exit_for_owner_timeout: Callable[[], bool] = _always_false
 
     # Sync-specific helpers used by routes.

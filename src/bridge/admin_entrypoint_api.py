@@ -74,6 +74,7 @@ def build_bridge_api(config: Any) -> BridgeApi:
         get_lifecycle_run_history_rows=ops_api.get_lifecycle_run_history_rows,
         get_task_live_payload=ops_api.get_task_live_payload,
         get_current_task_state_payload=ops_api.get_current_task_state_payload,
+        get_current_task_state_summary_payload=ops_api.get_current_task_state_summary_payload,
         should_exit_for_owner_timeout=root_mod.owner_session_should_exit,
         load_alert_state=root_mod.load_alert_state,
         save_alert_state=root_mod.save_alert_state,

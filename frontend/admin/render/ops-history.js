@@ -1,4 +1,4 @@
-import { escapeHtml, setTooltip, tooltipAttrs } from "../../shared/ui/index.js";
+import { escapeHtml, setTooltip, tooltipAttrs } from "../../shared/ui/index.js?v=6";
 import {
   buildTaskRunAnalysis,
   buildTaskRunDiagnostics,

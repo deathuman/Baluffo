@@ -32,7 +32,7 @@ import {
   rememberJobsUrl
 } from "../state-sync/index.js";
 import { requestConfirmationDialog } from "../../local-data/profile-name-dialog.js";
-import { callJobsBridge as callJobsBridgeFromModule } from "./pipeline.js";
+import { callJobsBridge as callJobsBridgeFromModule } from "./pipeline.js?v=7";
 import { applyJobsAdminBridgeState as applyJobsAdminBridgeStateFromModule } from "./admin-bridge-state.js?v=5";
 import {
   buildSeenRowKey,
@@ -56,7 +56,7 @@ import {
   createFilterOptionsAccumulator,
   finalizeFilterOptions
 } from "./runtime/query.js?v=4";
-import { refreshJobsFeed, loadStartupPreviewJobsFeed } from "./feed.js";
+import { refreshJobsFeed, loadStartupPreviewJobsFeed } from "./feed.js?v=6";
 import { setProgressVisibility, setStatusText } from "./runtime/view.js";
 import {
   fullCountryName as fullCountryNameForJobs,
@@ -68,7 +68,7 @@ import {
   fetchJsonFromCandidates as fetchJsonFromCandidatesFromSources,
   renderDataSources as renderDataSourcesFromSources
 } from "./sources.js";
-import { composeJobsRuntime } from "./runtime/composition.js?v=7";
+import { composeJobsRuntime } from "./runtime/composition.js?v=9";
 import { createJobsBoot } from "./runtime/boot.js";
 import { createJobsPageFlow } from "./runtime/page-flow.js?v=5";
 

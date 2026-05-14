@@ -2,6 +2,38 @@ import { fetchBridge } from "../../shared/api-client.js";
 import { formatTaskProgressDetail } from "../../shared/task-progress.js";
 import { normalizeToken } from "../../shared/text-utils.js";
 
+export const JOBS_UPDATE_COPY = Object.freeze({
+  idleLabel: "Update jobs",
+  updatingLabel: "Updating jobs...",
+  tooltipDefault: "Find new openings and rebuild the local job list. This usually takes a few minutes; first updates can take up to 1 hour.",
+  tooltipWarm: "Find new openings and rebuild the local job list. This usually takes a few minutes.",
+  tooltipFirstRun: "First update: find new openings and rebuild the local job list. This can take up to 1 hour.",
+  tooltipBridgeUnavailable: "Update jobs is unavailable because the Admin bridge is not reachable. Start or restart the desktop app, then try again.",
+  tooltipBridgeTimedOut: "Update jobs is unavailable because the Admin bridge did not respond in time. Start or restart the desktop app, then try again.",
+  completedWithUpdates: "Job update completed. Reload jobs to load updated listings.",
+  startedToast: "Job update started.",
+  startFailed: "Could not start job update."
+});
+
+export function getJobsUpdateUnavailableTooltip(error) {
+  const normalized = String(error || "").trim().toLowerCase();
+  if (normalized.includes("timed out") || normalized.includes("timeout")) {
+    return JOBS_UPDATE_COPY.tooltipBridgeTimedOut;
+  }
+  return JOBS_UPDATE_COPY.tooltipBridgeUnavailable;
+}
+
+export function getJobsUpdateTooltip({
+  bridgeError = "",
+  firstRun = false,
+  firstRunKnown = false
+} = {}) {
+  if (String(bridgeError || "").trim()) return getJobsUpdateUnavailableTooltip(bridgeError);
+  if (firstRun) return JOBS_UPDATE_COPY.tooltipFirstRun;
+  if (firstRunKnown) return JOBS_UPDATE_COPY.tooltipWarm;
+  return JOBS_UPDATE_COPY.tooltipDefault;
+}
+
 function titleCaseWords(value) {
   return String(value || "")
     .split(/\s+/)
@@ -19,16 +51,27 @@ function normalizePipelineStage(payload) {
         .replace(/^running\s+/i, "")
         .replace(/\.\.\.$/, "")
         .trim();
-      if (cleaned) return titleCaseWords(cleaned);
+      if (cleaned) return getUserFacingUpdateStage(cleaned);
     }
   }
   const rawStage = normalizeToken(payload?.stage);
   if (rawStage) {
-    if (rawStage === "sync_push") return "Sync Push";
-    if (rawStage === "sync_pull") return "Sync Pull";
-    return titleCaseWords(rawStage.replace(/_/g, " "));
+    return getUserFacingUpdateStage(rawStage);
   }
-  return "Pipeline";
+  return "Updating jobs";
+}
+
+function getUserFacingUpdateStage(value) {
+  const normalized = normalizeToken(value);
+  if (normalized === "discovery" || normalized === "discover" || normalized === "source_discovery") {
+    return "Checking sources";
+  }
+  if (normalized === "fetch" || normalized === "fetching") return "Fetching job listings";
+  if (normalized === "sync" || normalized === "sync_push" || normalized === "sync_pull") {
+    return "Updating local jobs";
+  }
+  if (normalized === "starting" || normalized === "pipeline") return "Updating jobs";
+  return titleCaseWords(String(value || "").replace(/_/g, " "));
 }
 
 function clampProgressRatio(value) {
@@ -63,7 +106,7 @@ function ensureJobsPipelineButtonChrome(button, idleLabel) {
   const labelEl = ownerDocument.createElement("span");
   labelEl.className = "jobs-pipeline-btn-label";
   labelEl.dataset.ui = "jobs-pipeline-label";
-  labelEl.textContent = String(button.textContent || idleLabel || "Run Discovery + Fetch + Sync");
+  labelEl.textContent = String(button.textContent || idleLabel || JOBS_UPDATE_COPY.idleLabel);
 
   button.replaceChildren(fillEl, labelEl);
   return { fillEl, labelEl };
@@ -109,7 +152,7 @@ export function formatPipelineElapsed(startedAt, nowMs = Date.now()) {
 export function getPipelineRunningLabel(payload, nowMs = Date.now()) {
   const stage = normalizePipelineStage(payload);
   const elapsed = formatPipelineElapsed(payload?.startedAt, nowMs);
-  return elapsed ? `${stage} running... ${elapsed}` : `${stage} running...`;
+  return elapsed ? `${stage}... ${elapsed}` : `${stage}...`;
 }
 
 export function formatBlockingTaskProgressLabel(task) {
@@ -132,7 +175,7 @@ function getPipelineProgressLabel(payload) {
   }
   const stage = String(payload?.stage || "").trim();
   if (stage) return `Stage: ${stage}`;
-  return "Running pipeline...";
+  return JOBS_UPDATE_COPY.updatingLabel;
 }
 
 export function buildJobsPipelineButtonView(
@@ -142,6 +185,7 @@ export function buildJobsPipelineButtonView(
     disabled = false,
     buttonLabel = "",
     progressLabel = "",
+    buttonTooltip = "",
     isError = false,
     nowMs = Date.now()
   } = {}
@@ -165,7 +209,8 @@ export function buildJobsPipelineButtonView(
     active,
     disabled: Boolean(disabled),
     isError: Boolean(isError),
-    label: label || (active ? "Pipeline Running..." : "Run Discovery + Fetch + Sync"),
+    label: label || (active ? JOBS_UPDATE_COPY.updatingLabel : JOBS_UPDATE_COPY.idleLabel),
+    tooltip: String(buttonTooltip || JOBS_UPDATE_COPY.tooltipDefault).trim(),
     progressLabel: String(progressLabel || getPipelineProgressLabel(payload)).trim(),
     progressMode: fillState.mode,
     progressFill: fillState.fill
@@ -180,6 +225,7 @@ export function updateJobsPipelineUi(
     disabled = false,
     buttonLabel = "",
     progressLabel = "",
+    buttonTooltip = "",
     isError = false
   } = {}
 ) {
@@ -187,9 +233,9 @@ export function updateJobsPipelineUi(
   if (!jobsPipelineRunBtn) return;
 
   if (!jobsPipelineRunBtn.dataset.idleLabel) {
-    jobsPipelineRunBtn.dataset.idleLabel = String(jobsPipelineRunBtn.textContent || "Run Discovery + Fetch + Sync");
+    jobsPipelineRunBtn.dataset.idleLabel = String(jobsPipelineRunBtn.textContent || JOBS_UPDATE_COPY.idleLabel);
   }
-  const idleLabel = String(jobsPipelineRunBtn.dataset.idleLabel || "Run Discovery + Fetch + Sync");
+  const idleLabel = String(jobsPipelineRunBtn.dataset.idleLabel || JOBS_UPDATE_COPY.idleLabel);
   const chrome = ensureJobsPipelineButtonChrome(jobsPipelineRunBtn, idleLabel);
   const fillEl = chrome?.fillEl || null;
   const labelEl = chrome?.labelEl || null;
@@ -198,10 +244,11 @@ export function updateJobsPipelineUi(
     disabled,
     buttonLabel,
     progressLabel,
+    buttonTooltip,
     isError
   });
 
-  const nextLabel = view.label || (view.active ? "Pipeline Running..." : idleLabel);
+  const nextLabel = view.label || (view.active ? JOBS_UPDATE_COPY.updatingLabel : idleLabel);
   if (labelEl) {
     labelEl.textContent = nextLabel;
   } else {
@@ -210,6 +257,11 @@ export function updateJobsPipelineUi(
   jobsPipelineRunBtn.disabled = Boolean(view.disabled);
   jobsPipelineRunBtn.setAttribute("aria-disabled", jobsPipelineRunBtn.disabled ? "true" : "false");
   jobsPipelineRunBtn.setAttribute("aria-busy", view.active ? "true" : "false");
+  if (view.tooltip) {
+    jobsPipelineRunBtn.setAttribute?.("data-tooltip", view.tooltip);
+    jobsPipelineRunBtn.removeAttribute?.("title");
+    if (jobsPipelineRunBtn.dataset) jobsPipelineRunBtn.dataset.tooltip = view.tooltip;
+  }
   jobsPipelineRunBtn.classList.toggle("running", Boolean(view.active));
   jobsPipelineRunBtn.classList.toggle("determinate", view.progressMode === "determinate");
   jobsPipelineRunBtn.classList.toggle("indeterminate", view.progressMode === "indeterminate");

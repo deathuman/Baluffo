@@ -15,7 +15,10 @@ from pydantic import ValidationError as PydanticValidationError
 from src.bridge.api import BridgeApi
 from src.bridge.fetch_report_review_state import load_fetch_report_with_dedup_review_state
 from src.bridge.registry_conflict_adjudication import overlay_adjudication
-from src.bridge.registry_conflicts import load_registry_conflicts_payload
+from src.bridge.registry_conflicts import (
+    load_registry_conflicts_payload,
+    summarize_registry_conflicts_payload,
+)
 from src.bridge.routes.error_boundary import (
     run_route_boundary,
     safe_bridge_log,
@@ -1147,7 +1150,11 @@ def handle_get(
         return True
 
     if path == "/ops/task-state":
-        handler.send_json(api.get_current_task_state_payload())
+        view = str((query.get("view") or [""])[0] or "").strip().lower()
+        if view == "summary":
+            handler.send_json(api.get_current_task_state_summary_payload())
+        else:
+            handler.send_json(api.get_current_task_state_payload())
         return True
 
     if path.startswith("/ops/task-live/"):
@@ -1246,6 +1253,7 @@ def handle_get(
         return True
 
     if path == "/registry/conflicts":
+        view = str((query.get("view") or [""])[0] or "").strip().lower()
         state = api.load_state()
         source_state_path = Path(api.JOBS_FETCH_REPORT_PATH).with_name("jobs-source-state.json")
         adjudication = api.load_registry_conflict_adjudication()
@@ -1259,6 +1267,8 @@ def handle_get(
         payload["registrySummary"] = api.summarize_state(state)
         payload["registryAutoHeal"] = api.get_registry_auto_heal_report()
         payload["ok"] = True
+        if view == "summary":
+            payload = summarize_registry_conflicts_payload(payload)
         handler.send_json(payload)
         return True
 

@@ -370,6 +370,9 @@ def build_admin_bridge_api(config: Any | None = None) -> BridgeApi:
         get_projected_run_history=admin_bridge._get_ops_api().get_projected_run_history,
         get_lifecycle_run_history_rows=admin_bridge._get_ops_api().get_lifecycle_run_history_rows,
         get_current_task_state_payload=admin_bridge._get_ops_api().get_current_task_state_payload,
+        get_current_task_state_summary_payload=(
+            admin_bridge._get_ops_api().get_current_task_state_summary_payload
+        ),
         should_exit_for_owner_timeout=admin_bridge.owner_session_should_exit,
         load_alert_state=admin_bridge.load_alert_state,
         save_alert_state=admin_bridge.save_alert_state,

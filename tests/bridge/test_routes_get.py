@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -377,6 +378,38 @@ def test_ops_task_state(tmp_path: Path) -> None:
     assert result is True
     assert handler.sent[-1]["status"] == 200
     assert handler.sent[-1]["payload"]["count"] == 1
+
+
+def test_ops_task_state_summary_route_uses_bounded_payload(tmp_path: Path) -> None:
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
+    api.get_current_task_state_payload = lambda: {
+        "tasks": [{"taskType": "fetch", "runId": "full", "workItems": [{"id": "full"}]}],
+        "count": 1,
+    }
+    api.get_current_task_state_summary_payload = lambda: {
+        "tasks": [
+            {
+                "taskType": "fetch",
+                "runId": "fetch_1",
+                "active": True,
+                "workItemCount": 5000,
+                "workItemsTruncated": True,
+            }
+        ],
+        "count": 1,
+        "summary": True,
+    }
+
+    handler = FakeHandler()
+    result = handle_get(handler, api=api, path="/ops/task-state", query={"view": ["summary"]})
+
+    assert result is True
+    payload = handler.sent[-1]["payload"]
+    assert payload["summary"] is True
+    assert payload["tasks"][0]["runId"] == "fetch_1"
+    assert "workItems" not in payload["tasks"][0]
+    assert len(json.dumps(payload).encode("utf-8")) < 256 * 1024
 
 
 def test_ops_dashboard_health_route_uses_dashboard_payload(tmp_path: Path) -> None:

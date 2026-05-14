@@ -3,6 +3,7 @@ from pathlib import Path
 from unittest import mock
 
 from src.ship import desktop_app
+from src.ship.desktop_app import session as desktop_session
 
 
 def test_watch_browser_session_uses_heartbeat_when_no_browser_process() -> None:
@@ -236,6 +237,34 @@ def test_watch_browser_session_background_recovery_waits_for_active_work_to_fini
         )
 
     assert result == "active_work_completed"
+
+
+def test_load_active_critical_desktop_tasks_uses_summary_route() -> None:
+    called_urls: list[str] = []
+
+    def fake_fetch_json(url: str, timeout_s: float = 10.0) -> dict[str, object]:  # noqa: ANN001
+        called_urls.append(url)
+        return {
+            "summary": True,
+            "tasks": [
+                {
+                    "taskType": "fetch",
+                    "runId": "fetch_live_1",
+                    "status": "running",
+                    "active": True,
+                }
+            ],
+        }
+
+    with mock.patch.object(desktop_session, "fetch_json", side_effect=fake_fetch_json):
+        active_tasks = desktop_app._load_active_critical_desktop_tasks(
+            Path("C:/tmp"),
+            bridge_port=8877,
+            allow_disk_fallback=False,
+        )
+
+    assert called_urls == ["http://127.0.0.1:8877/ops/task-state?view=summary"]
+    assert active_tasks == [{"taskType": "fetch", "runId": "fetch_live_1", "status": "running"}]
 
 
 def test_watch_browser_session_background_recovery_exits_when_bridge_is_unavailable() -> None:

@@ -513,7 +513,12 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
                 _apply_startup_threshold_gate(report, startup_profile=startup_profile)
 
         if bool(args.profile_only):
-            report["ok"] = all(str(row.get("status")) == "passed" for row in report["scenarios"])
+            record_only = bool(getattr(args, "profile_record_only", False))
+            report["ok"] = (
+                True
+                if record_only
+                else all(str(row.get("status")) == "passed" for row in report["scenarios"])
+            )
             if not report["ok"] and not report["failure"]:
                 report["failure"] = deps.build_failure_payload(
                     "startup-profile",

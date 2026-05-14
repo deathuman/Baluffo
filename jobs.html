@@ -7,7 +7,7 @@
   <link rel="icon" href="favicon.ico" sizes="any">
   <link rel="stylesheet" href="styles/base.css">
   <link rel="stylesheet" href="styles/components.css">
-  <link rel="stylesheet" href="styles/jobs.css?v=7">
+  <link rel="stylesheet" href="styles/jobs.css?v=8">
 </head>
 <body class="jobs-page">
   <button class="btn back-btn theme-toggle-btn global-theme-toggle" type="button" aria-label="Switch theme">Theme</button>
@@ -197,8 +197,8 @@
     <div class="jobs-toolbar">
       <p id="results-summary" data-ui="results-summary" class="results-summary" aria-live="polite"></p>
       <div class="toolbar-actions">
-        <button id="refresh-jobs-btn" data-ui="refresh-jobs-btn" class="btn clear-filters-btn" data-tooltip="Reload the current jobs feed from local data.">Refresh Jobs</button>
-        <button id="jobs-pipeline-run-btn" data-ui="jobs-pipeline-run-btn" class="btn clear-filters-btn jobs-pipeline-btn" type="button" data-tooltip="Runs discovery, fetch, and sync pipeline. Can take more than 5 minutes.">Run Discovery + Fetch + Sync</button>
+        <button id="refresh-jobs-btn" data-ui="refresh-jobs-btn" class="btn clear-filters-btn" data-tooltip="Reload the current local jobs data without checking sources.">Reload</button>
+        <button id="jobs-pipeline-run-btn" data-ui="jobs-pipeline-run-btn" class="btn clear-filters-btn jobs-pipeline-btn" type="button" data-tooltip="Find new openings and rebuild the local job list. This usually takes a few minutes; first updates can take up to 1 hour.">Update jobs</button>
         <span id="refresh-jobs-needed-badge" data-ui="refresh-jobs-needed-badge" class="refresh-jobs-needed-badge hidden" aria-live="polite">Updates found</span>
         <span id="jobs-last-updated" data-ui="jobs-last-updated" class="jobs-last-updated" aria-live="polite"></span>
       </div>
@@ -236,6 +236,6 @@
 
   <script src="frontend-runtime-config.js?v=2"></script>
   <script src="theme.js" defer></script>
-  <script type="module" src="frontend/jobs/index.js?v=7"></script>
+  <script type="module" src="frontend/jobs/index.js?v=9"></script>
 </body>
 </html>

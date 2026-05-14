@@ -7,15 +7,22 @@ import {
   renderAdminOpsKpis,
   renderAdminOpsSchedule,
   renderAdminOpsTrends
-} from "../../render.js?v=12";
+} from "../../render.js?v=13";
 import {
   filterSourcePolicyReviewPairs,
   getMigrationLinkLinkedActions,
   getMigrationLinkReviewActions,
   renderAdminSourcePolicyReview
-} from "../../render/source-policy-review.js";
-import { renderAdminRegistryConflicts } from "../../render/registry-conflicts.js";
-import { setTooltip } from "../../../shared/ui/index.js";
+} from "../../render/source-policy-review.js?v=6";
+import { renderAdminRegistryConflicts } from "../../render/registry-conflicts.js?v=6";
+import { setTooltip } from "../../../shared/ui/index.js?v=6";
+
+const OPS_TASK_STATE_SUMMARY_PATH = "/ops/task-state?view=summary";
+const OPS_HISTORY_DETAIL_PATH = "/ops/history?limit=80";
+const OPS_FETCHER_METRICS_DETAIL_PATH = "/ops/fetcher-metrics?windowRuns=80";
+const SOURCE_POLICY_DETAIL_PATH = "/source-policy/recommendations";
+const REGISTRY_CONFLICTS_SUMMARY_PATH = "/registry/conflicts?view=summary";
+const REGISTRY_CONFLICTS_DETAIL_PATH = "/registry/conflicts";
 
 function maybeUnrefTimer(timer) {
   timer?.unref?.();
@@ -179,6 +186,9 @@ export function createOpsHealthController({
 }) {
   let initialBridgeReadyResolved = false;
   let opsRenderToken = 0;
+  let opsOverviewDetailLoad = null;
+  let sourcePolicyDetailLoad = null;
+  let registryConflictsDetailLoad = null;
 
   function getOpsTabPanels() {
     return {
@@ -212,6 +222,7 @@ export function createOpsHealthController({
         panel.setAttribute?.("hidden", "");
       }
     });
+    return loadActiveOpsTabDetail(activeKey).catch(() => {});
   }
 
   function setupOpsTabs() {
@@ -399,6 +410,13 @@ export function createOpsHealthController({
   }
 
   function renderRegistryConflictsQueue(payload = state.latestRegistryConflictsPayload || {}) {
+    if (payload?.summaryView && refs.adminRegistryConflictsReviewEl) {
+      const conflictCount = Number(payload?.summary?.conflictCount || 0);
+      refs.adminRegistryConflictsReviewEl.innerHTML = conflictCount > 0
+        ? `<div class="muted">${escapeHtml(`${conflictCount.toLocaleString()} registry conflict(s) detected. Details load when this panel is opened.`)}</div>`
+        : '<div class="muted">No registry conflicts detected.</div>';
+      return;
+    }
     const adjudication = getObjectValue(payload?.adjudication);
     const conflictCheckRunning = Boolean(state.registryConflictCheckRunning)
       || String(adjudication?.status || "") === "running";
@@ -519,6 +537,226 @@ export function createOpsHealthController({
     });
   }
 
+  function getRenderScheduler() {
+    return typeof renderScheduler === "function"
+      ? renderScheduler
+      : callback => {
+        callback();
+        return () => {};
+      };
+  }
+
+  function getCachedHistoryPayload() {
+    return state.latestOpsHistoryPayload
+      && typeof state.latestOpsHistoryPayload === "object"
+      && !Array.isArray(state.latestOpsHistoryPayload)
+      ? state.latestOpsHistoryPayload
+      : { runs: [] };
+  }
+
+  function getCachedSourcePolicyPayload() {
+    return state.latestSourcePolicyRecommendationsPayload
+      && typeof state.latestSourcePolicyRecommendationsPayload === "object"
+      && !Array.isArray(state.latestSourcePolicyRecommendationsPayload)
+      ? state.latestSourcePolicyRecommendationsPayload
+      : { recommendations: { pairs: [] } };
+  }
+
+  function getCachedRegistryConflictsPayload() {
+    return state.latestRegistryConflictsPayload
+      && typeof state.latestRegistryConflictsPayload === "object"
+      && !Array.isArray(state.latestRegistryConflictsPayload)
+      ? state.latestRegistryConflictsPayload
+      : { summary: { conflictCount: 0 }, conflicts: [] };
+  }
+
+  function buildFetcherMetricsPayload(fetcherMetrics = state.latestOpsFetcherMetricsPayload || {}, health = state.latestOpsHealthCache || {}) {
+    const frontendPerfCounters = getFrontendPerfCounters();
+    return {
+      ...(fetcherMetrics && typeof fetcherMetrics === "object" ? fetcherMetrics : {}),
+      frontendPerfCounters: (
+        frontendPerfCounters
+        && typeof frontendPerfCounters === "object"
+        && !Array.isArray(frontendPerfCounters)
+      )
+        ? frontendPerfCounters
+        : {},
+      latestRun: {
+        ...(
+          fetcherMetrics?.latestRun && typeof fetcherMetrics.latestRun === "object"
+            ? fetcherMetrics.latestRun
+            : {}
+        ),
+        conservativeStaticCleanupProposals:
+          health?.kpis?.conservativeStaticCleanupProposals
+          && typeof health.kpis.conservativeStaticCleanupProposals === "object"
+            ? health.kpis.conservativeStaticCleanupProposals
+            : (
+              fetcherMetrics?.latestRun?.conservativeStaticCleanupProposals
+              && typeof fetcherMetrics.latestRun.conservativeStaticCleanupProposals === "object"
+                ? fetcherMetrics.latestRun.conservativeStaticCleanupProposals
+                : {}
+            )
+      }
+    };
+  }
+
+  function rerenderOpsTabBadges() {
+    renderOpsTabBadges(refs, {
+      health: state.latestOpsHealthCache || {},
+      discoveryReport: state.latestDiscoveryReportCache || {},
+      sourcePolicyRecommendations: getCachedSourcePolicyPayload(),
+      registryConflictsPayload: getCachedRegistryConflictsPayload(),
+      fetcherMetricsPayload: buildFetcherMetricsPayload()
+    });
+  }
+
+  function renderDeferredOverviewDetails(renderToken = opsRenderToken) {
+    if (renderToken !== opsRenderToken) return;
+    const historyPayload = getCachedHistoryPayload();
+    const historyRuns = Array.isArray(historyPayload?.runs) ? historyPayload.runs : [];
+    const taskStatePayload = state.latestOpsTaskStatePayload || { tasks: [] };
+    const runModel = deriveAdminRunsModel(
+      {
+        taskState: taskStatePayload || {},
+        historyRuns
+      },
+      Date.now()
+    );
+    const fetcherMetricsPayload = buildFetcherMetricsPayload();
+    rerenderOpsTabBadges();
+    getRenderScheduler()(() => {
+      if (renderToken !== opsRenderToken) return;
+      renderAdminOpsFetcherMetricsImpl(
+        refs.adminOpsFetcherMetricsEl,
+        fetcherMetricsPayload,
+        deriveFetcherFailureSummary(state.latestFetcherReportCache || {}),
+        {
+          onDedupReviewAction: handleDedupReviewAction,
+          onCopySectionDiagnostics: handleCopySectionDiagnostics,
+          runModel
+        }
+      );
+      renderAdminOpsDedupListsImpl(refs.adminOpsDedupListsEl, fetcherMetricsPayload, {
+        onDedupReviewAction: handleDedupReviewAction
+      });
+      renderAdminOpsHistoryImpl(refs.adminOpsHistoryEl, runModel, {
+        onCopyRunDiagnostics: handleCopyRunDiagnostics,
+        waitingForTaskState: Boolean(state.waitingForTaskState),
+        taskStateUnavailable: Boolean(state.taskStateUnavailable)
+      });
+      renderAdminOpsTrendsImpl(refs.adminOpsTrendsEl, historyRuns);
+    });
+  }
+
+  function loadOpsOverviewDetailData(renderToken = opsRenderToken) {
+    const detailLoad = (async () => {
+      const [historyResult, fetcherMetricsResult] = await Promise.allSettled([
+        getBridge(OPS_HISTORY_DETAIL_PATH),
+        getBridge(OPS_FETCHER_METRICS_DETAIL_PATH)
+      ]);
+      let changed = false;
+      if (
+        historyResult.status === "fulfilled"
+        && historyResult.value
+        && typeof historyResult.value === "object"
+        && !Array.isArray(historyResult.value)
+      ) {
+        state.latestOpsHistoryPayload = historyResult.value;
+        changed = true;
+      }
+      if (
+        fetcherMetricsResult.status === "fulfilled"
+        && fetcherMetricsResult.value
+        && typeof fetcherMetricsResult.value === "object"
+        && !Array.isArray(fetcherMetricsResult.value)
+      ) {
+        state.latestOpsFetcherMetricsPayload = fetcherMetricsResult.value;
+        changed = true;
+      }
+      if (changed) renderDeferredOverviewDetails(renderToken);
+    })().finally(() => {
+      if (opsOverviewDetailLoad === detailLoad) {
+        opsOverviewDetailLoad = null;
+      }
+    });
+    opsOverviewDetailLoad = detailLoad;
+    return opsOverviewDetailLoad;
+  }
+
+  function scheduleOpsOverviewDetailData(renderToken = opsRenderToken) {
+    maybeUnrefTimer(setTimeout(() => {
+      loadOpsOverviewDetailData(renderToken).catch(() => {});
+    }, 0));
+  }
+
+  async function loadSourcePolicyDetail({ force = false } = {}) {
+    if (!force && state.sourcePolicyRecommendationsDetailLoaded) {
+      return getCachedSourcePolicyPayload();
+    }
+    if (sourcePolicyDetailLoad) return sourcePolicyDetailLoad;
+    sourcePolicyDetailLoad = (async () => {
+      try {
+        const payload = await getBridge(SOURCE_POLICY_DETAIL_PATH);
+        const sourcePolicyRecommendations = payload
+          && typeof payload === "object"
+          && !Array.isArray(payload)
+          ? payload
+          : { recommendations: { pairs: [] } };
+        state.latestSourcePolicyRecommendationsPayload = sourcePolicyRecommendations;
+        state.sourcePolicyRecommendationsDetailLoaded = true;
+        renderSourcePolicyReviewQueue(sourcePolicyRecommendations);
+        rerenderOpsTabBadges();
+        return sourcePolicyRecommendations;
+      } catch (err) {
+        if (refs.adminSourcePolicyReviewEl) {
+          refs.adminSourcePolicyReviewEl.innerHTML = `<div class="muted">${escapeHtml(`Could not load source policy details: ${getErrorMessage(err)}`)}</div>`;
+        }
+        return null;
+      }
+    })().finally(() => {
+      sourcePolicyDetailLoad = null;
+    });
+    return sourcePolicyDetailLoad;
+  }
+
+  async function loadRegistryConflictsDetail({ force = false } = {}) {
+    if (!force && state.registryConflictsDetailLoaded) {
+      return getCachedRegistryConflictsPayload();
+    }
+    if (registryConflictsDetailLoad) return registryConflictsDetailLoad;
+    registryConflictsDetailLoad = (async () => {
+      try {
+        const payload = await getBridge(REGISTRY_CONFLICTS_DETAIL_PATH);
+        const registryConflictsPayload = payload
+          && typeof payload === "object"
+          && !Array.isArray(payload)
+          ? payload
+          : { summary: { conflictCount: 0 }, conflicts: [] };
+        state.latestRegistryConflictsPayload = registryConflictsPayload;
+        state.registryConflictsDetailLoaded = true;
+        state.registryConflictCheckRunning = String(registryConflictsPayload?.adjudication?.status || "") === "running";
+        renderRegistryConflictsQueue(registryConflictsPayload);
+        rerenderOpsTabBadges();
+        return registryConflictsPayload;
+      } catch (err) {
+        if (refs.adminRegistryConflictsReviewEl) {
+          refs.adminRegistryConflictsReviewEl.innerHTML = `<div class="muted">${escapeHtml(`Could not load registry conflict details: ${getErrorMessage(err)}`)}</div>`;
+        }
+        return null;
+      }
+    })().finally(() => {
+      registryConflictsDetailLoad = null;
+    });
+    return registryConflictsDetailLoad;
+  }
+
+  function loadActiveOpsTabDetail(tabKey = state.adminOpsActiveTab || "overview", { force = false } = {}) {
+    if (tabKey === "source-policy") return loadSourcePolicyDetail({ force });
+    if (tabKey === "registry-conflicts") return loadRegistryConflictsDetail({ force });
+    return Promise.resolve(null);
+  }
+
   async function loadOpsHealthData(options = {}) {
     if (state.adminBusyState.opsLoad) {
       if (options?.fromPoll) scheduleOpsHealthPolling(idlePollIntervalMs);
@@ -538,18 +776,12 @@ export function createOpsHealthController({
     try {
       const [
         healthResult,
-        historyResult,
         taskStateResult,
-        fetcherMetricsResult,
-        sourcePolicyResult,
         registryConflictsResult
       ] = await Promise.allSettled([
         getBridge("/ops/dashboard-health"),
-        getBridge("/ops/history?limit=80"),
-        getBridge("/ops/task-state"),
-        getBridge("/ops/fetcher-metrics?windowRuns=80"),
-        getBridge("/source-policy/recommendations"),
-        getBridge("/registry/conflicts")
+        getBridge(OPS_TASK_STATE_SUMMARY_PATH),
+        getBridge(REGISTRY_CONFLICTS_SUMMARY_PATH)
       ]);
       const health = (
         healthResult.status === "fulfilled"
@@ -559,49 +791,15 @@ export function createOpsHealthController({
       )
         ? healthResult.value
         : state.latestOpsHealthCache;
-      const historyPayload = (
-        historyResult.status === "fulfilled"
-        && historyResult.value
-        && typeof historyResult.value === "object"
-        && !Array.isArray(historyResult.value)
-      )
-        ? historyResult.value
-        : (
-          state.latestOpsHistoryPayload
-          && typeof state.latestOpsHistoryPayload === "object"
-          && !Array.isArray(state.latestOpsHistoryPayload)
-            ? state.latestOpsHistoryPayload
-            : { runs: [] }
-        );
       if (healthResult.status === "fulfilled" && health && typeof health === "object") {
         state.latestOpsHealthCache = health || null;
       }
-      if (historyResult.status === "fulfilled" && historyPayload && typeof historyPayload === "object") {
-        state.latestOpsHistoryPayload = historyPayload;
-      }
+      const historyPayload = getCachedHistoryPayload();
       const historyRuns = Array.isArray(historyPayload?.runs) ? historyPayload.runs : [];
       const taskStatePayload = taskStateController.resolveTaskStatePayload(taskStateResult);
+      state.latestOpsTaskStatePayload = taskStatePayload || {};
       state.taskStateUnavailable = Boolean(taskStatePayload?.taskStateUnavailable);
-      const fetcherMetrics = fetcherMetricsResult.status === "fulfilled"
-        ? fetcherMetricsResult.value
-        : null;
-      const sourcePolicyRecommendations = (
-        sourcePolicyResult.status === "fulfilled"
-        && sourcePolicyResult.value
-        && typeof sourcePolicyResult.value === "object"
-        && !Array.isArray(sourcePolicyResult.value)
-      )
-        ? sourcePolicyResult.value
-        : (
-          state.latestSourcePolicyRecommendationsPayload
-          && typeof state.latestSourcePolicyRecommendationsPayload === "object"
-          && !Array.isArray(state.latestSourcePolicyRecommendationsPayload)
-            ? state.latestSourcePolicyRecommendationsPayload
-            : { recommendations: { pairs: [] } }
-        );
-      if (sourcePolicyResult.status === "fulfilled" && sourcePolicyRecommendations && typeof sourcePolicyRecommendations === "object") {
-        state.latestSourcePolicyRecommendationsPayload = sourcePolicyRecommendations;
-      }
+      const sourcePolicyRecommendations = getCachedSourcePolicyPayload();
       const registryConflictsPayload = (
         registryConflictsResult.status === "fulfilled"
         && registryConflictsResult.value
@@ -609,15 +807,10 @@ export function createOpsHealthController({
         && !Array.isArray(registryConflictsResult.value)
       )
         ? registryConflictsResult.value
-        : (
-          state.latestRegistryConflictsPayload
-          && typeof state.latestRegistryConflictsPayload === "object"
-          && !Array.isArray(state.latestRegistryConflictsPayload)
-            ? state.latestRegistryConflictsPayload
-            : { summary: { conflictCount: 0 }, conflicts: [] }
-        );
+        : getCachedRegistryConflictsPayload();
       if (registryConflictsResult.status === "fulfilled" && registryConflictsPayload && typeof registryConflictsPayload === "object") {
         state.latestRegistryConflictsPayload = registryConflictsPayload;
+        state.registryConflictsDetailLoaded = !registryConflictsPayload?.summaryView;
         state.registryConflictCheckRunning = String(registryConflictsPayload?.adjudication?.status || "") === "running";
       }
       const runModel = deriveAdminRunsModel(
@@ -636,34 +829,10 @@ export function createOpsHealthController({
       const registryConflictRunning = String(registryConflictsPayload?.adjudication?.status || "") === "running";
       taskStateController.syncLiveBusyFlags(liveTypes);
       taskStateController.maybeAttachLiveTaskRows(liveTaskRows);
-      const frontendPerfCounters = getFrontendPerfCounters();
-      const fetcherMetricsPayload = {
-        ...(fetcherMetrics && typeof fetcherMetrics === "object" ? fetcherMetrics : {}),
-        frontendPerfCounters: (
-          frontendPerfCounters
-          && typeof frontendPerfCounters === "object"
-          && !Array.isArray(frontendPerfCounters)
-        )
-          ? frontendPerfCounters
-          : {},
-        latestRun: {
-          ...(
-            fetcherMetrics?.latestRun && typeof fetcherMetrics.latestRun === "object"
-              ? fetcherMetrics.latestRun
-              : {}
-          ),
-          conservativeStaticCleanupProposals:
-            health?.kpis?.conservativeStaticCleanupProposals
-            && typeof health.kpis.conservativeStaticCleanupProposals === "object"
-              ? health.kpis.conservativeStaticCleanupProposals
-              : (
-                fetcherMetrics?.latestRun?.conservativeStaticCleanupProposals
-                && typeof fetcherMetrics.latestRun.conservativeStaticCleanupProposals === "object"
-                  ? fetcherMetrics.latestRun.conservativeStaticCleanupProposals
-                  : {}
-              )
-        }
-      };
+      const fetcherMetricsPayload = buildFetcherMetricsPayload(
+        state.latestOpsFetcherMetricsPayload || {},
+        health || {}
+      );
 
       renderAdminOpsAlertsImpl(refs.adminOpsAlertsEl, health?.alerts || [], {
         onAck: async alertId => {
@@ -685,16 +854,10 @@ export function createOpsHealthController({
         registryConflictsPayload,
         fetcherMetricsPayload
       });
-      const scheduleRender = typeof renderScheduler === "function"
-        ? renderScheduler
-        : callback => {
-          callback();
-          return () => {};
-        };
-      scheduleRender(() => {
+      getRenderScheduler()(() => {
         if (renderToken !== opsRenderToken) return;
-        renderSourcePolicyReviewQueue(sourcePolicyRecommendations);
-        renderRegistryConflictsQueue(registryConflictsPayload);
+        renderSourcePolicyReviewQueue(getCachedSourcePolicyPayload());
+        renderRegistryConflictsQueue(getCachedRegistryConflictsPayload());
         renderAdminOpsFetcherMetricsImpl(
           refs.adminOpsFetcherMetricsEl,
           fetcherMetricsPayload,
@@ -717,6 +880,17 @@ export function createOpsHealthController({
       });
       adminDispatch.dispatch({ type: adminActions.OPS_REFRESHED, payload: { at: new Date().toISOString() } });
       scheduleOpsHealthPolling(getOpsPollIntervalMs(liveTypes.size > 0 || registryConflictRunning));
+      scheduleOpsOverviewDetailData(renderToken);
+      const shouldForceActiveDetail = Boolean(options?.forceDetails)
+        || (!options?.fromPoll && ["source-policy", "registry-conflicts"].includes(state.adminOpsActiveTab));
+      const activeDetailLoad = loadActiveOpsTabDetail(state.adminOpsActiveTab || "overview", {
+        force: shouldForceActiveDetail
+      });
+      if (shouldForceActiveDetail) {
+        await activeDetailLoad.catch(() => {});
+      } else {
+        activeDetailLoad.catch(() => {});
+      }
     } catch (err) {
       taskStateController.resetLifecycleTaskState();
       setOpsPlaceholders(`Ops health unavailable: ${getErrorMessage(err)}`);

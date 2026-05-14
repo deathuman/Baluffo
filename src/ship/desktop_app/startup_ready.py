@@ -65,6 +65,7 @@ def _startup_handoff_signal_events() -> dict[str, str]:
         "saved_auth_ready": "startup_metric",
         "saved_first_interactive": "startup_metric",
         "admin_ready": "startup_metric",
+        "admin_first_interactive": "startup_metric",
     }
 
 

@@ -29,7 +29,7 @@ The Jobs frontend boot path remains static JSON plus IndexedDB. Desktop local us
 
 | Category | Target authority | Compatibility/export surface | Notes |
 |---|---|---|---|
-| Current task liveness | SQLite `task_runs` after M3 cutover | `/ops/task-state` JSON projection | JSON lifecycle files remain compatibility exports and rollback fallback. |
+| Current task liveness | SQLite `task_runs` after M3 cutover | `/ops/task-state?view=summary` hot-path projection; `/ops/task-state` full diagnostic projection | JSON lifecycle files remain compatibility exports and rollback fallback. |
 | Live task events | SQLite `task_events` after M3 cutover | `/ops/task-live/<taskType>` | Recent bounded event windows only. |
 | Sync runs/history | SQLite `sync_runs` after M3 cutover | Existing history/task summaries | Includes sync size and shard metrics. |
 | Fetch source progress | SQLite `source_runs` after M4 cutover | `jobs-fetch-tasks.json` compatibility while needed | Live UI keeps compact current progress; terminal source details hydrate from SQLite/archive. |
@@ -178,7 +178,8 @@ Hot-path payload growth must be impossible by test.
 | task history row | 64 KiB |
 | live task summary | 256 KiB |
 | compact fetch report | 1 MiB |
-| `/ops/task-state` response | 256 KiB |
+| `/ops/task-state?view=summary` response | 256 KiB |
+| `/registry/conflicts?view=summary` response | 256 KiB |
 | `/ops/task-live/fetch` response | 1 MiB unless paginated |
 | per sync shard | 5-10 MiB |
 | compressed debug archive | warning at 25 MiB |

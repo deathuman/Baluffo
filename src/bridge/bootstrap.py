@@ -68,6 +68,7 @@ def build_bridge_api(
     get_task_live_payload: Callable[[str], dict[str, Any]] = _empty_task_live_payload,
     check_registry_conflicts: Callable[[dict[str, Any] | None], dict[str, Any]] | None = None,
     load_registry_conflict_adjudication: Callable[[], dict[str, Any]] | None = None,
+    get_current_task_state_summary_payload: Callable[[], dict[str, Any]] | None = None,
 ) -> BridgeApi:
     return BridgeApi(
         runtime_config=config,
@@ -123,6 +124,9 @@ def build_bridge_api(
         get_lifecycle_run_history_rows=get_lifecycle_run_history_rows,
         get_task_live_payload=get_task_live_payload,
         get_current_task_state_payload=get_current_task_state_payload,
+        get_current_task_state_summary_payload=(
+            get_current_task_state_summary_payload or get_current_task_state_payload
+        ),
         should_exit_for_owner_timeout=should_exit_for_owner_timeout,
         load_alert_state=load_alert_state,
         save_alert_state=save_alert_state,

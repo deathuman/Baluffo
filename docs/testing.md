@@ -68,12 +68,12 @@ Use the repo-native perf entrypoints before adding new benchmark tooling:
 | Complete benchmark report | `npm run perf:complete` | `_out/perf-complete/summary.json` plus the timestamped run directory |
 | Slowest Python tests | `npm run perf:py:timing` | Console output only |
 | Isolated discovery sanity benchmark | `npm run perf:discovery:benchmark` | `_out/perf-sanity-discovery/` |
-| Packaged desktop cold startup probe | `npm run perf:startup:cold` | `.tmp/packaged-desktop-smoke/` and `data/packaged-desktop-smoke-report.json` |
-| Packaged desktop warm startup probe | `npm run perf:startup:warm` | `.tmp/packaged-desktop-smoke/` and `data/packaged-desktop-smoke-report.json` |
+| Packaged Jobs cold/warm startup probe | `npm run perf:startup:cold` / `npm run perf:startup:warm` | `.tmp/packaged-desktop-smoke/` and `data/packaged-desktop-smoke-report.json` |
+| Packaged Admin cold/warm startup probe | `npm run perf:startup:admin:cold` / `npm run perf:startup:admin:warm` | `.tmp/packaged-desktop-smoke/` and `data/packaged-desktop-smoke-report.json` |
 
 Notes:
 - Prefer repo-local artifact roots such as `.tmp/` and `_out/` for new perf workflows; avoid `%LOCALAPPDATA%\\Temp` for benchmark or runtime-state outputs in this Windows-first repo.
-- Use `npm run perf:complete` when asked for the most complete benchmark. It aggregates discovery/fetch medians, frontend boot traces, cold/warm packaged startup, packaged sync push/pull timings, artifact sizes, best-effort process-tree RAM, and top process-level RAM contributors.
+- Use `npm run perf:complete` when asked for the most complete benchmark. It aggregates discovery/fetch medians, frontend boot traces, Jobs and Admin cold/warm packaged startup, packaged sync push/pull timings, artifact sizes, best-effort process-tree RAM, and top process-level RAM contributors.
 - Current safe RAM tuning is scoped to Chromium app-mode startup flags. The packaged sync section remains a full-runtime no-browser rehearsal so its RAM numbers stay comparable with earlier complete benchmark reports.
 - `npm run perf:discovery:benchmark` is the default discovery perf entrypoint because it keeps artifacts under `_out/`; use `python scripts/benchmark_discovery_probe.py` separately when tuning discovery probe concurrency.
 - Do not add `pytest-benchmark` or `py-spy` by default here. If dependency approval happens later, benchmark deterministic Python leaf logic first and keep desktop startup analysis on the existing startup-trace pipeline.
@@ -174,15 +174,18 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Python perf timing | `npm run perf:py:timing` |
 | Complete perf report | `npm run perf:complete` |
 | Discovery perf sanity | `npm run perf:discovery:benchmark` |
-| Packaged startup perf probe (cold/warm) | `npm run perf:startup:cold` / `npm run perf:startup:warm` |
+| Packaged Jobs startup perf probe (cold/warm) | `npm run perf:startup:cold` / `npm run perf:startup:warm` |
+| Packaged Admin startup perf probe (cold/warm) | `npm run perf:startup:admin:cold` / `npm run perf:startup:admin:warm` |
 | Packaged desktop smoke gate | `npm run test:frontend:packaged` |
 | Packaged sync rehearsal | `npm run test:frontend:packaged:sync-rehearsal` |
 | Packaged orphan reclaim rehearsal | `npm run test:frontend:packaged:orphan-reclaim-rehearsal` |
 | Packaged browser job rehearsal | `npm run test:frontend:packaged:browser-job-rehearsal` |
 | Jobs-page no-Admin packaged smoke gate | `npm run test:frontend:packaged:jobs-pipeline` |
+| Admin startup packaged smoke gate | `npm run test:frontend:packaged:admin-startup` |
 | Packaged desktop updater rehearsal | `npm run test:frontend:packaged:update-rehearsal` |
 | Orchestrated packaged smoke gate | `npm run test:frontend:packaged:orchestrated` |
-| Rebuild-backed packaged diagnostic | `npm run probe:desktop:startup:cold` |
+| Rebuild-backed packaged Jobs diagnostic | `npm run probe:desktop:startup:cold` |
+| Rebuild-backed packaged Admin diagnostic | `npm run probe:desktop:startup:admin:cold` |
 | One file | `python -m pytest tests/<path/to/test_*.py> -q` |
 | Admin bridge | `python -m pytest tests/admin/ -q` |
 | GameDevMap discovery lane | `python -m pytest -q tests/source_discovery -k gamedevmap`, then `python -m pytest -q tests/source_discovery`, then `npm run lint:precommit` |
@@ -220,6 +223,7 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 - `npm run test:frontend:packaged:sync-rehearsal`
 - `npm run test:frontend:packaged:orphan-reclaim-rehearsal`
 - `npm run test:frontend:packaged:browser-job-rehearsal`
+- `npm run test:frontend:packaged:admin-startup`
 - `npm run test:frontend:packaged:update-rehearsal`
 - Orchestrated build and verify commands own `_out/runs/...` and the rest of `_out/latest/...`:
   - `npm run build`
@@ -250,6 +254,17 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
   - the tracked run reaches a terminal non-error state,
   - no backend `error` payload is surfaced after startup.
 - This lane uses a smoke-only stub-success pipeline mode so it stays deterministic and bounded while still exercising the real `PipelineService` worker path.
+
+## Admin Startup Packaged Smoke Contract
+
+- `npm run test:frontend:packaged:admin-startup` is the packaged Admin first-render gate for the portable desktop runtime.
+- It must prove all of the following in packaged mode:
+  - `/ops/health` reports `desktopMode: true`,
+  - the Admin page records `admin_first_interactive`,
+  - the bridge badge reaches `Bridge Online`,
+  - `#admin-source-status` does not remain stuck on `Loading admin overview...`,
+  - startup requests use `/ops/task-state?view=summary` and `/registry/conflicts?view=summary`, not the full multi-MiB diagnostic routes.
+- Use this lane for Admin startup, ops-summary payloads, desktop local-data overview, and packaged bridge availability changes.
 
 ## Desktop Updater Rehearsal Contract
 
@@ -300,6 +315,7 @@ Use the narrowest check that matches the risky path:
 - Packaged sync config, auth portability, or sync release-gate changes: `npm run test:frontend:packaged:sync-rehearsal`
 - Packaged desktop supervision, stale-runtime recovery, or launcher self-heal changes: `npm run test:frontend:packaged:orphan-reclaim-rehearsal`
 - Packaged Chromium supervision or managed-browser shutdown propagation changes: `npm run test:frontend:packaged:browser-job-rehearsal`
+- Packaged Admin startup, overview, or heavy ops-payload loading changes: `npm run test:frontend:packaged:admin-startup`
 - Packaged updater, desktop handoff, or release-manifest changes: `npm run test:frontend:packaged:update-rehearsal`
 - Bridge route wiring or task-launch signature changes: focused `tests/bridge/...` plus `tests/test_pipeline_execution.py` for worker-path coverage
 - Admin task buttons, presets, or busy-state changes: focused frontend unit tests plus the nearest admin bridge payload test

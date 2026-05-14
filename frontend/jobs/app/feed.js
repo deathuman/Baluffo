@@ -157,7 +157,7 @@ export async function refreshJobsFeed({ manual, firstLoad = false }, deps) {
     setRefreshButtonDisabled(true);
   }
   if (manual || firstLoad) setProgress(true);
-  if (manual) setSourceStatus("Refreshing jobs from unified feed...");
+  if (manual) setSourceStatus("Reloading jobs...");
 
   try {
     const refreshStartedAt = Date.now();
@@ -181,8 +181,8 @@ export async function refreshJobsFeed({ manual, firstLoad = false }, deps) {
       if (firstLoad) {
         setSourceStatus(result.error || "Could not fetch listings from local unified feeds.");
       }
-      if (manual) showToast(result.error || "Could not refresh jobs.", "error");
-      dispatchRefreshFailed(result.error || "Could not refresh jobs.");
+      if (manual) showToast(result.error || "Could not reload jobs.", "error");
+      dispatchRefreshFailed(result.error || "Could not reload jobs.");
       return false;
     }
 
@@ -218,7 +218,7 @@ export async function refreshJobsFeed({ manual, firstLoad = false }, deps) {
     }
 
     if (manual) {
-      showToast("Jobs refreshed.", "success");
+      showToast("Jobs reloaded.", "success");
     } else if (previousLength > 0) {
       showToast("Job cache auto-updated.", "info");
     }
@@ -243,8 +243,8 @@ export async function refreshJobsFeed({ manual, firstLoad = false }, deps) {
         error: String(err?.message || "unknown error")
       });
     }
-    if (manual) showToast("Could not refresh jobs.", "error");
-    dispatchRefreshFailed(err?.message || "Could not refresh jobs.");
+    if (manual) showToast("Could not reload jobs.", "error");
+    dispatchRefreshFailed(err?.message || "Could not reload jobs.");
     return false;
   } finally {
     setRefreshInFlight(false);

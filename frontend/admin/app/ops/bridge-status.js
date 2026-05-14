@@ -1,4 +1,4 @@
-import { setTooltip } from "../../../shared/ui/index.js";
+import { setTooltip } from "../../../shared/ui/index.js?v=6";
 
 function maybeUnrefTimer(timer) {
   timer?.unref?.();

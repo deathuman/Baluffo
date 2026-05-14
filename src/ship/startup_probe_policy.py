@@ -36,7 +36,11 @@ EMBEDDED_PAGE_PROBES = (
         "openPath": "saved.html",
         "requiredEvents": ("saved_auth_ready",),
     },
-    {"name": "Embedded Admin Ready", "openPath": "admin.html", "requiredEvents": ("admin_ready",)},
+    {
+        "name": "Embedded Admin Ready",
+        "openPath": "admin.html",
+        "requiredEvents": ("admin_ready", "admin_first_interactive"),
+    },
 )
 
 
@@ -67,7 +71,7 @@ def startup_profile_required_events(page: str) -> tuple[str, ...]:
             "desktop_probe_inline_ready",
         )
     page_events = {
-        "admin": ("admin_ready",),
+        "admin": ("admin_ready", "admin_first_interactive"),
         "saved": ("saved_first_interactive",),
         "jobs": ("jobs_first_render", "jobs_first_interactive"),
     }.get(normalized, ("jobs_first_render", "jobs_first_interactive"))
@@ -150,7 +154,14 @@ def classify_startup_probe_failure(
     if (
         details["launchMode"] == REQUIRED_STARTUP_PROBE_LAUNCH_MODE
         and missing_events.intersection(
-            {"jobs_module_boot_start", "jobs_first_render", "jobs_first_interactive"}
+            {
+                "jobs_module_boot_start",
+                "jobs_first_render",
+                "jobs_first_interactive",
+                "admin_module_boot_start",
+                "admin_ready",
+                "admin_first_interactive",
+            }
         )
         and (
             details["windowClosedReason"] == "browser_handoff_failed"

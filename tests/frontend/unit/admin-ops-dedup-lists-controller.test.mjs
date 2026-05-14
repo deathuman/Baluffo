@@ -44,9 +44,9 @@ test("admin ops controller renders health metrics and dedup lists separately", a
     getBridge: async path => {
       if (path === "/ops/dashboard-health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
       if (path === "/ops/history?limit=80") return { runs: [] };
-      if (path === "/ops/task-state") return { tasks: [] };
+      if (path === "/ops/task-state?view=summary") return { tasks: [] };
       if (path === "/ops/fetcher-metrics?windowRuns=80") return fetcherMetricsPayload;
-      if (path === "/registry/conflicts") return { summary: { conflictCount: 0 }, conflicts: [] };
+      if (path === "/registry/conflicts?view=summary") return { summary: { conflictCount: 0 }, conflicts: [], summaryView: true };
       if (path === "/source-policy/recommendations") return { recommendations: { pairs: [] } };
       throw new Error(`unexpected path ${path}`);
     },
@@ -87,15 +87,16 @@ test("admin ops controller renders health metrics and dedup lists separately", a
   });
 
   await controller.loadOpsHealthData();
+  await new Promise(resolve => setTimeout(resolve, 0));
   renderScheduler.flush();
   controller.stopOpsHealthPolling();
 
-  assert.equal(calls.filter(call => call.kind === "health").length, 1);
-  assert.equal(calls.filter(call => call.kind === "dedup").length, 1);
+  assert.ok(calls.filter(call => call.kind === "health").length >= 2);
+  assert.ok(calls.filter(call => call.kind === "dedup").length >= 2);
   assert.equal(calls.find(call => call.kind === "health").el, refs.adminOpsFetcherMetricsEl);
   assert.equal(calls.find(call => call.kind === "dedup").el, refs.adminOpsDedupListsEl);
   assert.deepEqual(
-    calls.find(call => call.kind === "dedup").payload.latestRun.dedupEvidence,
+    calls.filter(call => call.kind === "dedup").at(-1).payload.latestRun.dedupEvidence,
     fetcherMetricsPayload.latestRun.dedupEvidence
   );
 });

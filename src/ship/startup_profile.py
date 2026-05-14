@@ -317,6 +317,126 @@ def summarize_startup_metrics(
             "perfRegressions": perf_regressions,
         }
 
+    if safe_page == "admin":
+        ready_event, ready_ms = _pick_first(events, ["admin_ready"])
+        if "admin_first_interactive" in events:
+            interactive_event, interactive_ms = (
+                "admin_first_interactive",
+                events["admin_first_interactive"],
+            )
+        else:
+            interactive_event, interactive_ms = ready_event, ready_ms
+        first_usable_event = interactive_event or ready_event
+        first_usable_ms = interactive_ms if interactive_ms is not None else ready_ms
+        page_loaded_ref = (
+            "desktop_page_loaded",
+            "desktop_shell_loaded",
+            "admin_module_boot_start",
+            "admin_page_boot_start",
+        )
+        stage_defs = [
+            (
+                "launch_to_site_ready",
+                "Launch -> Site Ready",
+                "desktop_launch_start",
+                "desktop_site_ready",
+            ),
+            (
+                "site_ready_to_window_created",
+                "Site Ready -> Window Created",
+                "desktop_site_ready",
+                "desktop_window_created",
+            ),
+            (
+                "window_created_to_window_shown",
+                "Window Created -> Window Shown",
+                "desktop_window_created",
+                WINDOW_SHOWN_EVENT_REFS,
+            ),
+            (
+                "window_shown_to_page_loaded",
+                "Window Shown -> Page Loaded",
+                WINDOW_SHOWN_EVENT_REFS,
+                page_loaded_ref,
+            ),
+            (
+                "first_render_to_first_interactive",
+                "Admin Ready -> First Interactive",
+                "admin_ready",
+                first_usable_event or "admin_first_interactive",
+            ),
+            (
+                "total_launch_to_first_usable_ui",
+                "Launch -> First Usable UI",
+                "desktop_launch_start",
+                first_usable_event or "admin_first_interactive",
+            ),
+        ]
+
+        stages: list[dict[str, Any]] = []
+        missing_events: list[str] = []
+        for key, label, start_ref, end_ref in stage_defs:
+            start_event, start_ms = _resolve_stage_event(events, start_ref)
+            end_event, end_ms = _resolve_stage_event(events, end_ref)
+            threshold_ms = int(thresholds.get(key, 0))
+            if start_ms is None:
+                if isinstance(start_ref, (list, tuple)):
+                    missing_events.extend([str(item) for item in start_ref])
+                else:
+                    missing_events.append(str(start_event or ""))
+            if end_ms is None:
+                if isinstance(end_ref, (list, tuple)):
+                    missing_events.extend([str(item) for item in end_ref])
+                else:
+                    missing_events.append(str(end_event or ""))
+            duration_ms = (
+                None if start_ms is None or end_ms is None else max(0, int(end_ms) - int(start_ms))
+            )
+            status = "missing"
+            if duration_ms is not None:
+                status = "slow" if threshold_ms > 0 and duration_ms > threshold_ms else "passed"
+            stages.append(
+                {
+                    "key": key,
+                    "label": label,
+                    "startEvent": start_event,
+                    "endEvent": end_event,
+                    "startMs": start_ms,
+                    "endMs": end_ms,
+                    "durationMs": duration_ms,
+                    "thresholdMs": threshold_ms,
+                    "status": status,
+                }
+            )
+
+        classification = _classify_stages(
+            stages=stages,
+            missing_events=missing_events,
+            classification_map={
+                "launch_to_site_ready": "bridge/site bootstrap delayed",
+                "site_ready_to_window_created": "browser launch / app-window creation delayed",
+                "window_created_to_window_shown": "native reveal delayed",
+                "window_shown_to_page_loaded": "admin page boot delayed",
+                "first_render_to_first_interactive": "admin interactive readiness delayed",
+            },
+        )
+        stage_statuses = [stage["status"] for stage in stages]
+        perf_regressions = _stage_perf_regressions(stages)
+        return {
+            "page": safe_page,
+            "profileMode": mode,
+            "events": events,
+            "stages": stages,
+            "firstUsableEvent": first_usable_event or "",
+            "firstUsableMs": first_usable_ms,
+            "classification": classification,
+            "status": "passed"
+            if stage_statuses and all(status == "passed" for status in stage_statuses)
+            else "failed",
+            "missingEvents": sorted({event for event in missing_events if event}),
+            "perfRegressions": perf_regressions,
+        }
+
     render_event, render_ms = _pick_first(events, [f"{safe_page}_first_render"])
     interactive_event, interactive_ms = _pick_first(
         events, [f"{safe_page}_first_interactive", f"{safe_page}_ready"]

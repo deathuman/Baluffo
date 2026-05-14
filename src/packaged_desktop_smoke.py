@@ -297,6 +297,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--browser-job-rehearsal", action="store_true")
     parser.add_argument("--profile-only", action="store_true")
     parser.add_argument("--profile-mode", choices=("cold", "warm"), default="cold")
+    parser.add_argument("--profile-record-only", action="store_true")
     parser.add_argument("--fail-on-threshold", action="store_true")
     parser.add_argument("--open-path", default="jobs.html")
     parser.add_argument("--node-smoke-script", default=str(DEFAULT_NODE_SMOKE_SCRIPT))

@@ -53,3 +53,43 @@ def test_summarize_startup_metrics_reports_warning_and_critical_regressions() ->
     rendered = render_startup_summary(summary)
     assert "Perf regressions:" in rendered
     assert "total_launch_to_first_usable_ui" in rendered
+
+
+def test_summarize_startup_metrics_accepts_admin_ready_to_interactive_path() -> None:
+    rows = [
+        _row("desktop_launch_start", 0),
+        _row("desktop_site_ready", 400),
+        _row("desktop_window_created", 700),
+        _row("desktop_shell_window_shown", 900),
+        _row("admin_module_boot_start", 1100),
+        _row("admin_ready", 1500),
+        _row("admin_first_interactive", 1800),
+    ]
+
+    summary = summarize_startup_metrics(rows, page="admin", profile_mode="cold")
+    stages = {stage["key"]: stage for stage in summary["stages"]}
+
+    assert summary["status"] == "passed"
+    assert summary["firstUsableEvent"] == "admin_first_interactive"
+    assert summary["firstUsableMs"] == 1800
+    assert summary["missingEvents"] == []
+    assert stages["first_render_to_first_interactive"]["startEvent"] == "admin_ready"
+    assert stages["first_render_to_first_interactive"]["endEvent"] == "admin_first_interactive"
+
+
+def test_summarize_startup_metrics_falls_back_to_admin_ready() -> None:
+    rows = [
+        _row("desktop_launch_start", 0),
+        _row("desktop_site_ready", 400),
+        _row("desktop_window_created", 700),
+        _row("desktop_shell_window_shown", 900),
+        _row("admin_module_boot_start", 1100),
+        _row("admin_ready", 1500),
+    ]
+
+    summary = summarize_startup_metrics(rows, page="admin", profile_mode="cold")
+
+    assert summary["status"] == "passed"
+    assert summary["firstUsableEvent"] == "admin_ready"
+    assert summary["firstUsableMs"] == 1500
+    assert summary["missingEvents"] == []

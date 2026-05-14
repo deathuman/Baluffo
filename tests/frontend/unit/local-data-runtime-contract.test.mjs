@@ -30,6 +30,7 @@ function setupDesktopGlobals() {
   const sessionStorage = createStorageMock();
   const eventListeners = new Map();
   const intervalHandlers = [];
+  const fetchCalls = [];
   global.window = {
     localStorage,
     sessionStorage,
@@ -57,7 +58,9 @@ function setupDesktopGlobals() {
     }
   };
   global.fetch = async url => {
-    if (String(url).includes("/desktop-local-data/session")) {
+    const normalizedUrl = String(url);
+    fetchCalls.push(normalizedUrl);
+    if (normalizedUrl.includes("/desktop-local-data/session")) {
       return {
         ok: true,
         json: async () => ({
@@ -71,19 +74,19 @@ function setupDesktopGlobals() {
         })
       };
     }
-    if (String(url).includes("/app/desktop-session-lifecycle")) {
+    if (normalizedUrl.includes("/app/desktop-session-lifecycle")) {
       return {
         ok: true,
         json: async () => ({ ok: true })
       };
     }
-    if (String(url).includes("/ops/task-state")) {
+    if (normalizedUrl.includes("/ops/task-state")) {
       return {
         ok: true,
         json: async () => ({ tasks: [], count: 0 })
       };
     }
-    if (String(url).includes("/app/update-status")) {
+    if (normalizedUrl.includes("/app/update-status")) {
       return {
         ok: true,
         json: async () => ({ availability: "unknown", downloadState: "idle", installState: "idle" })
@@ -91,7 +94,7 @@ function setupDesktopGlobals() {
     }
     throw new Error(`unexpected fetch: ${url}`);
   };
-  return { eventListeners, intervalHandlers };
+  return { eventListeners, fetchCalls, intervalHandlers };
 }
 
 test("assertLocalDataRuntime rejects missing required methods", () => {
@@ -121,13 +124,14 @@ test("browser local-data client conforms to shared runtime contract", async () =
 });
 
 test("desktop local-data client conforms to shared runtime contract", async () => {
-  setupDesktopGlobals();
-  const { initDesktopLocalDataClient } = await importFresh(
+  const { fetchCalls } = setupDesktopGlobals();
+  const { awaitDesktopBootstrap, initDesktopLocalDataClient } = await importFresh(
     "../../../frontend/shared/local-data/desktop-client.js",
     { relativeTo: import.meta.url }
   );
   const api = initDesktopLocalDataClient();
-  await Promise.resolve();
+  await awaitDesktopBootstrap();
+  await new Promise(resolve => setTimeout(resolve, 0));
   await Promise.resolve();
 
   assert.equal(assertLocalDataRuntime(api, "desktop runtime"), api);
@@ -139,4 +143,5 @@ test("desktop local-data client conforms to shared runtime contract", async () =
   assert.equal(typeof api.getAttachmentDownloadUrl("u1", "job_1", "att_1"), "string");
   assert.equal(typeof api.getBackupExportUrl("u1"), "string");
   assert.equal(global.window.JobAppLocalData, api);
+  assert.ok(fetchCalls.some(url => url.includes("/ops/task-state?view=summary")));
 });

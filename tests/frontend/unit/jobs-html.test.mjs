@@ -8,13 +8,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..", "..", "..");
 
-test("jobs html pipeline button includes tooltip about long-running pipeline", () => {
+test("jobs html update button uses user-facing update copy", () => {
   const html = fs.readFileSync(path.join(repoRoot, "jobs.html"), "utf8");
   assert.match(html, /id="jobs-pipeline-run-btn"/);
+  assert.match(html, />Update jobs<\/button>/);
   assert.match(
     html,
-    /data-tooltip="Runs discovery, fetch, and sync pipeline\. Can take more than 5 minutes\."/
+    /data-tooltip="Find new openings and rebuild the local job list\. This usually takes a few minutes; first updates can take up to 1 hour\."/
   );
+  assert.doesNotMatch(html, /Run Discovery \+ Fetch \+ Sync/);
   assert.doesNotMatch(html, /id="jobs-pipeline-run-btn"[^>]+title=/);
 });
 
@@ -27,7 +29,7 @@ test("desktop html meaningful operational buttons expose polished tooltips", () 
     [jobsHtml, /id="country-picker-clear-btn"[^>]+data-tooltip="Clear the current country selection\."/],
     [jobsHtml, /id="customize-quick-filters-btn"[^>]+data-tooltip="Choose which preset filters are shown\."/],
     [jobsHtml, /id="quick-filters-reset-btn"[^>]+data-tooltip="Restore the default quick filter presets\."/],
-    [jobsHtml, /id="refresh-jobs-btn"[^>]+data-tooltip="Reload the current jobs feed from local data\."/],
+    [jobsHtml, /id="refresh-jobs-btn"[^>]+data-tooltip="Reload the current local jobs data without checking sources\."/],
     [savedHtml, /id="add-custom-job-btn"[^>]+data-tooltip="Create a personal saved job entry\."/],
     [savedHtml, /id="global-phase-override-btn"[^>]+data-tooltip="Temporarily allow phase changes that are normally locked\."/],
     [savedHtml, /id="export-backup-btn"[^>]+data-tooltip="Export saved jobs, notes, and optional files to a backup\."/],
@@ -60,7 +62,7 @@ test("jobs html exposes first-slice read-only lifecycle filters", () => {
   assert.match(html, /value="likely_removed">Recently removed<\/option>/);
   assert.match(html, /value="reappeared">Reappeared<\/option>/);
   assert.match(html, /value="preserved_source_failed">Preserved because source failed<\/option>/);
-  assert.match(html, /frontend\/jobs\/index\.js\?v=7/);
+  assert.match(html, /frontend\/jobs\/index\.js\?v=9/);
   assert.doesNotMatch(html, /preserved_source_skipped/);
 });
 

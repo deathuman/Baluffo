@@ -357,6 +357,57 @@ def _pipeline_status_to_task_row(pipeline_status: dict[str, Any]) -> dict[str, A
     }
 
 
+_TASK_STATE_SUMMARY_KEYS = {
+    "taskType",
+    "type",
+    "runId",
+    "id",
+    "active",
+    "startedAt",
+    "heartbeatAt",
+    "finishedAt",
+    "status",
+    "lifecycleStatus",
+    "stage",
+    "parentRunId",
+    "parentTaskType",
+    "ownerKind",
+    "ownerPid",
+    "taskProgress",
+    "progress",
+    "summary",
+    "outputs",
+    "error",
+    "label",
+}
+
+
+def _compact_task_state_row(row: dict[str, Any]) -> dict[str, Any]:
+    compact = {key: row.get(key) for key in _TASK_STATE_SUMMARY_KEYS if key in row}
+    work_items = row.get("workItems")
+    if isinstance(work_items, list):
+        compact["workItemCount"] = len(work_items)
+        compact["workItemsTruncated"] = len(work_items) > 0
+    recent_events = row.get("recentEvents")
+    if isinstance(recent_events, list):
+        compact["recentEventCount"] = len(recent_events)
+        compact["recentEvents"] = list(recent_events[-5:])
+        compact["recentEventsTruncated"] = len(recent_events) > 5
+    return compact
+
+
+def _compact_task_state_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    tasks = [
+        _compact_task_state_row(row) for row in payload.get("tasks", []) if isinstance(row, dict)
+    ]
+    return {
+        **{key: value for key, value in payload.items() if key not in {"tasks", "count"}},
+        "tasks": tasks,
+        "count": len(tasks),
+        "summary": True,
+    }
+
+
 class OpsApi:
     def __init__(self, *, paths: OpsPaths, deps: OpsDeps) -> None:
         self._paths = paths
@@ -651,6 +702,9 @@ class OpsApi:
             "count": len(tasks),
             "diagnostics": diagnostics,
         }
+
+    def get_current_task_state_summary_payload(self) -> dict[str, Any]:
+        return _compact_task_state_payload(self.get_current_task_state_payload())
 
     def compute_fetcher_metrics(self, *, window_runs: int = 20) -> dict[str, Any]:
         latest_fetch_report = self._load_fetch_report_with_dedup_review_state()

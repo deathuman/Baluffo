@@ -55,7 +55,7 @@ function createElementMock(tagName) {
   };
 }
 
-function createButtonMock(textContent = "Run Discovery + Fetch + Sync") {
+function createButtonMock(textContent = "Update jobs") {
   return {
     dataset: {},
     style: createStyle(),
@@ -197,7 +197,7 @@ test("long-running fetch progress stays aligned across admin detailed view, ops 
     assert.equal(uiState.active, true);
     assert.equal(button.disabled, true);
     assert.equal(button["aria-busy"], "true");
-    assert.match(String(button.textContent || ""), /^Fetch running\.\.\./);
+    assert.match(String(button.textContent || ""), /^Fetching job listings\.\.\./);
   } finally {
     restoreTimers();
   }
