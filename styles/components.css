@@ -628,6 +628,50 @@ h1 {
   margin: 0;
 }
 
+.baluffo-tooltip-portal {
+  position: fixed;
+  left: 0;
+  top: 0;
+  max-width: min(320px, calc(100vw - 32px));
+  padding: 0.45rem 0.58rem;
+  border-radius: 8px;
+  background: rgba(12, 16, 24, 0.96);
+  color: #f6f8fb;
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: left;
+  overflow-wrap: anywhere;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.14s ease, transform 0.14s ease;
+  z-index: 2100;
+}
+
+.baluffo-tooltip-portal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.baluffo-tooltip-portal::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -11px;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: rgba(12, 16, 24, 0.96);
+}
+
+.baluffo-tooltip-portal.baluffo-tooltip-bottom::after {
+  top: -11px;
+  bottom: auto;
+  border-top-color: transparent;
+  border-bottom-color: rgba(12, 16, 24, 0.96);
+}
+
 .source-status {
   color: var(--text-muted);
   font-size: 0.9rem;

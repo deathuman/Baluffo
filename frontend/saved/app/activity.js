@@ -1,4 +1,5 @@
 import { normalizeToken } from "../../shared/text-utils.js";
+import { setTooltip } from "../../shared/ui/index.js";
 
 const TIMELINE_SCOPE_ALL = "all";
 const TIMELINE_SCOPE_SELECTED = "selected";
@@ -76,7 +77,7 @@ export function setActivityPanelOpen(open, deps) {
     historyPanelToggleBtnEl.setAttribute("aria-expanded", nextOpen ? "true" : "false");
     const label = nextOpen ? "Hide activity timeline" : "Show activity timeline";
     historyPanelToggleBtnEl.setAttribute("aria-label", label);
-    historyPanelToggleBtnEl.setAttribute("title", label);
+    setTooltip(historyPanelToggleBtnEl, label);
   }
   if (persist && currentUser) {
     persistTimelinePreferences(currentUser.uid);

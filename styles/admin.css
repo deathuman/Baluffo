@@ -2122,54 +2122,6 @@
   color: var(--contract-temporary-text);
 }
 
-.admin-sync-actions .btn {
-  position: relative;
-}
-
-.admin-sync-actions .btn[data-tooltip]::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 10px);
-  transform: translateX(-50%) translateY(4px);
-  width: max-content;
-  max-width: 260px;
-  padding: 0.45rem 0.58rem;
-  border-radius: 8px;
-  background: rgba(12, 16, 24, 0.96);
-  color: #f6f8fb;
-  font-size: 0.74rem;
-  line-height: 1.35;
-  text-align: left;
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.28);
-  pointer-events: none;
-  opacity: 0;
-  z-index: 10;
-  transition: opacity 0.14s ease, transform 0.14s ease;
-  white-space: normal;
-}
-
-.admin-sync-actions .btn[data-tooltip]::before {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 4px);
-  transform: translateX(-50%) translateY(4px);
-  border: 6px solid transparent;
-  border-top-color: rgba(12, 16, 24, 0.96);
-  opacity: 0;
-  z-index: 10;
-  transition: opacity 0.14s ease, transform 0.14s ease;
-}
-
-.admin-sync-actions .btn[data-tooltip]:hover::after,
-.admin-sync-actions .btn[data-tooltip]:hover::before,
-.admin-sync-actions .btn[data-tooltip]:focus-visible::after,
-.admin-sync-actions .btn[data-tooltip]:focus-visible::before {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
-}
-
 #admin-discovery-summary {
   margin: 0.55rem 0 0.1rem;
 }
@@ -2389,26 +2341,6 @@
 
   .admin-sync-meta-grid {
     grid-template-columns: 1fr;
-  }
-
-  .admin-sync-actions .btn[data-tooltip]::after {
-    left: auto;
-    right: 0;
-    transform: translateY(4px);
-    max-width: min(260px, calc(100vw - 3rem));
-  }
-
-  .admin-sync-actions .btn[data-tooltip]::before {
-    left: auto;
-    right: 1rem;
-    transform: translateY(4px);
-  }
-
-  .admin-sync-actions .btn[data-tooltip]:hover::after,
-  .admin-sync-actions .btn[data-tooltip]:hover::before,
-  .admin-sync-actions .btn[data-tooltip]:focus-visible::after,
-  .admin-sync-actions .btn[data-tooltip]:focus-visible::before {
-    transform: translateY(0);
   }
 
   .admin-discovery-layout {

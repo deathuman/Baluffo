@@ -1,4 +1,5 @@
 import { formatTaskProgressDetail } from "../../shared/task-progress.js";
+import { setTooltip } from "../../shared/ui/index.js";
 
 export function createAdminSyncController({
   state,
@@ -59,9 +60,9 @@ export function createAdminSyncController({
         ? `GitHub App mode: ${authMode}. Packaged config: available.`
         : "GitHub App credentials are packaged with the app.";
       if (configPath) {
-        refs.adminSyncConfigHintEl.title = "Full packaged config path is available in diagnostics.";
+        setTooltip(refs.adminSyncConfigHintEl, "Full packaged config path is available in diagnostics.");
       } else {
-        refs.adminSyncConfigHintEl.removeAttribute?.("title");
+        setTooltip(refs.adminSyncConfigHintEl, "");
       }
     }
     const repo = String(config?.repo || "unknown");

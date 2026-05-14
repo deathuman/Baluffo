@@ -4,7 +4,7 @@
  * @param {{ fullCountryName: function, sanitizeUrl: function, getJobKeyForJob: function, savedJobKeys: Set, isSeen?: boolean, isNew?: boolean, isJobsApiReady: function, toContractClass: function, capitalizeFirst: function }} options
  * @returns {string} HTML string for the row
  */
-import { escapeHtml } from "../ui/index.js";
+import { escapeHtml, tooltipAttrs } from "../ui/index.js";
 import { renderLifecycleBadgeHtml } from "../lifecycle-badges.js";
 import { formatJobLocationColumns } from "../location-display.js";
 
@@ -44,7 +44,7 @@ function renderFreshnessCell(job) {
   const tooltip = guessedDate ? `${baseTooltip} (${guessedDate})` : baseTooltip;
   return `
     <div class="col-freshness" aria-hidden="true">
-      <span class="job-freshness-ping ${tier}" title="${escapeHtml(tooltip)}"></span>
+      <span class="job-freshness-ping ${tier}"${tooltipAttrs(tooltip)}></span>
     </div>
   `;
 }
@@ -97,13 +97,13 @@ export function renderJobRow(job, options = {}) {
       </div>
     </div>
     <div class="col-company job-cell" data-label="Company">
-      <span class="job-company-compact" title="${safeCompany}">${safeCompany}</span>
+      <span class="job-company-compact"${tooltipAttrs(job.company)}>${safeCompany}</span>
     </div>
     <div class="col-sector job-cell" data-label="Sector">
       <span class="job-sector">${safeSector}</span>
     </div>
     <div class="col-city job-cell" data-label="City">
-      <span class="job-location" title="${safeCity}">${safeCity}</span>
+      <span class="job-location"${tooltipAttrs(locationColumns.cityLabel)}>${safeCity}</span>
     </div>
     <div class="col-country job-cell" data-label="Country">
       <span class="job-location">${safeCountry}</span>

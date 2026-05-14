@@ -13,8 +13,9 @@ test("jobs html pipeline button includes tooltip about long-running pipeline", (
   assert.match(html, /id="jobs-pipeline-run-btn"/);
   assert.match(
     html,
-    /title="Runs discovery, fetch, and sync pipeline\. Can take more than 5 minutes\."/
+    /data-tooltip="Runs discovery, fetch, and sync pipeline\. Can take more than 5 minutes\."/
   );
+  assert.doesNotMatch(html, /id="jobs-pipeline-run-btn"[^>]+title=/);
 });
 
 test("jobs html exposes desktop update controls in the header shell", () => {

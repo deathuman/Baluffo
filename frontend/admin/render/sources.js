@@ -1,4 +1,4 @@
-import { escapeHtml } from "../../shared/ui/index.js";
+import { escapeHtml, tooltipAttrs } from "../../shared/ui/index.js";
 
 function formatCompactNumber(value) {
   const number = Number(value || 0);
@@ -153,7 +153,7 @@ export function renderSourcesTableHtml(
 
   function buildSourceStatusTitle(row, normalizedStatus, statusErrorDetail) {
     if (normalizedStatus === "error" && statusErrorDetail) {
-      return ` title="${escapeHtml(`Error: ${statusErrorDetail}`)}"`;
+      return tooltipAttrs(`Error: ${statusErrorDetail}`);
     }
     if (normalizedStatus !== "excluded") {
       return "";
@@ -168,7 +168,7 @@ export function renderSourcesTableHtml(
     if (!reason) {
       return "";
     }
-    return ` title="${escapeHtml(`Excluded: ${reason}`)}"`;
+    return tooltipAttrs(`Excluded: ${reason}`);
   }
 
   return `
@@ -219,7 +219,7 @@ export function renderSourcesTableHtml(
             ? "healthy"
             : "warning";
         const approvalTitleRaw = String(approvalStatus?.title || approvalStatus?.label || "").trim();
-        const approvalTitle = approvalTitleRaw ? ` title="${escapeHtml(approvalTitleRaw)}"` : "";
+        const approvalTitle = tooltipAttrs(approvalTitleRaw);
         const sourceUrl = escapeHtml(String(
           row.listing_url
           || row.api_url
@@ -228,9 +228,9 @@ export function renderSourcesTableHtml(
           || (Array.isArray(row.pages) ? (row.pages[0] || "") : "")
           || ""
         ));
-        const sourceIdTitle = escapeHtml(sourceIdRaw || "missing source id");
+        const sourceIdTitle = sourceIdRaw || "missing source id";
         const sourceIdAria = escapeHtml(`Source ID: ${sourceIdRaw || "missing source id"}`);
-        const idIconHtml = `<span class="admin-source-id-inline" title="${sourceIdTitle}" aria-label="${sourceIdAria}">i</span>`;
+        const idIconHtml = `<span class="admin-source-id-inline"${tooltipAttrs(sourceIdTitle)} aria-label="${sourceIdAria}">i</span>`;
         const leadCell = isPending
           ? `<span class="admin-select-cell-inner"><input type="checkbox" class="pending-source-checkbox" data-ui="source-checkbox" data-source-id="${sourceId}" data-source-url="${sourceUrl}">${idIconHtml}</span>`
           : isRejected

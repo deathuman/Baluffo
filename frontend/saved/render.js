@@ -1,4 +1,4 @@
-import { escapeHtml } from "../shared/ui/index.js";
+import { escapeHtml, tooltipAttrs } from "../shared/ui/index.js";
 import { renderLifecycleBadgeHtml } from "../shared/lifecycle-badges.js";
 import { formatJobLocationColumns } from "../shared/location-display.js";
 
@@ -30,7 +30,8 @@ export function renderSavedJobBlockHtml(job, options = {}) {
   const isCustom = isCustomJob(job);
   const safeTitle = escapeHtml(job.title || "");
   const safeCompany = escapeHtml(job.company || "");
-  const customSource = escapeHtml(String(job.customSourceLabel || customSourceLabel || "Custom"));
+  const customSourceRaw = String(job.customSourceLabel || customSourceLabel || "Custom");
+  const customSource = escapeHtml(customSourceRaw);
   const safeSector = escapeHtml(normalizeSavedSector(job));
   const locationColumns = formatJobLocationColumns(job, { fullCountryName });
   const safeCity = escapeHtml(locationColumns.cityLabel);
@@ -55,7 +56,7 @@ export function renderSavedJobBlockHtml(job, options = {}) {
   const tabClassAttachments = activeTab === "attachments" ? "active" : "";
   const tabClassHistory = activeTab === "history" ? "active" : "";
   const reminderBadge = reminderMeta.isSoon
-    ? `<span class="saved-reminder-badge" title="${escapeHtml(reminderMeta.label)}">Due soon</span>`
+    ? `<span class="saved-reminder-badge"${tooltipAttrs(reminderMeta.label)}>Due soon</span>`
     : "";
   const lifecycleBadge = renderLifecycleBadgeHtml(lifecycleOverlay);
 
@@ -63,11 +64,11 @@ export function renderSavedJobBlockHtml(job, options = {}) {
     <div class="saved-job-block ${isExpanded ? "expanded" : ""} ${isSelected ? "selected" : ""}" data-job-key="${jobKey}" data-ui="saved-job-block">
       <div class="saved-job-row">
         <button class="remove-saved-btn remove-inline-btn" data-job-key="${jobKey}" data-ui="remove-saved-btn" aria-label="Remove saved job">X</button>
-        <div class="col-title job-cell" data-label="Position" title="${safeTitle}">
+        <div class="col-title job-cell" data-label="Position"${tooltipAttrs(job.title || "")}>
           <div class="saved-title-stack">
             <span class="saved-title-main">${safeTitle}</span>
             <div class="saved-title-meta">
-              ${isCustom ? `<span class="saved-custom-badge" title="Custom job source">${customSource}</span>` : ""}
+              ${isCustom ? `<span class="saved-custom-badge"${tooltipAttrs("Custom job source")}>${customSource}</span>` : ""}
               ${reminderBadge}
               ${lifecycleBadge}
               ${missingChips}
@@ -81,18 +82,18 @@ export function renderSavedJobBlockHtml(job, options = {}) {
             </div>
           ` : ""}
         </div>
-        <div class="col-company job-cell" data-label="Company" title="${safeCompany}">${safeCompany}</div>
-        <div class="col-sector job-cell" data-label="Sector" title="${safeSector}">${safeSector}</div>
-        <div class="col-city job-cell" data-label="City" title="${safeCity}">${safeCity}</div>
-        <div class="col-country job-cell" data-label="Country" title="${safeCountry}">${safeCountry}</div>
-        <div class="col-contract job-cell" data-label="Contract" title="${safeContract}">
+        <div class="col-company job-cell" data-label="Company"${tooltipAttrs(job.company || "")}>${safeCompany}</div>
+        <div class="col-sector job-cell" data-label="Sector"${tooltipAttrs(normalizeSavedSector(job))}>${safeSector}</div>
+        <div class="col-city job-cell" data-label="City"${tooltipAttrs(locationColumns.cityLabel)}>${safeCity}</div>
+        <div class="col-country job-cell" data-label="Country"${tooltipAttrs(locationColumns.countryLabel)}>${safeCountry}</div>
+        <div class="col-contract job-cell" data-label="Contract"${tooltipAttrs(job.contractType || "Unknown")}>
           <span class="job-contract ${contractClass}">${safeContract}</span>
         </div>
-        <div class="col-type job-cell" data-label="Type" title="${safeWorkType}">
+        <div class="col-type job-cell" data-label="Type"${tooltipAttrs(job.workType || "Onsite")}>
           <span class="job-tag ${safeWorkType.toLowerCase()}">${safeWorkType}</span>
         </div>
         <div class="col-link job-cell" data-label="Link">
-          ${hasLink ? `<a class="saved-open-link-icon" href="${safeLink}" target="_blank" rel="noopener noreferrer" aria-label="Open job link" title="Open job link">${renderWebIcon()}</a>` : `<span class="saved-no-link ${isCustom ? "saved-no-link-custom" : ""}" title="${isCustom ? "Custom entry without external URL" : "No URL available"}">${isCustom ? "No link" : "N/A"}</span>`}
+          ${hasLink ? `<a class="saved-open-link-icon" href="${safeLink}" target="_blank" rel="noopener noreferrer" aria-label="Open job link"${tooltipAttrs("Open job link")}>${renderWebIcon()}</a>` : `<span class="saved-no-link ${isCustom ? "saved-no-link-custom" : ""}"${tooltipAttrs(isCustom ? "Custom entry without external URL" : "No URL available")}>${isCustom ? "No link" : "N/A"}</span>`}
         </div>
       </div>
       <div class="saved-phase-row">

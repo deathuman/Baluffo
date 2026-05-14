@@ -1,4 +1,4 @@
-import { escapeHtml } from "../../shared/ui/index.js";
+import { escapeHtml, tooltipAttrs } from "../../shared/ui/index.js";
 import { UI_TOKENS, ui } from "../../shared/ui/selectors.js";
 import { formatDateTime, stableOpsSignature } from "./ops-shared.js";
 
@@ -293,7 +293,7 @@ function renderTriageFilterOption(bucket, activeFilter) {
     <option
       value="${escapeHtml(token)}"
       ${selected ? "selected" : ""}
-      title="${escapeHtml(stringValue(bucket?.description, label))}"
+      ${tooltipAttrs(stringValue(bucket?.description, label)).trim()}
     >${escapeHtml(label)} · ${count.toLocaleString()}</option>
   `;
 }
@@ -307,7 +307,7 @@ function renderReviewFilterOption(queue, activeFilter) {
     <option
       value="${escapeHtml(token)}"
       ${selected ? "selected" : ""}
-      title="${escapeHtml(stringValue(queue?.description, label))}"
+      ${tooltipAttrs(stringValue(queue?.description, label)).trim()}
     >${escapeHtml(label)} · ${count.toLocaleString()}</option>
   `;
 }

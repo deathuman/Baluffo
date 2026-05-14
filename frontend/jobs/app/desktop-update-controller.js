@@ -1,4 +1,5 @@
 import { setDisabled, setText, toggleHidden } from "./desktop-update-dom.js";
+import { setTooltip } from "../../shared/ui/index.js";
 import {
   buildReleaseNotesTitle,
   deriveDesktopUpdateView,
@@ -100,7 +101,7 @@ export function createJobsDesktopUpdateController({
       refs.desktopUpdateToggleBtn.dataset.updateState = view.stateToken;
       refs.desktopUpdateToggleBtn.textContent = view.buttonLabel;
       refs.desktopUpdateToggleBtn.setAttribute("aria-expanded", view.panelVisible ? "true" : "false");
-      refs.desktopUpdateToggleBtn.title = view.buttonLabel;
+      setTooltip(refs.desktopUpdateToggleBtn, view.buttonLabel);
     }
     if (refs.desktopUpdatePanel) {
       refs.desktopUpdatePanel.dataset.updateState = view.stateToken;

@@ -1,4 +1,4 @@
-import { escapeHtml } from "../../shared/ui/index.js";
+import { escapeHtml, setTooltip, tooltipAttrs } from "../../shared/ui/index.js";
 import {
   buildTaskRunAnalysis,
   buildTaskRunDiagnostics,
@@ -366,25 +366,13 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
       if (chip) {
         chip.className = `admin-status-chip ${view.statusClass}`;
         chip.textContent = view.statusText;
-        if (view.statusTitle) {
-          chip.setAttribute("title", view.statusTitle);
-        } else {
-          chip.removeAttribute("title");
-        }
+        setTooltip(chip, view.statusTitle);
       }
       cells[2].textContent = view.durationText;
       cells[3].textContent = view.outputOrQueuedText;
-      if (view.outputOrQueuedTitle) {
-        cells[3].setAttribute("title", view.outputOrQueuedTitle);
-      } else {
-        cells[3].removeAttribute("title");
-      }
+      setTooltip(cells[3], view.outputOrQueuedTitle);
       cells[4].textContent = view.failedText;
-      if (view.failedTitle) {
-        cells[4].setAttribute("title", view.failedTitle);
-      } else {
-        cells[4].removeAttribute("title");
-      }
+      setTooltip(cells[4], view.failedTitle);
       cells[5].textContent = view.finishedText;
     });
   };
@@ -547,12 +535,12 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
   const renderCompactRows = (views, { includeCopy = true } = {}) => views.map(view => {
     const outputOrQueuedTitle = view.isRunning ? "" : view.outputOrQueuedTitle;
     return `
-      <div class="admin-user-row admin-source-row admin-ops-history-row${view.isRunning ? " admin-ops-history-row-running" : ""}${view.key === selectedView?.key ? " admin-ops-history-row-selected" : ""}${view.progressStale ? " admin-ops-progress-stale" : ""}${String(view.statusText || "").toLowerCase() === "approaching" ? " admin-ops-history-row-approaching" : ""}" data-row-area="${view.rowArea}" data-run-key="${escapeHtml(view.key)}" tabindex="0" title="Select this run for bounded analysis">
+      <div class="admin-user-row admin-source-row admin-ops-history-row${view.isRunning ? " admin-ops-history-row-running" : ""}${view.key === selectedView?.key ? " admin-ops-history-row-selected" : ""}${view.progressStale ? " admin-ops-progress-stale" : ""}${String(view.statusText || "").toLowerCase() === "approaching" ? " admin-ops-history-row-approaching" : ""}" data-row-area="${view.rowArea}" data-run-key="${escapeHtml(view.key)}" tabindex="0"${tooltipAttrs("Select this run for bounded analysis")}>
         <div class="admin-cell">${escapeHtml(view.typeText)}</div>
-        <div class="admin-cell"><span class="admin-status-chip ${view.statusClass}"${view.statusTitle ? ` title="${escapeHtml(view.statusTitle)}"` : ""}>${escapeHtml(view.statusText)}</span>${includeCopy && onCopyRunDiagnostics ? ` <button type="button" class="btn clear-filters-btn admin-ops-run-copy-btn" data-ops-run-diagnostics-copy="${escapeHtml(view.key)}" title="Copy bounded diagnostics for this run">Copy</button>` : ""}</div>
+        <div class="admin-cell"><span class="admin-status-chip ${view.statusClass}"${tooltipAttrs(view.statusTitle)}>${escapeHtml(view.statusText)}</span>${includeCopy && onCopyRunDiagnostics ? ` <button type="button" class="btn clear-filters-btn admin-ops-run-copy-btn" data-ops-run-diagnostics-copy="${escapeHtml(view.key)}" data-tooltip="Copy bounded diagnostics for this run">Copy</button>` : ""}</div>
         <div class="admin-cell">${escapeHtml(view.durationText)}</div>
-        <div class="admin-cell"${outputOrQueuedTitle ? ` title="${escapeHtml(outputOrQueuedTitle)}"` : ""}>${escapeHtml(view.outputOrQueuedText)}</div>
-        <div class="admin-cell"${view.failedTitle ? ` title="${escapeHtml(view.failedTitle)}"` : ""}>${escapeHtml(view.failedText)}</div>
+        <div class="admin-cell"${tooltipAttrs(outputOrQueuedTitle)}>${escapeHtml(view.outputOrQueuedText)}</div>
+        <div class="admin-cell"${tooltipAttrs(view.failedTitle)}>${escapeHtml(view.failedText)}</div>
         <div class="admin-cell">${escapeHtml(view.finishedText)}</div>
       </div>
     `;
@@ -584,7 +572,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
               </div>
               <div>
                 <span class="admin-status-chip ${view.statusClass}">${escapeHtml(view.statusText)}</span>
-                ${onCopyRunDiagnostics ? `<button type="button" class="btn clear-filters-btn admin-ops-run-copy-btn" data-ops-run-diagnostics-copy="${escapeHtml(view.key)}" title="Copy bounded diagnostics for this run">Copy</button>` : ""}
+                ${onCopyRunDiagnostics ? `<button type="button" class="btn clear-filters-btn admin-ops-run-copy-btn" data-ops-run-diagnostics-copy="${escapeHtml(view.key)}" data-tooltip="Copy bounded diagnostics for this run">Copy</button>` : ""}
               </div>
             </div>
             <div class="admin-ops-run-detail-meta">${metaItems}</div>

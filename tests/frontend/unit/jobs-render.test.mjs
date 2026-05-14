@@ -32,7 +32,7 @@ test("jobs render outputs freshness ping with correct class and tooltip", () => 
     freshnessSource: "postedAt"
   });
   assert.match(postedHtml, /job-freshness-ping stale/);
-  assert.match(postedHtml, /title="Posted 33d ago \(Feb 3, 2026\)"/);
+  assert.match(postedHtml, /data-tooltip="Posted 33d ago \(Feb 3, 2026\)"/);
   assert.doesNotMatch(postedHtml, /job-lifecycle-badge/);
 
   const fetchedHtml = render({
@@ -50,7 +50,7 @@ test("jobs render outputs freshness ping with correct class and tooltip", () => 
     freshnessSource: "fetchedAt"
   });
   assert.match(fetchedHtml, /job-freshness-ping fresh/);
-  assert.match(fetchedHtml, /title="Fetched 4d ago \(best guess\) \(Mar 4, 2026\)"/);
+  assert.match(fetchedHtml, /data-tooltip="Fetched 4d ago \(best guess\) \(Mar 4, 2026\)"/);
 });
 
 test("jobs render omits freshness ping when score is unavailable", () => {
@@ -89,7 +89,7 @@ test("jobs render shows lifecycle badge with removed date tooltip", () => {
   });
   assert.match(html, /job-lifecycle-badge likely-removed/);
   assert.match(html, /Recently removed/);
-  assert.match(html, /title="Recently removed since Mar 7, 2026"/);
+  assert.match(html, /data-tooltip="Recently removed since Mar 7, 2026"/);
 });
 
 test("jobs render shows reappeared and preserved lifecycle badges", () => {

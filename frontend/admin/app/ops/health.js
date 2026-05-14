@@ -15,6 +15,7 @@ import {
   renderAdminSourcePolicyReview
 } from "../../render/source-policy-review.js";
 import { renderAdminRegistryConflicts } from "../../render/registry-conflicts.js";
+import { setTooltip } from "../../../shared/ui/index.js";
 
 function maybeUnrefTimer(timer) {
   timer?.unref?.();
@@ -136,7 +137,7 @@ function renderOpsTabBadges(refs, {
     if (badge) {
       badge.textContent = Number(state.count || 0).toLocaleString();
       badge.setAttribute?.("data-badge-tone", state.tone);
-      badge.title = state.title;
+      setTooltip(badge, state.title);
     }
   });
 }

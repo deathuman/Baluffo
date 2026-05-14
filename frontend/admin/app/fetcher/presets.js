@@ -1,3 +1,5 @@
+import { setTooltip } from "../../../shared/ui/index.js";
+
 export const FETCHER_FALLBACK_MESSAGES = {
   bridgeUnavailable: "Bridge is offline; using VS Code task fallback for this run.",
   presetNeedsBridge: "VS Code task fallback supports default fetcher runs only. Start admin bridge and retry.",
@@ -68,7 +70,7 @@ export function applyFetcherPresetMetadata(refs) {
     if (!btn) return;
     const meta = getFetcherPresetMeta(item.preset);
     btn.dataset.fetcherPreset = meta.preset;
-    if (meta.title) btn.title = meta.title;
+    setTooltip(btn, meta.title || "");
     if (meta.ariaLabel) btn.setAttribute("aria-label", meta.ariaLabel);
   });
 }

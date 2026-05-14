@@ -1,3 +1,5 @@
+import { setTooltip } from "../../../shared/ui/index.js";
+
 function maybeUnrefTimer(timer) {
   timer?.unref?.();
   return timer;
@@ -25,6 +27,7 @@ export function createOpsBridgeStatusController({
       normalized === "online" ? "online" : normalized === "offline" ? "offline" : "checking"
     );
     refs.adminBridgeStatusBadgeEl.textContent = label || "Bridge Checking";
+    setTooltip(refs.adminBridgeStatusBadgeEl, label || "Local admin bridge status");
     refs.adminBridgeStatusBadgeEl.classList.remove("refresh-pulse");
     void refs.adminBridgeStatusBadgeEl.offsetWidth;
     refs.adminBridgeStatusBadgeEl.classList.add("refresh-pulse");

@@ -37,11 +37,11 @@ test("admin ops history: stalled and orphaned current runs render read-only comp
   assert.doesNotMatch(historyEl.innerHTML, /admin-ops-run-card/);
   assert.match(
     historyEl.innerHTML,
-    /<span class="admin-status-chip warning" title="Check bridge and task logs; verify whether the task heartbeat stopped\.">stalled<\/span>/
+    /<span class="admin-status-chip warning" data-tooltip="Check bridge and task logs; verify whether the task heartbeat stopped\.">stalled<\/span>/
   );
   assert.match(
     historyEl.innerHTML,
-    /<span class="admin-status-chip critical" title="Refresh task state and check whether the owning process exited\.">orphaned<\/span>/
+    /<span class="admin-status-chip critical" data-tooltip="Refresh task state and check whether the owning process exited\.">orphaned<\/span>/
   );
   assert.equal((historyEl.innerHTML.match(/Check bridge and task logs/g) || []).length, 1);
   assert.equal((historyEl.innerHTML.match(/owning process exited/g) || []).length, 1);

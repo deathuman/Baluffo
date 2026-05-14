@@ -113,6 +113,10 @@ test("saved render shows lifecycle overlay badges read-only", () => {
 
   assert.match(html, /job-lifecycle-badge likely-removed/);
   assert.match(html, /Recently removed/);
+  assert.match(html, /data-tooltip="Gameplay Engineer"/);
+  assert.match(html, /data-tooltip="Studio"/);
+  assert.match(html, /data-tooltip="Recently removed since Mar 7, 2026"/);
+  assert.doesNotMatch(html, /\stitle="/);
   assert.doesNotMatch(html, /save-job-btn/);
 });
 

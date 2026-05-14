@@ -52,7 +52,8 @@
         : '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path fill="currentColor" d="M14.53 3.53a.75.75 0 0 1 .84-.15a9 9 0 1 0 5.24 11.1a.75.75 0 0 1 1.32-.2c.19.24.23.56.11.84A10.5 10.5 0 1 1 13.9 2.96c.25-.04.51.05.63.24Z"/></svg>';
       btn.setAttribute("aria-label", `Current theme: ${current}. Switch to ${next} theme`);
       btn.setAttribute("aria-pressed", onLight ? "true" : "false");
-      btn.setAttribute("title", `Switch to ${next} theme`);
+      btn.removeAttribute("title");
+      btn.setAttribute("data-tooltip", `Switch to ${next} theme`);
     });
   }
 

@@ -7,6 +7,35 @@ export function escapeHtml(text) {
     .replace(/'/g, "&#039;");
 }
 
+export function tooltipAttrs(text) {
+  const value = String(text || "").trim();
+  return value ? ` data-tooltip="${escapeHtml(value)}"` : "";
+}
+
+export function setTooltip(el, text) {
+  if (!el) return;
+  const value = String(text || "").trim();
+  el.removeAttribute?.("title");
+  if ("title" in el) {
+    try {
+      el.title = "";
+    } catch {
+      // Ignore read-only title implementations in tests or unusual hosts.
+    }
+  }
+  if (value) {
+    el.setAttribute?.("data-tooltip", value);
+    if (el.dataset) el.dataset.tooltip = value;
+    return;
+  }
+  el.removeAttribute?.("data-tooltip");
+  if (el.dataset) delete el.dataset.tooltip;
+}
+
+export function clearTooltip(el) {
+  setTooltip(el, "");
+}
+
 export function showToast(message, type = "info", options = {}) {
   const toast = document.createElement("div");
   toast.className = `toast ${type}`;

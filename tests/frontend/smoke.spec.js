@@ -101,6 +101,16 @@ async function cancelSignIn(page) {
   await expect(page.locator("#local-auth-name-input")).toBeHidden();
 }
 
+async function expectTooltipText(page, target, expectedText) {
+  await target.scrollIntoViewIfNeeded();
+  await target.hover({ force: true });
+  const tooltip = page.locator(".baluffo-tooltip-portal");
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toContainText(expectedText);
+  await page.keyboard.press("Escape");
+  await expect(tooltip).toHaveAttribute("aria-hidden", "true");
+}
+
 function writePlaywrightBridgeJson(relativeName, payload) {
   writeFileSync(
     path.join(PLAYWRIGHT_BRIDGE_DATA_DIR, relativeName),
@@ -177,6 +187,15 @@ test("jobs smoke: filters + refresh + pagination + save/unsave + guest warning",
   await expect(pageErrors).toEqual([]);
   await page.selectOption("#work-type-filter", "Remote");
   await expect(page.locator(".save-job-btn").first()).toBeVisible({ timeout: 20000 });
+  await expectTooltipText(page, page.locator("#jobs-pipeline-run-btn"), "Runs discovery");
+  const companyTooltipTarget = page.locator(".job-company-compact[data-tooltip]").first();
+  await expect(companyTooltipTarget).toBeVisible();
+  await expectTooltipText(
+    page,
+    companyTooltipTarget,
+    String(await companyTooltipTarget.getAttribute("data-tooltip") || "")
+  );
+  await expectTooltipText(page, page.locator(".jobs-footer-admin[data-tooltip]"), /admin/i);
 
   const pageButtons = page.locator("#pagination .page-btn");
   const count = await pageButtons.count();
@@ -244,6 +263,7 @@ test("jobs filter popups close on outside click and Escape", async ({ page }) =>
 test("saved smoke: export stays available for signed-in browser users and guest state restores", async ({ page }) => {
   await seedBridgeRuntimeBase(page);
   await page.goto("/saved.html");
+  await expectTooltipText(page, page.locator("#history-panel-toggle-btn"), "Show activity timeline");
 
   await signInWithProfile(page, "#saved-auth-sign-in-btn", "Smoke User", "#add-custom-job-btn");
   await expect(page.locator("#saved-auth-status")).not.toContainText(/Guest/i);
@@ -322,6 +342,7 @@ test("admin smoke: direct admin load shows bucketed fetch failure summary", asyn
   await page.goto("/admin.html");
   await expect(page.locator("#admin-content")).toBeVisible();
   await expect(page.locator("h1")).toContainText(/Administration/i);
+  await expectTooltipText(page, page.locator("#admin-sync-test-btn"), "Verify GitHub App access");
 
   // Load the fetch report - requires bridge to be running
   await page.click("#admin-refresh-report-btn");

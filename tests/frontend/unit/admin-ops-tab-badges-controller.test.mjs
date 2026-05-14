@@ -201,5 +201,6 @@ test("admin ops controller updates tab badges from loaded review payloads", asyn
   assert.equal(registryConflictsBadge.attributes["data-badge-tone"], "warning");
   assert.equal(dedupBadge.textContent, "3");
   assert.equal(dedupBadge.attributes["data-badge-tone"], "critical");
-  assert.equal(dedupBadge.title, "3 dedup blockers");
+  assert.equal(dedupBadge.attributes["data-tooltip"], "3 dedup blockers");
+  assert.equal(dedupBadge.title, "");
 });

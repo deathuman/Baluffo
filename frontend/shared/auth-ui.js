@@ -1,4 +1,5 @@
 import { toAuthViewModel } from "./auth-view-model.js";
+import { setTooltip } from "./ui/index.js";
 
 export function setAuthStatusViewModel(statusEl, hintEl, avatarEl, text) {
   const { label, hint } = toAuthViewModel(text);
@@ -16,6 +17,6 @@ export function setAuthControlsReady(buttons, ready) {
     if (!btn) return;
     btn.disabled = !isReady;
     btn.setAttribute("aria-disabled", isReady ? "false" : "true");
-    btn.title = isReady ? "" : "Local auth provider is starting.";
+    setTooltip(btn, isReady ? "" : "Local auth provider is starting.");
   });
 }

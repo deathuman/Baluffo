@@ -1,4 +1,4 @@
-import { escapeHtml } from "./ui/index.js";
+import { escapeHtml, tooltipAttrs } from "./ui/index.js";
 
 function formatDateForStatus(value) {
   const parsed = new Date(String(value || ""));
@@ -55,5 +55,5 @@ export function getLifecycleBadgeMeta(record, options = {}) {
 export function renderLifecycleBadgeHtml(record, options = {}) {
   const meta = getLifecycleBadgeMeta(record, options);
   if (!meta) return "";
-  return `<span class="job-lifecycle-badge ${meta.cssClass}" title="${escapeHtml(meta.title)}">${escapeHtml(meta.label)}</span>`;
+  return `<span class="job-lifecycle-badge ${meta.cssClass}"${tooltipAttrs(meta.title)}>${escapeHtml(meta.label)}</span>`;
 }

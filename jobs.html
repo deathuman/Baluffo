@@ -22,7 +22,7 @@
           type="button"
           aria-haspopup="dialog"
           aria-expanded="false"
-          title="Check for desktop updates"
+          data-tooltip="Check for desktop updates"
         >
           Check updates
         </button>
@@ -197,7 +197,7 @@
       <p id="results-summary" data-ui="results-summary" class="results-summary" aria-live="polite"></p>
       <div class="toolbar-actions">
         <button id="refresh-jobs-btn" data-ui="refresh-jobs-btn" class="btn clear-filters-btn">Refresh Jobs</button>
-        <button id="jobs-pipeline-run-btn" data-ui="jobs-pipeline-run-btn" class="btn clear-filters-btn jobs-pipeline-btn" type="button" title="Runs discovery, fetch, and sync pipeline. Can take more than 5 minutes.">Run Discovery + Fetch + Sync</button>
+        <button id="jobs-pipeline-run-btn" data-ui="jobs-pipeline-run-btn" class="btn clear-filters-btn jobs-pipeline-btn" type="button" data-tooltip="Runs discovery, fetch, and sync pipeline. Can take more than 5 minutes.">Run Discovery + Fetch + Sync</button>
         <span id="refresh-jobs-needed-badge" data-ui="refresh-jobs-needed-badge" class="refresh-jobs-needed-badge hidden" aria-live="polite">Updates found</span>
         <span id="jobs-last-updated" data-ui="jobs-last-updated" class="jobs-last-updated" aria-live="polite"></span>
       </div>
@@ -220,7 +220,7 @@
     <div class="jobs-footer">
       <p><strong>Disclaimer:</strong> This website is vibecoded. Please verify critical details directly with the original job posting and company site.</p>
       <p data-ui="app-version" class="jobs-footer-version" hidden></p>
-      <div class="jobs-footer-admin">
+      <div class="jobs-footer-admin" data-admin-bridge-tooltip="true" data-tooltip="Checking admin bridge status">
         <button
           id="admin-page-btn"
           data-ui="admin-page-btn"
@@ -228,7 +228,6 @@
           type="button"
           disabled
           aria-disabled="true"
-          title="Checking admin bridge status"
         >Admin</button>
       </div>
     </div>

@@ -299,7 +299,8 @@ export function buildJobLocationSummary(job) {
   const locationLabels = locations
     .map(location => {
       const city = sanitizeLocationField(location?.city || "", "city");
-      const country = sanitizeLocationField(location?.country || "", "country");
+      const rawCountry = sanitizeLocationField(location?.country || "", "country");
+      const country = rawCountry === "Remote" ? "" : rawCountry;
       if (!city && !country) return "";
       const label = city && country && city.toLowerCase().endsWith(`, ${country.toLowerCase()}`)
         ? city
@@ -312,7 +313,8 @@ export function buildJobLocationSummary(job) {
     .filter(Boolean);
   if (locationLabels.length > 0) return locationLabels.join(" | ");
   const city = sanitizeLocationField(job?.city || "", "city");
-  const country = sanitizeLocationField(job?.country || "", "country");
+  const rawCountry = sanitizeLocationField(job?.country || "", "country");
+  const country = rawCountry === "Remote" ? "" : rawCountry;
   if (city && country && city.toLowerCase().endsWith(`, ${country.toLowerCase()}`)) return city;
   return [city, country].filter(Boolean).join(", ");
 }

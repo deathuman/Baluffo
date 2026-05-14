@@ -1,4 +1,4 @@
-import { escapeHtml } from "../../shared/ui/index.js";
+import { escapeHtml, tooltipAttrs } from "../../shared/ui/index.js";
 import {
   buildOpsFetcherDiagnosticsSections,
   buildOpsFetcherMetricSections,
@@ -681,7 +681,7 @@ function formatDiagnosticsCopyButton(key) {
       class="btn clear-filters-btn admin-ops-diagnostics-copy-btn"
       type="button"
       data-ops-diagnostics-copy="${escapeHtml(key)}"
-      title="Copy bounded diagnostics for this section"
+      data-tooltip="Copy bounded diagnostics for this section"
     >Copy diagnostics</button>
   `;
 }
@@ -869,9 +869,9 @@ function renderDedupReviewActionButtons(tableKey, rowIndex, showActions) {
   if (!showActions) return "";
   return `
     <div class="admin-inline-actions" data-dedup-review-actions="${escapeHtml(tableKey)}:${Number(rowIndex)}">
-      <button type="button" class="admin-pill-button" title="Downgrade this exact disagreement from blocker to warning." data-dedup-review-action="reviewed_safe" data-dedup-review-table="${escapeHtml(tableKey)}" data-dedup-review-row="${Number(rowIndex)}">Safe duplicate</button>
-      <button type="button" class="admin-pill-button" title="Keep this exact disagreement blocking and record that it was reviewed." data-dedup-review-action="confirmed_blocking" data-dedup-review-table="${escapeHtml(tableKey)}" data-dedup-review-row="${Number(rowIndex)}">Real blocker</button>
-      <button type="button" class="admin-pill-button" title="Remove the manual decision and let the report classify it again." data-dedup-review-action="clear_review" data-dedup-review-table="${escapeHtml(tableKey)}" data-dedup-review-row="${Number(rowIndex)}">Reset review</button>
+      <button type="button" class="admin-pill-button"${tooltipAttrs("Downgrade this exact disagreement from blocker to warning.")} data-dedup-review-action="reviewed_safe" data-dedup-review-table="${escapeHtml(tableKey)}" data-dedup-review-row="${Number(rowIndex)}">Safe duplicate</button>
+      <button type="button" class="admin-pill-button"${tooltipAttrs("Keep this exact disagreement blocking and record that it was reviewed.")} data-dedup-review-action="confirmed_blocking" data-dedup-review-table="${escapeHtml(tableKey)}" data-dedup-review-row="${Number(rowIndex)}">Real blocker</button>
+      <button type="button" class="admin-pill-button"${tooltipAttrs("Remove the manual decision and let the report classify it again.")} data-dedup-review-action="clear_review" data-dedup-review-table="${escapeHtml(tableKey)}" data-dedup-review-row="${Number(rowIndex)}">Reset review</button>
       <span class="admin-muted">Local review only: no merge, registry, source, or job data is changed.</span>
     </div>
   `;

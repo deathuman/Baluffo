@@ -318,7 +318,7 @@ test("admin render: active excluded rows include a tooltip with the exclusion re
     row => row._lastStatus || row.status
   );
 
-  assert.match(excludedHtml, /admin-status-chip warning" title="Excluded: cache_within_freshness_window"/);
+  assert.match(excludedHtml, /admin-status-chip warning" data-tooltip="Excluded: cache_within_freshness_window"/);
   assert.match(excludedHtml, />excluded<\/span>/i);
 
   const healthyHtml = renderSourcesTableHtml(
