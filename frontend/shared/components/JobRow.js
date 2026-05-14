@@ -6,6 +6,7 @@
  */
 import { escapeHtml } from "../ui/index.js";
 import { renderLifecycleBadgeHtml } from "../lifecycle-badges.js";
+import { formatJobLocationColumns } from "../location-display.js";
 
 function getFreshnessTier(score) {
   if (!Number.isFinite(score)) return "";
@@ -63,8 +64,9 @@ export function renderJobRow(job, options = {}) {
   const safeTitle = escapeHtml(job.title);
   const safeCompany = escapeHtml(job.company);
   const safeSector = escapeHtml(job.sector || "Unknown");
-  const safeCity = escapeHtml(job.locationSummary || job.city || "");
-  const safeCountry = escapeHtml(fullCountryName(job.country));
+  const locationColumns = formatJobLocationColumns(job, { fullCountryName });
+  const safeCity = escapeHtml(locationColumns.cityLabel);
+  const safeCountry = escapeHtml(locationColumns.countryLabel);
   const safeJobLink = sanitizeUrl(job.jobLink);
   const jobKey = getJobKeyForJob(job);
   const isSaved = savedJobKeys.has(jobKey);

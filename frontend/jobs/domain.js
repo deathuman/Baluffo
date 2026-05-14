@@ -1,8 +1,10 @@
 export {
   canonicalizeCountryName,
+  buildJobLocationSummary,
   detectContractType,
   detectWorkType,
   fullCountryName,
+  isValidCityFilterOption,
   isSemanticallyValidLocationValue,
   isValidCountry,
   normalizeCountryToken,

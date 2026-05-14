@@ -27,15 +27,16 @@ baluffo/source-sync/shards/pending/<key>/<sha256>.json.gz
 Key details:
 
 - **Schema version:** 3
-- **Shard key:** stable source identity hash prefix
+- **Shard key:** stable source identity hash prefix; the default generation prefix is 1 hex character, with 1-character recursive splits only when a shard exceeds the per-shard cap
 - **Per-shard cap:** 10 MiB by default; split by longer hash prefix if exceeded
 - **Push protocol:** push changed shards, verify them, then update committed `manifest.json`
 - **Changed-shard detection:** Compare SHA-256 against last committed manifest
 - **Write compatibility:** do not update the v2 monolith
 - **Read compatibility:** fall back to v2 `source-sync.json` only when no trusted committed v3 manifest exists
 - **Garbage collection:** after a successful manifest commit, delete a bounded number of unreferenced shard files under `baluffo/source-sync/shards/`; GC warnings are reported after success and do not roll back the commit
-- **Metrics:** sync results, task summaries, timing history, and storage metrics include additive shard fields: `snapshotFormat`, `shardCount`, `changedShardCount`, `shardsPushedBytes`, `manifestSizeBytes`, `shardCapBytes`, and `shardHashes`
-- **Live progress:** sharded pushes emit additive `/ops/task-live/sync` progress while uploading/verifying shards, committing the manifest, and pruning old shards. These heartbeat counters are display-only and do not change the write protocol or committed snapshot contract.
+- **Metrics:** sync results, task summaries, timing history, and storage metrics include additive shard fields: `snapshotFormat`, `shardCount`, `changedShardCount`, `shardsPushedBytes`, `shardsReadBytes`, `totalShardBytes`, `manifestSizeBytes`, `shardCapBytes`, and `shardHashes`
+- **Live progress:** sharded pulls emit additive `/ops/task-live/sync` progress while reading shards, and sharded pushes emit progress while uploading/verifying shards, committing the manifest, and pruning old shards. These heartbeat counters are display-only and do not change the read/write protocol or committed snapshot contract.
+- **Pull no-op:** successful pulls persist the last committed manifest SHA in runtime sync state. If a later pull sees the same committed manifest SHA, it skips shard downloads and reports `skipped: true` with `skipReason: remote_manifest_unchanged`.
 - **Runtime history:** after the runtime-storage M3 cutover, sync task events and final sync-run rows are mirrored into SQLite `task_events` and `sync_runs`; compatibility JSON timing/live-task exports remain present.
 
 Current storage and runtime authority behavior is canonical in [`storage-contract.md`](storage-contract.md). The completed rollout history is archived in [`archive/runtime-storage-and-sync-architecture-plan.md`](archive/runtime-storage-and-sync-architecture-plan.md).

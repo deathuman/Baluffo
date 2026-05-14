@@ -112,7 +112,7 @@ test("syncAdminBusyUi disables uncapped fetcher and discovery buttons while thei
   assert.equal(refs.adminRunFetcherUncappedBtnEl.textContent, FETCHER_PRESET_META.uncapped.busyLabel);
   assert.equal(refs.adminRunDiscoveryUncappedBtnEl.disabled, true);
   assert.equal(refs.adminRunDiscoveryUncappedBtnEl.attributes["aria-disabled"], "true");
-  assert.equal(refs.adminRunDiscoveryUncappedBtnEl.textContent, "Uncapped Running...");
+  assert.equal(refs.adminRunDiscoveryUncappedBtnEl.textContent, "Uncapped Discovery Running...");
 });
 
 test("syncAdminBusyUi restores uncapped buttons after tasks are idle", () => {
@@ -138,7 +138,7 @@ test("syncAdminBusyUi restores uncapped buttons after tasks are idle", () => {
   refs.adminRunFetcherUncappedBtnEl.dataset.idleLabel = "Uncapped Run";
   refs.adminRunDiscoveryUncappedBtnEl.dataset.idleLabel = "Uncapped Run";
   refs.adminRunFetcherUncappedBtnEl.textContent = FETCHER_PRESET_META.uncapped.busyLabel;
-  refs.adminRunDiscoveryUncappedBtnEl.textContent = "Uncapped Running...";
+  refs.adminRunDiscoveryUncappedBtnEl.textContent = "Uncapped Discovery Running...";
 
   syncAdminBusyUi({
     busyState,

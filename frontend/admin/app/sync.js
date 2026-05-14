@@ -56,8 +56,13 @@ export function createAdminSyncController({
     const configPath = String(config?.configPath || "").trim();
     if (refs.adminSyncConfigHintEl) {
       refs.adminSyncConfigHintEl.textContent = configPath
-        ? `GitHub App mode: ${authMode}. Packaged config: ${configPath}`
+        ? `GitHub App mode: ${authMode}. Packaged config: available.`
         : "GitHub App credentials are packaged with the app.";
+      if (configPath) {
+        refs.adminSyncConfigHintEl.title = "Full packaged config path is available in diagnostics.";
+      } else {
+        refs.adminSyncConfigHintEl.removeAttribute?.("title");
+      }
     }
     const repo = String(config?.repo || "unknown");
     const branch = String(config?.branch || "main");

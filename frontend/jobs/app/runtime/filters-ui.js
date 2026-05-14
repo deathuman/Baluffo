@@ -218,7 +218,7 @@ export function createJobsFiltersController({
       availableCountries: nextAvailableCountries,
       availableCountryFilterValues: nextAvailableCountryFilterValues,
       availableProfessions: nextAvailableProfessions,
-      availableCities,
+      availableCities: rawAvailableCities,
       availableSectors
     } = precomputed || buildFilterOptions(allJobs, {
       getJobLocationCities,
@@ -228,6 +228,16 @@ export function createJobsFiltersController({
       fullCountryName: fullCountryNameForJobs,
       isSemanticallyValidLocationValue
     });
+    const seenCityOptions = new Set();
+    const availableCities = (Array.isArray(rawAvailableCities) ? rawAvailableCities : [])
+      .filter(city => {
+        const text = String(city || "").trim();
+        if (!text || seenCityOptions.has(text)) return false;
+        if (text.includes("<") || text.includes(">")) return false;
+        if (!isSemanticallyValidLocationValue(text, "city")) return false;
+        seenCityOptions.add(text);
+        return true;
+      });
 
     availableCountries = nextAvailableCountries;
     availableCountryFilterValues = nextAvailableCountryFilterValues;

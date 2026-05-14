@@ -46,6 +46,39 @@ LOCATION_ROLE_BLOB_RE = re.compile(
     r"(?i)\b(administratif|administration|assistant|assistante|gestion|human resources|hr|office|operations?|coordination|support)\b"
 )
 REMOTEISH_TOKENS = {"remote", "hybrid", "onsite", "on-site", "worldwide"}
+CITY_FILTER_ONLY_TOKENS = {
+    "unknown",
+    "n/a",
+    "na",
+    "none",
+    "blank",
+    "remote",
+    "fully remote",
+    "hybrid",
+    "onsite",
+    "on-site",
+    "on site",
+    "office",
+    "worldwide",
+    "global",
+    "emea",
+    "apac",
+    "latam",
+    "cis",
+    "full-time",
+    "full time",
+    "part-time",
+    "part time",
+    "temporary",
+    "contract",
+    "internship",
+}
+CITY_FILTER_DATE_NOISE_RE = re.compile(
+    r"(?i)^(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z.]*\s+\d{1,2}$"
+)
+CITY_FILTER_COUNTRY_CODE_BUNDLE_RE = re.compile(
+    r"(?i)^[a-z]{2}\s*-\s*[^;]+(?:\s*;\s*[a-z]{2}\s*-\s*[^;]+)+$"
+)
 COUNTRY_TOKEN_ALIASES = {
     "england": "uk",
     "great britain": "uk",
@@ -402,6 +435,13 @@ def invalid_location_reason(value: Any, *, field_name: str = "city") -> str:
     if not text:
         return ""
     lowered = norm_text(text)
+    if field_name == "city" and (
+        lowered in CITY_FILTER_ONLY_TOKENS
+        or lowered.startswith("(none)")
+        or CITY_FILTER_DATE_NOISE_RE.search(text)
+        or CITY_FILTER_COUNTRY_CODE_BUNDLE_RE.search(text)
+    ):
+        return f"invalid_{field_name}_semantic_noise"
     if lowered in {"unknown", "n/a", "na", "none"}:
         return ""
     if lowered in REMOTEISH_TOKENS:
@@ -426,6 +466,8 @@ def sanitize_location_text(value: Any, *, field_name: str = "city") -> tuple[str
         return "", ""
     if field_name == "country":
         return sanitize_country_text(text)
+    if norm_text(text) in REMOTEISH_TOKENS:
+        return "", ""
     reason = invalid_location_reason(text, field_name=field_name)
     if reason:
         return "", reason

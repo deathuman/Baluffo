@@ -17,8 +17,8 @@ def test_pipeline_lifecycle_state_retains_city_and_country_for_removed_rows() ->
             {
                 "title": "Engine Programmer",
                 "company": "Lifecycle Studio",
-                "city": "Remote",
-                "country": "Remote",
+                "city": "Berlin",
+                "country": "Germany",
                 "workType": "Remote",
                 "contractType": "Full-time",
                 "jobLink": "https://example.com/lifecycle/engine-programmer",
@@ -50,8 +50,8 @@ def test_pipeline_lifecycle_state_retains_city_and_country_for_removed_rows() ->
             assert len(jobs_map) == 1
             entry = list(jobs_map.values())[0]
             assert entry["status"] == "likely_removed"
-            assert entry["city"] == "Remote"
-            assert entry["country"] == "Remote"
+            assert entry["city"] == "Berlin"
+            assert entry["country"] == "DE"
     finally:
         jf.default_source_loaders = previous_default_loaders
 

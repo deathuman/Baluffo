@@ -41,6 +41,9 @@ SYNC_STATUS: dict[str, Any] = {
     "lastError": "",
     "lastAction": "",
     "lastResult": "",
+    "lastPullRemoteSha": "",
+    "lastPullRemoteGeneratedAt": "",
+    "lastPullSnapshotFormat": "",
 }
 
 SYNC_COUNTER_KEYS = (
@@ -132,6 +135,9 @@ class SyncState:
             "lastError": str(raw.get("lastError") or ""),
             "lastAction": str(raw.get("lastAction") or ""),
             "lastResult": str(raw.get("lastResult") or ""),
+            "lastPullRemoteSha": str(raw.get("lastPullRemoteSha") or ""),
+            "lastPullRemoteGeneratedAt": str(raw.get("lastPullRemoteGeneratedAt") or ""),
+            "lastPullSnapshotFormat": str(raw.get("lastPullSnapshotFormat") or ""),
             "lastDiscoverySyncFinishedAt": str(raw.get("lastDiscoverySyncFinishedAt") or ""),
             "counters": _normalize_sync_counters(raw.get("counters")),
         }
@@ -153,6 +159,9 @@ class SyncState:
             "lastError",
             "lastAction",
             "lastResult",
+            "lastPullRemoteSha",
+            "lastPullRemoteGeneratedAt",
+            "lastPullSnapshotFormat",
             "lastDiscoverySyncFinishedAt",
             "counters",
         }
@@ -184,6 +193,9 @@ class SyncState:
         error: str = "",
         pulled: bool = False,
         pushed: bool = False,
+        last_pull_remote_sha: str | None = None,
+        last_pull_remote_generated_at: str | None = None,
+        last_pull_snapshot_format: str | None = None,
     ) -> None:
         """Update sync status with new values.
 
@@ -221,6 +233,17 @@ class SyncState:
             if pulled:
                 SYNC_STATUS["lastPullAt"] = stamp
                 runtime_state["lastPullAt"] = stamp
+                if last_pull_remote_sha is not None:
+                    SYNC_STATUS["lastPullRemoteSha"] = str(last_pull_remote_sha or "")
+                    runtime_state["lastPullRemoteSha"] = str(last_pull_remote_sha or "")
+                if last_pull_remote_generated_at is not None:
+                    generated_at = str(last_pull_remote_generated_at or "")
+                    SYNC_STATUS["lastPullRemoteGeneratedAt"] = generated_at
+                    runtime_state["lastPullRemoteGeneratedAt"] = generated_at
+                if last_pull_snapshot_format is not None:
+                    snapshot_format = str(last_pull_snapshot_format or "")
+                    SYNC_STATUS["lastPullSnapshotFormat"] = snapshot_format
+                    runtime_state["lastPullSnapshotFormat"] = snapshot_format
 
             if pushed:
                 SYNC_STATUS["lastPushAt"] = stamp

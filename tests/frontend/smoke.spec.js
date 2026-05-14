@@ -257,7 +257,7 @@ test("saved smoke: export stays available for signed-in browser users and guest 
   await expect(download.suggestedFilename()).toContain("baluffo-backup-");
 
   await page.click("#saved-auth-sign-out-btn");
-  await expect(page.locator("#saved-source-status")).toContainText("Sign in to view your saved jobs");
+  await expect(page.locator("#saved-source-status")).toContainText("Sign in to a local profile to view saved jobs.");
 });
 
 test("jobs admin badge reaches online state after navigating back from saved", async ({ page }) => {

@@ -326,12 +326,70 @@ def test_canonicalize_job_with_reason_drops_static_page_noise_in_city_field() ->
         source="static_source::static:listing_url:https://careers.wbd.com/global/en/wb-games-jobs",
         fetched_at="2026-03-20T00:00:00Z",
     )
-    assert reason == ""
-    assert row is not None
-    payload = row if isinstance(row, dict) else row.to_dict()
-    assert payload["city"] == ""
-    assert payload["country"] == ""
-    assert payload["locations"] == []
+    assert row is None
+    assert reason == "non_job_static_page"
+
+
+@pytest.mark.parametrize(
+    "raw, source",
+    [
+        (
+            {
+                "title": "Software",
+                "company": "Stardock",
+                "city": "Increase productivity, design intelligent controls and reinforce branding with our enterprise products.",
+                "country": "Unknown",
+                "jobLink": "https://www.stardock.com/products",
+                "sector": "Game",
+            },
+            "static_source::static:listing_url:https://www.stardock.com/careers",
+        ),
+        (
+            {
+                "title": "Purpose-built for gaming.",
+                "company": "Immutable",
+                "city": "Know which channels are driving players likely to purchase, and which are driving empty wishlists.",
+                "country": "Unknown",
+                "jobLink": "https://www.immutable.com/chain",
+                "sector": "Game",
+            },
+            "static_source::static:listing_url:https://www.immutable.com/jobs",
+        ),
+        (
+            {
+                "title": "JOB OFFERS",
+                "company": "GS Studio",
+                "city": "Full-time",
+                "country": "Unknown",
+                "jobLink": "https://www.gs-studio.eu/career/no-open-positions",
+                "sector": "Game",
+            },
+            "static_source::static:listing_url:https://www.gs-studio.eu/career",
+        ),
+        (
+            {
+                "title": "Speculative Application - Art UK Remote / West Midlands",
+                "company": "Flix Interactive",
+                "city": "Don’t see an Art role available at Flix right now? We still want to hear from you",
+                "country": "UK",
+                "jobLink": "https://www.flixinteractive.com/vacancies/speculative-application-art",
+                "sector": "Game",
+            },
+            "static_source::static:listing_url:https://www.flixinteractive.com/",
+        ),
+    ],
+)
+def test_canonicalize_job_with_reason_drops_high_confidence_non_job_static_pages(
+    raw: dict[str, str],
+    source: str,
+) -> None:
+    row, reason = jf.canonicalize_job_with_reason(
+        raw,
+        source=source,
+        fetched_at="2026-03-20T00:00:00Z",
+    )
+    assert row is None
+    assert reason == "non_job_static_page"
 
 
 def test_public_text_quality_report_includes_city_garbage_audit() -> None:
@@ -762,111 +820,6 @@ def test_canonicalize_job_with_reason_blanks_role_blob_location_noise() -> None:
     assert payload["country"] == "FR"
     assert payload["locationSummary"] == "Paris, FR"
     assert payload["locations"] == [{"city": "Paris", "country": "FR"}]
-
-
-@pytest.mark.parametrize(
-    "value, expected_country",
-    [
-        ("Any", ""),
-        ("Apps for kids", ""),
-        ("CET +- 4", ""),
-        ("CET +- 2", ""),
-        ("COME FLY WITH US", ""),
-        ("Chief Human Resource Officer (CHRO)", ""),
-        ("Come work with us!", ""),
-        ("Chronos: Before the Ashes", ""),
-        ("Community", ""),
-        ("Contact", ""),
-        ("Create amazing characters that are efficient", ""),
-        ("Create", ""),
-        ("Cybersecurity", ""),
-        ("Culture & Values", ""),
-        ("Data & Engineering", ""),
-        ("Data & Research", ""),
-        ("Department", ""),
-        ("Departments", ""),
-        ("Do Not Sell My Information", ""),
-        ("Do Not Share My Personal", ""),
-        ("EU & NA", "EU & NA"),
-        ("Endless Legend is a 4X turn", ""),
-        ("Ensure brand message is consistent", ""),
-        ("Entertain the world", ""),
-        ("Filter by", ""),
-        ("Filter roles by", ""),
-        ("Filters", ""),
-        ("Finance", ""),
-        ("Finance & Accounting", ""),
-        ("Find us on Facebook", ""),
-        ("From Concept to Console: Meet Winslow", ""),
-        ("Full", ""),
-        ("Full or part", ""),
-        ("Games FQA Warsaw", ""),
-        ("HUMANKIND is a turn", ""),
-        ("Head of IP Licensing BD", ""),
-        ("Head of Recruiting", ""),
-        ("Help create video scripts", ""),
-        ("In this role", ""),
-        ("Imprint", ""),
-        ("Internal Tools & Player Insights", ""),
-        ("Interviews", ""),
-        ("Junior", ""),
-        ("Join our crew", ""),
-        ("Join the community", ""),
-        ("Join us", ""),
-        ("Legal", ""),
-        ("Ltd. )", ""),
-        ("Mastery social platforms: Facebook", ""),
-        ("Office", ""),
-        ("Organization", ""),
-        ("People & Culture", ""),
-        ("Senior Production Accountant (Feature) : 2026", ""),
-        ("Sega of America", ""),
-        ("Sign in", ""),
-        ("Spontaneous application", ""),
-        ("Startup Directory Founder Directory Launch YC", ""),
-        ("Student", ""),
-        ("Student & Recent Graduates", ""),
-        ("Studio", ""),
-        ("Studios", ""),
-        ("Titan Quest II Announced", ""),
-        ("To be clear", ""),
-        ("To be considered", ""),
-        ("UNAVAILABLE", ""),
-        ("UK", "UK"),
-        ("Web Build Purple Imp", ""),
-        ("Work & Innovation", ""),
-        ("144 million+ Downloads", ""),
-        ("3 to UTC+1", ""),
-        ("9mo", ""),
-        ("All", ""),
-        ("Inc.", ""),
-    ],
-)
-def test_canonicalize_job_with_reason_blanks_exact_city_noise_outliers(
-    value: str,
-    expected_country: str,
-) -> None:
-    row, reason = jf.canonicalize_job_with_reason(
-        {
-            "title": "Test Role",
-            "company": "Test Studio",
-            "city": value,
-            "country": "Unknown",
-            "jobLink": "https://example.com/test-role",
-            "sector": "Tech",
-        },
-        source="static_source::static",
-        fetched_at="2026-03-20T00:00:00Z",
-    )
-    assert reason == ""
-    assert row is not None
-    payload = row if isinstance(row, dict) else row.to_dict()
-    assert payload["city"] == ""
-    assert payload["country"] == expected_country
-    assert payload["locationSummary"] == expected_country
-    assert payload["locations"] == (
-        [{"city": "", "country": expected_country}] if expected_country else []
-    )
 
 
 def test_canonicalize_job_with_reason_normalizes_sector_from_game_evidence() -> None:

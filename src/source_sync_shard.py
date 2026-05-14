@@ -8,6 +8,7 @@ import hashlib
 import json
 import re
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any
@@ -17,9 +18,10 @@ from src import source_sync_config as _source_sync_config
 from src.source_registry_identity import source_identity
 
 SHARD_SCHEMA_VERSION = 3
-DEFAULT_PREFIX_LENGTH = 2
-PREFIX_LENGTH_STEP = 2
+DEFAULT_PREFIX_LENGTH = 1
+PREFIX_LENGTH_STEP = 1
 MAX_PREFIX_LENGTH = 64
+DEFAULT_SHARD_READ_WORKERS = 8
 DEFAULT_BASE_PATH = "baluffo/source-sync/shards"
 DEFAULT_MANIFEST_FILE_NAME = "manifest.json"
 DEFAULT_GC_DELETE_LIMIT = 32
@@ -298,7 +300,11 @@ def read_manifest(
     manifest = trusted_committed_manifest(parsed)
     if manifest is None:
         return None
-    return {"sha": str(payload.get("sha") or ""), "manifest": manifest}
+    return {
+        "sha": str(payload.get("sha") or ""),
+        "manifest": manifest,
+        "manifestSizeBytes": len(raw_bytes),
+    }
 
 
 def push_manifest(
@@ -445,6 +451,56 @@ def _shard_progress_counts(
         "manifestCommitted": bool(manifest_committed),
         "gcDeletedCount": max(0, int(gc_deleted_count or 0)),
     }
+
+
+def _shard_pull_progress_counts(
+    *,
+    shard_count: int,
+    completed_shard_count: int = 0,
+    current_shard_index: int = 0,
+    current_shard_label: str = "",
+    shards_read_bytes: int = 0,
+    total_shard_bytes: int = 0,
+    manifest_size_bytes: int = 0,
+    skipped: bool = False,
+    skip_reason: str = "",
+) -> dict[str, Any]:
+    return {
+        "action": "pull",
+        "shardCount": max(0, int(shard_count or 0)),
+        "completedShardCount": max(0, int(completed_shard_count or 0)),
+        "currentShardIndex": max(0, int(current_shard_index or 0)),
+        "currentShardLabel": str(current_shard_label or ""),
+        "shardsReadBytes": max(0, int(shards_read_bytes or 0)),
+        "totalShardBytes": max(0, int(total_shard_bytes or 0)),
+        "manifestSizeBytes": max(0, int(manifest_size_bytes or 0)),
+        "skipped": bool(skipped),
+        "skipReason": str(skip_reason or ""),
+    }
+
+
+def _emit_pull_progress(
+    progress_callback: Callable[..., None] | None,
+    *,
+    phase_label: str,
+    counts: dict[str, Any],
+    ratio: float,
+    message: str = "",
+    event_level: str = "muted",
+) -> None:
+    if not callable(progress_callback):
+        return
+    with suppress(Exception):
+        progress_callback(
+            phase_key="remote_read",
+            phase_label=phase_label,
+            mode="determinate",
+            ratio=max(0.0, min(1.0, float(ratio or 0.0))),
+            counts=counts,
+            target_url="",
+            event_level=event_level,
+            message=message,
+        )
 
 
 def _emit_push_progress(
@@ -798,15 +854,112 @@ def read_sharded_snapshot(
     module: Any,
     config: Any,
     *,
+    progress_callback: Callable[..., None] | None = None,
+    known_manifest_sha: str = "",
+    max_workers: int | None = None,
     opener: Callable[..., Any],
 ) -> dict[str, Any] | None:
     manifest_result = read_manifest(module, config, opener=opener)
     if manifest_result is None:
         return None
     manifest = manifest_result["manifest"]
+    manifest_sha = str(manifest_result.get("sha") or "")
+    manifest_size_bytes = int(manifest_result.get("manifestSizeBytes") or 0)
+    shard_entries = list(manifest["shards"])
+    shard_count = len(shard_entries)
+    total_shard_bytes = sum(int(entry.get("sizeBytes") or 0) for entry in shard_entries)
+    if known_manifest_sha and manifest_sha and str(known_manifest_sha or "") == manifest_sha:
+        _emit_pull_progress(
+            progress_callback,
+            phase_label="Remote manifest unchanged",
+            ratio=1.0,
+            counts=_shard_pull_progress_counts(
+                shard_count=shard_count,
+                completed_shard_count=0,
+                shards_read_bytes=0,
+                total_shard_bytes=total_shard_bytes,
+                manifest_size_bytes=manifest_size_bytes,
+                skipped=True,
+                skip_reason="remote_manifest_unchanged",
+            ),
+            message="Source-sync remote manifest is unchanged; skipping shard download.",
+            event_level="success",
+        )
+        return {
+            "schemaVersion": SHARD_SCHEMA_VERSION,
+            "generatedAt": manifest["generatedAt"],
+            "source": dict(manifest.get("source") or {"name": "admin_bridge"}),
+            "active": [],
+            "pending": [],
+            "manifest": manifest,
+            "manifestSha": manifest_sha,
+            "manifestSizeBytes": manifest_size_bytes,
+            "shardCount": shard_count,
+            "shardsReadBytes": 0,
+            "totalShardBytes": total_shard_bytes,
+            "skipped": True,
+            "skipReason": "remote_manifest_unchanged",
+        }
+    _emit_pull_progress(
+        progress_callback,
+        phase_label=f"Reading shard 0 of {shard_count}",
+        ratio=0.0,
+        counts=_shard_pull_progress_counts(
+            shard_count=shard_count,
+            completed_shard_count=0,
+            shards_read_bytes=0,
+            total_shard_bytes=total_shard_bytes,
+            manifest_size_bytes=manifest_size_bytes,
+        ),
+        message="Reading source-sync shards.",
+    )
     rows_by_bucket: dict[str, list[dict[str, Any]]] = {"active": [], "pending": []}
-    for entry in manifest["shards"]:
-        shard_result = read_shard(module, config, entry, opener=opener)
+    worker_count = max(1, min(int(max_workers or DEFAULT_SHARD_READ_WORKERS), shard_count or 1))
+    shard_results: list[dict[str, Any] | None] = [None] * shard_count
+    completed_count = 0
+    read_bytes = 0
+    if shard_entries:
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            future_to_index = {
+                executor.submit(read_shard, module, config, entry, opener=opener): index
+                for index, entry in enumerate(shard_entries)
+            }
+            try:
+                for future in as_completed(future_to_index):
+                    index = future_to_index[future]
+                    shard_result = future.result()
+                    shard_results[index] = shard_result
+                    completed_count += 1
+                    entry = shard_result["entry"]
+                    read_bytes += int(entry.get("sizeBytes") or 0)
+                    shard_label = f"{entry['bucket']}/{entry['key']}"
+                    _emit_pull_progress(
+                        progress_callback,
+                        phase_label=f"Read shard {completed_count} of {shard_count}",
+                        ratio=(completed_count / shard_count) if shard_count else 1.0,
+                        counts=_shard_pull_progress_counts(
+                            shard_count=shard_count,
+                            completed_shard_count=completed_count,
+                            current_shard_index=index + 1,
+                            current_shard_label=shard_label,
+                            shards_read_bytes=read_bytes,
+                            total_shard_bytes=total_shard_bytes,
+                            manifest_size_bytes=manifest_size_bytes,
+                        ),
+                        message=(
+                            f"Read {completed_count} of {shard_count} source-sync shards."
+                            if completed_count % 25 == 0 or completed_count == shard_count
+                            else ""
+                        ),
+                        event_level="success" if completed_count == shard_count else "muted",
+                    )
+            except Exception:
+                for future in future_to_index:
+                    future.cancel()
+                raise
+    for shard_result in shard_results:
+        if shard_result is None:
+            continue
         bucket = str(shard_result["entry"]["bucket"])
         rows_by_bucket.setdefault(bucket, []).extend(shard_result["rows"])
     snapshot: dict[str, Any] = {
@@ -816,7 +969,11 @@ def read_sharded_snapshot(
         "active": rows_by_bucket.pop("active", []),
         "pending": rows_by_bucket.pop("pending", []),
         "manifest": manifest,
-        "manifestSha": str(manifest_result.get("sha") or ""),
+        "manifestSha": manifest_sha,
+        "manifestSizeBytes": manifest_size_bytes,
+        "shardCount": shard_count,
+        "shardsReadBytes": read_bytes,
+        "totalShardBytes": total_shard_bytes,
     }
     for bucket in sorted(rows_by_bucket):
         snapshot[bucket] = rows_by_bucket[bucket]

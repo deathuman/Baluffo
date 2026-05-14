@@ -173,6 +173,48 @@ test("jobs render shows multi-location summaries", () => {
   assert.match(html, /Guildford, UK \| Utrecht, NL/);
 });
 
+test("jobs render suppresses duplicated location and unknown country display", () => {
+  const remoteHtml = render({
+    id: "4c",
+    title: "Analytics Manager",
+    company: "Atari",
+    sector: "Game",
+    city: "Remote",
+    country: "Remote",
+    locationSummary: "Remote, Remote",
+    workType: "Remote",
+    contractType: "Unknown"
+  });
+  assert.doesNotMatch(remoteHtml, /Remote, Remote/);
+
+  const countryHtml = render({
+    id: "4d",
+    title: "Revenue Specialist",
+    company: "Easygo",
+    sector: "Tech",
+    city: "Melbourne, Australia",
+    country: "Australia",
+    locationSummary: "Melbourne, Australia",
+    workType: "Onsite",
+    contractType: "Unknown"
+  });
+  assert.equal((countryHtml.match(/Melbourne, Australia/g) || []).length, 2);
+  assert.doesNotMatch(countryHtml, />Australia<\/span>\s*<\/div>\s*<div class="col-contract/);
+
+  const unknownHtml = render({
+    id: "4e",
+    title: "Security Analyst",
+    company: "Scopely",
+    sector: "Tech",
+    city: "US - United States, Unknown",
+    country: "Unknown",
+    locationSummary: "US - United States, Unknown",
+    workType: "Onsite",
+    contractType: "Unknown"
+  });
+  assert.doesNotMatch(unknownHtml, /Unknown Unknown/);
+});
+
 test("jobs render marks unseen rows with New badge and seen rows with class", () => {
   const newHtml = render({
     id: "5",

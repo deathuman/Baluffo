@@ -1,5 +1,6 @@
 import { escapeHtml } from "../shared/ui/index.js";
 import { renderLifecycleBadgeHtml } from "../shared/lifecycle-badges.js";
+import { formatJobLocationColumns } from "../shared/location-display.js";
 
 export function renderSavedJobBlockHtml(job, options = {}) {
   const {
@@ -31,8 +32,9 @@ export function renderSavedJobBlockHtml(job, options = {}) {
   const safeCompany = escapeHtml(job.company || "");
   const customSource = escapeHtml(String(job.customSourceLabel || customSourceLabel || "Custom"));
   const safeSector = escapeHtml(normalizeSavedSector(job));
-  const safeCity = escapeHtml(job.locationSummary || job.city || "");
-  const safeCountry = escapeHtml(fullCountryName(job.country || ""));
+  const locationColumns = formatJobLocationColumns(job, { fullCountryName });
+  const safeCity = escapeHtml(locationColumns.cityLabel);
+  const safeCountry = escapeHtml(locationColumns.countryLabel);
   const safeContract = escapeHtml(job.contractType || "Unknown");
   const safeWorkType = escapeHtml(job.workType || "Onsite");
   const safeLink = sanitizeUrl(job.jobLink || "");

@@ -38,10 +38,13 @@ function setBusyBadge(el, state, text) {
   el.textContent = String(text || "");
 }
 
-function setButtonBusy(el, busy, busyText) {
+function setButtonBusy(el, busy, busyText, fallbackIdleText = "") {
   if (!el) return;
   if (!el.dataset.idleLabel) {
-    el.dataset.idleLabel = String(el.textContent || "");
+    el.dataset.idleLabel = String(el.textContent || fallbackIdleText || "").trim();
+  }
+  if (!el.dataset.idleLabel && fallbackIdleText) {
+    el.dataset.idleLabel = String(fallbackIdleText).trim();
   }
   el.disabled = Boolean(busy);
   el.setAttribute("aria-disabled", busy ? "true" : "false");
@@ -93,15 +96,15 @@ export function syncAdminBusyUi({
     el.setAttribute("aria-disabled", (syncBusy || lockBusy) ? "true" : "false");
   });
 
-  setButtonBusy(refs.adminRunDiscoveryBtnEl, discoveryBusy || lockBusy, "Discovery Running...");
-  setButtonBusy(refs.adminRunDiscoveryUncappedBtnEl, discoveryBusy || lockBusy, "Uncapped Running...");
-  setButtonBusy(refs.adminLoadDiscoveryBtnEl, discoveryBusy || lockBusy, "Loading...");
-  setButtonBusy(refs.adminApproveSourcesBtnEl, discoveryBusy || lockBusy, "Working...");
-  setButtonBusy(refs.adminRejectSourcesBtnEl, discoveryBusy || lockBusy, "Working...");
-  setButtonBusy(refs.adminDeleteSourcesBtnEl, discoveryBusy || lockBusy, "Working...");
-  setButtonBusy(refs.adminRestoreRejectedBtnEl, discoveryBusy || lockBusy, "Working...");
-  setButtonBusy(refs.adminDemoteActiveBtnEl, discoveryBusy || lockBusy, "Working...");
-  setButtonBusy(refs.adminAddManualSourceBtnEl, discoveryBusy || lockBusy, "Adding...");
+  setButtonBusy(refs.adminRunDiscoveryBtnEl, discoveryBusy || lockBusy, "Discovery Running...", "Run Discovery");
+  setButtonBusy(refs.adminRunDiscoveryUncappedBtnEl, discoveryBusy || lockBusy, "Uncapped Discovery Running...", "Run Uncapped Discovery");
+  setButtonBusy(refs.adminLoadDiscoveryBtnEl, discoveryBusy || lockBusy, "Loading Discovery...", "Load Discovery");
+  setButtonBusy(refs.adminApproveSourcesBtnEl, discoveryBusy || lockBusy, "Approving Sources...", "Approve Sources");
+  setButtonBusy(refs.adminRejectSourcesBtnEl, discoveryBusy || lockBusy, "Rejecting Sources...", "Reject Sources");
+  setButtonBusy(refs.adminDeleteSourcesBtnEl, discoveryBusy || lockBusy, "Deleting Sources...", "Delete Sources");
+  setButtonBusy(refs.adminRestoreRejectedBtnEl, discoveryBusy || lockBusy, "Restoring Sources...", "Restore Rejected");
+  setButtonBusy(refs.adminDemoteActiveBtnEl, discoveryBusy || lockBusy, "Demoting Sources...", "Demote Active");
+  setButtonBusy(refs.adminAddManualSourceBtnEl, discoveryBusy || lockBusy, "Adding Source...", "Add Source");
   if (refs.adminManualSourceUrlEl) {
     refs.adminManualSourceUrlEl.disabled = discoveryBusy || lockBusy;
     refs.adminManualSourceUrlEl.setAttribute("aria-disabled", (discoveryBusy || lockBusy) ? "true" : "false");

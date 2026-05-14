@@ -42,10 +42,12 @@ def test_sync_pull_updates_local_registry_counts(admin_bridge_entrypoint_root, m
 
     monkeypatch.setattr(
         "src.admin_bridge.source_sync_module.pull_and_merge_sources",
-        lambda _cfg, _state: {
+        lambda _cfg, _state, **_kwargs: {
             "changed": True,
             "remoteFound": True,
             "remoteSha": "abc",
+            "remoteGeneratedAt": "2026-05-12T10:00:00+00:00",
+            "snapshotFormat": "sharded-v3",
             "mergedState": {
                 "active": [{"adapter": "static", "listing_url": "https://a.com/jobs"}],
                 "pending": [{"adapter": "teamtailor", "name": "Foo"}],
@@ -81,7 +83,7 @@ def test_sync_push_serializes_expected_snapshot_counts(admin_bridge_entrypoint_r
 
     monkeypatch.setattr(
         "src.admin_bridge.source_sync_module.push_sources_snapshot",
-        lambda _cfg, local_state: {
+        lambda _cfg, local_state, **_kwargs: {
             "pushed": True,
             "remotePreviouslyExisted": True,
             "remoteSha": "newsha",

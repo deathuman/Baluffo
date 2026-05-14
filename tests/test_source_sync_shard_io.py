@@ -16,8 +16,6 @@ from src.source_sync_shard import (
     push_manifest,
     push_shard,
     read_manifest,
-    read_shard,
-    read_sharded_snapshot,
     trusted_committed_manifest,
 )
 
@@ -162,7 +160,9 @@ def test_read_and_push_manifest_use_committed_manifest_path() -> None:
         opener=object(),
     )
 
-    assert read_result == {"sha": "oldsha", "manifest": manifest}
+    assert read_result["sha"] == "oldsha"
+    assert read_result["manifest"] == manifest
+    assert read_result["manifestSizeBytes"] > 0
     assert push_result == {"ok": True, "sha": "newsha"}
     put_call = module.calls[1]
     assert put_call["method"] == "PUT"
@@ -309,76 +309,3 @@ def test_push_changed_shards_only_puts_missing_or_changed_shards() -> None:
         call["url"].rsplit("/contents/", 1)[1].split("?ref=", 1)[0] for call in module.calls
     ]
     assert called_paths == [shard.path for shard in expected_changed for _ in range(2)]
-
-
-def test_read_shard_validates_payload_and_returns_rows() -> None:
-    shard = build_shards(
-        [_row(1)],
-        max_size=10_000,
-        base_path="baluffo/source-sync/shards/stable",
-    )[0]
-    module = _FakeSyncModule([(200, {"content": _encoded_bytes(shard.payload_bytes)})])
-
-    result = read_shard(module, _config(), shard.manifest_entry(), opener=object())
-
-    assert result["entry"] == shard.manifest_entry()
-    assert result["rows"] == _payload(shard)["rows"]
-    assert module.calls[0]["method"] == "GET"
-    assert module.calls[0]["url"] == (
-        f"https://api.github.test/repos/owner/repo/contents/{shard.path}?ref=main"
-    )
-
-
-def test_read_shard_rejects_payload_hash_mismatch() -> None:
-    shard = build_shards([_row(1)], max_size=10_000)[0]
-    payload = bytearray(shard.payload_bytes)
-    payload[-1] = (payload[-1] + 1) % 255
-    module = _FakeSyncModule([(200, {"content": _encoded_bytes(bytes(payload))})])
-
-    with pytest.raises(SourceSyncShardError, match="sha256 mismatch"):
-        read_shard(module, _config(), shard.manifest_entry(), opener=object())
-
-
-def test_read_sharded_snapshot_returns_none_when_manifest_absent_for_v2_fallback() -> None:
-    module = _FakeSyncModule([(404, {"message": "Not Found"})])
-
-    assert read_sharded_snapshot(module, _config(), opener=object()) is None
-    assert len(module.calls) == 1
-    assert module.calls[0]["url"].endswith("baluffo/source-sync/manifest.json?ref=main")
-
-
-def test_read_sharded_snapshot_reads_committed_manifest_and_all_shards() -> None:
-    active = build_shards(
-        [_row(1), _row(2)],
-        max_size=10_000,
-        bucket="active",
-        base_path="baluffo/source-sync/shards/stable",
-    )
-    pending = build_shards(
-        [_row(3)],
-        max_size=10_000,
-        bucket="pending",
-        base_path="baluffo/source-sync/shards/stable",
-    )
-    manifest = build_manifest(
-        active + pending,
-        generated_at="2026-05-12T10:00:00+00:00",
-        source_label="admin_bridge",
-    )
-    shards_by_path = {shard.path: shard for shard in active + pending}
-    module = _FakeSyncModule(
-        [(200, {"sha": "manifestsha", "content": _encoded_json(manifest)})]
-        + [
-            (200, {"content": _encoded_bytes(shards_by_path[entry["path"]].payload_bytes)})
-            for entry in manifest["shards"]
-        ]
-    )
-
-    snapshot = read_sharded_snapshot(module, _config(), opener=object())
-
-    assert snapshot["schemaVersion"] == 3
-    assert snapshot["generatedAt"] == manifest["generatedAt"]
-    assert snapshot["manifest"] == manifest
-    assert snapshot["active"] == [row for shard in active for row in _payload(shard)["rows"]]
-    assert snapshot["pending"] == [row for shard in pending for row in _payload(shard)["rows"]]
-    assert [call["method"] for call in module.calls] == ["GET"] * (1 + len(manifest["shards"]))

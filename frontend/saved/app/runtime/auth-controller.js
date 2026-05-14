@@ -98,15 +98,15 @@ export function createSavedAuthController({
 
   function handleSignedOut() {
     setAuthStatus("Browsing as guest");
-    setSourceStatus("Sign in to view your saved jobs.");
-    setActivityStatus("Sign in to view history.");
+    setSourceStatus("Sign in to a local profile to view saved jobs.");
+    setActivityStatus("Activity appears after you sign in and change saved jobs.");
     toggleAuthButtons(false);
     setBackupButtonsEnabled(false);
     setCustomJobAvailability(false);
     setCustomJobPanelOpen(false);
     setSavedFilterBarVisible(false);
     setSavedSortBarVisible(false);
-    renderAuthRequired("Sign in to access your custom saved jobs table.");
+    renderAuthRequired("Your saved jobs workspace is stored per local profile, so guest browsing cannot show or edit saved jobs.");
     markSavedFirstRender("auth_required", 0);
     renderTimeline();
   }

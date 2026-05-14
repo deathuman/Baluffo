@@ -63,7 +63,13 @@ export function createSavedRenderController({
   function renderAuthRequired(message) {
     const { savedJobsListEl } = dom;
     if (!savedJobsListEl) return;
-    savedJobsListEl.innerHTML = `<div class="no-results">${escapeHtml(message)}</div>`;
+    savedJobsListEl.innerHTML = `
+      <div class="no-results saved-auth-required">
+        <strong>Saved jobs require a local profile.</strong>
+        <p>${escapeHtml(message)}</p>
+        <p class="muted">Sign in on this device to save jobs, add notes, attach files, and track application progress.</p>
+      </div>
+    `;
   }
 
   function restoreActiveNotesContext(context, options = {}) {

@@ -201,7 +201,11 @@ def copy_playwright_browser_cache(
         shutil.rmtree(target)
     target.mkdir(parents=True, exist_ok=True)
     for item in cache.iterdir():
-        if item.name.startswith(".") or item.name == "mcp-chrome":
+        if (
+            item.name.startswith(".")
+            or item.name == "mcp-chrome"
+            or item.name.startswith("mcp-chrome-")
+        ):
             continue
         destination = target / item.name
         if item.is_dir():

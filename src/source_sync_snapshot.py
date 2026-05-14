@@ -629,11 +629,36 @@ def _read_sharded_remote_snapshot(
     module: Any,
     config: Any,
     *,
+    progress_callback: Callable[..., None] | None = None,
+    known_remote_sha: str = "",
+    max_shard_read_workers: int | None = None,
     opener: Callable[..., Any],
 ) -> dict[str, Any] | None:
-    sharded_snapshot = read_sharded_snapshot(module, config, opener=opener)
+    sharded_snapshot = read_sharded_snapshot(
+        module,
+        config,
+        progress_callback=progress_callback,
+        known_manifest_sha=known_remote_sha,
+        max_workers=max_shard_read_workers,
+        opener=opener,
+    )
     if sharded_snapshot is None:
         return None
+    if bool(sharded_snapshot.get("skipped")):
+        return {
+            "exists": True,
+            "sha": str(sharded_snapshot.get("manifestSha") or ""),
+            "snapshot": {},
+            "snapshotFormat": "sharded-v3",
+            "committedManifest": dict(sharded_snapshot.get("manifest") or {}),
+            "remoteGeneratedAt": str(sharded_snapshot.get("generatedAt") or ""),
+            "skipped": True,
+            "skipReason": str(sharded_snapshot.get("skipReason") or ""),
+            "shardCount": int(sharded_snapshot.get("shardCount") or 0),
+            "shardsReadBytes": int(sharded_snapshot.get("shardsReadBytes") or 0),
+            "totalShardBytes": int(sharded_snapshot.get("totalShardBytes") or 0),
+            "manifestSizeBytes": int(sharded_snapshot.get("manifestSizeBytes") or 0),
+        }
     result = _normalized_remote_snapshot_result(
         module,
         _remote_snapshot_payload_view(sharded_snapshot),
@@ -641,6 +666,10 @@ def _read_sharded_remote_snapshot(
         snapshot_format="sharded-v3",
     )
     result["committedManifest"] = dict(sharded_snapshot.get("manifest") or {})
+    result["shardCount"] = int(sharded_snapshot.get("shardCount") or 0)
+    result["shardsReadBytes"] = int(sharded_snapshot.get("shardsReadBytes") or 0)
+    result["totalShardBytes"] = int(sharded_snapshot.get("totalShardBytes") or 0)
+    result["manifestSizeBytes"] = int(sharded_snapshot.get("manifestSizeBytes") or 0)
     return result
 
 
@@ -772,12 +801,22 @@ def read_remote_snapshot(
     *,
     opener: Callable[..., Any],
     prefer_sharded: bool = False,
+    progress_callback: Callable[..., None] | None = None,
+    known_remote_sha: str = "",
+    max_shard_read_workers: int | None = None,
 ) -> dict[str, Any]:
     module.validate_sync_config(config)
 
     def _read_once() -> dict[str, Any]:
         if prefer_sharded:
-            sharded_result = _read_sharded_remote_snapshot(module, config, opener=opener)
+            sharded_result = _read_sharded_remote_snapshot(
+                module,
+                config,
+                progress_callback=progress_callback,
+                known_remote_sha=known_remote_sha,
+                max_shard_read_workers=max_shard_read_workers,
+                opener=opener,
+            )
             if sharded_result is not None:
                 return sharded_result
         return _read_monolithic_remote_snapshot(module, config, opener=opener)
@@ -862,10 +901,21 @@ def pull_and_merge_sources(
     config: Any,
     local_state: dict[str, Any],
     *,
+    progress_callback: Callable[..., None] | None = None,
+    known_remote_sha: str = "",
+    max_shard_read_workers: int | None = None,
     opener: Callable[..., Any],
 ) -> dict[str, Any]:
     module.record_sync_counters(totalPulls=1)
-    remote = read_remote_snapshot(module, config, opener=opener, prefer_sharded=True)
+    remote = read_remote_snapshot(
+        module,
+        config,
+        opener=opener,
+        prefer_sharded=True,
+        progress_callback=progress_callback,
+        known_remote_sha=known_remote_sha,
+        max_shard_read_workers=max_shard_read_workers,
+    )
     empty_remote = {
         "schemaVersion": module.SYNC_SCHEMA_VERSION,
         "generatedAt": "",
@@ -882,6 +932,24 @@ def pull_and_merge_sources(
             "mergedState": canonical_local,
             "remoteSha": "",
             "counters": module.sync_counters_payload(),
+        }
+    if bool(remote.get("skipped")):
+        counters = module.record_sync_counters(noOpSkips=1)
+        canonical_local = merge_registry_state(module, local_state, empty_remote)
+        return {
+            "changed": False,
+            "remoteFound": True,
+            "remoteSha": str(remote.get("sha") or ""),
+            "mergedState": canonical_local,
+            "remoteGeneratedAt": str(remote.get("remoteGeneratedAt") or ""),
+            "snapshotFormat": str(remote.get("snapshotFormat") or ""),
+            "shardCount": int(remote.get("shardCount") or 0),
+            "shardsReadBytes": int(remote.get("shardsReadBytes") or 0),
+            "totalShardBytes": int(remote.get("totalShardBytes") or 0),
+            "manifestSizeBytes": int(remote.get("manifestSizeBytes") or 0),
+            "skipped": True,
+            "skipReason": str(remote.get("skipReason") or ""),
+            "counters": counters,
         }
     snapshot = _as_dict(remote.get("snapshot"))
     merged_state = merge_registry_state(module, local_state, snapshot)
@@ -906,6 +974,13 @@ def pull_and_merge_sources(
         "remoteSha": str(remote.get("sha") or ""),
         "mergedState": merged_state,
         "remoteGeneratedAt": str(snapshot.get("generatedAt") or ""),
+        "snapshotFormat": str(remote.get("snapshotFormat") or ""),
+        "shardCount": int(remote.get("shardCount") or 0),
+        "shardsReadBytes": int(remote.get("shardsReadBytes") or 0),
+        "totalShardBytes": int(remote.get("totalShardBytes") or 0),
+        "manifestSizeBytes": int(remote.get("manifestSizeBytes") or 0),
+        "skipped": False,
+        "skipReason": "",
         "counters": module.sync_counters_payload(),
     }
 

@@ -14,8 +14,11 @@ class _FakeSourceSync:
         self.pull_calls: int = 0
         self.push_calls: int = 0
         self.remote_reads: int = 0
+        self.last_known_remote_sha: str = ""
         self.push_result_extra: dict[str, Any] = {}
+        self.pull_result_extra: dict[str, Any] = {}
         self.push_progress_payloads: list[dict[str, Any]] = []
+        self.pull_progress_payloads: list[dict[str, Any]] = []
         self.progress_callback: Any | None = None
         self._enabled = True
         self._ready = True
@@ -42,13 +45,32 @@ class _FakeSourceSync:
         self.remote_reads += 1
         return {"exists": True, "sha": "abc"}
 
-    def pull_and_merge_sources(self, config: Any, local_state: dict[str, Any]) -> dict[str, Any]:
+    def pull_and_merge_sources(
+        self,
+        config: Any,
+        local_state: dict[str, Any],
+        *,
+        progress_callback: Any | None = None,
+        known_remote_sha: str = "",
+    ) -> dict[str, Any]:
         self.pull_calls += 1
+        self.progress_callback = progress_callback
+        self.last_known_remote_sha = str(known_remote_sha or "")
+        if progress_callback is not None:
+            for payload in self.pull_progress_payloads:
+                progress_callback(**payload)
         return {
             "changed": True,
             "remoteFound": True,
             "remoteSha": "abc",
-            "mergedState": {"active": [], "pending": [], "rejected": []},
+            "remoteGeneratedAt": "2026-05-12T10:00:00+00:00",
+            "snapshotFormat": "sharded-v3",
+            "mergedState": {
+                "active": [{"adapter": "static", "listing_url": "https://a.com/jobs"}],
+                "pending": [],
+                "rejected": [],
+            },
+            **dict(self.pull_result_extra),
         }
 
     def push_sources_snapshot(
@@ -159,6 +181,7 @@ def test_sync_service_pull_delegates_and_persists() -> None:
             "pending": [],
             "rejected": [],
         }
+        persist_calls = 0
 
         def load_state() -> dict[str, list[dict[str, Any]]]:
             return {
@@ -170,6 +193,8 @@ def test_sync_service_pull_delegates_and_persists() -> None:
         def persist_state(
             state: dict[str, list[dict[str, Any]]],
         ) -> dict[str, list[dict[str, Any]]]:
+            nonlocal persist_calls
+            persist_calls += 1
             persisted["active"] = list(state.get("active") or [])
             persisted["pending"] = list(state.get("pending") or [])
             persisted["rejected"] = list(state.get("rejected") or [])
@@ -205,6 +230,7 @@ def test_sync_service_pull_delegates_and_persists() -> None:
         result = svc.sync_pull_sources()
         assert bool(result.get("ok")) is True
         assert source_sync.pull_calls == 1
+        assert source_sync.last_known_remote_sha == ""
         timing = result.get("timing")
         assert isinstance(timing, dict)
         assert timing["action"] == "pull"
@@ -216,8 +242,30 @@ def test_sync_service_pull_delegates_and_persists() -> None:
         assert any(row["stage"] == "pullMergeRemote" for row in timing["stageTop"])
 
         status = svc.get_sync_status_payload()
+        assert status["runtime"]["lastPullRemoteSha"] == "abc"
+        assert status["runtime"]["lastPullRemoteGeneratedAt"] == "2026-05-12T10:00:00+00:00"
+        assert status["runtime"]["lastPullSnapshotFormat"] == "sharded-v3"
         assert status["timing"]["action"] == "pull"
         assert status["timingHistory"][-1]["action"] == "pull"
+
+        source_sync.pull_result_extra = {
+            "changed": False,
+            "skipped": True,
+            "skipReason": "remote_manifest_unchanged",
+            "shardCount": 32,
+            "shardsReadBytes": 0,
+            "totalShardBytes": 1000,
+            "manifestSizeBytes": 200,
+        }
+        second = svc.sync_pull_sources()
+        assert bool(second.get("ok")) is True
+        assert second["skipped"] is True
+        assert second["skipReason"] == "remote_manifest_unchanged"
+        assert source_sync.pull_calls == 2
+        assert source_sync.last_known_remote_sha == "abc"
+        assert persist_calls == 1
+        second_status = svc.get_sync_status_payload()
+        assert second_status["runtime"]["lastPullAt"]
 
 
 def test_sync_service_push_returns_and_persists_timing() -> None:

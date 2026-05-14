@@ -46,6 +46,8 @@ _SYNC_SHARD_FIELD_NAMES = (
     "shardCount",
     "changedShardCount",
     "shardsPushedBytes",
+    "shardsReadBytes",
+    "totalShardBytes",
     "manifestSizeBytes",
     "shardCapBytes",
     "shardHashes",
@@ -76,7 +78,12 @@ class SourceSyncModule(Protocol):
     ) -> Any: ...
     def read_remote_snapshot(self, config: Any) -> dict[str, Any]: ...
     def pull_and_merge_sources(
-        self, config: Any, local_state: dict[str, Any]
+        self,
+        config: Any,
+        local_state: dict[str, Any],
+        *,
+        progress_callback: Callable[..., None] | None = None,
+        known_remote_sha: str = "",
     ) -> dict[str, Any]: ...
     def push_sources_snapshot(self, config: Any, state: dict[str, Any]) -> dict[str, Any]: ...
     def rate_limit_payload(self) -> dict[str, Any]: ...
@@ -445,6 +452,9 @@ class SyncService:
         error: str = "",
         pulled: bool = False,
         pushed: bool = False,
+        last_pull_remote_sha: str | None = None,
+        last_pull_remote_generated_at: str | None = None,
+        last_pull_snapshot_format: str | None = None,
     ) -> None:
         self._sync_state.set_sync_status(
             action=action,
@@ -452,6 +462,9 @@ class SyncService:
             error=error,
             pulled=bool(pulled),
             pushed=bool(pushed),
+            last_pull_remote_sha=last_pull_remote_sha,
+            last_pull_remote_generated_at=last_pull_remote_generated_at,
+            last_pull_snapshot_format=last_pull_snapshot_format,
         )
 
     # === Sync Operations ===
@@ -479,12 +492,17 @@ class SyncService:
         )
         with timing.record_stage("loadLocalRegistry"):
             local_state = self._load_state()
+        runtime_state = self._sync_state.load_sync_runtime_state()
+        local_has_synced_rows = bool(local_state.get("active") or local_state.get("pending"))
+        known_remote_sha = (
+            str(runtime_state.get("lastPullRemoteSha") or "") if local_has_synced_rows else ""
+        )
         emit_progress(
             phase_key="remote_read",
-            phase_label="Reading remote snapshot",
+            phase_label="Reading remote manifest",
             counts={"action": "pull"},
             event_level="muted",
-            message="Reading remote snapshot.",
+            message="Reading remote source-sync manifest.",
         )
         with timing.record_stage("pullMergeRemote"):
             result = run_profiled(
@@ -492,6 +510,8 @@ class SyncService:
                 self._sync_config,
                 local_state,
                 profile_name="sync_pull_merge",
+                progress_callback=emit_progress,
+                known_remote_sha=known_remote_sha,
             )
         merged_state = local_state
         if isinstance(result.get("mergedState"), dict):
@@ -519,12 +539,15 @@ class SyncService:
             with timing.record_stage("applyLocal"):
                 self._persist_state(merged_state)
 
-            self.set_sync_status(
-                action="pull",
-                result="ok",
-                pulled=True,
-                error="",
-            )
+        self.set_sync_status(
+            action="pull",
+            result="ok",
+            pulled=True,
+            error="",
+            last_pull_remote_sha=str(result.get("remoteSha") or ""),
+            last_pull_remote_generated_at=str(result.get("remoteGeneratedAt") or ""),
+            last_pull_snapshot_format=str(result.get("snapshotFormat") or ""),
+        )
 
         counters = as_json_object(result.get("counters"))
         if counters:
@@ -540,6 +563,9 @@ class SyncService:
                 "remoteFound": bool(result.get("remoteFound")),
                 "pushed": False,
                 "pulled": True,
+                "skipped": bool(result.get("skipped")),
+                "skipReason": str(result.get("skipReason") or ""),
+                **_sync_shard_fields(result),
             }
         )
         append_sync_timing_record(self._sync_timing_history_path, timing_record)
@@ -552,9 +578,12 @@ class SyncService:
                 "pendingCount": int(summary.get("pendingCount") or 0),
                 "rejectedCount": int(summary.get("rejectedCount") or 0),
                 "changed": bool(result.get("changed")),
+                "skipped": bool(result.get("skipped")),
             },
             event_level="success",
-            message="Sync pull summary updated.",
+            message="Sync pull skipped; remote manifest unchanged."
+            if bool(result.get("skipped"))
+            else "Sync pull summary updated.",
         )
         return {
             "ok": True,
@@ -562,6 +591,9 @@ class SyncService:
             "remoteFound": bool(result.get("remoteFound")),
             "remoteSha": str(result.get("remoteSha") or ""),
             "remoteGeneratedAt": str(result.get("remoteGeneratedAt") or ""),
+            "skipped": bool(result.get("skipped")),
+            "skipReason": str(result.get("skipReason") or ""),
+            **_sync_shard_fields(result),
             "counters": counters,
             "summary": summary,
             "timing": timing_record,

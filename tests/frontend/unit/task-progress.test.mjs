@@ -114,6 +114,36 @@ test("formatTaskProgressDetail renders sync shard progress", () => {
     }),
     "shards 501/501 | verified 501/501 | manifest committed | gc deleted 3"
   );
+  assert.equal(
+    formatTaskProgressDetail("sync", {
+      active: true,
+      phaseKey: "remote_read",
+      phaseLabel: "Read shard 25 of 501",
+      mode: "determinate",
+      ratio: 25 / 501,
+      counts: {
+        action: "pull",
+        shardCount: 501,
+        completedShardCount: 25,
+        currentShardIndex: 25,
+        currentShardLabel: "active/97",
+        shardsReadBytes: 1024,
+        totalShardBytes: 2048
+      }
+    }),
+    "Read shard 25 of 501 (5%) | read 25/501 | current active/97"
+  );
+  assert.equal(
+    formatTaskProgressCounts("sync", {
+      action: "pull",
+      shardCount: 501,
+      completedShardCount: 0,
+      shardsReadBytes: 0,
+      skipped: true,
+      skipReason: "remote_manifest_unchanged"
+    }),
+    "remote manifest unchanged | shards skipped 501"
+  );
 });
 
 test("formatTaskProgressCounts renders GameDevMap dry-run fetch subtask counts", () => {

@@ -73,7 +73,8 @@ test("admin sync controller hydrates status and runs save/test/pull/push flows",
   const payload = await controller.loadSyncStatus({ forceForm: true });
   assert.equal(payload, readyPayload);
   assert.equal(refs.adminSyncEnabledEl.checked, true);
-  assert.match(refs.adminSyncConfigHintEl.textContent, /packaged config: config\/sync\.json/i);
+  assert.match(refs.adminSyncConfigHintEl.textContent, /packaged config: available/i);
+  assert.doesNotMatch(refs.adminSyncConfigHintEl.textContent, /config\/sync\.json/i);
   assert.match(refs.adminSyncStatusEl.innerHTML, /Connected to org\/repo/i);
   assert.match(refs.adminSyncStatusEl.innerHTML, /Local sync enabled/i);
 

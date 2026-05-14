@@ -26,7 +26,9 @@ from src.jobs.common.url import is_supported_redirect_url
 from src.jobs.interfaces import JobProcessor
 from src.jobs.models import CanonicalJob, RawJob
 from src.jobs.normalizers import normalize_country, normalize_sector, normalize_work_type
+from src.jobs.page_gating import looks_like_source_specific_static_noise_row
 from src.jobs.text_utils import (
+    REMOTEISH_TOKENS,
     clean_text,
     norm_text,
     normalize_url,
@@ -363,7 +365,7 @@ def _resolve_city_country_values(
     ) and primary_location.get("country"):
         country_value = primary_location["country"]
         country_reason = ""
-    if not country_value:
+    if not country_value and norm_text(raw.get("city")) not in REMOTEISH_TOKENS:
         promoted_country = resolve_country_acceptance_value(raw.get("city"))
         if promoted_country:
             country_value = promoted_country
@@ -524,6 +526,12 @@ def canonicalize_job_with_reason(
     if env_flag("BALUFFO_CANONICAL_STRICT_URL", DEFAULT_CANONICAL_STRICT_URL) and raw_link:
         if not normalized_link:
             return None, "invalid_url"
+    if looks_like_source_specific_static_noise_row(
+        title=title,
+        job_link=normalized_link,
+        source_name=source,
+    ):
+        return None, "non_job_static_page"
 
     adapter = clean_text(raw.get("adapter"))
     studio = sanitize_public_text(raw.get("studio"))

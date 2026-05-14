@@ -171,4 +171,13 @@ test("jobs runtime query helpers sort jobs by relevance and title", () => {
 test("jobs runtime query helpers reject contaminated filter option values", () => {
   assert.equal(isCleanFilterOptionValue("Amsterdam"), true);
   assert.equal(isCleanFilterOptionValue("<script>alert(1)</script>"), false);
+  const semanticGuard = value => Boolean(sanitizeLocationField(value, "city"));
+  assert.equal(isCleanFilterOptionValue("Remote", { isSemanticallyValidLocationValue: semanticGuard }), false);
+  assert.equal(isCleanFilterOptionValue("Apr. 06", { isSemanticallyValidLocationValue: semanticGuard }), false);
+  assert.equal(
+    isCleanFilterOptionValue("CA - Canada; US - United States", { isSemanticallyValidLocationValue: semanticGuard }),
+    false
+  );
+  assert.equal(isCleanFilterOptionValue("6th of October City", { isSemanticallyValidLocationValue: semanticGuard }), true);
+  assert.equal(isCleanFilterOptionValue("St. Louis", { isSemanticallyValidLocationValue: semanticGuard }), true);
 });

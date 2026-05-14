@@ -13,16 +13,30 @@ def test_sync_state_persists_runtime_status_fields() -> None:
         before = state.load_sync_runtime_state()
         assert before["lastPullAt"] == ""
         assert before["lastPushAt"] == ""
+        assert before["lastPullRemoteSha"] == ""
+        assert before["lastPullRemoteGeneratedAt"] == ""
+        assert before["lastPullSnapshotFormat"] == ""
         assert before["lastDiscoverySyncFinishedAt"] == ""
         assert before["counters"]["totalPushes"] == 0
         assert before["counters"]["totalPulls"] == 0
 
-        state.set_sync_status(action="pull", result="ok", pulled=True, error="")
+        state.set_sync_status(
+            action="pull",
+            result="ok",
+            pulled=True,
+            error="",
+            last_pull_remote_sha="manifest-sha",
+            last_pull_remote_generated_at="2026-05-12T10:00:00+00:00",
+            last_pull_snapshot_format="sharded-v3",
+        )
         after = state.load_sync_runtime_state()
         assert after["lastAction"] == "pull"
         assert after["lastResult"] == "ok"
         assert after["lastError"] == ""
         assert after["lastPullAt"]
+        assert after["lastPullRemoteSha"] == "manifest-sha"
+        assert after["lastPullRemoteGeneratedAt"] == "2026-05-12T10:00:00+00:00"
+        assert after["lastPullSnapshotFormat"] == "sharded-v3"
         assert after["counters"]["date"]
 
         assert str(SYNC_STATUS.get("lastAction") or "") == "pull"

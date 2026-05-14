@@ -1338,6 +1338,8 @@ def test_run_static_studio_pages_source_uses_rendered_card_fallback_for_manual_t
     def fake_fetch(url: str, _: int) -> str:
         if url == "https://example.net/careers":
             return html
+        if url.startswith("https://example.net/jobs/"):
+            return f"<html><body><h1>{url.rsplit('/', 1)[-1]}</h1></body></html>"
         raise RuntimeError(f"Unexpected URL: {url}")
 
     try:
@@ -1349,13 +1351,11 @@ def test_run_static_studio_pages_source_uses_rendered_card_fallback_for_manual_t
         )
         assert len(rows) == 2
         assert {row["title"] for row in rows} == {"Environment Artist", "Technical Artist"}
-        assert {row["jobLink"] for row in rows} == {
-            "https://example.net/jobs/environment-artist",
-            "https://example.net/jobs/technical-artist",
-        }
-        detail = ((jf.SOURCE_DIAGNOSTICS.get("static_studio_pages") or {}).get("details") or [{}])[
-            0
-        ]
+        links = {row["jobLink"] for row in rows}
+        assert "https://example.net/jobs/environment-artist" in links
+        assert "https://example.net/jobs/technical-artist" in links
+        diagnostics = jf.SOURCE_DIAGNOSTICS.get("static_studio_pages") or {}
+        detail = (diagnostics.get("details") or [{}])[0]
         assert int(detail.get("keptCount") or 0) == 2
         assert str(detail.get("failureBucket") or "") != "js_required"
     finally:

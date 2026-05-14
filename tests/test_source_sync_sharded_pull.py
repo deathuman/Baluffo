@@ -71,6 +71,8 @@ def test_pull_and_merge_sources_merges_distinct_sources_by_identity_after_v2_fal
             cfg,
             {"active": [{"adapter": "static", "listing_url": "https://a.com/jobs"}]},
             opener=opener,
+            known_remote_sha="old-manifest-sha",
+            max_shard_read_workers=1,
         )
     finally:
         sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
@@ -133,6 +135,8 @@ def test_pull_and_merge_sources_prefers_committed_v3_shards(source_sync_test_roo
             cfg,
             {"active": [{"adapter": "static", "listing_url": "https://a.com/jobs"}]},
             opener=opener,
+            known_remote_sha="old-manifest-sha",
+            max_shard_read_workers=1,
         )
     finally:
         sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
@@ -141,5 +145,59 @@ def test_pull_and_merge_sources_prefers_committed_v3_shards(source_sync_test_roo
     assert result["remoteGeneratedAt"] == remote_snapshot["generatedAt"]
     assert len(result["mergedState"]["active"]) == 2
     assert len(result["mergedState"]["pending"]) == 1
+    assert opener.calls[1]["url"].endswith("baluffo/source-sync/manifest.json?ref=main")
+    assert all("source-sync.json" not in call["url"] for call in opener.calls[1:])
+
+
+def test_pull_and_merge_sources_skips_shards_when_manifest_sha_is_unchanged(
+    source_sync_test_root,
+):
+    source_sync_test_root.write_packaged_config()
+    remote_snapshot = {
+        "schemaVersion": 2,
+        "generatedAt": "2026-05-12T10:00:00+00:00",
+        "source": {"name": "admin_bridge"},
+        "active": [{"adapter": "static", "listing_url": "https://b.com/jobs"}],
+        "pending": [],
+    }
+    bundle = build_sharded_snapshot_bundle(
+        remote_snapshot,
+        max_shard_size=10_000,
+        base_path="baluffo/source-sync/shards",
+    )
+    manifest = bundle["manifest"]
+    opener = _Recorder(
+        [
+            _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
+            _FakeResponse(
+                200,
+                {
+                    "sha": "manifest-sha",
+                    "content": base64.b64encode(json.dumps(manifest).encode()).decode("ascii"),
+                },
+            ),
+        ]
+    )
+    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
+    original_build_jwt = sync.build_app_jwt
+    try:
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        result = sync.pull_and_merge_sources(
+            cfg,
+            {"active": [{"adapter": "static", "listing_url": "https://a.com/jobs"}]},
+            opener=opener,
+            known_remote_sha="manifest-sha",
+        )
+    finally:
+        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+
+    assert result["remoteSha"] == "manifest-sha"
+    assert result["remoteGeneratedAt"] == remote_snapshot["generatedAt"]
+    assert result["changed"] is False
+    assert result["skipped"] is True
+    assert result["skipReason"] == "remote_manifest_unchanged"
+    assert result["shardCount"] == len(manifest["shards"])
+    assert result["shardsReadBytes"] == 0
+    assert len(opener.calls) == 2
     assert opener.calls[1]["url"].endswith("baluffo/source-sync/manifest.json?ref=main")
     assert all("source-sync.json" not in call["url"] for call in opener.calls[1:])

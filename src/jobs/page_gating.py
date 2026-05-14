@@ -287,12 +287,47 @@ def looks_like_source_specific_static_noise_row(
     source_name: str,
 ) -> bool:
     source_lower = _lower(source_name)
+    title_lower = _lower(title)
     parsed = urlparse(clean_text(job_link) or "")
     host = parsed.netloc.lower()
+    path = parsed.path.lower()
     if "itch.io/jobs" in source_lower and host == "itch.io":
         title_words = _source_specific_words(title)
         slug_words = _job_link_slug_words(job_link)
         return bool(title_words and slug_words and not title_words.issubset(slug_words))
+    if "stardock.com/careers" in source_lower:
+        if host.endswith("stardock.com") and path.startswith("/products"):
+            return True
+        if (
+            host
+            and not host.endswith("stardock.com")
+            and "careers" not in path
+            and "jobs" not in path
+        ):
+            return True
+        if (
+            "corporate software solutions" in title_lower
+            or "create a character and lead" in title_lower
+        ):
+            return True
+    if "immutable.com/jobs" in source_lower:
+        if host.endswith("immutable.com") and not path.startswith("/jobs"):
+            return True
+        if "purpose-built for gaming" in title_lower or "automated marketing" in title_lower:
+            return True
+    if "careers.wbd.com/global/en/wb-games-jobs" in source_lower:
+        if "/global/en/c/" in path and path.endswith("-jobs"):
+            return True
+    if "gs-studio.eu/career" in source_lower:
+        if "no-open-positions" in path or title_lower == "job offers":
+            return True
+    if "flixinteractive.com" in source_lower:
+        if (
+            "speculative-application" in path
+            or "don't see" in title_lower
+            or "don’t see" in title_lower
+        ):
+            return True
     if (
         "stillfront.com/en/career/join-the-team" in source_lower
         and host.endswith(".teamtailor.com")

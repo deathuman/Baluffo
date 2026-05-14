@@ -535,9 +535,10 @@ def pull_and_merge_sources(
     local_state: dict[str, Any],
     *,
     opener: Callable[..., Any] = urlopen,
+    **kwargs: Any,
 ) -> dict[str, Any]:
     return _source_sync_snapshot.pull_and_merge_sources(
-        _self_module(), config, local_state, opener=opener
+        _self_module(), config, local_state, opener=opener, **kwargs
     )
 
 

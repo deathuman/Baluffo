@@ -115,3 +115,45 @@ test("saved render shows lifecycle overlay badges read-only", () => {
   assert.match(html, /Recently removed/);
   assert.doesNotMatch(html, /save-job-btn/);
 });
+
+test("saved render uses compact location display without repeated unknowns", () => {
+  const html = renderSavedJobBlockHtml({
+    jobKey: "job_2",
+    title: "Analytics Manager",
+    company: "Atari",
+    city: "Remote",
+    country: "Remote",
+    locationSummary: "Remote, Remote",
+    workType: "Remote",
+    contractType: "Unknown",
+    applicationStatus: "bookmark",
+    phaseTimestamps: {},
+    savedAt: "2026-03-08T09:00:00.000Z",
+    notes: ""
+  }, {
+    isCustomJob: () => false,
+    customSourceLabel: "Custom",
+    normalizeSavedSector: () => "Game",
+    fullCountryName: value => value,
+    sanitizeUrl: value => value,
+    toContractClass: () => "unknown",
+    normalizePhase: value => value || "bookmark",
+    expandedJobKey: "",
+    selectedJobKey: "",
+    getJobDetailsTab: () => "notes",
+    renderDetailsSummary: () => "",
+    getReminderMeta: () => ({ isSoon: false, label: "" }),
+    renderMissingInfoChips: () => "",
+    renderUpdatedHint: () => "",
+    getJobHistoryEntries: () => "",
+    renderWebIcon: () => "",
+    renderPhaseBar: () => "",
+    lifecycleOverlay: null,
+    currentUser: { uid: "u1" },
+    maxAttachmentsPerJob: 10,
+    maxAttachmentBytes: 1024
+  });
+
+  assert.doesNotMatch(html, /Remote, Remote/);
+  assert.doesNotMatch(html, /Unknown Unknown/);
+});

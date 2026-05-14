@@ -78,6 +78,8 @@ def _sync_shard_fields(payload: Any) -> dict[str, Any]:
         "shardCount",
         "changedShardCount",
         "shardsPushedBytes",
+        "shardsReadBytes",
+        "totalShardBytes",
         "manifestSizeBytes",
         "shardCapBytes",
     ):
@@ -127,8 +129,11 @@ def _apply_pull_result_summary(result: dict[str, Any], summary: dict[str, Any]) 
             "remoteFound": bool(result.get("remoteFound")),
             "remoteSha": str(result.get("remoteSha") or ""),
             "remoteGeneratedAt": str(result.get("remoteGeneratedAt") or ""),
+            "skipped": bool(result.get("skipped")),
+            "skipReason": str(result.get("skipReason") or ""),
         }
     )
+    summary.update(_sync_observability_fields(result))
     timing = as_json_object(result.get("timing"))
     if timing:
         summary["timing"] = timing

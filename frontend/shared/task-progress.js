@@ -127,10 +127,28 @@ function formatSyncCounts(counts, summary) {
     "changedShardCount",
     "completedShardCount",
     "verifiedShardCount",
+    "shardsReadBytes",
+    "totalShardBytes",
     "manifestCommitted",
     "gcDeletedCount"
   ].some(key => Object.prototype.hasOwnProperty.call(counts || {}, key));
   if (hasShardProgress) {
+    const action = String(counts?.action || summary?.action || "").trim().toLowerCase();
+    const hasReadProgress = Object.prototype.hasOwnProperty.call(counts || {}, "shardsReadBytes");
+    if (action === "pull" || hasReadProgress) {
+      const total = Math.max(0, Number(counts?.shardCount || 0));
+      const completed = Math.max(0, Number(counts?.completedShardCount || 0));
+      const current = String(counts?.currentShardLabel || "").trim();
+      const skipped = Boolean(counts?.skipped || summary?.skipped);
+      const parts = [
+        skipped
+          ? "remote manifest unchanged"
+          : total > 0 ? `read ${compactCount(completed)}/${compactCount(total)}` : "",
+        current && !skipped ? `current ${current}` : "",
+        skipped && total > 0 ? `shards skipped ${compactCount(total)}` : ""
+      ];
+      return parts.filter(Boolean).join(" | ");
+    }
     const changed = Math.max(0, Number(counts?.changedShardCount || 0));
     const total = changed || Math.max(0, Number(counts?.shardCount || 0));
     const completed = Math.max(0, Number(counts?.completedShardCount || 0));
