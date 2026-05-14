@@ -19,6 +19,18 @@ from .config import (
     STARTUP_PROFILE_MODE_ENV,
 )
 
+DISABLE_LEAN_BROWSER_FLAGS_ENV = "BALUFFO_DESKTOP_DISABLE_LEAN_BROWSER_FLAGS"
+LEAN_CHROMIUM_APP_FLAGS = (
+    "--disable-background-mode",
+    "--disable-background-networking",
+    "--disable-component-extensions-with-background-pages",
+    "--disable-component-update",
+    "--disable-default-apps",
+    "--disable-extensions",
+    "--disable-sync",
+    "--metrics-recording-only",
+)
+
 
 def _as_dict(value: object) -> dict[str, object]:
     return value if isinstance(value, dict) else {}
@@ -104,8 +116,16 @@ def chromium_app_mode_supported(
     return bool(api._truthy_env(env_map.get("BALUFFO_DESKTOP_ALLOW_EDGE_APP_MODE")))
 
 
-def build_browser_launch_command(browser_path: str, url: str, profile_dir: Path) -> list[str]:
-    return [
+def build_browser_launch_command(
+    browser_path: str,
+    url: str,
+    profile_dir: Path,
+    *,
+    env: Mapping[str, str] | None = None,
+) -> list[str]:
+    api = desktop_api()
+    env_map: Mapping[str, str] = env if env is not None else os.environ
+    command = [
         str(browser_path),
         f"--app={url}",
         "--new-window",
@@ -117,6 +137,9 @@ def build_browser_launch_command(browser_path: str, url: str, profile_dir: Path)
         "--media-cache-size=1",
         f"--user-data-dir={profile_dir}",
     ]
+    if not bool(api._truthy_env(env_map.get(DISABLE_LEAN_BROWSER_FLAGS_ENV))):
+        command[1:1] = list(LEAN_CHROMIUM_APP_FLAGS)
+    return command
 
 
 def clear_browser_profile_caches(profile_dir: Path) -> None:

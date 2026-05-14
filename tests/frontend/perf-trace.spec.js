@@ -2,7 +2,9 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "fs
 import path from "path";
 import { test, expect } from "@playwright/test";
 
-const PERF_TRACE_DIR = path.resolve("_out", "perf-traces");
+const PERF_TRACE_DIR = path.resolve(
+  process.env.BALUFFO_PERF_TRACE_DIR || path.join("_out", "perf-traces")
+);
 
 function readBridgeRuntimeMeta() {
   try {

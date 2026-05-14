@@ -132,6 +132,7 @@ def _build_initial_report(
         "bridgeReady": False,
         "scenarios": [],
         "startupProfile": {},
+        "memoryMetrics": {},
         "artifacts": {
             "artifactsDir": str(artifacts_dir),
             "reportPath": str(report_path),
@@ -228,6 +229,22 @@ def _load_failure_startup_metrics(
     return [row for row in partial_metrics if isinstance(row, dict)]
 
 
+def _start_process_memory_sampler(process: subprocess.Popen[Any] | None) -> Any | None:
+    if process is None:
+        return None
+    deps = _root()
+    memory_sampler = deps.ProcessMemorySampler(int(getattr(process, "pid", 0) or 0))
+    memory_sampler.start()
+    return memory_sampler
+
+
+def _stop_process_memory_sampler(memory_sampler: Any | None) -> dict[str, Any]:
+    if memory_sampler is None:
+        return {}
+    metrics = memory_sampler.stop()
+    return dict(metrics) if isinstance(metrics, dict) else {}
+
+
 def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
     deps = _root()
     started_at = deps.utc_now_iso()
@@ -303,6 +320,7 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
     )
 
     process: subprocess.Popen[Any] | None = None
+    memory_sampler: Any | None = None
     stdout_handle = None
     stderr_handle = None
     try:
@@ -447,6 +465,7 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
             startup_probe=startup_probe,
             env=runtime_env,
         )
+        memory_sampler = _start_process_memory_sampler(process)
         runtime_state = deps.wait_for_packaged_runtime(
             process,
             site_base_url=site_base_url,
@@ -589,6 +608,8 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
                 or deps.classify_subprocess_error(exc),
             )
     finally:
+        report["memoryMetrics"] = _stop_process_memory_sampler(memory_sampler)
+        memory_sampler = None
         deps.terminate_process_tree(process)
         if deps.os.name == "nt":
             deps.time.sleep(0.25)

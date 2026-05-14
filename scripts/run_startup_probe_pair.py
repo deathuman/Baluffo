@@ -63,63 +63,142 @@ def resolve_built_exe(cold_report_path: Path, cold_artifacts_dir: Path) -> Path:
     )
 
 
+def startup_pair_paths(
+    *,
+    artifact_root: Path = PAIR_ARTIFACT_ROOT,
+    run_token: str = "",
+) -> dict[str, Path]:
+    token = str(run_token or generate_pair_run_token()).strip()
+    run_root = Path(artifact_root) / token
+    return {
+        "runRoot": run_root,
+        "coldArtifactsDir": run_root / "cold",
+        "warmArtifactsDir": run_root / "warm",
+        "coldReportPath": run_root / "cold-report.json",
+        "warmReportPath": run_root / "warm-report.json",
+    }
+
+
+def cold_startup_probe_args(paths: dict[str, Path], *, runtime_timeout_s: float) -> list[str]:
+    return [
+        "--rebuild",
+        "--startup-probe",
+        "--profile-only",
+        "--profile-mode",
+        "cold",
+        "--runtime-timeout",
+        str(runtime_timeout_s),
+        "--artifacts-dir",
+        str(paths["coldArtifactsDir"]),
+        "--report-path",
+        str(paths["coldReportPath"]),
+    ]
+
+
+def warm_startup_probe_args(
+    paths: dict[str, Path],
+    *,
+    reused_exe: Path,
+    runtime_timeout_s: float,
+) -> list[str]:
+    return [
+        "--exe-path",
+        str(reused_exe),
+        "--startup-probe",
+        "--profile-only",
+        "--profile-mode",
+        "warm",
+        "--runtime-timeout",
+        str(runtime_timeout_s),
+        "--artifacts-dir",
+        str(paths["warmArtifactsDir"]),
+        "--report-path",
+        str(paths["warmReportPath"]),
+    ]
+
+
+def packaged_probe_command(args: list[str]) -> list[str]:
+    return [sys.executable, str(PACKAGED_SMOKE_SCRIPT), *args]
+
+
 def run_packaged_probe(args: list[str]) -> subprocess.CompletedProcess[Any]:
-    command = [sys.executable, str(PACKAGED_SMOKE_SCRIPT), *args]
+    command = packaged_probe_command(args)
     return subprocess.run(command, cwd=ROOT, check=False)
 
 
-def run_startup_probe_pair(*, runtime_timeout_s: float = DEFAULT_RUNTIME_TIMEOUT_S) -> int:
-    run_root = PAIR_ARTIFACT_ROOT / generate_pair_run_token()
-    cold_artifacts_dir = run_root / "cold"
-    warm_artifacts_dir = run_root / "warm"
-    cold_report_path = run_root / "cold-report.json"
-    warm_report_path = run_root / "warm-report.json"
+def write_startup_pair_summary(
+    path: Path,
+    *,
+    paths: dict[str, Path],
+    cold_exit_code: int,
+    warm_exit_code: int,
+    reused_exe: Path | None,
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "ok": int(cold_exit_code or 0) == 0 and int(warm_exit_code or 0) == 0,
+        "runRoot": str(paths["runRoot"]),
+        "coldReportPath": str(paths["coldReportPath"]),
+        "warmReportPath": str(paths["warmReportPath"]),
+        "coldArtifactsDir": str(paths["coldArtifactsDir"]),
+        "warmArtifactsDir": str(paths["warmArtifactsDir"]),
+        "reusedExe": str(reused_exe or ""),
+        "coldExitCode": int(cold_exit_code or 0),
+        "warmExitCode": int(warm_exit_code or 0),
+    }
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def run_startup_probe_pair(
+    *,
+    runtime_timeout_s: float = DEFAULT_RUNTIME_TIMEOUT_S,
+    artifact_root: Path = PAIR_ARTIFACT_ROOT,
+    summary_path: Path | None = None,
+) -> int:
+    paths = startup_pair_paths(artifact_root=artifact_root)
+    run_root = paths["runRoot"]
     run_root.mkdir(parents=True, exist_ok=True)
-    prune_pair_artifacts(PAIR_ARTIFACT_ROOT, current_run_dir=run_root)
+    prune_pair_artifacts(artifact_root, current_run_dir=run_root)
 
     print("Running cold startup probe with a single rebuild...")
     cold_result = run_packaged_probe(
-        [
-            "--rebuild",
-            "--startup-probe",
-            "--profile-only",
-            "--profile-mode",
-            "cold",
-            "--runtime-timeout",
-            str(runtime_timeout_s),
-            "--artifacts-dir",
-            str(cold_artifacts_dir),
-            "--report-path",
-            str(cold_report_path),
-        ]
+        cold_startup_probe_args(paths, runtime_timeout_s=runtime_timeout_s)
     )
 
+    reused_exe: Path | None = None
     try:
-        reused_exe = resolve_built_exe(cold_report_path, cold_artifacts_dir)
+        reused_exe = resolve_built_exe(paths["coldReportPath"], paths["coldArtifactsDir"])
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
+        if summary_path is not None:
+            write_startup_pair_summary(
+                summary_path,
+                paths=paths,
+                cold_exit_code=int(cold_result.returncode or 1),
+                warm_exit_code=1,
+                reused_exe=None,
+            )
         return int(cold_result.returncode or 1)
 
     print(f"Reusing packaged exe for warm startup probe: {reused_exe}")
     warm_result = run_packaged_probe(
-        [
-            "--exe-path",
-            str(reused_exe),
-            "--startup-probe",
-            "--profile-only",
-            "--profile-mode",
-            "warm",
-            "--runtime-timeout",
-            str(runtime_timeout_s),
-            "--artifacts-dir",
-            str(warm_artifacts_dir),
-            "--report-path",
-            str(warm_report_path),
-        ]
+        warm_startup_probe_args(
+            paths,
+            reused_exe=reused_exe,
+            runtime_timeout_s=runtime_timeout_s,
+        )
     )
 
-    print(f"Cold report: {cold_report_path}")
-    print(f"Warm report: {warm_report_path}")
+    if summary_path is not None:
+        write_startup_pair_summary(
+            summary_path,
+            paths=paths,
+            cold_exit_code=int(cold_result.returncode or 0),
+            warm_exit_code=int(warm_result.returncode or 0),
+            reused_exe=reused_exe,
+        )
+    print(f"Cold report: {paths['coldReportPath']}")
+    print(f"Warm report: {paths['warmReportPath']}")
     return 0 if cold_result.returncode == 0 and warm_result.returncode == 0 else 1
 
 
@@ -128,12 +207,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         description="Run cold and warm packaged startup probes while reusing a single rebuild."
     )
     parser.add_argument("--runtime-timeout", type=float, default=DEFAULT_RUNTIME_TIMEOUT_S)
+    parser.add_argument("--artifact-root", default=str(PAIR_ARTIFACT_ROOT))
+    parser.add_argument("--summary-path", default="")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    return run_startup_probe_pair(runtime_timeout_s=float(args.runtime_timeout))
+    summary_path = Path(str(args.summary_path)) if str(args.summary_path or "").strip() else None
+    return run_startup_probe_pair(
+        runtime_timeout_s=float(args.runtime_timeout),
+        artifact_root=Path(str(args.artifact_root)),
+        summary_path=summary_path,
+    )
 
 
 if __name__ == "__main__":

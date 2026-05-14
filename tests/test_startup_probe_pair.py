@@ -14,6 +14,7 @@ SPEC.loader.exec_module(startup_probe_pair)
 
 def test_run_startup_probe_pair_reuses_cold_build_for_warm(tmp_path: Path, monkeypatch) -> None:
     pair_root = tmp_path / "packaged-desktop-smoke-pair"
+    summary_path = tmp_path / "startup-summary.json"
     cold_report_paths: list[Path] = []
     commands: list[list[str]] = []
     fake_exe_path = tmp_path / "cold-build" / "Baluffo.exe"
@@ -48,7 +49,11 @@ def test_run_startup_probe_pair_reuses_cold_build_for_warm(tmp_path: Path, monke
 
     monkeypatch.setattr(startup_probe_pair.subprocess, "run", _fake_run)
 
-    exit_code = startup_probe_pair.run_startup_probe_pair(runtime_timeout_s=45.0)
+    exit_code = startup_probe_pair.run_startup_probe_pair(
+        runtime_timeout_s=45.0,
+        artifact_root=pair_root,
+        summary_path=summary_path,
+    )
 
     assert exit_code == 0
     assert len(commands) == 2
@@ -67,3 +72,30 @@ def test_run_startup_probe_pair_reuses_cold_build_for_warm(tmp_path: Path, monke
         == pair_root / ("20260417-080000-123456") / "warm"
     )
     assert cold_report_paths == [pair_root / "20260417-080000-123456" / "cold-report.json"]
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert summary["ok"] is True
+    assert summary["coldReportPath"] == str(
+        pair_root / "20260417-080000-123456" / "cold-report.json"
+    )
+    assert summary["warmReportPath"] == str(
+        pair_root / "20260417-080000-123456" / "warm-report.json"
+    )
+
+
+def test_startup_probe_pair_parse_args_accepts_artifact_root_and_summary_path(
+    tmp_path: Path,
+) -> None:
+    args = startup_probe_pair.parse_args(
+        [
+            "--runtime-timeout",
+            "12",
+            "--artifact-root",
+            str(tmp_path / "runs"),
+            "--summary-path",
+            str(tmp_path / "summary.json"),
+        ]
+    )
+
+    assert args.runtime_timeout == 12
+    assert args.artifact_root == str(tmp_path / "runs")
+    assert args.summary_path == str(tmp_path / "summary.json")

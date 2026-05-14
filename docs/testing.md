@@ -65,6 +65,7 @@ Use the repo-native perf entrypoints before adding new benchmark tooling:
 
 | Goal | Command | Output location |
 |------|---------|-----------------|
+| Complete benchmark report | `npm run perf:complete` | `_out/perf-complete/summary.json` plus the timestamped run directory |
 | Slowest Python tests | `npm run perf:py:timing` | Console output only |
 | Isolated discovery sanity benchmark | `npm run perf:discovery:benchmark` | `_out/perf-sanity-discovery/` |
 | Packaged desktop cold startup probe | `npm run perf:startup:cold` | `.tmp/packaged-desktop-smoke/` and `data/packaged-desktop-smoke-report.json` |
@@ -72,6 +73,8 @@ Use the repo-native perf entrypoints before adding new benchmark tooling:
 
 Notes:
 - Prefer repo-local artifact roots such as `.tmp/` and `_out/` for new perf workflows; avoid `%LOCALAPPDATA%\\Temp` for benchmark or runtime-state outputs in this Windows-first repo.
+- Use `npm run perf:complete` when asked for the most complete benchmark. It aggregates discovery/fetch medians, frontend boot traces, cold/warm packaged startup, packaged sync push/pull timings, artifact sizes, best-effort process-tree RAM, and top process-level RAM contributors.
+- Current safe RAM tuning is scoped to Chromium app-mode startup flags. The packaged sync section remains a full-runtime no-browser rehearsal so its RAM numbers stay comparable with earlier complete benchmark reports.
 - `npm run perf:discovery:benchmark` is the default discovery perf entrypoint because it keeps artifacts under `_out/`; use `python scripts/benchmark_discovery_probe.py` separately when tuning discovery probe concurrency.
 - Do not add `pytest-benchmark` or `py-spy` by default here. If dependency approval happens later, benchmark deterministic Python leaf logic first and keep desktop startup analysis on the existing startup-trace pipeline.
 
@@ -169,6 +172,7 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Ship bundle leaf builder | `python scripts/build_ship_bundle.py --bundle-version <version>` |
 | Portable EXE leaf builder | `python scripts/build_portable_exe.py --bundle-version <version>` |
 | Python perf timing | `npm run perf:py:timing` |
+| Complete perf report | `npm run perf:complete` |
 | Discovery perf sanity | `npm run perf:discovery:benchmark` |
 | Packaged startup perf probe (cold/warm) | `npm run perf:startup:cold` / `npm run perf:startup:warm` |
 | Packaged desktop smoke gate | `npm run test:frontend:packaged` |

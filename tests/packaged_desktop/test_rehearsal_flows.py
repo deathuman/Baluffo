@@ -82,7 +82,7 @@ def test_packaged_sync_rehearsal_server_serves_fake_github_app_flow() -> None:
             )
         )
         assert loaded_path == config_path
-        base_url, _stats, server, thread = smoke._start_packaged_sync_rehearsal_server(  # noqa: SLF001
+        base_url, stats, server, thread = smoke._start_packaged_sync_rehearsal_server(  # noqa: SLF001
             packaged_config=packaged_config,
             snapshot_payload={
                 "schemaVersion": source_sync.SYNC_SCHEMA_VERSION,
@@ -113,6 +113,50 @@ def test_packaged_sync_rehearsal_server_serves_fake_github_app_flow() -> None:
             decoded = json.loads(base64.b64decode(content_payload["content"]).decode("utf-8"))
             assert content_payload["sha"] == "packaged-sync-rehearsal-sha"
             assert decoded["source"]["name"] == "packaged_sync_rehearsal"
+
+            shard_payload = b"shard payload"
+            put_request = Request(
+                f"{base_url}/repos/owner/repo/contents/baluffo/source-sync/shards/a.json.gz",
+                data=json.dumps(
+                    {
+                        "message": "write shard",
+                        "content": base64.b64encode(shard_payload).decode("ascii"),
+                        "branch": "main",
+                    }
+                ).encode("utf-8"),
+                headers={"Authorization": "Bearer packaged-sync-rehearsal-token"},
+                method="PUT",
+            )
+            with urlopen(put_request, timeout=5) as response:  # noqa: S310
+                put_payload = json.loads(response.read().decode("utf-8"))
+            assert put_payload["content"]["sha"].startswith("packaged-sync-")
+
+            list_request = Request(
+                f"{base_url}/repos/owner/repo/contents/baluffo/source-sync/shards?ref=main",
+                headers={"Authorization": "Bearer packaged-sync-rehearsal-token"},
+            )
+            with urlopen(list_request, timeout=5) as response:  # noqa: S310
+                list_payload = json.loads(response.read().decode("utf-8"))
+            assert any(
+                row["path"] == "baluffo/source-sync/shards/a.json.gz" for row in list_payload
+            )
+
+            delete_request = Request(
+                f"{base_url}/repos/owner/repo/contents/baluffo/source-sync/shards/a.json.gz",
+                data=json.dumps(
+                    {
+                        "message": "delete shard",
+                        "sha": put_payload["content"]["sha"],
+                        "branch": "main",
+                    }
+                ).encode("utf-8"),
+                headers={"Authorization": "Bearer packaged-sync-rehearsal-token"},
+                method="DELETE",
+            )
+            with urlopen(delete_request, timeout=5) as response:  # noqa: S310
+                assert response.status == 200
+            assert stats["putRequests"] == 1
+            assert stats["deleteRequests"] == 1
         finally:
             server.shutdown()
             server.server_close()

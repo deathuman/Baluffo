@@ -24,6 +24,7 @@ from src import source_sync as _source_sync_mod
 from src.local_data_store import LocalDataPaths as _LocalDataPaths
 from src.local_data_store import LocalDataStore as _LocalDataStore
 from src.python_version_guard import ensure_required_python
+from src.shared.process_memory import ProcessMemorySampler as _ProcessMemorySampler
 from src.shared.utils import utc_now_iso as _utc_now_iso
 from src.ship import desktop_app as _desktop_app_mod
 from src.ship import desktop_update as _desktop_update_mod
@@ -139,6 +140,7 @@ datetime = _datetime
 source_sync_mod = _source_sync_mod
 LocalDataPaths = _LocalDataPaths
 LocalDataStore = _LocalDataStore
+ProcessMemorySampler = _ProcessMemorySampler
 utc_now_iso = _utc_now_iso
 desktop_app_mod = _desktop_app_mod
 desktop_update_mod = _desktop_update_mod
