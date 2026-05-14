@@ -21,7 +21,7 @@ import {
 } from "../domain.js";
 import { isJobsApiReady, jobsAuthService, jobsSavedJobsService, jobsPageService } from "../services.js";
 import { createJobsDispatcher, JOBS_ACTIONS } from "../actions.js";
-import { renderJobRowHtml, showJobsError } from "../render.js";
+import { renderJobRowHtml, showJobsError } from "../render.js?v=5";
 import { sanitizeUrl } from "./runtime-utils.js";
 import {
   readAutoRefreshAppliedId,
@@ -33,7 +33,7 @@ import {
 } from "../state-sync/index.js";
 import { requestConfirmationDialog } from "../../local-data/profile-name-dialog.js";
 import { callJobsBridge as callJobsBridgeFromModule } from "./pipeline.js";
-import { applyJobsAdminBridgeState as applyJobsAdminBridgeStateFromModule } from "./admin-bridge-state.js";
+import { applyJobsAdminBridgeState as applyJobsAdminBridgeStateFromModule } from "./admin-bridge-state.js?v=5";
 import {
   buildSeenRowKey,
   openJobsCacheDb as openJobsCacheDbFromModule,
@@ -70,7 +70,7 @@ import {
 } from "./sources.js";
 import { composeJobsRuntime } from "./runtime/composition.js?v=4";
 import { createJobsBoot } from "./runtime/boot.js";
-import { createJobsPageFlow } from "./runtime/page-flow.js?v=4";
+import { createJobsPageFlow } from "./runtime/page-flow.js?v=5";
 
 const defaultFilters = jobsStateModule.DEFAULT_FILTERS || {
   workType: "",

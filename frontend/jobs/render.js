@@ -1,5 +1,5 @@
 import { escapeHtml } from "../shared/ui/index.js";
-import { renderJobRow as renderJobRowFromComponent } from "../shared/components/JobRow.js";
+import { renderJobRow as renderJobRowFromComponent } from "../shared/components/JobRow.js?v=5";
 import { renderErrorState } from "../shared/components/ErrorState.js";
 
 export function renderJobRowHtml(job, options = {}) {

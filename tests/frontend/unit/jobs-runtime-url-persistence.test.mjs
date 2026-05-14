@@ -24,7 +24,7 @@ function createStorageMock(seed = {}) {
   };
 }
 
-function createHarness({ desktop = true, ready = false, probe = false } = {}) {
+function createHarness({ desktop = true, ready = false, probe = false, search = "?q=engineer" } = {}) {
   const calls = {
     metrics: [],
     remember: [],
@@ -38,7 +38,7 @@ function createHarness({ desktop = true, ready = false, probe = false } = {}) {
   const windowObject = {
     location: {
       pathname: "/jobs",
-      search: "?q=engineer"
+      search
     },
     history: {
       replaceState: (...args) => {
@@ -168,6 +168,33 @@ test("jobs URL persistence keeps the non-desktop remember and replace flow canon
     key: "last-url",
     url: "/jobs?page=2"
   });
+});
+
+test("jobs URL persistence does not preserve removed row preview parameters", () => {
+  const harness = createHarness({ desktop: false, search: "?rowPreview=1&jobsRowPreview=1" });
+
+  harness.persistence.writeStateToUrl({
+    currentPage: 2,
+    filters: {
+      countries: [],
+      city: "",
+      sector: "",
+      profession: "",
+      workType: "",
+      lifecycleStatus: "active",
+      newOnly: false,
+      excludeInternship: false,
+      search: "",
+      sort: "relevance"
+    }
+  });
+
+  assert.deepEqual(harness.calls.remember.at(-1), {
+    key: "last-url",
+    url: "/jobs?page=2"
+  });
+  assert.equal(harness.calls.history.length, 1);
+  assert.equal(harness.calls.history[0][2], "/jobs?page=2");
 });
 
 test("jobs URL persistence skips writes in startup probe mode", () => {

@@ -153,14 +153,12 @@ export function displayJobs(jobs, {
   setTimedInnerHTML(jobsList, `
     <div class="jobs-table-header">
       <div class="job-row-header">
-        <div class="col-freshness" data-tooltip="Freshness (posted/fetched recency)" aria-hidden="true"></div>
         <div class="col-title">Position</div>
         <div class="col-company">Company</div>
-        <div class="col-sector">Sector</div>
-        <div class="col-city">City</div>
-        <div class="col-country">Country</div>
+        <div class="col-location">Location</div>
         <div class="col-contract">Contract</div>
         <div class="col-type">Type</div>
+        <div class="col-save">Save</div>
       </div>
     </div>
     <div class="jobs-table-body">

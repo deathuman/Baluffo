@@ -114,7 +114,9 @@
 }
 
 .jobs-page .job-row-header {
-  padding: 0.78rem 0.95rem 0.78rem 3rem;
+  grid-template-columns: minmax(19rem, 1.8fr) minmax(10rem, 0.86fr) minmax(11rem, 0.76fr) 7.4rem 6.4rem 2.4rem;
+  column-gap: 0.64rem;
+  padding: 0.78rem 0.82rem 0.78rem 1rem;
   color: var(--text-subtle);
   font-size: 0.77rem;
   letter-spacing: 0.7px;
@@ -122,8 +124,12 @@
 
 .jobs-page .job-row,
 .jobs-page .job-row-link {
-  padding: 0.86rem 0.95rem 0.86rem 3rem;
+  grid-template-columns: minmax(19rem, 1.8fr) minmax(10rem, 0.86fr) minmax(11rem, 0.76fr) 7.4rem 6.4rem 2.4rem;
+  column-gap: 0.64rem;
+  min-height: 3.35rem;
+  padding: 0.46rem 0.82rem 0.46rem 1rem;
   border-bottom: 1px solid color-mix(in srgb, var(--surface-11) 88%, transparent);
+  align-items: center;
 }
 
 .jobs-page .job-row:hover,
@@ -162,6 +168,171 @@
   border-radius: 999px;
   font-size: 0.76rem;
   padding: 0.31rem 0.66rem;
+}
+
+.jobs-page .job-row-header .col-contract,
+.jobs-page .job-row-header .col-type,
+.jobs-page .job-row-header .col-save {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: stretch;
+  width: 100%;
+  min-width: 0;
+  text-align: center;
+}
+
+.jobs-page .job-row.job-row-seen {
+  opacity: 0.56;
+  background-color: color-mix(in srgb, var(--surface-0) 72%, var(--surface-3));
+}
+
+.jobs-page .job-row.job-row-seen .job-title-compact,
+.jobs-page .job-row.job-row-seen .job-country-main {
+  color: var(--text-muted);
+}
+
+.jobs-page .job-row.job-row-seen .job-freshness-ping,
+.jobs-page .job-row.job-row-seen .job-new-badge {
+  opacity: 0.45;
+}
+
+.jobs-page .job-row .job-freshness-ping.unknown {
+  width: 0.56rem;
+  height: 0.56rem;
+  opacity: 0.58;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--text-subtle) 76%, transparent);
+  box-shadow: none;
+}
+
+.jobs-page .job-title-line .col-freshness {
+  flex: 0 0 0.65rem;
+  width: 0.65rem;
+  min-height: 0;
+  align-self: center;
+}
+
+.jobs-page .col-title,
+.jobs-page .col-company,
+.jobs-page .col-location,
+.jobs-page .col-contract,
+.jobs-page .col-type,
+.jobs-page .col-save {
+  min-width: 0;
+}
+
+.jobs-page .job-title-line {
+  display: flex;
+  align-items: center;
+  gap: 0.38rem;
+  min-width: 0;
+}
+
+.jobs-page .job-row .job-title-compact {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jobs-page .job-row .job-company-compact {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jobs-page .job-sector-line {
+  margin-top: 0.12rem;
+  margin-left: calc(0.65rem + 0.38rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.jobs-page .job-row .job-company-compact {
+  display: block;
+  margin-top: 0.12rem;
+}
+
+.jobs-page .job-location-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.jobs-page .job-country-main,
+.jobs-page .job-city-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jobs-page .job-country-main {
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.jobs-page .job-city-sub {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.jobs-page .col-contract,
+.jobs-page .col-type {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: stretch;
+  width: 100%;
+}
+
+.jobs-page .col-contract .job-contract,
+.jobs-page .col-type .job-tag {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.jobs-page .col-save {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.jobs-page .col-save .job-inline-save-btn {
+  min-width: 1.95rem;
+  width: 1.95rem;
+  min-height: 1.95rem;
+  height: 1.95rem;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+}
+
+.jobs-page .col-save .job-inline-save-btn {
+  position: static;
+  transform: none;
+  border-color: var(--surface-20);
+  background-color: color-mix(in srgb, var(--surface-6) 78%, transparent);
+  color: var(--text-secondary);
+}
+
+.jobs-page .col-save .job-inline-save-btn.saved {
+  border-color: color-mix(in srgb, #4b8f5a 72%, var(--surface-20));
+  background-color: color-mix(in srgb, #1f4b2a 72%, var(--surface-3));
+  color: #a9f5b7;
 }
 
 .jobs-page .pagination {

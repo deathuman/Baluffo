@@ -4,7 +4,7 @@
  * @param {{ fullCountryName: function, sanitizeUrl: function, getJobKeyForJob: function, savedJobKeys: Set, isSeen?: boolean, isNew?: boolean, isJobsApiReady: function, toContractClass: function, capitalizeFirst: function }} options
  * @returns {string} HTML string for the row
  */
-import { escapeHtml, tooltipAttrs } from "../ui/index.js";
+import { escapeHtml, tooltipAttrs } from "../ui/index.js?v=5";
 import { renderLifecycleBadgeHtml } from "../lifecycle-badges.js";
 import { formatJobLocationColumns } from "../location-display.js";
 
@@ -35,7 +35,11 @@ function renderFreshnessCell(job) {
   const ageDays = typeof rawAgeDays === "number" ? rawAgeDays : Number.NaN;
   const source = String(job?.freshnessSource || "");
   if (!Number.isFinite(score) || !Number.isFinite(ageDays)) {
-    return '<div class="col-freshness" aria-hidden="true"></div>';
+    return `
+      <div class="col-freshness" aria-hidden="true">
+        <span class="job-freshness-ping unknown"${tooltipAttrs("Freshness unknown")}></span>
+      </div>
+    `;
   }
   const tier = getFreshnessTier(score);
   const baseTooltip = getFreshnessTooltip(ageDays, source);
@@ -45,6 +49,165 @@ function renderFreshnessCell(job) {
   return `
     <div class="col-freshness" aria-hidden="true">
       <span class="job-freshness-ping ${tier}"${tooltipAttrs(tooltip)}></span>
+    </div>
+  `;
+}
+
+function formatWorkType(value, capitalizeFirst) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  return capitalizeFirst(raw);
+}
+
+function isUnknownValue(value) {
+  const text = String(value || "").trim().toLowerCase();
+  return !text || text === "unknown" || text === "n/a";
+}
+
+function isWorkModeValue(value, workType = "") {
+  const text = String(value || "").trim().toLowerCase();
+  const mode = String(workType || "").trim().toLowerCase();
+  if (!text) return false;
+  return text === mode || ["remote", "hybrid", "onsite", "on-site", "on site"].includes(text);
+}
+
+function isEmptyLocationValue(value, workType = "") {
+  return isUnknownValue(value) || isWorkModeValue(value, workType);
+}
+
+function cleanRowLocationValue(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function sameText(left, right) {
+  return cleanRowLocationValue(left).toLowerCase() === cleanRowLocationValue(right).toLowerCase();
+}
+
+function stripCountrySuffix(city, country) {
+  const cleanCity = cleanRowLocationValue(city);
+  const cleanCountry = cleanRowLocationValue(country);
+  if (!cleanCity || !cleanCountry) return cleanCity;
+  const suffix = `, ${cleanCountry}`;
+  return cleanCity.toLowerCase().endsWith(suffix.toLowerCase())
+    ? cleanCity.slice(0, -suffix.length).trim()
+    : cleanCity;
+}
+
+function parseCompactLocationLabel(label, countryHint = "") {
+  const text = cleanRowLocationValue(label);
+  if (!text || text.includes("|")) return { city: "", country: "" };
+  const hint = cleanRowLocationValue(countryHint);
+  if (hint && text.toLowerCase().endsWith(`, ${hint.toLowerCase()}`)) {
+    return {
+      city: stripCountrySuffix(text, hint),
+      country: hint
+    };
+  }
+  const commaParts = text.split(",").map(part => cleanRowLocationValue(part)).filter(Boolean);
+  if (commaParts.length === 2) {
+    return {
+      city: commaParts[0],
+      country: commaParts[1]
+    };
+  }
+  return { city: text, country: "" };
+}
+
+function resolveRowLocation(job, locationColumns, { fullCountryName }) {
+  const locations = Array.isArray(job?.locations) ? job.locations : [];
+  const firstLocation = locations.length === 1 ? locations[0] : null;
+  const workType = String(job?.workType || "");
+  const rawCountry = cleanRowLocationValue(firstLocation?.country || job?.country || "");
+  const rawCity = cleanRowLocationValue(firstLocation?.city || job?.city || "");
+  const countryFromRaw = isEmptyLocationValue(rawCountry, workType)
+    ? ""
+    : cleanRowLocationValue(typeof fullCountryName === "function" ? fullCountryName(rawCountry) : rawCountry);
+  let country = countryFromRaw;
+  let city = isEmptyLocationValue(rawCity, workType) ? "" : stripCountrySuffix(rawCity, country);
+
+  if (sameText(city, country)) city = "";
+
+  if (!country || !city) {
+    const parsed = parseCompactLocationLabel(locationColumns.cityLabel, country || locationColumns.countryLabel);
+    if (!country && parsed.country && !isEmptyLocationValue(parsed.country, workType)) country = parsed.country;
+    if (!city && parsed.city && !isEmptyLocationValue(parsed.city, workType) && !sameText(parsed.city, country)) {
+      city = stripCountrySuffix(parsed.city, country);
+    }
+  }
+
+  const fallbackCountry = cleanRowLocationValue(locationColumns.countryLabel);
+  if (!country && fallbackCountry && !isEmptyLocationValue(fallbackCountry, workType)) country = fallbackCountry;
+  return { city, country };
+}
+
+function renderJobRowContent(job, {
+  safeTitle,
+  safeCompany,
+  locationColumns,
+  safeJobLink,
+  jobKey,
+  isSaved,
+  isJobsApiReady,
+  isSeen,
+  isNew,
+  toContractClass,
+  fullCountryName,
+  capitalizeFirst
+}) {
+  const workTypeLabel = formatWorkType(job.workType, capitalizeFirst);
+  const newBadge = isNew ? '<span class="job-new-badge">New</span>' : "";
+  const lifecycleBadge = renderLifecycleBadgeHtml(job);
+  const sectorLine = isUnknownValue(job.sector)
+    ? ""
+    : `<div class="job-sector-line">${escapeHtml(job.sector)}</div>`;
+  const rowLocation = resolveRowLocation(job, locationColumns, { fullCountryName });
+  const rowCountry = escapeHtml(rowLocation.country);
+  const rowCity = escapeHtml(rowLocation.city);
+  const rowClasses = [
+    "job-row",
+    safeJobLink ? "job-row-link" : "",
+    isSeen ? "job-row-seen" : "",
+    isNew ? "job-row-new" : ""
+  ].filter(Boolean).join(" ");
+  return `
+    <div class="${rowClasses}" data-job-link="${safeJobLink}" data-job-key="${escapeHtml(jobKey)}" data-ui="job-row">
+      <div class="col-title job-cell" data-label="Position">
+        <div class="job-title-line">
+          ${renderFreshnessCell(job)}
+          <span class="job-title-compact">${safeTitle}</span>
+          ${newBadge}
+          ${lifecycleBadge}
+        </div>
+        ${sectorLine}
+      </div>
+      <div class="col-company job-cell" data-label="Company">
+        <span class="job-company-compact"${tooltipAttrs(job.company)}>${safeCompany}</span>
+      </div>
+      <div class="col-location job-cell" data-label="Location">
+        <div class="job-location-stack">
+          <span class="job-country-main"${tooltipAttrs(rowLocation.country)}>${rowCountry}</span>
+          <span class="job-city-sub"${tooltipAttrs(rowLocation.city)}>${rowCity}</span>
+        </div>
+      </div>
+      <div class="col-contract job-cell" data-label="Contract">
+        <span class="job-contract ${toContractClass(job.contractType)}">${escapeHtml(job.contractType || "Unknown")}</span>
+      </div>
+      <div class="col-type job-cell" data-label="Type">
+        <span class="job-tag ${job.workType.toLowerCase()}">${escapeHtml(workTypeLabel || "Unknown")}</span>
+      </div>
+      <div class="col-save job-cell" data-label="Save" aria-label="Job actions">
+        <button
+          class="save-job-btn job-inline-save-btn ${isSaved ? "saved" : ""}"
+          data-job-id="${job.id}"
+          data-job-key="${jobKey}"
+          data-ui="save-job-btn"
+          ${!isJobsApiReady() ? "disabled" : ""}
+          aria-label="${isSaved ? "Job saved" : "Save job"}"
+          title="${isSaved ? "Saved" : "Save job"}"
+        >
+          <span aria-hidden="true">${isSaved ? "✓" : "＋"}</span>
+        </button>
+      </div>
     </div>
   `;
 }
@@ -63,57 +226,22 @@ export function renderJobRow(job, options = {}) {
   } = options;
   const safeTitle = escapeHtml(job.title);
   const safeCompany = escapeHtml(job.company);
-  const safeSector = escapeHtml(job.sector || "Unknown");
   const locationColumns = formatJobLocationColumns(job, { fullCountryName });
-  const safeCity = escapeHtml(locationColumns.cityLabel);
-  const safeCountry = escapeHtml(locationColumns.countryLabel);
   const safeJobLink = sanitizeUrl(job.jobLink);
   const jobKey = getJobKeyForJob(job);
   const isSaved = savedJobKeys.has(jobKey);
-  const rowClasses = [
-    "job-row",
-    safeJobLink ? "job-row-link" : "",
-    isSeen ? "job-row-seen" : "",
-    isNew ? "job-row-new" : ""
-  ].filter(Boolean).join(" ");
-  const newBadge = isNew ? '<span class="job-new-badge">New</span>' : "";
-  const content = `
-    <button
-      class="save-job-btn job-inline-save-btn ${isSaved ? "saved" : ""}"
-      data-job-id="${job.id}"
-      data-job-key="${jobKey}"
-      data-ui="save-job-btn"
-      ${!isJobsApiReady() ? "disabled" : ""}
-      aria-label="${isSaved ? "Remove saved job" : "Save job"}"
-    >
-      ${isSaved ? "x" : "+"}
-    </button>
-    ${renderFreshnessCell(job)}
-    <div class="col-title job-cell" data-label="Position">
-      <div class="job-title-wrap">
-        <div class="job-title-compact">${safeTitle}</div>
-        ${newBadge}
-        ${renderLifecycleBadgeHtml(job)}
-      </div>
-    </div>
-    <div class="col-company job-cell" data-label="Company">
-      <span class="job-company-compact"${tooltipAttrs(job.company)}>${safeCompany}</span>
-    </div>
-    <div class="col-sector job-cell" data-label="Sector">
-      <span class="job-sector">${safeSector}</span>
-    </div>
-    <div class="col-city job-cell" data-label="City">
-      <span class="job-location"${tooltipAttrs(locationColumns.cityLabel)}>${safeCity}</span>
-    </div>
-    <div class="col-country job-cell" data-label="Country">
-      <span class="job-location">${safeCountry}</span>
-    </div>
-    <div class="col-contract job-cell" data-label="Contract">
-      <span class="job-contract ${toContractClass(job.contractType)}">${escapeHtml(job.contractType || "Unknown")}</span>
-    </div>
-    <div class="col-type job-cell" data-label="Type">
-      <span class="job-tag ${job.workType.toLowerCase()}">${capitalizeFirst(job.workType)}</span>
-    </div>
-  `;
-  return `<div class="${rowClasses}" data-job-link="${safeJobLink}" data-job-key="${escapeHtml(jobKey)}" data-ui="job-row">${content}</div>`;
+  return renderJobRowContent(job, {
+    safeTitle,
+    safeCompany,
+    locationColumns,
+    safeJobLink,
+    jobKey,
+    isSaved,
+    isJobsApiReady,
+    isSeen,
+    isNew,
+    toContractClass,
+    fullCountryName,
+    capitalizeFirst
+  });
 }

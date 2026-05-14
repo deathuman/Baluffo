@@ -53,7 +53,7 @@ test("jobs render outputs freshness ping with correct class and tooltip", () => 
   assert.match(fetchedHtml, /data-tooltip="Fetched 4d ago \(best guess\) \(Mar 4, 2026\)"/);
 });
 
-test("jobs render omits freshness ping when score is unavailable", () => {
+test("jobs render shows empty freshness ring when score is unavailable", () => {
   const html = render({
     id: "3",
     title: "Animator",
@@ -67,8 +67,8 @@ test("jobs render omits freshness ping when score is unavailable", () => {
     freshnessAgeDays: null,
     freshnessSource: ""
   });
-  assert.match(html, /class="col-freshness" aria-hidden="true"><\/div>/);
-  assert.doesNotMatch(html, /job-freshness-ping/);
+  assert.match(html, /job-freshness-ping unknown/);
+  assert.match(html, /data-tooltip="Freshness unknown"/);
 });
 
 test("jobs render shows lifecycle badge with removed date tooltip", () => {
@@ -157,7 +157,7 @@ test("jobs render rewrites remoteok detail links to the listing page", () => {
   assert.doesNotMatch(html, /remote-jobs\/remote-gameplay-programmer-nebula-1234567/);
 });
 
-test("jobs render shows multi-location summaries", () => {
+test("jobs render uses separated location hierarchy", () => {
   const html = render({
     id: "4b",
     title: "Systems & Tools Engineer",
@@ -170,7 +170,8 @@ test("jobs render shows multi-location summaries", () => {
     contractType: "Full-time",
     jobLink: "https://jobs.example.com/stellar"
   });
-  assert.match(html, /Guildford, UK \| Utrecht, NL/);
+  assert.match(html, /class="job-country-main" data-tooltip="UK">UK<\/span>/);
+  assert.match(html, /class="job-city-sub" data-tooltip="Guildford">Guildford<\/span>/);
 });
 
 test("jobs render suppresses duplicated location and unknown country display", () => {
@@ -186,6 +187,8 @@ test("jobs render suppresses duplicated location and unknown country display", (
     contractType: "Unknown"
   });
   assert.doesNotMatch(remoteHtml, /Remote, Remote/);
+  assert.match(remoteHtml, /class="job-country-main"><\/span>/);
+  assert.match(remoteHtml, /class="job-city-sub"><\/span>/);
 
   const countryHtml = render({
     id: "4d",
@@ -198,8 +201,9 @@ test("jobs render suppresses duplicated location and unknown country display", (
     workType: "Onsite",
     contractType: "Unknown"
   });
-  assert.equal((countryHtml.match(/Melbourne, Australia/g) || []).length, 2);
-  assert.doesNotMatch(countryHtml, />Australia<\/span>\s*<\/div>\s*<div class="col-contract/);
+  assert.match(countryHtml, /class="job-country-main" data-tooltip="Australia">Australia<\/span>/);
+  assert.match(countryHtml, /class="job-city-sub" data-tooltip="Melbourne">Melbourne<\/span>/);
+  assert.doesNotMatch(countryHtml, /Melbourne, Australia/);
 
   const unknownHtml = render({
     id: "4e",
@@ -213,6 +217,47 @@ test("jobs render suppresses duplicated location and unknown country display", (
     contractType: "Unknown"
   });
   assert.doesNotMatch(unknownHtml, /Unknown Unknown/);
+});
+
+test("jobs render uses accepted default row hierarchy and save icon", () => {
+  const html = render({
+    id: "7",
+    title: "Technical Artist",
+    company: "Studio",
+    sector: "Game",
+    city: "Boston, United States",
+    country: "United States",
+    workType: "Hybrid",
+    contractType: "Full-time"
+  });
+
+  assert.match(html, /<div class="col-title job-cell" data-label="Position">/);
+  assert.match(html, /<div class="job-title-line">/);
+  assert.match(html, /<div class="job-sector-line">Game<\/div>/);
+  assert.match(html, /<div class="col-company job-cell" data-label="Company">/);
+  assert.match(html, /<div class="col-location job-cell" data-label="Location">/);
+  assert.match(html, /class="job-country-main" data-tooltip="United States">United States<\/span>/);
+  assert.match(html, /class="job-city-sub" data-tooltip="Boston">Boston<\/span>/);
+  assert.match(html, /<div class="col-contract job-cell" data-label="Contract">/);
+  assert.match(html, /<div class="col-type job-cell" data-label="Type">/);
+  assert.match(html, /<div class="col-save job-cell" data-label="Save" aria-label="Job actions">/);
+  assert.match(html, /aria-label="Save job"/);
+  assert.match(html, />＋<\/span>/);
+
+  const savedHtml = render({
+    id: "8",
+    title: "Producer",
+    company: "Studio",
+    sector: "Game",
+    city: "Rome",
+    country: "Italy",
+    workType: "Remote",
+    contractType: "Full-time"
+  }, {
+    savedJobKeys: new Set(["job_key"])
+  });
+  assert.match(savedHtml, /aria-label="Job saved"/);
+  assert.match(savedHtml, />✓<\/span>/);
 });
 
 test("jobs render marks unseen rows with New badge and seen rows with class", () => {

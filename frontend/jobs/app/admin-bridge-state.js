@@ -1,4 +1,4 @@
-import { setTooltip } from "../../shared/ui/index.js";
+import { setTooltip } from "../../shared/ui/index.js?v=5";
 
 export function applyJobsAdminBridgeState({
   buttonEl,
