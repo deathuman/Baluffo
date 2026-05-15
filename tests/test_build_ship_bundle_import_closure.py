@@ -10,6 +10,18 @@ from tests.helpers.temp_paths import workspace_tmpdir
 pytestmark = pytest.mark.packaging
 
 
+def test_validate_private_key_pem_accepts_valid_rsa_pem_with_escaped_newlines() -> None:
+    private_key_pem = (
+        "-----BEGIN RSA PRIVATE KEY-----\n"
+        "MB0CAQACAgyhAgERAgIKwQIBPQIBNQIBNQIBMQIBJg==\n"
+        "-----END RSA PRIVATE KEY-----"
+    )
+    build_ship_bundle._validate_private_key_pem(  # noqa: SLF001
+        private_key_pem.replace("\n", "\\n"),
+        source="unit-test",
+    )
+
+
 def _write_packaged_sync_config(tmp: str) -> None:
     config_path = Path(tmp) / "packaging" / "github-app-sync-config.json"
     config_path.parent.mkdir(parents=True, exist_ok=True)

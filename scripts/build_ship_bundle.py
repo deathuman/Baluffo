@@ -501,13 +501,15 @@ def _normalize_private_key_pem(raw_value: str) -> str:
 
 
 def _validate_private_key_pem(private_key_pem: str, *, source: str) -> None:
-    from src import source_sync
+    from src import source_sync_crypto
 
     normalized = _normalize_private_key_pem(private_key_pem)
     if not normalized:
         raise RuntimeError(f"Packaged sync private key from {source} is empty.")
     try:
-        source_sync._parse_rsa_private_key_der(source_sync._pem_to_der(normalized))  # noqa: SLF001
+        source_sync_crypto._parse_rsa_private_key_der(  # noqa: SLF001
+            source_sync_crypto._pem_to_der(normalized)  # noqa: SLF001
+        )
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError(
             f"Invalid packaged sync private key from {source}: {exc}. "
