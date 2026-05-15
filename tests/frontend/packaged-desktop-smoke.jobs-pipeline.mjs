@@ -16,6 +16,8 @@ const OUTPUT_DIR =
   process.env.PACKAGED_SMOKE_OUTPUT_DIR ||
   process.env.PACKAGED_SMOKE_ARTIFACTS_DIR ||
   path.resolve(".tmp/packaged-desktop-smoke/jobs-pipeline-output");
+const BRIDGE_REQUEST_RETRY_TIMEOUT_MS = 30_000;
+const BRIDGE_REQUEST_RETRY_INTERVAL_MS = 500;
 
 async function writeReport(report) {
   await fs.mkdir(path.dirname(REPORT_PATH), { recursive: true });
@@ -52,20 +54,52 @@ async function waitForJobsPageReady(page) {
   );
 }
 
+function isRetryableBridgeRequestError(error) {
+  return /ECONNREFUSED|ECONNRESET|ECONNABORTED|ETIMEDOUT|socket hang up/i.test(
+    String(error?.message || error || "")
+  );
+}
+
+async function bridgeRequestWithRetry(apiRequest, method, url, options = {}) {
+  const deadline = Date.now() + BRIDGE_REQUEST_RETRY_TIMEOUT_MS;
+  let lastError = null;
+  while (Date.now() < deadline) {
+    try {
+      return await apiRequest[method](url, options);
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableBridgeRequestError(error)) {
+        throw error;
+      }
+      await new Promise(resolve => setTimeout(resolve, BRIDGE_REQUEST_RETRY_INTERVAL_MS));
+    }
+  }
+  throw lastError || new Error(`Bridge ${method.toUpperCase()} request timed out: ${url}`);
+}
+
 async function fetchPipelineStatus(apiRequest) {
-  const response = await apiRequest.get(`${BRIDGE_BASE}/tasks/run-jobs-pipeline-status`);
+  const response = await bridgeRequestWithRetry(
+    apiRequest,
+    "get",
+    `${BRIDGE_BASE}/tasks/run-jobs-pipeline-status`
+  );
   assert.equal(response.ok(), true, "jobs pipeline status request should succeed");
   return response.json();
 }
 
 async function fetchBridgeJson(apiRequest, relativePath, label) {
-  const response = await apiRequest.get(`${BRIDGE_BASE}${relativePath}`);
+  const response = await bridgeRequestWithRetry(apiRequest, "get", `${BRIDGE_BASE}${relativePath}`);
   assert.equal(response.ok(), true, `${label} request should succeed`);
   return response.json();
 }
 
 async function postBridgeJson(apiRequest, relativePath, data, label) {
-  const response = await apiRequest.post(`${BRIDGE_BASE}${relativePath}`, { data });
+  const response = await bridgeRequestWithRetry(
+    apiRequest,
+    "post",
+    `${BRIDGE_BASE}${relativePath}`,
+    { data }
+  );
   assert.equal(response.ok(), true, `${label} request should succeed`);
   return response.json();
 }
