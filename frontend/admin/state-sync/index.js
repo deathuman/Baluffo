@@ -4,6 +4,7 @@ import {
   safeReadSession,
   safeWriteJsonLocal
 } from "../../local-data/storage-gateway.js";
+import { readLastJobsUrlFromSession } from "../../shared/last-jobs-url.js";
 
 // Admin state-sync helpers own local/session persistence used by app orchestration.
 
@@ -24,10 +25,7 @@ export function writeShowZeroJobs(storageKey, enabled) {
 }
 
 export function readAdminLastJobsUrl(storageKey, fallback = "jobs.html") {
-  const url = String(safeReadSession(storageKey, "") || "");
-  if (!url) return fallback;
-  if (!url.startsWith("/") && !url.startsWith("jobs.html")) return fallback;
-  return url;
+  return readLastJobsUrlFromSession(safeReadSession, storageKey, fallback);
 }
 
 export function writeJobsAutoRefreshSignal(storageKey, signal) {

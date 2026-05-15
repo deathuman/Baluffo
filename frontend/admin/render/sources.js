@@ -155,6 +155,28 @@ export function renderSourcesTableHtml(
     if (normalizedStatus === "error" && statusErrorDetail) {
       return tooltipAttrs(`Error: ${statusErrorDetail}`);
     }
+    if (normalizedStatus === "warning") {
+      const warningReason = String(
+        row?.warningReason
+        || row?._lastWarning
+        || row?.lastWarning
+        || row?.warning
+        || ""
+      ).trim();
+      if (warningReason) {
+        return tooltipAttrs(`Warning: ${warningReason}`);
+      }
+      if (statusErrorDetail) {
+        return tooltipAttrs(`Warning: ${statusErrorDetail}`);
+      }
+      if (String(row?.lastProbedAt || "").trim()) {
+        return tooltipAttrs("Warning: source was probed, but no confirmed healthy check result is available yet.");
+      }
+      return tooltipAttrs("Warning: source needs review, but no detailed warning reason was recorded.");
+    }
+    if (normalizedStatus === "not_run" || normalizedStatus === "n/a") {
+      return tooltipAttrs("Not run yet: no source check or fetch result has been recorded.");
+    }
     if (normalizedStatus !== "excluded") {
       return "";
     }

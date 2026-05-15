@@ -1,4 +1,4 @@
-import { renderSourcesTableHtml } from "../../render.js?v=13";
+import { renderSourcesTableHtml } from "../../render.js?v=15";
 
 function isCheckedSourceInput(el) {
   if (typeof HTMLInputElement === "undefined") {

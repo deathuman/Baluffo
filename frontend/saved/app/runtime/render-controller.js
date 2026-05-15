@@ -39,6 +39,7 @@ export function createSavedRenderController({
   computeAnchorScrollDelta,
   cssEscape,
   renderTimeline,
+  setActivityPanelOpen,
   renderWorkspaceStats,
   renderSelectedJobHint,
   updateTimelineScopeButtons,
@@ -260,7 +261,7 @@ export function createSavedRenderController({
           phaseLabels,
           canTransition,
           currentUser: viewState.currentUser,
-          phaseOverrideArmedGlobal: viewState.phaseOverrideArmedGlobal
+          phaseOverrideContext: viewState.phaseOverrideContext
         }
       ),
       currentUser: viewState.currentUser,
@@ -288,6 +289,10 @@ export function createSavedRenderController({
     if (allJobs.length === 0) {
       viewState.expandedJobKey = null;
       viewState.selectedJobKey = "";
+      viewState.phaseOverrideContext = null;
+      if (typeof setActivityPanelOpen === "function") {
+        setActivityPanelOpen(false, { persist: false });
+      }
       renderSelectedJobHint();
       savedJobsListEl.innerHTML = '<div class="no-results">No saved jobs yet.</div>';
       renderTimeline();
@@ -296,6 +301,7 @@ export function createSavedRenderController({
 
     if (!allJobs.some(job => String(job?.jobKey || "").trim() === viewState.selectedJobKey)) {
       viewState.selectedJobKey = "";
+      viewState.phaseOverrideContext = null;
       renderSelectedJobHint();
       updateTimelineScopeButtons();
       if (viewState.timelineScope === timelineScopeSelected) {

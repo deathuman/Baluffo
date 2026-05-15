@@ -6,6 +6,7 @@ import {
   formatRelativeTime,
   getJobHistoryEntries,
   renderSavedJobBlockHtml,
+  renderRemoveSavedIcon,
   renderPhaseBar,
   formatPhaseTimestamp,
   renderDetailsSummary
@@ -46,12 +47,10 @@ test("saved render: phase bar and history rows render expected markup", () => {
       phaseOptions: ["bookmark", "applied", "rejected"],
       phaseLabels: { bookmark: "Saved", applied: "Applied", rejected: "Rejected" },
       canTransition: () => false,
-      currentUser: { uid: "u1" },
-      phaseOverrideArmedGlobal: true
+      currentUser: { uid: "u1" }
     }
   );
   assert.match(phaseHtml, /phase-bar/);
-  assert.match(phaseHtml, /override-enabled/);
   assert.match(phaseHtml, /Set phase to Applied/);
   assert.match(phaseHtml, /data-tooltip="Set phase to Saved\."/);
   assert.match(phaseHtml, /data-job-key="job-1"/);
@@ -117,12 +116,70 @@ test("saved render shows lifecycle overlay badges read-only", () => {
   assert.match(html, /data-tooltip="Gameplay Engineer"/);
   assert.match(html, /data-tooltip="Studio"/);
   assert.match(html, /data-tooltip="Recently removed since Mar 7, 2026"/);
-  assert.match(html, /remove-saved-btn[\s\S]*data-tooltip="Remove this job from Saved Jobs\."/);
+  assert.match(html, /remove-saved-btn[\s\S]*data-tooltip="Remove saved job"/);
   assert.match(html, /details-toggle-btn[\s\S]*data-tooltip="Show notes, files, and history for this job\."/);
   assert.match(html, /attach-upload-btn[\s\S]*data-tooltip="Attach files to this saved job\."/);
   assert.match(html, /job-history-refresh-btn[\s\S]*data-tooltip="Reload activity history for this job\."/);
   assert.doesNotMatch(html, /\stitle="/);
   assert.doesNotMatch(html, /save-job-btn/);
+});
+
+test("saved render uses remove icon and contextual phase override by default", () => {
+  const baseJob = {
+    jobKey: "job_1",
+    title: "Gameplay Engineer",
+    company: "Studio",
+    city: "Rome",
+    country: "Italy",
+    workType: "Remote",
+    contractType: "Full-time",
+    jobLink: "https://example.com/jobs/1",
+    applicationStatus: "bookmark",
+    phaseTimestamps: {},
+    savedAt: "2026-03-08T09:00:00.000Z",
+    notes: ""
+  };
+  const baseOptions = {
+    isCustomJob: () => false,
+    customSourceLabel: "Custom",
+    normalizeSavedSector: () => "Game",
+    fullCountryName: value => value,
+    sanitizeUrl: value => value,
+    toContractClass: () => "full-time",
+    normalizePhase: value => value || "bookmark",
+    expandedJobKey: "",
+    selectedJobKey: "",
+    getJobDetailsTab: () => "notes",
+    renderDetailsSummary: () => "",
+    getReminderMeta: () => ({ isSoon: false, label: "" }),
+    renderMissingInfoChips: () => "",
+    renderUpdatedHint: () => "",
+    getJobHistoryEntries: () => "",
+    renderWebIcon: () => "",
+    renderPhaseBar: () => "",
+    lifecycleOverlay: null,
+    currentUser: { uid: "u1" },
+    maxAttachmentsPerJob: 10,
+    maxAttachmentBytes: 1024
+  };
+
+  const html = renderSavedJobBlockHtml(baseJob, baseOptions);
+  assert.match(html, /remove-saved-btn[\s\S]*data-tooltip="Remove saved job"/);
+  assert.match(html, /<svg viewBox="0 0 24 24"/);
+  assert.doesNotMatch(html, />X<\/button>/);
+  assert.match(renderRemoveSavedIcon(), /currentColor/);
+
+  const phaseHtml = renderPhaseBar("job_1", "bookmark", {}, "", {
+    phaseOptions: ["bookmark", "applied", "offer"],
+    phaseLabels: { bookmark: "Saved", applied: "Applied", offer: "Final Round" },
+    canTransition: (_current, next) => next === "applied",
+    currentUser: { uid: "u1" },
+    phaseOverrideContext: { jobKey: "job_1", phase: "offer" }
+  });
+  assert.match(phaseHtml, /phase-override-context/);
+  assert.match(phaseHtml, /This phase change is normally locked because it skips an earlier application step\./);
+  assert.match(phaseHtml, /Override for this job/);
+  assert.match(phaseHtml, /data-ui="phase-override-cancel-btn"/);
 });
 
 test("saved render exposes custom job action tooltips", () => {

@@ -67,16 +67,6 @@ export function createSavedChrome(deps) {
     if (deps.dom.exportBackupBtnEl) deps.dom.exportBackupBtnEl.disabled = !enabled;
     if (deps.dom.exportIncludeFilesEl) deps.dom.exportIncludeFilesEl.disabled = !enabled;
     if (deps.dom.importBackupBtnEl) deps.dom.importBackupBtnEl.disabled = !enabled;
-    if (deps.dom.globalPhaseOverrideBtnEl) deps.dom.globalPhaseOverrideBtnEl.disabled = !enabled;
-    updateGlobalOverrideButton();
-  }
-
-  function updateGlobalOverrideButton() {
-    if (!deps.dom.globalPhaseOverrideBtnEl) return;
-    deps.dom.globalPhaseOverrideBtnEl.classList.toggle("active", deps.viewState.phaseOverrideArmedGlobal);
-    deps.dom.globalPhaseOverrideBtnEl.textContent = deps.viewState.phaseOverrideArmedGlobal
-      ? "Override Armed (One Use)"
-      : "Override Phase Lock";
   }
 
   function getLastJobsUrl() {
@@ -94,7 +84,6 @@ export function createSavedChrome(deps) {
     setSourceStatus,
     setActivityStatus,
     setBackupButtonsEnabled,
-    updateGlobalOverrideButton,
     getLastJobsUrl
   };
 }

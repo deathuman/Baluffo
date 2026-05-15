@@ -1437,17 +1437,67 @@
 
 .admin-ops-history-header,
 .admin-ops-history-row {
-  grid-template-columns: 0.9fr 1fr 0.9fr 1fr 0.8fr 1.25fr;
+  grid-template-columns:
+    minmax(5rem, 0.62fr)
+    6.25rem
+    4.5rem
+    minmax(20rem, 1.9fr)
+    4.75rem
+    minmax(9rem, max-content);
+  column-gap: 0;
 }
 
 .admin-ops-history-row .admin-cell {
   overflow-wrap: anywhere;
 }
 
+.admin-ops-history-header > div,
+.admin-ops-history-row > .admin-cell {
+  justify-self: stretch;
+  text-align: left;
+}
+
+.admin-ops-history-header > div:nth-child(3),
+.admin-ops-history-header > div:nth-child(5),
+.admin-ops-history-header > div:nth-child(6),
+.admin-ops-history-row > .admin-cell:nth-child(3),
+.admin-ops-history-row > .admin-cell:nth-child(5),
+.admin-ops-history-row > .admin-cell:nth-child(6) {
+  justify-self: stretch;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.admin-ops-history-header > div:nth-child(4),
+.admin-ops-history-row > .admin-cell:nth-child(4) {
+  justify-self: stretch;
+  text-align: left;
+  padding-left: 1.1rem;
+}
+
+.admin-ops-history-header > div:nth-child(6),
+.admin-ops-history-row > .admin-cell:nth-child(6) {
+  padding-left: 1.15rem;
+}
+
+.admin-ops-history-row > .admin-cell:nth-child(2) .admin-status-chip {
+  margin-left: 0;
+}
+
+.admin-ops-history-row > .admin-cell:nth-child(4) {
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
 @media (max-width: 520px) {
   .admin-ops-history-header,
   .admin-ops-history-row {
     grid-template-columns: minmax(0, 0.75fr) minmax(0, 0.95fr) minmax(0, 0.8fr) minmax(0, 1.35fr) minmax(0, 0.7fr);
+  }
+
+  .admin-ops-history-header > div:nth-child(4),
+  .admin-ops-history-row > .admin-cell:nth-child(4) {
+    padding-left: 0;
   }
 
   .admin-ops-history-header > div:nth-child(6),
@@ -1467,8 +1517,8 @@
 }
 
 .admin-ops-run-copy-btn {
-  margin-left: 0.35rem;
-  padding: 0.14rem 0.42rem;
+  margin-left: 0.24rem;
+  padding: 0.14rem 0.36rem;
   font-size: 0.68rem;
   line-height: 1.15;
   vertical-align: middle;
@@ -2189,6 +2239,55 @@
 .admin-discovery-bulk-card .admin-fetcher-actions + .admin-fetcher-actions {
   margin-top: 0.45rem;
   justify-content: flex-start;
+}
+
+.admin-advanced-bulk-details {
+  margin-top: 0.65rem;
+  border: 1px solid var(--surface-11);
+  border-radius: 8px;
+  background-color: var(--surface-3);
+}
+
+.admin-advanced-bulk-summary {
+  cursor: pointer;
+  padding: 0.55rem 0.65rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.admin-advanced-bulk-summary::-webkit-details-marker {
+  display: none;
+}
+
+.admin-advanced-bulk-summary::after {
+  content: ">";
+  float: right;
+  color: var(--accent);
+}
+
+.admin-advanced-bulk-details[open] .admin-advanced-bulk-summary::after {
+  content: "v";
+}
+
+.admin-advanced-bulk-note,
+.admin-bulk-busy-message {
+  margin: 0;
+  padding: 0.55rem 0.65rem 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.admin-bulk-busy-message {
+  margin-top: 0.55rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid #80604a;
+  border-radius: 7px;
+  background-color: rgba(128, 96, 74, 0.18);
+  color: #f0d1b6;
+}
+
+.admin-advanced-bulk-action-row {
+  padding: 0.6rem 0.65rem 0.7rem;
 }
 
 .admin-discovery-bulk-card .admin-fetcher-actions .clear-filters-btn {

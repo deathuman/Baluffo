@@ -174,7 +174,6 @@ export function createSavedBoot(deps) {
       signOutUser: () => deps.savedAuthController.signOutUser(),
       exportBackup,
       importBackup,
-      updateGlobalOverrideButton: deps.updateGlobalOverrideButton,
       setTimelineScope: deps.setTimelineScope,
       renderTimeline: deps.renderTimeline
     });

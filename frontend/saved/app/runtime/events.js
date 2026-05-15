@@ -23,7 +23,6 @@ export function bindSavedPageEvents({
   signOutUser,
   exportBackup,
   importBackup,
-  updateGlobalOverrideButton,
   setTimelineScope,
   renderTimeline
 }) {
@@ -39,12 +38,12 @@ export function bindSavedPageEvents({
     savedSortBtnEls,
     historyPanelToggleBtnEl,
     activityRefreshBtnEl,
+    activityCloseBtnEl,
     signInBtnEl,
     signOutBtnEl,
     exportBackupBtnEl,
     importBackupBtnEl,
     importBackupInputEl,
-    globalPhaseOverrideBtnEl,
     activityScopeBtnEls
   } = dom;
 
@@ -101,6 +100,9 @@ export function bindSavedPageEvents({
   bindUi(historyPanelToggleBtnEl, "click", () => {
     setActivityPanelOpen(!viewState.activityPanelOpen);
   });
+  bindUi(activityCloseBtnEl, "click", () => {
+    setActivityPanelOpen(false);
+  });
   bindAsyncClick(activityRefreshBtnEl, refreshActivityLog);
   bindAsyncClick(signInBtnEl, signInUser);
   bindAsyncClick(signOutBtnEl, signOutUser);
@@ -115,21 +117,6 @@ export function bindSavedPageEvents({
       if (!file) return;
       await importBackup(file);
       importBackupInputEl.value = "";
-    });
-  }
-
-  if (globalPhaseOverrideBtnEl) {
-    globalPhaseOverrideBtnEl.addEventListener("click", () => {
-      if (!viewState.currentUser) return;
-      viewState.phaseOverrideArmedGlobal = !viewState.phaseOverrideArmedGlobal;
-      updateGlobalOverrideButton();
-      showToast(
-        viewState.phaseOverrideArmedGlobal
-          ? "Global override armed for one locked phase change."
-          : "Global override cancelled.",
-        "info"
-      );
-      renderSavedJobs(Array.from(viewState.lastSavedJobsByKey.values()));
     });
   }
 
@@ -152,7 +139,7 @@ export function bindSavedJobsListDelegation({
   cssEscape,
   setSelectedJobKey,
   removeSavedJob,
-  updatePhase,
+    updatePhase,
   toggleDetailsForJob,
   openCustomJobEditor,
   setJobDetailsTab,
@@ -185,6 +172,22 @@ export function bindSavedJobsListDelegation({
       const phase = phaseBtn.dataset.phase || "";
       setSelectedJobKey(jobKey, { rerenderTimeline: false });
       updatePhase(jobKey, phase).catch(() => {});
+      return;
+    }
+
+    const phaseOverrideConfirmBtn = target.closest(ui(t.phaseOverrideConfirmBtn));
+    if (phaseOverrideConfirmBtn) {
+      const jobKey = phaseOverrideConfirmBtn.dataset.jobKey || "";
+      const phase = phaseOverrideConfirmBtn.dataset.phase || "";
+      setSelectedJobKey(jobKey, { rerenderTimeline: false });
+      updatePhase(jobKey, phase, { overrideThisTransition: true }).catch(() => {});
+      return;
+    }
+
+    const phaseOverrideCancelBtn = target.closest(ui(t.phaseOverrideCancelBtn));
+    if (phaseOverrideCancelBtn) {
+      viewState.phaseOverrideContext = null;
+      renderSavedJobs(Array.from(viewState.lastSavedJobsByKey.values()));
       return;
     }
 

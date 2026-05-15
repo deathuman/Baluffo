@@ -1,50 +1,55 @@
 import { showToast } from "../../../shared/ui/index.js";
 
 export function createSavedMutations(deps) {
+  const notify = deps.showToast || showToast;
+
   async function removeSavedJob(jobKey) {
     if (!deps.viewState.currentUser) {
-      showToast("Sign in required.", "error");
+      notify("Sign in required.", "error");
       return;
     }
     const removedSnapshot = deps.viewState.lastSavedJobsByKey.get(String(jobKey || "")) || null;
     try {
       const removeResult = await deps.savedPageService.removeSavedJobForUser(deps.viewState.currentUser.uid, jobKey);
       if (!removeResult.ok) throw new Error(removeResult.error || "Could not remove job.");
-      showToast("Removed saved job.", "success", {
+      if (deps.viewState.phaseOverrideContext?.jobKey === String(jobKey || "").trim()) {
+        deps.viewState.phaseOverrideContext = null;
+      }
+      notify("Removed saved job.", "success", {
         durationMs: 6500,
-        actionLabel: "Revert",
+        actionLabel: "Undo",
         onAction: async () => {
           if (!deps.viewState.currentUser || !removedSnapshot) return;
           try {
             const restoreResult = await deps.savedPageService.saveJobForUser(deps.viewState.currentUser.uid, removedSnapshot);
             if (!restoreResult.ok) throw new Error(restoreResult.error || "Could not restore job.");
-            showToast("Saved job restored.", "success");
+            notify("Saved job restored.", "success");
           } catch (restoreErr) {
             console.error("Could not restore removed job:", restoreErr);
-            showToast("Could not restore removed job.", "error");
+            notify("Could not restore removed job.", "error");
           }
         }
       });
     } catch (err) {
       console.error("Could not remove saved job:", err);
-      showToast("Could not remove job.", "error");
+      notify("Could not remove job.", "error");
     }
   }
 
-  async function updatePhase(jobKey, phase) {
+  async function updatePhase(jobKey, phase, options = {}) {
     if (!deps.viewState.currentUser) {
-      showToast("Sign in required.", "error");
+      notify("Sign in required.", "error");
       return;
     }
 
     const safeJobKey = String(jobKey || "").trim();
     if (!safeJobKey) {
-      showToast("Invalid saved job key.", "error");
+      notify("Invalid saved job key.", "error");
       return;
     }
     const row = deps.viewState.lastSavedJobsByKey.get(safeJobKey);
     if (!row) {
-      showToast("Saved job not found. Refresh and retry.", "error");
+      notify("Saved job not found. Refresh and retry.", "error");
       return;
     }
     const currentPhase = deps.normalizePhase(row?.applicationStatus);
@@ -53,13 +58,22 @@ export function createSavedMutations(deps) {
       return;
     }
     const regularAllowed = deps.canTransition(currentPhase, normalized);
-    const overrideArmed = deps.viewState.phaseOverrideArmedGlobal;
-    if (!regularAllowed && !overrideArmed) {
-      showToast("Locked transition. Use Override Phase Lock for exceptional changes.", "info");
+    const overrideContext = deps.viewState.phaseOverrideContext || null;
+    const overrideRequested =
+      options.overrideThisTransition &&
+      String(overrideContext?.jobKey || "") === safeJobKey &&
+      String(overrideContext?.phase || "") === normalized;
+    if (!regularAllowed && !overrideRequested) {
+      deps.viewState.phaseOverrideContext = {
+        jobKey: safeJobKey,
+        phase: normalized,
+        fromPhase: currentPhase
+      };
+      deps.renderSavedJobs(Array.from(deps.viewState.lastSavedJobsByKey.values()));
       return;
     }
 
-    if (!regularAllowed && overrideArmed) {
+    if (!regularAllowed && overrideRequested) {
       const from = deps.phaseLabels[currentPhase] || currentPhase;
       const to = deps.phaseLabels[normalized] || normalized;
       const ok = await deps.requestConfirmationDialog({
@@ -67,7 +81,11 @@ export function createSavedMutations(deps) {
         description: `${from} -> ${to}`,
         confirmLabel: "Override"
       });
-      if (!ok) return;
+      if (!ok) {
+        deps.viewState.phaseOverrideContext = null;
+        deps.renderSavedJobs(Array.from(deps.viewState.lastSavedJobsByKey.values()));
+        return;
+      }
     }
 
     try {
@@ -79,7 +97,7 @@ export function createSavedMutations(deps) {
       }
       const previousPhaseTimestamp = String(row?.phaseTimestamps?.[currentPhase] || "").trim();
       const updateOptions = {
-        override: !regularAllowed && overrideArmed
+        override: !regularAllowed && overrideRequested
       };
       if (interviewTimestamp) {
         updateOptions.preserveTimestamp = interviewTimestamp;
@@ -91,12 +109,11 @@ export function createSavedMutations(deps) {
         updateOptions
       );
       if (!updateResult.ok) throw new Error(updateResult.error || "Could not update phase.");
-      if (overrideArmed) {
-        deps.viewState.phaseOverrideArmedGlobal = false;
-        deps.updateGlobalOverrideButton();
+      if (overrideRequested) {
+        deps.viewState.phaseOverrideContext = null;
       }
       const previousPhase = currentPhase;
-      showToast(`Phase updated to ${deps.phaseLabels[normalized] || normalized}.`, "success", {
+      notify(`Phase updated to ${deps.phaseLabels[normalized] || normalized}.`, "success", {
         durationMs: 6500,
         actionLabel: "Revert",
         onAction: async () => {
@@ -108,12 +125,12 @@ export function createSavedMutations(deps) {
               preserveTimestamp: previousPhaseTimestamp
             });
             if (!revertResult.ok) throw new Error(revertResult.error || "Could not revert phase.");
-            showToast(`Phase reverted to ${deps.phaseLabels[previousPhase] || previousPhase}.`, "success");
+            notify(`Phase reverted to ${deps.phaseLabels[previousPhase] || previousPhase}.`, "success");
             await deps.refreshActivityLog();
             deps.renderSavedJobs(Array.from(deps.viewState.lastSavedJobsByKey.values()));
           } catch (revertErr) {
             console.error("Could not revert phase change:", revertErr);
-            showToast("Could not revert phase.", "error");
+            notify("Could not revert phase.", "error");
           }
         }
       });
@@ -121,7 +138,7 @@ export function createSavedMutations(deps) {
       await deps.refreshActivityLog();
     } catch (err) {
       console.error("Could not update phase:", err);
-      showToast(err?.message || "Could not update phase.", "error");
+      notify(err?.message || "Could not update phase.", "error");
     } finally {
       deps.renderSavedJobs(Array.from(deps.viewState.lastSavedJobsByKey.values()));
     }

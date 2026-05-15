@@ -3,6 +3,7 @@ import {
   safeWriteJsonLocal,
   safeReadSession
 } from "../../local-data/storage-gateway.js";
+import { readLastJobsUrlFromSession } from "../../shared/last-jobs-url.js";
 
 // Saved page state-sync helpers: local/session persistence only.
 function buildSavedTimelinePrefsKey(prefix, uid) {
@@ -31,8 +32,5 @@ export function persistSavedTimelinePreferences(prefix, uid, normalizeScope, nex
 }
 
 export function readSavedLastJobsUrl(storageKey, fallback = "jobs.html") {
-  const url = String(safeReadSession(storageKey, "") || "");
-  if (!url) return fallback;
-  if (!url.startsWith("/") && !url.startsWith("jobs.html")) return fallback;
-  return url;
+  return readLastJobsUrlFromSession(safeReadSession, storageKey, fallback);
 }

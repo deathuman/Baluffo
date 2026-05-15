@@ -7,7 +7,7 @@ import {
   renderAdminOpsKpis,
   renderAdminOpsSchedule,
   renderAdminOpsTrends
-} from "../../render.js?v=13";
+} from "../../render.js?v=15";
 import {
   filterSourcePolicyReviewPairs,
   getMigrationLinkLinkedActions,

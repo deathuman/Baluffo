@@ -48,11 +48,12 @@ export function cacheSavedDom(doc = document) {
     exportIncludeFilesEl: doc.querySelector(ui(t.exportIncludeFiles)),
     importBackupBtnEl: doc.querySelector(ui(t.importBackupBtn)),
     importBackupInputEl: doc.querySelector(ui(t.importBackupInput)),
-    globalPhaseOverrideBtnEl: doc.querySelector(ui(t.globalPhaseOverrideBtn)),
     activityPanelEl: doc.querySelector(ui(t.activityPanel)),
     activityPanelBodyEl: doc.querySelector(ui(t.activityPanelBody)),
     activityPanelStatusEl: doc.querySelector(ui(t.activityPanelStatus)),
     activityRefreshBtnEl: doc.querySelector(ui(t.activityRefreshBtn)),
+    activityCloseBtnEl: doc.querySelector(ui(t.activityCloseBtn)),
+    activityRecentBadgeEl: doc.querySelector(ui(t.activityRecentBadge)),
     activityScopeBtnEls: Array.from(doc.querySelectorAll(ui(t.activityScopeBtn))),
     activitySelectedJobEl: doc.querySelector(ui(t.activitySelectedJob))
   };

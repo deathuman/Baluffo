@@ -461,7 +461,10 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
             ${analysis.primaryLabel ? `<span>${escapeHtml(analysis.primaryLabel)}</span>` : ""}
             ${analysis.secondaryLabel ? `<span>${escapeHtml(analysis.secondaryLabel)}</span>` : ""}
           </div>
-          <span class="admin-status-chip ${view.statusClass}">${escapeHtml(analysis.statusLabel || view.statusText)}</span>
+          <div>
+            <span class="admin-status-chip ${view.statusClass}">${escapeHtml(analysis.statusLabel || view.statusText)}</span>
+            ${onCopyRunDiagnostics ? `<button type="button" class="btn clear-filters-btn admin-ops-run-copy-btn" data-ops-run-diagnostics-copy="${escapeHtml(view.key)}" data-tooltip="Copy bounded diagnostics for this run">Copy</button>` : ""}
+          </div>
         </div>
         <div class="admin-ops-run-detail-meta">${timingItems || '<span>No timing data.</span>'}</div>
         <div class="admin-ops-run-detail-summary"><strong>Progress</strong> ${escapeHtml(analysis.progressLabel || view.outputOrQueuedText)}</div>
@@ -497,6 +500,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
           : null;
         const view = viewByKey.get(key) || null;
         if (slot) slot.innerHTML = renderSelectedRunAnalysis(view);
+        attachCopyHandlers();
         if (view && onSelectRun) onSelectRun(view.analysisPayload);
       };
       rowEl.onkeydown = event => {
@@ -518,35 +522,42 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
 
   const olderOpen = canPatchInPlace ? Boolean(historyEl.querySelector(".admin-ops-history-older")?.open) : false;
   const recentOpen = canPatchInPlace ? Boolean(historyEl.querySelector(".admin-ops-history-recent")?.open) : false;
+  const openRunDetailKeys = new Set();
+  if (canPatchInPlace) {
+    historyEl.querySelectorAll(".admin-ops-history-run[data-run-key]").forEach(runEl => {
+      if (runEl.querySelector(".admin-ops-run-detail")?.open) {
+        openRunDetailKeys.add(String(runEl.dataset?.runKey || runEl.getAttribute?.("data-run-key") || ""));
+      }
+    });
+  }
   if (canPatchInPlace) {
     historyEl.dataset.opsStructureSig = structureSignature;
   }
 
   const renderCappedRows = (views, cap, {
-    includeCopy = true,
     renderRows = renderCompactRows
   } = {}) => {
     const visible = views.slice(0, cap);
     const overflow = views.slice(cap);
     return `
-      ${renderRows(visible, { includeCopy })}
+      ${renderRows(visible)}
       ${overflow.length ? `
         <details class="admin-ops-expand-capped">
           <summary>Show all ${views.length} runs</summary>
           <div class="jobs-table-body">
-            ${renderRows(overflow, { includeCopy })}
+            ${renderRows(overflow)}
           </div>
         </details>
       ` : ""}
     `;
   };
 
-  const renderCompactRows = (views, { includeCopy = true } = {}) => views.map(view => {
+  const renderCompactRows = views => views.map(view => {
     const outputOrQueuedTitle = view.isRunning ? "" : view.outputOrQueuedTitle;
     return `
       <div class="admin-user-row admin-source-row admin-ops-history-row${view.isRunning ? " admin-ops-history-row-running" : ""}${view.key === selectedView?.key ? " admin-ops-history-row-selected" : ""}${view.progressStale ? " admin-ops-progress-stale" : ""}${String(view.statusText || "").toLowerCase() === "approaching" ? " admin-ops-history-row-approaching" : ""}" data-row-area="${view.rowArea}" data-run-key="${escapeHtml(view.key)}" tabindex="0"${tooltipAttrs("Select this run for bounded analysis")}>
         <div class="admin-cell">${escapeHtml(view.typeText)}</div>
-        <div class="admin-cell"><span class="admin-status-chip ${view.statusClass}"${tooltipAttrs(view.statusTitle)}>${escapeHtml(view.statusText)}</span>${includeCopy && onCopyRunDiagnostics ? ` <button type="button" class="btn clear-filters-btn admin-ops-run-copy-btn" data-ops-run-diagnostics-copy="${escapeHtml(view.key)}" data-tooltip="Copy bounded diagnostics for this run">Copy</button>` : ""}</div>
+        <div class="admin-cell"><span class="admin-status-chip ${view.statusClass}"${tooltipAttrs(view.statusTitle)}>${escapeHtml(view.statusText)}</span></div>
         <div class="admin-cell">${escapeHtml(view.durationText)}</div>
         <div class="admin-cell"${tooltipAttrs(outputOrQueuedTitle)}>${escapeHtml(view.outputOrQueuedText)}</div>
         <div class="admin-cell"${tooltipAttrs(view.failedTitle)}>${escapeHtml(view.failedText)}</div>
@@ -570,7 +581,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
       : '<div class="muted">No diagnostic hints for this run.</div>';
     return `
       <div class="admin-ops-history-run" data-row-area="${view.rowArea}" data-run-key="${escapeHtml(view.key)}">
-        ${renderCompactRows([view], { includeCopy: false })}
+        ${renderCompactRows([view])}
         <details class="admin-ops-run-detail">
           <summary>${escapeHtml(view.title)} details</summary>
           <div class="admin-ops-run-detail-body">
@@ -581,7 +592,6 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
               </div>
               <div>
                 <span class="admin-status-chip ${view.statusClass}">${escapeHtml(view.statusText)}</span>
-                ${onCopyRunDiagnostics ? `<button type="button" class="btn clear-filters-btn admin-ops-run-copy-btn" data-ops-run-diagnostics-copy="${escapeHtml(view.key)}" data-tooltip="Copy bounded diagnostics for this run">Copy</button>` : ""}
               </div>
             </div>
             <div class="admin-ops-run-detail-meta">${metaItems}</div>
@@ -653,6 +663,13 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
     if (recentDetailsEl) recentDetailsEl.open = recentOpen;
     const detailsEl = historyEl.querySelector(".admin-ops-history-older");
     if (detailsEl) detailsEl.open = olderOpen;
+    historyEl.querySelectorAll(".admin-ops-history-run[data-run-key]").forEach(runEl => {
+      const key = String(runEl.dataset?.runKey || runEl.getAttribute?.("data-run-key") || "");
+      const runDetailsEl = runEl.querySelector(".admin-ops-run-detail");
+      if (runDetailsEl && openRunDetailKeys.has(key)) {
+        runDetailsEl.open = true;
+      }
+    });
   }
   attachCopyHandlers();
   attachSelectionHandlers();

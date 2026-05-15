@@ -49,6 +49,10 @@ export function createSavedActivityController({
   }
 
   function setActivityPanelOpen(open, options = {}) {
+    if (open) {
+      viewState.timelineScope = viewState.selectedJobKey ? "selected" : timelineScopeAll;
+      updateTimelineScopeButtons();
+    }
     return setActivityPanelOpenFromModule(open, {
       activityPanelEl: dom.activityPanelEl,
       historyPanelToggleBtnEl: dom.historyPanelToggleBtnEl,
@@ -105,9 +109,11 @@ export function createSavedActivityController({
       dom.savedMetricRemindersEl.textContent = String(dueSoon);
     }
     if (dom.savedMetricActivityEl) {
-      dom.savedMetricActivityEl.textContent = String(
-        countRecentActivityEntries(viewState.cachedActivityEntries, 24)
-      );
+      const recentCount = countRecentActivityEntries(viewState.cachedActivityEntries, 24);
+      dom.savedMetricActivityEl.textContent = String(recentCount);
+      if (dom.activityRecentBadgeEl) {
+        dom.activityRecentBadgeEl.textContent = recentCount > 0 ? String(recentCount) : "";
+      }
     }
   }
 

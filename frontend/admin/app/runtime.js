@@ -9,7 +9,7 @@ import { emitStartupMetric, logError, markFirstInteractive } from "../../shared/
 import { createPerfMarks } from "../../shared/perf-marks.js";
 import {
   appendAdminLogRow
-} from "../render.js?v=13";
+} from "../render.js?v=15";
 import {
   getErrorMessage as getErrorMessageFromDomain,
   normalizeLogLevel as normalizeLogLevelFromDomain,
@@ -52,11 +52,12 @@ import {
   FETCHER_PRESET_META
 } from "./fetcher.js?v=13";
 import { createAdminRuntimeState } from "./runtime/state.js";
-import { composeAdminControllers } from "./runtime/composition.js?v=13";
+import { composeAdminControllers } from "./runtime/composition.js?v=14";
 import { createAdminStartupMetrics } from "./runtime/effects.js";
 import { createBridgeCaller } from "./runtime/actions.js";
 import { setStatusText, toLocalTime } from "./runtime/view.js";
 import { bindAdminRuntimeEvents } from "./runtime/events.js?v=13";
+import { applyAdminAdvancedBulkLayout } from "./bulk-actions.js";
 
 const JOBS_LAST_URL_KEY = adminConfig.JOBS_LAST_URL_KEY || "baluffo_jobs_last_url";
 const JOBS_FETCHER_COMMAND = adminConfig.JOBS_FETCHER_COMMAND || "python -m src.jobs_fetcher --social-enabled";
@@ -71,7 +72,6 @@ const ACTIVE_TASK_POLL_INTERVAL_MS = 500;
 const ADMIN_SHOW_ZERO_JOBS_KEY = "baluffo_admin_show_zero_jobs_sources";
 const ADMIN_SOURCE_FILTER_KEY = "baluffo_admin_source_filter";
 const UNKNOWN_ERROR_TEXT = "unknown error";
-
 const state = createAdminRuntimeState();
 
 let refs = {};
@@ -237,6 +237,7 @@ function setSourceFilter(value) {
 function cacheDom() {
   adminPerfMarks.markStep("admin_dom_cache_start");
   refs = cacheAdminDom(document);
+  applyAdminAdvancedBulkLayout({ doc: document, refs });
   adminPerfMarks.markStep("admin_dom_cache_end");
   adminPerfMarks.measureStep("admin_dom_cache", "admin_dom_cache_start", "admin_dom_cache_end");
 }

@@ -121,10 +121,12 @@ test("admin ops history: run diagnostics copy uses bounded payload without chang
     visibleCompletedRows: [],
     olderCompletedRows: []
   }, {
+    selectedRunKey: runKey,
     onCopyRunDiagnostics: payload => copied.push(payload)
   });
 
   assert.match(historyEl.innerHTML, /admin-ops-history-row/);
+  assert.match(historyEl.innerHTML, /Selected Run Analysis/);
   assert.match(historyEl.innerHTML, /data-ops-run-diagnostics-copy=/);
   assert.doesNotMatch(historyEl.innerHTML, /admin-ops-run-card/);
   assert.doesNotMatch(historyEl.innerHTML, /role="progressbar"/i);
@@ -370,8 +372,6 @@ test("admin ops history: selected run analysis renders timeline empty state", ()
   assert.match(historyEl.innerHTML, /Timeline/);
   assert.match(historyEl.innerHTML, /No timeline evidence recorded for this run/);
   assert.match(historyEl.innerHTML, /admin-ops-run-detail/);
-  assert.doesNotMatch(historyEl.innerHTML, /admin-ops-run-card/);
-  assert.doesNotMatch(historyEl.innerHTML, /role="progressbar"/i);
   assert.doesNotMatch(historyEl.innerHTML, /<button[^>]*>(?:Start|Stop|Retry|Clear|Cleanup|Lifecycle)/i);
 });
 

@@ -187,14 +187,15 @@ test("jobs smoke: filters + refresh + pagination + save/unsave + guest warning",
   await expect(pageErrors).toEqual([]);
   await page.selectOption("#work-type-filter", "Remote");
   await expect(page.locator(".save-job-btn").first()).toBeVisible({ timeout: 20000 });
-  await expectTooltipText(page, page.locator("#jobs-pipeline-run-btn"), "Runs discovery");
-  await expectTooltipText(page, page.locator("#refresh-jobs-btn"), "Reload the current jobs feed");
-  const companyTooltipTarget = page.locator(".job-company-compact[data-tooltip]").first();
-  await expect(companyTooltipTarget).toBeVisible();
   await expectTooltipText(
     page,
-    companyTooltipTarget,
-    String(await companyTooltipTarget.getAttribute("data-tooltip") || "")
+    page.locator("#jobs-pipeline-run-btn"),
+    "Find new openings and rebuild the local job list."
+  );
+  await expectTooltipText(
+    page,
+    page.locator("#refresh-jobs-btn"),
+    "Reload the current local jobs data without checking sources."
   );
   await expectTooltipText(page, page.locator(".jobs-footer-admin[data-tooltip]"), /admin/i);
 

@@ -69,6 +69,8 @@ function buildRefs() {
     adminRejectSourcesBtnEl: createElement("Reject"),
     adminDeleteSourcesBtnEl: createElement("Delete"),
     adminRestoreRejectedBtnEl: createElement("Restore"),
+    adminDemoteActiveBtnEl: createElement("Demote"),
+    adminBulkBusyMessageEl: createElement(),
     adminAddManualSourceBtnEl: createElement("Add Source"),
     adminManualSourceUrlEl: createElement(),
     adminSourceFilterBtnEls: [],
@@ -154,4 +156,51 @@ test("syncAdminBusyUi restores uncapped buttons after tasks are idle", () => {
   assert.equal(refs.adminRunDiscoveryUncappedBtnEl.disabled, false);
   assert.equal(refs.adminRunDiscoveryUncappedBtnEl.attributes["aria-disabled"], "false");
   assert.equal(refs.adminRunDiscoveryUncappedBtnEl.textContent, "Uncapped Run");
+});
+
+test("syncAdminBusyUi shows one registry busy message and preserves bulk labels", () => {
+  const busyState = {
+    fetcherRun: false,
+    fetcherWatch: false,
+    fetcherReportLoad: false,
+    liveFetchRunning: false,
+    discoveryRun: false,
+    discoveryWatch: true,
+    discoveryLoad: false,
+    discoveryWrite: false,
+    manualAdd: false,
+    manualCheck: false,
+    liveDiscoveryRunning: false,
+    syncRun: false,
+    liveSyncRunning: false,
+    opsLoad: false,
+    livePipelineRunning: false
+  };
+  const refs = buildRefs();
+  refs.adminApproveSourcesBtnEl.textContent = "Approve Selected";
+  refs.adminRejectSourcesBtnEl.textContent = "Reject Selected";
+  refs.adminRestoreRejectedBtnEl.textContent = "Restore Selected";
+  refs.adminDemoteActiveBtnEl.textContent = "Demote zero-jobs to Pending";
+  refs.adminDeleteSourcesBtnEl.textContent = "Delete Selected";
+
+  syncAdminBusyUi({
+    busyState,
+    viewState: toAdminViewState(busyState, { isUnlocked: true }),
+    fetcherPresetMeta: FETCHER_PRESET_META,
+    refs,
+    onSyncDiscoveryLogDisclosure() {}
+  });
+
+  assert.equal(refs.adminApproveSourcesBtnEl.disabled, true);
+  assert.equal(refs.adminRejectSourcesBtnEl.disabled, true);
+  assert.equal(refs.adminRestoreRejectedBtnEl.disabled, true);
+  assert.equal(refs.adminDemoteActiveBtnEl.disabled, true);
+  assert.equal(refs.adminDeleteSourcesBtnEl.disabled, true);
+  assert.equal(refs.adminApproveSourcesBtnEl.textContent, "Approve Selected");
+  assert.equal(refs.adminRejectSourcesBtnEl.textContent, "Reject Selected");
+  assert.equal(refs.adminRestoreRejectedBtnEl.textContent, "Restore Selected");
+  assert.equal(refs.adminDemoteActiveBtnEl.textContent, "Demote zero-jobs to Pending");
+  assert.equal(refs.adminDeleteSourcesBtnEl.textContent, "Delete Selected");
+  assert.match(refs.adminBulkBusyMessageEl.textContent, /Source registry actions are paused/);
+  assert.equal(refs.adminBulkBusyMessageEl.classList.contains("hidden"), false);
 });

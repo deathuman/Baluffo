@@ -90,6 +90,7 @@ export function composeSavedRuntime(deps) {
     computeAnchorScrollDelta: deps.computeAnchorScrollDelta,
     cssEscape: (...args) => deps.cssEscape(...args),
     renderTimeline: (...args) => savedActivityController.renderTimeline(...args),
+    setActivityPanelOpen: (...args) => savedActivityController.setActivityPanelOpen(...args),
     renderWorkspaceStats: (...args) => savedActivityController.renderWorkspaceStats(...args),
     renderSelectedJobHint: (...args) => savedActivityController.renderSelectedJobHint(...args),
     updateTimelineScopeButtons: (...args) => savedActivityController.updateTimelineScopeButtons(...args),

@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  renderActivityEntries,
+  renderSelectedJobHint
+} from "../../../frontend/saved/app/activity.js";
+import {
   buildTimelinePrefsKey,
   countRecentActivityEntries,
   filterActivityEntriesForScope,
@@ -62,4 +66,28 @@ test("saved timeline helpers count recent activity within 24h window", () => {
   const recent = new Date(now - 2 * 60 * 60 * 1000).toISOString();
   const old = new Date(now - 30 * 60 * 60 * 1000).toISOString();
   assert.equal(countRecentActivityEntries([{ createdAt: recent }, { createdAt: old }], 24), 1);
+});
+
+test("saved activity copy replaces selected-none and empty timeline text by default", () => {
+  const selectedHint = { textContent: "" };
+  renderSelectedJobHint(selectedHint, "", new Map());
+  assert.equal(selectedHint.textContent, "Showing all saved-job activity.");
+
+  renderSelectedJobHint(selectedHint, "job_1", new Map());
+  assert.equal(selectedHint.textContent, "Showing activity for this job.");
+
+  const activityPanelBodyEl = { innerHTML: "" };
+  const deps = {
+    activityPanelBodyEl,
+    lastActivityPulse: null,
+    renderActivityEntry: () => "",
+    renderTimeline: () => {},
+    clearExpiredPulseState: () => {},
+    activityHighlightMs: 20
+  };
+  renderActivityEntries([], deps);
+  assert.equal(
+    activityPanelBodyEl.innerHTML,
+    '<div class="muted">No activity yet. Changes to phases, notes, and files will appear here.</div>'
+  );
 });

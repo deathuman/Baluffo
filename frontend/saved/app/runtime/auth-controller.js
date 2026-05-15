@@ -80,13 +80,13 @@ export function createSavedAuthController({
     viewState.unsubscribeSavedJobs = () => {};
     clearNoteSaveQueues();
     viewState.expandedJobKey = null;
-    viewState.phaseOverrideArmedGlobal = false;
     viewState.jobDetailTabByKey = new Map();
     viewState.cachedActivityEntries = [];
     viewState.lastSavedJobsByKey = new Map();
     viewState.savedLifecycleOverlayByJobKey = new Map();
     viewState.savedLifecycleOverlayRequestId = 0;
     viewState.selectedJobKey = "";
+    viewState.phaseOverrideContext = null;
     viewState.timelineScope = timelineScopeAll;
     viewState.lastActivityPulse = null;
     setSavedFilter(defaultSavedFilter);

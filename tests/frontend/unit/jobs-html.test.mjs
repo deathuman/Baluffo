@@ -31,10 +31,12 @@ test("desktop html meaningful operational buttons expose polished tooltips", () 
     [jobsHtml, /id="quick-filters-reset-btn"[^>]+data-tooltip="Restore the default quick filter presets\."/],
     [jobsHtml, /id="refresh-jobs-btn"[^>]+data-tooltip="Reload the current local jobs data without checking sources\."/],
     [savedHtml, /id="add-custom-job-btn"[^>]+data-tooltip="Create a personal saved job entry\."/],
-    [savedHtml, /id="global-phase-override-btn"[^>]+data-tooltip="Temporarily allow phase changes that are normally locked\."/],
     [savedHtml, /id="export-backup-btn"[^>]+data-tooltip="Export saved jobs, notes, and optional files to a backup\."/],
     [savedHtml, /id="import-backup-btn"[^>]+data-tooltip="Import a saved jobs backup into the current local profile\."/],
+    [savedHtml, /id="history-panel-toggle-btn"[\s\S]*<svg viewBox="0 0 24 24"/],
+    [savedHtml, /class="activity-toggle-label">Activity timeline<\/span>/],
     [savedHtml, /id="activity-refresh-btn"[^>]+data-tooltip="Reload the activity timeline\."/],
+    [savedHtml, /id="activity-close-btn"[^>]+data-tooltip="Close activity timeline\."/],
     [adminHtml, /id="admin-refresh-btn"[^>]+data-tooltip="Reload users, totals, sources, and operational panels\."/],
     [adminHtml, /id="admin-refresh-ops-btn"[^>]+data-tooltip="Refresh operations health, run history, and alert summaries\."/],
     [adminHtml, /id="admin-run-discovery-btn"[^>]+data-tooltip="Run source discovery with the default bridge preset\."/],
@@ -46,7 +48,21 @@ test("desktop html meaningful operational buttons expose polished tooltips", () 
     [adminHtml, /id="admin-delete-sources-btn"[^>]+data-tooltip="Delete selected reviewed sources from the local registry\."/]
   ].forEach(([html, pattern]) => assert.match(html, pattern));
 
-  assert.doesNotMatch(`${jobsHtml}\n${savedHtml}\n${adminHtml}`, /id="(?:country-picker-clear-btn|customize-quick-filters-btn|quick-filters-reset-btn|refresh-jobs-btn|add-custom-job-btn|global-phase-override-btn|export-backup-btn|import-backup-btn|activity-refresh-btn|admin-refresh-btn|admin-refresh-ops-btn|admin-run-discovery-btn|admin-load-discovery-btn|admin-add-manual-source-btn|admin-approve-sources-btn|admin-reject-sources-btn|admin-restore-rejected-btn|admin-delete-sources-btn)"[^>]+\stitle=/);
+  assert.doesNotMatch(`${jobsHtml}\n${savedHtml}\n${adminHtml}`, /id="(?:country-picker-clear-btn|customize-quick-filters-btn|quick-filters-reset-btn|refresh-jobs-btn|add-custom-job-btn|export-backup-btn|import-backup-btn|activity-refresh-btn|admin-refresh-btn|admin-refresh-ops-btn|admin-run-discovery-btn|admin-load-discovery-btn|admin-add-manual-source-btn|admin-approve-sources-btn|admin-reject-sources-btn|admin-restore-rejected-btn|admin-delete-sources-btn)"[^>]+\stitle=/);
+});
+
+test("saved activity toggle keeps text hidden behind the icon affordance", () => {
+  const savedCss = fs.readFileSync(path.join(repoRoot, "styles", "saved.css"), "utf8");
+  assert.match(savedCss, /\.activity-toggle-label,\s*\.activity-recent-badge\s*\{\s*display: none;/);
+  assert.doesNotMatch(savedCss, /saved-ux-preview/);
+  assert.doesNotMatch(savedCss, /\.saved-activity-close-btn\s*\{\s*display: none;/);
+  assert.match(savedCss, /\.activity-recent-badge:not\(:empty\)\s*\{[\s\S]*position: absolute;[\s\S]*top: -0\.36rem;[\s\S]*right: -0\.36rem;/);
+});
+
+test("saved activity timeline uses the shared rounded scrollbar treatment", () => {
+  const savedCss = fs.readFileSync(path.join(repoRoot, "styles", "saved.css"), "utf8");
+  assert.match(savedCss, /\.activity-panel-body\s*\{[\s\S]*scrollbar-width: thin;[\s\S]*scrollbar-color: var\(--surface-18\) var\(--surface-1\);/);
+  assert.match(savedCss, /\.activity-panel-body::-webkit-scrollbar-thumb\s*\{[\s\S]*background: var\(--surface-18\);[\s\S]*border-radius: 999px;[\s\S]*border: 2px solid var\(--surface-1\);/);
 });
 
 test("jobs html exposes desktop update controls in the header shell", () => {
@@ -79,6 +95,16 @@ test("admin html no longer renders fetcher or discovery live-items markup", () =
   assert.doesNotMatch(adminHtml, /data-ui="admin-discovery-live-items"/);
   assert.doesNotMatch(adminHtml, /admin-discovery-live-card/);
   assert.doesNotMatch(adminHtml, /data-ui="admin-fetcher-live-items"/);
+});
+
+test("admin html leaves advanced bulk actions to the default runtime layout", () => {
+  const adminHtml = fs.readFileSync(path.join(repoRoot, "admin.html"), "utf8");
+  assert.doesNotMatch(adminHtml, /admin-advanced-bulk-actions/);
+  assert.match(adminHtml, /id="admin-approve-sources-btn"[\s\S]*Approve Selected<\/button>/);
+  assert.match(adminHtml, /id="admin-reject-sources-btn"[\s\S]*Reject Selected<\/button>/);
+  assert.match(adminHtml, /id="admin-restore-rejected-btn"[\s\S]*Restore Selected<\/button>/);
+  assert.match(adminHtml, /id="admin-demote-active-btn"[\s\S]*Demote zero-jobs to Pending<\/button>/);
+  assert.match(adminHtml, /id="admin-delete-sources-btn"[\s\S]*Delete Selected<\/button>/);
 });
 
 test("admin html groups operations health into overview discovery source-policy and dedup tabs", () => {

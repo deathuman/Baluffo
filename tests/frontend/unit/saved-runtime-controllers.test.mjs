@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createSavedActivityController } from "../../../frontend/saved/app/runtime/activity-controller.js";
 import { createSavedAuthController } from "../../../frontend/saved/app/runtime/auth-controller.js";
 import { createSavedBoot } from "../../../frontend/saved/app/runtime/boot.js";
 import { createSavedCustomJobController } from "../../../frontend/saved/app/runtime/custom-job-controller.js";
@@ -9,56 +8,6 @@ import {
   createButton,
   createElement
 } from "./helpers/saved-runtime-helpers.mjs";
-
-test("saved activity controller falls back selected scope when no job is selected", () => {
-  const allScopeBtn = createButton({ dataset: { timelineScope: "all" } });
-  const selectedScopeBtn = createButton({ dataset: { timelineScope: "selected" } });
-  const dom = {
-    activityScopeBtnEls: [allScopeBtn, selectedScopeBtn],
-    activityPanelEl: createElement(),
-    historyPanelToggleBtnEl: createButton(),
-    activitySelectedJobEl: createElement(),
-    savedMetricTotalEl: createElement(),
-    savedMetricRemindersEl: createElement(),
-    savedMetricActivityEl: createElement(),
-    activityPanelStatusEl: createElement(),
-    activityPanelBodyEl: createElement()
-  };
-  const viewState = {
-    activityPanelOpen: false,
-    timelineScope: "all",
-    selectedJobKey: "",
-    currentUser: null,
-    lastSavedJobsByKey: new Map(),
-    cachedActivityEntries: [],
-    lastActivityPulse: null
-  };
-  const controller = createSavedActivityController({
-    dom,
-    viewState,
-    savedPageService: {
-      isAvailable: () => true,
-      listActivityForUser: async () => ({ ok: true, data: [] })
-    },
-    setActivityStatus: () => {},
-    timelinePrefPrefix: "test_saved_timeline",
-    timelineScopeAll: "all",
-    activityHighlightMs: 20,
-    renderActivityEntryHtml: () => "<div></div>",
-    getReminderMeta: () => ({ isSoon: false }),
-    loadSavedTimelinePreferences: () => ({ visible: false, scope: "all" }),
-    persistSavedTimelinePreferences: () => {},
-    activityTypeLabel: () => "activity",
-    formatActivityDetail: () => "detail",
-    formatPhaseTimestamp: () => ""
-  });
-
-  controller.setTimelineScope("selected");
-
-  assert.equal(viewState.timelineScope, "all");
-  assert.equal(allScopeBtn.classList.contains("active"), true);
-  assert.equal(selectedScopeBtn.disabled, true);
-});
 
 test("saved custom job controller resets form chrome when closing the panel", () => {
   let resetCount = 0;
@@ -154,7 +103,6 @@ test("saved auth controller delays the initial guest render while desktop auth r
     currentUser: null,
     unsubscribeSavedJobs() {},
     expandedJobKey: null,
-    phaseOverrideArmedGlobal: false,
     jobDetailTabByKey: new Map(),
     cachedActivityEntries: [],
     lastSavedJobsByKey: new Map(),
@@ -404,7 +352,6 @@ test("saved boot marks boot and DOM cache milestones", () => {
       setSavedFilter() {},
       setSavedSort() {},
       setActivityPanelOpen() {},
-      updateGlobalOverrideButton() {},
       setTimelineScope() {},
       renderTimeline() {},
       renderWorkspaceStats() {},

@@ -136,12 +136,10 @@ export function clearExpiredPulse(lastActivityPulse) {
 export function renderSelectedJobHint(activitySelectedJobEl, selectedJobKey, lastSavedJobsByKey) {
   if (!activitySelectedJobEl) return;
   if (!selectedJobKey) {
-    activitySelectedJobEl.textContent = "Selected: none";
+    activitySelectedJobEl.textContent = "Showing all saved-job activity.";
     return;
   }
-  const row = lastSavedJobsByKey.get(selectedJobKey);
-  const label = row ? `${row.title || "Untitled"} @ ${row.company || "Unknown"}` : selectedJobKey;
-  activitySelectedJobEl.textContent = `Selected: ${label}`;
+  activitySelectedJobEl.textContent = "Showing activity for this job.";
 }
 
 export function renderTimeline(deps) {
@@ -187,7 +185,7 @@ export function renderActivityEntries(entries, deps) {
   } = deps;
   if (!activityPanelBodyEl) return;
   if (!Array.isArray(entries) || entries.length === 0) {
-    activityPanelBodyEl.innerHTML = '<div class="muted">No activity yet.</div>';
+    activityPanelBodyEl.innerHTML = '<div class="muted">No activity yet. Changes to phases, notes, and files will appear here.</div>';
     return;
   }
   activityPanelBodyEl.innerHTML = entries.map(entry => {

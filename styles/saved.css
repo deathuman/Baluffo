@@ -50,11 +50,31 @@
   gap: 0.65rem;
 }
 
-#global-phase-override-btn.active {
-  border-color: var(--accent);
-  background-color: var(--surface-12);
-  color: var(--accent-soft-text);
+.activity-toggle-label,
+.activity-recent-badge {
+  display: none;
 }
+
+.activity-recent-badge:not(:empty) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  top: -0.36rem;
+  right: -0.36rem;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  padding: 0 0.28rem;
+  border-radius: 999px;
+  background-color: var(--accent);
+  color: #1a1027;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+  pointer-events: none;
+  box-shadow: 0 0 0 2px var(--surface-1);
+}
+
 .saved-row-header,
 .saved-job-row {
   display: grid;
@@ -524,6 +544,17 @@
   border-color: #7d5050;
 }
 
+.remove-inline-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.remove-inline-btn svg {
+  width: 0.88rem;
+  height: 0.88rem;
+}
+
 .saved-phase-row {
   display: grid;
   grid-template-columns: 170px 1fr;
@@ -883,14 +914,29 @@
   color: #b8aaaa;
 }
 
-.phase-step-btn.override-enabled {
-  border-style: dashed;
-  border-color: #d79a9a;
-}
-
 .phase-step-btn:disabled {
   opacity: 0.62;
   cursor: not-allowed;
+}
+
+.phase-override-context {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid #80604a;
+  border-radius: 7px;
+  background-color: rgba(128, 96, 74, 0.18);
+  color: #f0d1b6;
+  font-size: 0.78rem;
+}
+
+.phase-override-context .btn {
+  margin: 0;
+  padding: 0.24rem 0.5rem;
+  font-size: 0.72rem;
 }
 
 .phase-step-text {
@@ -1137,6 +1183,27 @@
   padding: 0.6rem 0.65rem 0.75rem;
   overflow: auto;
   max-height: calc(100vh - 18rem);
+  scrollbar-width: thin;
+  scrollbar-color: var(--surface-18) var(--surface-1);
+}
+
+.activity-panel-body::-webkit-scrollbar {
+  width: 10px;
+}
+
+.activity-panel-body::-webkit-scrollbar-track {
+  background: var(--surface-1);
+  border-radius: 999px;
+}
+
+.activity-panel-body::-webkit-scrollbar-thumb {
+  background: var(--surface-18);
+  border-radius: 999px;
+  border: 2px solid var(--surface-1);
+}
+
+.activity-panel-body::-webkit-scrollbar-thumb:hover {
+  background: var(--surface-20);
 }
 
 .activity-entry-wrap {

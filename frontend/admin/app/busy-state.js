@@ -55,6 +55,14 @@ function setButtonBusy(el, busy, busyText, fallbackIdleText = "") {
   }
 }
 
+function setPreviewBulkBusyMessage(el, busy) {
+  if (!el) return;
+  el.textContent = busy
+    ? "Source registry actions are paused while Admin work is running."
+    : "";
+  el.classList?.toggle("hidden", !busy);
+}
+
 export function toAdminViewState(busyState, { isUnlocked } = {}) {
   return {
     isUnlocked: Boolean(isUnlocked),
@@ -99,11 +107,13 @@ export function syncAdminBusyUi({
   setButtonBusy(refs.adminRunDiscoveryBtnEl, discoveryBusy || lockBusy, "Discovery Running...", "Run Discovery");
   setButtonBusy(refs.adminRunDiscoveryUncappedBtnEl, discoveryBusy || lockBusy, "Uncapped Discovery Running...", "Run Uncapped Discovery");
   setButtonBusy(refs.adminLoadDiscoveryBtnEl, discoveryBusy || lockBusy, "Loading Discovery...", "Load Discovery");
-  setButtonBusy(refs.adminApproveSourcesBtnEl, discoveryBusy || lockBusy, "Approving Sources...", "Approve Sources");
-  setButtonBusy(refs.adminRejectSourcesBtnEl, discoveryBusy || lockBusy, "Rejecting Sources...", "Reject Sources");
-  setButtonBusy(refs.adminDeleteSourcesBtnEl, discoveryBusy || lockBusy, "Deleting Sources...", "Delete Sources");
-  setButtonBusy(refs.adminRestoreRejectedBtnEl, discoveryBusy || lockBusy, "Restoring Sources...", "Restore Rejected");
-  setButtonBusy(refs.adminDemoteActiveBtnEl, discoveryBusy || lockBusy, "Demoting Sources...", "Demote Active");
+  const registryBusy = discoveryBusy || lockBusy;
+  setPreviewBulkBusyMessage(refs.adminBulkBusyMessageEl, registryBusy);
+  setButtonBusy(refs.adminApproveSourcesBtnEl, registryBusy, "", "Approve Sources");
+  setButtonBusy(refs.adminRejectSourcesBtnEl, registryBusy, "", "Reject Sources");
+  setButtonBusy(refs.adminDeleteSourcesBtnEl, registryBusy, "", "Delete Sources");
+  setButtonBusy(refs.adminRestoreRejectedBtnEl, registryBusy, "", "Restore Rejected");
+  setButtonBusy(refs.adminDemoteActiveBtnEl, registryBusy, "", "Demote Active");
   setButtonBusy(refs.adminAddManualSourceBtnEl, discoveryBusy || lockBusy, "Adding Source...", "Add Source");
   if (refs.adminManualSourceUrlEl) {
     refs.adminManualSourceUrlEl.disabled = discoveryBusy || lockBusy;

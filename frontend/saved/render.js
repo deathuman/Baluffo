@@ -63,7 +63,7 @@ export function renderSavedJobBlockHtml(job, options = {}) {
   return `
     <div class="saved-job-block ${isExpanded ? "expanded" : ""} ${isSelected ? "selected" : ""}" data-job-key="${jobKey}" data-ui="saved-job-block">
       <div class="saved-job-row">
-        <button class="remove-saved-btn remove-inline-btn" data-job-key="${jobKey}" data-ui="remove-saved-btn" aria-label="Remove saved job" ${tooltipAttrs("Remove this job from Saved Jobs.")}>X</button>
+        <button class="remove-saved-btn remove-inline-btn" data-job-key="${jobKey}" data-ui="remove-saved-btn" aria-label="Remove saved job" ${tooltipAttrs("Remove saved job")}>${renderRemoveSavedIcon()}</button>
         <div class="col-title job-cell" data-label="Position"${tooltipAttrs(job.title || "")}>
           <div class="saved-title-stack">
             <span class="saved-title-main">${safeTitle}</span>
@@ -250,24 +250,26 @@ export function renderPhaseBar(jobKey, activePhase, phaseTimestamps, savedAt, op
     phaseLabels = {},
     canTransition = () => false,
     currentUser = null,
-    phaseOverrideArmedGlobal = false
+    phaseOverrideContext = null
   } = options;
   const activeIndex = phaseOptions.indexOf(activePhase);
   const safeJobKey = escapeHtml(String(jobKey || ""));
+  const contextJobKey = String(phaseOverrideContext?.jobKey || "");
+  const contextPhase = String(phaseOverrideContext?.phase || "");
+  const hasContext = contextJobKey === String(jobKey || "") && Boolean(contextPhase);
   const timestamps = phaseTimestamps && typeof phaseTimestamps === "object" ? phaseTimestamps : {};
   const segments = phaseOptions.map((phase, idx) => {
     const isActive = idx === activeIndex;
     const isComplete = idx <= activeIndex;
     const canChangeNormally = canTransition(activePhase, phase);
-    const canClick = currentUser && (canChangeNormally || phaseOverrideArmedGlobal);
+    const canClick = Boolean(currentUser);
     const fallback = phase === "bookmark" ? savedAt : "";
     const selectedAt = formatPhaseTimestamp(timestamps[phase] || fallback);
     const classes = [
       "phase-step-btn",
       isActive ? "active" : "",
       isComplete ? "complete" : "",
-      !canChangeNormally ? "locked" : "",
-      phaseOverrideArmedGlobal && !canChangeNormally ? "override-enabled" : ""
+      !canChangeNormally ? "locked" : ""
     ].filter(Boolean).join(" ");
 
     return `
@@ -287,7 +289,23 @@ export function renderPhaseBar(jobKey, activePhase, phaseTimestamps, savedAt, op
     `;
   }).join("");
 
-  return `<div class="phase-bar" role="group" aria-label="Application phases">${segments}</div>`;
+  const overrideMessage = hasContext ? `
+    <div class="phase-override-context" data-job-key="${safeJobKey}" data-phase="${escapeHtml(contextPhase)}">
+      <span>This phase change is normally locked because it skips an earlier application step.</span>
+      <button class="btn back-btn phase-override-confirm-btn" data-ui="phase-override-confirm-btn" data-job-key="${safeJobKey}" data-phase="${escapeHtml(contextPhase)}">Override for this job</button>
+      <button class="btn back-btn phase-override-cancel-btn" data-ui="phase-override-cancel-btn" data-job-key="${safeJobKey}">Cancel</button>
+    </div>
+  ` : "";
+
+  return `<div class="phase-bar" role="group" aria-label="Application phases">${segments}</div>${overrideMessage}`;
+}
+
+export function renderRemoveSavedIcon() {
+  return `
+    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
+      <path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-2 6h10l-.7 11H7.7L7 9Zm3 2v7h1.6v-7H10Zm2.4 0v7H14v-7h-1.6Z"/>
+    </svg>
+  `;
 }
 
 export function renderWebIcon() {
