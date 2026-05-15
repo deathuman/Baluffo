@@ -376,6 +376,103 @@ def load_json_array(
     return rows
 
 
+def _summary_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _summary_lower(value: Any) -> str:
+    return _summary_text(value).lower()
+
+
+def _summary_int(value: Any) -> int:
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _summary_pending_is_hidden(row: dict[str, Any]) -> bool:
+    return (
+        bool(row.get("hiddenFromDefault")) or _summary_lower(row.get("candidateState")) == "hidden"
+    )
+
+
+def _summary_pending_is_deferred(row: dict[str, Any]) -> bool:
+    return (
+        bool(row.get("deferred"))
+        or bool(_summary_text(row.get("deferReason")))
+        or bool(_summary_text(row.get("firstDeferredAt")))
+        or bool(_summary_text(row.get("lastDeferredAt")))
+        or _summary_int(row.get("deferCount")) > 0
+    )
+
+
+def _summary_pending_is_duplicate(row: dict[str, Any]) -> bool:
+    return bool(_summary_text(row.get("duplicateOfSourceId"))) or "duplicate" in _summary_lower(
+        row.get("pendingReason")
+    )
+
+
+def summarize_json_array_storage(
+    path: Path, default: list[dict[str, Any]] | None = None
+) -> dict[str, Any]:
+    """Return cheap storage metadata for a registry JSON array.
+
+    This intentionally avoids lean-row metadata expansion and registry
+    normalization. It is for startup summaries where count/fingerprint evidence
+    is enough and the full registry detail route can do exact derivation later.
+    """
+
+    fallback = [dict(row) for row in (default or []) if isinstance(row, dict)]
+    source_path = Path(path)
+    existing = next(
+        (candidate for candidate in _json_storage_candidates(source_path) if candidate.exists()),
+        None,
+    )
+    payload: Any = fallback
+    status = "fallback"
+    if existing is not None:
+        try:
+            payload = _load_json_payload_from_file(existing)
+            status = "ready" if isinstance(payload, list) else "invalid"
+        except (OSError, json.JSONDecodeError):
+            payload = fallback
+            status = "unreadable"
+    if not isinstance(payload, list):
+        payload = fallback
+    if _uses_json_journal(source_path) and _json_journal_should_overlay_base(source_path, existing):
+        journal_payload = _load_json_journal_latest_payload(source_path, base_payload=payload)
+        if isinstance(journal_payload, list):
+            payload = journal_payload
+            status = "journal"
+    journal_path = _json_journal_path_for(source_path)
+    signatures = []
+    for candidate in (existing, journal_path if journal_path.exists() else None):
+        if candidate is None:
+            continue
+        try:
+            stat = candidate.stat()
+        except OSError:
+            continue
+        signatures.append(
+            {
+                "path": candidate.name,
+                "size": int(stat.st_size),
+                "mtimeNs": int(stat.st_mtime_ns),
+            }
+        )
+    rows = [row for row in payload if isinstance(row, dict)]
+    return {
+        "count": len(rows),
+        "invalidCount": max(0, len(payload) - len(rows)),
+        "hiddenCount": sum(1 for row in rows if _summary_pending_is_hidden(row)),
+        "deferredCount": sum(1 for row in rows if _summary_pending_is_deferred(row)),
+        "duplicateCount": sum(1 for row in rows if _summary_pending_is_duplicate(row)),
+        "status": status,
+        "storage": signatures,
+    }
+
+
 def load_json_object(path: Path, default: dict[str, Any] | None = None) -> dict[str, Any]:
     fallback = dict(default or {})
     try:

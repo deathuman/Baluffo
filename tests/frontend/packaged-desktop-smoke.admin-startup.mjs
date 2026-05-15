@@ -121,6 +121,11 @@ async function main() {
       await waitForDesktopAdapter(page);
       await page.locator("#admin-content").waitFor({ state: "visible", timeout: 30_000 });
       await page.waitForFunction(
+        () => !/Loading operations health/i.test(document.querySelector("#admin-ops-trends")?.textContent || ""),
+        null,
+        { timeout: 2_500 }
+      );
+      await page.waitForFunction(
         () => !/Loading admin overview/i.test(document.querySelector("#admin-source-status")?.textContent || ""),
         null,
         { timeout: 30_000 }
@@ -135,6 +140,8 @@ async function main() {
       const bridgeBadgeText = await page.locator("#admin-bridge-status-badge").textContent();
       assert.match(String(bridgeBadgeText || ""), /Bridge Online/i);
       assert.doesNotMatch(String(bridgeBadgeText || ""), /Bridge Checking/i);
+      const opsTrendsText = await page.locator("#admin-ops-trends").textContent();
+      assert.doesNotMatch(String(opsTrendsText || ""), /Loading operations health/i);
 
       const parsedRequests = capturedBridgeRequests.map(rawUrl => new URL(rawUrl));
       assert.equal(
@@ -161,6 +168,7 @@ async function main() {
       const healthPayload = await health.json();
       assert.equal(Boolean(healthPayload?.desktopMode), true, "packaged bridge should report desktopMode true");
       await waitForStartupMetric(apiRequest, "admin_first_interactive");
+      await waitForStartupMetric(apiRequest, "admin_ops_health_first_render");
     }, scenarios);
   } catch (error) {
     errors.push(error instanceof Error ? error.message : String(error));

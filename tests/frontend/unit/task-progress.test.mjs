@@ -146,6 +146,19 @@ test("formatTaskProgressDetail renders sync shard progress", () => {
   );
 });
 
+test("formatTaskProgressCounts does not invent zero sync counts", () => {
+  assert.equal(formatTaskProgressCounts("sync", {}, null, { action: "pull" }), "");
+  assert.equal(
+    formatTaskProgressDetail("sync", {
+      active: true,
+      phaseKey: "startup",
+      phaseLabel: "Starting sync",
+      counts: {}
+    }, { action: "pull" }),
+    "Starting sync"
+  );
+});
+
 test("formatTaskProgressCounts renders GameDevMap dry-run fetch subtask counts", () => {
   assert.equal(
     formatTaskProgressCounts("discovery", {

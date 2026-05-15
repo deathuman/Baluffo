@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from src import source_registry as sr
+from src.bridge import registry_service as registry_service_module
 from src.bridge.registry_service import RegistryPaths, RegistryService
 from src.bridge.storage_health import (
     close_storage_stores,
@@ -387,5 +388,55 @@ def test_registry_service_sqlite_json_drift_rolls_back_to_json(tmp_path: Path) -
             row["code"] == "source_registry_json_sqlite_mismatch"
             for row in get_storage_health_payload(tmp_path)["storage"]["diagnostics"]
         )
+    finally:
+        close_storage_stores()
+
+
+def test_registry_service_json_authority_summary_avoids_full_normalization(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    active_path = tmp_path / "source-registry-active.json"
+    pending_path = tmp_path / "source-registry-pending.json"
+    rejected_path = tmp_path / "source-registry-rejected.json"
+    sr.save_json_atomic(active_path, [{"id": "active-1", "name": "Active", "adapter": "static"}])
+    sr.save_json_atomic(
+        pending_path,
+        [
+            {"id": "pending-1", "name": "Pending", "adapter": "greenhouse"},
+            {"id": "pending-2", "name": "Pending 2", "adapter": "lever"},
+        ],
+    )
+    sr.save_json_atomic(rejected_path, [{"id": "rejected-1", "name": "Rejected"}])
+
+    def fail_safe_demotions(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("summary computed full conflict demotions")
+
+    monkeypatch.setattr(
+        registry_service_module,
+        "apply_registry_conflict_safe_demotions",
+        fail_safe_demotions,
+    )
+    try:
+        store = get_storage_store(tmp_path)
+        store.set_authority_mode("sourceRegistry", "json", reason="test-json-authority")
+        service = RegistryService(
+            paths=RegistryPaths(
+                active=active_path,
+                pending=pending_path,
+                rejected=rejected_path,
+            ),
+            default_active=[],
+            normalize_manual_static=lambda row: row,
+        )
+
+        summary = service.get_summary_payload()
+
+        assert summary["generation"] == ""
+        assert summary["reason"] == "json_summary"
+        assert summary["summaryExact"] is False
+        assert summary["activeCount"] == 1
+        assert summary["pendingCount"] == 2
+        assert summary["rejectedCount"] == 1
+        assert summary["stateFingerprint"]
     finally:
         close_storage_stores()

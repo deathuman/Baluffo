@@ -16,8 +16,11 @@ from src.bridge.api import BridgeApi
 from src.bridge.fetch_report_review_state import load_fetch_report_with_dedup_review_state
 from src.bridge.registry_conflict_adjudication import overlay_adjudication
 from src.bridge.registry_conflicts import (
+    build_registry_conflicts_summary_cache_key,
     load_registry_conflicts_payload,
+    load_registry_conflicts_summary_payload,
     summarize_registry_conflicts_payload,
+    write_registry_conflicts_summary_cache,
 )
 from src.bridge.routes.error_boundary import (
     run_route_boundary,
@@ -1254,9 +1257,23 @@ def handle_get(
 
     if path == "/registry/conflicts":
         view = str((query.get("view") or [""])[0] or "").strip().lower()
-        state = api.load_state()
         source_state_path = Path(api.JOBS_FETCH_REPORT_PATH).with_name("jobs-source-state.json")
         adjudication = api.load_registry_conflict_adjudication()
+        registry_summary = api.get_registry_summary_payload()
+        registry_auto_heal = api.get_registry_auto_heal_report()
+        if view == "summary":
+            handler.send_json(
+                load_registry_conflicts_summary_payload(
+                    registry_summary=registry_summary,
+                    source_state_path=source_state_path,
+                    adjudication_payload=adjudication,
+                    registry_auto_heal=registry_auto_heal,
+                )
+            )
+            return True
+        state = api.load_state()
+        registry_summary = api.get_registry_summary_payload()
+        registry_auto_heal = api.get_registry_auto_heal_report()
         payload = load_registry_conflicts_payload(
             load_state=lambda: state,
             load_json_object=api.load_json_object,
@@ -1265,10 +1282,21 @@ def handle_get(
         )
         payload = overlay_adjudication(payload, adjudication)
         payload["registrySummary"] = api.summarize_state(state)
-        payload["registryAutoHeal"] = api.get_registry_auto_heal_report()
+        payload["registryAutoHeal"] = registry_auto_heal
         payload["ok"] = True
-        if view == "summary":
-            payload = summarize_registry_conflicts_payload(payload)
+        try:
+            cache_key = build_registry_conflicts_summary_cache_key(
+                registry_summary=registry_summary,
+                source_state_path=source_state_path,
+                adjudication_payload=adjudication,
+            )
+            write_registry_conflicts_summary_cache(
+                source_state_path=source_state_path,
+                cache_key=cache_key,
+                payload=summarize_registry_conflicts_payload(payload),
+            )
+        except OSError:
+            logger.debug("Could not write registry conflicts summary cache", exc_info=True)
         handler.send_json(payload)
         return True
 

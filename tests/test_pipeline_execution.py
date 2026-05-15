@@ -433,6 +433,7 @@ class TestAdminPanelTaskDisplay:
             get_history=lambda: history,
             get_fetch_report=lambda: {"summary": {}},
             get_state=lambda: {"active": False, "pending": []},
+            get_registry_summary_payload=None,
             get_tombstones=lambda: {},
             get_sync_status_payload=lambda: {},
             now_iso=lambda: "2026-03-22T12:10:00Z",

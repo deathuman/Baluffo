@@ -170,8 +170,12 @@ test("jobs render uses separated location hierarchy", () => {
     contractType: "Full-time",
     jobLink: "https://jobs.example.com/stellar"
   });
-  assert.match(html, /class="job-country-main" data-tooltip="UK">UK<\/span>/);
-  assert.match(html, /class="job-city-sub" data-tooltip="Guildford">Guildford<\/span>/);
+  assert.match(html, /class="job-company-compact">Stellar Entertainment<\/span>/);
+  assert.match(html, /class="job-country-main">UK<\/span>/);
+  assert.match(html, /class="job-city-sub">Guildford<\/span>/);
+  assert.doesNotMatch(html, /data-tooltip="Stellar Entertainment"/);
+  assert.doesNotMatch(html, /data-tooltip="UK"/);
+  assert.doesNotMatch(html, /data-tooltip="Guildford"/);
 });
 
 test("jobs render suppresses duplicated location and unknown country display", () => {
@@ -201,8 +205,8 @@ test("jobs render suppresses duplicated location and unknown country display", (
     workType: "Onsite",
     contractType: "Unknown"
   });
-  assert.match(countryHtml, /class="job-country-main" data-tooltip="Australia">Australia<\/span>/);
-  assert.match(countryHtml, /class="job-city-sub" data-tooltip="Melbourne">Melbourne<\/span>/);
+  assert.match(countryHtml, /class="job-country-main">Australia<\/span>/);
+  assert.match(countryHtml, /class="job-city-sub">Melbourne<\/span>/);
   assert.doesNotMatch(countryHtml, /Melbourne, Australia/);
 
   const unknownHtml = render({
@@ -236,8 +240,12 @@ test("jobs render uses accepted default row hierarchy and save icon", () => {
   assert.match(html, /<div class="job-sector-line">Game<\/div>/);
   assert.match(html, /<div class="col-company job-cell" data-label="Company">/);
   assert.match(html, /<div class="col-location job-cell" data-label="Location">/);
-  assert.match(html, /class="job-country-main" data-tooltip="United States">United States<\/span>/);
-  assert.match(html, /class="job-city-sub" data-tooltip="Boston">Boston<\/span>/);
+  assert.match(html, /class="job-company-compact">Studio<\/span>/);
+  assert.match(html, /class="job-country-main">United States<\/span>/);
+  assert.match(html, /class="job-city-sub">Boston<\/span>/);
+  assert.doesNotMatch(html, /data-tooltip="Studio"/);
+  assert.doesNotMatch(html, /data-tooltip="United States"/);
+  assert.doesNotMatch(html, /data-tooltip="Boston"/);
   assert.match(html, /<div class="col-contract job-cell" data-label="Contract">/);
   assert.match(html, /<div class="col-type job-cell" data-label="Type">/);
   assert.match(html, /<div class="col-save job-cell" data-label="Save" aria-label="Job actions">/);

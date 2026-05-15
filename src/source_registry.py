@@ -36,6 +36,7 @@ load_json_object = _io.load_json_object
 load_runtime_evidence = _io.load_runtime_evidence
 load_runtime_evidence_array = _io.load_runtime_evidence_array
 registry_seed_path_for = _io.registry_seed_path_for
+summarize_json_array_storage = _io.summarize_json_array_storage
 
 AUTO_APPROVAL_CAP_DEFER_REASONS = _auto.AUTO_APPROVAL_CAP_DEFER_REASONS
 AUTO_APPROVAL_EXISTING_MATCH_REASONS = _auto.AUTO_APPROVAL_EXISTING_MATCH_REASONS

@@ -1,7 +1,10 @@
 import json
+from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest import mock
 
 from src import admin_bridge
+from src.bridge import ops_health
 
 
 def test_compute_ops_health_is_lightweight_liveness(admin_bridge_entrypoint_root):
@@ -30,6 +33,89 @@ def test_compute_ops_health_is_lightweight_liveness(admin_bridge_entrypoint_root
     assert health["lifecycle"]["latestHeartbeatAt"] == "2026-05-07T10:02:00+00:00"
     assert "alerts" not in health
     assert "kpis" not in health
+
+
+def test_dashboard_health_uses_lightweight_registry_summary_without_full_state() -> None:
+    deps = SimpleNamespace(
+        get_history=lambda: [],
+        get_fetch_report=lambda: {},
+        get_state=lambda: (_ for _ in ()).throw(AssertionError("loaded full registry state")),
+        get_registry_summary_payload=lambda: {
+            "generation": "sqlite-generation-1",
+            "activeCount": 3,
+            "pendingCount": 2,
+            "rejectedCount": 1,
+            "tombstoneCount": 4,
+            "stateHash": "state",
+            "tombstoneHash": "tombstone",
+        },
+        get_tombstones=lambda: {},
+        get_sync_status_payload=lambda: {},
+        now_iso=lambda: "2026-05-14T10:00:00+00:00",
+        desktop_mode=True,
+        desktop_last_activity_at="2026-05-14T10:00:00+00:00",
+        owner_state={"startedAt": "2026-05-14T09:59:00+00:00"},
+        load_alert_state_fn=lambda: {},
+        save_alert_state_fn=lambda _payload: None,
+        parse_schedule_metadata_fn=lambda: {"fetcher": {}, "discovery": {}},
+        parse_iso=lambda _value: None,
+        now_utc=lambda: datetime(2026, 5, 14, 10, 0, tzinfo=UTC),
+        get_source_policy_soak_report=lambda: {},
+        get_updater_status_payload=lambda: {},
+        app_version="0.0.0-test",
+        startup_ready=True,
+    )
+
+    health = ops_health.compute_ops_health(deps)
+    kpis = health["kpis"]
+
+    assert kpis["pendingApprovalsCount"] == 2
+    assert kpis["registrySync"]["activeCount"] == 3
+    assert kpis["registrySync"]["pendingCount"] == 2
+    assert kpis["registrySync"]["rejectedCount"] == 1
+    assert kpis["registrySync"]["tombstoneCount"] == 4
+
+
+def test_dashboard_health_uses_json_summary_without_full_state() -> None:
+    deps = SimpleNamespace(
+        get_history=lambda: [],
+        get_fetch_report=lambda: {},
+        get_state=lambda: (_ for _ in ()).throw(AssertionError("loaded full registry state")),
+        get_registry_summary_payload=lambda: {
+            "generation": "",
+            "reason": "json_summary",
+            "activeCount": 7,
+            "pendingCount": 5,
+            "rejectedCount": 2,
+            "tombstoneCount": 1,
+            "summaryExact": False,
+            "stateFingerprint": "json-artifacts",
+        },
+        get_tombstones=lambda: {},
+        get_sync_status_payload=lambda: {},
+        now_iso=lambda: "2026-05-14T10:00:00+00:00",
+        desktop_mode=True,
+        desktop_last_activity_at="2026-05-14T10:00:00+00:00",
+        owner_state={"startedAt": "2026-05-14T09:59:00+00:00"},
+        load_alert_state_fn=lambda: {},
+        save_alert_state_fn=lambda _payload: None,
+        parse_schedule_metadata_fn=lambda: {"fetcher": {}, "discovery": {}},
+        parse_iso=lambda _value: None,
+        now_utc=lambda: datetime(2026, 5, 14, 10, 0, tzinfo=UTC),
+        get_source_policy_soak_report=lambda: {},
+        get_updater_status_payload=lambda: {},
+        app_version="0.0.0-test",
+        startup_ready=True,
+    )
+
+    health = ops_health.compute_ops_health(deps)
+    kpis = health["kpis"]
+
+    assert kpis["pendingApprovalsCount"] == 5
+    assert kpis["registrySync"]["activeCount"] == 7
+    assert kpis["registrySync"]["pendingCount"] == 5
+    assert kpis["registrySync"]["rejectedCount"] == 2
+    assert kpis["registrySync"]["tombstoneCount"] == 1
 
 
 def test_compute_ops_health_reports_alerts(admin_bridge_entrypoint_root):

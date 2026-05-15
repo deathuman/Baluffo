@@ -366,12 +366,24 @@ def summarize_startup_metrics(
                 first_usable_event or "admin_first_interactive",
             ),
             (
+                "admin_ready_to_ops_health_first_render",
+                "Admin Ready -> Ops Health First Render",
+                "admin_ready",
+                "admin_ops_health_first_render",
+            ),
+            (
                 "total_launch_to_first_usable_ui",
                 "Launch -> First Usable UI",
                 "desktop_launch_start",
                 first_usable_event or "admin_first_interactive",
             ),
         ]
+        if "admin_ops_health_first_render" not in events:
+            stage_defs = [
+                stage
+                for stage in stage_defs
+                if stage[0] != "admin_ready_to_ops_health_first_render"
+            ]
 
         stages: list[dict[str, Any]] = []
         missing_events: list[str] = []
@@ -418,6 +430,7 @@ def summarize_startup_metrics(
                 "window_created_to_window_shown": "native reveal delayed",
                 "window_shown_to_page_loaded": "admin page boot delayed",
                 "first_render_to_first_interactive": "admin interactive readiness delayed",
+                "admin_ready_to_ops_health_first_render": "admin operations health render delayed",
             },
         )
         stage_statuses = [stage["status"] for stage in stages]

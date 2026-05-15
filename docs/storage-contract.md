@@ -184,6 +184,8 @@ Hot-path payload growth must be impossible by test.
 | per sync shard | 5-10 MiB |
 | compressed debug archive | warning at 25 MiB |
 
+Summary-route budgets cover compute time as well as response size. Admin startup routes must avoid full registry normalization, JSON parity checks, work-item expansion, and full conflict-card/evidence construction. This applies while `sourceRegistry=sqlite` and after rollback to `sourceRegistry=json`; JSON-mode summaries may use lightweight artifact counts/fingerprints instead of exact normalized registry state. `/registry/conflicts?view=summary` may return `summaryStatus: "pending"` when exact conflict counts are not already cached.
+
 ## Benchmark Contract
 
 For every milestone that changes runtime storage authority:

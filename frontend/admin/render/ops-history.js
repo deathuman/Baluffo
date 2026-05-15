@@ -179,6 +179,11 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
     return stageIndex > 0 && stageTotal > 0 ? `stage ${stageIndex.toLocaleString()}/${stageTotal.toLocaleString()}` : "";
   };
 
+  const hasOwn = (source, key) => Object.prototype.hasOwnProperty.call(source || {}, key);
+  const hasSyncLifecycleCounts = summary => ["activeCount", "pendingCount", "rejectedCount"].some(
+    key => hasOwn(summary, key)
+  );
+
   const toRowView = (row, rowArea, index) => {
     const inputIsLive = Boolean(row?.isLive || row?.active);
     if (inputIsLive) {
@@ -198,10 +203,12 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
     const type = String(row?.type || "unknown");
     const syncAction = String(summary?.action || "").trim().toLowerCase();
     const syncLabel = syncAction ? `Sync ${syncAction}` : "Sync";
-    const syncCounts = [summary?.activeCount, summary?.pendingCount, summary?.rejectedCount]
-      .map(value => Number(value || 0))
-      .map(value => value.toLocaleString())
-      .join("/");
+    const syncCounts = hasSyncLifecycleCounts(summary)
+      ? [summary?.activeCount, summary?.pendingCount, summary?.rejectedCount]
+          .map(value => Number(value || 0))
+          .map(value => value.toLocaleString())
+          .join("/")
+      : "";
     const currentRunDetail = formatTaskProgressDetail(
       type,
       taskProgress,
@@ -272,7 +279,9 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
       isRunning: statusToken === "running" || statusToken === "started",
       durationText: runView.durationLabel || runView.elapsedLabel || formatDuration(Number(row?.elapsedMs ?? row?.durationMs ?? 0)),
       outputOrQueuedText: row?.type === "sync"
-        ? `${syncLabel} (${syncCounts})`
+        ? syncCounts
+          ? `${syncLabel} (${syncCounts})`
+          : (runView.progressLabel ? `${syncLabel} (${runView.progressLabel})` : syncLabel)
         : progressText,
       outputOrQueuedTitle: progressTitle,
       failedText: (row?.type === "discovery"

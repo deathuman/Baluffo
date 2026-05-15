@@ -35,6 +35,8 @@ export function createAdminOpsController({
   bridgeStatusPollIntervalMs,
   idlePollIntervalMs,
   awaitBridgeReady,
+  markAdminStep,
+  measureAdminStep,
   renderScheduler = scheduleAdminRender
 }) {
   const bridgeStatusController = createOpsBridgeStatusController({
@@ -80,6 +82,8 @@ export function createAdminOpsController({
     taskStateController,
     getBridgeStatus: bridgeStatusController.getBridgeStatus,
     awaitBridgeReady,
+    markAdminStep,
+    measureAdminStep,
     renderScheduler
   });
 

@@ -4,8 +4,10 @@ import json
 from pathlib import Path
 
 from src.bridge.registry_conflicts import (
+    build_registry_conflicts_summary_cache_key,
     derive_registry_conflict_queue,
     summarize_registry_conflicts_payload,
+    write_registry_conflicts_summary_cache,
 )
 from src.bridge.routes.get_routes import handle_get
 from tests.helpers.bridge_api import FakeDesktopLocalDataStore, FakeHandler, make_stub_bridge_api
@@ -90,27 +92,9 @@ def test_registry_conflicts_route_joins_source_health_aliases(tmp_path: Path) ->
 def test_registry_conflicts_summary_route_omits_heavy_conflict_detail(tmp_path: Path) -> None:
     store = FakeDesktopLocalDataStore()
     api = make_stub_bridge_api(tmp_path, store)
-    api.load_state = lambda: {
-        "active": [
-            {
-                "id": "winner-1",
-                "name": "Winner Source",
-                "studio": "Studio",
-                "adapter": "greenhouse",
-                "registryState": "active",
-            }
-        ],
-        "pending": [
-            {
-                "id": "loser-1",
-                "name": "Loser Source",
-                "studio": "Studio",
-                "adapter": "static",
-                "registryState": "pending",
-            }
-        ],
-        "rejected": [],
-    }
+    api.load_state = lambda: (_ for _ in ()).throw(
+        AssertionError("summary route loaded full state")
+    )
 
     handler = FakeHandler()
     result = handle_get(
@@ -124,10 +108,64 @@ def test_registry_conflicts_summary_route_omits_heavy_conflict_detail(tmp_path: 
     payload = handler.sent[-1]["payload"]
     assert payload["ok"] is True
     assert payload["summaryView"] is True
-    assert payload["summary"]["conflictCount"] == 1
-    assert payload["conflicts"][0]["familyKey"]
-    assert "winner" not in payload["conflicts"][0]
+    assert payload["summaryStatus"] == "pending"
+    assert payload["summaryExact"] is False
+    assert payload["summary"]["conflictCount"] == 0
+    assert payload["conflicts"] == []
     assert payload["detailRoute"] == "/registry/conflicts"
+
+
+def test_registry_conflicts_summary_route_uses_cached_exact_summary(tmp_path: Path) -> None:
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
+    source_state_path = Path(api.JOBS_FETCH_REPORT_PATH).with_name("jobs-source-state.json")
+    source_state_path.write_text("{}", encoding="utf-8")
+    registry_summary = api.get_registry_summary_payload()
+    cache_key = build_registry_conflicts_summary_cache_key(
+        registry_summary=registry_summary,
+        source_state_path=source_state_path,
+        adjudication_payload=api.load_registry_conflict_adjudication(),
+    )
+    write_registry_conflicts_summary_cache(
+        source_state_path=source_state_path,
+        cache_key=cache_key,
+        payload={
+            "ok": True,
+            "summary": {"conflictCount": 12, "familyCount": 12, "rowCount": 24},
+            "summaryStatus": "ready",
+            "summaryExact": True,
+            "triage": {},
+            "review": {},
+            "automation": {},
+            "adjudication": {},
+            "registrySummary": registry_summary,
+            "registryAutoHeal": {},
+            "warnings": [],
+            "conflicts": [{"familyKey": "sample"}],
+            "conflictSampleCount": 1,
+            "conflictsTruncated": True,
+            "detailRoute": "/registry/conflicts",
+            "summaryView": True,
+        },
+    )
+    api.load_state = lambda: (_ for _ in ()).throw(
+        AssertionError("summary route loaded full state")
+    )
+
+    handler = FakeHandler()
+    result = handle_get(
+        handler,
+        api=api,
+        path="/registry/conflicts",
+        query={"view": ["summary"]},
+    )
+
+    assert result is True
+    payload = handler.sent[-1]["payload"]
+    assert payload["summaryStatus"] == "ready"
+    assert payload["summaryExact"] is True
+    assert payload["summary"]["conflictCount"] == 12
+    assert payload["conflicts"][0]["familyKey"] == "sample"
 
 
 def test_registry_conflicts_summary_payload_stays_bounded_for_large_cards() -> None:

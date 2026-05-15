@@ -71,7 +71,7 @@ The packaged startup measurement path is:
 1. The desktop launcher emits runtime startup events.
 2. Browser pages emit startup metrics once `startupProbe=1` enables the browser-side transport.
 3. The bridge stores those browser-origin metrics under the runtime data directory.
-4. Jobs startup profiles use `jobs_first_render` and `jobs_first_interactive`; Admin startup profiles use `admin_ready` and `admin_first_interactive`.
+4. Jobs startup profiles use `jobs_first_render` and `jobs_first_interactive`; Admin startup profiles use `admin_ready`, `admin_first_interactive`, and `admin_ops_health_first_render` for the visible Operations Health path.
 4. Packaged smoke collects startup metrics from the runtime data and bridge endpoints.
 5. Startup profile analysis renders the stage timings and summary report.
 

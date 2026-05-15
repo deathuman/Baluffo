@@ -333,6 +333,7 @@ def refresh_sync_config() -> source_sync_module.SyncConfig:
 normalize_state = admin_registry_api_mod.normalize_state
 load_state = admin_registry_api_mod.load_state
 summarize_state = admin_registry_api_mod.summarize_state
+get_registry_summary_payload = admin_registry_api_mod.get_registry_summary_payload
 get_registry_auto_heal_report = admin_registry_api_mod.get_registry_auto_heal_report
 persist_state = admin_registry_api_mod.persist_state
 persist_state_and_auto_sync = admin_registry_api_mod.persist_state_and_auto_sync
@@ -547,6 +548,8 @@ def cleanup_stale_startup_tasks() -> dict[str, Any]:
         Path(RUNTIME_CONFIG.data_dir).resolve(),
         pid_is_running=pid_is_running,
         now_iso=now_iso,
+        current_runs=_TASK_LIFECYCLE.get_current_runs,
+        orphan_run=_TASK_LIFECYCLE.orphan_run,
     )
 
 

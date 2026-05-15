@@ -24,6 +24,21 @@ SOCIAL_FALSE_POSITIVE_SAMPLE_SIZE = 50
 NON_DISMISSIBLE_ALERT_IDS = frozenset({"fetch_never_run"})
 
 
+def _safe_int(value: Any) -> int:
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _has_registry_summary_counts(summary: dict[str, Any]) -> bool:
+    if str(summary.get("generation") or "").strip():
+        return True
+    return any(
+        key in summary for key in ("activeCount", "pendingCount", "rejectedCount", "tombstoneCount")
+    )
+
+
 def load_alert_state(
     load_json_object: Callable[[Any, dict[str, Any]], dict[str, Any]],
     path: Any,
@@ -508,14 +523,29 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
     """
     history: list[dict[str, Any]] = deps.get_history()
     latest_fetch_report: dict[str, Any] = deps.get_fetch_report()
-    state: dict[str, Any] = deps.get_state()
+    registry_summary: dict[str, Any] = {}
+    get_registry_summary_payload = getattr(deps, "get_registry_summary_payload", None)
+    if callable(get_registry_summary_payload):
+        try:
+            registry_summary = as_json_object(get_registry_summary_payload())
+        except Exception:  # noqa: BLE001
+            registry_summary = {}
+    if not _has_registry_summary_counts(registry_summary):
+        registry_summary = {}
+    state: dict[str, Any] = {}
+    if not registry_summary:
+        state = deps.get_state()
     schedule = populate_schedule_next_run(
         deps.parse_schedule_metadata_fn(), history, deps.parse_iso
     )
     alerts_meta = evaluate_alerts(
         history=history,
         latest_fetch_report=latest_fetch_report,
-        pending_count=len(state.get("pending") or []),
+        pending_count=(
+            _safe_int(registry_summary.get("pendingCount"))
+            if registry_summary
+            else len(state.get("pending") or [])
+        ),
         load_alert_state_fn=deps.load_alert_state_fn,
         save_alert_state_fn=deps.save_alert_state_fn,
         parse_iso=deps.parse_iso,
@@ -552,6 +582,7 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
         sync_status = {}
     registry_sync = derive_registry_sync_summary(
         state=state,
+        summary=registry_summary,
         tombstones=tombstones,
         sync_status=sync_status,
         history=history,
@@ -599,7 +630,11 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
             "sevenDayFetchSuccessRate": round(float(metrics["successRate7d"]), 4),
             "avgFetchDurationMs7d": int(metrics["avgDurationMs7d"]),
             "failedSourceRatioLatest": round(float(failed_ratio_latest), 4),
-            "pendingApprovalsCount": len(state.get("pending") or []),
+            "pendingApprovalsCount": (
+                _safe_int(registry_summary.get("pendingCount"))
+                if registry_summary
+                else len(state.get("pending") or [])
+            ),
             "sourceHealth": source_health,
             "providerCoverage": provider_coverage,
             "dedupReviewState": dedup_review_state,

@@ -93,6 +93,8 @@ test("admin ops controller copies run diagnostics through renderer callback", as
 
   try {
     await controller.loadOpsHealthData();
+    await Promise.resolve();
+    await Promise.resolve();
     renderScheduler.flush();
     await copyPromise;
     controller.stopOpsHealthPolling();

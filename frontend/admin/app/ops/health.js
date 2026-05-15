@@ -124,18 +124,28 @@ function renderOpsTabBadges(refs, {
     : {};
   const dedupEvidence = getObjectValue(fetcherMetricsPayload?.latestRun?.dedupEvidence);
   const registryConflictsSummary = getObjectValue(registryConflictsPayload?.summary);
+  const registrySummaryStatus = String(registryConflictsPayload?.summaryStatus || "").toLowerCase();
   const registryConflictCount = Number(registryConflictsSummary?.conflictCount || 0);
+  const registryConflictBadgeState = registrySummaryStatus === "pending" || registrySummaryStatus === "unavailable"
+    ? {
+        count: 0,
+        tone: "neutral",
+        title: registrySummaryStatus === "unavailable"
+          ? "Registry conflict summary unavailable"
+          : "Registry conflict summary pending"
+      }
+    : {
+        count: registryConflictCount,
+        tone: registryConflictCount > 0 ? "warning" : "neutral",
+        title: registryConflictCount > 0
+          ? formatBadgeTitle(registryConflictCount, "registry conflict", "registry conflicts")
+          : "No registry conflicts"
+      };
   const badgeStates = {
     overview: toAlertBadgeState(health?.alerts || []),
     discovery: toDiscoveryBadgeState(discovery),
     "source-policy": toSourcePolicyBadgeState(sourcePolicyRecommendations || {}),
-    "registry-conflicts": {
-      count: registryConflictCount,
-      tone: registryConflictCount > 0 ? "warning" : "neutral",
-      title: registryConflictCount > 0
-        ? formatBadgeTitle(registryConflictCount, "registry conflict", "registry conflicts")
-        : "No registry conflicts"
-    },
+    "registry-conflicts": registryConflictBadgeState,
     dedup: toDedupBadgeState(dedupEvidence)
   };
   badges.forEach(badge => {
@@ -175,6 +185,8 @@ export function createOpsHealthController({
   taskStateController,
   getBridgeStatus,
   awaitBridgeReady = async () => true,
+  markAdminStep,
+  measureAdminStep,
   getFrontendPerfCounters = () => {
     try {
       return globalThis.__baluffoSnapshotFrontendPerfCounters?.() || {};
@@ -189,6 +201,34 @@ export function createOpsHealthController({
   let opsOverviewDetailLoad = null;
   let sourcePolicyDetailLoad = null;
   let registryConflictsDetailLoad = null;
+
+  function markStep(name, payload = {}) {
+    if (typeof markAdminStep === "function") markAdminStep(name, payload);
+  }
+
+  function measureStep(name, startMark, endMark, payload = {}) {
+    if (typeof measureAdminStep === "function") measureAdminStep(name, startMark, endMark, payload);
+  }
+
+  async function measuredGetBridge(path, metricName, { enabled = true } = {}) {
+    const startMark = `${metricName}_start`;
+    const endMark = `${metricName}_done`;
+    if (enabled) markStep(startMark);
+    try {
+      const payload = await getBridge(path);
+      if (enabled) {
+        markStep(endMark, { ok: true });
+        measureStep(metricName, startMark, endMark, { ok: true });
+      }
+      return payload;
+    } catch (err) {
+      if (enabled) {
+        markStep(endMark, { ok: false, error: String(err?.message || err || "unknown error") });
+        measureStep(metricName, startMark, endMark, { ok: false });
+      }
+      throw err;
+    }
+  }
 
   function getOpsTabPanels() {
     return {
@@ -346,6 +386,7 @@ export function createOpsHealthController({
     try {
       await postBridge("/source-policy/review-action", buildSourcePolicyActionPayload(row, action));
       await loadOpsHealthData();
+      await loadSourcePolicyDetail({ force: true });
     } catch (err) {
       showToast(`Could not update source policy review: ${getErrorMessage(err)}`, "error");
     }
@@ -404,6 +445,7 @@ export function createOpsHealthController({
         "success"
       );
       await loadOpsHealthData();
+      await loadSourcePolicyDetail({ force: true });
     } catch (err) {
       showToast(`Could not update migration identity link: ${getErrorMessage(err)}`, "error");
     }
@@ -412,7 +454,12 @@ export function createOpsHealthController({
   function renderRegistryConflictsQueue(payload = state.latestRegistryConflictsPayload || {}) {
     if (payload?.summaryView && refs.adminRegistryConflictsReviewEl) {
       const conflictCount = Number(payload?.summary?.conflictCount || 0);
-      refs.adminRegistryConflictsReviewEl.innerHTML = conflictCount > 0
+      const summaryStatus = String(payload?.summaryStatus || "").toLowerCase();
+      refs.adminRegistryConflictsReviewEl.innerHTML = summaryStatus === "pending"
+        ? '<div class="muted">Registry conflict summary is loading in the background. Details load when this panel is opened.</div>'
+        : summaryStatus === "unavailable"
+          ? '<div class="muted">Registry conflict summary is unavailable. Details load when this panel is opened.</div>'
+          : conflictCount > 0
         ? `<div class="muted">${escapeHtml(`${conflictCount.toLocaleString()} registry conflict(s) detected. Details load when this panel is opened.`)}</div>`
         : '<div class="muted">No registry conflicts detected.</div>';
       return;
@@ -757,103 +804,84 @@ export function createOpsHealthController({
     return Promise.resolve(null);
   }
 
-  async function loadOpsHealthData(options = {}) {
-    if (state.adminBusyState.opsLoad) {
-      if (options?.fromPoll) scheduleOpsHealthPolling(idlePollIntervalMs);
-      return;
-    }
-    const renderToken = ++opsRenderToken;
-    if (!initialBridgeReadyResolved) {
-      initialBridgeReadyResolved = true;
-      if (!(await awaitBridgeReady())) {
-        scheduleOpsHealthPolling(idlePollIntervalMs);
-        return;
-      }
-    }
-    setBusyFlag("opsLoad", true);
-    const showLoadingState = !options?.fromPoll && !state.latestOpsHealthCache;
-    if (showLoadingState && refs.adminOpsTrendsEl) refs.adminOpsTrendsEl.textContent = "Loading operations health...";
-    try {
-      const [
-        healthResult,
-        taskStateResult,
-        registryConflictsResult
-      ] = await Promise.allSettled([
-        getBridge("/ops/dashboard-health"),
-        getBridge(OPS_TASK_STATE_SUMMARY_PATH),
-        getBridge(REGISTRY_CONFLICTS_SUMMARY_PATH)
-      ]);
-      const health = (
-        healthResult.status === "fulfilled"
-        && healthResult.value
-        && typeof healthResult.value === "object"
-        && !Array.isArray(healthResult.value)
-      )
-        ? healthResult.value
-        : state.latestOpsHealthCache;
-      if (healthResult.status === "fulfilled" && health && typeof health === "object") {
-        state.latestOpsHealthCache = health || null;
-      }
-      const historyPayload = getCachedHistoryPayload();
-      const historyRuns = Array.isArray(historyPayload?.runs) ? historyPayload.runs : [];
-      const taskStatePayload = taskStateController.resolveTaskStatePayload(taskStateResult);
-      state.latestOpsTaskStatePayload = taskStatePayload || {};
-      state.taskStateUnavailable = Boolean(taskStatePayload?.taskStateUnavailable);
-      const sourcePolicyRecommendations = getCachedSourcePolicyPayload();
-      const registryConflictsPayload = (
-        registryConflictsResult.status === "fulfilled"
-        && registryConflictsResult.value
-        && typeof registryConflictsResult.value === "object"
-        && !Array.isArray(registryConflictsResult.value)
-      )
-        ? registryConflictsResult.value
-        : getCachedRegistryConflictsPayload();
-      if (registryConflictsResult.status === "fulfilled" && registryConflictsPayload && typeof registryConflictsPayload === "object") {
-        state.latestRegistryConflictsPayload = registryConflictsPayload;
-        state.registryConflictsDetailLoaded = !registryConflictsPayload?.summaryView;
-        state.registryConflictCheckRunning = String(registryConflictsPayload?.adjudication?.status || "") === "running";
-      }
-      const runModel = deriveAdminRunsModel(
-        {
-          taskState: taskStatePayload || {},
-          historyRuns
-        },
-        Date.now()
-      );
-      const liveTaskRows = taskStateController.getActiveTaskRows(taskStatePayload);
-      const liveTypes = new Set(
-        liveTaskRows
-          .map(row => taskStateController.getTaskType(row))
-          .filter(Boolean)
-      );
-      const registryConflictRunning = String(registryConflictsPayload?.adjudication?.status || "") === "running";
+  function getCachedTaskStatePayload() {
+    return getObjectValue(state.latestOpsTaskStatePayload);
+  }
+
+  function deriveLiveRunContext(taskStatePayload, registryConflictsPayload) {
+    const historyPayload = getCachedHistoryPayload();
+    const historyRuns = Array.isArray(historyPayload?.runs) ? historyPayload.runs : [];
+    const runModel = deriveAdminRunsModel(
+      {
+        taskState: taskStatePayload || {},
+        historyRuns
+      },
+      Date.now()
+    );
+    const liveTaskRows = taskStateController.getActiveTaskRows(taskStatePayload);
+    const liveTypes = new Set(
+      liveTaskRows
+        .map(row => taskStateController.getTaskType(row))
+        .filter(Boolean)
+    );
+    const registryConflictRunning = String(registryConflictsPayload?.adjudication?.status || "") === "running";
+    return {
+      historyRuns,
+      runModel,
+      liveTaskRows,
+      liveTypes,
+      registryConflictRunning
+    };
+  }
+
+  function renderOpsHealthSnapshot(renderToken, health, {
+    taskStatePayload = getCachedTaskStatePayload(),
+    registryConflictsPayload = getCachedRegistryConflictsPayload(),
+    syncTaskState = false,
+    dispatchRefresh = false,
+    scheduleDetails = false,
+    renderDeferredPanels = true
+  } = {}) {
+    if (renderToken !== opsRenderToken) return;
+    const sourcePolicyRecommendations = getCachedSourcePolicyPayload();
+    const {
+      historyRuns,
+      runModel,
+      liveTaskRows,
+      liveTypes,
+      registryConflictRunning
+    } = deriveLiveRunContext(taskStatePayload, registryConflictsPayload);
+    if (syncTaskState) {
       taskStateController.syncLiveBusyFlags(liveTypes);
       taskStateController.maybeAttachLiveTaskRows(liveTaskRows);
-      const fetcherMetricsPayload = buildFetcherMetricsPayload(
-        state.latestOpsFetcherMetricsPayload || {},
-        health || {}
-      );
+    }
+    const fetcherMetricsPayload = buildFetcherMetricsPayload(
+      state.latestOpsFetcherMetricsPayload || {},
+      health || {}
+    );
 
-      renderAdminOpsAlertsImpl(refs.adminOpsAlertsEl, health?.alerts || [], {
-        onAck: async alertId => {
-          if (!alertId) return;
-          try {
-            await postBridge("/ops/alerts/ack", { id: alertId });
-            await loadOpsHealthData();
-          } catch (err) {
-            showToast(`Could not dismiss alert: ${getErrorMessage(err)}`, "error");
-          }
+    renderAdminOpsAlertsImpl(refs.adminOpsAlertsEl, health?.alerts || [], {
+      onAck: async alertId => {
+        if (!alertId) return;
+        try {
+          await postBridge("/ops/alerts/ack", { id: alertId });
+          await loadOpsHealthData();
+        } catch (err) {
+          showToast(`Could not dismiss alert: ${getErrorMessage(err)}`, "error");
         }
-      });
-      renderAdminOpsKpisImpl(refs.adminOpsKpisEl, health?.kpis || {}, String(health?.status || "healthy"));
-      renderAdminOpsScheduleImpl(refs.adminOpsScheduleEl, health?.schedule || {}, state.latestOpsHealthCache);
-      renderOpsTabBadges(refs, {
-        health,
-        discoveryReport: state.latestDiscoveryReportCache || {},
-        sourcePolicyRecommendations,
-        registryConflictsPayload,
-        fetcherMetricsPayload
-      });
+      }
+    });
+    renderAdminOpsKpisImpl(refs.adminOpsKpisEl, health?.kpis || {}, String(health?.status || "healthy"));
+    renderAdminOpsScheduleImpl(refs.adminOpsScheduleEl, health?.schedule || {}, state.latestOpsHealthCache);
+    renderOpsTabBadges(refs, {
+      health,
+      discoveryReport: state.latestDiscoveryReportCache || {},
+      sourcePolicyRecommendations,
+      registryConflictsPayload,
+      fetcherMetricsPayload
+    });
+    renderAdminOpsTrendsImpl(refs.adminOpsTrendsEl, historyRuns);
+    if (renderDeferredPanels) {
       getRenderScheduler()(() => {
         if (renderToken !== opsRenderToken) return;
         renderSourcePolicyReviewQueue(getCachedSourcePolicyPayload());
@@ -876,22 +904,165 @@ export function createOpsHealthController({
           waitingForTaskState: Boolean(state.waitingForTaskState),
           taskStateUnavailable: Boolean(state.taskStateUnavailable)
         });
-        renderAdminOpsTrendsImpl(refs.adminOpsTrendsEl, historyRuns);
       });
+    }
+    if (dispatchRefresh) {
       adminDispatch.dispatch({ type: adminActions.OPS_REFRESHED, payload: { at: new Date().toISOString() } });
-      scheduleOpsHealthPolling(getOpsPollIntervalMs(liveTypes.size > 0 || registryConflictRunning));
+    }
+    scheduleOpsHealthPolling(getOpsPollIntervalMs(liveTypes.size > 0 || registryConflictRunning));
+    if (scheduleDetails) {
       scheduleOpsOverviewDetailData(renderToken);
-      const shouldForceActiveDetail = Boolean(options?.forceDetails)
-        || (!options?.fromPoll && ["source-policy", "registry-conflicts"].includes(state.adminOpsActiveTab));
-      const activeDetailLoad = loadActiveOpsTabDetail(state.adminOpsActiveTab || "overview", {
-        force: shouldForceActiveDetail
+    }
+  }
+
+  async function loadTaskStateSummaryData(renderToken, options = {}) {
+    try {
+      const payload = await measuredGetBridge(
+        OPS_TASK_STATE_SUMMARY_PATH,
+        "admin_ops_task_summary_fetch",
+        { enabled: !options?.fromPoll }
+      );
+      if (renderToken !== opsRenderToken) return null;
+      const taskStatePayload = taskStateController.resolveTaskStatePayload({
+        status: "fulfilled",
+        value: payload
       });
-      if (shouldForceActiveDetail) {
-        await activeDetailLoad.catch(() => {});
-      } else {
-        activeDetailLoad.catch(() => {});
-      }
+      state.latestOpsTaskStatePayload = taskStatePayload || {};
+      state.taskStateUnavailable = Boolean(taskStatePayload?.taskStateUnavailable);
+      renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || {}, {
+        taskStatePayload,
+        registryConflictsPayload: getCachedRegistryConflictsPayload(),
+        syncTaskState: true,
+        renderDeferredPanels: true
+      });
+      return taskStatePayload;
     } catch (err) {
+      if (renderToken !== opsRenderToken) return null;
+      const taskStatePayload = taskStateController.resolveTaskStatePayload({
+        status: "rejected",
+        reason: err
+      });
+      state.latestOpsTaskStatePayload = taskStatePayload || {};
+      state.taskStateUnavailable = true;
+      renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || {}, {
+        taskStatePayload,
+        registryConflictsPayload: getCachedRegistryConflictsPayload(),
+        syncTaskState: true,
+        renderDeferredPanels: true
+      });
+      return null;
+    }
+  }
+
+  async function loadRegistryConflictsSummaryData(renderToken, options = {}) {
+    if (state.registryConflictsDetailLoaded) return getCachedRegistryConflictsPayload();
+    try {
+      const payload = await measuredGetBridge(
+        REGISTRY_CONFLICTS_SUMMARY_PATH,
+        "admin_registry_conflicts_summary_fetch",
+        { enabled: !options?.fromPoll }
+      );
+      if (renderToken !== opsRenderToken || state.registryConflictsDetailLoaded) return null;
+      const registryConflictsPayload = payload
+        && typeof payload === "object"
+        && !Array.isArray(payload)
+        ? payload
+        : { summary: { conflictCount: 0 }, summaryStatus: "unavailable", conflicts: [], summaryView: true };
+      state.latestRegistryConflictsPayload = registryConflictsPayload;
+      state.registryConflictsDetailLoaded = !registryConflictsPayload?.summaryView;
+      state.registryConflictCheckRunning = String(registryConflictsPayload?.adjudication?.status || "") === "running";
+      renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || {}, {
+        taskStatePayload: getCachedTaskStatePayload(),
+        registryConflictsPayload,
+        renderDeferredPanels: false
+      });
+      renderRegistryConflictsQueue(registryConflictsPayload);
+      return registryConflictsPayload;
+    } catch {
+      if (renderToken !== opsRenderToken || state.registryConflictsDetailLoaded) return null;
+      const registryConflictsPayload = {
+        summary: { conflictCount: 0 },
+        summaryStatus: "unavailable",
+        conflicts: [],
+        summaryView: true
+      };
+      state.latestRegistryConflictsPayload = registryConflictsPayload;
+      renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || {}, {
+        taskStatePayload: getCachedTaskStatePayload(),
+        registryConflictsPayload,
+        renderDeferredPanels: false
+      });
+      renderRegistryConflictsQueue(registryConflictsPayload);
+      return null;
+    }
+  }
+
+  async function loadOpsHealthData(options = {}) {
+    if (state.adminBusyState.opsLoad) {
+      if (options?.fromPoll) scheduleOpsHealthPolling(idlePollIntervalMs);
+      return;
+    }
+    const renderToken = ++opsRenderToken;
+    if (!initialBridgeReadyResolved) {
+      initialBridgeReadyResolved = true;
+      if (!(await awaitBridgeReady())) {
+        scheduleOpsHealthPolling(idlePollIntervalMs);
+        return;
+      }
+    }
+    setBusyFlag("opsLoad", true);
+    const showLoadingState = !options?.fromPoll && !state.latestOpsHealthCache;
+    if (showLoadingState && refs.adminOpsTrendsEl) refs.adminOpsTrendsEl.textContent = "Loading operations health...";
+    const measureFirstRender = !options?.fromPoll;
+    if (measureFirstRender) markStep("admin_ops_health_first_render_start");
+    try {
+      let health;
+      try {
+        health = await measuredGetBridge(
+          "/ops/dashboard-health",
+          "admin_dashboard_health_fetch",
+          { enabled: !options?.fromPoll }
+        );
+      } catch (err) {
+        if (!state.latestOpsHealthCache) throw err;
+        health = state.latestOpsHealthCache;
+      }
+      if (renderToken !== opsRenderToken) return;
+      if (health && typeof health === "object" && !Array.isArray(health)) {
+        state.latestOpsHealthCache = health || null;
+      }
+      renderOpsHealthSnapshot(renderToken, health || {}, {
+        taskStatePayload: getCachedTaskStatePayload(),
+        registryConflictsPayload: getCachedRegistryConflictsPayload(),
+        syncTaskState: Boolean(state.latestOpsTaskStatePayload),
+        dispatchRefresh: true,
+        scheduleDetails: true,
+        renderDeferredPanels: false
+      });
+      if (measureFirstRender) {
+        markStep("admin_ops_health_first_render_done", { ok: true });
+        measureStep(
+          "admin_ops_health_first_render",
+          "admin_ops_health_first_render_start",
+          "admin_ops_health_first_render_done",
+          { ok: true }
+        );
+      }
+      loadTaskStateSummaryData(renderToken, options).catch(() => {});
+      loadRegistryConflictsSummaryData(renderToken, options).catch(() => {});
+    } catch (err) {
+      if (measureFirstRender) {
+        markStep("admin_ops_health_first_render_done", {
+          ok: false,
+          error: String(err?.message || err || "unknown error")
+        });
+        measureStep(
+          "admin_ops_health_first_render",
+          "admin_ops_health_first_render_start",
+          "admin_ops_health_first_render_done",
+          { ok: false }
+        );
+      }
       taskStateController.resetLifecycleTaskState();
       setOpsPlaceholders(`Ops health unavailable: ${getErrorMessage(err)}`);
       taskStateController.syncLiveBusyFlags(new Set());

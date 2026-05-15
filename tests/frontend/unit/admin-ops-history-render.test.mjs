@@ -141,6 +141,38 @@ test("admin ops history: run diagnostics copy uses bounded payload without chang
   assert.doesNotMatch(historyEl.innerHTML, /<button[^>]*>(?:Start|Stop|Retry|Clear|Cleanup|Lifecycle)/i);
 });
 
+test("admin ops history: sync row without counts shows awaiting progress instead of zero tuple", () => {
+  const historyEl = makeEl();
+  renderAdminOpsHistory(historyEl, {
+    currentRows: [
+      {
+        type: "sync",
+        runId: "sync_starting",
+        active: true,
+        isLive: true,
+        status: "running",
+        startedAt: "2026-03-08T10:00:00.000Z",
+        heartbeatAt: new Date().toISOString(),
+        summary: {
+          action: "pull",
+          automatic: true,
+          reason: "startup"
+        },
+        taskProgress: {
+          active: true,
+          counts: {}
+        }
+      }
+    ],
+    visibleCompletedRows: [],
+    olderCompletedRows: []
+  });
+
+  assert.match(historyEl.innerHTML, /Sync pull \(awaiting progress\)/i);
+  assert.doesNotMatch(historyEl.innerHTML, /0\/0\/0/);
+  assert.doesNotMatch(historyEl.innerHTML, /active 0 \/ pending 0 \/ rejected 0/i);
+});
+
 test("admin ops history: selected run analysis renders bounded read-only evidence", () => {
   const historyEl = makeEl();
   const runKey = "current||fetch_selected_1|fetch|2026-03-08T10:00:00.000Z||0";

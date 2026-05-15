@@ -122,6 +122,8 @@ function formatDiscoveryCounts(counts, progress) {
 }
 
 function formatSyncCounts(counts, summary) {
+  const sourceCounts = counts && typeof counts === "object" && !Array.isArray(counts) ? counts : {};
+  const sourceSummary = summary && typeof summary === "object" && !Array.isArray(summary) ? summary : {};
   const hasShardProgress = [
     "shardCount",
     "changedShardCount",
@@ -131,15 +133,15 @@ function formatSyncCounts(counts, summary) {
     "totalShardBytes",
     "manifestCommitted",
     "gcDeletedCount"
-  ].some(key => Object.prototype.hasOwnProperty.call(counts || {}, key));
+  ].some(key => Object.prototype.hasOwnProperty.call(sourceCounts, key));
   if (hasShardProgress) {
-    const action = String(counts?.action || summary?.action || "").trim().toLowerCase();
-    const hasReadProgress = Object.prototype.hasOwnProperty.call(counts || {}, "shardsReadBytes");
+    const action = String(sourceCounts?.action || sourceSummary?.action || "").trim().toLowerCase();
+    const hasReadProgress = Object.prototype.hasOwnProperty.call(sourceCounts, "shardsReadBytes");
     if (action === "pull" || hasReadProgress) {
-      const total = Math.max(0, Number(counts?.shardCount || 0));
-      const completed = Math.max(0, Number(counts?.completedShardCount || 0));
-      const current = String(counts?.currentShardLabel || "").trim();
-      const skipped = Boolean(counts?.skipped || summary?.skipped);
+      const total = Math.max(0, Number(sourceCounts?.shardCount || 0));
+      const completed = Math.max(0, Number(sourceCounts?.completedShardCount || 0));
+      const current = String(sourceCounts?.currentShardLabel || "").trim();
+      const skipped = Boolean(sourceCounts?.skipped || sourceSummary?.skipped);
       const parts = [
         skipped
           ? "remote manifest unchanged"
@@ -149,27 +151,35 @@ function formatSyncCounts(counts, summary) {
       ];
       return parts.filter(Boolean).join(" | ");
     }
-    const changed = Math.max(0, Number(counts?.changedShardCount || 0));
-    const total = changed || Math.max(0, Number(counts?.shardCount || 0));
-    const completed = Math.max(0, Number(counts?.completedShardCount || 0));
-    const verified = Math.max(0, Number(counts?.verifiedShardCount || 0));
-    const current = String(counts?.currentShardLabel || "").trim();
+    const changed = Math.max(0, Number(sourceCounts?.changedShardCount || 0));
+    const total = changed || Math.max(0, Number(sourceCounts?.shardCount || 0));
+    const completed = Math.max(0, Number(sourceCounts?.completedShardCount || 0));
+    const verified = Math.max(0, Number(sourceCounts?.verifiedShardCount || 0));
+    const current = String(sourceCounts?.currentShardLabel || "").trim();
     const parts = [
       total > 0 ? `shards ${compactCount(completed)}/${compactCount(total)}` : "",
       total > 0 ? `verified ${compactCount(verified)}/${compactCount(total)}` : "",
       current ? `current ${current}` : "",
-      counts?.manifestCommitted ? "manifest committed" : "",
-      (counts?.manifestCommitted || Number(counts?.gcDeletedCount || 0) > 0)
-        ? `gc deleted ${compactCount(counts?.gcDeletedCount)}`
+      sourceCounts?.manifestCommitted ? "manifest committed" : "",
+      (sourceCounts?.manifestCommitted || Number(sourceCounts?.gcDeletedCount || 0) > 0)
+        ? `gc deleted ${compactCount(sourceCounts?.gcDeletedCount)}`
         : ""
     ];
     return parts.filter(Boolean).join(" | ");
   }
-  const active = Math.max(0, Number(counts?.activeCount ?? summary?.activeCount ?? 0));
-  const pending = Math.max(0, Number(counts?.pendingCount ?? summary?.pendingCount ?? 0));
-  const rejected = Math.max(0, Number(counts?.rejectedCount ?? summary?.rejectedCount ?? 0));
-  const changed = Object.prototype.hasOwnProperty.call(counts || {}, "changed") || Object.prototype.hasOwnProperty.call(summary || {}, "changed")
-    ? ` | changed ${(counts?.changed ?? summary?.changed) ? "yes" : "no"}`
+  const hasLifecycleCounts = ["activeCount", "pendingCount", "rejectedCount"].some(
+    key => Object.prototype.hasOwnProperty.call(sourceCounts, key)
+      || Object.prototype.hasOwnProperty.call(sourceSummary, key)
+  );
+  const hasChanged = Object.prototype.hasOwnProperty.call(sourceCounts, "changed")
+    || Object.prototype.hasOwnProperty.call(sourceSummary, "changed");
+  if (!hasLifecycleCounts && !hasChanged) return "";
+  if (!hasLifecycleCounts) return `changed ${(sourceCounts?.changed ?? sourceSummary?.changed) ? "yes" : "no"}`;
+  const active = Math.max(0, Number(sourceCounts?.activeCount ?? sourceSummary?.activeCount ?? 0));
+  const pending = Math.max(0, Number(sourceCounts?.pendingCount ?? sourceSummary?.pendingCount ?? 0));
+  const rejected = Math.max(0, Number(sourceCounts?.rejectedCount ?? sourceSummary?.rejectedCount ?? 0));
+  const changed = hasChanged
+    ? ` | changed ${(sourceCounts?.changed ?? sourceSummary?.changed) ? "yes" : "no"}`
     : "";
   return `active ${compactCount(active)} | pending ${compactCount(pending)} | rejected ${compactCount(rejected)}${changed}`;
 }

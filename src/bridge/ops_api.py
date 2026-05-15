@@ -40,6 +40,7 @@ class OpsDeps:
     load_json_object: Callable[[Path, Any], Any]
     save_json_atomic: Callable[[Path, Any], None]
     load_state: Callable[[], dict[str, Any]]
+    get_registry_summary_payload: Callable[[], dict[str, Any]]
     load_tombstones: Callable[[], dict[str, Any]]
     now_iso: Callable[[], str]
     now_utc: Callable[[], Any]
@@ -82,6 +83,7 @@ class OpsHealthDeps:
     get_history: Callable[[], list[dict[str, Any]]]
     get_fetch_report: Callable[[], dict[str, Any]]
     get_state: Callable[[], dict[str, Any]]
+    get_registry_summary_payload: Callable[[], dict[str, Any]] | None
     get_tombstones: Callable[[], dict[str, Any]]
     get_sync_status_payload: Callable[[], dict[str, Any]]
     now_iso: Callable[[], str]
@@ -521,6 +523,7 @@ class OpsApi:
                 {},
             ),
             get_state=self._deps.load_state,
+            get_registry_summary_payload=self._deps.get_registry_summary_payload,
             get_tombstones=self._deps.load_tombstones,
             get_sync_status_payload=self._deps.get_sync_status_payload,
             now_iso=self._deps.now_iso,

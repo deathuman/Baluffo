@@ -7,6 +7,21 @@ import {
   createElement,
 } from "./helpers/admin-controller-test-helpers.mjs";
 
+async function flushAdminOpsBackground() {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+function createDeferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 function createOpsControllerForBridgeStatus({
   state = { adminBusyState: {} },
   refs = {},
@@ -199,13 +214,14 @@ test("admin ops controller preserves optimistic rows while history lags", async 
     });
 
     await controller.loadOpsHealthData();
+    await flushAdminOpsBackground();
     renderScheduler.flush();
     controller.stopOpsHealthPolling();
 
-    assert.equal(optimisticApplied, 1, label);
+    assert.ok(optimisticApplied >= 1, label);
     assert.equal(state.adminBusyState[busyKey], false, label);
-    assert.equal(runModels.length, 1, label);
-    assert.equal(runModels[0].currentRows.length, 0, label);
+    assert.ok(runModels.length >= 1, label);
+    assert.equal(runModels.at(-1).currentRows.length, 0, label);
   }
 });
 
@@ -279,6 +295,7 @@ test("admin ops controller startup uses summary ops routes before deferred detai
   });
 
   await controller.loadOpsHealthData();
+  await flushAdminOpsBackground();
   renderScheduler.flush();
   controller.stopOpsHealthPolling();
 
@@ -288,6 +305,92 @@ test("admin ops controller startup uses summary ops routes before deferred detai
     "/registry/conflicts?view=summary"
   ]);
   assert.equal(historyRenderCount, 1);
+});
+
+test("admin ops controller renders health before summary requests settle", async () => {
+  const state = {
+    latestOpsHealthCache: null,
+    adminBusyState: {
+      opsLoad: false,
+      liveFetchRunning: false,
+      liveDiscoveryRunning: false,
+      liveSyncRunning: false,
+      livePipelineRunning: false
+    }
+  };
+  const refs = {
+    adminOpsAlertsEl: createElement(),
+    adminOpsKpisEl: createElement(),
+    adminOpsScheduleEl: createElement(),
+    adminOpsFetcherMetricsEl: createElement(),
+    adminOpsHistoryEl: createElement(),
+    adminOpsTrendsEl: createElement(),
+    adminRegistryConflictsReviewEl: createElement()
+  };
+  const taskState = createDeferred();
+  const registrySummary = createDeferred();
+  const calls = [];
+  const controller = createAdminOpsController({
+    state,
+    refs,
+    getBridge: async path => {
+      calls.push(path);
+      if (path === "/ops/dashboard-health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
+      if (path === "/ops/task-state?view=summary") return taskState.promise;
+      if (path === "/registry/conflicts?view=summary") return registrySummary.promise;
+      if (path === "/ops/history?limit=80") return new Promise(() => {});
+      if (path === "/ops/fetcher-metrics?windowRuns=80") return new Promise(() => {});
+      throw new Error(`unexpected path ${path}`);
+    },
+    postBridge: async () => ({}),
+    deriveAdminRunsModel: () => ({
+      currentRows: [],
+      visibleCompletedRows: [],
+      olderCompletedRows: [],
+      hasLiveRuns: false,
+      liveTypes: []
+    }),
+    getOpsPollIntervalMs: () => 5000,
+    renderAdminOpsAlerts() {},
+    renderAdminOpsKpis() {},
+    renderAdminOpsSchedule() {},
+    renderAdminOpsFetcherMetrics() {},
+    renderAdminOpsTrends(el) {
+      if (el) el.textContent = "Health rendered";
+    },
+    renderAdminOpsHistory() {},
+    renderAdminRegistryConflicts() {},
+    setBusyFlag(key, value) {
+      state.adminBusyState[key] = value;
+    },
+    showToast() {},
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    adminDispatch: { dispatch() {} },
+    adminActions: { OPS_REFRESHED: "ops/refreshed" },
+    escapeHtml: value => String(value || ""),
+    onBridgeStatusChange() {},
+    bridgeStatusPollIntervalMs: 1000,
+    idlePollIntervalMs: 1000,
+    renderScheduler: callback => {
+      callback();
+      return () => {};
+    }
+  });
+
+  await controller.loadOpsHealthData();
+
+  assert.equal(refs.adminOpsTrendsEl.textContent, "Health rendered");
+  assert.equal(state.adminBusyState.opsLoad, false);
+  assert.deepEqual(calls.slice(0, 3), [
+    "/ops/dashboard-health",
+    "/ops/task-state?view=summary",
+    "/registry/conflicts?view=summary"
+  ]);
+
+  taskState.resolve({ tasks: [], count: 0, summary: true });
+  registrySummary.resolve({ summary: { conflictCount: 0 }, summaryView: true });
+  await flushAdminOpsBackground();
+  controller.stopOpsHealthPolling();
 });
 
 test("admin ops controller renders bridge task-state without reattaching from history-only rows", async () => {
@@ -397,6 +500,7 @@ test("admin ops controller renders bridge task-state without reattaching from hi
       });
 
       await controller.loadOpsHealthData();
+      await flushAdminOpsBackground();
       renderScheduler.flush();
 
       assert.equal(state.adminBusyState[busyKey], true, label);
@@ -514,6 +618,7 @@ test("admin ops controller quietly auto-attaches active fetch and discovery task
   });
 
   await controller.loadOpsHealthData();
+  await flushAdminOpsBackground();
   renderScheduler.flush();
   controller.stopOpsHealthPolling();
 
@@ -608,10 +713,13 @@ test("admin ops controller trusts empty lifecycle task-state samples immediately
   });
 
   await controller.loadOpsHealthData();
+  await flushAdminOpsBackground();
   renderScheduler.flush();
   await controller.loadOpsHealthData();
+  await flushAdminOpsBackground();
   renderScheduler.flush();
   await controller.loadOpsHealthData();
+  await flushAdminOpsBackground();
   renderScheduler.flush();
   controller.stopOpsHealthPolling();
 
@@ -706,8 +814,10 @@ test("admin ops controller clears live rows on task-state polling failure", asyn
   });
 
   await controller.loadOpsHealthData();
+  await flushAdminOpsBackground();
   renderScheduler.flush();
   await controller.loadOpsHealthData();
+  await flushAdminOpsBackground();
   renderScheduler.flush();
   controller.stopOpsHealthPolling();
 
@@ -789,6 +899,87 @@ test("admin ops controller skips stale deferred detail renders after a newer ref
   await controller.loadOpsHealthData();
   await controller.loadOpsHealthData();
   await new Promise(resolve => setTimeout(resolve, 0));
+  renderScheduler.flush();
+  controller.stopOpsHealthPolling();
+
+  assert.equal(renderedRunIds.at(-1), "new_run");
+  assert.equal(renderedRunIds.includes("old_run"), false);
+});
+
+test("admin ops controller ignores stale task-state summary responses", async () => {
+  const state = {
+    latestOpsHealthCache: null,
+    adminBusyState: {
+      opsLoad: false,
+      liveFetchRunning: false,
+      liveDiscoveryRunning: false,
+      liveSyncRunning: false,
+      livePipelineRunning: false
+    }
+  };
+  const refs = {
+    adminOpsAlertsEl: createElement(),
+    adminOpsKpisEl: createElement(),
+    adminOpsScheduleEl: createElement(),
+    adminOpsFetcherMetricsEl: createElement(),
+    adminOpsHistoryEl: createElement(),
+    adminOpsTrendsEl: createElement(),
+    adminRegistryConflictsReviewEl: createElement()
+  };
+  const firstTaskState = createDeferred();
+  const secondTaskState = createDeferred();
+  const taskStateResponses = [firstTaskState, secondTaskState];
+  const renderedRunIds = [];
+  const renderScheduler = createDeferredRenderScheduler();
+  const controller = createAdminOpsController({
+    state,
+    refs,
+    getBridge: async path => {
+      if (path === "/ops/dashboard-health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
+      if (path === "/ops/task-state?view=summary") return taskStateResponses.shift()?.promise || { tasks: [] };
+      if (path === "/registry/conflicts?view=summary") return { summary: { conflictCount: 0 }, conflicts: [], summaryView: true };
+      if (path === "/ops/history?limit=80") return new Promise(() => {});
+      if (path === "/ops/fetcher-metrics?windowRuns=80") return new Promise(() => {});
+      throw new Error(`unexpected path ${path}`);
+    },
+    postBridge: async () => ({}),
+    deriveAdminRunsModel: payload => ({
+      currentRows: Array.isArray(payload?.taskState?.tasks) ? payload.taskState.tasks : [],
+      visibleCompletedRows: [],
+      olderCompletedRows: [],
+      hasLiveRuns: false,
+      liveTypes: []
+    }),
+    getOpsPollIntervalMs: () => 5000,
+    renderAdminOpsAlerts() {},
+    renderAdminOpsKpis() {},
+    renderAdminOpsSchedule() {},
+    renderAdminOpsFetcherMetrics() {},
+    renderAdminOpsTrends() {},
+    renderAdminOpsHistory(_el, runModel) {
+      renderedRunIds.push(runModel.currentRows[0]?.runId || "");
+    },
+    setBusyFlag(key, value) {
+      state.adminBusyState[key] = value;
+    },
+    showToast() {},
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    adminDispatch: { dispatch() {} },
+    adminActions: { OPS_REFRESHED: "ops/refreshed" },
+    escapeHtml: value => String(value || ""),
+    onBridgeStatusChange() {},
+    bridgeStatusPollIntervalMs: 1000,
+    idlePollIntervalMs: 1000,
+    renderScheduler: renderScheduler.schedule
+  });
+
+  await controller.loadOpsHealthData();
+  await controller.loadOpsHealthData();
+  secondTaskState.resolve({ tasks: [{ taskType: "fetch", runId: "new_run", active: true }] });
+  await flushAdminOpsBackground();
+  renderScheduler.flush();
+  firstTaskState.resolve({ tasks: [{ taskType: "fetch", runId: "old_run", active: true }] });
+  await flushAdminOpsBackground();
   renderScheduler.flush();
   controller.stopOpsHealthPolling();
 

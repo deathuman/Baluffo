@@ -116,7 +116,9 @@ export function composeAdminControllers({
     attachToActiveDiscoveryRun: (...args) => discoveryController?.attachToActiveDiscoveryRun?.(...args),
     loadLatestDiscoveryReport: options => discoveryController?.loadLatestDiscoveryReport?.(options),
     bridgeStatusPollIntervalMs,
-    idlePollIntervalMs: opsPollIdleIntervalMs
+    idlePollIntervalMs: opsPollIdleIntervalMs,
+    markAdminStep,
+    measureAdminStep
   });
 
   syncController = createAdminSyncController({

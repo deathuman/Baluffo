@@ -66,6 +66,10 @@ def _summary_dict(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
 
 
+def _progress_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
 def _running_lifecycle_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
     rows = payload.get("rows") if isinstance(payload, dict) else []
     if not isinstance(rows, list):
@@ -140,6 +144,8 @@ def cleanup_orphaned_startup_tasks(
     *,
     pid_is_running: Callable[[int], bool],
     now_iso: Callable[[], str],
+    current_runs: Callable[[], list[dict[str, Any]]] | None = None,
+    orphan_run: Callable[..., dict[str, Any] | None] | None = None,
 ) -> dict[str, Any]:
     """Close stale task rows that cannot survive a desktop bridge restart."""
 
@@ -158,27 +164,36 @@ def cleanup_orphaned_startup_tasks(
         {"schemaVersion": _schema_version_int(), "updatedAt": "", "rows": []},
     )
     task_state = _load_json_object(task_state_path, {})
+    running_rows = _running_lifecycle_rows(lifecycle_payload)
+    if current_runs is not None:
+        running_rows.extend(_running_lifecycle_rows({"rows": current_runs()}))
     stale_keys: set[tuple[str, str]] = set()
+    stale_rows_by_key: dict[tuple[str, str], dict[str, Any]] = {}
     stale_parent_run_ids: set[str] = set()
 
-    # Stale row detection now uses lifecycle ledger ownerPid exclusively.
-    # The legacy admin-task-state.json pass has been removed.
-    for row in _running_lifecycle_rows(lifecycle_payload):
+    # Stale row detection now uses lifecycle ledger ownership exclusively.
+    # Process-owned rows must have a live ownerPid; bridge_thread and pipeline
+    # owners are in-process workers and cannot survive a bridge restart.
+    for row in running_rows:
         task_type, run_id = _run_key(row)
         if not task_type or not run_id:
             continue
         owner_kind = str(row.get("ownerKind") or "").strip().lower()
-        if owner_kind == "pipeline" or _pid_dead(row, pid_is_running):
-            stale_keys.add((task_type, run_id))
+        if owner_kind in {"pipeline", "bridge_thread"} or _pid_dead(row, pid_is_running):
+            key = (task_type, run_id)
+            stale_keys.add(key)
+            stale_rows_by_key.setdefault(key, dict(row))
             parent_run_id = str(row.get("parentRunId") or "").strip()
             if parent_run_id:
                 stale_parent_run_ids.add(parent_run_id)
 
     if stale_parent_run_ids:
-        for row in _running_lifecycle_rows(lifecycle_payload):
+        for row in running_rows:
             task_type, run_id = _run_key(row)
             if run_id in stale_parent_run_ids:
-                stale_keys.add((task_type, run_id))
+                key = (task_type, run_id)
+                stale_keys.add(key)
+                stale_rows_by_key.setdefault(key, dict(row))
 
     if not stale_keys:
         return {"ok": True, "dataDir": str(root), "orphaned": 0, "clearedTaskState": 0}
@@ -196,9 +211,25 @@ def cleanup_orphaned_startup_tasks(
         next_task_state[task_type] = entry
     _write_json(task_state_path, next_task_state)
 
+    if orphan_run is not None:
+        for task_type, run_id in sorted(stale_keys):
+            row = stale_rows_by_key.get((task_type, run_id), {})
+            progress = _progress_dict(row.get("progress") or row.get("taskProgress"))
+            orphan_kwargs: dict[str, Any] = {
+                "finished_at": finished_at,
+                "terminal_reason": error,
+                "summary": {**_summary_dict(row.get("summary")), "error": error},
+            }
+            if progress:
+                orphan_kwargs["progress"] = {**progress, "active": False, "updatedAt": finished_at}
+            orphan_run(run_id, task_type, **orphan_kwargs)
+        lifecycle_payload = _load_json_object(
+            lifecycle_path,
+            {"schemaVersion": _schema_version_int(), "updatedAt": "", "rows": []},
+        )
+
     rows = lifecycle_payload.get("rows") if isinstance(lifecycle_payload, dict) else []
     next_rows: list[dict[str, Any]] = []
-    orphaned = 0
     for row in rows if isinstance(rows, list) else []:
         if not isinstance(row, dict):
             continue
@@ -215,7 +246,6 @@ def cleanup_orphaned_startup_tasks(
                 "summary": {**_summary_dict(row.get("summary")), "error": error},
             }
             next_rows.append(updated)
-            orphaned += 1
             continue
         next_rows.append(dict(row))
     _write_json(
@@ -253,7 +283,7 @@ def cleanup_orphaned_startup_tasks(
     return {
         "ok": True,
         "dataDir": str(root),
-        "orphaned": orphaned,
+        "orphaned": len(stale_keys),
         "clearedTaskState": cleared_task_state,
     }
 

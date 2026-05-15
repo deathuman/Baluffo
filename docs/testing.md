@@ -261,7 +261,9 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 - It must prove all of the following in packaged mode:
   - `/ops/health` reports `desktopMode: true`,
   - the Admin page records `admin_first_interactive`,
+  - the Admin page records `admin_ops_health_first_render`,
   - the bridge badge reaches `Bridge Online`,
+  - `#admin-ops-trends` does not remain stuck on `Loading operations health...`,
   - `#admin-source-status` does not remain stuck on `Loading admin overview...`,
   - startup requests use `/ops/task-state?view=summary` and `/registry/conflicts?view=summary`, not the full multi-MiB diagnostic routes.
 - Use this lane for Admin startup, ops-summary payloads, desktop local-data overview, and packaged bridge availability changes.

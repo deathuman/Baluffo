@@ -117,14 +117,22 @@ def _conflict_count(
 def derive_registry_sync_summary(
     *,
     state: Any,
+    summary: Any = None,
     tombstones: Any = None,
     sync_status: Any = None,
     history: Any = None,
 ) -> dict[str, Any]:
     registry = as_json_object(state)
-    active_rows, active_invalid = _bucket_rows(registry.get("active"))
-    pending_rows, pending_invalid = _bucket_rows(registry.get("pending"))
-    rejected_rows, rejected_invalid = _bucket_rows(registry.get("rejected"))
+    summary_payload = as_json_object(summary)
+    use_summary = bool(summary_payload)
+    if use_summary:
+        active_rows, active_invalid = [], 0
+        pending_rows, pending_invalid = [], 0
+        rejected_rows, rejected_invalid = [], 0
+    else:
+        active_rows, active_invalid = _bucket_rows(registry.get("active"))
+        pending_rows, pending_invalid = _bucket_rows(registry.get("pending"))
+        rejected_rows, rejected_invalid = _bucket_rows(registry.get("rejected"))
     tombstone_rows = as_json_object(tombstones)
     sync_payload = as_json_object(sync_status)
     runtime = as_json_object(sync_payload.get("runtime"))
@@ -135,17 +143,41 @@ def derive_registry_sync_summary(
         runtime=runtime,
         latest_sync=latest_sync,
     )
-    tombstone_count = len(tombstone_rows)
-    rejected_count = len(rejected_rows)
+    tombstone_count = (
+        _safe_int(summary_payload.get("tombstoneCount")) if use_summary else len(tombstone_rows)
+    )
+    rejected_count = (
+        _safe_int(summary_payload.get("rejectedCount")) if use_summary else len(rejected_rows)
+    )
 
     return {
-        "activeCount": len(active_rows),
-        "pendingCount": len(pending_rows),
+        "summaryExact": (bool(summary_payload.get("summaryExact", True)) if use_summary else True),
+        "summaryStatus": (
+            _text(summary_payload.get("summaryStatus") or "ready") if use_summary else "ready"
+        ),
+        "activeCount": (
+            _safe_int(summary_payload.get("activeCount")) if use_summary else len(active_rows)
+        ),
+        "pendingCount": (
+            _safe_int(summary_payload.get("pendingCount")) if use_summary else len(pending_rows)
+        ),
         "rejectedCount": rejected_count,
         "tombstoneCount": tombstone_count,
-        "hiddenPendingCount": sum(1 for row in pending_rows if _pending_is_hidden(row)),
-        "deferredPendingCount": sum(1 for row in pending_rows if _pending_is_deferred(row)),
-        "duplicatePendingCount": sum(1 for row in pending_rows if _pending_is_duplicate(row)),
+        "hiddenPendingCount": (
+            _safe_int(summary_payload.get("hiddenPendingCount"))
+            if use_summary
+            else sum(1 for row in pending_rows if _pending_is_hidden(row))
+        ),
+        "deferredPendingCount": (
+            _safe_int(summary_payload.get("deferredPendingCount"))
+            if use_summary
+            else sum(1 for row in pending_rows if _pending_is_deferred(row))
+        ),
+        "duplicatePendingCount": (
+            _safe_int(summary_payload.get("duplicatePendingCount"))
+            if use_summary
+            else sum(1 for row in pending_rows if _pending_is_duplicate(row))
+        ),
         "lastSyncAt": _latest_sync_timestamp(runtime, latest_sync),
         "lastSyncStatus": status,
         "remoteActiveCount": _safe_int(latest_summary.get("activeCount")),
@@ -157,7 +189,11 @@ def derive_registry_sync_summary(
         "conflictCount": _conflict_count(status=status, runtime=runtime, latest_sync=latest_sync),
         "localOnlyCount": rejected_count + tombstone_count,
         "remoteOnlyCount": _safe_int(latest_summary.get("remoteOnlyCount")),
-        "invalidRowsCount": active_invalid + pending_invalid + rejected_invalid,
+        "invalidRowsCount": (
+            _safe_int(summary_payload.get("invalidRowsCount"))
+            if use_summary
+            else active_invalid + pending_invalid + rejected_invalid
+        ),
     }
 
 

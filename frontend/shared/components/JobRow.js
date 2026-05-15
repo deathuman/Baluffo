@@ -181,12 +181,12 @@ function renderJobRowContent(job, {
         ${sectorLine}
       </div>
       <div class="col-company job-cell" data-label="Company">
-        <span class="job-company-compact"${tooltipAttrs(job.company)}>${safeCompany}</span>
+        <span class="job-company-compact">${safeCompany}</span>
       </div>
       <div class="col-location job-cell" data-label="Location">
         <div class="job-location-stack">
-          <span class="job-country-main"${tooltipAttrs(rowLocation.country)}>${rowCountry}</span>
-          <span class="job-city-sub"${tooltipAttrs(rowLocation.city)}>${rowCity}</span>
+          <span class="job-country-main">${rowCountry}</span>
+          <span class="job-city-sub">${rowCity}</span>
         </div>
       </div>
       <div class="col-contract job-cell" data-label="Contract">

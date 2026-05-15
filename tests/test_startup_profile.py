@@ -64,6 +64,7 @@ def test_summarize_startup_metrics_accepts_admin_ready_to_interactive_path() -> 
         _row("admin_module_boot_start", 1100),
         _row("admin_ready", 1500),
         _row("admin_first_interactive", 1800),
+        _row("admin_ops_health_first_render", 2100),
     ]
 
     summary = summarize_startup_metrics(rows, page="admin", profile_mode="cold")
@@ -75,6 +76,10 @@ def test_summarize_startup_metrics_accepts_admin_ready_to_interactive_path() -> 
     assert summary["missingEvents"] == []
     assert stages["first_render_to_first_interactive"]["startEvent"] == "admin_ready"
     assert stages["first_render_to_first_interactive"]["endEvent"] == "admin_first_interactive"
+    assert (
+        stages["admin_ready_to_ops_health_first_render"]["endEvent"]
+        == "admin_ops_health_first_render"
+    )
 
 
 def test_summarize_startup_metrics_falls_back_to_admin_ready() -> None:

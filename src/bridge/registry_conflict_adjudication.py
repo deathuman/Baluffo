@@ -10,7 +10,12 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
-from src.bridge.registry_conflicts import derive_registry_conflict_queue
+from src.bridge.registry_conflicts import (
+    build_registry_conflicts_summary_cache_key,
+    derive_registry_conflict_queue,
+    summarize_registry_conflicts_payload,
+    write_registry_conflicts_summary_cache,
+)
 from src.bridge.source_check_http import try_fetch_with_playwright
 from src.bridge.source_probe_evidence import probe_source_evidence
 from src.jobs.adapters.html_parsers import parse_jobpostings_from_html
@@ -997,6 +1002,30 @@ def run_registry_conflict_adjudication(
             "summary": summary,
         }
         api.save_json_atomic(_artifact_path(api), result)
+        try:
+            registry_summary = api.get_registry_summary_payload()
+            source_state_path = api.JOBS_FETCH_REPORT_PATH.with_name("jobs-source-state.json")
+            cache_payload = overlay_adjudication(
+                {
+                    **conflict_payload,
+                    "registrySummary": api.summarize_state(state),
+                    "registryAutoHeal": api.get_registry_auto_heal_report(),
+                    "ok": True,
+                },
+                result,
+            )
+            cache_key = build_registry_conflicts_summary_cache_key(
+                registry_summary=registry_summary,
+                source_state_path=source_state_path,
+                adjudication_payload=result,
+            )
+            write_registry_conflicts_summary_cache(
+                source_state_path=source_state_path,
+                cache_key=cache_key,
+                payload=summarize_registry_conflicts_payload(cache_payload),
+            )
+        except (AttributeError, OSError, TypeError, ValueError):
+            pass
         return result
 
 

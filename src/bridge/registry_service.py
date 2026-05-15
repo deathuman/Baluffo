@@ -6,9 +6,11 @@ source registry state.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +38,7 @@ from src.source_registry import (
     save_registry_state_atomic,
     source_identity,
     source_url_fingerprint,
+    summarize_json_array_storage,
     unique_sources,
 )
 from src.storage.baluffo_store import BaluffoStoreError
@@ -498,6 +501,71 @@ class RegistryService:
             "pendingCount": len(state["pending"]),
             "rejectedCount": len(state["rejected"]),
         }
+
+    def _cheap_json_summary_payload(self, *, reason: str) -> dict[str, Any]:
+        active_summary = summarize_json_array_storage(self._paths.active, self._default_active)
+        pending_summary = summarize_json_array_storage(self._paths.pending, [])
+        rejected_summary = summarize_json_array_storage(self._paths.rejected, [])
+        tombstones = self._load_tombstones_json()
+        evidence = {
+            "active": active_summary,
+            "pending": pending_summary,
+            "rejected": rejected_summary,
+            "tombstoneCount": len(tombstones),
+            "tombstoneHash": source_registry_tombstone_hash(tombstones),
+        }
+        fingerprint = sha256(
+            json.dumps(evidence, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+        ).hexdigest()
+        return {
+            "activeCount": int(active_summary.get("count") or 0),
+            "pendingCount": int(pending_summary.get("count") or 0),
+            "rejectedCount": int(rejected_summary.get("count") or 0),
+            "tombstoneCount": len(tombstones),
+            "hiddenPendingCount": int(pending_summary.get("hiddenCount") or 0),
+            "deferredPendingCount": int(pending_summary.get("deferredCount") or 0),
+            "duplicatePendingCount": int(pending_summary.get("duplicateCount") or 0),
+            "invalidRowsCount": int(active_summary.get("invalidCount") or 0)
+            + int(pending_summary.get("invalidCount") or 0)
+            + int(rejected_summary.get("invalidCount") or 0),
+            "stateHash": "",
+            "tombstoneHash": source_registry_tombstone_hash(tombstones),
+            "stateFingerprint": fingerprint,
+            "generation": "",
+            "reason": reason,
+            "publishedAt": "",
+            "updatedAt": "",
+            "summaryStatus": "ready",
+            "summaryExact": False,
+            "storage": {
+                "active": active_summary,
+                "pending": pending_summary,
+                "rejected": rejected_summary,
+            },
+        }
+
+    def get_summary_payload(self) -> dict[str, Any]:
+        mode = self._authority_mode()
+        if mode == "sqlite":
+            try:
+                summary = self._runtime_store().current_summary()
+                if str(summary.get("generation") or "").strip():
+                    if self._has_registry_json_exports():
+                        json_summary = self._cheap_json_summary_payload(
+                            reason="sqlite_export_summary"
+                        )
+                        return {
+                            **json_summary,
+                            "generation": str(summary.get("generation") or ""),
+                            "publishedAt": str(summary.get("publishedAt") or ""),
+                            "updatedAt": str(summary.get("updatedAt") or ""),
+                            "sqliteStateHash": str(summary.get("stateHash") or ""),
+                            "sqliteTombstoneHash": str(summary.get("tombstoneHash") or ""),
+                        }
+                    return summary
+            except _STORAGE_OPERATION_ERRORS:
+                pass
+        return self._cheap_json_summary_payload(reason=f"{mode}_summary")
 
     def persist_state(
         self, state: dict[str, list[dict[str, Any]]]

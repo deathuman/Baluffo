@@ -210,6 +210,12 @@ def make_stub_bridge_api(tmp_path: Path, store: FakeDesktopLocalDataStore) -> Br
     api.desktop_local_data_store = lambda: store
     api.load_state = load_state
     api.summarize_state = summarize_state
+    api.get_registry_summary_payload = lambda: {
+        **summarize_state(state),
+        "tombstoneCount": 0,
+        "stateHash": "unit-test-state",
+        "tombstoneHash": "unit-test-tombstones",
+    }
     api.persist_state_and_auto_sync = persist_state_and_auto_sync
     api.source_identity = source_identity
     api.source_url_fingerprint = source_url_fingerprint

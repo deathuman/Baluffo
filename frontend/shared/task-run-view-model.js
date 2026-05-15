@@ -20,6 +20,26 @@ function compactNumber(value) {
   return Math.max(0, Number(value || 0)).toLocaleString();
 }
 
+function hasOwn(source, key) {
+  return Object.prototype.hasOwnProperty.call(source || {}, key);
+}
+
+function hasSyncLifecycleCounts(summary, progress) {
+  const counts = progress?.counts && typeof progress.counts === "object" && !Array.isArray(progress.counts)
+    ? progress.counts
+    : {};
+  return ["activeCount", "pendingCount", "rejectedCount"].some(
+    key => hasOwn(counts, key) || hasOwn(summary, key)
+  );
+}
+
+function syncProgressEvidenceLabel(summary, progress) {
+  const counts = progress?.counts && typeof progress.counts === "object" && !Array.isArray(progress.counts)
+    ? progress.counts
+    : {};
+  return formatTaskProgressCounts("sync", counts, progress, summary);
+}
+
 function trimDiagnosticText(value, limit = DIAGNOSTIC_TEXT_LIMIT) {
   const text = String(value || "").trim();
   if (!text) return "";
@@ -308,6 +328,9 @@ function fallbackProgressLabel(taskType, summary, progress) {
     return `queued ${compactNumber(summary?.queuedCandidateCount)} | failed ${compactNumber(summary?.failedProbeCount)}`;
   }
   if (taskType === "sync") {
+    if (!hasSyncLifecycleCounts(summary, progress)) {
+      return syncProgressEvidenceLabel(summary, progress) || "awaiting progress";
+    }
     const action = String(summary?.action || "").trim();
     const actionLabel = action ? `${action} | ` : "";
     return `${actionLabel}active ${compactNumber(summary?.activeCount)} | pending ${compactNumber(summary?.pendingCount)} | rejected ${compactNumber(summary?.rejectedCount)}`;
@@ -348,6 +371,9 @@ function deriveSecondaryLabel(taskType, summary, progress) {
     return `${failed.toLocaleString()} failed probe${failed === 1 ? "" : "s"}`;
   }
   if (taskType === "sync") {
+    if (!hasSyncLifecycleCounts(summary, progress)) {
+      return syncProgressEvidenceLabel(summary, progress) ? "" : "awaiting progress";
+    }
     return `active ${compactNumber(summary?.activeCount)} / pending ${compactNumber(summary?.pendingCount)} / rejected ${compactNumber(summary?.rejectedCount)}`;
   }
   if (taskType === "pipeline") {

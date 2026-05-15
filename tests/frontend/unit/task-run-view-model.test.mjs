@@ -85,6 +85,25 @@ test("task run view model derives discovery and sync summaries", () => {
   assert.match(sync.secondaryLabel, /active 10 \/ pending 3 \/ rejected 1/i);
 });
 
+test("task run view model keeps empty sync progress from looking like zero-count work", () => {
+  const view = buildTaskRunView({
+    taskType: "sync",
+    active: true,
+    startedAt: "2026-03-08T10:09:00.000Z",
+    heartbeatAt: "2026-03-08T10:09:30.000Z",
+    summary: { action: "pull", automatic: true, reason: "startup" },
+    taskProgress: {
+      active: true,
+      counts: {}
+    }
+  }, { nowMs: NOW });
+
+  assert.equal(view.primaryLabel, "Sync pull");
+  assert.equal(view.secondaryLabel, "awaiting progress");
+  assert.equal(view.progressLabel, "awaiting progress");
+  assert.deepEqual(view.diagnosticHints, []);
+});
+
 test("task run view model derives pipeline progress and approaching heartbeat warnings", () => {
   const view = buildTaskRunView({
     taskType: "pipeline",

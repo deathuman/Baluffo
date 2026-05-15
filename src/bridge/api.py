@@ -137,6 +137,17 @@ def _empty_state_summary(_state: RegistryState) -> StateSummary:
     }
 
 
+def _empty_registry_summary_payload() -> JsonObject:
+    return {
+        "activeCount": 0,
+        "pendingCount": 0,
+        "rejectedCount": 0,
+        "tombstoneCount": 0,
+        "stateHash": "",
+        "tombstoneHash": "",
+    }
+
+
 def _empty_registry_auto_heal_report() -> JsonObject:
     return {
         "autoHealed": False,
@@ -305,6 +316,7 @@ class BridgeApi:
 
     load_state: LoadStateFunc = _empty_registry_state
     summarize_state: SummarizeStateFunc = _empty_state_summary
+    get_registry_summary_payload: Callable[[], JsonObject] = _empty_registry_summary_payload
     get_registry_auto_heal_report: Callable[[], JsonObject] = _empty_registry_auto_heal_report
     persist_state_and_auto_sync: Callable[..., RegistryState] = _identity_registry_state
     load_tombstones: LoadTombstonesFunc = _empty_tombstones
@@ -381,6 +393,10 @@ class BridgeApi:
         registry_bindings = (
             ("load_state", self.registry.load_state),
             ("summarize_state", self.registry.summarize_state),
+            (
+                "get_registry_summary_payload",
+                getattr(self.registry, "get_summary_payload", _empty_registry_summary_payload),
+            ),
             ("get_registry_auto_heal_report", self.registry.get_auto_heal_report),
             ("load_tombstones", self.registry.load_tombstones),
             ("save_tombstones", self.registry.save_tombstones),
