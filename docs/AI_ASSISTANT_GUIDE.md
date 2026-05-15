@@ -5,7 +5,7 @@
 > - **Canonical for:** task routing, minimal read order, common repo misconceptions, and AI editing rules
 > - **Not canonical for:** data contracts, endpoint payloads, or deep subsystem ownership detail
 > - **Then inspect:** [`architecture-ai-map.md`](architecture-ai-map.md) for task-to-files routing, plus one matching contract or workflow doc
-> - **Last updated:** 2026-05-13
+> - **Last updated:** 2026-05-15
 
 Read this first. Then load only the smallest additional docs needed.
 
@@ -62,6 +62,58 @@ If Serena memory and repo docs ever diverge, the repo docs stay canonical.
 | Bridge changes | `python -m pytest tests/admin/ -q` |
 | Pipeline/fetcher | `python -m pytest tests/test_jobs_fetcher_*.py -q` |
 | Full verification | `npm run verify` |
+
+## Repository Navigation Tooling
+
+These are contributor-local helpers for AI-assisted repo work. They are not Baluffo runtime,
+packaging, release, Python, Node, CI, or pre-commit dependencies.
+
+| Tool | Default use | Boundary |
+|------|-------------|----------|
+| Serena | Symbol-aware navigation, references, declarations, and refactor support | Required code-intelligence MCP; repo docs and source remain canonical |
+| `rg` | Fast deterministic text search | Default text-search primitive for agents |
+| `fd` | Fast file discovery | Prefer over `find` for agent and human repo navigation |
+| `ast-grep` | Syntax-aware structural search for Python, JS/TS, HTML, JSON, and YAML | Use when code shape matters more than exact text |
+| `jq` / `yq` | Focused JSON/YAML inspection | Prefer before reading full config or data files |
+| `bat` | Focused previews with line numbers and ranges | Use after the relevant file or region is known |
+| `fzf` | Human-guided fuzzy selection | Avoid in autonomous agent commands because it is interactive |
+| `git grep` | Git-tracked-file-only search | Use when ignored or untracked files must be excluded |
+
+Optional Windows toolbelt install, with package IDs verified through `winget search` on 2026-05-15:
+
+```powershell
+winget install -e --id BurntSushi.ripgrep.MSVC
+winget install -e --id sharkdp.fd
+winget install -e --id ast-grep.ast-grep
+winget install -e --id sharkdp.bat
+winget install -e --id jqlang.jq
+winget install -e --id MikeFarah.yq
+winget install -e --id junegunn.fzf
+```
+
+Verify availability after install, restarting the shell first if a newly installed command is not found:
+
+```powershell
+rg --version
+fd --version
+ast-grep --version
+bat --version
+jq --version
+yq --version
+fzf --version
+```
+
+Baluffo-specific examples:
+
+```powershell
+rg -n "desktop-local-data" frontend src tests
+fd -e py tests src
+ast-grep --lang py --pattern '$OBJ.$METHOD($$$ARGS)' src tests
+jq '.scripts | keys' package.json
+yq '.repos[].hooks[].id' .pre-commit-config.yaml
+bat --style=numbers --line-range 60:110 docs/AI_ASSISTANT_GUIDE.md
+git grep -n "desktop-local-data" -- frontend src tests
+```
 
 ## Serena Session Preflight (for new client sessions)
 
