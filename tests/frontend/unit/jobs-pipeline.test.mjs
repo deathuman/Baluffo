@@ -140,6 +140,15 @@ test("pipeline label works without startedAt", () => {
   assert.equal(label, "Fetching job listings...");
 });
 
+test("pipeline label maps starting pipeline copy to user-facing update copy", () => {
+  const now = Date.parse("2026-03-12T12:00:08.000Z");
+  const label = getPipelineRunningLabel({
+    progress: { label: "Starting pipeline" },
+    startedAt: "2026-03-12T12:00:00.000Z"
+  }, now);
+  assert.equal(label, "Updating jobs... 8s");
+});
+
 test("formatPipelineElapsed handles invalid and short durations", () => {
   const now = Date.parse("2026-03-12T12:00:08.000Z");
   assert.equal(formatPipelineElapsed("", now), "");

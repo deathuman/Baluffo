@@ -264,7 +264,7 @@ async function main() {
       assert.match(runId, /^pipeline_[a-f0-9]{10}$/i, "jobs pipeline run id should look like a pipeline run");
       const buttonState = await waitForPipelineButtonBusyState(pipelineButton);
       assert.ok(buttonState.mode === "determinate" || buttonState.mode === "indeterminate", "pipeline button should show a progress mode");
-      assert.match(buttonState.label, /running/i);
+      assert.match(buttonState.label, /(updating|checking|fetching)/i);
       assert.equal(buttonState.ariaBusy, "true");
       assert.ok(buttonState.fillMode === buttonState.mode || !buttonState.fillMode, "pipeline fill should track the button mode");
       assert.notEqual(buttonState.fillOpacity, "0", "pipeline fill should be visible");

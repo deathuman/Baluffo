@@ -70,7 +70,14 @@ function getUserFacingUpdateStage(value) {
   if (normalized === "sync" || normalized === "sync_push" || normalized === "sync_pull") {
     return "Updating local jobs";
   }
-  if (normalized === "starting" || normalized === "pipeline") return "Updating jobs";
+  if (
+    normalized === "starting"
+    || normalized === "pipeline"
+    || normalized === "starting pipeline"
+    || normalized === "pipeline starting"
+  ) {
+    return "Updating jobs";
+  }
   return titleCaseWords(String(value || "").replace(/_/g, " "));
 }
 

@@ -1,6 +1,6 @@
 # Documentation Archive
 
-> Historical cleanup and refactor records were trimmed on 2026-04-26, legacy active-plan routing was pruned again on 2026-04-30, the completed jobs-fetcher plus dedup readiness closeouts were archived on 2026-05-03, the completed runtime storage/source-sync plan, completed task lifecycle ledger plan, superseded lifecycle note, and completed static decision records were archived on 2026-05-12, and the completed bridge route inventory guardrail plan was archived on 2026-05-13.
+> Historical cleanup and refactor records were trimmed on 2026-04-26, legacy active-plan routing was pruned again on 2026-04-30, the completed jobs-fetcher plus dedup readiness closeouts were archived on 2026-05-03, the completed runtime storage/source-sync plan, completed task lifecycle ledger plan, superseded lifecycle note, and completed static decision records were archived on 2026-05-12, the completed bridge route inventory guardrail plan was archived on 2026-05-13, and the pre-`0.2.0` UX/readiness records were archived on 2026-05-15.
 
 This repository now keeps active documentation in `docs/` and relies on git history for detailed cleanup records, old refactor charters, and completed task logs. The archive is intentionally small so the docs remain useful for a personal project.
 
@@ -16,6 +16,7 @@ Retired archive categories:
 - Completed repo-health and repo-analysis implementation logs.
 - Time-bound scraping/fetch run notes that no longer describe current behavior.
 - April 2026 repo-analysis residual trackers and early source-discovery HTTP-recovery snapshots.
+- Completed pre-`0.2.0` desktop UX polish lives in [`0.2.0-deferred-desktop-ux-polish-plan.md`](0.2.0-deferred-desktop-ux-polish-plan.md), and pre-release `0.2.0` approval plus release-day gates live in [`0.2.0-release-readiness-plan.md`](0.2.0-release-readiness-plan.md).
 - Completed jobs-fetcher broad lifecycle/C901 simplification closeout lives in [`jobs-fetcher-aggressive-simplification-closeout.md`](jobs-fetcher-aggressive-simplification-closeout.md).
 - Closed bridge route inventory guardrail plan lives in [`bridge-route-inventory-guardrail-plan.md`](bridge-route-inventory-guardrail-plan.md).
 - Closed dedup lifecycle readiness closeout lives in [`dedup-lifecycle-readiness-closeout.md`](dedup-lifecycle-readiness-closeout.md).

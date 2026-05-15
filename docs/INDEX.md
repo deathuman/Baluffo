@@ -5,7 +5,7 @@
 > - **Canonical for:** wiki routing, doc discovery, and the default AI read path
 > - **Not canonical for:** payload details, route contracts, or subsystem implementation behavior
 > - **Then inspect:** [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`architecture-ai-map.md`](architecture-ai-map.md), and one matching contract or workflow doc
-> - **Last updated:** 2026-05-14
+> - **Last updated:** 2026-05-15
 
 Use this page as the wiki home. Start here, load the minimum active docs you need, and use git history for old cleanup/refactor details unless the task explicitly needs historical provenance.
 
@@ -98,6 +98,8 @@ Important for maintenance, release, and support workflows, but usually not the f
 | Document | Status | Notes |
 |----------|--------|-------|
 | [`archive/README.md`](archive/README.md) | Archive index | Short note for retired cleanup/refactor records; use git history for detailed provenance |
+| [`archive/0.2.0-deferred-desktop-ux-polish-plan.md`](archive/0.2.0-deferred-desktop-ux-polish-plan.md) | Archived closeout | Completed pre-`0.2.0` Jobs, Saved Jobs, and Admin desktop UX polish |
+| [`archive/0.2.0-release-readiness-plan.md`](archive/0.2.0-release-readiness-plan.md) | Archived pre-release approval | Pre-release `0.2.0` scope, changelog draft handoff, risk decisions, and remaining release-day gates |
 | [`archive/jobs-fetcher-aggressive-simplification-closeout.md`](archive/jobs-fetcher-aggressive-simplification-closeout.md) | Archived closeout | Completed jobs-fetcher broad lifecycle/C901 simplification record |
 | [`archive/dedup-lifecycle-readiness-closeout.md`](archive/dedup-lifecycle-readiness-closeout.md) | Archived closeout | Closed broad dedup lifecycle readiness tracker; active work moved through current-run blocker review to Google Sheets role-bucket audit |
 | [`archive/dedup-current-run-blocker-review-closeout.md`](archive/dedup-current-run-blocker-review-closeout.md) | Archived closeout | Closed current-run blocker review tracker; active work moved to Google Sheets role-bucket audit |

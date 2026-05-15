@@ -400,6 +400,8 @@ def test_index_routes_current_process_docs_only(repo_root: Path) -> None:
     assert "## Refactor Charters" not in index_text
     assert "Refactor record" not in index_text
     assert archive_files == [
+        "docs/archive/0.2.0-deferred-desktop-ux-polish-plan.md",
+        "docs/archive/0.2.0-release-readiness-plan.md",
         "docs/archive/README.md",
         "docs/archive/admin-health-dashboard-console-closeout.md",
         "docs/archive/bridge-route-inventory-guardrail-plan.md",
