@@ -25,6 +25,7 @@ DISCOVERY_STAGES: tuple[str, ...] = (
     "curated_seed",
     "sheet_directory",
     "provider_pattern",
+    "provider_migration_advisory",
     "web_provider",
     "generic_static",
 )

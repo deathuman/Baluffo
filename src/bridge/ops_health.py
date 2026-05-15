@@ -615,6 +615,7 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
         "owner": {
             "mode": str(owner_state.get("ownerMode") or ""),
             "token": str(owner_state.get("ownerToken") or ""),
+            "sessionId": str(owner_state.get("sessionId") or ""),
             "startedBy": str(owner_state.get("startedBy") or ""),
             "startedAt": str(owner_state.get("startedAt") or ""),
             "lastActivityAt": str(owner_state.get("lastActivityAt") or ""),

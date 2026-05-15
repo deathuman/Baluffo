@@ -42,9 +42,9 @@ def test_release_docs_cover_the_current_public_release_line(repo_root: Path) -> 
         heading in top_release for heading in ("### Added", "### Changed", "### Fixed", "### Notes")
     )
     assert "\n- " in top_release
-    assert "isolated policy and telemetry path" in top_release
-    assert "Playwright bridge local data" in top_release
-    assert "authoritative ordering for browser launch" in top_release
+    assert "Runtime SQLite/WAL storage" in top_release
+    assert "Source-sync v3" in top_release
+    assert "gitleaks-based secret scanning" in top_release
     assert "Desktop in-app update flow in the Jobs desktop UI" in previous_release
     assert (
         "Location normalization was consolidated into the canonical parsers path"

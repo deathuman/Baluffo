@@ -23,6 +23,7 @@
     "curated_seed": 2,
     "sheet_directory": 0,
     "provider_pattern": 0,
+    "provider_migration_advisory": 0,
     "web_provider": 0,
     "generic_static": 0
   }

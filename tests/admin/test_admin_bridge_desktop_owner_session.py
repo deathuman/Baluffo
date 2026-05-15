@@ -45,3 +45,33 @@ def test_desktop_owner_session_stays_alive_when_requests_refresh_activity(
         return_value=admin_bridge.parse_iso("2026-03-01T00:00:20+00:00"),
     ):
         assert admin_bridge.owner_session_should_exit() is False
+
+
+def test_lightweight_ops_health_exposes_desktop_owner_identity(
+    admin_bridge_entrypoint_root,
+):
+    cfg = admin_bridge.RuntimeConfig(
+        root=admin_bridge_entrypoint_root,
+        data_dir=admin_bridge_entrypoint_root,
+        host="127.0.0.1",
+        port=8877,
+        log_format="human",
+        log_level="info",
+        quiet_requests=False,
+        desktop_mode=True,
+        owner_mode="desktop-window",
+        owner_token="owner-1",
+        desktop_session_id="session-1",
+        started_by="test",
+        owner_idle_timeout_s=15.0,
+    )
+    admin_bridge.configure_runtime_paths(cfg)
+
+    health = admin_bridge.compute_ops_health()
+
+    assert health["service"] == "baluffo-bridge"
+    assert health["desktopMode"] is True
+    assert health["startupReady"] is True
+    assert health["owner"]["mode"] == "desktop-window"
+    assert health["owner"]["token"] == "owner-1"
+    assert health["owner"]["sessionId"] == "session-1"

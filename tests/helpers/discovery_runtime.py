@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -83,7 +84,22 @@ def override_discovery_runtime(
         url_patch_manifest_path=root / "url-patch-manifest.json",
         m5_strategic_backlog_path=root / "m5-strategic-backlog.json",
     )
+    isolated_default_config = copy.deepcopy(discovery_config_module.DEFAULT_DISCOVERY_CONFIG)
+    for section_name, artifact_name in (
+        ("sheetDirectory", "sheet-directory-discovery-audit.json"),
+        ("webSearch", "web-search-discovery-audit.json"),
+    ):
+        section = isolated_default_config.get(section_name)
+        if isinstance(section, dict):
+            section["activeAuditPath"] = str(root / artifact_name)
     with ExitStack() as stack:
+        stack.enter_context(
+            mock.patch.dict(
+                discovery_config_module.DEFAULT_DISCOVERY_CONFIG,
+                isolated_default_config,
+                clear=True,
+            )
+        )
         stack.enter_context(
             mock.patch.object(source_registry_module, "ACTIVE_PATH", paths.active_path)
         )

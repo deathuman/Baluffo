@@ -575,6 +575,15 @@ class OpsApi:
             "desktopLastActivityAt": str(self._deps.get_desktop_last_activity_at() or ""),
             "startupReady": startup_ready,
             "appVersion": str(self._deps.app_version or ""),
+            "owner": {
+                "mode": str(owner_state.get("ownerMode") or ""),
+                "token": str(owner_state.get("ownerToken") or ""),
+                "sessionId": str(owner_state.get("sessionId") or ""),
+                "startedBy": str(owner_state.get("startedBy") or ""),
+                "startedAt": str(owner_state.get("startedAt") or ""),
+                "lastActivityAt": str(owner_state.get("lastActivityAt") or ""),
+                "idleTimeoutSeconds": float(owner_state.get("idleTimeoutSeconds") or 0.0),
+            },
             "lifecycle": {
                 "currentCount": len(current_rows),
                 "recentCount": len(recent_rows),

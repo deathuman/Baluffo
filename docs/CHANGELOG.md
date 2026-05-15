@@ -10,7 +10,7 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
-## [0.2.0] - Unreleased
+## [0.2.0] - 2026-05-15
 
 ### Added
 - A more polished desktop Jobs experience, with denser job rows, clearer save/open actions, user-facing update controls, and quick-filter presets for common browsing flows.
