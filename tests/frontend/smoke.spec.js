@@ -190,7 +190,7 @@ test("jobs smoke: filters + refresh + pagination + save/unsave + guest warning",
   await expectTooltipText(
     page,
     page.locator("#jobs-pipeline-run-btn"),
-    "Find new openings and rebuild the local job list."
+    /(?:Find new openings|First update: find new openings) and rebuild the local job list\./i
   );
   await expectTooltipText(
     page,
