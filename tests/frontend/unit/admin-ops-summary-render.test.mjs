@@ -85,7 +85,9 @@ test("admin render: schedule/trends/history render deterministic core text", () 
   assert.match(historyEl.innerHTML, /running/);
   assert.match(historyEl.innerHTML, /critical/);
   assert.doesNotMatch(historyEl.innerHTML, /admin-ops-run-card/);
-  assert.match(historyEl.innerHTML, />fetch</);
+  assert.match(historyEl.innerHTML, />Fetch</);
+  assert.match(historyEl.innerHTML, />Discovery</);
+  assert.match(historyEl.innerHTML, />Sync</);
   assert.match(historyEl.innerHTML, />42</);
   assert.match(historyEl.innerHTML, /Review queue: 5/);
   assert.match(historyEl.innerHTML, /Sync pull/i);

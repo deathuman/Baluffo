@@ -86,6 +86,78 @@ def test_wait_for_report_completion_refreshes_pipeline_child_heartbeat(tmp_path:
     assert parent_heartbeats == [("pipeline_1", "pipeline", "discovery")]
 
 
+def test_pipeline_stage_heartbeat_uses_normalized_lifecycle_progress() -> None:
+    parent_heartbeats: list[dict[str, Any]] = []
+    status: dict[str, Any] = {
+        "active": True,
+        "runId": "pipeline_1",
+        "baselineOutputCount": 12,
+        "jobsPageLoadedCount": 15,
+        "finalOutputCount": 0,
+    }
+    service = _make_pipeline_service(
+        pipeline_status=status,
+        heartbeat_lifecycle_run=lambda _run_id, _task_type, **kwargs: (
+            parent_heartbeats.append(dict(kwargs)) or {}
+        ),
+    )
+
+    service._mark_stage(stage="fetch", current_step=2, total_steps=3, label="Running fetch...")
+
+    assert status["progress"] == {
+        "currentStep": 2,
+        "totalSteps": 3,
+        "percent": 67,
+        "label": "Running fetch...",
+    }
+    progress = parent_heartbeats[-1]["progress"]
+    assert progress["active"] is True
+    assert progress["phaseKey"] == "fetch"
+    assert progress["phaseLabel"] == "Running fetch..."
+    assert progress["mode"] == "determinate"
+    assert progress["counts"]["currentStep"] == 2
+    assert progress["counts"]["totalSteps"] == 3
+    assert progress["counts"]["baselineOutputCount"] == 12
+    assert progress["counts"]["jobsPageLoadedCount"] == 15
+
+
+def test_pipeline_completion_uses_normalized_lifecycle_progress() -> None:
+    finished_runs: list[dict[str, Any]] = []
+    status: dict[str, Any] = {
+        "active": True,
+        "runId": "pipeline_1",
+        "stage": "fetch",
+        "progress": {"currentStep": 2, "totalSteps": 3, "percent": 67, "label": "Running fetch..."},
+        "baselineOutputCount": 12,
+        "jobsPageLoadedCount": 15,
+        "finalOutputCount": 0,
+    }
+    service = _make_pipeline_service(
+        pipeline_status=status,
+        finish_lifecycle_run=lambda run_id, task_type, **kwargs: (
+            finished_runs.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        ),
+    )
+
+    service._set_completed(status="ok", final_output_count=20)
+
+    assert status["progress"] == {
+        "currentStep": 3,
+        "totalSteps": 3,
+        "percent": 100,
+        "label": "Pipeline completed",
+    }
+    progress = finished_runs[-1]["progress"]
+    assert progress["active"] is False
+    assert progress["phaseKey"] == "completed"
+    assert progress["phaseLabel"] == "Pipeline completed"
+    assert progress["counts"]["currentStep"] == 3
+    assert progress["counts"]["totalSteps"] == 3
+    assert progress["counts"]["baselineOutputCount"] == 12
+    assert progress["counts"]["jobsPageLoadedCount"] == 15
+    assert progress["counts"]["finalOutputCount"] == 20
+
+
 def test_pipeline_waits_for_discovery_auto_approval_after_child_terminal_report() -> None:
     parent_heartbeats: list[tuple[str, str, str]] = []
     service = _make_pipeline_service(

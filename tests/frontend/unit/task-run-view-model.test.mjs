@@ -146,6 +146,113 @@ test("task run view model derives pipeline progress and approaching heartbeat wa
   assert.match(view.secondaryLabel, /step 3\/7/i);
 });
 
+test("task run view model omits placeholder pipeline progress without evidence", () => {
+  const view = buildTaskRunView({
+    taskType: "pipeline",
+    active: true,
+    startedAt: "2026-03-08T10:00:00.000Z",
+    heartbeatAt: "2026-03-08T10:01:45.000Z",
+    summary: {},
+    taskProgress: {
+      active: true,
+      phaseKey: "starting",
+      phaseLabel: "Starting pipeline",
+      counts: {}
+    }
+  }, { nowMs: NOW });
+
+  assert.equal(view.progressLabel, "Starting pipeline");
+  assert.equal(view.secondaryLabel, "");
+  assert.doesNotMatch(view.progressLabel, /step 0|output 0/i);
+});
+
+test("task run view model derives pipeline diagnostics from parent summary and child runs", () => {
+  const view = buildTaskRunView({
+    taskType: "pipeline",
+    status: "ok",
+    finishedAt: "2026-03-08T10:00:00.000Z",
+    summary: {
+      baselineOutputCount: 120,
+      jobsPageLoadedCount: 150,
+      finalOutputCount: 175,
+      updatesFound: true
+    },
+    taskProgress: {
+      active: false,
+      phaseKey: "completed",
+      phaseLabel: "Pipeline completed",
+      mode: "determinate",
+      ratio: 1,
+      counts: {
+        currentStep: 3,
+        totalSteps: 3,
+        baselineOutputCount: 120,
+        jobsPageLoadedCount: 150,
+        finalOutputCount: 175
+      }
+    },
+    pipelineChildren: [
+      {
+        type: "fetch",
+        status: "ok",
+        finishedAt: "2026-03-08T09:50:00.000Z",
+        summary: { outputCount: 175, failedSources: 0 },
+        taskProgress: {
+          active: false,
+          phaseLabel: "Executing sources",
+          mode: "determinate",
+          ratio: 1,
+          counts: { resolvedSources: 12, sourceCount: 12, outputCount: 175, failedSources: 0 }
+        }
+      },
+      {
+        type: "discovery",
+        status: "ok",
+        finishedAt: "2026-03-08T09:20:00.000Z",
+        summary: { queuedCandidateCount: 6, failedProbeCount: 1 },
+        taskProgress: {
+          active: false,
+          phaseLabel: "Probing candidates",
+          counts: { generatedCandidates: 20, queuedCandidates: 6, failedProbes: 1 }
+        }
+      }
+    ]
+  }, { nowMs: NOW });
+
+  assert.match(view.diagnosticHints[0], /output 175 vs comparison base 150/i);
+  assert.match(view.diagnosticHints[0], /updates found/i);
+  assert.ok(view.diagnosticHints.some(hint => /Discovery completed/i.test(hint)));
+  assert.ok(view.diagnosticHints.some(hint => /Fetch completed/i.test(hint)));
+  assert.doesNotMatch(view.diagnosticHints.join(" "), /step 0|output 0/i);
+});
+
+test("task run view model supports legacy flat pipeline progress and no-evidence fallback", () => {
+  const legacy = buildTaskRunView({
+    taskType: "pipeline",
+    status: "ok",
+    finishedAt: "2026-03-08T10:00:00.000Z",
+    summary: { baselineOutputCount: 40, finalOutputCount: 45, updatesFound: true },
+    taskProgress: {
+      currentStep: 3,
+      totalSteps: 3,
+      label: "Pipeline completed",
+      percent: 100
+    }
+  }, { nowMs: NOW });
+  const empty = buildTaskRunView({
+    taskType: "pipeline",
+    status: "ok",
+    finishedAt: "2026-03-08T10:00:00.000Z",
+    summary: {},
+    taskProgress: {}
+  }, { nowMs: NOW });
+
+  assert.match(legacy.progressLabel, /Pipeline completed/i);
+  assert.match(legacy.progressLabel, /step 3\/3/i);
+  assert.match(legacy.diagnosticHints[0], /output 45 vs comparison base 40/i);
+  assert.deepEqual(empty.diagnosticHints, ["No stage diagnostics are available for this pipeline run."]);
+});
+
 test("task run view model derives terminal, stalled, and orphaned states", () => {
   assert.equal(buildTaskRunView({ type: "fetch", status: "ok", finishedAt: "2026-03-08T10:01:00.000Z" }, { nowMs: NOW }).status, "completed");
   assert.equal(buildTaskRunView({ type: "fetch", status: "warning", finishedAt: "2026-03-08T10:01:00.000Z" }, { nowMs: NOW }).status, "completed_with_warnings");
@@ -276,6 +383,43 @@ test("task run diagnostics covers completed failures and missing rows safely", (
   assert.equal(missing.taskType, "unknown");
   assert.equal(missing.status, "waiting");
   assert.deepEqual(missing.workItemExamples, []);
+});
+
+test("task run diagnostics exports related pipeline child runs", () => {
+  const payload = buildTaskRunDiagnostics({
+    type: "pipeline",
+    runId: "pipeline_selected_1",
+    status: "ok",
+    finishedAt: "2026-03-08T10:00:00.000Z",
+    summary: {
+      baselineOutputCount: 120,
+      finalOutputCount: 140,
+      updatesFound: true
+    },
+    pipelineChildren: [
+      {
+        type: "fetch",
+        runId: "fetch_child_1",
+        status: "ok",
+        startedAt: "2026-03-08T09:20:00.000Z",
+        finishedAt: "2026-03-08T09:50:00.000Z",
+        summary: { outputCount: 140, failedSources: 0 },
+        taskProgress: {
+          counts: { resolvedSources: 10, sourceCount: 10, outputCount: 140, failedSources: 0 }
+        }
+      }
+    ]
+  }, {
+    rowArea: "completed",
+    nowMs: NOW,
+    generatedAt: "2026-03-08T10:10:00.000Z"
+  });
+
+  assert.equal(payload.relatedRuns.length, 1);
+  assert.equal(payload.relatedRuns[0].taskType, "fetch");
+  assert.equal(payload.relatedRuns[0].runId, "fetch_child_1");
+  assert.equal(payload.relatedRuns[0].summaryCounts.outputCount, 140);
+  assert.match(payload.relatedRuns[0].diagnosticHints[0], /sources resolved/i);
 });
 
 test("task run analysis normalizes selected run evidence with capped examples", () => {

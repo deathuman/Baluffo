@@ -81,6 +81,28 @@ test("formatTaskProgressCounts renders pipeline step and output counts", () => {
   );
 });
 
+test("formatTaskProgressCounts does not invent zero pipeline counts", () => {
+  assert.equal(formatTaskProgressCounts("pipeline", {}), "");
+  assert.equal(
+    formatTaskProgressCounts("pipeline", {
+      currentStep: 3,
+      totalSteps: 3,
+      baselineOutputCount: 0,
+      finalOutputCount: 0
+    }),
+    "step 3/3"
+  );
+  assert.equal(
+    formatTaskProgressDetail("pipeline", {
+      active: true,
+      phaseKey: "starting",
+      phaseLabel: "Starting pipeline",
+      counts: {}
+    }),
+    "Starting pipeline"
+  );
+});
+
 test("formatTaskProgressDetail renders sync shard progress", () => {
   assert.equal(
     formatTaskProgressDetail("sync", {

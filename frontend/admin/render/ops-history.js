@@ -3,7 +3,7 @@ import {
   buildTaskRunAnalysis,
   buildTaskRunDiagnostics,
   buildTaskRunView
-} from "../../shared/task-run-view-model.js?v=9";
+} from "../../shared/task-run-view-model.js?v=11";
 import {
   formatDiscoverySubtaskProgress,
   formatScrapyStaticSourcesTailBadge,
@@ -16,6 +16,29 @@ import {
   formatSignedInt,
   getRunStatusChipClass
 } from "./ops-shared.js";
+
+const TASK_TYPE_LABELS = new Map([
+  ["discovery", "Discovery"],
+  ["pipeline", "Pipeline"],
+  ["fetch", "Fetch"],
+  ["sync", "Sync"]
+]);
+
+function formatRunTaskTypeLabel(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+  const mapped = TASK_TYPE_LABELS.get(normalized.toLowerCase());
+  if (mapped) return mapped;
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function isZeroPipelineProgressLabel(value) {
+  return /^step 0(?:\s*\|\s*output 0\s*\(baseline 0\))?$/i.test(String(value || "").trim());
+}
+
+function firstMeaningfulPipelineLabel(...values) {
+  return values.map(value => String(value || "").trim()).find(value => value && !isZeroPipelineProgressLabel(value)) || "";
+}
 
 export function renderAdminOpsTrends(trendsEl, runs) {
   if (!trendsEl) return;
@@ -236,15 +259,18 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
       ? currentRunDetail
       : "";
     const progressText = row?.type === "pipeline"
-      ? (pipelineChildDetail || runView.progressLabel || runView.secondaryLabel || Number(summary?.finalOutputCount || summary?.outputCount || 0).toLocaleString())
+      ? (firstMeaningfulPipelineLabel(pipelineChildDetail, runView.progressLabel, runView.secondaryLabel) || (row?.isLive ? "Pipeline running" : "Pipeline completed"))
       : (row?.isLive && liveRunDetail)
         ? liveRunDetail
         : row?.type === "discovery"
           ? `Review queue: ${Number(summary?.queuedCandidateCount || 0).toLocaleString()}`
           : Number(summary?.outputCount || 0).toLocaleString();
-    const progressTitle = runView.progressStale
+    const rawProgressTitle = runView.progressStale
       ? runView.progressStaleLabel || runView.progressLabel || ""
       : (runView.progressLabel || runView.secondaryLabel || progressText);
+    const progressTitle = type === "pipeline"
+      ? (firstMeaningfulPipelineLabel(rawProgressTitle) || progressText)
+      : rawProgressTitle;
     const statusText = runView.stallProximity === "approaching"
       ? "approaching"
       : (runView.statusLabel || rawStatus);
@@ -271,7 +297,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
       title: runView.title,
       primaryLabel: runView.primaryLabel,
       secondaryLabel: runView.secondaryLabel,
-      typeText: runView.taskType || type,
+      typeText: formatRunTaskTypeLabel(runView.taskType || type),
       statusText,
       severity: runView.severity,
       statusClass,
@@ -294,12 +320,17 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
       finishedText: statusToken === "running" || statusToken === "started"
         ? ""
         : formatDateTime(row?.finishedAt || ""),
-      progressLabel: runView.progressLabel || "",
+      progressLabel: type === "pipeline"
+        ? firstMeaningfulPipelineLabel(runView.progressLabel)
+        : (runView.progressLabel || ""),
       warningSummary: runView.warningSummary || "",
       failureSummary: runView.failureSummary || "",
       progressStale: Boolean(runView.progressStale),
       diagnosticHints: Array.isArray(runView.diagnosticHints)
-        ? runView.diagnosticHints.map(hint => truncateText(hint, 160)).filter(Boolean).slice(0, 5)
+        ? runView.diagnosticHints
+            .map(hint => truncateText(hint, 160))
+            .filter(hint => hint && !(type === "pipeline" && isZeroPipelineProgressLabel(hint)))
+            .slice(0, 5)
         : [],
       diagnosticsPayload: buildTaskRunDiagnostics(row, { rowArea, runView }),
       analysisPayload: buildTaskRunAnalysis(row, { rowArea, runView })

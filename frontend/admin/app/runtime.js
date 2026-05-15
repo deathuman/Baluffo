@@ -9,7 +9,7 @@ import { emitStartupMetric, logError, markFirstInteractive } from "../../shared/
 import { createPerfMarks } from "../../shared/perf-marks.js";
 import {
   appendAdminLogRow
-} from "../render.js?v=15";
+} from "../render.js?v=16";
 import {
   getErrorMessage as getErrorMessageFromDomain,
   normalizeLogLevel as normalizeLogLevelFromDomain,

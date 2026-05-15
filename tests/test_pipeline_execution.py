@@ -589,6 +589,12 @@ class TestPipelineMetricsTimestamps:
         assert "baselineOutputCount" in summary
         assert "jobsPageLoadedCount" in summary
         assert "stage" in summary
+        progress = initial_record["progress"]
+        assert progress["phaseKey"] == "starting"
+        assert progress["phaseLabel"] == "Starting pipeline..."
+        assert progress["counts"]["currentStep"] == 0
+        assert progress["counts"]["totalSteps"] == 3
+        assert progress["counts"]["baselineOutputCount"] == 10
 
     def test_pipeline_status_shows_baseline_count(self, tmp_path: Path) -> None:
         """Test pipeline status includes baseline output count."""

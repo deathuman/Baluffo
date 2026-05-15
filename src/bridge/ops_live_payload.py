@@ -159,6 +159,7 @@ def build_pipeline_task_progress(payload: JsonObject) -> JsonObject:
             "currentStep": current_step,
             "totalSteps": total_steps,
             "baselineOutputCount": coerce_non_negative_int(payload.get("baselineOutputCount")),
+            "jobsPageLoadedCount": coerce_non_negative_int(payload.get("jobsPageLoadedCount")),
             "finalOutputCount": coerce_non_negative_int(payload.get("finalOutputCount")),
         },
     }

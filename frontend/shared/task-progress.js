@@ -1,16 +1,32 @@
 export function normalizeTaskProgressPayload(progress) {
   if (!progress || typeof progress !== "object" || Array.isArray(progress)) return null;
+  const topLevelCounts = {};
+  [
+    "currentStep",
+    "totalSteps",
+    "baselineOutputCount",
+    "finalOutputCount",
+    "jobsPageLoadedCount"
+  ].forEach(key => {
+    if (Object.prototype.hasOwnProperty.call(progress, key)) {
+      topLevelCounts[key] = progress[key];
+    }
+  });
   const mode = String(progress.mode || "").trim().toLowerCase() === "determinate"
     ? "determinate"
     : "indeterminate";
-  const counts = progress.counts && typeof progress.counts === "object" && !Array.isArray(progress.counts)
+  const nestedCounts = progress.counts && typeof progress.counts === "object" && !Array.isArray(progress.counts)
     ? progress.counts
     : {};
+  const counts = {
+    ...topLevelCounts,
+    ...nestedCounts
+  };
   const ratioValue = Number(progress.ratio);
   return {
     active: Boolean(progress.active),
     phaseKey: String(progress.phaseKey || "").trim(),
-    phaseLabel: String(progress.phaseLabel || "").trim(),
+    phaseLabel: String(progress.phaseLabel || progress.label || "").trim(),
     mode,
     ratio: Number.isFinite(ratioValue) ? Math.max(0, Math.min(1, ratioValue)) : 0,
     counts,
@@ -190,9 +206,11 @@ function formatPipelineCounts(counts, progress) {
   const baseline = Math.max(0, Number(counts?.baselineOutputCount || 0));
   const final = Math.max(0, Number(counts?.finalOutputCount || 0));
   void progress;
+  if (currentStep <= 0 && totalSteps <= 0 && baseline <= 0 && final <= 0) return "";
   const stepLabel = totalSteps > 0
     ? `step ${compactCount(currentStep)}/${compactCount(totalSteps)}`
     : `step ${compactCount(currentStep)}`;
+  if (baseline <= 0 && final <= 0) return stepLabel;
   return `${stepLabel} | output ${compactCount(final)} (baseline ${compactCount(baseline)})`;
 }
 

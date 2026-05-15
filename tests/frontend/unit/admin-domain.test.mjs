@@ -237,7 +237,7 @@ test("admin domain normalizes ops runs into current + collapsed completed groups
 });
 
 
-test("admin domain orders completed runs by startedAt across mixed durations", () => {
+test("admin domain orders completed runs by finishedAt across mixed durations", () => {
   const model = normalizeOpsRuns([
     {
       id: "fetch-long",
@@ -266,9 +266,112 @@ test("admin domain orders completed runs by startedAt across mixed durations", (
   ]);
 
   assert.equal(model.visibleCompletedRows.length, 2);
-  assert.equal(model.visibleCompletedRows[0].type, "sync");
-  assert.equal(model.visibleCompletedRows[1].type, "fetch");
+  assert.equal(model.visibleCompletedRows[0].type, "fetch");
+  assert.equal(model.visibleCompletedRows[1].type, "sync");
   assert.equal(model.olderCompletedRows[0].type, "discovery");
+});
+
+test("admin domain orders older completed runs by finishedAt with startedAt fallback", () => {
+  const model = normalizeOpsRuns([
+    {
+      id: "recent-1",
+      type: "fetch",
+      status: "ok",
+      startedAt: "2026-03-08T09:00:00.000Z",
+      finishedAt: "2026-03-08T10:00:00.000Z",
+      durationMs: 3600000
+    },
+    {
+      id: "recent-2",
+      type: "sync",
+      status: "ok",
+      startedAt: "2026-03-08T09:30:00.000Z",
+      finishedAt: "2026-03-08T09:45:00.000Z",
+      durationMs: 900000
+    },
+    {
+      id: "older-newest",
+      type: "pipeline",
+      status: "ok",
+      startedAt: "2026-03-08T08:00:00.000Z",
+      finishedAt: "2026-03-08T09:30:00.000Z",
+      durationMs: 5400000
+    },
+    {
+      id: "older-fallback",
+      type: "fetch",
+      status: "ok",
+      startedAt: "2026-03-08T09:15:00.000Z",
+      finishedAt: "not-a-date",
+      durationMs: 600000
+    },
+    {
+      id: "older-oldest",
+      type: "discovery",
+      status: "warning",
+      startedAt: "2026-03-08T07:00:00.000Z",
+      finishedAt: "2026-03-08T07:30:00.000Z",
+      durationMs: 1800000
+    }
+  ]);
+
+  assert.deepEqual(model.visibleCompletedRows.map(row => row.id), ["recent-1", "recent-2"]);
+  assert.deepEqual(model.olderCompletedRows.map(row => row.id), ["older-newest", "older-fallback", "older-oldest"]);
+});
+
+test("admin domain attaches ordered pipeline children without hiding child rows", () => {
+  const model = normalizeOpsRuns([
+    {
+      id: "pipeline_1",
+      runId: "pipeline_1",
+      type: "pipeline",
+      status: "ok",
+      startedAt: "2026-03-08T09:00:00.000Z",
+      finishedAt: "2026-03-08T10:00:00.000Z",
+      durationMs: 3600000
+    },
+    {
+      id: "sync_1",
+      runId: "sync_1",
+      type: "sync",
+      status: "ok",
+      parentRunId: "pipeline_1",
+      parentTaskType: "pipeline",
+      startedAt: "2026-03-08T09:50:00.000Z",
+      finishedAt: "2026-03-08T09:59:00.000Z",
+      durationMs: 540000
+    },
+    {
+      id: "fetch_1",
+      runId: "fetch_1",
+      type: "fetch",
+      status: "ok",
+      parentRunId: "pipeline_1",
+      parentTaskType: "pipeline",
+      startedAt: "2026-03-08T09:20:00.000Z",
+      finishedAt: "2026-03-08T09:45:00.000Z",
+      durationMs: 1500000
+    },
+    {
+      id: "discovery_1",
+      runId: "discovery_1",
+      type: "discovery",
+      status: "ok",
+      parentRunId: "pipeline_1",
+      parentTaskType: "pipeline",
+      startedAt: "2026-03-08T09:01:00.000Z",
+      finishedAt: "2026-03-08T09:10:00.000Z",
+      durationMs: 540000
+    }
+  ]);
+
+  const pipeline = model.visibleCompletedRows[0];
+  assert.equal(pipeline.type, "pipeline");
+  assert.deepEqual(pipeline.pipelineChildren.map(row => row.type), ["discovery", "fetch", "sync"]);
+  assert.deepEqual(
+    [...model.visibleCompletedRows, ...model.olderCompletedRows].map(row => row.id).sort(),
+    ["discovery_1", "fetch_1", "pipeline_1", "sync_1"]
+  );
 });
 
 test("admin domain derives adaptive ops polling interval", () => {

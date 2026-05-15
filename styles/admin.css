@@ -1435,6 +1435,19 @@
   grid-column: 1 / -1;
 }
 
+#admin-ops-history.jobs-list {
+  gap: 0.65rem;
+  margin: 0 0 1.2rem;
+  padding: 0.7rem;
+  overflow: visible;
+  border: 1px solid color-mix(in srgb, var(--surface-11) 82%, transparent);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at right top, var(--accent-soft-bg), transparent 46%),
+    linear-gradient(180deg, var(--surface-4), var(--surface-2));
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
+}
+
 .admin-ops-history-header,
 .admin-ops-history-row {
   grid-template-columns:
@@ -1532,12 +1545,13 @@
   border-bottom: 0;
 }
 
-.admin-ops-current-runs {
-  margin: 0 0 0.8rem;
-}
-
+.admin-ops-current-runs,
 .admin-ops-completed-runs {
   margin: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--surface-11) 86%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--table-row-even) 56%, transparent);
 }
 
 .admin-ops-history-title {
@@ -1545,6 +1559,25 @@
   font-size: 0.88rem;
   font-weight: 700;
   color: var(--text-secondary);
+}
+
+#admin-ops-history > .admin-ops-current-runs > .admin-ops-history-title {
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--surface-11) 82%, transparent);
+  background: color-mix(in srgb, var(--surface-5) 44%, transparent);
+}
+
+#admin-ops-history .jobs-table-header {
+  border-top: 0;
+}
+
+#admin-ops-history .admin-ops-history-header {
+  border-right: 0;
+  border-left: 0;
+  border-radius: 0;
 }
 
 .admin-ops-run-detail {
@@ -1685,19 +1718,17 @@
   color: var(--text-muted);
 }
 
-.admin-ops-history-older {
+.admin-ops-history-recent,
+.admin-ops-trends-details {
   margin: 0;
   border: 1px solid var(--surface-11);
   border-radius: 10px;
   background: color-mix(in srgb, var(--table-row-even) 55%, transparent);
 }
 
-.admin-ops-history-recent,
-.admin-ops-trends-details {
-  margin: 0 0 0.8rem;
-  border: 1px solid var(--surface-11);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--table-row-even) 55%, transparent);
+.admin-ops-history-recent {
+  border: 0;
+  background: transparent;
 }
 
 .admin-ops-trends-details {
@@ -1712,6 +1743,11 @@
   color: var(--text-secondary);
   font-weight: 700;
   list-style: none;
+}
+
+.admin-ops-history-recent > summary,
+.admin-ops-history-older > summary {
+  background: color-mix(in srgb, var(--surface-5) 44%, transparent);
 }
 
 .admin-ops-history-recent > summary::-webkit-details-marker,
@@ -1731,7 +1767,7 @@
 
 .admin-ops-history-recent .jobs-table-header,
 .admin-ops-trends-details .results-summary {
-  border-top: 1px solid var(--surface-11);
+  border-top: 1px solid color-mix(in srgb, var(--surface-11) 82%, transparent);
 }
 
 .admin-ops-trends-details .results-summary {
@@ -1761,7 +1797,7 @@
 }
 
 .admin-ops-history-older .jobs-table-body {
-  border-top: 1px solid var(--surface-11);
+  border-top: 1px solid color-mix(in srgb, var(--surface-11) 82%, transparent);
 }
 
 .admin-ops-trend-summary {

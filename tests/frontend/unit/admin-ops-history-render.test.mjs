@@ -425,3 +425,125 @@ test("admin ops history: pipeline rows keep progress text visible and cap overfl
   assert.match(historyEl.innerHTML, /Show all 11 runs/i);
   assert.match(historyEl.innerHTML, /admin-ops-expand-capped/);
 });
+
+test("admin ops history: live pipeline without progress evidence shows neutral fallback", () => {
+  const historyEl = makeEl();
+  renderAdminOpsHistory(historyEl, {
+    currentRows: [
+      {
+        type: "pipeline",
+        active: true,
+        startedAt: new Date(Date.now() - 60_000).toISOString(),
+        heartbeatAt: new Date().toISOString(),
+        summary: {},
+        taskProgress: {
+          active: true,
+          phaseKey: "",
+          phaseLabel: "",
+          counts: {}
+        }
+      }
+    ],
+    visibleCompletedRows: [],
+    olderCompletedRows: []
+  });
+
+  assert.match(historyEl.innerHTML, /Pipeline running/);
+  assert.doesNotMatch(historyEl.innerHTML, /step 0/i);
+  assert.doesNotMatch(historyEl.innerHTML, /output 0 \(baseline 0\)/i);
+});
+
+test("admin ops history: completed pipeline zero progress shows neutral fallback", () => {
+  const historyEl = makeEl();
+  renderAdminOpsHistory(historyEl, {
+    currentRows: [],
+    visibleCompletedRows: [
+      {
+        type: "pipeline",
+        status: "ok",
+        startedAt: "2026-03-08T10:00:00.000Z",
+        finishedAt: "2026-03-08T10:02:00.000Z",
+        taskProgress: {
+          active: false,
+          counts: {
+            currentStep: 0,
+            baselineOutputCount: 0,
+            finalOutputCount: 0
+          }
+        },
+        summary: {
+          currentStep: 0,
+          baselineOutputCount: 0,
+          finalOutputCount: 0
+        }
+      }
+    ],
+    olderCompletedRows: []
+  });
+
+  assert.match(historyEl.innerHTML, /Pipeline completed/);
+  assert.match(historyEl.innerHTML, /No stage diagnostics are available for this pipeline run/);
+  assert.doesNotMatch(historyEl.innerHTML, /step 0/i);
+  assert.doesNotMatch(historyEl.innerHTML, /output 0 \(baseline 0\)/i);
+});
+
+test("admin ops history: completed pipeline drawer shows parent and child diagnostics", () => {
+  const historyEl = makeEl();
+  renderAdminOpsHistory(historyEl, {
+    currentRows: [],
+    visibleCompletedRows: [
+      {
+        type: "pipeline",
+        status: "ok",
+        startedAt: "2026-03-08T09:00:00.000Z",
+        finishedAt: "2026-03-08T10:00:00.000Z",
+        summary: {
+          baselineOutputCount: 120,
+          jobsPageLoadedCount: 150,
+          finalOutputCount: 175,
+          updatesFound: true
+        },
+        taskProgress: {
+          active: false,
+          phaseLabel: "Pipeline completed",
+          mode: "determinate",
+          ratio: 1,
+          counts: {
+            currentStep: 3,
+            totalSteps: 3,
+            baselineOutputCount: 120,
+            jobsPageLoadedCount: 150,
+            finalOutputCount: 175
+          }
+        },
+        pipelineChildren: [
+          {
+            type: "discovery",
+            status: "ok",
+            finishedAt: "2026-03-08T09:20:00.000Z",
+            summary: { queuedCandidateCount: 6, failedProbeCount: 1 },
+            taskProgress: {
+              counts: { generatedCandidates: 20, queuedCandidates: 6, failedProbes: 1 }
+            }
+          },
+          {
+            type: "fetch",
+            status: "ok",
+            finishedAt: "2026-03-08T09:50:00.000Z",
+            summary: { outputCount: 175, failedSources: 0 },
+            taskProgress: {
+              counts: { resolvedSources: 12, sourceCount: 12, outputCount: 175, failedSources: 0 }
+            }
+          }
+        ]
+      }
+    ],
+    olderCompletedRows: []
+  });
+
+  assert.match(historyEl.innerHTML, /Pipeline output 175 vs comparison base 150; updates found/);
+  assert.match(historyEl.innerHTML, /Discovery completed/);
+  assert.match(historyEl.innerHTML, /Fetch completed/);
+  assert.doesNotMatch(historyEl.innerHTML, /step 0/i);
+  assert.doesNotMatch(historyEl.innerHTML, /output 0 \(baseline 0\)/i);
+});

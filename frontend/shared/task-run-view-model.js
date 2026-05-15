@@ -16,6 +16,35 @@ const TASK_TITLES = {
   pipeline: "Pipeline"
 };
 
+const TASK_RUN_SUMMARY_COUNT_KEYS = [
+  "outputCount",
+  "sourceCount",
+  "successfulSources",
+  "failedSources",
+  "okWithWarningSources",
+  "queuedCandidateCount",
+  "failedProbeCount",
+  "foundEndpointCount",
+  "generatedCandidateCount",
+  "survivedDedupeCandidateCount",
+  "probedCandidateCount",
+  "discoverableButDeferredCount",
+  "currentStageKey",
+  "stageIndex",
+  "stageTotal",
+  "completedStageCount",
+  "activeCount",
+  "pendingCount",
+  "rejectedCount",
+  "action",
+  "baselineOutputCount",
+  "jobsPageLoadedCount",
+  "finalOutputCount",
+  "updatesFound",
+  "stage",
+  "error"
+];
+
 function compactNumber(value) {
   return Math.max(0, Number(value || 0)).toLocaleString();
 }
@@ -344,6 +373,7 @@ function fallbackProgressLabel(taskType, summary, progress) {
       const stepLabel = totalSteps > 0
         ? `step ${compactNumber(currentStep)}/${compactNumber(totalSteps)}`
         : `step ${compactNumber(currentStep)}`;
+      if (baseline <= 0 && final <= 0) return stepLabel;
       return `${stepLabel} | output ${compactNumber(final)} (baseline ${compactNumber(baseline)})`;
     }
   }
@@ -425,6 +455,116 @@ function deriveRemediationHint(status) {
   return "";
 }
 
+function hasNumber(source, key) {
+  return hasOwn(source, key) && Number.isFinite(Number(source?.[key]));
+}
+
+function firstNumber(sourceA, sourceB, key) {
+  if (hasNumber(sourceA, key)) return Math.max(0, Number(sourceA[key] || 0));
+  if (hasNumber(sourceB, key)) return Math.max(0, Number(sourceB[key] || 0));
+  return 0;
+}
+
+function hasPipelineCountEvidence(summary, counts, key) {
+  return hasNumber(counts, key) || hasNumber(summary, key);
+}
+
+function buildPipelineOutputHint(summary, progress) {
+  const counts = progress?.counts && typeof progress.counts === "object" && !Array.isArray(progress.counts)
+    ? progress.counts
+    : {};
+  const hasBaseline = hasPipelineCountEvidence(summary, counts, "baselineOutputCount");
+  const hasLoaded = hasPipelineCountEvidence(summary, counts, "jobsPageLoadedCount");
+  const hasFinal = hasPipelineCountEvidence(summary, counts, "finalOutputCount");
+  if (!hasBaseline && !hasLoaded && !hasFinal && !hasOwn(summary, "updatesFound")) return "";
+  const baseline = firstNumber(counts, summary, "baselineOutputCount");
+  const loaded = firstNumber(counts, summary, "jobsPageLoadedCount");
+  const final = firstNumber(counts, summary, "finalOutputCount");
+  const comparisonBase = Math.max(hasBaseline ? baseline : 0, hasLoaded ? loaded : 0);
+  if (comparisonBase <= 0 && final <= 0 && !hasOwn(summary, "updatesFound")) return "";
+  const parts = [];
+  if (hasFinal && (hasBaseline || hasLoaded)) {
+    parts.push(`output ${compactNumber(final)} vs comparison base ${compactNumber(comparisonBase)}`);
+  } else if (hasFinal) {
+    parts.push(`final output ${compactNumber(final)}`);
+  } else if (hasBaseline || hasLoaded) {
+    parts.push(`comparison base ${compactNumber(comparisonBase)}`);
+  }
+  if (hasOwn(summary, "updatesFound")) {
+    parts.push(summary.updatesFound ? "updates found" : "no updates found");
+  }
+  return parts.length ? `Pipeline ${parts.join("; ")}` : "";
+}
+
+function buildPipelineStageHint(progress) {
+  const counts = progress?.counts && typeof progress.counts === "object" && !Array.isArray(progress.counts)
+    ? progress.counts
+    : {};
+  const currentStep = Math.max(0, Number(counts.currentStep || 0));
+  const totalSteps = Math.max(0, Number(counts.totalSteps || 0));
+  const label = String(progress?.phaseLabel || progress?.phaseKey || "").trim();
+  if (currentStep <= 0 && totalSteps <= 0 && !label) return "";
+  const step = totalSteps > 0
+    ? `stage ${compactNumber(currentStep)}/${compactNumber(totalSteps)}`
+    : currentStep > 0 ? `stage ${compactNumber(currentStep)}` : "";
+  return ["Pipeline", step, label].filter(Boolean).join(" ");
+}
+
+function pipelineChildTaskLabel(taskType) {
+  return {
+    discovery: "Discovery",
+    fetch: "Fetch",
+    sync: "Sync"
+  }[taskType] || (TASK_TITLES[taskType] || "Task");
+}
+
+function buildPipelineChildHint(child, nowMs) {
+  if (!child || typeof child !== "object" || Array.isArray(child)) return "";
+  const taskType = getTaskType(child);
+  if (!taskType || taskType === "pipeline") return "";
+  const childView = buildTaskRunView({ ...child, pipelineChildren: [] }, { nowMs });
+  const status = String(childView.statusLabel || childView.status || "").replaceAll("_", " ").trim();
+  const details = [
+    childView.failureSummary,
+    childView.warningSummary,
+    childView.progressLabel,
+    childView.secondaryLabel,
+    Array.isArray(childView.diagnosticHints) ? childView.diagnosticHints[0] : ""
+  ].map(value => String(value || "").trim()).filter(Boolean);
+  const uniqueDetails = [];
+  details.forEach(detail => {
+    if (!uniqueDetails.some(existing => existing === detail || existing.includes(detail) || detail.includes(existing))) {
+      uniqueDetails.push(detail);
+    }
+  });
+  const suffix = uniqueDetails.length ? `: ${uniqueDetails.slice(0, 2).join(" | ")}` : "";
+  return `${pipelineChildTaskLabel(taskType)} ${status || "unknown"}${suffix}`;
+}
+
+function uniqueDiagnosticHints(hints) {
+  const seen = new Set();
+  return hints
+    .map(hint => trimDiagnosticText(hint, DIAGNOSTIC_TEXT_LIMIT))
+    .filter(Boolean)
+    .filter(hint => {
+      const key = hint.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, DIAGNOSTIC_LIST_LIMIT);
+}
+
+function buildPipelineDiagnosticHints(row, summary, progress, nowMs) {
+  const children = Array.isArray(row?.pipelineChildren) ? row.pipelineChildren : [];
+  const hints = uniqueDiagnosticHints([
+    buildPipelineOutputHint(summary, progress),
+    buildPipelineStageHint(progress),
+    ...children.map(child => buildPipelineChildHint(child, nowMs))
+  ]);
+  return hints.length ? hints : ["No stage diagnostics are available for this pipeline run."];
+}
+
 export function buildTaskRunView(row, { nowMs = Date.now() } = {}) {
   const safeRow = row && typeof row === "object" && !Array.isArray(row) ? row : {};
   const taskType = getTaskType(safeRow);
@@ -500,7 +640,9 @@ export function buildTaskRunView(row, { nowMs = Date.now() } = {}) {
     warningSummary: deriveWarningSummary(taskType, summary, status),
     failureSummary: deriveFailureSummary(taskType, summary),
     remediationHint: deriveRemediationHint(status),
-    diagnosticHints: [countsLabel].filter(Boolean)
+    diagnosticHints: taskType === "pipeline"
+      ? buildPipelineDiagnosticHints(safeRow, summary, progress, nowMs)
+      : [countsLabel].filter(Boolean)
   };
 }
 
@@ -535,6 +677,29 @@ export function buildTaskRunLogLabel(row, {
   };
 }
 
+function buildRelatedRunDiagnostics(row, nowMs) {
+  const children = Array.isArray(row?.pipelineChildren) ? row.pipelineChildren : [];
+  return children
+    .map(child => {
+      if (!child || typeof child !== "object" || Array.isArray(child)) return null;
+      const view = buildTaskRunView({ ...child, pipelineChildren: [] }, { nowMs });
+      return {
+        taskType: view.taskType || getTaskType(child),
+        runId: String(child.runId || child.id || "").trim(),
+        status: view.status || "unknown",
+        statusLabel: view.statusLabel || String(child.displayStatus || child.status || "unknown"),
+        startedAt: String(child.startedAt || "").trim(),
+        finishedAt: String(child.finishedAt || "").trim(),
+        summaryCounts: compactPrimitiveMap(getSummary(child), TASK_RUN_SUMMARY_COUNT_KEYS),
+        diagnosticHints: Array.isArray(view.diagnosticHints)
+          ? view.diagnosticHints.map(hint => trimDiagnosticText(hint, 160)).filter(Boolean).slice(0, 3)
+          : []
+      };
+    })
+    .filter(Boolean)
+    .slice(0, DIAGNOSTIC_LIST_LIMIT);
+}
+
 export function buildTaskRunDiagnostics(row, {
   rowArea = "unknown",
   nowMs = Date.now(),
@@ -545,29 +710,7 @@ export function buildTaskRunDiagnostics(row, {
   const view = runView && typeof runView === "object" && !Array.isArray(runView)
     ? runView
     : buildTaskRunView(safeRow, { nowMs });
-  const summaryCounts = compactPrimitiveMap(safeRow.summary, [
-    "outputCount",
-    "sourceCount",
-    "successfulSources",
-    "failedSources",
-    "okWithWarningSources",
-    "queuedCandidateCount",
-    "failedProbeCount",
-    "foundEndpointCount",
-    "generatedCandidateCount",
-    "survivedDedupeCandidateCount",
-    "probedCandidateCount",
-    "discoverableButDeferredCount",
-    "currentStageKey",
-    "stageIndex",
-    "stageTotal",
-    "completedStageCount",
-    "activeCount",
-    "pendingCount",
-    "rejectedCount",
-    "action",
-    "error"
-  ]);
+  const summaryCounts = compactPrimitiveMap(safeRow.summary, TASK_RUN_SUMMARY_COUNT_KEYS);
   const timing = {
     startedAt: String(safeRow.startedAt || "").trim(),
     finishedAt: String(safeRow.finishedAt || "").trim(),
@@ -608,6 +751,7 @@ export function buildTaskRunDiagnostics(row, {
     remediationHint: trimDiagnosticText(view.remediationHint || ""),
     diagnosticHints,
     summaryCounts,
+    relatedRuns: buildRelatedRunDiagnostics(safeRow, nowMs),
     workItemExamples,
     eventExamples
   };
@@ -623,29 +767,7 @@ export function buildTaskRunAnalysis(row, {
     ? runView
     : buildTaskRunView(safeRow, { nowMs });
   const summary = getSummary(safeRow);
-  const summaryCounts = compactPrimitiveMap(summary, [
-    "outputCount",
-    "sourceCount",
-    "successfulSources",
-    "failedSources",
-    "okWithWarningSources",
-    "queuedCandidateCount",
-    "failedProbeCount",
-    "foundEndpointCount",
-    "generatedCandidateCount",
-    "survivedDedupeCandidateCount",
-    "probedCandidateCount",
-    "discoverableButDeferredCount",
-    "currentStageKey",
-    "stageIndex",
-    "stageTotal",
-    "completedStageCount",
-    "activeCount",
-    "pendingCount",
-    "rejectedCount",
-    "action",
-    "error"
-  ]);
+  const summaryCounts = compactPrimitiveMap(summary, TASK_RUN_SUMMARY_COUNT_KEYS);
   const diagnosticHints = Array.isArray(view.diagnosticHints)
     ? view.diagnosticHints.map(hint => trimDiagnosticText(hint, 160)).filter(Boolean).slice(0, DIAGNOSTIC_LIST_LIMIT)
     : [];
@@ -689,6 +811,7 @@ export function buildTaskRunAnalysis(row, {
     remediationHint: trimDiagnosticText(view.remediationHint || ""),
     diagnosticHints,
     summaryCounts,
+    relatedRuns: buildRelatedRunDiagnostics(safeRow, nowMs),
     slowExamples,
     workItemExamples,
     eventExamples,

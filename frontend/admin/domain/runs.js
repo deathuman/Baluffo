@@ -1,10 +1,16 @@
 import { getTaskStateRows } from "../../shared/live-task.js";
 import { normalizeTaskProgressPayload } from "../../shared/task-progress.js";
 
-function parseRunTimestampMs(row) {
+function parseRunStartedTimestampMs(row) {
   const raw = String(row?.startedAt || row?.finishedAt || "").trim();
   const parsed = Date.parse(raw);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function parseCompletedRunTimestampMs(row) {
+  const finished = Date.parse(String(row?.finishedAt || "").trim());
+  if (Number.isFinite(finished)) return finished;
+  return parseRunStartedTimestampMs(row);
 }
 
 function normalizeRunStatus(value) {
@@ -32,6 +38,55 @@ function toOpsRunRow(row, nowMs) {
     elapsedMs,
     displayStatus: status
   };
+}
+
+const PIPELINE_CHILD_STAGE_ORDER = {
+  discovery: 0,
+  fetch: 1,
+  sync: 2
+};
+
+function pipelineChildSortValue(row) {
+  const type = String(row?.taskType || row?.type || "").trim().toLowerCase();
+  return PIPELINE_CHILD_STAGE_ORDER[type] ?? 99;
+}
+
+function parsePipelineChildTimestampMs(row) {
+  const finished = Date.parse(String(row?.finishedAt || "").trim());
+  if (Number.isFinite(finished)) return finished;
+  return parseRunStartedTimestampMs(row);
+}
+
+function buildPipelineChildrenByParent(rows, nowMs) {
+  const childrenByParent = new Map();
+  rows.forEach(row => {
+    const parentTaskType = String(row?.parentTaskType || "").trim().toLowerCase();
+    const parentRunId = String(row?.parentRunId || "").trim();
+    const type = String(row?.taskType || row?.type || "").trim().toLowerCase();
+    if (parentTaskType !== "pipeline" || !parentRunId || !type || type === "pipeline") return;
+    const child = row?.displayStatus ? row : toOpsRunRow(row, nowMs);
+    const children = childrenByParent.get(parentRunId) || [];
+    children.push(child);
+    childrenByParent.set(parentRunId, children);
+  });
+  childrenByParent.forEach(children => {
+    children.sort((a, b) => {
+      const stageDelta = pipelineChildSortValue(a) - pipelineChildSortValue(b);
+      if (stageDelta !== 0) return stageDelta;
+      return parsePipelineChildTimestampMs(b) - parsePipelineChildTimestampMs(a);
+    });
+  });
+  return childrenByParent;
+}
+
+function attachPipelineChildren(rows, sourceRows, nowMs) {
+  const childrenByParent = buildPipelineChildrenByParent(sourceRows, nowMs);
+  return rows.map(row => {
+    const type = String(row?.taskType || row?.type || "").trim().toLowerCase();
+    const runId = String(row?.runId || row?.id || "").trim();
+    const children = type === "pipeline" && runId ? childrenByParent.get(runId) : null;
+    return children?.length ? { ...row, pipelineChildren: children } : row;
+  });
 }
 
 function normalizeCurrentTaskStateRow(row, nowMs = Date.now()) {
@@ -110,13 +165,13 @@ export function normalizeOpsRuns(runs, nowMs = Date.now()) {
       dedupedRows[existingIndex] = row;
       return;
     }
-    if (existingLive === nextLive && parseRunTimestampMs(row) >= parseRunTimestampMs(existing)) {
+    if (existingLive === nextLive && parseRunStartedTimestampMs(row) >= parseRunStartedTimestampMs(existing)) {
       dedupedRows[existingIndex] = row;
     }
   });
-  const sorted = [...dedupedRows].sort((a, b) => parseRunTimestampMs(b) - parseRunTimestampMs(a));
+  const liveSorted = [...dedupedRows].sort((a, b) => parseRunStartedTimestampMs(b) - parseRunStartedTimestampMs(a));
   const latestLiveByType = new Map();
-  sorted.forEach(row => {
+  liveSorted.forEach(row => {
     if (!isRunLive(row)) return;
     const type = String(row?.type || "").trim().toLowerCase();
     if (!type || latestLiveByType.has(type)) return;
@@ -124,22 +179,25 @@ export function normalizeOpsRuns(runs, nowMs = Date.now()) {
   });
 
   const currentRows = Array.from(latestLiveByType.values())
-    .sort((a, b) => parseRunTimestampMs(b) - parseRunTimestampMs(a));
+    .sort((a, b) => parseRunStartedTimestampMs(b) - parseRunStartedTimestampMs(a));
 
-  const completedRows = sorted
+  const completedRows = [...dedupedRows]
     .filter(row => !isRunLive(row) && isTerminalHistoryRow(row))
+    .sort((a, b) => parseCompletedRunTimestampMs(b) - parseCompletedRunTimestampMs(a))
     .map(row => toOpsRunRow(row, nowMs));
 
-  const visibleCompletedRows = completedRows.slice(0, 2);
-  const olderCompletedRows = completedRows.slice(2);
-  const hasLiveRuns = currentRows.some(row => Boolean(row?.isLive));
-  const liveTypes = currentRows
+  const currentRowsWithChildren = attachPipelineChildren(currentRows, dedupedRows, nowMs);
+  const completedRowsWithChildren = attachPipelineChildren(completedRows, dedupedRows, nowMs);
+  const visibleCompletedRows = completedRowsWithChildren.slice(0, 2);
+  const olderCompletedRows = completedRowsWithChildren.slice(2);
+  const hasLiveRuns = currentRowsWithChildren.some(row => Boolean(row?.isLive));
+  const liveTypes = currentRowsWithChildren
     .filter(row => Boolean(row?.isLive))
     .map(row => String(row?.type || "").toLowerCase())
     .filter(Boolean);
 
   return {
-    currentRows,
+    currentRows: currentRowsWithChildren,
     visibleCompletedRows,
     olderCompletedRows,
     hasLiveRuns,
@@ -158,9 +216,14 @@ export function deriveAdminRunsModel(
   const normalizedCurrentRows = taskRows
     .map(row => normalizeCurrentTaskStateRow(row, nowMs))
     .filter(row => row && row.isLive);
+  const currentRowsWithChildren = attachPipelineChildren(
+    normalizedCurrentRows,
+    normalizedCurrentRows,
+    nowMs
+  );
   const currentByType = new Map();
-  normalizedCurrentRows
-    .sort((a, b) => parseRunTimestampMs(b) - parseRunTimestampMs(a))
+  currentRowsWithChildren
+    .sort((a, b) => parseRunStartedTimestampMs(b) - parseRunStartedTimestampMs(a))
     .forEach(row => {
       const taskType = String(row?.taskType || row?.type || "").trim().toLowerCase();
       if (!taskType || currentByType.has(taskType)) return;

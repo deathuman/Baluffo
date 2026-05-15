@@ -8,6 +8,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from src.bridge.ops_live_payload import build_pipeline_task_progress
+
 
 @dataclass
 class PipelineRuntime:
@@ -92,13 +94,17 @@ class PipelineService:
             "label": str(label or ""),
         }
 
+    @staticmethod
+    def _pipeline_lifecycle_progress(status: dict[str, Any]) -> dict[str, Any]:
+        return build_pipeline_task_progress(status)
+
     def _mark_stage(
         self, *, stage: str, current_step: int, total_steps: int, label: str, error: str = ""
     ) -> None:
         with self._lock:
             self._status["stage"] = str(stage or "unknown")
             self._status["progress"] = self._pipeline_progress(current_step, total_steps, label)
-            progress = dict(self._status.get("progress") or {})
+            progress = self._pipeline_lifecycle_progress(dict(self._status))
             run_id = str(self._status.get("runId") or "")
             if error:
                 self._status["error"] = str(error)
@@ -133,6 +139,7 @@ class PipelineService:
                 }
             )
             finished_at = str(self._status.get("finishedAt") or "")
+            progress = self._pipeline_lifecycle_progress(dict(self._status))
             if run_id:
                 if callable(self._fail_lifecycle_run) and status == "error":
                     self._fail_lifecycle_run(
@@ -147,7 +154,7 @@ class PipelineService:
                             "finalOutputCount": int(final_output_count or 0),
                             "updatesFound": bool(updates_found),
                         },
-                        progress=dict(self._status.get("progress") or {}),
+                        progress=progress,
                     )
                 elif callable(self._finish_lifecycle_run):
                     self._finish_lifecycle_run(
@@ -161,7 +168,7 @@ class PipelineService:
                             "finalOutputCount": int(final_output_count or 0),
                             "updatesFound": bool(updates_found),
                         },
-                        progress=dict(self._status.get("progress") or {}),
+                        progress=progress,
                     )
             self._runtime.active_run_id = ""
 
@@ -459,7 +466,7 @@ class PipelineService:
         with self._lock:
             run_id = str(self._status.get("runId") or "").strip()
             stage = str(self._status.get("stage") or "running").strip() or "running"
-            progress = dict(self._status.get("progress") or {})
+            progress = self._pipeline_lifecycle_progress(dict(self._status))
         if run_id and callable(self._heartbeat_lifecycle_run):
             self._heartbeat_lifecycle_run(
                 run_id,
@@ -838,7 +845,7 @@ class PipelineService:
                     started_at=started_at,
                     stage="starting",
                     owner_kind="pipeline",
-                    progress=dict(self._status.get("progress") or {}),
+                    progress=self._pipeline_lifecycle_progress(dict(self._status)),
                     summary={
                         "baselineOutputCount": int(baseline_output_count),
                         "jobsPageLoadedCount": int(max(0, jobs_page_loaded_count)),
