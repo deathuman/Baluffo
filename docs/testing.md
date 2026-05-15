@@ -5,7 +5,7 @@
 > - **Canonical for:** test commands, targeted test routing, and fixture references
 > - **Not canonical for:** runtime architecture or data contracts
 > - **Then inspect:** the nearest `tests/` module for the subsystem you changed
-> - **Last updated:** 2026-04-26
+> - **Last updated:** 2026-05-15
 
 This document owns the verification matrix for Baluffo. Keep build, test, and fixture guidance here instead of repeating command tables in routing docs.
 
@@ -254,6 +254,12 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
   - the tracked run reaches a terminal non-error state,
   - no backend `error` payload is surfaced after startup.
 - This lane uses a smoke-only stub-success pipeline mode so it stays deterministic and bounded while still exercising the real `PipelineService` worker path.
+- On Windows CI, bridge requests can briefly fail with loopback errors such as `ECONNREFUSED` while the packaged runtime is settling after startup. Bounded retry is acceptable, but a failure after the retry window should be treated as a bridge/runtime failure and diagnosed from the packaged smoke report plus bridge stdout/stderr artifacts.
+
+## Packaged Smoke CI Diagnostics
+
+- When a packaged smoke lane fails in GitHub Actions, download the run artifacts and inspect the scenario report JSON before relying on truncated console logs.
+- Failure summaries must be safe for non-UTF-8 Windows consoles. If Playwright output contains Unicode and the Python smoke wrapper raises `UnicodeEncodeError`, fix the diagnostic printer first because it may be hiding the real packaged runtime failure.
 
 ## Admin Startup Packaged Smoke Contract
 

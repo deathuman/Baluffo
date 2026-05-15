@@ -219,6 +219,7 @@ Before any release:
 2. Run the canonical release preflight on the exact commit you plan to push or tag:
    - `npm run release:preflight`
    This includes the pre-commit `gitleaks` scan through the existing lint lane.
+   Local preflight does not fully exercise GitHub secret-backed packaged sync config generation unless a valid non-secret test PEM path or env value is provided for that run. Treat packaged sync private-key handling as uncovered until the local lane or the release CI lane has executed that path.
 3. If you need to debug a failing lane individually, rerun the underlying command directly:
    - `npm run lint:precommit`
    - `npm run test:py:extended`
@@ -229,6 +230,10 @@ Before any release:
    - `npm run test:frontend:packaged:orphan-reclaim-rehearsal`
    - `npm run test:frontend:packaged:browser-job-rehearsal`
    - `npm run test:frontend:packaged:jobs-pipeline`
+   For CI release failures, inspect artifacts before inferring root cause:
+   - `gh run view <run-id> --log-failed`
+   - `gh run download <run-id> --dir .tmp/release-run-<run-id>`
+   - Inspect the packaged smoke report JSON first when a packaged desktop lane fails.
 4. Validate any declared migrations and rollback behavior.
 5. Rehearse the release on a staging machine before publish.
 
@@ -286,6 +291,14 @@ For the canonical startup measurement architecture and the preferred `perf:start
 5. If sync credentials are packaged, confirm the packaged runtime still resolves the expected sync config and smoke remains green.
 
 ### Post-Release / Incident Checks
+
+If a tagged release workflow fails:
+
+1. Inspect failed logs and downloaded artifacts before changing code.
+2. Confirm whether GitHub release assets, notes, or manifests were published.
+3. Do not move, delete, or recreate the release tag without explicit user approval.
+4. If tag movement is approved, recreate the annotated tag on the fixed release commit and force-push only that tag.
+5. Watch the fresh release workflow and re-check assets, release notes, manifest publication, and rollback availability.
 
 After release:
 

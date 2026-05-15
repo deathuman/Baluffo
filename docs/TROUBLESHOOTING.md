@@ -5,7 +5,7 @@
 > - **Canonical for:** common issue triage steps, quick diagnostics, and known recovery paths
 > - **Not canonical for:** subsystem ownership, API contracts, or release policy
 > - **Then inspect:** [`architecture-ai-map.md`](architecture-ai-map.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`testing.md`](testing.md), and the owning runtime docs for the affected subsystem
-> - **Last updated:** 2026-04-25
+> - **Last updated:** 2026-05-15
 
 ---
 
@@ -226,6 +226,15 @@ python -c "from src.bridge.source_check_api import trigger_source_check; print(t
 | current.txt valid | Check `app/current.txt` points to valid version |
 | Permissions | Ensure scripts are not blocked by security policy |
 
+### Packaged sync private-key validation fails during release build
+
+| Check | Action |
+|-------|--------|
+| Failure text mentions packaged sync private key | Inspect the failing `scripts/build_ship_bundle.py` path before changing sync runtime behavior |
+| Import or helper mismatch | Confirm the build script validates PEM data through `src/source_sync_crypto.py`, not a broad composition-root import |
+| Local preflight passed but CI failed | Reproduce with a valid non-secret test PEM path or env value so the secret-backed generation path is actually exercised |
+| Coverage gap | Add or inspect focused coverage near `tests/test_build_ship_bundle_import_closure.py` before loosening validation |
+
 ### Build fails
 
 ```powershell
@@ -260,6 +269,23 @@ npm run build:frontend-runtime-config
 set PLAYWRIGHT_PYTHON=py
 npm run test:smoke
 ```
+
+### Packaged Jobs pipeline smoke gets `ECONNREFUSED`
+
+| Check | Action |
+|-------|--------|
+| Endpoint | Confirm the refusal is for `/tasks/run-jobs-pipeline-status` on the packaged bridge port |
+| Smoke report | Download and inspect `packaged-desktop-smoke-report.json` or the lane-specific report artifact before relying on console output |
+| Transient readiness | If retries later succeed, treat it as startup settling; if the retry window expires, inspect bridge stdout/stderr and runtime exit status |
+| Product signal | Check whether the backend pipeline reached `stage=error` or emitted a non-empty `error` payload after startup |
+
+### Packaged smoke failure summary raises `UnicodeEncodeError`
+
+| Check | Action |
+|-------|--------|
+| Console encoding | Treat Windows `cp1252` or other non-UTF-8 console failures as diagnostic failures, not product proof |
+| Masked root cause | Fix or use the console-safe failure printer before classifying the Playwright or packaged runtime error |
+| Artifacts | Download the packaged smoke report and stdout/stderr files; they usually contain the real failure that console printing hid |
 
 ### Temp directory errors (Windows)
 
