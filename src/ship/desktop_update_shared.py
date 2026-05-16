@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import ctypes
 import hashlib
 import json
 import ssl
+import sys
 from collections.abc import Callable
+from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -368,6 +371,31 @@ def read_desktop_session_state(session_root: Path) -> dict[str, Any]:
     return _as_dict(deps.read_json(Path(session_root) / "desktop-session.json", {}))
 
 
+def _pid_is_running_windows(pid: int) -> bool:
+    process_query_limited_information = 0x1000
+    still_active = 259
+    try:
+        handle = ctypes.windll.kernel32.OpenProcess(
+            process_query_limited_information,
+            False,
+            int(pid),
+        )
+        if not handle:
+            return False
+        exit_code = wintypes.DWORD()
+        try:
+            if not ctypes.windll.kernel32.GetExitCodeProcess(
+                handle,
+                ctypes.byref(exit_code),
+            ):
+                return False
+            return int(exit_code.value) == still_active
+        finally:
+            ctypes.windll.kernel32.CloseHandle(handle)
+    except (AttributeError, OSError, TypeError, ValueError):
+        return False
+
+
 def pid_is_running(pid: int) -> bool:
     deps = _root()
     pid = int(pid or 0)
@@ -379,6 +407,8 @@ def pid_is_running(pid: int) -> bool:
             return bool(process.is_running()) and process.status() != deps.psutil.STATUS_ZOMBIE
         except Exception:
             return False
+    if sys.platform == "win32":
+        return _pid_is_running_windows(pid)
     try:
         deps.os.kill(pid, 0)
     except OSError:
@@ -484,6 +514,7 @@ class DesktopUpdatePaths:
     rollback_root: Path
     success_marker_path: Path
     handoff_request_path: Path
+    handoff_diagnostics_path: Path
     helper_stdout_log_path: Path
     helper_stderr_log_path: Path
     helper_diagnostics_log_path: Path
@@ -507,6 +538,7 @@ class DesktopUpdatePaths:
             rollback_root=updater_dir / "rollback",
             success_marker_path=updater_dir / deps.SUCCESS_MARKER_FILE,
             handoff_request_path=updater_dir / deps.HANDOFF_REQUEST_FILE,
+            handoff_diagnostics_path=updater_dir / deps.HANDOFF_DIAGNOSTICS_FILE,
             helper_stdout_log_path=updater_dir / deps.HELPER_STDOUT_LOG_FILE,
             helper_stderr_log_path=updater_dir / deps.HELPER_STDERR_LOG_FILE,
             helper_diagnostics_log_path=updater_dir / deps.HELPER_DIAGNOSTICS_LOG_FILE,

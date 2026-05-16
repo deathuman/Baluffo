@@ -5,18 +5,23 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import os
 import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
+from zipfile import ZIP_DEFLATED, ZipFile
 
 ROOT = Path(__file__).resolve().parents[1]
 DIST_DIR = ROOT / "dist" / "baluffo-portable"
 LATEST_PORTABLE_DIR = ROOT / "_out" / "latest" / "build" / "portable"
 DEFAULT_EXE_NAME = "Baluffo"
 DEFAULT_ICON_PATH = ROOT / "favicon.ico"
+PLAYWRIGHT_BROWSER_NAME = "chromium-headless-shell"
+PLAYWRIGHT_BROWSER_CACHE_PREFIX = "chromium_headless_shell"
+PLAYWRIGHT_BROWSER_EXE_NAME = "chrome-headless-shell.exe"
 OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES = tuple(
     package_name
     for package_name in ("certifi",)
@@ -156,22 +161,65 @@ def _playwright_browser_cache_candidates() -> list[Path]:
     return out
 
 
-def _has_chromium_headless_shell(cache_dir: Path) -> bool:
+def _playwright_package_dir(output_dir: Path) -> Path:
+    return output_dir / "_internal" / "playwright" / "driver" / "package"
+
+
+def _required_playwright_browser_cache_name(package_dir: Path) -> str:
+    browsers_json = package_dir / "browsers.json"
+    if not browsers_json.is_file():
+        raise RuntimeError(f"Packaged Playwright browsers.json missing: {browsers_json}")
+    try:
+        payload = json.loads(browsers_json.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(
+            f"Could not read packaged Playwright browsers.json: {browsers_json}"
+        ) from exc
+    browsers = payload.get("browsers") if isinstance(payload, dict) else None
+    if not isinstance(browsers, list):
+        raise RuntimeError(
+            f"Packaged Playwright browsers.json has no browsers list: {browsers_json}"
+        )
+    for browser in browsers:
+        if not isinstance(browser, dict) or browser.get("name") != PLAYWRIGHT_BROWSER_NAME:
+            continue
+        revision = str(browser.get("revision") or "").strip()
+        if not revision:
+            raise RuntimeError(
+                f"Packaged Playwright {PLAYWRIGHT_BROWSER_NAME} entry has no revision: "
+                f"{browsers_json}"
+            )
+        return f"{PLAYWRIGHT_BROWSER_CACHE_PREFIX}-{revision}"
+    raise RuntimeError(
+        f"Packaged Playwright browsers.json has no {PLAYWRIGHT_BROWSER_NAME} entry: {browsers_json}"
+    )
+
+
+def _has_chromium_headless_shell(
+    cache_dir: Path, *, required_browser_cache_name: str | None = None
+) -> bool:
     if not cache_dir.is_dir():
         return False
-    for child in cache_dir.iterdir():
-        if not child.is_dir() or not child.name.startswith("chromium_headless_shell-"):
-            continue
-        if any(child.rglob("chrome-headless-shell.exe")):
+    candidates = (
+        [cache_dir / required_browser_cache_name]
+        if required_browser_cache_name
+        else [
+            child
+            for child in cache_dir.iterdir()
+            if child.is_dir() and child.name.startswith(f"{PLAYWRIGHT_BROWSER_CACHE_PREFIX}-")
+        ]
+    )
+    for child in candidates:
+        if child.is_dir() and any(child.rglob(PLAYWRIGHT_BROWSER_EXE_NAME)):
             return True
     return False
 
 
-def resolve_playwright_browser_cache() -> Path | None:
-    if importlib.util.find_spec("playwright") is None:
-        return None
+def resolve_playwright_browser_cache(required_browser_cache_name: str | None = None) -> Path | None:
     for candidate in _playwright_browser_cache_candidates():
-        if _has_chromium_headless_shell(candidate):
+        if _has_chromium_headless_shell(
+            candidate, required_browser_cache_name=required_browser_cache_name
+        ):
             return candidate
     return None
 
@@ -179,39 +227,31 @@ def resolve_playwright_browser_cache() -> Path | None:
 def copy_playwright_browser_cache(
     output_dir: Path, *, source_cache: Path | None = None
 ) -> Path | None:
-    if importlib.util.find_spec("playwright") is None:
-        return None
+    package_dir = _playwright_package_dir(output_dir)
+    if not package_dir.is_dir():
+        raise RuntimeError(f"Packaged Playwright driver directory missing: {package_dir}")
+    required_browser_cache_name = _required_playwright_browser_cache_name(package_dir)
     cache = (
         Path(source_cache).expanduser().resolve()
         if source_cache
-        else resolve_playwright_browser_cache()
+        else resolve_playwright_browser_cache(required_browser_cache_name)
     )
-    if cache is None or not _has_chromium_headless_shell(cache):
+    if cache is None or not _has_chromium_headless_shell(
+        cache, required_browser_cache_name=required_browser_cache_name
+    ):
         searched = ", ".join(str(path) for path in _playwright_browser_cache_candidates())
         raise RuntimeError(
-            "Portable build requires installed Playwright Chromium Headless Shell browsers. "
-            f"Could not find chromium_headless_shell in: {searched}. "
+            "Portable build requires the packaged Playwright Chromium Headless Shell "
+            f"browser cache entry {required_browser_cache_name}. "
+            f"Could not find it in: {searched}. "
             "Run `python -m playwright install chromium` and rebuild."
         )
-    package_dir = output_dir / "_internal" / "playwright" / "driver" / "package"
-    if not package_dir.is_dir():
-        raise RuntimeError(f"Packaged Playwright driver directory missing: {package_dir}")
     target = package_dir / ".local-browsers"
     if target.exists():
         shutil.rmtree(target)
     target.mkdir(parents=True, exist_ok=True)
-    for item in cache.iterdir():
-        if (
-            item.name.startswith(".")
-            or item.name == "mcp-chrome"
-            or item.name.startswith("mcp-chrome-")
-        ):
-            continue
-        destination = target / item.name
-        if item.is_dir():
-            shutil.copytree(item, destination)
-        else:
-            shutil.copy2(item, destination)
+    shutil.copytree(cache / required_browser_cache_name, target / required_browser_cache_name)
+    validate_playwright_browser_payload(output_dir)
     return target
 
 
@@ -358,12 +398,46 @@ def run_helper_pyinstaller(output_dir: Path, *, icon_path: Path) -> Path:
 
 
 def create_zip(output_dir: Path, *, version: str) -> Path:
+    validate_playwright_browser_payload(output_dir)
     archive_base = output_dir.parent / f"{output_dir.name}-{version}"
-    archive_path = archive_base.with_suffix(".zip")
+    archive_path = archive_base.parent / f"{archive_base.name}.zip"
     if archive_path.exists():
         archive_path.unlink()
-    built = shutil.make_archive(str(archive_base), "zip", root_dir=str(output_dir))
-    return Path(built)
+    with ZipFile(archive_path, "w", compression=ZIP_DEFLATED, compresslevel=9) as zip_file:
+        for path in sorted(output_dir.rglob("*")):
+            rel = path.relative_to(output_dir).as_posix()
+            if path.is_dir():
+                zip_file.write(path, f"{rel}/")
+            else:
+                zip_file.write(path, rel)
+    return archive_path
+
+
+def validate_playwright_browser_payload(output_dir: Path) -> None:
+    package_dir = _playwright_package_dir(output_dir)
+    if not package_dir.is_dir():
+        return
+    required_browser_cache_name = _required_playwright_browser_cache_name(package_dir)
+    local_browsers = package_dir / ".local-browsers"
+    if not local_browsers.is_dir():
+        raise RuntimeError(f"Portable Playwright browser payload missing: {local_browsers}")
+    unexpected = sorted(
+        child.name
+        for child in local_browsers.iterdir()
+        if child.name != required_browser_cache_name
+    )
+    if unexpected:
+        raise RuntimeError(
+            "Portable Playwright browser payload must contain only "
+            f"{required_browser_cache_name}; found unexpected entries: {', '.join(unexpected)}"
+        )
+    if not _has_chromium_headless_shell(
+        local_browsers, required_browser_cache_name=required_browser_cache_name
+    ):
+        raise RuntimeError(
+            "Portable Playwright browser payload is missing "
+            f"{required_browser_cache_name}/{PLAYWRIGHT_BROWSER_EXE_NAME}"
+        )
 
 
 def mirror_latest_portable(output_dir: Path, latest_dir: Path = LATEST_PORTABLE_DIR) -> Path:

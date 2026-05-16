@@ -11,8 +11,10 @@ from src.jobs.common.taxonomy import (
     FailureBucket,
     ZeroKeptClassification,
     assess_zero_extract,
+    classification_context_from_source_detail,
     classify_zero_kept,
     failure_bucket_from_zero_extract_assessment,
+    has_explicit_empty_evidence,
 )
 from src.jobs.text_utils import clean_text, norm_text
 from src.shared.json_shapes import as_json_list, as_json_object
@@ -230,6 +232,54 @@ def _normalize_detail_item(item: dict[str, Any]) -> dict[str, Any]:
     return clean_item
 
 
+def _zero_kept_context(
+    normalized: dict[str, Any],
+    src: dict[str, Any],
+    classification: str,
+) -> ClassificationContext:
+    context_src = dict(src)
+    context_src.update(
+        {
+            "status": normalized["status"],
+            "error": normalized["error"],
+            "classification": classification,
+            "fetchedCount": normalized["fetchedCount"],
+        }
+    )
+    return classification_context_from_source_detail(context_src)
+
+
+def _clear_unsupported_empty_evidence_claims(
+    failure_bucket: str,
+    zk_classification: str,
+    context: ClassificationContext,
+) -> tuple[str, str]:
+    has_empty_evidence = has_explicit_empty_evidence(context)
+    if zk_classification == ZeroKeptClassification.LEGIT_EMPTY.value and not has_empty_evidence:
+        zk_classification = ""
+    if failure_bucket == FailureBucket.NO_OPENINGS.value and not has_empty_evidence:
+        failure_bucket = ""
+    return failure_bucket, zk_classification
+
+
+def _infer_zero_kept_failure_bucket(
+    zk_classification: str,
+    context: ClassificationContext,
+) -> str:
+    assessment = assess_zero_extract(context)
+    inferred_bucket = failure_bucket_from_zero_extract_assessment(
+        assessment,
+        ZeroKeptClassification.LEGIT_EMPTY
+        if zk_classification == ZeroKeptClassification.LEGIT_EMPTY.value
+        else None,
+    )
+    if inferred_bucket != FailureBucket.UNKNOWN:
+        return inferred_bucket.value
+    if zk_classification == ZeroKeptClassification.LEGIT_EMPTY.value:
+        return FailureBucket.NO_OPENINGS.value
+    return FailureBucket.NEEDS_REVIEW.value
+
+
 def _apply_zero_kept_classification(
     normalized: dict[str, Any],
     src: dict[str, Any],
@@ -238,28 +288,16 @@ def _apply_zero_kept_classification(
     classification = _clean_label(src.get("classification"))
     zk_classification = _clean_label(src.get("zeroKeptClassification"))
     if normalized["keptCount"] == 0 and normalized["status"] != "excluded":
-        context = ClassificationContext(
-            status=normalized["status"],
-            error=normalized["error"],
-            classification=classification,
-            fetched_count=normalized["fetchedCount"],
+        context = _zero_kept_context(normalized, src, classification)
+        failure_bucket, zk_classification = _clear_unsupported_empty_evidence_claims(
+            failure_bucket,
+            zk_classification,
+            context,
         )
         if not zk_classification:
             zk_classification = classify_zero_kept(context).value
         if not failure_bucket:
-            assessment = assess_zero_extract(context)
-            inferred_bucket = failure_bucket_from_zero_extract_assessment(
-                assessment,
-                ZeroKeptClassification.LEGIT_EMPTY
-                if zk_classification == ZeroKeptClassification.LEGIT_EMPTY.value
-                else None,
-            )
-            if inferred_bucket != FailureBucket.UNKNOWN:
-                failure_bucket = inferred_bucket.value
-            elif zk_classification == ZeroKeptClassification.LEGIT_EMPTY.value:
-                failure_bucket = FailureBucket.NO_OPENINGS.value
-            else:
-                failure_bucket = FailureBucket.NEEDS_REVIEW.value
+            failure_bucket = _infer_zero_kept_failure_bucket(zk_classification, context)
     if failure_bucket:
         normalized["failureBucket"] = failure_bucket
     if classification:

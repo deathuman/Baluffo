@@ -86,6 +86,12 @@ from .pipeline_run_setup import canonicalize_existing_output_row
 OUTPUT_FIELDS = common_config.OUTPUT_FIELDS
 LIGHTWEIGHT_OUTPUT_FIELDS = common_config.LIGHTWEIGHT_OUTPUT_FIELDS
 
+_MISSING_COUNTRY_PLACEHOLDERS = {"", "unknown", "n/a", "na", "none", "null"}
+
+
+def _is_missing_country_placeholder(value: Any) -> bool:
+    return norm_text(value) in _MISSING_COUNTRY_PLACEHOLDERS
+
 
 def _as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
@@ -99,6 +105,8 @@ def _apply_final_location_quality_guardrail(rows: list[dict[str, Any]]) -> dict[
         if not isinstance(row, dict):
             continue
         for field_name in ("city", "country"):
+            if field_name == "country" and _is_missing_country_placeholder(row.get(field_name)):
+                continue
             value, reason = sanitize_location_text(row.get(field_name), field_name=field_name)
             if not reason:
                 continue

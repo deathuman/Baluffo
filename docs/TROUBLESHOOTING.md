@@ -5,7 +5,7 @@
 > - **Canonical for:** common issue triage steps, quick diagnostics, and known recovery paths
 > - **Not canonical for:** subsystem ownership, API contracts, or release policy
 > - **Then inspect:** [`architecture-ai-map.md`](architecture-ai-map.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`testing.md`](testing.md), and the owning runtime docs for the affected subsystem
-> - **Last updated:** 2026-05-15
+> - **Last updated:** 2026-05-16
 
 ---
 
@@ -215,8 +215,13 @@ python -c "from src.bridge.source_check_api import trigger_source_check; print(t
 |-------|--------|
 | Failed background download | Open the updater panel again and confirm whether it now shows the persisted error with `Try download again` |
 | Persisted updater state | Inspect `ship\data\updater\install-state.json` for `downloadState`, `installState`, and `lastError` |
+| Handoff diagnostics | If the app reports that it could not confirm updater handoff, inspect `ship\data\updater\handoff-diagnostics.json`; it records non-secret verifier predicates such as PID liveness and session match |
 | Helper diagnostics | If install handoff starts, inspect `ship\data\updater\desktop-updater-helper.*.log` and `desktop-updater-helper.diagnostics.jsonl` |
 | Bad staged ZIP | Delete only the failed file under `ship\data\updater\downloads\` if it remains after a failed attempt, then retry the download |
+
+### Portable update from `v0.1.33` reports `install_handoff_unconfirmed`
+
+`v0.1.33` can falsely reject a live Windows launcher during install handoff when the packaged runtime lacks optional `psutil`. A target ZIP cannot repair that already-installed source-side checker. Close Baluffo, extract a fixed portable release such as `v0.2.01`, preserve/copy the old `ship\data\` into the new extracted folder, and start the new `Baluffo.exe`. Do not move or rewrite the published `v0.2.0` release tag to work around this.
 
 ### Ship bundle launcher fails
 

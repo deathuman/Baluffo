@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib as _contextlib
+import ctypes as _ctypes
 import os as _os
 import shutil as _shutil
 import ssl as _ssl
@@ -61,7 +62,7 @@ DESKTOP_UPDATE_SCHEMA_VERSION = 1
 DESKTOP_UPDATE_CHANNEL = "stable"
 DESKTOP_UPDATE_MANIFEST_ASSET = "baluffo-desktop-update-manifest.json"
 DESKTOP_UPDATE_HELPER_NAME = "BaluffoUpdater.exe"
-DESKTOP_UPDATER_VERSION = "2.0.0"
+DESKTOP_UPDATER_VERSION = "2.0.1"
 DEFAULT_RELEASE_CHECK_THROTTLE_SECONDS = 6 * 60 * 60
 DOWNLOAD_CHUNK_SIZE = 1024 * 256
 GITHUB_API_BASE = "https://api.github.com"
@@ -72,6 +73,7 @@ INSTALL_PLAN_FILE = "install-plan.json"
 MANIFEST_CACHE_FILE = "manifest-cache.json"
 SUCCESS_MARKER_FILE = "post-install-success.json"
 HANDOFF_REQUEST_FILE = "handoff-requested.json"
+HANDOFF_DIAGNOSTICS_FILE = "handoff-diagnostics.json"
 HELPER_STDOUT_LOG_FILE = "desktop-updater-helper.stdout.log"
 HELPER_STDERR_LOG_FILE = "desktop-updater-helper.stderr.log"
 HELPER_DIAGNOSTICS_LOG_FILE = "desktop-updater-helper.diagnostics.jsonl"
@@ -124,6 +126,7 @@ desktop_update_state_mod.root = sys.modules[__name__]
 desktop_update_service_mod.root = sys.modules[__name__]
 
 contextlib = _contextlib
+ctypes = _ctypes
 os = _os
 shutil = _shutil
 ssl = _ssl
@@ -192,11 +195,13 @@ save_status = desktop_update_state_mod.save_status
 updater_install_requested = desktop_update_state_mod.updater_install_requested
 clear_success_marker = desktop_update_state_mod.clear_success_marker
 clear_handoff_request = desktop_update_state_mod.clear_handoff_request
+clear_handoff_diagnostics = desktop_update_state_mod.clear_handoff_diagnostics
 clear_install_plan = desktop_update_state_mod.clear_install_plan
 clear_staged_helper = desktop_update_state_mod.clear_staged_helper
 helper_runtime_tmpdir = desktop_update_state_mod.helper_runtime_tmpdir
 launch_staged_update_helper = desktop_update_state_mod.launch_staged_update_helper
 write_success_marker = desktop_update_state_mod.write_success_marker
+write_handoff_diagnostics = desktop_update_state_mod.write_handoff_diagnostics
 read_cached_manifest = desktop_update_state_mod.read_cached_manifest
 _normalize_release_notes_payload = desktop_update_state_mod._normalize_release_notes_payload
 _cached_release_notes = desktop_update_state_mod._cached_release_notes
@@ -223,6 +228,7 @@ __all__ = [
     "DesktopUpdateService",
     "canonical_manifest_bytes",
     "clear_success_marker",
+    "clear_handoff_diagnostics",
     "compare_versions",
     "compute_sha256",
     "desktop_update_public_key_candidate_paths",
@@ -248,4 +254,5 @@ __all__ = [
     "verify_manifest_signature",
     "write_json_atomic",
     "write_success_marker",
+    "write_handoff_diagnostics",
 ]

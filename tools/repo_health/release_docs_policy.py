@@ -26,7 +26,8 @@ def test_release_docs_cover_the_current_public_release_line(repo_root: Path) -> 
     release_text = (docs_dir / "RELEASE.md").read_text(encoding="utf-8")
     app_version = get_app_version()
     top_release = _section(changelog_text, f"## [{app_version}]")
-    previous_release = _section(changelog_text, "## [0.1.1]")
+    release_0_2_0 = _section(changelog_text, "## [0.2.0]")
+    release_0_1_1 = _section(changelog_text, "## [0.1.1]")
     legacy_notes = _section(changelog_text, "## Legacy notes")
 
     assert "src/app_version.py" in release_text
@@ -42,17 +43,23 @@ def test_release_docs_cover_the_current_public_release_line(repo_root: Path) -> 
         heading in top_release for heading in ("### Added", "### Changed", "### Fixed", "### Notes")
     )
     assert "\n- " in top_release
-    assert "Runtime SQLite/WAL storage" in top_release
-    assert "Source-sync v3" in top_release
-    assert "gitleaks-based secret scanning" in top_release
-    assert "Desktop in-app update flow in the Jobs desktop UI" in previous_release
+    assert "Windows portable updater handoff" in top_release
+    assert "optional `psutil`" in top_release
+    assert "non-secret diagnostics" in top_release
+    assert "updater capability `2.0.1`" in top_release
+    assert "`chromium_headless_shell-*`" in top_release
+    assert "explicit visible empty-state evidence" in top_release
+    assert "Milan, Tel Aviv, and Frankfurt am Main" in top_release
+    assert "Runtime SQLite/WAL storage" in release_0_2_0
+    assert "Source-sync v3" in release_0_2_0
+    assert "gitleaks-based secret scanning" in release_0_2_0
+    assert "Desktop in-app update flow in the Jobs desktop UI" in release_0_1_1
     assert (
-        "Location normalization was consolidated into the canonical parsers path"
-        in previous_release
+        "Location normalization was consolidated into the canonical parsers path" in release_0_1_1
     )
     assert (
         "Closing the packaged desktop window now tears down the desktop session cleanly"
-        in previous_release
+        in release_0_1_1
     )
     assert "Desktop portable EXE with PyInstaller" not in legacy_notes
     assert "Ship bundle (zip-first) release channel" not in legacy_notes

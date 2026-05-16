@@ -194,6 +194,8 @@ class DesktopUpdateService:
     ) -> dict[str, Any]:
         deps = self._deps
         error = "Baluffo did not confirm the install handoff. Try install again."
+        with deps.contextlib.suppress(Exception):
+            deps.write_handoff_diagnostics(self.paths)
         deps.clear_handoff_request(self.paths)
         deps.clear_install_plan(self.paths)
         deps.clear_staged_helper(temp_helper)
@@ -559,6 +561,8 @@ class DesktopUpdateService:
                     error_code="install_start_failed",
                 )
             try:
+                deps.clear_success_marker(self.paths)
+                deps.clear_handoff_diagnostics(self.paths)
                 rollback_path = self.paths.rollback_root / (
                     f"{str(manifest.get('version') or '').strip()}-"
                     f"{deps.datetime.now(deps.UTC).strftime('%Y%m%d-%H%M%S')}"

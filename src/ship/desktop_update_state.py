@@ -199,6 +199,11 @@ def clear_handoff_request(paths: Any) -> None:
         paths.handoff_request_path.unlink()
 
 
+def clear_handoff_diagnostics(paths: Any) -> None:
+    with contextlib.suppress(OSError):
+        paths.handoff_diagnostics_path.unlink()
+
+
 def clear_install_plan(paths: Any) -> None:
     with contextlib.suppress(OSError):
         paths.install_plan_path.unlink()
@@ -262,6 +267,58 @@ def write_success_marker(
         "launcherToken": str(launcher_token or ""),
     }
     deps.write_json_atomic(paths.success_marker_path, payload)
+
+
+def write_handoff_diagnostics(paths: Any) -> dict[str, Any]:
+    deps = _root()
+    payload: dict[str, Any] = {
+        "writtenAt": deps.iso_now(),
+        "handoffRequestPresent": bool(paths.handoff_request_path.exists()),
+        "installPlanPresent": bool(paths.install_plan_path.exists()),
+        "installPlanValid": False,
+        "launcherPid": 0,
+        "launcherPidRunning": False,
+        "desktopSessionRoot": "",
+        "desktopSessionFilePresent": False,
+        "sessionLauncherPid": 0,
+        "launcherPidMatchesSession": False,
+        "launcherTokenMatchesSession": False,
+    }
+    try:
+        plan = deps.validate_install_plan(deps.read_json(paths.install_plan_path, {}))
+    except ValueError as exc:
+        payload["installPlanError"] = str(exc)
+        deps.write_json_atomic(paths.handoff_diagnostics_path, payload)
+        return payload
+    payload["installPlanValid"] = True
+    launcher_pid = _as_int(plan.get("launcherPid"))
+    launcher_token = str(plan.get("launcherToken") or "").strip()
+    session_root_raw = str(plan.get("desktopSessionRoot") or "").strip()
+    payload["launcherPid"] = launcher_pid
+    if launcher_pid > 0:
+        payload["launcherPidRunning"] = bool(deps.pid_is_running(launcher_pid))
+    if session_root_raw:
+        try:
+            session_root = deps._resolve_runtime_path(session_root_raw)
+        except (OSError, RuntimeError, ValueError) as exc:
+            payload["desktopSessionRoot"] = session_root_raw
+            payload["desktopSessionRootError"] = type(exc).__name__
+        else:
+            session_state_path = session_root / "desktop-session.json"
+            payload["desktopSessionRoot"] = str(session_root)
+            payload["desktopSessionFilePresent"] = bool(session_state_path.exists())
+            session_state = _as_dict(deps.read_desktop_session_state(session_root))
+            session_launcher_pid = _as_int(session_state.get("launcherPid"))
+            session_launcher_token = str(session_state.get("launcherToken") or "").strip()
+            payload["sessionLauncherPid"] = session_launcher_pid
+            payload["launcherPidMatchesSession"] = bool(
+                launcher_pid > 0 and session_launcher_pid == launcher_pid
+            )
+            payload["launcherTokenMatchesSession"] = bool(
+                launcher_token and session_launcher_token == launcher_token
+            )
+    deps.write_json_atomic(paths.handoff_diagnostics_path, payload)
+    return payload
 
 
 def read_cached_manifest(paths: Any) -> dict[str, Any]:

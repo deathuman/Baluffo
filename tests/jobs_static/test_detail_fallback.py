@@ -87,7 +87,9 @@ def test_job_page_gate_rejects_regular_pages_and_accepts_jobposting_jsonld() -> 
     assert reason == "jobposting_jsonld"
 
 
-def test_normalize_source_report_row_fills_zero_kept_label_residues() -> None:
+def test_normalize_source_report_row_keeps_zero_kept_residue_in_review_without_empty_evidence() -> (
+    None
+):
     row = jf.normalize_source_report_row(
         {
             "name": "static_source::zero_kept_residue",
@@ -101,8 +103,124 @@ def test_normalize_source_report_row_fills_zero_kept_label_residues() -> None:
             "error": "",
         }
     )
-    assert str(row.get("failureBucket") or "") == "no_openings"
+    assert str(row.get("failureBucket") or "") == "needs_review"
     assert str(row.get("classification") or "") == ""
+    assert str(row.get("zeroKeptClassification") or "") == "needs_review"
+
+
+def test_normalize_source_report_row_preserves_explicit_empty_confirmed_evidence() -> None:
+    row = jf.normalize_source_report_row(
+        {
+            "name": "static_source::empty_confirmed",
+            "status": "ok",
+            "adapter": "static",
+            "failureBucket": "",
+            "classification": "empty_confirmed",
+            "zeroKeptClassification": "",
+            "emptyConfirmed": True,
+            "extractorHint": "explicit_no_openings_marker",
+            "fetchedCount": 0,
+            "keptCount": 0,
+            "error": "",
+        }
+    )
+    assert str(row.get("failureBucket") or "") == "no_openings"
+    assert str(row.get("classification") or "") == "empty_confirmed"
+    assert str(row.get("zeroKeptClassification") or "") == "legit_empty"
+
+
+def test_normalize_source_report_row_downgrades_legacy_empty_without_evidence() -> None:
+    row = jf.normalize_source_report_row(
+        {
+            "name": "static_source::legacy_empty",
+            "status": "ok",
+            "adapter": "static",
+            "failureBucket": "no_openings",
+            "classification": "",
+            "zeroKeptClassification": "legit_empty",
+            "fetchedCount": 2,
+            "keptCount": 0,
+            "error": "",
+        }
+    )
+    assert str(row.get("failureBucket") or "") == "needs_review"
+    assert str(row.get("zeroKeptClassification") or "") == "needs_review"
+
+
+def test_normalize_source_report_row_marks_all_canonical_drops_needs_review() -> None:
+    row = jf.normalize_source_report_row(
+        {
+            "name": "personio_sources",
+            "status": "ok",
+            "adapter": "personio",
+            "failureBucket": "",
+            "classification": "",
+            "zeroKeptClassification": "",
+            "fetchedCount": 27,
+            "keptCount": 0,
+            "error": "",
+            "loss": {
+                "rawFetched": 27,
+                "canonicalDropped": 27,
+                "canonicalKept": 0,
+                "canonicalDropReasons": {"missing_job_link": 27},
+            },
+            "details": [
+                {
+                    "adapter": "personio",
+                    "name": "Stratosphere Games",
+                    "status": "ok",
+                    "fetchedCount": 2,
+                    "keptCount": 2,
+                },
+                {
+                    "adapter": "personio",
+                    "name": "Welevel",
+                    "status": "ok",
+                    "fetchedCount": 25,
+                    "keptCount": 25,
+                },
+            ],
+        }
+    )
+    assert str(row.get("failureBucket") or "") == "needs_review"
+    assert str(row.get("zeroKeptClassification") or "") == "needs_review"
+
+
+def test_normalize_source_report_row_all_empty_child_details_are_no_openings() -> None:
+    row = jf.normalize_source_report_row(
+        {
+            "name": "static_sources",
+            "status": "ok",
+            "adapter": "static",
+            "failureBucket": "",
+            "classification": "ok_no_jobs",
+            "zeroKeptClassification": "",
+            "fetchedCount": 0,
+            "keptCount": 0,
+            "error": "",
+            "details": [
+                {
+                    "adapter": "static",
+                    "name": "Studio A",
+                    "status": "ok",
+                    "fetchedCount": 0,
+                    "keptCount": 0,
+                    "classification": "empty_confirmed",
+                    "emptyConfirmed": True,
+                },
+                {
+                    "adapter": "static",
+                    "name": "Studio B",
+                    "status": "ok",
+                    "fetchedCount": 0,
+                    "keptCount": 0,
+                    "extractorHint": "explicit_no_openings_marker",
+                },
+            ],
+        }
+    )
+    assert str(row.get("failureBucket") or "") == "no_openings"
     assert str(row.get("zeroKeptClassification") or "") == "legit_empty"
 
 

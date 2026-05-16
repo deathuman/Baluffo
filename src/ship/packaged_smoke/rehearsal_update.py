@@ -53,6 +53,23 @@ def _inject_desktop_update_public_keys(portable_root: Path, public_keys: dict[st
         target.write_text(payload, encoding="utf-8")
 
 
+def _remove_optional_psutil_runtime(portable_root: Path) -> list[str]:
+    internal_dir = portable_root / "_internal"
+    removed: list[str] = []
+    if not internal_dir.exists():
+        return removed
+    for pattern in ("psutil", "psutil-*", "_psutil*.pyd"):
+        for candidate in internal_dir.glob(pattern):
+            if not candidate.exists():
+                continue
+            removed.append(candidate.relative_to(portable_root).as_posix())
+            if candidate.is_dir():
+                shutil.rmtree(candidate)
+            else:
+                candidate.unlink()
+    return removed
+
+
 def _seed_rehearsal_local_data(data_dir: Path) -> dict[str, Any]:
     deps = _root()
     store = deps.LocalDataStore(deps.LocalDataPaths.from_data_dir(data_dir))
@@ -388,6 +405,7 @@ def run_desktop_update_rehearsal(
     if install_root.exists():
         shutil.rmtree(install_root)
     shutil.copytree(portable_root, install_root)
+    source_psutil_removed = _remove_optional_psutil_runtime(install_root)
     install_exe = install_root / "Baluffo.exe"
     data_dir = install_root / "ship" / "data"
     seeded = deps._seed_rehearsal_local_data(data_dir)
@@ -584,6 +602,7 @@ def run_desktop_update_rehearsal(
                 "helperStdoutLog": str(paths.helper_stdout_log_path),
                 "helperStderrLog": str(paths.helper_stderr_log_path),
                 "helperDiagnosticsLog": str(paths.helper_diagnostics_log_path),
+                "sourcePsutilRemoved": source_psutil_removed,
             },
         }
     except Exception as exc:

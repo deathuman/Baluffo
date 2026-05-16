@@ -23,7 +23,7 @@ Represents a single job posting retrieved from the external sources.
 | `title` | `string` | The title of the job opening. |
 | `company` | `string` | The studio or employer name. |
 | `city` | `string` | The geographic city or empty if purely remote. |
-| `country` | `string` | The localized or ISO country name. |
+| `country` | `string` | The localized or ISO country name; `Unknown` is a missing-country placeholder, not contamination. |
 | `workType` | `string` | One of `Remote`, `Hybrid`, `Onsite`. |
 | `contractType` | `string` | One of `Full-time`, `Internship`, `Temporary`, `Unknown`. |
 | `jobLink` | `string` | The canonical URL to apply for the job. |
@@ -800,6 +800,12 @@ Runtime-only dynamic redundant-static rows may also include additive diagnostics
 `coveredByProviderSourceId`, `coveredByProviderAdapter`, `providerCoverageStatus`,
 `providerCoverageConsecutiveSuccesses`, `providerCoverageLatestKeptCount`, and
 `migrationSourceIdentity`. These diagnostics are not registry fields.
+
+`failureBucket="no_openings"` and `zeroKeptClassification="legit_empty"` require
+explicit empty-state evidence, such as `emptyConfirmed`, `classification="empty_confirmed"`,
+or an explicit no-openings extractor hint. A source with fetched/raw rows that all drop
+during canonicalization, for example because every row is missing `jobLink`, remains
+`needs_review` instead of being treated as a legitimate empty/no-openings source.
 
 ### Provider coverage validation
 

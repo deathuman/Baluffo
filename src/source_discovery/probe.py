@@ -15,6 +15,7 @@ from xml.etree import ElementTree as ET
 
 from src.jobs.adapters.parsers.json_payloads import parse_greenhouse_jobs_payload
 from src.jobs.adapters.parsers.provider_html import parse_jazzhr_jobs_html
+from src.jobs.common.no_openings import contains_no_openings_marker, visible_text_from_html
 from src.jobs.parsers import parse_jobpostings_from_html
 
 from .io_runtime import endpoint_url
@@ -56,9 +57,6 @@ _STATIC_DETAIL_QUERY_KEYS = frozenset(
         "requisition_id",
     }
 )
-_NO_OPENINGS_RE = re.compile(
-    r"(?i)\b(?:no|not currently|currently no)\s+(?:open\s+)?(?:jobs?|roles?|positions?|vacancies?|openings?)\b"
-)
 _HIDDEN_BLOCK_RE = re.compile(
     r"(?is)<(?P<tag>[a-z0-9]+)\b[^>]*"
     r"(?:hidden\b|aria-hidden\s*=\s*['\"]?true|display\s*:\s*none|visibility\s*:\s*hidden)"
@@ -92,9 +90,7 @@ class StaticProbeEvidence:
 
 
 def _html_text(html: str) -> str:
-    text = re.sub(r"(?is)<(script|style|template)\b.*?</\1>", " ", str(html or ""))
-    text = re.sub(r"(?is)<[^>]+>", " ", text)
-    return " ".join(unescape(text).split()).strip().lower()
+    return visible_text_from_html(html)
 
 
 def _visible_link_html(html: str) -> str:
@@ -235,8 +231,7 @@ def static_probe_evidence(text: str, base_url: str) -> StaticProbeEvidence:
             reason="result_count_label",
         )
 
-    page_text = _html_text(text)
-    no_openings = bool(_NO_OPENINGS_RE.search(page_text))
+    no_openings = contains_no_openings_marker(text)
     jobs = parse_jobpostings_from_html(
         text,
         base_url=base_url,

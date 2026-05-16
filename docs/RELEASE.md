@@ -188,6 +188,7 @@ Portable layout:
 - `ship\`: embedded ship bundle
 - `ship\data\`: runtime and user data
 - `ship\data\local-user-data\`: desktop-specific saved jobs, notes, activity, attachments, and profile data
+- `_internal\playwright\driver\package\.local-browsers\`: exactly one `chromium_headless_shell-<revision>` directory matching packaged Playwright `browsers.json`
 
 Runtime notes:
 
@@ -205,9 +206,12 @@ Portable desktop in-app update flow:
 - Background download failures must remain visible in the Jobs-page updater panel, using the persisted updater `lastError` and a retry download action instead of reverting to the generic available-update CTA.
 - The updater downloads the portable ZIP from the selected GitHub release and never overwrites `ship\data\` from the downloaded artifact.
 - Install handoff writes `install-plan.json`, copies `BaluffoUpdater.exe` to a temp path outside the install root, and closes the running app before the helper mutates the runtime.
+- Install handoff liveness checks must work without optional `psutil`; the Windows fallback uses process handles, not `os.kill(pid, 0)`.
+- Handoff failures before helper launch write `ship\data\updater\handoff-diagnostics.json` with non-secret verifier predicates.
 - The helper owns extraction, rollback snapshotting, optional migrations, target relaunch, and rollback-on-failure.
 - First-launch success requires desktop session state, `baluffo-bridge` health in desktop mode, `startupReady == true`, the target app version, and a fresh `ship\data\updater\post-install-success.json`.
 - The release workflow must publish the portable ZIP, ship recovery ZIP, desktop manifest, and release notes together for desktop in-app updates to work.
+- Releases that require the fixed source-side handoff checker must set `min_desktop_updater_version` to `2.0.1` or newer; do not move or replace an already published release tag to recover affected installs.
 
 ## Verification Checklist
 
@@ -259,6 +263,8 @@ Before any release:
    - `dist\baluffo-portable-<version>.zip` exists
    - `_out\latest\build\portable\Baluffo.exe` was refreshed from the same portable output
    - the embedded `ship\` bundle exists
+   - the embedded Playwright browser payload contains only the required `chromium_headless_shell-*` cache, not full Chromium, Firefox, WebKit, ffmpeg, winldd, or other local cache siblings
+   - the packaged updater rehearsal source runtime exercises install handoff with optional `psutil` removed
 3. Run packaged desktop smoke validation:
 
 ```powershell

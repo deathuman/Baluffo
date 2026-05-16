@@ -141,6 +141,7 @@ _CITY_LOCATION_ALLOWLIST = {
     "des moines",
     "dee why",
     "florham park",
+    "frankfurt am main",
     "george town",
     "hoogvliet rotterdam",
     "hong kong",
@@ -154,6 +155,7 @@ _CITY_LOCATION_ALLOWLIST = {
     "mountain view",
     "mountain home",
     "mercer island",
+    "milan",
     "milton keynes",
     "miami beach",
     "mammoth lakes",
@@ -190,6 +192,7 @@ _CITY_LOCATION_ALLOWLIST = {
     "sunshine coast",
     "stone mountain",
     "sankt ingbert",
+    "tel aviv",
     "temple terrace",
     "the hague",
     "thousand oaks",
@@ -756,6 +759,27 @@ def _classify_multi_city_words(token: str, words: list[str], alpha_words: list[s
     return ""
 
 
+def _is_preserved_city_location(token: str, normalized: str) -> bool:
+    if normalized in _CITY_REGION_DESCRIPTOR_ALLOWLIST:
+        return True
+    if _looks_like_pipe_joined_location_summary(token):
+        return True
+    if normalized in _REMOTEISH_LOCATION_TOKENS or _looks_like_country_token(token):
+        return True
+    return normalized in _CITY_LOCATION_ALLOWLIST
+
+
+def _classify_unopened_city_closer(token: str) -> str:
+    if not token.endswith((")", "]", "}")):
+        return ""
+    if any(opening in token for opening in ("(", "[", "{")):
+        return ""
+    stripped = token.rstrip(")]}")
+    if stripped and re.fullmatch(r"[A-Za-z??-??']+(?:\s+[A-Za-z??-??']+)*", stripped):
+        return "role_category"
+    return ""
+
+
 def classify_city_garbage(value: Any) -> str:
     token = clean_text(value)
     if not token:
@@ -763,16 +787,11 @@ def classify_city_garbage(value: Any) -> str:
     normalized = _normalized_location_name(token)
     words = _location_candidate_words(token)
     alpha_words = [word for word in words if any(char.isalpha() for char in word)]
-    if normalized in _CITY_REGION_DESCRIPTOR_ALLOWLIST:
+    if _is_preserved_city_location(token, normalized):
         return ""
-    if _looks_like_pipe_joined_location_summary(token):
-        return ""
-    if normalized in _REMOTEISH_LOCATION_TOKENS or _looks_like_country_token(token):
-        return ""
-    if token.endswith((")", "]", "}")) and not any(opening in token for opening in ("(", "[", "{")):
-        stripped = token.rstrip(")]}")
-        if stripped and re.fullmatch(r"[A-Za-z??-??']+(?:\s+[A-Za-z??-??']+)*", stripped):
-            return "role_category"
+    closer_result = _classify_unopened_city_closer(token)
+    if closer_result:
+        return closer_result
     for classifier in (
         lambda: _classify_chrome_or_label_noise(token, normalized),
         lambda: _classify_prose_or_role_noise(normalized),

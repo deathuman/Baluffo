@@ -26,11 +26,31 @@ from scripts.build_portable_exe import (
     parse_args,
     resolve_icon_path,
     resolve_playwright_browser_cache,
+    validate_playwright_browser_payload,
 )
 from src.app_version import APP_VERSION
 from tests.helpers.temp_paths import workspace_tmpdir
 
 pytestmark = pytest.mark.packaging
+
+
+def _write_playwright_browsers_json(package_dir: Path, *, revision: str = "1208") -> None:
+    package_dir.mkdir(parents=True, exist_ok=True)
+    (package_dir / "browsers.json").write_text(
+        json.dumps(
+            {
+                "browsers": [
+                    {
+                        "name": "chromium-headless-shell",
+                        "revision": revision,
+                        "installByDefault": True,
+                    },
+                    {"name": "chromium", "revision": revision, "installByDefault": True},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
 
 
 def test_portable_layout_wraps_ship_bundle_in_ship_folder() -> None:
@@ -90,6 +110,7 @@ def test_create_zip_packages_portable_folder() -> None:
         (output / "BaluffoUpdater.exe").write_text("helper", encoding="utf-8")
         archive = create_zip(output, version="1.0.0-test")
         assert archive.exists()
+        assert archive.name == "baluffo-portable-1.0.0-test.zip"
         with ZipFile(archive, "r") as handle:
             names = set(handle.namelist())
         assert "Baluffo.exe" in names
@@ -236,7 +257,7 @@ def test_portable_build_can_find_playwright_chromium_headless_shell_cache() -> N
         pytest.skip("playwright chromium headless shell cache not installed")
 
 
-def test_copy_playwright_browser_cache_embeds_local_browsers() -> None:
+def test_copy_playwright_browser_cache_embeds_only_required_headless_shell() -> None:
     with workspace_tmpdir("build-portable-playwright-cache") as tmp:
         root = Path(tmp)
         source = root / "ms-playwright"
@@ -248,23 +269,99 @@ def test_copy_playwright_browser_cache_embeds_local_browsers() -> None:
         )
         shell.parent.mkdir(parents=True, exist_ok=True)
         shell.write_text("shell", encoding="utf-8")
+        (source / "chromium-1208" / "chrome-win64").mkdir(parents=True)
+        (source / "chromium-1208" / "chrome-win64" / "chrome.exe").write_text(
+            "full chromium",
+            encoding="utf-8",
+        )
+        (source / "firefox-1509" / "firefox").mkdir(parents=True)
+        (source / "firefox-1509" / "firefox" / "firefox.exe").write_text(
+            "firefox",
+            encoding="utf-8",
+        )
+        (source / "webkit-2248").mkdir()
+        (source / "ffmpeg-1011").mkdir()
         (source / ".links").mkdir()
         (source / "mcp-chrome").mkdir()
         output = root / "portable"
         package_dir = output / "_internal" / "playwright" / "driver" / "package"
-        package_dir.mkdir(parents=True, exist_ok=True)
+        _write_playwright_browsers_json(package_dir)
 
         target = copy_playwright_browser_cache(output, source_cache=source)
 
         assert target == package_dir / ".local-browsers"
+        assert sorted(child.name for child in target.iterdir()) == ["chromium_headless_shell-1208"]
         assert (
             target
             / "chromium_headless_shell-1208"
             / "chrome-headless-shell-win64"
             / "chrome-headless-shell.exe"
         ).read_text(encoding="utf-8") == "shell"
+        assert not (target / "chromium-1208").exists()
+        assert not (target / "firefox-1509").exists()
+        assert not (target / "webkit-2248").exists()
+        assert not (target / "ffmpeg-1011").exists()
         assert not (target / ".links").exists()
         assert not (target / "mcp-chrome").exists()
+
+
+def test_copy_playwright_browser_cache_rejects_missing_required_headless_shell() -> None:
+    with workspace_tmpdir("build-portable-playwright-cache") as tmp:
+        root = Path(tmp)
+        source = root / "ms-playwright"
+        shell = (
+            source
+            / "chromium_headless_shell-9999"
+            / "chrome-headless-shell-win64"
+            / "chrome-headless-shell.exe"
+        )
+        shell.parent.mkdir(parents=True, exist_ok=True)
+        shell.write_text("wrong revision", encoding="utf-8")
+        package_dir = root / "portable" / "_internal" / "playwright" / "driver" / "package"
+        _write_playwright_browsers_json(package_dir, revision="1208")
+
+        with pytest.raises(RuntimeError, match="chromium_headless_shell-1208"):
+            copy_playwright_browser_cache(root / "portable", source_cache=source)
+
+
+def test_create_zip_rejects_extra_playwright_browser_payloads() -> None:
+    with workspace_tmpdir("build-portable-playwright-cache") as tmp:
+        root = Path(tmp)
+        output = root / "dist" / "baluffo-portable"
+        package_dir = output / "_internal" / "playwright" / "driver" / "package"
+        _write_playwright_browsers_json(package_dir)
+        required_shell = (
+            package_dir
+            / ".local-browsers"
+            / "chromium_headless_shell-1208"
+            / "chrome-headless-shell-win64"
+            / "chrome-headless-shell.exe"
+        )
+        required_shell.parent.mkdir(parents=True, exist_ok=True)
+        required_shell.write_text("shell", encoding="utf-8")
+        (package_dir / ".local-browsers" / "chromium-1208").mkdir()
+
+        with pytest.raises(RuntimeError, match="unexpected entries: chromium-1208"):
+            create_zip(output, version="1.0.0-test")
+
+
+def test_validate_playwright_browser_payload_accepts_only_required_headless_shell() -> None:
+    with workspace_tmpdir("build-portable-playwright-cache") as tmp:
+        root = Path(tmp)
+        output = root / "portable"
+        package_dir = output / "_internal" / "playwright" / "driver" / "package"
+        _write_playwright_browsers_json(package_dir)
+        required_shell = (
+            package_dir
+            / ".local-browsers"
+            / "chromium_headless_shell-1208"
+            / "chrome-headless-shell-win64"
+            / "chrome-headless-shell.exe"
+        )
+        required_shell.parent.mkdir(parents=True, exist_ok=True)
+        required_shell.write_text("shell", encoding="utf-8")
+
+        validate_playwright_browser_payload(output)
 
 
 def test_updater_helper_does_not_inherit_main_scrapy_test_exclusions() -> None:

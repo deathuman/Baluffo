@@ -13,6 +13,7 @@ from src.jobs.adapters.html_parsers import (
     iter_job_postings_from_jsonld,
     strip_html_text,
 )
+from src.jobs.common.no_openings import contains_no_openings_marker
 from src.jobs.text_utils import clean_text
 from src.scrapers import domain_profiles
 
@@ -186,17 +187,6 @@ _JOB_TITLE_CAMPAIGN_NOISE_PHRASES = (
     "explore internship and apprenticeship roles",
     "apprenticeship roles across exciting teams",
     "across exciting teams including",
-)
-
-_NO_OPENING_MARKERS = (
-    "no open positions",
-    "no open roles",
-    "no openings",
-    "no jobs available",
-    "no jobs found",
-    "0 results",
-    "we're not hiring",
-    "we are not hiring",
 )
 
 
@@ -568,10 +558,10 @@ def classify_job_page(
     body_text = _html_text(html_text)
     profile = _normalize_detail_profile(profile)
 
+    if contains_no_openings_marker(html_text):
+        return False, "no_openings"
     if _has_jsonld_jobposting(html_text):
         return True, "jobposting_jsonld"
-    if any(marker in _lower(html_text) for marker in _NO_OPENING_MARKERS):
-        return False, "no_openings"
 
     if _has_job_listing_anchor_evidence(html_text):
         return True, "job_listing_anchors"

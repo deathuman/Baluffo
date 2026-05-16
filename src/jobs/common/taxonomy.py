@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from enum import StrEnum
 
-from src.shared.json_shapes import as_json_object
+from src.shared.json_shapes import as_json_list, as_json_object
 
 
 class FailureBucket(StrEnum):
@@ -49,6 +49,12 @@ class ClassificationContext:
     detail_parse_empty_count: int = 0
     extractor_hint: str = ""
     signal_quality: str = "strong"
+    raw_fetched: int = 0
+    canonical_dropped: int = 0
+    canonical_kept: int = 0
+    child_detail_count: int = 0
+    child_empty_confirmed_count: int = 0
+    child_kept_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -220,6 +226,28 @@ def _has_empty_confirmed_signal(
         context.empty_confirmed
         or classification == "empty_confirmed"
         or hint in {"explicit_no_openings_marker", "empty_confirmed"}
+        or (
+            context.child_detail_count > 0
+            and context.child_empty_confirmed_count == context.child_detail_count
+            and context.child_kept_count == 0
+        )
+    )
+
+
+def has_explicit_empty_evidence(context: ClassificationContext) -> bool:
+    return _has_empty_confirmed_signal(
+        context,
+        _normalized_text(context.classification),
+        _normalized_text(context.extractor_hint),
+    )
+
+
+def has_all_rows_canonical_dropped(context: ClassificationContext) -> bool:
+    return (
+        context.raw_fetched > 0
+        and context.canonical_dropped > 0
+        and context.canonical_kept == 0
+        and context.canonical_dropped >= context.raw_fetched
     )
 
 
@@ -289,10 +317,11 @@ def _error_text_failure_bucket(error_lower: str) -> FailureBucket | None:
 
 
 def _status_classification_failure_bucket(
+    context: ClassificationContext,
     status: str,
     classification: str,
 ) -> FailureBucket | None:
-    if status == "ok" and classification in ("ok_no_jobs", "parser_stale"):
+    if status == "ok" and classification == "ok_no_jobs" and has_explicit_empty_evidence(context):
         return FailureBucket.NO_OPENINGS
     if classification in ("parse_error", "parser_stale"):
         return FailureBucket.PARSER_EMPTY
@@ -301,12 +330,28 @@ def _status_classification_failure_bucket(
     return None
 
 
+def _source_detail_has_empty_confirmed_signal(src: dict[str, object]) -> bool:
+    classification = _normalized_text(src.get("classification"))
+    hint = _normalized_text(src.get("extractorHint"))
+    return (
+        bool(src.get("emptyConfirmed"))
+        or classification == "empty_confirmed"
+        or hint
+        in {
+            "explicit_no_openings_marker",
+            "empty_confirmed",
+        }
+    )
+
+
 def classification_context_from_source_detail(
     source_detail: dict[str, object],
 ) -> ClassificationContext:
     src = as_json_object(source_detail)
     stats = as_json_object(src.get("stats"))
     loss = as_json_object(src.get("loss"))
+    details = [as_json_object(item) for item in as_json_list(src.get("details"))]
+    details = [item for item in details if item]
     http_status = _coerce_int(src.get("httpStatus")) or None
     fetched_count = _coerce_int(src.get("fetchedCount"))
     detail_pages_visited = _coerce_int(
@@ -319,6 +364,9 @@ def classification_context_from_source_detail(
     detail_parse_empty_count = _coerce_int(
         src.get("detailParseEmptyCount") or loss.get("staticDetailParseEmpty")
     )
+    raw_fetched = _coerce_int(loss.get("rawFetched"))
+    canonical_dropped = _coerce_int(loss.get("canonicalDropped"))
+    canonical_kept = _coerce_int(loss.get("canonicalKept"))
     return ClassificationContext(
         status=_normalized_text(src.get("status")),
         error=_normalized_text(src.get("error")),
@@ -339,6 +387,14 @@ def classification_context_from_source_detail(
         detail_parse_empty_count=detail_parse_empty_count,
         extractor_hint=_normalized_text(src.get("extractorHint")),
         signal_quality=_normalized_text(src.get("signalQuality")) or "strong",
+        raw_fetched=raw_fetched,
+        canonical_dropped=canonical_dropped,
+        canonical_kept=canonical_kept,
+        child_detail_count=len(details),
+        child_empty_confirmed_count=sum(
+            1 for detail in details if _source_detail_has_empty_confirmed_signal(detail)
+        ),
+        child_kept_count=sum(_coerce_int(detail.get("keptCount")) for detail in details),
     )
 
 
@@ -445,7 +501,7 @@ def map_error_to_failure_bucket(context: ClassificationContext) -> FailureBucket
     for bucket in (
         _classification_failure_bucket(classification),
         _error_text_failure_bucket(error_lower),
-        _status_classification_failure_bucket(status, classification),
+        _status_classification_failure_bucket(context, status, classification),
     ):
         if bucket is not None:
             return bucket
@@ -465,8 +521,8 @@ def classify_zero_kept(
     classification = _normalized_text(context.classification)
     if classification == "dead_listing_page":
         return ZeroKeptClassification.NEEDS_REVIEW
-    if context.fetched_count > 0:
-        return ZeroKeptClassification.LEGIT_EMPTY
+    if has_all_rows_canonical_dropped(context):
+        return ZeroKeptClassification.NEEDS_REVIEW
     assessment = assess_zero_extract(context)
     if status == "error" and (
         context.http_status in {401, 403, 404, 429, 500, 502, 503, 504}

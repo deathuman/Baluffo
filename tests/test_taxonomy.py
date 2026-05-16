@@ -48,8 +48,17 @@ class TestMapErrorToFailureBucket:
         assert map_error_to_failure_bucket(ctx) == FailureBucket.SITE_CHANGED
 
     def test_no_openings(self):
-        ctx = ClassificationContext(status="ok", error="", classification="ok_no_jobs")
+        ctx = ClassificationContext(
+            status="ok",
+            error="",
+            classification="ok_no_jobs",
+            empty_confirmed=True,
+        )
         assert map_error_to_failure_bucket(ctx) == FailureBucket.NO_OPENINGS
+
+    def test_ok_no_jobs_without_empty_evidence_is_unknown(self):
+        ctx = ClassificationContext(status="ok", error="", classification="ok_no_jobs")
+        assert map_error_to_failure_bucket(ctx) == FailureBucket.UNKNOWN
 
     def test_static_manual_no_jobs(self):
         ctx = ClassificationContext(
@@ -76,9 +85,18 @@ class TestMapErrorToFailureBucket:
 
 
 class TestClassifyZeroKept:
-    def test_legit_empty_with_fetched(self):
+    def test_fetched_rows_without_empty_evidence_need_review(self):
         ctx = ClassificationContext(
             status="ok", error="", classification="ok_no_jobs", fetched_count=10
+        )
+        assert classify_zero_kept(ctx) == ZeroKeptClassification.NEEDS_REVIEW
+
+    def test_legit_empty_requires_explicit_empty_evidence(self):
+        ctx = ClassificationContext(
+            status="ok",
+            error="",
+            classification="ok_no_jobs",
+            extractor_hint="explicit_no_openings_marker",
         )
         assert classify_zero_kept(ctx) == ZeroKeptClassification.LEGIT_EMPTY
 
@@ -118,9 +136,32 @@ class TestClassifyZeroKept:
         )
         assert classify_zero_kept(ctx) == ZeroKeptClassification.BROKEN_EXTRACTION
 
-    def test_legit_empty_with_jobs(self):
+    def test_ok_with_jobs_zero_kept_without_empty_evidence_needs_review(self):
         ctx = ClassificationContext(
             status="ok", error="", classification="ok_with_jobs", fetched_count=5
+        )
+        assert classify_zero_kept(ctx) == ZeroKeptClassification.NEEDS_REVIEW
+
+    def test_all_canonical_dropped_rows_need_review(self):
+        ctx = ClassificationContext(
+            status="ok",
+            error="",
+            classification="",
+            fetched_count=27,
+            raw_fetched=27,
+            canonical_dropped=27,
+            canonical_kept=0,
+        )
+        assert classify_zero_kept(ctx) == ZeroKeptClassification.NEEDS_REVIEW
+
+    def test_all_child_details_empty_confirmed_is_legit_empty(self):
+        ctx = ClassificationContext(
+            status="ok",
+            error="",
+            classification="ok_no_jobs",
+            child_detail_count=2,
+            child_empty_confirmed_count=2,
+            child_kept_count=0,
         )
         assert classify_zero_kept(ctx) == ZeroKeptClassification.LEGIT_EMPTY
 

@@ -11,6 +11,7 @@ from src.jobs.contamination_audit import (
     build_location_quality_report,
     build_public_text_quality_report,
 )
+from src.jobs.pipeline_finalize import _apply_final_location_quality_guardrail
 from src.jobs.text_utils import load_city_noise_contract
 from tests.helpers import jobs_reporting
 
@@ -292,6 +293,29 @@ def test_canonicalize_job_with_reason_normalizes_raw_city_blob_without_locations
     assert payload["locations"] == [{"city": "Los Angeles", "country": "US"}]
 
 
+def test_canonicalize_job_with_reason_preserves_city_only_unknown_country_summary() -> None:
+    row, reason = jf.canonicalize_job_with_reason(
+        {
+            "title": "Tools Programmer",
+            "company": "Example Studio",
+            "city": "Cambridge",
+            "country": "Unknown",
+            "jobLink": "https://example.com/cambridge",
+            "sector": "Game",
+        },
+        source="static_source::example",
+        fetched_at="2026-03-20T00:00:00Z",
+    )
+
+    assert reason == ""
+    assert row is not None
+    payload = row if isinstance(row, dict) else row.to_dict()
+    assert payload["city"] == "Cambridge"
+    assert payload["country"] == ""
+    assert payload["locations"] == [{"city": "Cambridge", "country": ""}]
+    assert payload["locationSummary"] == "Cambridge"
+
+
 def test_canonicalize_job_with_reason_promotes_country_only_raw_city_value() -> None:
     row, reason = jf.canonicalize_job_with_reason(
         {
@@ -311,6 +335,61 @@ def test_canonicalize_job_with_reason_promotes_country_only_raw_city_value() -> 
     assert payload["city"] == ""
     assert payload["country"] == "Japan"
     assert payload["locations"] == [{"city": "", "country": "Japan"}]
+
+
+def test_final_location_quality_guardrail_keeps_unknown_country_placeholders() -> None:
+    rows = [
+        {
+            "title": "Tools Programmer",
+            "company": "Example Studio",
+            "city": "Cambridge",
+            "country": "Unknown",
+            "source": "static_source::example",
+            "jobLink": "https://example.com/cambridge",
+        },
+        {
+            "title": "Artist",
+            "company": "Example Studio",
+            "city": "Tokyo",
+            "country": "N/A",
+            "source": "static_source::example",
+            "jobLink": "https://example.com/tokyo",
+        },
+    ]
+
+    report = _apply_final_location_quality_guardrail(rows)
+
+    assert int(report["invalidLocationFieldCount"]) == 0
+    assert rows[0]["country"] == "Unknown"
+    assert rows[1]["country"] == "N/A"
+
+
+def test_final_location_quality_guardrail_still_blanks_invalid_country_noise() -> None:
+    rows = [
+        {
+            "title": "Producer",
+            "company": "Example Studio",
+            "city": "Berlin",
+            "country": "Hybrid",
+            "source": "static_source::example",
+            "jobLink": "https://example.com/producer",
+        },
+        {
+            "title": "Engineer",
+            "company": "Example Studio",
+            "city": "Paris",
+            "country": 'document.addEventListener("DOMContentLoaded", function () {',
+            "source": "static_source::example",
+            "jobLink": "https://example.com/engineer",
+        },
+    ]
+
+    report = _apply_final_location_quality_guardrail(rows)
+
+    assert int(report["invalidLocationFieldCount"]) == 2
+    assert int(report["fieldCounts"]["country"]) == 2
+    assert rows[0]["country"] == ""
+    assert rows[1]["country"] == ""
 
 
 def test_canonicalize_job_with_reason_drops_static_page_noise_in_city_field() -> None:

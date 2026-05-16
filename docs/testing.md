@@ -219,12 +219,14 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 - Direct packaging commands own `dist/` outputs and refresh the convenience mirror at `_out/latest/build/portable`:
   - `npm run build:portable-exe`
   - `python scripts/build_portable_exe.py`
+- Portable builds must stay self-contained but browser-minimal: `_internal/playwright/driver/package/.local-browsers/` may contain only the `chromium_headless_shell-*` directory required by packaged Playwright `browsers.json`.
 - `npm run test:frontend:packaged*`
 - `npm run test:frontend:packaged:sync-rehearsal`
 - `npm run test:frontend:packaged:orphan-reclaim-rehearsal`
 - `npm run test:frontend:packaged:browser-job-rehearsal`
 - `npm run test:frontend:packaged:admin-startup`
 - `npm run test:frontend:packaged:update-rehearsal`
+  - The update rehearsal removes optional `_internal/psutil*` from the source install copy before launch, so the source-side handoff verifier must pass through the dependency-free Windows PID fallback.
 - Orchestrated build and verify commands own `_out/runs/...` and the rest of `_out/latest/...`:
   - `npm run build`
   - `npm run verify`

@@ -72,6 +72,31 @@ def test_run_packaged_smoke_can_run_desktop_update_rehearsal_mode() -> None:
         assert saved["ok"] is True
 
 
+def test_desktop_update_rehearsal_removes_optional_psutil_from_source_runtime() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        portable_root = Path(tmp) / "portable"
+        internal_dir = portable_root / "_internal"
+        (internal_dir / "psutil").mkdir(parents=True)
+        (internal_dir / "psutil" / "__init__.py").write_text("", encoding="utf-8")
+        (internal_dir / "psutil-6.0.0.dist-info").mkdir()
+        (internal_dir / "_psutil_windows.pyd").write_bytes(b"pyd")
+        (internal_dir / "keep.txt").write_text("keep", encoding="utf-8")
+
+        removed = smoke.packaged_smoke_rehearsal_update_mod._remove_optional_psutil_runtime(
+            portable_root
+        )
+
+        assert sorted(Path(item).as_posix() for item in removed) == [
+            "_internal/_psutil_windows.pyd",
+            "_internal/psutil",
+            "_internal/psutil-6.0.0.dist-info",
+        ]
+        assert not (internal_dir / "psutil").exists()
+        assert not (internal_dir / "psutil-6.0.0.dist-info").exists()
+        assert not (internal_dir / "_psutil_windows.pyd").exists()
+        assert (internal_dir / "keep.txt").is_file()
+
+
 def test_packaged_sync_rehearsal_server_serves_fake_github_app_flow() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         portable_root = Path(tmp) / "portable"

@@ -10,6 +10,7 @@ import pytest
 
 from src import app_version
 from src.ship import desktop_update as du
+from src.ship import desktop_update_shared as du_shared
 from src.ship.desktop_app import config as desktop_app_config
 from tests.helpers.temp_paths import workspace_tmpdir
 
@@ -156,6 +157,56 @@ def test_pid_is_running_rejects_zombie_psutil_processes() -> None:
 
     with mock.patch.object(du, "psutil", fake_psutil):
         assert du.pid_is_running(4242) is False
+
+
+def test_pid_is_running_windows_fallback_accepts_live_pid_without_psutil() -> None:
+    kernel32 = mock.Mock()
+    kernel32.OpenProcess.return_value = 99
+
+    def fake_get_exit_code_process(_handle, exit_code_ref) -> int:
+        pointer = du_shared.ctypes.cast(
+            exit_code_ref,
+            du_shared.ctypes.POINTER(du_shared.wintypes.DWORD),
+        )
+        pointer.contents.value = 259
+        return 1
+
+    kernel32.GetExitCodeProcess.side_effect = fake_get_exit_code_process
+
+    with (
+        mock.patch.object(du, "psutil", None),
+        mock.patch.object(du_shared.sys, "platform", "win32"),
+        mock.patch.object(
+            du_shared.ctypes,
+            "windll",
+            mock.Mock(kernel32=kernel32),
+            create=True,
+        ),
+    ):
+        assert du.pid_is_running(4242) is True
+
+    kernel32.OpenProcess.assert_called_once_with(0x1000, False, 4242)
+    kernel32.CloseHandle.assert_called_once_with(99)
+
+
+def test_pid_is_running_windows_fallback_rejects_open_failed_pid_without_psutil() -> None:
+    kernel32 = mock.Mock()
+    kernel32.OpenProcess.return_value = 0
+
+    with (
+        mock.patch.object(du, "psutil", None),
+        mock.patch.object(du_shared.sys, "platform", "win32"),
+        mock.patch.object(
+            du_shared.ctypes,
+            "windll",
+            mock.Mock(kernel32=kernel32),
+            create=True,
+        ),
+    ):
+        assert du.pid_is_running(4242) is False
+
+    kernel32.GetExitCodeProcess.assert_not_called()
+    kernel32.CloseHandle.assert_not_called()
 
 
 def test_manifest_to_status_marks_0_1_3_available_over_0_1_23() -> None:
@@ -1347,6 +1398,12 @@ def test_request_install_writes_plan_and_launches_helper() -> None:
             json.dumps({"launcherPid": 1234, "launcherToken": "token-1"}),
             encoding="utf-8",
         )
+        du.write_success_marker(
+            paths,
+            app_version="0.1.0",
+            bridge_port=8877,
+            launcher_token="stale-token",
+        )
 
         with (
             mock.patch.object(du, "resolve_desktop_session_root", return_value=session_root),
@@ -1368,6 +1425,8 @@ def test_request_install_writes_plan_and_launches_helper() -> None:
         assert result["status"]["installStageLabel"] == "Preparing update"
         assert result["status"]["rollbackPath"]
         assert paths.handoff_request_path.is_file()
+        assert not paths.success_marker_path.exists()
+        assert not paths.handoff_diagnostics_path.exists()
 
 
 def test_request_install_not_ready_leaves_no_partial_handoff_artifacts() -> None:
@@ -1447,6 +1506,8 @@ def test_request_install_returns_handoff_unconfirmed_when_post_write_verificatio
             result = service.request_install()
 
         status = du.load_status(paths, current_version="0.1.0")
+        diagnostics_raw = paths.handoff_diagnostics_path.read_text(encoding="utf-8")
+        diagnostics = json.loads(diagnostics_raw)
         assert result["started"] is False
         assert result["errorCode"] == "install_handoff_unconfirmed"
         assert status["downloadState"] == "downloaded"
@@ -1454,6 +1515,14 @@ def test_request_install_returns_handoff_unconfirmed_when_post_write_verificatio
         assert status["downloadedZipPath"] == str(download_path)
         assert not paths.install_plan_path.exists()
         assert not paths.handoff_request_path.exists()
+        assert diagnostics["handoffRequestPresent"] is True
+        assert diagnostics["installPlanValid"] is True
+        assert diagnostics["launcherPid"] == 1234
+        assert diagnostics["launcherPidRunning"] is False
+        assert diagnostics["desktopSessionFilePresent"] is True
+        assert diagnostics["launcherPidMatchesSession"] is True
+        assert diagnostics["launcherTokenMatchesSession"] is True
+        assert "token-1" not in diagnostics_raw
 
 
 def test_run_download_worker_failure_clears_install_ready_state_and_bad_zip() -> None:

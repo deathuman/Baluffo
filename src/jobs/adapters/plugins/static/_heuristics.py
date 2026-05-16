@@ -6,6 +6,7 @@ from urllib.parse import urljoin
 
 from src.jobs.adapters.html_parsers import strip_html_text
 from src.jobs.adapters.static_runtime_support import classify_static_fetch_exception
+from src.jobs.common.no_openings import contains_no_openings_marker
 from src.jobs.text_utils import clean_text, normalize_url
 
 # Canonical classification values for static/scrapy_static diagnostics and browser queue.
@@ -58,19 +59,7 @@ def detect_js_shell(html: str) -> bool:
 
 def detect_no_openings(html: str) -> bool:
     """Detect explicit 'no openings' markers to allow a proven-empty result."""
-    s = normalize_html(html).lower()
-    markers = [
-        "no open positions",
-        "no open roles",
-        "no openings",
-        "no jobs available",
-        "no jobs found",
-        "0 results",
-        "0 job",
-        "we're not hiring",
-        "we are not hiring",
-    ]
-    return any(m in s for m in markers)
+    return contains_no_openings_marker(normalize_html(html))
 
 
 def detect_outbound_ats_links(html: str, *, base_url: str) -> list[str]:

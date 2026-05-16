@@ -10,6 +10,7 @@ from src.jobs.canonicalize import CanonicalNormalizer
 from src.jobs.common.taxonomy import (
     ClassificationContext,
     FailureBucket,
+    classification_context_from_source_detail,
     classify_zero_kept,
     map_error_to_failure_bucket,
 )
@@ -589,13 +590,7 @@ def _classify_report_outcome(
     report: dict[str, Any],
     root_module: _PipelineSourceResultsRoot,
 ) -> None:
-    cls_context = ClassificationContext(
-        status=str(report.get("status") or ""),
-        error=str(report.get("error") or ""),
-        classification="",
-        http_status=None,
-        fetched_count=int(report.get("fetchedCount") or 0),
-    )
+    cls_context = classification_context_from_source_detail(report)
     zero_kept_classification = classify_zero_kept(cls_context)
     failure_bucket = map_error_to_failure_bucket(cls_context)
     if (

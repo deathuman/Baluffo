@@ -11,6 +11,8 @@ from src import jobs_fetcher as jf
 from src.jobs.adapters import static as static_adapter
 from src.jobs.pipeline_runtime_summary import PipelineTaskRuntime
 from src.jobs.pipeline_runtime_writers import make_task_state_writer
+from src.jobs.pipeline_source_results import _classify_report_outcome
+from src.jobs.pipeline_stage_source_execution import _failure_bucket_from_zero_extract_context
 from src.shared.json_io import read_json
 from tests.helpers.job_fixtures import _fixture, _fixture_json
 from tests.helpers.temp_paths import workspace_tmpdir
@@ -232,6 +234,53 @@ def test_normalize_source_report_row_preserves_static_stage_timings() -> None:
     assert int(detail_stats.get("detail_yield_percent") or 0) == 75
 
 
+class _ReportClassificationRoot:
+    _failure_bucket_from_zero_extract_context = staticmethod(
+        _failure_bucket_from_zero_extract_context
+    )
+
+
+def test_classify_report_outcome_marks_canonical_drop_all_as_needs_review() -> None:
+    report = {
+        "name": "personio_sources",
+        "status": "ok",
+        "adapter": "personio",
+        "fetchedCount": 27,
+        "keptCount": 0,
+        "error": "",
+        "loss": {
+            "rawFetched": 27,
+            "canonicalDropped": 27,
+            "canonicalKept": 0,
+            "canonicalDropReasons": {"missing_job_link": 27},
+        },
+    }
+
+    _classify_report_outcome(report=report, root_module=_ReportClassificationRoot())
+
+    assert report["failureBucket"] == "needs_review"
+    assert report["zeroKeptClassification"] == "needs_review"
+
+
+def test_classify_report_outcome_accepts_explicit_empty_evidence() -> None:
+    report = {
+        "name": "static_source::empty",
+        "status": "ok",
+        "adapter": "static",
+        "classification": "empty_confirmed",
+        "emptyConfirmed": True,
+        "extractorHint": "explicit_no_openings_marker",
+        "fetchedCount": 0,
+        "keptCount": 0,
+        "error": "",
+    }
+
+    _classify_report_outcome(report=report, root_module=_ReportClassificationRoot())
+
+    assert report["failureBucket"] == "no_openings"
+    assert report["zeroKeptClassification"] == "legit_empty"
+
+
 def test_pipeline_partial_success_when_one_source_fails() -> None:
     def failing_loader(**_: object):
         raise RuntimeError("timeout")
@@ -379,7 +428,7 @@ def test_pipeline_reads_previous_output_in_packaged_layout_with_shared_contract_
         output = read_json(output_dir / "jobs-unified.json", [])
         assert len(output) == 1
         assert output[0]["city"] == ""
-        assert output[0]["country"] == ""
+        assert output[0]["country"] == "Unknown"
         assert output[0]["locations"] == []
         assert int(report["summary"].get("outputCount") or 0) == 1
 
