@@ -104,6 +104,34 @@ async function postBridgeJson(apiRequest, relativePath, data, label) {
   return response.json();
 }
 
+function isActiveTaskRow(row) {
+  const finishedAt = String(row?.finishedAt || "").trim();
+  const status = String(row?.status || row?.lifecycleStatus || "").trim().toLowerCase();
+  return Boolean(row?.active) || (!finishedAt && ["running", "starting"].includes(status));
+}
+
+function summarizeTaskRow(row) {
+  return [row?.taskType || row?.type || "task", row?.runId || row?.id, row?.status || row?.lifecycleStatus, row?.stage]
+    .map(value => String(value || "").trim()).filter(Boolean).join(":");
+}
+
+async function waitForBridgeTasksIdle(apiRequest, timeoutMs = 120_000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastActiveTasks = [];
+  while (Date.now() < deadline) {
+    const payload = await fetchBridgeJson(apiRequest, "/ops/task-state?view=summary", "task state summary");
+    lastActiveTasks = Array.isArray(payload?.tasks)
+      ? payload.tasks.filter(row => isActiveTaskRow(row))
+      : [];
+    if (lastActiveTasks.length === 0) {
+      return payload;
+    }
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+  const summary = lastActiveTasks.map(summarizeTaskRow).join(", ") || "unknown task";
+  throw new Error(`Bridge tasks did not become idle before pipeline launch: ${summary}`);
+}
+
 async function waitForPipelineRunStart(apiRequest, timeoutMs = 120_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -280,6 +308,7 @@ async function main() {
     const pipelineStartedAt = Date.now();
     try {
       const pipelineButton = page.locator("#jobs-pipeline-run-btn");
+      await waitForBridgeTasksIdle(apiRequest);
       await page.waitForFunction(
         () => {
           const button = document.querySelector("#jobs-pipeline-run-btn");
