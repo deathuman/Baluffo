@@ -167,21 +167,98 @@ function formatPublishedAt(publishedAt) {
   });
 }
 
+function normalizeReleaseNotesEntry(entry = {}, fallback = {}) {
+  const payload = entry && typeof entry === "object" ? entry : {};
+  const fallbackPayload = fallback && typeof fallback === "object" ? fallback : {};
+  return {
+    releaseNotesUrl: String(payload.releaseNotesUrl || fallbackPayload.releaseNotesUrl || ""),
+    releaseNotesTitle: String(payload.releaseNotesTitle || fallbackPayload.releaseNotesTitle || ""),
+    releaseNotesBody: String(payload.releaseNotesBody || fallbackPayload.releaseNotesBody || ""),
+    releaseNotesPublishedAt: String(
+      payload.releaseNotesPublishedAt || fallbackPayload.releaseNotesPublishedAt || ""
+    ),
+    releaseTag: String(payload.releaseTag || fallbackPayload.releaseTag || ""),
+    releaseVersion: String(payload.releaseVersion || fallbackPayload.releaseVersion || ""),
+  };
+}
+
+function releaseNotesEntryHasContent(entry) {
+  return Boolean(
+    entry.releaseNotesUrl
+    || entry.releaseNotesTitle
+    || entry.releaseNotesBody
+    || entry.releaseNotesPublishedAt
+    || entry.releaseTag
+    || entry.releaseVersion
+  );
+}
+
+function releaseNotesEntryKey(entry) {
+  return (
+    String(entry.releaseNotesUrl || "").trim()
+    || String(entry.releaseTag || "").trim()
+    || String(entry.releaseVersion || "").trim()
+    || String(entry.releaseNotesTitle || "").trim()
+  );
+}
+
+function releaseNotesEntryLabel(entry, fallbackIndex) {
+  return String(
+    entry.releaseVersion
+    || entry.releaseTag
+    || entry.releaseNotesTitle
+    || `Release ${fallbackIndex + 1}`
+  ).trim();
+}
+
+function normalizeReleaseNotesHistory(history, currentEntry) {
+  const currentHasSpecificContent = Boolean(
+    currentEntry.releaseNotesUrl
+    || currentEntry.releaseNotesBody
+    || currentEntry.releaseNotesPublishedAt
+    || (currentEntry.releaseNotesTitle && currentEntry.releaseNotesTitle !== "Release notes")
+  );
+  const candidates = [
+    ...(currentHasSpecificContent ? [currentEntry] : []),
+    ...(Array.isArray(history) ? history : []),
+  ];
+  const entries = [];
+  const seen = new Set();
+  candidates.forEach(item => {
+    const entry = normalizeReleaseNotesEntry(item);
+    if (!releaseNotesEntryHasContent(entry)) return;
+    const key = releaseNotesEntryKey(entry);
+    if (key && seen.has(key)) return;
+    if (key) seen.add(key);
+    entries.push(entry);
+  });
+  return entries;
+}
+
 export function openReleaseNotesDialog({
   title = "Release notes",
   markdown = "",
   publishedAt = "",
   releaseNotesUrl = "",
+  releaseNotesHistory = [],
   openExternalUrl,
   fallbackMessage = "Release notes are unavailable for this build.",
   documentTarget,
   windowTarget = globalThis?.window
 } = {}) {
+  const currentEntry = normalizeReleaseNotesEntry({
+    releaseNotesUrl,
+    releaseNotesTitle: title,
+    releaseNotesBody: markdown,
+    releaseNotesPublishedAt: publishedAt,
+  });
+  const releaseEntries = normalizeReleaseNotesHistory(releaseNotesHistory, currentEntry);
+  const selectedInitialEntry = releaseEntries[0] || currentEntry;
+  let currentReleaseNotesUrl = normalizeExternalUrl(selectedInitialEntry.releaseNotesUrl);
   const doc = getDocumentTarget(documentTarget);
-  const safeReleaseNotesUrl = normalizeExternalUrl(releaseNotesUrl);
   if (!doc) {
-    if (safeReleaseNotesUrl) {
-      openExternalUrlTarget(safeReleaseNotesUrl, openExternalUrl, windowTarget);
+    if (currentReleaseNotesUrl) {
+      openExternalUrlTarget(currentReleaseNotesUrl, openExternalUrl, windowTarget);
     }
     return null;
   }
@@ -199,18 +276,59 @@ export function openReleaseNotesDialog({
   const heading = doc.createElement("h2");
   heading.id = "release-notes-dialog-title";
   heading.className = "release-notes-dialog-title";
-  heading.textContent = String(title || "Release notes");
+  heading.textContent = String(selectedInitialEntry.releaseNotesTitle || "Release notes");
 
-  const publishedAtText = formatPublishedAt(publishedAt);
   const publishedAtEl = doc.createElement("p");
   publishedAtEl.className = "release-notes-dialog-published-at";
-  publishedAtEl.textContent = publishedAtText ? `Published ${publishedAtText}` : "";
+  const initialPublishedAtText = formatPublishedAt(selectedInitialEntry.releaseNotesPublishedAt);
+  publishedAtEl.textContent = initialPublishedAtText ? `Published ${initialPublishedAtText}` : "";
+  publishedAtEl.hidden = !initialPublishedAtText;
+
+  const versionSelect = doc.createElement("select");
+  versionSelect.className = "release-notes-dialog-version-select";
+  versionSelect.setAttribute("aria-label", "Release version");
+  releaseEntries.forEach((entry, index) => {
+    const option = doc.createElement("option");
+    option.value = String(index);
+    option.textContent = releaseNotesEntryLabel(entry, index);
+    if (index === 0) {
+      option.selected = true;
+    }
+    versionSelect.appendChild(option);
+  });
 
   const body = doc.createElement("div");
   body.className = "release-notes-dialog-body";
 
-  if (String(markdown || "").trim()) {
-    renderReleaseNotesMarkdown(body, markdown, {
+  function renderSelectedEntry(entry) {
+    const selected = normalizeReleaseNotesEntry(entry, selectedInitialEntry);
+    heading.textContent = String(selected.releaseNotesTitle || "Release notes");
+    const selectedPublishedAtText = formatPublishedAt(selected.releaseNotesPublishedAt);
+    publishedAtEl.textContent = selectedPublishedAtText ? `Published ${selectedPublishedAtText}` : "";
+    publishedAtEl.hidden = !selectedPublishedAtText;
+    currentReleaseNotesUrl = normalizeExternalUrl(selected.releaseNotesUrl);
+    body.replaceChildren();
+    if (String(selected.releaseNotesBody || "").trim()) {
+      renderReleaseNotesMarkdown(body, selected.releaseNotesBody, {
+        documentTarget: doc,
+        openExternalUrl,
+        windowTarget,
+      });
+    } else {
+      const emptyState = doc.createElement("p");
+      emptyState.className = "release-notes-dialog-empty";
+      emptyState.textContent = String(fallbackMessage || "Release notes are unavailable for this build.");
+      body.appendChild(emptyState);
+    }
+    if (currentReleaseNotesUrl && openBtn.parentNode !== actions) {
+      actions.appendChild(openBtn);
+    } else if (!currentReleaseNotesUrl && openBtn.parentNode === actions) {
+      actions.removeChild(openBtn);
+    }
+  }
+
+  if (String(selectedInitialEntry.releaseNotesBody || "").trim()) {
+    renderReleaseNotesMarkdown(body, selectedInitialEntry.releaseNotesBody, {
       documentTarget: doc,
       openExternalUrl,
       windowTarget,
@@ -267,16 +385,22 @@ export function openReleaseNotesDialog({
   doc.addEventListener("keydown", onKeyDown, true);
 
   actions.appendChild(closeBtn);
-  if (safeReleaseNotesUrl) {
-    openBtn.addEventListener("click", () => {
-      openExternalUrlTarget(safeReleaseNotesUrl, openExternalUrl, windowTarget);
-    });
+  openBtn.addEventListener("click", () => {
+    openExternalUrlTarget(currentReleaseNotesUrl, openExternalUrl, windowTarget);
+  });
+  if (currentReleaseNotesUrl) {
     actions.appendChild(openBtn);
   }
 
+  versionSelect.addEventListener("change", () => {
+    const selectedIndex = Number(versionSelect.value);
+    renderSelectedEntry(releaseEntries[selectedIndex] || releaseEntries[0] || selectedInitialEntry);
+  });
+
   panel.appendChild(heading);
-  if (publishedAtText) {
-    panel.appendChild(publishedAtEl);
+  panel.appendChild(publishedAtEl);
+  if (releaseEntries.length > 1) {
+    panel.appendChild(versionSelect);
   }
   panel.appendChild(body);
   panel.appendChild(actions);

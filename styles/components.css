@@ -363,6 +363,18 @@ h1 {
   font-size: 0.95rem;
 }
 
+.release-notes-dialog-version-select {
+  width: min(100%, 220px);
+  min-height: 34px;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--surface-18);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.9rem;
+}
+
 .release-notes-dialog-body {
   flex: 1 1 auto;
   min-height: 0;

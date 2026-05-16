@@ -96,6 +96,60 @@ test("openReleaseNotesDialog renders fallback state, supports escape close, and 
   assert.equal(doc.activeElement, trigger);
 });
 
+test("openReleaseNotesDialog switches between release history entries", () => {
+  const doc = createFakeDocument();
+  const openedUrls = [];
+
+  const dialog = openReleaseNotesDialog({
+    title: "Baluffo v0.2.0",
+    markdown: "### Fixed\n- Latest notes",
+    publishedAt: "2026-05-16T09:46:00Z",
+    releaseNotesUrl: "https://example.com/releases/v0.2.0",
+    releaseNotesHistory: [
+      {
+        releaseNotesUrl: "https://example.com/releases/v0.2.0",
+        releaseNotesTitle: "Baluffo v0.2.0",
+        releaseNotesBody: "### Fixed\n- Latest notes",
+        releaseNotesPublishedAt: "2026-05-16T09:46:00Z",
+        releaseTag: "v0.2.0",
+        releaseVersion: "0.2.0",
+      },
+      {
+        releaseNotesUrl: "https://example.com/releases/v0.1.33",
+        releaseNotesTitle: "Baluffo v0.1.33",
+        releaseNotesBody: "### Added\n- Previous notes",
+        releaseNotesPublishedAt: "2026-05-14T10:00:00Z",
+        releaseTag: "v0.1.33",
+        releaseVersion: "0.1.33",
+      },
+    ],
+    openExternalUrl: url => openedUrls.push(url),
+    documentTarget: doc,
+    windowTarget: doc.defaultView,
+  });
+
+  assert.ok(dialog);
+  const selector = doc.find(
+    node => typeof node.className === "string" && node.className.includes("release-notes-dialog-version-select")
+  );
+  assert.ok(selector);
+  assert.equal(selector.children.length, 2);
+  assert.equal(doc.find(node => node.id === "release-notes-dialog-title").textContent, "Baluffo v0.2.0");
+  assert.match(dialog.body.textContent, /Latest notes/);
+
+  selector.value = "1";
+  selector.dispatch("change");
+
+  assert.equal(doc.find(node => node.id === "release-notes-dialog-title").textContent, "Baluffo v0.1.33");
+  assert.match(dialog.body.textContent, /Previous notes/);
+
+  const openButton = doc.find(
+    node => typeof node.className === "string" && node.className.includes("release-notes-dialog-open")
+  );
+  openButton.dispatch("click");
+  assert.deepEqual(openedUrls, ["https://example.com/releases/v0.1.33"]);
+});
+
 test("openReleaseNotesDialog closes when clicking the dimmed overlay", () => {
   const doc = createFakeDocument();
   const dialog = openReleaseNotesDialog({
@@ -106,6 +160,12 @@ test("openReleaseNotesDialog closes when clicking the dimmed overlay", () => {
   });
 
   assert.ok(dialog);
+  assert.equal(
+    doc.find(
+      node => typeof node.className === "string" && node.className.includes("release-notes-dialog-version-select")
+    ),
+    null
+  );
   dialog.overlay.dispatch("click", { target: dialog.overlay });
   assert.equal(dialog.overlay.parentNode, null);
 });

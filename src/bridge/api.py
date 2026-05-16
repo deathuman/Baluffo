@@ -109,6 +109,7 @@ def _default_update_status_payload() -> JsonObject:
         "releaseNotesTitle": "",
         "releaseNotesBody": "",
         "releaseNotesPublishedAt": "",
+        "releaseNotesHistory": [],
         "lastCheckedAt": "",
         "lastError": "",
     }

@@ -337,6 +337,7 @@ export function createJobsDesktopUpdateController({
         markdown,
         publishedAt: state.status.releaseNotesPublishedAt,
         releaseNotesUrl,
+        releaseNotesHistory: state.status.releaseNotesHistory,
         openExternalUrl,
         fallbackMessage,
       });

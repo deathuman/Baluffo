@@ -12,6 +12,32 @@ export function formatDesktopUpdateBytes(bytes) {
   return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
+function normalizeReleaseNotesHistory(history) {
+  if (!Array.isArray(history)) return [];
+  return history
+    .filter(item => item && typeof item === "object")
+    .map(item => ({
+      releaseNotesUrl: String(item.releaseNotesUrl || ""),
+      releaseNotesTitle: String(item.releaseNotesTitle || ""),
+      releaseNotesBody: String(item.releaseNotesBody || ""),
+      releaseNotesPublishedAt: String(item.releaseNotesPublishedAt || ""),
+      releaseTag: String(item.releaseTag || ""),
+      releaseVersion: String(item.releaseVersion || ""),
+    }))
+    .filter(item => (
+      item.releaseNotesUrl
+      || item.releaseNotesTitle
+      || item.releaseNotesBody
+      || item.releaseNotesPublishedAt
+      || item.releaseTag
+      || item.releaseVersion
+    ));
+}
+
+function releaseNotesHistoryVisible(history) {
+  return history.some(item => item.releaseNotesBody || item.releaseNotesUrl);
+}
+
 export function normalizeDesktopUpdateStatus(status = {}) {
   const payload = status && typeof status === "object" ? status : {};
   return {
@@ -31,6 +57,7 @@ export function normalizeDesktopUpdateStatus(status = {}) {
     releaseNotesTitle: String(payload.releaseNotesTitle || ""),
     releaseNotesBody: String(payload.releaseNotesBody || ""),
     releaseNotesPublishedAt: String(payload.releaseNotesPublishedAt || ""),
+    releaseNotesHistory: normalizeReleaseNotesHistory(payload.releaseNotesHistory),
     lastCheckedAt: String(payload.lastCheckedAt || ""),
     lastError: String(payload.lastError || ""),
     blockedReason: String(payload.blockedReason || ""),
@@ -200,7 +227,12 @@ export function deriveDesktopUpdateView(status, { panelOpen = false } = {}) {
     releaseNotesTitle: buildReleaseNotesTitle(normalized),
     releaseNotesBody: normalized.releaseNotesBody,
     releaseNotesPublishedAt: normalized.releaseNotesPublishedAt,
-    releaseNotesVisible: Boolean(normalized.releaseNotesBody || normalized.releaseNotesUrl),
+    releaseNotesHistory: normalized.releaseNotesHistory,
+    releaseNotesVisible: Boolean(
+      normalized.releaseNotesBody
+      || normalized.releaseNotesUrl
+      || releaseNotesHistoryVisible(normalized.releaseNotesHistory)
+    ),
     primaryAction: "check",
     primaryLabel: "Check for updates",
     primaryDisabled: false,

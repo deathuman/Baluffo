@@ -23,6 +23,10 @@ def _as_str_dict(value: Any) -> dict[str, str]:
     return {str(key): str(item) for key, item in value.items()} if isinstance(value, dict) else {}
 
 
+def _as_list(value: Any) -> list[Any]:
+    return list(value) if isinstance(value, list) else []
+
+
 def _as_int(value: Any, default: int = 0) -> int:
     if isinstance(value, bool):
         return int(value)
@@ -57,6 +61,7 @@ def default_status_payload(*, current_version: str | None = None) -> dict[str, A
         "releaseNotesTitle": "",
         "releaseNotesBody": "",
         "releaseNotesPublishedAt": "",
+        "releaseNotesHistory": [],
         "lastCheckedAt": "",
         "lastError": "",
         "blockedReason": "",
@@ -347,6 +352,71 @@ def _normalize_release_notes_payload(
     }
 
 
+def _release_version_from_tag(tag: str) -> str:
+    value = str(tag or "").strip()
+    return value[1:] if value.lower().startswith("v") else value
+
+
+def _normalize_release_notes_entry(
+    payload: dict[str, Any] | None,
+    *,
+    fallback_url: str = "",
+    fallback_title: str = "",
+    fallback_version: str = "",
+) -> dict[str, str]:
+    source = dict(payload) if isinstance(payload, dict) else {}
+    entry = dict(
+        _normalize_release_notes_payload(
+            source,
+            fallback_url=fallback_url,
+            fallback_title=fallback_title,
+        )
+    )
+    release_tag = str(source.get("releaseTag") or source.get("tag_name") or "").strip()
+    release_version = str(
+        source.get("releaseVersion") or source.get("version") or fallback_version or ""
+    ).strip()
+    if not release_version and release_tag:
+        release_version = _release_version_from_tag(release_tag)
+    entry["releaseTag"] = release_tag
+    entry["releaseVersion"] = release_version
+    return entry
+
+
+def _release_notes_entry_has_content(entry: dict[str, str]) -> bool:
+    return bool(
+        entry.get("releaseNotesUrl")
+        or entry.get("releaseNotesTitle")
+        or entry.get("releaseNotesBody")
+        or entry.get("releaseNotesPublishedAt")
+        or entry.get("releaseTag")
+        or entry.get("releaseVersion")
+    )
+
+
+def _normalize_release_notes_history(payload: Any) -> list[dict[str, str]]:
+    entries: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in _as_list(payload):
+        if not isinstance(item, dict):
+            continue
+        entry = _normalize_release_notes_entry(item)
+        if not _release_notes_entry_has_content(entry):
+            continue
+        key = (
+            entry.get("releaseTag")
+            or entry.get("releaseVersion")
+            or entry.get("releaseNotesUrl")
+            or entry.get("releaseNotesTitle")
+        )
+        if key and key in seen:
+            continue
+        if key:
+            seen.add(key)
+        entries.append(entry)
+    return entries
+
+
 def _cached_release_notes(
     cached_manifest: dict[str, Any], *, target_version: str = "", manifest_url: str = ""
 ) -> dict[str, str]:
@@ -359,6 +429,11 @@ def _cached_release_notes(
             fallback_title=target_version,
         )
     )
+
+
+def _cached_release_notes_history(cached_manifest: dict[str, Any]) -> list[dict[str, str]]:
+    deps = _root()
+    return list(deps._normalize_release_notes_history(cached_manifest.get("releaseNotesHistory")))
 
 
 def _portable_artifact_name(manifest: dict[str, Any]) -> str:
@@ -374,6 +449,7 @@ def _manifest_to_status(
     manifest: dict[str, Any],
     existing: dict[str, Any],
     release_notes: dict[str, Any] | None = None,
+    release_notes_history: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     deps = _root()
     next_status = dict(existing)
@@ -391,6 +467,29 @@ def _manifest_to_status(
         fallback_url=str(manifest.get("release_notes_url") or "").strip(),
         fallback_title=target_version,
     )
+    release_notes_history_payload = deps._normalize_release_notes_history(
+        release_notes_history
+        if release_notes_history is not None
+        else existing.get("releaseNotesHistory")
+    )
+    if not release_notes_history_payload and _release_notes_entry_has_content(
+        {
+            **release_notes_payload,
+            "releaseTag": "",
+            "releaseVersion": str(target_version or ""),
+        }
+    ):
+        release_notes_history_payload = [
+            deps._normalize_release_notes_entry(
+                {
+                    **release_notes_payload,
+                    "releaseVersion": target_version,
+                },
+                fallback_url=str(manifest.get("release_notes_url") or "").strip(),
+                fallback_title=target_version,
+                fallback_version=target_version,
+            )
+        ]
     next_status.update(
         {
             "currentVersion": str(current_version or ""),
@@ -398,6 +497,7 @@ def _manifest_to_status(
             "targetVersion": target_version,
             "channel": str(manifest.get("channel") or deps.DESKTOP_UPDATE_CHANNEL),
             **release_notes_payload,
+            "releaseNotesHistory": release_notes_history_payload,
             "lastCheckedAt": deps.iso_now(),
             "lastError": preserve_last_error,
             "blockedReason": "",

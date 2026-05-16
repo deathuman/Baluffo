@@ -211,6 +211,7 @@ Portable desktop in-app update flow:
 - The helper owns extraction, rollback snapshotting, optional migrations, target relaunch, and rollback-on-failure.
 - First-launch success requires desktop session state, `baluffo-bridge` health in desktop mode, `startupReady == true`, the target app version, and a fresh `ship\data\updater\post-install-success.json`.
 - The release workflow must publish the portable ZIP, ship recovery ZIP, desktop manifest, and release notes together for desktop in-app updates to work.
+- Desktop update status may include cached stable GitHub release-note history as `releaseNotesHistory`; the scalar latest-release `releaseNotes*` fields remain the compatibility contract.
 - Releases that require the fixed source-side handoff checker must set `min_desktop_updater_version` to `2.0.1` or newer; do not move or replace an already published release tag to recover affected installs.
 
 ## Verification Checklist

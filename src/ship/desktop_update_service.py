@@ -31,6 +31,35 @@ def _as_bytes_dict(value: Any) -> dict[str, bytes]:
     )
 
 
+def _release_identity(release: dict[str, Any]) -> str:
+    return (
+        str(release.get("id") or "").strip()
+        or str(release.get("tag_name") or release.get("releaseTag") or "").strip()
+        or str(release.get("html_url") or release.get("releaseNotesUrl") or "").strip()
+    )
+
+
+def _merge_release_notes_history(
+    latest_entry: dict[str, str],
+    history: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    entries: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for entry in [latest_entry, *history]:
+        key = (
+            entry.get("releaseTag")
+            or entry.get("releaseVersion")
+            or entry.get("releaseNotesUrl")
+            or entry.get("releaseNotesTitle")
+        )
+        if key and key in seen:
+            continue
+        if key:
+            seen.add(key)
+        entries.append(dict(entry))
+    return entries
+
+
 class DesktopUpdateService:
     """App-side desktop updater state, fetch, download, and helper handoff service."""
 
@@ -46,6 +75,7 @@ class DesktopUpdateService:
         self._current_version_getter = current_version_getter or deps.get_app_version
         self._lock = deps.threading.RLock()
         self._download_thread: Any | None = None
+        self._stable_releases: list[dict[str, Any]] = []
 
     def current_version(self) -> str:
         deps = self._deps
@@ -58,7 +88,7 @@ class DesktopUpdateService:
         self,
         *,
         cached_manifest: dict[str, Any] | None = None,
-    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, str]]:
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, str], list[dict[str, str]]]:
         deps = self._deps
         cached = (
             dict(cached_manifest)
@@ -71,7 +101,8 @@ class DesktopUpdateService:
             target_version=str(manifest.get("version") or "").strip(),
             manifest_url=str(manifest.get("release_notes_url") or "").strip(),
         )
-        return dict(cached), manifest, dict(release_notes)
+        release_notes_history = deps._cached_release_notes_history(cached)
+        return dict(cached), manifest, dict(release_notes), list(release_notes_history)
 
     def _reconcile_status_locked(
         self,
@@ -91,9 +122,12 @@ class DesktopUpdateService:
             self.paths,
             existing,
         )
-        cached, cached_manifest_payload, release_notes = self._load_cached_manifest_parts(
-            cached_manifest=cached_manifest,
-        )
+        (
+            cached,
+            cached_manifest_payload,
+            release_notes,
+            release_notes_history,
+        ) = self._load_cached_manifest_parts(cached_manifest=cached_manifest)
         manifest_payload = (
             dict(manifest) if isinstance(manifest, dict) else dict(cached_manifest_payload)
         )
@@ -104,6 +138,7 @@ class DesktopUpdateService:
                 manifest=manifest_payload,
                 existing=next_status,
                 release_notes=release_notes,
+                release_notes_history=release_notes_history,
             )
             next_status = deps._reconcile_downloaded_artifact_status(
                 paths=self.paths,
@@ -139,6 +174,8 @@ class DesktopUpdateService:
             or next_status.get("releaseNotesPublishedAt")
         ):
             next_status.update(release_notes)
+        if not next_status.get("releaseNotesHistory") and release_notes_history:
+            next_status["releaseNotesHistory"] = release_notes_history
         if next_status != existing:
             return _as_dict(deps.save_status(self.paths, next_status))
         return dict(next_status)
@@ -239,12 +276,15 @@ class DesktopUpdateService:
         payload = deps.fetch_json(url)
         if not isinstance(payload, list):
             raise RuntimeError("GitHub releases payload was not a list.")
+        self._stable_releases = []
         for release in payload:
             if not isinstance(release, dict):
                 continue
             if bool(release.get("draft")) or bool(release.get("prerelease")):
                 continue
-            return dict(release)
+            self._stable_releases.append(dict(release))
+        if self._stable_releases:
+            return dict(self._stable_releases[0])
         raise RuntimeError("No stable GitHub release is available.")
 
     def _resolve_manifest_from_release(self, release: dict[str, Any]) -> dict[str, Any]:
@@ -289,7 +329,12 @@ class DesktopUpdateService:
                 if last_checked is not None:
                     age = (deps.datetime.now(deps.UTC) - last_checked).total_seconds()
                     if age < deps.DEFAULT_RELEASE_CHECK_THROTTLE_SECONDS:
-                        cached, manifest, release_notes = self._load_cached_manifest_parts()
+                        (
+                            cached,
+                            manifest,
+                            release_notes,
+                            release_notes_history,
+                        ) = self._load_cached_manifest_parts()
                         if manifest:
                             return _as_dict(
                                 deps.save_status(
@@ -300,6 +345,7 @@ class DesktopUpdateService:
                                             manifest=manifest,
                                             existing=status,
                                             release_notes=release_notes,
+                                            release_notes_history=release_notes_history,
                                         ),
                                         cached_manifest=cached,
                                         manifest=manifest,
@@ -315,6 +361,27 @@ class DesktopUpdateService:
                 fallback_url=str(manifest.get("release_notes_url") or "").strip(),
                 fallback_title=str(manifest.get("version") or "").strip(),
             )
+            stable_releases = list(self._stable_releases)
+            if not stable_releases or _release_identity(stable_releases[0]) != _release_identity(
+                release
+            ):
+                stable_releases = [release]
+            release_notes_history = deps._normalize_release_notes_history(stable_releases)
+            latest_release_notes_entry = deps._normalize_release_notes_entry(
+                {
+                    **release,
+                    **release_notes,
+                    "releaseTag": str(release.get("tag_name") or ""),
+                    "releaseVersion": str(manifest.get("version") or ""),
+                },
+                fallback_url=str(manifest.get("release_notes_url") or "").strip(),
+                fallback_title=str(manifest.get("version") or "").strip(),
+                fallback_version=str(manifest.get("version") or "").strip(),
+            )
+            release_notes_history = _merge_release_notes_history(
+                latest_release_notes_entry,
+                release_notes_history,
+            )
             deps.write_json_atomic(
                 self.paths.manifest_cache_path,
                 {
@@ -323,6 +390,7 @@ class DesktopUpdateService:
                     "releaseTag": str(release.get("tag_name") or ""),
                     "manifest": manifest,
                     "releaseNotes": release_notes,
+                    "releaseNotesHistory": release_notes_history,
                 },
             )
             next_status = deps._manifest_to_status(
@@ -330,6 +398,7 @@ class DesktopUpdateService:
                 manifest=manifest,
                 existing=deps.load_status(self.paths, current_version=current_version),
                 release_notes=release_notes,
+                release_notes_history=release_notes_history,
             )
             with self._lock:
                 return dict(
@@ -453,7 +522,9 @@ class DesktopUpdateService:
                     error=str(status.get("lastError") or "No update is available."),
                     error_code="no_update_available",
                 )
-            _cached, manifest, _release_notes = self._load_cached_manifest_parts()
+            _cached, manifest, _release_notes, _release_notes_history = (
+                self._load_cached_manifest_parts()
+            )
             if not manifest:
                 return self._download_failure_locked(
                     status=status,
@@ -521,7 +592,9 @@ class DesktopUpdateService:
                     error="Update ZIP is not ready to install.",
                     error_code="install_not_ready",
                 )
-            _cached, manifest, _release_notes = self._load_cached_manifest_parts()
+            _cached, manifest, _release_notes, _release_notes_history = (
+                self._load_cached_manifest_parts()
+            )
             if not manifest:
                 return self._install_failure_locked(
                     status=status,
