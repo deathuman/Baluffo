@@ -376,7 +376,7 @@ export function createSavedRenderController({
       view.jobKey === viewState.expandedJobKey && getJobDetailsTab(view.jobKey) === "attachments"
     ));
     if (activeAttachmentView && typeof hydrateAttachmentListForJob === "function") {
-      hydrateAttachmentListForJob(activeAttachmentView.jobKey, { force: true }).catch(err => {
+      hydrateAttachmentListForJob(activeAttachmentView.jobKey).catch(err => {
         console.error("Could not load attachment list:", err);
       });
     } else if (activeAttachmentView && typeof hydrateAttachmentLists === "function") {
@@ -419,7 +419,7 @@ export function createSavedRenderController({
     viewState.expandedJobKey = nextKey;
     applyDetailsAccordion();
     if (nextKey && getJobDetailsTab(nextKey) === "attachments" && typeof hydrateAttachmentListForJob === "function") {
-      hydrateAttachmentListForJob(nextKey, { force: true }).catch(err => {
+      hydrateAttachmentListForJob(nextKey).catch(err => {
         console.error("Could not load attachment list:", err);
       });
     }
@@ -490,7 +490,7 @@ export function createSavedRenderController({
       panel.classList.toggle("hidden", !active);
     });
     if (safeTab === "attachments" && typeof hydrateAttachmentListForJob === "function") {
-      hydrateAttachmentListForJob(jobKey, { force: true }).catch(err => {
+      hydrateAttachmentListForJob(jobKey).catch(err => {
         console.error("Could not load attachment list:", err);
       });
     }

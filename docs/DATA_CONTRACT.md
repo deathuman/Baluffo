@@ -379,6 +379,13 @@ This is the canonical stored/output row shape returned by desktop local-data GET
 | `createdAt` | `string` (ISO 8601) | Attachment creation/import timestamp. |
 | `path` | `string` | Relative on-disk filename under the user attachment directory. |
 
+Saved-job removal is intentionally row-scoped. `removeSavedJobForUser` hard-removes the
+saved-job row and does not delete attachment rows for the same `profileId` + `jobKey`.
+The Saved page confirmation/Undo flow restores the removed saved-job snapshot with the
+same `jobKey`, so any preserved attachment rows become visible again after Undo. File or
+metadata cleanup must go through the explicit attachment delete surface, not saved-job
+remove.
+
 ### 2.4 Backup export/import payload v3
 
 Desktop backup export writes schema version `3` and remains profile-scoped. Importers accept v1, v2, and v3 payloads; legacy saved-job rows are normalized into split `pipelinePhase`/`outcomeStatus` tracking on import.
