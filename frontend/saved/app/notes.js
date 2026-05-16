@@ -54,6 +54,7 @@ export async function flushNotesSave(jobKey, value, deps) {
   const {
     noteSaveState,
     currentUser,
+    getPreviousNoteLength,
     updateJobNotes,
     setNoteSaveState,
     dispatchSaved,
@@ -77,7 +78,12 @@ export async function flushNotesSave(jobKey, value, deps) {
   setNoteSaveState(jobKey, "saving");
   const saveValue = noteSaveState.pendingValues.get(jobKey);
   try {
-    const notesResult = await updateJobNotes(currentUser.uid, jobKey, saveValue);
+    const previousLength = typeof getPreviousNoteLength === "function"
+      ? getPreviousNoteLength(jobKey)
+      : undefined;
+    const notesResult = await updateJobNotes(currentUser.uid, jobKey, saveValue, {
+      previousLength
+    });
     if (!notesResult.ok) throw new Error(notesResult.error || "Could not save notes.");
     if (noteSaveState.pendingValues.get(jobKey) === saveValue) {
       noteSaveState.pendingValues.delete(jobKey);

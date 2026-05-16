@@ -14,6 +14,7 @@ function toLifecycleOverlayRecord(row) {
   return {
     status: String(row?.status || "").trim().toLowerCase(),
     removedAt: String(row?.removedAt || "").trim(),
+    lastSeenAt: String(row?.lastSeenAt || "").trim(),
     lifecycleEvent: String(row?.lifecycleEvent || "").trim().toLowerCase(),
     lifecycleReason: String(row?.lifecycleReason || "").trim().toLowerCase()
   };

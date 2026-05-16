@@ -2,11 +2,35 @@ const CONTROLLER_KEY = "__baluffoTooltipController";
 const TOOLTIP_ID = "baluffo-global-tooltip";
 
 function getTooltipText(target) {
-  return String(
+  const direct = String(
     target?.getAttribute?.("data-tooltip")
     || target?.dataset?.tooltip
     || ""
   ).trim();
+  if (direct) return direct;
+  return getClippedTooltipText(target);
+}
+
+function getClippedTooltipText(target) {
+  const text = String(
+    target?.getAttribute?.("data-tooltip-if-clipped")
+    || target?.dataset?.tooltipIfClipped
+    || ""
+  ).trim();
+  if (!text || !isElementClipped(target)) return "";
+  return text;
+}
+
+function isElementClipped(target) {
+  if (!target) return false;
+  const scrollWidth = Number(target.scrollWidth || 0);
+  const clientWidth = Number(target.clientWidth || 0);
+  const scrollHeight = Number(target.scrollHeight || 0);
+  const clientHeight = Number(target.clientHeight || 0);
+  return (
+    (scrollWidth > 0 && clientWidth > 0 && scrollWidth > clientWidth + 1)
+    || (scrollHeight > 0 && clientHeight > 0 && scrollHeight > clientHeight + 1)
+  );
 }
 
 function hasTooltip(target) {

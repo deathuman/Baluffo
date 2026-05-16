@@ -53,7 +53,15 @@
  * @property {SavedJobSnapshot} snapshot - Flattened CanonicalJob subset.
  * @property {string} createdAt - ISO 8601 timestamp.
  * @property {string} updatedAt - ISO 8601 timestamp.
- * @property {string} status - Application stage.
+ * @property {string} applicationStatus - Legacy mirror derived from tracking fields.
+ * @property {string} pipelinePhase - Current active pipeline phase.
+ * @property {string} outcomeStatus - Current outcome; active means still in flight.
+ * @property {Object<string,string>} phaseTimestamps - ISO timestamps keyed by phase.
+ * @property {Object<string,string>} outcomeTimestamps - ISO timestamps keyed by terminal outcome.
+ * @property {string} contentUpdatedAt - ISO timestamp for job content edits.
+ * @property {string} trackingUpdatedAt - ISO timestamp for phase/outcome changes.
+ * @property {string} notesUpdatedAt - ISO timestamp for notes changes.
+ * @property {string} lastActivityAt - ISO timestamp for the latest saved-job activity row.
  * @property {string} notes - User text.
  * @property {boolean} isCustom - True if manually created.
  * @property {string} customSourceLabel - Display name for custom rows.

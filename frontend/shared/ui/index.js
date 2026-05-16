@@ -12,6 +12,11 @@ export function tooltipAttrs(text) {
   return value ? ` data-tooltip="${escapeHtml(value)}"` : "";
 }
 
+export function clippedTooltipAttrs(text) {
+  const value = String(text || "").trim();
+  return value ? ` data-tooltip-if-clipped="${escapeHtml(value)}"` : "";
+}
+
 export function setTooltip(el, text) {
   if (!el) return;
   const value = String(text || "").trim();

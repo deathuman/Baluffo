@@ -141,6 +141,7 @@ export function createSavedBoot(deps) {
       setSelectedJobKey: deps.setSelectedJobKey,
       removeSavedJob: deps.removeSavedJob,
       updatePhase: deps.updatePhase,
+      updateOutcome: deps.updateOutcome,
       toggleDetailsForJob: deps.toggleDetailsForJob,
       openCustomJobEditor: deps.openCustomJobEditor,
       setJobDetailsTab: deps.setJobDetailsTab,

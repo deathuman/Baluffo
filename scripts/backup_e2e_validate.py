@@ -303,7 +303,10 @@ def _seed_profile_data(store: LocalDataStore, uid: str) -> tuple[list[str], list
         uid,
         job_a,
         "interview_1",
-        {"preserveTimestamp": "2026-03-10T11:30:00.000Z"},
+        {
+            "override": True,
+            "preserveTimestamp": "2026-03-10T11:30:00.000Z",
+        },
     )
     store.update_job_notes(uid, job_a, "Interview scheduled for Tuesday.")
 
@@ -467,8 +470,8 @@ def run_validation(data_dir: Path) -> dict[str, Any]:
     return {
         "generatedAt": now_iso(),
         "ok": overall_ok,
-        "schemaVersion": 2,
-        "backupSchemaVersion": 2,
+        "schemaVersion": 3,
+        "backupSchemaVersion": 3,
         "dataDir": str(data_dir),
         "scenarios": scenarios,
     }
@@ -500,8 +503,8 @@ def main() -> int:
         report = {
             "generatedAt": now_iso(),
             "ok": False,
-            "schemaVersion": 2,
-            "backupSchemaVersion": 2,
+            "schemaVersion": 3,
+            "backupSchemaVersion": 3,
             "dataDir": str(data_dir),
             "error": str(exc),
             "scenarios": [],

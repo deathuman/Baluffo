@@ -5,7 +5,7 @@
 > - **Canonical for:** endpoint surface, route naming, and high-level request intent
 > - **Not canonical for:** backend business logic internals or service ownership
 > - **Then inspect:** `src/bridge/routes/{get_routes,post_routes,post_routes_admin,post_routes_local_data,post_routes_update}.py`, `src/bridge/*.py`, `frontend/*/services.js`
-> - **Last updated:** 2026-05-13
+> - **Last updated:** 2026-05-16
 > - **Ownership note:** ops/task-state internals now compose through `src/bridge/ops_api.py`, `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, `src/bridge/ops_task_{fetch_live,discovery_live,projection}.py`, and `src/bridge/ops_live_payload.py`
 > - **Local-data ownership note:** desktop local-data storage now routes through `src/local_data_store.py` as a thin facade over `src/local_data_store_{shared,profiles,saved_jobs,attachments,backup}.py`, while the shared desktop runtime stays rooted at `frontend/shared/local-data/desktop-client.js` over `frontend/shared/local-data/desktop/{api,lifecycle,navigation,state}.js`
 > - **Desktop update ownership note:** the helper executable stays rooted at `src/ship/desktop_updater.py` over `src/ship/desktop_updater_{ui,release,install}.py`, while the Jobs desktop update UI stays rooted at `frontend/jobs/app/desktop-update.js` over `frontend/jobs/app/desktop-update-{model,dom,controller}.js`
@@ -26,6 +26,7 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
 | POST | `/desktop-local-data/saved-jobs/save` | Bookmark a job |
 | POST | `/desktop-local-data/saved-jobs/remove` | Remove saved job |
 | POST | `/desktop-local-data/saved-jobs/status` | Update application status |
+| POST | `/desktop-local-data/saved-jobs/tracking` | Update split phase/outcome tracking |
 | POST | `/desktop-local-data/saved-jobs/notes` | Update job notes |
 | GET | `/desktop-local-data/attachments?uid=&jobKey=` | List attachments |
 | GET | `/desktop-local-data/attachments/content?uid=&jobKey=&attachmentId=` | Download attachment |

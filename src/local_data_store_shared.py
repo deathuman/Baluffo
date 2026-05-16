@@ -16,7 +16,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-APPLICATION_STATUSES = ["bookmark", "applied", "interview_1", "interview_2", "offer", "rejected"]
 LOCK = threading.RLock()
 
 
@@ -85,25 +84,6 @@ def generate_job_key(job: dict[str, Any]) -> str:
         ).lower()
     salt = str(job.get("keySalt") or "").strip().lower()
     return f"job_{_hash_fnv1a(f'{seed}|{salt}' if salt else seed)}"
-
-
-def normalize_application_status(status: str) -> str:
-    raw = str(status or "").strip().lower()
-    if raw == "bookmarked":
-        return "bookmark"
-    return raw if raw in APPLICATION_STATUSES else "bookmark"
-
-
-def can_transition_phase(current: str, nxt: str) -> bool:
-    left = normalize_application_status(current)
-    right = normalize_application_status(nxt)
-    if left == right:
-        return True
-    if left == "rejected":
-        return False
-    if right == "rejected":
-        return True
-    return APPLICATION_STATUSES.index(right) == APPLICATION_STATUSES.index(left) + 1
 
 
 def normalize_sector_value(sector: str, company_type: str = "") -> str:

@@ -13,17 +13,24 @@ from .local_data_store_shared import (
     LOCK,
     LocalDataPaths,
     _normalize_iso,
-    can_transition_phase,
     ensure_user_dirs,
     generate_job_key,
     load_activity_rows,
     load_attachment_rows,
     load_saved_job_rows,
-    normalize_application_status,
     normalize_sector_value,
     sanitize_job_url,
     save_activity_rows,
     save_saved_job_rows,
+)
+from .local_data_store_tracking import (
+    can_set_outcome_status,
+    can_transition_pipeline_phase,
+    normalize_outcome_status,
+    normalize_pipeline_phase,
+    normalize_tracking_fields,
+    split_application_status,
+    to_application_status_mirror,
 )
 
 
@@ -44,10 +51,13 @@ def normalize_saved_job(
         }
     )
     saved_at = _normalize_iso(source.get("savedAt") or base.get("savedAt"), now_iso())
-    phase_timestamps = dict(base.get("phaseTimestamps") or {})
-    phase_timestamps.update(dict(source.get("phaseTimestamps") or {}))
-    if not phase_timestamps.get("bookmark"):
-        phase_timestamps["bookmark"] = saved_at
+    tracking = normalize_tracking_fields(
+        source,
+        base,
+        saved_at=saved_at,
+        now_iso=now_iso,
+        normalize_iso=_normalize_iso,
+    )
     is_custom = bool(
         source.get("isCustom") if source.get("isCustom") is not None else base.get("isCustom")
     )
@@ -81,10 +91,11 @@ def normalize_saved_job(
         "reminderAt": _normalize_iso(source.get("reminderAt") or base.get("reminderAt"), ""),
         "contactedAt": _normalize_iso(source.get("contactedAt") or base.get("contactedAt"), ""),
         "updatedBy": str(source.get("updatedBy") or base.get("updatedBy") or "").strip(),
-        "applicationStatus": normalize_application_status(
-            str(source.get("applicationStatus") or base.get("applicationStatus") or "")
-        ),
-        "phaseTimestamps": phase_timestamps,
+        "pipelinePhase": tracking["pipelinePhase"],
+        "outcomeStatus": tracking["outcomeStatus"],
+        "applicationStatus": tracking["applicationStatus"],
+        "phaseTimestamps": tracking["phaseTimestamps"],
+        "outcomeTimestamps": tracking["outcomeTimestamps"],
         "notes": str(
             source.get("notes") if source.get("notes") is not None else base.get("notes") or ""
         ),
@@ -93,6 +104,10 @@ def normalize_saved_job(
         ),
         "savedAt": saved_at,
         "updatedAt": _normalize_iso(source.get("updatedAt") or base.get("updatedAt"), now_iso()),
+        "contentUpdatedAt": tracking["contentUpdatedAt"],
+        "trackingUpdatedAt": tracking["trackingUpdatedAt"],
+        "notesUpdatedAt": tracking["notesUpdatedAt"],
+        "lastActivityAt": tracking["lastActivityAt"],
     }
 
 
@@ -114,6 +129,14 @@ def merge_saved_job(
     if not phase_timestamps.get("bookmark"):
         phase_timestamps["bookmark"] = merged["savedAt"]
     merged["phaseTimestamps"] = phase_timestamps
+    tracking = normalize_tracking_fields(
+        merged,
+        current,
+        saved_at=str(merged.get("savedAt") or ""),
+        now_iso=now_iso,
+        normalize_iso=_normalize_iso,
+    )
+    merged.update(tracking)
     return merged
 
 
@@ -138,6 +161,16 @@ def add_activity(
         }
     )
     save_activity_rows(paths, uid, rows)
+    job_key = str(job.get("jobKey") or (details or {}).get("jobKey") or "")
+    if job_key:
+        saved_rows = load_saved_job_rows(paths, uid)
+        target = next(
+            (row for row in saved_rows if str(row.get("jobKey") or "") == job_key),
+            None,
+        )
+        if target:
+            target["lastActivityAt"] = rows[-1]["createdAt"]
+            save_saved_job_rows(paths, uid, saved_rows)
 
 
 def attachment_count(paths: LocalDataPaths, uid: str, job_key: str) -> int:
@@ -193,6 +226,7 @@ def save_job_for_user(
             },
             existing,
         )
+        payload["contentUpdatedAt"] = current_iso
         payload["attachmentsCount"] = attachment_count(paths, uid, job_key)
         next_rows = [row for row in rows if str(row.get("jobKey") or "") != job_key] + [payload]
         save_saved_job_rows(paths, uid, next_rows)
@@ -228,7 +262,11 @@ def remove_saved_job_for_user(paths: LocalDataPaths, uid: str, job_key: str) -> 
                 uid,
                 event_type,
                 removed,
-                {"fromStatus": str(removed.get("applicationStatus") or "bookmark")},
+                {
+                    "fromStatus": str(removed.get("applicationStatus") or "bookmark"),
+                    "fromPhase": str(removed.get("pipelinePhase") or "bookmark"),
+                    "fromOutcome": str(removed.get("outcomeStatus") or "active"),
+                },
             )
 
 
@@ -239,48 +277,125 @@ def update_application_status(
     status: str,
     options: dict[str, Any] | None = None,
 ) -> None:
+    split = split_application_status(status)
+    if split["outcomeStatus"] != "active":
+        update_application_tracking(
+            paths, uid, job_key, {"outcomeStatus": split["outcomeStatus"]}, options
+        )
+        return
+    update_application_tracking(
+        paths, uid, job_key, {"pipelinePhase": split["pipelinePhase"]}, options
+    )
+
+
+def update_application_tracking(
+    paths: LocalDataPaths,
+    uid: str,
+    job_key: str,
+    tracking_update: dict[str, Any],
+    options: dict[str, Any] | None = None,
+) -> None:
     require_current_user(paths, uid)
     with LOCK:
         options = options or {}
+        tracking_update = dict(tracking_update or {})
         rows = load_saved_job_rows(paths, uid)
         target = next(
             (row for row in rows if str(row.get("jobKey") or "") == str(job_key or "")), None
         )
         if not target:
             raise ValueError("Saved job not found.")
-        previous_status = normalize_application_status(str(target.get("applicationStatus") or ""))
-        next_status = normalize_application_status(status)
-        if previous_status == next_status:
+        previous = normalize_tracking_fields(
+            target,
+            {},
+            saved_at=str(target.get("savedAt") or ""),
+            now_iso=now_iso,
+            normalize_iso=_normalize_iso,
+        )
+        next_phase = (
+            previous["pipelinePhase"]
+            if "pipelinePhase" not in tracking_update
+            else normalize_pipeline_phase(tracking_update.get("pipelinePhase"))
+        )
+        next_outcome = (
+            previous["outcomeStatus"]
+            if "outcomeStatus" not in tracking_update
+            else normalize_outcome_status(tracking_update.get("outcomeStatus"))
+        )
+        phase_changed = next_phase != previous["pipelinePhase"]
+        outcome_changed = next_outcome != previous["outcomeStatus"]
+        if not phase_changed and not outcome_changed:
             return
-        if not bool(options.get("override")) and not can_transition_phase(
-            previous_status, next_status
+        override = bool(options.get("override"))
+        if (
+            phase_changed
+            and not override
+            and not can_transition_pipeline_phase(
+                previous["pipelinePhase"], next_phase, previous["outcomeStatus"]
+            )
         ):
             raise ValueError(
                 "Invalid phase transition. Use override for backward or skipped transitions."
             )
-        phase_timestamps = dict(target.get("phaseTimestamps") or {})
+        if (
+            outcome_changed
+            and not override
+            and not can_set_outcome_status(previous["outcomeStatus"], next_outcome)
+        ):
+            raise ValueError(
+                "Invalid outcome transition. Use override for terminal outcome changes."
+            )
+        current_iso = now_iso()
+        phase_timestamps = dict(previous["phaseTimestamps"])
         cleanup_phase = str(options.get("cleanupPhase") or "").strip()
         if cleanup_phase:
             phase_timestamps.pop(cleanup_phase, None)
-        phase_timestamps[next_status] = str(options.get("preserveTimestamp") or now_iso())
-        target["applicationStatus"] = next_status
+        if phase_changed:
+            phase_timestamps[next_phase] = str(options.get("preserveTimestamp") or current_iso)
+        outcome_timestamps = dict(previous["outcomeTimestamps"])
+        if outcome_changed and next_outcome != "active":
+            outcome_timestamps[next_outcome] = str(
+                options.get("preserveOutcomeTimestamp") or current_iso
+            )
+        target["pipelinePhase"] = next_phase
+        target["outcomeStatus"] = next_outcome
+        target["applicationStatus"] = to_application_status_mirror(next_phase, next_outcome)
         target["phaseTimestamps"] = phase_timestamps
-        target["updatedAt"] = now_iso()
+        target["outcomeTimestamps"] = outcome_timestamps
+        target["trackingUpdatedAt"] = current_iso
+        target["updatedAt"] = current_iso
         save_saved_job_rows(paths, uid, rows)
+        event_type = str(options.get("eventType") or "").strip()
+        if not event_type:
+            event_type = "outcome_changed" if outcome_changed else "phase_changed"
         add_activity(
             paths,
             uid,
-            "phase_changed",
+            event_type,
             target,
             {
-                "previousStatus": previous_status,
-                "nextStatus": next_status,
-                "overrideUsed": bool(options.get("override")),
+                "previousPhase": previous["pipelinePhase"],
+                "nextPhase": next_phase,
+                "previousOutcome": previous["outcomeStatus"],
+                "nextOutcome": next_outcome,
+                "previousStatus": to_application_status_mirror(
+                    previous["pipelinePhase"], previous["outcomeStatus"]
+                ),
+                "nextStatus": to_application_status_mirror(next_phase, next_outcome),
+                "overrideUsed": override,
+                "overrideReason": str(options.get("overrideReason") or "").strip(),
+                "overrideReasonProvided": bool(str(options.get("overrideReason") or "").strip()),
             },
         )
 
 
-def update_job_notes(paths: LocalDataPaths, uid: str, job_key: str, notes: str) -> None:
+def update_job_notes(
+    paths: LocalDataPaths,
+    uid: str,
+    job_key: str,
+    notes: str,
+    _options: dict[str, Any] | None = None,
+) -> None:
     require_current_user(paths, uid)
     with LOCK:
         rows = load_saved_job_rows(paths, uid)
@@ -289,8 +404,24 @@ def update_job_notes(paths: LocalDataPaths, uid: str, job_key: str, notes: str) 
         )
         if not target:
             raise ValueError("Saved job not found.")
-        target["notes"] = str(notes or "")
+        previous_notes = str(target.get("notes") or "")
+        previous_length = len(previous_notes)
+        next_notes = str(notes or "")
+        target["notes"] = next_notes
+        target["notesUpdatedAt"] = now_iso()
         save_saved_job_rows(paths, uid, rows)
+        if previous_notes != next_notes:
+            add_activity(
+                paths,
+                uid,
+                "note_updated",
+                target,
+                {
+                    "previousLength": previous_length,
+                    "nextLength": len(next_notes),
+                    "debounceWindow": True,
+                },
+            )
 
 
 def list_activity_for_user(

@@ -266,7 +266,7 @@ test("saved smoke: export stays available for signed-in browser users and guest 
   await seedBridgeRuntimeBase(page);
   await page.goto("/saved.html");
   await expectTooltipText(page, page.locator("#history-panel-toggle-btn"), "Show activity timeline");
-  await expectTooltipText(page, page.locator("#add-custom-job-btn"), "Create a personal saved job entry");
+  await expect(page.locator("#add-custom-job-btn")).not.toHaveAttribute("data-tooltip", /.+/);
 
   await signInWithProfile(page, "#saved-auth-sign-in-btn", "Smoke User", "#add-custom-job-btn");
   await expect(page.locator("#saved-auth-status")).not.toContainText(/Guest/i);

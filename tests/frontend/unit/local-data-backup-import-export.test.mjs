@@ -1,12 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildProfileBackupPayload } from "../../../frontend/local-data/backup-import-export.js";
+import {
+  buildProfileBackupPayload,
+  parseBackupPayload
+} from "../../../frontend/local-data/backup-import-export.js";
 
 test("backup import-export: buildProfileBackupPayload emits deterministic ordering", () => {
   const payload = buildProfileBackupPayload("u1", {
     includeFiles: true,
     nowIso: () => "2026-03-09T10:00:00.000Z",
-    backupSchemaVersion: 2,
+    backupSchemaVersion: 3,
     normalizeSavedJobRecord: (_uid, row) => ({ ...row }),
     profile: { id: "u1", name: "User One" },
     savedJobs: [
@@ -35,8 +38,8 @@ test("backup import-export: buildProfileBackupPayload emits deterministic orderi
     payload.activityLog.map(row => row.id),
     ["ev_1", "ev_2"]
   );
-  assert.equal(payload.schemaVersion, 2);
-  assert.equal(payload.version, 2);
+  assert.equal(payload.schemaVersion, 3);
+  assert.equal(payload.version, 3);
   assert.equal(payload.includesFiles, true);
   assert.deepEqual(payload.counts, {
     savedJobs: 2,
@@ -50,7 +53,7 @@ test("backup import-export: includesFiles false keeps payload contract intact", 
   const payload = buildProfileBackupPayload("u1", {
     includeFiles: false,
     nowIso: () => "2026-03-09T10:00:00.000Z",
-    backupSchemaVersion: 2,
+    backupSchemaVersion: 3,
     normalizeSavedJobRecord: (_uid, row) => ({ ...row }),
     profile: { id: "u1", name: "User One" },
     savedJobs: [{ jobKey: "job_1", title: "A", company: "Studio" }],
@@ -77,7 +80,7 @@ test("backup import-export: includesFiles true keeps attachment payload referenc
   const payload = buildProfileBackupPayload("u1", {
     includeFiles: true,
     nowIso: () => "2026-03-09T10:00:00.000Z",
-    backupSchemaVersion: 2,
+    backupSchemaVersion: 3,
     normalizeSavedJobRecord: (_uid, row) => ({ ...row }),
     profile: { id: "u1", name: "User One" },
     savedJobs: [{ jobKey: "job_1", title: "A", company: "Studio" }],
@@ -101,4 +104,17 @@ test("backup import-export: includesFiles true keeps attachment payload referenc
     historyEvents: 0,
     attachments: 1
   });
+});
+
+test("backup import-export: parser accepts v1, v2, and v3 payloads", () => {
+  for (const schemaVersion of [1, 2, 3]) {
+    const parsed = parseBackupPayload({
+      schemaVersion,
+      savedJobs: [],
+      attachments: [],
+      activityLog: []
+    });
+    assert.equal(parsed.schemaVersion, schemaVersion);
+    assert.deepEqual(parsed.savedJobs, []);
+  }
 });

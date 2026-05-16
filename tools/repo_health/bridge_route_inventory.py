@@ -579,6 +579,14 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
     ),
     _route(
         "POST",
+        "/desktop-local-data/saved-jobs/tracking",
+        EXACT,
+        POST_LOCAL_DATA_HANDLER,
+        "public",
+        caller_files=LOCAL_DATA_CALLERS,
+    ),
+    _route(
+        "POST",
         "/desktop-local-data/saved-jobs/notes",
         EXACT,
         POST_LOCAL_DATA_HANDLER,

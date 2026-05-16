@@ -102,7 +102,13 @@ def test_backup_export_import_roundtrip_preserves_business_fields() -> None:
             },
         )
         store.update_application_status(
-            uid, job_1, "interview_1", {"preserveTimestamp": "2026-03-10T11:30:00.000Z"}
+            uid,
+            job_1,
+            "interview_1",
+            {
+                "override": True,
+                "preserveTimestamp": "2026-03-10T11:30:00.000Z",
+            },
         )
         store.update_job_notes(uid, job_1, "Interview planned")
 
@@ -141,7 +147,7 @@ def test_backup_export_import_roundtrip_preserves_business_fields() -> None:
         activity_before_len = len(store.list_activity_for_user(uid, 2000))
 
         payload_no_files = store.export_profile_data(uid, include_files=False)
-        assert payload_no_files.get("schemaVersion") == 2
+        assert payload_no_files.get("schemaVersion") == 3
         assert payload_no_files.get("includesFiles") is False
         assert payload_no_files.get("counts") == {
             "savedJobs": 2,
@@ -160,7 +166,7 @@ def test_backup_export_import_roundtrip_preserves_business_fields() -> None:
         )
 
         payload_with_files = store.export_profile_data(uid, include_files=True)
-        assert payload_with_files.get("schemaVersion") == 2
+        assert payload_with_files.get("schemaVersion") == 3
         assert payload_with_files.get("includesFiles") is True
         assert payload_with_files.get("counts") == {
             "savedJobs": 2,
@@ -192,6 +198,8 @@ def test_backup_export_import_roundtrip_preserves_business_fields() -> None:
         assert set(jobs_before.keys()) == set(jobs_after.keys())
         assert jobs_after[job_1]["notes"] == "Interview planned"
         assert jobs_after[job_1]["applicationStatus"] == "interview_1"
+        assert jobs_after[job_1]["pipelinePhase"] == "interview_1"
+        assert jobs_after[job_1]["outcomeStatus"] == "active"
         assert jobs_after[job_1]["phaseTimestamps"].get("interview_1") == "2026-03-10T11:30:00.000Z"
         assert jobs_after[job_2]["isCustom"] is True
         assert jobs_after[job_2]["customSourceLabel"] == "Manual"
@@ -269,6 +277,39 @@ def test_import_skips_malformed_rows_and_keeps_valid_rows() -> None:
         assert any("jobKey" in str(w) for w in result.get("warnings") or [])
 
 
+def test_backup_import_accepts_v1_v2_v3_payload_versions() -> None:
+    with workspace_tmpdir("local-data-store") as tmp:
+        store = LocalDataStore(LocalDataPaths.from_data_dir(Path(tmp) / "data"))
+        user = store.sign_in("BackupVersions")
+        uid = str(user["uid"])
+
+        for version in (1, 2, 3):
+            result = store.import_profile_data(
+                uid,
+                {
+                    "schemaVersion": version,
+                    "savedJobs": [
+                        {
+                            "jobKey": f"job_version_{version}",
+                            "title": f"Role {version}",
+                            "company": "Studio Versions",
+                            "applicationStatus": "rejected" if version == 1 else "bookmark",
+                            "savedAt": "2026-03-08T09:00:00.000Z",
+                        }
+                    ],
+                    "attachments": [],
+                    "activityLog": [],
+                },
+            )
+            assert int(result.get("created", 0)) == 1
+
+        rows = sorted(store.list_saved_jobs(uid), key=lambda row: str(row.get("title") or ""))
+        assert [row["title"] for row in rows] == ["Role 1", "Role 2", "Role 3"]
+        assert rows[0]["outcomeStatus"] == "rejected"
+        assert rows[1]["pipelinePhase"] == "bookmark"
+        assert rows[2]["pipelinePhase"] == "bookmark"
+
+
 def test_update_application_status_is_noop_when_reclicking_same_phase() -> None:
     with workspace_tmpdir("local-data-store") as tmp:
         store = LocalDataStore(LocalDataPaths.from_data_dir(Path(tmp) / "data"))
@@ -296,3 +337,60 @@ def test_update_application_status_is_noop_when_reclicking_same_phase() -> None:
         assert str(after_row.get("updatedAt") or "") == before_updated_at
         assert dict(after_row.get("phaseTimestamps") or {}) == before_phase_timestamps
         assert after_activity_len == before_activity_len
+
+
+def test_update_application_tracking_splits_phase_outcome_and_touches_activity() -> None:
+    with workspace_tmpdir("local-data-store") as tmp:
+        store = LocalDataStore(LocalDataPaths.from_data_dir(Path(tmp) / "data"))
+        user = store.sign_in("TrackingSplit")
+        uid = str(user["uid"])
+        job_key = store.save_job_for_user(
+            uid,
+            {
+                "title": "Gameplay Programmer",
+                "company": "Studio Split",
+                "jobLink": "https://example.com/split",
+                "notes": "old",
+            },
+        )
+
+        saved = store.list_saved_jobs(uid)[0]
+        initial_activity_at = str(saved.get("lastActivityAt") or "")
+        store.update_application_tracking(uid, job_key, {"pipelinePhase": "applied"})
+        applied = store.list_saved_jobs(uid)[0]
+        assert applied["pipelinePhase"] == "applied"
+        assert applied["outcomeStatus"] == "active"
+        assert applied["applicationStatus"] == "applied"
+        assert str(applied.get("lastActivityAt") or "") >= initial_activity_at
+
+        store.update_application_tracking(uid, job_key, {"outcomeStatus": "rejected"})
+        rejected = store.list_saved_jobs(uid)[0]
+        assert rejected["pipelinePhase"] == "applied"
+        assert rejected["outcomeStatus"] == "rejected"
+        assert rejected["applicationStatus"] == "rejected"
+        assert rejected["outcomeTimestamps"].get("rejected")
+        after_outcome_activity_at = str(rejected.get("lastActivityAt") or "")
+
+        store.update_job_notes(uid, job_key, "new")
+        after_notes = store.list_saved_jobs(uid)[0]
+        assert str(after_notes.get("lastActivityAt") or "") >= after_outcome_activity_at
+        after_notes_activity_at = str(after_notes.get("lastActivityAt") or "")
+
+        store.add_attachment_for_job(
+            uid,
+            job_key,
+            {"name": "resume.txt", "type": "text/plain", "size": 1},
+            "data:text/plain;base64,WA==",
+        )
+        after_attachment = store.list_saved_jobs(uid)[0]
+        assert str(after_attachment.get("lastActivityAt") or "") >= after_notes_activity_at
+
+        activity_rows = store.list_activity_for_user(uid, 20)
+        activity_types = [row.get("type") for row in activity_rows]
+        assert "phase_changed" in activity_types
+        assert "outcome_changed" in activity_types
+        assert "note_updated" in activity_types
+        assert "attachment_added" in activity_types
+        note_activity = next(row for row in activity_rows if row.get("type") == "note_updated")
+        assert note_activity["details"]["previousLength"] == 3
+        assert note_activity["details"]["nextLength"] == 3

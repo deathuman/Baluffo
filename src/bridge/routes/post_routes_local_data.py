@@ -20,6 +20,47 @@ def _json_error(exc: Exception) -> dict[str, Any]:
     return {"ok": False, "error": str(exc)}
 
 
+def _handle_saved_job_tracking_post(
+    handler: BridgeResponseWriter,
+    *,
+    api: BridgeApi,
+    path: str,
+    payload_dict: dict[str, Any],
+) -> bool:
+    route_name = path.rsplit("/", 1)[-1]
+
+    def _payload() -> dict[str, Any]:
+        store = api.desktop_local_data_store()
+        uid = str(payload_dict.get("uid") or "")
+        job_key = str(payload_dict.get("jobKey") or "")
+        options = _as_dict(payload_dict.get("options"))
+        if route_name == "status":
+            store.update_application_status(
+                uid,
+                job_key,
+                str(payload_dict.get("status") or ""),
+                options,
+            )
+        elif route_name == "tracking":
+            store.update_application_tracking(
+                uid,
+                job_key,
+                _as_dict(payload_dict.get("tracking")),
+                options,
+            )
+        else:
+            store.update_job_notes(
+                uid,
+                job_key,
+                str(payload_dict.get("notes") or ""),
+                options,
+            )
+        return {"ok": True}
+
+    send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
+    return True
+
+
 def handle_post(
     handler: BridgeResponseWriter,
     *,
@@ -89,32 +130,17 @@ def handle_post(
         send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
         return True
 
-    if path == "/desktop-local-data/saved-jobs/status":
-
-        def _payload() -> dict[str, Any]:
-            api.desktop_local_data_store().update_application_status(
-                str(payload_dict.get("uid") or ""),
-                str(payload_dict.get("jobKey") or ""),
-                str(payload_dict.get("status") or ""),
-                _as_dict(payload_dict.get("options")),
-            )
-            return {"ok": True}
-
-        send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
-        return True
-
-    if path == "/desktop-local-data/saved-jobs/notes":
-
-        def _payload() -> dict[str, Any]:
-            api.desktop_local_data_store().update_job_notes(
-                str(payload_dict.get("uid") or ""),
-                str(payload_dict.get("jobKey") or ""),
-                str(payload_dict.get("notes") or ""),
-            )
-            return {"ok": True}
-
-        send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
-        return True
+    if path in (
+        "/desktop-local-data/saved-jobs/status",
+        "/desktop-local-data/saved-jobs/tracking",
+        "/desktop-local-data/saved-jobs/notes",
+    ):
+        return _handle_saved_job_tracking_post(
+            handler,
+            api=api,
+            path=path,
+            payload_dict=payload_dict,
+        )
 
     if path == "/desktop-local-data/attachments/add":
 

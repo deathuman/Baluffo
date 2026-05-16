@@ -5,7 +5,7 @@
 > - **Canonical for:** data contracts between pipeline, bridge, frontend, and local user data flows
 > - **Not canonical for:** subsystem ownership or route wiring
 > - **Then inspect:** `src/core/schemas.py`, `src/core/contracts.py`, the owning `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py` modules, relevant tests, and the owning runtime docs
-> - **Last updated:** 2026-05-12
+> - **Last updated:** 2026-05-16
 > - **Also update when changing contract shape:** `src/core/schemas.py`, `src/core/contracts.py`, the owning `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py` modules, relevant tests, and any affected UI/runtime docs
 
 This document serves as the absolute boundary and source of truth for data structures passed between the Python pipeline (`src/jobs/`) and the Vanilla JS frontend (`frontend/`).
@@ -337,12 +337,19 @@ This is the canonical stored/output row shape returned by desktop local-data GET
 | `reminderAt` | `string` (ISO 8601) | Optional reminder timestamp. |
 | `contactedAt` | `string` (ISO 8601) | Optional contacted timestamp. |
 | `updatedBy` | `string` | Optional user/editor marker. |
-| `applicationStatus` | `string` | Canonical local status such as `bookmark`, `applied`, or interview/offer phases. |
-| `phaseTimestamps` | `object<string, string>` | Phase-to-timestamp map; `bookmark` is always present after normalization. |
+| `pipelinePhase` | `string` | Canonical phase: `bookmark`, `applied`, `screening`, `assignment`, `interview_1`, `interview_2`, `final`, or `offer`. |
+| `outcomeStatus` | `string` | Canonical outcome: `active`, `rejected`, `withdrawn`, `ghosted`, `closed`, or `accepted`. |
+| `applicationStatus` | `string` | Legacy compatibility mirror derived from `pipelinePhase` and `outcomeStatus`; new code must not read this as source of truth. |
+| `phaseTimestamps` | `object<string, string>` | Phase-to-timestamp map for pipeline phases only; `bookmark` is always present after normalization. |
+| `outcomeTimestamps` | `object<string, string>` | Outcome-to-timestamp map for terminal outcomes. |
 | `notes` | `string` | Freeform local notes. |
 | `attachmentsCount` | `number` | Current count of persisted local attachments for the row. |
 | `savedAt` | `string` (ISO 8601) | Bookmark/create timestamp. |
 | `updatedAt` | `string` (ISO 8601) | Last mutation timestamp. |
+| `contentUpdatedAt` | `string` (ISO 8601) | Last saved-job content/edit timestamp. |
+| `trackingUpdatedAt` | `string` (ISO 8601) | Last phase/outcome tracking timestamp. |
+| `notesUpdatedAt` | `string` (ISO 8601) | Last notes timestamp, empty when notes have not been edited. |
+| `lastActivityAt` | `string` (ISO 8601) | Latest activity row timestamp touching this saved job. |
 
 `/desktop-local-data/saved-jobs/save` remains compatibility-lenient: the POST input validator still accepts legacy fields such as `snapshot`, `status`, `attachments`, `signature`, and `keySalt` through `SavedJobSchema`. Those fields are accepted for input compatibility, but they are not the canonical persisted/output row contract.
 
@@ -372,14 +379,14 @@ This is the canonical stored/output row shape returned by desktop local-data GET
 | `createdAt` | `string` (ISO 8601) | Attachment creation/import timestamp. |
 | `path` | `string` | Relative on-disk filename under the user attachment directory. |
 
-### 2.4 Backup export/import payload v2
+### 2.4 Backup export/import payload v3
 
-Desktop backup export/import uses schema version `2` and is profile-scoped.
+Desktop backup export writes schema version `3` and remains profile-scoped. Importers accept v1, v2, and v3 payloads; legacy saved-job rows are normalized into split `pipelinePhase`/`outcomeStatus` tracking on import.
 
 | Field | Type | Description |
 |---|---|---|
-| `version` | `number` | Always `2` for the current writer. |
-| `schemaVersion` | `number` | Always `2` for the current writer. |
+| `version` | `number` | Always `3` for the current writer. |
+| `schemaVersion` | `number` | Always `3` for the current writer. |
 | `exportedAt` | `string` (ISO 8601) | Export timestamp. |
 | `includesFiles` | `boolean` | Whether attachment file contents were embedded. |
 | `counts.savedJobs` | `number` | Count of exported saved-job rows. |
@@ -413,7 +420,7 @@ The canonical browser/desktop local-data runtime surface is defined by `frontend
 Stable method groups:
 
 - Auth/session: `isReady`, `getCurrentUser`, `onAuthStateChanged`, `signIn`, `signOut`
-- Saved jobs and status: `saveJobForUser`, `removeSavedJobForUser`, `getSavedJobKeys`, `subscribeSavedJobs`, `generateJobKey`, `canTransitionPhase`, `updateApplicationStatus`, `updateJobNotes`
+- Saved jobs and tracking: `saveJobForUser`, `removeSavedJobForUser`, `getSavedJobKeys`, `subscribeSavedJobs`, `generateJobKey`, `canTransitionPhase`, `updateApplicationStatus`, `updateApplicationTracking`, `updateJobNotes`
 - Attachments: `buildAttachmentPath`, `listAttachmentsForJob`, `addAttachmentForJob`, `getAttachmentBlob`, `getAttachmentOpenUrl`, `getAttachmentDownloadUrl`, `deleteAttachmentForJob`
 - Activity/backup/admin: `listActivityForUser`, `exportProfileData`, `getBackupExportUrl`, `importProfileData`, `getAdminOverview`, `wipeAccountAdmin`
 

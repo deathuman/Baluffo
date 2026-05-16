@@ -60,6 +60,7 @@ MAIN_RUNTIME_HIDDEN_IMPORTS = (
     "src.local_data_store_profiles",
     "src.local_data_store_saved_jobs",
     "src.local_data_store_shared",
+    "src.local_data_store_tracking",
     "src.local_data_store",
     "src.pipeline_io",
     "src.shared",

@@ -29,6 +29,7 @@ export function buildTimelinePrefsKey(prefix, uid) {
 export function timelineTypeForEntry(entry) {
   const type = String(entry?.type || "").toLowerCase();
   if (type.includes("phase")) return TIMELINE_SCOPE_PHASE;
+  if (type.includes("outcome")) return TIMELINE_SCOPE_PHASE;
   if (type.includes("note")) return TIMELINE_SCOPE_NOTES;
   if (type.includes("attach")) return TIMELINE_SCOPE_ATTACHMENTS;
   return TIMELINE_SCOPE_ALL;

@@ -55,6 +55,10 @@ export function activityTypeLabel(type) {
     case "job_saved": return "Saved";
     case "job_removed": return "Removed";
     case "phase_changed": return "Phase Changed";
+    case "phase_reverted": return "Phase Reverted";
+    case "outcome_changed": return "Outcome Changed";
+    case "outcome_reverted": return "Outcome Reverted";
+    case "note_updated": return "Note Updated";
     case "attachment_added": return "Attachment Added";
     case "attachment_deleted": return "Attachment Deleted";
     case "custom_job_created": return "Custom Job";
@@ -77,17 +81,33 @@ export function formatActivityDetail(entry, options = {}) {
   const details = entry?.details && typeof entry.details === "object" ? entry.details : {};
   const normalizePhase = options.normalizePhase || (value => value);
   const phaseLabels = options.phaseLabels || {};
+  const normalizeOutcome = options.normalizeOutcome || (value => value);
+  const outcomeLabels = options.outcomeLabels || {};
   const formatPhaseTimestamp = options.formatPhaseTimestamp || (() => "");
-  if (type === "phase_changed") {
-    const from = phaseLabels[normalizePhase(details.previousStatus)] || "Unknown";
-    const to = phaseLabels[normalizePhase(details.nextStatus)] || "Unknown";
+  if (type === "phase_changed" || type === "phase_reverted") {
+    const previous = details.previousPhase || details.previousStatus;
+    const next = details.nextPhase || details.nextStatus;
+    const from = phaseLabels[normalizePhase(previous)] || "Unknown";
+    const to = phaseLabels[normalizePhase(next)] || "Unknown";
+    const override = details.overrideUsed ? " (override)" : "";
+    return `${from} -> ${to}${override}`;
+  }
+  if (type === "outcome_changed" || type === "outcome_reverted") {
+    const from = outcomeLabels[normalizeOutcome(details.previousOutcome)] || "Unknown";
+    const to = outcomeLabels[normalizeOutcome(details.nextOutcome)] || "Unknown";
     const override = details.overrideUsed ? " (override)" : "";
     return `${from} -> ${to}${override}`;
   }
   if (type === "job_removed") {
-    const from = phaseLabels[normalizePhase(details.fromStatus)] || "Saved";
+    const outcome = String(details.fromOutcome || "").trim();
+    if (outcome && outcome !== "active") {
+      const label = outcomeLabels[normalizeOutcome(outcome)] || outcome;
+      return `Removed from ${label}`;
+    }
+    const from = phaseLabels[normalizePhase(details.fromPhase || details.fromStatus)] || "Saved";
     return `Removed from ${from}`;
   }
+  if (type === "note_updated") return "Updated notes";
   if (type === "custom_job_created") return "Created custom job entry";
   if (type === "custom_job_removed") return "Deleted custom job entry";
   if (type === "custom_job_updated") return "Updated custom job fields";

@@ -139,7 +139,8 @@ export function bindSavedJobsListDelegation({
   cssEscape,
   setSelectedJobKey,
   removeSavedJob,
-    updatePhase,
+  updatePhase,
+  updateOutcome,
   toggleDetailsForJob,
   openCustomJobEditor,
   setJobDetailsTab,
@@ -175,18 +176,36 @@ export function bindSavedJobsListDelegation({
       return;
     }
 
-    const phaseOverrideConfirmBtn = target.closest(ui(t.phaseOverrideConfirmBtn));
-    if (phaseOverrideConfirmBtn) {
-      const jobKey = phaseOverrideConfirmBtn.dataset.jobKey || "";
-      const phase = phaseOverrideConfirmBtn.dataset.phase || "";
+    const outcomeBtn = target.closest(ui(t.outcomeBtn));
+    if (outcomeBtn) {
+      const jobKey = outcomeBtn.dataset.jobKey || "";
+      const outcomeStatus = outcomeBtn.dataset.outcomeStatus || "";
       setSelectedJobKey(jobKey, { rerenderTimeline: false });
-      updatePhase(jobKey, phase, { overrideThisTransition: true }).catch(() => {});
+      updateOutcome(jobKey, outcomeStatus).catch(() => {});
       return;
     }
 
-    const phaseOverrideCancelBtn = target.closest(ui(t.phaseOverrideCancelBtn));
-    if (phaseOverrideCancelBtn) {
+    const trackingOverrideConfirmBtn = target.closest(ui(t.trackingOverrideConfirmBtn));
+    if (trackingOverrideConfirmBtn) {
+      const jobKey = trackingOverrideConfirmBtn.dataset.jobKey || "";
+      const kind = trackingOverrideConfirmBtn.dataset.trackingKind || "phase";
+      setSelectedJobKey(jobKey, { rerenderTimeline: false });
+      if (kind === "outcome") {
+        updateOutcome(jobKey, trackingOverrideConfirmBtn.dataset.outcomeStatus || "", {
+          overrideThisTransition: true
+        }).catch(() => {});
+      } else {
+        updatePhase(jobKey, trackingOverrideConfirmBtn.dataset.phase || "", {
+          overrideThisTransition: true
+        }).catch(() => {});
+      }
+      return;
+    }
+
+    const trackingOverrideCancelBtn = target.closest(ui(t.trackingOverrideCancelBtn));
+    if (trackingOverrideCancelBtn) {
       viewState.phaseOverrideContext = null;
+      viewState.trackingOverrideContext = null;
       renderSavedJobs(Array.from(viewState.lastSavedJobsByKey.values()));
       return;
     }
@@ -244,10 +263,6 @@ export function bindSavedJobsListDelegation({
       return;
     }
 
-    const itemBlock = target.closest(ui(t.itemBlock));
-    if (itemBlock && !target.closest("button,a,input,textarea,select,label")) {
-      setSelectedJobKey(itemBlock.dataset.jobKey || "", { rerenderTimeline: false });
-    }
   });
 
   savedJobsListEl.addEventListener("input", event => {

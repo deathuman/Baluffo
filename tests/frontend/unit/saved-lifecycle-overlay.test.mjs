@@ -71,12 +71,14 @@ test("saved lifecycle overlay prefers canonical rows and falls back to lifecycle
   assert.deepEqual(first, {
     status: "active",
     removedAt: "",
+    lastSeenAt: "",
     lifecycleEvent: "reappeared",
     lifecycleReason: ""
   });
   assert.deepEqual(second, {
     status: "active",
     removedAt: "",
+    lastSeenAt: "",
     lifecycleEvent: "preserved",
     lifecycleReason: "source_failed"
   });

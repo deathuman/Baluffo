@@ -1,4 +1,13 @@
 import { sanitizeLocationField } from "../jobs/domain.js";
+import {
+  canSetOutcomeStatus,
+  canTransitionPipelinePhase,
+  normalizeOutcomeStatus,
+  normalizePipelinePhase,
+  normalizeTrackingFields,
+  splitApplicationStatus,
+  toApplicationStatusMirror
+} from "./tracking.js";
 
 export function createSavedJobsDomain(deps) {
   const {
@@ -8,8 +17,6 @@ export function createSavedJobsDomain(deps) {
     notifySavedJobsChanged,
     addActivityLog,
     generateJobKey,
-    normalizeApplicationStatus,
-    canTransitionPhase,
     normalizeSectorValue,
     normalizeCustomSourceLabel,
     sanitizeJobUrl,
@@ -30,13 +37,11 @@ export function createSavedJobsDomain(deps) {
     };
     const jobKey = generateJobKey(inputForKey);
     const savedAt = normalizeIsoOrNow(source.savedAt || base.savedAt, nowIso());
-    const mergedPhaseTimestamps = {
-      ...toPlainObject(base.phaseTimestamps),
-      ...toPlainObject(source.phaseTimestamps)
-    };
-    if (!mergedPhaseTimestamps.bookmark) {
-      mergedPhaseTimestamps.bookmark = savedAt;
-    }
+    const tracking = normalizeTrackingFields(source, base, {
+      savedAt,
+      nowIso,
+      normalizeIsoOrNow
+    });
 
     const isCustom = source.isCustom === true || (source.isCustom == null ? base.isCustom === true : false);
     return {
@@ -60,12 +65,19 @@ export function createSavedJobsDomain(deps) {
       reminderAt: normalizeIsoOrNow(source.reminderAt ?? base.reminderAt, ""),
       contactedAt: normalizeIsoOrNow(source.contactedAt ?? base.contactedAt, ""),
       updatedBy: String(source.updatedBy ?? base.updatedBy ?? "").trim(),
-      applicationStatus: normalizeApplicationStatus(source.applicationStatus ?? base.applicationStatus),
-      phaseTimestamps: mergedPhaseTimestamps,
+      pipelinePhase: tracking.pipelinePhase,
+      outcomeStatus: tracking.outcomeStatus,
+      applicationStatus: tracking.applicationStatus,
+      phaseTimestamps: tracking.phaseTimestamps,
+      outcomeTimestamps: tracking.outcomeTimestamps,
       notes: String(source.notes ?? base.notes ?? ""),
       attachmentsCount: Math.max(0, Number(source.attachmentsCount ?? base.attachmentsCount) || 0),
       savedAt,
-      updatedAt: normalizeIsoOrNow(source.updatedAt ?? base.updatedAt, nowIso())
+      updatedAt: normalizeIsoOrNow(source.updatedAt ?? base.updatedAt, nowIso()),
+      contentUpdatedAt: tracking.contentUpdatedAt,
+      trackingUpdatedAt: tracking.trackingUpdatedAt,
+      notesUpdatedAt: tracking.notesUpdatedAt,
+      lastActivityAt: tracking.lastActivityAt
     };
   }
 
@@ -91,6 +103,12 @@ export function createSavedJobsDomain(deps) {
     if (!merged.phaseTimestamps.bookmark) {
       merged.phaseTimestamps.bookmark = merged.savedAt;
     }
+    const tracking = normalizeTrackingFields(merged, existing, {
+      savedAt: merged.savedAt,
+      nowIso,
+      normalizeIsoOrNow
+    });
+    Object.assign(merged, tracking);
     return merged;
   }
 
@@ -111,18 +129,11 @@ export function createSavedJobsDomain(deps) {
         existingSnapshot = existing ? { ...existing } : null;
         const incomingSavedAt = String(job?.savedAt || "").trim();
         const savedAt = existing?.savedAt || incomingSavedAt || currentIso;
-        const phaseTimestamps = existing?.phaseTimestamps && typeof existing.phaseTimestamps === "object"
-          ? { ...existing.phaseTimestamps }
-          : {};
-        if (!existing && job?.phaseTimestamps && typeof job.phaseTimestamps === "object") {
-          Object.assign(phaseTimestamps, job.phaseTimestamps);
-        }
-        if (!phaseTimestamps.bookmark) {
-          phaseTimestamps.bookmark = savedAt;
-        }
-        const applicationStatus = existing
-          ? normalizeApplicationStatus(existing.applicationStatus)
-          : normalizeApplicationStatus(job?.applicationStatus);
+        const tracking = normalizeTrackingFields(job || {}, existing || {}, {
+          savedAt,
+          nowIso: () => currentIso,
+          normalizeIsoOrNow
+        });
         const payload = {
           pk,
           profileId: uid,
@@ -144,14 +155,21 @@ export function createSavedJobsDomain(deps) {
           reminderAt: String(job.reminderAt || existing?.reminderAt || "").trim(),
           contactedAt: String(job.contactedAt || existing?.contactedAt || "").trim(),
           updatedBy: String(job.updatedBy || existing?.updatedBy || "").trim(),
-          applicationStatus,
-          phaseTimestamps,
+          pipelinePhase: tracking.pipelinePhase,
+          outcomeStatus: tracking.outcomeStatus,
+          applicationStatus: tracking.applicationStatus,
+          phaseTimestamps: tracking.phaseTimestamps,
+          outcomeTimestamps: tracking.outcomeTimestamps,
           notes: existing?.notes ?? String(job.notes || ""),
           attachmentsCount: Number.isFinite(existing?.attachmentsCount)
             ? existing.attachmentsCount
             : Math.max(0, Number(job?.attachmentsCount) || 0),
           savedAt,
-          updatedAt: currentIso
+          updatedAt: currentIso,
+          contentUpdatedAt: currentIso,
+          trackingUpdatedAt: tracking.trackingUpdatedAt,
+          notesUpdatedAt: tracking.notesUpdatedAt,
+          lastActivityAt: tracking.lastActivityAt || savedAt
         };
         savedSnapshot = { ...payload };
         const putReq = store.put(payload);
@@ -211,6 +229,8 @@ export function createSavedJobsDomain(deps) {
       const eventType = removedSnapshot?.isCustom ? "custom_job_removed" : "job_removed";
       await addActivityLog(uid, eventType, removedSnapshot, {
         fromStatus: removedSnapshot.applicationStatus || "bookmark",
+        fromPhase: removedSnapshot.pipelinePhase || "bookmark",
+        fromOutcome: removedSnapshot.outcomeStatus || "active",
         isCustom: Boolean(removedSnapshot?.isCustom)
       });
     }
@@ -234,12 +254,22 @@ export function createSavedJobsDomain(deps) {
   }
 
   async function updateApplicationStatus(uid, jobKey, status, options = {}) {
+    const split = splitApplicationStatus(status);
+    if (split.outcomeStatus !== "active") {
+      return updateApplicationTracking(uid, jobKey, { outcomeStatus: split.outcomeStatus }, options);
+    }
+    return updateApplicationTracking(uid, jobKey, { pipelinePhase: split.pipelinePhase }, options);
+  }
+
+  async function updateApplicationTracking(uid, jobKey, trackingUpdate = {}, options = {}) {
     const user = ensureCurrentUser();
     if (uid !== user.uid) throw new Error("User mismatch.");
-    const nextStatus = normalizeApplicationStatus(status);
     const allowOverride = Boolean(options && options.override);
     const cleanupPhase = String(options?.cleanupPhase || "").trim();
     const preserveTimestamp = String(options?.preserveTimestamp || "").trim();
+    const preserveOutcomeTimestamp = String(options?.preserveOutcomeTimestamp || "").trim();
+    const overrideReason = String(options?.overrideReason || "").trim();
+    const eventTypeOverride = String(options?.eventType || "").trim();
     const pk = `${uid}::${jobKey}`;
 
     let logPayload = null;
@@ -251,31 +281,73 @@ export function createSavedJobsDomain(deps) {
           fail(new Error("Saved job not found."));
           return;
         }
-        const previousStatus = normalizeApplicationStatus(current.applicationStatus);
-        if (!allowOverride && !canTransitionPhase(previousStatus, nextStatus)) {
+        const previousTracking = normalizeTrackingFields(current, {}, {
+          savedAt: current.savedAt,
+          nowIso,
+          normalizeIsoOrNow
+        });
+        const nextPhase = trackingUpdate.pipelinePhase == null
+          ? previousTracking.pipelinePhase
+          : normalizePipelinePhase(trackingUpdate.pipelinePhase);
+        const nextOutcome = trackingUpdate.outcomeStatus == null
+          ? previousTracking.outcomeStatus
+          : normalizeOutcomeStatus(trackingUpdate.outcomeStatus);
+        const phaseChanged = nextPhase !== previousTracking.pipelinePhase;
+        const outcomeChanged = nextOutcome !== previousTracking.outcomeStatus;
+        if (!phaseChanged && !outcomeChanged) {
+          done();
+          return;
+        }
+        if (phaseChanged && !allowOverride && !canTransitionPipelinePhase(
+          previousTracking.pipelinePhase,
+          nextPhase,
+          previousTracking.outcomeStatus
+        )) {
           fail(new Error("Invalid phase transition. Use override for backward or skipped transitions."));
           return;
         }
+        if (outcomeChanged && !allowOverride && !canSetOutcomeStatus(previousTracking.outcomeStatus, nextOutcome)) {
+          fail(new Error("Invalid outcome transition. Use override for terminal outcome changes."));
+          return;
+        }
+        const currentIso = nowIso();
         const next = {
           ...current,
-          applicationStatus: nextStatus,
+          pipelinePhase: nextPhase,
+          outcomeStatus: nextOutcome,
+          applicationStatus: toApplicationStatusMirror(nextPhase, nextOutcome),
           phaseTimestamps: {
-            ...(current.phaseTimestamps && typeof current.phaseTimestamps === "object" ? current.phaseTimestamps : {})
+            ...previousTracking.phaseTimestamps
           },
-          updatedAt: current.updatedAt || current.savedAt || nowIso()
+          outcomeTimestamps: {
+            ...previousTracking.outcomeTimestamps
+          },
+          updatedAt: currentIso,
+          trackingUpdatedAt: currentIso
         };
         if (cleanupPhase) {
           delete next.phaseTimestamps[cleanupPhase];
         }
-        next.phaseTimestamps[nextStatus] = preserveTimestamp || nowIso();
+        if (phaseChanged) {
+          next.phaseTimestamps[nextPhase] = preserveTimestamp || currentIso;
+        }
+        if (outcomeChanged && nextOutcome !== "active") {
+          next.outcomeTimestamps[nextOutcome] = preserveOutcomeTimestamp || currentIso;
+        }
         logPayload = {
           profileId: uid,
           jobKey: current.jobKey || jobKey,
           title: current.title || "",
           company: current.company || "",
-          previousStatus,
-          nextStatus,
-          overrideUsed: allowOverride
+          previousPhase: previousTracking.pipelinePhase,
+          nextPhase,
+          previousOutcome: previousTracking.outcomeStatus,
+          nextOutcome,
+          phaseChanged,
+          outcomeChanged,
+          overrideUsed: allowOverride,
+          overrideReason,
+          overrideReasonProvided: Boolean(overrideReason)
         };
         const putReq = store.put(next);
         putReq.onsuccess = () => done();
@@ -285,10 +357,18 @@ export function createSavedJobsDomain(deps) {
     });
 
     if (logPayload) {
-      await addActivityLog(uid, "phase_changed", logPayload, {
-        previousStatus: logPayload.previousStatus,
-        nextStatus: logPayload.nextStatus,
-        overrideUsed: logPayload.overrideUsed
+      const eventType = eventTypeOverride
+        || (logPayload.outcomeChanged ? "outcome_changed" : "phase_changed");
+      await addActivityLog(uid, eventType, logPayload, {
+        previousPhase: logPayload.previousPhase,
+        nextPhase: logPayload.nextPhase,
+        previousOutcome: logPayload.previousOutcome,
+        nextOutcome: logPayload.nextOutcome,
+        previousStatus: toApplicationStatusMirror(logPayload.previousPhase, logPayload.previousOutcome),
+        nextStatus: toApplicationStatusMirror(logPayload.nextPhase, logPayload.nextOutcome),
+        overrideUsed: logPayload.overrideUsed,
+        overrideReason: logPayload.overrideReason,
+        overrideReasonProvided: logPayload.overrideReasonProvided
       });
     }
     await notifySavedJobsChanged(uid);
@@ -321,11 +401,12 @@ export function createSavedJobsDomain(deps) {
     await notifySavedJobsChanged(uid);
   }
 
-  async function updateJobNotes(uid, jobKey, notes) {
+  async function updateJobNotes(uid, jobKey, notes, _options = {}) {
     const user = ensureCurrentUser();
     if (uid !== user.uid) throw new Error("User mismatch.");
     const pk = `${uid}::${jobKey}`;
 
+    let logPayload = null;
     await withStore("saved_jobs", "readwrite", (store, done, fail) => {
       const getReq = store.get(pk);
       getReq.onsuccess = () => {
@@ -334,9 +415,21 @@ export function createSavedJobsDomain(deps) {
           fail(new Error("Saved job not found."));
           return;
         }
+        const previousNotes = String(current.notes || "");
+        const nextNotes = String(notes || "");
         const next = {
           ...current,
-          notes: String(notes || "")
+          notes: nextNotes,
+          notesUpdatedAt: nowIso()
+        };
+        logPayload = {
+          profileId: uid,
+          jobKey: current.jobKey || jobKey,
+          title: current.title || "",
+          company: current.company || "",
+          notesChanged: previousNotes !== nextNotes,
+          previousLength: previousNotes.length,
+          nextLength: nextNotes.length
         };
         const putReq = store.put(next);
         putReq.onsuccess = () => done();
@@ -345,6 +438,13 @@ export function createSavedJobsDomain(deps) {
       getReq.onerror = () => fail(getReq.error || new Error("Could not load saved job."));
     });
 
+    if (logPayload && logPayload.notesChanged) {
+      await addActivityLog(uid, "note_updated", logPayload, {
+        previousLength: logPayload.previousLength,
+        nextLength: logPayload.nextLength,
+        debounceWindow: true
+      });
+    }
     await notifySavedJobsChanged(uid);
   }
 
@@ -356,6 +456,7 @@ export function createSavedJobsDomain(deps) {
     getSavedJobKeys,
     subscribeSavedJobs,
     updateApplicationStatus,
+    updateApplicationTracking,
     updateAttachmentMetadata,
     updateJobNotes
   };

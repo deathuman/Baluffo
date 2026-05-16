@@ -10,7 +10,6 @@ from src import local_data_store_backup as local_data_store_backup_mod
 from src import local_data_store_profiles as local_data_store_profiles_mod
 from src import local_data_store_saved_jobs as local_data_store_saved_jobs_mod
 from src.local_data_store_shared import (
-    APPLICATION_STATUSES,
     LOCK,
     LocalDataPaths,
     _bytes_to_data_url,
@@ -19,12 +18,15 @@ from src.local_data_store_shared import (
     _read_json,
     _write_atomic,
     _write_json,
-    can_transition_phase,
     ensure_store_initialized,
     generate_job_key,
-    normalize_application_status,
     normalize_sector_value,
     sanitize_job_url,
+)
+from src.local_data_store_tracking import (
+    APPLICATION_STATUSES,
+    can_transition_phase,
+    normalize_application_status,
 )
 
 
@@ -66,8 +68,25 @@ class LocalDataStore:
             self.paths, uid, job_key, status, options
         )
 
-    def update_job_notes(self, uid: str, job_key: str, notes: str) -> None:
-        local_data_store_saved_jobs_mod.update_job_notes(self.paths, uid, job_key, notes)
+    def update_application_tracking(
+        self,
+        uid: str,
+        job_key: str,
+        tracking_update: dict[str, Any],
+        options: dict[str, Any] | None = None,
+    ) -> None:
+        local_data_store_saved_jobs_mod.update_application_tracking(
+            self.paths, uid, job_key, tracking_update, options
+        )
+
+    def update_job_notes(
+        self,
+        uid: str,
+        job_key: str,
+        notes: str,
+        options: dict[str, Any] | None = None,
+    ) -> None:
+        local_data_store_saved_jobs_mod.update_job_notes(self.paths, uid, job_key, notes, options)
 
     def list_activity_for_user(self, uid: str, limit: int = 300) -> list[dict[str, Any]]:
         return local_data_store_saved_jobs_mod.list_activity_for_user(self.paths, uid, limit)

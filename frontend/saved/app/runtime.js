@@ -29,6 +29,16 @@ import {
   readSavedLastJobsUrl
 } from "../state-sync/index.js";
 import { requestConfirmationDialog, requestTextInputDialog } from "../../local-data/profile-name-dialog.js";
+import {
+  OUTCOME_STATUS_LABELS,
+  OUTCOME_STATUSES,
+  PIPELINE_PHASE_LABELS,
+  PIPELINE_PHASES,
+  canSetOutcomeStatus,
+  canTransitionPipelinePhase,
+  normalizeOutcomeStatus,
+  normalizePipelinePhase
+} from "../../local-data/tracking.js";
 import { computeAnchorScrollDelta } from "./render-cycle.js";
 import {
   SAVED_FILTER_ALL,
@@ -56,15 +66,10 @@ const TIMELINE_SCOPE_PHASE = "phase";
 const TIMELINE_SCOPE_NOTES = "notes";
 const TIMELINE_SCOPE_ATTACHMENTS = "attachments";
 
-const PHASE_OPTIONS = ["bookmark", "applied", "interview_1", "interview_2", "offer", "rejected"];
-const PHASE_LABELS = {
-  bookmark: "Saved",
-  applied: "Applied",
-  interview_1: "Interview 1",
-  interview_2: "Interview 2",
-  offer: "Final Round",
-  rejected: "Rejected"
-};
+const PHASE_OPTIONS = PIPELINE_PHASES;
+const PHASE_LABELS = PIPELINE_PHASE_LABELS;
+const OUTCOME_OPTIONS = OUTCOME_STATUSES;
+const OUTCOME_LABELS = OUTCOME_STATUS_LABELS;
 
 const MAX_ATTACHMENTS_PER_JOB = 20;
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
@@ -102,7 +107,9 @@ savedRuntime = composeSavedRuntime({
   activityTypeLabel: type => activityTypeLabelFromDomain(type),
   formatActivityDetail: entry => formatActivityDetailFromDomain(entry, {
     normalizePhase: phase => savedRuntime.normalizePhase(phase),
+    normalizeOutcome: outcome => savedRuntime.normalizeOutcome(outcome),
     phaseLabels: PHASE_LABELS,
+    outcomeLabels: OUTCOME_LABELS,
     formatPhaseTimestamp
   }),
   formatPhaseTimestamp,
@@ -113,6 +120,12 @@ savedRuntime = composeSavedRuntime({
   timelineScopeAttachments: TIMELINE_SCOPE_ATTACHMENTS,
   phaseOptions: PHASE_OPTIONS,
   phaseLabels: PHASE_LABELS,
+  outcomeOptions: OUTCOME_OPTIONS,
+  outcomeLabels: OUTCOME_LABELS,
+  normalizePhase: normalizePipelinePhase,
+  normalizeOutcome: normalizeOutcomeStatus,
+  canTransitionPhase: canTransitionPipelinePhase,
+  canSetOutcome: canSetOutcomeStatus,
   customSourceLabel: CUSTOM_SOURCE_LABEL,
   reminderSoonHours: REMINDER_SOON_HOURS,
   maxAttachmentsPerJob: MAX_ATTACHMENTS_PER_JOB,
@@ -172,7 +185,10 @@ savedNotes = createSavedRuntimeNotes({
   savedActions: SAVED_ACTIONS,
   setNoteSaveState: (...args) => savedRuntime.setNoteSaveState(...args),
   getCurrentUser: () => savedRuntime.viewState.currentUser,
-  updateJobNotes: (uid, safeJobKey, saveValue) => savedPageService.updateJobNotes(uid, safeJobKey, saveValue),
+  getPreviousNoteLength: safeJobKey => String(
+    savedRuntime.viewState.lastSavedJobsByKey.get(String(safeJobKey || ""))?.notes || ""
+  ).length,
+  updateJobNotes: (uid, safeJobKey, saveValue, options) => savedPageService.updateJobNotes(uid, safeJobKey, saveValue, options),
   queueActivityPulse: (...args) => savedRuntime.queueActivityPulse(...args),
   timelineScopeNotes: TIMELINE_SCOPE_NOTES
 });
@@ -181,11 +197,15 @@ savedMutations = createSavedMutations({
   viewState: savedRuntime.viewState,
   savedPageService,
   normalizePhase: (...args) => savedRuntime.normalizePhase(...args),
+  normalizeOutcome: (...args) => savedRuntime.normalizeOutcome(...args),
   canTransition: (...args) => savedRuntime.canTransition(...args),
+  canSetOutcome: (...args) => savedRuntime.canSetOutcome(...args),
   requestConfirmationDialog,
+  requestTextInputDialog,
   needsInterviewTimestamp: (...args) => savedPhaseTime.needsInterviewTimestamp(...args),
   requestInterviewTimestamp: (...args) => savedPhaseTime.requestInterviewTimestamp(...args),
   phaseLabels: PHASE_LABELS,
+  outcomeLabels: OUTCOME_LABELS,
   refreshActivityLog: (...args) => savedRuntime.refreshActivityLog(...args),
   renderSavedJobs: (...args) => savedRuntime.renderSavedJobs(...args),
   queueActivityPulse: (...args) => savedRuntime.queueActivityPulse(...args),
@@ -205,6 +225,7 @@ savedBoot = createSavedBoot({
   setSelectedJobKey: (...args) => savedRuntime.setSelectedJobKey(...args),
   removeSavedJob: (...args) => savedMutations.removeSavedJob(...args),
   updatePhase: (...args) => savedMutations.updatePhase(...args),
+  updateOutcome: (...args) => savedMutations.updateOutcome(...args),
   toggleDetailsForJob: (...args) => savedRuntime.toggleDetailsForJob(...args),
   openCustomJobEditor: (...args) => savedRuntime.openCustomJobEditor(...args),
   setJobDetailsTab: (...args) => savedRuntime.setJobDetailsTab(...args),

@@ -12,6 +12,7 @@ export const LOCAL_DATA_RUNTIME_METHODS = Object.freeze([
   "buildAttachmentPath",
   "canTransitionPhase",
   "updateApplicationStatus",
+  "updateApplicationTracking",
   "updateJobNotes",
   "listAttachmentsForJob",
   "addAttachmentForJob",

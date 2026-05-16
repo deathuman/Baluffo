@@ -21,7 +21,8 @@ export function createSavedRuntimeNotes(deps) {
     return flushNotesSaveFromModule(jobKey, value, {
       noteSaveState: deps.noteSaveState,
       currentUser: deps.getCurrentUser(),
-      updateJobNotes: (uid, safeJobKey, saveValue) => deps.updateJobNotes(uid, safeJobKey, saveValue),
+      getPreviousNoteLength: deps.getPreviousNoteLength,
+      updateJobNotes: (uid, safeJobKey, saveValue, options) => deps.updateJobNotes(uid, safeJobKey, saveValue, options),
       setNoteSaveState: deps.setNoteSaveState,
       dispatchSaved: safeJobKey => {
         deps.savedDispatch.dispatch({ type: deps.savedActions.NOTES_SAVED, payload: { jobKey: safeJobKey } });

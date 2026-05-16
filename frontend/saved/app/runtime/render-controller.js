@@ -5,7 +5,12 @@ import {
   fullCountryName
 } from "../../../shared/data/index.js";
 import { normalizeToken } from "../../../shared/text-utils.js";
-import { isCustomJob, filterSavedJobs, sortSavedJobs } from "../view-state.js";
+import {
+  buildSavedJobViewModel,
+  filterSavedJobViews,
+  isCustomJob,
+  sortSavedJobViews
+} from "../view-state.js";
 
 function captureActiveNotesContext(savedJobsListEl) {
   const active = document.activeElement;
@@ -27,11 +32,16 @@ function captureActiveNotesContext(savedJobsListEl) {
 export function createSavedRenderController({
   dom,
   viewState,
-  savedPageService,
   timelineScopeAll,
   timelineScopeSelected,
-  phaseOptions,
-  phaseLabels,
+  phaseOptions = [],
+  phaseLabels = {},
+  outcomeOptions = [],
+  outcomeLabels = {},
+  normalizePhase: normalizePhaseValue = phase => String(phase || "bookmark").trim().toLowerCase() || "bookmark",
+  normalizeOutcome: normalizeOutcomeValue = outcome => String(outcome || "active").trim().toLowerCase() || "active",
+  canTransitionPhase = () => true,
+  canSetOutcome: canSetOutcomeValue = () => true,
   customSourceLabel,
   reminderSoonHours,
   maxAttachmentsPerJob,
@@ -48,6 +58,7 @@ export function createSavedRenderController({
   renderSavedFilterMeta,
   renderReminderCounter,
   hydrateAttachmentLists,
+  hydrateAttachmentListForJob,
   bindAttachmentActionButtons,
   renderSavedJobBlockHtml,
   parseIsoDate,
@@ -202,30 +213,31 @@ export function createSavedRenderController({
   }
 
   function normalizePhase(phase) {
-    const raw = String(phase || "").toLowerCase().trim();
-    if (raw === "bookmarked") return "bookmark";
-    return phaseOptions.includes(raw) ? raw : "bookmark";
+    return normalizePhaseValue(phase);
   }
 
-  function canTransition(currentPhase, nextPhase) {
-    const transitionResult = savedPageService.canTransitionPhase(currentPhase, nextPhase);
-    if (typeof transitionResult === "boolean") {
-      return transitionResult;
-    }
-    const current = normalizePhase(currentPhase);
-    const next = normalizePhase(nextPhase);
-    if (current === next) return true;
-    if (current === "rejected") return false;
-    if (next === "rejected") return true;
-    const currentIdx = phaseOptions.indexOf(current);
-    const nextIdx = phaseOptions.indexOf(next);
-    return currentIdx >= 0 && nextIdx >= 0 && nextIdx === currentIdx + 1;
+  function normalizeOutcome(outcome) {
+    return normalizeOutcomeValue(outcome);
   }
 
-  function renderSavedJobBlock(job) {
-    const lifecycleOverlay = viewState.savedLifecycleOverlayByJobKey.get(
-      String(job?.jobKey || "").trim().toLowerCase()
-    ) || null;
+  function canTransition(currentPhase, nextPhase, outcomeStatus = "active") {
+    return canTransitionPhase(currentPhase, nextPhase, outcomeStatus);
+  }
+
+  function canSetOutcome(currentOutcome, nextOutcome) {
+    return canSetOutcomeValue(currentOutcome, nextOutcome);
+  }
+
+  function renderSavedJobBlock(viewOrJob) {
+    const view = viewOrJob?.job ? viewOrJob : buildSavedJobViewModel(viewOrJob, {
+      lifecycleOverlay: viewState.savedLifecycleOverlayByJobKey.get(
+        String(viewOrJob?.jobKey || "").trim().toLowerCase()
+      ) || null,
+      parseIsoDate,
+      currentUser: viewState.currentUser
+    });
+    const job = view.job;
+    const lifecycleOverlay = view.lifecycleOverlay;
     return renderSavedJobBlockHtml(job, {
       isCustomJob,
       customSourceLabel,
@@ -250,7 +262,15 @@ export function createSavedRenderController({
         formatActivityDetail
       }),
       lifecycleOverlay,
+      jobView: view,
       renderWebIcon,
+      phaseOptions,
+      phaseLabels,
+      outcomeOptions,
+      outcomeLabels,
+      canTransition,
+      canSetOutcome,
+      trackingOverrideContext: viewState.trackingOverrideContext || viewState.phaseOverrideContext,
       renderPhaseBar: (jobKey, activePhase, phaseTimestamps, savedAt) => renderPhaseBar(
         jobKey,
         activePhase,
@@ -259,9 +279,12 @@ export function createSavedRenderController({
         {
           phaseOptions,
           phaseLabels,
+          outcomeOptions,
+          outcomeLabels,
           canTransition,
+          canSetOutcome,
           currentUser: viewState.currentUser,
-          phaseOverrideContext: viewState.phaseOverrideContext
+          trackingOverrideContext: viewState.trackingOverrideContext || viewState.phaseOverrideContext
         }
       ),
       currentUser: viewState.currentUser,
@@ -275,11 +298,18 @@ export function createSavedRenderController({
     if (!savedJobsListEl) return;
     const renderContext = captureRenderContext();
     const allJobs = Array.isArray(jobs) ? jobs : [];
-    const filteredJobs = sortSavedJobs(
-      filterSavedJobs(allJobs, viewState.activeSavedFilter),
-      viewState.activeSavedSort,
-      { parseIsoDate }
+    const allViews = allJobs.map(job => buildSavedJobViewModel(job, {
+      lifecycleOverlay: viewState.savedLifecycleOverlayByJobKey.get(
+        String(job?.jobKey || "").trim().toLowerCase()
+      ) || null,
+      parseIsoDate,
+      currentUser: viewState.currentUser
+    }));
+    const filteredViews = sortSavedJobViews(
+      filterSavedJobViews(allViews, viewState.activeSavedFilter),
+      viewState.activeSavedSort
     );
+    const filteredJobs = filteredViews.map(view => view.job);
     setSavedFilterBarVisible(allJobs.length > 0 && Boolean(viewState.currentUser));
     setSavedSortBarVisible(allJobs.length > 0 && Boolean(viewState.currentUser));
     renderSavedFilterMeta(allJobs.length, filteredJobs.length);
@@ -290,6 +320,7 @@ export function createSavedRenderController({
       viewState.expandedJobKey = null;
       viewState.selectedJobKey = "";
       viewState.phaseOverrideContext = null;
+      viewState.trackingOverrideContext = null;
       if (typeof setActivityPanelOpen === "function") {
         setActivityPanelOpen(false, { persist: false });
       }
@@ -302,6 +333,7 @@ export function createSavedRenderController({
     if (!allJobs.some(job => String(job?.jobKey || "").trim() === viewState.selectedJobKey)) {
       viewState.selectedJobKey = "";
       viewState.phaseOverrideContext = null;
+      viewState.trackingOverrideContext = null;
       renderSelectedJobHint();
       updateTimelineScopeButtons();
       if (viewState.timelineScope === timelineScopeSelected) {
@@ -324,16 +356,14 @@ export function createSavedRenderController({
         <div class="saved-row-header">
           <div class="col-title">Position</div>
           <div class="col-company">Company</div>
-          <div class="col-sector">Sector</div>
-          <div class="col-city">City</div>
-          <div class="col-country">Country</div>
+          <div class="col-location">Location</div>
           <div class="col-contract">Contract</div>
           <div class="col-type">Type</div>
           <div class="col-link">Link</div>
         </div>
       </div>
       <div class="jobs-table-body">
-        ${filteredJobs.map(renderSavedJobBlock).join("")}
+        ${filteredViews.map(renderSavedJobBlock).join("")}
       </div>
     `;
 
@@ -342,9 +372,18 @@ export function createSavedRenderController({
     renderTimeline();
     restoreRenderContext(renderContext);
 
-    hydrateAttachmentLists(filteredJobs).catch(err => {
-      console.error("Could not load attachment lists:", err);
-    });
+    const activeAttachmentView = filteredViews.find(view => (
+      view.jobKey === viewState.expandedJobKey && getJobDetailsTab(view.jobKey) === "attachments"
+    ));
+    if (activeAttachmentView && typeof hydrateAttachmentListForJob === "function") {
+      hydrateAttachmentListForJob(activeAttachmentView.jobKey, { force: true }).catch(err => {
+        console.error("Could not load attachment list:", err);
+      });
+    } else if (activeAttachmentView && typeof hydrateAttachmentLists === "function") {
+      hydrateAttachmentLists([activeAttachmentView.job]).catch(err => {
+        console.error("Could not load attachment lists:", err);
+      });
+    }
   }
 
   function setSelectedJobKey(jobKey, options = {}) {
@@ -365,7 +404,7 @@ export function createSavedRenderController({
     if (savedJobsListEl) {
       savedJobsListEl.querySelectorAll(".saved-job-block").forEach(block => {
         const isActive = String(block.dataset.jobKey || "") === viewState.selectedJobKey;
-        block.classList.toggle("selected", isActive);
+        block.dataset.selected = isActive ? "true" : "false";
       });
     }
   }
@@ -379,6 +418,11 @@ export function createSavedRenderController({
     }
     viewState.expandedJobKey = nextKey;
     applyDetailsAccordion();
+    if (nextKey && getJobDetailsTab(nextKey) === "attachments" && typeof hydrateAttachmentListForJob === "function") {
+      hydrateAttachmentListForJob(nextKey, { force: true }).catch(err => {
+        console.error("Could not load attachment list:", err);
+      });
+    }
   }
 
   function applyDetailsAccordion() {
@@ -402,7 +446,7 @@ export function createSavedRenderController({
         );
       }
       if (arrow) {
-        arrow.textContent = expanded ? "v" : ">";
+        arrow.classList.toggle("expanded", expanded);
       }
     });
   }
@@ -445,6 +489,11 @@ export function createSavedRenderController({
       const active = String(panel.getAttribute("data-tab-panel") || "") === safeTab;
       panel.classList.toggle("hidden", !active);
     });
+    if (safeTab === "attachments" && typeof hydrateAttachmentListForJob === "function") {
+      hydrateAttachmentListForJob(jobKey, { force: true }).catch(err => {
+        console.error("Could not load attachment list:", err);
+      });
+    }
   }
 
   return {
@@ -453,7 +502,9 @@ export function createSavedRenderController({
     getJobDetailsTab,
     setJobDetailsTab,
     normalizePhase,
+    normalizeOutcome,
     canTransition,
+    canSetOutcome,
     setSelectedJobKey,
     toggleDetailsForJob,
     applyDetailsAccordion,

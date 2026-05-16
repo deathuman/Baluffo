@@ -65,21 +65,30 @@
             <button type="button" class="btn back-btn saved-sort-btn active" data-ui="sort-btn" data-saved-sort="updated">Recently Updated</button>
             <button type="button" class="btn back-btn saved-sort-btn" data-ui="sort-btn" data-saved-sort="saved">Recently Added</button>
             <button type="button" class="btn back-btn saved-sort-btn" data-ui="sort-btn" data-saved-sort="reminder">Reminder Soon</button>
+            <button type="button" class="btn back-btn saved-sort-btn" data-ui="sort-btn" data-saved-sort="activity">Recent Activity</button>
+            <button type="button" class="btn back-btn saved-sort-btn" data-ui="sort-btn" data-saved-sort="stage">Stage</button>
             <button type="button" class="btn back-btn saved-sort-btn" data-ui="sort-btn" data-saved-sort="personal">Custom Jobs First</button>
           </div>
           <span id="saved-reminder-counter" data-ui="saved-reminder-counter" class="saved-reminder-counter"></span>
         </div>
         <div id="saved-custom-filter-bar" data-ui="saved-custom-filter-bar" class="saved-custom-filter-bar hidden" aria-hidden="true">
           <span class="saved-custom-filter-label">Show</span>
-          <div class="saved-custom-filter-actions" role="group" aria-label="Saved jobs source filter">
+          <div class="saved-custom-filter-actions" role="group" aria-label="Saved jobs filters">
             <button type="button" class="btn back-btn saved-custom-filter-btn active" data-ui="custom-filter-btn" data-saved-filter="all">All</button>
+            <button type="button" class="btn back-btn saved-custom-filter-btn" data-ui="custom-filter-btn" data-saved-filter="needs_action">Needs Action</button>
+            <button type="button" class="btn back-btn saved-custom-filter-btn" data-ui="custom-filter-btn" data-saved-filter="applied">Applied</button>
+            <button type="button" class="btn back-btn saved-custom-filter-btn" data-ui="custom-filter-btn" data-saved-filter="interviewing">Interviewing</button>
+            <button type="button" class="btn back-btn saved-custom-filter-btn" data-ui="custom-filter-btn" data-saved-filter="offer">Offer</button>
+            <button type="button" class="btn back-btn saved-custom-filter-btn" data-ui="custom-filter-btn" data-saved-filter="closed">Closed</button>
+            <button type="button" class="btn back-btn saved-custom-filter-btn" data-ui="custom-filter-btn" data-saved-filter="has_notes">Notes</button>
+            <button type="button" class="btn back-btn saved-custom-filter-btn" data-ui="custom-filter-btn" data-saved-filter="has_attachments">Files</button>
             <button type="button" class="btn back-btn saved-custom-filter-btn" data-ui="custom-filter-btn" data-saved-filter="custom">Custom Jobs</button>
             <button type="button" class="btn back-btn saved-custom-filter-btn" data-ui="custom-filter-btn" data-saved-filter="imported">Imported</button>
           </div>
           <span id="saved-custom-filter-count" data-ui="saved-custom-filter-count" class="saved-custom-filter-count"></span>
         </div>
         <div class="saved-actions-group saved-actions-quick">
-          <button id="add-custom-job-btn" data-ui="add-custom-job-btn" class="btn clear-filters-btn" aria-label="Add custom job" data-tooltip="Create a personal saved job entry.">+ Add Custom Job</button>
+          <button id="add-custom-job-btn" data-ui="add-custom-job-btn" class="btn clear-filters-btn" aria-label="Add custom job">+ Add Custom Job</button>
         </div>
         <section id="custom-job-panel" data-ui="custom-job-panel" class="custom-job-panel hidden" aria-hidden="true">
           <div class="custom-job-panel-header">
@@ -166,13 +175,13 @@
               <section class="saved-backup-section" aria-label="Backup and restore">
                 <div class="saved-backup-head">Backup & Restore</div>
                 <div class="saved-backup-row">
-                  <button id="export-backup-btn" data-ui="export-backup-btn" class="btn back-btn" disabled data-tooltip="Export saved jobs, notes, and optional files to a backup.">Export Backup</button>
+                  <button id="export-backup-btn" data-ui="export-backup-btn" class="btn back-btn" disabled>Export Backup</button>
                   <label class="backup-toggle">
                     <input id="export-include-files" data-ui="export-include-files" type="checkbox">
                     <span class="backup-toggle-label">Include attachments</span>
                     <span class="backup-toggle-hint">Exports a `.zip` package with files.</span>
                   </label>
-                  <button id="import-backup-btn" data-ui="import-backup-btn" class="btn back-btn" disabled data-tooltip="Import a saved jobs backup into the current local profile.">Import Backup</button>
+                  <button id="import-backup-btn" data-ui="import-backup-btn" class="btn back-btn" disabled>Import Backup</button>
                 </div>
               </section>
             </div>
@@ -184,8 +193,8 @@
         <div class="activity-panel-header">
           <h2>Activity Timeline</h2>
           <div class="activity-panel-actions">
-            <button id="activity-refresh-btn" data-ui="activity-refresh-btn" class="btn back-btn" aria-label="Refresh activity" data-tooltip="Reload the activity timeline.">Refresh</button>
-            <button id="activity-close-btn" data-ui="activity-close-btn" class="btn back-btn saved-activity-close-btn" type="button" aria-label="Close activity timeline" data-tooltip="Close activity timeline.">Close</button>
+            <button id="activity-refresh-btn" data-ui="activity-refresh-btn" class="btn back-btn" aria-label="Refresh activity">Refresh</button>
+            <button id="activity-close-btn" data-ui="activity-close-btn" class="btn back-btn saved-activity-close-btn" type="button" aria-label="Close activity timeline">Close</button>
           </div>
         </div>
         <div id="activity-scope-bar" class="activity-scope-bar" role="group" aria-label="Activity scope filters">

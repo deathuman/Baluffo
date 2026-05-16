@@ -2,6 +2,7 @@ __pycache__/
 *.py[cod]
 node_modules/
 playwright-report/
+.playwright-mcp/
 dist/
 build/
 out/
@@ -34,7 +35,11 @@ data/*.csv
 data/*.log
 data/*.md
 data/*.jsonl
+data/*.db
+data/*.db-*
+data/*.json.gz
 data/local-user-data/
+data/updater/
 !data/.gitkeep
 !data/source-discovery-config.json
 !data/jobs-unified.json

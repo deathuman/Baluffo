@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { renderAttachmentList } from "../../../frontend/saved/app/attachments.js";
 import { escapeHtml } from "../../../frontend/shared/ui/index.js";
 
-test("saved attachments render meaningful action tooltips without native titles", () => {
+test("saved attachments omit redundant visible action tooltips and native titles", () => {
   const listEl = { innerHTML: "" };
   const savedJobsListEl = {
     querySelector(selector) {
@@ -26,8 +26,8 @@ test("saved attachments render meaningful action tooltips without native titles"
     bindAttachmentActionButtons() {}
   });
 
-  assert.match(listEl.innerHTML, /att-open-btn[\s\S]*data-tooltip="Open this attachment\."/);
-  assert.match(listEl.innerHTML, /att-download-btn[\s\S]*data-tooltip="Download this attachment\."/);
-  assert.match(listEl.innerHTML, /att-delete-btn[\s\S]*data-tooltip="Delete this attachment from the saved job\."/);
+  assert.doesNotMatch(listEl.innerHTML, /att-open-btn[\s\S]*data-tooltip=/);
+  assert.doesNotMatch(listEl.innerHTML, /att-download-btn[\s\S]*data-tooltip=/);
+  assert.doesNotMatch(listEl.innerHTML, /att-delete-btn[\s\S]*data-tooltip=/);
   assert.doesNotMatch(listEl.innerHTML, /\stitle=/);
 });

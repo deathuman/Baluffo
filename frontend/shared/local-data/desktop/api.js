@@ -337,10 +337,17 @@ export function createDesktopLocalDataApi() {
       });
       await pollSavedSubscriptions();
     },
-    async updateJobNotes(uid, jobKey, notes) {
+    async updateApplicationTracking(uid, jobKey, tracking, options = {}) {
+      await requestJson("/saved-jobs/tracking", {
+        method: "POST",
+        body: JSON.stringify({ uid, jobKey, tracking, options })
+      });
+      await pollSavedSubscriptions();
+    },
+    async updateJobNotes(uid, jobKey, notes, options = {}) {
       await requestJson("/saved-jobs/notes", {
         method: "POST",
-        body: JSON.stringify({ uid, jobKey, notes })
+        body: JSON.stringify({ uid, jobKey, notes, options })
       });
       await pollSavedSubscriptions();
     },

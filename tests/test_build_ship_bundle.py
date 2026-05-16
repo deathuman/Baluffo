@@ -55,7 +55,6 @@ def test_bundle_contains_runtime_assets_and_seeded_runtime_data_only() -> None:
         )
         output = _build_with_temp_packaged_config(tmp)
         version_root = output / "app" / "versions" / "1.2.3"
-
         assert (output / "run-site.ps1").exists()
         assert (output / "run-bridge.ps1").exists()
         assert (output / "RELEASE_GUIDE.md").exists()
@@ -73,6 +72,7 @@ def test_bundle_contains_runtime_assets_and_seeded_runtime_data_only() -> None:
         assert (version_root / "src" / "local_data_store_profiles.py").exists()
         assert (version_root / "src" / "local_data_store_saved_jobs.py").exists()
         assert (version_root / "src" / "local_data_store_shared.py").exists()
+        assert (version_root / "src" / "local_data_store_tracking.py").exists()
         assert (version_root / "src" / "source_sync.py").exists()
         assert (version_root / "src" / "source_sync_config.py").exists()
         assert (version_root / "src" / "source_sync_crypto.py").exists()

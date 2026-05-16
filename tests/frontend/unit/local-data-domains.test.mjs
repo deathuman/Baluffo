@@ -285,6 +285,7 @@ test("saved-jobs domain updateJobNotes does not mutate updatedAt ordering field"
     updatedAt: "2026-03-08T12:00:00.000Z"
   };
   const writes = [];
+  const activityCalls = [];
   let notifyCount = 0;
 
   const savedJobsDomain = createSavedJobsDomain({
@@ -317,7 +318,9 @@ test("saved-jobs domain updateJobNotes does not mutate updatedAt ordering field"
     notifySavedJobsChanged: async () => {
       notifyCount += 1;
     },
-    addActivityLog: async () => {},
+    addActivityLog: async (...args) => {
+      activityCalls.push(args);
+    },
     generateJobKey: input => String(input?.jobKey || "job_x"),
     normalizeApplicationStatus: status => String(status || "bookmark"),
     canTransitionPhase: () => true,
@@ -330,10 +333,17 @@ test("saved-jobs domain updateJobNotes does not mutate updatedAt ordering field"
     isClearlyLowerQualityImported: () => false
   });
 
-  await savedJobsDomain.updateJobNotes("u1", "job_1", "new note");
+  await savedJobsDomain.updateJobNotes("u1", "job_1", "new");
 
   assert.equal(writes.length, 1);
-  assert.equal(writes[0].notes, "new note");
+  assert.equal(writes[0].notes, "new");
   assert.equal(writes[0].updatedAt, "2026-03-08T12:00:00.000Z");
+  assert.equal(activityCalls.length, 1);
+  assert.equal(activityCalls[0][1], "note_updated");
+  assert.deepEqual(activityCalls[0][3], {
+    previousLength: 3,
+    nextLength: 3,
+    debounceWindow: true
+  });
   assert.equal(notifyCount, 1);
 });

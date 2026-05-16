@@ -85,6 +85,7 @@ APP_RUNTIME_SCRIPTS = (
     "local_data_store_profiles.py",
     "local_data_store_saved_jobs.py",
     "local_data_store_shared.py",
+    "local_data_store_tracking.py",
     "local_data_store.py",
     "discovery_seed_catalog.json",
     "python_version_guard.py",

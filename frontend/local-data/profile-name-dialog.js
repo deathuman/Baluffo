@@ -53,7 +53,9 @@ export async function requestTextInputDialog({
   label = "Value",
   submitLabel = "Continue",
   existingProfiles = [],
-  defaultValue = ""
+  defaultValue = "",
+  placeholder = "Enter profile name",
+  required = true
 } = {}) {
   const doc = getDocumentTarget();
   if (!doc) {
@@ -98,9 +100,9 @@ export async function requestTextInputDialog({
     input.type = "text";
     input.maxLength = 120;
     input.autocomplete = "off";
-    input.required = true;
+    input.required = Boolean(required);
     input.value = String(defaultValue || "");
-    input.placeholder = "Enter profile name";
+    input.placeholder = String(placeholder || "");
 
     const actions = doc.createElement("div");
     actions.className = "local-auth-dialog-actions";

@@ -6,8 +6,6 @@ function getFileExtension(name) {
   return String(name).slice(idx + 1).toLowerCase();
 }
 
-import { tooltipAttrs } from "../../shared/ui/index.js";
-
 function formatFileSize(bytes) {
   const value = Number(bytes) || 0;
   if (value < 1024) return `${value} B`;
@@ -54,6 +52,27 @@ export async function hydrateAttachmentLists(jobs, deps) {
       console.error("Could not list attachments:", err);
       renderAttachmentList(jobKey, []);
     }
+  }
+}
+
+export async function hydrateAttachmentList(jobKey, deps) {
+  const {
+    currentUser,
+    listAttachmentsForJob,
+    renderAttachmentList,
+    renderAttachmentLoading
+  } = deps;
+  const safeJobKey = String(jobKey || "");
+  if (!currentUser || !safeJobKey) return;
+  if (typeof renderAttachmentLoading === "function") {
+    renderAttachmentLoading(safeJobKey);
+  }
+  try {
+    const rowsResult = await listAttachmentsForJob(currentUser.uid, safeJobKey);
+    renderAttachmentList(safeJobKey, rowsResult.ok ? rowsResult.data : []);
+  } catch (err) {
+    console.error("Could not list attachments:", err);
+    renderAttachmentList(safeJobKey, []);
   }
 }
 
@@ -190,12 +209,19 @@ export function renderAttachmentList(jobKey, attachments, deps) {
           <span class="attachment-size">${size}</span>
         </div>
         <div class="attachment-actions">
-          <button class="btn back-btn att-open-btn" data-job-key="${escapeHtml(jobKey)}" data-attachment-id="${id}" ${tooltipAttrs("Open this attachment.")}>Open</button>
-          <button class="btn back-btn att-download-btn" data-job-key="${escapeHtml(jobKey)}" data-attachment-id="${id}" data-file-name="${name}" ${tooltipAttrs("Download this attachment.")}>Download</button>
-          <button class="btn back-btn att-delete-btn" data-job-key="${escapeHtml(jobKey)}" data-attachment-id="${id}" ${tooltipAttrs("Delete this attachment from the saved job.")}>Delete</button>
+          <button class="btn back-btn att-open-btn" data-job-key="${escapeHtml(jobKey)}" data-attachment-id="${id}">Open</button>
+          <button class="btn back-btn att-download-btn" data-job-key="${escapeHtml(jobKey)}" data-attachment-id="${id}" data-file-name="${name}">Download</button>
+          <button class="btn back-btn att-delete-btn" data-job-key="${escapeHtml(jobKey)}" data-attachment-id="${id}">Delete</button>
         </div>
       </div>
     `;
   }).join("");
   bindAttachmentActionButtons();
+}
+
+export function renderAttachmentLoading(jobKey, deps) {
+  const { savedJobsListEl, cssEscape } = deps;
+  const container = savedJobsListEl?.querySelector(`.attachments-list[data-job-key="${cssEscape(jobKey)}"]`);
+  if (!container) return;
+  container.innerHTML = '<div class="muted">Loading attachments...</div>';
 }

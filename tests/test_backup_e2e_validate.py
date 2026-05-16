@@ -8,7 +8,7 @@ def test_run_validation_reports_desktop_file_store_scenarios() -> None:
     with workspace_tmpdir("backup-e2e-validate") as tmp:
         report = backup_validate.run_validation(Path(tmp) / "data")
     assert bool(report.get("ok"))
-    assert int(report.get("schemaVersion") or 0) == 2
+    assert int(report.get("schemaVersion") or 0) == 3
     assert "dataDir" in report
     scenarios = report.get("scenarios") or []
     assert len(scenarios) == 3

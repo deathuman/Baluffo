@@ -1,6 +1,14 @@
-import { escapeHtml, tooltipAttrs } from "../shared/ui/index.js";
+import { clippedTooltipAttrs, escapeHtml, tooltipAttrs } from "../shared/ui/index.js";
 import { renderLifecycleBadgeHtml } from "../shared/lifecycle-badges.js";
 import { formatJobLocationColumns } from "../shared/location-display.js";
+import {
+  normalizeOutcomeStatus,
+  normalizePipelinePhase
+} from "../local-data/tracking.js";
+import {
+  renderApplicationTrackingControls as renderApplicationTrackingControlsFromModule,
+  renderPhaseBar as renderPhaseBarFromTrackingUi
+} from "./app/tracking-ui.js";
 
 export function renderSavedJobBlockHtml(job, options = {}) {
   const {
@@ -21,7 +29,9 @@ export function renderSavedJobBlockHtml(job, options = {}) {
     getJobHistoryEntries,
     renderWebIcon,
     renderPhaseBar,
+    renderApplicationTrackingControls = renderApplicationTrackingControlsFromModule,
     lifecycleOverlay,
+    jobView,
     currentUser,
     maxAttachmentsPerJob,
     maxAttachmentBytes
@@ -32,7 +42,8 @@ export function renderSavedJobBlockHtml(job, options = {}) {
   const safeCompany = escapeHtml(job.company || "");
   const customSourceRaw = String(job.customSourceLabel || customSourceLabel || "Custom");
   const customSource = escapeHtml(customSourceRaw);
-  const safeSector = escapeHtml(normalizeSavedSector(job));
+  const sectorLabel = normalizeSavedSector(job);
+  const safeSector = escapeHtml(sectorLabel);
   const locationColumns = formatJobLocationColumns(job, { fullCountryName });
   const safeCity = escapeHtml(locationColumns.cityLabel);
   const safeCountry = escapeHtml(locationColumns.countryLabel);
@@ -43,7 +54,22 @@ export function renderSavedJobBlockHtml(job, options = {}) {
   const contractClass = toContractClass(job.contractType || "Unknown");
   const rawJobKey = String(job.jobKey || job.id || "");
   const jobKey = escapeHtml(rawJobKey);
-  const normalizedPhase = normalizePhase(job.applicationStatus);
+  const normalizedPhase = normalizePipelinePhase(
+    jobView?.pipelinePhase || job.pipelinePhase || normalizePhase(job.applicationStatus)
+  );
+  const normalizedOutcome = normalizeOutcomeStatus(
+    jobView?.outcomeStatus || job.outcomeStatus || job.applicationStatus
+  );
+  const trackingJobView = {
+    ...(jobView || {}),
+    job,
+    jobKey: rawJobKey,
+    pipelinePhase: normalizedPhase,
+    outcomeStatus: normalizedOutcome,
+    phaseTimestamps: jobView?.phaseTimestamps || job.phaseTimestamps || {},
+    outcomeTimestamps: jobView?.outcomeTimestamps || job.outcomeTimestamps || {},
+    savedAt: jobView?.savedAt || job.savedAt || ""
+  };
   const isExpanded = expandedJobKey === rawJobKey;
   const isSelected = selectedJobKey === rawJobKey;
   const activeTab = getJobDetailsTab(rawJobKey);
@@ -61,12 +87,15 @@ export function renderSavedJobBlockHtml(job, options = {}) {
   const lifecycleBadge = renderLifecycleBadgeHtml(lifecycleOverlay);
 
   return `
-    <div class="saved-job-block ${isExpanded ? "expanded" : ""} ${isSelected ? "selected" : ""}" data-job-key="${jobKey}" data-ui="saved-job-block">
+    <div class="saved-job-block ${isExpanded ? "expanded" : ""}" data-job-key="${jobKey}" data-ui="saved-job-block" data-selected="${isSelected ? "true" : "false"}">
       <div class="saved-job-row">
         <button class="remove-saved-btn remove-inline-btn" data-job-key="${jobKey}" data-ui="remove-saved-btn" aria-label="Remove saved job" ${tooltipAttrs("Remove saved job")}>${renderRemoveSavedIcon()}</button>
-        <div class="col-title job-cell" data-label="Position"${tooltipAttrs(job.title || "")}>
+        <div class="col-title job-cell" data-label="Position">
           <div class="saved-title-stack">
-            <span class="saved-title-main">${safeTitle}</span>
+            <div class="saved-title-line">
+              <span class="saved-title-main"${clippedTooltipAttrs(job.title || "")}>${safeTitle}</span>
+            </div>
+            <div class="job-sector-line">${safeSector}</div>
             <div class="saved-title-meta">
               ${isCustom ? `<span class="saved-custom-badge"${tooltipAttrs("Custom job source")}>${customSource}</span>` : ""}
               ${reminderBadge}
@@ -77,31 +106,35 @@ export function renderSavedJobBlockHtml(job, options = {}) {
           </div>
           ${isCustom ? `
             <div class="saved-personal-actions">
-              <button class="btn back-btn personal-edit-btn" data-job-key="${jobKey}" data-ui="personal-edit-btn" aria-label="Edit custom job" ${tooltipAttrs("Edit this custom saved job.")}>Edit</button>
-              <button class="btn back-btn personal-duplicate-btn" data-job-key="${jobKey}" data-ui="personal-duplicate-btn" aria-label="Duplicate custom job" ${tooltipAttrs("Duplicate this custom job as a new entry.")}>Duplicate</button>
+              <button class="btn back-btn personal-edit-btn" data-job-key="${jobKey}" data-ui="personal-edit-btn" aria-label="Edit custom job">Edit</button>
+              <button class="btn back-btn personal-duplicate-btn" data-job-key="${jobKey}" data-ui="personal-duplicate-btn" aria-label="Duplicate custom job">Duplicate</button>
             </div>
           ` : ""}
         </div>
-        <div class="col-company job-cell" data-label="Company"${tooltipAttrs(job.company || "")}>${safeCompany}</div>
-        <div class="col-sector job-cell" data-label="Sector"${tooltipAttrs(normalizeSavedSector(job))}>${safeSector}</div>
-        <div class="col-city job-cell" data-label="City"${tooltipAttrs(locationColumns.cityLabel)}>${safeCity}</div>
-        <div class="col-country job-cell" data-label="Country"${tooltipAttrs(locationColumns.countryLabel)}>${safeCountry}</div>
-        <div class="col-contract job-cell" data-label="Contract"${tooltipAttrs(job.contractType || "Unknown")}>
+        <div class="col-company job-cell" data-label="Company">
+          <span class="job-company-compact">${safeCompany}</span>
+        </div>
+        <div class="col-location job-cell" data-label="Location">
+          <div class="job-location-stack">
+            <span class="job-country-main">${safeCountry}</span>
+            <span class="job-city-sub">${safeCity}</span>
+          </div>
+        </div>
+        <div class="col-contract job-cell" data-label="Contract">
           <span class="job-contract ${contractClass}">${safeContract}</span>
         </div>
-        <div class="col-type job-cell" data-label="Type"${tooltipAttrs(job.workType || "Onsite")}>
+        <div class="col-type job-cell" data-label="Type">
           <span class="job-tag ${safeWorkType.toLowerCase()}">${safeWorkType}</span>
         </div>
         <div class="col-link job-cell" data-label="Link">
-          ${hasLink ? `<a class="saved-open-link-icon" href="${safeLink}" target="_blank" rel="noopener noreferrer" aria-label="Open job link"${tooltipAttrs("Open job link")}>${renderWebIcon()}</a>` : `<span class="saved-no-link ${isCustom ? "saved-no-link-custom" : ""}"${tooltipAttrs(isCustom ? "Custom entry without external URL" : "No URL available")}>${isCustom ? "No link" : "N/A"}</span>`}
+          ${hasLink ? `<a class="saved-open-link-icon" href="${safeLink}" target="_blank" rel="noopener noreferrer" aria-label="Open job link"${tooltipAttrs("Open job link")}>${renderWebIcon()}</a>` : `<span class="saved-no-link ${isCustom ? "saved-no-link-custom" : ""}">${isCustom ? "No link" : "N/A"}</span>`}
         </div>
       </div>
-      <div class="saved-phase-row">
-        <div class="phase-label">Application Phase</div>
-        <div class="phase-value">
-          ${renderPhaseBar(rawJobKey, normalizedPhase, job.phaseTimestamps, job.savedAt)}
-        </div>
-      </div>
+      ${renderApplicationTrackingControls(trackingJobView, {
+        ...options,
+        renderPhaseBar,
+        currentUser
+      })}
       <div class="saved-details-toggle-row">
         <div class="details-toggle-spacer"></div>
         <button
@@ -110,10 +143,15 @@ export function renderSavedJobBlockHtml(job, options = {}) {
           data-ui="details-toggle-btn"
           aria-expanded="${isExpanded ? "true" : "false"}"
           aria-label="${isExpanded ? "Collapse" : "Expand"} notes and attachments"
-          ${tooltipAttrs(isExpanded ? "Hide notes, files, and history for this job." : "Show notes, files, and history for this job.")}
         >
+          <span class="details-toggle-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path d="M7 3h7l4 4v14H7z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+              <path d="M14 3v5h5M9.5 12h5M9.5 16h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </span>
           <span class="details-toggle-text">${detailsSummary}Notes, Files & History</span>
-          <span class="details-toggle-arrow" aria-hidden="true">${isExpanded ? "v" : ">"}</span>
+          <span class="details-toggle-arrow ${isExpanded ? "expanded" : ""}" aria-hidden="true"></span>
         </button>
       </div>
       <div class="saved-details-section ${isExpanded ? "" : "collapsed"}" data-job-key="${jobKey}" aria-hidden="${isExpanded ? "false" : "true"}">
@@ -134,7 +172,7 @@ export function renderSavedJobBlockHtml(job, options = {}) {
             <div class="attachments-label">Attachments</div>
             <div class="attachments-value">
               <div class="attachments-toolbar">
-                <button class="btn back-btn attach-upload-btn" data-job-key="${jobKey}" data-ui="attach-upload-btn" ${!currentUser ? "disabled" : ""} ${tooltipAttrs(currentUser ? "Attach files to this saved job." : "Sign in to upload attachments.")}>Upload</button>
+                <button class="btn back-btn attach-upload-btn" data-job-key="${jobKey}" data-ui="attach-upload-btn" ${!currentUser ? "disabled" : ""} ${!currentUser ? tooltipAttrs("Sign in to upload attachments.") : ""}>Upload</button>
                 <span class="attachments-hint">Max ${maxAttachmentsPerJob} files, ${Math.round(maxAttachmentBytes / (1024 * 1024))}MB each</span>
               </div>
               <input class="attach-file-input hidden" type="file" multiple data-job-key="${jobKey}" accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg">
@@ -147,7 +185,7 @@ export function renderSavedJobBlockHtml(job, options = {}) {
             <div class="attachments-label">History</div>
             <div class="attachments-value">
               <div class="job-history-toolbar">
-                <button class="btn back-btn job-history-refresh-btn" data-job-key="${jobKey}" data-ui="job-history-refresh-btn" ${tooltipAttrs("Reload activity history for this job.")}>Refresh</button>
+                <button class="btn back-btn job-history-refresh-btn" data-job-key="${jobKey}" data-ui="job-history-refresh-btn">Refresh</button>
               </div>
               <div class="job-history-list">
                 ${historyRows}
@@ -245,59 +283,10 @@ export function getJobHistoryEntries(jobKey, options = {}) {
 }
 
 export function renderPhaseBar(jobKey, activePhase, phaseTimestamps, savedAt, options = {}) {
-  const {
-    phaseOptions = [],
-    phaseLabels = {},
-    canTransition = () => false,
-    currentUser = null,
-    phaseOverrideContext = null
-  } = options;
-  const activeIndex = phaseOptions.indexOf(activePhase);
-  const safeJobKey = escapeHtml(String(jobKey || ""));
-  const contextJobKey = String(phaseOverrideContext?.jobKey || "");
-  const contextPhase = String(phaseOverrideContext?.phase || "");
-  const hasContext = contextJobKey === String(jobKey || "") && Boolean(contextPhase);
-  const timestamps = phaseTimestamps && typeof phaseTimestamps === "object" ? phaseTimestamps : {};
-  const segments = phaseOptions.map((phase, idx) => {
-    const isActive = idx === activeIndex;
-    const isComplete = idx <= activeIndex;
-    const canChangeNormally = canTransition(activePhase, phase);
-    const canClick = Boolean(currentUser);
-    const fallback = phase === "bookmark" ? savedAt : "";
-    const selectedAt = formatPhaseTimestamp(timestamps[phase] || fallback);
-    const classes = [
-      "phase-step-btn",
-      isActive ? "active" : "",
-      isComplete ? "complete" : "",
-      !canChangeNormally ? "locked" : ""
-    ].filter(Boolean).join(" ");
-
-    return `
-      <button
-        class="${classes}"
-        data-job-key="${safeJobKey}"
-        data-ui="phase-step-btn"
-        data-phase="${phase}"
-        data-current-phase="${escapeHtml(activePhase)}"
-        ${canClick ? "" : "disabled"}
-        aria-label="Set phase to ${escapeHtml(phaseLabels[phase] || phase)}"
-        ${tooltipAttrs(canClick ? `Set phase to ${phaseLabels[phase] || phase}.` : "Phase changes are locked for this step.")}
-      >
-        <span class="phase-step-text">${escapeHtml(phaseLabels[phase] || phase)}</span>
-        ${selectedAt ? `<span class="phase-step-time">${escapeHtml(selectedAt)}</span>` : ""}
-      </button>
-    `;
-  }).join("");
-
-  const overrideMessage = hasContext ? `
-    <div class="phase-override-context" data-job-key="${safeJobKey}" data-phase="${escapeHtml(contextPhase)}">
-      <span>This phase change is normally locked because it skips an earlier application step.</span>
-      <button class="btn back-btn phase-override-confirm-btn" data-ui="phase-override-confirm-btn" data-job-key="${safeJobKey}" data-phase="${escapeHtml(contextPhase)}">Override for this job</button>
-      <button class="btn back-btn phase-override-cancel-btn" data-ui="phase-override-cancel-btn" data-job-key="${safeJobKey}">Cancel</button>
-    </div>
-  ` : "";
-
-  return `<div class="phase-bar" role="group" aria-label="Application phases">${segments}</div>${overrideMessage}`;
+  return renderPhaseBarFromTrackingUi(jobKey, activePhase, phaseTimestamps, savedAt, {
+    ...options,
+    trackingOverrideContext: options.trackingOverrideContext || options.phaseOverrideContext || null
+  });
 }
 
 export function renderRemoveSavedIcon() {

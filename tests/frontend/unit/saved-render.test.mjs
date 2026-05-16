@@ -44,15 +44,24 @@ test("saved render: phase bar and history rows render expected markup", () => {
     { applied: "2026-03-08T10:00:00.000Z" },
     "2026-03-08T09:00:00.000Z",
     {
-      phaseOptions: ["bookmark", "applied", "rejected"],
-      phaseLabels: { bookmark: "Saved", applied: "Applied", rejected: "Rejected" },
+      phaseOptions: ["bookmark", "applied", "offer"],
+      phaseLabels: { bookmark: "Saved", applied: "Applied", offer: "Offer" },
       canTransition: () => false,
       currentUser: { uid: "u1" }
     }
   );
   assert.match(phaseHtml, /phase-bar/);
-  assert.match(phaseHtml, /Set phase to Applied/);
-  assert.match(phaseHtml, /data-tooltip="Set phase to Saved\."/);
+  assert.match(phaseHtml, /phase-timeline-step/);
+  assert.match(phaseHtml, /phase-step-node/);
+  assert.match(phaseHtml, /phase-step-check/);
+  assert.match(phaseHtml, /data-phase-status="completed"/);
+  assert.match(phaseHtml, /data-phase-status="current"/);
+  assert.match(phaseHtml, /aria-current="step"/);
+  assert.match(phaseHtml, /aria-label="Applied, current phase, entered/);
+  assert.match(phaseHtml, /data-phase-time=/);
+  assert.doesNotMatch(phaseHtml, /phase-step-time/);
+  assert.doesNotMatch(phaseHtml, /data-tooltip="Set phase to Saved\."/);
+  assert.doesNotMatch(phaseHtml, /data-tooltip="Set phase to Applied\."/);
   assert.match(phaseHtml, /data-job-key="job-1"/);
 
   const historyHtml = getJobHistoryEntries("job-1", {
@@ -113,13 +122,30 @@ test("saved render shows lifecycle overlay badges read-only", () => {
 
   assert.match(html, /job-lifecycle-badge likely-removed/);
   assert.match(html, /Recently removed/);
-  assert.match(html, /data-tooltip="Gameplay Engineer"/);
-  assert.match(html, /data-tooltip="Studio"/);
+  assert.doesNotMatch(html, /data-tooltip="Gameplay Engineer"/);
+  assert.match(html, /data-tooltip-if-clipped="Gameplay Engineer"/);
+  assert.doesNotMatch(html, /data-tooltip="Studio"/);
+  assert.doesNotMatch(html, /data-tooltip="Italy, Rome"/);
+  assert.doesNotMatch(html, /data-tooltip="Rome"/);
+  assert.match(html, /<div class="saved-title-line">\s*<span class="saved-title-main" data-tooltip-if-clipped="Gameplay Engineer">Gameplay Engineer<\/span>\s*<\/div>/);
+  assert.match(html, /<div class="job-sector-line"[^>]*>Game<\/div>/);
+  assert.match(html, /<div class="col-company job-cell" data-label="Company">\s*<span class="job-company-compact">Studio<\/span>/);
+  assert.match(html, /<div class="col-location job-cell" data-label="Location">\s*<div class="job-location-stack">/);
+  assert.match(html, /<span class="job-country-main">Italy<\/span>/);
+  assert.match(html, /<span class="job-city-sub">Rome<\/span>/);
   assert.match(html, /data-tooltip="Recently removed since Mar 7, 2026"/);
   assert.match(html, /remove-saved-btn[\s\S]*data-tooltip="Remove saved job"/);
-  assert.match(html, /details-toggle-btn[\s\S]*data-tooltip="Show notes, files, and history for this job\."/);
-  assert.match(html, /attach-upload-btn[\s\S]*data-tooltip="Attach files to this saved job\."/);
-  assert.match(html, /job-history-refresh-btn[\s\S]*data-tooltip="Reload activity history for this job\."/);
+  assert.doesNotMatch(html, /details-toggle-btn[\s\S]*data-tooltip="Show notes, files, and history for this job\."/);
+  assert.match(html, /details-toggle-icon[\s\S]*<svg viewBox="0 0 24 24"/);
+  assert.match(html, /details-toggle-text[\s\S]*Notes, Files &amp; History|details-toggle-text[\s\S]*Notes, Files & History/);
+  assert.match(html, /<span class="details-toggle-arrow\s*" aria-hidden="true"><\/span>/);
+  assert.doesNotMatch(html, /details-toggle-arrow[\s\S]*<svg viewBox="0 0 24 24"/);
+  assert.doesNotMatch(html, /details-toggle-arrow[^>]*>[v>]</);
+  assert.doesNotMatch(html, /attach-upload-btn[\s\S]*data-tooltip="Attach files to this saved job\."/);
+  assert.doesNotMatch(html, /job-history-refresh-btn[\s\S]*data-tooltip="Reload activity history for this job\."/);
+  assert.doesNotMatch(html, /class="col-sector job-cell"/);
+  assert.doesNotMatch(html, /class="col-city job-cell"/);
+  assert.doesNotMatch(html, /class="col-country job-cell"/);
   assert.doesNotMatch(html, /\stitle="/);
   assert.doesNotMatch(html, /save-job-btn/);
 });
@@ -169,6 +195,10 @@ test("saved render uses remove icon and contextual phase override by default", (
   assert.doesNotMatch(html, />X<\/button>/);
   assert.match(renderRemoveSavedIcon(), /currentColor/);
 
+  const selectedHtml = renderSavedJobBlockHtml(baseJob, { ...baseOptions, selectedJobKey: "job_1" });
+  assert.doesNotMatch(selectedHtml, /saved-job-block[^"]*\bselected\b/);
+  assert.match(selectedHtml, /data-selected="true"/);
+
   const phaseHtml = renderPhaseBar("job_1", "bookmark", {}, "", {
     phaseOptions: ["bookmark", "applied", "offer"],
     phaseLabels: { bookmark: "Saved", applied: "Applied", offer: "Final Round" },
@@ -177,12 +207,12 @@ test("saved render uses remove icon and contextual phase override by default", (
     phaseOverrideContext: { jobKey: "job_1", phase: "offer" }
   });
   assert.match(phaseHtml, /phase-override-context/);
-  assert.match(phaseHtml, /This phase change is normally locked because it skips an earlier application step\./);
-  assert.match(phaseHtml, /Override for this job/);
-  assert.match(phaseHtml, /data-ui="phase-override-cancel-btn"/);
+  assert.match(phaseHtml, /This phase change is normally locked because it skips or rewinds an application step\./);
+  assert.match(phaseHtml, /Override phase/);
+  assert.match(phaseHtml, /data-ui="tracking-override-cancel-btn"/);
 });
 
-test("saved render exposes custom job action tooltips", () => {
+test("saved render omits redundant custom job action tooltips", () => {
   const html = renderSavedJobBlockHtml({
     jobKey: "custom_1",
     title: "Personal lead",
@@ -217,8 +247,8 @@ test("saved render exposes custom job action tooltips", () => {
     maxAttachmentBytes: 1024
   });
 
-  assert.match(html, /personal-edit-btn[\s\S]*data-tooltip="Edit this custom saved job\."/);
-  assert.match(html, /personal-duplicate-btn[\s\S]*data-tooltip="Duplicate this custom job as a new entry\."/);
+  assert.doesNotMatch(html, /personal-edit-btn[\s\S]*data-tooltip="Edit this custom saved job\."/);
+  assert.doesNotMatch(html, /personal-duplicate-btn[\s\S]*data-tooltip="Duplicate this custom job as a new entry\."/);
   assert.doesNotMatch(html, /\stitle="/);
 });
 
@@ -262,4 +292,7 @@ test("saved render uses compact location display without repeated unknowns", () 
 
   assert.doesNotMatch(html, /Remote, Remote/);
   assert.doesNotMatch(html, /Unknown Unknown/);
+  assert.match(html, /<div class="col-location job-cell" data-label="Location"[^>]*>/);
+  assert.match(html, /<span class="job-country-main"><\/span>/);
+  assert.match(html, /<span class="job-city-sub"><\/span>/);
 });

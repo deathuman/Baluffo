@@ -5,7 +5,20 @@
 > - **Canonical for:** saved-job data model refinements, phase/outcome ergonomics, activity semantics, Saved page operations UX, and milestone sequencing toward Saved Jobs Tracker v1
 > - **Not canonical for:** backend job discovery/fetch contracts, local data storage internals, or deployment/packaging behavior
 > - **Then inspect:** [`../AI_ASSISTANT_GUIDE.md`](../AI_ASSISTANT_GUIDE.md), [`../architecture-ai-map.md`](../architecture-ai-map.md), [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md), [`../../frontend/local-data/constants.js`](../../frontend/local-data/constants.js), [`../../frontend/local-data/phase.js`](../../frontend/local-data/phase.js), [`../../src/local_data_store_shared.py`](../../src/local_data_store_shared.py), [`../../src/core/schemas.py`](../../src/core/schemas.py), and [`../testing.md`](../testing.md)
-> - **Last updated:** 2026-05-12
+> - **Last updated:** 2026-05-16
+
+## Implementation Status
+
+Saved Job Tracker v1 is now implemented as a split phase/outcome model. The canonical contract is documented in [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md); this plan remains useful as rationale and future hardening context, not as the current row-shape source of truth.
+
+Implemented guardrails:
+
+- Tracking normalization is owned by paired modules: [`../../frontend/local-data/tracking.js`](../../frontend/local-data/tracking.js) and [`../../src/local_data_store_tracking.py`](../../src/local_data_store_tracking.py).
+- Saved rows persist `pipelinePhase`, `outcomeStatus`, `outcomeTimestamps`, content/tracking/notes timestamps, and `lastActivityAt`; `applicationStatus` is a write-only compatibility mirror.
+- Browser and desktop tracking use the same parity fixtures in [`../../tests/fixtures/saved_job_tracking_cases.json`](../../tests/fixtures/saved_job_tracking_cases.json).
+- Saved page filtering/sorting consumes [`../../frontend/saved/app/view-model.js`](../../frontend/saved/app/view-model.js) instead of reinterpreting raw rows in render/filter/timeline code.
+- Phase and outcome controls are rendered separately by [`../../frontend/saved/app/tracking-ui.js`](../../frontend/saved/app/tracking-ui.js).
+- Backup export writes schema v3; import accepts v1/v2/v3.
 
 ## Current save-job flow
 

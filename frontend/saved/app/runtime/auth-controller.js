@@ -87,6 +87,9 @@ export function createSavedAuthController({
     viewState.savedLifecycleOverlayRequestId = 0;
     viewState.selectedJobKey = "";
     viewState.phaseOverrideContext = null;
+    viewState.trackingOverrideContext = null;
+    viewState.loadedAttachmentJobKeys = new Set();
+    viewState.loadingAttachmentJobKeys = new Set();
     viewState.timelineScope = timelineScopeAll;
     viewState.lastActivityPulse = null;
     setSavedFilter(defaultSavedFilter);

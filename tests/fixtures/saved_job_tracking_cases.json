@@ -1,0 +1,98 @@
+[
+  {
+    "name": "legacy active",
+    "input": {
+      "applicationStatus": "interview_1",
+      "savedAt": "2026-03-08T09:00:00.000Z",
+      "phaseTimestamps": {
+        "bookmark": "2026-03-08T09:00:00.000Z",
+        "applied": "2026-03-08T10:00:00.000Z",
+        "interview_1": "2026-03-10T11:00:00.000Z"
+      }
+    },
+    "expected": {
+      "pipelinePhase": "interview_1",
+      "outcomeStatus": "active",
+      "applicationStatus": "interview_1"
+    }
+  },
+  {
+    "name": "legacy rejected keeps best prior phase",
+    "input": {
+      "applicationStatus": "rejected",
+      "savedAt": "2026-03-08T09:00:00.000Z",
+      "updatedAt": "2026-03-12T08:00:00.000Z",
+      "phaseTimestamps": {
+        "bookmark": "2026-03-08T09:00:00.000Z",
+        "applied": "2026-03-08T10:00:00.000Z",
+        "interview_2": "2026-03-11T11:00:00.000Z"
+      }
+    },
+    "expected": {
+      "pipelinePhase": "interview_2",
+      "outcomeStatus": "rejected",
+      "applicationStatus": "rejected",
+      "outcomeTimestampKey": "rejected"
+    }
+  },
+  {
+    "name": "split active",
+    "input": {
+      "pipelinePhase": "assignment",
+      "outcomeStatus": "active",
+      "applicationStatus": "applied",
+      "savedAt": "2026-03-08T09:00:00.000Z"
+    },
+    "expected": {
+      "pipelinePhase": "assignment",
+      "outcomeStatus": "active",
+      "applicationStatus": "assignment"
+    }
+  },
+  {
+    "name": "split terminal",
+    "input": {
+      "pipelinePhase": "offer",
+      "outcomeStatus": "accepted",
+      "savedAt": "2026-03-08T09:00:00.000Z",
+      "outcomeTimestamps": {
+        "accepted": "2026-03-20T15:30:00.000Z"
+      }
+    },
+    "expected": {
+      "pipelinePhase": "offer",
+      "outcomeStatus": "accepted",
+      "applicationStatus": "accepted",
+      "outcomeTimestampKey": "accepted"
+    }
+  },
+  {
+    "name": "malformed status",
+    "input": {
+      "applicationStatus": "???",
+      "savedAt": "2026-03-08T09:00:00.000Z"
+    },
+    "expected": {
+      "pipelinePhase": "bookmark",
+      "outcomeStatus": "active",
+      "applicationStatus": "bookmark"
+    }
+  },
+  {
+    "name": "timestamp edge fills bookmark and terminal",
+    "input": {
+      "applicationStatus": "ghosted",
+      "savedAt": "2026-03-08T09:00:00.000Z",
+      "updatedAt": "2026-03-30T12:00:00.000Z",
+      "phaseTimestamps": {
+        "applied": "2026-03-09T10:00:00.000Z"
+      }
+    },
+    "expected": {
+      "pipelinePhase": "applied",
+      "outcomeStatus": "ghosted",
+      "applicationStatus": "ghosted",
+      "outcomeTimestampKey": "ghosted"
+    }
+  }
+]

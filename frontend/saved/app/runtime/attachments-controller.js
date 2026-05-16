@@ -1,9 +1,11 @@
 import {
+  hydrateAttachmentList as hydrateAttachmentListFromModule,
   hydrateAttachmentLists as hydrateAttachmentListsFromModule,
   uploadAttachments as uploadAttachmentsFromModule,
   getAttachmentPreviewUrl as getAttachmentPreviewUrlFromModule,
   clearAttachmentPreviewUrls as clearAttachmentPreviewUrlsFromModule,
-  renderAttachmentList as renderAttachmentListFromModule
+  renderAttachmentList as renderAttachmentListFromModule,
+  renderAttachmentLoading as renderAttachmentLoadingFromModule
 } from "../attachments.js";
 import { escapeHtml, showToast } from "../../../shared/ui/index.js";
 
@@ -30,6 +32,8 @@ export function createSavedAttachmentsController({
   }
 
   function renderAttachmentList(jobKey, attachments) {
+    viewState.loadedAttachmentJobKeys.add(String(jobKey || ""));
+    viewState.loadingAttachmentJobKeys.delete(String(jobKey || ""));
     return renderAttachmentListFromModule(jobKey, attachments, {
       savedJobsListEl: dom.savedJobsListEl,
       cssEscape,
@@ -40,12 +44,37 @@ export function createSavedAttachmentsController({
     });
   }
 
+  function renderAttachmentLoading(jobKey) {
+    return renderAttachmentLoadingFromModule(jobKey, {
+      savedJobsListEl: dom.savedJobsListEl,
+      cssEscape
+    });
+  }
+
   async function hydrateAttachmentLists(jobs) {
     return hydrateAttachmentListsFromModule(jobs, {
       currentUser: viewState.currentUser,
       listAttachmentsForJob: (uid, jobKey) => savedPageService.listAttachmentsForJob(uid, jobKey),
       renderAttachmentList
     });
+  }
+
+  async function hydrateAttachmentListForJob(jobKey, options = {}) {
+    const safeJobKey = String(jobKey || "").trim();
+    if (!safeJobKey || !viewState.currentUser) return;
+    if (!options.force && viewState.loadedAttachmentJobKeys.has(safeJobKey)) return;
+    if (viewState.loadingAttachmentJobKeys.has(safeJobKey)) return;
+    viewState.loadingAttachmentJobKeys.add(safeJobKey);
+    try {
+      await hydrateAttachmentListFromModule(safeJobKey, {
+        currentUser: viewState.currentUser,
+        listAttachmentsForJob: (uid, safeKey) => savedPageService.listAttachmentsForJob(uid, safeKey),
+        renderAttachmentList,
+        renderAttachmentLoading
+      });
+    } finally {
+      viewState.loadingAttachmentJobKeys.delete(safeJobKey);
+    }
   }
 
   async function uploadAttachments(jobKey, files) {
@@ -60,6 +89,7 @@ export function createSavedAttachmentsController({
       renderAttachmentList,
       showToast,
       dispatchAttachmentMutated: safeJobKey => {
+        viewState.loadedAttachmentJobKeys.add(String(safeJobKey || ""));
         savedDispatch.dispatch({
           type: savedActions.ATTACHMENT_MUTATED,
           payload: { jobKey: safeJobKey }
@@ -152,6 +182,7 @@ export function createSavedAttachmentsController({
       const nextResult = await savedPageService.listAttachmentsForJob(viewState.currentUser.uid, jobKey);
       if (!nextResult.ok) throw new Error(nextResult.error || "Could not list attachments.");
       renderAttachmentList(jobKey, nextResult.data);
+      viewState.loadedAttachmentJobKeys.add(String(jobKey || ""));
       showToast("Attachment removed.", "success");
       savedDispatch.dispatch({ type: savedActions.ATTACHMENT_MUTATED, payload: { jobKey } });
       queueActivityPulse(jobKey, timelineScopeAttachments);
@@ -196,6 +227,7 @@ export function createSavedAttachmentsController({
 
   return {
     hydrateAttachmentLists,
+    hydrateAttachmentListForJob,
     uploadAttachments,
     renderAttachmentList,
     bindAttachmentActionButtons

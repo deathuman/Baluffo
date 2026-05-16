@@ -16,6 +16,7 @@ test("saved domain normalizes custom job payload", () => {
 
 test("saved domain maps activity labels/details", () => {
   assert.equal(activityTypeLabel("job_saved"), "Saved");
+  assert.equal(activityTypeLabel("outcome_changed"), "Outcome Changed");
   const detail = formatActivityDetail(
     { type: "phase_changed", details: { previousStatus: "bookmark", nextStatus: "applied" } },
     {
@@ -25,4 +26,13 @@ test("saved domain maps activity labels/details", () => {
     }
   );
   assert.equal(detail, "Saved -> Applied");
+  const outcomeDetail = formatActivityDetail(
+    { type: "outcome_changed", details: { previousOutcome: "active", nextOutcome: "rejected" } },
+    {
+      normalizeOutcome: value => value,
+      outcomeLabels: { active: "Active", rejected: "Rejected" },
+      formatPhaseTimestamp: () => ""
+    }
+  );
+  assert.equal(outcomeDetail, "Active -> Rejected");
 });

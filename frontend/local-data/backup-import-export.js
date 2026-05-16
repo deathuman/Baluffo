@@ -21,12 +21,15 @@ export function areSavedRowsEquivalent(a, b) {
   const fields = [
     "jobKey", "title", "company", "sector", "companyType", "city", "country", "workType",
     "contractType", "jobLink", "profession", "isCustom", "customSourceLabel", "reminderAt",
-    "contactedAt", "updatedBy", "applicationStatus", "notes", "attachmentsCount", "savedAt"
+    "contactedAt", "updatedBy", "pipelinePhase", "outcomeStatus", "applicationStatus", "notes",
+    "attachmentsCount", "savedAt", "contentUpdatedAt", "trackingUpdatedAt", "notesUpdatedAt",
+    "lastActivityAt"
   ];
   for (const field of fields) {
     if (String(a[field] ?? "") !== String(b[field] ?? "")) return false;
   }
-  return JSON.stringify(toPlainObject(a.phaseTimestamps)) === JSON.stringify(toPlainObject(b.phaseTimestamps));
+  return JSON.stringify(toPlainObject(a.phaseTimestamps)) === JSON.stringify(toPlainObject(b.phaseTimestamps))
+    && JSON.stringify(toPlainObject(a.outcomeTimestamps)) === JSON.stringify(toPlainObject(b.outcomeTimestamps));
 }
 
 export function parseBackupPayload(payload) {

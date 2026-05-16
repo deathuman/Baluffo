@@ -117,6 +117,36 @@ export function createIndexedDbAdapter({ dbName, dbVersion }) {
     });
   }
 
+  async function withStores(storeNames, mode, fn) {
+    const db = await getDb();
+    const names = Array.isArray(storeNames) ? storeNames : [storeNames];
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(names, mode);
+      const stores = Object.fromEntries(names.map(name => [name, tx.objectStore(name)]));
+
+      let settled = false;
+      function done(value) {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      }
+      function fail(err) {
+        if (settled) return;
+        settled = true;
+        reject(err);
+      }
+
+      try {
+        fn(stores, done, fail);
+      } catch (err) {
+        fail(err);
+      }
+
+      tx.onerror = () => fail(tx.error || new Error(`IndexedDB transaction failed: ${names.join(",")}`));
+      tx.onabort = () => fail(tx.error || new Error(`IndexedDB transaction aborted: ${names.join(",")}`));
+    });
+  }
+
   async function listSavedJobs(uid) {
     return withStore("saved_jobs", "readonly", (store, done, fail) => {
       const index = store.index("by_profile");
@@ -167,6 +197,7 @@ export function createIndexedDbAdapter({ dbName, dbVersion }) {
   return {
     isReady: () => hasIndexedDb,
     withStore,
+    withStores,
     listSavedJobs,
     listAllSavedJobs,
     listAllAttachments,

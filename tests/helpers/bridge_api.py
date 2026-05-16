@@ -47,24 +47,9 @@ class FakeHandler:
         disposition: str = "inline",
         status: int = 200,
     ) -> None:
-        self._send_bytes(
-            body,
-            content_type=content_type,
-            filename=filename,
-            disposition=disposition,
-            status=status,
-        )
-
-    def _send_bytes(
-        self,
-        body: bytes,
-        *,
-        content_type: str,
-        filename: str = "",
-        disposition: str = "inline",
-        status: int = 200,
-    ) -> None:
         self.bytes_sent.append({"status": status, "body": body, "content_type": content_type})
+
+    _send_bytes = send_bytes
 
 
 class FakeDesktopLocalDataStore:
@@ -103,10 +88,27 @@ class FakeDesktopLocalDataStore:
             if job.get("key") == job_key:
                 job["status"] = status
 
-    def update_job_notes(self, uid: str, job_key: str, notes: str) -> None:
+    def update_job_notes(
+        self,
+        uid: str,
+        job_key: str,
+        notes: str,
+        options: dict[str, Any] | None = None,
+    ) -> None:
         for job in self.saved_jobs.get(uid, []):
             if job.get("key") == job_key:
                 job["notes"] = notes
+
+    def update_application_tracking(
+        self,
+        uid: str,
+        job_key: str,
+        tracking: dict[str, Any],
+        options: dict[str, Any] | None = None,
+    ) -> None:
+        for job in self.saved_jobs.get(uid, []):
+            if job.get("key") == job_key:
+                job.update(tracking)
 
     def add_attachment_for_job(self, uid: str, job_key: str, file_meta: dict) -> str:
         att_id = f"att_{hash(file_meta.get('name', '')) % 10000}"

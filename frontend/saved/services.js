@@ -63,13 +63,25 @@ export const savedPageService = {
       return toResult(null, err?.message || "Could not update application status.");
     }
   },
-  async updateJobNotes(uid, jobKey, notes) {
+  async updateApplicationTracking(uid, jobKey, tracking, options = {}) {
+    try {
+      const api = getLocalDataApi();
+      if (!api || typeof api.updateApplicationTracking !== "function") {
+        throw new Error("Local data API unavailable for updateApplicationTracking.");
+      }
+      await api.updateApplicationTracking(uid, jobKey, tracking, options);
+      return toResult(true);
+    } catch (err) {
+      return toResult(null, err?.message || "Could not update application tracking.");
+    }
+  },
+  async updateJobNotes(uid, jobKey, notes, options = {}) {
     try {
       const api = getLocalDataApi();
       if (!api || typeof api.updateJobNotes !== "function") {
         throw new Error("Local data API unavailable for updateJobNotes.");
       }
-      await api.updateJobNotes(uid, jobKey, notes);
+      await api.updateJobNotes(uid, jobKey, notes, options);
       return toResult(true);
     } catch (err) {
       return toResult(null, err?.message || "Could not update notes.");

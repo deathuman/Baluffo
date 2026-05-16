@@ -83,7 +83,10 @@ class SavedJobSchema(BaseModel):
     createdAt: str = Field(default="", description="ISO 8601 when bookmark/custom row was created")
     status: str = Field(default="", description="Legacy user stage mirror")
     applicationStatus: str = Field(default="", description="User stage e.g. bookmark, applied")
+    pipelinePhase: str = Field(default="", description="Application pipeline phase")
+    outcomeStatus: str = Field(default="", description="Application outcome status")
     phaseTimestamps: dict[str, str] = Field(default_factory=dict)
+    outcomeTimestamps: dict[str, str] = Field(default_factory=dict)
     notes: str = ""
     isCustom: bool = False
     customSourceLabel: str = ""
@@ -119,11 +122,18 @@ class LocalSavedJobRowSchema(BaseModel):
     contactedAt: str = ""
     updatedBy: str = ""
     applicationStatus: str = ""
+    pipelinePhase: str = ""
+    outcomeStatus: str = ""
     phaseTimestamps: dict[str, str] = Field(default_factory=dict)
+    outcomeTimestamps: dict[str, str] = Field(default_factory=dict)
     notes: str = ""
     attachmentsCount: int = 0
     savedAt: str = ""
     updatedAt: str = ""
+    contentUpdatedAt: str = ""
+    trackingUpdatedAt: str = ""
+    notesUpdatedAt: str = ""
+    lastActivityAt: str = ""
 
 
 class LocalDataActivityRowSchema(BaseModel):
@@ -200,8 +210,8 @@ class LocalDataBackupPayloadSchema(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    version: int = 2
-    schemaVersion: int = 2
+    version: int = 3
+    schemaVersion: int = 3
     exportedAt: str = ""
     includesFiles: bool = False
     counts: LocalDataBackupCountsSchema = Field(default_factory=LocalDataBackupCountsSchema)

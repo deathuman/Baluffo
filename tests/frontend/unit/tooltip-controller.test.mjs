@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   clearTooltip,
+  clippedTooltipAttrs,
   setTooltip,
   tooltipAttrs
 } from "../../../frontend/shared/ui/index.js";
@@ -45,6 +46,10 @@ function createFakeElement(doc, tagName = "div") {
     className: "",
     textContent: "",
     title: "",
+    clientWidth: 80,
+    scrollWidth: 80,
+    clientHeight: 24,
+    scrollHeight: 24,
     _rect: { left: 100, top: 80, right: 180, bottom: 104, width: 80, height: 24 },
     appendChild(child) {
       child.parentNode = this;
@@ -65,6 +70,7 @@ function createFakeElement(doc, tagName = "div") {
       this.attributes[name] = String(value);
       if (name === "id") this.id = String(value);
       if (name === "data-tooltip") this.dataset.tooltip = String(value);
+      if (name === "data-tooltip-if-clipped") this.dataset.tooltipIfClipped = String(value);
       if (name === "role") this.role = String(value);
     },
     getAttribute(name) {
@@ -73,6 +79,7 @@ function createFakeElement(doc, tagName = "div") {
     removeAttribute(name) {
       delete this.attributes[name];
       if (name === "data-tooltip") delete this.dataset.tooltip;
+      if (name === "data-tooltip-if-clipped") delete this.dataset.tooltipIfClipped;
     },
     getBoundingClientRect() {
       return this._rect;
@@ -151,6 +158,31 @@ test("tooltip helpers set data-tooltip and remove legacy title", () => {
 
   clearTooltip(el);
   assert.equal(el.getAttribute("data-tooltip"), null);
+});
+
+test("tooltip controller only shows clipped conditional tooltips when text overflows", () => {
+  assert.equal(
+    clippedTooltipAttrs('Long "position" & title'),
+    ' data-tooltip-if-clipped="Long &quot;position&quot; &amp; title"'
+  );
+  assert.equal(clippedTooltipAttrs(""), "");
+
+  const { doc, windowTarget } = createTooltipDom();
+  const target = createFakeElement(doc, "span");
+  target.setAttribute("data-tooltip-if-clipped", "Complete position title");
+  doc.body.appendChild(target);
+
+  installGlobalTooltipController({ documentTarget: doc, windowTarget });
+  doc.dispatch("pointerover", { target });
+  assert.equal(doc.body.children.find(child => child.id === "baluffo-global-tooltip"), undefined);
+
+  target.scrollWidth = 160;
+  target.clientWidth = 80;
+  doc.dispatch("pointerover", { target });
+  const portal = doc.body.children.find(child => child.id === "baluffo-global-tooltip");
+  assert.ok(portal);
+  assert.equal(portal.textContent, "Complete position title");
+  assert.equal(portal.getAttribute("aria-hidden"), "false");
 });
 
 test("tooltip controller shows via focus, restores aria-describedby, and flips near viewport edge", () => {

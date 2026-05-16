@@ -111,6 +111,95 @@ test("saved activity controller opens to selected scope when a job is selected",
   assert.equal(historyPanelToggleBtnEl.attributes["aria-expanded"], "true");
 });
 
+test("saved mutations confirm before removing a saved job", async () => {
+  const confirmationCalls = [];
+  const removeCalls = [];
+  const toastCalls = [];
+  const viewState = {
+    currentUser: { uid: "u1" },
+    phaseOverrideContext: { jobKey: "job_1" },
+    trackingOverrideContext: { jobKey: "job_1" },
+    lastSavedJobsByKey: new Map([
+      ["job_1", {
+        jobKey: "job_1",
+        title: "Gameplay Engineer",
+        company: "Studio"
+      }]
+    ])
+  };
+  const mutations = createSavedMutations({
+    viewState,
+    savedPageService: {
+      async removeSavedJobForUser(...args) {
+        removeCalls.push(args);
+        return { ok: true };
+      }
+    },
+    async requestConfirmationDialog(params) {
+      confirmationCalls.push(params);
+      return true;
+    },
+    showToast(message, type, options = {}) {
+      toastCalls.push({ message, type, options });
+    }
+  });
+
+  await mutations.removeSavedJob("job_1");
+
+  assert.equal(confirmationCalls.length, 1);
+  assert.equal(confirmationCalls[0].title, "Remove saved job?");
+  assert.equal(confirmationCalls[0].confirmLabel, "Remove job");
+  assert.match(confirmationCalls[0].description, /Gameplay Engineer at Studio/);
+  assert.deepEqual(removeCalls, [["u1", "job_1"]]);
+  assert.equal(viewState.phaseOverrideContext, null);
+  assert.equal(viewState.trackingOverrideContext, null);
+  assert.equal(toastCalls[0].message, "Removed saved job.");
+  assert.equal(toastCalls[0].type, "success");
+  assert.equal(toastCalls[0].options.actionLabel, "Undo");
+});
+
+test("saved mutations do not remove a saved job when confirmation is cancelled", async () => {
+  const confirmationCalls = [];
+  const removeCalls = [];
+  const toastCalls = [];
+  const viewState = {
+    currentUser: { uid: "u1" },
+    phaseOverrideContext: { jobKey: "job_1" },
+    trackingOverrideContext: { jobKey: "job_1" },
+    lastSavedJobsByKey: new Map([
+      ["job_1", {
+        jobKey: "job_1",
+        title: "Gameplay Engineer",
+        company: "Studio"
+      }]
+    ])
+  };
+  const mutations = createSavedMutations({
+    viewState,
+    savedPageService: {
+      async removeSavedJobForUser(...args) {
+        removeCalls.push(args);
+        return { ok: true };
+      }
+    },
+    async requestConfirmationDialog(params) {
+      confirmationCalls.push(params);
+      return false;
+    },
+    showToast(message, type, options = {}) {
+      toastCalls.push({ message, type, options });
+    }
+  });
+
+  await mutations.removeSavedJob("job_1");
+
+  assert.equal(confirmationCalls.length, 1);
+  assert.deepEqual(removeCalls, []);
+  assert.deepEqual(toastCalls, []);
+  assert.deepEqual(viewState.phaseOverrideContext, { jobKey: "job_1" });
+  assert.deepEqual(viewState.trackingOverrideContext, { jobKey: "job_1" });
+});
+
 test("saved mutations require contextual override before persisting locked phase", async () => {
   const updateCalls = [];
   const confirmationCalls = [];
@@ -136,7 +225,9 @@ test("saved mutations require contextual override before persisting locked phase
       }
     },
     normalizePhase: value => String(value || "bookmark"),
+    normalizeOutcome: value => (String(value || "").trim() === "rejected" ? "rejected" : "active"),
     canTransition: () => false,
+    canSetOutcome: () => true,
     async requestConfirmationDialog(params) {
       confirmationCalls.push(params);
       return true;
@@ -144,6 +235,7 @@ test("saved mutations require contextual override before persisting locked phase
     needsInterviewTimestamp: () => false,
     requestInterviewTimestamp: async () => "",
     phaseLabels: { bookmark: "Saved", offer: "Final Round" },
+    outcomeLabels: { active: "Active" },
     refreshActivityLog: async () => {},
     renderSavedJobs(rows) {
       renderCalls.push(rows.length);
@@ -158,10 +250,13 @@ test("saved mutations require contextual override before persisting locked phase
   await mutations.updatePhase("job_1", "offer");
 
   assert.deepEqual(viewState.phaseOverrideContext, {
+    kind: "phase",
     jobKey: "job_1",
     phase: "offer",
-    fromPhase: "bookmark"
+    fromPhase: "bookmark",
+    fromOutcome: "active"
   });
+  assert.deepEqual(viewState.trackingOverrideContext, viewState.phaseOverrideContext);
   assert.equal(updateCalls.length, 0);
   assert.equal(confirmationCalls.length, 0);
   assert.deepEqual(renderCalls, [1]);
@@ -174,8 +269,9 @@ test("saved mutations require contextual override before persisting locked phase
     uid: "u1",
     jobKey: "job_1",
     phase: "offer",
-    options: { override: true }
+    options: { override: true, overrideReason: "" }
   });
   assert.equal(viewState.phaseOverrideContext, null);
+  assert.equal(viewState.trackingOverrideContext, null);
   assert.equal(toastCalls.at(-1).options.actionLabel, "Revert");
 });

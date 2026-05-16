@@ -60,6 +60,7 @@ export function initBrowserLocalDataClient() {
   const indexedDbAdapter = createIndexedDbAdapter({ dbName: DB_NAME, dbVersion: DB_VERSION });
   const hasIndexedDb = indexedDbAdapter.isReady();
   const withStore = indexedDbAdapter.withStore;
+  const withStores = indexedDbAdapter.withStores;
   const listSavedJobs = indexedDbAdapter.listSavedJobs;
   const listAllSavedJobs = indexedDbAdapter.listAllSavedJobs;
   const listAllAttachments = indexedDbAdapter.listAllAttachments;
@@ -94,6 +95,7 @@ export function initBrowserLocalDataClient() {
 
   const activityDomain = createActivityDomain({
     withStore,
+    withStores,
     ensureCurrentUser,
     hashFNV1a,
     nowIso
@@ -194,6 +196,7 @@ export function initBrowserLocalDataClient() {
     generateJobKey,
     buildAttachmentPath,
     updateApplicationStatus: savedJobsDomain.updateApplicationStatus,
+    updateApplicationTracking: savedJobsDomain.updateApplicationTracking,
     canTransitionPhase,
     updateAttachmentMetadata: savedJobsDomain.updateAttachmentMetadata,
     updateJobNotes: savedJobsDomain.updateJobNotes,
