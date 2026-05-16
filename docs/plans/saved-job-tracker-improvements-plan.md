@@ -86,6 +86,7 @@ The canonical persisted row and backup shape live in [`../DATA_CONTRACT.md`](../
 - Saved page source lifecycle overlay is read-only and separate from user tracking.
 - Lifecycle rows are matched by the same generated job key logic used by saved-job storage.
 - The overlay preserves `status`, `removedAt`, `lastSeenAt`, `lifecycleEvent`, and `lifecycleReason`.
+- Saved lifecycle badge tooltips include `lastSeenAt` relative copy for non-active lifecycle badges without changing Jobs page badge copy.
 - `needsAction` is evidence-only: due/overdue reminders or active saved jobs whose source is likely removed/archived.
 - Source lifecycle never auto-converts user outcomes.
 
@@ -114,6 +115,7 @@ Coverage exists for:
 - Remove confirmation cancel/confirm behavior.
 - Remove/Undo behavior preserving attachment rows linked by `profileId` and `jobKey`.
 - Attachment lazy-load duplicate-read prevention on rerender and repeated tab open.
+- Saved lifecycle badge copy for `lastSeenAt` while active source overlays stay visually quiet.
 - Saved row layout, clipped tooltips, compact tracking UI, and tooltip cleanup.
 
 ## Deferred Work
@@ -147,17 +149,7 @@ Possible future polish:
 - Keep loading state visible for the first load of an unloaded attachment tab.
 - Continue to verify upload/delete refreshes the affected job list.
 
-### 3. Source Lifecycle Copy
-
-Saved overlay records preserve `lastSeenAt`, but the badge copy still mostly surfaces `removedAt` for removed/archived states.
-
-Next fixes:
-
-- Add relative copy for `lastSeenAt`, for example "last seen 3d ago".
-- Keep `removedAt` copy when it is the more useful signal.
-- Add tests for active, likely removed, archived, reappeared, and preserved source states.
-
-### 4. Grouping
+### 3. Grouping
 
 Filters and sorts are implemented. Grouping is not.
 
@@ -170,7 +162,7 @@ Candidate group modes:
 
 Do this only when the Saved page needs a denser list-management mode. It should consume `buildSavedJobViewModel()` and not rederive tracking rules.
 
-### 5. Richer Revert Details
+### 4. Richer Revert Details
 
 `phase_reverted` and `outcome_reverted` exist, but their details still mostly use the generic previous/next shape.
 
@@ -188,7 +180,7 @@ Optional hardening:
 
 Do this only if the activity timeline needs more precise audit copy.
 
-### 6. Flexible Tracking Object
+### 5. Flexible Tracking Object
 
 The broader CRM-style tracking object is deferred:
 
@@ -212,10 +204,9 @@ This is v2 scope. It should not be mixed into v1 cleanup unless we are intention
 
 Recommended order:
 
-1. Add `lastSeenAt` lifecycle copy to saved-row badges.
-2. Decide whether grouping is worth adding now or should wait.
-3. Add richer revert event details if timeline auditability needs it.
-4. Leave flexible `tracking` object for a separate v2 design pass.
+1. Decide whether grouping is worth adding now or should wait.
+2. Add richer revert event details if timeline auditability needs it.
+3. Leave flexible `tracking` object for a separate v2 design pass.
 
 ## Guardrails For Future Changes
 

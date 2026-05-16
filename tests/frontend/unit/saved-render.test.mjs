@@ -12,6 +12,45 @@ import {
   renderDetailsSummary
 } from "../../../frontend/saved/render.js";
 
+function renderSavedLifecycleOverlay(lifecycleOverlay) {
+  return renderSavedJobBlockHtml({
+    jobKey: "job_1",
+    title: "Gameplay Engineer",
+    company: "Studio",
+    city: "Rome",
+    country: "Italy",
+    workType: "Remote",
+    contractType: "Full-time",
+    jobLink: "https://example.com/jobs/1",
+    applicationStatus: "bookmark",
+    phaseTimestamps: {},
+    savedAt: "2026-03-08T09:00:00.000Z",
+    notes: ""
+  }, {
+    isCustomJob: () => false,
+    customSourceLabel: "Custom",
+    normalizeSavedSector: () => "Game",
+    fullCountryName: value => value,
+    sanitizeUrl: value => value,
+    toContractClass: () => "full-time",
+    normalizePhase: value => value || "bookmark",
+    expandedJobKey: "",
+    selectedJobKey: "",
+    getJobDetailsTab: () => "notes",
+    renderDetailsSummary: () => "",
+    getReminderMeta: () => ({ isSoon: false, label: "" }),
+    renderMissingInfoChips: () => "",
+    renderUpdatedHint: () => "",
+    getJobHistoryEntries: () => "",
+    renderWebIcon: () => "",
+    renderPhaseBar: () => "",
+    lifecycleOverlay,
+    currentUser: { uid: "u1" },
+    maxAttachmentsPerJob: 10,
+    maxAttachmentBytes: 1024
+  });
+}
+
 test("saved render: date/reminder helpers parse and classify near reminders", () => {
   assert.equal(parseIsoDate("not-a-date"), null);
   assert.ok(parseIsoDate("2026-03-08T10:00:00.000Z") instanceof Date);
@@ -112,6 +151,7 @@ test("saved render shows lifecycle overlay badges read-only", () => {
     lifecycleOverlay: {
       status: "likely_removed",
       removedAt: "2026-03-07T00:00:00.000Z",
+      lastSeenAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
       lifecycleEvent: "",
       lifecycleReason: ""
     },
@@ -133,7 +173,7 @@ test("saved render shows lifecycle overlay badges read-only", () => {
   assert.match(html, /<div class="col-location job-cell" data-label="Location">\s*<div class="job-location-stack">/);
   assert.match(html, /<span class="job-country-main">Italy<\/span>/);
   assert.match(html, /<span class="job-city-sub">Rome<\/span>/);
-  assert.match(html, /data-tooltip="Recently removed since Mar 7, 2026"/);
+  assert.match(html, /data-tooltip="Recently removed since Mar 7, 2026; last seen 3d ago"/);
   assert.match(html, /remove-saved-btn[\s\S]*data-tooltip="Remove saved job"/);
   assert.doesNotMatch(html, /details-toggle-btn[\s\S]*data-tooltip="Show notes, files, and history for this job\."/);
   assert.match(html, /details-toggle-icon[\s\S]*<svg viewBox="0 0 24 24"/);
@@ -148,6 +188,48 @@ test("saved render shows lifecycle overlay badges read-only", () => {
   assert.doesNotMatch(html, /class="col-country job-cell"/);
   assert.doesNotMatch(html, /\stitle="/);
   assert.doesNotMatch(html, /save-job-btn/);
+});
+
+test("saved render adds last seen copy to non-active lifecycle badges only", () => {
+  const archivedHtml = renderSavedLifecycleOverlay({
+    status: "archived",
+    removedAt: "2026-03-01T00:00:00.000Z",
+    lastSeenAt: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
+    lifecycleEvent: "",
+    lifecycleReason: ""
+  });
+  assert.match(archivedHtml, /job-lifecycle-badge archived/);
+  assert.match(archivedHtml, /data-tooltip="Archived after removal on Mar 1, 2026; last seen 12h ago"/);
+
+  const reappearedHtml = renderSavedLifecycleOverlay({
+    status: "active",
+    removedAt: "",
+    lastSeenAt: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+    lifecycleEvent: "reappeared",
+    lifecycleReason: ""
+  });
+  assert.match(reappearedHtml, /job-lifecycle-badge reappeared/);
+  assert.match(reappearedHtml, /data-tooltip="Reappeared in the latest fetch; last seen 15m ago"/);
+
+  const preservedHtml = renderSavedLifecycleOverlay({
+    status: "active",
+    removedAt: "",
+    lastSeenAt: new Date(Date.now() - 20 * 1000).toISOString(),
+    lifecycleEvent: "preserved",
+    lifecycleReason: "source_failed"
+  });
+  assert.match(preservedHtml, /job-lifecycle-badge preserved/);
+  assert.match(preservedHtml, /data-tooltip="Kept visible because the source failed in the latest fetch; last seen just now"/);
+
+  const activeHtml = renderSavedLifecycleOverlay({
+    status: "active",
+    removedAt: "",
+    lastSeenAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+    lifecycleEvent: "",
+    lifecycleReason: ""
+  });
+  assert.doesNotMatch(activeHtml, /job-lifecycle-badge/);
+  assert.doesNotMatch(activeHtml, /last seen/);
 });
 
 test("saved render uses remove icon and contextual phase override by default", () => {

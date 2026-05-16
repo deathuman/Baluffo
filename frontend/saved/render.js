@@ -84,7 +84,7 @@ export function renderSavedJobBlockHtml(job, options = {}) {
   const reminderBadge = reminderMeta.isSoon
     ? `<span class="saved-reminder-badge"${tooltipAttrs(reminderMeta.label)}>Due soon</span>`
     : "";
-  const lifecycleBadge = renderLifecycleBadgeHtml(lifecycleOverlay);
+  const lifecycleBadge = renderLifecycleBadgeHtml(lifecycleOverlay, { includeLastSeenAt: true });
 
   return `
     <div class="saved-job-block ${isExpanded ? "expanded" : ""}" data-job-key="${jobKey}" data-ui="saved-job-block" data-selected="${isSelected ? "true" : "false"}">
