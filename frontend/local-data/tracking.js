@@ -146,6 +146,24 @@ export function canTransitionPipelinePhase(currentPhase, nextPhase, outcomeStatu
   return currentIdx >= 0 && nextIdx === currentIdx + 1;
 }
 
+export function isPipelinePhaseRewind(currentPhase, nextPhase) {
+  const currentIdx = PIPELINE_PHASES.indexOf(normalizePipelinePhase(currentPhase));
+  const nextIdx = PIPELINE_PHASES.indexOf(normalizePipelinePhase(nextPhase));
+  return currentIdx >= 0 && nextIdx >= 0 && nextIdx < currentIdx;
+}
+
+export function clearFuturePhaseTimestamps(phaseTimestamps, phase) {
+  const normalizedPhase = normalizePipelinePhase(phase);
+  const targetIdx = PIPELINE_PHASES.indexOf(normalizedPhase);
+  const timestamps = normalizeTimestampMap(phaseTimestamps, PIPELINE_PHASES);
+  if (targetIdx < 0) return timestamps;
+  Object.keys(timestamps).forEach(key => {
+    const idx = PIPELINE_PHASES.indexOf(key);
+    if (idx > targetIdx) delete timestamps[key];
+  });
+  return timestamps;
+}
+
 export function canSetOutcomeStatus(currentOutcome, nextOutcome, { override = false } = {}) {
   const current = normalizeOutcomeStatus(currentOutcome);
   const next = normalizeOutcomeStatus(nextOutcome);

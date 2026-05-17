@@ -340,7 +340,7 @@ This is the canonical stored/output row shape returned by desktop local-data GET
 | `pipelinePhase` | `string` | Canonical phase: `bookmark`, `applied`, `screening`, `assignment`, `interview_1`, `interview_2`, `final`, or `offer`. |
 | `outcomeStatus` | `string` | Canonical outcome: `active`, `rejected`, `withdrawn`, `ghosted`, `closed`, or `accepted`. |
 | `applicationStatus` | `string` | Legacy compatibility mirror derived from `pipelinePhase` and `outcomeStatus`; new code must not read this as source of truth. |
-| `phaseTimestamps` | `object<string, string>` | Phase-to-timestamp map for pipeline phases only; `bookmark` is always present after normalization. |
+| `phaseTimestamps` | `object<string, string>` | Current valid phase-to-timestamp map for pipeline phases only; `bookmark` is always present after normalization. Backward override transitions clear timestamps for phases after the restored phase. |
 | `outcomeTimestamps` | `object<string, string>` | Outcome-to-timestamp map for terminal outcomes. |
 | `notes` | `string` | Freeform local notes. |
 | `attachmentsCount` | `number` | Current count of persisted local attachments for the row. |

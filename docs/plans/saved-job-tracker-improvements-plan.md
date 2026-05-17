@@ -68,6 +68,8 @@ The canonical persisted row and backup shape live in [`../DATA_CONTRACT.md`](../
 
 - Phase and outcome controls are rendered separately in [`../../frontend/saved/app/tracking-ui.js`](../../frontend/saved/app/tracking-ui.js).
 - Phase UI is a compact horizontal stepper.
+- Phase hover tooltips are omitted when they would only repeat visible phase information.
+- Applied has a visible date-only milestone when its stored timestamp exists, because it marks the start of the real application process.
 - Outcome UI is a quiet status chip plus final-outcome menu.
 - Active jobs show `Set final outcome`.
 - Terminal jobs show `Change outcome` plus a reopen action.
@@ -123,6 +125,7 @@ Coverage exists for:
 - Saved lifecycle badge copy for `lastSeenAt` while active source overlays stay visually quiet.
 - Saved grouping model and render behavior, including filter-before-group and sorted order inside groups.
 - Phase/outcome revert activity audit details in both browser and Python local-data runtimes.
+- Backward override cleanup that clears future phase timestamps in both browser and Python local-data runtimes.
 - Saved row layout, clipped tooltips, compact tracking UI, and tooltip cleanup.
 
 ## Deferred Work

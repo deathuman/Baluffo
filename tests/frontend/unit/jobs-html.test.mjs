@@ -122,7 +122,9 @@ test("saved rows use compact hierarchy and bounded title layout", () => {
   assert.match(savedCss, /\.phase-bar::after\s*\{[\s\S]*--phase-progress-ratio/);
   assert.match(savedCss, /@media \(max-width: 900px\)\s*\{[\s\S]*\.saved-row-header\s*\{[\s\S]*display: none;/);
   assert.match(savedCss, /\.phase-timeline-step\.active \.phase-step-node\s*\{[\s\S]*width: 1\.55rem;[\s\S]*box-shadow:[\s\S]*rgba\(187, 134, 252, 0\.58\)/);
-  assert.match(savedCss, /\.phase-timeline-step\[data-phase-time\]::after\s*\{[\s\S]*content: attr\(data-phase-time\);/);
+  assert.match(savedCss, /\.phase-timeline-step\.applied-reached:not\(\.active\) \.phase-step-node\s*\{[\s\S]*box-shadow: 0 0 0\.48rem rgba\(187, 134, 252, 0\.16\);/);
+  assert.match(savedCss, /\.phase-step-applied-date\s*\{[\s\S]*white-space: nowrap;/);
+  assert.doesNotMatch(savedCss, /\.phase-timeline-step\[data-phase-time\]::after/);
   assert.match(savedCss, /\.saved-tracking-action-row\s*\{[\s\S]*grid-template-columns: minmax\(14rem, auto\) minmax\(20rem, 1fr\) minmax\(15rem, auto\)/);
   assert.match(savedCss, /\.tracking-status-slot\s*\{[\s\S]*min-width: 0;/);
   assert.match(savedCss, /\.tracking-current-line\s*\{[\s\S]*display: flex;/);

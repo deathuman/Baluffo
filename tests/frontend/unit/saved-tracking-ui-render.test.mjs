@@ -64,12 +64,54 @@ test("saved tracking UI: phase timestamps move out of the timeline and into deta
     currentUser: { uid: "u1" }
   });
 
-  assert.match(html, /data-phase-time="[^"]+"/);
+  assert.doesNotMatch(html, /data-phase-time=/);
   assert.doesNotMatch(html, /phase-step-time/);
   assert.match(
     html,
     /tracking-current-line[\s\S]*Current phase:[\s\S]*Saved[\s\S]*Entered:[\s\S]*May/
   );
+});
+
+test("saved tracking UI: Applied shows a visible date-only milestone when reached", () => {
+  const html = renderApplicationTrackingControls({
+    jobKey: "job-1",
+    pipelinePhase: "screening",
+    outcomeStatus: "active",
+    phaseTimestamps: {
+      applied: "2026-05-16T19:21:00.000Z",
+      screening: "2026-05-16T20:21:00.000Z"
+    }
+  }, {
+    phaseOptions: ["bookmark", "applied", "screening"],
+    phaseLabels: { bookmark: "Saved", applied: "Applied", screening: "Screening" },
+    canTransition: () => true,
+    canSetOutcome: () => true,
+    now: new Date("2026-05-17T10:00:00.000Z"),
+    currentUser: { uid: "u1" }
+  });
+
+  assert.match(html, /phase-timeline-step complete applied-reached/);
+  assert.match(html, /phase-step-applied-date[^>]*>May 16</);
+  assert.doesNotMatch(html, /phase-step-applied-date[^>]*>[^<]*7:21/);
+  assert.doesNotMatch(html, /data-tooltip="Applied completed/);
+
+  const missingHtml = renderApplicationTrackingControls({
+    jobKey: "job-1",
+    pipelinePhase: "screening",
+    outcomeStatus: "active",
+    phaseTimestamps: {
+      screening: "2026-05-16T20:21:00.000Z"
+    }
+  }, {
+    phaseOptions: ["bookmark", "applied", "screening"],
+    phaseLabels: { bookmark: "Saved", applied: "Applied", screening: "Screening" },
+    canTransition: () => true,
+    canSetOutcome: () => true,
+    currentUser: { uid: "u1" }
+  });
+
+  assert.doesNotMatch(missingHtml, /phase-step-applied-date/);
+  assert.doesNotMatch(missingHtml, /phase-step-applied-date[^>]*>Not recorded</);
 });
 
 test("saved tracking UI: action row exposes next phase and change phase controls", () => {

@@ -13,6 +13,14 @@ function formatTrackingTimestamp(value, options = {}) {
   if (!value) return "";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "";
+  if (options.dateOnly) {
+    const currentYear = new Date(resolveNowMs(options.now)).getFullYear();
+    return parsed.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      ...(parsed.getFullYear() === currentYear ? {} : { year: "numeric" })
+    });
+  }
   if (options.compact) {
     return parsed.toLocaleString(undefined, {
       month: "short",
@@ -216,7 +224,8 @@ export function renderPhaseBar(jobKey, activePhase, phaseTimestamps, savedAt, op
     canTransition = () => false,
     currentUser = null,
     trackingOverrideContext = null,
-    outcomeStatus = "active"
+    outcomeStatus = "active",
+    now = Date.now
   } = options;
   const normalizedPhase = normalizePipelinePhase(activePhase);
   const normalizedOutcome = normalizeOutcomeStatus(outcomeStatus);
@@ -224,7 +233,6 @@ export function renderPhaseBar(jobKey, activePhase, phaseTimestamps, savedAt, op
   const safeJobKey = escapeHtml(String(jobKey || ""));
   const hasContext = isContextFor(trackingOverrideContext, jobKey, "phase", trackingOverrideContext?.phase);
   const timestamps = phaseTimestamps && typeof phaseTimestamps === "object" ? phaseTimestamps : {};
-  const lockedByOutcome = isTerminalOutcome(normalizedOutcome);
   const progressRatio = phaseOptions.length > 1 && activeIndex > 0
     ? Math.min(1, activeIndex / (phaseOptions.length - 1))
     : 0;
@@ -232,29 +240,25 @@ export function renderPhaseBar(jobKey, activePhase, phaseTimestamps, savedAt, op
     const normalizedOption = normalizePipelinePhase(phase);
     const isActive = normalizedOption === normalizedPhase;
     const isComplete = activeIndex >= 0 && idx < activeIndex;
+    const isApplied = normalizedOption === "applied";
+    const appliedReached = isApplied && activeIndex >= idx;
     const canChangeNormally = canTransition(normalizedPhase, normalizedOption, normalizedOutcome);
     const canClick = Boolean(currentUser);
     const selectedTimestamp = getPhaseTimestamp(timestamps, normalizedOption, savedAt);
     const selectedAtFull = formatTrackingTimestamp(selectedTimestamp);
+    const appliedDate = isApplied && appliedReached
+      ? formatTrackingTimestamp(selectedTimestamp, { dateOnly: true, now })
+      : "";
     const status = isActive ? "current" : isComplete ? "completed" : "future";
     const classes = [
       "phase-step-btn",
       "phase-timeline-step",
       isActive ? "active" : "",
       isComplete ? "complete" : "",
+      appliedReached ? "applied-reached" : "",
       !canChangeNormally ? "locked" : ""
     ].filter(Boolean).join(" ");
     const label = phaseLabels[normalizedOption] || normalizedOption;
-    const tooltip = !canClick
-      ? "Sign in to change application phase."
-      : lockedByOutcome
-        ? [
-          selectedAtFull ? `${label} ${status === "current" ? "entered" : "completed"} ${selectedAtFull}.` : "",
-          "Set the outcome back to Active before changing phase."
-        ].filter(Boolean).join(" ")
-        : selectedAtFull
-          ? `${label} ${status === "current" ? "entered" : "completed"} ${selectedAtFull}.`
-          : "";
     const ariaLabel = buildPhaseStepAriaLabel(label, status, selectedAtFull);
 
     return `
@@ -264,18 +268,17 @@ export function renderPhaseBar(jobKey, activePhase, phaseTimestamps, savedAt, op
         data-ui="phase-step-btn"
         data-phase="${escapeHtml(normalizedOption)}"
         data-phase-status="${status}"
-        ${selectedAtFull ? `data-phase-time="${escapeHtml(selectedAtFull)}"` : ""}
         data-current-phase="${escapeHtml(normalizedPhase)}"
         data-current-outcome="${escapeHtml(normalizedOutcome)}"
         ${canClick ? "" : "disabled"}
         ${isActive ? 'aria-current="step"' : ""}
         aria-label="${escapeHtml(ariaLabel)}"
-        ${tooltipAttrs(tooltip)}
       >
         <span class="phase-step-node" aria-hidden="true">
           ${isComplete && !isActive ? '<span class="phase-step-check">✓</span>' : ""}
         </span>
         <span class="phase-step-text">${escapeHtml(label)}</span>
+        ${appliedDate ? `<span class="phase-step-applied-date">${escapeHtml(appliedDate)}</span>` : ""}
       </button>
     `;
   }).join("");

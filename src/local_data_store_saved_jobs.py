@@ -26,6 +26,8 @@ from .local_data_store_shared import (
 from .local_data_store_tracking import (
     can_set_outcome_status,
     can_transition_pipeline_phase,
+    clear_future_phase_timestamps,
+    is_pipeline_phase_rewind,
     normalize_outcome_status,
     normalize_pipeline_phase,
     normalize_tracking_fields,
@@ -430,8 +432,20 @@ def update_application_tracking(
         cleanup_phase = str(options.get("cleanupPhase") or "").strip()
         if cleanup_phase:
             phase_timestamps.pop(cleanup_phase, None)
+        phase_rewind = (
+            phase_changed
+            and override
+            and is_pipeline_phase_rewind(previous["pipelinePhase"], next_phase)
+        )
+        if phase_rewind:
+            phase_timestamps = clear_future_phase_timestamps(phase_timestamps, next_phase)
         if phase_changed:
-            phase_timestamps[next_phase] = str(options.get("preserveTimestamp") or current_iso)
+            existing_target_timestamp = str(phase_timestamps.get(next_phase) or "").strip()
+            phase_timestamps[next_phase] = str(
+                options.get("preserveTimestamp")
+                or (existing_target_timestamp if phase_rewind else "")
+                or current_iso
+            )
         outcome_timestamps = dict(previous["outcomeTimestamps"])
         if outcome_changed and next_outcome != "active":
             outcome_timestamps[next_outcome] = str(

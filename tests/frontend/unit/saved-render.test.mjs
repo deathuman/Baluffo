@@ -105,8 +105,11 @@ test("saved render: phase bar and history rows render expected markup", () => {
   assert.match(phaseHtml, /data-phase-status="current"/);
   assert.match(phaseHtml, /aria-current="step"/);
   assert.match(phaseHtml, /aria-label="Applied, current phase, entered/);
-  assert.match(phaseHtml, /data-phase-time=/);
+  assert.doesNotMatch(phaseHtml, /data-phase-time=/);
   assert.doesNotMatch(phaseHtml, /phase-step-time/);
+  assert.match(phaseHtml, /phase-step-applied-date[^>]*>Mar 8</);
+  assert.doesNotMatch(phaseHtml, /phase-step-applied-date[^>]*>[^<]*10:00/);
+  assert.doesNotMatch(phaseHtml, /data-tooltip="Applied, current phase/);
   assert.doesNotMatch(phaseHtml, /data-tooltip="Set phase to Saved\."/);
   assert.doesNotMatch(phaseHtml, /data-tooltip="Set phase to Applied\."/);
   assert.match(phaseHtml, /data-job-key="job-1"/);

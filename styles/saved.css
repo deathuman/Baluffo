@@ -1498,6 +1498,13 @@
   box-shadow: none;
 }
 
+.phase-timeline-step.applied-reached:not(.active) .phase-step-node {
+  border-color: color-mix(in srgb, var(--accent) 68%, var(--surface-14));
+  background: color-mix(in srgb, var(--accent) 28%, var(--surface-7));
+  color: var(--accent-soft-text);
+  box-shadow: 0 0 0.48rem rgba(187, 134, 252, 0.16);
+}
+
 .phase-timeline-step.active .phase-step-node {
   border-color: color-mix(in srgb, var(--accent) 80%, #ffffff);
   width: 1.55rem;
@@ -1529,6 +1536,11 @@
   color: color-mix(in srgb, var(--text-secondary) 72%, var(--text-muted));
 }
 
+.phase-timeline-step.applied-reached:not(.active) .phase-step-text {
+  color: color-mix(in srgb, var(--accent-soft-text) 84%, var(--text-secondary));
+  font-weight: 720;
+}
+
 .phase-timeline-step.active .phase-step-text {
   color: var(--accent-soft-text);
   font-size: 0.84rem;
@@ -1539,27 +1551,12 @@
   display: none;
 }
 
-.phase-timeline-step[data-phase-time]::after {
-  content: attr(data-phase-time);
-  position: absolute;
-  top: 2.72rem;
-  left: 50%;
-  z-index: 2;
-  max-width: 7.4rem;
-  transform: translateX(-50%);
-  color: var(--text-subtle);
-  font-size: 0.66rem;
-  line-height: 1.1;
-  opacity: 0;
-  pointer-events: none;
+.phase-step-applied-date {
+  color: color-mix(in srgb, var(--accent-soft-text) 72%, var(--text-muted));
+  font-size: 0.68rem;
+  font-weight: 650;
+  line-height: 1.05;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.phase-timeline-step[data-phase-time]:hover::after,
-.phase-timeline-step[data-phase-time]:focus-visible::after {
-  opacity: 0.88;
 }
 
 .saved-tracking-action-row {

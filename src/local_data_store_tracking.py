@@ -138,6 +138,23 @@ def can_transition_pipeline_phase(current: Any, nxt: Any, outcome_status: Any = 
     return PIPELINE_PHASES.index(right) == PIPELINE_PHASES.index(left) + 1
 
 
+def is_pipeline_phase_rewind(current: Any, nxt: Any) -> bool:
+    left = normalize_pipeline_phase(current)
+    right = normalize_pipeline_phase(nxt)
+    return PIPELINE_PHASES.index(right) < PIPELINE_PHASES.index(left)
+
+
+def clear_future_phase_timestamps(value: Any, phase: Any) -> dict[str, str]:
+    normalized_phase = normalize_pipeline_phase(phase)
+    target_index = PIPELINE_PHASES.index(normalized_phase)
+    timestamps = _normalize_timestamp_map(value, PIPELINE_PHASES)
+    return {
+        key: timestamp
+        for key, timestamp in timestamps.items()
+        if PIPELINE_PHASES.index(key) <= target_index
+    }
+
+
 def can_set_outcome_status(current: Any, nxt: Any, *, override: bool = False) -> bool:
     left = normalize_outcome_status(current)
     right = normalize_outcome_status(nxt)

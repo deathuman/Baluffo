@@ -2,6 +2,8 @@ import { sanitizeLocationField } from "../jobs/domain.js";
 import {
   canSetOutcomeStatus,
   canTransitionPipelinePhase,
+  clearFuturePhaseTimestamps,
+  isPipelinePhaseRewind,
   normalizeOutcomeStatus,
   normalizePipelinePhase,
   normalizeTrackingFields,
@@ -318,6 +320,9 @@ export function createSavedJobsDomain(deps) {
           return;
         }
         const currentIso = nowIso();
+        const phaseRewind = phaseChanged
+          && allowOverride
+          && isPipelinePhaseRewind(previousTracking.pipelinePhase, nextPhase);
         const next = {
           ...current,
           pipelinePhase: nextPhase,
@@ -335,8 +340,13 @@ export function createSavedJobsDomain(deps) {
         if (cleanupPhase) {
           delete next.phaseTimestamps[cleanupPhase];
         }
+        if (phaseRewind) {
+          next.phaseTimestamps = clearFuturePhaseTimestamps(next.phaseTimestamps, nextPhase);
+        }
         if (phaseChanged) {
-          next.phaseTimestamps[nextPhase] = preserveTimestamp || currentIso;
+          const existingTargetTimestamp = String(next.phaseTimestamps[nextPhase] || "").trim();
+          next.phaseTimestamps[nextPhase] = preserveTimestamp
+            || (phaseRewind && existingTargetTimestamp ? existingTargetTimestamp : currentIso);
         }
         if (outcomeChanged && nextOutcome !== "active") {
           next.outcomeTimestamps[nextOutcome] = preserveOutcomeTimestamp || currentIso;

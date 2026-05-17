@@ -100,6 +100,54 @@ test("browser saved-job phase revert activity keeps compatibility fields and add
   assert.equal(getStoredRow().phaseTimestamps.applied, undefined);
 });
 
+test("browser saved-job backward override clears future phase timestamps", async () => {
+  const { domain, getStoredRow } = createTrackingDomain({
+    pk: "u1::job_1",
+    profileId: "u1",
+    jobKey: "job_1",
+    title: "Role",
+    company: "Studio",
+    savedAt: "2026-03-08T08:00:00.000Z",
+    pipelinePhase: "offer",
+    outcomeStatus: "active",
+    applicationStatus: "offer",
+    phaseTimestamps: {
+      bookmark: "2026-03-08T08:00:00.000Z",
+      applied: "2026-03-08T09:00:00.000Z",
+      screening: "2026-03-08T10:00:00.000Z",
+      assignment: "2026-03-08T11:00:00.000Z",
+      interview_1: "2026-03-08T12:00:00.000Z",
+      interview_2: "2026-03-08T13:00:00.000Z",
+      final: "2026-03-08T14:00:00.000Z",
+      offer: "2026-03-08T15:00:00.000Z"
+    },
+    outcomeTimestamps: {}
+  });
+
+  await domain.updateApplicationTracking(
+    "u1",
+    "job_1",
+    { pipelinePhase: "applied" },
+    { override: true }
+  );
+
+  assert.deepEqual(getStoredRow().phaseTimestamps, {
+    bookmark: "2026-03-08T08:00:00.000Z",
+    applied: "2026-03-08T09:00:00.000Z"
+  });
+
+  await domain.updateApplicationTracking(
+    "u1",
+    "job_1",
+    { pipelinePhase: "bookmark" },
+    { override: true }
+  );
+
+  assert.deepEqual(getStoredRow().phaseTimestamps, {
+    bookmark: "2026-03-08T08:00:00.000Z"
+  });
+});
+
 test("browser saved-job outcome revert activity keeps compatibility fields and adds audit details", async () => {
   const restoredTimestamp = "2026-03-08T10:00:00.000Z";
   const { domain, activityCalls } = createTrackingDomain({
