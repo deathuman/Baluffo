@@ -32,10 +32,14 @@ export function createSavedAuthController({
   defaultSavedFilter,
   setSavedSort,
   defaultSavedSort,
+  setSavedGroup = () => {},
+  defaultSavedGroup = "none",
+  loadSavedListPreferences = () => ({ group: defaultSavedGroup }),
   renderSelectedJobHint,
   setBackupButtonsEnabled,
   setSavedFilterBarVisible,
   setSavedSortBarVisible,
+  setSavedGroupBarVisible = () => {},
   loadTimelinePreferences,
   subscribeToSavedJobs,
   refreshActivityLog,
@@ -94,6 +98,9 @@ export function createSavedAuthController({
     viewState.lastActivityPulse = null;
     setSavedFilter(defaultSavedFilter);
     setSavedSort(defaultSavedSort);
+    if (typeof setSavedGroup === "function") {
+      setSavedGroup(defaultSavedGroup);
+    }
     updateTimelineScopeButtons();
     renderSelectedJobHint();
     renderWorkspaceStats();
@@ -109,6 +116,9 @@ export function createSavedAuthController({
     setCustomJobPanelOpen(false);
     setSavedFilterBarVisible(false);
     setSavedSortBarVisible(false);
+    if (typeof setSavedGroupBarVisible === "function") {
+      setSavedGroupBarVisible(false);
+    }
     renderAuthRequired("Your saved jobs workspace is stored per local profile, so guest browsing cannot show or edit saved jobs.");
     markSavedFirstRender("auth_required", 0);
     renderTimeline();
@@ -122,7 +132,9 @@ export function createSavedAuthController({
     setBackupButtonsEnabled(true);
     setCustomJobAvailability(true);
     const timelinePrefs = loadTimelinePreferences(user.uid);
+    const listPrefs = loadSavedListPreferences(user.uid);
     viewState.timelineScope = timelinePrefs.scope;
+    setSavedGroup(listPrefs.group || defaultSavedGroup);
     setActivityPanelOpen(false, { persist: false });
     updateTimelineScopeButtons();
     renderSelectedJobHint();
@@ -165,6 +177,9 @@ export function createSavedAuthController({
       savedAuthReadyPoller.schedulePoll();
       setCustomJobAvailability(false);
       setSavedSortBarVisible(false);
+      if (typeof setSavedGroupBarVisible === "function") {
+        setSavedGroupBarVisible(false);
+      }
       renderAuthRequired("Local auth provider is starting. Please wait...");
       markSavedFirstRender("auth_waiting", 0);
       renderTimeline();
@@ -208,6 +223,9 @@ export function createSavedAuthController({
           setCustomJobAvailability(false);
           setSavedFilterBarVisible(false);
           setSavedSortBarVisible(false);
+          if (typeof setSavedGroupBarVisible === "function") {
+            setSavedGroupBarVisible(false);
+          }
           renderAuthRequired("Restoring your local profile. Please wait...");
           markSavedFirstRender("auth_restoring", 0);
           renderTimeline();

@@ -10,12 +10,15 @@ export function bindSavedPageEvents({
   showToast,
   defaultSavedFilter,
   defaultSavedSort,
+  defaultSavedGroup = "none",
   timelineScopeAll,
   setCustomJobPanelOpen,
   createCustomJob,
   updateCustomJobWarning,
   setSavedFilter,
   setSavedSort,
+  setSavedGroup = () => {},
+  persistSavedListPreferences = () => {},
   renderSavedJobs,
   setActivityPanelOpen,
   refreshActivityLog,
@@ -36,6 +39,7 @@ export function bindSavedPageEvents({
     customJobLinkEl,
     savedCustomFilterBtnEls,
     savedSortBtnEls,
+    savedGroupBtnEls = [],
     historyPanelToggleBtnEl,
     activityRefreshBtnEl,
     activityCloseBtnEl,
@@ -93,6 +97,17 @@ export function bindSavedPageEvents({
     btn.addEventListener("click", () => {
       const sortKey = String(btn.dataset.savedSort || defaultSavedSort).toLowerCase();
       setSavedSort(sortKey);
+      renderSavedJobs(Array.from(viewState.lastSavedJobsByKey.values()));
+    });
+  });
+
+  savedGroupBtnEls.forEach(btn => {
+    btn.addEventListener("click", () => {
+      const groupKey = String(btn.dataset.savedGroup || defaultSavedGroup).toLowerCase();
+      setSavedGroup(groupKey);
+      persistSavedListPreferences(viewState.currentUser?.uid || "", {
+        group: viewState.activeSavedGroup
+      });
       renderSavedJobs(Array.from(viewState.lastSavedJobsByKey.values()));
     });
   });

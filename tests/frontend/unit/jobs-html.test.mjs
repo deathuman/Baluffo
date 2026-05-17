@@ -65,6 +65,22 @@ test("saved activity timeline uses the shared rounded scrollbar treatment", () =
   assert.match(savedCss, /\.activity-panel-body::-webkit-scrollbar-thumb\s*\{[\s\S]*background: var\(--surface-18\);[\s\S]*border-radius: 999px;[\s\S]*border: 2px solid var\(--surface-1\);/);
 });
 
+test("saved html exposes compact grouping controls and group header styling", () => {
+  const savedHtml = fs.readFileSync(path.join(repoRoot, "saved.html"), "utf8");
+  const savedCss = fs.readFileSync(path.join(repoRoot, "styles", "saved.css"), "utf8");
+
+  assert.match(savedHtml, /id="saved-group-bar" data-ui="saved-group-bar"/);
+  assert.match(savedHtml, /class="saved-group-label">Group<\/span>/);
+  assert.match(savedHtml, /data-ui="group-btn" data-saved-group="none">None<\/button>/);
+  assert.match(savedHtml, /data-ui="group-btn" data-saved-group="stage">Stage<\/button>/);
+  assert.match(savedCss, /\.saved-sort-bar,\s*\.saved-group-bar\s*\{[\s\S]*display: flex;/);
+  assert.match(savedCss, /\.saved-sort-btn,\s*\.saved-group-btn\s*\{[\s\S]*border-radius: 999px;/);
+  assert.match(savedCss, /\.saved-group-section\s*\{[\s\S]*display: block;[\s\S]*margin: 0 0 0\.68rem;/);
+  assert.match(savedCss, /\.saved-group-header\s*\{[\s\S]*border-top: 1px solid[\s\S]*border-bottom: 1px solid/);
+  assert.match(savedCss, /\.saved-group-title\s*\{[\s\S]*text-transform: uppercase;/);
+  assert.doesNotMatch(savedCss, /\.saved-group-section\s*\{[^}]*box-shadow:/);
+});
+
 test("saved rows use compact hierarchy and bounded title layout", () => {
   const savedCss = fs.readFileSync(path.join(repoRoot, "styles", "saved.css"), "utf8");
   const renderController = fs.readFileSync(

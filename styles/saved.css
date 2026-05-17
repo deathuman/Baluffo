@@ -123,7 +123,8 @@
   background: linear-gradient(180deg, var(--surface-5), var(--surface-2));
 }
 
-.saved-sort-bar {
+.saved-sort-bar,
+.saved-group-bar {
   display: flex;
   align-items: center;
   gap: 0.62rem;
@@ -134,7 +135,8 @@
   background: linear-gradient(180deg, var(--surface-5), var(--surface-2));
 }
 
-.saved-sort-label {
+.saved-sort-label,
+.saved-group-label {
   font-size: 0.78rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -142,14 +144,16 @@
   color: var(--text-muted);
 }
 
-.saved-sort-actions {
+.saved-sort-actions,
+.saved-group-actions {
   display: inline-flex;
   align-items: center;
   gap: 0.38rem;
   flex-wrap: wrap;
 }
 
-.saved-sort-btn {
+.saved-sort-btn,
+.saved-group-btn {
   margin: 0;
   padding: 0.24rem 0.56rem;
   min-height: 1.7rem;
@@ -160,7 +164,8 @@
   color: var(--text-secondary);
 }
 
-.saved-sort-btn.active {
+.saved-sort-btn.active,
+.saved-group-btn.active {
   background: linear-gradient(180deg, var(--surface-14), var(--surface-12));
   border-color: var(--accent);
   color: var(--accent-soft-text);
@@ -413,6 +418,50 @@
 
 .saved-job-block:last-child {
   border-bottom: none;
+}
+
+.saved-group-section {
+  display: block;
+  margin: 0 0 0.68rem;
+}
+
+.saved-group-section:last-child {
+  margin-bottom: 0;
+}
+
+.saved-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0.14rem 0 0.42rem;
+  padding: 0.42rem 1rem;
+  border-top: 1px solid color-mix(in srgb, var(--surface-15) 62%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--surface-11) 72%, transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent 68%);
+}
+
+.saved-group-title {
+  color: var(--accent-soft-text);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.55px;
+  text-transform: uppercase;
+}
+
+.saved-group-count {
+  min-width: 1.45rem;
+  height: 1.45rem;
+  padding: 0 0.42rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 36%, var(--surface-12));
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-weight: 800;
+  background: color-mix(in srgb, var(--surface-7) 80%, transparent);
 }
 
 .saved-job-row {
@@ -1715,6 +1764,11 @@
     --saved-remove-gutter: 4.25rem;
     --saved-remove-size: 2.2rem;
     min-height: auto;
+  }
+
+  .saved-group-header {
+    margin-top: 0.08rem;
+    padding: 0.38rem 0.85rem;
   }
 
   .saved-phase-row {

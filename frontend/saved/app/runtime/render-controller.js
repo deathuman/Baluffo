@@ -8,6 +8,7 @@ import { normalizeToken } from "../../../shared/text-utils.js";
 import {
   buildSavedJobViewModel,
   filterSavedJobViews,
+  groupSavedJobViews,
   isCustomJob,
   sortSavedJobViews
 } from "../view-state.js";
@@ -55,6 +56,7 @@ export function createSavedRenderController({
   updateTimelineScopeButtons,
   setSavedFilterBarVisible,
   setSavedSortBarVisible,
+  setSavedGroupBarVisible,
   renderSavedFilterMeta,
   renderReminderCounter,
   hydrateAttachmentLists,
@@ -293,6 +295,27 @@ export function createSavedRenderController({
     });
   }
 
+  function renderSavedGroupHeader(group) {
+    return `
+      <div class="saved-group-header" data-saved-group-key="${escapeHtml(group.key)}">
+        <span class="saved-group-title">${escapeHtml(group.label)}</span>
+        <span class="saved-group-count">${Number(group.count) || 0}</span>
+      </div>
+    `;
+  }
+
+  function renderSavedGroupedBody(groups, isGrouped) {
+    if (!isGrouped) {
+      return groups[0]?.views.map(renderSavedJobBlock).join("") || "";
+    }
+    return groups.map(group => `
+      <section class="saved-group-section" data-saved-group-key="${escapeHtml(group.key)}">
+        ${renderSavedGroupHeader(group)}
+        ${group.views.map(renderSavedJobBlock).join("")}
+      </section>
+    `).join("");
+  }
+
   function renderSavedJobs(jobs) {
     const { savedJobsListEl } = dom;
     if (!savedJobsListEl) return;
@@ -309,9 +332,14 @@ export function createSavedRenderController({
       filterSavedJobViews(allViews, viewState.activeSavedFilter),
       viewState.activeSavedSort
     );
+    const groupedViews = groupSavedJobViews(filteredViews, viewState.activeSavedGroup);
+    const isGrouped = groupedViews.some(group => group.key !== "none");
     const filteredJobs = filteredViews.map(view => view.job);
     setSavedFilterBarVisible(allJobs.length > 0 && Boolean(viewState.currentUser));
     setSavedSortBarVisible(allJobs.length > 0 && Boolean(viewState.currentUser));
+    if (typeof setSavedGroupBarVisible === "function") {
+      setSavedGroupBarVisible(allJobs.length > 0 && Boolean(viewState.currentUser));
+    }
     renderSavedFilterMeta(allJobs.length, filteredJobs.length);
     renderReminderCounter(allJobs);
     renderWorkspaceStats(allJobs);
@@ -363,7 +391,7 @@ export function createSavedRenderController({
         </div>
       </div>
       <div class="jobs-table-body">
-        ${filteredViews.map(renderSavedJobBlock).join("")}
+        ${renderSavedGroupedBody(groupedViews, isGrouped)}
       </div>
     `;
 

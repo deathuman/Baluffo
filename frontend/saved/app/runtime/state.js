@@ -33,6 +33,8 @@ function createSavedDomState() {
     savedCustomFilterBtnEls: [],
     savedSortBarEl: null,
     savedSortBtnEls: [],
+    savedGroupBarEl: null,
+    savedGroupBtnEls: [],
     savedReminderCounterEl: null,
     historyPanelToggleBtnEl: null,
     savedWorkspaceLayoutEl: null,
@@ -57,6 +59,7 @@ function createSavedDomState() {
 function createSavedViewState({
   defaultSavedFilter = "",
   defaultSavedSort = "updated",
+  defaultSavedGroup = "none",
   defaultTimelineScope = "all"
 } = {}) {
   return {
@@ -69,6 +72,7 @@ function createSavedViewState({
     customJobTargetKey: "",
     activeSavedSort: defaultSavedSort,
     activeSavedFilter: defaultSavedFilter,
+    activeSavedGroup: defaultSavedGroup,
     jobDetailTabByKey: new Map(),
     cachedActivityEntries: [],
     lastSavedJobsByKey: new Map(),

@@ -24,7 +24,9 @@ import {
   savedPageService
 } from "../services.js";
 import {
+  loadSavedListPreferences,
   loadSavedTimelinePreferences,
+  persistSavedListPreferences,
   persistSavedTimelinePreferences,
   readSavedLastJobsUrl
 } from "../state-sync/index.js";
@@ -42,9 +44,12 @@ import {
 import { computeAnchorScrollDelta } from "./render-cycle.js";
 import {
   SAVED_FILTER_ALL,
+  SAVED_GROUP_NONE,
   SORT_UPDATED,
   isValidSavedFilter,
+  isValidSavedGroup,
   isValidSavedSort,
+  normalizeSavedGroup,
   REMINDER_SOON_HOURS
 } from "./view-state.js";
 import { createSavedBoot } from "./runtime/boot.js";
@@ -57,8 +62,10 @@ import { applySavedAdminBridgeState as applySavedAdminBridgeStateFromModule } fr
 
 const JOBS_LAST_URL_KEY = "baluffo_jobs_last_url";
 const TIMELINE_PREF_PREFIX = "baluffo_saved_timeline_prefs";
+const LIST_PREF_PREFIX = "baluffo_saved_list_prefs";
 const CUSTOM_SOURCE_LABEL = "Custom";
 const DEFAULT_SAVED_FILTER = SAVED_FILTER_ALL;
+const DEFAULT_SAVED_GROUP = SAVED_GROUP_NONE;
 const ACTIVITY_HIGHLIGHT_MS = 2600;
 const TIMELINE_SCOPE_ALL = "all";
 const TIMELINE_SCOPE_SELECTED = "selected";
@@ -93,6 +100,7 @@ savedRuntime = composeSavedRuntime({
   createSavedDispatcher,
   defaultSavedFilter: DEFAULT_SAVED_FILTER,
   defaultSavedSort: SORT_UPDATED,
+  defaultSavedGroup: DEFAULT_SAVED_GROUP,
   defaultTimelineScope: TIMELINE_SCOPE_ALL,
   savedPageService,
   savedAuthService,
@@ -104,6 +112,18 @@ savedRuntime = composeSavedRuntime({
   getReminderMeta,
   loadSavedTimelinePreferences,
   persistSavedTimelinePreferences,
+  loadSavedListPreferences: uid => loadSavedListPreferences(
+    LIST_PREF_PREFIX,
+    uid,
+    normalizeSavedGroup,
+    DEFAULT_SAVED_GROUP
+  ),
+  persistSavedListPreferences: (uid, nextState) => persistSavedListPreferences(
+    LIST_PREF_PREFIX,
+    uid,
+    normalizeSavedGroup,
+    nextState
+  ),
   activityTypeLabel: type => activityTypeLabelFromDomain(type),
   formatActivityDetail: entry => formatActivityDetailFromDomain(entry, {
     normalizePhase: phase => savedRuntime.normalizePhase(phase),
@@ -142,6 +162,7 @@ savedRuntime = composeSavedRuntime({
   setActivityStatus: (...args) => savedChrome.setActivityStatus(...args),
   setSavedFilterBarVisible: (...args) => savedChrome.setSavedFilterBarVisible(...args),
   setSavedSortBarVisible: (...args) => savedChrome.setSavedSortBarVisible(...args),
+  setSavedGroupBarVisible: (...args) => savedChrome.setSavedGroupBarVisible(...args),
   renderSavedFilterMeta: (...args) => savedChrome.renderSavedFilterMeta(...args),
   renderReminderCounter: (...args) => savedChrome.renderReminderCounter(...args),
   emitSavedStartupMetric: (...args) => savedBoot.emitSavedStartupMetric(...args),
@@ -152,6 +173,7 @@ savedRuntime = composeSavedRuntime({
   setSourceStatus: (...args) => savedChrome.setSourceStatus(...args),
   setSavedFilter: (...args) => savedChrome.setSavedFilter(...args),
   setSavedSort: (...args) => savedChrome.setSavedSort(...args),
+  setSavedGroup: (...args) => savedChrome.setSavedGroup(...args),
   setBackupButtonsEnabled: (...args) => savedChrome.setBackupButtonsEnabled(...args),
   clearNoteSaveQueues: (...args) => savedNotes.clearNoteSaveQueues(...args),
   subscribeToSavedJobs: (...args) => savedBoot.subscribeToSavedJobs(...args),
@@ -165,6 +187,8 @@ savedChrome = createSavedChrome({
   defaultSavedFilter: DEFAULT_SAVED_FILTER,
   isValidSavedSort,
   defaultSavedSort: SORT_UPDATED,
+  isValidSavedGroup,
+  defaultSavedGroup: DEFAULT_SAVED_GROUP,
   getReminderMeta,
   readSavedLastJobsUrl,
   jobsLastUrlKey: JOBS_LAST_URL_KEY,
@@ -239,12 +263,20 @@ savedBoot = createSavedBoot({
   getLastJobsUrl: (...args) => savedChrome.getLastJobsUrl(...args),
   defaultSavedFilter: DEFAULT_SAVED_FILTER,
   defaultSavedSort: SORT_UPDATED,
+  defaultSavedGroup: DEFAULT_SAVED_GROUP,
+  persistSavedListPreferences: (uid, nextState) => persistSavedListPreferences(
+    LIST_PREF_PREFIX,
+    uid,
+    normalizeSavedGroup,
+    nextState
+  ),
   timelineScopeAll: TIMELINE_SCOPE_ALL,
   setCustomJobPanelOpen: (...args) => savedRuntime.setCustomJobPanelOpen(...args),
   createCustomJob: (...args) => savedRuntime.createCustomJob(...args),
   updateCustomJobWarning: (...args) => savedRuntime.updateCustomJobWarning(...args),
   setSavedFilter: (...args) => savedChrome.setSavedFilter(...args),
   setSavedSort: (...args) => savedChrome.setSavedSort(...args),
+  setSavedGroup: (...args) => savedChrome.setSavedGroup(...args),
   setActivityPanelOpen: (...args) => savedRuntime.setActivityPanelOpen(...args),
   setTimelineScope: (...args) => savedRuntime.setTimelineScope(...args),
   renderTimeline: (...args) => savedRuntime.renderTimeline(...args),

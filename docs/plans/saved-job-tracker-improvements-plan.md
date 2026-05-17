@@ -59,6 +59,8 @@ The canonical persisted row and backup shape live in [`../DATA_CONTRACT.md`](../
 - The view model owns phase bucket, outcome bucket, source bucket, `needsAction`, notes/files flags, missing link, sort keys, and allowed actions.
 - Saved filters are expanded beyond custom/imported.
 - Saved sorts include recent activity and stage.
+- Saved grouping is view-only and default-off. `none` preserves the flat list; `stage` groups filtered and sorted rows by active stage or terminal outcome.
+- The grouping choice is persisted per local profile and invalid stored values normalize back to `none`.
 - Rendering/filtering/sorting use the view model instead of reinterpreting raw rows independently.
 
 ### Tracking UI
@@ -116,6 +118,7 @@ Coverage exists for:
 - Remove/Undo behavior preserving attachment rows linked by `profileId` and `jobKey`.
 - Attachment lazy-load duplicate-read prevention on rerender and repeated tab open.
 - Saved lifecycle badge copy for `lastSeenAt` while active source overlays stay visually quiet.
+- Saved grouping model and render behavior, including filter-before-group and sorted order inside groups.
 - Saved row layout, clipped tooltips, compact tracking UI, and tooltip cleanup.
 
 ## Deferred Work
@@ -151,16 +154,22 @@ Possible future polish:
 
 ### 3. Grouping
 
-Filters and sorts are implemented. Grouping is not.
+Stage grouping is implemented as a view-only Saved-page mode:
 
-Candidate group modes:
+- `none` is the default and keeps the existing flat list.
+- `stage` consumes `groupSavedJobViews()` after filtering and sorting.
+- Active jobs group into Saved, Applied, Interviewing, and Final / Offer.
+- Terminal jobs group by outcome label: Rejected, Withdrawn, Ghosted, Closed, and Accepted.
+- Grouping does not change saved-job storage, routes, backup shape, tracking state, selection, expansion, or attachment hydration.
+- The chosen group mode is stored as local UI preference data, not on saved-job rows.
 
-- phase
+Deferred candidate group modes:
+
 - company
 - reminder week
 - source status
 
-Do this only when the Saved page needs a denser list-management mode. It should consume `buildSavedJobViewModel()` and not rederive tracking rules.
+Add more modes only when the Saved page needs a denser list-management workflow. New modes should consume `buildSavedJobViewModel()` and not rederive tracking rules.
 
 ### 4. Richer Revert Details
 
@@ -204,8 +213,8 @@ This is v2 scope. It should not be mixed into v1 cleanup unless we are intention
 
 Recommended order:
 
-1. Decide whether grouping is worth adding now or should wait.
-2. Add richer revert event details if timeline auditability needs it.
+1. Add richer revert event details if timeline auditability needs it.
+2. Decide whether company/reminder/source-status grouping should become separate modes.
 3. Leave flexible `tracking` object for a separate v2 design pass.
 
 ## Guardrails For Future Changes

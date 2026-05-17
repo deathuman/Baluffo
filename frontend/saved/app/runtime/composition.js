@@ -14,6 +14,7 @@ export function composeSavedRuntime(deps) {
   const pageState = createSavedPageState({
     defaultSavedFilter: deps.defaultSavedFilter,
     defaultSavedSort: deps.defaultSavedSort,
+    defaultSavedGroup: deps.defaultSavedGroup,
     defaultTimelineScope: deps.defaultTimelineScope
   });
   const dom = pageState.dom;
@@ -102,6 +103,7 @@ export function composeSavedRuntime(deps) {
     updateTimelineScopeButtons: (...args) => savedActivityController.updateTimelineScopeButtons(...args),
     setSavedFilterBarVisible: (...args) => deps.setSavedFilterBarVisible(...args),
     setSavedSortBarVisible: (...args) => deps.setSavedSortBarVisible(...args),
+    setSavedGroupBarVisible: (...args) => deps.setSavedGroupBarVisible(...args),
     renderSavedFilterMeta: (...args) => deps.renderSavedFilterMeta(...args),
     renderReminderCounter: (...args) => deps.renderReminderCounter(...args),
     hydrateAttachmentLists: (...args) => savedAttachmentsController.hydrateAttachmentLists(...args),
@@ -153,11 +155,24 @@ export function composeSavedRuntime(deps) {
     defaultSavedFilter: deps.defaultSavedFilter,
     setSavedSort: (...args) => deps.setSavedSort(...args),
     defaultSavedSort: deps.defaultSavedSort,
+    setSavedGroup: (...args) => deps.setSavedGroup(...args),
+    defaultSavedGroup: deps.defaultSavedGroup,
+    loadSavedListPreferences: (...args) => (
+      typeof deps.loadSavedListPreferences === "function"
+        ? deps.loadSavedListPreferences(...args)
+        : { group: deps.defaultSavedGroup || "none" }
+    ),
     renderSelectedJobHint: (...args) => savedActivityController.renderSelectedJobHint(...args),
     setBackupButtonsEnabled: (...args) => deps.setBackupButtonsEnabled(...args),
     setSavedFilterBarVisible: (...args) => deps.setSavedFilterBarVisible(...args),
     setSavedSortBarVisible: (...args) => deps.setSavedSortBarVisible(...args),
+    setSavedGroupBarVisible: (...args) => deps.setSavedGroupBarVisible(...args),
     loadTimelinePreferences: uid => savedActivityController.loadTimelinePreferences(uid),
+    persistSavedListPreferences: (...args) => (
+      typeof deps.persistSavedListPreferences === "function"
+        ? deps.persistSavedListPreferences(...args)
+        : false
+    ),
     subscribeToSavedJobs: (...args) => deps.subscribeToSavedJobs(...args),
     refreshActivityLog: (...args) => savedActivityController.refreshActivityLog(...args),
     timelineScopeAll: deps.timelineScopeAll,

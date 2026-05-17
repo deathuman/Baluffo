@@ -103,6 +103,8 @@ export const UI_TOKENS = Object.freeze({
     customFilterBtn: "custom-filter-btn",
     sortBar: "saved-sort-bar",
     sortBtn: "sort-btn",
+    groupBar: "saved-group-bar",
+    groupBtn: "group-btn",
     reminderCounter: "saved-reminder-counter",
     historyPanelToggleBtn: "history-panel-toggle-btn",
     workspaceLayout: "saved-workspace-layout",

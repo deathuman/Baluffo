@@ -27,6 +27,8 @@ export const SORT_PERSONAL = "personal";
 export const SORT_ACTIVITY = "activity";
 export const SORT_STAGE = "stage";
 export const REMINDER_SOON_HOURS = 72;
+export const SAVED_GROUP_NONE = "none";
+export const SAVED_GROUP_STAGE = "stage";
 
 const VALID_FILTERS = new Set([
   SAVED_FILTER_ALL,
@@ -53,6 +55,31 @@ const VALID_SORTS = new Set([
   SORT_ACTIVITY,
   SORT_STAGE
 ]);
+
+const VALID_GROUPS = new Set([
+  SAVED_GROUP_NONE,
+  SAVED_GROUP_STAGE
+]);
+
+const ACTIVE_STAGE_GROUPS = [
+  { key: "stage_saved", label: "Saved", phaseBucket: "saved" },
+  { key: "stage_applied", label: "Applied", phaseBucket: "applied" },
+  { key: "stage_interviewing", label: "Interviewing", phaseBucket: "interviewing" },
+  { key: "stage_offer", label: "Final / Offer", phaseBucket: "offer" }
+];
+
+const TERMINAL_STAGE_GROUPS = [
+  { key: "outcome_rejected", label: "Rejected", outcomeStatus: "rejected" },
+  { key: "outcome_withdrawn", label: "Withdrawn", outcomeStatus: "withdrawn" },
+  { key: "outcome_ghosted", label: "Ghosted", outcomeStatus: "ghosted" },
+  { key: "outcome_closed", label: "Closed", outcomeStatus: "closed" },
+  { key: "outcome_accepted", label: "Accepted", outcomeStatus: "accepted" }
+];
+
+const STAGE_GROUPS = [
+  ...ACTIVE_STAGE_GROUPS,
+  ...TERMINAL_STAGE_GROUPS
+];
 
 export function isCustomJob(job) {
   return Boolean(job && job.isCustom);
@@ -178,6 +205,15 @@ export function isValidSavedSort(value) {
   return VALID_SORTS.has(value);
 }
 
+export function isValidSavedGroup(value) {
+  return VALID_GROUPS.has(value);
+}
+
+export function normalizeSavedGroup(value) {
+  const safeValue = String(value || "").trim().toLowerCase();
+  return isValidSavedGroup(safeValue) ? safeValue : SAVED_GROUP_NONE;
+}
+
 function matchesFilter(view, filter) {
   if (filter === SAVED_FILTER_CUSTOM) return view.isCustom;
   if (filter === SAVED_FILTER_IMPORTED) return view.isImported;
@@ -228,4 +264,46 @@ export function sortSavedJobViews(views, mode) {
     return rows.sort((a, b) => byActive(a, b) || byTitle(a, b) || byKey(a, b));
   }
   return rows.sort((a, b) => byActive(a, b) || byUpdated(a, b) || byTitle(a, b) || byKey(a, b));
+}
+
+function stageGroupForView(view) {
+  if (view?.outcomeStatus && view.outcomeStatus !== "active") {
+    return TERMINAL_STAGE_GROUPS.find(group => group.outcomeStatus === view.outcomeStatus)
+      || TERMINAL_STAGE_GROUPS.find(group => group.outcomeStatus === "closed");
+  }
+  return ACTIVE_STAGE_GROUPS.find(group => group.phaseBucket === view?.phaseBucket)
+    || ACTIVE_STAGE_GROUPS[0];
+}
+
+export function groupSavedJobViews(views, mode = SAVED_GROUP_NONE) {
+  const rows = Array.isArray(views) ? views : [];
+  const safeMode = normalizeSavedGroup(mode);
+  if (safeMode !== SAVED_GROUP_STAGE) {
+    return [{
+      key: SAVED_GROUP_NONE,
+      label: "",
+      count: rows.length,
+      views: rows
+    }];
+  }
+
+  const groupsByKey = new Map(STAGE_GROUPS.map(group => [
+    group.key,
+    {
+      key: group.key,
+      label: group.label,
+      count: 0,
+      views: []
+    }
+  ]));
+
+  rows.forEach(view => {
+    const group = stageGroupForView(view);
+    const bucket = groupsByKey.get(group.key);
+    if (!bucket) return;
+    bucket.views.push(view);
+    bucket.count = bucket.views.length;
+  });
+
+  return Array.from(groupsByKey.values()).filter(group => group.views.length > 0);
 }

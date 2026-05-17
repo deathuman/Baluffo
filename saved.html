@@ -71,6 +71,13 @@
           </div>
           <span id="saved-reminder-counter" data-ui="saved-reminder-counter" class="saved-reminder-counter"></span>
         </div>
+        <div id="saved-group-bar" data-ui="saved-group-bar" class="saved-group-bar hidden" aria-hidden="true">
+          <span class="saved-group-label">Group</span>
+          <div class="saved-group-actions" role="group" aria-label="Saved jobs grouping">
+            <button type="button" class="btn back-btn saved-group-btn active" data-ui="group-btn" data-saved-group="none">None</button>
+            <button type="button" class="btn back-btn saved-group-btn" data-ui="group-btn" data-saved-group="stage">Stage</button>
+          </div>
+        </div>
         <div id="saved-custom-filter-bar" data-ui="saved-custom-filter-bar" class="saved-custom-filter-bar hidden" aria-hidden="true">
           <span class="saved-custom-filter-label">Show</span>
           <div class="saved-custom-filter-actions" role="group" aria-label="Saved jobs filters">

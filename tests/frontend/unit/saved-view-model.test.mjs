@@ -9,6 +9,7 @@ import {
   SORT_ACTIVITY,
   buildSavedJobViewModel,
   filterSavedJobViews,
+  groupSavedJobViews,
   sortSavedJobViews
 } from "../../../frontend/saved/app/view-model.js";
 
@@ -101,4 +102,61 @@ test("saved view model filters and sorts consume derived fields", () => {
     sortSavedJobViews(views, SORT_ACTIVITY).map(item => item.jobKey),
     ["job_closed", "job_interview", "job_old"]
   );
+});
+
+test("saved view model grouping keeps flat rows by default", () => {
+  const views = [
+    view({ jobKey: "job_a", pipelinePhase: "bookmark", outcomeStatus: "active" }),
+    view({ jobKey: "job_b", pipelinePhase: "offer", outcomeStatus: "accepted" })
+  ];
+
+  assert.deepEqual(groupSavedJobViews(views, "none"), [{
+    key: "none",
+    label: "",
+    count: 2,
+    views
+  }]);
+  assert.deepEqual(groupSavedJobViews(views, "stale").map(group => group.key), ["none"]);
+});
+
+test("saved view model groups active rows by stage", () => {
+  const views = [
+    view({ jobKey: "job_saved", pipelinePhase: "bookmark", outcomeStatus: "active" }),
+    view({ jobKey: "job_screen", pipelinePhase: "screening", outcomeStatus: "active" }),
+    view({ jobKey: "job_interview", pipelinePhase: "interview_2", outcomeStatus: "active" }),
+    view({ jobKey: "job_offer", pipelinePhase: "final", outcomeStatus: "active" })
+  ];
+
+  const groups = groupSavedJobViews(views, "stage");
+
+  assert.deepEqual(groups.map(group => [group.key, group.label, group.count]), [
+    ["stage_saved", "Saved", 1],
+    ["stage_applied", "Applied", 1],
+    ["stage_interviewing", "Interviewing", 1],
+    ["stage_offer", "Final / Offer", 1]
+  ]);
+  assert.deepEqual(groups.flatMap(group => group.views.map(item => item.jobKey)), [
+    "job_saved",
+    "job_screen",
+    "job_interview",
+    "job_offer"
+  ]);
+});
+
+test("saved view model groups terminal rows by outcome label", () => {
+  const views = [
+    view({ jobKey: "job_rejected", pipelinePhase: "interview_2", outcomeStatus: "rejected" }),
+    view({ jobKey: "job_withdrawn", pipelinePhase: "applied", outcomeStatus: "withdrawn" }),
+    view({ jobKey: "job_ghosted", pipelinePhase: "screening", outcomeStatus: "ghosted" }),
+    view({ jobKey: "job_closed", pipelinePhase: "offer", outcomeStatus: "closed" }),
+    view({ jobKey: "job_accepted", pipelinePhase: "offer", outcomeStatus: "accepted" })
+  ];
+
+  assert.deepEqual(groupSavedJobViews(views, "stage").map(group => [group.label, group.count]), [
+    ["Rejected", 1],
+    ["Withdrawn", 1],
+    ["Ghosted", 1],
+    ["Closed", 1],
+    ["Accepted", 1]
+  ]);
 });

@@ -38,6 +38,8 @@ export function cacheSavedDom(doc = document) {
     savedCustomFilterBtnEls: Array.from(doc.querySelectorAll(ui(t.customFilterBtn))),
     savedSortBarEl: doc.querySelector(ui(t.sortBar)),
     savedSortBtnEls: Array.from(doc.querySelectorAll(ui(t.sortBtn))),
+    savedGroupBarEl: doc.querySelector(ui(t.groupBar)),
+    savedGroupBtnEls: Array.from(doc.querySelectorAll(ui(t.groupBtn))),
     savedReminderCounterEl: doc.querySelector(ui(t.reminderCounter)),
     historyPanelToggleBtnEl: doc.querySelector(ui(t.historyPanelToggleBtn)),
     savedWorkspaceLayoutEl: doc.querySelector(ui(t.workspaceLayout)),

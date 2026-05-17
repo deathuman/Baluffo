@@ -25,10 +25,25 @@ export function createSavedChrome(deps) {
     });
   }
 
+  function setSavedGroup(nextGroup) {
+    const isValid = typeof deps.isValidSavedGroup === "function" && deps.isValidSavedGroup(nextGroup);
+    deps.viewState.activeSavedGroup = isValid ? nextGroup : (deps.defaultSavedGroup || "none");
+    deps.dom.savedGroupBtnEls.forEach(btn => {
+      const isActive = String(btn.dataset.savedGroup || "").toLowerCase() === deps.viewState.activeSavedGroup;
+      btn.classList.toggle("active", isActive);
+    });
+  }
+
   function setSavedSortBarVisible(visible) {
     if (!deps.dom.savedSortBarEl) return;
     deps.dom.savedSortBarEl.classList.toggle("hidden", !visible);
     deps.dom.savedSortBarEl.setAttribute("aria-hidden", visible ? "false" : "true");
+  }
+
+  function setSavedGroupBarVisible(visible) {
+    if (!deps.dom.savedGroupBarEl) return;
+    deps.dom.savedGroupBarEl.classList.toggle("hidden", !visible);
+    deps.dom.savedGroupBarEl.setAttribute("aria-hidden", visible ? "false" : "true");
   }
 
   function setSavedFilterBarVisible(visible) {
@@ -77,7 +92,9 @@ export function createSavedChrome(deps) {
     cssEscape,
     setSavedFilter,
     setSavedSort,
+    setSavedGroup,
     setSavedSortBarVisible,
+    setSavedGroupBarVisible,
     setSavedFilterBarVisible,
     renderSavedFilterMeta,
     renderReminderCounter,

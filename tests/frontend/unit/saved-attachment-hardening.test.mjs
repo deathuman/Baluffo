@@ -204,6 +204,7 @@ function createRenderControllerHarness(FakeHTMLElement) {
     savedLifecycleOverlayByJobKey: new Map(),
     activeSavedFilter: "all",
     activeSavedSort: "updated",
+    activeSavedGroup: "none",
     phaseOverrideContext: null,
     trackingOverrideContext: null,
     cachedActivityEntries: [],
