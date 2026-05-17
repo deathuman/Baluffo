@@ -110,6 +110,15 @@ function reminderState(reminderAt, { parseIsoDate, now = Date.now } = {}) {
   };
 }
 
+function phaseEnteredAtFor(job, phase) {
+  const timestamps = job?.phaseTimestamps && typeof job.phaseTimestamps === "object"
+    ? job.phaseTimestamps
+    : {};
+  const timestamp = timestamps[phase];
+  if (timestamp) return String(timestamp);
+  return phase === "bookmark" ? String(job?.savedAt || "") : "";
+}
+
 function phaseBucketFor(phase) {
   if (phase === "applied" || phase === "screening" || phase === "assignment") return "applied";
   if (phase === "interview_1" || phase === "interview_2") return "interviewing";
@@ -123,6 +132,19 @@ function sourceBucketFor(lifecycleOverlay) {
   if (status === "archived") return "archived";
   if (status === "active") return "active";
   return "unknown";
+}
+
+function attentionReason(key) {
+  const labels = {
+    reminder_overdue: "Overdue reminder",
+    reminder_due_soon: "Reminder due soon",
+    source_likely_removed: "Source likely removed",
+    source_archived: "Source archived"
+  };
+  return {
+    key,
+    label: labels[key] || key
+  };
 }
 
 export function buildSavedJobViewModel(job, options = {}) {
@@ -141,12 +163,14 @@ export function buildSavedJobViewModel(job, options = {}) {
   const sourceNeedsAction = outcomeStatus === "active" && (
     sourceBucket === "likely_removed" || sourceBucket === "archived"
   );
-  const needsAction = reminder.isDueSoon || sourceNeedsAction;
   const needsActionReasons = [
     reminder.isOverdue ? "reminder_overdue" : "",
     !reminder.isOverdue && reminder.isDueSoon ? "reminder_due_soon" : "",
     sourceNeedsAction ? `source_${sourceBucket}` : ""
   ].filter(Boolean);
+  const attentionReasons = needsActionReasons.map(attentionReason);
+  const primaryAttentionReason = attentionReasons[0] || null;
+  const needsAction = attentionReasons.length > 0;
   const stageIndex = outcomeStatus === "active"
     ? PIPELINE_PHASES.indexOf(pipelinePhase)
     : PIPELINE_PHASES.length + Math.max(0, OUTCOME_STATUSES.indexOf(outcomeStatus));
@@ -159,6 +183,7 @@ export function buildSavedJobViewModel(job, options = {}) {
       || job?.savedAt
       || ""
   );
+  const phaseEnteredAt = phaseEnteredAtFor(job, pipelinePhase);
 
   return {
     job,
@@ -170,7 +195,11 @@ export function buildSavedJobViewModel(job, options = {}) {
     sourceBucket,
     needsAction,
     needsActionReasons,
+    attentionReasons,
+    primaryAttentionReason,
     sourceNeedsAction,
+    activeAt,
+    phaseEnteredAt,
     hasNotes,
     hasAttachments,
     missingLink,

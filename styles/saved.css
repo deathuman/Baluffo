@@ -361,10 +361,34 @@
   letter-spacing: 0.15px;
 }
 
+.saved-reminder-badge.scheduled {
+  border-color: var(--border-muted);
+  background-color: color-mix(in srgb, var(--surface-9) 72%, transparent);
+  color: var(--text-subtle);
+}
+
+.saved-reminder-badge.overdue {
+  border-color: #8a3434;
+  background-color: rgba(150, 48, 48, 0.18);
+  color: #f1b0a8;
+}
+
 [data-theme="light"] .saved-reminder-badge {
   border-color: #d2b176;
   background-color: rgba(219, 177, 97, 0.22);
   color: #7a5410;
+}
+
+[data-theme="light"] .saved-reminder-badge.scheduled {
+  border-color: #d1d5db;
+  background-color: rgba(243, 244, 246, 0.84);
+  color: #4b5563;
+}
+
+[data-theme="light"] .saved-reminder-badge.overdue {
+  border-color: #c75b50;
+  background-color: rgba(221, 82, 70, 0.16);
+  color: #8f2f28;
 }
 
 .saved-missing-chip {
@@ -407,8 +431,17 @@
 .saved-page .jobs-table-header {
   position: sticky;
   top: 0;
-  z-index: 25;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.18);
+  z-index: 90;
+  width: 100%;
+  overflow: hidden;
+  isolation: isolate;
+  background-color: var(--surface-2);
+  background:
+    radial-gradient(circle at 35% 0%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 36%),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-5) 96%, #10121a), var(--surface-2));
+  box-shadow:
+    0 12px 24px rgba(0, 0, 0, 0.34),
+    0 1px 0 color-mix(in srgb, var(--surface-15) 84%, transparent);
 }
 
 .saved-job-block {
@@ -1583,8 +1616,65 @@
   font-weight: 760;
 }
 
+.tracking-last-activity {
+  color: var(--text-secondary);
+}
+
 .tracking-meta-separator {
   color: color-mix(in srgb, var(--text-muted) 72%, transparent);
+}
+
+.tracking-attention-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  min-height: 1.34rem;
+  padding: 0.13rem 0.48rem;
+  border-radius: 999px;
+  border: 1px solid #8f6e35;
+  background-color: rgba(206, 162, 81, 0.14);
+  color: #efd49a;
+  font-size: 0.7rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.tracking-attention-chip strong {
+  color: inherit;
+  font-size: inherit;
+  font-weight: 780;
+}
+
+.tracking-attention-dot {
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 999px;
+  background-color: #e6b45f;
+  box-shadow: 0 0 0 3px rgba(230, 180, 95, 0.12);
+  flex: 0 0 auto;
+}
+
+.tracking-attention-chip[data-attention-reason="reminder_overdue"] {
+  border-color: #8a3434;
+  background-color: rgba(150, 48, 48, 0.18);
+  color: #f1b0a8;
+}
+
+.tracking-attention-chip[data-attention-reason="reminder_overdue"] .tracking-attention-dot {
+  background-color: #ef7669;
+  box-shadow: 0 0 0 3px rgba(239, 118, 105, 0.12);
+}
+
+[data-theme="light"] .tracking-attention-chip {
+  border-color: #d2b176;
+  background-color: rgba(219, 177, 97, 0.18);
+  color: #7a5410;
+}
+
+[data-theme="light"] .tracking-attention-chip[data-attention-reason="reminder_overdue"] {
+  border-color: #c75b50;
+  background-color: rgba(221, 82, 70, 0.16);
+  color: #8f2f28;
 }
 
 .tracking-final-indicator {

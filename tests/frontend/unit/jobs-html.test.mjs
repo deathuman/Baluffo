@@ -98,6 +98,7 @@ test("saved rows use compact hierarchy and bounded title layout", () => {
     savedCss,
     /grid-template-columns: minmax\(17\.5rem, 1\.58fr\) minmax\(12\.5rem, 1\.05fr\) minmax\(10rem, 0\.68fr\) 7\.2rem 6\.2rem 3\.8rem;/
   );
+  assert.match(savedCss, /\.saved-page \.jobs-table-header\s*\{[\s\S]*position: sticky;[\s\S]*top: 0;[\s\S]*z-index: 90;[\s\S]*width: 100%;[\s\S]*background-color: var\(--surface-2\);[\s\S]*box-shadow:/);
   assert.match(savedCss, /\.saved-row-header > div,\s*\.saved-job-row > \.job-cell\s*\{[\s\S]*width: 100%;/);
   assert.match(savedCss, /\.saved-title-main\s*\{[\s\S]*white-space: nowrap;[\s\S]*text-overflow: ellipsis;/);
   assert.match(
@@ -119,6 +120,7 @@ test("saved rows use compact hierarchy and bounded title layout", () => {
   assert.match(savedCss, /\.saved-phase-row\s*\{[\s\S]*grid-template-columns: minmax\(0, 1fr\);/);
   assert.match(savedCss, /\.phase-bar::before,[\s\S]*\.phase-bar::after\s*\{[\s\S]*top: 0\.66rem;/);
   assert.match(savedCss, /\.phase-bar::after\s*\{[\s\S]*--phase-progress-ratio/);
+  assert.match(savedCss, /@media \(max-width: 900px\)\s*\{[\s\S]*\.saved-row-header\s*\{[\s\S]*display: none;/);
   assert.match(savedCss, /\.phase-timeline-step\.active \.phase-step-node\s*\{[\s\S]*width: 1\.55rem;[\s\S]*box-shadow:[\s\S]*rgba\(187, 134, 252, 0\.58\)/);
   assert.match(savedCss, /\.phase-timeline-step\[data-phase-time\]::after\s*\{[\s\S]*content: attr\(data-phase-time\);/);
   assert.match(savedCss, /\.saved-tracking-action-row\s*\{[\s\S]*grid-template-columns: minmax\(14rem, auto\) minmax\(20rem, 1fr\) minmax\(15rem, auto\)/);

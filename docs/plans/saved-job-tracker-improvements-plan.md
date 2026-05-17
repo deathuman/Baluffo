@@ -57,7 +57,7 @@ The canonical persisted row and backup shape live in [`../DATA_CONTRACT.md`](../
 ### Saved Page View Model
 
 - Saved row interpretation is centralized in [`../../frontend/saved/app/view-model.js`](../../frontend/saved/app/view-model.js).
-- The view model owns phase bucket, outcome bucket, source bucket, `needsAction`, notes/files flags, missing link, sort keys, and allowed actions.
+- The view model owns phase bucket, outcome bucket, source bucket, `needsAction`, action-reason metadata, notes/files flags, missing link, sort keys, and allowed actions.
 - Saved filters are expanded beyond custom/imported.
 - Saved sorts include recent activity and stage.
 - Saved grouping is view-only and default-off. `none` preserves the flat list; `stage` groups filtered and sorted rows by active stage or terminal outcome.
@@ -72,6 +72,7 @@ The canonical persisted row and backup shape live in [`../DATA_CONTRACT.md`](../
 - Active jobs show `Set final outcome`.
 - Terminal jobs show `Change outcome` plus a reopen action.
 - Offer is treated as the final active phase and shows an awaiting-outcome/final-stage indicator.
+- The expanded action row shows current phase, entered time, last activity, and the primary attention reason when one exists.
 - Locked transitions use a contextual override flow with optional reason capture.
 
 ### Saved Row Layout And UX
@@ -81,6 +82,7 @@ The canonical persisted row and backup shape live in [`../DATA_CONTRACT.md`](../
 - Company/city tooltips that repeated visible text were removed.
 - The link icon remains a framed link action.
 - Remove uses a smaller danger affordance plus confirmation dialog before deletion.
+- Reminder badges distinguish overdue reminders, due-soon reminders, and scheduled reminders.
 - Expanded job cards are more compact and visually closer to the mockup direction.
 - The details toggle uses the `Notes, Files & History` treatment.
 
@@ -113,8 +115,8 @@ Coverage exists for:
 - Backup v1/v2 import and v3 export.
 - `lastActivityAt` updates from phase/outcome/notes/attachments.
 - Note updates with same-length different content.
-- Saved view-model filters/sorts/needs-action behavior.
-- Phase/outcome UI rendering.
+- Saved view-model filters/sorts/needs-action/action-reason behavior.
+- Phase/outcome UI rendering, including expanded action-row state summaries.
 - Remove confirmation cancel/confirm behavior.
 - Remove/Undo behavior preserving attachment rows linked by `profileId` and `jobKey`.
 - Attachment lazy-load duplicate-read prevention on rerender and repeated tab open.

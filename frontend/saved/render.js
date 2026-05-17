@@ -81,8 +81,8 @@ export function renderSavedJobBlockHtml(job, options = {}) {
   const tabClassNotes = activeTab === "notes" ? "active" : "";
   const tabClassAttachments = activeTab === "attachments" ? "active" : "";
   const tabClassHistory = activeTab === "history" ? "active" : "";
-  const reminderBadge = reminderMeta.isSoon
-    ? `<span class="saved-reminder-badge"${tooltipAttrs(reminderMeta.label)}>Due soon</span>`
+  const reminderBadge = reminderMeta.hasReminder
+    ? `<span class="saved-reminder-badge ${escapeHtml(reminderMeta.badgeClass || "scheduled")}"${reminderMeta.label ? tooltipAttrs(reminderMeta.label) : ""}>${escapeHtml(reminderMeta.badgeLabel || "Reminder set")}</span>`
     : "";
   const lifecycleBadge = renderLifecycleBadgeHtml(lifecycleOverlay, { includeLastSeenAt: true });
 
@@ -227,17 +227,39 @@ export function parseIsoDate(value) {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function resolveNowMs(value) {
+  if (typeof value === "function") return Number(value()) || Date.now();
+  if (value instanceof Date) return value.getTime();
+  return Number(value) || Date.now();
+}
+
 export function getReminderMeta(reminderAt, options = {}) {
-  const { reminderSoonHours = 72 } = options;
+  const { reminderSoonHours = 72, now = Date.now } = options;
   const parsed = parseIsoDate(reminderAt);
-  if (!parsed) return { isSoon: false, label: "" };
-  const now = Date.now();
-  const diffMs = parsed.getTime() - now;
+  if (!parsed) {
+    return {
+      hasReminder: false,
+      isSoon: false,
+      isDueSoon: false,
+      isOverdue: false,
+      label: "",
+      badgeLabel: "",
+      badgeClass: ""
+    };
+  }
+  const diffMs = parsed.getTime() - resolveNowMs(now);
   const soonMs = Number(reminderSoonHours) * 60 * 60 * 1000;
-  const isSoon = diffMs >= 0 && diffMs <= soonMs;
+  const isOverdue = diffMs < 0;
+  const isDueSoon = !isOverdue && diffMs <= soonMs;
+  const isSoon = isOverdue || isDueSoon;
   return {
+    hasReminder: true,
     isSoon,
-    label: parsed.toLocaleString()
+    isDueSoon,
+    isOverdue,
+    label: parsed.toLocaleString(),
+    badgeLabel: isOverdue ? "Overdue" : isDueSoon ? "Due soon" : "Reminder set",
+    badgeClass: isOverdue ? "overdue" : isDueSoon ? "due-soon" : "scheduled"
   };
 }
 

@@ -33,6 +33,10 @@ test("saved view model derives tracking, evidence-only needsAction, and buckets"
     jobKey: "job_1",
     applicationStatus: "interview_1",
     reminderAt: "",
+    phaseTimestamps: {
+      interview_1: "2026-04-01T09:00:00.000Z"
+    },
+    lastActivityAt: "2026-04-01T10:30:00.000Z",
     attachmentsCount: 0,
     notes: ""
   }, { status: "likely_removed" });
@@ -41,6 +45,13 @@ test("saved view model derives tracking, evidence-only needsAction, and buckets"
   assert.equal(activeRemoved.phaseBucket, "interviewing");
   assert.equal(activeRemoved.needsAction, true);
   assert.deepEqual(activeRemoved.needsActionReasons, ["source_likely_removed"]);
+  assert.deepEqual(activeRemoved.attentionReasons, [{
+    key: "source_likely_removed",
+    label: "Source likely removed"
+  }]);
+  assert.equal(activeRemoved.primaryAttentionReason.label, "Source likely removed");
+  assert.equal(activeRemoved.phaseEnteredAt, "2026-04-01T09:00:00.000Z");
+  assert.equal(activeRemoved.activeAt, "2026-04-01T10:30:00.000Z");
 
   const rejectedRemoved = view({
     jobKey: "job_2",
@@ -53,6 +64,39 @@ test("saved view model derives tracking, evidence-only needsAction, and buckets"
   assert.equal(rejectedRemoved.needsAction, false);
   assert.equal(rejectedRemoved.hasNotes, true);
   assert.equal(rejectedRemoved.hasAttachments, true);
+});
+
+test("saved view model prioritizes reminder action before source lifecycle evidence", () => {
+  const overdueAndRemoved = view({
+    jobKey: "job_overdue",
+    pipelinePhase: "applied",
+    outcomeStatus: "active",
+    reminderAt: "2026-04-01T10:00:00.000Z"
+  }, { status: "likely_removed" });
+  assert.equal(overdueAndRemoved.needsAction, true);
+  assert.deepEqual(overdueAndRemoved.needsActionReasons, [
+    "reminder_overdue",
+    "source_likely_removed"
+  ]);
+  assert.equal(overdueAndRemoved.primaryAttentionReason.label, "Overdue reminder");
+
+  const dueSoon = view({
+    jobKey: "job_due",
+    pipelinePhase: "screening",
+    outcomeStatus: "active",
+    reminderAt: "2026-04-01T13:00:00.000Z"
+  });
+  assert.deepEqual(dueSoon.needsActionReasons, ["reminder_due_soon"]);
+  assert.equal(dueSoon.primaryAttentionReason.label, "Reminder due soon");
+
+  const terminalArchivedWithReminder = view({
+    jobKey: "job_terminal",
+    pipelinePhase: "offer",
+    outcomeStatus: "rejected",
+    reminderAt: "2026-04-01T13:00:00.000Z"
+  }, { status: "archived" });
+  assert.deepEqual(terminalArchivedWithReminder.needsActionReasons, ["reminder_due_soon"]);
+  assert.equal(terminalArchivedWithReminder.sourceNeedsAction, false);
 });
 
 test("saved view model filters and sorts consume derived fields", () => {

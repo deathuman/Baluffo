@@ -221,16 +221,18 @@ __pycache__/
 1. `git pull` in Baluffo
 2. `git pull` in BaluffoMemory (on first use: `git clone <BaluffoMemory-url>` alongside Baluffo; skip memory if clone unavailable)
 3. Read `AGENTS.md` and `docs/AI_ASSISTANT_GUIDE.md`
-4. Use Serena for repo/code truth
-5. Use memory only for handoff/context
-6. Validate memory claims against repo state before acting
+4. For non-trivial Baluffo tasks, search/read relevant Basic Memory notes for current focus, recent handoffs, recurring gotchas, or stale-memory corrections
+5. Use Serena for repo/code truth
+6. Use memory only for continuity, handoff, gotchas, current focus, and stale-memory correction
+7. Validate memory claims against repo state before acting
 
 ## Session End Workflow
 
 1. AI updates useful durable memory as normal task maintenance.
 2. Keep notes concise, sourced, and future-session relevant.
-3. Commit only durable notes to BaluffoMemory when the task includes Git publishing.
-4. `git push` BaluffoMemory only when the task includes pushing memory changes.
+3. Explicitly decide whether to update current focus, handoff, gotcha, decision, or stale-memory notes; skip the write only when the task produced no durable continuity value.
+4. Commit only durable notes to BaluffoMemory when the task includes Git publishing.
+5. `git push` BaluffoMemory only when the task includes pushing memory changes.
 
 ## Merge-Conflict Handling
 

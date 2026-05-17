@@ -5,7 +5,7 @@
 > - **Canonical for:** task routing, minimal read order, common repo misconceptions, and AI editing rules
 > - **Not canonical for:** data contracts, endpoint payloads, or deep subsystem ownership detail
 > - **Then inspect:** [`architecture-ai-map.md`](architecture-ai-map.md) for task-to-files routing, plus one matching contract or workflow doc
-> - **Last updated:** 2026-05-15
+> - **Last updated:** 2026-05-17
 
 Read this first. Then load only the smallest additional docs needed.
 
@@ -62,6 +62,27 @@ If Serena memory and repo docs ever diverge, the repo docs stay canonical.
 | Bridge changes | `python -m pytest tests/admin/ -q` |
 | Pipeline/fetcher | `python -m pytest tests/test_jobs_fetcher_*.py -q` |
 | Full verification | `npm run verify` |
+
+## Codex In-App Browser Visual QA
+
+For visual inspection in the Codex in-app browser, use the bridge-backed desktop runtime instead of a bare static server. From the repo root:
+
+```powershell
+npm run dev:bridge
+```
+
+Then navigate the in-app browser to the page with the desktop bridge parameters:
+
+```text
+http://127.0.0.1:8080/saved.html?desktop=1&bridgePort=8877&bridgeHost=127.0.0.1
+```
+
+If the in-app browser shows `ERR_CONNECTION_REFUSED` for `127.0.0.1:8080`, the site process is not running. If Saved loads but shows profile restore/sign-in instead of saved rows, the admin bridge on `8877` is not running or the page was opened without the desktop query parameters. Confirm both ports before debugging UI code:
+
+```powershell
+Test-NetConnection 127.0.0.1 -Port 8080
+Test-NetConnection 127.0.0.1 -Port 8877
+```
 
 ## Repository Navigation Tooling
 
@@ -143,6 +164,8 @@ See [`testing.md`](testing.md) for the full verification matrix.
 ### AI Operating Boundaries
 
 - Use Serena for repo/code navigation and symbol-aware inspection; use Basic Memory only for continuity, handoff, recurring gotchas, current focus, and stale-memory correction.
+- At the start of any non-trivial Baluffo task, search/read relevant Basic Memory notes for current focus, recent handoffs, recurring gotchas, or stale-memory corrections before planning edits.
+- At closeout, decide whether to update Basic Memory. Update it when the task changes future-session context, creates or resolves a recurring gotcha, changes current focus, records a durable decision, or corrects stale memory.
 - Verify memory claims against repo files before acting, and do not let external memory override source, tests, docs, or `AGENTS.md`.
 - Do not add a new MCP, tool, or plugin until the failure mode is clear and the existing Serena/Basic Memory setup is insufficient.
 - Keep narrow tasks narrow; do not broaden a bug fix into a refactor or cross more than one subsystem boundary without a short edit plan.

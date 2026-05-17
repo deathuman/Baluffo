@@ -5,7 +5,7 @@
 > - **Canonical for:** common issue triage steps, quick diagnostics, and known recovery paths
 > - **Not canonical for:** subsystem ownership, API contracts, or release policy
 > - **Then inspect:** [`architecture-ai-map.md`](architecture-ai-map.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`testing.md`](testing.md), and the owning runtime docs for the affected subsystem
-> - **Last updated:** 2026-05-16
+> - **Last updated:** 2026-05-17
 
 ---
 
@@ -61,6 +61,16 @@
 | Busy state active | Wait for current operation (fetch/discovery) to complete |
 | JavaScript error | Check browser console for errors |
 | data-ui attribute missing | Verify element has `data-ui` attribute per [`selectors.js`](../frontend/shared/ui/selectors.js) |
+
+### Codex in-app browser cannot visually inspect the app
+
+| Symptom | Solution |
+|---------|----------|
+| `ERR_CONNECTION_REFUSED` for `http://127.0.0.1:8080/saved.html` | Start the owned site and bridge with `npm run dev:bridge` from the repo root |
+| Saved page loads but shows profile restore/sign-in instead of saved rows | Open the desktop URL: `http://127.0.0.1:8080/saved.html?desktop=1&bridgePort=8877&bridgeHost=127.0.0.1` |
+| Bridge-backed page still does not load saved data | Confirm both ports respond with `Test-NetConnection 127.0.0.1 -Port 8080` and `Test-NetConnection 127.0.0.1 -Port 8877` |
+
+Use a bare static server only for static markup/CSS fixtures. For real Saved-page visual QA, use `npm run dev:bridge` so desktop local data comes from the file-backed bridge store under `data/local-user-data/`.
 
 ---
 

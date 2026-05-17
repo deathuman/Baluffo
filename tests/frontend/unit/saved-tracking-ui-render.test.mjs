@@ -84,6 +84,12 @@ test("saved tracking UI: action row exposes next phase and change phase controls
     jobKey: "job-1",
     pipelinePhase: "screening",
     outcomeStatus: "active",
+    activeAt: "2026-05-16T20:21:00.000Z",
+    attentionReasons: [
+      { key: "reminder_overdue", label: "Overdue reminder" },
+      { key: "source_likely_removed", label: "Source likely removed" }
+    ],
+    primaryAttentionReason: { key: "reminder_overdue", label: "Overdue reminder" },
     phaseTimestamps: {
       screening: "2026-05-16T19:21:00.000Z"
     }
@@ -94,14 +100,18 @@ test("saved tracking UI: action row exposes next phase and change phase controls
       current === "screening" && next === "assignment" && outcome === "active"
     ),
     canSetOutcome: () => true,
+    now: new Date("2026-05-16T21:21:00.000Z"),
     currentUser: { uid: "u1" }
   });
 
   assert.match(activeHtml, /saved-tracking-action-row/);
   assert.match(
     activeHtml,
-    /tracking-phase-summary[\s\S]*tracking-current-line[\s\S]*Current phase:[\s\S]*Screening[\s\S]*Entered:/
+    /tracking-phase-summary[\s\S]*tracking-current-line[\s\S]*Current phase:[\s\S]*Screening[\s\S]*Entered:[\s\S]*Last activity:[\s\S]*1h ago/
   );
+  assert.match(activeHtml, /tracking-attention-chip[\s\S]*data-attention-reason="reminder_overdue"/);
+  assert.match(activeHtml, /Needs action:[\s\S]*Overdue reminder/);
+  assert.match(activeHtml, /data-tooltip="Needs action: Overdue reminder; Source likely removed"/);
   assert.doesNotMatch(activeHtml, /tracking-entered-summary/);
   assert.match(
     activeHtml,

@@ -24,6 +24,92 @@ function formatTrackingTimestamp(value, options = {}) {
   return parsed.toLocaleString();
 }
 
+function resolveNowMs(value) {
+  if (typeof value === "function") return Number(value()) || Date.now();
+  if (value instanceof Date) return value.getTime();
+  return Number(value) || Date.now();
+}
+
+function formatRelativeTimestamp(value, options = {}) {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  const deltaMin = Math.round((resolveNowMs(options.now) - parsed.getTime()) / 60000);
+  if (deltaMin < 1) return "just now";
+  if (deltaMin < 60) return `${deltaMin}m ago`;
+  const deltaHours = Math.round(deltaMin / 60);
+  if (deltaHours < 24) return `${deltaHours}h ago`;
+  const deltaDays = Math.round(deltaHours / 24);
+  if (deltaDays < 8) return `${deltaDays}d ago`;
+  return parsed.toLocaleDateString();
+}
+
+function activeTimestampFor(jobView) {
+  const job = jobView?.job || {};
+  return String(
+    jobView?.activeAt
+      || jobView?.sortKeys?.activeAt
+      || job?.lastActivityAt
+      || job?.trackingUpdatedAt
+      || job?.notesUpdatedAt
+      || job?.contentUpdatedAt
+      || job?.updatedAt
+      || job?.savedAt
+      || ""
+  );
+}
+
+function normalizeAttentionReason(reason) {
+  if (reason && typeof reason === "object") {
+    return {
+      key: String(reason.key || "").trim(),
+      label: String(reason.label || reason.key || "").trim()
+    };
+  }
+  const key = String(reason || "").trim();
+  const labels = {
+    reminder_overdue: "Overdue reminder",
+    reminder_due_soon: "Reminder due soon",
+    source_likely_removed: "Source likely removed",
+    source_archived: "Source archived"
+  };
+  return {
+    key,
+    label: labels[key] || key
+  };
+}
+
+function attentionReasonsFor(jobView) {
+  const richReasons = Array.isArray(jobView?.attentionReasons)
+    ? jobView.attentionReasons
+    : [];
+  const rawReasons = richReasons.length > 0
+    ? richReasons
+    : Array.isArray(jobView?.needsActionReasons)
+      ? jobView.needsActionReasons
+      : [];
+  return rawReasons
+    .map(normalizeAttentionReason)
+    .filter(reason => reason.key && reason.label);
+}
+
+function renderAttentionChip(jobView) {
+  const reasons = attentionReasonsFor(jobView);
+  const primary = normalizeAttentionReason(jobView?.primaryAttentionReason || reasons[0]);
+  if (!primary.key || !primary.label) return "";
+  const allLabels = reasons.map(reason => reason.label).filter(Boolean);
+  const tooltip = allLabels.length > 1
+    ? `Needs action: ${allLabels.join("; ")}`
+    : `Needs action: ${primary.label}`;
+  return `
+    <span class="tracking-attention-chip" data-attention-reason="${escapeHtml(primary.key)}"${tooltipAttrs(tooltip)}>
+      <span class="tracking-attention-dot" aria-hidden="true"></span>
+      <span>Needs action:</span>
+      <strong>${escapeHtml(primary.label)}</strong>
+    </span>
+  `;
+}
+
 function isContextFor(context, jobKey, kind, value) {
   if (!context) return false;
   if (String(context.jobKey || "") !== String(jobKey || "")) return false;
@@ -205,16 +291,27 @@ function renderPhaseActions(jobKey, activePhase, phaseTimestamps, savedAt, optio
     phaseLabels = PIPELINE_PHASE_LABELS,
     canTransition = () => false,
     currentUser = null,
-    outcomeStatus = "active"
+    outcomeStatus = "active",
+    jobView = null,
+    now = Date.now
   } = options;
   const normalizedPhase = normalizePipelinePhase(activePhase);
   const normalizedOutcome = normalizeOutcomeStatus(outcomeStatus);
   const activeIndex = phaseOptions.indexOf(normalizedPhase);
   const timestamps = phaseTimestamps && typeof phaseTimestamps === "object" ? phaseTimestamps : {};
   const currentLabel = phaseLabels[normalizedPhase] || normalizedPhase;
-  const currentTimestamp = getPhaseTimestamp(timestamps, normalizedPhase, savedAt);
+  const currentTimestamp = String(jobView?.phaseEnteredAt || "")
+    || getPhaseTimestamp(timestamps, normalizedPhase, savedAt);
   const enteredAt = formatTrackingTimestamp(currentTimestamp, { compact: true }) || "Not recorded";
   const enteredAtFull = formatTrackingTimestamp(currentTimestamp);
+  const activeAt = activeTimestampFor(jobView);
+  const lastActivity = formatRelativeTimestamp(activeAt, { now }) || "Not recorded";
+  const lastActivityFull = formatTrackingTimestamp(activeAt);
+  const summaryTooltip = [
+    enteredAtFull ? `Entered ${enteredAtFull}` : "",
+    lastActivityFull ? `Last activity ${lastActivityFull}` : ""
+  ].filter(Boolean).join(" · ");
+  const attentionChip = renderAttentionChip(jobView);
   const isFinalPhase = activeIndex >= 0 && activeIndex === phaseOptions.length - 1;
   const finalIndicator = isFinalPhase
     ? `<span class="tracking-final-indicator">${isTerminalOutcome(normalizedOutcome) ? "Final stage" : "Awaiting outcome"}</span>`
@@ -284,14 +381,18 @@ function renderPhaseActions(jobKey, activePhase, phaseTimestamps, savedAt, optio
       </button>
     `;
   return `
-    <div class="tracking-phase-summary"${enteredAtFull ? tooltipAttrs(enteredAtFull) : ""}>
+    <div class="tracking-phase-summary"${summaryTooltip ? tooltipAttrs(summaryTooltip) : ""}>
       <span class="tracking-current-line">
         <span>Current phase:</span>
         <strong>${escapeHtml(currentLabel)}</strong>
         <span class="tracking-meta-separator" aria-hidden="true">&middot;</span>
         <span>Entered:</span>
         <strong>${escapeHtml(enteredAt)}</strong>
+        <span class="tracking-meta-separator" aria-hidden="true">&middot;</span>
+        <span>Last activity:</span>
+        <strong class="tracking-last-activity">${escapeHtml(lastActivity)}</strong>
         ${finalIndicator}
+        ${attentionChip}
       </span>
     </div>
     <div class="tracking-action-controls">
@@ -407,7 +508,8 @@ export function renderApplicationTrackingControls(jobView, options = {}) {
   const renderOutcome = options.renderOutcomeControls || renderOutcomeControls;
   const phaseActions = renderPhaseActions(jobKey, pipelinePhase, phaseTimestamps, savedAt, {
     ...options,
-    outcomeStatus
+    outcomeStatus,
+    jobView
   });
   return `
     <div class="saved-phase-row saved-tracking-phase-row">

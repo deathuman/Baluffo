@@ -55,12 +55,20 @@ test("saved render: date/reminder helpers parse and classify near reminders", ()
   assert.equal(parseIsoDate("not-a-date"), null);
   assert.ok(parseIsoDate("2026-03-08T10:00:00.000Z") instanceof Date);
 
-  const soon = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-  const far = new Date(Date.now() + 120 * 60 * 60 * 1000).toISOString();
-  const soonMeta = getReminderMeta(soon, { reminderSoonHours: 72 });
-  const farMeta = getReminderMeta(far, { reminderSoonHours: 72 });
+  const now = new Date("2026-03-08T10:00:00.000Z");
+  const overdueMeta = getReminderMeta("2026-03-08T09:00:00.000Z", { reminderSoonHours: 72, now });
+  const soonMeta = getReminderMeta("2026-03-08T11:00:00.000Z", { reminderSoonHours: 72, now });
+  const farMeta = getReminderMeta("2026-03-12T11:00:00.000Z", { reminderSoonHours: 72, now });
+  assert.equal(overdueMeta.isOverdue, true);
+  assert.equal(overdueMeta.badgeLabel, "Overdue");
+  assert.equal(overdueMeta.badgeClass, "overdue");
   assert.equal(soonMeta.isSoon, true);
+  assert.equal(soonMeta.badgeLabel, "Due soon");
+  assert.equal(soonMeta.badgeClass, "due-soon");
+  assert.equal(farMeta.hasReminder, true);
   assert.equal(farMeta.isSoon, false);
+  assert.equal(farMeta.badgeLabel, "Reminder set");
+  assert.equal(farMeta.badgeClass, "scheduled");
   assert.ok(soonMeta.label.length > 0);
 });
 

@@ -39,6 +39,9 @@ Serena's own project memory is covered in Docs Routing above.
 - Basic Memory is the required external continuity MCP for AI-assisted Baluffo
   planning, handoff, recurring gotchas, current focus, and stale-memory
   corrections.
+- For non-trivial Baluffo tasks, check relevant Basic Memory notes at task
+  start for continuity and gotchas, then validate anything useful against repo
+  source, tests, docs, and AGENTS.md before acting.
 - External memory must not become a source of truth for current implementation
   behavior.
 - Do not store current implementation facts unless they include a source path,
@@ -51,6 +54,9 @@ Serena's own project memory is covered in Docs Routing above.
   vault `BaluffoMemory`.
 - Keep memory notes current as normal AI task maintenance when they are useful
   for future sessions; no separate memory-specific approval is required.
+- At task closeout, explicitly decide whether a current-focus, handoff, gotcha,
+  decision, or stale-memory correction should be written or updated. Skip the
+  write only when the task produced no durable continuity value.
 - Never store secrets, tokens, credentials, private keys, or sensitive data.
 - If a secret is accidentally committed to the memory repo, treat the repo as
   compromised and rotate all affected credentials.
