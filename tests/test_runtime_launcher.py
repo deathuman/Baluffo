@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest import mock
+from urllib.error import HTTPError
 from urllib.request import urlopen
 
 import pytest
@@ -74,6 +75,32 @@ def test_quarantine_preserves_jobs_rows_with_successful_report() -> None:
         assert (data_dir / "jobs-unified.json").exists()
         assert (data_dir / "jobs-unified-light.json").exists()
         assert (data_dir / "jobs-unified.csv").exists()
+
+
+def test_quarantine_treats_top_level_error_report_as_unsuccessful() -> None:
+    with workspace_tmpdir("runtime-launcher-error-report") as tmp:
+        data_dir = Path(tmp) / "data"
+        _write(
+            data_dir / "jobs-fetch-report.json",
+            json.dumps(
+                {
+                    "status": "error",
+                    "finishedAt": "2026-05-17T10:00:00+00:00",
+                    "summary": {"outputCount": 1},
+                }
+            ),
+        )
+        _write(data_dir / "jobs-unified.json", "[{}]")
+        _write(data_dir / "jobs-unified-light.json", "[{}]")
+        _write(data_dir / "jobs-unified.csv", "id,title\n1,Role\n")
+
+        result = rl.quarantine_stale_jobs_row_artifacts(data_dir)
+
+        assert "skipped" not in result
+        assert len(result["quarantined"]) == 3
+        assert not (data_dir / "jobs-unified.json").exists()
+        assert not (data_dir / "jobs-unified-light.json").exists()
+        assert not (data_dir / "jobs-unified.csv").exists()
 
 
 @pytest.mark.parametrize(
@@ -447,6 +474,79 @@ def test_build_site_request_handler_serves_data_requests_from_runtime_data_dir()
         assert '"ok":true' in payload
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/jobs-unified-startup.json",
+        "/jobs-unified-light.json",
+        "/jobs-unified.json",
+        "/jobs-unified.csv",
+        "/data/jobs-unified-startup.json",
+        "/data/jobs-unified-light.json",
+        "/data/jobs-unified.json",
+        "/data/jobs-unified.csv",
+    ],
+)
+def test_build_site_request_handler_blocks_row_artifacts_during_jobs_cold_start(path: str) -> None:
+    with workspace_tmpdir("runtime-launcher-cold-row-block") as tmp:
+        root = Path(tmp) / "site"
+        root.mkdir(parents=True, exist_ok=True)
+        data_dir = Path(tmp) / "data"
+        for name in rl.ROW_BEARING_JOBS_ARTIFACTS:
+            _write(data_dir / name, "id,title\njob-1,Role\n" if name.endswith(".csv") else "[]\n")
+
+        handler = rl.build_site_request_handler(
+            root,
+            runtime_data_dir=data_dir,
+            static_data_dir=data_dir,
+            startup_probe=False,
+            jobs_cold_start=True,
+        )
+        server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with pytest.raises(HTTPError) as exc_info:
+                urlopen(f"http://127.0.0.1:{server.server_address[1]}{path}?t=1", timeout=2.0)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+        assert exc_info.value.code == 404
+
+
+def test_build_site_request_handler_serves_row_artifacts_for_returning_user() -> None:
+    with workspace_tmpdir("runtime-launcher-returning-row-artifact") as tmp:
+        root = Path(tmp) / "site"
+        root.mkdir(parents=True, exist_ok=True)
+        data_dir = Path(tmp) / "data"
+        _write(data_dir / "jobs-unified.json", '[{"id":"job-1"}]\n')
+
+        handler = rl.build_site_request_handler(
+            root,
+            runtime_data_dir=data_dir,
+            static_data_dir=data_dir,
+            startup_probe=False,
+            jobs_cold_start=False,
+        )
+        server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with urlopen(
+                f"http://127.0.0.1:{server.server_address[1]}/data/jobs-unified.json?t=1",
+                timeout=2.0,
+            ) as response:
+                payload = response.read().decode("utf-8")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+        assert '"job-1"' in payload
+
+
 def test_build_site_request_handler_serves_legacy_root_data_aliases() -> None:
     with workspace_tmpdir("runtime-launcher") as tmp:
         root = Path(tmp) / "site"
@@ -488,6 +588,7 @@ def test_build_site_request_handler_serves_desktop_runtime_bridge_config() -> No
             root,
             desktop_bridge_host="127.0.0.1",
             desktop_bridge_port=61234,
+            jobs_cold_start=True,
         )
         server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -508,6 +609,7 @@ def test_build_site_request_handler_serves_desktop_runtime_bridge_config() -> No
         assert '"port": 61234' in payload
         assert '"runtime": {' in payload
         assert '"desktop": true' in payload
+        assert '"jobsColdStart": true' in payload
         assert '"port": 8877' not in payload
 
 
@@ -584,6 +686,30 @@ def test_run_site_server_reports_app_version() -> None:
         payload = json.loads(print_mock.call_args.args[0])
         assert payload["appVersion"] == APP_VERSION
         assert payload["currentVersion"] == "2.4.6"
+
+
+def test_run_site_server_marks_jobs_cold_start_before_sync_can_mutate_data() -> None:
+    with workspace_tmpdir("runtime-launcher") as tmp:
+        root = Path(tmp) / "ship"
+        _seed_ship_root(root, version="2.4.6")
+        captured: dict[str, object] = {}
+        original_handler_factory = rl.build_site_request_handler
+
+        class _StopServer(Exception):
+            pass
+
+        def capture_handler(*args, **kwargs):
+            captured.update(kwargs)
+            return original_handler_factory(*args, **kwargs)
+
+        with (
+            mock.patch.object(rl, "build_site_request_handler", side_effect=capture_handler),
+            mock.patch.object(rl, "ThreadingHTTPServer", side_effect=_StopServer),
+        ):
+            with pytest.raises(_StopServer):
+                rl.run_site_server(root, port=8123)
+
+        assert captured["jobs_cold_start"] is True
 
 
 def test_run_site_server_continues_when_jobs_quarantine_raises() -> None:

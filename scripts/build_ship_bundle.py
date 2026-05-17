@@ -104,6 +104,7 @@ APP_RUNTIME_SHIP_FILES = (
     "desktop_update_service.py",
     "desktop_update_shared.py",
     "desktop_update_state.py",
+    "jobs_first_run_state.py",
     "migrations.py",
     "runtime_launcher.py",
     "startup_telemetry.py",

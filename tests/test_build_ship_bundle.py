@@ -118,7 +118,7 @@ def test_bundle_contains_runtime_assets_and_seeded_runtime_data_only() -> None:
         assert not (version_root / "baluffo.config.local.json").exists()
         assert (version_root / "packaging" / "github-app-sync-config.json").exists()
         jobs_html = (version_root / "jobs.html").read_text(encoding="utf-8")
-        assert '<script src="frontend-runtime-config.js?v=2"></script>' in jobs_html
+        assert '<script src="frontend-runtime-config.js?v=4"></script>' in jobs_html
         bundled_release_guide = (output / "RELEASE_GUIDE.md").read_text(encoding="utf-8")
         assert "# Release Guide" in bundled_release_guide
 
@@ -150,6 +150,7 @@ def test_bundle_contains_runtime_assets_and_seeded_runtime_data_only() -> None:
         assert not (output / "data" / "jobs-unified-light.json").exists()
         assert not (output / "data" / "jobs-unified.csv").exists()
         assert not (output / "data" / "jobs-unified-startup.json").exists()
+        assert not list(output.glob("**/baluffo-runtime.db*"))
         assert (output / "data" / "jobs-source-state.json.gz").exists()
         assert not (output / "data" / "jobs-source-state.json").exists()
         assert read_json(output / "data" / "jobs-source-state.json", {}) == {

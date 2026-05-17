@@ -17,6 +17,11 @@ async function fetchWithTimeout(url, timeoutMs, init = {}) {
   }, { url: String(url || "").slice(0, 180) });
 }
 
+function withCacheBuster(url) {
+  const separator = String(url || "").includes("?") ? "&" : "?";
+  return `${url}${separator}t=${Date.now()}`;
+}
+
 export function parseUnifiedJobsPayload(payload, jobsParsing) {
   if (jobsParsing && typeof jobsParsing.parseUnifiedJobsPayload === "function") {
     return jobsParsing.parseUnifiedJobsPayload(payload);
@@ -102,7 +107,10 @@ export async function fetchUnifiedJobs(options = {}) {
   for (const source of unifiedJsonSources || []) {
     try {
       if (typeof setSourceStatus === "function") setSourceStatus(`Fetching from ${source.name}...`);
-      const response = await fetcher(source.url, requestTimeoutMs, { headers: { Accept: "application/json" } });
+      const response = await fetcher(withCacheBuster(source.url), requestTimeoutMs, {
+        cache: "no-store",
+        headers: { Accept: "application/json" }
+      });
       if (!response.ok) continue;
       const payload = await response.json();
       const jobs = parseUnifiedPayload(payload);
@@ -115,7 +123,10 @@ export async function fetchUnifiedJobs(options = {}) {
   for (const source of unifiedCsvSources || []) {
     try {
       if (typeof setSourceStatus === "function") setSourceStatus(`Fetching from ${source.name}...`);
-      const response = await fetcher(source.url, requestTimeoutMs, { headers: { Accept: "text/csv,*/*" } });
+      const response = await fetcher(withCacheBuster(source.url), requestTimeoutMs, {
+        cache: "no-store",
+        headers: { Accept: "text/csv,*/*" }
+      });
       if (!response.ok) continue;
       const csv = await response.text();
       if (!csv || csv.length < 100) continue;
@@ -151,7 +162,7 @@ export async function fetchJsonFromCandidates(urls, options = {}) {
   const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 12000;
   for (const url of urls || []) {
     try {
-      const response = await fetcher(`${url}?t=${Date.now()}`, timeoutMs, { cache: "no-store" });
+      const response = await fetcher(withCacheBuster(url), timeoutMs, { cache: "no-store" });
       if (!response.ok) continue;
       return await response.json();
     } catch {

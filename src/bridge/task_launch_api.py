@@ -34,6 +34,7 @@ from src.shared.json_io import (
     read_json,
     read_json_text,
 )
+from src.ship.jobs_first_run_state import has_successful_runtime_jobs_report
 from src.storage import EvidenceArchiveStore, JobRuntimeStore, SourceRuntimeStore
 from src.storage.job_runtime import jobs_feed_rows_hash
 
@@ -1220,52 +1221,8 @@ class TaskLaunchApi:
                 return True
         return False
 
-    @staticmethod
-    def _json_feed_artifact_has_rows(path: Path) -> bool:
-        if existing_json_candidate(path) is None:
-            return False
-        try:
-            payload = read_json(path, None)
-        except (TypeError, UnicodeDecodeError, ValueError):
-            return False
-        rows = payload.get("jobs") if isinstance(payload, dict) else payload
-        return isinstance(rows, list) and any(isinstance(row, dict) for row in rows)
-
-    @staticmethod
-    def _csv_feed_artifact_has_rows(path: Path) -> bool:
-        try:
-            lines = Path(path).read_text(encoding="utf-8").splitlines()
-        except (OSError, UnicodeDecodeError):
-            return False
-        non_empty_lines = [line for line in lines if line.strip()]
-        if len(non_empty_lines) < 2:
-            return False
-        return "," in non_empty_lines[0] and any("," in line for line in non_empty_lines[1:])
-
-    def _has_loadable_runtime_feed_artifacts(self) -> bool:
-        data_dir = self._runtime.data_dir
-        return (
-            self._json_feed_artifact_has_rows(data_dir / "jobs-unified.json")
-            and self._json_feed_artifact_has_rows(data_dir / "jobs-unified-light.json")
-            and self._csv_feed_artifact_has_rows(data_dir / "jobs-unified.csv")
-        )
-
     def _has_successful_runtime_feed(self) -> bool:
-        report = read_json(self._paths.jobs_fetch_report, {})
-        if not isinstance(report, dict):
-            return False
-        if not str(report.get("finishedAt") or "").strip():
-            return False
-        summary = dict(report.get("summary") or {})
-        if str(summary.get("status") or "").strip().lower() in {"error", "failed"}:
-            return False
-        try:
-            output_count = int(summary.get("outputCount") or 0)
-        except (TypeError, ValueError):
-            output_count = 0
-        if output_count <= 0:
-            return False
-        return self._has_loadable_runtime_feed_artifacts()
+        return has_successful_runtime_jobs_report(self._runtime.data_dir)
 
     @staticmethod
     def _bootstrap_active_metadata(run_id: str, started_at: str, pid: int) -> dict[str, Any]:
@@ -2119,7 +2076,13 @@ class TaskLaunchApi:
         get_lifecycle_current_runs: Callable[[], list[dict[str, Any]]] = lambda: [],
         get_lifecycle_run_history_rows: Callable[[], list[dict[str, Any]]] = lambda: [],
     ) -> dict[str, Any]:
-        _ = payload
+        payload_data = payload if isinstance(payload, dict) else {}
+        raw_force_bootstrap = payload_data.get("forceBootstrap")
+        force_bootstrap = (
+            raw_force_bootstrap
+            if isinstance(raw_force_bootstrap, bool)
+            else str(raw_force_bootstrap or "").strip().lower() in {"1", "true", "yes", "on"}
+        )
         lock_context = (
             self._deps.task_state_lock if self._deps.task_state_lock is not None else nullcontext()
         )
@@ -2134,7 +2097,7 @@ class TaskLaunchApi:
                     "alreadyCompleted": True,
                     "error": "full_pipeline_already_completed",
                 }
-            if self._has_successful_runtime_feed():
+            if not force_bootstrap and self._has_successful_runtime_feed():
                 return {
                     "started": False,
                     "task": "jobs_bootstrap",

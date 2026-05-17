@@ -289,6 +289,7 @@ def test_jobs_bootstrap_rejects_after_full_pipeline_success() -> None:
             return 1234
 
         result = api.start_jobs_bootstrap_task(
+            {"forceBootstrap": True, "source": "jobs_first_run"},
             normalize_fetch_report_contract=lambda payload: payload,
             run_background_script=run_background_script,
             save_json_atomic=_save_json_atomic,
@@ -333,6 +334,34 @@ def test_jobs_bootstrap_rejects_when_runtime_feed_artifacts_are_loadable() -> No
         assert result["alreadyCompleted"] is True
         assert result["error"] == "runtime_feed_already_available"
         assert called is False
+
+
+def test_jobs_bootstrap_force_bypasses_successful_runtime_feed_guard() -> None:
+    with workspace_tmpdir("task-launch-bootstrap-runtime-feed-force") as data_dir:
+        api = _task_launch_api(data_dir)
+        api._start_bootstrap_lifecycle_watch = lambda **_kwargs: None  # type: ignore[method-assign]  # noqa: SLF001
+        _write_successful_runtime_feed_shell(data_dir)
+        write_atomic_if_changed(data_dir / "jobs-unified.json", '[{"id":"job-1"}]')
+        write_atomic_if_changed(data_dir / "jobs-unified-light.json", '[{"id":"job-1"}]')
+        write_atomic_if_changed(data_dir / "jobs-unified.csv", "id,title\njob-1,Tools Programmer\n")
+        called = False
+
+        def run_background_script(*_args: Any, **_kwargs: Any) -> int:
+            nonlocal called
+            called = True
+            return 1234
+
+        result = api.start_jobs_bootstrap_task(
+            {"forceBootstrap": True, "source": "jobs_first_run"},
+            normalize_fetch_report_contract=lambda payload: payload,
+            run_background_script=run_background_script,
+            save_json_atomic=_save_json_atomic,
+            schema_version=1,
+        )
+
+        assert result["started"] is True
+        assert result["task"] == "jobs_bootstrap"
+        assert called is True
 
 
 def test_jobs_bootstrap_allows_recovery_when_successful_report_has_corrupt_rows() -> None:

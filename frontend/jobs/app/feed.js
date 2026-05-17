@@ -14,7 +14,15 @@ function filtersMatchDefault(filters = {}, defaultFilters = {}) {
 }
 
 const BOOTSTRAP_AUTO_START_KEY = "baluffo_jobs_bootstrap_auto_started";
+const BOOTSTRAP_LAUNCH_COLD_START_HANDLED_KEY = "baluffo_jobs_bootstrap_launch_cold_start_handled";
 const LOCAL_FEED_MISSING_MESSAGE = "Local jobs feed is missing or unreadable. Retry quick refresh or run Update jobs to rebuild the full feed.";
+const EMPTY_TITLE_FEED_MESSAGE = "Jobs feed contained no displayable positions. Retry quick refresh or run Update jobs to rebuild the full feed.";
+const FIRST_RUN_BOOTSTRAP_STATUS = "Refreshing first-run sheet jobs. This can take about 4 minutes...";
+const FIRST_RUN_BOOTSTRAP_NOTICE = Object.freeze({
+  title: "Preparing first-run jobs",
+  body: "Baluffo is fetching the starter Google Sheets job feed. The first refresh can take about 4 minutes. You can keep this window open; jobs will appear automatically when the refresh finishes.",
+  primaryLabel: "Got it"
+});
 
 function reportFinishedTimestamp(report) {
   const finishedAt = String(report?.finishedAt || "").trim();
@@ -27,11 +35,16 @@ function reportSummary(report) {
   return report?.summary && typeof report.summary === "object" ? report.summary : {};
 }
 
+function reportStatus(report) {
+  const summary = reportSummary(report);
+  return String(summary.status || report?.status || "").trim().toLowerCase();
+}
+
 export function isSuccessfulJobsFetchReport(report) {
   if (!report || typeof report !== "object") return false;
   if (!reportFinishedTimestamp(report)) return false;
   const summary = reportSummary(report);
-  const status = String(summary.status || "").trim().toLowerCase();
+  const status = reportStatus(report);
   if (status === "error" || status === "failed") return false;
   return Number(summary.outputCount || 0) > 0;
 }
@@ -40,7 +53,7 @@ function isTerminalFailedJobsFetchReport(report) {
   if (!report || typeof report !== "object") return false;
   if (!reportFinishedTimestamp(report)) return false;
   const summary = reportSummary(report);
-  return String(summary.status || "").trim().toLowerCase() === "error"
+  return ["error", "failed"].includes(reportStatus(report))
     || Boolean(summary.error);
 }
 
@@ -59,6 +72,14 @@ function coverageScope(report) {
 function localStorageFor(windowObject) {
   try {
     return windowObject?.localStorage || null;
+  } catch {
+    return null;
+  }
+}
+
+function sessionStorageFor(windowObject) {
+  try {
+    return windowObject?.sessionStorage || null;
   } catch {
     return null;
   }
@@ -105,13 +126,21 @@ function clearBootstrapAutoStart(windowObject) {
   localStorageFor(windowObject)?.removeItem(BOOTSTRAP_AUTO_START_KEY);
 }
 
-function bootstrapColdStartAction(report, windowObject) {
-  if (isSuccessfulJobsFetchReport(report)) return false;
-  if (isTerminalFailedJobsFetchReport(report)) return "retry";
+function markLaunchColdStartHandled(windowObject) {
+  sessionStorageFor(windowObject)?.setItem(BOOTSTRAP_LAUNCH_COLD_START_HANDLED_KEY, "1");
+}
+
+function launchColdStartAlreadyHandled(windowObject) {
+  return sessionStorageFor(windowObject)?.getItem(BOOTSTRAP_LAUNCH_COLD_START_HANDLED_KEY) === "1";
+}
+
+function bootstrapColdStartAction(report, windowObject, { forceStart = false } = {}) {
+  if (!forceStart && isSuccessfulJobsFetchReport(report)) return false;
+  if (!forceStart && isTerminalFailedJobsFetchReport(report)) return "retry";
   const marker = bootstrapAutoStartMarker(windowObject);
-  if (marker.status === "failed") return "retry";
+  if (marker.status === "failed") return forceStart ? "start" : "retry";
   if (marker.status === "running" || marker.status === "legacy") {
-    return isNonTerminalJobsFetchReport(report) ? "reattach" : "retry";
+    return forceStart || isNonTerminalJobsFetchReport(report) ? "reattach" : "retry";
   }
   return "start";
 }
@@ -122,6 +151,18 @@ function bootstrapRetryMessage(report) {
   return error
     ? `First-run sheet refresh failed: ${error}`
     : "No fresh local jobs feed is available yet. Retry the quick sheet refresh.";
+}
+
+function notifyFirstRunBootstrap(showFirstRunBootstrapNotice, reason = "") {
+  if (typeof showFirstRunBootstrapNotice !== "function") return;
+  try {
+    showFirstRunBootstrapNotice({
+      ...FIRST_RUN_BOOTSTRAP_NOTICE,
+      reason: String(reason || "")
+    });
+  } catch {
+    // The notice is informational only; bootstrap must continue if UI setup fails.
+  }
 }
 
 export function canUseStartupPreviewFastPath(pageState = {}, defaultFilters = {}) {
@@ -150,29 +191,74 @@ export async function initJobsFeed(deps) {
     refreshJobsNow,
     updateLastUpdatedText,
     fetchJobsReport,
+    desktopJobsColdStart = false,
     startJobsBootstrap,
     windowObject,
     setProgress,
     bootstrapPollIntervalMs = 1500,
-    bootstrapTimeoutMs = 120000,
+    bootstrapTimeoutMs = 5 * 60 * 1000,
     setHasInitializedJobsFeed,
     scheduleNonCriticalStartupWork,
     applyPendingAutoRefreshSignal,
     loadStartupPreviewJobs,
     showError,
-    getAllJobs
+    getAllJobs,
+    setAllJobs,
+    showFirstRunBootstrapNotice
   } = deps;
 
   if (!hasJobsList) return;
   markJobsStep("jobs_boot_start");
   emitMetric("jobs_init_start");
+  let firstRunBootstrapNoticeShown = false;
+
+  function showBootstrapNoticeOnce(reason) {
+    if (firstRunBootstrapNoticeShown) return;
+    firstRunBootstrapNoticeShown = true;
+    notifyFirstRunBootstrap(showFirstRunBootstrapNotice, reason);
+  }
 
   try {
     initAuth();
 
-    const cached = isDesktopRuntimeMode() ? null : await readCachedJobs();
+    const desktopMode = isDesktopRuntimeMode();
+    const localReport = desktopMode && typeof fetchJobsReport === "function"
+      ? await fetchJobsReport({ timeoutMs: 1500 }).catch(() => null)
+      : null;
+    const launchColdStartPending = desktopMode
+      && Boolean(desktopJobsColdStart)
+      && !launchColdStartAlreadyHandled(windowObject);
+    const localReportPresent = Boolean(localReport && typeof localReport === "object");
+    const firstRunRequired = Boolean(
+      desktopMode
+      && (launchColdStartPending || (localReportPresent && !isSuccessfulJobsFetchReport(localReport)))
+    );
+    const firstRunAction = firstRunRequired
+      ? bootstrapColdStartAction(localReport, windowObject, {
+        forceStart: true
+      })
+      : false;
+    emitMetric("jobs_first_run_gate_evaluated", {
+      desktopMode,
+      runtimeColdStart: Boolean(desktopJobsColdStart),
+      launchColdStartPending,
+      reportSuccessful: isSuccessfulJobsFetchReport(localReport),
+      action: firstRunAction || "skip"
+    });
+
+    if (firstRunRequired) {
+      if (typeof setAllJobs === "function") setAllJobs([]);
+      stateHubSet("jobsFeedCount", 0);
+      stateHubSet("jobsLastUpdated", "");
+      recalculateItemsPerPage();
+      updateFilterOptions();
+      applyStateToFilters();
+      applyFiltersAndRender({ resetPage: false });
+    }
+
+    const cached = desktopMode ? null : await readCachedJobs();
     emitMetric("jobs_cache_checked", {
-      desktopMode: isDesktopRuntimeMode(),
+      desktopMode,
       hasCache: Boolean(cached?.jobs && cached.jobs.length > 0)
     });
     emitMetric(cached?.jobs && cached.jobs.length > 0 ? "jobs_cache_hit" : "jobs_cache_miss");
@@ -205,11 +291,12 @@ export async function initJobsFeed(deps) {
       if (explicit) clearBootstrapAutoStart(windowObject);
       markBootstrapRunning(windowObject);
       if (typeof setProgress === "function") setProgress(true);
-      setSourceStatus("Refreshing first-run sheet jobs...");
+      setSourceStatus(FIRST_RUN_BOOTSTRAP_STATUS);
       try {
         if (typeof startJobsBootstrap !== "function") {
           throw new Error("bootstrap route unavailable");
         }
+        emitMetric("jobs_first_run_bootstrap_start_requested", { explicit });
         const startedPayload = await startJobsBootstrap();
         markBootstrapRunning(windowObject, { runId: startedPayload?.runId });
         if (startedPayload?.alreadyCompleted) {
@@ -260,16 +347,15 @@ export async function initJobsFeed(deps) {
       }
     }
 
-    const localReport = isDesktopRuntimeMode() && typeof fetchJobsReport === "function"
-      ? await fetchJobsReport({ timeoutMs: 1500 }).catch(() => null)
-      : null;
-    if (isDesktopRuntimeMode() && !isSuccessfulJobsFetchReport(localReport)) {
+    if (firstRunRequired) {
       setHasInitializedJobsFeed(true);
+      markStartupRendered("first_run_bootstrap", 0);
+      markJobsFirstInteractive("first_run_bootstrap");
       scheduleNonCriticalStartupWork();
-      await applyPendingAutoRefreshSignal();
-      const bootstrapAction = bootstrapColdStartAction(localReport, windowObject);
-      if (bootstrapAction === "start" || bootstrapAction === "reattach") {
+      if (firstRunAction === "start" || firstRunAction === "reattach") {
         try {
+          if (launchColdStartPending) markLaunchColdStartHandled(windowObject);
+          showBootstrapNoticeOnce(firstRunAction);
           const ok = await startBootstrapAndLoad();
           if (!ok) {
             showError("Unable to load job listings right now.", retryBootstrap);
@@ -398,7 +484,15 @@ export async function refreshJobsFeed({ manual, firstLoad = false }, deps) {
     }
 
     const previousLength = getAllJobs().length;
-    setAllJobs(normalizeRows(result.jobs));
+    const normalizedJobs = normalizeRows(result.jobs);
+    if (!normalizedJobs.length) {
+      setAllJobs([]);
+      if (firstLoad) setSourceStatus(EMPTY_TITLE_FEED_MESSAGE);
+      if (manual) showToast(EMPTY_TITLE_FEED_MESSAGE, "error");
+      dispatchRefreshFailed(EMPTY_TITLE_FEED_MESSAGE);
+      return false;
+    }
+    setAllJobs(normalizedJobs);
     setRefreshJobsNeedsAttention(false);
     const now = Date.now();
     const latestReport = typeof fetchJobsReport === "function"

@@ -3,7 +3,7 @@ import {
   fetchJsonFromCandidates as fetchJsonFromCandidatesFromData,
   parseUnifiedJobsPayload,
   parseCSVLarge as parseCSVLargeFromData
-} from "../data-source.js";
+} from "../data-source.js?v=2";
 import { renderDataSourcesPanel } from "../render.js";
 
 const UNIFIED_JSON_SOURCES = [

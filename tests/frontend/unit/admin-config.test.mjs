@@ -29,6 +29,7 @@ test("AdminConfig loads generated frontend-safe defaults without XHR", async () 
     { relativeTo: import.meta.url }
   );
   assert.equal(AdminConfig.ADMIN_BRIDGE_BASE, "http://127.0.0.1:8877");
+  assert.equal(AdminConfig.DESKTOP_JOBS_COLD_START, false);
   assert.equal(AdminConfig.GITHUB_APP_ENABLED_DEFAULT, true);
 });
 
@@ -56,7 +57,48 @@ test("AdminConfig uses desktop-served runtime config when URL lacks bridge param
   );
 
   assert.equal(AdminConfig.ADMIN_BRIDGE_BASE, "http://127.0.0.1:61234");
+  assert.equal(AdminConfig.DESKTOP_JOBS_COLD_START, false);
   delete globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG;
+});
+
+test("AdminConfig treats runtime jobsColdStart as a desktop cold-start signal", async () => {
+  globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG = Object.freeze({
+    bridge: {
+      host: "127.0.0.1",
+      port: 61236
+    },
+    runtime: {
+      desktop: true,
+      jobsColdStart: true
+    }
+  });
+  global.window = {
+    location: { href: "http://127.0.0.1:8080/jobs.html?desktop=1" },
+    sessionStorage: buildSessionStorage()
+  };
+
+  const { AdminConfig } = await importFresh(
+    "../../../frontend/shared/config/admin-config.js",
+    { relativeTo: import.meta.url }
+  );
+
+  assert.equal(AdminConfig.DESKTOP_JOBS_COLD_START, true);
+  delete globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG;
+});
+
+test("AdminConfig treats jobsColdStart URL flag as an independent fallback", async () => {
+  delete globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG;
+  global.window = {
+    location: { href: "http://127.0.0.1:8080/jobs.html?desktop=1&jobsColdStart=1" },
+    sessionStorage: buildSessionStorage()
+  };
+
+  const { AdminConfig } = await importFresh(
+    "../../../frontend/shared/config/admin-config.js",
+    { relativeTo: import.meta.url }
+  );
+
+  assert.equal(AdminConfig.DESKTOP_JOBS_COLD_START, true);
 });
 
 test("AdminConfig overwrites stale cached bridge base with active desktop runtime config", async () => {

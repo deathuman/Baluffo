@@ -135,6 +135,18 @@ def test_should_clear_browser_profile_caches_only_for_cold_startup_probe() -> No
     assert desktop_app.should_clear_browser_profile_caches({}) is False
 
 
+def test_should_clear_browser_profile_caches_for_jobs_cold_start() -> None:
+    assert (
+        desktop_app.should_clear_browser_profile_caches(
+            {
+                desktop_app.JOBS_COLD_START_ENV: "1",
+                desktop_app.STARTUP_PROFILE_MODE_ENV: "warm",
+            }
+        )
+        is True
+    )
+
+
 def test_chromium_process_ready_timeout_prefers_shorter_wait_for_chrome_and_edge() -> None:
     assert desktop_app.chromium_process_ready_timeout_s({"name": "chrome"}) == pytest.approx(0.35)
     assert desktop_app.chromium_process_ready_timeout_s({"name": "msedge"}) == pytest.approx(0.35)
@@ -735,6 +747,37 @@ def test_launch_browser_for_url_uses_cold_probe_cache_policy_for_chrome() -> Non
         mock.ANY,
         clear_profile_caches=True,
     )
+
+
+def test_launch_browser_for_url_clears_profile_caches_for_jobs_cold_start() -> None:
+    fake_process = mock.Mock(spec=subprocess.Popen)
+    trace_events: list[tuple[str, dict[str, object]]] = []
+    with (
+        mock.patch.object(
+            desktop_app,
+            "resolve_chromium_browser_candidates",
+            return_value=[{"name": "chrome", "path": "C:/Chrome/chrome.exe"}],
+        ),
+        mock.patch.object(
+            desktop_app, "launch_chromium_app", return_value=fake_process
+        ) as launch_mock,
+        mock.patch.object(desktop_app, "wait_for_browser_process_ready", return_value=True),
+    ):
+        result = desktop_app.launch_browser_for_url(
+            "http://127.0.0.1:8080/jobs.html?jobsColdStart=1",
+            env={desktop_app.JOBS_COLD_START_ENV: "1"},
+            trace_hook=lambda event, _event_mono, fields: trace_events.append((event, fields)),
+        )
+
+    assert result["mode"] == "chromium-app"
+    launch_mock.assert_called_once_with(
+        "http://127.0.0.1:8080/jobs.html?jobsColdStart=1",
+        "C:/Chrome/chrome.exe",
+        mock.ANY,
+        clear_profile_caches=True,
+    )
+    assert trace_events[0][0] == "desktop_browser_process_spawn_started"
+    assert trace_events[0][1]["clearProfileCaches"] is True
 
 
 def test_launch_browser_for_url_uses_warm_probe_cache_policy_for_chrome() -> None:

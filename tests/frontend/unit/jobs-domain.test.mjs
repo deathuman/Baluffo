@@ -57,6 +57,23 @@ test("jobs domain classifies company and normalizes jobs", () => {
   assert.equal(rows[0].companyType, "Game");
 });
 
+test("jobs domain filters rows with empty normalized titles", () => {
+  const rows = normalizeJobs([
+    { title: "", company: "Blank Studio" },
+    { title: "   ", company: "Whitespace Studio" },
+    { title: '<div class="cb"><', company: "Markup Studio" },
+    { title: "Animator", company: "Real Studio" }
+  ], {
+    professionLabels: {},
+    sanitizeUrl: value => value
+  });
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].title, "Animator");
+  assert.equal(rows[0].company, "Real Studio");
+  assert.deepEqual(normalizeJobs([{ title: " ", company: "Only Blank" }]), []);
+});
+
 test("jobs domain preserves multiple locations for filtering and display", () => {
   const rows = normalizeJobs([
     {

@@ -95,6 +95,7 @@ def test_bundle_contains_python_import_closure_modules() -> None:
             "src/source_registry_policy.py",
             "src/source_registry_state.py",
             "src/storage_metrics.py",
+            "src/ship/jobs_first_run_state.py",
             "src/ship/runtime_launcher.py",
             "src/ship/update_manager.py",
             "src/ship/update_manager_apply.py",

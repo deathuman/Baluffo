@@ -23,8 +23,13 @@ if str(ROOT) not in sys.path:
 
 from src.app_version import get_app_version
 from src.baluffo_config import get_bridge_defaults, get_desktop_defaults, get_security_defaults
-from src.shared.json_io import PIPELINE_GZIP_JSON_NAMES, existing_json_candidate, read_json
+from src.shared.json_io import PIPELINE_GZIP_JSON_NAMES
 from src.ship import update_manager
+from src.ship.jobs_first_run_state import (
+    ROW_BEARING_JOBS_ARTIFACTS,
+    has_successful_runtime_jobs_report,
+    jobs_cold_start_required,
+)
 from src.ship.startup_telemetry import (
     append_runtime_startup_trace as _append_runtime_startup_trace,
 )
@@ -54,12 +59,7 @@ ROOT_DATA_FILE_ALIASES = frozenset(
         "jobs-unified.csv",
     }
 )
-ROW_BEARING_JOBS_ARTIFACTS = (
-    "jobs-unified-startup.json",
-    "jobs-unified-light.json",
-    "jobs-unified.json",
-    "jobs-unified.csv",
-)
+ROW_BEARING_JOBS_ARTIFACT_NAMES = frozenset(ROW_BEARING_JOBS_ARTIFACTS)
 
 
 def _is_expected_client_disconnect(exc: BaseException) -> bool:
@@ -99,33 +99,6 @@ class QuietSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
             raise
 
 
-def _successful_runtime_jobs_report(data_dir: Path) -> bool:
-    report = read_json(Path(data_dir) / "jobs-fetch-report.json", {})
-    if not isinstance(report, dict):
-        return False
-    if not str(report.get("finishedAt") or "").strip():
-        return False
-    summary = report.get("summary")
-    if not isinstance(summary, dict):
-        return False
-    if str(summary.get("status") or "").strip().lower() in {"error", "failed"}:
-        return False
-    try:
-        output_count = int(summary.get("outputCount") or 0)
-    except (TypeError, ValueError):
-        output_count = 0
-    if output_count <= 0:
-        return False
-    return all(
-        bool(
-            existing_json_candidate(Path(data_dir) / name)
-            if name.endswith(".json")
-            else (Path(data_dir) / name).exists()
-        )
-        for name in ("jobs-unified-light.json", "jobs-unified.json", "jobs-unified.csv")
-    )
-
-
 def _row_artifact_candidates(data_dir: Path) -> list[Path]:
     candidates: list[Path] = []
     for name in ROW_BEARING_JOBS_ARTIFACTS:
@@ -139,12 +112,26 @@ def _row_artifact_candidates(data_dir: Path) -> list[Path]:
     return sorted({path.resolve() for path in candidates})
 
 
+def _is_row_bearing_jobs_artifact_request(trace_path: str) -> bool:
+    normalized = str(trace_path or "").split("?", 1)[0].split("#", 1)[0].lstrip("/")
+    artifact_name = normalized.removesuffix(".gz")
+    if artifact_name in ROW_BEARING_JOBS_ARTIFACT_NAMES:
+        return True
+    if not normalized.startswith("data/"):
+        return False
+    rel_path = normalized[5:]
+    safe_parts = [token for token in PurePosixPath(rel_path).parts if token not in {"", ".", ".."}]
+    if len(safe_parts) != 1:
+        return False
+    return safe_parts[0].removesuffix(".gz") in ROW_BEARING_JOBS_ARTIFACT_NAMES
+
+
 def quarantine_stale_jobs_row_artifacts(data_dir: str | Path) -> dict[str, object]:
     data_path = Path(data_dir)
     candidates = _row_artifact_candidates(data_path)
     if not candidates:
         return {"quarantined": [], "failed": [], "skipped": "no_artifacts"}
-    if _successful_runtime_jobs_report(data_path):
+    if has_successful_runtime_jobs_report(data_path):
         return {"quarantined": [], "failed": [], "skipped": "successful_runtime_report"}
 
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -254,7 +241,9 @@ def _normalize_bridge_runtime_config(
     return host, port
 
 
-def _render_frontend_runtime_config_js(bridge_host: str, bridge_port: int) -> str:
+def _render_frontend_runtime_config_js(
+    bridge_host: str, bridge_port: int, *, jobs_cold_start: bool = False
+) -> str:
     payload = {
         "bridge": {
             "host": str(bridge_host),
@@ -265,6 +254,7 @@ def _render_frontend_runtime_config_js(bridge_host: str, bridge_port: int) -> st
         },
         "runtime": {
             "desktop": True,
+            "jobsColdStart": bool(jobs_cold_start),
         },
     }
     rendered = json.dumps(payload, indent=2, ensure_ascii=True)
@@ -280,6 +270,7 @@ class ProbeAwareSimpleHTTPRequestHandler(QuietSimpleHTTPRequestHandler):
     _runtime_data_dir: Path | None = None
     _static_data_dir: Path | None = None
     _bridge_runtime_config: tuple[str, int] | None = None
+    _jobs_cold_start = False
     _startup_probe = False
     _serve_gzip_json = False
 
@@ -372,9 +363,16 @@ class ProbeAwareSimpleHTTPRequestHandler(QuietSimpleHTTPRequestHandler):
         trace_path = path_only.lstrip("/")
         request_started = time.perf_counter()
         bridge_runtime_config = self.__class__._bridge_runtime_config
+        if self.__class__._jobs_cold_start and _is_row_bearing_jobs_artifact_request(trace_path):
+            self.send_error(404, "Jobs feed artifacts are unavailable during first-run bootstrap.")
+            return
         if trace_path == "frontend-runtime-config.js" and bridge_runtime_config:
             bridge_host, bridge_port = bridge_runtime_config
-            body = _render_frontend_runtime_config_js(bridge_host, bridge_port).encode("utf-8")
+            body = _render_frontend_runtime_config_js(
+                bridge_host,
+                bridge_port,
+                jobs_cold_start=bool(self.__class__._jobs_cold_start),
+            ).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/javascript; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
@@ -407,6 +405,7 @@ def _make_probe_aware_simple_http_request_handler(
     startup_probe: bool = False,
     desktop_bridge_host: str | None = None,
     desktop_bridge_port: str | int | None = None,
+    jobs_cold_start: bool = False,
 ):
     bridge_runtime_config = _normalize_bridge_runtime_config(
         desktop_bridge_host,
@@ -424,6 +423,7 @@ def _make_probe_aware_simple_http_request_handler(
             if static_data_dir
             else None,
             "_bridge_runtime_config": bridge_runtime_config,
+            "_jobs_cold_start": bool(jobs_cold_start),
             "_startup_probe": bool(startup_probe),
         },
     )
@@ -437,6 +437,7 @@ def build_site_request_handler(
     startup_probe: bool = False,
     desktop_bridge_host: str | None = None,
     desktop_bridge_port: str | int | None = None,
+    jobs_cold_start: bool = False,
 ):
     return _make_probe_aware_simple_http_request_handler(
         directory,
@@ -445,6 +446,7 @@ def build_site_request_handler(
         startup_probe=startup_probe,
         desktop_bridge_host=desktop_bridge_host,
         desktop_bridge_port=desktop_bridge_port,
+        jobs_cold_start=jobs_cold_start,
     )
 
 
@@ -629,6 +631,7 @@ def run_site_server(
     safe_quarantine_stale_jobs_row_artifacts(static_data_dir)
     if runtime_data_dir is not None and runtime_data_dir != static_data_dir.resolve():
         safe_quarantine_stale_jobs_row_artifacts(runtime_data_dir)
+    jobs_cold_start = jobs_cold_start_required(runtime_data_dir or static_data_dir)
     print(
         json.dumps(
             {
@@ -649,6 +652,7 @@ def run_site_server(
         startup_probe=startup_probe_enabled(),
         desktop_bridge_host=desktop_bridge_host or os.environ.get(DESKTOP_BRIDGE_HOST_ENV),
         desktop_bridge_port=desktop_bridge_port or os.environ.get(DESKTOP_BRIDGE_PORT_ENV),
+        jobs_cold_start=jobs_cold_start,
     )
     server = ThreadingHTTPServer(("127.0.0.1", int(port)), handler)
     _append_runtime_startup_trace(

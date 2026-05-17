@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseUnifiedJobsPayload, parseCSVLarge, fetchUnifiedJobs } from "../../../frontend/jobs/data-source.js";
+import {
+  parseUnifiedJobsPayload,
+  parseCSVLarge,
+  fetchUnifiedJobs,
+  fetchJsonFromCandidates
+} from "../../../frontend/jobs/data-source.js";
 
 test("jobs data-source parses unified payload variants", () => {
   assert.equal(parseUnifiedJobsPayload([{ id: 1 }], null).length, 1);
@@ -29,9 +34,9 @@ test("jobs data-source fetchUnifiedJobs short-circuits on first unified JSON suc
     sheetsFallbackSource: { sheetId: "sheet", gid: "1" },
     parseUnifiedPayload: payload => (Array.isArray(payload?.jobs) ? payload.jobs : []),
     parseCSV: () => [{ id: "csv" }],
-    fetcher: async url => {
-      calls.push(url);
-      if (url === "json-a") {
+    fetcher: async (url, _timeoutMs, init) => {
+      calls.push({ url, init });
+      if (String(url).startsWith("json-a?")) {
         return {
           ok: true,
           json: async () => ({ jobs: [{ id: "json" }] })
@@ -43,7 +48,9 @@ test("jobs data-source fetchUnifiedJobs short-circuits on first unified JSON suc
 
   assert.deepEqual(result.jobs, [{ id: "json" }]);
   assert.equal(result.sourceName, "Unified JSON A");
-  assert.deepEqual(calls, ["json-a"]);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].url, /^json-a\?t=\d+/);
+  assert.equal(calls[0].init.cache, "no-store");
 });
 
 test("jobs data-source fetchUnifiedJobs falls back to Google Sheets when unified sources fail", async () => {
@@ -69,8 +76,8 @@ test("jobs data-source fetchUnifiedJobs falls back to Google Sheets when unified
 
   assert.deepEqual(result.jobs, [{ id: "sheet-job" }]);
   assert.equal(result.sourceName, "Google Sheets fallback");
-  assert.equal(calls[0], "json-a");
-  assert.equal(calls[1], "csv-a");
+  assert.match(calls[0], /^json-a\?t=\d+/);
+  assert.match(calls[1], /^csv-a\?t=\d+/);
   assert.match(calls[2], /spreadsheets\/d\/sheet123\/export/);
 });
 
@@ -115,5 +122,49 @@ test("jobs data-source fetchUnifiedJobs can skip sheets fallback for fast first-
   assert.equal(result.jobs, null);
   assert.equal(result.sourceName, "");
   assert.equal(result.error, "Could not fetch listings from local unified feeds.");
-  assert.deepEqual(calls, ["json-a", "csv-a"]);
+  assert.equal(calls.length, 2);
+  assert.match(calls[0], /^json-a\?t=\d+/);
+  assert.match(calls[1], /^csv-a\?t=\d+/);
+});
+
+test("jobs data-source local JSON and CSV fetches use no-store cache-busted requests", async () => {
+  const calls = [];
+  const result = await fetchUnifiedJobs({
+    unifiedJsonSources: [{ name: "Unified JSON", url: "jobs-unified.json" }],
+    unifiedCsvSources: [{ name: "Unified CSV", url: "jobs-unified.csv" }],
+    allowSheetsFallback: false,
+    parseUnifiedPayload: () => [],
+    parseCSV: () => [],
+    fetcher: async (url, _timeoutMs, init) => {
+      calls.push({ url, init });
+      return {
+        ok: false,
+        json: async () => ({}),
+        text: async () => ""
+      };
+    }
+  });
+
+  assert.equal(result.jobs, null);
+  assert.equal(calls.length, 2);
+  assert.match(calls[0].url, /^jobs-unified\.json\?t=\d+/);
+  assert.equal(calls[0].init.cache, "no-store");
+  assert.equal(calls[0].init.headers.Accept, "application/json");
+  assert.match(calls[1].url, /^jobs-unified\.csv\?t=\d+/);
+  assert.equal(calls[1].init.cache, "no-store");
+  assert.equal(calls[1].init.headers.Accept, "text/csv,*/*");
+});
+
+test("jobs data-source JSON candidate fetches preserve existing query before cache-busting", async () => {
+  const calls = [];
+  await fetchJsonFromCandidates(["data/jobs-fetch-report.json?source=local"], {
+    fetcher: async (url, _timeoutMs, init) => {
+      calls.push({ url, init });
+      return { ok: false, json: async () => ({}) };
+    }
+  });
+
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].url, /^data\/jobs-fetch-report\.json\?source=local&t=\d+/);
+  assert.equal(calls[0].init.cache, "no-store");
 });

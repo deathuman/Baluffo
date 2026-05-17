@@ -16,6 +16,7 @@ from .config import (
     CHROMIUM_PROCESS_READY_POLL_INTERVALS_S,
     CHROMIUM_PROCESS_READY_TIMEOUT_S,
     CHROMIUM_PROCESS_READY_TIMEOUTS_S,
+    JOBS_COLD_START_ENV,
     STARTUP_PROFILE_MODE_ENV,
 )
 
@@ -164,6 +165,8 @@ def clear_browser_profile_caches(profile_dir: Path) -> None:
 def should_clear_browser_profile_caches(env: dict[str, str] | None = None) -> bool:
     api = desktop_api()
     env_map: Mapping[str, str] = env if env is not None else os.environ
+    if bool(api._truthy_env(env_map.get(JOBS_COLD_START_ENV))):
+        return True
     if not bool(api._truthy_env(env_map.get("BALUFFO_STARTUP_PROBE"))):
         return False
     profile_mode = str(env_map.get(STARTUP_PROFILE_MODE_ENV) or "").strip().lower()

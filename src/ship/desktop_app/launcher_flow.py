@@ -9,6 +9,7 @@ from . import launcher_recovery as launcher_recovery_mod
 from ._compat import desktop_api
 from .config import (
     ACTIVE_WORK_RECOVERY_STOP_REASONS,
+    JOBS_COLD_START_ENV,
     PACKAGED_BRIDGE_OWNER_IDLE_TIMEOUT_S,
     READY_TIMEOUT_S,
     STARTUP_PROBE_BRIDGE_OWNER_IDLE_TIMEOUT_S,
@@ -31,6 +32,26 @@ def _as_int(value: object, default: int = 0) -> int:
         except ValueError:
             return default
     return default
+
+
+def _child_env_for(
+    api: object, current_config: DesktopRuntimeConfig, session_root: Path
+) -> dict[str, str]:
+    env = {
+        "BALUFFO_DATA_DIR": str(current_config.data_dir),
+        "BALUFFO_DESKTOP_MODE": "1",
+        "BALUFFO_DESKTOP_BRIDGE_HOST": str(current_config.bridge_host),
+        "BALUFFO_DESKTOP_BRIDGE_PORT": str(int(current_config.bridge_port)),
+        "BALUFFO_DESKTOP_SESSION_ROOT": str(session_root),
+    }
+    if bool(current_config.startup_probe):
+        env["BALUFFO_STARTUP_PROBE"] = "1"
+        profile_mode = str(api.os.environ.get(STARTUP_PROFILE_MODE_ENV) or "").strip()
+        if profile_mode:
+            env[STARTUP_PROFILE_MODE_ENV] = profile_mode
+    if bool(current_config.jobs_cold_start):
+        env[JOBS_COLD_START_ENV] = "1"
+    return env
 
 
 def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
@@ -74,28 +95,13 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             strategy=str(session_root_info.get("strategy") or ""),
         )
 
-        def _child_env_for(current_config: DesktopRuntimeConfig) -> dict[str, str]:
-            env = {
-                "BALUFFO_DATA_DIR": str(current_config.data_dir),
-                "BALUFFO_DESKTOP_MODE": "1",
-                "BALUFFO_DESKTOP_BRIDGE_HOST": str(current_config.bridge_host),
-                "BALUFFO_DESKTOP_BRIDGE_PORT": str(int(current_config.bridge_port)),
-                "BALUFFO_DESKTOP_SESSION_ROOT": str(session_root),
-            }
-            if bool(current_config.startup_probe):
-                env["BALUFFO_STARTUP_PROBE"] = "1"
-                profile_mode = str(api.os.environ.get(STARTUP_PROFILE_MODE_ENV) or "").strip()
-                if profile_mode:
-                    env[STARTUP_PROFILE_MODE_ENV] = profile_mode
-            return env
-
         launch_result: dict[str, object] = {}
         port_retry_attempted = False
         open_url = ""
         site_ready_elapsed_ms = 0
         while True:
             try:
-                child_env = _child_env_for(config)
+                child_env = _child_env_for(api, config, session_root)
                 api.ensure_runtime_ports(config)
                 desktop_job = api._windows_create_kill_on_close_job()
                 api._append_startup_trace(

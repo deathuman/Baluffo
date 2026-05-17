@@ -10,6 +10,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from src.baluffo_config import get_desktop_defaults
+from src.ship.jobs_first_run_state import jobs_cold_start_required
 
 from ._compat import desktop_api
 
@@ -69,6 +70,7 @@ CHROMIUM_BROWSER_CANDIDATES = (
 PREFERRED_BROWSER_PATH_ENV = "BALUFFO_DESKTOP_BROWSER_PATH"
 NO_BROWSER_ENV = "BALUFFO_DESKTOP_NO_BROWSER"
 STARTUP_PROFILE_MODE_ENV = "BALUFFO_STARTUP_PROFILE_MODE"
+JOBS_COLD_START_ENV = "BALUFFO_JOBS_COLD_START"
 
 _RUNTIME_SESSION_ROOT: Path | None = None
 _LAST_SESSION_ROOT_INFO: dict[str, str] = {"strategy": "", "path": ""}
@@ -84,6 +86,7 @@ class DesktopRuntimeConfig:
     open_path: str
     title: str
     startup_probe: bool
+    jobs_cold_start: bool = False
     no_browser: bool = False
     site_port_explicit: bool = False
     bridge_port_explicit: bool = False
@@ -106,6 +109,12 @@ def resolve_ship_root(root: str | Path | None = None) -> Path:
     return resolved
 
 
+def open_path_is_jobs_entry(open_path: str) -> bool:
+    path = str(open_path or "").strip().lstrip("/")
+    path = path.split("?", 1)[0].split("#", 1)[0].replace("\\", "/")
+    return path.rsplit("/", 1)[-1] == "jobs.html"
+
+
 def create_runtime_config(args: argparse.Namespace) -> DesktopRuntimeConfig:
     api = desktop_api()
     ship_root = api.resolve_ship_root(args.root or None)
@@ -118,17 +127,22 @@ def create_runtime_config(args: argparse.Namespace) -> DesktopRuntimeConfig:
         if str(args.data_dir or "").strip()
         else ship_root / "data"
     )
+    open_path = str(args.open_path or DEFAULT_OPEN_PATH).lstrip("/") or DEFAULT_OPEN_PATH
+    jobs_cold_start = bool(
+        api.open_path_is_jobs_entry(open_path) and jobs_cold_start_required(data_dir)
+    )
     return DesktopRuntimeConfig(
         ship_root=ship_root,
         site_port=site_port,
         bridge_port=bridge_port,
         bridge_host=str(args.bridge_host or DESKTOP_DEFAULTS["bridge_host"]),
         data_dir=data_dir,
-        open_path=str(args.open_path or DEFAULT_OPEN_PATH).lstrip("/") or DEFAULT_OPEN_PATH,
+        open_path=open_path,
         title=str(args.title or DESKTOP_DEFAULTS["title"] or WINDOW_TITLE).strip() or WINDOW_TITLE,
         startup_probe=bool(
             args.startup_probe or _truthy_env(os.environ.get("BALUFFO_STARTUP_PROBE"))
         ),
+        jobs_cold_start=jobs_cold_start,
         no_browser=_truthy_env(os.environ.get(NO_BROWSER_ENV)),
         site_port_explicit=site_port_explicit,
         bridge_port_explicit=bridge_port_explicit,
@@ -204,7 +218,12 @@ def resolve_runtime_ports(config: DesktopRuntimeConfig) -> DesktopRuntimeConfig:
 
 def build_open_url(config: DesktopRuntimeConfig) -> str:
     separator = "&" if "?" in config.open_path else "?"
-    extra = "&startupProbe=1" if bool(config.startup_probe) else ""
+    extras: list[str] = []
+    if bool(config.startup_probe):
+        extras.append("startupProbe=1")
+    if bool(config.jobs_cold_start) and open_path_is_jobs_entry(config.open_path):
+        extras.append("jobsColdStart=1")
+    extra = "".join(f"&{item}" for item in extras)
     return (
         f"http://127.0.0.1:{config.site_port}/{config.open_path}"
         f"{separator}desktop=1&bridgePort={int(config.bridge_port)}&bridgeHost={config.bridge_host}{extra}"

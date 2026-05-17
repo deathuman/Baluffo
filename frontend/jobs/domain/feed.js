@@ -185,7 +185,7 @@ export function normalizeJobs(rows, options = {}) {
     }
     if (!job.description) job.description = `${job.title} at ${job.company}`;
     return job;
-  });
+  }).filter(job => String(job?.title || "").trim());
 }
 
 function simpleHash(input) {

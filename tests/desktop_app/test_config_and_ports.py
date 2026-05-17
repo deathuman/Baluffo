@@ -35,6 +35,7 @@ def test_create_runtime_config_defaults_to_fixed_desktop_ports() -> None:
     assert config.no_browser is False
     assert config.data_dir == root / "data"
     assert config.open_path == "admin.html"
+    assert config.jobs_cold_start is False
     assert config.title == desktop_app.WINDOW_TITLE
 
 
@@ -58,6 +59,41 @@ def test_create_runtime_config_defaults_to_jobs_entry() -> None:
         config = desktop_app.create_runtime_config(args)
 
     assert config.open_path == "jobs.html"
+    assert config.jobs_cold_start is True
+
+
+def test_create_runtime_config_skips_jobs_cold_start_for_successful_local_feed() -> None:
+    with workspace_tmpdir("desktop-config-returning-jobs") as tmp:
+        root = Path(tmp) / "ship"
+        data_dir = root / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        (data_dir / "jobs-fetch-report.json").write_text(
+            '{"finishedAt":"2026-05-17T10:00:00+00:00","summary":{"status":"ok","outputCount":1}}',
+            encoding="utf-8",
+        )
+        (data_dir / "jobs-unified.json").write_text('[{"id":"job-1"}]', encoding="utf-8")
+        (data_dir / "jobs-unified-light.json").write_text('[{"id":"job-1"}]', encoding="utf-8")
+        (data_dir / "jobs-unified.csv").write_text(
+            "id,title\njob-1,Tools Programmer\n", encoding="utf-8"
+        )
+        args = argparse.Namespace(
+            root=str(root),
+            site_port=0,
+            bridge_port=0,
+            bridge_host="127.0.0.1",
+            data_dir="",
+            open_path="jobs.html",
+            title="",
+            port=0,
+            bind_host="127.0.0.1",
+            child_mode="",
+            desktop_runtime=False,
+            startup_probe=False,
+        )
+        with mock.patch.object(desktop_app, "resolve_ship_root", return_value=root):
+            config = desktop_app.create_runtime_config(args)
+
+    assert config.jobs_cold_start is False
 
 
 def test_create_runtime_config_can_enable_test_no_browser_mode_from_env() -> None:
@@ -116,6 +152,42 @@ def test_build_open_url_marks_startup_probe_when_enabled() -> None:
     assert (
         desktop_app.build_open_url(config)
         == "http://127.0.0.1:8080/jobs.html?desktop=1&bridgePort=8877&bridgeHost=127.0.0.1&startupProbe=1"
+    )
+
+
+def test_build_open_url_marks_jobs_cold_start_when_enabled() -> None:
+    config = desktop_app.DesktopRuntimeConfig(
+        ship_root=Path("C:/tmp/baluffo-ship"),
+        site_port=8080,
+        bridge_port=8877,
+        bridge_host="127.0.0.1",
+        data_dir=Path("C:/tmp/baluffo-ship/data"),
+        open_path="jobs.html",
+        title="Baluffo",
+        startup_probe=False,
+        jobs_cold_start=True,
+    )
+    assert (
+        desktop_app.build_open_url(config)
+        == "http://127.0.0.1:8080/jobs.html?desktop=1&bridgePort=8877&bridgeHost=127.0.0.1&jobsColdStart=1"
+    )
+
+
+def test_build_open_url_does_not_mark_jobs_cold_start_for_non_jobs_entry() -> None:
+    config = desktop_app.DesktopRuntimeConfig(
+        ship_root=Path("C:/tmp/baluffo-ship"),
+        site_port=8080,
+        bridge_port=8877,
+        bridge_host="127.0.0.1",
+        data_dir=Path("C:/tmp/baluffo-ship/data"),
+        open_path="admin.html",
+        title="Baluffo",
+        startup_probe=False,
+        jobs_cold_start=True,
+    )
+    assert (
+        desktop_app.build_open_url(config)
+        == "http://127.0.0.1:8080/admin.html?desktop=1&bridgePort=8877&bridgeHost=127.0.0.1"
     )
 
 

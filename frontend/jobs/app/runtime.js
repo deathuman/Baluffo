@@ -1,4 +1,4 @@
-import { AdminConfig as adminConfig } from "../../shared/config/admin-config.js";
+import { AdminConfig as adminConfig } from "../../shared/config/admin-config.js?v=2";
 import { JobsStateModule as jobsStateModule } from "../state.js?v=4";
 import { postStartupMetricToBridge, resolveStartupProbeEnabled } from "../../../probes/startup-probe.js";
 import {
@@ -33,6 +33,7 @@ import {
 } from "../state-sync/index.js";
 import { requestConfirmationDialog } from "../../local-data/profile-name-dialog.js";
 import { callJobsBridge as callJobsBridgeFromModule } from "./pipeline.js?v=8";
+import { openFirstRunJobsNotice } from "./first-run-notice.js?v=1";
 import { applyJobsAdminBridgeState as applyJobsAdminBridgeStateFromModule } from "./admin-bridge-state.js?v=5";
 import {
   buildSeenRowKey,
@@ -56,7 +57,7 @@ import {
   createFilterOptionsAccumulator,
   finalizeFilterOptions
 } from "./runtime/query.js?v=4";
-import { refreshJobsFeed, loadStartupPreviewJobsFeed } from "./feed.js?v=7";
+import { refreshJobsFeed, loadStartupPreviewJobsFeed } from "./feed.js?v=9";
 import { setProgressVisibility, setStatusText } from "./runtime/view.js";
 import {
   fullCountryName as fullCountryNameForJobs,
@@ -70,7 +71,7 @@ import {
   renderDataSources as renderDataSourcesFromSources
 } from "./sources.js";
 import { composeJobsRuntime } from "./runtime/composition.js?v=9";
-import { createJobsBoot } from "./runtime/boot.js";
+import { createJobsBoot } from "./runtime/boot.js?v=2";
 import { createJobsPageFlow } from "./runtime/page-flow.js?v=5";
 
 const defaultFilters = jobsStateModule.DEFAULT_FILTERS || {
@@ -243,6 +244,7 @@ jobsBoot = createJobsBoot({
   markStartupRendered: jobsRuntime.markStartupRendered,
   markJobsFirstInteractive: jobsRuntime.markJobsFirstInteractive,
   isDesktopRuntimeMode: jobsRuntime.isDesktopRuntimeMode,
+  desktopJobsColdStart: Boolean(adminConfig.DESKTOP_JOBS_COLD_START),
   isJobsCacheStale,
   jobsCacheTtlMs: JOBS_CACHE_TTL_MS,
   applyPendingAutoRefreshSignal: (...args) => jobsPageFlow.applyPendingAutoRefreshSignal(...args),
@@ -258,6 +260,11 @@ jobsBoot = createJobsBoot({
   logJobsError: jobsRuntime.logJobsError,
   openJobLinkInDefaultBrowser: (...args) => openJobLinkInDefaultBrowser(...args),
   requestConfirmationDialog,
+  showFirstRunBootstrapNotice: options => openFirstRunJobsNotice({
+    ...options,
+    documentTarget: documentObject,
+    windowTarget: windowObject
+  }),
   windowObject,
   documentObject
 });

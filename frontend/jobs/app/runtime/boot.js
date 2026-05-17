@@ -5,7 +5,7 @@ import { createAdminBridgeButtonWatcher } from "../../../shared/admin-bridge-but
 import { openReleaseNotesDialog } from "../../../shared/ui/release-notes-dialog.js";
 import { cacheJobsDom } from "../dom.js";
 import { createJobsDesktopUpdateController } from "../desktop-update.js";
-import { initJobsFeed } from "../feed.js";
+import { initJobsFeed } from "../feed.js?v=9";
 import { scheduleNonCriticalStartup } from "../startup.js";
 
 export function createJobsBoot(deps) {
@@ -63,9 +63,10 @@ export function createJobsBoot(deps) {
       refreshJobsNow: options => deps.feedController.refreshJobsNow(options),
       updateLastUpdatedText: timestamp => deps.feedController.updateLastUpdatedText(timestamp),
       fetchJobsReport: options => deps.feedController.fetchJobsReport(options),
+      desktopJobsColdStart: deps.desktopJobsColdStart,
       startJobsBootstrap: () => deps.callJobsBridge("/tasks/run-jobs-bootstrap", {
         method: "POST",
-        body: { source: "jobs_cold_start" },
+        body: { source: "jobs_first_run", forceBootstrap: true },
         allowStatuses: [409]
       }),
       windowObject: deps.windowObject,
@@ -76,7 +77,11 @@ export function createJobsBoot(deps) {
       applyPendingAutoRefreshSignal: (...args) => deps.applyPendingAutoRefreshSignal(...args),
       loadStartupPreviewJobs: () => deps.feedController.loadStartupPreviewJobs(),
       showError: (...args) => deps.showError(...args),
-      getAllJobs: () => deps.runtimeState.allJobs
+      getAllJobs: () => deps.runtimeState.allJobs,
+      setAllJobs: jobs => {
+        deps.runtimeState.allJobs = Array.isArray(jobs) ? jobs : [];
+      },
+      showFirstRunBootstrapNotice: deps.showFirstRunBootstrapNotice
     });
   }
 
