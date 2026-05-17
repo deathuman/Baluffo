@@ -288,6 +288,86 @@ def update_application_status(
     )
 
 
+def _phase_revert_activity_details(
+    options: dict[str, Any],
+    previous_phase: str,
+    next_phase: str,
+    cleanup_phase: str,
+) -> dict[str, Any]:
+    return {
+        "revertedFromPhase": normalize_pipeline_phase(
+            options.get("revertedFromPhase") or previous_phase
+        ),
+        "restoredPhase": normalize_pipeline_phase(options.get("restoredPhase") or next_phase),
+        "removedPhaseTimestampFor": normalize_pipeline_phase(
+            options.get("removedPhaseTimestampFor") or cleanup_phase or previous_phase
+        ),
+        "restoredPhaseTimestamp": str(
+            options.get("restoredPhaseTimestamp") or options.get("preserveTimestamp") or ""
+        ),
+    }
+
+
+def _outcome_revert_activity_details(
+    options: dict[str, Any],
+    previous_outcome: str,
+    next_outcome: str,
+) -> dict[str, Any]:
+    return {
+        "revertedFromOutcome": normalize_outcome_status(
+            options.get("revertedFromOutcome") or previous_outcome
+        ),
+        "restoredOutcome": normalize_outcome_status(options.get("restoredOutcome") or next_outcome),
+        "restoredOutcomeTimestamp": str(
+            options.get("restoredOutcomeTimestamp") or options.get("preserveOutcomeTimestamp") or ""
+        ),
+    }
+
+
+def _tracking_activity_details(
+    previous: dict[str, Any],
+    next_phase: str,
+    next_outcome: str,
+    *,
+    options: dict[str, Any],
+    event_type: str,
+    cleanup_phase: str,
+    override: bool,
+) -> dict[str, Any]:
+    override_reason = str(options.get("overrideReason") or "").strip()
+    details = {
+        "previousPhase": previous["pipelinePhase"],
+        "nextPhase": next_phase,
+        "previousOutcome": previous["outcomeStatus"],
+        "nextOutcome": next_outcome,
+        "previousStatus": to_application_status_mirror(
+            previous["pipelinePhase"], previous["outcomeStatus"]
+        ),
+        "nextStatus": to_application_status_mirror(next_phase, next_outcome),
+        "overrideUsed": override,
+        "overrideReason": override_reason,
+        "overrideReasonProvided": bool(override_reason),
+    }
+    if event_type == "phase_reverted":
+        details.update(
+            _phase_revert_activity_details(
+                options,
+                previous["pipelinePhase"],
+                next_phase,
+                cleanup_phase,
+            )
+        )
+    elif event_type == "outcome_reverted":
+        details.update(
+            _outcome_revert_activity_details(
+                options,
+                previous["outcomeStatus"],
+                next_outcome,
+            )
+        )
+    return details
+
+
 def update_application_tracking(
     paths: LocalDataPaths,
     uid: str,
@@ -368,24 +448,21 @@ def update_application_tracking(
         event_type = str(options.get("eventType") or "").strip()
         if not event_type:
             event_type = "outcome_changed" if outcome_changed else "phase_changed"
+        details = _tracking_activity_details(
+            previous,
+            next_phase,
+            next_outcome,
+            options=options,
+            event_type=event_type,
+            cleanup_phase=cleanup_phase,
+            override=override,
+        )
         add_activity(
             paths,
             uid,
             event_type,
             target,
-            {
-                "previousPhase": previous["pipelinePhase"],
-                "nextPhase": next_phase,
-                "previousOutcome": previous["outcomeStatus"],
-                "nextOutcome": next_outcome,
-                "previousStatus": to_application_status_mirror(
-                    previous["pipelinePhase"], previous["outcomeStatus"]
-                ),
-                "nextStatus": to_application_status_mirror(next_phase, next_outcome),
-                "overrideUsed": override,
-                "overrideReason": str(options.get("overrideReason") or "").strip(),
-                "overrideReasonProvided": bool(str(options.get("overrideReason") or "").strip()),
-            },
+            details,
         )
 
 

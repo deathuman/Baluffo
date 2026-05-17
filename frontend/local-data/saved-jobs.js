@@ -270,6 +270,13 @@ export function createSavedJobsDomain(deps) {
     const preserveOutcomeTimestamp = String(options?.preserveOutcomeTimestamp || "").trim();
     const overrideReason = String(options?.overrideReason || "").trim();
     const eventTypeOverride = String(options?.eventType || "").trim();
+    const revertedFromPhase = String(options?.revertedFromPhase || "").trim();
+    const restoredPhase = String(options?.restoredPhase || "").trim();
+    const removedPhaseTimestampFor = String(options?.removedPhaseTimestampFor || "").trim();
+    const restoredPhaseTimestamp = String(options?.restoredPhaseTimestamp || "").trim();
+    const revertedFromOutcome = String(options?.revertedFromOutcome || "").trim();
+    const restoredOutcome = String(options?.restoredOutcome || "").trim();
+    const restoredOutcomeTimestamp = String(options?.restoredOutcomeTimestamp || "").trim();
     const pk = `${uid}::${jobKey}`;
 
     let logPayload = null;
@@ -359,7 +366,7 @@ export function createSavedJobsDomain(deps) {
     if (logPayload) {
       const eventType = eventTypeOverride
         || (logPayload.outcomeChanged ? "outcome_changed" : "phase_changed");
-      await addActivityLog(uid, eventType, logPayload, {
+      const details = {
         previousPhase: logPayload.previousPhase,
         nextPhase: logPayload.nextPhase,
         previousOutcome: logPayload.previousOutcome,
@@ -369,7 +376,19 @@ export function createSavedJobsDomain(deps) {
         overrideUsed: logPayload.overrideUsed,
         overrideReason: logPayload.overrideReason,
         overrideReasonProvided: logPayload.overrideReasonProvided
-      });
+      };
+      if (eventType === "phase_reverted") {
+        details.revertedFromPhase = normalizePipelinePhase(revertedFromPhase || logPayload.previousPhase);
+        details.restoredPhase = normalizePipelinePhase(restoredPhase || logPayload.nextPhase);
+        details.removedPhaseTimestampFor = normalizePipelinePhase(removedPhaseTimestampFor || cleanupPhase || logPayload.previousPhase);
+        details.restoredPhaseTimestamp = restoredPhaseTimestamp || preserveTimestamp || "";
+      }
+      if (eventType === "outcome_reverted") {
+        details.revertedFromOutcome = normalizeOutcomeStatus(revertedFromOutcome || logPayload.previousOutcome);
+        details.restoredOutcome = normalizeOutcomeStatus(restoredOutcome || logPayload.nextOutcome);
+        details.restoredOutcomeTimestamp = restoredOutcomeTimestamp || preserveOutcomeTimestamp || "";
+      }
+      await addActivityLog(uid, eventType, logPayload, details);
     }
     await notifySavedJobsChanged(uid);
   }

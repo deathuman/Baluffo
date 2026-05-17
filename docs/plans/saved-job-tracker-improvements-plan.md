@@ -48,6 +48,7 @@ The canonical persisted row and backup shape live in [`../DATA_CONTRACT.md`](../
 - Phase toast reverts write `phase_reverted`.
 - Outcome changes write `outcome_changed`.
 - Outcome toast reverts write `outcome_reverted`.
+- Revert activity keeps generic previous/next fields and adds explicit restored/reverted fields for audit copy.
 - Notes write durable `note_updated` activity when content changes.
 - Note activity compares note content, not note length.
 - Activity writes update `lastActivityAt` through the shared activity write path.
@@ -119,6 +120,7 @@ Coverage exists for:
 - Attachment lazy-load duplicate-read prevention on rerender and repeated tab open.
 - Saved lifecycle badge copy for `lastSeenAt` while active source overlays stay visually quiet.
 - Saved grouping model and render behavior, including filter-before-group and sorted order inside groups.
+- Phase/outcome revert activity audit details in both browser and Python local-data runtimes.
 - Saved row layout, clipped tooltips, compact tracking UI, and tooltip cleanup.
 
 ## Deferred Work
@@ -173,21 +175,21 @@ Add more modes only when the Saved page needs a denser list-management workflow.
 
 ### 4. Richer Revert Details
 
-`phase_reverted` and `outcome_reverted` exist, but their details still mostly use the generic previous/next shape.
+`phase_reverted` and `outcome_reverted` now keep the generic previous/next fields and add explicit audit fields.
 
-Optional hardening:
+Phase revert details may include:
 
 ```json
 {
-  "fromPhase": "offer",
+  "revertedFromPhase": "offer",
   "restoredPhase": "final",
-  "removedTimestampFor": "offer",
-  "restoredTimestamp": "2026-05-16T20:52:00+00:00",
+  "removedPhaseTimestampFor": "offer",
+  "restoredPhaseTimestamp": "2026-05-16T20:52:00+00:00",
   "overrideUsed": true
 }
 ```
 
-Do this only if the activity timeline needs more precise audit copy.
+Outcome revert details may include `revertedFromOutcome`, `restoredOutcome`, and `restoredOutcomeTimestamp`.
 
 ### 5. Flexible Tracking Object
 
@@ -213,9 +215,8 @@ This is v2 scope. It should not be mixed into v1 cleanup unless we are intention
 
 Recommended order:
 
-1. Add richer revert event details if timeline auditability needs it.
-2. Decide whether company/reminder/source-status grouping should become separate modes.
-3. Leave flexible `tracking` object for a separate v2 design pass.
+1. Decide whether company/reminder/source-status grouping should become separate modes.
+2. Leave flexible `tracking` object for a separate v2 design pass.
 
 ## Guardrails For Future Changes
 

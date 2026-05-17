@@ -84,7 +84,17 @@ export function formatActivityDetail(entry, options = {}) {
   const normalizeOutcome = options.normalizeOutcome || (value => value);
   const outcomeLabels = options.outcomeLabels || {};
   const formatPhaseTimestamp = options.formatPhaseTimestamp || (() => "");
-  if (type === "phase_changed" || type === "phase_reverted") {
+  if (type === "phase_reverted") {
+    const previous = details.revertedFromPhase || details.previousPhase || details.previousStatus;
+    const next = details.restoredPhase || details.nextPhase || details.nextStatus;
+    const from = phaseLabels[normalizePhase(previous)] || "Unknown";
+    const to = phaseLabels[normalizePhase(next)] || "Unknown";
+    const restoredAt = formatPhaseTimestamp(details.restoredPhaseTimestamp);
+    const restored = restoredAt ? ` (restored ${restoredAt})` : "";
+    const override = details.overrideUsed ? " (override)" : "";
+    return `${from} -> ${to}${restored}${override}`;
+  }
+  if (type === "phase_changed") {
     const previous = details.previousPhase || details.previousStatus;
     const next = details.nextPhase || details.nextStatus;
     const from = phaseLabels[normalizePhase(previous)] || "Unknown";
@@ -92,7 +102,17 @@ export function formatActivityDetail(entry, options = {}) {
     const override = details.overrideUsed ? " (override)" : "";
     return `${from} -> ${to}${override}`;
   }
-  if (type === "outcome_changed" || type === "outcome_reverted") {
+  if (type === "outcome_reverted") {
+    const previous = details.revertedFromOutcome || details.previousOutcome;
+    const next = details.restoredOutcome || details.nextOutcome;
+    const from = outcomeLabels[normalizeOutcome(previous)] || "Unknown";
+    const to = outcomeLabels[normalizeOutcome(next)] || "Unknown";
+    const restoredAt = formatPhaseTimestamp(details.restoredOutcomeTimestamp);
+    const restored = restoredAt ? ` (restored ${restoredAt})` : "";
+    const override = details.overrideUsed ? " (override)" : "";
+    return `${from} -> ${to}${restored}${override}`;
+  }
+  if (type === "outcome_changed") {
     const from = outcomeLabels[normalizeOutcome(details.previousOutcome)] || "Unknown";
     const to = outcomeLabels[normalizeOutcome(details.nextOutcome)] || "Unknown";
     const override = details.overrideUsed ? " (override)" : "";

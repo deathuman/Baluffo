@@ -366,6 +366,8 @@ This is the canonical stored/output row shape returned by desktop local-data GET
 | `createdAt` | `string` (ISO 8601) | Event timestamp. |
 | `details` | `object` | Event-specific metadata. |
 
+Tracking activity details remain additive and backward-compatible. `phase_reverted` rows keep the generic phase/status fields and may also include `revertedFromPhase`, `restoredPhase`, `removedPhaseTimestampFor`, and `restoredPhaseTimestamp`. `outcome_reverted` rows keep the generic outcome/status fields and may also include `revertedFromOutcome`, `restoredOutcome`, and `restoredOutcomeTimestamp`.
+
 ### 2.3 Persisted attachment row
 
 | Field | Type | Description |

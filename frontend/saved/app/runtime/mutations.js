@@ -182,7 +182,11 @@ export function createSavedMutations(deps) {
               override: true,
               cleanupPhase: normalized,
               preserveTimestamp: previousPhaseTimestamp,
-              eventType: "phase_reverted"
+              eventType: "phase_reverted",
+              revertedFromPhase: normalized,
+              restoredPhase: previousPhase,
+              removedPhaseTimestampFor: normalized,
+              restoredPhaseTimestamp: previousPhaseTimestamp
             };
             const revertResult = typeof deps.savedPageService.updateApplicationTracking === "function"
               ? await deps.savedPageService.updateApplicationTracking(
@@ -308,7 +312,10 @@ export function createSavedMutations(deps) {
               {
                 override: true,
                 preserveOutcomeTimestamp: previousOutcomeTimestamp,
-                eventType: "outcome_reverted"
+                eventType: "outcome_reverted",
+                revertedFromOutcome: normalized,
+                restoredOutcome: previousOutcome,
+                restoredOutcomeTimestamp: previousOutcomeTimestamp
               }
             );
             if (!revertResult.ok) throw new Error(revertResult.error || "Could not revert outcome.");

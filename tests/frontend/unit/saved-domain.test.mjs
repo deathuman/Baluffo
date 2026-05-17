@@ -36,3 +36,57 @@ test("saved domain maps activity labels/details", () => {
   );
   assert.equal(outcomeDetail, "Active -> Rejected");
 });
+
+test("saved domain prefers explicit revert activity details with legacy fallback", () => {
+  const phaseOptions = {
+    normalizePhase: value => value,
+    phaseLabels: { bookmark: "Saved", applied: "Applied", offer: "Offer" },
+    formatPhaseTimestamp: value => (value ? "Mar 8, 8:00 AM" : "")
+  };
+  assert.equal(
+    formatActivityDetail({
+      type: "phase_reverted",
+      details: {
+        previousPhase: "offer",
+        nextPhase: "applied",
+        revertedFromPhase: "offer",
+        restoredPhase: "bookmark",
+        restoredPhaseTimestamp: "2026-03-08T08:00:00.000Z"
+      }
+    }, phaseOptions),
+    "Offer -> Saved (restored Mar 8, 8:00 AM)"
+  );
+  assert.equal(
+    formatActivityDetail({
+      type: "phase_reverted",
+      details: { previousPhase: "offer", nextPhase: "applied" }
+    }, { ...phaseOptions, formatPhaseTimestamp: () => "" }),
+    "Offer -> Applied"
+  );
+
+  const outcomeOptions = {
+    normalizeOutcome: value => value,
+    outcomeLabels: { active: "Active", rejected: "Rejected", accepted: "Accepted" },
+    formatPhaseTimestamp: value => (value ? "Mar 8, 10:00 AM" : "")
+  };
+  assert.equal(
+    formatActivityDetail({
+      type: "outcome_reverted",
+      details: {
+        previousOutcome: "accepted",
+        nextOutcome: "active",
+        revertedFromOutcome: "accepted",
+        restoredOutcome: "rejected",
+        restoredOutcomeTimestamp: "2026-03-08T10:00:00.000Z"
+      }
+    }, outcomeOptions),
+    "Accepted -> Rejected (restored Mar 8, 10:00 AM)"
+  );
+  assert.equal(
+    formatActivityDetail({
+      type: "outcome_reverted",
+      details: { previousOutcome: "accepted", nextOutcome: "active" }
+    }, { ...outcomeOptions, formatPhaseTimestamp: () => "" }),
+    "Accepted -> Active"
+  );
+});
