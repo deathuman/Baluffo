@@ -5,7 +5,7 @@
 > - **Canonical for:** documentation discovery, ownership, freshness checks, and maintenance workflow
 > - **Not canonical for:** subsystem behavior, data contracts, release notes, or runtime behavior outside this guide's process scope
 > - **Then inspect:** [`INDEX.md`](INDEX.md), then the smallest authoritative doc set for the task
-> - **Last updated:** 2026-05-13
+> - **Last updated:** 2026-05-17
 
 ## Core Rules
 
@@ -66,6 +66,7 @@ Review the touched area and update docs in the same change when any of these mov
 - `Last updated` markers on active docs you touched
 - Archive links in [`INDEX.md`](INDEX.md) when the archive index changes
 - Both the link target and any visible path text when an archive move changes how active docs or the changelog refer to archive material
+- Basic Memory continuity notes when routing, ownership, recurring gotchas, current focus, handoff context, durable decisions, or stale-memory corrections change; repo docs remain canonical over memory
 
 ## Logging and History
 

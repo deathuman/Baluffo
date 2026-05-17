@@ -23,13 +23,14 @@ This is not a React/Vite app and not a cloud backend.
 
 1. This guide
 2. [`architecture-ai-map.md`](architecture-ai-map.md) only when you need task-to-files routing, ownership detail, or compatibility-surface classification
-3. One matching contract or workflow doc:
+3. [`plans/initial_findings.md`](plans/initial_findings.md) when doing refactoring, consolidation, or dead-code triage work
+4. One matching contract or workflow doc:
    - [`DATA_CONTRACT.md`](DATA_CONTRACT.md)
    - [`admin-bridge-api.md`](admin-bridge-api.md)
    - [`fetcher-runtime-contracts.md`](fetcher-runtime-contracts.md)
    - [`testing.md`](testing.md)
    - [`LOCAL_SETUP.md`](LOCAL_SETUP.md)
-4. [`AGENTS.md`](../AGENTS.md) only for repo guardrails and prompt-routing rules
+5. [`AGENTS.md`](../AGENTS.md) only for repo guardrails and prompt-routing rules
 
 Do not load archive docs by default. Retired cleanup/refactor detail now lives primarily in git history; the active routing docs are the primary source for current ownership.
 
@@ -53,6 +54,7 @@ If Serena memory and repo docs ever diverge, the repo docs stay canonical.
 | Bridge changes only need backend tests | Verify both Python backend and frontend/runtime callers as needed |
 | UI selectors can be guessed | Use `frontend/shared/ui/selectors.js` |
 | Endpoint payloads can be assumed | Check [`admin-bridge-api.md`](admin-bridge-api.md) first |
+| Dedup/reporting pressure has no known hotspot | `src/jobs/reporting_dedup_evidence.py` is the current primary split candidate: 3,641 lines, 122 functions, with `build_dedup_evidence()` and `build_dedup_audit_gate()` as the large public builders |
 
 ## Verification Shortcuts
 
@@ -61,6 +63,7 @@ If Serena memory and repo docs ever diverge, the repo docs stay canonical.
 | Frontend syntax/wiring | `node --check frontend/jobs/app.js` |
 | Bridge changes | `python -m pytest tests/admin/ -q` |
 | Pipeline/fetcher | `python -m pytest tests/test_jobs_fetcher_*.py -q` |
+| Jobs helper consolidation | For `_as_list`, `_as_dict`, and `_as_dict_rows`, first verify the jobs copies still share identical list/dict/drop-non-dicts semantics; bridge `_as_dict` helpers are not identical |
 | Full verification | `npm run verify` |
 
 ## Codex In-App Browser Visual QA

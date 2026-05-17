@@ -5,7 +5,7 @@
 > - **Canonical for:** system boundaries, task routing, compatibility-surface detail, and the expanded verification matrix
 > - **Not canonical for:** endpoint payloads or data schema details
 > - **Then inspect:** the minimal source files listed in the task table, plus the matching contract doc if shape changes are involved
-> - **Last updated:** 2026-04-26
+> - **Last updated:** 2026-05-17
 >
 > Start with [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) first. Retired boundary-charter detail now lives in git history; this map is the current routing source.
 > For any file described below as a stable thin surface, compatibility surface, or monkeypatch surface, preserve the root-level exported names that tests or leaf modules patch through that root unless the matching contract tests and docs are updated in the same change.
@@ -36,7 +36,7 @@ src/jobs_fetcher.py (stable thin CLI facade)
   -> src/jobs/ (pipeline, adapters, dedup)
   -> src/jobs/fetcher_compat_{exports,runtime}.py
 src/jobs/adapters/static.py (stable static adapter surface)
-  -> src/jobs/adapters/static_{runtime,listing,listing_flow,detail,sources}.py
+  -> src/jobs/adapters/static_{runtime,listing,detail,sources}.py
   -> src/jobs/adapters/static_{runtime_support,detail_heuristics}.py
   -> plugins/static/*
 src/source_discovery.py (stable thin CLI entrypoint)
@@ -150,11 +150,12 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 
 **Jobs package (`src/jobs/`):**
 - `pipeline.py`, `src/jobs_fetcher.py` - current fetcher entrypoints; preserve CLI/user-facing task launch behavior unless the bridge/frontend caller is updated in the same slice.
-- `pipeline_run_setup.py`, `pipeline_execution_flow.py`, `pipeline_stage_source_execution.py`, `pipeline_source_{loop,results,progress}.py`, `pipeline_runtime_{writers,summary}.py`, `pipeline_timing.py`, `pipeline_finalize.py` - current pipeline implementation. These are internal and can be collapsed or rewired when the replacement is simpler and tests cover the same source execution behavior.
-- `state.py`, `state_source_state.py`, `state_source_{records,browser,migration}.py`, `state_lifecycle.py`, `state_incremental.py` - current jobs source-state implementation. These are internal fetcher state helpers; preserve persisted source-state meaning, not historical module boundaries.
+- `pipeline_run_setup.py`, `pipeline_execution_flow.py`, `pipeline_stage_source_execution.py`, `pipeline_source_{loop,results,progress}.py`, `pipeline_runtime_{writers,summary}.py`, `pipeline_timing.py`, `pipeline_finalize.py` - current pipeline implementation. `pipeline_execution_flow.py` is now a 142-line execution helper with real source-orchestration logic, not a historical shim or default simplification target. Other internals can be collapsed or rewired when the replacement is simpler and tests cover the same source execution behavior.
+- `state.py` is a removable source-state facade over `state_source_state.py`, `state_lifecycle.py`, and `state_incremental.py`; `state_source_state.py` is the current source-state implementation. Preserve persisted source-state meaning, not historical module boundaries.
 - `common/contracts_{runtime,source_reports,task_state,fetch_report}.py` - current fetch/report payload normalization. Preserve active report fields used by the app.
 - `reporting_{summary,queues,breakdowns,social}.py` - current report assembly. Preserve active report shapes.
 - `fetcher_compat_exports.py`, `fetcher_compat_runtime.py` - lazy compatibility exports and root-backed wrapper seams behind `src/jobs_fetcher.py`
+- Existing jobs root injection appears in `fetcher_compat_runtime.py` and `pipeline_source_{loop,progress,results}.py`; `jobs_fetcher.py` and `pipeline_stage_source_execution.py` bind those roots. Treat this as compatibility debt, not a pattern to expand.
 - `adapters/` - static, provider_api, social fetchers
 - `canonicalize.py`, `dedup.py` - normalization
 - `common/` - leaf helpers (`config`, `contracts`, `heuristics`, `parsing`, etc.); `common/__init__.py` is compatibility-only
@@ -166,6 +167,7 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 - `reporting_{progress,candidates,backlog}.py` - progress/taskProgress assembly, candidate-stream staging/merge, and M5 backlog ownership
 - `gamesmap.py` - stable Gamesmap compatibility surface
 - `gamesmap_{cache,parsing,candidates}.py` - Gamesmap cache, parsing, and candidate generation ownership
+- Existing discovery root injection appears in `orchestrator_{generation,probe,finalize}.py` and `gamesmap_candidates.py`; `orchestrator.py` and `gamesmap.py` bind those roots. Prefer explicit imports for new cross-module references.
 - `web_search.py` - stable discovery web-search compatibility surface
 - `web_search_{fetch,extract,candidates}.py` - web-search fetch, extraction, and candidate inference ownership
 - `gamedevmap.py` - stable GameDevMap adapter compatibility surface; routes default discovery through the active-source audit/recovery engine
@@ -252,7 +254,7 @@ See [`testing.md`](testing.md) for more commands.
 - `src/jobs/pipeline.py` - current package entrypoint; keep CLI/task launch behavior covered, but internal runtime, source-execution, and report modules may be rewired or collapsed when the replacement is simpler
 - `frontend/jobs/app/desktop-update.js` - stable Jobs desktop-update export surface; keep implementation in `frontend/jobs/app/desktop-update-{model,dom,controller}.js`
 - `src/jobs/adapters/static.py` - current static adapter entrypoint; generic listing/detail/runtime modules may be collapsed when the replacement is simpler and covered by adapter tests
-- `src/jobs/state.py` - current jobs source-state facade; preserve persisted source-state meaning, not the historical facade/leaf split
+- `src/jobs/state.py` - removable jobs source-state facade over current leaf implementations; preserve persisted source-state meaning when removing it, not the facade/leaf split
 - `src/bridge/routes/post_routes.py` - stable POST registration surface; keep route-family logic in `src/bridge/routes/post_routes_{admin,local_data,update}.py`
 - `frontend/jobs/domain.js` - stable Jobs domain export surface; keep query/feed/view ownership in `frontend/jobs/domain/{query,feed,view}.js`
 - `src/source_sync.py` - permanent thin sync integration surface; keep new sync logic in `src/source_sync_{config,runtime,snapshot,crypto}.py`
@@ -265,8 +267,7 @@ See [`testing.md`](testing.md) for more commands.
 - `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, `src/bridge/ops_task_{fetch_live,discovery_live,projection}.py`, `src/bridge/ops_live_payload.py`
 - `frontend/admin/render/{ops-summary,ops-history,ops-shared}.js`
 - `src/jobs/fetcher_compat_{exports,runtime}.py`
-- `src/jobs/adapters/static_listing_flow.py`
-- `src/jobs/pipeline_{run_setup,execution_flow,finalize}.py`
+- `src/jobs/pipeline_{run_setup,finalize}.py`
 - `src/jobs/pipeline_runtime_{writers,summary}.py`
 - `src/jobs/pipeline_source_{loop,results,progress}.py`
 - `src/jobs/state_{source_state,lifecycle,incremental}.py`
