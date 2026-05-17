@@ -192,12 +192,13 @@ def _is_foreground_window(user32: Any, hwnd: int) -> bool:
 
 
 def _flash_window(user32: Any, hwnd: int) -> None:
-    info = _FLASHWINFO()
-    info.cbSize = ctypes.sizeof(_FLASHWINFO)
-    info.hwnd = _hwnd_type()(hwnd)
-    info.dwFlags = FLASHW_COMPLETION_FLAGS
-    info.uCount = 0
-    info.dwTimeout = 0
+    info = _FLASHWINFO(
+        ctypes.sizeof(_FLASHWINFO),
+        _hwnd_type()(hwnd),
+        FLASHW_COMPLETION_FLAGS,
+        0,
+        0,
+    )
     user32.FlashWindowEx(ctypes.byref(info))
 
 
