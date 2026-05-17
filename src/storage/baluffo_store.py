@@ -289,7 +289,7 @@ class BaluffoStore:
                     )
                     VALUES (?, ?, ?, ?)
                     """,
-                    (surface, mode, "default-json-authority", _now_iso()),
+                    (surface, mode, "default-sqlite-authority", _now_iso()),
                 )
 
         self.write(seed)
