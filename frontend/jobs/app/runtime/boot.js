@@ -59,8 +59,16 @@ export function createJobsBoot(deps) {
       isJobsCacheStale: deps.isJobsCacheStale,
       cacheTtlMs: deps.jobsCacheTtlMs,
       setSourceStatus: text => deps.feedController.setSourceStatus(text),
+      setProgress: visible => deps.feedController.setProgress(visible),
       refreshJobsNow: options => deps.feedController.refreshJobsNow(options),
       updateLastUpdatedText: timestamp => deps.feedController.updateLastUpdatedText(timestamp),
+      fetchJobsReport: options => deps.feedController.fetchJobsReport(options),
+      startJobsBootstrap: () => deps.callJobsBridge("/tasks/run-jobs-bootstrap", {
+        method: "POST",
+        body: { source: "jobs_cold_start" },
+        allowStatuses: [409]
+      }),
+      windowObject: deps.windowObject,
       setHasInitializedJobsFeed: value => {
         deps.runtimeState.hasInitializedJobsFeed = Boolean(value);
       },

@@ -31,6 +31,7 @@ export function createJobsFeedController({
   fetchUnifiedJobsFromSources,
   fetchJsonFromCandidatesFromSources,
   renderDataSourcesFromSources,
+  jobsFetchReportUrls,
   mapProfession,
   normalizeSector,
   classifyCompanyType,
@@ -109,11 +110,29 @@ export function createJobsFeedController({
     setStatusText(setText, dom.sourceStatus, text);
   }
 
-  async function fetchUnifiedJobs({ timeoutMs } = {}) {
+  function reportFinishedTimestamp(report) {
+    const finishedAt = String(report?.finishedAt || "").trim();
+    if (!finishedAt) return null;
+    const timestamp = Date.parse(finishedAt);
+    return Number.isFinite(timestamp) ? timestamp : null;
+  }
+
+  async function fetchJobsReport({ timeoutMs = 1500 } = {}) {
+    const report = await fetchJsonFromCandidates(jobsFetchReportUrls || [], { timeoutMs });
+    runtimeState.jobsFetchReport = report && typeof report === "object" ? report : null;
+    return runtimeState.jobsFetchReport;
+  }
+
+  function getLatestJobsReportFinishedMs() {
+    return reportFinishedTimestamp(runtimeState.jobsFetchReport);
+  }
+
+  async function fetchUnifiedJobs({ timeoutMs, allowSheetsFallback = true } = {}) {
     return fetchUnifiedJobsFromSources({
       setSourceStatus,
       jobsParsing,
       timeoutMs,
+      allowSheetsFallback,
       parserDeps: {
         mapProfession,
         normalizeSector,
@@ -168,6 +187,7 @@ export function createJobsFeedController({
       setRefreshJobsNeedsAttention,
       isDesktopRuntimeMode,
       writeCachedJobs,
+      fetchJobsReport,
       updateLastUpdatedText,
       recalculateItemsPerPage,
       updateFilterOptions: () => filtersController.updateFilterOptions(runtimeState.allJobs),
@@ -196,6 +216,7 @@ export function createJobsFeedController({
       parseUnifiedJobsPayload: payload => parseUnifiedJobsPayload(payload, jobsParsing),
       normalizeRows,
       updateLastUpdatedText,
+      startupLastUpdatedTimestamp: getLatestJobsReportFinishedMs(),
       recalculateItemsPerPage,
       pageState,
       defaultFilters,
@@ -227,6 +248,7 @@ export function createJobsFeedController({
     refreshJobsNow,
     writeCachedJobs,
     loadStartupPreviewJobs,
+    fetchJobsReport,
     setRefreshJobsNeedsAttention,
     fetchUnifiedJobs,
     fetchJsonFromCandidates,

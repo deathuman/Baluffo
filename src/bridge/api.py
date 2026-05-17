@@ -341,6 +341,7 @@ class BridgeApi:
 
     # Task / ops helpers used by routes.
     trigger_discovery_task: TriggerDiscoveryTaskFunc = _not_started_discovery_task
+    start_jobs_bootstrap_task: StartTaskFunc = _not_started_result
     start_fetcher_task: StartTaskFunc = _not_started_result
     start_jobs_pipeline_task: StartTaskFunc = _not_started_result
     start_sync_task: StartSyncTaskFunc = _not_started_result

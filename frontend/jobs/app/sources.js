@@ -41,6 +41,7 @@ const JOBS_FETCH_REPORT_URLS = [
   "data/jobs-fetch-report.json",
   "jobs-fetch-report.json"
 ];
+export { JOBS_FETCH_REPORT_URLS };
 
 function isDesktopRuntimeMode() {
   const win = globalThis.window;
@@ -61,7 +62,8 @@ export async function fetchUnifiedJobs({
   setSourceStatus,
   jobsParsing,
   parserDeps,
-  timeoutMs
+  timeoutMs,
+  allowSheetsFallback = true
 }) {
   return fetchUnifiedJobsFromData({
     unifiedJsonSources: UNIFIED_JSON_SOURCES,
@@ -69,6 +71,7 @@ export async function fetchUnifiedJobs({
     sheetsFallbackSources: SHEETS_FALLBACK_SOURCES,
     setSourceStatus,
     timeoutMs,
+    allowSheetsFallback,
     parseUnifiedPayload: payload => parseUnifiedJobsPayload(payload, jobsParsing),
     parseCSV: csv => parseCSVLargeFromData(csv, {
       jobsParsing,

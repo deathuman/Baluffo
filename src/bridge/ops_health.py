@@ -21,7 +21,7 @@ SOCIAL_UNIQUE_VALUE_THRESHOLD = 0.10
 SOCIAL_DUPLICATE_RATE_THRESHOLD = 0.70
 SOCIAL_FALSE_POSITIVE_THRESHOLD = 0.05
 SOCIAL_FALSE_POSITIVE_SAMPLE_SIZE = 50
-NON_DISMISSIBLE_ALERT_IDS = frozenset({"fetch_never_run"})
+NON_DISMISSIBLE_ALERT_IDS = frozenset({"fetch_never_run", "pipeline_never_run"})
 
 
 def _safe_int(value: Any) -> int:
@@ -36,6 +36,42 @@ def _has_registry_summary_counts(summary: dict[str, Any]) -> bool:
         return True
     return any(
         key in summary for key in ("activeCount", "pendingCount", "rejectedCount", "tombstoneCount")
+    )
+
+
+def _task_type(row: dict[str, Any]) -> str:
+    return str(row.get("taskType") or row.get("type") or "").strip().lower()
+
+
+def _task_status(row: dict[str, Any]) -> str:
+    return str(row.get("lifecycleStatus") or row.get("status") or "").strip().lower()
+
+
+def _coverage_scope(row: dict[str, Any]) -> str:
+    summary = as_json_object(row.get("summary"))
+    runtime = as_json_object(row.get("runtime"))
+    return str(
+        summary.get("coverageScope")
+        or runtime.get("coverageScope")
+        or row.get("coverageScope")
+        or ""
+    ).strip()
+
+
+def _is_bootstrap_scope(row: dict[str, Any]) -> bool:
+    return _coverage_scope(row) == "bootstrap_sheets"
+
+
+def _successful_task(row: dict[str, Any]) -> bool:
+    return _task_status(row) in {"ok", "warning", "succeeded", "completed"}
+
+
+def _has_successful_full_pipeline(history: list[dict[str, Any]]) -> bool:
+    return any(
+        _task_type(row) == "pipeline"
+        and bool(str(row.get("finishedAt") or "").strip())
+        and _successful_task(row)
+        for row in history
     )
 
 
@@ -255,15 +291,13 @@ def collect_fetch_history_metrics(
 ) -> dict[str, Any]:
     now = now_utc()
     seven_days_ago = now - timedelta(days=7)
-    fetch_rows = [
-        row for row in history if str(row.get("type")) == "fetch" and row.get("finishedAt")
-    ]
+    fetch_rows = [row for row in history if _task_type(row) == "fetch" and row.get("finishedAt")]
     fetch_7d = [
         row
         for row in fetch_rows
         if (parse_iso(row.get("finishedAt")) or datetime.min.replace(tzinfo=UTC)) >= seven_days_ago
     ]
-    success_7d = [row for row in fetch_7d if str(row.get("status")) in {"ok", "warning"}]
+    success_7d = [row for row in fetch_7d if _successful_task(row)]
     success_rate = (len(success_7d) / len(fetch_7d)) if fetch_7d else 0.0
     avg_duration = (
         int(sum(int(row.get("durationMs") or 0) for row in fetch_7d) / len(fetch_7d))
@@ -271,9 +305,7 @@ def collect_fetch_history_metrics(
         else 0
     )
     latest_fetch = fetch_rows[-1] if fetch_rows else None
-    last_success = next(
-        (row for row in reversed(fetch_rows) if str(row.get("status")) in {"ok", "warning"}), None
-    )
+    last_success = next((row for row in reversed(fetch_rows) if _successful_task(row)), None)
     return {
         "fetchRows": fetch_rows,
         "successRate7d": success_rate,
@@ -297,7 +329,7 @@ def populate_schedule_next_run(
             (
                 row
                 for row in reversed(history)
-                if str(row.get("type")) == run_type and row.get("finishedAt")
+                if _task_type(row) == run_type and row.get("finishedAt")
             ),
             None,
         )
@@ -334,12 +366,10 @@ def evaluate_alerts(
     acked = dict(alert_state.get("acked") or {})
     active_conditions: list[dict[str, Any]] = []
     now = now_utc()
-    fetch_rows = [
-        row for row in history if str(row.get("type")) == "fetch" and row.get("finishedAt")
-    ]
+    fetch_rows = [row for row in history if _task_type(row) == "fetch" and row.get("finishedAt")]
     latest_fetch = fetch_rows[-1] if fetch_rows else None
     last_success_fetch = next(
-        (row for row in reversed(fetch_rows) if str(row.get("status")) in {"ok", "warning"}),
+        (row for row in reversed(fetch_rows) if _successful_task(row)),
         None,
     )
     stale_hours = None
@@ -368,9 +398,21 @@ def evaluate_alerts(
             }
         )
 
+    if not _has_successful_full_pipeline(history):
+        active_conditions.append(
+            {
+                "id": "pipeline_never_run",
+                "severity": "warning",
+                "message": "No successful full Jobs pipeline has run yet. Coverage is limited until the full pipeline completes.",
+                "value": None,
+                "triggeredAt": now_iso(),
+            }
+        )
+
     fetch_summary = summarize_fetch_report(latest_fetch_report)
     failed_ratio = float(fetch_summary["failedRatio"])
-    if failed_ratio > DEGRADED_FAILURE_RATIO:
+    latest_report_is_bootstrap = _is_bootstrap_scope(latest_fetch_report)
+    if not latest_report_is_bootstrap and failed_ratio > DEGRADED_FAILURE_RATIO:
         active_conditions.append(
             {
                 "id": "degraded_reliability",
@@ -383,6 +425,8 @@ def evaluate_alerts(
 
     outputs: list[int] = []
     for row in fetch_rows:
+        if _is_bootstrap_scope(row):
+            continue
         summary = as_json_object(row.get("summary"))
         output_count = int(summary.get("outputCount") or 0)
         if output_count > 0:

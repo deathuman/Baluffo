@@ -13,6 +13,117 @@ function filtersMatchDefault(filters = {}, defaultFilters = {}) {
   return JSON.stringify(current) === JSON.stringify(defaults);
 }
 
+const BOOTSTRAP_AUTO_START_KEY = "baluffo_jobs_bootstrap_auto_started";
+const LOCAL_FEED_MISSING_MESSAGE = "Local jobs feed is missing or unreadable. Retry quick refresh or run Update jobs to rebuild the full feed.";
+
+function reportFinishedTimestamp(report) {
+  const finishedAt = String(report?.finishedAt || "").trim();
+  if (!finishedAt) return null;
+  const timestamp = Date.parse(finishedAt);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function reportSummary(report) {
+  return report?.summary && typeof report.summary === "object" ? report.summary : {};
+}
+
+export function isSuccessfulJobsFetchReport(report) {
+  if (!report || typeof report !== "object") return false;
+  if (!reportFinishedTimestamp(report)) return false;
+  const summary = reportSummary(report);
+  const status = String(summary.status || "").trim().toLowerCase();
+  if (status === "error" || status === "failed") return false;
+  return Number(summary.outputCount || 0) > 0;
+}
+
+function isTerminalFailedJobsFetchReport(report) {
+  if (!report || typeof report !== "object") return false;
+  if (!reportFinishedTimestamp(report)) return false;
+  const summary = reportSummary(report);
+  return String(summary.status || "").trim().toLowerCase() === "error"
+    || Boolean(summary.error);
+}
+
+function isNonTerminalJobsFetchReport(report) {
+  return Boolean(report && typeof report === "object")
+    && !isSuccessfulJobsFetchReport(report)
+    && !isTerminalFailedJobsFetchReport(report);
+}
+
+function coverageScope(report) {
+  const runtime = report?.runtime && typeof report.runtime === "object" ? report.runtime : {};
+  const summary = reportSummary(report);
+  return String(summary.coverageScope || runtime.coverageScope || "").trim();
+}
+
+function localStorageFor(windowObject) {
+  try {
+    return windowObject?.localStorage || null;
+  } catch {
+    return null;
+  }
+}
+
+function bootstrapAutoStartMarker(windowObject) {
+  const value = localStorageFor(windowObject)?.getItem(BOOTSTRAP_AUTO_START_KEY);
+  if (!value) return { status: "none" };
+  if (value === "1") return { status: "legacy" };
+  try {
+    const parsed = JSON.parse(value);
+    const status = String(parsed?.status || "").trim().toLowerCase();
+    if (status === "running" || status === "failed") {
+      return {
+        status,
+        runId: String(parsed?.runId || "").trim(),
+        error: String(parsed?.error || "").trim()
+      };
+    }
+  } catch {
+    // Fall through to legacy handling for older/corrupt markers.
+  }
+  return { status: "legacy" };
+}
+
+function writeBootstrapAutoStartMarker(windowObject, status, details = {}) {
+  localStorageFor(windowObject)?.setItem(BOOTSTRAP_AUTO_START_KEY, JSON.stringify({
+    status,
+    runId: String(details.runId || "").trim(),
+    error: String(details.error || "").trim(),
+    updatedAt: new Date().toISOString()
+  }));
+}
+
+function markBootstrapRunning(windowObject, details = {}) {
+  writeBootstrapAutoStartMarker(windowObject, "running", details);
+}
+
+function markBootstrapFailed(windowObject, error) {
+  writeBootstrapAutoStartMarker(windowObject, "failed", { error });
+}
+
+function clearBootstrapAutoStart(windowObject) {
+  localStorageFor(windowObject)?.removeItem(BOOTSTRAP_AUTO_START_KEY);
+}
+
+function bootstrapColdStartAction(report, windowObject) {
+  if (isSuccessfulJobsFetchReport(report)) return false;
+  if (isTerminalFailedJobsFetchReport(report)) return "retry";
+  const marker = bootstrapAutoStartMarker(windowObject);
+  if (marker.status === "failed") return "retry";
+  if (marker.status === "running" || marker.status === "legacy") {
+    return isNonTerminalJobsFetchReport(report) ? "reattach" : "retry";
+  }
+  return "start";
+}
+
+function bootstrapRetryMessage(report) {
+  const summary = reportSummary(report);
+  const error = String(summary.error || "").trim();
+  return error
+    ? `First-run sheet refresh failed: ${error}`
+    : "No fresh local jobs feed is available yet. Retry the quick sheet refresh.";
+}
+
 export function canUseStartupPreviewFastPath(pageState = {}, defaultFilters = {}) {
   return Number(pageState?.currentPage || 1) === 1
     && filtersMatchDefault(pageState?.filters || {}, defaultFilters);
@@ -38,6 +149,12 @@ export async function initJobsFeed(deps) {
     setSourceStatus,
     refreshJobsNow,
     updateLastUpdatedText,
+    fetchJobsReport,
+    startJobsBootstrap,
+    windowObject,
+    setProgress,
+    bootstrapPollIntervalMs = 1500,
+    bootstrapTimeoutMs = 120000,
     setHasInitializedJobsFeed,
     scheduleNonCriticalStartupWork,
     applyPendingAutoRefreshSignal,
@@ -84,6 +201,89 @@ export async function initJobsFeed(deps) {
       return;
     }
 
+    async function startBootstrapAndLoad({ explicit = false } = {}) {
+      if (explicit) clearBootstrapAutoStart(windowObject);
+      markBootstrapRunning(windowObject);
+      if (typeof setProgress === "function") setProgress(true);
+      setSourceStatus("Refreshing first-run sheet jobs...");
+      try {
+        if (typeof startJobsBootstrap !== "function") {
+          throw new Error("bootstrap route unavailable");
+        }
+        const startedPayload = await startJobsBootstrap();
+        markBootstrapRunning(windowObject, { runId: startedPayload?.runId });
+        if (startedPayload?.alreadyCompleted) {
+          if (typeof setProgress === "function") setProgress(false);
+          const loaded = await refreshJobsNow({ manual: false, firstLoad: true });
+          clearBootstrapAutoStart(windowObject);
+          if (!loaded) throw new Error(LOCAL_FEED_MISSING_MESSAGE);
+          return true;
+        }
+        if (!startedPayload?.started && !startedPayload?.alreadyRunning) {
+          throw new Error(String(startedPayload?.error || "bootstrap did not start"));
+        }
+        const pollInterval = Math.max(0, Number(bootstrapPollIntervalMs) || 0);
+        const deadline = Date.now() + Math.max(1000, Number(bootstrapTimeoutMs) || 120000);
+        while (Date.now() < deadline) {
+          await new Promise(resolve => setTimeout(resolve, pollInterval));
+          const nextReport = await fetchJobsReport({ timeoutMs: 1500 }).catch(() => null);
+          if (isSuccessfulJobsFetchReport(nextReport)) {
+            if (typeof setProgress === "function") setProgress(false);
+            const loaded = await refreshJobsNow({ manual: false, firstLoad: true });
+            if (loaded) {
+              clearBootstrapAutoStart(windowObject);
+              return true;
+            }
+            throw new Error(LOCAL_FEED_MISSING_MESSAGE);
+          }
+          if (isTerminalFailedJobsFetchReport(nextReport)) {
+            throw new Error(bootstrapRetryMessage(nextReport));
+          }
+        }
+        throw new Error("first-run sheet refresh timed out");
+      } catch (err) {
+        markBootstrapFailed(windowObject, String(err?.message || err || ""));
+        throw err;
+      } finally {
+        if (typeof setProgress === "function") setProgress(false);
+      }
+    }
+
+    async function retryBootstrap() {
+      try {
+        const ok = await startBootstrapAndLoad({ explicit: true });
+        if (!ok) {
+          throw new Error("unable to load promoted sheet jobs");
+        }
+      } catch (err) {
+        showError(String(err?.message || "Unable to refresh first-run jobs."), retryBootstrap);
+      }
+    }
+
+    const localReport = isDesktopRuntimeMode() && typeof fetchJobsReport === "function"
+      ? await fetchJobsReport({ timeoutMs: 1500 }).catch(() => null)
+      : null;
+    if (isDesktopRuntimeMode() && !isSuccessfulJobsFetchReport(localReport)) {
+      setHasInitializedJobsFeed(true);
+      scheduleNonCriticalStartupWork();
+      await applyPendingAutoRefreshSignal();
+      const bootstrapAction = bootstrapColdStartAction(localReport, windowObject);
+      if (bootstrapAction === "start" || bootstrapAction === "reattach") {
+        try {
+          const ok = await startBootstrapAndLoad();
+          if (!ok) {
+            showError("Unable to load job listings right now.", retryBootstrap);
+          }
+          return;
+        } catch (err) {
+          showError(String(err?.message || "Unable to refresh first-run jobs."), retryBootstrap);
+          return;
+        }
+      }
+      showError(bootstrapRetryMessage(localReport), retryBootstrap);
+      return;
+    }
+
     const previewLoaded = await loadStartupPreviewJobs();
     if (previewLoaded) {
       setSourceStatus(`Loaded ${getAllJobs().length.toLocaleString()} jobs from startup snapshot. Syncing full feed...`);
@@ -99,6 +299,16 @@ export async function initJobsFeed(deps) {
     scheduleNonCriticalStartupWork();
     await applyPendingAutoRefreshSignal();
     if (!ok) {
+      if (isDesktopRuntimeMode() && isSuccessfulJobsFetchReport(localReport)) {
+        try {
+          const recovered = await startBootstrapAndLoad();
+          if (!recovered) showError(LOCAL_FEED_MISSING_MESSAGE, retryBootstrap);
+          return;
+        } catch (err) {
+          showError(String(err?.message || LOCAL_FEED_MISSING_MESSAGE), retryBootstrap);
+          return;
+        }
+      }
       showError("Unable to load job listings right now.");
     }
   } catch (err) {
@@ -131,6 +341,7 @@ export async function refreshJobsFeed({ manual, firstLoad = false }, deps) {
     setRefreshJobsNeedsAttention,
     isDesktopRuntimeMode,
     writeCachedJobs,
+    fetchJobsReport,
     updateLastUpdatedText,
     recalculateItemsPerPage,
     updateFilterOptions,
@@ -190,12 +401,17 @@ export async function refreshJobsFeed({ manual, firstLoad = false }, deps) {
     setAllJobs(normalizeRows(result.jobs));
     setRefreshJobsNeedsAttention(false);
     const now = Date.now();
+    const latestReport = typeof fetchJobsReport === "function"
+      ? await fetchJobsReport({ timeoutMs: 1500 }).catch(() => null)
+      : null;
+    const reportTimestamp = reportFinishedTimestamp(latestReport);
+    const lastUpdated = reportTimestamp || (!isDesktopRuntimeMode() ? now : null);
     stateHubSet("jobsFeedCount", getAllJobs().length);
-    stateHubSet("jobsLastUpdated", now);
+    stateHubSet("jobsLastUpdated", lastUpdated || "");
     if (!isDesktopRuntimeMode()) {
       await writeCachedJobs(getAllJobs());
     }
-    updateLastUpdatedText(now);
+    updateLastUpdatedText(lastUpdated);
     recalculateItemsPerPage();
     updateFilterOptions();
     applyStateToFilters();
@@ -224,7 +440,11 @@ export async function refreshJobsFeed({ manual, firstLoad = false }, deps) {
     }
 
     const sourceLabel = result.sourceName ? ` from ${result.sourceName}` : "";
-    setSourceStatus(`Loaded ${getAllJobs().length.toLocaleString()} jobs${sourceLabel}.`);
+    const limitedScope = coverageScope(latestReport) === "bootstrap_sheets";
+    const coverageNote = limitedScope
+      ? " Sheet-limited first-run refresh; run Update jobs for full coverage."
+      : "";
+    setSourceStatus(`Loaded ${getAllJobs().length.toLocaleString()} jobs${sourceLabel}.${coverageNote}`);
     renderDataSources().catch(() => {});
     dispatchRefreshCompleted();
     return true;
@@ -263,6 +483,7 @@ export async function loadStartupPreviewJobsFeed(deps) {
     parseUnifiedJobsPayload,
     normalizeRows,
     updateLastUpdatedText,
+    startupLastUpdatedTimestamp = null,
     recalculateItemsPerPage,
     pageState,
     defaultFilters,
@@ -320,7 +541,7 @@ export async function loadStartupPreviewJobsFeed(deps) {
     emitMetric("jobs_startup_preview_normalize_complete", {
       rowCount: getAllJobs().length
     });
-    updateLastUpdatedText(Date.now());
+    updateLastUpdatedText(startupLastUpdatedTimestamp);
     recalculateItemsPerPage();
     markJobsStep("jobs_startup_preview_render_start", {
       rowCount: getAllJobs().length

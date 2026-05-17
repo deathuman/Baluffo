@@ -251,6 +251,9 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 
 - `npm run test:frontend:packaged:jobs-pipeline` is no longer just a “pipeline started” check.
 - It must prove all of the following in the packaged desktop runtime:
+  - fresh packages do not include row-bearing jobs artifacts and must not fall back to stale bundled `jobs-unified*` or startup preview rows,
+  - a first-run package with no successful runtime report enters the sheet bootstrap path or a retryable no-data state,
+  - a bootstrap-scoped feed keeps full-pipeline limited-coverage messaging visible until a full Jobs pipeline succeeds,
   - the Jobs page renders and the pipeline button becomes busy,
   - the pipeline reports a real `runId`,
   - the tracked run reaches a terminal non-error state,

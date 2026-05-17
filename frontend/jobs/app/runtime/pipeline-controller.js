@@ -6,7 +6,7 @@ import {
   JOBS_UPDATE_COPY,
   scheduleJobsPipelineStatusPoll as scheduleJobsPipelineStatusPollFromModule,
   updateJobsPipelineUi as updateJobsPipelineUiFromModule
-} from "../pipeline.js?v=7";
+} from "../pipeline.js?v=8";
 
 const BLOCKING_TASK_TYPES = new Set(["pipeline", "fetch", "discovery", "sync"]);
 
@@ -120,7 +120,7 @@ export function createJobsPipelineController({
       const payload = await callJobsBridge("/ops/dashboard-health");
       const alerts = Array.isArray(payload?.alerts) ? payload.alerts : [];
       jobsPipelineUiState.updateTooltipFirstRun = alerts.some(alert => (
-        String(alert?.id || "").trim() === "fetch_never_run"
+        ["fetch_never_run", "pipeline_never_run"].includes(String(alert?.id || "").trim())
       ));
       jobsPipelineUiState.updateTooltipFirstRunKnown = true;
     } catch {

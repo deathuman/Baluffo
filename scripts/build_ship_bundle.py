@@ -30,7 +30,6 @@ from src.shared.json_io import (
     copy_json_file_to_storage,
     existing_json_candidate,
     gzip_backed_json_storage_path,
-    read_json,
     write_json_text,
 )
 from src.ship.update_manager import ShipPaths, refresh_runtime_bootstrap
@@ -130,13 +129,9 @@ APP_VERSION_CONTRACT_FILES = (
 APP_RUNTIME_DATA_FILES = APP_VERSION_CONTRACT_FILES + (
     "defaults/source-registry-active.seed.json",
     "defaults/source-registry-pending.seed.json",
-    "jobs-unified-light.json",
-    "jobs-unified.json",
-    "jobs-unified.csv",
     "jobs-fetch-report.json",
     "source-discovery-config.json",
 )
-STARTUP_PREVIEW_LIMIT = 240
 APP_VERSION_IMPORT_CHECK_MODULES = (
     "src.admin_bridge",
     "src.ship.runtime_launcher",
@@ -741,16 +736,6 @@ def _run_app_version_python_validation(version_dir: Path, script: str, label: st
     )
 
 
-def _generate_startup_preview(data_dir: Path) -> None:
-    light_path = data_dir / "jobs-unified-light.json"
-    startup_path = data_dir / "jobs-unified-startup.json"
-    payload = read_json(light_path, [])
-    if not isinstance(payload, list):
-        return
-    startup_rows = payload[:STARTUP_PREVIEW_LIMIT]
-    _write_text(startup_path, json.dumps(startup_rows, ensure_ascii=False))
-
-
 def build_bundle(output_dir: Path, version: str) -> Path:
     write_frontend_runtime_config()
     if output_dir.exists():
@@ -813,7 +798,6 @@ def build_bundle(output_dir: Path, version: str) -> Path:
 
     data_dir = output_dir / "data"
     _seed_runtime_data(data_dir)
-    _generate_startup_preview(data_dir)
     (data_dir / "backups").mkdir(parents=True, exist_ok=True)
     (data_dir / "migration-reports").mkdir(parents=True, exist_ok=True)
 

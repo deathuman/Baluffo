@@ -5,6 +5,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from unittest import mock
 from urllib.request import urlopen
 
@@ -19,6 +20,118 @@ from tests.helpers.temp_paths import workspace_tmpdir
 def _write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
+
+
+def test_quarantine_stale_jobs_row_artifacts_without_successful_report() -> None:
+    with workspace_tmpdir("runtime-launcher-quarantine") as tmp:
+        data_dir = Path(tmp) / "data"
+        _write(data_dir / "jobs-fetch-report.json", json.dumps({"summary": {"outputCount": 0}}))
+        _write(data_dir / "jobs-unified.json", "[]")
+        _write(data_dir / "jobs-unified-light.json", "[]")
+        _write(data_dir / "jobs-unified.csv", "id,title\n")
+        _write(data_dir / "jobs-unified-startup.json", "[]")
+
+        result = rl.quarantine_stale_jobs_row_artifacts(data_dir)
+
+        assert not (data_dir / "jobs-unified.json").exists()
+        assert not (data_dir / "jobs-unified-light.json").exists()
+        assert not (data_dir / "jobs-unified.csv").exists()
+        assert not (data_dir / "jobs-unified-startup.json").exists()
+        assert len(result["quarantined"]) == 4
+        assert list((data_dir / "backups").glob("stripped-packaged-jobs-*"))
+        assert list((data_dir / "migration-reports").glob("stripped-packaged-jobs-cleanup-*.json"))
+
+
+def test_quarantine_stale_jobs_row_artifacts_without_artifacts_returns_consistent_result() -> None:
+    with workspace_tmpdir("runtime-launcher-quarantine-empty") as tmp:
+        data_dir = Path(tmp) / "data"
+
+        result = rl.quarantine_stale_jobs_row_artifacts(data_dir)
+
+        assert result == {"quarantined": [], "failed": [], "skipped": "no_artifacts"}
+
+
+def test_quarantine_preserves_jobs_rows_with_successful_report() -> None:
+    with workspace_tmpdir("runtime-launcher-preserve-jobs") as tmp:
+        data_dir = Path(tmp) / "data"
+        _write(
+            data_dir / "jobs-fetch-report.json",
+            json.dumps(
+                {
+                    "finishedAt": "2026-05-17T10:00:00+00:00",
+                    "summary": {"status": "ok", "outputCount": 1},
+                }
+            ),
+        )
+        _write(data_dir / "jobs-unified.json", "[{}]")
+        _write(data_dir / "jobs-unified-light.json", "[{}]")
+        _write(data_dir / "jobs-unified.csv", "id,title\n1,Role\n")
+
+        result = rl.quarantine_stale_jobs_row_artifacts(data_dir)
+
+        assert result["skipped"] == "successful_runtime_report"
+        assert result["failed"] == []
+        assert (data_dir / "jobs-unified.json").exists()
+        assert (data_dir / "jobs-unified-light.json").exists()
+        assert (data_dir / "jobs-unified.csv").exists()
+
+
+@pytest.mark.parametrize(
+    ("move_error", "error_message"),
+    [
+        (OSError("file locked"), "file locked"),
+        (rl.shutil.Error("destination conflict"), "destination conflict"),
+    ],
+)
+def test_quarantine_stale_jobs_row_artifacts_keeps_running_when_one_move_fails(
+    move_error: Exception,
+    error_message: str,
+) -> None:
+    with workspace_tmpdir("runtime-launcher-quarantine-partial") as tmp:
+        data_dir = Path(tmp) / "data"
+        _write(data_dir / "jobs-fetch-report.json", json.dumps({"summary": {"outputCount": 0}}))
+        _write(data_dir / "jobs-unified.json", "[]")
+        _write(data_dir / "jobs-unified.csv", "id,title\n")
+        original_move = rl.shutil.move
+
+        def move_with_locked_json(source: str, target: str) -> str:
+            if str(source).endswith("jobs-unified.json"):
+                raise move_error
+            return str(original_move(source, target))
+
+        with mock.patch.object(rl.shutil, "move", side_effect=move_with_locked_json):
+            result = rl.quarantine_stale_jobs_row_artifacts(data_dir)
+
+        assert (data_dir / "jobs-unified.json").exists()
+        assert not (data_dir / "jobs-unified.csv").exists()
+        assert len(result["quarantined"]) == 1
+        assert result["failed"][0]["path"].endswith("jobs-unified.json")
+        assert error_message in result["failed"][0]["error"]
+        reports = list(
+            (data_dir / "migration-reports").glob("stripped-packaged-jobs-cleanup-*.json")
+        )
+        report_payload = json.loads(reports[0].read_text(encoding="utf-8"))
+        assert report_payload["failed"][0]["path"].endswith("jobs-unified.json")
+
+
+def test_quarantine_stale_jobs_row_artifacts_returns_report_write_error() -> None:
+    with workspace_tmpdir("runtime-launcher-quarantine-report-error") as tmp:
+        data_dir = Path(tmp) / "data"
+        _write(data_dir / "jobs-fetch-report.json", json.dumps({"summary": {"outputCount": 0}}))
+        _write(data_dir / "jobs-unified.csv", "id,title\n")
+        original_write_text = Path.write_text
+
+        def write_text_with_report_error(path: Path, text: str, *args: Any, **kwargs: Any) -> int:
+            if path.name.startswith("stripped-packaged-jobs-cleanup-"):
+                raise OSError("report locked")
+            return int(original_write_text(path, text, *args, **kwargs))
+
+        with mock.patch.object(Path, "write_text", write_text_with_report_error):
+            result = rl.quarantine_stale_jobs_row_artifacts(data_dir)
+
+        assert not (data_dir / "jobs-unified.csv").exists()
+        assert result["quarantined"][0].endswith("jobs-unified.csv")
+        assert "report locked" in result["reportError"]
 
 
 def test_append_startup_trace_writes_versioned_fields_row() -> None:
@@ -473,6 +586,34 @@ def test_run_site_server_reports_app_version() -> None:
         assert payload["currentVersion"] == "2.4.6"
 
 
+def test_run_site_server_continues_when_jobs_quarantine_raises() -> None:
+    with workspace_tmpdir("runtime-launcher") as tmp:
+        root = Path(tmp) / "ship"
+        _seed_ship_root(root, version="2.4.6")
+        events: list[tuple[str, dict[str, object]]] = []
+
+        class _StopServer(Exception):
+            pass
+
+        with (
+            mock.patch.object(
+                rl,
+                "quarantine_stale_jobs_row_artifacts",
+                side_effect=RuntimeError("quarantine crashed"),
+            ),
+            mock.patch.object(
+                rl,
+                "_append_runtime_startup_trace",
+                side_effect=lambda event, **fields: events.append((event, dict(fields))),
+            ),
+            mock.patch.object(rl, "ThreadingHTTPServer", side_effect=_StopServer),
+        ):
+            with pytest.raises(_StopServer):
+                rl.run_site_server(root, port=8123)
+
+        assert any(event == "jobs_row_artifact_quarantine_failed" for event, _fields in events)
+
+
 def test_run_site_server_skips_heal_when_active_version_is_healthy() -> None:
     with workspace_tmpdir("runtime-launcher") as tmp:
         root = Path(tmp) / "ship"
@@ -645,6 +786,39 @@ def test_run_bridge_server_forwards_desktop_owner_arguments() -> None:
         assert "desktop-session-1" in captured_argv
         assert "--started-by" in captured_argv
         assert "launcher-1" in captured_argv
+
+
+def test_run_bridge_server_continues_when_jobs_quarantine_raises() -> None:
+    with workspace_tmpdir("runtime-launcher") as tmp:
+        root = Path(tmp) / "ship"
+        _seed_ship_root(root, version="3.1.4")
+        events: list[tuple[str, dict[str, object]]] = []
+
+        def _capture_run_path(_script: str, run_name: str) -> None:
+            raise RuntimeError("stop-after-argv")
+
+        with pytest.raises(RuntimeError, match="stop-after-argv"):
+            with (
+                mock.patch.object(
+                    rl,
+                    "quarantine_stale_jobs_row_artifacts",
+                    side_effect=RuntimeError("quarantine crashed"),
+                ),
+                mock.patch.object(
+                    rl,
+                    "_append_runtime_startup_trace",
+                    side_effect=lambda event, **fields: events.append((event, dict(fields))),
+                ),
+                mock.patch.object(rl.runpy, "run_path", side_effect=_capture_run_path),
+            ):
+                rl.run_bridge_server(
+                    root,
+                    bind_host="127.0.0.1",
+                    port=8877,
+                    data_dir=root / "data",
+                )
+
+        assert any(event == "jobs_row_artifact_quarantine_failed" for event, _fields in events)
 
 
 def test_run_bridge_server_uses_current_version_repaired_by_startup_check() -> None:

@@ -13,6 +13,7 @@ import sys
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path, PurePosixPath
 
@@ -22,7 +23,7 @@ if str(ROOT) not in sys.path:
 
 from src.app_version import get_app_version
 from src.baluffo_config import get_bridge_defaults, get_desktop_defaults, get_security_defaults
-from src.shared.json_io import PIPELINE_GZIP_JSON_NAMES
+from src.shared.json_io import PIPELINE_GZIP_JSON_NAMES, existing_json_candidate, read_json
 from src.ship import update_manager
 from src.ship.startup_telemetry import (
     append_runtime_startup_trace as _append_runtime_startup_trace,
@@ -52,6 +53,12 @@ ROOT_DATA_FILE_ALIASES = frozenset(
         "jobs-unified.json",
         "jobs-unified.csv",
     }
+)
+ROW_BEARING_JOBS_ARTIFACTS = (
+    "jobs-unified-startup.json",
+    "jobs-unified-light.json",
+    "jobs-unified.json",
+    "jobs-unified.csv",
 )
 
 
@@ -90,6 +97,147 @@ class QuietSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
                 self.close_connection = True
                 return
             raise
+
+
+def _successful_runtime_jobs_report(data_dir: Path) -> bool:
+    report = read_json(Path(data_dir) / "jobs-fetch-report.json", {})
+    if not isinstance(report, dict):
+        return False
+    if not str(report.get("finishedAt") or "").strip():
+        return False
+    summary = report.get("summary")
+    if not isinstance(summary, dict):
+        return False
+    if str(summary.get("status") or "").strip().lower() in {"error", "failed"}:
+        return False
+    try:
+        output_count = int(summary.get("outputCount") or 0)
+    except (TypeError, ValueError):
+        output_count = 0
+    if output_count <= 0:
+        return False
+    return all(
+        bool(
+            existing_json_candidate(Path(data_dir) / name)
+            if name.endswith(".json")
+            else (Path(data_dir) / name).exists()
+        )
+        for name in ("jobs-unified-light.json", "jobs-unified.json", "jobs-unified.csv")
+    )
+
+
+def _row_artifact_candidates(data_dir: Path) -> list[Path]:
+    candidates: list[Path] = []
+    for name in ROW_BEARING_JOBS_ARTIFACTS:
+        path = Path(data_dir) / name
+        if path.exists():
+            candidates.append(path)
+        if name.endswith(".json"):
+            gzip_path = Path(data_dir) / f"{name}.gz"
+            if gzip_path.exists():
+                candidates.append(gzip_path)
+    return sorted({path.resolve() for path in candidates})
+
+
+def quarantine_stale_jobs_row_artifacts(data_dir: str | Path) -> dict[str, object]:
+    data_path = Path(data_dir)
+    candidates = _row_artifact_candidates(data_path)
+    if not candidates:
+        return {"quarantined": [], "failed": [], "skipped": "no_artifacts"}
+    if _successful_runtime_jobs_report(data_path):
+        return {"quarantined": [], "failed": [], "skipped": "successful_runtime_report"}
+
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    backup_dir = data_path / "backups" / f"stripped-packaged-jobs-{timestamp}"
+    report_dir = data_path / "migration-reports"
+    quarantined: list[str] = []
+    failed: list[dict[str, str]] = []
+    report_error = ""
+
+    try:
+        report_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        report_error = str(exc)
+
+    try:
+        backup_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        failed.extend(
+            {
+                "path": str(source),
+                "target": str(backup_dir / source.name),
+                "error": str(exc),
+            }
+            for source in candidates
+        )
+        report = {
+            "schemaVersion": 1,
+            "createdAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "reason": "no_successful_runtime_jobs_report",
+            "backupDir": str(backup_dir),
+            "quarantined": quarantined,
+            "failed": failed,
+        }
+        if report_error:
+            report["reportError"] = report_error
+        elif report_dir.exists():
+            report_path = report_dir / f"stripped-packaged-jobs-cleanup-{timestamp}.json"
+            try:
+                report_path.write_text(
+                    json.dumps(report, indent=2, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+                report["reportPath"] = str(report_path)
+            except OSError as report_exc:
+                report["reportError"] = str(report_exc)
+        return report
+
+    for source in candidates:
+        target = backup_dir / source.name
+        if target.exists():
+            target = backup_dir / f"{source.stem}-{len(quarantined) + 1}{source.suffix}"
+        try:
+            shutil.move(str(source), str(target))
+        except (OSError, shutil.Error) as exc:
+            failed.append({"path": str(source), "target": str(target), "error": str(exc)})
+            continue
+        quarantined.append(str(source))
+
+    report = {
+        "schemaVersion": 1,
+        "createdAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "reason": "no_successful_runtime_jobs_report",
+        "backupDir": str(backup_dir),
+        "quarantined": quarantined,
+        "failed": failed,
+    }
+    if report_error:
+        report["reportError"] = report_error
+    elif report_dir.exists():
+        report_path = report_dir / f"stripped-packaged-jobs-cleanup-{timestamp}.json"
+        try:
+            report_path.write_text(
+                json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+            report["reportPath"] = str(report_path)
+        except OSError as exc:
+            report["reportError"] = str(exc)
+    return report
+
+
+def safe_quarantine_stale_jobs_row_artifacts(data_dir: str | Path) -> dict[str, object]:
+    try:
+        return quarantine_stale_jobs_row_artifacts(data_dir)
+    except (RuntimeError, OSError, shutil.Error, TypeError, ValueError) as exc:
+        _append_runtime_startup_trace(
+            "jobs_row_artifact_quarantine_failed",
+            dataDir=str(data_dir),
+            error=str(exc),
+        )
+        return {
+            "quarantined": [],
+            "failed": [{"path": str(data_dir), "error": str(exc)}],
+        }
 
 
 def _normalize_bridge_runtime_config(
@@ -475,6 +623,12 @@ def run_site_server(
             "desktop_site_repair_completed",
             activeRoot=str(layout.active_root),
         )
+    static_data_dir = update_manager.ShipPaths.from_root(layout.root).data
+    runtime_data_env = str(os.environ.get("BALUFFO_DATA_DIR") or "").strip()
+    runtime_data_dir = Path(runtime_data_env).expanduser().resolve() if runtime_data_env else None
+    safe_quarantine_stale_jobs_row_artifacts(static_data_dir)
+    if runtime_data_dir is not None and runtime_data_dir != static_data_dir.resolve():
+        safe_quarantine_stale_jobs_row_artifacts(runtime_data_dir)
     print(
         json.dumps(
             {
@@ -490,10 +644,8 @@ def run_site_server(
     )
     handler = build_site_request_handler(
         layout.active_root,
-        runtime_data_dir=Path(str(os.environ.get("BALUFFO_DATA_DIR") or "")).expanduser().resolve()
-        if str(os.environ.get("BALUFFO_DATA_DIR") or "").strip()
-        else None,
-        static_data_dir=update_manager.ShipPaths.from_root(layout.root).data,
+        runtime_data_dir=runtime_data_dir,
+        static_data_dir=static_data_dir,
         startup_probe=startup_probe_enabled(),
         desktop_bridge_host=desktop_bridge_host or os.environ.get(DESKTOP_BRIDGE_HOST_ENV),
         desktop_bridge_port=desktop_bridge_port or os.environ.get(DESKTOP_BRIDGE_PORT_ENV),
@@ -564,6 +716,7 @@ def run_bridge_server(
             active_root=updated_active_root,
             data_dir=layout.data_dir,
         )
+    safe_quarantine_stale_jobs_row_artifacts(layout.data_dir)
     bridge_script = layout.active_root / "src" / "admin_bridge.py"
     if not bridge_script.exists():
         raise RuntimeError(f"Admin bridge entrypoint not found: {bridge_script}")

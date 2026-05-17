@@ -42,8 +42,8 @@ data/local-user-data/
 data/updater/
 !data/.gitkeep
 !data/source-discovery-config.json
-!data/jobs-unified.json
-!data/jobs-unified-light.json
+!data/contracts/
+!data/contracts/*.json
 !data/defaults/
 !data/defaults/*.json
 

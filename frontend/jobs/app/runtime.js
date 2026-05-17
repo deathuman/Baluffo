@@ -32,7 +32,7 @@ import {
   rememberJobsUrl
 } from "../state-sync/index.js";
 import { requestConfirmationDialog } from "../../local-data/profile-name-dialog.js";
-import { callJobsBridge as callJobsBridgeFromModule } from "./pipeline.js?v=7";
+import { callJobsBridge as callJobsBridgeFromModule } from "./pipeline.js?v=8";
 import { applyJobsAdminBridgeState as applyJobsAdminBridgeStateFromModule } from "./admin-bridge-state.js?v=5";
 import {
   buildSeenRowKey,
@@ -56,7 +56,7 @@ import {
   createFilterOptionsAccumulator,
   finalizeFilterOptions
 } from "./runtime/query.js?v=4";
-import { refreshJobsFeed, loadStartupPreviewJobsFeed } from "./feed.js?v=6";
+import { refreshJobsFeed, loadStartupPreviewJobsFeed } from "./feed.js?v=7";
 import { setProgressVisibility, setStatusText } from "./runtime/view.js";
 import {
   fullCountryName as fullCountryNameForJobs,
@@ -64,6 +64,7 @@ import {
 } from "./countries.js";
 import {
   STARTUP_PREVIEW_JSON_URLS,
+  JOBS_FETCH_REPORT_URLS,
   fetchUnifiedJobs as fetchUnifiedJobsFromSources,
   fetchJsonFromCandidates as fetchJsonFromCandidatesFromSources,
   renderDataSources as renderDataSourcesFromSources
@@ -164,6 +165,7 @@ const jobsRuntime = composeJobsRuntime({
   displayJobs: (...args) => jobsPageFlow.displayJobs(...args),
   jobsParsing,
   startupPreviewJsonUrls: STARTUP_PREVIEW_JSON_URLS,
+  jobsFetchReportUrls: JOBS_FETCH_REPORT_URLS,
   parseUnifiedJobsPayload,
   openJobsCacheDbFromModule,
   readJobsCache,
@@ -251,6 +253,7 @@ jobsBoot = createJobsBoot({
   readStateFromUrl: (...args) => jobsPageFlow.readStateFromUrl(...args),
   rememberCurrentJobsUrl: (...args) => jobsPageFlow.rememberCurrentJobsUrl(...args),
   ensureJobsPipelineStatusWatch: (...args) => jobsPageFlow.ensureJobsPipelineStatusWatch(...args),
+  callJobsBridge: (...args) => jobsRuntime.callJobsBridge(...args),
   applyJobsAdminBridgeState: jobsRuntime.applyJobsAdminBridgeState,
   logJobsError: jobsRuntime.logJobsError,
   openJobLinkInDefaultBrowser: (...args) => openJobLinkInDefaultBrowser(...args),

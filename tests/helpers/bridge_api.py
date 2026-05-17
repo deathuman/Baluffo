@@ -364,6 +364,7 @@ def build_admin_bridge_api(config: Any | None = None) -> BridgeApi:
         trigger_source_check=admin_bridge.trigger_source_check,
         load_json_object=admin_bridge.load_json_object,
         save_json_atomic=admin_bridge.save_json_atomic,
+        start_jobs_bootstrap_task=admin_bridge.start_jobs_bootstrap_task,
         start_fetcher_task=admin_bridge.start_fetcher_task,
         start_sync_task=admin_bridge.start_sync_task,
         get_discovery_config_payload=admin_bridge.get_discovery_config_payload,

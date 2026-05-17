@@ -71,7 +71,8 @@ def _only_sources_selection(
             f"[jobs_fetcher] WARN unknown --only-sources entries: {', '.join(missing)}",
             flush=True,
         )
-    return source_loaders, True, selection_exclusions, True
+    seed_from_existing_output = not bool(getattr(args, "no_seed_existing_output", False))
+    return source_loaders, seed_from_existing_output, selection_exclusions, True
 
 
 def _successful_sources_to_skip(

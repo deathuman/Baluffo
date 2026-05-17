@@ -66,6 +66,32 @@ def test_sign_out_success(tmp_path: Path) -> None:
     assert handler.sent[-1]["payload"]["ok"] is True
 
 
+def test_run_jobs_bootstrap_route(tmp_path: Path) -> None:
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
+    api.start_jobs_bootstrap_task = lambda payload=None: {
+        "started": True,
+        "runId": "jobs_bootstrap_test",
+        "task": "jobs_bootstrap",
+        "taskType": "fetch",
+        "preset": "bootstrap_sheets",
+        "coverageScope": "bootstrap_sheets",
+    }
+
+    handler = FakeHandler()
+    result = handle_post(
+        handler,
+        api=api,
+        path="/tasks/run-jobs-bootstrap",
+        payload={},
+    )
+
+    assert result is True
+    assert handler.sent[-1]["status"] == 200
+    assert handler.sent[-1]["payload"]["task"] == "jobs_bootstrap"
+    assert handler.sent[-1]["payload"]["coverageScope"] == "bootstrap_sheets"
+
+
 def test_save_job_success(tmp_path: Path) -> None:
     """Test saving a job successfully."""
     store = FakeDesktopLocalDataStore()

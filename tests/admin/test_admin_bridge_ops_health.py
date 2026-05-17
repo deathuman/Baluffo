@@ -162,6 +162,106 @@ def test_compute_ops_health_guides_initial_fetch_when_none_has_succeeded(
     assert "Run Jobs Fetcher" in guidance["message"]
 
 
+def test_evaluate_alerts_keeps_pipeline_never_run_after_bootstrap_fetch() -> None:
+    saved_states: list[dict[str, object]] = []
+
+    result = ops_health.evaluate_alerts(
+        history=[
+            {
+                "type": "fetch",
+                "status": "ok",
+                "finishedAt": "2026-05-17T10:00:00+00:00",
+                "summary": {"outputCount": 12, "coverageScope": "bootstrap_sheets"},
+            }
+        ],
+        latest_fetch_report={
+            "finishedAt": "2026-05-17T10:00:00+00:00",
+            "summary": {"outputCount": 12, "failedSources": 0, "sourceCount": 3},
+        },
+        pending_count=0,
+        load_alert_state_fn=lambda: {"acked": {"pipeline_never_run": "2026-05-17T10:01:00Z"}},
+        save_alert_state_fn=lambda state: saved_states.append(state),
+        parse_iso=admin_bridge.parse_iso,
+        now_iso=lambda: "2026-05-17T10:02:00+00:00",
+        now_utc=lambda: datetime(2026, 5, 17, 10, 2, tzinfo=UTC),
+    )
+
+    guidance = next(
+        (alert for alert in result["alerts"] if alert.get("id") == "pipeline_never_run"),
+        None,
+    )
+    assert guidance is not None
+    assert guidance["dismissible"] is False
+    assert "pipeline_never_run" not in saved_states[-1]["acked"]
+
+
+def test_evaluate_alerts_clears_pipeline_never_run_after_full_pipeline_success() -> None:
+    result = ops_health.evaluate_alerts(
+        history=[
+            {
+                "type": "pipeline",
+                "status": "ok",
+                "finishedAt": "2026-05-17T10:00:00+00:00",
+            }
+        ],
+        latest_fetch_report={
+            "finishedAt": "2026-05-17T10:00:00+00:00",
+            "summary": {"outputCount": 12, "failedSources": 0, "sourceCount": 3},
+        },
+        pending_count=0,
+        load_alert_state_fn=lambda: {},
+        save_alert_state_fn=lambda _state: None,
+        parse_iso=admin_bridge.parse_iso,
+        now_iso=lambda: "2026-05-17T10:02:00+00:00",
+        now_utc=lambda: datetime(2026, 5, 17, 10, 2, tzinfo=UTC),
+    )
+
+    alert_ids = {alert["id"] for alert in result["alerts"]}
+    assert "pipeline_never_run" not in alert_ids
+
+
+def test_evaluate_alerts_excludes_bootstrap_runs_from_output_drop_baseline() -> None:
+    history = [
+        {
+            "type": "fetch",
+            "status": "ok",
+            "finishedAt": f"2026-05-17T0{idx}:00:00+00:00",
+            "summary": {"outputCount": output},
+        }
+        for idx, output in enumerate([100, 105, 98], start=1)
+    ]
+    history.append(
+        {
+            "type": "fetch",
+            "status": "ok",
+            "finishedAt": "2026-05-17T04:00:00+00:00",
+            "summary": {"outputCount": 8, "coverageScope": "bootstrap_sheets"},
+        }
+    )
+
+    result = ops_health.evaluate_alerts(
+        history=history,
+        latest_fetch_report={
+            "finishedAt": "2026-05-17T04:00:00+00:00",
+            "summary": {
+                "outputCount": 8,
+                "failedSources": 0,
+                "sourceCount": 3,
+                "coverageScope": "bootstrap_sheets",
+            },
+        },
+        pending_count=0,
+        load_alert_state_fn=lambda: {},
+        save_alert_state_fn=lambda _state: None,
+        parse_iso=admin_bridge.parse_iso,
+        now_iso=lambda: "2026-05-17T04:02:00+00:00",
+        now_utc=lambda: datetime(2026, 5, 17, 4, 2, tzinfo=UTC),
+    )
+
+    alert_ids = {alert["id"] for alert in result["alerts"]}
+    assert "output_drop" not in alert_ids
+
+
 def test_compute_ops_health_reframes_stale_fetch_as_guidance(admin_bridge_entrypoint_root):
     admin_bridge.append_run_history(
         {

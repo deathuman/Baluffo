@@ -165,3 +165,22 @@ test("jobs feed controller preview wiring normalizes rows and forwards startup p
     "measure:jobs_forwarded_preview"
   ]);
 });
+
+test("jobs feed controller forwards allowSheetsFallback to source fetcher", async () => {
+  let forwarded = null;
+  const { controller } = createFeedController({
+    refreshJobsFeed: async (_request, deps) => {
+      forwarded = await deps.fetchUnifiedJobs({
+        timeoutMs: 100,
+        allowSheetsFallback: false
+      });
+      return true;
+    },
+    fetchUnifiedJobsFromSources: async options => options
+  });
+
+  await controller.refreshJobsNow({ manual: false, firstLoad: true });
+
+  assert.equal(forwarded.allowSheetsFallback, false);
+  assert.equal(forwarded.timeoutMs, 100);
+});

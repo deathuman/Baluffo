@@ -42,8 +42,12 @@ function createBaseDeps(overrides = {}) {
       isJobsCacheStale: () => false,
       cacheTtlMs: 1000,
       setSourceStatus: text => calls.sourceStatus.push(String(text || "")),
+      setProgress: () => {},
       refreshJobsNow: async () => true,
       updateLastUpdatedText: () => {},
+      fetchJobsReport: async () => null,
+      startJobsBootstrap: async () => ({ started: true }),
+      windowObject: { localStorage: new Map() },
       setHasInitializedJobsFeed: value => calls.initialized.push(Boolean(value)),
       scheduleNonCriticalStartupWork: () => {},
       applyPendingAutoRefreshSignal: async () => {},
@@ -52,6 +56,18 @@ function createBaseDeps(overrides = {}) {
       logError: () => {},
       getAllJobs: () => [],
       ...overrides
+    }
+  };
+}
+
+function createLocalStorage(initialEntries = []) {
+  const storage = new Map(initialEntries);
+  return {
+    storage,
+    localStorage: {
+      getItem: key => storage.get(key) || null,
+      setItem: (key, value) => storage.set(key, String(value)),
+      removeItem: key => storage.delete(key)
     }
   };
 }
@@ -85,6 +101,8 @@ test("initJobsFeed renders explicit error path when startup throws before first 
 test("refreshJobsFeed marks first-load fetch and render milestones", async () => {
   let refreshInFlight = false;
   let allJobs = [];
+  let fetchUnifiedOptions = null;
+  let lastUpdated = null;
   const perf = [];
   const ok = await refreshJobsFeed({ manual: false, firstLoad: true }, {
     getRefreshInFlight: () => refreshInFlight,
@@ -96,7 +114,10 @@ test("refreshJobsFeed marks first-load fetch and render milestones", async () =>
     setProgress: () => {},
     setSourceStatus: () => {},
     firstLoadRequestTimeoutMs: 4500,
-    fetchUnifiedJobs: async () => ({ jobs: [{ id: "job-1" }], sourceName: "test" }),
+    fetchUnifiedJobs: async options => {
+      fetchUnifiedOptions = options;
+      return { jobs: [{ id: "job-1" }], sourceName: "test" };
+    },
     dispatchRefreshFailed: () => {},
     showToast: () => {},
     logError: () => {},
@@ -108,7 +129,13 @@ test("refreshJobsFeed marks first-load fetch and render milestones", async () =>
     setRefreshJobsNeedsAttention: () => {},
     isDesktopRuntimeMode: () => true,
     writeCachedJobs: async () => {},
-    updateLastUpdatedText: () => {},
+    fetchJobsReport: async () => ({
+      finishedAt: "2026-05-17T10:00:00+00:00",
+      summary: { outputCount: 1, coverageScope: "bootstrap_sheets" }
+    }),
+    updateLastUpdatedText: value => {
+      lastUpdated = value;
+    },
     recalculateItemsPerPage: () => {},
     updateFilterOptions: () => {},
     applyStateToFilters: () => {},
@@ -124,6 +151,8 @@ test("refreshJobsFeed marks first-load fetch and render milestones", async () =>
   });
 
   assert.equal(ok, true);
+  assert.equal(fetchUnifiedOptions.allowSheetsFallback, false);
+  assert.equal(lastUpdated, Date.parse("2026-05-17T10:00:00+00:00"));
   assert.deepEqual(
     perf.map(item => `${item.type}:${item.name}`),
     [
@@ -138,6 +167,238 @@ test("refreshJobsFeed marks first-load fetch and render milestones", async () =>
   assert.deepEqual(perf.find(item => item.name === "jobs_render")?.payload, {
     rowCount: 1
   });
+});
+
+test("initJobsFeed skips packaged feeds and auto-starts bootstrap on desktop cold start", async () => {
+  const { storage, localStorage } = createLocalStorage();
+  let reportCalls = 0;
+  let bootstrapStarts = 0;
+  let refreshOptions = null;
+  let startupPreviewCalled = false;
+  const { calls, deps } = createBaseDeps({
+    isDesktopRuntimeMode: () => true,
+    windowObject: { localStorage },
+    bootstrapPollIntervalMs: 0,
+    bootstrapTimeoutMs: 1000,
+    fetchJobsReport: async () => {
+      reportCalls += 1;
+      if (reportCalls === 1) {
+        return { summary: { outputCount: 0 } };
+      }
+      return {
+        finishedAt: "2026-05-17T10:00:00+00:00",
+        summary: { status: "ok", outputCount: 3, coverageScope: "bootstrap_sheets" }
+      };
+    },
+    startJobsBootstrap: async () => {
+      bootstrapStarts += 1;
+      return { started: true, task: "jobs_bootstrap" };
+    },
+    refreshJobsNow: async options => {
+      refreshOptions = options;
+      return true;
+    },
+    loadStartupPreviewJobs: async () => {
+      startupPreviewCalled = true;
+      return true;
+    }
+  });
+
+  await initJobsFeed(deps);
+
+  assert.equal(bootstrapStarts, 1);
+  assert.deepEqual(refreshOptions, { manual: false, firstLoad: true });
+  assert.equal(startupPreviewCalled, false);
+  assert.deepEqual(calls.showError, []);
+  assert.equal(storage.has("baluffo_jobs_bootstrap_auto_started"), false);
+});
+
+test("initJobsFeed does not auto-loop bootstrap after a failed desktop attempt", async () => {
+  const { localStorage } = createLocalStorage([
+    ["baluffo_jobs_bootstrap_auto_started", JSON.stringify({ status: "failed" })]
+  ]);
+  let bootstrapStarts = 0;
+  const { calls, deps } = createBaseDeps({
+    isDesktopRuntimeMode: () => true,
+    windowObject: { localStorage },
+    fetchJobsReport: async () => ({
+      finishedAt: "2026-05-17T10:00:00+00:00",
+      summary: { status: "error", outputCount: 0, error: "sheet failed" }
+    }),
+    startJobsBootstrap: async () => {
+      bootstrapStarts += 1;
+      return { started: true };
+    }
+  });
+
+  await initJobsFeed(deps);
+
+  assert.equal(bootstrapStarts, 0);
+  assert.equal(calls.showError.length, 1);
+  assert.match(calls.showError[0], /sheet failed|First-run sheet refresh failed/);
+});
+
+test("initJobsFeed recovers with bootstrap when successful report has no loadable feed", async () => {
+  const { storage, localStorage } = createLocalStorage();
+  let bootstrapStarts = 0;
+  let reportCalls = 0;
+  const refreshCalls = [];
+  const { calls, deps } = createBaseDeps({
+    isDesktopRuntimeMode: () => true,
+    windowObject: { localStorage },
+    bootstrapPollIntervalMs: 0,
+    bootstrapTimeoutMs: 1000,
+    fetchJobsReport: async () => {
+      reportCalls += 1;
+      return {
+        finishedAt: "2026-05-17T10:00:00+00:00",
+        summary: { status: "ok", outputCount: 3, coverageScope: "bootstrap_sheets" }
+      };
+    },
+    startJobsBootstrap: async () => {
+      bootstrapStarts += 1;
+      return { started: true, runId: "jobs_bootstrap_test" };
+    },
+    loadStartupPreviewJobs: async () => false,
+    refreshJobsNow: async options => {
+      refreshCalls.push(options);
+      return refreshCalls.length > 1;
+    }
+  });
+
+  await initJobsFeed(deps);
+
+  assert.equal(bootstrapStarts, 1);
+  assert.equal(reportCalls >= 2, true);
+  assert.deepEqual(refreshCalls, [
+    { manual: false, firstLoad: true },
+    { manual: false, firstLoad: true }
+  ]);
+  assert.deepEqual(calls.showError, []);
+  assert.equal(storage.has("baluffo_jobs_bootstrap_auto_started"), false);
+});
+
+test("initJobsFeed reports missing local feed when bootstrap is already completed", async () => {
+  const { localStorage } = createLocalStorage();
+  let bootstrapStarts = 0;
+  const { calls, deps } = createBaseDeps({
+    isDesktopRuntimeMode: () => true,
+    windowObject: { localStorage },
+    fetchJobsReport: async () => ({
+      finishedAt: "2026-05-17T10:00:00+00:00",
+      summary: { status: "ok", outputCount: 3 }
+    }),
+    startJobsBootstrap: async () => {
+      bootstrapStarts += 1;
+      return { alreadyCompleted: true, error: "full_pipeline_already_completed" };
+    },
+    loadStartupPreviewJobs: async () => false,
+    refreshJobsNow: async () => false
+  });
+
+  await initJobsFeed(deps);
+
+  assert.equal(bootstrapStarts, 1);
+  assert.equal(calls.showError.length, 1);
+  assert.match(calls.showError[0], /Local jobs feed is missing|Run Update jobs/);
+});
+
+test("initJobsFeed reattaches to running bootstrap after reload", async () => {
+  const { storage, localStorage } = createLocalStorage([
+    ["baluffo_jobs_bootstrap_auto_started", JSON.stringify({ status: "running" })]
+  ]);
+  let bootstrapStarts = 0;
+  let reportCalls = 0;
+  let refreshOptions = null;
+  const { calls, deps } = createBaseDeps({
+    isDesktopRuntimeMode: () => true,
+    windowObject: { localStorage },
+    bootstrapPollIntervalMs: 0,
+    bootstrapTimeoutMs: 1000,
+    fetchJobsReport: async () => {
+      reportCalls += 1;
+      if (reportCalls === 1) {
+        return { summary: { outputCount: 0, coverageScope: "bootstrap_sheets" } };
+      }
+      return {
+        finishedAt: "2026-05-17T10:00:00+00:00",
+        summary: { status: "ok", outputCount: 3, coverageScope: "bootstrap_sheets" }
+      };
+    },
+    startJobsBootstrap: async () => {
+      bootstrapStarts += 1;
+      return { alreadyRunning: true, runId: "jobs_bootstrap_test" };
+    },
+    refreshJobsNow: async options => {
+      refreshOptions = options;
+      return true;
+    }
+  });
+
+  await initJobsFeed(deps);
+
+  assert.equal(bootstrapStarts, 1);
+  assert.deepEqual(refreshOptions, { manual: false, firstLoad: true });
+  assert.deepEqual(calls.showError, []);
+  assert.equal(storage.has("baluffo_jobs_bootstrap_auto_started"), false);
+});
+
+test("initJobsFeed treats legacy marker as reattachable only with non-terminal report", async () => {
+  const { localStorage } = createLocalStorage([["baluffo_jobs_bootstrap_auto_started", "1"]]);
+  let bootstrapStarts = 0;
+  const { calls, deps } = createBaseDeps({
+    isDesktopRuntimeMode: () => true,
+    windowObject: { localStorage },
+    bootstrapPollIntervalMs: 0,
+    bootstrapTimeoutMs: 1000,
+    fetchJobsReport: async () => ({
+      finishedAt: "2026-05-17T10:00:00+00:00",
+      summary: { status: "error", outputCount: 0, error: "sheet failed" }
+    }),
+    startJobsBootstrap: async () => {
+      bootstrapStarts += 1;
+      return { alreadyRunning: true };
+    }
+  });
+
+  await initJobsFeed(deps);
+
+  assert.equal(bootstrapStarts, 0);
+  assert.equal(calls.showError.length, 1);
+  assert.match(calls.showError[0], /sheet failed|First-run sheet refresh failed/);
+});
+
+test("initJobsFeed reattaches legacy marker when report is non-terminal", async () => {
+  const { storage, localStorage } = createLocalStorage([
+    ["baluffo_jobs_bootstrap_auto_started", "1"]
+  ]);
+  let bootstrapStarts = 0;
+  let reportCalls = 0;
+  const { calls, deps } = createBaseDeps({
+    isDesktopRuntimeMode: () => true,
+    windowObject: { localStorage },
+    bootstrapPollIntervalMs: 0,
+    bootstrapTimeoutMs: 1000,
+    fetchJobsReport: async () => {
+      reportCalls += 1;
+      if (reportCalls === 1) return { summary: { outputCount: 0 } };
+      return {
+        finishedAt: "2026-05-17T10:00:00+00:00",
+        summary: { status: "ok", outputCount: 3, coverageScope: "bootstrap_sheets" }
+      };
+    },
+    startJobsBootstrap: async () => {
+      bootstrapStarts += 1;
+      return { alreadyRunning: true, runId: "jobs_bootstrap_test" };
+    },
+    refreshJobsNow: async () => true
+  });
+
+  await initJobsFeed(deps);
+
+  assert.equal(bootstrapStarts, 1);
+  assert.deepEqual(calls.showError, []);
+  assert.equal(storage.has("baluffo_jobs_bootstrap_auto_started"), false);
 });
 
 test("canUseStartupPreviewFastPath only accepts the default first-page startup state", () => {

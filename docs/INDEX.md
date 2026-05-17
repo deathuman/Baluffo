@@ -5,7 +5,7 @@
 > - **Canonical for:** wiki routing, doc discovery, and the default AI read path
 > - **Not canonical for:** payload details, route contracts, or subsystem implementation behavior
 > - **Then inspect:** [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`architecture-ai-map.md`](architecture-ai-map.md), and one matching contract or workflow doc
-> - **Last updated:** 2026-05-16
+> - **Last updated:** 2026-05-17
 
 Use this page as the wiki home. Start here, load the minimum active docs you need, and use git history for old cleanup/refactor details unless the task explicitly needs historical provenance.
 
@@ -70,6 +70,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`plans/static-plugin-simple-runner-migration-plan.md`](plans/static-plugin-simple-runner-migration-plan.md) | Plans / Follow-Ups | You are continuing the static plugin migration onto `SimpleStaticPlugin` in bounded behavior-preserving batches |
 | [`plans/ai-modification-safety-improvements-plan.md`](plans/ai-modification-safety-improvements-plan.md) | Plans / Follow-Ups | You are reducing AI edit risk around compatibility roots, bridge route contracts, large dict-shaped evidence builders, and packaged release surfaces |
 | [`plans/daily-trust-ux-strategy-plan.md`](plans/daily-trust-ux-strategy-plan.md) | Plans / Follow-Ups | You are improving daily-use trust, UX polish, recovery affordances, diagnostics, saved exploration, or contributor-facing system maps |
+| [`plans/cold-run-jobs-freshness-strategy-plan.md`](plans/cold-run-jobs-freshness-strategy-plan.md) | Plans / Follow-Ups | You are improving first-run Jobs freshness, bootstrap refresh, packaged jobs artifact stripping, or first-pipeline limited-coverage UX |
 | [`plans/post-0.2.0-desktop-runtime-ram-reduction-plan.md`](plans/post-0.2.0-desktop-runtime-ram-reduction-plan.md) | Plans / Follow-Ups | You are revisiting desktop runtime RAM reduction, packaged startup memory, or static site process consolidation after v0.2.0 |
 | [`plans/optional-playwright-browser-download-plan.md`](plans/optional-playwright-browser-download-plan.md) | Plans / Follow-Ups | You are moving Playwright browser binaries out of the portable ZIP or making packaged browser fallback an optional first-start download |
 | [`plans/cloakbrowser-enhanced-browser-fallback-ab-test-plan.md`](plans/cloakbrowser-enhanced-browser-fallback-ab-test-plan.md) | Plans / Follow-Ups | You are evaluating CloakBrowser as an optional enhanced browser fallback or measuring blocked/challenged career-page recovery |

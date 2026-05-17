@@ -328,6 +328,7 @@ export async function callJobsBridge(baseUrl, path, options = {}) {
     method: options.method || "GET",
     body: options.body,
     headers: options.headers,
+    allowStatuses: options.allowStatuses,
     timeoutMs
   });
   return response.json();

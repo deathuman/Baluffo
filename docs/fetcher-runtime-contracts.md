@@ -5,7 +5,7 @@
 > - **Canonical for:** fetcher runtime options, admin preset wiring, and fetch-run artifacts consumed by admin flows
 > - **Not canonical for:** full jobs pipeline ownership or broad testing strategy
 > - **Then inspect:** `src/jobs_fetcher.py`, `src/jobs/fetcher_compat_{exports,runtime}.py`, `src/jobs/pipeline*.py`, `src/jobs/state*.py`, and [`testing.md`](testing.md)
-> - **Last updated:** 2026-05-12
+> - **Last updated:** 2026-05-17
 
 ## CLI runtime options
 
@@ -20,6 +20,7 @@
 - `--hot-source-cadence-minutes` (default `15`): cadence for recently changed sources.
 - `--cold-source-cadence-minutes` (default `60`): cadence for stable sources.
 - `--only-sources`: comma-separated list of source loader names to run.
+- `--no-seed-existing-output`: for targeted `--only-sources` runs, prevents carrying existing output into the new feed. This is required for first-run sheet bootstrap staging.
 - `--circuit-breaker-failures` (default `3`): consecutive failures to trigger quarantine.
 - `--circuit-breaker-cooldown-minutes` (default `180`): quarantine duration.
 - `--browser-fallback-cooldown-minutes` (default `30`): short-lived cooldown applied after an environment-level Playwright/browser failure.
@@ -45,6 +46,7 @@ Bridge defaults:
   - `--adapter-http-concurrency 48`
 - Bridge-started fetch runs include `--social-enabled` by default unless `socialEnabled: false` is passed.
 - Jobs page `Run Discovery + Fetch + Sync` and Admin `Run Jobs Fetcher` share this same bridge-default behavior.
+- `POST /tasks/run-jobs-bootstrap` is not a normal fetch preset. It is a first-run/retry bootstrap route that runs only `google_sheets`, `google_sheets_1er2oaxo`, and `google_sheets_1mvqhxat` into a private staging directory with no existing-output seed, no preserve-on-empty, forced refresh, circuit breaker ignored, and social disabled. It promotes `jobs-unified.json`, `jobs-unified-light.json`, `jobs-unified.csv`, and the report only when at least one sheet succeeds and output count is non-zero.
 
 Optional overrides:
 
@@ -87,7 +89,7 @@ Optional overrides:
   - archived lifecycle rows are moved into yearly transparent gzip-backed cold files (`jobs-lifecycle-archive-{year}.json.gz`) and loaded on demand only.
   - report/debug JSON remains pretty-printed for operator readability.
   - warning limits are `80_000_000` bytes for full JSON, `60_000_000` bytes for light JSON, and `50_000_000` bytes for CSV.
-  - packaging still ships full JSON, light JSON, CSV, and the generated startup preview; changing package-time output selection is a separate decision.
+  - package builds no longer seed row-bearing jobs artifacts (`jobs-unified*.json(.gz)`, `jobs-unified.csv`, or `jobs-unified-startup.json`). The desktop launcher quarantines stale row artifacts from upgraded installs when no successful runtime report proves a real local feed.
 - Static HTTP fetch policy:
   - static listing and detail fetches should go through the shared `fetch_html_cached` path so cache, per-domain throttling, and redirect handling stay consistent.
   - one redirect hop is allowed for 301/302/303/307/308 when the target is HTTP(S), contains no credentials, does not downgrade HTTPS to HTTP, and stays on the same host or a `www.`/bare-host alias.

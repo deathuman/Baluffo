@@ -5,7 +5,7 @@ from unittest import mock
 import pytest
 
 from scripts import build_ship_bundle
-from scripts.build_ship_bundle import STARTUP_PREVIEW_LIMIT, build_bundle
+from scripts.build_ship_bundle import build_bundle
 from src import source_sync
 from src.app_version import APP_VERSION
 from src.shared.json_io import read_json
@@ -144,10 +144,12 @@ def test_bundle_contains_runtime_assets_and_seeded_runtime_data_only() -> None:
             "outputs": {"report": str(output / "data" / "jobs-fetch-report.json")},
         }
         assert isinstance(seeded_report["sources"], list)
-        assert (output / "data" / "jobs-unified.json.gz").exists()
+        assert not (output / "data" / "jobs-unified.json.gz").exists()
         assert not (output / "data" / "jobs-unified.json").exists()
-        assert (output / "data" / "jobs-unified-light.json.gz").exists()
+        assert not (output / "data" / "jobs-unified-light.json.gz").exists()
         assert not (output / "data" / "jobs-unified-light.json").exists()
+        assert not (output / "data" / "jobs-unified.csv").exists()
+        assert not (output / "data" / "jobs-unified-startup.json").exists()
         assert (output / "data" / "jobs-source-state.json.gz").exists()
         assert not (output / "data" / "jobs-source-state.json").exists()
         assert read_json(output / "data" / "jobs-source-state.json", {}) == {
@@ -155,11 +157,6 @@ def test_bundle_contains_runtime_assets_and_seeded_runtime_data_only() -> None:
             "updatedAt": "",
             "sources": {},
         }
-        startup_rows = json.loads(
-            (output / "data" / "jobs-unified-startup.json").read_text(encoding="utf-8")
-        )
-        assert isinstance(startup_rows, list)
-        assert len(startup_rows) <= STARTUP_PREVIEW_LIMIT
 
 
 def test_parse_args_defaults_to_shared_app_version() -> None:
@@ -170,7 +167,7 @@ def test_parse_args_defaults_to_shared_app_version() -> None:
     assert args.bundle_version == APP_VERSION
 
 
-def test_bundle_generates_capped_startup_preview() -> None:
+def test_bundle_does_not_generate_startup_preview_from_local_jobs_rows() -> None:
     with workspace_tmpdir("build-ship-bundle") as tmp:
         rows = [{"title": f"Role {index}", "company": "Studio"} for index in range(300)]
         data_dir = Path(tmp) / "data"
@@ -196,12 +193,9 @@ def test_bundle_generates_capped_startup_preview() -> None:
             encoding="utf-8",
         )
         output = _build_with_temp_packaged_config(tmp)
-        startup_rows = json.loads(
-            (output / "data" / "jobs-unified-startup.json").read_text(encoding="utf-8")
-        )
-        assert isinstance(startup_rows, list)
-        assert len(startup_rows) <= STARTUP_PREVIEW_LIMIT
-        assert len(startup_rows) > 0
+        assert not (output / "data" / "jobs-unified-startup.json").exists()
+        assert not (output / "data" / "jobs-unified-light.json").exists()
+        assert not (output / "data" / "jobs-unified-light.json.gz").exists()
 
 
 def test_bundle_generates_packaged_sync_config_from_build_env() -> None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from src.bridge import admin_task_runtime as admin_task_runtime_mod
 from src.bridge import bootstrap as bridge_bootstrap
 from src.bridge import storage_health as storage_health_mod
 from src.bridge.api import BridgeApi
@@ -59,6 +60,7 @@ def build_bridge_api(config: Any) -> BridgeApi:
         load_registry_conflict_adjudication=root_mod.load_registry_conflict_adjudication,
         load_json_object=root_mod.load_json_object,
         save_json_atomic=root_mod.save_json_atomic,
+        start_jobs_bootstrap_task=admin_task_runtime_mod.start_jobs_bootstrap_task,
         start_fetcher_task=root_mod.start_fetcher_task,
         start_sync_task=root_mod.start_sync_task,
         get_discovery_config_payload=root_mod.get_discovery_config_payload,

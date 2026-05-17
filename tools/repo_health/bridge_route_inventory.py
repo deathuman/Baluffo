@@ -92,6 +92,10 @@ PIPELINE_CALLERS = (
     "frontend/jobs/app/runtime.js",
     "frontend/jobs/app/runtime/pipeline-controller.js",
 )
+JOBS_BOOTSTRAP_CALLERS = (
+    "frontend/jobs/app/feed.js",
+    "frontend/jobs/app/runtime/boot.js",
+)
 STARTUP_METRIC_CALLERS = (
     "frontend/admin/data-source.js",
     "frontend/saved/app/runtime/composition.js",
@@ -484,6 +488,16 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         POST_ADMIN_HANDLER,
         "public",
         caller_files=PIPELINE_CALLERS,
+    ),
+    _route(
+        "POST",
+        "/tasks/run-jobs-bootstrap",
+        EXACT,
+        POST_ADMIN_HANDLER,
+        "public",
+        caller_files=JOBS_BOOTSTRAP_CALLERS,
+        verification="python -m pytest tests/bridge/test_routes_post.py "
+        "tests/bridge/test_task_launch_bootstrap.py -q",
     ),
     _route(
         "POST",

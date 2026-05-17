@@ -243,6 +243,7 @@ export function composeJobsRuntime(deps) {
     fetchUnifiedJobsFromSources: deps.fetchUnifiedJobsFromSources,
     fetchJsonFromCandidatesFromSources: deps.fetchJsonFromCandidatesFromSources,
     renderDataSourcesFromSources: deps.renderDataSourcesFromSources,
+    jobsFetchReportUrls: deps.jobsFetchReportUrls,
     mapProfession: deps.mapProfession,
     normalizeSector: deps.normalizeSector,
     classifyCompanyType: deps.classifyCompanyType,

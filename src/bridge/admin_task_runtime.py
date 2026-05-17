@@ -419,5 +419,22 @@ def start_fetcher_task(payload: JsonObject | None = None) -> JsonObject:
     )
 
 
+def start_jobs_bootstrap_task(payload: JsonObject | None = None) -> JsonObject:
+    root_mod = _require_root()
+    return root_mod._get_task_launch_api().start_jobs_bootstrap_task(
+        payload,
+        normalize_fetch_report_contract=root_mod.normalize_fetch_report_contract,
+        run_background_script=root_mod.run_background_script,
+        save_json_atomic=root_mod.save_json_atomic,
+        schema_version=root_mod.SCHEMA_VERSION,
+        start_lifecycle_run=root_mod.start_lifecycle_run,
+        finish_lifecycle_run=root_mod.finish_lifecycle_run,
+        fail_lifecycle_run=root_mod.fail_lifecycle_run,
+        heartbeat_lifecycle_run=root_mod.heartbeat_lifecycle_run,
+        get_lifecycle_current_runs=root_mod.get_lifecycle_current_runs,
+        get_lifecycle_run_history_rows=root_mod.get_lifecycle_run_history_rows,
+    )
+
+
 def start_jobs_pipeline_task(payload: JsonObject | None = None) -> JsonObject:
     return _require_root()._get_pipeline_service().start_task(payload)

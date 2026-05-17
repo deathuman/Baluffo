@@ -83,8 +83,10 @@ def normalize_runtime_payload(
         "googleSheetsRedirectConcurrency": _clamped_int(
             src.get("googleSheetsRedirectConcurrency"), 0, 1
         ),
+        "seedFromExistingOutput": bool(src.get("seedFromExistingOutput")),
         "incrementalCacheEnabled": bool(src.get("incrementalCacheEnabled")),
         "forceRefreshAll": bool(src.get("forceRefreshAll")),
+        "coverageScope": clean_text(src.get("coverageScope")),
         "includeLinkedStaticValidation": bool(src.get("includeLinkedStaticValidation")),
         "respectSourceCadence": bool(src.get("respectSourceCadence")),
         "hotSourceCadenceMinutes": _clamped_int(src.get("hotSourceCadenceMinutes"), 0, 1),
@@ -116,6 +118,7 @@ def normalize_runtime_payload(
     if lifecycle:
         payload["lifecycle"] = {
             "owner": clean_text(lifecycle.get("owner")),
+            "ownerPid": _clamped_int(lifecycle.get("ownerPid"), 0, 0),
             "heartbeatAt": clean_text(lifecycle.get("heartbeatAt")),
         }
 

@@ -222,6 +222,11 @@ def parse_args() -> argparse.Namespace:
         help="Comma-separated source loader names to run (for targeted/incremental fetches).",
     )
     parser.add_argument(
+        "--no-seed-existing-output",
+        action="store_true",
+        help="Do not carry existing jobs into a targeted --only-sources run.",
+    )
+    parser.add_argument(
         "--max-workers",
         type=int,
         default=DEFAULT_FETCH_MAX_WORKERS,

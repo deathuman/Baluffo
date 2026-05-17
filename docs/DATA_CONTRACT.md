@@ -5,7 +5,7 @@
 > - **Canonical for:** data contracts between pipeline, bridge, frontend, and local user data flows
 > - **Not canonical for:** subsystem ownership or route wiring
 > - **Then inspect:** `src/core/schemas.py`, `src/core/contracts.py`, the owning `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py` modules, relevant tests, and the owning runtime docs
-> - **Last updated:** 2026-05-16
+> - **Last updated:** 2026-05-17
 > - **Also update when changing contract shape:** `src/core/schemas.py`, `src/core/contracts.py`, the owning `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py` modules, relevant tests, and any affected UI/runtime docs
 
 This document serves as the absolute boundary and source of truth for data structures passed between the Python pipeline (`src/jobs/`) and the Vanilla JS frontend (`frontend/`).
@@ -667,7 +667,7 @@ Do not change signatures or remove without a dedicated plan:
 - **GameDevMap audit metadata** may appear as top-level `gamedevmapAuditSummary` and `summary.gamedevmapAudit`. These are additive report diagnostics for the resumable GameDevMap audit/cache path, including cache hit, timing, active split, recovered/browser counts, artifact size, and failure buckets. `gamedevmap.activeAuditEnabled` is no longer a supported source-discovery input; enabled GameDevMap discovery uses active-audit artifact rows. These fields are not candidate registry fields and must not be copied into active, pending, or rejected source rows.
 - **Directory audit metadata** may appear as top-level `directoryAuditSummaries` and `summary.directoryAudits` when enabled Gameprog, Gamesmap, sheet-directory, or web-search audits run or reuse a fresh artifact in the current process. Gameprog, sheet-directory, and the combined seed-careers/web-search audit run by default when their stages are enabled; Gamesmap still also requires `gamesmap.enabled=true`. `activeAuditEnabled` is no longer a supported source-discovery input; enabled Gameprog, Gamesmap, sheet-directory, and web-search stages use audit-artifact rows. HTTP recovery lanes also run by default for Gameprog, Gamesmap, sheet-directory, and web-search unless the owning `activeAuditRecoveryEnabled=false` setting is set. `activeAuditRecoveryUrlLimit` defaults to `6` for these adapters, invalid or non-positive values fall back to `6`, and resolved values are included in audit signatures so budget changes rebuild artifacts. These additive diagnostics include cache hit, completion, audit duration, candidate/failure counts, timing totals, artifact size, top failure buckets, adapter-owned boundary counts, HTTP recovery counts (`recoveryFetchAttempts`, `recoveryPagesFetched`, `recoveredProviderCandidates`, `recoveredStaticCandidates`, `recoveryFailures`) when an adapter recovery lane runs, web-search-only link/query sample diagnostics, and web-search browser-recovery counts. They are not candidate registry fields and must not be copied into active, pending, or rejected source rows.
 - **Report summary** must retain: counts, stage maps (`generatedCountByStage`, `survivedDedupeCountByStage`, `probedCountByStage`, `queuedCountByStage`), `lossAccounting`, `adapterCounts`, `methodCounts`.
-- **Runtime lifecycle metadata:** discovery runtime may include `runtime.lifecycle.owner` and `runtime.lifecycle.heartbeatAt`. These fields are additive and used by the bridge to project Current Runs without mutating the report.
+- **Runtime lifecycle metadata:** discovery/fetch runtime may include `runtime.lifecycle.owner`, `runtime.lifecycle.ownerPid`, and `runtime.lifecycle.heartbeatAt`. These fields are additive and used by the bridge to project or reattach Current Runs without mutating terminal report truth.
 - **Candidates file semantics:** `data/source-discovery-candidates.json` is the persisted discovery review queue. It may contain both queued candidates and deferred review rows; consumers must use `deferred` / `deferReason` instead of assuming every row is queue-ready.
 - **M5 review snapshot:** `data/m5-strategic-backlog.json` is a derived review artifact built from discovery output. It is additive and must not replace `data/source-discovery-candidates.json` as the canonical discovery ledger.
 - **Additive candidate metadata** may include lifecycle and ranking fields such as `candidateState`, `rankScore`, `rankReasons`, `promotionLane`, `approvedAt`, `approvedBy`, `liveAt`, `quarantinedAt`, `quarantineReason`, `deferCount`, `firstDeferredAt`, and `lastDeferredAt`.
@@ -749,7 +749,7 @@ Sync `taskProgress.counts` may include additive sharded-push diagnostics while `
   - `data/source-discovery-report.json`
 - `data/admin-run-history.json` is a legacy history surface keyed by `runId`. It is not read or written by normal lifecycle projection.
 - `data/jobs-fetch-tasks.json` now carries top-level `runId`, `startedAt`, `finishedAt`, and `heartbeatAt`.
-- Fetch report runtime may include `runtime.lifecycle.owner` and `runtime.lifecycle.heartbeatAt`.
+- Fetch report runtime may include `runtime.lifecycle.owner`, `runtime.lifecycle.ownerPid`, and `runtime.lifecycle.heartbeatAt`.
 - Any new task-lifecycle artifact must preserve `runId` end to end instead of relying on timestamps.
 
 ### Lifecycle cleanup
@@ -781,6 +781,8 @@ Sync `taskProgress.counts` may include additive sharded-push diagnostics while `
 | `csv.exceeded` | `boolean` | True when the CSV byte size is over its limit. |
 
 `summary.sizeGuardrailExceeded` remains the aggregate compatibility flag and is true when any `summary.sizeGuardrails.*.exceeded` value is true.
+
+`summary.coverageScope` and `runtime.coverageScope` are additive fetch-report metadata. The first-run bootstrap route writes `"bootstrap_sheets"` to both fields for sheet-limited output; normal full fetch/pipeline reports should omit the field or replace it with their own full-coverage scope. Bootstrap-scoped reports must not be used as full-fetch output-drop or reliability baselines.
 
 ### Source health triage
 

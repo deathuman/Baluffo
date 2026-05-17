@@ -528,6 +528,32 @@ def handle_post(handler: BridgeResponseWriter, *, api: BridgeApi, path: str, pay
         )
         return True
 
+    if path == "/tasks/run-jobs-bootstrap":
+
+        def _send() -> None:
+            result = api.start_jobs_bootstrap_task(data)
+            status_code = (
+                409
+                if bool(result.get("alreadyRunning")) or bool(result.get("alreadyCompleted"))
+                else 200
+            )
+            handler.send_json(result, status=status_code)
+
+        run_route_boundary(
+            handler,
+            _send,
+            error_status=500,
+            error_payload=lambda exc: {
+                "started": False,
+                "task": "jobs_bootstrap",
+                "taskType": "fetch",
+                "preset": "bootstrap_sheets",
+                "coverageScope": "bootstrap_sheets",
+                "error": str(exc),
+            },
+        )
+        return True
+
     if path == "/tasks/run-fetcher":
 
         def _send() -> None:
