@@ -231,8 +231,8 @@ __pycache__/
 1. AI updates useful durable memory as normal task maintenance.
 2. Keep notes concise, sourced, and future-session relevant.
 3. Explicitly decide whether to update current focus, handoff, gotcha, decision, or stale-memory notes; skip the write only when the task produced no durable continuity value.
-4. Commit only durable notes to BaluffoMemory when the task includes Git publishing.
-5. `git push` BaluffoMemory only when the task includes pushing memory changes.
+4. Commit and push durable BaluffoMemory updates as part of normal closeout when memory changed and the network is available.
+5. If memory push fails or network is unavailable, report the pending BaluffoMemory status and the exact command to retry.
 
 ## Merge-Conflict Handling
 
@@ -243,7 +243,8 @@ Never auto-merge or discard memory files speculatively.
 
 - Reads are free and automated.
 - Writes are normal AI task maintenance when they improve future-session continuity.
-- Commit or push memory writes only when the task includes Git publishing.
+- Commit and push memory writes during normal closeout when they improve future-session continuity.
+- Do not push memory only when the user explicitly asks to keep memory local, when network access is unavailable, or when the memory repo has unrelated/conflicting changes that need review.
 
 ## Canonical Source Rule
 
