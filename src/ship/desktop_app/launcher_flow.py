@@ -80,6 +80,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 "BALUFFO_DESKTOP_MODE": "1",
                 "BALUFFO_DESKTOP_BRIDGE_HOST": str(current_config.bridge_host),
                 "BALUFFO_DESKTOP_BRIDGE_PORT": str(int(current_config.bridge_port)),
+                "BALUFFO_DESKTOP_SESSION_ROOT": str(session_root),
             }
             if bool(current_config.startup_probe):
                 env["BALUFFO_STARTUP_PROBE"] = "1"
@@ -232,6 +233,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                         "windowShownAtMonotonic": api.time.perf_counter(),
                         "windowShownObserved": False,
                         "windowPid": 0,
+                        "windowHwnd": 0,
                         "windowTitle": "",
                     }
                     api._append_startup_trace(
@@ -389,27 +391,32 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             processReadyPollIntervalMs=_as_int(launch_result.get("processReadyPollIntervalMs")),
             revealObserved=bool(launch_result.get("windowShownObserved")),
         )
-        api.save_session_state(
-            {
-                "appVersion": api.get_app_version(),
-                "launcherPid": api.os.getpid(),
-                "launcherToken": str(instance_lock.launcher_token or launcher_token),
-                "desktopSessionId": desktop_session_id,
-                "desktopOwnerToken": owner_token,
-                "launcherStartedAt": str(instance_lock.created_at or datetime.now(UTC).isoformat()),
-                "sitePort": int(config.site_port),
-                "sitePid": int(getattr(site_process, "pid", 0) or 0),
-                "bridgePort": int(config.bridge_port),
-                "bridgePid": int(getattr(bridge_process, "pid", 0) or 0),
-                "bridgeHost": str(config.bridge_host),
-                "url": str(open_url),
-                "launchMode": launch_mode,
-                "browserPath": str(launch_result.get("browserPath") or ""),
-                "exePath": api._current_exe_path(),
-                "dataDir": str(config.data_dir),
-                "timestamp": datetime.now(UTC).isoformat(),
-            }
-        )
+        session_payload = {
+            "appVersion": api.get_app_version(),
+            "launcherPid": api.os.getpid(),
+            "launcherToken": str(instance_lock.launcher_token or launcher_token),
+            "desktopSessionId": desktop_session_id,
+            "desktopOwnerToken": owner_token,
+            "launcherStartedAt": str(instance_lock.created_at or datetime.now(UTC).isoformat()),
+            "sitePort": int(config.site_port),
+            "sitePid": int(getattr(site_process, "pid", 0) or 0),
+            "bridgePort": int(config.bridge_port),
+            "bridgePid": int(getattr(bridge_process, "pid", 0) or 0),
+            "bridgeHost": str(config.bridge_host),
+            "url": str(open_url),
+            "launchMode": launch_mode,
+            "browserPath": str(launch_result.get("browserPath") or ""),
+            "browserPid": _as_int(
+                launch_result.get("browserPid") or getattr(browser_process, "pid", 0)
+            ),
+            "windowPid": _as_int(launch_result.get("windowPid")),
+            "windowHwnd": _as_int(launch_result.get("windowHwnd")),
+            "windowTitle": str(launch_result.get("windowTitle") or ""),
+            "exePath": api._current_exe_path(),
+            "dataDir": str(config.data_dir),
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+        api.save_session_state(session_payload)
         api.update_instance_lock_state(instance_lock, "running")
         session_state_written = True
         bridge_ready = api.is_baluffo_bridge_healthy(
@@ -444,6 +451,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 browserPath=str(launch_result.get("browserPath") or ""),
                 observed=bool(launch_result.get("windowShownObserved")),
                 windowPid=_as_int(launch_result.get("windowPid")),
+                windowHwnd=_as_int(launch_result.get("windowHwnd")),
                 windowTitle=str(launch_result.get("windowTitle") or ""),
                 handoffEvidence=str(launch_result.get("revealHandoffEvidence") or ""),
             )
@@ -517,6 +525,20 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                     accepted_elapsed_ms = max(
                         0, int((float(launch_accepted_at_mono) - started_mono) * 1000)
                     )
+                if session_state_written:
+                    session_payload = {
+                        **session_payload,
+                        "launchMode": launch_mode,
+                        "browserPath": str(launch_result.get("browserPath") or ""),
+                        "browserPid": _as_int(
+                            launch_result.get("browserPid") or getattr(browser_process, "pid", 0)
+                        ),
+                        "windowPid": _as_int(launch_result.get("windowPid")),
+                        "windowHwnd": _as_int(launch_result.get("windowHwnd")),
+                        "windowTitle": str(launch_result.get("windowTitle") or ""),
+                        "timestamp": datetime.now(UTC).isoformat(),
+                    }
+                    api.save_session_state(session_payload)
                 continue
             if bridge_healthy:
                 launch_result = api._recoverable_active_work_browser_loss_result(

@@ -505,3 +505,82 @@ def test_active_pipeline_discovery_stage_keeps_quiet_child_discovery_running() -
     assert row["status"] == "started"
     assert row["finishedAt"] == ""
     assert "error" not in row["summary"]
+
+
+def test_pipeline_completion_notifier_fires_once_for_long_terminal_run() -> None:
+    calls: list[dict[str, Any]] = []
+    logs: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+    service = _make_pipeline_service(
+        now_iso=lambda: "2026-05-06T19:02:00Z",
+        bridge_log=lambda *args, **kwargs: logs.append((args, kwargs)),
+        pipeline_completion_notifier=lambda payload: (
+            calls.append(payload) or {"notified": True, "reason": "notified", "hwnd": 101}
+        ),
+    )
+    service._status.update(
+        {
+            "runId": "pipeline_1",
+            "startedAt": "2026-05-06T19:00:00Z",
+            "baselineOutputCount": 0,
+            "jobsPageLoadedCount": 0,
+        }
+    )
+
+    service._set_completed(status="ok", final_output_count=5)
+    service._set_completed(status="ok", final_output_count=5)
+
+    assert len(calls) == 1
+    assert calls[0]["runId"] == "pipeline_1"
+    assert calls[0]["durationSeconds"] == 120.0
+    assert calls[0]["status"] == "completed"
+    assert calls[0]["updatesFound"] is True
+    assert any(args[1] == "jobs_pipeline_completion_attention" for args, _kwargs in logs)
+
+
+def test_pipeline_completion_notifier_failure_does_not_block_terminal_status() -> None:
+    logs: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+
+    def _raise(_payload: dict[str, Any]) -> dict[str, Any]:
+        raise RuntimeError("attention failed")
+
+    service = _make_pipeline_service(
+        now_iso=lambda: "2026-05-06T19:02:00Z",
+        bridge_log=lambda *args, **kwargs: logs.append((args, kwargs)),
+        pipeline_completion_notifier=_raise,
+    )
+    service._status.update(
+        {
+            "active": True,
+            "runId": "pipeline_1",
+            "startedAt": "2026-05-06T19:00:00Z",
+            "baselineOutputCount": 0,
+            "jobsPageLoadedCount": 0,
+        }
+    )
+
+    service._set_completed(status="ok", final_output_count=5)
+    payload = service.get_status_payload()
+
+    assert payload["active"] is False
+    assert payload["stage"] == "completed"
+    assert any(args[1] == "jobs_pipeline_completion_attention_failed" for args, _kwargs in logs)
+
+
+def test_pipeline_completion_notifier_skips_short_terminal_run() -> None:
+    calls: list[dict[str, Any]] = []
+    service = _make_pipeline_service(
+        now_iso=lambda: "2026-05-06T19:00:59Z",
+        pipeline_completion_notifier=lambda payload: calls.append(payload),
+    )
+    service._status.update(
+        {
+            "runId": "pipeline_1",
+            "startedAt": "2026-05-06T19:00:00Z",
+            "baselineOutputCount": 0,
+            "jobsPageLoadedCount": 0,
+        }
+    )
+
+    service._set_completed(status="ok", final_output_count=5)
+
+    assert calls == []

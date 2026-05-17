@@ -10,6 +10,8 @@ from typing import Any
 
 from src.bridge.ops_live_payload import build_pipeline_task_progress
 
+PIPELINE_COMPLETION_NOTIFICATION_MIN_SECONDS = 60.0
+
 
 @dataclass
 class PipelineRuntime:
@@ -52,6 +54,7 @@ class PipelineService:
         fail_lifecycle_run: Callable[..., dict[str, Any]] | None = None,
         attach_lifecycle_child: Callable[..., dict[str, Any] | None] | None = None,
         clear_task_state: Callable[[str], None] | None = None,
+        pipeline_completion_notifier: Callable[[dict[str, Any]], Any] | None = None,
     ) -> None:
         self._lock = pipeline_state_lock
         self._status = pipeline_status
@@ -82,6 +85,8 @@ class PipelineService:
         self._finish_lifecycle_run = finish_lifecycle_run
         self._fail_lifecycle_run = fail_lifecycle_run
         self._attach_lifecycle_child = attach_lifecycle_child
+        self._pipeline_completion_notifier = pipeline_completion_notifier
+        self._completion_notification_run_id = ""
 
     @staticmethod
     def _pipeline_progress(current_step: int, total_steps: int, label: str) -> dict[str, Any]:
@@ -117,7 +122,45 @@ class PipelineService:
                 summary={"stage": str(stage or "unknown")},
             )
 
+    def _completion_duration_seconds(self, started_at: str, finished_at: str) -> float:
+        if not started_at or not finished_at:
+            return 0.0
+        try:
+            started = self._parse_iso(started_at)
+            finished = self._parse_iso(finished_at)
+            duration = (finished - started).total_seconds()
+        except (TypeError, ValueError):
+            return 0.0
+        try:
+            return max(0.0, float(duration))
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _notify_pipeline_completion(self, payload: dict[str, Any] | None) -> None:
+        if not payload or not callable(self._pipeline_completion_notifier):
+            return
+        run_id = str(payload.get("runId") or "")
+        try:
+            result = self._pipeline_completion_notifier(dict(payload))
+            if isinstance(result, dict):
+                self._bridge_log(
+                    "info",
+                    "jobs_pipeline_completion_attention",
+                    runId=run_id,
+                    notified=bool(result.get("notified")),
+                    reason=str(result.get("reason") or ""),
+                    hwnd=int(result.get("hwnd") or 0),
+                )
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            self._bridge_log(
+                "warning",
+                "jobs_pipeline_completion_attention_failed",
+                runId=run_id,
+                error=str(exc),
+            )
+
     def _set_completed(self, *, status: str, final_output_count: int = 0, error: str = "") -> None:
+        completion_notification: dict[str, Any] | None = None
         with self._lock:
             run_id = str(self._status.get("runId") or "")
             baseline = int(self._status.get("baselineOutputCount") or 0)
@@ -139,6 +182,24 @@ class PipelineService:
                 }
             )
             finished_at = str(self._status.get("finishedAt") or "")
+            started_at = str(self._status.get("startedAt") or "")
+            stage = str(self._status.get("stage") or "")
+            duration_seconds = self._completion_duration_seconds(started_at, finished_at)
+            if (
+                run_id
+                and run_id != self._completion_notification_run_id
+                and duration_seconds >= PIPELINE_COMPLETION_NOTIFICATION_MIN_SECONDS
+            ):
+                self._completion_notification_run_id = run_id
+                completion_notification = {
+                    "runId": run_id,
+                    "startedAt": started_at,
+                    "finishedAt": finished_at,
+                    "durationSeconds": duration_seconds,
+                    "status": stage,
+                    "error": str(error or ""),
+                    "updatesFound": bool(updates_found),
+                }
             progress = self._pipeline_lifecycle_progress(dict(self._status))
             if run_id:
                 if callable(self._fail_lifecycle_run) and status == "error":
@@ -171,6 +232,7 @@ class PipelineService:
                         progress=progress,
                     )
             self._runtime.active_run_id = ""
+        self._notify_pipeline_completion(completion_notification)
 
     def _get_child_task_snapshot(self, task_type: str, run_id: str = "") -> Any:
         if not callable(self._get_projected_run_history):

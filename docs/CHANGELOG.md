@@ -10,6 +10,9 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+### Added
+- Windows desktop sessions now flash the Baluffo taskbar button when a long Jobs pipeline run finishes in the background.
+
 ## [0.2.01] - 2026-05-16
 
 ### Changed

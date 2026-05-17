@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 
 from src.bridge import run_history_api as _run_history_api
+from src.bridge.desktop_attention import notify_pipeline_completion_attention
 from src.bridge.server import runtime_state as bridge_runtime_state
 from src.source_registry_io import load_runtime_evidence
 
@@ -637,6 +638,12 @@ def get_pipeline_service() -> _PipelineServiceLike:
                 )
                 return True
 
+            def pipeline_completion_notifier(payload: dict[str, Any]) -> dict[str, Any]:
+                return notify_pipeline_completion_attention(
+                    runtime_config=root_mod.RUNTIME_CONFIG,
+                    completion=payload,
+                )
+
             root_mod._PIPELINE_SERVICE = root_mod.PipelineService(
                 pipeline_state_lock=bridge_runtime_state.PIPELINE_STATE_LOCK,
                 pipeline_status=bridge_runtime_state.PIPELINE_STATUS,
@@ -668,6 +675,7 @@ def get_pipeline_service() -> _PipelineServiceLike:
                 fail_lifecycle_run=root_mod.fail_lifecycle_run,
                 attach_lifecycle_child=root_mod.attach_lifecycle_child,
                 clear_task_state=root_mod.clear_task_state,
+                pipeline_completion_notifier=pipeline_completion_notifier,
             )
         return cast(_PipelineServiceLike, root_mod._PIPELINE_SERVICE)
 
