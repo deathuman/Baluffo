@@ -425,11 +425,10 @@ def build_fetcher_args_from_payload(payload: dict[str, Any]) -> tuple[list[str],
 
 
 def mark_desktop_session_activity(path: str) -> None:
-    _ = path
-    if (
-        not bool(getattr(RUNTIME_CONFIG, "desktop_mode", False))
-        and str(getattr(RUNTIME_CONFIG, "owner_mode", "") or "").strip() != "desktop-window"
-    ):
+    owner_mode = str(getattr(RUNTIME_CONFIG, "owner_mode", "") or "").strip()
+    if owner_mode == "desktop-window":
+        return
+    if not bool(getattr(RUNTIME_CONFIG, "desktop_mode", False)):
         return
     bridge_runtime_state.mark_desktop_session_activity(now_iso=now_iso)
 

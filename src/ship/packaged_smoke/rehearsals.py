@@ -119,6 +119,16 @@ def _wait_for_pid_exit(pid: int, *, timeout_s: float) -> None:
     rehearsal_browser_mod._wait_for_pid_exit(pid, timeout_s=timeout_s)
 
 
+def _terminate_browser_proof_process(pid: int) -> None:
+    _root()
+    rehearsal_browser_mod._terminate_browser_proof_process(pid)
+
+
+def _wait_for_desktop_ports_released(*ports: int, timeout_s: float) -> None:
+    _root()
+    rehearsal_browser_mod._wait_for_desktop_ports_released(*ports, timeout_s=timeout_s)
+
+
 def _wait_for_relaunched_runtime(
     *,
     expected_data_dir: Path,

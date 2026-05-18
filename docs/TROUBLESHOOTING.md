@@ -219,6 +219,19 @@ python -c "from src.bridge.source_check_api import trigger_source_check; print(t
 | Port conflict | Check if another Baluffo instance is running |
 | Log files | Check `data/` for startup logs |
 
+### Closed desktop window leaves `Baluffo.exe` running
+
+Fixed desktop-window builds shut down the owned launcher, site child, and bridge child shortly after the Baluffo browser window closes when no critical fetch, discovery, pipeline, or sync task is active. During active work, the launcher may keep the bridge alive temporarily for the existing background recovery path, but `/ops/health` polling alone must not keep the process tree alive.
+
+Diagnostics:
+
+| Check | Action |
+|-------|--------|
+| Startup trace | Inspect `ship\data\desktop-startup-metrics.jsonl` for `desktop_browser_window_missing_waiting_for_bridge` followed by `desktop_browser_heartbeat_timeout` |
+| Bridge events | Inspect `ship\data\admin-bridge-events.jsonl`; repeated `/ops/health` entries should not advance the desktop-window owner activity timestamp |
+| Session state | Inspect `%LOCALAPPDATA%\Baluffo\desktop-session.json` for stale `sitePid`, `bridgePid`, `sitePort`, and `bridgePort` values |
+| Live ports | Check `127.0.0.1:8080` and `127.0.0.1:8877` only if the stuck `Baluffo.exe` children are still present |
+
 ### Desktop updater goes back to `Download` after starting or finishing a download
 
 | Check | Action |

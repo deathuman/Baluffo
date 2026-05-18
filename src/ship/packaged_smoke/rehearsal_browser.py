@@ -98,6 +98,49 @@ def _wait_for_pid_exit(pid: int, *, timeout_s: float) -> None:
     raise TimeoutError(f"Managed browser pid {int(pid or 0)} remained alive after launcher exit.")
 
 
+def _terminate_browser_proof_process(pid: int) -> None:
+    deps = _root()
+    normalized_pid = int(pid or 0)
+    if normalized_pid <= 0:
+        raise RuntimeError(
+            "Packaged browser close rehearsal had no browser proof PID to terminate."
+        )
+    if deps.os.name == "nt":
+        deps.subprocess.run(
+            ["taskkill", "/PID", str(normalized_pid), "/T", "/F"],
+            stdout=deps.subprocess.DEVNULL,
+            stderr=deps.subprocess.DEVNULL,
+            check=False,
+        )
+        return
+    try:
+        deps.os.kill(normalized_pid, 15)
+    except OSError:
+        return
+
+
+def _wait_for_desktop_ports_released(*ports: int, timeout_s: float) -> None:
+    deps = _root()
+    deadline = deps.time.monotonic() + max(5.0, float(timeout_s))
+    last_active: dict[int, list[int]] = {}
+    while deps.time.monotonic() < deadline:
+        last_active = {}
+        for raw_port in ports:
+            port = int(raw_port)
+            if port <= 0:
+                continue
+            pids = sorted(deps.pids_listening_on_tcp_port_windows(port))
+            if pids:
+                last_active[port] = pids
+        if not last_active:
+            return
+        deps.time.sleep(0.5)
+    raise TimeoutError(
+        "Packaged browser close rehearsal left desktop ports listening: "
+        + ", ".join(f"{port}={pids}" for port, pids in sorted(last_active.items()))
+    )
+
+
 def run_packaged_browser_job_rehearsal(
     *,
     exe_path: Path,
@@ -208,8 +251,17 @@ def run_packaged_browser_job_rehearsal(
             raise RuntimeError(
                 "Packaged browser job rehearsal proof PID was not alive before launcher shutdown."
             )
-        deps.terminate_process_only(runtime_process)
+        deps._terminate_browser_proof_process(proof_pid)
         deps._wait_for_pid_exit(proof_pid, timeout_s=max(15.0, float(runtime_timeout_s)))
+        deps._wait_for_process_exit(
+            runtime_process,
+            timeout_s=max(45.0, float(runtime_timeout_s)),
+        )
+        deps._wait_for_desktop_ports_released(
+            actual_site_port,
+            actual_bridge_port,
+            timeout_s=max(15.0, float(runtime_timeout_s) / 2.0),
+        )
         return {
             "name": "Packaged browser job rehearsal",
             "slug": "packaged-browser-job-rehearsal",
@@ -229,6 +281,8 @@ def run_packaged_browser_job_rehearsal(
                 "windowPid": window_pid,
                 "proofPid": proof_pid,
                 "proofSource": proof_source,
+                "browserCloseShutdown": True,
+                "desktopPortsReleased": True,
                 "runtimeStdout": str(runtime_stdout_path),
                 "runtimeStderr": str(runtime_stderr_path),
                 "startupMetrics": str(metrics_path),

@@ -229,12 +229,12 @@ def watch_browser_session(
         while True:
             if api.updater_install_requested(data_dir):
                 return "update_install_requested"
-            last_heartbeat = max(
+            last_activity = max(
                 api.latest_browser_heartbeat_ts(data_dir), api.bridge_last_activity_ts(bridge_port)
             )
-            if last_heartbeat <= 0.0:
+            if last_activity <= 0.0:
                 return "heartbeat_missing"
-            idle_for = time.time() - last_heartbeat
+            idle_for = time.time() - last_activity
             if idle_for > float(heartbeat_idle_timeout_s):
                 return "heartbeat_timeout"
             time.sleep(1.0)
@@ -418,9 +418,9 @@ def watch_browser_session(
                 allow_title_fallback=True,
             )
         )
-        last_heartbeat = api.latest_browser_session_activity_ts(data_dir, bridge_port=bridge_port)
-        if last_heartbeat > 0.0:
-            idle_for = time.time() - last_heartbeat
+        last_activity = api.latest_browser_session_activity_ts(data_dir, bridge_port=bridge_port)
+        if last_activity > 0.0:
+            idle_for = time.time() - last_activity
             if idle_for > float(DETACHED_WINDOW_IDLE_TIMEOUT_S):
                 api._append_startup_trace(
                     data_dir,

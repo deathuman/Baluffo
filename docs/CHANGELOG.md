@@ -24,6 +24,7 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 - First-run Jobs pipeline tooltip and status copy now describe the bootstrap phase instead of the normal refresh cadence.
 
 ### Fixed
+- Closing the packaged desktop browser window no longer leaves the launcher, site child, or bridge child running because `/ops/health` polling can no longer refresh desktop-window owner activity.
 - First-run Jobs now suppresses stale packaged/runtime rows, starts one Google Sheets bootstrap, serves the promoted feed after success, and avoids the repeated fetch loop.
 - Admin and Jobs navigation no longer pay the one-minute cold-start validation cost after first-run bootstrap recovery.
 - Jobs rows with empty normalized titles are filtered before render, and the first-run empty state now explains that jobs are still being prepared.

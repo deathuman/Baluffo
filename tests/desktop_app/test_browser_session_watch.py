@@ -387,7 +387,7 @@ def test_watch_browser_session_returns_handoff_failed_when_signal_never_arrives(
     assert "desktop_browser_watchdog_handoff_confirmed" not in event_names
 
 
-def test_watch_browser_session_times_out_when_handoff_window_disappears_without_heartbeat() -> None:
+def test_watch_browser_session_times_out_missing_handoff_window_stale_activity() -> None:
     bridge_process = mock.Mock(spec=subprocess.Popen)
     bridge_process.poll.return_value = None
     browser_process = mock.Mock(spec=subprocess.Popen)
@@ -400,8 +400,8 @@ def test_watch_browser_session_times_out_when_handoff_window_disappears_without_
             return_value=("visible_window", 980),
         ) as handoff_mock,
         mock.patch.object(desktop_app, "updater_install_requested", return_value=False),
-        mock.patch.object(desktop_app, "latest_browser_heartbeat_ts", return_value=0.0),
-        mock.patch.object(desktop_app, "latest_browser_session_activity_ts", return_value=0.0),
+        mock.patch.object(desktop_app, "latest_browser_session_activity_ts", return_value=100.0),
+        mock.patch.object(desktop_app.time, "time", return_value=131.0),
         mock.patch.object(
             desktop_app, "_is_baluffo_browser_window_open", return_value=False
         ) as window_mock,

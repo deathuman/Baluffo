@@ -198,7 +198,14 @@ def api_datetime_fromisoformat(text: str) -> datetime:
 def bridge_last_activity_ts(bridge_port: int) -> float:
     api = desktop_api()
     payload = api.get_baluffo_bridge_health(bridge_port, timeout_s=1.5)
-    return _as_float(api._parse_metric_ts(payload.get("desktopLastActivityAt"))) if payload else 0.0
+    if not payload:
+        return 0.0
+    owner = payload.get("owner") if isinstance(payload.get("owner"), dict) else {}
+    activity_at = (
+        str(owner.get("lastActivityAt") or "").strip()
+        or str(payload.get("desktopLastActivityAt") or "").strip()
+    )
+    return _as_float(api._parse_metric_ts(activity_at))
 
 
 def latest_browser_heartbeat_ts(data_dir: Path) -> float:
@@ -213,6 +220,8 @@ def latest_browser_heartbeat_ts(data_dir: Path) -> float:
 
 def latest_browser_session_activity_ts(data_dir: Path, *, bridge_port: int) -> float:
     api = desktop_api()
+    # Bridge activity here is desktop page lifecycle activity exposed by the bridge;
+    # generic health polling must not refresh it.
     return max(
         _as_float(api.latest_browser_heartbeat_ts(data_dir)),
         _as_float(api.bridge_last_activity_ts(bridge_port)),

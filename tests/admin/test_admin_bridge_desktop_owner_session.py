@@ -3,9 +3,11 @@ from __future__ import annotations
 from unittest import mock
 
 from src import admin_bridge
+from src.bridge.api import BridgeApi
+from tests.helpers.bridge_api import BridgeRuntimeConfigStub
 
 
-def test_desktop_owner_session_stays_alive_when_requests_refresh_activity(
+def test_desktop_owner_session_stays_alive_when_lifecycle_refreshes_activity(
     admin_bridge_entrypoint_root,
 ):
     cfg = admin_bridge.RuntimeConfig(
@@ -27,7 +29,7 @@ def test_desktop_owner_session_stays_alive_when_requests_refresh_activity(
     with mock.patch.object(
         admin_bridge,
         "now_iso",
-        side_effect=["2026-03-01T00:00:01+00:00", "2026-03-01T00:00:18+00:00"],
+        return_value="2026-03-01T00:00:01+00:00",
     ):
         status_code, payload = admin_bridge.update_desktop_session_lifecycle(
             owner_token="owner-1",
@@ -35,7 +37,31 @@ def test_desktop_owner_session_stays_alive_when_requests_refresh_activity(
             page_id="page-1",
             state="alive",
         )
-        admin_bridge.mark_desktop_session_activity("/registry/conflicts")
+    assert status_code == 200
+    assert payload["ok"] is True
+
+    with mock.patch.object(
+        admin_bridge,
+        "now_iso",
+        return_value="2026-03-01T00:00:18+00:00",
+    ):
+        admin_bridge.mark_desktop_session_activity("/ops/health")
+    assert (
+        admin_bridge.bridge_runtime_state.get_owner_state()["lastActivityAt"]
+        == "2026-03-01T00:00:01+00:00"
+    )
+
+    with mock.patch.object(
+        admin_bridge,
+        "now_iso",
+        return_value="2026-03-01T00:00:18+00:00",
+    ):
+        status_code, payload = admin_bridge.update_desktop_session_lifecycle(
+            owner_token="owner-1",
+            session_id="session-1",
+            page_id="page-1",
+            state="alive",
+        )
     assert status_code == 200
     assert payload["ok"] is True
 
@@ -75,3 +101,29 @@ def test_lightweight_ops_health_exposes_desktop_owner_identity(
     assert health["owner"]["mode"] == "desktop-window"
     assert health["owner"]["token"] == "owner-1"
     assert health["owner"]["sessionId"] == "session-1"
+
+
+def test_bridge_api_ignores_route_activity_for_desktop_window_owner(tmp_path):
+    calls: list[str] = []
+    api = BridgeApi(
+        runtime_config=BridgeRuntimeConfigStub(
+            root=tmp_path,
+            data_dir=tmp_path,
+            desktop_mode=True,
+            owner_mode="desktop-window",
+        ),
+        DISCOVERY_REPORT_PATH=tmp_path / "discovery-report.json",
+        JOBS_FETCH_REPORT_PATH=tmp_path / "jobs-fetch-report.json",
+        APPROVAL_STATE_PATH=tmp_path / "approval.json",
+        DISCOVERY_LOG_PATH=tmp_path / "discovery.log",
+        FETCHER_LOG_PATH=tmp_path / "fetcher.log",
+        STARTUP_METRICS_PATH=tmp_path / "startup-metrics.jsonl",
+        DESKTOP_SESSION_ACTIVITY_AT="2026-03-01T00:00:01+00:00",
+        now_iso=lambda: "2026-03-01T00:00:18+00:00",
+        _mark_desktop_session_activity=lambda path: calls.append(path),
+    )
+
+    api.mark_desktop_session_activity("/ops/health")
+
+    assert calls == []
+    assert api.DESKTOP_SESSION_ACTIVITY_AT == "2026-03-01T00:00:01+00:00"

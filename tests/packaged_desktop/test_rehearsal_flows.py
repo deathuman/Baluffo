@@ -455,8 +455,16 @@ def test_run_packaged_browser_job_rehearsal_passes_with_attached_pid_proof() -> 
                 },
             ),
             mock.patch.object(smoke.desktop_app_mod, "is_process_alive", return_value=True),
-            mock.patch.object(smoke, "terminate_process_only") as terminate_only_mock,
+            mock.patch.object(
+                smoke,
+                "_terminate_browser_proof_process",
+            ) as terminate_browser_mock,
             mock.patch.object(smoke, "_wait_for_pid_exit") as wait_pid_exit_mock,
+            mock.patch.object(smoke, "_wait_for_process_exit") as wait_process_exit_mock,
+            mock.patch.object(
+                smoke,
+                "_wait_for_desktop_ports_released",
+            ) as wait_ports_released_mock,
             mock.patch.object(smoke, "terminate_process_tree"),
             mock.patch.object(smoke, "cleanup_orphaned_desktop_ports_nt"),
         ):
@@ -475,8 +483,12 @@ def test_run_packaged_browser_job_rehearsal_passes_with_attached_pid_proof() -> 
     assert launch_mock.call_args.kwargs["env"][
         smoke.desktop_app_mod.PREFERRED_BROWSER_PATH_ENV
     ] == ("C:/Chrome/chrome.exe")
-    terminate_only_mock.assert_called_once_with(runtime_process)
+    terminate_browser_mock.assert_called_once_with(333)
     wait_pid_exit_mock.assert_called_once_with(333, timeout_s=15.0)
+    wait_process_exit_mock.assert_called_once_with(runtime_process, timeout_s=45.0)
+    wait_ports_released_mock.assert_called_once_with(8080, 8877, timeout_s=15.0)
+    assert payload["details"]["browserCloseShutdown"] is True
+    assert payload["details"]["desktopPortsReleased"] is True
 
 
 def test_run_packaged_browser_job_rehearsal_fails_when_attach_metric_is_missing() -> None:

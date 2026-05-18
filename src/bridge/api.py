@@ -449,6 +449,11 @@ class BridgeApi:
                 )
 
     def mark_desktop_session_activity(self, path: str) -> None:
+        owner_mode = str(getattr(self.runtime_config, "owner_mode", "") or "").strip()
+        if owner_mode == "desktop-window":
+            return
+        if not bool(getattr(self.runtime_config, "desktop_mode", False)):
+            return
         # Keep routes compatible with the legacy module-global `DESKTOP_SESSION_ACTIVITY_AT`.
         self._mark_desktop_session_activity(path)
         try:
