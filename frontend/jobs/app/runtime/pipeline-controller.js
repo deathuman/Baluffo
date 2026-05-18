@@ -6,7 +6,7 @@ import {
   JOBS_UPDATE_COPY,
   scheduleJobsPipelineStatusPoll as scheduleJobsPipelineStatusPollFromModule,
   updateJobsPipelineUi as updateJobsPipelineUiFromModule
-} from "../pipeline.js?v=8";
+} from "../pipeline.js?v=9";
 
 const BLOCKING_TASK_TYPES = new Set(["pipeline", "fetch", "discovery", "sync"]);
 
@@ -41,6 +41,20 @@ function buildBlockingTaskPayload(task) {
     }
   }
   return payload;
+}
+
+function taskCoverageScope(task) {
+  const summary = task?.summary && typeof task.summary === "object" ? task.summary : {};
+  const runtime = task?.runtime && typeof task.runtime === "object" ? task.runtime : {};
+  return String(task?.coverageScope || summary.coverageScope || runtime.coverageScope || "").trim();
+}
+
+function isFirstRunBootstrapTask(task) {
+  const runId = String(task?.runId || "").trim();
+  const taskName = String(task?.task || task?.name || "").trim();
+  return runId.startsWith("jobs_bootstrap_")
+    || taskName === "jobs_bootstrap"
+    || taskCoverageScope(task) === "bootstrap_sheets";
 }
 
 function getBlockingTask(taskStatePayload, trackedRunId = "") {
@@ -98,6 +112,7 @@ export function createJobsPipelineController({
     disabled = false,
     buttonLabel = "",
     progressLabel = "",
+    firstRunBootstrapActive = false,
     isError = false
   } = {}) {
     updateJobsPipelineUiFromModule(refs, {
@@ -108,6 +123,9 @@ export function createJobsPipelineController({
       progressLabel,
       buttonTooltip: getJobsUpdateTooltip({
         bridgeError: jobsPipelineUiState.updateTooltipBridgeError,
+        firstRunBootstrapActive: Boolean(
+          firstRunBootstrapActive || jobsPipelineUiState.updateTooltipFirstRunBootstrapActive
+        ),
         firstRun: jobsPipelineUiState.updateTooltipFirstRun,
         firstRunKnown: jobsPipelineUiState.updateTooltipFirstRunKnown
       }),
@@ -188,6 +206,7 @@ export function createJobsPipelineController({
       if (active) {
         jobsPipelineUiState.active = true;
         jobsPipelineUiState.pendingStart = false;
+        jobsPipelineUiState.updateTooltipFirstRunBootstrapActive = false;
         jobsPipelineUiState.runId = runId || jobsPipelineUiState.runId;
         jobsPipelineUiState.startedAt = String(payload?.startedAt || jobsPipelineUiState.startedAt || "");
         updateJobsPipelineUi({
@@ -204,6 +223,7 @@ export function createJobsPipelineController({
       }
 
       if (jobsPipelineUiState.pendingStart) {
+        jobsPipelineUiState.updateTooltipFirstRunBootstrapActive = false;
         updateJobsPipelineUi({
           running: true,
           disabled: true,
@@ -217,6 +237,8 @@ export function createJobsPipelineController({
         if (trackedRunId || jobsPipelineUiState.active) {
           jobsPipelineUiState.active = true;
         }
+        const firstRunBootstrapActive = isFirstRunBootstrapTask(blockingTask);
+        jobsPipelineUiState.updateTooltipFirstRunBootstrapActive = firstRunBootstrapActive;
         const blockingPayload = buildBlockingTaskPayload(blockingTask);
         const blockingProgressLabel = formatBlockingTaskProgressLabel(blockingTask);
         updateJobsPipelineUi({
@@ -224,15 +246,18 @@ export function createJobsPipelineController({
           disabled: true,
           buttonLabel: getPipelineRunningLabel(blockingPayload),
           progressLabel: blockingProgressLabel || String(blockingTask?.taskProgress?.phaseLabel || "").trim(),
+          firstRunBootstrapActive,
           pipelinePayload: blockingPayload
         });
         scheduleJobsPipelineStatusPoll(pollDelayMs);
         return;
       }
       if ((trackedRunId && trackedRunId === runId) || jobsPipelineUiState.active) {
+        jobsPipelineUiState.updateTooltipFirstRunBootstrapActive = false;
         await refreshJobsUpdateTooltipFromHealth();
         handlePipelineCompletionStatus(payload);
       } else {
+        jobsPipelineUiState.updateTooltipFirstRunBootstrapActive = false;
         await refreshJobsUpdateTooltipFromHealth();
         updateJobsPipelineUi({
           running: false,
@@ -246,6 +271,7 @@ export function createJobsPipelineController({
       markPipelineStatusPollFailure(jobsPipelineUiState);
       jobsPipelineUiState.bridgeOnline = false;
       jobsPipelineUiState.updateTooltipBridgeError = String(err?.message || err || "bridge unavailable");
+      jobsPipelineUiState.updateTooltipFirstRunBootstrapActive = false;
       jobsPipelineUiState.updateTooltipFirstRun = false;
       jobsPipelineUiState.updateTooltipFirstRunKnown = false;
       jobsPipelineUiState.active = false;
@@ -285,6 +311,7 @@ export function createJobsPipelineController({
     try {
       jobsPipelineUiState.active = true;
       jobsPipelineUiState.pendingStart = true;
+      jobsPipelineUiState.updateTooltipFirstRunBootstrapActive = false;
       jobsPipelineUiState.runId = "";
       jobsPipelineUiState.startedAt = new Date().toISOString();
       const payload = await callJobsBridge("/tasks/run-jobs-pipeline", {
@@ -299,6 +326,7 @@ export function createJobsPipelineController({
       }
       jobsPipelineUiState.bridgeOnline = true;
       jobsPipelineUiState.updateTooltipBridgeError = "";
+      jobsPipelineUiState.updateTooltipFirstRunBootstrapActive = false;
       resetPipelineStatusPollFailures(jobsPipelineUiState);
       jobsPipelineUiState.active = true;
       jobsPipelineUiState.pendingStart = false;
@@ -320,6 +348,7 @@ export function createJobsPipelineController({
       const normalizedMessage = message.toLowerCase();
       jobsPipelineUiState.active = false;
       jobsPipelineUiState.pendingStart = false;
+      jobsPipelineUiState.updateTooltipFirstRunBootstrapActive = false;
       jobsPipelineUiState.runId = "";
       jobsPipelineUiState.startedAt = "";
       updateJobsPipelineUi({

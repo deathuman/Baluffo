@@ -162,6 +162,58 @@ test("pollJobsPipelineStatus keeps the Jobs button busy while fetch is still act
   }
 });
 
+test("pollJobsPipelineStatus uses first-run bootstrap tooltip while sheet bootstrap fetch is active", async () => {
+  const restoreTimers = installFakeTimers();
+  try {
+    const button = createButtonMock();
+    const uiState = createJobsPipelineUiState();
+
+    const controller = createJobsPipelineController({
+      refs: { jobsPipelineRunBtn: button },
+      jobsPipelineUiState: uiState,
+      callJobsBridge: async path => {
+        if (path === "/tasks/run-jobs-pipeline-status") {
+          return { active: false, stage: "idle" };
+        }
+        if (path === "/ops/task-state") {
+          return {
+            tasks: [
+              {
+                taskType: "fetch",
+                task: "jobs_bootstrap",
+                runId: "jobs_bootstrap_test",
+                active: true,
+                startedAt: "2026-05-18T00:00:00.000Z",
+                summary: { coverageScope: "bootstrap_sheets" },
+                taskProgress: {
+                  phaseLabel: "Executing sources",
+                  counts: { outputCount: 120 }
+                }
+              }
+            ]
+          };
+        }
+        throw new Error(`Unexpected bridge path: ${path}`);
+      },
+      getAllJobs: () => [],
+      showToast: () => {},
+      setRefreshJobsNeedsAttention: () => {},
+      isErrorStage: payload => Boolean(payload?.error),
+      pollDelayMs: 25,
+      idlePollDelayMs: 50
+    });
+
+    await controller.pollJobsPipelineStatus();
+
+    assert.equal(button.disabled, true);
+    assert.match(String(button.textContent || ""), /^Fetching job listings\.\.\./);
+    assert.equal(button.dataset.tooltip, JOBS_UPDATE_COPY.tooltipFirstRunBootstrap);
+    assert.equal(uiState.updateTooltipFirstRunBootstrapActive, true);
+  } finally {
+    restoreTimers();
+  }
+});
+
 test("pollJobsPipelineStatus announces completion only after blocking tasks clear", async () => {
   const restoreTimers = installFakeTimers();
   try {

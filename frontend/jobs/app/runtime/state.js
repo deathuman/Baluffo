@@ -23,6 +23,7 @@ export function createJobsPipelineUiState() {
     startedAt: "",
     statusPollFailureCount: 0,
     updateTooltipBridgeError: "",
+    updateTooltipFirstRunBootstrapActive: false,
     updateTooltipFirstRun: false,
     updateTooltipFirstRunKnown: false
   };

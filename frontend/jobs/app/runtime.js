@@ -32,7 +32,7 @@ import {
   rememberJobsUrl
 } from "../state-sync/index.js";
 import { requestConfirmationDialog } from "../../local-data/profile-name-dialog.js";
-import { callJobsBridge as callJobsBridgeFromModule } from "./pipeline.js?v=8";
+import { callJobsBridge as callJobsBridgeFromModule } from "./pipeline.js?v=9";
 import { openFirstRunJobsNotice } from "./first-run-notice.js?v=1";
 import { applyJobsAdminBridgeState as applyJobsAdminBridgeStateFromModule } from "./admin-bridge-state.js?v=5";
 import {
@@ -70,7 +70,7 @@ import {
   fetchJsonFromCandidates as fetchJsonFromCandidatesFromSources,
   renderDataSources as renderDataSourcesFromSources
 } from "./sources.js";
-import { composeJobsRuntime } from "./runtime/composition.js?v=9";
+import { composeJobsRuntime } from "./runtime/composition.js?v=10";
 import { createJobsBoot } from "./runtime/boot.js?v=2";
 import { createJobsPageFlow } from "./runtime/page-flow.js?v=5";
 

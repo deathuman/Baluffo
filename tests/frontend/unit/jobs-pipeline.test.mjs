@@ -102,6 +102,10 @@ test("jobs update tooltip copy covers default, warm, first-run, and unavailable 
     JOBS_UPDATE_COPY.tooltipWarm
   );
   assert.equal(
+    getJobsUpdateTooltip({ firstRunKnown: true, firstRun: true, firstRunBootstrapActive: true }),
+    JOBS_UPDATE_COPY.tooltipFirstRunBootstrap
+  );
+  assert.equal(
     getJobsUpdateTooltip({ firstRunKnown: true, firstRun: true }),
     JOBS_UPDATE_COPY.tooltipFirstRun
   );

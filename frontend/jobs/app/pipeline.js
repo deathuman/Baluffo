@@ -8,6 +8,7 @@ export const JOBS_UPDATE_COPY = Object.freeze({
   tooltipDefault: "Find new openings and rebuild the local job list. This usually takes a few minutes; first updates can take up to 1 hour.",
   tooltipWarm: "Find new openings and rebuild the local job list. This usually takes a few minutes.",
   tooltipFirstRun: "First update: find new openings and rebuild the local job list. This can take up to 1 hour.",
+  tooltipFirstRunBootstrap: "Preparing first-run jobs: Baluffo is fetching the starter Google Sheets job feed. The first refresh can take about 4 minutes.",
   tooltipBridgeUnavailable: "Update jobs is unavailable because the Admin bridge is not reachable. Start or restart the desktop app, then try again.",
   tooltipBridgeTimedOut: "Update jobs is unavailable because the Admin bridge did not respond in time. Start or restart the desktop app, then try again.",
   completedWithUpdates: "Job update completed. Reload jobs to load updated listings.",
@@ -25,10 +26,12 @@ export function getJobsUpdateUnavailableTooltip(error) {
 
 export function getJobsUpdateTooltip({
   bridgeError = "",
+  firstRunBootstrapActive = false,
   firstRun = false,
   firstRunKnown = false
 } = {}) {
   if (String(bridgeError || "").trim()) return getJobsUpdateUnavailableTooltip(bridgeError);
+  if (firstRunBootstrapActive) return JOBS_UPDATE_COPY.tooltipFirstRunBootstrap;
   if (firstRun) return JOBS_UPDATE_COPY.tooltipFirstRun;
   if (firstRunKnown) return JOBS_UPDATE_COPY.tooltipWarm;
   return JOBS_UPDATE_COPY.tooltipDefault;
