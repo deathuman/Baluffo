@@ -874,6 +874,32 @@ coverage fields.
 | `needsReviewProviders` | `Array<Object>` | Compact provider rows that fetched successfully but kept zero jobs. |
 | `readyLaterProviders` | `Array<Object>` | Compact rows with diagnostic `providerReplacementReadiness="ready_later"`. No source mutation is implied. |
 
+### Provider coverage gaps
+
+The source-policy soak report may include `sections.providerCoverageGaps`. This section is
+read-only advisory evidence derived from discovery candidates, active/pending/rejected registry
+rows, fetch report source rows, and source-state provider coverage. It must not mutate registry
+rows, source sync, loader selection, provider validation, dynamic static suppression, source-policy
+review state, or `REDUNDANT_STATIC_IF_PROVIDER`.
+
+Section payload:
+
+| Field | Type | Description |
+|---|---|---|
+| `bucketCounts` | `object` | Counts by provider coverage gap bucket. |
+| `totalGapCount` | `number` | Total examples counted across gap buckets. |
+| `unsupportedProviderDetected` | `object` | Count and capped examples for unsupported ATS families such as Oracle HCM. |
+| `providerDetectedNeedsProbe` | `object` | Count and capped examples for provider-shaped rows that still need probing. |
+| `stagedProviderNotFetched` | `object` | Count and capped examples for pending provider migration candidates with no fetch evidence. |
+| `fetchedButNotValidated` | `object` | Count and capped examples for fetched provider migration candidates that are not `validated_provider`. |
+| `validatedProviderMissingMigrationSourceIdentity` | `object` | Count and capped examples for successful provider fetches that cannot link back to a static/generic source. |
+| `staticStillActiveDespiteValidatedProvider` | `object` | Count and capped examples for active static rows linked to validated providers without current suppression evidence. |
+
+Bucket objects include `count` and `examples`. Example rows are compact diagnostics and may include
+source/provider identities and names, blocker reason, detected provider family/url/id, current
+adapter, registry bucket/state, latest fetch status, kept count, provider coverage status,
+consecutive success count, and `migrationSourceIdentity`.
+
 ### Provider coverage link backfill review surface
 
 Fetch reports, normalized bridge payloads, `/ops/health` KPI payloads, and fetcher metrics may

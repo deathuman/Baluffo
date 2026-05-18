@@ -17,6 +17,7 @@ PROVIDER_DISPLAY_NAMES = {
     "smartrecruiters": "SmartRecruiters",
     "teamtailor": "Teamtailor",
     "workable": "Workable",
+    "workday": "Workday",
 }
 
 _HOST_FRAGMENT_ADAPTERS = (
@@ -28,6 +29,7 @@ _HOST_FRAGMENT_ADAPTERS = (
     ("workable", ("apply.workable.com", ".workable.com")),
     ("teamtailor", (".teamtailor.com",)),
     ("personio", (".jobs.personio.de",)),
+    ("workday", (".myworkdayjobs.com",)),
 )
 
 
@@ -264,6 +266,27 @@ def _personio_candidate(
     }
 
 
+def _workday_candidate(
+    base: dict[str, Any],
+    parsed: ParseResult,
+    host: str,
+    path: str,
+    studio: str,
+) -> dict[str, Any] | None:
+    if not host.endswith(".myworkdayjobs.com"):
+        return None
+    listing_path = path.rstrip("/")
+    if not listing_path:
+        return None
+    base_url = f"{parsed.scheme}://{host}" if parsed.scheme else f"https://{host}"
+    query = f"?{parsed.query}" if parsed.query else ""
+    return {
+        **base,
+        "listing_url": f"{base_url}{listing_path}{query}",
+        "company": studio,
+    }
+
+
 ProviderCandidateBuilder = Callable[
     [dict[str, Any], ParseResult, str, str, str],
     dict[str, Any] | None,
@@ -280,6 +303,7 @@ _PROVIDER_CANDIDATE_BUILDERS: dict[str, ProviderCandidateBuilder] = {
     "smartrecruiters": _smartrecruiters_candidate,
     "teamtailor": _teamtailor_candidate,
     "workable": _workable_candidate,
+    "workday": _workday_candidate,
 }
 
 

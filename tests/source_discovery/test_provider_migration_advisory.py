@@ -63,6 +63,20 @@ def test_provider_migration_advisory_classifies_unsupported_provider_evidence() 
     assert "unsupported_provider_evidence" in row["migrationReasons"]
 
 
+def test_provider_migration_advisory_classifies_oracle_hcm_as_unsupported() -> None:
+    row = enrich_provider_migration_metadata(
+        {
+            "name": "Oracle Studio",
+            "adapter": "static",
+            "listing_url": "https://example.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs",
+        }
+    )
+
+    assert row["detectedProviderFamily"] == "oracle_hcm"
+    assert row["recommendedAction"] == "unsupported_provider"
+    assert "unsupported_provider_evidence" in row["migrationReasons"]
+
+
 def test_provider_migration_advisory_keeps_static_or_insufficient_rows() -> None:
     productive = enrich_provider_migration_metadata(
         {"name": "Productive Static", "adapter": "static", "jobsFound": 4}
@@ -146,6 +160,44 @@ def test_stage_provider_candidate_keeps_discovery_and_registry_state_separate() 
     assert "pendingReason" not in staged
     assert "stateChangedAt" not in staged
     assert "stateChangedBy" not in staged
+
+
+def test_stage_provider_candidate_supports_safe_workday_listing_url() -> None:
+    staged, diagnostic = provider_staging_decision_for_advisory(
+        {
+            "name": "Workday Static Studio",
+            "adapter": "static",
+            "pages": ["https://studio.example/careers"],
+            "atsLinks": ["https://tencent.wd1.myworkdayjobs.com/en-US/timi_careers?q=game"],
+            "jobsFound": 3,
+        },
+        at="2026-04-30T12:00:00+00:00",
+    )
+
+    assert diagnostic["providerStagingDecision"] == "staged"
+    assert staged["adapter"] == "workday"
+    assert staged["listing_url"] == (
+        "https://tencent.wd1.myworkdayjobs.com/en-US/timi_careers?q=game"
+    )
+    assert staged["company"] == "Workday Static Studio"
+    assert staged["migrationSourceIdentity"] == "static:name:workday static studio"
+
+
+def test_stage_provider_candidate_blocks_unsafe_workday_root_url() -> None:
+    candidate, diagnostic = provider_staging_decision_for_advisory(
+        {
+            "name": "Unsafe Workday",
+            "adapter": "static",
+            "detectedProviderFamily": "workday",
+            "detectedProviderUrl": "https://tencent.wd1.myworkdayjobs.com/",
+            "jobsFound": 3,
+        },
+        at="2026-04-30T12:00:00+00:00",
+    )
+
+    assert candidate == {}
+    assert diagnostic["recommendedAction"] == "review_provider_migration"
+    assert "provider_row_build_failure" in diagnostic["providerStagingBlockers"]
 
 
 def test_stage_provider_candidates_blocks_active_pending_and_weak_actions() -> None:

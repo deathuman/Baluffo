@@ -5,7 +5,7 @@
 > - **Canonical for:** next-step provider discovery coverage strategy and provider coverage gap report requirements
 > - **Not canonical for:** provider adapter runtime behavior, report payload contracts, source registry policy, or source cleanup authority
 > - **Then inspect:** [`../scraping-pipeline.md`](../scraping-pipeline.md), [`../source-policy-runbook.md`](../source-policy-runbook.md), [`../adapter-plugin-inventory.md`](../adapter-plugin-inventory.md), and [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md)
-> - **Last updated:** 2026-05-13
+> - **Last updated:** 2026-05-19
 
 ## Summary
 
@@ -28,11 +28,12 @@ Keep this work local-first, advisory, and non-destructive. Do not add Apify as a
 Current docs and code show these important boundaries:
 
 - `docs/adapter-plugin-inventory.md` lists fetcher loaders and provider plugins for Greenhouse, Teamtailor, Lever, SmartRecruiters, Workable, Recruitee, Pinpoint, Ashby, BambooHR, Breezy, JazzHR, Personio, Workday, and `scrapy_static_sources`.
-- `src/source_discovery/config.py` currently exposes discovery `SUPPORTED_PROVIDERS` for Greenhouse, Lever, SmartRecruiters, Workable, Teamtailor, Ashby, BambooHR, Recruitee, Pinpoint, and Personio.
-- `src/source_discovery/provider_inference.py` builds provider candidate rows for those supported discovery providers. It does not currently build Workday, Breezy, JazzHR, Oracle HCM, iCIMS, SuccessFactors, Jobvite, Cornerstone/CSOD, Homerun, or HRMOS provider candidates.
-- `src/source_discovery/provider_migration_advisory.py` recognizes Workday, Breezy, and JazzHR as supported migration providers, but staging still depends on `SUPPORTED_PROVIDERS` row building. Its unsupported-family detector currently classifies Jobvite only.
-- Current `data/source-discovery-candidates.json` contains provider-shaped URLs still represented as static rows, including Workday `*.myworkdayjobs.com` candidates and Oracle HCM `*.oraclecloud.com/hcmUI/CandidateExperience/...` candidates. It also contains Greenhouse `job-boards.greenhouse.io` candidates already inferred as Greenhouse provider rows.
+- `src/source_discovery/config.py` currently exposes discovery `SUPPORTED_PROVIDERS` for Greenhouse, Lever, SmartRecruiters, Workable, Teamtailor, Ashby, BambooHR, Workday, Recruitee, Pinpoint, and Personio.
+- `src/source_discovery/provider_inference.py` builds provider candidate rows for those supported discovery providers, including safe Workday `*.myworkdayjobs.com` listing URLs with non-root paths. It does not currently build Breezy, JazzHR, iCIMS, SuccessFactors, Jobvite, Cornerstone/CSOD, Homerun, HRMOS, or Oracle HCM fetch candidates.
+- `src/source_discovery/provider_migration_advisory.py` recognizes safe Workday candidates as supported migration/provider-staging evidence, and classifies Jobvite and Oracle HCM as unsupported-provider evidence. Breezy and JazzHR remain recognized migration families, but discovery row building for them is still future work.
+- Current checked-in `data/source-discovery-candidates.json` may still contain provider-shaped URLs represented as static rows until discovery is rerun. The first slice added Workday/Oracle HCM classification and reporting logic without rewriting runtime data artifacts.
 - Static/plugin coverage already includes partial special cases such as HRMOS and Jobvite-like static handling, but that is not the same as discovery/provider migration coverage.
+- The source-policy soak report now includes additive read-only `sections.providerCoverageGaps` in JSON and Markdown. `docs/DATA_CONTRACT.md` is canonical for that report shape, and `docs/scraping-pipeline.md` is the operator-facing summary.
 
 Conclusion: the plan should extend detection and reporting around the existing provider/static workflow, not introduce another scraping stack.
 
@@ -143,11 +144,24 @@ Runtime artifacts under `data/` and `_out/` are evidence, not default commit tar
 - Staged, fetched, validated, linked, and static-suppression-ready states are visible without digging through multiple artifacts.
 - No Apify runtime, new dependency, generic scraper, source cleanup, source-sync mutation, or static suppression semantic change is introduced.
 
-## First Slice
+## First Slice (Implemented 2026-05-19)
 
-Start with the smallest implementation that proves the layer:
+The smallest implementation that proves the layer is complete:
 
-1. Add read-only detection/classification for Workday and Oracle HCM examples already present in `data/source-discovery-candidates.json`.
-2. Add or adjust tests showing Workday is a supported-provider inference candidate only when the row shape is safe, while Oracle HCM is classified as unsupported/provider gap evidence.
-3. Add the soak-report gap buckets with counts and capped examples.
-4. Defer Admin UI changes until the JSON/Markdown report is stable.
+1. Added read-only detection/classification for Workday and Oracle HCM examples already present in current discovery artifacts.
+2. Added tests showing Workday is a supported-provider inference candidate only when the row shape is safe, while Oracle HCM is classified as unsupported/provider gap evidence.
+3. Added source-policy soak-report `providerCoverageGaps` buckets with counts, blocker reasons, provider/static evidence, and capped examples in JSON and Markdown.
+4. Deferred Admin UI changes until the JSON/Markdown report is stable.
+
+Verification completed on 2026-05-19:
+
+```bash
+python -m pytest -q tests/source_discovery/test_provider_inference.py tests/source_discovery/test_provider_migration_advisory.py tests/source_discovery/test_web_search_candidates.py
+python -m pytest -q tests/test_source_policy_soak_report.py tests/test_source_policy_soak_report_provider_activation.py
+python -m pytest -q tests/source_discovery tests/test_source_policy_soak_report.py tests/test_source_policy_soak_report_provider_activation.py tests/test_source_policy_soak_report_backfill.py tests/test_source_policy_soak_report_backfill_enrichment.py tests/test_source_policy_soak_report_cleanup_proposals.py tests/test_source_policy_soak_report_linked_static_identity.py tests/test_source_policy_soak_report_suppression_selection.py
+git diff --check
+```
+
+Results: 50 focused source-discovery tests passed, 29 focused soak-report tests passed, the broader 502-test source-discovery/soak-report sweep passed, and `git diff --check` passed.
+
+Remaining follow-ups are the broader ATS taxonomy, staged-provider validation visibility refinements, and Admin/Ops review surface. Those should be planned as separate slices.

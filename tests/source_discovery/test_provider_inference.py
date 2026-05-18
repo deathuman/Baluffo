@@ -74,6 +74,12 @@ from src.source_discovery import provider_inference
             "feed_url",
             "https://example.jobs.personio.de/xml",
         ),
+        (
+            "https://tencent.wd1.myworkdayjobs.com/en-US/timi_careers?q=game",
+            "workday",
+            "listing_url",
+            "https://tencent.wd1.myworkdayjobs.com/en-US/timi_careers?q=game",
+        ),
     ],
 )
 def test_shared_provider_inference_preserves_provider_row_shapes(
@@ -127,6 +133,14 @@ def test_shared_provider_inference_rejects_unknown_and_empty_provider_tokens() -
     assert (
         provider_inference.infer_web_candidate(
             "https://jobs.ashbyhq.com/",
+            "Example",
+            nl_priority=False,
+        )
+        is None
+    )
+    assert (
+        provider_inference.infer_web_candidate(
+            "https://tencent.wd1.myworkdayjobs.com/",
             "Example",
             nl_priority=False,
         )

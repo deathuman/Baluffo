@@ -97,6 +97,15 @@ CONSERVATIVE_CLEANUP_MIN_SAFE_RUNS = 3
 CONSERVATIVE_CLEANUP_EXAMPLE_LIMIT = 5
 CONSERVATIVE_CLEANUP_PROPOSAL_STALE_AFTER_SECONDS = 24 * 60 * 60
 PROVIDER_COVERAGE_LINK_BACKFILL_EXAMPLE_LIMIT = 5
+PROVIDER_COVERAGE_GAP_EXAMPLE_LIMIT = 5
+PROVIDER_COVERAGE_GAP_BUCKETS = (
+    "unsupportedProviderDetected",
+    "providerDetectedNeedsProbe",
+    "stagedProviderNotFetched",
+    "fetchedButNotValidated",
+    "validatedProviderMissingMigrationSourceIdentity",
+    "staticStillActiveDespiteValidatedProvider",
+)
 PROVIDER_ID_FIELDS = (
     "slug",
     "account",
@@ -1068,6 +1077,327 @@ def _provider_migration_activation_section(
             )
         )
     return section, gates
+
+
+def _identity_for_gap_row(row: dict[str, Any]) -> str:
+    if not row:
+        return ""
+    explicit = clean_text(row.get("sourceIdentity") or row.get("id") or row.get("sourceId"))
+    if explicit:
+        return explicit
+    if any(clean_text(row.get(key)) for key in ("adapter", "name", "listing_url", "api_url")):
+        return source_identity(row)
+    return ""
+
+
+def _source_state_evidence_for_tokens(
+    source_state_rows: dict[str, dict[str, Any]],
+    tokens: set[str],
+) -> tuple[str, dict[str, Any]]:
+    for name, raw in source_state_rows.items():
+        row = as_json_object(raw)
+        state_tokens = {clean_text(name), *_source_identity_tokens(row)}
+        if tokens & {token for token in state_tokens if token}:
+            return clean_text(name), row
+    return "", {}
+
+
+def _source_report_evidence_for_tokens(
+    source_rows: list[dict[str, Any]],
+    tokens: set[str],
+) -> dict[str, Any]:
+    for row in source_rows:
+        if tokens & _source_row_tokens(row):
+            return row
+    return {}
+
+
+def _provider_coverage_gap_example(
+    *,
+    row: dict[str, Any],
+    blocker_reason: str,
+    registry_bucket: str = "",
+    registry_row: dict[str, Any] | None = None,
+    source_row: dict[str, Any] | None = None,
+    state_row: dict[str, Any] | None = None,
+    state_name: str = "",
+    provider_row: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    registry = as_json_object(registry_row)
+    source = as_json_object(source_row)
+    state = as_json_object(state_row)
+    provider = as_json_object(provider_row)
+    latest_kept = _first_int_value(source, "keptCount", "jobsFound")
+    if latest_kept == 0:
+        latest_kept = _first_int_value(
+            state,
+            "lastKeptCount",
+            "providerCoverageLatestKeptCount",
+        )
+    example = {
+        "blockerReason": clean_text(blocker_reason),
+        "sourceIdentity": _identity_for_gap_row(row),
+        "sourceName": _first_clean_text(row, "name", "studio", "company") or clean_text(state_name),
+        "providerSourceIdentity": _identity_for_gap_row(provider) or _identity_for_gap_row(row),
+        "providerSourceName": _first_clean_text(provider, "name", "studio", "company")
+        or _first_clean_text(row, "providerSourceName", "name", "studio", "company")
+        or clean_text(state_name),
+        "detectedProviderFamily": _first_clean_text(
+            row, "detectedProviderFamily", "providerFamily", "providerAdapter", "adapter"
+        ),
+        "detectedProviderUrl": _first_clean_text(
+            row, "detectedProviderUrl", "providerUrl", "listing_url", "careersUrl"
+        ),
+        "detectedProviderId": _first_clean_text(row, "detectedProviderId", "providerId"),
+        "currentAdapter": _first_clean_text(row, "currentAdapter", "adapter"),
+        "registryBucket": clean_text(registry_bucket),
+        "registryState": _first_clean_text(registry, "registryState", "candidateState")
+        or clean_text(registry_bucket),
+        "latestFetchStatus": _first_clean_text(source, "status", "lastStatus")
+        or _first_clean_text(state, "lastStatus", "providerCoverageStatus")
+        or _first_clean_text(row, "lastProbeStatus"),
+        "keptCount": latest_kept,
+        "providerCoverageStatus": _first_clean_text(
+            state,
+            "providerCoverageStatus",
+        )
+        or _first_clean_text(row, "providerCoverageStatus"),
+        "providerCoverageConsecutiveSuccessCount": _first_int_value(
+            state, "providerCoverageConsecutiveSuccesses"
+        ),
+        "migrationSourceIdentity": _first_clean_text(row, "migrationSourceIdentity")
+        or _first_clean_text(state, "migrationSourceIdentity")
+        or _first_clean_text(provider, "migrationSourceIdentity"),
+    }
+    return {key: value for key, value in example.items() if value not in ("", None) and value != []}
+
+
+def _provider_coverage_gap_bucket(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "count": len(rows),
+        "examples": rows[:PROVIDER_COVERAGE_GAP_EXAMPLE_LIMIT],
+    }
+
+
+def _provider_source_rows_missing_migration_identity(
+    *,
+    source_rows: list[dict[str, Any]],
+    source_state_rows: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    supported = {clean_text(provider) for provider in SUPPORTED_PROVIDERS}
+    examples: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in source_rows:
+        adapter = clean_text(row.get("adapter"))
+        identity = _identity_for_gap_row(row)
+        if (
+            adapter in supported
+            and clean_text(row.get("status")) == "ok"
+            and _first_int_value(row, "keptCount", "jobsFound") > 0
+            and not clean_text(row.get("migrationSourceIdentity"))
+            and identity not in seen
+        ):
+            examples.append(
+                _provider_coverage_gap_example(
+                    row=row,
+                    blocker_reason="missing_migration_source_identity",
+                    source_row=row,
+                )
+            )
+            seen.add(identity)
+    for name, raw in source_state_rows.items():
+        row = as_json_object(raw)
+        adapter = clean_text(row.get("lastAdapter") or row.get("adapter"))
+        identity = _identity_for_gap_row(row) or clean_text(name)
+        if (
+            adapter in supported
+            and clean_text(row.get("lastStatus")) == "ok"
+            and _first_int_value(row, "lastKeptCount", "providerCoverageLatestKeptCount") > 0
+            and not clean_text(row.get("migrationSourceIdentity"))
+            and identity not in seen
+        ):
+            examples.append(
+                _provider_coverage_gap_example(
+                    row=row,
+                    blocker_reason="missing_migration_source_identity",
+                    state_row=row,
+                    state_name=clean_text(name),
+                )
+            )
+            seen.add(identity)
+    return examples
+
+
+def _source_rows_include_dynamic_suppression(
+    *,
+    source_rows: list[dict[str, Any]],
+    static_row: dict[str, Any],
+    migration_source_identity: str,
+) -> bool:
+    static_tokens = {
+        clean_text(migration_source_identity),
+        *_static_registry_identity_tokens(static_row),
+    }
+    static_tokens = {token for token in static_tokens if token}
+    for row in source_rows:
+        if clean_text(row.get("exclusionReason")) != "dynamic_redundant_provider":
+            continue
+        if _source_row_tokens(row) & static_tokens:
+            return True
+    return False
+
+
+def _active_static_rows_for_validated_providers(
+    *,
+    source_rows: list[dict[str, Any]],
+    source_state_rows: dict[str, dict[str, Any]],
+    active_rows: list[dict[str, Any]],
+    pending_rows: list[dict[str, Any]],
+    rejected_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    examples: list[dict[str, Any]] = []
+    for source_name, raw_state_row in source_state_rows.items():
+        state_row = as_json_object(raw_state_row)
+        if clean_text(state_row.get("providerCoverageStatus")) != "validated_provider":
+            continue
+        migration_source_identity = clean_text(state_row.get("migrationSourceIdentity"))
+        if not migration_source_identity:
+            continue
+        static_registry = _find_linked_static_registry_row(
+            active_rows=active_rows,
+            pending_rows=pending_rows,
+            rejected_rows=rejected_rows,
+            identity=migration_source_identity,
+        )
+        if not static_registry:
+            continue
+        static_bucket, static_row = static_registry
+        if (
+            static_bucket != "active"
+            or clean_text(static_row.get("adapter")) not in STATIC_LIKE_ADAPTERS
+        ):
+            continue
+        if _source_rows_include_dynamic_suppression(
+            source_rows=source_rows,
+            static_row=static_row,
+            migration_source_identity=migration_source_identity,
+        ):
+            continue
+        provider_registry = _find_provider_registry_row(
+            active_rows=active_rows,
+            pending_rows=pending_rows,
+            source_name=clean_text(source_name),
+            source_state_row=state_row,
+        )
+        examples.append(
+            _provider_coverage_gap_example(
+                row=static_row,
+                blocker_reason="active_static_not_suppressed",
+                registry_bucket=static_bucket,
+                registry_row=static_row,
+                state_row=state_row,
+                state_name=clean_text(source_name),
+                provider_row=provider_registry[1] if provider_registry else {},
+            )
+        )
+    return examples
+
+
+def _provider_coverage_gaps_section(
+    *,
+    discovery_candidates: list[dict[str, Any]],
+    active_rows: list[dict[str, Any]],
+    pending_rows: list[dict[str, Any]],
+    rejected_rows: list[dict[str, Any]],
+    source_rows: list[dict[str, Any]],
+    source_state_rows: dict[str, dict[str, Any]],
+    provider_coverage: dict[str, Any],
+) -> dict[str, Any]:
+    enriched_candidates = enrich_provider_migration_rows(
+        discovery_candidates,
+        active_rows=active_rows,
+        pending_rows=pending_rows,
+    )
+    fetched_tokens = _source_token_index(source_rows) | _source_state_token_index(source_state_rows)
+    coverage_status_by_token = _provider_coverage_status_by_token(
+        provider_coverage,
+        source_state_rows,
+    )
+    pending_provider_migration = [
+        row
+        for row in pending_rows
+        if clean_text(row.get("pendingReason")) == "provider_migration_candidate"
+    ]
+
+    unsupported = [
+        _provider_coverage_gap_example(row=row, blocker_reason="unsupported_provider")
+        for row in enriched_candidates
+        if clean_text(row.get("recommendedAction")) == "unsupported_provider"
+    ]
+    needs_probe = [
+        _provider_coverage_gap_example(row=row, blocker_reason="needs_probe")
+        for row in enriched_candidates
+        if clean_text(row.get("recommendedAction")) == "needs_probe"
+    ]
+    staged_not_fetched: list[dict[str, Any]] = []
+    fetched_not_validated: list[dict[str, Any]] = []
+    for row in pending_provider_migration:
+        tokens = _source_identity_tokens(row)
+        registry_bucket = "pending"
+        source_row = _source_report_evidence_for_tokens(source_rows, tokens)
+        state_name, state_row = _source_state_evidence_for_tokens(source_state_rows, tokens)
+        if not (tokens & fetched_tokens):
+            staged_not_fetched.append(
+                _provider_coverage_gap_example(
+                    row=row,
+                    blocker_reason="not_fetched",
+                    registry_bucket=registry_bucket,
+                    registry_row=row,
+                )
+            )
+            continue
+        if not any(coverage_status_by_token.get(token) == "validated_provider" for token in tokens):
+            fetched_not_validated.append(
+                _provider_coverage_gap_example(
+                    row=row,
+                    blocker_reason="fetched_but_not_validated",
+                    registry_bucket=registry_bucket,
+                    registry_row=row,
+                    source_row=source_row,
+                    state_row=state_row,
+                    state_name=state_name,
+                )
+            )
+
+    buckets = {
+        "unsupportedProviderDetected": unsupported,
+        "providerDetectedNeedsProbe": needs_probe,
+        "stagedProviderNotFetched": staged_not_fetched,
+        "fetchedButNotValidated": fetched_not_validated,
+        "validatedProviderMissingMigrationSourceIdentity": (
+            _provider_source_rows_missing_migration_identity(
+                source_rows=source_rows,
+                source_state_rows=source_state_rows,
+            )
+        ),
+        "staticStillActiveDespiteValidatedProvider": (
+            _active_static_rows_for_validated_providers(
+                source_rows=source_rows,
+                source_state_rows=source_state_rows,
+                active_rows=active_rows,
+                pending_rows=pending_rows,
+                rejected_rows=rejected_rows,
+            )
+        ),
+    }
+    bucket_counts = {bucket: len(rows) for bucket, rows in buckets.items()}
+    section = {
+        "bucketCounts": bucket_counts,
+        "totalGapCount": sum(bucket_counts.values()),
+    }
+    for bucket in PROVIDER_COVERAGE_GAP_BUCKETS:
+        section[bucket] = _provider_coverage_gap_bucket(buckets.get(bucket, []))
+    return section
 
 
 def _url_from_row(row: dict[str, Any]) -> str:
@@ -2870,6 +3200,15 @@ def _build_sections(
         rejected_rows=rejected_rows,
     )
     gates.extend(suppression_eligibility_gates)
+    provider_coverage_gaps = _provider_coverage_gaps_section(
+        discovery_candidates=discovery_candidates,
+        active_rows=active_rows,
+        pending_rows=pending_rows,
+        rejected_rows=rejected_rows,
+        source_rows=source_rows,
+        source_state_rows=source_state_rows,
+        provider_coverage=provider_coverage,
+    )
     staged_provider_candidates_count = int(
         provider_migration_activation.get("stagedProviderCandidateCount") or 0
     )
@@ -2970,6 +3309,7 @@ def _build_sections(
             "pendingProviderMigrationCandidateCount": pending_provider_migration_count,
         },
         "providerMigrationActivation": provider_migration_activation,
+        "providerCoverageGaps": provider_coverage_gaps,
         "providerCoverageLinkBackfill": provider_coverage_link_backfill,
         "suppressionEligibility": suppression_eligibility,
         "providerCoverageValidation": {
@@ -3069,6 +3409,7 @@ def _build_sections(
         "providerMigrationCandidatesNoFetchCount": int(
             provider_migration_activation.get("providerMigrationCandidatesNoFetchCount") or 0
         ),
+        "providerCoverageGapCount": int(provider_coverage_gaps.get("totalGapCount") or 0),
         "providerCoverageBackfillCandidateLinkCount": int(
             provider_coverage_link_backfill.get("candidateLinkCount") or 0
         ),
@@ -3167,6 +3508,45 @@ def _markdown_table(rows: list[tuple[str, Any]]) -> list[str]:
     for key, value in rows:
         lines.append(f"| `{key}` | `{value}` |")
     return lines
+
+
+def _markdown_cell(value: Any) -> str:
+    return clean_text(value).replace("|", "\\|")
+
+
+def _provider_coverage_gap_markdown_rows(report: dict[str, Any]) -> list[str]:
+    gaps = as_json_object(as_json_object(report.get("sections")).get("providerCoverageGaps"))
+    rows = ["| Bucket | Source | Provider | Reason | Status | Registry |"]
+    rows.append("|--------|--------|----------|--------|--------|----------|")
+    for bucket in PROVIDER_COVERAGE_GAP_BUCKETS:
+        bucket_payload = as_json_object(gaps.get(bucket))
+        for example in json_object_rows(bucket_payload.get("examples")):
+            source = clean_text(example.get("sourceName")) or clean_text(
+                example.get("sourceIdentity")
+            )
+            provider = (
+                clean_text(example.get("providerSourceName"))
+                or clean_text(example.get("providerSourceIdentity"))
+                or clean_text(example.get("detectedProviderFamily"))
+            )
+            status = clean_text(example.get("providerCoverageStatus")) or clean_text(
+                example.get("latestFetchStatus")
+            )
+            registry = clean_text(example.get("registryBucket")) or clean_text(
+                example.get("registryState")
+            )
+            rows.append(
+                "| "
+                f"`{bucket}` | "
+                f"{_markdown_cell(source)} | "
+                f"{_markdown_cell(provider)} | "
+                f"`{_markdown_cell(example.get('blockerReason'))}` | "
+                f"`{_markdown_cell(status)}` | "
+                f"`{_markdown_cell(registry)}` |"
+            )
+    if len(rows) == 2:
+        rows.append("| none |  |  |  |  |  |")
+    return rows
 
 
 def _review_candidates_markdown_rows(report: dict[str, Any]) -> list[str]:
@@ -3410,6 +3790,9 @@ def render_markdown_report(report: dict[str, Any]) -> str:
     static_scope_conflicts = as_json_object(
         as_json_object(report.get("sections")).get("staticRegistryScopeConflicts")
     )
+    provider_coverage_gaps = as_json_object(
+        as_json_object(report.get("sections")).get("providerCoverageGaps")
+    )
     conservative_cleanup_summary_items = [
         (key, value)
         for key, value in conservative_cleanup.items()
@@ -3441,6 +3824,21 @@ def render_markdown_report(report: dict[str, Any]) -> str:
                 ).items()
             )
         ),
+        "",
+        "## Provider Coverage Gaps",
+        "",
+        "Advisory only: these buckets explain provider discovery and validation gaps without changing source rows or fetch behavior.",
+        "",
+        *_markdown_table(
+            [
+                ("totalGapCount", int(provider_coverage_gaps.get("totalGapCount") or 0)),
+                *list(as_json_object(provider_coverage_gaps.get("bucketCounts")).items()),
+            ]
+        ),
+        "",
+        "### Gap examples",
+        "",
+        *_provider_coverage_gap_markdown_rows(report),
         "",
         "## Provider Coverage Link Backfill",
         "",

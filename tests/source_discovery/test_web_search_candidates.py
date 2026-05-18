@@ -50,6 +50,12 @@ from ._helpers import web_audit_rows
             "feed_url",
             "https://example.jobs.personio.de/xml",
         ),
+        (
+            "https://tencent.wd1.myworkdayjobs.com/en-US/timi_careers?q=game",
+            "workday",
+            "listing_url",
+            "https://tencent.wd1.myworkdayjobs.com/en-US/timi_careers?q=game",
+        ),
     ],
 )
 def test_infer_web_candidate_covers_provider_url_shapes(
@@ -78,6 +84,12 @@ def test_infer_web_candidate_rejects_invalid_unknown_and_empty_provider_tokens()
     assert (
         web_candidates.infer_web_candidate(
             "https://jobs.ashbyhq.com/", "Example", nl_priority=False
+        )
+        is None
+    )
+    assert (
+        web_candidates.infer_web_candidate(
+            "https://tencent.wd1.myworkdayjobs.com/", "Example", nl_priority=False
         )
         is None
     )

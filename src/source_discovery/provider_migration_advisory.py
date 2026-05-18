@@ -179,6 +179,9 @@ def _redundant_rule_for_host(host: str) -> dict[str, Any]:
 
 def _unsupported_provider_family(url: str) -> str:
     host = _host(url)
+    path = (urlparse(url).path or "").lower()
+    if host.endswith("oraclecloud.com") and "/hcmui/candidateexperience/" in path:
+        return "oracle_hcm"
     if "jobvite.com" in host:
         return "jobvite"
     return ""
