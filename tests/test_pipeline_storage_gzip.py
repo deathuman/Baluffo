@@ -296,12 +296,19 @@ def test_runtime_launcher_serves_gzip_backed_pipeline_data() -> None:
 
 
 def test_runtime_launcher_serves_large_gzip_backed_pipeline_snapshot() -> None:
-    repo_root = Path(__file__).resolve().parents[1]
-    fixture_path = repo_root / "data" / "jobs-unified.json"
-    fixture_rows = read_json(fixture_path, [])
-
-    assert isinstance(fixture_rows, list)
-    assert len(fixture_rows) > 1000
+    fixture_rows = [
+        {
+            "id": f"large-fixture-{idx:04d}",
+            "title": f"Runtime Fixture Role {idx:04d}",
+            "company": "Runtime Fixture Studio",
+            "city": "Remote",
+            "country": "US",
+            "locationSummary": "Remote, US",
+            "jobLink": f"https://example.com/jobs/large-fixture-{idx:04d}",
+            "source": "test_fixture",
+        }
+        for idx in range(1200)
+    ]
 
     with workspace_tmpdir("pipeline-runtime-gzip-large") as tmp:
         root = Path(tmp) / "site"

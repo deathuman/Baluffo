@@ -35,6 +35,38 @@ function resolveDesktopRuntimeQuery() {
 const BRIDGE_RUNTIME_BASE = resolveBridgeRuntimeBase();
 const DESKTOP_RUNTIME_QUERY = resolveDesktopRuntimeQuery();
 const PLAYWRIGHT_BRIDGE_DATA_DIR = path.resolve(".tmp", "playwright", "admin-bridge-data");
+const SMOKE_JOBS_FEED = Array.from({ length: 24 }, (_, idx) => ({
+  id: `smoke-job-${idx + 1}`,
+  title: idx === 0 ? "Smoke Gameplay Engineer" : `Smoke QA Analyst ${idx + 1}`,
+  company: idx % 2 === 0 ? "Smoke Studio" : "Example Games",
+  city: idx % 3 === 0 ? "Remote" : "Berlin",
+  country: idx % 3 === 0 ? "US" : "DE",
+  locationSummary: idx % 3 === 0 ? "Remote, US" : "Berlin, DE",
+  locations: [{ city: idx % 3 === 0 ? "Remote" : "Berlin", country: idx % 3 === 0 ? "US" : "DE" }],
+  workType: idx % 3 === 0 ? "Remote" : "Hybrid",
+  contractType: "Full-time",
+  sector: "Game",
+  companyType: "Game",
+  source: "Google Sheets",
+  jobLink: `https://example.com/jobs/smoke-job-${idx + 1}`,
+}));
+const SMOKE_JOBS_CSV = [
+  "id,title,company,city,country,workType,contractType,sector,source,jobLink",
+  ...SMOKE_JOBS_FEED.map(job =>
+    [
+      job.id,
+      job.title,
+      job.company,
+      job.city,
+      job.country,
+      job.workType,
+      job.contractType,
+      job.sector,
+      job.source,
+      job.jobLink,
+    ].map(value => `"${String(value).replaceAll('"', '""')}"`).join(",")
+  ),
+].join("\n");
 
 function isIgnorableSmokeConsoleError(msg) {
   if (!msg || msg.type() !== "error") {
@@ -50,6 +82,20 @@ function isIgnorableSmokeConsoleError(msg) {
 }
 
 async function seedBridgeRuntimeBase(page) {
+  await page.route(/\/(?:data\/)?jobs-unified(?:-startup|-light)?\.json(?:\?|$)/i, async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: `${JSON.stringify(SMOKE_JOBS_FEED)}\n`,
+    });
+  });
+  await page.route(/\/(?:data\/)?jobs-unified\.csv(?:\?|$)/i, async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: "text/csv",
+      body: `${SMOKE_JOBS_CSV}\n`,
+    });
+  });
   await page.addInitScript((runtimeBridgeBase) => {
     try {
       window.sessionStorage.setItem("baluffo_runtime_bridge_base", String(runtimeBridgeBase || ""));
