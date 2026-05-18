@@ -57,7 +57,7 @@ import {
   createFilterOptionsAccumulator,
   finalizeFilterOptions
 } from "./runtime/query.js?v=4";
-import { refreshJobsFeed, loadStartupPreviewJobsFeed } from "./feed.js?v=9";
+import { refreshJobsFeed, loadStartupPreviewJobsFeed } from "./feed.js?v=10";
 import { setProgressVisibility, setStatusText } from "./runtime/view.js";
 import {
   fullCountryName as fullCountryNameForJobs,
@@ -71,8 +71,8 @@ import {
   renderDataSources as renderDataSourcesFromSources
 } from "./sources.js";
 import { composeJobsRuntime } from "./runtime/composition.js?v=10";
-import { createJobsBoot } from "./runtime/boot.js?v=2";
-import { createJobsPageFlow } from "./runtime/page-flow.js?v=5";
+import { createJobsBoot } from "./runtime/boot.js?v=3";
+import { createJobsPageFlow } from "./runtime/page-flow.js?v=6";
 
 const defaultFilters = jobsStateModule.DEFAULT_FILTERS || {
   workType: "",

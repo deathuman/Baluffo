@@ -430,7 +430,7 @@ test("initJobsFeed does not infer first-run from an unavailable report without l
   assert.equal(calls.metrics.find(metric => metric.event === "jobs_first_run_gate_evaluated")?.payload.action, "skip");
 });
 
-test("initJobsFeed honors launch-time desktop cold-start marker even when a report is successful", async () => {
+test("initJobsFeed skips launch-time desktop cold-start marker when report is successful", async () => {
   const { localStorage, sessionStorage, session } = createLocalStorage();
   let bootstrapStarts = 0;
   let refreshOptions = null;
@@ -456,11 +456,10 @@ test("initJobsFeed honors launch-time desktop cold-start marker even when a repo
 
   await initJobsFeed(deps);
 
-  assert.equal(bootstrapStarts, 1);
+  assert.equal(bootstrapStarts, 0);
   assert.deepEqual(refreshOptions, { manual: false, firstLoad: true });
-  assert.equal(calls.notices.length, 1);
-  assert.equal(calls.notices[0].reason, "start");
-  assert.equal(session.get("baluffo_jobs_bootstrap_launch_cold_start_handled"), "1");
+  assert.deepEqual(calls.notices, []);
+  assert.equal(session.get("baluffo_jobs_bootstrap_launch_cold_start_handled"), undefined);
 });
 
 test("initJobsFeed does not repeat launch-time cold-start bootstrap after session handling", async () => {

@@ -229,9 +229,11 @@ export async function initJobsFeed(deps) {
       && Boolean(desktopJobsColdStart)
       && !launchColdStartAlreadyHandled(windowObject);
     const localReportPresent = Boolean(localReport && typeof localReport === "object");
+    const localReportSuccessful = isSuccessfulJobsFetchReport(localReport);
     const firstRunRequired = Boolean(
       desktopMode
-      && (launchColdStartPending || (localReportPresent && !isSuccessfulJobsFetchReport(localReport)))
+      && !localReportSuccessful
+      && (launchColdStartPending || localReportPresent)
     );
     const firstRunAction = firstRunRequired
       ? bootstrapColdStartAction(localReport, windowObject, {
@@ -242,7 +244,7 @@ export async function initJobsFeed(deps) {
       desktopMode,
       runtimeColdStart: Boolean(desktopJobsColdStart),
       launchColdStartPending,
-      reportSuccessful: isSuccessfulJobsFetchReport(localReport),
+      reportSuccessful: localReportSuccessful,
       action: firstRunAction || "skip"
     });
 

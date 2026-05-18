@@ -348,6 +348,18 @@ class ProbeAwareSimpleHTTPRequestHandler(QuietSimpleHTTPRequestHandler):
             return "application/json; charset=utf-8"
         return super().guess_type(path)
 
+    @classmethod
+    def _jobs_cold_start_required_for_request(cls) -> bool:
+        if not cls._jobs_cold_start:
+            return False
+        data_dir = cls._runtime_data_dir or cls._static_data_dir
+        if data_dir is None:
+            return True
+        try:
+            return jobs_cold_start_required(data_dir)
+        except (OSError, RuntimeError, TypeError, ValueError):
+            return True
+
     def end_headers(self):
         # Desktop runtime should always load the latest local bundle assets.
         if self._serve_gzip_json:
@@ -363,7 +375,8 @@ class ProbeAwareSimpleHTTPRequestHandler(QuietSimpleHTTPRequestHandler):
         trace_path = path_only.lstrip("/")
         request_started = time.perf_counter()
         bridge_runtime_config = self.__class__._bridge_runtime_config
-        if self.__class__._jobs_cold_start and _is_row_bearing_jobs_artifact_request(trace_path):
+        jobs_cold_start_required_now = self.__class__._jobs_cold_start_required_for_request()
+        if jobs_cold_start_required_now and _is_row_bearing_jobs_artifact_request(trace_path):
             self.send_error(404, "Jobs feed artifacts are unavailable during first-run bootstrap.")
             return
         if trace_path == "frontend-runtime-config.js" and bridge_runtime_config:
@@ -371,7 +384,7 @@ class ProbeAwareSimpleHTTPRequestHandler(QuietSimpleHTTPRequestHandler):
             body = _render_frontend_runtime_config_js(
                 bridge_host,
                 bridge_port,
-                jobs_cold_start=bool(self.__class__._jobs_cold_start),
+                jobs_cold_start=jobs_cold_start_required_now,
             ).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/javascript; charset=utf-8")

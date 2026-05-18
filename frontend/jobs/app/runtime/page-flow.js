@@ -4,7 +4,7 @@ import {
   applyPendingJobsAutoRefreshSignal,
   handleJobsAutoRefreshSignalValue,
   triggerJobsAutoRefreshFromSignal
-} from "../feed.js?v=9";
+} from "../feed.js?v=10";
 import {
   getAutoRefreshStatusText,
   parseAutoRefreshSignal as parseAutoRefreshSignalFromStartup,

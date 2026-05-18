@@ -5,7 +5,7 @@ import { createAdminBridgeButtonWatcher } from "../../../shared/admin-bridge-but
 import { openReleaseNotesDialog } from "../../../shared/ui/release-notes-dialog.js";
 import { cacheJobsDom } from "../dom.js";
 import { createJobsDesktopUpdateController } from "../desktop-update.js";
-import { initJobsFeed } from "../feed.js?v=9";
+import { initJobsFeed } from "../feed.js?v=10";
 import { scheduleNonCriticalStartup } from "../startup.js";
 
 export function createJobsBoot(deps) {
