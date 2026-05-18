@@ -11,7 +11,7 @@ import {
   parseJobsPageUrlState
 } from "../startup.js";
 import { matchesCountrySelection as matchesCountrySelectionForJobs } from "../countries.js";
-import { displayJobs as displayJobsFromView, goToPage as goToPageFromView, updateResultsSummary as updateResultsSummaryFromView } from "./list-view.js?v=5";
+import { displayJobs as displayJobsFromView, goToPage as goToPageFromView, updateResultsSummary as updateResultsSummaryFromView } from "./list-view.js?v=6";
 import { filterJobs, sortJobs as sortJobsFromQuery } from "./query.js?v=4";
 
 export function createJobsPageFlow(deps) {
@@ -87,7 +87,7 @@ export function createJobsPageFlow(deps) {
     deps.jobsUrlPersistence.rememberCurrentJobsUrl();
   }
 
-  function applyFiltersAndRender({ resetPage }) {
+  function applyFiltersAndRender({ resetPage, emptyStateReason = "" }) {
     deps.startupPreviewController.clearPendingStartupPreviewMaterialization();
     if (resetPage) {
       deps.state.currentPage = 1;
@@ -118,7 +118,7 @@ export function createJobsPageFlow(deps) {
       filteredCount: deps.runtimeState.filteredJobs.length,
       sortMode: String(deps.state.filters.sort || "relevance")
     });
-    displayJobs(deps.runtimeState.filteredJobs);
+    displayJobs(deps.runtimeState.filteredJobs, { emptyStateReason });
     deps.emitDesktopStartupMetric("jobs_write_state_start");
     writeStateToUrl();
     deps.emitDesktopStartupMetric("jobs_write_state_complete");

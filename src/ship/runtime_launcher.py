@@ -29,6 +29,7 @@ from src.ship.jobs_first_run_state import (
     ROW_BEARING_JOBS_ARTIFACTS,
     has_successful_runtime_jobs_report,
     jobs_cold_start_required,
+    jobs_cold_start_required_for_static_serving,
 )
 from src.ship.startup_telemetry import (
     append_runtime_startup_trace as _append_runtime_startup_trace,
@@ -356,7 +357,7 @@ class ProbeAwareSimpleHTTPRequestHandler(QuietSimpleHTTPRequestHandler):
         if data_dir is None:
             return True
         try:
-            return jobs_cold_start_required(data_dir)
+            return jobs_cold_start_required_for_static_serving(data_dir)
         except (OSError, RuntimeError, TypeError, ValueError):
             return True
 
@@ -375,11 +376,15 @@ class ProbeAwareSimpleHTTPRequestHandler(QuietSimpleHTTPRequestHandler):
         trace_path = path_only.lstrip("/")
         request_started = time.perf_counter()
         bridge_runtime_config = self.__class__._bridge_runtime_config
-        jobs_cold_start_required_now = self.__class__._jobs_cold_start_required_for_request()
-        if jobs_cold_start_required_now and _is_row_bearing_jobs_artifact_request(trace_path):
+        is_row_artifact_request = _is_row_bearing_jobs_artifact_request(trace_path)
+        is_runtime_config_request = trace_path == "frontend-runtime-config.js"
+        jobs_cold_start_required_now = False
+        if is_row_artifact_request or is_runtime_config_request:
+            jobs_cold_start_required_now = self.__class__._jobs_cold_start_required_for_request()
+        if jobs_cold_start_required_now and is_row_artifact_request:
             self.send_error(404, "Jobs feed artifacts are unavailable during first-run bootstrap.")
             return
-        if trace_path == "frontend-runtime-config.js" and bridge_runtime_config:
+        if is_runtime_config_request and bridge_runtime_config:
             bridge_host, bridge_port = bridge_runtime_config
             body = _render_frontend_runtime_config_js(
                 bridge_host,

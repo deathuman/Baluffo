@@ -255,7 +255,10 @@ export async function initJobsFeed(deps) {
       recalculateItemsPerPage();
       updateFilterOptions();
       applyStateToFilters();
-      applyFiltersAndRender({ resetPage: false });
+      applyFiltersAndRender({
+        resetPage: false,
+        emptyStateReason: "first_run_bootstrap"
+      });
     }
 
     const cached = desktopMode ? null : await readCachedJobs();

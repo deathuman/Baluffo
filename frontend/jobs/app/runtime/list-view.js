@@ -2,6 +2,12 @@ import { getVisiblePages } from "../pagination.js";
 import { setTimedInnerHTML } from "../../../shared/perf-counters.js";
 import { sanitizeUrl, toContractClass, capitalizeFirst } from "../runtime-utils.js";
 
+const EMPTY_STATE_MESSAGES = Object.freeze({
+  first_run_bootstrap: "Preparing first-run jobs. Baluffo is fetching the starter Google Sheets feed; "
+    + "jobs will appear here automatically. This can take about 4 minutes.",
+  default: "No jobs found matching your filters."
+});
+
 export function updateResultsSummary(resultsSummary, total, from, to, loadedTotal = total) {
   if (!resultsSummary) return;
   const loaded = Number.isFinite(Number(loadedTotal)) ? Number(loadedTotal) : total;
@@ -116,7 +122,8 @@ export function displayJobs(jobs, {
   renderJobRowHtml
 }, {
   pageJobsOverride = null,
-  totalCountOverride = null
+  totalCountOverride = null,
+  emptyStateReason = ""
 } = {}) {
   if (!jobsList || !pagination) return;
   const hasTotalCountOverride = totalCountOverride !== null && totalCountOverride !== undefined;
@@ -127,9 +134,11 @@ export function displayJobs(jobs, {
   });
 
   if (totalCount === 0) {
+    const emptyMessage = EMPTY_STATE_MESSAGES[String(emptyStateReason || "").trim()]
+      || EMPTY_STATE_MESSAGES.default;
     setTimedInnerHTML(
       jobsList,
-      '<div class="no-results">No jobs found matching your filters.</div>',
+      `<div class="no-results">${emptyMessage}</div>`,
       "frontend_render_jobs_list_empty"
     );
     setTimedInnerHTML(pagination, "", "frontend_render_jobs_pagination_empty");
