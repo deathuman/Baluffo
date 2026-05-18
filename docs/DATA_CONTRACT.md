@@ -5,7 +5,7 @@
 > - **Canonical for:** data contracts between pipeline, bridge, frontend, and local user data flows
 > - **Not canonical for:** subsystem ownership or route wiring
 > - **Then inspect:** `src/core/schemas.py`, `src/core/contracts.py`, the owning `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py` modules, relevant tests, and the owning runtime docs
-> - **Last updated:** 2026-05-17
+> - **Last updated:** 2026-05-18
 > - **Also update when changing contract shape:** `src/core/schemas.py`, `src/core/contracts.py`, the owning `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py` modules, relevant tests, and any affected UI/runtime docs
 
 This document serves as the absolute boundary and source of truth for data structures passed between the Python pipeline (`src/jobs/`) and the Vanilla JS frontend (`frontend/`).
@@ -765,6 +765,10 @@ Sync `taskProgress.counts` may include additive sharded-push diagnostics while `
 `summary.needsReviewBreakdown` is the shaped zero-kept static diagnostic view. It does not promise to equal every raw `needs_review` marker in `sources`.
 
 `summary.okCleanSources` and `summary.okWithWarningSources` are additive counters over source-report rows whose `status` remains `ok`. They distinguish clean successful sources from successful sources carrying warning/error diagnostic text without changing source status semantics.
+
+Source rows may include `loss.canonicalDropReasons` for rows rejected before canonical output. The stable reasons include structural drops (`missing_title`, `missing_company`, `missing_job_link`, `invalid_url`, `invalid_payload`) and sanitizer drops (`non_job_static_page`, `google_sheets_category_row`). These diagnostics are additive report visibility only and do not add fields to `jobs-unified.json`, `jobs-unified-light.json`, or `jobs-unified.csv`.
+
+Google Sheets source detail stats may also include additive title-hydration diagnostics: `title_hydration_candidates`, `title_hydration_feed_fetches`, `title_hydration_cache_hits`, `title_hydration_repaired`, `title_hydration_missed`, `title_hydration_errors`, and `title_hydration_ms`. These describe provider-feed title repair attempts and do not add canonical job output fields.
 
 `summary.sizeGuardrails` is an additive output-size diagnostic. It does not change the output file contract: `jobs-unified.json`, `jobs-unified-light.json`, and `jobs-unified.csv` are still written with the same row fields. Unified JSON files are compact serialized; report/debug JSON remains pretty-printed.
 

@@ -10,10 +10,12 @@ from collections import Counter
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, cast
+from urllib.parse import quote, unquote, urlparse
 
 from src.jobs.adapters import community
 from src.jobs.adapters.parsers.location import normalize_location_details
 from src.jobs.common.datetime_utils import to_iso
+from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.common.heuristics import (
     classify_company_type,
     compute_focus_score,
@@ -51,6 +53,222 @@ TARGET_PROFESSIONS = common_config.TARGET_PROFESSIONS
 DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = community.DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY
 DEFAULT_CANONICAL_STRICT_URL = common_config.DEFAULT_CANONICAL_STRICT_URL
 REDIRECT_RESOLUTION_SKIP_SOURCES = {"gracklehq"}
+_GOOGLE_SHEETS_CATEGORY_LABEL_TERMS = frozenset(
+    {
+        "Accounting",
+        "Account-management",
+        "Administartive",
+        "Administrative",
+        "Audio",
+        "Audio-production",
+        "Auditing",
+        "Backend",
+        "Backend-development",
+        "Business-analysis",
+        "Business-development",
+        "Campaign-management",
+        "Character-art",
+        "Community-management",
+        "Combat-design",
+        "Concept-art",
+        "Curriculum-design",
+        "Customer-service",
+        "Cyber-security",
+        "Data-analysis",
+        "Data-science",
+        "Design",
+        "Devops",
+        "Digital-marketing",
+        "Editorial",
+        "Education",
+        "Facility-management",
+        "Finance",
+        "Financial-analysis",
+        "Frontend",
+        "Frontend-development",
+        "Full-stack-development",
+        "Game-ai",
+        "Game-design",
+        "Game-economy",
+        "Game-engine",
+        "Game-production",
+        "Game-programmer",
+        "Gameplay",
+        "Graphic-design",
+        "Graphics-engineer",
+        "HR",
+        "Human-resource",
+        "Human-resources",
+        "IT & infrastructure",
+        "It-&-infrastructure",
+        "Legal",
+        "Level-art",
+        "Level-design",
+        "Live-ops",
+        "Localization",
+        "Logistics",
+        "Marketing",
+        "Mobile-development",
+        "Network-admin",
+        "Network-engineering",
+        "Operations",
+        "Physics-engine",
+        "Product-design",
+        "Product",
+        "Product-management",
+        "Program-management",
+        "Programming",
+        "Project-management",
+        "Prop-art",
+        "Public-relation",
+        "QA",
+        "Quality-assurance",
+        "Quality-analysis",
+        "Quest-design",
+        "Rendering",
+        "Research-development",
+        "Risk-management",
+        "Sales",
+        "Social-media",
+        "Software-development-&-engineering",
+        "Software-development-engineering",
+        "System-admin",
+        "System-design",
+        "Talent-acquisition",
+        "Taxation",
+        "Teaching",
+        "Technical-art",
+        "Testing",
+        "UI-art",
+        "Ui-ux-design",
+        "Vfx",
+        "Video-editing",
+        "Videography",
+        "Web-development",
+    }
+)
+_GOOGLE_SHEETS_GAME_ADJACENT_CATEGORY_LABEL_TERMS = frozenset(
+    {
+        "Audio",
+        "Community-management",
+        "Digital-marketing",
+        "Game-design",
+        "Game-economy",
+        "Game-production",
+        "Game-programmer",
+        "Gameplay",
+        "Level-design",
+        "Live-ops",
+        "Localization",
+        "Product",
+        "Product-management",
+        "Rendering",
+        "Social-media",
+        "Technical-art",
+        "UI-art",
+        "Vfx",
+        "Video-editing",
+    }
+)
+_GOOGLE_SHEETS_GAME_EVIDENCE_TERMS = frozenset(
+    {
+        "arena net",
+        "arenanet",
+        "cd projekt",
+        "cdprojekt",
+        "game",
+        "gamedev",
+        "gameplay",
+        "games",
+        "gameloft",
+        "gaming",
+        "insomniac",
+        "interactive",
+        "nintendo",
+        "people can fly",
+        "playstation",
+        "riot games",
+        "scopely",
+        "studio",
+        "studios",
+        "ubisoft",
+        "unity",
+        "unreal",
+        "xbox",
+        "zynga",
+    }
+)
+_GOOGLE_SHEETS_LINK_EMPLOYER_GAME_EVIDENCE_TERMS = frozenset(
+    term
+    for term in _GOOGLE_SHEETS_GAME_EVIDENCE_TERMS
+    if term not in {"game", "interactive", "studio", "studios"}
+)
+_GOOGLE_SHEETS_NON_GAME_EVIDENCE_TERMS = frozenset(
+    {
+        "abercrombie",
+        "accor",
+        "accorhotel",
+        "ace tate",
+        "aecom",
+        "afry",
+        "allstate",
+        "applus",
+        "autodesk",
+        "bdo",
+        "bosch",
+        "boskalis",
+        "brickwell",
+        "broadcom",
+        "carda health",
+        "cigna",
+        "conde nast",
+        "culina",
+        "delta electronics",
+        "domino",
+        "doordash",
+        "energy jobline",
+        "enphase",
+        "enverus",
+        "eurofins",
+        "greencross",
+        "illumina",
+        "international sos",
+        "jysk",
+        "kanadevia",
+        "kipp",
+        "kpmg",
+        "labcorp",
+        "lockheed",
+        "lucid hearing",
+        "mcdonald",
+        "medhealth",
+        "motorola",
+        "northrop grumman",
+        "paypal",
+        "philips",
+        "plug power",
+        "pwc",
+        "redcare pharmacy",
+        "salesforce",
+        "servicenow",
+        "sgi",
+        "shiji",
+        "state of oklahoma",
+        "thales",
+        "thriving center of psychology",
+        "transunion",
+        "tutor me education",
+        "veolia",
+        "visa",
+        "walmart",
+        "wayman learning trust",
+        "wynn resorts",
+    }
+)
+_GOOGLE_SHEETS_BEBEE_NON_GAME_EMPLOYER_MARKERS = (
+    "adecco",
+    "securiguard",
+)
 
 _LOCATION_AUDIT_LOCK = threading.Lock()
 _LOCATION_AUDIT_FIELD_COUNTS: Counter[str] = Counter()
@@ -59,6 +277,629 @@ _LOCATION_AUDIT_EXAMPLES: list[dict[str, Any]] = []
 _SECTOR_AUDIT_LOCK = threading.Lock()
 _SECTOR_AUDIT_DOWNGRADED_COUNT = 0
 _SECTOR_AUDIT_EXAMPLES: list[dict[str, Any]] = []
+
+
+def _normalized_evidence_text(*values: Any) -> str:
+    text = " ".join(clean_text(value) for value in values if clean_text(value))
+    return norm_text(re.sub(r"[^a-zA-Z0-9]+", " ", text))
+
+
+def _contains_evidence_term(text: str, term: str) -> bool:
+    normalized_term = _normalized_evidence_text(term)
+    if not normalized_term:
+        return False
+    padded_text = f" {text} "
+    if f" {normalized_term} " in padded_text:
+        return True
+    compact_text = text.replace(" ", "")
+    compact_term = normalized_term.replace(" ", "")
+    return len(compact_term) >= 4 and compact_term in compact_text
+
+
+def _google_sheets_category_label_keys(value: Any) -> set[str]:
+    raw = clean_text(value)
+    if not raw:
+        return set()
+    spaced = norm_text(re.sub(r"[-_]+", " ", raw).replace("&", " and "))
+    compact_and = norm_text(re.sub(r"[-_]+", " ", raw).replace("&", " "))
+    return {
+        key
+        for key in {
+            norm_text(raw),
+            spaced,
+            compact_and,
+            spaced.replace(" ", "-"),
+            compact_and.replace(" ", "-"),
+        }
+        if key
+    }
+
+
+_GOOGLE_SHEETS_CATEGORY_LABEL_KEYS = frozenset(
+    key
+    for term in _GOOGLE_SHEETS_CATEGORY_LABEL_TERMS
+    for key in _google_sheets_category_label_keys(term)
+)
+_GOOGLE_SHEETS_GAME_ADJACENT_CATEGORY_LABEL_KEYS = frozenset(
+    key
+    for term in _GOOGLE_SHEETS_GAME_ADJACENT_CATEGORY_LABEL_TERMS
+    for key in _google_sheets_category_label_keys(term)
+)
+
+
+def _google_sheets_category_term_matches(value: Any, term_keys: frozenset[str]) -> bool:
+    return bool(_google_sheets_category_label_keys(value) & term_keys)
+
+
+def _is_google_sheets_category_label(value: Any) -> bool:
+    return _google_sheets_category_term_matches(value, _GOOGLE_SHEETS_CATEGORY_LABEL_KEYS)
+
+
+def _is_google_sheets_game_adjacent_category_label(value: Any) -> bool:
+    return _google_sheets_category_term_matches(
+        value, _GOOGLE_SHEETS_GAME_ADJACENT_CATEGORY_LABEL_KEYS
+    )
+
+
+_GOOGLE_SHEETS_TITLE_SLUG_STOP_SEGMENTS = frozenset(
+    {
+        "apply",
+        "career",
+        "careers",
+        "detail",
+        "details",
+        "en",
+        "en-us",
+        "external",
+        "job",
+        "job-detail",
+        "job-details",
+        "jobs",
+        "listing",
+        "openings",
+        "opportunities",
+        "position",
+        "positions",
+        "search",
+        "vacancies",
+        "vacancy",
+        "view",
+    }
+)
+_GOOGLE_SHEETS_TITLE_SLUG_REJECT_TRAILING_TOKENS = frozenset(
+    {"careers", "jobs", "openings", "opportunities", "search"}
+)
+_GOOGLE_SHEETS_TITLECASE_UPPER_TOKENS = frozenset(
+    {
+        "2d",
+        "3d",
+        "ai",
+        "api",
+        "ar",
+        "b2b",
+        "b2c",
+        "c#",
+        "c++",
+        "crm",
+        "hr",
+        "ios",
+        "ip",
+        "it",
+        "qa",
+        "ui",
+        "uk",
+        "us",
+        "ux",
+        "vr",
+        "xr",
+    }
+)
+
+
+def _looks_like_google_sheets_opaque_slug_segment(segment: str) -> bool:
+    normalized = segment.strip().strip("-_").lower()
+    if not normalized:
+        return True
+    if normalized in _GOOGLE_SHEETS_TITLE_SLUG_STOP_SEGMENTS:
+        return True
+    if re.fullmatch(r"(?:r|jr|req|job)?[-_]?\d{4,}", normalized):
+        return True
+    if re.fullmatch(
+        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+        normalized,
+    ):
+        return True
+    compact = re.sub(r"[-_]", "", normalized)
+    if re.fullmatch(r"[0-9a-f]{16,}", compact):
+        return True
+    return bool(
+        re.fullmatch(r"[a-z0-9]{12,}", compact)
+        and compact == normalized
+        and re.search(r"\d", compact)
+    )
+
+
+def _strip_google_sheets_title_slug_ids(segment: str) -> str:
+    slug = unquote(segment or "").strip().strip("/").strip("-_")
+    if not slug:
+        return ""
+    slug = re.sub(r"^\d{6,}[-_]+", "", slug)
+    slug = re.sub(
+        r"[-_]+(?:r|jr|req|job|wd)?\d{4,}[a-z0-9]*$",
+        "",
+        slug,
+        flags=re.IGNORECASE,
+    )
+    slug = re.sub(
+        r"[-_]+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+        "",
+        slug,
+        flags=re.IGNORECASE,
+    )
+    return slug.strip().strip("-_")
+
+
+def _google_sheets_titlecase_from_slug_text(text: str) -> str:
+    words = re.findall(r"[A-Za-z0-9+#]+", text)
+    title_words: list[str] = []
+    for word in words:
+        lower = word.lower()
+        if lower in _GOOGLE_SHEETS_TITLECASE_UPPER_TOKENS:
+            title_words.append(lower.upper())
+        elif re.fullmatch(r"[a-z]\d[a-z0-9]*", lower):
+            title_words.append(lower.upper())
+        else:
+            title_words.append(lower.capitalize())
+    return " ".join(title_words)
+
+
+def _google_sheets_title_candidate_from_slug(segment: str) -> str:
+    if _looks_like_google_sheets_opaque_slug_segment(segment):
+        return ""
+    raw_slug = unquote(segment or "").strip().strip("/").strip("-_")
+    slug = _strip_google_sheets_title_slug_ids(segment)
+    if _looks_like_google_sheets_opaque_slug_segment(slug):
+        return ""
+    stripped_ats_id = slug.lower() != raw_slug.lower()
+    slug_text = re.sub(r"[-_+]+", " ", slug)
+    slug_text = re.sub(r"\s+", " ", slug_text).strip()
+    title = _google_sheets_titlecase_from_slug_text(slug_text)
+    if not title:
+        return ""
+    normalized_words = norm_text(title).split()
+    alpha_words = [word for word in normalized_words if re.search(r"[a-z]", word)]
+    if len(alpha_words) < 2 and not stripped_ats_id:
+        return ""
+    if len(normalized_words) > 14:
+        return ""
+    if normalized_words[-1] in _GOOGLE_SHEETS_TITLE_SLUG_REJECT_TRAILING_TOKENS:
+        return ""
+    if _is_google_sheets_category_label(title):
+        return ""
+    return title
+
+
+def _google_sheets_title_slug_segments(job_link: str) -> list[str]:
+    parsed = urlparse(clean_text(job_link) or "")
+    host = parsed.netloc.lower().removeprefix("www.")
+    parts = [unquote(part).strip() for part in parsed.path.split("/") if part.strip()]
+    if not host or not parts:
+        return []
+
+    candidates: list[str] = []
+    if host == "jobs.smartrecruiters.com" and len(parts) >= 2:
+        candidates.append(parts[-1])
+    if host.endswith("myworkdayjobs.com") or "myworkdayjobs.com" in host:
+        candidates.append(parts[-1])
+
+    lowered_parts = [part.lower() for part in parts]
+    for marker in ("job", "jobs", "job-detail", "job-details"):
+        if marker in lowered_parts:
+            marker_index = lowered_parts.index(marker)
+            if marker_index > 0:
+                candidates.append(parts[marker_index - 1])
+            if marker_index + 1 < len(parts):
+                candidates.append(parts[marker_index + 1])
+
+    candidates.extend(reversed(parts))
+
+    seen: set[str] = set()
+    ordered_candidates: list[str] = []
+    for candidate in candidates:
+        key = candidate.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        ordered_candidates.append(candidate)
+    return ordered_candidates
+
+
+def _derive_google_sheets_title_from_url(
+    *,
+    source: str,
+    title: str,
+    job_link: str,
+) -> str:
+    if not clean_text(source).startswith("google_sheets"):
+        return ""
+    if not _is_google_sheets_category_label(title):
+        return ""
+    for segment in _google_sheets_title_slug_segments(job_link):
+        candidate = _google_sheets_title_candidate_from_slug(segment)
+        if candidate:
+            return candidate
+    return ""
+
+
+def _validated_opening_title_or_reason(
+    *,
+    title: str,
+    job_link: str,
+    source: str,
+) -> tuple[str | None, str]:
+    if looks_like_source_specific_static_noise_row(
+        title=title,
+        job_link=job_link,
+        source_name=source,
+    ):
+        return None, "non_job_static_page"
+    return title, ""
+
+
+def _google_sheets_repaired_title_or_reason(
+    *,
+    title: str,
+    source: str,
+    company: str,
+    job_link: str,
+    title_hydration_resolver: GoogleSheetsProviderTitleResolver | None,
+) -> tuple[str | None, str]:
+    if _looks_like_google_sheets_category_row_noise(
+        source=source,
+        title=title,
+        company=company,
+        job_link=job_link,
+    ):
+        return None, "google_sheets_category_row"
+
+    repaired_title = _derive_google_sheets_title_from_url(
+        source=source,
+        title=title,
+        job_link=job_link,
+    )
+    if repaired_title:
+        return _validated_opening_title_or_reason(
+            title=repaired_title,
+            job_link=job_link,
+            source=source,
+        )
+
+    if title_hydration_resolver is None:
+        return title, ""
+    hydrated_title = title_hydration_resolver.resolve_title(job_link)
+    if not hydrated_title:
+        return title, ""
+    return _validated_opening_title_or_reason(
+        title=hydrated_title,
+        job_link=job_link,
+        source=source,
+    )
+
+
+_GOOGLE_SHEETS_TITLE_HYDRATION_STAT_KEYS = (
+    "title_hydration_candidates",
+    "title_hydration_feed_fetches",
+    "title_hydration_cache_hits",
+    "title_hydration_repaired",
+    "title_hydration_missed",
+    "title_hydration_errors",
+    "title_hydration_ms",
+)
+_GOOGLE_SHEETS_GREENHOUSE_HOSTS = frozenset(
+    {
+        "boards.greenhouse.io",
+        "job-boards.greenhouse.io",
+        "job-boards.eu.greenhouse.io",
+    }
+)
+_GOOGLE_SHEETS_LEVER_HOSTS = frozenset({"jobs.lever.co", "jobs.eu.lever.co"})
+
+
+def _google_sheets_provider_title_target(
+    job_link: str,
+) -> tuple[str, str, str, tuple[str, ...]] | None:
+    parsed = urlparse(clean_text(job_link) or "")
+    host = parsed.netloc.lower().removeprefix("www.")
+    parts = [unquote(part).strip() for part in parsed.path.split("/") if part.strip()]
+    normalized_link = normalize_url(job_link)
+    if host in _GOOGLE_SHEETS_GREENHOUSE_HOSTS and len(parts) >= 3 and parts[1].lower() == "jobs":
+        board_slug = clean_text(parts[0])
+        job_id = clean_text(parts[2])
+        if not board_slug or not job_id:
+            return None
+        feed_url = (
+            "https://boards-api.greenhouse.io/v1/boards/"
+            f"{quote(board_slug, safe='')}/jobs?content=true"
+        )
+        return "greenhouse", board_slug, feed_url, (f"id:{job_id}", f"url:{normalized_link}")
+    if host in _GOOGLE_SHEETS_LEVER_HOSTS and len(parts) >= 2:
+        account = clean_text(parts[0])
+        posting_id = clean_text(parts[-1])
+        if not account or not posting_id or posting_id.lower() == "jobs":
+            return None
+        feed_url = f"https://api.lever.co/v0/postings/{quote(account, safe='')}?mode=json"
+        return "lever", account, feed_url, (f"id:{posting_id}", f"url:{normalized_link}")
+    return None
+
+
+def _google_sheets_provider_title_lookup_keys(provider: str, row: dict[str, Any]) -> set[str]:
+    keys: set[str] = set()
+    for value in (row.get("id"), row.get("internal_job_id"), row.get("requisitionCode")):
+        text = clean_text(value)
+        if text:
+            keys.add(f"id:{text}")
+    if provider == "greenhouse":
+        urls = (row.get("absolute_url"), row.get("url"))
+    else:
+        urls = (row.get("hostedUrl"), row.get("applyUrl"), row.get("url"))
+    for value in urls:
+        normalized = normalize_url(value)
+        if normalized:
+            keys.add(f"url:{normalized}")
+    return keys
+
+
+def _google_sheets_provider_title_from_row(provider: str, row: dict[str, Any]) -> str:
+    if provider == "greenhouse":
+        return sanitize_public_text(row.get("title") or row.get("text"))
+    return sanitize_public_text(row.get("text") or row.get("title"))
+
+
+def _google_sheets_provider_title_map(provider: str, payload: Any) -> dict[str, str]:
+    if provider == "greenhouse":
+        rows = payload.get("jobs") if isinstance(payload, dict) else None
+    else:
+        rows = payload if isinstance(payload, list) else None
+    if not isinstance(rows, list):
+        return {}
+    title_by_key: dict[str, str] = {}
+    for row_value in rows:
+        if not isinstance(row_value, dict):
+            continue
+        title = _google_sheets_provider_title_from_row(provider, row_value)
+        if not title:
+            continue
+        for key in _google_sheets_provider_title_lookup_keys(provider, row_value):
+            title_by_key.setdefault(key, title)
+    return title_by_key
+
+
+class GoogleSheetsProviderTitleResolver:
+    """Per-run Google Sheets title resolver backed by provider JSON feeds."""
+
+    def __init__(
+        self,
+        *,
+        fetch_text: Callable[[str, int], str],
+        timeout_s: int,
+        retries: int,
+        backoff_s: float,
+    ) -> None:
+        self._fetch_text = fetch_text
+        self._timeout_s = max(1, int(timeout_s or 1))
+        self._retries = max(0, int(retries or 0))
+        self._backoff_s = max(0.0, float(backoff_s or 0.0))
+        self._cache: dict[tuple[str, str], dict[str, str]] = {}
+        self._row_feed_uses: set[tuple[str, str]] = set()
+        self._stats: Counter[str] = Counter()
+        self._lock = threading.Lock()
+
+    def supports(self, job_link: str) -> bool:
+        return _google_sheets_provider_title_target(job_link) is not None
+
+    def prefetch(self, job_links: Sequence[str], *, concurrency: int = 1) -> None:
+        targets = [
+            target
+            for link in job_links
+            if (target := _google_sheets_provider_title_target(link)) is not None
+        ]
+        feed_targets: dict[tuple[str, str], tuple[str, str, str, tuple[str, ...]]] = {
+            (provider, feed_key): target
+            for target in targets
+            for provider, feed_key, _feed_url, _lookup_keys in (target,)
+        }
+        pending = [target for key, target in feed_targets.items() if key not in self._cache]
+        if not pending:
+            return
+        max_workers = max(1, min(int(concurrency or 1), len(pending)))
+        if max_workers <= 1:
+            for provider, feed_key, feed_url, _lookup_keys in pending:
+                self._ensure_feed(provider, feed_key, feed_url)
+            return
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [
+                executor.submit(self._ensure_feed, provider, feed_key, feed_url)
+                for provider, feed_key, feed_url, _lookup_keys in pending
+            ]
+            for future in as_completed(futures):
+                future.result()
+
+    def resolve_title(self, job_link: str) -> str:
+        target = _google_sheets_provider_title_target(job_link)
+        if target is None:
+            return ""
+        provider, feed_key, feed_url, lookup_keys = target
+        cache_key = (provider, feed_key)
+        with self._lock:
+            self._stats["title_hydration_candidates"] += 1
+            if cache_key in self._row_feed_uses:
+                self._stats["title_hydration_cache_hits"] += 1
+            else:
+                self._row_feed_uses.add(cache_key)
+        title_by_key = self._ensure_feed(provider, feed_key, feed_url)
+        for lookup_key in lookup_keys:
+            title = sanitize_public_text(title_by_key.get(lookup_key))
+            if title and not _is_google_sheets_category_label(title):
+                with self._lock:
+                    self._stats["title_hydration_repaired"] += 1
+                return title
+        with self._lock:
+            self._stats["title_hydration_missed"] += 1
+        return ""
+
+    def snapshot_stats(self) -> dict[str, int]:
+        with self._lock:
+            return {
+                key: int(self._stats.get(key, 0))
+                for key in _GOOGLE_SHEETS_TITLE_HYDRATION_STAT_KEYS
+            }
+
+    def _ensure_feed(self, provider: str, feed_key: str, feed_url: str) -> dict[str, str]:
+        cache_key = (provider, feed_key)
+        with self._lock:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                return cached
+        started = time.perf_counter()
+        title_by_key: dict[str, str] = {}
+        try:
+            with self._lock:
+                self._stats["title_hydration_feed_fetches"] += 1
+            text = fetch_with_retries(
+                feed_url,
+                self._fetch_text,
+                self._timeout_s,
+                self._retries,
+                self._backoff_s,
+            )
+            title_by_key = _google_sheets_provider_title_map(provider, json.loads(text))
+        except (RuntimeError, OSError, ValueError):
+            with self._lock:
+                self._stats["title_hydration_errors"] += 1
+            title_by_key = {}
+        finally:
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
+            with self._lock:
+                self._stats["title_hydration_ms"] += elapsed_ms
+                self._cache[cache_key] = title_by_key
+        return title_by_key
+
+
+def _google_sheets_url_evidence_text(job_link: str) -> str:
+    parsed = urlparse(clean_text(job_link) or "")
+    return _normalized_evidence_text(parsed.netloc, parsed.path)
+
+
+_GOOGLE_SHEETS_EMPLOYER_LEGAL_SUFFIXES = (
+    "corporation",
+    "company",
+    "limited",
+    "studio",
+    "studios",
+    "group",
+    "gmbh",
+    "inc",
+    "llc",
+    "ltd",
+    "plc",
+    "pvt",
+)
+
+
+def _google_sheets_link_employer_candidate(job_link: str) -> str:
+    parsed = urlparse(clean_text(job_link) or "")
+    host = parsed.netloc.lower().removeprefix("www.")
+    parts = [unquote(part) for part in parsed.path.split("/") if part]
+    if host == "jobs.smartrecruiters.com" and parts:
+        return parts[0]
+    if host == "himalayas.app" and len(parts) >= 2 and parts[0].lower() == "companies":
+        return parts[1]
+    if host == "shine.com" and len(parts) >= 4 and parts[0].lower() == "jobs":
+        return parts[-2]
+    if host == "bebee.com":
+        path_evidence = _normalized_evidence_text(*parts)
+        for marker in _GOOGLE_SHEETS_BEBEE_NON_GAME_EMPLOYER_MARKERS:
+            if _contains_evidence_term(path_evidence, marker):
+                return marker
+    return ""
+
+
+def _google_sheets_employer_identity_key(value: Any) -> str:
+    raw = clean_text(value)
+    if not raw:
+        return ""
+    raw = unquote(raw)
+    raw = re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", " ", raw)
+    raw = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", raw)
+    compact = _normalized_evidence_text(raw).replace(" ", "")
+    for suffix in _GOOGLE_SHEETS_EMPLOYER_LEGAL_SUFFIXES:
+        if compact.endswith(suffix) and len(compact) > len(suffix) + 3:
+            compact = compact[: -len(suffix)]
+            break
+    return compact
+
+
+def _has_google_sheets_link_employer_mismatch_without_game_evidence(
+    company: str, job_link: str
+) -> bool:
+    link_employer = _google_sheets_link_employer_candidate(job_link)
+    if not link_employer:
+        return False
+    company_key = _google_sheets_employer_identity_key(company)
+    link_employer_key = _google_sheets_employer_identity_key(link_employer)
+    unknown_key = _google_sheets_employer_identity_key(UNKNOWN_COMPANY_LABEL)
+    if not company_key or not link_employer_key or company_key == unknown_key:
+        return False
+    if company_key == link_employer_key:
+        return False
+    if company_key in link_employer_key or link_employer_key in company_key:
+        return False
+    link_evidence_text = _normalized_evidence_text(link_employer)
+    return not any(
+        _contains_evidence_term(link_evidence_text, term)
+        for term in _GOOGLE_SHEETS_LINK_EMPLOYER_GAME_EVIDENCE_TERMS
+    )
+
+
+def _has_google_sheets_non_game_evidence(company: str, job_link: str) -> bool:
+    if _has_google_sheets_link_employer_mismatch_without_game_evidence(company, job_link):
+        return True
+    evidence_text = _normalized_evidence_text(
+        company,
+        _google_sheets_url_evidence_text(job_link),
+    )
+    return any(
+        _contains_evidence_term(evidence_text, term)
+        for term in _GOOGLE_SHEETS_NON_GAME_EVIDENCE_TERMS
+    )
+
+
+def _has_google_sheets_plausible_game_evidence(company: str, job_link: str) -> bool:
+    evidence_text = _normalized_evidence_text(
+        company,
+        _google_sheets_url_evidence_text(job_link),
+    )
+    return any(
+        _contains_evidence_term(evidence_text, term) for term in _GOOGLE_SHEETS_GAME_EVIDENCE_TERMS
+    )
+
+
+def _looks_like_google_sheets_category_row_noise(
+    *,
+    source: str,
+    title: str,
+    company: str,
+    job_link: str,
+) -> bool:
+    if not clean_text(source).startswith("google_sheets"):
+        return False
+    if not _is_google_sheets_category_label(title):
+        return False
+    if _has_google_sheets_non_game_evidence(company, job_link):
+        return True
+    if _is_google_sheets_game_adjacent_category_label(title):
+        return False
+    return not _has_google_sheets_plausible_game_evidence(company, job_link)
 
 
 def reset_location_quality_audit() -> None:
@@ -505,6 +1346,7 @@ def canonicalize_job_with_reason(
     fetched_at: str,
     resolve_redirect_url: Callable[[str], str] | None = None,
     resolved_job_link: Any = None,
+    title_hydration_resolver: GoogleSheetsProviderTitleResolver | None = None,
 ) -> tuple[CanonicalJob | None, str]:
     if not isinstance(raw, dict):
         return None, "invalid_payload"
@@ -541,6 +1383,17 @@ def canonicalize_job_with_reason(
         adapter=adapter,
         studio=studio,
     )
+    title, drop_reason = _google_sheets_repaired_title_or_reason(
+        title=title,
+        source=source,
+        company=company,
+        job_link=normalized_link,
+        title_hydration_resolver=title_hydration_resolver,
+    )
+    if drop_reason:
+        return None, drop_reason
+    if title is None:
+        return None, "missing_title"
     raw_sector = sanitize_public_text(raw.get("sector"))
     normalized_sector = normalize_sector(
         raw_sector,
@@ -609,6 +1462,7 @@ def canonicalize_job(
     fetched_at: str,
     resolve_redirect_url: Callable[[str], str] | None = None,
     resolved_job_link: Any = None,
+    title_hydration_resolver: GoogleSheetsProviderTitleResolver | None = None,
 ) -> CanonicalJob | None:
     normalized, _reason = canonicalize_job_with_reason(
         raw,
@@ -616,6 +1470,7 @@ def canonicalize_job(
         fetched_at=fetched_at,
         resolve_redirect_url=resolve_redirect_url,
         resolved_job_link=resolved_job_link,
+        title_hydration_resolver=title_hydration_resolver,
     )
     return normalized
 
@@ -683,12 +1538,81 @@ def _resolve_redirects_parallel(
     return resolved_links
 
 
+def _google_sheet_final_link(raw: RawJob, idx: int, resolved_links: dict[int, str]) -> str:
+    return normalize_url(resolved_links.get(idx)) or normalize_url((raw or {}).get("jobLink"))
+
+
+def _google_sheet_title_hydration_candidate_link(
+    *,
+    raw: RawJob,
+    idx: int,
+    source: str,
+    resolved_links: dict[int, str],
+    title_hydration_resolver: GoogleSheetsProviderTitleResolver,
+) -> str:
+    if not isinstance(raw, dict):
+        return ""
+    title = sanitize_public_text(raw.get("title"))
+    company = normalize_company_value(sanitize_public_text(raw.get("company")))
+    normalized_link = _google_sheet_final_link(raw, idx, resolved_links)
+    if not title or not company or not normalized_link:
+        return ""
+    if (
+        not clean_text(source).startswith("google_sheets")
+        or not _is_google_sheets_category_label(title)
+        or looks_like_source_specific_static_noise_row(
+            title=title,
+            job_link=normalized_link,
+            source_name=source,
+        )
+        or _looks_like_google_sheets_category_row_noise(
+            source=source,
+            title=title,
+            company=company,
+            job_link=normalized_link,
+        )
+        or _derive_google_sheets_title_from_url(
+            source=source,
+            title=title,
+            job_link=normalized_link,
+        )
+    ):
+        return ""
+    if not title_hydration_resolver.supports(normalized_link):
+        return ""
+    return normalized_link
+
+
+def _google_sheet_title_hydration_candidate_links(
+    *,
+    raw_rows: Sequence[RawJob],
+    source: str,
+    resolved_links: dict[int, str],
+    title_hydration_resolver: GoogleSheetsProviderTitleResolver | None,
+) -> list[str]:
+    if title_hydration_resolver is None:
+        return []
+    candidate_links: list[str] = []
+    for idx, raw in enumerate(raw_rows):
+        candidate_link = _google_sheet_title_hydration_candidate_link(
+            raw=raw,
+            idx=idx,
+            source=source,
+            resolved_links=resolved_links,
+            title_hydration_resolver=title_hydration_resolver,
+        )
+        if candidate_link:
+            candidate_links.append(candidate_link)
+    return candidate_links
+
+
 def _canonicalize_google_sheet_rows_with_resolved_links(
     *,
     raw_rows: Sequence[RawJob],
     source: str,
     fetched_at: str,
     resolved_links: dict[int, str],
+    title_hydration_resolver: GoogleSheetsProviderTitleResolver | None,
 ) -> tuple[list[CanonicalJob], Counter[str], int]:
     canonical_started = time.perf_counter()
     canonical_batch: list[CanonicalJob] = []
@@ -699,6 +1623,7 @@ def _canonicalize_google_sheet_rows_with_resolved_links(
             source=source,
             fetched_at=fetched_at,
             resolved_job_link=resolved_links.get(idx),
+            title_hydration_resolver=title_hydration_resolver,
         )
         if normalized:
             canonical_batch.append(normalized)
@@ -716,6 +1641,7 @@ def _google_sheet_redirect_stats(
     resolver_stats_after: dict[str, Any],
     redirect_resolve_ms: int,
     canonicalize_ms: int,
+    title_hydration_stats: dict[str, int] | None = None,
 ) -> dict[str, int]:
     redirect_resolved = sum(
         1
@@ -723,7 +1649,7 @@ def _google_sheet_redirect_stats(
         if normalize_url(resolved_links.get(idx))
         and normalize_url(resolved_links.get(idx)) != normalize_url(original)
     )
-    return {
+    stats = {
         "redirect_candidates": len(redirect_candidates),
         "redirect_resolved": int(redirect_resolved),
         "redirect_cache_hits": max(
@@ -734,6 +1660,9 @@ def _google_sheet_redirect_stats(
         "redirect_resolve_ms": int(redirect_resolve_ms),
         "canonicalize_ms": int(canonicalize_ms),
     }
+    for key in _GOOGLE_SHEETS_TITLE_HYDRATION_STAT_KEYS:
+        stats[key] = int((title_hydration_stats or {}).get(key) or 0)
+    return stats
 
 
 def canonicalize_google_sheets_rows(
@@ -743,6 +1672,7 @@ def canonicalize_google_sheets_rows(
     fetched_at: str,
     redirect_resolver: PooledRedirectResolver | None = None,
     redirect_concurrency: int = DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY,
+    title_hydration_resolver: GoogleSheetsProviderTitleResolver | None = None,
 ) -> tuple[list[CanonicalJob], Counter, dict[str, int]]:
     redirect_concurrency = max(
         1, int(redirect_concurrency or DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY)
@@ -758,12 +1688,23 @@ def canonicalize_google_sheets_rows(
         redirect_resolver=redirect_resolver,
         redirect_concurrency=redirect_concurrency,
     )
+    if title_hydration_resolver is not None:
+        title_hydration_resolver.prefetch(
+            _google_sheet_title_hydration_candidate_links(
+                raw_rows=raw_rows,
+                source=source,
+                resolved_links=resolved_links,
+                title_hydration_resolver=title_hydration_resolver,
+            ),
+            concurrency=redirect_concurrency,
+        )
     canonical_batch, drop_reasons, canonicalize_ms = (
         _canonicalize_google_sheet_rows_with_resolved_links(
             raw_rows=raw_rows,
             source=source,
             fetched_at=fetched_at,
             resolved_links=resolved_links,
+            title_hydration_resolver=title_hydration_resolver,
         )
     )
     return (
@@ -776,6 +1717,11 @@ def canonicalize_google_sheets_rows(
             resolver_stats_after=resolver_stats_after,
             redirect_resolve_ms=redirect_resolve_ms,
             canonicalize_ms=canonicalize_ms,
+            title_hydration_stats=(
+                title_hydration_resolver.snapshot_stats()
+                if title_hydration_resolver is not None
+                else None
+            ),
         ),
     )
 
@@ -790,12 +1736,14 @@ class CanonicalNormalizer(JobProcessor):
         resolve_redirect_url: Callable[[str], str] | None = None,
         redirect_resolver: PooledRedirectResolver | None = None,
         redirect_concurrency: int = DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY,
+        title_hydration_resolver: GoogleSheetsProviderTitleResolver | None = None,
     ) -> None:
         self.source = source
         self.fetched_at = fetched_at
         self.resolve_redirect_url = resolve_redirect_url
         self.redirect_resolver = redirect_resolver
         self.redirect_concurrency = redirect_concurrency
+        self.title_hydration_resolver = title_hydration_resolver
         self.stats: dict[str, Any] = {}
         self.drop_reasons: Counter[str] = Counter()
 
@@ -810,6 +1758,7 @@ class CanonicalNormalizer(JobProcessor):
                 fetched_at=self.fetched_at,
                 redirect_resolver=self.redirect_resolver,
                 redirect_concurrency=self.redirect_concurrency,
+                title_hydration_resolver=self.title_hydration_resolver,
             )
             return canonical_batch
 

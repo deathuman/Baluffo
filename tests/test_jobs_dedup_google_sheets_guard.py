@@ -25,13 +25,13 @@ def test_deduplicate_jobs_keeps_google_sheets_generic_role_bucket_detail_urls_se
     first = _google_sheets_job(
         title="Product-management",
         company="eBay",
-        link="https://jobs.ebayinc.com/us/en/job/R0065718/product-manager-buyer-experience",
+        link="https://jobs.ebayinc.com/us/en/job/R0065718",
         source_job_id="sheet-5632",
     )
     second = _google_sheets_job(
         title="Product-management",
         company="eBay",
-        link="https://jobs.ebayinc.com/us/en/job/R0068764/product-manager-seller-experience",
+        link="https://jobs.ebayinc.com/us/en/job/R0068764",
         source_job_id="sheet-30257",
     )
     assert first is not None

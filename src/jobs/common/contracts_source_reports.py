@@ -19,6 +19,16 @@ from src.jobs.common.taxonomy import (
 from src.jobs.text_utils import clean_text, norm_text
 from src.shared.json_shapes import as_json_list, as_json_object
 
+_CANONICAL_DROP_REASON_KEYS = (
+    "missing_title",
+    "missing_company",
+    "missing_job_link",
+    "invalid_url",
+    "invalid_payload",
+    "non_job_static_page",
+    "google_sheets_category_row",
+)
+
 
 def _clean_label(value: Any) -> str:
     text = clean_text(value)
@@ -58,19 +68,21 @@ def _normalize_stage_timings(src: dict[str, Any]) -> dict[str, int]:
 def _normalize_loss(loss: Any) -> dict[str, Any]:
     payload = as_json_object(loss)
     drop_reasons = as_json_object(payload.get("canonicalDropReasons"))
+    normalized_drop_reasons = {
+        reason: _clamped_int(drop_reasons.get(reason), 0, 0)
+        for reason in _CANONICAL_DROP_REASON_KEYS
+    }
+    for reason, count in sorted(drop_reasons.items()):
+        reason_key = clean_text(reason)
+        if reason_key:
+            normalized_drop_reasons[reason_key] = _clamped_int(count, 0, 0)
     return {
         "rawFetched": _clamped_int(payload.get("rawFetched"), 0, 0),
         "canonicalDropped": _clamped_int(payload.get("canonicalDropped"), 0, 0),
         "canonicalKept": _clamped_int(payload.get("canonicalKept"), 0, 0),
         "dedupMerged": _clamped_int(payload.get("dedupMerged"), 0, 0),
         "finalOutput": _clamped_int(payload.get("finalOutput"), 0, 0),
-        "canonicalDropReasons": {
-            "missing_title": _clamped_int(drop_reasons.get("missing_title"), 0, 0),
-            "missing_company": _clamped_int(drop_reasons.get("missing_company"), 0, 0),
-            "missing_job_link": _clamped_int(drop_reasons.get("missing_job_link"), 0, 0),
-            "invalid_url": _clamped_int(drop_reasons.get("invalid_url"), 0, 0),
-            "invalid_payload": _clamped_int(drop_reasons.get("invalid_payload"), 0, 0),
-        },
+        "canonicalDropReasons": normalized_drop_reasons,
         "scrapyRunnerRejectedValidation": _clamped_int(
             payload.get("scrapyRunnerRejectedValidation"), 0, 0
         ),
@@ -153,6 +165,15 @@ def _normalize_detail_stats(stats: dict[str, Any]) -> dict[str, Any]:
         "redirect_candidates": _clamped_int(stats.get("redirect_candidates"), 0, 0),
         "redirect_resolved": _clamped_int(stats.get("redirect_resolved"), 0, 0),
         "redirect_cache_hits": _clamped_int(stats.get("redirect_cache_hits"), 0, 0),
+        "title_hydration_candidates": _clamped_int(stats.get("title_hydration_candidates"), 0, 0),
+        "title_hydration_feed_fetches": _clamped_int(
+            stats.get("title_hydration_feed_fetches"), 0, 0
+        ),
+        "title_hydration_cache_hits": _clamped_int(stats.get("title_hydration_cache_hits"), 0, 0),
+        "title_hydration_repaired": _clamped_int(stats.get("title_hydration_repaired"), 0, 0),
+        "title_hydration_missed": _clamped_int(stats.get("title_hydration_missed"), 0, 0),
+        "title_hydration_errors": _clamped_int(stats.get("title_hydration_errors"), 0, 0),
+        "title_hydration_ms": _clamped_int(stats.get("title_hydration_ms"), 0, 0),
         "parse_csv_ms": _clamped_int(stats.get("parse_csv_ms"), 0, 0),
         "listing_fetch_ms": _clamped_int(stats.get("listing_fetch_ms"), 0, 0),
         "listing_browser_fallbacks": _clamped_int(stats.get("listing_browser_fallbacks"), 0, 0),

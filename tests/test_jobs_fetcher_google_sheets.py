@@ -240,45 +240,12 @@ def test_canonicalize_google_sheets_rows_falls_back_when_redirect_resolution_fai
     assert stats["redirect_resolved"] == 0
 
 
-def test_normalize_source_report_row_preserves_google_sheets_redirect_stats() -> None:
-    row = jf.normalize_source_report_row(
-        {
-            "name": "google_sheets",
-            "status": "ok",
-            "adapter": "csv",
-            "stageTimingsMs": {
-                "parseCsv": 55,
-                "redirectResolve": 91,
-                "canonicalization": 120,
-            },
-            "details": [
-                {
-                    "adapter": "csv",
-                    "studio": "community_sheet",
-                    "name": "google_sheets",
-                    "status": "ok",
-                    "stats": {
-                        "parse_csv_ms": 55,
-                        "redirect_candidates": 7,
-                        "redirect_resolved": 6,
-                        "redirect_cache_hits": 2,
-                        "redirect_resolve_ms": 91,
-                    },
-                }
-            ],
-        }
-    )
-    assert (row.get("stageTimingsMs") or {}).get("redirectResolve") == 91
-    detail_stats = (row.get("details") or [{}])[0].get("stats") or {}
-    assert int(detail_stats.get("redirect_candidates") or 0) == 7
-    assert int(detail_stats.get("redirect_cache_hits") or 0) == 2
-
-
 def test_run_pipeline_tracks_google_sheets_redirect_stats_in_report_and_state() -> None:
     csv_text = (
         "Company,City,Country,Fully Remote?,Job Type,Job,Link\n"
         f"{jf.UNKNOWN_COMPANY_LABEL},Montpellier,France,No,Full-time,Technical Director,https://gracklehq.com/rd/372393\n"
         f"{jf.UNKNOWN_COMPANY_LABEL},Burbank,United States,Yes,Internship,Character TD,https://example.com/jobs/character-td\n"
+        "Example Games,Remote,Unknown,Yes,Full-time,Product-management,https://job-boards.greenhouse.io/examplegames/jobs/12345\n"
     )
 
     def google_loader(**kwargs):
@@ -315,6 +282,21 @@ def test_run_pipeline_tracks_google_sheets_redirect_stats_in_report_and_state() 
             def fake_fetch(url: str, _: int) -> str:
                 if "docs.google.com" in url or "allorigins.win" in url:
                     return csv_text
+                if (
+                    url
+                    == "https://boards-api.greenhouse.io/v1/boards/examplegames/jobs?content=true"
+                ):
+                    return json.dumps(
+                        {
+                            "jobs": [
+                                {
+                                    "id": 12345,
+                                    "title": "Senior Product Manager",
+                                    "absolute_url": "https://job-boards.greenhouse.io/examplegames/jobs/12345",
+                                }
+                            ]
+                        }
+                    )
                 raise RuntimeError(f"Unexpected URL: {url}")
 
             report = jf.run_pipeline(
@@ -331,6 +313,9 @@ def test_run_pipeline_tracks_google_sheets_redirect_stats_in_report_and_state() 
         detail_stats = (source_row.get("details") or [{}])[0].get("stats") or {}
         assert int(detail_stats.get("redirect_candidates") or 0) == 1
         assert int(detail_stats.get("redirect_resolved") or 0) == 1
+        assert int(detail_stats.get("title_hydration_candidates") or 0) == 1
+        assert int(detail_stats.get("title_hydration_feed_fetches") or 0) == 1
+        assert int(detail_stats.get("title_hydration_repaired") or 0) == 1
         assert "redirect_resolve_ms" in detail_stats
 
         state_payload = read_json(out / "jobs-source-state.json", {})

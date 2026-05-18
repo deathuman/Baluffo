@@ -189,6 +189,21 @@ _JOB_TITLE_CAMPAIGN_NOISE_PHRASES = (
     "across exciting teams including",
 )
 
+_GENERIC_NON_OPENING_TITLE_PHRASES = (
+    "general application",
+    "general interest",
+    "initiativbewerbung",
+    "initiative application",
+    "open application",
+    "speculative application",
+    "speculative applications",
+    "spontaneous application",
+    "spontaneous applications",
+    "student application",
+    "talent pool",
+    "xsolla school",
+)
+
 
 def _html_text(html_text: str) -> str:
     return strip_html_text(re.sub(r"(?is)<[^>]+>", " ", str(html_text or "")))
@@ -333,6 +348,43 @@ def _stillfront_noise(source_lower: str, host: str) -> bool:
     )
 
 
+def _dorado_noise(source_lower: str, title_lower: str, host: str) -> bool:
+    if "doradogames.com/careers" not in source_lower:
+        return False
+    external_aggregator = host.endswith("linkedin.com") or host.endswith("mercor.com")
+    non_game_title = any(
+        fragment in title_lower
+        for fragment in (
+            "administrative assistant",
+            "data entry",
+            "lieutenant",
+            "medical scribe",
+        )
+    )
+    return bool(external_aggregator or non_game_title)
+
+
+def _hitica_noise(source_lower: str, title_lower: str, host: str) -> bool:
+    if "hitica.games" not in source_lower:
+        return False
+    external_aggregator = host.endswith("djinni.co")
+    non_game_title = any(
+        fragment in title_lower for fragment in ("email deliverability", "farming")
+    )
+    return bool(external_aggregator or non_game_title)
+
+
+def _baobab_noise(source_lower: str, host: str) -> bool:
+    return "baobabstudios.com/about" in source_lower and host.endswith("linkedin.com")
+
+
+def _talent_pool_noise(title_lower: str, path: str) -> bool:
+    path_text = path.replace("-", " ").replace("_", " ")
+    if any(phrase in title_lower for phrase in _GENERIC_NON_OPENING_TITLE_PHRASES):
+        return True
+    return any(phrase in path_text for phrase in _GENERIC_NON_OPENING_TITLE_PHRASES)
+
+
 def looks_like_source_specific_static_noise_row(
     *,
     title: str,
@@ -353,6 +405,10 @@ def looks_like_source_specific_static_noise_row(
             _gs_studio_noise(source_lower, title_lower, path),
             _flix_noise(source_lower, title_lower, path),
             _stillfront_noise(source_lower, host),
+            _dorado_noise(source_lower, title_lower, host),
+            _hitica_noise(source_lower, title_lower, host),
+            _baobab_noise(source_lower, host),
+            _talent_pool_noise(title_lower, path),
         )
     )
 

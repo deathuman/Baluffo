@@ -6,7 +6,7 @@ from collections import Counter
 from collections.abc import Mapping
 from typing import Any, Protocol
 
-from src.jobs.canonicalize import CanonicalNormalizer
+from src.jobs.canonicalize import CanonicalNormalizer, GoogleSheetsProviderTitleResolver
 from src.jobs.common.taxonomy import (
     ClassificationContext,
     FailureBucket,
@@ -20,6 +20,16 @@ from src.jobs_fetcher_registry import SOURCE_REPORT_META
 
 from .reporting_summary import format_source_error
 from .state_source_records import source_rows_fingerprint
+
+_CANONICAL_DROP_REASON_KEYS = (
+    "missing_title",
+    "missing_company",
+    "missing_job_link",
+    "invalid_url",
+    "invalid_payload",
+    "non_job_static_page",
+    "google_sheets_category_row",
+)
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -270,17 +280,27 @@ def _canonicalize_source_rows(
     name: str,
     raw_rows: list[Any],
     config: Any,
+    fetch_text_limited: Any,
     redirect_resolver: Any,
     report: dict[str, Any],
     report_loss: dict[str, Any],
     progress_callback: Any,
 ) -> tuple[list[CanonicalJob], dict[str, int], int]:
+    title_hydration_resolver = None
+    if name.startswith("google_sheets"):
+        title_hydration_resolver = GoogleSheetsProviderTitleResolver(
+            fetch_text=fetch_text_limited,
+            timeout_s=config.timeout_s,
+            retries=config.retries,
+            backoff_s=config.backoff_s,
+        )
     normalizer = CanonicalNormalizer(
         source=name,
         fetched_at=config.started_at,
         resolve_redirect_url=redirect_resolver.resolve,
         redirect_resolver=redirect_resolver,
         redirect_concurrency=config.google_sheets_redirect_concurrency,
+        title_hydration_resolver=title_hydration_resolver,
     )
     canonical_batch = normalizer.process(raw_rows)
     kept = len(canonical_batch)
@@ -295,12 +315,13 @@ def _canonicalize_source_rows(
     report_loss["canonicalKept"] = int(kept)
     report_loss["canonicalDropped"] = max(0, int(len(raw_rows)) - int(kept))
     report_loss["canonicalDropReasons"] = {
-        "missing_title": int(normalizer.drop_reasons.get("missing_title", 0)),
-        "missing_company": int(normalizer.drop_reasons.get("missing_company", 0)),
-        "missing_job_link": int(normalizer.drop_reasons.get("missing_job_link", 0)),
-        "invalid_url": int(normalizer.drop_reasons.get("invalid_url", 0)),
-        "invalid_payload": int(normalizer.drop_reasons.get("invalid_payload", 0)),
+        reason: int(normalizer.drop_reasons.get(reason, 0))
+        for reason in _CANONICAL_DROP_REASON_KEYS
     }
+    for reason, count in sorted(normalizer.drop_reasons.items()):
+        reason_key = clean_text(reason)
+        if reason_key:
+            report_loss["canonicalDropReasons"][reason_key] = int(count)
     progress_callback(
         phase_key="normalized_rows",
         phase_label="Rows normalized",
@@ -490,6 +511,16 @@ def _apply_csv_stage_timings(
                 google_sheet_redirect_stats.get("redirect_resolve_ms") or 0
             )
             stats["canonicalize_ms"] = int(google_sheet_redirect_stats.get("canonicalize_ms") or 0)
+            for hydration_key in (
+                "title_hydration_candidates",
+                "title_hydration_feed_fetches",
+                "title_hydration_cache_hits",
+                "title_hydration_repaired",
+                "title_hydration_missed",
+                "title_hydration_errors",
+                "title_hydration_ms",
+            ):
+                stats[hydration_key] = int(google_sheet_redirect_stats.get(hydration_key) or 0)
     stage_timings.update(
         {
             "parseCsv": int(parse_csv_ms),
@@ -674,6 +705,7 @@ def execute_loader(
             name=name,
             raw_rows=raw_rows,
             config=config,
+            fetch_text_limited=fetch_text_limited,
             redirect_resolver=redirect_resolver,
             report=report,
             report_loss=report_loss,

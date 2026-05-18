@@ -71,6 +71,7 @@ COMPAT_MODULE_EXPORTS.update(
             "OPTIONAL_FIELDS",
             "OUTPUT_FIELDS",
             "REQUIRED_FIELDS",
+            "GoogleSheetsProviderTitleResolver",
             "UNKNOWN_COMPANY_LABEL",
             "canonicalize_google_sheets_rows",
             "canonicalize_job",
