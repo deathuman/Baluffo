@@ -10,8 +10,24 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-05-18
+
 ### Added
+- Saved Jobs tracking polish, including phase history rendering, clearer action state, activity/timeline refinements, and attachment hardening.
+- Previous release-note viewing in the desktop update UI, so users can inspect earlier published release details.
 - Windows desktop sessions now flash the Baluffo taskbar button when a long Jobs pipeline run finishes in the background.
+- A first-run Jobs notice that explains the starter Google Sheets bootstrap and its expected duration.
+
+### Changed
+- Saved Jobs action clarity and phase tracker presentation were tightened for repeated tracking workflows.
+- AI/docs routing, Basic Memory closeout policy, and refactoring-analysis guidance were updated for future maintenance sessions.
+- First-run Jobs pipeline tooltip and status copy now describe the bootstrap phase instead of the normal refresh cadence.
+
+### Fixed
+- First-run Jobs now suppresses stale packaged/runtime rows, starts one Google Sheets bootstrap, serves the promoted feed after success, and avoids the repeated fetch loop.
+- Admin and Jobs navigation no longer pay the one-minute cold-start validation cost after first-run bootstrap recovery.
+- Jobs rows with empty normalized titles are filtered before render, and the first-run empty state now explains that jobs are still being prepared.
+- Saved Jobs attachment, tracking, grouping, and revert edge cases were hardened across browser and desktop local-data paths.
 
 ## [0.2.01] - 2026-05-16
 

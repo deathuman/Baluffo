@@ -321,9 +321,6 @@ def load_saved_sync_settings() -> dict[str, Any]:
     return _get_sync_service().load_saved_sync_settings()
 
 
-# noqa: SLF001
-
-
 def refresh_sync_config() -> source_sync_module.SyncConfig:
     global SYNC_CONFIG
     SYNC_CONFIG = _get_sync_service().refresh_sync_config()
@@ -607,6 +604,7 @@ def _wait_for_report_completion(
 
 
 _wait_for_sync_completion = admin_task_runtime_mod.wait_for_sync_completion
+start_jobs_bootstrap_task = admin_task_runtime_mod.start_jobs_bootstrap_task
 start_fetcher_task = admin_task_runtime_mod.start_fetcher_task
 start_jobs_pipeline_task = admin_task_runtime_mod.start_jobs_pipeline_task
 desktop_local_data_store = admin_entrypoint_runtime_mod.desktop_local_data_store

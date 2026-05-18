@@ -26,6 +26,7 @@ def test_release_docs_cover_the_current_public_release_line(repo_root: Path) -> 
     release_text = (docs_dir / "RELEASE.md").read_text(encoding="utf-8")
     app_version = get_app_version()
     top_release = _section(changelog_text, f"## [{app_version}]")
+    release_0_2_01 = _section(changelog_text, "## [0.2.01]")
     release_0_2_0 = _section(changelog_text, "## [0.2.0]")
     release_0_1_1 = _section(changelog_text, "## [0.1.1]")
     legacy_notes = _section(changelog_text, "## Legacy notes")
@@ -43,13 +44,19 @@ def test_release_docs_cover_the_current_public_release_line(repo_root: Path) -> 
         heading in top_release for heading in ("### Added", "### Changed", "### Fixed", "### Notes")
     )
     assert "\n- " in top_release
-    assert "Windows portable updater handoff" in top_release
-    assert "optional `psutil`" in top_release
-    assert "non-secret diagnostics" in top_release
-    assert "updater capability `2.0.1`" in top_release
-    assert "`chromium_headless_shell-*`" in top_release
-    assert "explicit visible empty-state evidence" in top_release
-    assert "Milan, Tel Aviv, and Frankfurt am Main" in top_release
+    assert "Saved Jobs tracking polish" in top_release
+    assert "Previous release-note viewing" in top_release
+    assert "flash the Baluffo taskbar button" in top_release
+    assert "first-run Jobs notice" in top_release
+    assert "starts one Google Sheets bootstrap" in top_release
+    assert "one-minute cold-start validation cost" in top_release
+    assert "Windows portable updater handoff" in release_0_2_01
+    assert "optional `psutil`" in release_0_2_01
+    assert "non-secret diagnostics" in release_0_2_01
+    assert "updater capability `2.0.1`" in release_0_2_01
+    assert "`chromium_headless_shell-*`" in release_0_2_01
+    assert "explicit visible empty-state evidence" in release_0_2_01
+    assert "Milan, Tel Aviv, and Frankfurt am Main" in release_0_2_01
     assert "Runtime SQLite/WAL storage" in release_0_2_0
     assert "Source-sync v3" in release_0_2_0
     assert "gitleaks-based secret scanning" in release_0_2_0

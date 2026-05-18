@@ -86,6 +86,10 @@ class _TaskLaunchApiLike(Protocol):
         self, payload: JsonObject | None = None, **kwargs: Any
     ) -> JsonObject: ...
 
+    def start_jobs_bootstrap_task(
+        self, payload: JsonObject | None = None, **kwargs: Any
+    ) -> JsonObject: ...
+
 
 class _AdminTaskRuntimeRoot(Protocol):
     TASKS_CONFIG_PATH: Path

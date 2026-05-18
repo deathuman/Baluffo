@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -19,6 +20,49 @@ def _root() -> Any:
 
 def _as_dict(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
+
+
+def _seed_jobs_pipeline_smoke_feed(data_dir: Path, *, finished_at: str) -> None:
+    data_dir.mkdir(parents=True, exist_ok=True)
+    row = {
+        "id": "packaged-smoke-seed-job",
+        "title": "Packaged Smoke Seed Job",
+        "company": "Packaged Smoke Studio",
+        "location": "Remote",
+        "country": "Remote",
+        "city": "",
+        "source": "packaged_smoke",
+    }
+    report = {
+        "schemaVersion": 1,
+        "status": "ok",
+        "startedAt": str(finished_at or ""),
+        "finishedAt": str(finished_at or ""),
+        "summary": {"status": "ok", "outputCount": 1},
+    }
+    (data_dir / "jobs-fetch-report.json").write_text(
+        f"{json.dumps(report, separators=(',', ':'))}\n",
+        encoding="utf-8",
+    )
+    feed = f"{json.dumps([row], separators=(',', ':'))}\n"
+    (data_dir / "jobs-unified-light.json").write_text(feed, encoding="utf-8")
+    (data_dir / "jobs-unified.json").write_text(feed, encoding="utf-8")
+    (data_dir / "jobs-unified.csv").write_text(
+        "id,title,company,location,source\n"
+        "packaged-smoke-seed-job,Packaged Smoke Seed Job,Packaged Smoke Studio,Remote,packaged_smoke\n",
+        encoding="utf-8",
+    )
+
+
+def _seed_jobs_pipeline_smoke_feed_if_needed(
+    *,
+    node_smoke_script: Path,
+    jobs_pipeline_script: Path,
+    data_dir: Path,
+    finished_at: str,
+) -> None:
+    if node_smoke_script == jobs_pipeline_script.resolve():
+        _seed_jobs_pipeline_smoke_feed(data_dir, finished_at=finished_at)
 
 
 def _record_rehearsal_artifacts(
@@ -279,6 +323,12 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     runtime_data_dir.mkdir(parents=True, exist_ok=True)
     embedded_artifacts_dir.mkdir(parents=True, exist_ok=True)
+    _seed_jobs_pipeline_smoke_feed_if_needed(
+        node_smoke_script=node_smoke_script,
+        jobs_pipeline_script=deps.JOBS_PIPELINE_NODE_SMOKE_SCRIPT,
+        data_dir=runtime_data_dir,
+        finished_at=started_at,
+    )
     runtime_env = os.environ.copy()
     runtime_env.update(
         deps.packaged_runtime_env_overrides(

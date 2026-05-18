@@ -231,7 +231,7 @@ python -c "from src.bridge.source_check_api import trigger_source_check; print(t
 
 ### Portable update from `v0.1.33` reports `install_handoff_unconfirmed`
 
-`v0.1.33` can falsely reject a live Windows launcher during install handoff when the packaged runtime lacks optional `psutil`. A target ZIP cannot repair that already-installed source-side checker. Close Baluffo, extract a fixed portable release such as `v0.2.01`, preserve/copy the old `ship\data\` into the new extracted folder, and start the new `Baluffo.exe`. Do not move or rewrite the published `v0.2.0` release tag to work around this.
+`v0.1.33` can falsely reject a live Windows launcher during install handoff when the packaged runtime lacks optional `psutil`. A target ZIP cannot repair that already-installed source-side checker. Close Baluffo, extract a fixed portable release `v0.2.1` or newer, preserve/copy the old `ship\data\` into the new extracted folder, and start the new `Baluffo.exe`. Do not move or rewrite the published `v0.2.0` release tag to work around this.
 
 ### Ship bundle launcher fails
 

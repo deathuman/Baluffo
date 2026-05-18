@@ -19,6 +19,10 @@ def test_compare_baluffo_versions_uses_custom_0_1_x_ordering() -> None:
     assert compare_baluffo_versions("0.1.30", "0.1.29") > 0
 
 
+def test_compare_baluffo_versions_orders_0_2_1_after_0_2_01() -> None:
+    assert compare_baluffo_versions("0.2.1", "0.2.01") > 0
+
+
 def test_compare_baluffo_versions_falls_back_safely_for_malformed_values() -> None:
     assert compare_baluffo_versions("release-candidate", "0.1.3") > 0
     assert compare_baluffo_versions("0.1.3", "release-candidate") < 0

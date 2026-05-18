@@ -88,7 +88,6 @@ async function assertJobsPageReady(page) {
   const jobsListText = await page.locator("#jobs-list").textContent();
   assert.doesNotMatch(String(jobsListText || ""), /loading jobs/i);
 }
-
 async function fetchStartupMetricRows(apiRequest, limit = 400) {
   const response = await apiRequest.get(`${BRIDGE_BASE}/desktop-local-data/startup-metrics?limit=${Number(limit) || 400}`);
   assert.equal(response.ok(), true, "startup metrics request should succeed");
@@ -307,6 +306,7 @@ async function main() {
     }, scenarios);
 
     await runScenario("Desktop update UI is visible on jobs page", async () => {
+      await page.getByRole("button", { name: /Got it/i }).click({ timeout: 1000 }).catch(() => {});
       const updateToggle = page.locator("#desktop-update-toggle-btn");
       await updateToggle.waitFor({ state: "visible", timeout: 15_000 });
       assert.equal(await updateToggle.isEnabled(), true, "desktop update toggle should be enabled");
