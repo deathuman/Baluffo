@@ -215,8 +215,8 @@ REDUNDANT_STATIC_IF_PROVIDER: list[dict[str, Any]] = [
     {
         "hosts": ["nextlevelgames.com", "www.nextlevelgames.com"],
         "adapter": "jazzhr",
-        "provider_id_field": "adapter",
-        "provider_id_value": "jazzhr",
+        "provider_id_field": "board_url",
+        "provider_id_value": "https://nextlevelgames.applytojob.com/apply",
     },
 ]
 

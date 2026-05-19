@@ -63,6 +63,41 @@ Inspect:
 
 The soak report should stay `ok` or `warning` unless it finds a contract violation such as source-policy review state or recommendations inside `source-sync.json`.
 
+If `sections.providerMigrationActivation.stagingDiagnosticsSource` is
+`computed_from_candidates`, the report is showing read-only fallback "would stage" diagnostics from
+current discovery candidates because the discovery report lacks `candidateReview.providerMigration`.
+Use the `computed*` counts to choose the next investigation, but do not treat them as proof that
+provider rows were written to pending.
+
+The soak report also includes `sections.providerCoverageNextAction`, a single read-only triage
+recommendation for AI/operator follow-up. Treat `safeLocalCommands` as local evidence-refresh
+commands only; they may update ignored runtime artifacts under `data/` or `_out/`, but they do not
+authorize committing those artifacts or applying Admin/registry changes. When
+`requiresHumanApproval=true`, stop before the mutation and use the explicit Admin workflow below.
+When the action is `refresh_discovery_staging_evidence`, prefer:
+
+```powershell
+python scripts/provider_migration_staging_refresh.py --data-dir data --out-dir _out --apply-pending
+python scripts/source_policy_soak_report.py --data-dir data --out-dir _out
+```
+
+This fast refresh reuses existing discovery candidates and writes only provider-migration discovery
+diagnostics, staged provider candidates, and pending provider rows. Run full discovery only when the
+candidate artifacts are missing or malformed.
+
+When the next action becomes `fetch_staged_provider_candidates`, use the targeted
+`safeLocalCommands` value from the report. That command should include
+`--include-pending-provider-migration`, which temporarily makes pending provider migration rows
+visible to provider loaders for validation evidence only. It does not approve, promote, hide,
+reject, sync, suppress, or apply migration links.
+
+When the next action becomes `debug_provider_validation`, read
+`providerValidationDiagnostics.causeCounts` before broadening scope. `zeroKeptFetched` means the
+provider row fetched but kept no jobs, `fetchError` means row-level fetch failed,
+`missingDetailEvidence` means the aggregate loader ran without matching row-level evidence,
+`notFetched` means no matching provider evidence exists, and `validated` means the provider row has
+already reached validated-provider status.
+
 ## Review Migration Link Candidates
 
 Open Admin/Ops and use the Source Policy Review panel. The Migration Link Review section is driven by:
@@ -89,6 +124,9 @@ Blocked migration-link rows can also surface source-state evidence fields such a
 taxonomy distinguishes `no_source_state_history`, `source_state_not_ok`,
 `insufficient_provider_success_history`, `multiple_static_candidates_with_equal_history`, and
 `static_only_evidence_present`.
+
+Provider-to-provider or provider-shaped self-links stay in the blocked surface with
+`apiEligible=false`; they are not review candidates even when the provider identity matches.
 
 For each candidate, review:
 

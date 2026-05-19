@@ -46,7 +46,123 @@ def test_provider_coverage_backfill_exact_redundant_rule_candidate(
     assert link["recommendedAction"] == "backfill_migration_identity_candidate"
     assert link["confidence"] >= 0.9
     assert link["staticSourceId"] == "static:cdpr"
+    next_action = report["sections"]["providerCoverageNextAction"]
+    assert next_action["action"] == "review_one_migration_link"
+    assert next_action["priority"] == 4
+    assert next_action["requiresHumanApproval"] is True
+    assert next_action["evidenceCounts"]["apiEligibleReviewCandidateCount"] == 1
     assert "provider_coverage_link_high_confidence_candidates" in _gate_ids(report)
+
+
+def test_provider_coverage_backfill_nextlevel_jazzhr_requires_exact_board_url(
+    tmp_path: Path,
+) -> None:
+    data_dir = tmp_path / "data"
+    _write_json(data_dir / "jobs-fetch-report.json", {})
+    _write_json(
+        data_dir / "source-registry-active.json",
+        [
+            {
+                "id": "jazzhr:board_url:https://lostboysinteractive.applytojob.com/apply",
+                "name": "Lost Boys Interactive (JazzHR)",
+                "adapter": "jazzhr",
+                "board_url": "https://lostboysinteractive.applytojob.com/apply",
+            },
+            {
+                "id": "jazzhr:board_url:https://nextlevelgames.applytojob.com/apply",
+                "name": "Next Level Games (JazzHR)",
+                "adapter": "jazzhr",
+                "board_url": "https://nextlevelgames.applytojob.com/apply",
+            },
+            {
+                "id": "static:nextlevel",
+                "name": "Next Level Games (Sheet)",
+                "adapter": "static",
+                "listing_url": (
+                    "https://nextlevelgames.com/"
+                    "jobs-at-next-level-games-subsidiary-of-nintendo-co-ltd/"
+                ),
+            },
+        ],
+    )
+    _write_json(data_dir / "source-registry-pending.json", [])
+
+    report = soak.build_soak_report(data_dir)
+    section = report["sections"]["providerCoverageLinkBackfill"]
+
+    assert section["candidateLinkCount"] == 1
+    assert section["highConfidenceLinkCount"] == 1
+    assert [row["providerSourceName"] for row in section["reviewCandidates"]] == [
+        "Next Level Games (JazzHR)"
+    ]
+    assert section["reviewCandidates"][0]["selectedStaticSourceId"] == "static:nextlevel"
+    assert all(
+        row.get("providerSourceName") != "Lost Boys Interactive (JazzHR)"
+        or row.get("staticSourceId") != "static:nextlevel"
+        for row in section["links"]
+    )
+
+
+def test_provider_coverage_backfill_blocks_duplicate_review_static_targets(
+    tmp_path: Path, monkeypatch
+) -> None:
+    data_dir = tmp_path / "data"
+    _write_json(data_dir / "jobs-fetch-report.json", {})
+    _write_json(
+        data_dir / "source-registry-active.json",
+        [
+            {
+                "id": "smartrecruiters:company_id:alpha",
+                "name": "Alpha Provider",
+                "adapter": "smartrecruiters",
+                "company_id": "alpha",
+            },
+            {
+                "id": "smartrecruiters:company_id:beta",
+                "name": "Beta Provider",
+                "adapter": "smartrecruiters",
+                "company_id": "beta",
+            },
+            {
+                "id": "static:shared",
+                "name": "Shared Static",
+                "adapter": "static",
+                "listing_url": "https://shared.example/jobs",
+            },
+        ],
+    )
+    _write_json(data_dir / "source-registry-pending.json", [])
+    monkeypatch.setattr(
+        soak,
+        "REDUNDANT_STATIC_IF_PROVIDER",
+        [
+            {
+                "hosts": ["shared.example"],
+                "adapter": "smartrecruiters",
+                "provider_id_field": "company_id",
+                "provider_id_value": "alpha",
+            },
+            {
+                "hosts": ["shared.example"],
+                "adapter": "smartrecruiters",
+                "provider_id_field": "company_id",
+                "provider_id_value": "beta",
+            },
+        ],
+    )
+
+    report = soak.build_soak_report(data_dir)
+    section = report["sections"]["providerCoverageLinkBackfill"]
+
+    assert section["candidateLinkCount"] == 2
+    assert section["blockedCount"] == 2
+    assert section["highConfidenceLinkCount"] == 0
+    assert section["reviewCandidates"] == []
+    assert section["blockedReasonCounts"]["static_link_target_collision"] == 2
+    assert {row["providerSourceId"] for row in section["blockedCandidates"]} == {
+        "smartrecruiters:company_id:alpha",
+        "smartrecruiters:company_id:beta",
+    }
 
 
 def test_provider_coverage_backfill_duplicate_advisory_candidate(
@@ -85,6 +201,55 @@ def test_provider_coverage_backfill_duplicate_advisory_candidate(
     assert link["recommendedAction"] == "needs_review"
     assert link["confidence"] >= 0.75
     assert link["staticSourceId"] == "static:studio"
+
+
+def test_provider_coverage_backfill_blocks_provider_shaped_self_link(
+    tmp_path: Path,
+) -> None:
+    data_dir = tmp_path / "data"
+    _write_json(data_dir / "jobs-fetch-report.json", {})
+    _write_json(
+        data_dir / "source-registry-active.json",
+        [
+            {
+                "id": "workable:account:selfstudio",
+                "name": "Self Studio Provider",
+                "adapter": "workable",
+                "account": "selfstudio",
+            }
+        ],
+    )
+    _write_json(data_dir / "source-registry-pending.json", [])
+    _write_json(
+        data_dir / "source-discovery-candidates.json",
+        [
+            {
+                "sourceIdentity": "workable:account:selfstudio",
+                "providerStagingSourceIdentity": "workable:account:selfstudio",
+                "name": "Self Studio Provider",
+                "adapter": "workable",
+                "currentAdapter": "workable",
+                "currentUrl": "https://apply.workable.com/selfstudio/",
+                "detectedProviderFamily": "workable",
+                "detectedProviderId": "selfstudio",
+                "recommendedAction": "already_covered_by_provider",
+                "duplicateOfActiveSource": True,
+            }
+        ],
+    )
+
+    report = soak.build_soak_report(data_dir)
+    section = report["sections"]["providerCoverageLinkBackfill"]
+    blocked = section["blockedCandidates"][0]
+
+    assert section["candidateLinkCount"] == 1
+    assert section["blockedCount"] == 1
+    assert section["mediumConfidenceLinkCount"] == 0
+    assert section["reviewCandidates"] == []
+    assert blocked["apiEligible"] is False
+    assert blocked["providerSourceId"] == "workable:account:selfstudio"
+    assert blocked["staticSourceId"] == "workable:account:selfstudio"
+    assert blocked["blockers"] == ["provider_shaped_self_link"]
 
 
 def test_provider_coverage_backfill_advisory_matches_custom_provider_id_and_generic_static(
@@ -306,6 +471,12 @@ def test_provider_coverage_backfill_ambiguous_static_matches_warn(
     }
     assert section["blockerCounts"]["ambiguous_static_match"] == 2
     assert {row["recommendedAction"] for row in section["links"]} == {"ambiguous_static_match"}
+    next_action = report["sections"]["providerCoverageNextAction"]
+    assert next_action["action"] == "resolve_link_ambiguity"
+    assert next_action["priority"] == 6
+    assert next_action["requiresHumanApproval"] is False
+    assert next_action["evidenceCounts"]["apiEligibleReviewCandidateCount"] == 0
+    assert "ambiguous_static_match" in next_action["blockedBy"]
     assert "provider_coverage_link_ambiguous_static_match" in _gate_ids(report)
     assert "provider_coverage_link_unresolved_ambiguity_examples" in _gate_ids(report)
 

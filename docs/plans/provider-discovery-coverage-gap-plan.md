@@ -27,10 +27,10 @@ Keep this work local-first, advisory, and non-destructive. Do not add Apify as a
 
 Current docs and code show these important boundaries:
 
-- `docs/adapter-plugin-inventory.md` lists fetcher loaders and provider plugins for Greenhouse, Teamtailor, Lever, SmartRecruiters, Workable, Recruitee, Pinpoint, Ashby, BambooHR, Breezy, JazzHR, Personio, Workday, and `scrapy_static_sources`.
-- `src/source_discovery/config.py` currently exposes discovery `SUPPORTED_PROVIDERS` for Greenhouse, Lever, SmartRecruiters, Workable, Teamtailor, Ashby, BambooHR, Workday, Recruitee, Pinpoint, and Personio.
-- `src/source_discovery/provider_inference.py` builds provider candidate rows for those supported discovery providers, including safe Workday `*.myworkdayjobs.com` listing URLs with non-root paths. It does not currently build Breezy, JazzHR, iCIMS, SuccessFactors, Jobvite, Cornerstone/CSOD, Homerun, HRMOS, or Oracle HCM fetch candidates.
-- `src/source_discovery/provider_migration_advisory.py` recognizes safe Workday candidates as supported migration/provider-staging evidence, and classifies Jobvite and Oracle HCM as unsupported-provider evidence. Breezy and JazzHR remain recognized migration families, but discovery row building for them is still future work.
+- `docs/adapter-plugin-inventory.md` lists fetcher loaders and provider plugins for Greenhouse, Teamtailor, Lever, SmartRecruiters, Workable, Recruitee, Pinpoint, Ashby, BambooHR, Breezy, JazzHR, Oracle HCM, Personio, Workday, and `scrapy_static_sources`.
+- `src/source_discovery/config.py` currently exposes discovery `SUPPORTED_PROVIDERS` for Greenhouse, Lever, SmartRecruiters, Workable, Teamtailor, Ashby, BambooHR, Breezy, JazzHR, Oracle HCM, Workday, Recruitee, Pinpoint, and Personio.
+- `src/source_discovery/provider_inference.py` builds provider candidate rows for those supported discovery providers, including safe Workday `*.myworkdayjobs.com` listing URLs with non-root paths, safe Breezy/JazzHR board URLs, and Oracle HCM Candidate Experience jobs pages on `oraclecloud.com`.
+- `src/source_discovery/provider_migration_advisory.py` recognizes safe supported candidates as migration/provider-staging evidence, keeps unsafe Oracle HCM evidence unsupported, and classifies Jobvite, iCIMS, SuccessFactors, Cornerstone/CSOD, Homerun, and HRMOS as unsupported-provider evidence.
 - Current checked-in `data/source-discovery-candidates.json` may still contain provider-shaped URLs represented as static rows until discovery is rerun. The first slice added Workday/Oracle HCM classification and reporting logic without rewriting runtime data artifacts.
 - Static/plugin coverage already includes partial special cases such as HRMOS and Jobvite-like static handling, but that is not the same as discovery/provider migration coverage.
 - The source-policy soak report now includes additive read-only `sections.providerCoverageGaps` in JSON and Markdown. `docs/DATA_CONTRACT.md` is canonical for that report shape, and `docs/scraping-pipeline.md` is the operator-facing summary.
@@ -149,7 +149,7 @@ Runtime artifacts under `data/` and `_out/` are evidence, not default commit tar
 The smallest implementation that proves the layer is complete:
 
 1. Added read-only detection/classification for Workday and Oracle HCM examples already present in current discovery artifacts.
-2. Added tests showing Workday is a supported-provider inference candidate only when the row shape is safe, while Oracle HCM is classified as unsupported/provider gap evidence.
+2. Added tests showing Workday is a supported-provider inference candidate only when the row shape is safe, while Oracle HCM was initially classified as unsupported/provider gap evidence.
 3. Added source-policy soak-report `providerCoverageGaps` buckets with counts, blocker reasons, provider/static evidence, and capped examples in JSON and Markdown.
 4. Deferred Admin UI changes until the JSON/Markdown report is stable.
 
@@ -164,4 +164,17 @@ git diff --check
 
 Results: 50 focused source-discovery tests passed, 29 focused soak-report tests passed, the broader 502-test source-discovery/soak-report sweep passed, and `git diff --check` passed.
 
-Remaining follow-ups are the broader ATS taxonomy, staged-provider validation visibility refinements, and Admin/Ops review surface. Those should be planned as separate slices.
+Remaining follow-ups are staged-provider validation outcomes that produce real positive kept-job evidence, a narrow unsupported-family adapter decision if one family becomes worth implementing, and the Admin/Ops review surface. Those should be planned as separate slices.
+
+## Oracle HCM Decision Slice (Implemented 2026-05-19)
+
+Oracle HCM now has a narrow supported-provider path only for Candidate Experience jobs pages on `oraclecloud.com`.
+
+Implemented scope:
+
+1. Added discovery/provider-migration rows with `adapter="oracle_hcm"`, `listing_url`, `base_url`, and normalized `site_path` for safe `/hcmUI/CandidateExperience/.../sites/.../jobs` URLs.
+2. Added an `oracle_hcm_sources` provider plugin and fixture-backed Oracle CE requisition parser using the documented `recruitingCEJobRequisitions` endpoint path.
+3. Preserved iCIMS, SuccessFactors, Cornerstone/CSOD, Homerun, HRMOS, and Jobvite as unsupported advisory-only families.
+4. Kept unsafe Oracle CE URLs unsupported and made auth-gated or empty Oracle fetch evidence non-promotable rather than another provider fetch/debug loop.
+
+Runtime validation should still treat Oracle CE 401/403 or empty tenant responses as a useful decision outcome: the family is structurally supported, but those tenant examples are not promotable unless public requisition payloads return real kept jobs.

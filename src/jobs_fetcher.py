@@ -87,8 +87,8 @@ def run_scrapy_static_source(*args, **kwargs):
     return fetcher_compat_runtime_mod.run_scrapy_static_source(*args, **kwargs)
 
 
-def registry_entries(adapter: str, *, enabled_only: bool = True):
-    return fetcher_compat_runtime_mod.registry_entries(adapter, enabled_only=enabled_only)
+def registry_entries(adapter: str, *, enabled_only: bool = True, **kwargs):
+    return fetcher_compat_runtime_mod.registry_entries(adapter, enabled_only=enabled_only, **kwargs)
 
 
 def build_redirect_resolver(*args, **kwargs):

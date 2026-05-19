@@ -87,6 +87,7 @@ def _is_provider_family_adapter(adapter_name: str) -> bool:
         "greenhouse",
         "jazzhr",
         "lever",
+        "oracle_hcm",
         "personio",
         "pinpoint",
         "recruitee",

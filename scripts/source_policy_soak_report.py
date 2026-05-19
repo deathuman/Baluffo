@@ -44,7 +44,10 @@ from src.shared.json_io import read_json
 from src.shared.json_shapes import as_json_list, as_json_object, json_object_rows
 from src.shared.utils import now_iso
 from src.source_discovery.config import SUPPORTED_PROVIDERS
-from src.source_discovery.provider_migration_advisory import enrich_provider_migration_rows
+from src.source_discovery.provider_migration_advisory import (
+    build_provider_migration_payload,
+    enrich_provider_migration_rows,
+)
 from src.source_registry_identity import source_identity
 
 SCHEMA_VERSION = "1.0"
@@ -106,6 +109,13 @@ PROVIDER_COVERAGE_GAP_BUCKETS = (
     "validatedProviderMissingMigrationSourceIdentity",
     "staticStillActiveDespiteValidatedProvider",
 )
+PROVIDER_VALIDATION_DIAGNOSTIC_CAUSES = (
+    "zeroKeptFetched",
+    "fetchError",
+    "notFetched",
+    "missingDetailEvidence",
+    "validated",
+)
 PROVIDER_ID_FIELDS = (
     "slug",
     "account",
@@ -114,9 +124,48 @@ PROVIDER_ID_FIELDS = (
     "api_url",
     "feed_url",
     "board_url",
+    "site_path",
     "listing_url",
     "base_url",
 )
+PROVIDER_STAGING_DIAGNOSTIC_COUNT_KEYS = (
+    "stageableProviderCandidateCount",
+    "stagedProviderCandidateCount",
+    "stagingSkippedCount",
+    "stagingBlockedByDuplicateActiveCount",
+    "stagingBlockedByDuplicatePendingCount",
+    "stagingBlockedByUnsupportedProviderCount",
+    "stagingBlockedByInsufficientEvidenceCount",
+    "stagingBlockedByNeedsProbeCount",
+    "stagingBlockedByProviderRowBuildFailureCount",
+    "stagingBlockedByIdentityCollisionCount",
+    "stagingBlockedByAdapterMismatchCount",
+)
+PROVIDER_ADAPTER_SOURCE_LOADERS = {
+    "ashby": "ashby_sources",
+    "bamboohr": "bamboohr_sources",
+    "breezy": "breezy_sources",
+    "greenhouse": "greenhouse_boards",
+    "jazzhr": "jazzhr_sources",
+    "lever": "lever_sources",
+    "oracle_hcm": "oracle_hcm_sources",
+    "personio": "personio_sources",
+    "pinpoint": "pinpoint_sources",
+    "recruitee": "recruitee_sources",
+    "smartrecruiters": "smartrecruiters_sources",
+    "teamtailor": "teamtailor_sources",
+    "workable": "workable_sources",
+    "workday": "workday_sources",
+}
+PROVIDER_COVERAGE_NEXT_ACTION_PRIORITY = {
+    "refresh_discovery_staging_evidence": 1,
+    "fetch_staged_provider_candidates": 2,
+    "debug_provider_validation": 3,
+    "review_one_migration_link": 4,
+    "plan_unsupported_provider_family": 5,
+    "resolve_link_ambiguity": 6,
+    "none": 0,
+}
 
 
 def _read_json_artifact(path: Path) -> tuple[Any, str, str]:
@@ -322,6 +371,22 @@ def _source_row_tokens(row: dict[str, Any]) -> set[str]:
     if name.startswith("static_source::"):
         tokens.add(name[len("static_source::") :])
     return {token for token in tokens if token}
+
+
+def _source_evidence_rows(source_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    evidence_rows: list[dict[str, Any]] = []
+    for row in source_rows:
+        evidence_rows.append(row)
+        source_loader_name = clean_text(row.get("name"))
+        adapter = clean_text(row.get("adapter"))
+        for detail in json_object_rows(row.get("details")):
+            detail_row = dict(detail)
+            if source_loader_name and not clean_text(detail_row.get("sourceLoaderName")):
+                detail_row["sourceLoaderName"] = source_loader_name
+            if adapter and not clean_text(detail_row.get("adapter")):
+                detail_row["adapter"] = adapter
+            evidence_rows.append(detail_row)
+    return evidence_rows
 
 
 def _find_registry_row(
@@ -855,6 +920,16 @@ def _provider_migration_activation_section(
     discovery_provider_migration = as_json_object(
         as_json_object(discovery_report.get("candidateReview")).get("providerMigration")
     )
+    computed_provider_migration = (
+        {}
+        if discovery_provider_migration
+        else build_provider_migration_payload(
+            discovery_candidates,
+            active_rows=active_rows,
+            pending_rows=pending_rows,
+            at="",
+        )
+    )
     enriched_candidates = enrich_provider_migration_rows(
         discovery_candidates,
         active_rows=active_rows,
@@ -872,14 +947,32 @@ def _provider_migration_activation_section(
         if clean_text(row.get("candidateState")) == "staged_provider_candidate"
         or bool(row.get("createdFromAdvisory"))
     ]
+    actual_staged_count = len(staged_candidates)
     pending_provider_migration = [
         row
         for row in pending_rows
         if clean_text(row.get("pendingReason")) == "provider_migration_candidate"
     ]
-    fetched_tokens = _source_token_index(source_rows) | _source_state_token_index(source_state_rows)
+    pending_provider_adapters = [
+        adapter
+        for adapter in PROVIDER_ADAPTER_SOURCE_LOADERS
+        if any(clean_text(row.get("adapter")) == adapter for row in pending_provider_migration)
+    ]
+    pending_provider_source_loaders = [
+        PROVIDER_ADAPTER_SOURCE_LOADERS[adapter] for adapter in pending_provider_adapters
+    ]
+    source_evidence_rows = _source_evidence_rows(source_rows)
+    fetched_tokens = _source_token_index(source_evidence_rows) | _source_state_token_index(
+        source_state_rows
+    )
     coverage_status_by_token = _provider_coverage_status_by_token(
         provider_coverage, source_state_rows
+    )
+    validation_diagnostics = _provider_validation_diagnostics(
+        pending_provider_migration=pending_provider_migration,
+        source_rows=source_rows,
+        source_state_rows=source_state_rows,
+        provider_coverage=provider_coverage,
     )
     fetched_count = 0
     validated_count = 0
@@ -901,7 +994,13 @@ def _provider_migration_activation_section(
         "advisoryTotalCandidates": advisory_total,
         "addProviderSourceCount": int(action_counts.get("add_provider_source", 0)),
         "reviewProviderMigrationCount": int(action_counts.get("review_provider_migration", 0)),
-        "stagedProviderCandidateCount": len(staged_candidates),
+        "stagingDiagnosticsSource": "computed_from_candidates"
+        if computed_provider_migration
+        else "discovery_report"
+        if discovery_provider_migration
+        else "none",
+        "actualStagedProviderCandidateCount": actual_staged_count,
+        "stagedProviderCandidateCount": actual_staged_count,
         "pendingProviderMigrationCandidateCount": len(pending_provider_migration),
         "duplicateActiveSkippedCount": sum(
             1 for row in enriched_candidates if bool(row.get("duplicateOfActiveSource"))
@@ -918,6 +1017,9 @@ def _provider_migration_activation_section(
         "providerMigrationCandidatesNoFetchCount": max(
             0, len(pending_provider_migration) - fetched_count
         ),
+        "pendingProviderMigrationAdapters": pending_provider_adapters,
+        "pendingProviderMigrationSourceLoaders": pending_provider_source_loaders,
+        "providerValidationDiagnostics": validation_diagnostics,
         "actionCounts": dict(sorted(action_counts.items())),
     }
     if discovery_provider_migration:
@@ -938,19 +1040,7 @@ def _provider_migration_activation_section(
         section["reviewProviderMigrationCount"] = int(
             section["actionCounts"].get("review_provider_migration") or 0
         )
-        for key in (
-            "stageableProviderCandidateCount",
-            "stagedProviderCandidateCount",
-            "stagingSkippedCount",
-            "stagingBlockedByDuplicateActiveCount",
-            "stagingBlockedByDuplicatePendingCount",
-            "stagingBlockedByUnsupportedProviderCount",
-            "stagingBlockedByInsufficientEvidenceCount",
-            "stagingBlockedByNeedsProbeCount",
-            "stagingBlockedByProviderRowBuildFailureCount",
-            "stagingBlockedByIdentityCollisionCount",
-            "stagingBlockedByAdapterMismatchCount",
-        ):
+        for key in PROVIDER_STAGING_DIAGNOSTIC_COUNT_KEYS:
             section[key] = int(discovery_provider_migration.get(key) or 0)
         section["stagingBlockerCounts"] = as_json_object(
             discovery_provider_migration.get("stagingBlockerCounts")
@@ -962,6 +1052,33 @@ def _provider_migration_activation_section(
             section.get("stagedProviderCandidateCount")
             or discovery_provider_migration.get("stagedProviderCount")
             or section["stagedProviderCandidateCount"]
+        )
+    elif computed_provider_migration:
+        section["computedStageableProviderCandidateCount"] = int(
+            computed_provider_migration.get("stageableProviderCandidateCount") or 0
+        )
+        section["computedWouldStageProviderCandidateCount"] = int(
+            computed_provider_migration.get("stagedProviderCandidateCount") or 0
+        )
+        for key in (
+            "stagingSkippedCount",
+            "stagingBlockedByDuplicateActiveCount",
+            "stagingBlockedByDuplicatePendingCount",
+            "stagingBlockedByUnsupportedProviderCount",
+            "stagingBlockedByInsufficientEvidenceCount",
+            "stagingBlockedByNeedsProbeCount",
+            "stagingBlockedByProviderRowBuildFailureCount",
+            "stagingBlockedByIdentityCollisionCount",
+            "stagingBlockedByAdapterMismatchCount",
+        ):
+            section[f"computed{key[0].upper()}{key[1:]}"] = int(
+                computed_provider_migration.get(key) or 0
+            )
+        section["computedStagingBlockerCounts"] = as_json_object(
+            computed_provider_migration.get("stagingBlockerCounts")
+        )
+        section["computedStagingBlockerExamples"] = json_object_rows(
+            computed_provider_migration.get("stagingBlockerExamples")
         )
     gates: list[dict[str, Any]] = []
     actionable_advisory_count = (
@@ -975,55 +1092,59 @@ def _provider_migration_activation_section(
                 {"actionableAdvisoryCount": actionable_advisory_count},
             )
         )
-    if (
-        int(section.get("stageableProviderCandidateCount") or 0) > 0
-        and section["stagedProviderCandidateCount"] == 0
-    ):
+    diagnostic_stageable_count = int(
+        section.get("stageableProviderCandidateCount")
+        or section.get("computedStageableProviderCandidateCount")
+        or 0
+    )
+    if diagnostic_stageable_count > 0 and section["stagedProviderCandidateCount"] == 0:
         gates.append(
             _warning_gate(
                 "stageable_provider_without_staging",
                 "Provider migration diagnostics found stageable candidates but none were staged.",
                 {
-                    "stageableProviderCandidateCount": int(
-                        section.get("stageableProviderCandidateCount") or 0
-                    )
+                    "stageableProviderCandidateCount": diagnostic_stageable_count,
+                    "stagingDiagnosticsSource": clean_text(section.get("stagingDiagnosticsSource")),
                 },
             )
         )
-    if int(section.get("stagingBlockedByProviderRowBuildFailureCount") or 0) > 0:
+    provider_row_build_failure_count = int(
+        section.get("stagingBlockedByProviderRowBuildFailureCount")
+        or section.get("computedStagingBlockedByProviderRowBuildFailureCount")
+        or 0
+    )
+    if provider_row_build_failure_count > 0:
         gates.append(
             _warning_gate(
                 "provider_staging_row_build_failure",
                 "Provider migration staging could not build provider rows for some candidates.",
-                {
-                    "providerRowBuildFailureCount": int(
-                        section.get("stagingBlockedByProviderRowBuildFailureCount") or 0
-                    )
-                },
+                {"providerRowBuildFailureCount": provider_row_build_failure_count},
             )
         )
-    if int(section.get("stagingBlockedByIdentityCollisionCount") or 0) > 0:
+    identity_collision_count = int(
+        section.get("stagingBlockedByIdentityCollisionCount")
+        or section.get("computedStagingBlockedByIdentityCollisionCount")
+        or 0
+    )
+    if identity_collision_count > 0:
         gates.append(
             _warning_gate(
                 "provider_staging_identity_collision",
                 "Provider migration staging found provider identity collisions.",
-                {
-                    "identityCollisionCount": int(
-                        section.get("stagingBlockedByIdentityCollisionCount") or 0
-                    )
-                },
+                {"identityCollisionCount": identity_collision_count},
             )
         )
-    if int(section.get("stagingBlockedByAdapterMismatchCount") or 0) > 0:
+    adapter_mismatch_count = int(
+        section.get("stagingBlockedByAdapterMismatchCount")
+        or section.get("computedStagingBlockedByAdapterMismatchCount")
+        or 0
+    )
+    if adapter_mismatch_count > 0:
         gates.append(
             _warning_gate(
                 "provider_staging_adapter_mismatch",
                 "Provider migration staging skipped candidates because their adapter is not static-like.",
-                {
-                    "adapterMismatchCount": int(
-                        section.get("stagingBlockedByAdapterMismatchCount") or 0
-                    )
-                },
+                {"adapterMismatchCount": adapter_mismatch_count},
             )
         )
     if (
@@ -1077,6 +1198,272 @@ def _provider_migration_activation_section(
             )
         )
     return section, gates
+
+
+def _safe_command(*parts: str) -> str:
+    return " ".join(part for part in parts if part)
+
+
+def _provider_coverage_next_action_section(
+    *,
+    provider_migration_activation: dict[str, Any],
+    provider_coverage_gaps: dict[str, Any],
+    provider_coverage_link_backfill: dict[str, Any],
+) -> dict[str, Any]:
+    activation = as_json_object(provider_migration_activation)
+    gaps = as_json_object(provider_coverage_gaps)
+    link_backfill = as_json_object(provider_coverage_link_backfill)
+    bucket_counts = as_json_object(gaps.get("bucketCounts"))
+    review_candidates = json_object_rows(link_backfill.get("reviewCandidates"))
+    blocked_candidates = json_object_rows(link_backfill.get("blockedCandidates"))
+    api_eligible_review_count = sum(
+        1 for row in review_candidates if as_json_object(row).get("apiEligible") is True
+    )
+    provider_validation_diagnostics = as_json_object(
+        activation.get("providerValidationDiagnostics")
+    )
+    provider_validation_cause_counts = as_json_object(
+        provider_validation_diagnostics.get("causeCounts")
+    )
+    evidence_counts = {
+        "stagingDiagnosticsSource": clean_text(activation.get("stagingDiagnosticsSource")),
+        "actualStagedProviderCandidateCount": int(
+            activation.get("actualStagedProviderCandidateCount") or 0
+        ),
+        "stagedProviderCandidateCount": int(activation.get("stagedProviderCandidateCount") or 0),
+        "pendingProviderMigrationCandidateCount": int(
+            activation.get("pendingProviderMigrationCandidateCount") or 0
+        ),
+        "computedStageableProviderCandidateCount": int(
+            activation.get("computedStageableProviderCandidateCount") or 0
+        ),
+        "computedWouldStageProviderCandidateCount": int(
+            activation.get("computedWouldStageProviderCandidateCount") or 0
+        ),
+        "providerMigrationCandidatesFetchedCount": int(
+            activation.get("providerMigrationCandidatesFetchedCount") or 0
+        ),
+        "providerMigrationCandidatesValidatedCount": int(
+            activation.get("providerMigrationCandidatesValidatedCount") or 0
+        ),
+        "providerMigrationCandidatesNoFetchCount": int(
+            activation.get("providerMigrationCandidatesNoFetchCount") or 0
+        ),
+        "pendingProviderMigrationAdapters": [
+            clean_text(adapter)
+            for adapter in as_json_list(activation.get("pendingProviderMigrationAdapters"))
+            if clean_text(adapter)
+        ],
+        "pendingProviderMigrationSourceLoaders": [
+            clean_text(loader)
+            for loader in as_json_list(activation.get("pendingProviderMigrationSourceLoaders"))
+            if clean_text(loader)
+        ],
+        "providerValidationDiagnostics": provider_validation_diagnostics,
+        "providerValidationZeroKeptFetchedCount": int(
+            provider_validation_cause_counts.get("zeroKeptFetched") or 0
+        ),
+        "providerValidationFetchErrorCount": int(
+            provider_validation_cause_counts.get("fetchError") or 0
+        ),
+        "providerValidationNotFetchedCount": int(
+            provider_validation_cause_counts.get("notFetched") or 0
+        ),
+        "providerValidationMissingDetailEvidenceCount": int(
+            provider_validation_cause_counts.get("missingDetailEvidence") or 0
+        ),
+        "providerValidationValidatedCount": int(
+            provider_validation_cause_counts.get("validated") or 0
+        ),
+        "reviewCandidateCount": len(review_candidates),
+        "apiEligibleReviewCandidateCount": api_eligible_review_count,
+        "blockedLinkCandidateCount": len(blocked_candidates),
+        "unsupportedProviderDetectedCount": int(
+            bucket_counts.get("unsupportedProviderDetected") or 0
+        ),
+        "providerDetectedNeedsProbeCount": int(
+            bucket_counts.get("providerDetectedNeedsProbe") or 0
+        ),
+        "stagedProviderNotFetchedCount": int(bucket_counts.get("stagedProviderNotFetched") or 0),
+        "fetchedButNotValidatedCount": int(bucket_counts.get("fetchedButNotValidated") or 0),
+        "validatedProviderMissingMigrationSourceIdentityCount": int(
+            bucket_counts.get("validatedProviderMissingMigrationSourceIdentity") or 0
+        ),
+        "staticStillActiveDespiteValidatedProviderCount": int(
+            bucket_counts.get("staticStillActiveDespiteValidatedProvider") or 0
+        ),
+        "totalProviderCoverageGapCount": int(gaps.get("totalGapCount") or 0),
+    }
+
+    def section(
+        action: str,
+        rationale: str,
+        *,
+        safe_local_commands: list[str] | None = None,
+        requires_human_approval: bool = False,
+        blocked_by: list[str] | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "action": action,
+            "priority": PROVIDER_COVERAGE_NEXT_ACTION_PRIORITY[action],
+            "rationale": rationale,
+            "evidenceCounts": evidence_counts,
+            "safeLocalCommands": safe_local_commands or [],
+            "requiresHumanApproval": requires_human_approval,
+            "blockedBy": blocked_by or [],
+        }
+
+    def pending_provider_fetch_command(*, force_refresh_all: bool = False) -> str:
+        pending_source_loaders = [
+            clean_text(loader)
+            for loader in evidence_counts["pendingProviderMigrationSourceLoaders"]
+            if clean_text(loader)
+        ]
+        command_parts = ["python", "src/jobs_fetcher.py"]
+        if pending_source_loaders:
+            command_parts.extend(["--only-sources", ",".join(pending_source_loaders)])
+        command_parts.append("--include-pending-provider-migration")
+        if force_refresh_all:
+            command_parts.append("--force-refresh-all")
+        return _safe_command(*command_parts)
+
+    provider_validation_diagnostic_total = sum(
+        int(provider_validation_cause_counts.get(cause) or 0)
+        for cause in PROVIDER_VALIDATION_DIAGNOSTIC_CAUSES
+    )
+    non_promotable_provider_validation_count = (
+        evidence_counts["providerValidationZeroKeptFetchedCount"]
+        + evidence_counts["providerValidationFetchErrorCount"]
+    )
+    positive_or_unknown_unvalidated_count = max(
+        0,
+        evidence_counts["fetchedButNotValidatedCount"] - non_promotable_provider_validation_count,
+    )
+    should_debug_provider_validation = (
+        evidence_counts["providerValidationMissingDetailEvidenceCount"] > 0
+        or positive_or_unknown_unvalidated_count > 0
+        or (
+            provider_validation_diagnostic_total == 0
+            and (
+                evidence_counts["fetchedButNotValidatedCount"] > 0
+                or (
+                    evidence_counts["providerMigrationCandidatesFetchedCount"] > 0
+                    and evidence_counts["providerMigrationCandidatesValidatedCount"]
+                    < evidence_counts["providerMigrationCandidatesFetchedCount"]
+                )
+            )
+        )
+    )
+
+    if (
+        evidence_counts["stagingDiagnosticsSource"] == "computed_from_candidates"
+        and evidence_counts["computedWouldStageProviderCandidateCount"] > 0
+        and evidence_counts["actualStagedProviderCandidateCount"] == 0
+        and evidence_counts["pendingProviderMigrationCandidateCount"] == 0
+    ):
+        return section(
+            "refresh_discovery_staging_evidence",
+            "Provider staging evidence is fallback-computed from candidates; refresh discovery so actual pending/staged rows and provider-migration review diagnostics are current.",
+            safe_local_commands=[
+                _safe_command(
+                    "python",
+                    "scripts/provider_migration_staging_refresh.py",
+                    "--data-dir",
+                    "data",
+                    "--out-dir",
+                    "_out",
+                    "--apply-pending",
+                ),
+                _safe_command(
+                    "python",
+                    "scripts/source_policy_soak_report.py",
+                    "--data-dir",
+                    "data",
+                    "--out-dir",
+                    "_out",
+                ),
+            ],
+            blocked_by=["discovery_report_missing_provider_migration_review"],
+        )
+    if (
+        evidence_counts["pendingProviderMigrationCandidateCount"] > 0
+        and evidence_counts["providerMigrationCandidatesFetchedCount"] == 0
+        and evidence_counts["providerValidationFetchErrorCount"] == 0
+        and evidence_counts["providerValidationMissingDetailEvidenceCount"] == 0
+    ):
+        return section(
+            "fetch_staged_provider_candidates",
+            "Pending provider migration candidates exist, but none have provider fetch evidence yet.",
+            safe_local_commands=[
+                pending_provider_fetch_command(),
+                _safe_command(
+                    "python",
+                    "scripts/source_policy_soak_report.py",
+                    "--data-dir",
+                    "data",
+                    "--out-dir",
+                    "_out",
+                ),
+            ],
+            blocked_by=["pending_provider_migration_not_fetched"],
+        )
+    if should_debug_provider_validation:
+        return section(
+            "debug_provider_validation",
+            "Provider migration candidates have fetch evidence, but validation has not reached validated-provider status.",
+            safe_local_commands=[
+                pending_provider_fetch_command(force_refresh_all=True),
+                _safe_command(
+                    "python",
+                    "scripts/source_policy_soak_report.py",
+                    "--data-dir",
+                    "data",
+                    "--out-dir",
+                    "_out",
+                ),
+            ],
+            blocked_by=["provider_fetch_not_validated"],
+        )
+    if evidence_counts["unsupportedProviderDetectedCount"] > 0:
+        return section(
+            "plan_unsupported_provider_family",
+            "Unsupported provider-family detections remain after staged/fetched/linkable provider work is not the top blocker.",
+            blocked_by=["unsupported_provider_family"],
+        )
+    if api_eligible_review_count > 0:
+        return section(
+            "review_one_migration_link",
+            "At least one API-eligible migration-link review candidate exists; applying or clearing links requires explicit Admin/human approval.",
+            requires_human_approval=True,
+            blocked_by=["requires_explicit_admin_migration_link_action"],
+        )
+    if len(blocked_candidates) > 0:
+        return section(
+            "resolve_link_ambiguity",
+            "Provider/static link candidates exist, but none are currently API-eligible for review.",
+            safe_local_commands=[
+                _safe_command(
+                    "python",
+                    "scripts/source_policy_soak_report.py",
+                    "--data-dir",
+                    "data",
+                    "--out-dir",
+                    "_out",
+                )
+            ],
+            blocked_by=sorted(
+                {
+                    clean_text(blocker)
+                    for row in blocked_candidates
+                    for blocker in as_json_list(row.get("blockers"))
+                    if clean_text(blocker)
+                }
+            ),
+        )
+    return section(
+        "none",
+        "No provider coverage triage action is currently recommended from the available soak evidence.",
+    )
 
 
 def _identity_for_gap_row(row: dict[str, Any]) -> str:
@@ -1179,6 +1566,148 @@ def _provider_coverage_gap_bucket(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _provider_validation_diagnostic_example(
+    *,
+    row: dict[str, Any],
+    cause: str,
+    source_loader_name: str,
+    registry_row: dict[str, Any],
+    source_row: dict[str, Any],
+    state_row: dict[str, Any],
+    state_name: str,
+    aggregate_row: dict[str, Any],
+) -> dict[str, Any]:
+    example = _provider_coverage_gap_example(
+        row=row,
+        blocker_reason=cause,
+        registry_bucket="pending",
+        registry_row=registry_row,
+        source_row=source_row,
+        state_row=state_row,
+        state_name=state_name,
+    )
+    if source_loader_name:
+        example["sourceLoaderName"] = source_loader_name
+    latest_error = _first_clean_text(
+        source_row,
+        "error",
+        "lastError",
+        "providerCoverageLatestError",
+    ) or _first_clean_text(state_row, "lastError", "providerCoverageLatestError")
+    if latest_error:
+        example["latestFetchError"] = latest_error
+    if aggregate_row:
+        aggregate_status = _first_clean_text(aggregate_row, "status", "lastStatus")
+        aggregate_error = _first_clean_text(aggregate_row, "error", "lastError")
+        if aggregate_status:
+            example["aggregateFetchStatus"] = aggregate_status
+        if aggregate_error:
+            example["aggregateFetchError"] = aggregate_error
+    return example
+
+
+def _provider_validation_diagnostics(
+    *,
+    pending_provider_migration: list[dict[str, Any]],
+    source_rows: list[dict[str, Any]],
+    source_state_rows: dict[str, dict[str, Any]],
+    provider_coverage: dict[str, Any],
+) -> dict[str, Any]:
+    evidence_rows = _source_evidence_rows(source_rows)
+    coverage_status_by_token = _provider_coverage_status_by_token(
+        provider_coverage, source_state_rows
+    )
+    source_loader_rows = {
+        clean_text(row.get("name")): row for row in source_rows if clean_text(row.get("name"))
+    }
+    cause_counts = {cause: 0 for cause in PROVIDER_VALIDATION_DIAGNOSTIC_CAUSES}
+    examples_by_cause: dict[str, list[dict[str, Any]]] = {
+        cause: [] for cause in PROVIDER_VALIDATION_DIAGNOSTIC_CAUSES
+    }
+    for row in pending_provider_migration:
+        tokens = _source_identity_tokens(row)
+        adapter = clean_text(row.get("adapter"))
+        source_loader_name = PROVIDER_ADAPTER_SOURCE_LOADERS.get(adapter, "")
+        aggregate_row = as_json_object(source_loader_rows.get(source_loader_name))
+        source_row = _source_report_evidence_for_tokens(evidence_rows, tokens)
+        state_name, state_row = _source_state_evidence_for_tokens(source_state_rows, tokens)
+        provider_status = next(
+            (
+                coverage_status_by_token[token]
+                for token in tokens
+                if coverage_status_by_token.get(token)
+            ),
+            "",
+        )
+        if provider_status == "validated_provider":
+            cause = "validated"
+        elif source_row or state_row:
+            latest_status = norm_text(
+                _first_clean_text(source_row, "status", "lastStatus")
+                or _first_clean_text(state_row, "lastStatus", "providerCoverageStatus")
+            )
+            latest_error = _first_clean_text(
+                source_row,
+                "error",
+                "lastError",
+                "providerCoverageLatestError",
+            ) or _first_clean_text(state_row, "lastError", "providerCoverageLatestError")
+            latest_kept = _first_int_value(source_row, "keptCount", "jobsFound")
+            if latest_kept == 0:
+                latest_kept = _first_int_value(
+                    state_row,
+                    "lastKeptCount",
+                    "providerCoverageLatestKeptCount",
+                )
+            if latest_status == "error" or latest_error:
+                cause = "fetchError"
+            elif latest_status in {"ok", "excluded"} and latest_kept == 0:
+                cause = "zeroKeptFetched"
+            else:
+                cause = "missingDetailEvidence"
+        elif aggregate_row:
+            cause = "missingDetailEvidence"
+        else:
+            cause = "notFetched"
+
+        cause_counts[cause] += 1
+        if len(examples_by_cause[cause]) < PROVIDER_COVERAGE_GAP_EXAMPLE_LIMIT:
+            examples_by_cause[cause].append(
+                _provider_validation_diagnostic_example(
+                    row=row,
+                    cause=cause,
+                    source_loader_name=source_loader_name,
+                    registry_row=row,
+                    source_row=source_row,
+                    state_row=state_row,
+                    state_name=state_name,
+                    aggregate_row=aggregate_row,
+                )
+            )
+
+    return {
+        "causeCounts": cause_counts,
+        "examples": {cause: rows for cause, rows in examples_by_cause.items() if rows},
+    }
+
+
+def _looks_like_provider_source_identity(value: Any) -> bool:
+    parts = clean_text(value).split(":", 2)
+    if len(parts) != 3:
+        return False
+    adapter, field, identity_value = (norm_text(part) for part in parts)
+    supported = {norm_text(provider) for provider in SUPPORTED_PROVIDERS}
+    return bool(adapter in supported and field in PROVIDER_ID_FIELDS and identity_value)
+
+
+def _has_per_provider_identity(row: dict[str, Any], *, state_name: str = "") -> bool:
+    if clean_text(row.get("sourceIdentity") or row.get("id") or row.get("sourceId")):
+        return True
+    if _looks_like_provider_source_identity(state_name):
+        return True
+    return any(clean_text(row.get(key)) for key in PROVIDER_ID_FIELDS)
+
+
 def _provider_source_rows_missing_migration_identity(
     *,
     source_rows: list[dict[str, Any]],
@@ -1195,6 +1724,7 @@ def _provider_source_rows_missing_migration_identity(
             and clean_text(row.get("status")) == "ok"
             and _first_int_value(row, "keptCount", "jobsFound") > 0
             and not clean_text(row.get("migrationSourceIdentity"))
+            and _has_per_provider_identity(row)
             and identity not in seen
         ):
             examples.append(
@@ -1214,6 +1744,7 @@ def _provider_source_rows_missing_migration_identity(
             and clean_text(row.get("lastStatus")) == "ok"
             and _first_int_value(row, "lastKeptCount", "providerCoverageLatestKeptCount") > 0
             and not clean_text(row.get("migrationSourceIdentity"))
+            and _has_per_provider_identity(row, state_name=name)
             and identity not in seen
         ):
             examples.append(
@@ -1318,7 +1849,10 @@ def _provider_coverage_gaps_section(
         active_rows=active_rows,
         pending_rows=pending_rows,
     )
-    fetched_tokens = _source_token_index(source_rows) | _source_state_token_index(source_state_rows)
+    source_evidence_rows = _source_evidence_rows(source_rows)
+    fetched_tokens = _source_token_index(source_evidence_rows) | _source_state_token_index(
+        source_state_rows
+    )
     coverage_status_by_token = _provider_coverage_status_by_token(
         provider_coverage,
         source_state_rows,
@@ -1344,7 +1878,7 @@ def _provider_coverage_gaps_section(
     for row in pending_provider_migration:
         tokens = _source_identity_tokens(row)
         registry_bucket = "pending"
-        source_row = _source_report_evidence_for_tokens(source_rows, tokens)
+        source_row = _source_report_evidence_for_tokens(source_evidence_rows, tokens)
         state_name, state_row = _source_state_evidence_for_tokens(source_state_rows, tokens)
         if not (tokens & fetched_tokens):
             staged_not_fetched.append(
@@ -2061,6 +2595,20 @@ def _advisory_static_candidate(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _provider_shaped_static_link_blockers(
+    provider: dict[str, Any], static: dict[str, Any]
+) -> list[str]:
+    static_id = norm_text(static.get("staticSourceId"))
+    if not static_id:
+        return []
+    if static_id in {norm_text(key) for key in _provider_identity_keys(provider)}:
+        return ["provider_shaped_self_link"]
+    static_adapter = static_id.split(":", 1)[0]
+    if static_adapter in {norm_text(provider) for provider in SUPPORTED_PROVIDERS}:
+        return ["provider_shaped_static_identity"]
+    return []
+
+
 def _advisory_link_rows(
     provider: dict[str, Any], advisory_rows: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
@@ -2077,12 +2625,14 @@ def _advisory_link_rows(
         static = _advisory_static_candidate(advisory)
         if not static:
             continue
+        blockers = _provider_shaped_static_link_blockers(provider, static)
         rows.append(
             _provider_link_row(
                 provider,
                 static,
                 confidence=0.8,
                 reasons=["provider_migration_advisory_exact_identity"],
+                blockers=blockers,
                 recommended_action="needs_review",
             )
         )
@@ -2299,9 +2849,36 @@ def _provider_coverage_link_backfill_sort_key(row: dict[str, Any]) -> tuple[Any,
 
 
 def _blocked_link_candidates(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    blocked = [dict(row) for row in rows if _link_blockers(row)]
+    blocked = [{**row, "apiEligible": False} for row in rows if _link_blockers(row)]
     blocked.sort(key=_provider_coverage_link_backfill_sort_key)
     return blocked
+
+
+def _potential_review_link(row: dict[str, Any]) -> bool:
+    confidence = float(row.get("confidence") or 0)
+    if confidence < 0.75 or _link_blockers(row):
+        return False
+    if clean_text(row.get("recommendedAction")) not in {
+        "backfill_migration_identity_candidate",
+        "needs_review",
+    }:
+        return False
+    return bool(clean_text(row.get("providerSourceId")) and clean_text(row.get("staticSourceId")))
+
+
+def _block_colliding_static_link_targets(rows: list[dict[str, Any]]) -> None:
+    by_static: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        if not _potential_review_link(row):
+            continue
+        static_id = clean_text(row.get("staticSourceId")).lower()
+        by_static.setdefault(static_id, []).append(row)
+    for collisions in by_static.values():
+        provider_ids = {clean_text(row.get("providerSourceId")).lower() for row in collisions}
+        if len(provider_ids) <= 1:
+            continue
+        for row in collisions:
+            row["blockers"] = sorted({*_link_blockers(row), "static_link_target_collision"})
 
 
 def _disambiguation_blocker_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
@@ -2638,6 +3215,7 @@ def _provider_coverage_link_backfill_section(
             )
         )
     links.extend(diagnostic_rows)
+    _block_colliding_static_link_targets(links)
     candidate_links = [row for row in links if _is_candidate_link(row)]
     blocked_candidates = _blocked_link_candidates(candidate_links)
     blocker_counts = Counter(
@@ -2664,12 +3242,14 @@ def _provider_coverage_link_backfill_section(
         for row in candidate_links
         if float(row.get("confidence") or 0) >= 0.9
         and clean_text(row.get("recommendedAction")) == "backfill_migration_identity_candidate"
+        and not _link_blockers(row)
     ]
     medium_confidence = [
         row
         for row in candidate_links
         if 0.75 <= float(row.get("confidence") or 0) < 0.9
         and clean_text(row.get("recommendedAction")) == "needs_review"
+        and not _link_blockers(row)
     ]
     review_candidates = _review_candidates(links)
     section = {
@@ -3209,6 +3789,11 @@ def _build_sections(
         source_state_rows=source_state_rows,
         provider_coverage=provider_coverage,
     )
+    provider_coverage_next_action = _provider_coverage_next_action_section(
+        provider_migration_activation=provider_migration_activation,
+        provider_coverage_gaps=provider_coverage_gaps,
+        provider_coverage_link_backfill=provider_coverage_link_backfill,
+    )
     staged_provider_candidates_count = int(
         provider_migration_activation.get("stagedProviderCandidateCount") or 0
     )
@@ -3310,6 +3895,7 @@ def _build_sections(
         },
         "providerMigrationActivation": provider_migration_activation,
         "providerCoverageGaps": provider_coverage_gaps,
+        "providerCoverageNextAction": provider_coverage_next_action,
         "providerCoverageLinkBackfill": provider_coverage_link_backfill,
         "suppressionEligibility": suppression_eligibility,
         "providerCoverageValidation": {
@@ -3410,6 +3996,10 @@ def _build_sections(
             provider_migration_activation.get("providerMigrationCandidatesNoFetchCount") or 0
         ),
         "providerCoverageGapCount": int(provider_coverage_gaps.get("totalGapCount") or 0),
+        "providerCoverageNextAction": clean_text(provider_coverage_next_action.get("action")),
+        "providerCoverageNextActionPriority": int(
+            provider_coverage_next_action.get("priority") or 0
+        ),
         "providerCoverageBackfillCandidateLinkCount": int(
             provider_coverage_link_backfill.get("candidateLinkCount") or 0
         ),
@@ -3547,6 +4137,27 @@ def _provider_coverage_gap_markdown_rows(report: dict[str, Any]) -> list[str]:
     if len(rows) == 2:
         rows.append("| none |  |  |  |  |  |")
     return rows
+
+
+def _markdown_joined_values(values: Any) -> str:
+    items = [clean_text(item) for item in as_json_list(values) if clean_text(item)]
+    return ", ".join(items) if items else "none"
+
+
+def _provider_coverage_next_action_markdown_rows(report: dict[str, Any]) -> list[str]:
+    next_action = as_json_object(
+        as_json_object(report.get("sections")).get("providerCoverageNextAction")
+    )
+    return _markdown_table(
+        [
+            ("action", clean_text(next_action.get("action")) or "none"),
+            ("priority", int(next_action.get("priority") or 0)),
+            ("requiresHumanApproval", bool(next_action.get("requiresHumanApproval"))),
+            ("blockedBy", _markdown_joined_values(next_action.get("blockedBy"))),
+            ("safeLocalCommands", _markdown_joined_values(next_action.get("safeLocalCommands"))),
+            ("rationale", clean_text(next_action.get("rationale"))),
+        ]
+    )
 
 
 def _review_candidates_markdown_rows(report: dict[str, Any]) -> list[str]:
@@ -3824,6 +4435,12 @@ def render_markdown_report(report: dict[str, Any]) -> str:
                 ).items()
             )
         ),
+        "",
+        "## Provider Coverage Next Action",
+        "",
+        "Advisory only: this is the agent triage recommendation derived from current soak evidence; it does not apply Admin or registry mutations.",
+        "",
+        *_provider_coverage_next_action_markdown_rows(report),
         "",
         "## Provider Coverage Gaps",
         "",

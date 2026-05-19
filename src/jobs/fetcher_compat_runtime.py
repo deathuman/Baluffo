@@ -41,12 +41,13 @@ def run_scrapy_static_source(*args, **kwargs):
             static_scrapy_mod.registry_entries = previous
 
 
-def registry_entries(adapter: str, *, enabled_only: bool = True):
+def registry_entries(adapter: str, *, enabled_only: bool = True, **kwargs):
     root_mod = _root_mod()
     return registry_mod.registry_entries(
         adapter,
         enabled_only=enabled_only,
         registry_rows=root_mod.STUDIO_SOURCE_REGISTRY,
+        **kwargs,
     )
 
 

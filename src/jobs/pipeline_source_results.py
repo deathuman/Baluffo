@@ -661,6 +661,7 @@ def execute_loader(
     base_meta = _as_dict(SOURCE_REPORT_META.get(name))
     report = _build_initial_report(name=name, base_meta=base_meta, root_module=root_module)
     report_loss = _as_dict(report.get("loss"))
+    adapter_name = norm_text(report.get("adapter"))
     canonical_batch: list[CanonicalJob] = []
     heartbeat_callback, progress_callback = _build_loader_callbacks(
         name=name,
@@ -673,7 +674,6 @@ def execute_loader(
 
     try:
         thread_local.source_name = name
-        adapter_name = norm_text(report.get("adapter"))
         loader_kwargs = _build_loader_kwargs(
             name=name,
             adapter_name=adapter_name,
@@ -745,6 +745,20 @@ def execute_loader(
     except Exception as exc:  # noqa: BLE001
         report["status"] = "error"
         report["error"] = format_source_error(name, exc)
+        diag, detail_rows = _apply_diagnostics(name=name, root_module=root_module, report=report)
+        _apply_provider_or_social_counts(
+            name=name,
+            root_module=root_module,
+            report=report,
+            detail_rows=detail_rows,
+        )
+        _apply_partial_errors_and_low_confidence(name=name, diag=diag, report=report)
+        _apply_source_specific_loss(
+            name=name,
+            report=report,
+            detail_rows=detail_rows,
+            report_loss=report_loss,
+        )
     finally:
         thread_local.source_name = ""
 

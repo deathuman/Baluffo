@@ -137,6 +137,13 @@ AUDIT_CASES: list[dict[str, Any]] = [
         "registry_adapter": "jazzhr",
     },
     {
+        "name": "oracle_hcm",
+        "family": "provider",
+        "runner": provider_api.run_oracle_hcm_sources_source,
+        "diagnostic": "oracle_hcm_sources",
+        "registry_adapter": "oracle_hcm",
+    },
+    {
         "name": "ashby",
         "family": "provider",
         "runner": provider_api.run_ashby_sources_source,

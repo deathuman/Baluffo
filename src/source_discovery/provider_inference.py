@@ -9,8 +9,11 @@ from .scoring import careers_keyword_count, clean_token, studio_domain_match
 PROVIDER_DISPLAY_NAMES = {
     "ashby": "Ashby",
     "bamboohr": "BambooHR",
+    "breezy": "Breezy",
     "greenhouse": "Greenhouse",
+    "jazzhr": "JazzHR",
     "lever": "Lever",
+    "oracle_hcm": "Oracle HCM",
     "personio": "Personio",
     "pinpoint": "Pinpoint",
     "recruitee": "Recruitee",
@@ -24,6 +27,8 @@ _HOST_FRAGMENT_ADAPTERS = (
     ("greenhouse", ("boards.greenhouse.io", "jobs.greenhouse.io", "boards-api.greenhouse.io")),
     ("ashby", ("jobs.ashbyhq.com",)),
     ("bamboohr", ("bamboohr.com", ".bamboohr.com")),
+    ("breezy", (".breezy.hr",)),
+    ("jazzhr", (".applytojob.com",)),
     ("recruitee", (".recruitee.com",)),
     ("pinpoint", (".pinpointhq.com",)),
     ("workable", ("apply.workable.com", ".workable.com")),
@@ -33,7 +38,22 @@ _HOST_FRAGMENT_ADAPTERS = (
 )
 
 
+def _is_oraclecloud_host(host: str) -> bool:
+    return host == "oraclecloud.com" or host.endswith(".oraclecloud.com")
+
+
+def _is_oracle_hcm_candidate_path(path: str) -> bool:
+    tokens = [piece.lower() for piece in _path_tokens(path)]
+    if "hcmui" not in tokens or "candidateexperience" not in tokens:
+        return False
+    if "sites" not in tokens or not tokens:
+        return False
+    return tokens[-1] == "jobs"
+
+
 def infer_provider_adapter(host: str, path: str) -> str | None:
+    if _is_oraclecloud_host(host) and _is_oracle_hcm_candidate_path(path):
+        return "oracle_hcm"
     for adapter, fragments in _HOST_FRAGMENT_ADAPTERS:
         if any(fragment in host for fragment in fragments):
             return adapter
@@ -250,6 +270,63 @@ def _bamboohr_candidate(
     }
 
 
+def _breezy_candidate(
+    base: dict[str, Any],
+    parsed: ParseResult,
+    host: str,
+    _path: str,
+    _studio: str,
+) -> dict[str, Any] | None:
+    account = host.split(".breezy.hr", 1)[0]
+    if not account:
+        return None
+    scheme = parsed.scheme or "https"
+    return {
+        **base,
+        "board_url": f"{scheme}://{host}/",
+    }
+
+
+def _jazzhr_candidate(
+    base: dict[str, Any],
+    parsed: ParseResult,
+    host: str,
+    _path: str,
+    _studio: str,
+) -> dict[str, Any] | None:
+    account = host.split(".applytojob.com", 1)[0]
+    if not account:
+        return None
+    scheme = parsed.scheme or "https"
+    return {
+        **base,
+        "board_url": f"{scheme}://{host}/apply",
+    }
+
+
+def _oracle_hcm_candidate(
+    base: dict[str, Any],
+    parsed: ParseResult,
+    host: str,
+    path: str,
+    _studio: str,
+) -> dict[str, Any] | None:
+    if not _is_oraclecloud_host(host) or not _is_oracle_hcm_candidate_path(path):
+        return None
+    scheme = parsed.scheme or "https"
+    base_url = f"{scheme}://{host}"
+    site_path = path.rstrip("/")
+    if not site_path:
+        return None
+    listing_url = parsed._replace(scheme=scheme, netloc=host, fragment="").geturl()
+    return {
+        **base,
+        "listing_url": listing_url,
+        "base_url": base_url,
+        "site_path": site_path,
+    }
+
+
 def _personio_candidate(
     base: dict[str, Any],
     _parsed: ParseResult,
@@ -295,8 +372,11 @@ ProviderCandidateBuilder = Callable[
 _PROVIDER_CANDIDATE_BUILDERS: dict[str, ProviderCandidateBuilder] = {
     "ashby": _ashby_candidate,
     "bamboohr": _bamboohr_candidate,
+    "breezy": _breezy_candidate,
     "greenhouse": _greenhouse_candidate,
+    "jazzhr": _jazzhr_candidate,
     "lever": _lever_candidate,
+    "oracle_hcm": _oracle_hcm_candidate,
     "personio": _personio_candidate,
     "pinpoint": _pinpoint_candidate,
     "recruitee": _recruitee_candidate,

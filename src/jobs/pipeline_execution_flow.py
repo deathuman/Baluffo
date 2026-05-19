@@ -35,6 +35,7 @@ _PROVIDER_REGISTRY_ADAPTERS = (
     "personio",
     "breezy",
     "jazzhr",
+    "oracle_hcm",
 )
 
 

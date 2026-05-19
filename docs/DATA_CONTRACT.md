@@ -672,7 +672,7 @@ Do not change signatures or remove without a dedicated plan:
 - **M5 review snapshot:** `data/m5-strategic-backlog.json` is a derived review artifact built from discovery output. It is additive and must not replace `data/source-discovery-candidates.json` as the canonical discovery ledger.
 - **Additive candidate metadata** may include lifecycle and ranking fields such as `candidateState`, `rankScore`, `rankReasons`, `promotionLane`, `approvedAt`, `approvedBy`, `liveAt`, `quarantinedAt`, `quarantineReason`, `deferCount`, `firstDeferredAt`, and `lastDeferredAt`.
 - **Discovery review metadata** is derived observability only. Candidate rows may include additive review fields such as `sourceIdentity`, `duplicateOfActiveSource`, `duplicateOfPendingSource`, `providerDetected`, `providerFamily`, `lastProbeStatus`, `lastProbeError`, `browserFallbackRecommended`, and `promotionRecommendation`. Reports may include top-level `candidateReview` with recommendation counts and compact ranked candidate lanes. These fields help Admin review candidates and must not trigger automatic promote, hide, reject, tombstone, provider migration, or source deletion behavior by themselves.
-- **Provider migration advisory metadata** is also derived observability only. Candidate rows may include additive advisory fields such as `currentAdapter`, `currentUrl`, `detectedProviderFamily`, `detectedProviderUrl`, `detectedProviderId`, `existingProviderSourceId`, `existingProviderSourceState`, `staticSourceState`, `migrationConfidence`, `migrationReasons`, and `recommendedAction`. `candidateReview.providerMigration` may group compact read-only lanes for provider migration candidates, already-covered static sources, add-provider-source candidates, unsupported providers, needs-probe rows, and keep-static / insufficient-evidence rows. These fields must not add, promote, hide, reject, tombstone, delete, sync, or migrate source rows.
+- **Provider migration advisory metadata** is also derived observability only. Candidate rows may include additive advisory fields such as `currentAdapter`, `currentUrl`, `detectedProviderFamily`, `detectedProviderUrl`, `detectedProviderId`, `existingProviderSourceId`, `existingProviderSourceState`, `staticSourceState`, `migrationConfidence`, `migrationReasons`, and `recommendedAction`. `candidateReview.providerMigration` may group compact read-only lanes for provider migration candidates, already-covered static sources, add-provider-source candidates, unsupported providers, needs-probe rows, and keep-static / insufficient-evidence rows. The source-policy soak report may compute fallback staging diagnostics from current discovery candidates when the discovery report lacks `candidateReview.providerMigration`; fields such as `stagingDiagnosticsSource`, `computedStageableProviderCandidateCount`, `computedWouldStageProviderCandidateCount`, and `computedStagingBlockerCounts` are read-only "would stage" evidence and do not mean registry rows were written. These fields must not add, promote, hide, reject, tombstone, delete, sync, or migrate source rows.
 - **Automatic provider candidate staging** may create provider-backed discovery candidates from strong static/generic provider evidence without Admin action. While a row is only in the discovery candidate stream it uses `candidateState="staged_provider_candidate"` plus advisory fields such as `createdFromAdvisory`, `migrationSourceIdentity`, `migrationReasons`, and `migrationConfidence`; it must not claim `registryState="pending"` until written to `data/source-registry-pending.json`. Pending provider rows use `pendingReason="provider_migration_candidate"` and remain subject to the existing probe and discovery auto-approval policy. Static source rows remain unchanged by staging.
 - **Provider coverage validation** is provider-fetch-only evidence. A staged provider row is considered `validated_provider` after its own provider adapter fetch succeeds with `keptCount > 0`; static `jobsFound`, static fetch output, Scrapy/static, community, social, and generic rows must not validate provider coverage. Validation proves only that the provider source is real and usable. It must not delete, hide, reject, tombstone, skip, replace, or mark the original static source redundant.
 - **Hidden pending rows** remain recoverable pending rows. `candidateState="hidden"` / `hiddenFromDefault=true` means default review views may omit them; explicit review views may request them.
@@ -892,13 +892,50 @@ Section payload:
 | `providerDetectedNeedsProbe` | `object` | Count and capped examples for provider-shaped rows that still need probing. |
 | `stagedProviderNotFetched` | `object` | Count and capped examples for pending provider migration candidates with no fetch evidence. |
 | `fetchedButNotValidated` | `object` | Count and capped examples for fetched provider migration candidates that are not `validated_provider`. |
-| `validatedProviderMissingMigrationSourceIdentity` | `object` | Count and capped examples for successful provider fetches that cannot link back to a static/generic source. |
+| `validatedProviderMissingMigrationSourceIdentity` | `object` | Count and capped examples for successful per-provider fetches that cannot link back to a static/generic source; aggregate provider loader rows without a per-provider identity are excluded. |
 | `staticStillActiveDespiteValidatedProvider` | `object` | Count and capped examples for active static rows linked to validated providers without current suppression evidence. |
 
 Bucket objects include `count` and `examples`. Example rows are compact diagnostics and may include
 source/provider identities and names, blocker reason, detected provider family/url/id, current
 adapter, registry bucket/state, latest fetch status, kept count, provider coverage status,
 consecutive success count, and `migrationSourceIdentity`.
+
+### Provider coverage next action
+
+The source-policy soak report may include `sections.providerCoverageNextAction`. This section is a
+single read-only triage recommendation for AI/operator workflows. It is derived from
+`providerMigrationActivation`, `providerCoverageGaps`, and `providerCoverageLinkBackfill`; it must
+not mutate discovery artifacts, registry rows, source sync, Admin review state, migration identity
+links, loader selection, or runtime fetch behavior.
+
+Section payload:
+
+| Field | Type | Description |
+|---|---|---|
+| `action` | `string` | One of `refresh_discovery_staging_evidence`, `fetch_staged_provider_candidates`, `debug_provider_validation`, `review_one_migration_link`, `resolve_link_ambiguity`, `plan_unsupported_provider_family`, or `none`. |
+| `priority` | `number` | Numeric priority where `1` is the highest triage action and `0` means no action is recommended. |
+| `rationale` | `string` | Concise explanation for why this action was selected from the current evidence. |
+| `evidenceCounts` | `object` | Compact counts that explain the decision, including staging source/counts, pending/fetched/validated counts, review/blocked link counts, and provider coverage gap counts. |
+| `safeLocalCommands` | `Array<string>` | Optional local evidence-refresh commands the AI/operator may run against ignored runtime artifacts. These commands do not imply committed artifact changes. For `refresh_discovery_staging_evidence`, the preferred command is the focused `scripts/provider_migration_staging_refresh.py --apply-pending` path, which updates only provider-migration discovery diagnostics/candidates/pending rows; full discovery remains a fallback when candidate artifacts are missing or malformed. |
+| `requiresHumanApproval` | `boolean` | `true` only when the next step would require an explicit Admin or registry mutation, such as applying one migration identity link. |
+| `blockedBy` | `Array<string>` | Machine-readable blockers or approval requirements that explain why the action cannot proceed as an automatic mutation. |
+
+When `action="fetch_staged_provider_candidates"`, `evidenceCounts` may include
+`pendingProviderMigrationAdapters` and `pendingProviderMigrationSourceLoaders`. The recommended
+fetch command must use `--include-pending-provider-migration`; that flag is validation-only and
+makes pending provider migration rows fetchable in memory without approving, promoting, syncing,
+hiding, rejecting, suppressing, or applying migration links.
+
+When `action="debug_provider_validation"`, `evidenceCounts.providerValidationDiagnostics` may break
+pending provider migration rows into `zeroKeptFetched`, `fetchError`, `notFetched`,
+`missingDetailEvidence`, and `validated`. The safe command should stay targeted to the pending
+provider loaders and may add `--force-refresh-all`; it remains validation-only and does not mutate
+registry/Admin state.
+
+`review_one_migration_link` may only be selected when at least one
+`providerCoverageLinkBackfill.reviewCandidates[]` row has `apiEligible=true`. Blocked link
+candidates, including ambiguous or provider-shaped self-link rows, must select
+`resolve_link_ambiguity` or another non-mutating action instead.
 
 ### Provider coverage link backfill review surface
 
@@ -925,6 +962,11 @@ The section may expose both actionable and blocked review queues:
 blocked-candidate surface explains why the review queue is empty. High-level `blockedReasonCounts`
 capture the queue blocker, while `disambiguationBlockerCounts` explain the lower-level evidence gap
 for each blocked candidate.
+
+Provider-to-provider or provider-shaped self-links are blocked diagnostics, not actionable review
+rows. They may appear under `blockedCandidates` with blockers such as
+`provider_shaped_self_link` or `provider_shaped_static_identity` and `apiEligible=false`, but they
+must not appear in `reviewCandidates`.
 
 Blocked candidate rows may include source-state evidence fields such as `lastStatus`,
 `lastKeptCount`, `lastSuccessfulAt`, `lastFetchedAt`, `providerCoverageStatus`,

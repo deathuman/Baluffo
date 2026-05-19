@@ -9,6 +9,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
+from src.jobs import registry as jobs_registry
 from src.jobs.adapters import community as community_adapter
 from src.jobs.adapters.api import default_source_loaders as adapters_default_source_loaders
 from src.jobs.common import config as common_config
@@ -112,9 +113,13 @@ def run_pipeline(
     selection_exclusions: list[dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
     include_linked_static_validation: bool = False,
+    include_pending_provider_migration: bool = False,
 ) -> dict[str, Any]:
     run_started_mono = time.perf_counter()
     setup: pipeline_run_setup_mod.PipelineRunSetup | None = None
+    previous_include_pending = jobs_registry.set_include_pending_provider_migration(
+        include_pending_provider_migration
+    )
     try:
         setup = pipeline_run_setup_mod.prepare_pipeline_run(
             output_dir=Path(output_dir),
@@ -147,6 +152,7 @@ def run_pipeline(
             selection_exclusions=selection_exclusions,
             force_refresh_all=force_refresh_all,
             include_linked_static_validation=include_linked_static_validation,
+            include_pending_provider_migration=include_pending_provider_migration,
             default_source_loaders=default_source_loaders,
             build_redirect_resolver_fn=_pipeline_redirect_resolver_builder(),
         )
@@ -182,6 +188,7 @@ def run_pipeline(
             static_suppression_policy=setup.runtime_payload.get("staticSuppressionPolicy"),
         )
     finally:
+        jobs_registry.set_include_pending_provider_migration(previous_include_pending)
         if setup is not None:
             setup.stop_progress_reporter()
 
@@ -284,6 +291,13 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Validation-only: include ready linked static sources that are otherwise filtered "
             "by redundant-static rules so dynamic suppression evidence can be observed."
+        ),
+    )
+    parser.add_argument(
+        "--include-pending-provider-migration",
+        action="store_true",
+        help=(
+            "Validation-only: include pending provider migration rows in provider fetch loaders."
         ),
     )
     parser.add_argument(

@@ -23,6 +23,7 @@ def source_identity(row: dict[str, Any]) -> str:
         "api_url",
         "feed_url",
         "board_url",
+        "site_path",
         "listing_url",
         "name",
     ):
@@ -47,6 +48,7 @@ _PROVIDER_ID_FIELDS_BY_ADAPTER = {
     "smartrecruiters": {"company_id"},
     "workable": {"account"},
     "jazzhr": {"board_url"},
+    "oracle_hcm": {"listing_url", "site_path"},
 }
 
 

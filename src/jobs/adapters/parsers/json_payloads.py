@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 from typing import Any
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, urlunparse
 
 from src.jobs.game_detection import looks_like_game_job
 from src.jobs.models import RawJob
@@ -61,6 +61,14 @@ def _as_dict(value: Any) -> dict[str, Any]:
 
 def _as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
+
+
+def _first_clean(row: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = clean_text(row.get(key))
+        if value:
+            return value
+    return ""
 
 
 def _infer_workable_location_details(
@@ -684,6 +692,216 @@ def parse_pinpoint_jobs_payload(
                 "jobLink": link,
                 "sector": "Game",
                 "postedAt": row.get("deadline_at") or "",
+                "locations": location_details.get("locations") or [],
+                "locationSummary": clean_text(location_details.get("locationSummary")),
+            }
+        )
+    return jobs
+
+
+def _oracle_child_rows(row: dict[str, Any]) -> list[dict[str, Any]]:
+    for key in ("requisitionList", "requisitions", "jobs"):
+        value = row.get(key)
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+        if isinstance(value, dict):
+            items = value.get("items")
+            if isinstance(items, list):
+                return [item for item in items if isinstance(item, dict)]
+    return []
+
+
+def _oracle_requisition_rows(payload: Any) -> list[dict[str, Any]]:
+    payload_dict = _as_dict(payload)
+    items = _as_list(payload_dict.get("items"))
+    rows: list[dict[str, Any]] = []
+    for item_value in items:
+        if not isinstance(item_value, dict):
+            continue
+        parent = _as_dict(item_value)
+        children = _oracle_child_rows(parent)
+        if children:
+            for child in children:
+                merged = dict(parent)
+                merged.update(child)
+                rows.append(merged)
+            continue
+        rows.append(parent)
+    return rows
+
+
+def _oracle_site_key(site_path: str) -> str:
+    parts = [piece for piece in clean_text(site_path).split("/") if piece]
+    lowered = [piece.lower() for piece in parts]
+    if "sites" in lowered:
+        idx = lowered.index("sites")
+        if idx + 1 < len(parts):
+            return clean_text(parts[idx + 1])
+    return hashlib.sha1(clean_text(site_path).encode("utf-8")).hexdigest()[:10]
+
+
+def _oracle_hcm_location_text(row: dict[str, Any]) -> str:
+    value = row.get("PrimaryLocation") or row.get("primaryLocation")
+    if value:
+        return clean_text(value)
+    for key in (
+        "Location",
+        "location",
+        "JobLocation",
+        "jobLocation",
+        "WorkLocation",
+        "workLocation",
+    ):
+        value = row.get(key)
+        if value:
+            return clean_text(value)
+    for key in ("Locations", "locations", "RecruitingLocations", "recruitingLocations"):
+        value = row.get(key)
+        if isinstance(value, list):
+            return "; ".join(clean_text(item) for item in value if clean_text(item))
+    return ""
+
+
+def _oracle_hcm_public_link(
+    row: dict[str, Any],
+    *,
+    listing_url: str,
+    job_id: str,
+) -> str:
+    explicit = _first_clean(
+        row,
+        "ExternalApplyURL",
+        "externalApplyURL",
+        "ExternalApplyUrl",
+        "externalApplyUrl",
+        "ApplyURL",
+        "applyURL",
+        "ApplyUrl",
+        "applyUrl",
+        "JobURL",
+        "jobURL",
+        "JobUrl",
+        "jobUrl",
+        "CandidateJobUrl",
+        "candidateJobUrl",
+        "deepLinkUrl",
+    )
+    if explicit:
+        return explicit
+    links = _as_list(row.get("links"))
+    for link in links:
+        if not isinstance(link, dict):
+            continue
+        href = clean_text(link.get("href"))
+        if href.startswith("http"):
+            return href
+    if not listing_url or not job_id:
+        return listing_url
+    parsed = urlparse(listing_url)
+    base_path = (parsed.path or "").rstrip("/")
+    return urlunparse(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            f"{base_path}/{job_id}",
+            "",
+            "",
+            "",
+        )
+    )
+
+
+def parse_oracle_hcm_requisitions_payload(
+    payload: Any,
+    listing_url: str,
+    fallback_company: str = "",
+    *,
+    site_path: str = "",
+) -> list[RawJob]:
+    rows = _oracle_requisition_rows(payload)
+    if not rows:
+        return []
+    company = clean_text(fallback_company) or "Unknown"
+    site_key = _oracle_site_key(site_path or urlparse(listing_url).path)
+    jobs: list[RawJob] = []
+    for row in rows:
+        title = _first_clean(
+            row,
+            "Title",
+            "title",
+            "RequisitionTitle",
+            "requisitionTitle",
+            "ExternalTitle",
+            "externalTitle",
+            "JobTitle",
+            "jobTitle",
+            "Name",
+            "name",
+        )
+        job_id = _first_clean(
+            row,
+            "RequisitionNumber",
+            "requisitionNumber",
+            "RequisitionId",
+            "requisitionId",
+            "SearchId",
+            "searchId",
+            "Id",
+            "id",
+        )
+        link = _oracle_hcm_public_link(row, listing_url=listing_url, job_id=job_id)
+        if not title or not link:
+            continue
+        location_text = _oracle_hcm_location_text(row)
+        city, country, work_type = parse_generic_location_fields(location_text)
+        location_details = _normalized_location_details(location_text)
+        contract_type = _first_clean(
+            row,
+            "JobType",
+            "jobType",
+            "WorkerType",
+            "workerType",
+            "EmploymentType",
+            "employmentType",
+        )
+        tags = " ".join(
+            _first_clean(row, key)
+            for key in (
+                "DepartmentName",
+                "departmentName",
+                "OrganizationName",
+                "organizationName",
+                "JobFamilyName",
+                "jobFamilyName",
+                "Description",
+                "description",
+                "ShortDescription",
+                "shortDescription",
+            )
+        )
+        if not looks_like_game_job(title, company, tags):
+            continue
+        stable_id = job_id or hashlib.sha1(link.encode("utf-8")).hexdigest()[:10]
+        jobs.append(
+            {
+                "sourceJobId": f"oracle_hcm:{site_key}:{stable_id}",
+                "title": title,
+                "company": company,
+                "city": clean_text(location_details.get("city")) or city,
+                "country": clean_text(location_details.get("country")) or country,
+                "workType": work_type or _first_clean(row, "WorkplaceType", "workplaceType"),
+                "contractType": contract_type,
+                "jobLink": link,
+                "sector": "Game",
+                "postedAt": _first_clean(
+                    row,
+                    "PostingDate",
+                    "postingDate",
+                    "PostedDate",
+                    "postedDate",
+                    "CreationDate",
+                    "creationDate",
+                ),
                 "locations": location_details.get("locations") or [],
                 "locationSummary": clean_text(location_details.get("locationSummary")),
             }

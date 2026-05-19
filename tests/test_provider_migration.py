@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -13,6 +15,11 @@ from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.provider_api import ensure_registered as ensure_provider_plugins
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from tests.helpers.job_fixtures import _fixture
+
+
+def _write_json(path: Path, payload: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload), encoding="utf-8")
 
 
 class _FakeDeps:
@@ -237,3 +244,140 @@ def test_registry_entries_bamboohr_derives_from_static_and_suppresses_redundant_
     )
     assert any(row.get("name") == "Wolcen Studios BambooHR" for row in bamboohr_entries)
     assert all(row.get("name") != "Wolcen Studios (Manual Website)" for row in static_entries)
+
+
+def test_registry_entries_excludes_pending_provider_migration_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pending_path = tmp_path / "source-registry-pending.json"
+    _write_json(
+        pending_path,
+        [
+            {
+                "id": "bamboohr:listing_url:https://pending.bamboohr.com/careers",
+                "name": "Pending Studio (BambooHR)",
+                "studio": "Pending Studio",
+                "adapter": "bamboohr",
+                "listing_url": "https://pending.bamboohr.com/careers",
+                "registryState": "pending",
+                "pendingReason": "provider_migration_candidate",
+                "enabledByDefault": False,
+                "migrationSourceIdentity": "static:pending",
+            }
+        ],
+    )
+    monkeypatch.setattr(jobs_registry, "SOURCE_REGISTRY_PENDING_PATH", pending_path)
+    monkeypatch.setattr(jobs_registry, "STUDIO_SOURCE_REGISTRY", [])
+
+    assert jobs_registry.registry_entries("bamboohr") == []
+
+    rows = jobs_registry.registry_entries("bamboohr", include_pending_provider_migration=True)
+
+    assert len(rows) == 1
+    assert rows[0]["name"] == "Pending Studio (BambooHR)"
+    assert rows[0]["pendingReason"] == "provider_migration_candidate"
+    assert rows[0]["migrationSourceIdentity"] == "static:pending"
+    assert rows[0]["enabledByDefault"] is True
+    assert rows[0]["fetchOnlyPendingProviderMigration"] is True
+
+
+def test_registry_entries_pending_provider_migration_filters_unsafe_rows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pending_path = tmp_path / "source-registry-pending.json"
+    _write_json(
+        pending_path,
+        [
+            {
+                "id": "bamboohr:listing_url:https://valid.bamboohr.com/careers",
+                "name": "Valid Pending (BambooHR)",
+                "studio": "Valid Pending",
+                "adapter": "bamboohr",
+                "listing_url": "https://valid.bamboohr.com/careers",
+                "registryState": "pending",
+                "pendingReason": "provider_migration_candidate",
+                "migrationSourceIdentity": "static:valid",
+                "enabledByDefault": False,
+            },
+            {
+                "id": "bamboohr:listing_url:https://dupe.bamboohr.com/careers",
+                "name": "Duplicate Pending (BambooHR)",
+                "adapter": "bamboohr",
+                "listing_url": "https://dupe.bamboohr.com/careers",
+                "registryState": "pending",
+                "pendingReason": "provider_migration_candidate",
+                "migrationSourceIdentity": "static:dupe",
+            },
+            {
+                "id": "bamboohr:listing_url:https://manual.bamboohr.com/careers",
+                "name": "Manual Pending (BambooHR)",
+                "adapter": "bamboohr",
+                "listing_url": "https://manual.bamboohr.com/careers",
+                "registryState": "pending",
+                "pendingReason": "manual_source",
+                "migrationSourceIdentity": "static:manual",
+            },
+            {
+                "id": "static:pending",
+                "name": "Static Pending",
+                "adapter": "static",
+                "listing_url": "https://static.example/jobs",
+                "registryState": "pending",
+                "pendingReason": "provider_migration_candidate",
+                "migrationSourceIdentity": "static:source",
+            },
+            {
+                "id": "oracle_hcm:pending",
+                "name": "Unsupported Pending",
+                "adapter": "oracle_hcm",
+                "registryState": "pending",
+                "pendingReason": "provider_migration_candidate",
+                "migrationSourceIdentity": "static:oracle",
+            },
+            {
+                "id": "bamboohr:listing_url:https://hidden.bamboohr.com/careers",
+                "name": "Hidden Pending (BambooHR)",
+                "adapter": "bamboohr",
+                "listing_url": "https://hidden.bamboohr.com/careers",
+                "registryState": "pending",
+                "pendingReason": "provider_migration_candidate",
+                "migrationSourceIdentity": "static:hidden",
+                "candidateState": "hidden",
+            },
+            {
+                "id": "bamboohr:listing_url:https://rejected.bamboohr.com/careers",
+                "name": "Rejected Pending (BambooHR)",
+                "adapter": "bamboohr",
+                "listing_url": "https://rejected.bamboohr.com/careers",
+                "registryState": "rejected",
+                "pendingReason": "provider_migration_candidate",
+                "migrationSourceIdentity": "static:rejected",
+            },
+        ],
+    )
+    monkeypatch.setattr(jobs_registry, "SOURCE_REGISTRY_PENDING_PATH", pending_path)
+    monkeypatch.setattr(
+        jobs_registry,
+        "STUDIO_SOURCE_REGISTRY",
+        [
+            {
+                "id": "bamboohr:listing_url:https://dupe.bamboohr.com/careers",
+                "name": "Active Dupe (BambooHR)",
+                "adapter": "bamboohr",
+                "listing_url": "https://dupe.bamboohr.com/careers",
+                "enabledByDefault": True,
+            }
+        ],
+    )
+
+    rows = jobs_registry.registry_entries("bamboohr", include_pending_provider_migration=True)
+    names = {row.get("name") for row in rows}
+
+    assert "Valid Pending (BambooHR)" in names
+    assert "Duplicate Pending (BambooHR)" not in names
+    assert "Manual Pending (BambooHR)" not in names
+    assert "Static Pending" not in names
+    assert "Unsupported Pending" not in names
+    assert "Hidden Pending (BambooHR)" not in names
+    assert "Rejected Pending (BambooHR)" not in names
+    assert jobs_registry.registry_entries("static", include_pending_provider_migration=True) == []

@@ -25,6 +25,7 @@ DEFAULT_SOURCE_LOADER_NAMES: list[str] = [
     "bamboohr_sources",
     "breezy_sources",
     "jazzhr_sources",
+    "oracle_hcm_sources",
     "workday_sources",
     "personio_sources",
     "scrapy_static_sources",
@@ -66,6 +67,11 @@ SOURCE_REPORT_META: dict[str, dict[str, str]] = {
     "bamboohr_sources": {"adapter": "bamboohr", "studio": "multiple", "fetchStrategy": "http"},
     "breezy_sources": {"adapter": "breezy", "studio": "multiple", "fetchStrategy": "http"},
     "jazzhr_sources": {"adapter": "jazzhr", "studio": "multiple", "fetchStrategy": "http"},
+    "oracle_hcm_sources": {
+        "adapter": "oracle_hcm",
+        "studio": "multiple",
+        "fetchStrategy": "http",
+    },
     "workday_sources": {"adapter": "workday", "studio": "multiple", "fetchStrategy": "http"},
     "personio_sources": {"adapter": "personio", "studio": "multiple", "fetchStrategy": "http"},
     "scrapy_static_sources": {

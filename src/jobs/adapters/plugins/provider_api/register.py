@@ -17,6 +17,7 @@ from src.jobs.adapters.plugins.types import SimpleAdapterPlugin
 from .greenhouse_runner import _run_greenhouse_boards
 from .html_board import _html_board_plugin
 from .json_feed import _json_feed_plugin
+from .oracle_hcm import run_oracle_hcm_sources_source
 from .teamtailor_runner import _run_teamtailor_sources
 
 _REGISTERED = False
@@ -74,6 +75,17 @@ def ensure_registered() -> None:
                 ctx.family == "provider_api" and ctx.adapter_key == "bamboohr_sources"
             ),
             run_fn=_provider_structured_listing.run_bamboohr_sources_source,
+        )
+    )
+    default_registry.register(
+        SimpleAdapterPlugin(
+            name="oracle_hcm_sources",
+            family="provider_api",
+            priority=56,
+            can_handle_fn=lambda ctx: (
+                ctx.family == "provider_api" and ctx.adapter_key == "oracle_hcm_sources"
+            ),
+            run_fn=run_oracle_hcm_sources_source,
         )
     )
     default_registry.register(

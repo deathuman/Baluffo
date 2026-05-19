@@ -205,6 +205,7 @@ def prepare_pipeline_run(
     selection_exclusions: list[dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
     include_linked_static_validation: bool = False,
+    include_pending_provider_migration: bool = False,
     default_source_loaders: Callable[..., list[tuple[str, SourceLoader]]] | None = None,
     build_redirect_resolver_fn: Callable[..., Any] | None = None,
 ) -> PipelineRunSetup:
@@ -367,6 +368,7 @@ def prepare_pipeline_run(
         normalize_runtime_payload=normalize_runtime_payload,
     )
     runtime_payload["staticSuppressionPolicy"] = dynamic_static_suppression_policy
+    runtime_payload["includePendingProviderMigration"] = bool(include_pending_provider_migration)
     selected_loaders, incremental_skipped = apply_incremental_cache_exclusions(
         selected_loaders,
         incremental_cache_enabled=incremental_cache_enabled,

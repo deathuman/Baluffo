@@ -13,6 +13,7 @@ from src.jobs.adapters import provider_api
 from src.jobs.adapters.plugins.provider_api import greenhouse_runner, teamtailor_runner
 from src.jobs.adapters.plugins.provider_api import html_board as html_board_runner
 from src.jobs.adapters.plugins.provider_api import json_feed as json_feed_runner
+from src.jobs.adapters.plugins.provider_api import oracle_hcm as oracle_hcm_runner
 from src.jobs.common.config import GREENHOUSE_JOBS_URL_TEMPLATE
 from tests.helpers.job_fixtures import _fixture
 
@@ -101,7 +102,13 @@ class _FakeDeps:
 @pytest.fixture()
 def fake_deps(monkeypatch: pytest.MonkeyPatch) -> _FakeDeps:
     deps = _FakeDeps()
-    for module in (greenhouse_runner, html_board_runner, json_feed_runner, teamtailor_runner):
+    for module in (
+        greenhouse_runner,
+        html_board_runner,
+        json_feed_runner,
+        oracle_hcm_runner,
+        teamtailor_runner,
+    ):
         monkeypatch.setattr(module, "registry_entries", deps.registry_entries)
         monkeypatch.setattr(module, "fetch_with_retries", deps.fetch_with_retries)
         monkeypatch.setattr(module, "set_source_diagnostics", deps.set_source_diagnostics)
@@ -264,6 +271,39 @@ DISPATCH_CASES = [
             extra_check=_assert_full_time_contract,
         ),
         id="jazzhr",
+    ),
+    pytest.param(
+        _DispatchCase(
+            name="oracle_hcm",
+            setup=lambda deps: (
+                deps.set_registry_entries(
+                    "oracle_hcm",
+                    [
+                        {
+                            "name": "Corsair (Oracle HCM)",
+                            "studio": "Corsair",
+                            "listing_url": "https://edix.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs",
+                            "base_url": "https://edix.fa.us2.oraclecloud.com",
+                            "site_path": "/hcmUI/CandidateExperience/en/sites/CX_1/jobs",
+                        }
+                    ],
+                ),
+                deps.set_response(
+                    "https://edix.fa.us2.oraclecloud.com/hcmRestApi/resources/11.13.18.05/recruitingCEJobRequisitions?expand=requisitionList&onlyData=true&limit=200",
+                    json.loads(_fixture("oracle_hcm_requisitions.json")),
+                ),
+            ),
+            run=lambda: provider_api.run_oracle_hcm_sources_source(
+                fetch_text=lambda _url, _timeout: "",
+                timeout_s=5,
+                retries=1,
+                backoff_s=0.0,
+            ),
+            expected_len=1,
+            expected_adapter="oracle_hcm",
+            expected_studio="Corsair",
+        ),
+        id="oracle_hcm",
     ),
     pytest.param(
         _DispatchCase(

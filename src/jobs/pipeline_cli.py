@@ -187,6 +187,9 @@ def _run_pipeline_from_args(
         include_linked_static_validation=bool(
             getattr(args, "include_linked_static_validation", False)
         ),
+        include_pending_provider_migration=bool(
+            getattr(args, "include_pending_provider_migration", False)
+        ),
     )
 
 

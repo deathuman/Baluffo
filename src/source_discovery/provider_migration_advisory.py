@@ -27,6 +27,7 @@ _PROVIDER_ID_FIELDS = (
     "api_url",
     "feed_url",
     "board_url",
+    "site_path",
     "listing_url",
     "base_url",
 )
@@ -73,6 +74,7 @@ _STRONG_PROVIDER_EVIDENCE_REASONS = {
     "provider_id:api_url",
     "provider_id:feed_url",
     "provider_id:board_url",
+    "provider_id:site_path",
     "provider_id:listing_url",
     "provider_id:base_url",
 }
@@ -182,6 +184,16 @@ def _unsupported_provider_family(url: str) -> str:
     path = (urlparse(url).path or "").lower()
     if host.endswith("oraclecloud.com") and "/hcmui/candidateexperience/" in path:
         return "oracle_hcm"
+    if "icims.com" in host:
+        return "icims"
+    if "successfactors.com" in host:
+        return "successfactors"
+    if host.endswith("csod.com") or ".csod.com" in host:
+        return "cornerstone_csod"
+    if host.endswith("homerun.co") or ".homerun.co" in host:
+        return "homerun"
+    if host == "hrmos.co" or host.endswith(".hrmos.co"):
+        return "hrmos"
     if "jobvite.com" in host:
         return "jobvite"
     return ""
@@ -399,7 +411,10 @@ def enrich_provider_migration_metadata(
         or _candidate_url(updated)
     )
     family = _provider_family(updated, provider_url)
-    supported = family in _SUPPORTED_MIGRATION_PROVIDERS
+    provider_row_from_url = _provider_row_from_url(updated, family, provider_url)
+    supported = family in _SUPPORTED_MIGRATION_PROVIDERS and (
+        family != "oracle_hcm" or bool(provider_row_from_url)
+    )
     unsupported = bool(family and not supported)
     id_field, provider_id = _provider_id(updated, family, provider_url)
     existing_id, existing_state = _existing_provider_match(

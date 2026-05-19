@@ -36,6 +36,7 @@ All registered sources used by the jobs fetcher are listed in `src/jobs_fetcher_
 | bamboohr_sources | bamboohr | provider_api dispatch -> structured-listing plugin | adapter: bamboohr |
 | breezy_sources | breezy | provider_api dispatch -> HTML-board plugin | adapter: breezy |
 | jazzhr_sources | jazzhr | provider_api dispatch -> HTML-board plugin | adapter: jazzhr |
+| oracle_hcm_sources | oracle_hcm | provider_api dispatch -> Oracle HCM CE plugin | adapter: oracle_hcm |
 | personio_sources | personio | provider_api entrypoint and provider plugin registration | adapter: personio |
 | workday_sources | workday | provider_api dispatch -> structured-listing plugin | adapter: workday |
 | scrapy_static_sources | scrapy_static | static (Scrapy subprocess) | adapter: scrapy_static |
@@ -89,14 +90,14 @@ provider/static pair; there is no force-suppress action and no adapter registry 
   Registers the current provider plugins:
   - direct runner plugins: `greenhouse_boards`, `teamtailor_sources`
   - JSON-feed plugins: `lever_sources`, `workable_sources`, `smartrecruiters_sources`, `recruitee_sources`, `pinpoint_sources`
-  - structured/migration plugins: `personio_sources`, `bamboohr_sources`, `workday_sources`
+  - structured/migration plugins: `personio_sources`, `bamboohr_sources`, `workday_sources`, `oracle_hcm_sources`
   - HTML-board plugins: `breezy_sources`, `jazzhr_sources`, `ashby_sources`
 
 - **Provider plugin implementation owners**
   - `greenhouse_runner.py` and `teamtailor_runner.py` own the two direct runners.
   - `json_feed.py` owns shared JSON feed providers.
   - `html_board.py` owns shared HTML board providers.
-  - `provider_personio.py` and `provider_structured_listing.py` remain specialized provider owners behind registered plugin entries.
+  - `provider_personio.py`, `provider_structured_listing.py`, and `oracle_hcm.py` remain specialized provider owners behind registered plugin entries.
 
 - **`src/jobs/adapters/community/__init__.py`**
   Community-board loaders now include:
@@ -198,7 +199,7 @@ Manual migration identity backfill is an explicit Admin/API action for existing 
 
 ### How to add new sources by family
 
-- **Provider API (Greenhouse, Lever, Recruitee, Pinpoint, BambooHR, Workday, Breezy, JazzHR, etc.):** Add the source to the runtime registry (`data/source-registry-active.json` or via Admin -> Sources). The fetcher loads registry entries by adapter type; ensure the entry has the required fields (e.g. `slug` for Greenhouse, `api_url` for Lever/Recruitee/Pinpoint, `board_url` for Ashby/Breezy/JazzHR, `feed_url` for Personio, `pages` or `listing_url` for BambooHR/Workday migration sources). No change to `DEFAULT_SOURCE_LOADER_NAMES` is needed once the provider family itself exists. `personio_sources` is now registered through `src/jobs/adapters/plugins/provider_api/register.py` and exposed through the provider_api surface.
+- **Provider API (Greenhouse, Lever, Recruitee, Pinpoint, BambooHR, Workday, Breezy, JazzHR, Oracle HCM, etc.):** Add the source to the runtime registry (`data/source-registry-active.json` or via Admin -> Sources). The fetcher loads registry entries by adapter type; ensure the entry has the required fields (e.g. `slug` for Greenhouse, `api_url` for Lever/Recruitee/Pinpoint, `board_url` for Ashby/Breezy/JazzHR, `feed_url` for Personio, `pages` or `listing_url` for BambooHR/Workday migration sources, `listing_url` plus `base_url`/`site_path` for Oracle HCM CE sources). No change to `DEFAULT_SOURCE_LOADER_NAMES` is needed once the provider family itself exists. `personio_sources` is now registered through `src/jobs/adapters/plugins/provider_api/register.py` and exposed through the provider_api surface.
 - **Static studio site:** (1) Add a static plugin if the site needs custom parsing (see Static plugins above). (2) Add a registry entry with `"adapter": "static"`, `pages` (listing URL(s)), and `company`/`name`. The pipeline will pick the plugin by host from the first page URL.
 - **New CSV/Google Sheet:** Add an entry to `GOOGLE_SHEETS_SOURCES` in `src/jobs/adapters/community/google_sheets.py` (or import from `src.jobs.adapters.community`) with `name`, `sheetId`, `gid`. Add the same `name` to `DEFAULT_SOURCE_LOADER_NAMES` and `SOURCE_REPORT_META` in `src/jobs_fetcher_registry.py`.
 - **New community board / aggregator:** Add the parser and loader in `src/jobs/adapters/community/__init__.py`, export the parser through `src/jobs/parsers.py`, and only touch `src/jobs_fetcher.py` if a legacy CLI compatibility re-export must stay available. Lazy compatibility export routing lives in `src/jobs/fetcher_compat_exports.py`, and root-backed wrapper seams live in `src/jobs/fetcher_compat_runtime.py`. Then add the loader name to `DEFAULT_SOURCE_LOADER_NAMES` and `SOURCE_REPORT_META` in `src/jobs_fetcher_registry.py`. Recent examples: `gamejobs`, `workwithindies`, `8bitplay`, `gracklehq`.

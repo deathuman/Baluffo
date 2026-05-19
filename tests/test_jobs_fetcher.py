@@ -137,6 +137,31 @@ def test_registry_entries_suppresses_nextlevelgames_static_when_jazzhr_provider_
     assert all(row.get("name") != "Next Level Games (Manual Website)" for row in static_entries)
 
 
+def test_registry_entries_keeps_nextlevelgames_static_for_other_jazzhr_provider() -> None:
+    static_nextlevel = {
+        "name": "Next Level Games (Manual Website)",
+        "studio": "Next Level Games",
+        "adapter": "static",
+        "pages": [
+            "https://nextlevelgames.com/jobs-at-next-level-games-subsidiary-of-nintendo-co-ltd/"
+        ],
+        "enabledByDefault": True,
+    }
+    jazzhr_provider = {
+        "name": "Lost Boys Interactive (JazzHR)",
+        "studio": "Lost Boys Interactive",
+        "adapter": "jazzhr",
+        "board_url": "https://lostboysinteractive.applytojob.com/apply",
+        "enabledByDefault": True,
+    }
+    with mock.patch.object(
+        jobs_registry, "STUDIO_SOURCE_REGISTRY", [static_nextlevel, jazzhr_provider]
+    ):
+        static_entries = jobs_registry.registry_entries("static")
+
+    assert any(row.get("name") == "Next Level Games (Manual Website)" for row in static_entries)
+
+
 def test_parse_args_uses_config_backed_output_and_social_defaults() -> None:
     prev_argv = list(sys.argv)
     try:
@@ -161,6 +186,16 @@ def test_parse_args_uses_updated_pipeline_concurrency_defaults() -> None:
     assert float(args.backoff or 0) == 1.2
     assert int(args.adapter_http_concurrency or 0) == 48
     assert int(args.static_detail_concurrency or 0) == 10
+
+
+def test_parse_args_accepts_pending_provider_migration_fetch_flag() -> None:
+    prev_argv = list(sys.argv)
+    try:
+        sys.argv = ["jobs_fetcher.py", "--include-pending-provider-migration"]
+        args = jf.parse_args()
+    finally:
+        sys.argv = prev_argv
+    assert args.include_pending_provider_migration is True
 
 
 def test_default_source_loaders_includes_all_registry_sources() -> None:

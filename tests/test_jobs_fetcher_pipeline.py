@@ -590,6 +590,7 @@ def test_pipeline_default_source_loader_contract_excludes_wellfound_and_keeps_co
     assert "ashby_sources" in loader_names
     assert "breezy_sources" in loader_names
     assert "jazzhr_sources" in loader_names
+    assert "oracle_hcm_sources" in loader_names
     assert "personio_sources" in loader_names
     assert "scrapy_static_sources" in loader_names
     assert any(name.startswith("static_source::") for name in loader_names)
@@ -2240,6 +2241,51 @@ def test_run_pipeline_reports_board_level_provider_cache_rollup() -> None:
         assert row["boardRevalidatedCount"] == 1
         assert row["boardNotModifiedCount"] == 1
         assert row["boardRefreshedCount"] == 1
+
+
+def test_run_pipeline_preserves_provider_diagnostics_when_loader_raises() -> None:
+    source_name = "greenhouse_boards"
+    jf.SOURCE_DIAGNOSTICS.pop(source_name, None)
+
+    def provider_family_loader(**_: object):
+        jf.SOURCE_DIAGNOSTICS[source_name] = {
+            "adapter": "greenhouse",
+            "studio": "multiple",
+            "details": [
+                {
+                    "name": "Board A",
+                    "studio": "Board A",
+                    "adapter": "greenhouse",
+                    "status": "error",
+                    "error": "HTTP 401",
+                    "fetchedCount": 0,
+                    "keptCount": 0,
+                    "migrationSourceIdentity": "static:board-a",
+                }
+            ],
+            "partialErrors": ["greenhouse:Board A: HTTP 401"],
+        }
+        raise RuntimeError("aggregate provider failure")
+
+    with workspace_tmpdir("jobs-fetcher-provider-error-diagnostics") as tmp:
+        out = Path(tmp)
+        report = jf.run_pipeline(
+            output_dir=out,
+            source_loaders=[(source_name, provider_family_loader)],
+            show_progress=False,
+            force_refresh_all=True,
+        )
+        row = next(item for item in report["sources"] if item["name"] == source_name)
+        assert row["status"] == "error"
+        assert "HTTP 401" in row["error"]
+        assert row["boardCount"] == 1
+        assert row["details"][0]["name"] == "Board A"
+        assert row["details"][0]["error"] == "HTTP 401"
+
+        state_payload = read_json(out / "jobs-source-state.json", {})
+        sources_state = state_payload.get("sources") or {}
+        assert sources_state["Board A"]["lastStatus"] == "error"
+        assert sources_state["Board A"]["migrationSourceIdentity"] == "static:board-a"
 
 
 def test_run_pipeline_excludes_quarantined_source_unless_ignored() -> None:

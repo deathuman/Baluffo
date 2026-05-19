@@ -1,0 +1,27 @@
+{
+  "items": [
+    {
+      "SearchId": "300000001",
+      "requisitionList": {
+        "items": [
+          {
+            "RequisitionNumber": "REQ-100",
+            "Title": "Senior Gameplay Engineer",
+            "PrimaryLocation": "Amsterdam, Netherlands",
+            "DepartmentName": "Game Engineering",
+            "ExternalApplyURL": "https://edix.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs/REQ-100",
+            "PostingDate": "2026-05-01"
+          },
+          {
+            "RequisitionNumber": "REQ-200",
+            "Title": "Payroll Specialist",
+            "PrimaryLocation": "Austin, United States",
+            "DepartmentName": "People Operations",
+            "ExternalApplyURL": "https://edix.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs/REQ-200",
+            "PostingDate": "2026-05-02"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -32,6 +32,12 @@ def test_provider_coverage_gaps_summarize_first_slice_buckets(tmp_path: Path) ->
                     "status": "ok",
                     "keptCount": 3,
                 },
+                {
+                    "name": "greenhouse_boards",
+                    "adapter": "greenhouse",
+                    "status": "ok",
+                    "keptCount": 99,
+                },
             ],
         },
     )
@@ -59,6 +65,11 @@ def test_provider_coverage_gaps_summarize_first_slice_buckets(tmp_path: Path) ->
                     "providerCoverageStatus": "validated_provider",
                     "providerCoverageConsecutiveSuccesses": 1,
                     "providerCoverageLatestKeptCount": 4,
+                },
+                "lever_sources": {
+                    "lastAdapter": "lever",
+                    "lastStatus": "ok",
+                    "lastKeptCount": 100,
                 },
             }
         },
@@ -105,10 +116,10 @@ def test_provider_coverage_gaps_summarize_first_slice_buckets(tmp_path: Path) ->
         data_dir / "source-discovery-candidates.json",
         [
             {
-                "id": "static:oracle",
-                "name": "Oracle HCM Static",
+                "id": "static:icims",
+                "name": "iCIMS Static",
                 "adapter": "static",
-                "listing_url": "https://example.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs",
+                "listing_url": "https://careers-example.icims.com/jobs/search",
                 "jobsFound": 1,
             }
         ],
@@ -123,9 +134,7 @@ def test_provider_coverage_gaps_summarize_first_slice_buckets(tmp_path: Path) ->
     assert gaps["bucketCounts"]["validatedProviderMissingMigrationSourceIdentity"] == 1
     assert gaps["bucketCounts"]["staticStillActiveDespiteValidatedProvider"] == 1
     assert gaps["totalGapCount"] == 5
-    assert (
-        gaps["unsupportedProviderDetected"]["examples"][0]["detectedProviderFamily"] == "oracle_hcm"
-    )
+    assert gaps["unsupportedProviderDetected"]["examples"][0]["detectedProviderFamily"] == "icims"
     assert gaps["stagedProviderNotFetched"]["examples"][0]["blockerReason"] == "not_fetched"
     assert gaps["fetchedButNotValidated"]["examples"][0]["providerCoverageStatus"] == "needs_review"
     assert (
@@ -141,3 +150,33 @@ def test_provider_coverage_gaps_summarize_first_slice_buckets(tmp_path: Path) ->
 
     assert "## Provider Coverage Gaps" in markdown
     assert "unsupportedProviderDetected" in markdown
+
+
+def test_provider_coverage_next_action_plans_unsupported_provider_family_last(
+    tmp_path: Path,
+) -> None:
+    data_dir = tmp_path / "data"
+    _write_json(data_dir / "jobs-fetch-report.json", {})
+    _write_json(data_dir / "source-registry-active.json", [])
+    _write_json(data_dir / "source-registry-pending.json", [])
+    _write_json(data_dir / "source-registry-rejected.json", [])
+    _write_json(
+        data_dir / "source-discovery-candidates.json",
+        [
+            {
+                "id": "static:icims",
+                "name": "iCIMS Static",
+                "adapter": "static",
+                "listing_url": "https://careers-example.icims.com/jobs/search",
+                "jobsFound": 1,
+            }
+        ],
+    )
+
+    report = soak.build_soak_report(data_dir)
+    next_action = report["sections"]["providerCoverageNextAction"]
+
+    assert next_action["action"] == "plan_unsupported_provider_family"
+    assert next_action["priority"] == 5
+    assert next_action["evidenceCounts"]["unsupportedProviderDetectedCount"] == 1
+    assert next_action["blockedBy"] == ["unsupported_provider_family"]

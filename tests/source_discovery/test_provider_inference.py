@@ -69,6 +69,24 @@ from src.source_discovery import provider_inference
             "https://beamdog.bamboohr.com/careers",
         ),
         (
+            "https://yallaplay.breezy.hr/jobs/game-designer",
+            "breezy",
+            "board_url",
+            "https://yallaplay.breezy.hr/",
+        ),
+        (
+            "https://lostboysinteractive.applytojob.com/apply",
+            "jazzhr",
+            "board_url",
+            "https://lostboysinteractive.applytojob.com/apply",
+        ),
+        (
+            "https://edix.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs",
+            "oracle_hcm",
+            "site_path",
+            "/hcmUI/CandidateExperience/en/sites/CX_1/jobs",
+        ),
+        (
             "https://example.jobs.personio.de/job/123",
             "personio",
             "feed_url",
@@ -103,6 +121,24 @@ def test_shared_provider_inference_preserves_provider_row_shapes(
     assert row["evidenceTypes"] == ["web_provider_url"]
     assert row["evidenceSource"] == "url"
     assert row[provider_key] == provider_value
+
+
+def test_shared_provider_inference_builds_oracle_hcm_identity_shape() -> None:
+    url = (
+        "https://fa-exhj-saasfaprod1.fa.ocs.oraclecloud.com/"
+        "hcmUI/CandidateExperience/en/sites/CX_1/jobs?location=Viet+Nam"
+    )
+    row = provider_inference.infer_web_candidate(
+        url,
+        "Glass Egg",
+        nl_priority=False,
+    )
+
+    assert row is not None
+    assert row["adapter"] == "oracle_hcm"
+    assert row["listing_url"] == url
+    assert row["base_url"] == "https://fa-exhj-saasfaprod1.fa.ocs.oraclecloud.com"
+    assert row["site_path"] == "/hcmUI/CandidateExperience/en/sites/CX_1/jobs"
 
 
 def test_shared_provider_inference_preserves_workable_hyphenated_account() -> None:
@@ -141,6 +177,30 @@ def test_shared_provider_inference_rejects_unknown_and_empty_provider_tokens() -
     assert (
         provider_inference.infer_web_candidate(
             "https://tencent.wd1.myworkdayjobs.com/",
+            "Example",
+            nl_priority=False,
+        )
+        is None
+    )
+    assert (
+        provider_inference.infer_web_candidate(
+            "https://breezy.hr/",
+            "Example",
+            nl_priority=False,
+        )
+        is None
+    )
+    assert (
+        provider_inference.infer_web_candidate(
+            "https://example.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/123",
+            "Example",
+            nl_priority=False,
+        )
+        is None
+    )
+    assert (
+        provider_inference.infer_web_candidate(
+            "https://example.oraclecloud.com/cloud/sign-in",
             "Example",
             nl_priority=False,
         )

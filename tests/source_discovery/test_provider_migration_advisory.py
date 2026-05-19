@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from src.source_discovery.candidate_review import (
     build_candidate_review_payload,
     enrich_candidates_for_review,
@@ -63,16 +65,94 @@ def test_provider_migration_advisory_classifies_unsupported_provider_evidence() 
     assert "unsupported_provider_evidence" in row["migrationReasons"]
 
 
-def test_provider_migration_advisory_classifies_oracle_hcm_as_unsupported() -> None:
+def test_provider_migration_advisory_stages_safe_oracle_hcm_jobs_page() -> None:
+    url = "https://example.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs"
     row = enrich_provider_migration_metadata(
         {
             "name": "Oracle Studio",
             "adapter": "static",
-            "listing_url": "https://example.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs",
+            "listing_url": url,
         }
     )
 
     assert row["detectedProviderFamily"] == "oracle_hcm"
+    assert row["detectedProviderId"] == "/hcmUI/CandidateExperience/en/sites/CX_1/jobs"
+    assert row["recommendedAction"] == "add_provider_source"
+
+    staged, diagnostic = provider_staging_decision_for_advisory(
+        {
+            "name": "Oracle Studio",
+            "adapter": "static",
+            "listing_url": url,
+            "jobsFound": 1,
+        },
+        at="2026-05-19T12:00:00+00:00",
+    )
+
+    assert diagnostic["providerStagingDecision"] == "staged"
+    assert staged["adapter"] == "oracle_hcm"
+    assert staged["listing_url"] == url
+    assert staged["base_url"] == "https://example.fa.ocs.oraclecloud.com"
+    assert staged["site_path"] == "/hcmUI/CandidateExperience/en/sites/CX_1/jobs"
+
+
+def test_provider_migration_advisory_keeps_unsafe_oracle_hcm_evidence_unsupported() -> None:
+    row = enrich_provider_migration_metadata(
+        {
+            "name": "Oracle Detail",
+            "adapter": "static",
+            "atsLinks": [
+                "https://example.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/123"
+            ],
+        }
+    )
+
+    assert row["detectedProviderFamily"] == "oracle_hcm"
+    assert row["recommendedAction"] == "unsupported_provider"
+    assert "unsupported_provider_evidence" in row["migrationReasons"]
+
+
+@pytest.mark.parametrize(
+    ("url", "family"),
+    [
+        (
+            "https://jobs.jobvite.com/jobvitestudio",
+            "jobvite",
+        ),
+        (
+            "https://careers-example.icims.com/jobs/search",
+            "icims",
+        ),
+        (
+            "https://career4.successfactors.com/career?company=example",
+            "successfactors",
+        ),
+        (
+            "https://example.csod.com/ux/ats/careersite/1/home",
+            "cornerstone_csod",
+        ),
+        (
+            "https://example.homerun.co/jobs",
+            "homerun",
+        ),
+        (
+            "https://hrmos.co/pages/example/jobs",
+            "hrmos",
+        ),
+    ],
+)
+def test_provider_migration_advisory_classifies_unsupported_ats_families(
+    url: str, family: str
+) -> None:
+    row = enrich_provider_migration_metadata(
+        {
+            "name": f"{family} Studio",
+            "adapter": "static",
+            "atsLinks": [url],
+        }
+    )
+
+    assert row["detectedProviderFamily"] == family
     assert row["recommendedAction"] == "unsupported_provider"
     assert "unsupported_provider_evidence" in row["migrationReasons"]
 
