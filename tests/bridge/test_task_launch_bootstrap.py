@@ -157,6 +157,49 @@ def test_jobs_bootstrap_start_forces_isolated_targeted_fetch() -> None:
         assert report["summary"]["coverageScope"] == BOOTSTRAP_COVERAGE_SCOPE
 
 
+def test_packaged_smoke_bootstrap_mode_starts_controlled_running_report(
+    monkeypatch: Any,
+) -> None:
+    monkeypatch.setenv("BALUFFO_PACKAGED_SMOKE_RUNTIME", "1")
+    monkeypatch.setenv("BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_MODE", "controlled-success")
+    with workspace_tmpdir("task-launch-bootstrap-smoke-start") as data_dir:
+        api = _task_launch_api(data_dir, pid_is_running=lambda _pid: True)
+        watched: list[dict[str, Any]] = []
+        lifecycle_rows: list[dict[str, Any]] = []
+        api._start_bootstrap_lifecycle_watch = (  # type: ignore[method-assign]  # noqa: SLF001
+            lambda **kwargs: watched.append(dict(kwargs))
+        )
+        api._complete_packaged_smoke_bootstrap_after_delay = (  # type: ignore[method-assign]  # noqa: SLF001
+            lambda **_kwargs: None
+        )
+
+        def run_background_script(*_args: Any, **_kwargs: Any) -> int:
+            raise AssertionError("controlled bootstrap smoke must not spawn live fetcher")
+
+        result = api.start_jobs_bootstrap_task(
+            normalize_fetch_report_contract=lambda payload: payload,
+            run_background_script=run_background_script,
+            save_json_atomic=_save_json_atomic,
+            schema_version=1,
+            start_lifecycle_run=lambda **kwargs: lifecycle_rows.append(dict(kwargs)) or {},
+            get_lifecycle_current_runs=lambda: [],
+            get_lifecycle_run_history_rows=lambda: [],
+        )
+
+        assert result["started"] is True
+        assert result["smokeMode"] == "controlled-success"
+        assert result["task"] == "jobs_bootstrap"
+        assert result["coverageScope"] == BOOTSTRAP_COVERAGE_SCOPE
+        assert watched and watched[-1]["run_id"] == result["runId"]
+        assert lifecycle_rows and lifecycle_rows[-1]["owner_kind"] == "packaged_smoke"
+        report = read_json(data_dir / "jobs-fetch-report.json", {})
+        assert report["runId"] == result["runId"]
+        assert not report.get("finishedAt")
+        assert report["runtime"]["lifecycle"]["owner"] == "process"
+        assert int(report["runtime"]["lifecycle"]["ownerPid"]) == int(result["pid"])
+        assert report["summary"]["coverageScope"] == BOOTSTRAP_COVERAGE_SCOPE
+
+
 def test_jobs_bootstrap_lifecycle_start_failure_still_tracks_running_process() -> None:
     with workspace_tmpdir("task-launch-bootstrap-lifecycle-start-fails") as data_dir:
         api = _task_launch_api(data_dir, pid_is_running=lambda pid: int(pid) == 1234)

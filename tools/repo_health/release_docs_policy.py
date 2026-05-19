@@ -308,8 +308,11 @@ def test_package_json_build_aliases_use_leaf_builders(repo_root: Path) -> None:
     assert scripts["test:frontend:packaged:browser-job-rehearsal"] == (
         "npm run check:python-version && python src/packaged_desktop_smoke.py --browser-job-rehearsal --rebuild --runtime-timeout 60"
     )
+    assert scripts["test:frontend:packaged:first-run"] == (
+        "npm run check:python-version && python src/packaged_desktop_smoke.py --open-path desktop-probe.html --node-smoke-script tests/frontend/packaged-desktop-smoke.first-run-jobs.mjs --runtime-timeout 60 --playwright-timeout 240"
+    )
     assert scripts["release:preflight"] == (
-        "npm run lint:precommit && npm run test:py:extended && npm run test:frontend:unit && npm run test:frontend:packaged && npm run test:frontend:packaged:sync-rehearsal && npm run test:frontend:packaged:update-rehearsal && npm run test:frontend:packaged:orphan-reclaim-rehearsal && npm run test:frontend:packaged:browser-job-rehearsal && npm run test:frontend:packaged:jobs-pipeline"
+        "npm run lint:precommit && npm run test:py:extended && npm run test:frontend:unit && npm run test:frontend:packaged && npm run test:frontend:packaged:admin-startup && npm run test:frontend:packaged:sync-rehearsal && npm run test:frontend:packaged:update-rehearsal && npm run test:frontend:packaged:orphan-reclaim-rehearsal && npm run test:frontend:packaged:browser-job-rehearsal && npm run test:frontend:packaged:first-run && npm run test:frontend:packaged:jobs-pipeline && npm run probe:desktop:startup:jobs:cold"
     )
     assert (
         "_out/latest/build/portable/Baluffo.exe"
@@ -345,7 +348,9 @@ def test_testing_doc_owns_verification_matrix(repo_root: Path) -> None:
         "npm run test:frontend:packaged:sync-rehearsal",
         "npm run test:frontend:packaged:orphan-reclaim-rehearsal",
         "npm run test:frontend:packaged:browser-job-rehearsal",
+        "npm run test:frontend:packaged:first-run",
         "npm run probe:desktop:startup:cold",
+        "npm run probe:desktop:startup:jobs:cold",
     ):
         assert command in testing_text
 
@@ -368,7 +373,9 @@ def test_release_guide_uses_canonical_release_preflight(repo_root: Path) -> None
     assert "npm run test:frontend:packaged:sync-rehearsal" in release_text
     assert "npm run test:frontend:packaged:orphan-reclaim-rehearsal" in release_text
     assert "npm run test:frontend:packaged:browser-job-rehearsal" in release_text
+    assert "npm run test:frontend:packaged:first-run" in release_text
     assert "npm run test:frontend:packaged:jobs-pipeline" in release_text
+    assert "npm run probe:desktop:startup:jobs:cold" in release_text
     assert "startup-probe-architecture.md" in release_text
 
 

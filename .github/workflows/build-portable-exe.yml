@@ -158,7 +158,9 @@ jobs:
           npm run test:frontend:packaged:update-rehearsal
           npm run test:frontend:packaged:orphan-reclaim-rehearsal
           npm run test:frontend:packaged:browser-job-rehearsal
+          npm run test:frontend:packaged:first-run
           npm run test:frontend:packaged:jobs-pipeline
+          npm run probe:desktop:startup:jobs:cold
 
       - name: Upload smoke test artifacts on failure
         if: failure() && steps.release_gates.outcome == 'failure'

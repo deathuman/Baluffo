@@ -1,0 +1,37 @@
+[
+  {
+    "name": "activision animator slug becomes stricter technical animator",
+    "title": "Animator",
+    "company": "Activision",
+    "jobLink": "https://careers.activision.com/job/R026851/Expert-Technical-Animator_123",
+    "expectedTitle": "Expert Technical Animator"
+  },
+  {
+    "name": "workday animation slug becomes stricter cinematic animator",
+    "title": "Animation",
+    "company": "Xbox Game Studios",
+    "jobLink": "https://xboxgaming.wd1.myworkdayjobs.com/en-US/External/job/Malm/Senior-Technical-Cinematic-Animator_R026851",
+    "expectedTitle": "Senior Technical Cinematic Animator"
+  },
+  {
+    "name": "qualified technical animator accepts stricter expert title",
+    "title": "Technical Animator",
+    "company": "Xbox Game Studios",
+    "jobLink": "https://xboxgaming.wd1.myworkdayjobs.com/en-US/External/job/Malm/Expert-Technical-Animator_R026851",
+    "expectedTitle": "Expert Technical Animator"
+  },
+  {
+    "name": "short same-title numeric suffix stays broad",
+    "title": "Animator",
+    "company": "Example Games",
+    "jobLink": "https://example.com/jobs/animator_123",
+    "expectedTitle": "Animator"
+  },
+  {
+    "name": "qualified technical animator rejects lateral cinematic title",
+    "title": "Technical Animator",
+    "company": "Example Games",
+    "jobLink": "https://example.com/jobs/Cinematic-Animator_123",
+    "expectedTitle": "Technical Animator"
+  }
+]

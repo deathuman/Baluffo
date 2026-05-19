@@ -70,8 +70,14 @@ test("shared popups expose explicit light-theme presentation", () => {
   assert.match(componentsCss, /\[data-theme="light"\]\s+\.popup-overlay\s*\{[\s\S]*rgba\(29,\s*39,\s*58,\s*0\.46\)/);
   assert.match(componentsCss, /\[data-theme="light"\]\s+\.popup\s*\{[\s\S]*#ffffff;[\s\S]*border-color:/);
   assert.match(componentsCss, /@supports \(\(-webkit-backdrop-filter: blur\(18px\)\) or \(backdrop-filter: blur\(18px\)\)\)\s*\{[\s\S]*\[data-theme="light"\]\s+\.popup\s*\{/);
-  assert.match(componentsCss, /\[data-theme="light"\]\s+\.popup\s+\.popup-btn-primary\s*\{[\s\S]*#4769b2/);
-  assert.match(componentsCss, /\[data-theme="light"\]\s+\.popup\s+\.popup-btn-tertiary\s*\{[\s\S]*#365175/);
+  assert.match(
+    componentsCss,
+    /\[data-theme="light"\]\s+\.popup\s+\.popup-btn-primary,\s*\[data-theme="light"\]\s+\.popup\s+\.btn\.back-btn\.popup-btn-primary\s*\{[\s\S]*#4769b2/
+  );
+  assert.match(
+    componentsCss,
+    /\[data-theme="light"\]\s+\.popup\s+\.popup-btn-tertiary,\s*\[data-theme="light"\]\s+\.popup\s+\.btn\.back-btn\.popup-btn-tertiary\s*\{[\s\S]*#365175/
+  );
   assert.match(componentsCss, /\[data-theme="light"\]\s+\.popup\s+select:not\(\[multiple\]\)\s*\{[\s\S]*stroke='%2340516a'/);
 });
 

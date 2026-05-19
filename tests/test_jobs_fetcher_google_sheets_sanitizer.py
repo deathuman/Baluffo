@@ -1,4 +1,14 @@
+import json
+from pathlib import Path
+
 from src import jobs_fetcher as jf
+
+_TITLE_SPECIFICITY_CORPUS = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "jobs"
+    / "google_sheets_title_specificity_corpus.json"
+)
 
 
 def test_canonicalize_google_sheets_rows_drops_category_labels_with_non_game_evidence() -> None:
@@ -392,6 +402,31 @@ def test_canonicalize_google_sheets_rows_repairs_broad_animation_titles_from_saf
         "Expert Technical Animator",
     ]
     assert not drop_reasons
+
+
+def test_canonicalize_google_sheets_title_specificity_corpus() -> None:
+    cases = json.loads(_TITLE_SPECIFICITY_CORPUS.read_text(encoding="utf-8"))
+    for index, case in enumerate(cases, start=1):
+        canonical_rows, drop_reasons, _stats = jf.canonicalize_google_sheets_rows(
+            [
+                {
+                    "sourceJobId": f"corpus-{index}",
+                    "title": case["title"],
+                    "company": case["company"],
+                    "city": "Remote",
+                    "country": "Unknown",
+                    "workType": "Remote",
+                    "contractType": "Full-time",
+                    "jobLink": case["jobLink"],
+                    "sector": "Game",
+                }
+            ],
+            source=case.get("source", "google_sheets_1er2oaxo"),
+            fetched_at="2026-03-13T00:00:00+00:00",
+        )
+
+        assert not drop_reasons, case["name"]
+        assert [row.title for row in canonical_rows] == [case["expectedTitle"]], case["name"]
 
 
 def test_canonicalize_google_sheets_rows_preserves_broad_title_when_url_is_not_stricter() -> None:

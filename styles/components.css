@@ -78,7 +78,7 @@ h1 {
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.06) 22%, rgba(255, 255, 255, 0.02) 58%, rgba(255, 255, 255, 0.08)),
       linear-gradient(135deg, rgba(187, 134, 252, 0.2), rgba(187, 134, 252, 0.08) 28%, rgba(29, 34, 49, 0.16) 66%, rgba(15, 17, 24, 0.18)),
-      rgba(24, 27, 36, 0.16);
+      rgba(24, 27, 36, 0.86);
     -webkit-backdrop-filter: blur(22px) saturate(155%);
     backdrop-filter: blur(22px) saturate(155%);
   }
@@ -194,11 +194,13 @@ h1 {
   outline-offset: 2px;
 }
 
-.popup .popup-btn-secondary {
+.popup .popup-btn-secondary,
+.popup .btn.back-btn.popup-btn-secondary {
   color: color-mix(in srgb, var(--text-primary) 90%, var(--text-muted));
 }
 
-.popup .popup-btn-primary {
+.popup .popup-btn-primary,
+.popup .btn.back-btn.popup-btn-primary {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05)),
     linear-gradient(135deg, color-mix(in srgb, var(--accent) 82%, white 18%), color-mix(in srgb, var(--accent) 68%, #10141f));
@@ -209,7 +211,8 @@ h1 {
     0 10px 24px rgba(84, 52, 128, 0.28);
 }
 
-.popup .popup-btn-primary:hover {
+.popup .popup-btn-primary:hover,
+.popup .btn.back-btn.popup-btn-primary:hover {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.07)),
     linear-gradient(135deg, color-mix(in srgb, var(--accent) 88%, white 12%), color-mix(in srgb, var(--accent) 74%, #111726));
@@ -220,7 +223,8 @@ h1 {
     0 12px 26px rgba(84, 52, 128, 0.32);
 }
 
-.popup .popup-btn-tertiary {
+.popup .popup-btn-tertiary,
+.popup .btn.back-btn.popup-btn-tertiary {
   min-height: 2.35rem;
   padding: 0.45rem 0.8rem;
   border: 1px solid rgba(187, 134, 252, 0.18);
@@ -231,7 +235,8 @@ h1 {
   text-decoration: none;
 }
 
-.popup .popup-btn-tertiary:hover {
+.popup .popup-btn-tertiary:hover,
+.popup .btn.back-btn.popup-btn-tertiary:hover {
   background: rgba(187, 134, 252, 0.12);
   border-color: rgba(187, 134, 252, 0.28);
   box-shadow:
@@ -240,7 +245,8 @@ h1 {
   color: color-mix(in srgb, var(--accent) 64%, white 20%);
 }
 
-.popup .popup-btn-tertiary:active {
+.popup .popup-btn-tertiary:active,
+.popup .btn.back-btn.popup-btn-tertiary:active {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
@@ -292,8 +298,8 @@ h1 {
 @supports ((-webkit-backdrop-filter: blur(18px)) or (backdrop-filter: blur(18px))) {
   [data-theme="light"] .popup {
     background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(246, 249, 255, 0.86)),
-      rgba(255, 255, 255, 0.82);
+      linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(246, 249, 255, 0.94)),
+      rgba(255, 255, 255, 0.94);
     -webkit-backdrop-filter: blur(18px) saturate(122%);
     backdrop-filter: blur(18px) saturate(122%);
   }
@@ -343,11 +349,13 @@ h1 {
     0 5px 12px rgba(53, 75, 111, 0.12);
 }
 
-[data-theme="light"] .popup .popup-btn-secondary {
+[data-theme="light"] .popup .popup-btn-secondary,
+[data-theme="light"] .popup .btn.back-btn.popup-btn-secondary {
   color: #40516a;
 }
 
-[data-theme="light"] .popup .popup-btn-primary {
+[data-theme="light"] .popup .popup-btn-primary,
+[data-theme="light"] .popup .btn.back-btn.popup-btn-primary {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.08)),
     linear-gradient(180deg, #4769b2, #365391);
@@ -358,7 +366,8 @@ h1 {
     0 10px 22px rgba(49, 75, 131, 0.24);
 }
 
-[data-theme="light"] .popup .popup-btn-primary:hover {
+[data-theme="light"] .popup .popup-btn-primary:hover,
+[data-theme="light"] .popup .btn.back-btn.popup-btn-primary:hover {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.1)),
     linear-gradient(180deg, #3f60a6, #304a82);
@@ -369,14 +378,16 @@ h1 {
     0 12px 24px rgba(49, 75, 131, 0.28);
 }
 
-[data-theme="light"] .popup .popup-btn-tertiary {
+[data-theme="light"] .popup .popup-btn-tertiary,
+[data-theme="light"] .popup .btn.back-btn.popup-btn-tertiary {
   background: rgba(72, 91, 122, 0.08);
   border-color: rgba(117, 137, 169, 0.34);
   color: #365175;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
-[data-theme="light"] .popup .popup-btn-tertiary:hover {
+[data-theme="light"] .popup .popup-btn-tertiary:hover,
+[data-theme="light"] .popup .btn.back-btn.popup-btn-tertiary:hover {
   background: rgba(72, 91, 122, 0.12);
   border-color: rgba(100, 121, 153, 0.46);
   color: #273f5f;

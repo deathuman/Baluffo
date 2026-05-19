@@ -180,11 +180,13 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Packaged sync rehearsal | `npm run test:frontend:packaged:sync-rehearsal` |
 | Packaged orphan reclaim rehearsal | `npm run test:frontend:packaged:orphan-reclaim-rehearsal` |
 | Packaged browser job rehearsal | `npm run test:frontend:packaged:browser-job-rehearsal` |
+| Packaged deterministic Jobs first-run gate | `npm run test:frontend:packaged:first-run` |
 | Jobs-page no-Admin packaged smoke gate | `npm run test:frontend:packaged:jobs-pipeline` |
 | Admin startup packaged smoke gate | `npm run test:frontend:packaged:admin-startup` |
 | Packaged desktop updater rehearsal | `npm run test:frontend:packaged:update-rehearsal` |
 | Orchestrated packaged smoke gate | `npm run test:frontend:packaged:orchestrated` |
 | Rebuild-backed packaged Jobs diagnostic | `npm run probe:desktop:startup:cold` |
+| Rebuild-backed packaged Jobs cold-start release gate | `npm run probe:desktop:startup:jobs:cold` |
 | Rebuild-backed packaged Admin diagnostic | `npm run probe:desktop:startup:admin:cold` |
 | One file | `python -m pytest tests/<path/to/test_*.py> -q` |
 | Admin bridge | `python -m pytest tests/admin/ -q` |
@@ -224,6 +226,7 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 - `npm run test:frontend:packaged:sync-rehearsal`
 - `npm run test:frontend:packaged:orphan-reclaim-rehearsal`
 - `npm run test:frontend:packaged:browser-job-rehearsal`
+- `npm run test:frontend:packaged:first-run`
 - `npm run test:frontend:packaged:admin-startup`
 - `npm run test:frontend:packaged:update-rehearsal`
   - The update rehearsal removes optional `_internal/psutil*` from the source install copy before launch, so the source-side handoff verifier must pass through the dependency-free Windows PID fallback.
@@ -247,12 +250,28 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 - Before adding a new guard or smoke test, delete or merge any older test that already protects the same invariant.
 - Prefer seam-patched unit checks for selection, normalization, and routing logic. Keep only one intentionally slow smoke test when full execution is the behavior under test.
 
+## Jobs First-Run Packaged Smoke Contract
+
+- `npm run test:frontend:packaged:first-run` is the deterministic packaged Jobs first-run gate.
+- It launches the packaged runtime on `desktop-probe.html` first, then the node smoke script opens `jobs.html` so the first Jobs page load belongs to the test, not to startup profiling or readiness probing.
+- The lane sets `BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_MODE=controlled-success` only for this smoke script. The real `/tasks/run-jobs-bootstrap` route and lifecycle/report promotion path run, but the bootstrap feed is a deterministic one-row sheet-scoped fixture and does not call live Google Sheets.
+- It must prove all of the following:
+  - the isolated runtime data dir starts without row-bearing `jobs-unified*` artifacts,
+  - cold Jobs startup shows first-run progress or retryable first-run UI, not a silent empty list,
+  - no visible `Bridge timed out` text appears,
+  - the bridge bootstrap route starts or reattaches with `smokeMode: "controlled-success"`,
+  - task state and fetch report evidence show a running bootstrap before promotion,
+  - the deterministic feed promotes and renders,
+  - sheet-limited first-run coverage messaging remains visible after the feed renders,
+  - light and dark first-run/local-auth popup screenshots are captured at desktop and mobile widths,
+  - computed popup style assertions cover overlay opacity, panel bounds, light surfaces, readable text, controls, inputs, and selects.
+- The smoke writes screenshots and `first-run-style-report.json` under the packaged smoke output directory. These are artifacts, not checked-in pixel baselines.
+
 ## Jobs Pipeline Smoke Contract
 
 - `npm run test:frontend:packaged:jobs-pipeline` is no longer just a “pipeline started” check.
 - It must prove all of the following in the packaged desktop runtime:
   - fresh packages do not include row-bearing jobs artifacts and must not fall back to stale bundled `jobs-unified*` or startup preview rows,
-  - a first-run package with no successful runtime report enters the sheet bootstrap path or a retryable no-data state,
   - a bootstrap-scoped feed keeps full-pipeline limited-coverage messaging visible until a full Jobs pipeline succeeds,
   - the Jobs page renders and the pipeline button becomes busy,
   - the pipeline reports a real `runId`,
@@ -328,8 +347,10 @@ Use the narrowest check that matches the risky path:
 - Packaged sync config, auth portability, or sync release-gate changes: `npm run test:frontend:packaged:sync-rehearsal`
 - Packaged desktop supervision, stale-runtime recovery, or launcher self-heal changes: `npm run test:frontend:packaged:orphan-reclaim-rehearsal`
 - Packaged Chromium supervision or managed-browser shutdown propagation changes: `npm run test:frontend:packaged:browser-job-rehearsal`
+- Packaged Jobs first-run, cold empty-state, bootstrap confirm/retry, or popup theme changes: `npm run test:frontend:packaged:first-run`
 - Packaged Admin startup, overview, or heavy ops-payload loading changes: `npm run test:frontend:packaged:admin-startup`
 - Packaged updater, desktop handoff, or release-manifest changes: `npm run test:frontend:packaged:update-rehearsal`
+- Packaged Jobs startup threshold changes: `npm run probe:desktop:startup:jobs:cold`
 - Bridge route wiring or task-launch signature changes: focused `tests/bridge/...` plus `tests/test_pipeline_execution.py` for worker-path coverage
 - Admin task buttons, presets, or busy-state changes: focused frontend unit tests plus the nearest admin bridge payload test
 - Contamination or location-quality regressions: targeted fetcher/unit checks around sanitization, canonicalization, or audit helpers

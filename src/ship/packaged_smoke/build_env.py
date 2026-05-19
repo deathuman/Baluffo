@@ -358,6 +358,14 @@ def packaged_fetch_evidence_smoke_mode(
     return ""
 
 
+def packaged_bootstrap_smoke_mode(node_smoke_script: Path) -> str:
+    deps = _root()
+    resolved = Path(node_smoke_script).expanduser().resolve()
+    if resolved == deps.FIRST_RUN_JOBS_NODE_SMOKE_SCRIPT.resolve():
+        return "controlled-success"
+    return ""
+
+
 def packaged_runtime_env_overrides(
     node_smoke_script: Path | None = None,
     *,
@@ -379,6 +387,11 @@ def packaged_runtime_env_overrides(
         )
         if fetch_mode:
             overrides["BALUFFO_PACKAGED_SMOKE_FETCH_MODE"] = fetch_mode
+        bootstrap_mode = deps.packaged_bootstrap_smoke_mode(node_smoke_script)
+        if bootstrap_mode:
+            overrides["BALUFFO_PACKAGED_SMOKE_RUNTIME"] = "1"
+            overrides["BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_MODE"] = bootstrap_mode
+            overrides["BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_DELAY_MS"] = "8000"
     if artifacts_dir is not None:
         local_app_data = deps.packaged_desktop_local_appdata_root(
             artifacts_dir,

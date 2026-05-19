@@ -89,6 +89,9 @@ DEFAULT_NODE_SMOKE_SCRIPT = ROOT / "tests" / "frontend" / "packaged-desktop-smok
 JOBS_PIPELINE_NODE_SMOKE_SCRIPT = (
     ROOT / "tests" / "frontend" / "packaged-desktop-smoke.jobs-pipeline.mjs"
 )
+FIRST_RUN_JOBS_NODE_SMOKE_SCRIPT = (
+    ROOT / "tests" / "frontend" / "packaged-desktop-smoke.first-run-jobs.mjs"
+)
 FETCH_EVIDENCE_NODE_SMOKE_SCRIPT = (
     ROOT / "tests" / "frontend" / "packaged-desktop-smoke.fetch-evidence.mjs"
 )
@@ -99,6 +102,7 @@ _PORTABLE_EXE_FRESHNESS_MARKERS = (
     ROOT / "src" / "ship" / "update_manager.py",
     ROOT / "src" / "ship" / "desktop_app" / "__init__.py",
     ROOT / "src" / "admin_bridge.py",
+    ROOT / "src" / "bridge" / "task_launch_api.py",
     ROOT / "index.html",
     ROOT / "jobs.html",
     ROOT / "saved.html",
@@ -200,6 +204,7 @@ collect_packaged_smoke_env_diagnostics = (
 build_packaged_smoke_env = packaged_smoke_build_env_mod.build_packaged_smoke_env
 packaged_pipeline_smoke_mode = packaged_smoke_build_env_mod.packaged_pipeline_smoke_mode
 packaged_fetch_evidence_smoke_mode = packaged_smoke_build_env_mod.packaged_fetch_evidence_smoke_mode
+packaged_bootstrap_smoke_mode = packaged_smoke_build_env_mod.packaged_bootstrap_smoke_mode
 packaged_runtime_env_overrides = packaged_smoke_build_env_mod.packaged_runtime_env_overrides
 ensure_portable_exe = packaged_smoke_build_env_mod.ensure_portable_exe
 

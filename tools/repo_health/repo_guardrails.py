@@ -163,6 +163,7 @@ def check_repo_root_structure() -> list[str]:
         "src/packaged_desktop_smoke.py": '.tmp" / "packaged-desktop-smoke',
         "probes/packaged_desktop_double_launch_probe.py": '.tmp" / "probes" / "double-launch',
         "tests/frontend/packaged-desktop-smoke.mjs": ".tmp/packaged-desktop-smoke/",
+        "tests/frontend/packaged-desktop-smoke.first-run-jobs.mjs": ".tmp/packaged-desktop-smoke/",
         "tests/frontend/packaged-desktop-smoke.jobs-pipeline.mjs": ".tmp/packaged-desktop-smoke/",
         "playwright.config.js": ".tmp/playwright/test-results",
         ".github/workflows/build-portable-exe.yml": ".tmp/packaged-desktop-smoke",

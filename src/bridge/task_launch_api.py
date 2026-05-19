@@ -789,6 +789,21 @@ class TaskLaunchApi:
             == "source-runs"
         )
 
+    def _packaged_smoke_bootstrap_controlled_success_enabled(self) -> bool:
+        return (
+            str(os.getenv("BALUFFO_PACKAGED_SMOKE_RUNTIME") or "").strip() == "1"
+            and str(os.getenv("BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_MODE") or "").strip().lower()
+            == "controlled-success"
+        )
+
+    def _packaged_smoke_bootstrap_delay_s(self) -> float:
+        raw_delay_ms = os.getenv("BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_DELAY_MS")
+        try:
+            delay_ms = int(str(raw_delay_ms or "8000").strip())
+        except (TypeError, ValueError):
+            delay_ms = 8000
+        return max(0.0, min(60.0, delay_ms / 1000.0))
+
     def _packaged_smoke_fetch_source_runs_report(
         self,
         *,
@@ -893,6 +908,344 @@ class TaskLaunchApi:
                 ok=False,
                 message=str(exc),
             )
+
+    def _packaged_smoke_bootstrap_jobs_feed_rows(self, *, finished_at: str) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": "packaged-first-run-technical-cinematic-animator",
+                "title": "Packaged First-Run Technical Cinematic Animator",
+                "company": "Packaged Smoke Studio",
+                "city": "Remote",
+                "country": "Worldwide",
+                "workType": "Remote",
+                "contractType": "Full-time",
+                "jobLink": "https://example.com/jobs/packaged-first-run-technical-cinematic-animator",
+                "sector": "Games",
+                "profession": "Animation",
+                "companyType": "Studio",
+                "description": "Deterministic first-run bootstrap row for packaged smoke.",
+                "source": BOOTSTRAP_SHEET_SOURCE_NAMES[0],
+                "sourceJobId": "packaged-first-run-technical-cinematic-animator",
+                "fetchedAt": finished_at,
+                "postedAt": "",
+                "status": "active",
+                "firstSeenAt": finished_at,
+                "lastSeenAt": finished_at,
+                "removedAt": "",
+                "lifecycleEvent": "",
+                "lifecycleReason": "",
+                "dedupKey": "packaged-first-run-technical-cinematic-animator",
+                "qualityScore": 100,
+                "focusScore": 100,
+                "sourceBundleCount": 1,
+                "sourceBundle": [
+                    {
+                        "sourceName": BOOTSTRAP_SHEET_SOURCE_NAMES[0],
+                        "sourceJobId": "packaged-first-run-technical-cinematic-animator",
+                        "jobLink": (
+                            "https://example.com/jobs/"
+                            "packaged-first-run-technical-cinematic-animator"
+                        ),
+                    }
+                ],
+                "locations": [{"city": "Remote", "country": "Worldwide"}],
+                "locationSummary": "Remote, Worldwide",
+            }
+        ]
+
+    def _packaged_smoke_bootstrap_report(
+        self,
+        *,
+        run_id: str,
+        started_at: str,
+        finished_at: str,
+        schema_version: int,
+    ) -> dict[str, Any]:
+        sources = [
+            {
+                "name": source_name,
+                "sourceKey": source_name,
+                "status": "ok",
+                "adapter": "csv",
+                "fetchStrategy": "packaged-smoke-controlled",
+                "studio": "Packaged Smoke Studio",
+                "fetchedCount": 1,
+                "keptCount": 1 if index == 0 else 0,
+                "durationMs": 5,
+                "details": [
+                    {
+                        "name": "Packaged First-Run Technical Cinematic Animator",
+                        "url": (
+                            "https://example.com/jobs/"
+                            "packaged-first-run-technical-cinematic-animator"
+                        ),
+                        "status": "ok",
+                        "keptCount": 1 if index == 0 else 0,
+                    }
+                ],
+            }
+            for index, source_name in enumerate(BOOTSTRAP_SHEET_SOURCE_NAMES)
+        ]
+        return self._with_bootstrap_metadata(
+            {
+                "runId": run_id,
+                "schemaVersion": schema_version,
+                "startedAt": started_at,
+                "finishedAt": finished_at,
+                "status": "ok",
+                "runtime": {
+                    "seedFromExistingOutput": False,
+                    "incrementalCacheEnabled": False,
+                    "smokeMode": "controlled-success",
+                    "lifecycle": {
+                        "owner": "fetch_report",
+                        "heartbeatAt": finished_at,
+                    },
+                },
+                "summary": {
+                    "status": "ok",
+                    "outputCount": 1,
+                    "failedSources": 0,
+                    "sourceCount": len(BOOTSTRAP_SHEET_SOURCE_NAMES),
+                    "smokeMode": "controlled-success",
+                },
+                "sources": sources,
+            },
+            report_path=self._paths.jobs_fetch_report,
+        )
+
+    def _write_packaged_smoke_bootstrap_running_tasks(
+        self,
+        *,
+        run_id: str,
+        started_at: str,
+        save_json_atomic: Callable[[Path, Any], None],
+        staging_dir: Path,
+    ) -> None:
+        save_json_atomic(
+            staging_dir / "jobs-fetch-tasks.json",
+            {
+                "runId": run_id,
+                "startedAt": started_at,
+                "finishedAt": "",
+                "heartbeatAt": started_at,
+                "summary": {
+                    "coverageScope": BOOTSTRAP_COVERAGE_SCOPE,
+                    "outputCount": 0,
+                    "sourceCount": len(BOOTSTRAP_SHEET_SOURCE_NAMES),
+                },
+                "taskProgress": {
+                    "active": True,
+                    "phaseKey": "fetching",
+                    "phaseLabel": "Refreshing sheet jobs",
+                    "mode": "indeterminate",
+                    "ratio": 0.0,
+                    "counts": {},
+                    "updatedAt": started_at,
+                },
+            },
+        )
+
+    def _write_packaged_smoke_bootstrap_terminal_staging(
+        self,
+        *,
+        run_id: str,
+        started_at: str,
+        staging_dir: Path,
+        schema_version: int,
+        normalize_fetch_report_contract: Callable[[dict[str, Any]], dict[str, Any]],
+        save_json_atomic: Callable[[Path, Any], None],
+    ) -> None:
+        finished_at = self._deps.now_iso()
+        rows = self._packaged_smoke_bootstrap_jobs_feed_rows(finished_at=finished_at)
+        write_atomic_if_changed(
+            staging_dir / "jobs-unified.json",
+            serialize_rows_for_json(rows, jobs_common_config.OUTPUT_FIELDS),
+        )
+        write_atomic_if_changed(
+            staging_dir / "jobs-unified-light.json",
+            serialize_rows_for_json(rows, jobs_common_config.LIGHTWEIGHT_OUTPUT_FIELDS),
+        )
+        write_atomic_if_changed(
+            staging_dir / "jobs-unified.csv",
+            serialize_rows_for_csv(rows, jobs_common_config.OUTPUT_FIELDS),
+        )
+        report = self._packaged_smoke_bootstrap_report(
+            run_id=run_id,
+            started_at=started_at,
+            finished_at=finished_at,
+            schema_version=schema_version,
+        )
+        save_json_atomic(
+            staging_dir / "jobs-fetch-report.json",
+            normalize_fetch_report_contract(report),
+        )
+        save_json_atomic(
+            staging_dir / "jobs-fetch-tasks.json",
+            {
+                "runId": run_id,
+                "startedAt": started_at,
+                "finishedAt": finished_at,
+                "heartbeatAt": finished_at,
+                "summary": dict(report.get("summary") or {}),
+                "taskProgress": {
+                    "active": False,
+                    "phaseKey": "completed",
+                    "phaseLabel": "First-run sheet jobs ready",
+                    "mode": "determinate",
+                    "ratio": 1.0,
+                    "counts": {"sources": len(BOOTSTRAP_SHEET_SOURCE_NAMES), "outputs": 1},
+                    "updatedAt": finished_at,
+                },
+            },
+        )
+
+    def _complete_packaged_smoke_bootstrap_after_delay(
+        self,
+        *,
+        run_id: str,
+        started_at: str,
+        staging_dir: Path,
+        schema_version: int,
+        report_shell: dict[str, Any],
+        normalize_fetch_report_contract: Callable[[dict[str, Any]], dict[str, Any]],
+        save_json_atomic: Callable[[Path, Any], None],
+    ) -> None:
+        try:
+            time.sleep(self._packaged_smoke_bootstrap_delay_s())
+            self._write_packaged_smoke_bootstrap_terminal_staging(
+                run_id=run_id,
+                started_at=started_at,
+                staging_dir=staging_dir,
+                schema_version=schema_version,
+                normalize_fetch_report_contract=normalize_fetch_report_contract,
+                save_json_atomic=save_json_atomic,
+            )
+        except (RuntimeError, OSError, TypeError, ValueError) as exc:
+            finished_at = self._deps.now_iso()
+            failure_report = self._bootstrap_failure_report(
+                report_shell,
+                error=f"packaged smoke bootstrap failed: {exc}",
+                finished_at=finished_at,
+            )
+            try:
+                save_json_atomic(
+                    staging_dir / "jobs-fetch-report.json",
+                    normalize_fetch_report_contract(failure_report),
+                )
+            except (RuntimeError, OSError, TypeError, ValueError):
+                self._deps.bridge_log(
+                    "error",
+                    "packaged_smoke_bootstrap_failure_staging_write_failed",
+                    runId=run_id,
+                    error=str(exc),
+                )
+
+    def _start_packaged_smoke_controlled_bootstrap(
+        self,
+        *,
+        run_id: str,
+        started_at: str,
+        staging_dir: Path,
+        spawn_args: list[str],
+        report_shell: dict[str, Any],
+        normalize_fetch_report_contract: Callable[[dict[str, Any]], dict[str, Any]],
+        save_json_atomic: Callable[[Path, Any], None],
+        schema_version: int,
+        start_lifecycle_run: Callable[..., dict[str, Any]],
+        finish_lifecycle_run: Callable[..., dict[str, Any]],
+        fail_lifecycle_run: Callable[..., dict[str, Any]],
+        heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None],
+    ) -> dict[str, Any]:
+        pid = os.getpid()
+        self._record_active_bootstrap_process(run_id=run_id, started_at=started_at, pid=pid)
+        self._write_bootstrap_running_report(
+            report_shell=report_shell,
+            pid=pid,
+            heartbeat_at=started_at,
+            normalize_fetch_report_contract=normalize_fetch_report_contract,
+            save_json_atomic=save_json_atomic,
+        )
+        self._write_packaged_smoke_bootstrap_running_tasks(
+            run_id=run_id,
+            started_at=started_at,
+            staging_dir=staging_dir,
+            save_json_atomic=save_json_atomic,
+        )
+        try:
+            start_lifecycle_run(
+                run_id=run_id,
+                task_type="fetch",
+                started_at=started_at,
+                stage="starting",
+                owner_kind="packaged_smoke",
+                owner_pid=pid,
+                progress={
+                    "active": True,
+                    "phaseKey": "starting",
+                    "phaseLabel": "Refreshing sheet jobs",
+                    "mode": "indeterminate",
+                    "ratio": 0.0,
+                    "counts": {},
+                    "updatedAt": started_at,
+                },
+                summary={"coverageScope": BOOTSTRAP_COVERAGE_SCOPE},
+            )
+        except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
+            self._deps.bridge_log(
+                "error",
+                "packaged_smoke_bootstrap_lifecycle_start_failed",
+                runId=run_id,
+                pid=pid,
+                error=str(exc),
+            )
+        threading.Thread(
+            target=self._complete_packaged_smoke_bootstrap_after_delay,
+            kwargs={
+                "run_id": run_id,
+                "started_at": started_at,
+                "staging_dir": staging_dir,
+                "schema_version": schema_version,
+                "report_shell": report_shell,
+                "normalize_fetch_report_contract": normalize_fetch_report_contract,
+                "save_json_atomic": save_json_atomic,
+            },
+            name=f"jobs-bootstrap-smoke-complete-{run_id}",
+            daemon=True,
+        ).start()
+        self._start_bootstrap_lifecycle_watch(
+            run_id=run_id,
+            pid=pid,
+            staging_dir=staging_dir,
+            report_shell=report_shell,
+            normalize_fetch_report_contract=normalize_fetch_report_contract,
+            save_json_atomic=save_json_atomic,
+            finish_lifecycle_run=finish_lifecycle_run,
+            fail_lifecycle_run=fail_lifecycle_run,
+            heartbeat_lifecycle_run=heartbeat_lifecycle_run,
+        )
+        self._deps.bridge_log(
+            "info",
+            "task_started",
+            runId=run_id,
+            task="jobs_bootstrap",
+            preset="bootstrap_sheets",
+            pid=pid,
+            args=" ".join(spawn_args),
+            smokeMode="controlled-success",
+        )
+        return {
+            "started": True,
+            "runId": run_id,
+            "task": "jobs_bootstrap",
+            "taskType": "fetch",
+            "preset": "bootstrap_sheets",
+            "coverageScope": BOOTSTRAP_COVERAGE_SCOPE,
+            "args": spawn_args,
+            "pid": pid,
+            "startedAt": started_at,
+            "smokeMode": "controlled-success",
+        }
 
     def _start_packaged_smoke_source_runs_fetch(
         self,
@@ -1352,6 +1705,8 @@ class TaskLaunchApi:
         response = build_duplicate_start_payload("jobs_bootstrap", "fetch", active_metadata)
         response["preset"] = "bootstrap_sheets"
         response["coverageScope"] = BOOTSTRAP_COVERAGE_SCOPE
+        if self._packaged_smoke_bootstrap_controlled_success_enabled():
+            response["smokeMode"] = "controlled-success"
         self._deps.bridge_log(
             "info",
             "task_start_attached_existing",
@@ -2133,6 +2488,21 @@ class TaskLaunchApi:
                 self._paths.jobs_fetch_report,
                 normalize_fetch_report_contract(report_shell),
             )
+            if self._packaged_smoke_bootstrap_controlled_success_enabled():
+                return self._start_packaged_smoke_controlled_bootstrap(
+                    run_id=run_id,
+                    started_at=started_at,
+                    staging_dir=staging_dir,
+                    spawn_args=spawn_args,
+                    report_shell=report_shell,
+                    normalize_fetch_report_contract=normalize_fetch_report_contract,
+                    save_json_atomic=save_json_atomic,
+                    schema_version=schema_version,
+                    start_lifecycle_run=start_lifecycle_run,
+                    finish_lifecycle_run=finish_lifecycle_run,
+                    fail_lifecycle_run=fail_lifecycle_run,
+                    heartbeat_lifecycle_run=heartbeat_lifecycle_run,
+                )
             try:
                 pid = run_background_script(
                     "jobs_fetcher.py",
