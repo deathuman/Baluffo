@@ -18,6 +18,8 @@ const BOOTSTRAP_LAUNCH_COLD_START_HANDLED_KEY = "baluffo_jobs_bootstrap_launch_c
 const LOCAL_FEED_MISSING_MESSAGE = "Local jobs feed is missing or unreadable. Retry quick refresh or run Update jobs to rebuild the full feed.";
 const EMPTY_TITLE_FEED_MESSAGE = "Jobs feed contained no displayable positions. Retry quick refresh or run Update jobs to rebuild the full feed.";
 const FIRST_RUN_BOOTSTRAP_STATUS = "Refreshing first-run sheet jobs. This can take about 4 minutes...";
+const FIRST_RUN_BOOTSTRAP_CONFIRMING_STATUS = "Confirming first-run sheet refresh started...";
+const FIRST_RUN_BOOTSTRAP_UNCONFIRMED_MESSAGE = "Could not confirm first-run sheet refresh started. Retry quick refresh or open Admin.";
 const FIRST_RUN_BOOTSTRAP_NOTICE = Object.freeze({
   title: "Preparing first-run jobs",
   body: "Baluffo is fetching the starter Google Sheets job feed. The first refresh can take about 4 minutes. You can keep this window open; jobs will appear automatically when the refresh finishes.",
@@ -67,6 +69,41 @@ function coverageScope(report) {
   const runtime = report?.runtime && typeof report.runtime === "object" ? report.runtime : {};
   const summary = reportSummary(report);
   return String(summary.coverageScope || runtime.coverageScope || "").trim();
+}
+
+function reportRunId(report) {
+  const summary = reportSummary(report);
+  return String(report?.runId || summary.runId || "").trim();
+}
+
+function isActiveBootstrapReport(report) {
+  if (!report || typeof report !== "object") return false;
+  if (reportFinishedTimestamp(report)) return false;
+  const scope = coverageScope(report).toLowerCase();
+  const runId = reportRunId(report);
+  return scope === "bootstrap_sheets" || runId.startsWith("jobs_bootstrap_");
+}
+
+function bootstrapStartHasRunningEvidence(payload) {
+  return Boolean(
+    payload
+      && typeof payload === "object"
+      && (payload.started || payload.alreadyRunning || payload.alreadyCompleted)
+  );
+}
+
+function isUncertainBootstrapStartError(err) {
+  const message = String(err?.message || err || "").toLowerCase();
+  return message.includes("timed out")
+    || message.includes("bridge unreachable")
+    || message.includes("network error")
+    || message.includes("failed to fetch");
+}
+
+function bootstrapStartUnconfirmedError() {
+  const error = new Error(FIRST_RUN_BOOTSTRAP_UNCONFIRMED_MESSAGE);
+  error.bootstrapStartUnconfirmed = true;
+  return error;
 }
 
 function localStorageFor(windowObject) {
@@ -165,6 +202,12 @@ function notifyFirstRunBootstrap(showFirstRunBootstrapNotice, reason = "") {
   }
 }
 
+function sleep(ms) {
+  const delay = Math.max(0, Number(ms) || 0);
+  if (delay <= 0) return Promise.resolve();
+  return new Promise(resolve => setTimeout(resolve, delay));
+}
+
 export function canUseStartupPreviewFastPath(pageState = {}, defaultFilters = {}) {
   return Number(pageState?.currentPage || 1) === 1
     && filtersMatchDefault(pageState?.filters || {}, defaultFilters);
@@ -195,6 +238,10 @@ export async function initJobsFeed(deps) {
     startJobsBootstrap,
     windowObject,
     setProgress,
+    setJobsStartupState,
+    bootstrapStartTimeoutMs = 30000,
+    bootstrapConfirmTimeoutMs = 20000,
+    bootstrapConfirmIntervalMs = 1000,
     bootstrapPollIntervalMs = 1500,
     bootstrapTimeoutMs = 5 * 60 * 1000,
     setHasInitializedJobsFeed,
@@ -216,6 +263,25 @@ export async function initJobsFeed(deps) {
     if (firstRunBootstrapNoticeShown) return;
     firstRunBootstrapNoticeShown = true;
     notifyFirstRunBootstrap(showFirstRunBootstrapNotice, reason);
+  }
+
+  function setFirstRunStartupState(detail = "first_run_bootstrap") {
+    if (typeof setJobsStartupState === "function") {
+      setJobsStartupState("loading", detail);
+    }
+  }
+
+  function renderFirstRunBootstrapState() {
+    if (typeof setAllJobs === "function") setAllJobs([]);
+    stateHubSet("jobsFeedCount", 0);
+    stateHubSet("jobsLastUpdated", "");
+    recalculateItemsPerPage();
+    updateFilterOptions();
+    applyStateToFilters();
+    applyFiltersAndRender({
+      resetPage: false,
+      emptyStateReason: "first_run_bootstrap"
+    });
   }
 
   try {
@@ -249,16 +315,7 @@ export async function initJobsFeed(deps) {
     });
 
     if (firstRunRequired) {
-      if (typeof setAllJobs === "function") setAllJobs([]);
-      stateHubSet("jobsFeedCount", 0);
-      stateHubSet("jobsLastUpdated", "");
-      recalculateItemsPerPage();
-      updateFilterOptions();
-      applyStateToFilters();
-      applyFiltersAndRender({
-        resetPage: false,
-        emptyStateReason: "first_run_bootstrap"
-      });
+      renderFirstRunBootstrapState();
     }
 
     const cached = desktopMode ? null : await readCachedJobs();
@@ -295,6 +352,7 @@ export async function initJobsFeed(deps) {
     async function startBootstrapAndLoad({ explicit = false } = {}) {
       if (explicit) clearBootstrapAutoStart(windowObject);
       markBootstrapRunning(windowObject);
+      setFirstRunStartupState();
       if (typeof setProgress === "function") setProgress(true);
       setSourceStatus(FIRST_RUN_BOOTSTRAP_STATUS);
       try {
@@ -302,7 +360,7 @@ export async function initJobsFeed(deps) {
           throw new Error("bootstrap route unavailable");
         }
         emitMetric("jobs_first_run_bootstrap_start_requested", { explicit });
-        const startedPayload = await startJobsBootstrap();
+        const startedPayload = await startBootstrapWithConfirmation({ explicit });
         markBootstrapRunning(windowObject, { runId: startedPayload?.runId });
         if (startedPayload?.alreadyCompleted) {
           if (typeof setProgress === "function") setProgress(false);
@@ -334,21 +392,108 @@ export async function initJobsFeed(deps) {
         }
         throw new Error("first-run sheet refresh timed out");
       } catch (err) {
-        markBootstrapFailed(windowObject, String(err?.message || err || ""));
+        if (err?.bootstrapStartUnconfirmed) {
+          clearBootstrapAutoStart(windowObject);
+        } else {
+          markBootstrapFailed(windowObject, String(err?.message || err || ""));
+        }
         throw err;
       } finally {
         if (typeof setProgress === "function") setProgress(false);
       }
     }
 
-    async function retryBootstrap() {
+    async function startBootstrapWithConfirmation({ explicit = false } = {}) {
       try {
+        const payload = await startJobsBootstrap({ timeoutMs: bootstrapStartTimeoutMs });
+        if (bootstrapStartHasRunningEvidence(payload)) return payload;
+        return payload;
+      } catch (err) {
+        if (!isUncertainBootstrapStartError(err)) throw err;
+        emitMetric("jobs_first_run_bootstrap_start_uncertain", {
+          explicit,
+          error: String(err?.message || err || "")
+        });
+        setSourceStatus(FIRST_RUN_BOOTSTRAP_CONFIRMING_STATUS);
+        const confirmedPayload = await confirmBootstrapStart({ explicit });
+        if (confirmedPayload) return confirmedPayload;
+        throw bootstrapStartUnconfirmedError();
+      }
+    }
+
+    async function confirmBootstrapStart({ explicit = false } = {}) {
+      const deadline = Date.now() + Math.max(0, Number(bootstrapConfirmTimeoutMs) || 0);
+      const interval = Math.max(0, Number(bootstrapConfirmIntervalMs) || 0);
+      let retriedStart = false;
+      for (;;) {
+        const report = typeof fetchJobsReport === "function"
+          ? await fetchJobsReport({ timeoutMs: 1500 }).catch(() => null)
+          : null;
+        if (isSuccessfulJobsFetchReport(report)) {
+          return { alreadyCompleted: true, runId: reportRunId(report) };
+        }
+        if (isTerminalFailedJobsFetchReport(report)) {
+          throw new Error(bootstrapRetryMessage(report));
+        }
+        if (isActiveBootstrapReport(report)) {
+          emitMetric("jobs_first_run_bootstrap_start_confirmed", {
+            explicit,
+            evidence: "report",
+            runId: reportRunId(report)
+          });
+          return { alreadyRunning: true, runId: reportRunId(report) };
+        }
+
+        if (!retriedStart) {
+          retriedStart = true;
+          try {
+            const retryPayload = await startJobsBootstrap({ timeoutMs: bootstrapStartTimeoutMs });
+            if (bootstrapStartHasRunningEvidence(retryPayload)) {
+              emitMetric("jobs_first_run_bootstrap_start_confirmed", {
+                explicit,
+                evidence: retryPayload?.alreadyRunning ? "already_running" : "retry_start",
+                runId: String(retryPayload?.runId || "")
+              });
+              return retryPayload;
+            }
+          } catch (retryErr) {
+            if (!isUncertainBootstrapStartError(retryErr)) throw retryErr;
+            emitMetric("jobs_first_run_bootstrap_start_retry_uncertain", {
+              explicit,
+              error: String(retryErr?.message || retryErr || "")
+            });
+          }
+        }
+
+        if (Date.now() >= deadline) return null;
+        await sleep(interval);
+      }
+    }
+
+    let retryBootstrapInFlight = false;
+    async function retryBootstrap(event) {
+      if (retryBootstrapInFlight) return;
+      retryBootstrapInFlight = true;
+      const retryButton = event?.currentTarget;
+      if (retryButton) {
+        retryButton.disabled = true;
+        retryButton.setAttribute("aria-busy", "true");
+      }
+      try {
+        setFirstRunStartupState("first_run_bootstrap_retry");
+        renderFirstRunBootstrapState();
         const ok = await startBootstrapAndLoad({ explicit: true });
         if (!ok) {
           throw new Error("unable to load promoted sheet jobs");
         }
       } catch (err) {
         showError(String(err?.message || "Unable to refresh first-run jobs."), retryBootstrap);
+      } finally {
+        retryBootstrapInFlight = false;
+        if (retryButton?.isConnected) {
+          retryButton.disabled = false;
+          retryButton.removeAttribute("aria-busy");
+        }
       }
     }
 

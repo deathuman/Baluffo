@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Sequence
 from typing import Any
 
@@ -35,8 +36,13 @@ SOCIAL_SOURCE_NAMES = common_social.SOCIAL_SOURCE_NAMES
 _GOOGLE_SHEETS_GENERIC_ROLE_TITLE_TERMS = {
     "account management",
     "account-management",
+    "animation",
+    "animator",
+    "animators",
     "community management",
     "community-management",
+    "cinematic animator",
+    "cinematic-animator",
     "localization",
     "product management",
     "product-management",
@@ -47,6 +53,8 @@ _GOOGLE_SHEETS_GENERIC_ROLE_TITLE_TERMS = {
     "project-management",
     "system design",
     "system-design",
+    "technical animator",
+    "technical-animator",
 }
 _SHEET_ROLE_BUCKET_CATEGORY_TITLE_TERMS = {
     "account-management",
@@ -79,6 +87,8 @@ _SHEET_ROLE_BUCKET_CATEGORY_TITLE_TERMS = {
     "web-development",
 }
 _SHEET_ROLE_BUCKET_WEAK_TOKENS = {
+    "animation",
+    "animator",
     "art",
     "business",
     "community",
@@ -106,6 +116,33 @@ _SHEET_ROLE_BUCKET_WEAK_TOKENS = {
     "vfx",
     "web",
 }
+_SHEET_REPAIRABLE_BROAD_ROLE_TOKENS = frozenset(
+    {
+        "3d",
+        "animation",
+        "animator",
+        "animators",
+        "cinematic",
+        "cinematics",
+        "technical",
+    }
+)
+_SHEET_ANIMATION_FAMILY_TOKENS = frozenset({"animation", "animator", "animators"})
+_SHEET_SPECIFIC_TITLE_TOKENS = frozenset(
+    {
+        "advanced",
+        "associate",
+        "cinematic",
+        "cinematics",
+        "expert",
+        "lead",
+        "principal",
+        "senior",
+        "sr",
+        "staff",
+        "technical",
+    }
+)
 _SHEET_ROLE_BUCKET_GUARD_REASON = "sheet_role_bucket_different_primary_url"
 _COMPANY_SUFFIX_TOKENS = {
     "company",
@@ -223,7 +260,8 @@ def _has_google_sheets_generic_role_title(job: CanonicalJob | dict[str, Any]) ->
         return True
     tokens = normalized.split()
     return 1 <= len(tokens) <= 2 and any(
-        token in {"design", "localization", "management", "programming"} for token in tokens
+        token in {"animation", "animator", "design", "localization", "management", "programming"}
+        for token in tokens
     )
 
 
@@ -332,6 +370,61 @@ def _merge_output_fields(merged: dict[str, Any], other_dict: dict[str, Any]) -> 
             continue
         if not clean_text(merged.get(field)) and clean_text(other_dict.get(field)):
             merged[field] = other_dict[field]
+
+
+def _title_tokens(value: Any) -> list[str]:
+    raw = clean_text(value)
+    if not raw:
+        return []
+    return [
+        token.lower() for token in re.findall(r"[A-Za-z0-9+#]+", raw.replace("&", " ")) if token
+    ]
+
+
+def _is_repairable_broad_sheet_title(value: Any) -> bool:
+    tokens = _title_tokens(value)
+    if not tokens or len(tokens) > 3:
+        return False
+    token_set = set(tokens)
+    return bool(token_set & _SHEET_ANIMATION_FAMILY_TOKENS) and token_set.issubset(
+        _SHEET_REPAIRABLE_BROAD_ROLE_TOKENS
+    )
+
+
+def _animation_title_family(value: Any) -> set[str]:
+    return {"animation"} if set(_title_tokens(value)) & _SHEET_ANIMATION_FAMILY_TOKENS else set()
+
+
+def _is_more_specific_same_family_title(current_title: Any, candidate_title: Any) -> bool:
+    if norm_text(current_title) == norm_text(candidate_title):
+        return False
+    current_family = _animation_title_family(current_title)
+    if not current_family or not current_family & _animation_title_family(candidate_title):
+        return False
+    current_tokens = _title_tokens(current_title)
+    candidate_tokens = _title_tokens(candidate_title)
+    if len(candidate_tokens) <= len(current_tokens):
+        return False
+    current_required_tokens = set(current_tokens) - _SHEET_ANIMATION_FAMILY_TOKENS
+    if not current_required_tokens.issubset(set(candidate_tokens)):
+        return False
+    candidate_gain = set(candidate_tokens) - set(current_tokens)
+    return bool(candidate_gain & _SHEET_SPECIFIC_TITLE_TOKENS)
+
+
+def _prefer_specific_title(merged: dict[str, Any], other_dict: dict[str, Any]) -> None:
+    if not _is_google_sheets_row(merged):
+        return
+    if fingerprint_url(merged.get("jobLink")) != fingerprint_url(other_dict.get("jobLink")):
+        return
+    current_title = clean_text(merged.get("title"))
+    candidate_title = clean_text(other_dict.get("title"))
+    if not current_title or not candidate_title:
+        return
+    if not _is_repairable_broad_sheet_title(current_title):
+        return
+    if _is_more_specific_same_family_title(current_title, candidate_title):
+        merged["title"] = candidate_title
 
 
 def _prefer_company_and_posted_at(merged: dict[str, Any], other_dict: dict[str, Any]) -> None:
@@ -466,6 +559,7 @@ def merge_records(existing: CanonicalJob, candidate: CanonicalJob) -> CanonicalJ
     other_dict = other.to_dict()
     _merge_output_fields(merged, other_dict)
     _prefer_company_and_posted_at(merged, other_dict)
+    _prefer_specific_title(merged, other_dict)
 
     merge_rows = [existing.to_dict(), candidate.to_dict(), merged]
     bundle = _merge_source_bundle(merge_rows)

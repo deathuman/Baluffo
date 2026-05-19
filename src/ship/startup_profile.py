@@ -13,6 +13,8 @@ PROFILE_THRESHOLDS_MS = {
     "cold": {
         "launch_to_site_ready": 2500,
         "site_ready_to_window_created": 800,
+        "site_ready_to_bridge_ready": 2500,
+        "bridge_ready_to_window_created": 800,
         "window_created_to_window_shown": 10000,
         "window_shown_to_page_loaded": 5000,
         "page_loaded_to_local_data_api_ready": 1000,
@@ -25,6 +27,8 @@ PROFILE_THRESHOLDS_MS = {
     "warm": {
         "launch_to_site_ready": 1800,
         "site_ready_to_window_created": 600,
+        "site_ready_to_bridge_ready": 1800,
+        "bridge_ready_to_window_created": 600,
         "window_created_to_window_shown": 7000,
         "window_shown_to_page_loaded": 2500,
         "page_loaded_to_local_data_api_ready": 750,
@@ -148,6 +152,34 @@ def _resolve_stage_event(
     return (name, events.get(name)) if name in events else (name, None)
 
 
+def _pre_window_stage_defs(
+    events: dict[str, int],
+) -> list[tuple[str, str, str | Sequence[str] | None, str | Sequence[str] | None]]:
+    if "desktop_bridge_ready_before_window" in events:
+        return [
+            (
+                "site_ready_to_bridge_ready",
+                "Site Ready -> Bridge Ready",
+                "desktop_site_ready",
+                "desktop_bridge_ready_before_window",
+            ),
+            (
+                "bridge_ready_to_window_created",
+                "Bridge Ready -> Window Created",
+                "desktop_bridge_ready_before_window",
+                "desktop_window_created",
+            ),
+        ]
+    return [
+        (
+            "site_ready_to_window_created",
+            "Site Ready -> Window Created",
+            "desktop_site_ready",
+            "desktop_window_created",
+        )
+    ]
+
+
 def _classify_stages(
     *,
     stages: list[dict[str, Any]],
@@ -230,12 +262,7 @@ def summarize_startup_metrics(
                 "desktop_launch_start",
                 "desktop_site_ready",
             ),
-            (
-                "site_ready_to_window_created",
-                "Site Ready -> Window Created",
-                "desktop_site_ready",
-                "desktop_window_created",
-            ),
+            *_pre_window_stage_defs(events),
             (
                 "window_created_to_window_shown",
                 "Window Created -> Window Shown",
@@ -295,6 +322,8 @@ def summarize_startup_metrics(
             missing_events=probe_missing_events,
             classification_map={
                 "launch_to_site_ready": "bridge/site bootstrap delayed",
+                "site_ready_to_bridge_ready": "desktop bridge startup delayed",
+                "bridge_ready_to_window_created": "browser launch / app-window creation delayed",
                 "site_ready_to_window_created": "browser launch / app-window creation delayed",
                 "window_created_to_window_shown": "native reveal delayed",
                 "window_shown_to_page_loaded": "desktop page load delayed",
@@ -341,12 +370,7 @@ def summarize_startup_metrics(
                 "desktop_launch_start",
                 "desktop_site_ready",
             ),
-            (
-                "site_ready_to_window_created",
-                "Site Ready -> Window Created",
-                "desktop_site_ready",
-                "desktop_window_created",
-            ),
+            *_pre_window_stage_defs(events),
             (
                 "window_created_to_window_shown",
                 "Window Created -> Window Shown",
@@ -426,6 +450,8 @@ def summarize_startup_metrics(
             missing_events=missing_events,
             classification_map={
                 "launch_to_site_ready": "bridge/site bootstrap delayed",
+                "site_ready_to_bridge_ready": "desktop bridge startup delayed",
+                "bridge_ready_to_window_created": "browser launch / app-window creation delayed",
                 "site_ready_to_window_created": "browser launch / app-window creation delayed",
                 "window_created_to_window_shown": "native reveal delayed",
                 "window_shown_to_page_loaded": "admin page boot delayed",
@@ -478,12 +504,7 @@ def summarize_startup_metrics(
             "desktop_launch_start",
             "desktop_site_ready",
         ),
-        (
-            "site_ready_to_window_created",
-            "Site Ready -> Window Created",
-            "desktop_site_ready",
-            "desktop_window_created",
-        ),
+        *_pre_window_stage_defs(events),
         (
             "window_created_to_window_shown",
             "Window Created -> Window Shown",
@@ -583,6 +604,8 @@ def summarize_startup_metrics(
         missing_events=missing_events,
         classification_map={
             "launch_to_site_ready": "bridge/site bootstrap delayed",
+            "site_ready_to_bridge_ready": "desktop bridge startup delayed",
+            "bridge_ready_to_window_created": "browser launch / app-window creation delayed",
             "site_ready_to_window_created": "browser launch / app-window creation delayed",
             "window_created_to_window_shown": "native reveal delayed",
             "window_shown_to_page_loaded": "page boot delayed",

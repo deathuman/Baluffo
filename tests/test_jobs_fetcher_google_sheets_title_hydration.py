@@ -150,6 +150,50 @@ def test_canonicalize_google_sheets_rows_reuses_title_hydration_feed_cache() -> 
     assert stats["title_hydration_repaired"] == 2
 
 
+def test_canonicalize_google_sheets_rows_hydrates_broad_animation_titles() -> None:
+    greenhouse_feed = "https://boards-api.greenhouse.io/v1/boards/examplegames/jobs?content=true"
+
+    def fake_fetch(url: str, _timeout: int) -> str:
+        assert url == greenhouse_feed
+        return json.dumps(
+            {
+                "jobs": [
+                    {
+                        "id": 12345,
+                        "title": "Senior Technical Animator",
+                        "absolute_url": "https://job-boards.greenhouse.io/examplegames/jobs/12345",
+                    }
+                ]
+            }
+        )
+
+    resolver = jf.GoogleSheetsProviderTitleResolver(
+        fetch_text=fake_fetch,
+        timeout_s=5,
+        retries=0,
+        backoff_s=0.0,
+    )
+    canonical_rows, drop_reasons, stats = jf.canonicalize_google_sheets_rows(
+        [
+            {
+                "sourceJobId": "sheet-1",
+                "title": "Animator",
+                "company": "Example Games",
+                "jobLink": "https://job-boards.greenhouse.io/examplegames/jobs/12345",
+                "sector": "Game",
+            }
+        ],
+        source="google_sheets",
+        fetched_at="2026-03-13T00:00:00+00:00",
+        title_hydration_resolver=resolver,
+    )
+
+    assert [row.title for row in canonical_rows] == ["Senior Technical Animator"]
+    assert not drop_reasons
+    assert stats["title_hydration_candidates"] == 1
+    assert stats["title_hydration_repaired"] == 1
+
+
 def test_canonicalize_google_sheets_rows_keeps_unsupported_missing_and_failed_hydration() -> None:
     missing_feed = "https://boards-api.greenhouse.io/v1/boards/missingboard/jobs?content=true"
     broken_feed = "https://boards-api.greenhouse.io/v1/boards/brokenboard/jobs?content=true"

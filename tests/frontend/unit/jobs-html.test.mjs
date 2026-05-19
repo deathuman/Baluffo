@@ -65,6 +65,16 @@ test("saved activity timeline uses the shared rounded scrollbar treatment", () =
   assert.match(savedCss, /\.activity-panel-body::-webkit-scrollbar-thumb\s*\{[\s\S]*background: var\(--surface-18\);[\s\S]*border-radius: 999px;[\s\S]*border: 2px solid var\(--surface-1\);/);
 });
 
+test("shared popups expose explicit light-theme presentation", () => {
+  const componentsCss = fs.readFileSync(path.join(repoRoot, "styles", "components.css"), "utf8");
+  assert.match(componentsCss, /\[data-theme="light"\]\s+\.popup-overlay\s*\{[\s\S]*rgba\(29,\s*39,\s*58,\s*0\.46\)/);
+  assert.match(componentsCss, /\[data-theme="light"\]\s+\.popup\s*\{[\s\S]*#ffffff;[\s\S]*border-color:/);
+  assert.match(componentsCss, /@supports \(\(-webkit-backdrop-filter: blur\(18px\)\) or \(backdrop-filter: blur\(18px\)\)\)\s*\{[\s\S]*\[data-theme="light"\]\s+\.popup\s*\{/);
+  assert.match(componentsCss, /\[data-theme="light"\]\s+\.popup\s+\.popup-btn-primary\s*\{[\s\S]*#4769b2/);
+  assert.match(componentsCss, /\[data-theme="light"\]\s+\.popup\s+\.popup-btn-tertiary\s*\{[\s\S]*#365175/);
+  assert.match(componentsCss, /\[data-theme="light"\]\s+\.popup\s+select:not\(\[multiple\]\)\s*\{[\s\S]*stroke='%2340516a'/);
+});
+
 test("saved html exposes compact grouping controls and group header styling", () => {
   const savedHtml = fs.readFileSync(path.join(repoRoot, "saved.html"), "utf8");
   const savedCss = fs.readFileSync(path.join(repoRoot, "styles", "saved.css"), "utf8");

@@ -172,11 +172,11 @@ export function createJobsPageFlow(deps) {
 
   function showError(message, onRetry = null) {
     setJobsStartupState("error", "load_error");
-    deps.showJobsError(deps.dom.jobsList, deps.dom.pagination, message, () => {
+    deps.showJobsError(deps.dom.jobsList, deps.dom.pagination, message, event => {
       const retry = typeof onRetry === "function"
         ? onRetry
         : () => deps.retryInit().catch(err => handleJobsStartupFailure("Retry failed", err));
-      return retry();
+      return retry(event);
     });
     updateResultsSummary(0, 0, 0, deps.runtimeState.allJobs.length);
   }

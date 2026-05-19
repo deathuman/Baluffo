@@ -64,12 +64,19 @@ export function createJobsBoot(deps) {
       updateLastUpdatedText: timestamp => deps.feedController.updateLastUpdatedText(timestamp),
       fetchJobsReport: options => deps.feedController.fetchJobsReport(options),
       desktopJobsColdStart: deps.desktopJobsColdStart,
-      startJobsBootstrap: () => deps.callJobsBridge("/tasks/run-jobs-bootstrap", {
+      startJobsBootstrap: (options = {}) => deps.callJobsBridge("/tasks/run-jobs-bootstrap", {
         method: "POST",
         body: { source: "jobs_first_run", forceBootstrap: true },
-        allowStatuses: [409]
+        allowStatuses: [409],
+        timeoutMs: Number(options?.timeoutMs) > 0
+          ? Number(options.timeoutMs)
+          : deps.bootstrapStartTimeoutMs
       }),
       windowObject: deps.windowObject,
+      setJobsStartupState: deps.setJobsStartupState,
+      bootstrapStartTimeoutMs: deps.bootstrapStartTimeoutMs,
+      bootstrapConfirmTimeoutMs: deps.bootstrapConfirmTimeoutMs,
+      bootstrapConfirmIntervalMs: deps.bootstrapConfirmIntervalMs,
       setHasInitializedJobsFeed: value => {
         deps.runtimeState.hasInitializedJobsFeed = Boolean(value);
       },

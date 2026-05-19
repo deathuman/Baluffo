@@ -73,7 +73,7 @@ def startup_profile_required_events(page: str) -> tuple[str, ...]:
     page_events = {
         "admin": ("admin_ready", "admin_first_interactive"),
         "saved": ("saved_first_interactive",),
-        "jobs": ("jobs_first_render", "jobs_first_interactive"),
+        "jobs": ("jobs_auth_ready", "jobs_first_render", "jobs_first_interactive"),
     }.get(normalized, ("jobs_first_render", "jobs_first_interactive"))
     return STARTUP_REQUIRED_EVENTS + (f"{normalized}_module_boot_start",) + tuple(page_events)
 

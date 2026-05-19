@@ -66,6 +66,77 @@ def test_deduplicate_jobs_keeps_google_sheets_generic_role_bucket_detail_urls_se
     )
 
 
+def test_deduplicate_jobs_keeps_google_sheets_animator_buckets_on_different_urls_separate() -> None:
+    first = _google_sheets_job(
+        title="Animator",
+        company="Example Games",
+        link="https://jobs.example.com/postings/12345",
+        source_job_id="sheet-animator-1",
+    )
+    second = _google_sheets_job(
+        title="Animator",
+        company="Example Games",
+        link="https://jobs.example.com/postings/67890",
+        source_job_id="sheet-animator-2",
+    )
+    assert first is not None
+    assert second is not None
+
+    rows, stats = jf.deduplicate_jobs([first, second])
+
+    assert int(stats["outputCount"]) == 2
+    assert int(stats["mergedCount"]) == 0
+    assert int(stats["sheetRoleBucketGuardBlockedCount"]) == 2
+    assert int(stats["googleSheetsGenericRoleGuardBlockedCount"]) == 2
+    assert sorted(row.jobLink for row in rows) == sorted([first.jobLink, second.jobLink])
+
+
+def test_deduplicate_jobs_prefers_specific_animation_title_for_same_url() -> None:
+    broad = _google_sheets_job(
+        title="Animator",
+        company="Example Games",
+        link="https://jobs.example.com/postings/12345",
+        source_job_id="sheet-animator",
+    )
+    specific = _google_sheets_job(
+        title="Technical Cinematic Animator",
+        company="Example Games",
+        link="https://jobs.example.com/postings/12345",
+        source_job_id="sheet-specific-animator",
+    )
+    assert broad is not None
+    assert specific is not None
+
+    rows, stats = jf.deduplicate_jobs([broad, specific])
+
+    assert int(stats["outputCount"]) == 1
+    assert int(stats["mergedCount"]) == 1
+    assert rows[0].title == "Technical Cinematic Animator"
+
+
+def test_deduplicate_jobs_does_not_replace_qualified_animation_bucket_with_lateral_title() -> None:
+    broad = _google_sheets_job(
+        title="Technical Animator",
+        company="Example Games",
+        link="https://jobs.example.com/postings/12345",
+        source_job_id="sheet-technical-animator",
+    )
+    lateral = _google_sheets_job(
+        title="Cinematic Animator",
+        company="Example Games",
+        link="https://jobs.example.com/postings/12345",
+        source_job_id="sheet-cinematic-animator",
+    )
+    assert broad is not None
+    assert lateral is not None
+
+    rows, stats = jf.deduplicate_jobs([broad, lateral])
+
+    assert int(stats["outputCount"]) == 1
+    assert int(stats["mergedCount"]) == 1
+    assert rows[0].title == "Technical Animator"
+
+
 def test_deduplicate_jobs_still_merges_google_sheets_generic_role_bucket_same_url() -> None:
     first = _google_sheets_job(
         title="Localization",

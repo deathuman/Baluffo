@@ -338,6 +338,133 @@ def test_canonicalize_google_sheets_rows_repairs_category_titles_from_safe_url_s
     assert not drop_reasons
 
 
+def test_canonicalize_google_sheets_rows_repairs_broad_animation_titles_from_safe_url_slugs() -> (
+    None
+):
+    rows = [
+        {
+            "sourceJobId": "sheet-1",
+            "title": "Animator",
+            "company": "Activision",
+            "city": "Remote",
+            "country": "Unknown",
+            "workType": "Remote",
+            "contractType": "Full-time",
+            "jobLink": "https://careers.activision.com/job/R026851/Expert-Technical-Animator",
+            "sector": "Game",
+        },
+        {
+            "sourceJobId": "sheet-2",
+            "title": "Animation",
+            "company": "Activision",
+            "city": "Remote",
+            "country": "Unknown",
+            "workType": "Remote",
+            "contractType": "Full-time",
+            "jobLink": "https://careers.activision.com/job/R026851/Expert-Technical-Animator",
+            "sector": "Game",
+        },
+        {
+            "sourceJobId": "sheet-3",
+            "title": "Technical Animator",
+            "company": "Xbox Game Studios",
+            "city": "Malmo",
+            "country": "SE",
+            "workType": "Hybrid",
+            "contractType": "Full-time",
+            "jobLink": (
+                "https://xboxgaming.wd1.myworkdayjobs.com/en-US/External/job/Malm/"
+                "Expert-Technical-Animator_R026851"
+            ),
+            "sector": "Game",
+        },
+    ]
+
+    canonical_rows, drop_reasons, _stats = jf.canonicalize_google_sheets_rows(
+        rows,
+        source="google_sheets_1er2oaxo",
+        fetched_at="2026-03-13T00:00:00+00:00",
+    )
+
+    assert [row.title for row in canonical_rows] == [
+        "Expert Technical Animator",
+        "Expert Technical Animator",
+        "Expert Technical Animator",
+    ]
+    assert not drop_reasons
+
+
+def test_canonicalize_google_sheets_rows_preserves_broad_title_when_url_is_not_stricter() -> None:
+    canonical_rows, drop_reasons, _stats = jf.canonicalize_google_sheets_rows(
+        [
+            {
+                "sourceJobId": "sheet-1",
+                "title": "Animator",
+                "company": "Example Games",
+                "city": "Remote",
+                "country": "Unknown",
+                "workType": "Remote",
+                "contractType": "Full-time",
+                "jobLink": "https://example.com/jobs/animator_123",
+                "sector": "Game",
+            }
+        ],
+        source="google_sheets",
+        fetched_at="2026-03-13T00:00:00+00:00",
+    )
+
+    assert [row.title for row in canonical_rows] == ["Animator"]
+    assert not drop_reasons
+
+
+def test_canonicalize_google_sheets_rows_preserves_qualified_broad_title_for_lateral_url_slug() -> (
+    None
+):
+    canonical_rows, drop_reasons, _stats = jf.canonicalize_google_sheets_rows(
+        [
+            {
+                "sourceJobId": "sheet-1",
+                "title": "Technical Animator",
+                "company": "Example Games",
+                "city": "Remote",
+                "country": "Unknown",
+                "workType": "Remote",
+                "contractType": "Full-time",
+                "jobLink": "https://example.com/jobs/Cinematic-Animator_123",
+                "sector": "Game",
+            }
+        ],
+        source="google_sheets",
+        fetched_at="2026-03-13T00:00:00+00:00",
+    )
+
+    assert [row.title for row in canonical_rows] == ["Technical Animator"]
+    assert not drop_reasons
+
+
+def test_canonicalize_google_sheets_rows_strips_short_numeric_ats_suffixes() -> None:
+    canonical_rows, drop_reasons, _stats = jf.canonicalize_google_sheets_rows(
+        [
+            {
+                "sourceJobId": "sheet-1",
+                "title": "Product-management",
+                "company": "Example Games",
+                "city": "Remote",
+                "country": "Unknown",
+                "workType": "Remote",
+                "contractType": "Full-time",
+                "jobLink": "https://example.com/jobs/Senior-Product-Manager_123",
+                "sector": "Game",
+            }
+        ],
+        source="google_sheets",
+        fetched_at="2026-03-13T00:00:00+00:00",
+    )
+
+    assert [row.title for row in canonical_rows] == ["Senior Product Manager"]
+    assert not drop_reasons
+
+
 def test_canonicalize_google_sheets_rows_preserves_opaque_category_title_urls() -> None:
     canonical_rows, drop_reasons, _stats = jf.canonicalize_google_sheets_rows(
         [

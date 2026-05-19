@@ -100,6 +100,9 @@ const QUICK_FILTER_PREFS_KEY = "baluffo_quick_filter_prefs";
 const JOBS_PIPELINE_STATUS_POLL_MS = 1500;
 const JOBS_PIPELINE_STATUS_IDLE_POLL_MS = 5000;
 const JOBS_BRIDGE_REQUEST_TIMEOUT_MS = 1800;
+const JOBS_BOOTSTRAP_START_TIMEOUT_MS = 30000;
+const JOBS_BOOTSTRAP_START_CONFIRM_MS = 20000;
+const JOBS_BOOTSTRAP_START_CONFIRM_INTERVAL_MS = 1000;
 const JOBS_FIRST_LOAD_REQUEST_TIMEOUT_MS = 4500;
 
 const PROFESSION_LABELS = jobsStateModule.PROFESSION_LABELS || {};
@@ -245,6 +248,9 @@ jobsBoot = createJobsBoot({
   markJobsFirstInteractive: jobsRuntime.markJobsFirstInteractive,
   isDesktopRuntimeMode: jobsRuntime.isDesktopRuntimeMode,
   desktopJobsColdStart: Boolean(adminConfig.DESKTOP_JOBS_COLD_START),
+  bootstrapStartTimeoutMs: JOBS_BOOTSTRAP_START_TIMEOUT_MS,
+  bootstrapConfirmTimeoutMs: JOBS_BOOTSTRAP_START_CONFIRM_MS,
+  bootstrapConfirmIntervalMs: JOBS_BOOTSTRAP_START_CONFIRM_INTERVAL_MS,
   isJobsCacheStale,
   jobsCacheTtlMs: JOBS_CACHE_TTL_MS,
   applyPendingAutoRefreshSignal: (...args) => jobsPageFlow.applyPendingAutoRefreshSignal(...args),

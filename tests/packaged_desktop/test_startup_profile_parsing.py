@@ -107,6 +107,7 @@ def test_startup_profile_required_events_include_window_and_page_ready_markers()
         "desktop_window_created",
         "desktop_shell_window_shown",
         "jobs_module_boot_start",
+        "jobs_auth_ready",
         "jobs_first_render",
         "jobs_first_interactive",
     )
@@ -485,6 +486,73 @@ def test_startup_profile_summary_prefers_timestamps_over_mixed_elapsed_ms_clocks
     assert stages["auth_ready_to_first_render"]["durationMs"] == 100
     assert summary["firstUsableEvent"] == "jobs_first_interactive"
     assert summary["firstUsableMs"] == 5900
+
+
+def test_startup_profile_summary_splits_bridge_ready_before_window_launch() -> None:
+    rows = [
+        {
+            "ts": "2026-03-10T12:00:00+00:00",
+            "event": "desktop_launch_start",
+            "fields": {"elapsedMs": 0},
+        },
+        {
+            "ts": "2026-03-10T12:00:00.500000+00:00",
+            "event": "desktop_site_ready",
+            "fields": {"elapsedMs": 500},
+        },
+        {
+            "ts": "2026-03-10T12:00:01.600000+00:00",
+            "event": "desktop_bridge_ready_before_window",
+            "fields": {"elapsedMs": 1600},
+        },
+        {
+            "ts": "2026-03-10T12:00:02.050000+00:00",
+            "event": "desktop_window_created",
+            "fields": {"elapsedMs": 2050},
+        },
+        {
+            "ts": "2026-03-10T12:00:02.055000+00:00",
+            "event": "desktop_shell_window_shown",
+            "fields": {"elapsedMs": 2055},
+        },
+        {
+            "ts": "2026-03-10T12:00:02.200000+00:00",
+            "event": "jobs_module_boot_start",
+            "payload": {"elapsedMs": 2200},
+        },
+        {
+            "ts": "2026-03-10T12:00:02.240000+00:00",
+            "event": "jobs_local_data_init_ready",
+            "payload": {"elapsedMs": 2240},
+        },
+        {
+            "ts": "2026-03-10T12:00:02.310000+00:00",
+            "event": "jobs_auth_ready",
+            "payload": {"elapsedMs": 2310},
+        },
+        {
+            "ts": "2026-03-10T12:00:02.320000+00:00",
+            "event": "jobs_first_render",
+            "payload": {"elapsedMs": 2320},
+        },
+        {
+            "ts": "2026-03-10T12:00:02.330000+00:00",
+            "event": "jobs_first_interactive",
+            "payload": {"elapsedMs": 2330},
+        },
+    ]
+
+    summary = summarize_startup_metrics(rows, page="jobs", profile_mode="cold")
+    stages = {stage["key"]: stage for stage in summary["stages"]}
+
+    assert "site_ready_to_window_created" not in stages
+    assert stages["site_ready_to_bridge_ready"]["durationMs"] == 1100
+    assert stages["site_ready_to_bridge_ready"]["status"] == "passed"
+    assert stages["bridge_ready_to_window_created"]["durationMs"] == 450
+    assert stages["bridge_ready_to_window_created"]["status"] == "passed"
+    assert summary["classification"] == "desktop bridge startup delayed"
+    assert summary["status"] == "passed"
+    assert summary["perfRegressions"] == []
 
 
 def test_startup_profile_summary_uses_inferred_shell_window_fallback_when_visibility_not_observed() -> (

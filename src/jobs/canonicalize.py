@@ -394,6 +394,33 @@ _GOOGLE_SHEETS_TITLECASE_UPPER_TOKENS = frozenset(
         "xr",
     }
 )
+_GOOGLE_SHEETS_REPAIRABLE_BROAD_ROLE_TOKENS = frozenset(
+    {
+        "3d",
+        "animation",
+        "animator",
+        "animators",
+        "cinematic",
+        "cinematics",
+        "technical",
+    }
+)
+_GOOGLE_SHEETS_ANIMATION_FAMILY_TOKENS = frozenset({"animation", "animator", "animators"})
+_GOOGLE_SHEETS_SPECIFIC_TITLE_TOKENS = frozenset(
+    {
+        "advanced",
+        "associate",
+        "cinematic",
+        "cinematics",
+        "expert",
+        "lead",
+        "principal",
+        "senior",
+        "sr",
+        "staff",
+        "technical",
+    }
+)
 
 
 def _looks_like_google_sheets_opaque_slug_segment(segment: str) -> bool:
@@ -425,7 +452,7 @@ def _strip_google_sheets_title_slug_ids(segment: str) -> str:
         return ""
     slug = re.sub(r"^\d{6,}[-_]+", "", slug)
     slug = re.sub(
-        r"[-_]+(?:r|jr|req|job|wd)?\d{4,}[a-z0-9]*$",
+        r"[-_]+(?:r|jr|req|job|wd)?\d{3,}[a-z0-9]*$",
         "",
         slug,
         flags=re.IGNORECASE,
@@ -451,6 +478,55 @@ def _google_sheets_titlecase_from_slug_text(text: str) -> str:
         else:
             title_words.append(lower.capitalize())
     return " ".join(title_words)
+
+
+def _google_sheets_title_tokens(value: Any) -> list[str]:
+    raw = clean_text(value)
+    if not raw:
+        return []
+    return [
+        token.lower() for token in re.findall(r"[A-Za-z0-9+#]+", raw.replace("&", " ")) if token
+    ]
+
+
+def _google_sheets_animation_family(value: Any) -> set[str]:
+    tokens = set(_google_sheets_title_tokens(value))
+    return {"animation"} if tokens & _GOOGLE_SHEETS_ANIMATION_FAMILY_TOKENS else set()
+
+
+def _is_google_sheets_repairable_broad_title(value: Any) -> bool:
+    tokens = _google_sheets_title_tokens(value)
+    if not tokens or len(tokens) > 3:
+        return False
+    token_set = set(tokens)
+    return bool(token_set & _GOOGLE_SHEETS_ANIMATION_FAMILY_TOKENS) and token_set.issubset(
+        _GOOGLE_SHEETS_REPAIRABLE_BROAD_ROLE_TOKENS
+    )
+
+
+def _is_stricter_same_family_google_sheets_title(original: str, candidate: str) -> bool:
+    if norm_text(original) == norm_text(candidate):
+        return False
+    original_family = _google_sheets_animation_family(original)
+    if not original_family:
+        return False
+    if not original_family & _google_sheets_animation_family(candidate):
+        return False
+    original_tokens = _google_sheets_title_tokens(original)
+    candidate_tokens = _google_sheets_title_tokens(candidate)
+    if len(candidate_tokens) <= len(original_tokens):
+        return False
+    original_required_tokens = set(original_tokens) - _GOOGLE_SHEETS_ANIMATION_FAMILY_TOKENS
+    if not original_required_tokens.issubset(set(candidate_tokens)):
+        return False
+    candidate_gain = set(candidate_tokens) - set(original_tokens)
+    return bool(candidate_gain & _GOOGLE_SHEETS_SPECIFIC_TITLE_TOKENS)
+
+
+def _should_accept_google_sheets_repaired_title(original: str, candidate: str) -> bool:
+    if not _is_google_sheets_repairable_broad_title(original):
+        return True
+    return _is_stricter_same_family_google_sheets_title(original, candidate)
 
 
 def _google_sheets_title_candidate_from_slug(segment: str) -> str:
@@ -522,11 +598,12 @@ def _derive_google_sheets_title_from_url(
 ) -> str:
     if not clean_text(source).startswith("google_sheets"):
         return ""
-    if not _is_google_sheets_category_label(title):
+    repairable_broad_title = _is_google_sheets_repairable_broad_title(title)
+    if not _is_google_sheets_category_label(title) and not repairable_broad_title:
         return ""
     for segment in _google_sheets_title_slug_segments(job_link):
         candidate = _google_sheets_title_candidate_from_slug(segment)
-        if candidate:
+        if candidate and _should_accept_google_sheets_repaired_title(title, candidate):
             return candidate
     return ""
 
@@ -578,6 +655,8 @@ def _google_sheets_repaired_title_or_reason(
         return title, ""
     hydrated_title = title_hydration_resolver.resolve_title(job_link)
     if not hydrated_title:
+        return title, ""
+    if not _should_accept_google_sheets_repaired_title(title, hydrated_title):
         return title, ""
     return _validated_opening_title_or_reason(
         title=hydrated_title,
@@ -1559,7 +1638,10 @@ def _google_sheet_title_hydration_candidate_link(
         return ""
     if (
         not clean_text(source).startswith("google_sheets")
-        or not _is_google_sheets_category_label(title)
+        or (
+            not _is_google_sheets_category_label(title)
+            and not _is_google_sheets_repairable_broad_title(title)
+        )
         or looks_like_source_specific_static_noise_row(
             title=title,
             job_link=normalized_link,
