@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 
 from src.jobs.common.registry_defaults import REDUNDANT_STATIC_IF_PROVIDER
 from src.source_registry import source_identity
+from src.url_hosts import host_matches_domain
 
 from .config import SUPPORTED_PROVIDERS
 from .provider_inference import infer_provider_adapter, provider_candidate
@@ -155,7 +156,7 @@ def _current_url(row: dict[str, Any]) -> str:
 
 def _host(url: str) -> str:
     try:
-        host = (urlparse(url).netloc or "").strip().lower()
+        host = (urlparse(url).hostname or "").strip().lower()
     except ValueError:
         return ""
     return host[4:] if host.startswith("www.") else host
@@ -182,19 +183,19 @@ def _redundant_rule_for_host(host: str) -> dict[str, Any]:
 def _unsupported_provider_family(url: str) -> str:
     host = _host(url)
     path = (urlparse(url).path or "").lower()
-    if host.endswith("oraclecloud.com") and "/hcmui/candidateexperience/" in path:
+    if host_matches_domain(host, "oraclecloud.com") and "/hcmui/candidateexperience/" in path:
         return "oracle_hcm"
-    if "icims.com" in host:
+    if host_matches_domain(host, "icims.com"):
         return "icims"
-    if "successfactors.com" in host:
+    if host_matches_domain(host, "successfactors.com"):
         return "successfactors"
-    if host.endswith("csod.com") or ".csod.com" in host:
+    if host_matches_domain(host, "csod.com"):
         return "cornerstone_csod"
-    if host.endswith("homerun.co") or ".homerun.co" in host:
+    if host_matches_domain(host, "homerun.co"):
         return "homerun"
-    if host == "hrmos.co" or host.endswith(".hrmos.co"):
+    if host_matches_domain(host, "hrmos.co"):
         return "hrmos"
-    if "jobvite.com" in host:
+    if host_matches_domain(host, "jobvite.com"):
         return "jobvite"
     return ""
 

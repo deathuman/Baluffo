@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
 CHECKPOINT_TAG_NAME = "last-known-good"
 CHECKPOINT_ROLLBACK_TAG_PREFIX = "rollback-"
+_FULL_SHA_RE = re.compile(r"\A[0-9a-fA-F]{40}\Z")
 
 
 @dataclass(frozen=True)
@@ -88,6 +90,16 @@ def build_checkpoint_tag_plan(
             checkpoint_date,
             (),
             "missing_commit_sha",
+        )
+    if not _FULL_SHA_RE.fullmatch(normalized_sha):
+        return CheckpointTagPlan(
+            False,
+            normalized_branch,
+            normalized_conclusion,
+            normalized_sha,
+            checkpoint_date,
+            (),
+            "invalid_commit_sha",
         )
     return CheckpointTagPlan(
         True,

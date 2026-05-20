@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 from src.jobs.transport import normalize_url as normalize_job_url
 from src.shared.regex import find_urls_in_text
 from src.source_registry import normalize_source_url
+from src.url_hosts import host_matches_domain
 
 
 def _is_ignored_job_href(href: str) -> bool:
@@ -33,7 +34,7 @@ def _is_ignored_job_url(url: str) -> bool:
 
 
 def _is_general_application_url(parsed: object) -> bool:
-    netloc = (getattr(parsed, "netloc", "") or "").lower()
+    host = (getattr(parsed, "hostname", "") or "").lower()
     path = (getattr(parsed, "path", "") or "").lower()
     if any(
         token in path
@@ -51,7 +52,7 @@ def _is_general_application_url(parsed: object) -> bool:
         )
     ):
         return True
-    if "greenhouse.io" not in netloc:
+    if not host_matches_domain(host, "greenhouse.io"):
         return False
     parts = [part for part in path.strip("/").split("/") if part]
     return bool(len(parts) >= 3 and parts[1] == "jobs" and parts[0].endswith("oa"))
@@ -105,19 +106,20 @@ def _embedded_job_url_candidates(absolute: str) -> list[str]:
     low = absolute.lower()
     if _is_ignored_job_url(absolute):
         return []
+    parsed = urlparse(absolute)
+    host = (parsed.hostname or "").lower()
     if "jobs.lever.co/" in low:
         return [absolute] if _is_lever_posting_url(absolute) else []
-    if any(token in low for token in ("boards.greenhouse.io/", "jobs.ashbyhq.com/")):
+    if host in {"boards.greenhouse.io", "jobs.ashbyhq.com"}:
         return [absolute]
-    if ".jobs.personio.de/" in low:
+    if host_matches_domain(host, "jobs.personio.de"):
         out = [absolute]
         search_url = normalize_job_url(absolute.rstrip("/") + "/search.json")
         if search_url and not low.endswith("/search.json"):
             out.append(search_url)
         return out
-    if "jobs.smartrecruiters.com/" in low or "apply.workable.com/" in low:
+    if host in {"jobs.smartrecruiters.com", "apply.workable.com"}:
         return [absolute]
-    parsed = urlparse(absolute)
     path = (parsed.path or "").lower()
     return [absolute] if not _is_ignored_job_url(absolute) and _is_job_like_path(path) else []
 
@@ -186,7 +188,7 @@ def extract_embedded_job_urls(html: str, base_url: str) -> list[str]:
 
 def extract_workable_account(url: str) -> str:
     parsed = urlparse(str(url or "").strip())
-    if "apply.workable.com" not in (parsed.netloc or "").lower():
+    if (parsed.hostname or "").lower() != "apply.workable.com":
         return ""
     parts = [part for part in (parsed.path or "").split("/") if part]
     if not parts:
@@ -359,8 +361,8 @@ def extract_external_job_links_from_scripts(
 
 
 def extract_text_job_signals(html: str, page_url: str) -> list[str]:
-    sanitized = re.sub(r"(?is)<script[^>]*>.*?</script>", " ", html)
-    sanitized = re.sub(r"(?is)<style[^>]*>.*?</style>", " ", sanitized)
+    sanitized = re.sub(r"(?is)<script\b[^>]*>.*?</script\s*>", " ", html)
+    sanitized = re.sub(r"(?is)<style\b[^>]*>.*?</style\s*>", " ", sanitized)
     text = re.sub(r"(?is)<[^>]+>", " ", sanitized)
     text = re.sub(r"\s+", " ", text).strip().lower()
     if not text:

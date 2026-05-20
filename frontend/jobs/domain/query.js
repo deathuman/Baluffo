@@ -74,11 +74,11 @@ export function fullCountryName(code, options = {}) {
 export function sanitizePublicText(value) {
   const decoded = String(value || "")
     .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
     .replace(/&quot;/gi, "\"")
-    .replace(/&#39;/gi, "'");
+    .replace(/&#39;/gi, "'")
+    .replace(/&amp;/gi, "&");
   const stripped = decoded.replace(/<[^>]+>/gi, " ");
   const normalized = stripped.replace(/\s+/g, " ").trim();
   if (!normalized) return "";

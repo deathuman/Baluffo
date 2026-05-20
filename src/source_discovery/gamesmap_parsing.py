@@ -37,8 +37,8 @@ def _as_list(value: Any) -> list[Any]:
 
 
 def _strip_html_tags(html: str) -> str:
-    text = re.sub(r"(?is)<script[^>]*>.*?</script>", " ", str(html or ""))
-    text = re.sub(r"(?is)<style[^>]*>.*?</style>", " ", text)
+    text = re.sub(r"(?is)<script\b[^>]*>.*?</script\s*>", " ", str(html or ""))
+    text = re.sub(r"(?is)<style\b[^>]*>.*?</style\s*>", " ", text)
     text = re.sub(r"(?s)<[^>]+>", " ", text)
     return re.sub(r"\s+", " ", text).strip()
 

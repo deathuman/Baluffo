@@ -4,6 +4,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from src.source_registry import unique_sources
+from src.url_hosts import host_matches_domain, host_matches_subdomain
 
 from .config import SUPPORTED_PROVIDERS
 from .scoring import careers_keyword_count, clean_token, to_slug, unique_string_list
@@ -44,7 +45,7 @@ def provider_reinforcement_score(seed: dict[str, Any], provider: str) -> int:
     if not careers_url:
         return 0
     parsed = urlparse(careers_url)
-    host = (parsed.netloc or "").lower()
+    host = (parsed.hostname or "").lower()
     path = (parsed.path or "").lower()
     if provider == "teamtailor":
         return _teamtailor_reinforcement_score(careers_url, host, path)
@@ -52,18 +53,18 @@ def provider_reinforcement_score(seed: dict[str, Any], provider: str) -> int:
 
 
 def _host_reinforcement_score(provider: str, host: str, path: str) -> int:
-    host_markers = {
-        "greenhouse": ("greenhouse",),
+    host_domains = {
+        "greenhouse": ("greenhouse.io",),
         "lever": ("lever.co",),
-        "smartrecruiters": ("smartrecruiters",),
-        "workable": ("workable",),
-        "ashby": ("ashbyhq",),
-        "recruitee": (".recruitee.com",),
-        "pinpoint": (".pinpointhq.com",),
-        "personio": (".jobs.personio.de",),
+        "smartrecruiters": ("smartrecruiters.com",),
+        "workable": ("workable.com",),
+        "ashby": ("ashbyhq.com",),
+        "recruitee": ("recruitee.com",),
+        "pinpoint": ("pinpointhq.com",),
+        "personio": ("jobs.personio.de",),
     }
-    markers = host_markers.get(provider, ())
-    if any(marker in host for marker in markers):
+    domains = host_domains.get(provider, ())
+    if any(host_matches_domain(host, domain) for domain in domains):
         return 18
     if provider == "greenhouse" and "greenhouse" in path:
         return 18
@@ -71,7 +72,7 @@ def _host_reinforcement_score(provider: str, host: str, path: str) -> int:
 
 
 def _teamtailor_reinforcement_score(careers_url: str, host: str, path: str) -> int:
-    if ".teamtailor.com" in host:
+    if host_matches_subdomain(host, "teamtailor.com"):
         return 18
     if path.startswith("/jobs") and careers_keyword_count(careers_url):
         return 8
@@ -209,7 +210,7 @@ def _ashby_pattern_row(base: dict[str, Any], studio: str, alias: str) -> dict[st
 
 
 def _recruitee_pattern_row(base: dict[str, Any], studio: str, alias: str) -> dict[str, Any]:
-    host = alias if ".recruitee.com" in alias else f"{alias}.recruitee.com"
+    host = alias if host_matches_subdomain(alias, "recruitee.com") else f"{alias}.recruitee.com"
     return {
         **base,
         "name": f"{studio} (Recruitee)",
@@ -220,7 +221,7 @@ def _recruitee_pattern_row(base: dict[str, Any], studio: str, alias: str) -> dic
 
 
 def _pinpoint_pattern_row(base: dict[str, Any], studio: str, alias: str) -> dict[str, Any]:
-    host = alias if ".pinpointhq.com" in alias else f"{alias}.pinpointhq.com"
+    host = alias if host_matches_subdomain(alias, "pinpointhq.com") else f"{alias}.pinpointhq.com"
     return {
         **base,
         "name": f"{studio} (Pinpoint)",

@@ -18,6 +18,7 @@ from src.source_registry_state import (
     transition_registry_to_pending,
     transition_registry_to_rejected,
 )
+from src.url_hosts import url_host_matches_domain
 
 SOURCE_HEALTH_FIELD_NAMES = (
     "healthScore",
@@ -750,7 +751,7 @@ def _source_state_url_identity_keys(row: dict[str, Any]) -> list[str]:
         if not url:
             continue
         keys.append(url)
-        if adapter == "recruitee" and "recruitee.com" in url.lower():
+        if adapter == "recruitee" and url_host_matches_domain(url, "recruitee.com"):
             keys.append(f"recruitee:api_url:{url}")
         elif adapter == "teamtailor":
             keys.append(f"teamtailor:listing_url:{url}")

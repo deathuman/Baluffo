@@ -78,6 +78,7 @@ APP_RUNTIME_SCRIPTS = (
     "source_sync_shard.py",
     "source_sync_snapshot.py",
     "source_sync.py",
+    "url_hosts.py",
     "storage_metrics.py",
     "local_data_store_attachments.py",
     "local_data_store_backup.py",

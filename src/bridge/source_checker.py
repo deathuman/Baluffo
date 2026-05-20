@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import urlparse
 
 from src.source_discovery.provider_inference import infer_web_candidate
 from src.source_registry import normalize_source_url
+from src.url_hosts import host_matches_subdomain
 
 
 def _as_list(value: Any) -> list[Any]:
@@ -33,7 +36,7 @@ def _extract_static_module_signals(html: str, page_url: str) -> list[str]:
         signals.append(f"signal:job_openings_module:{normalize_source_url(page_url) or page_url}")
     if "sumo-lever-integration" in low or "sumo_lever_filter" in low:
         signals.append(f"signal:sumo_lever_module:{normalize_source_url(page_url) or page_url}")
-    if "apply.workable.com/" in low:
+    if re.search(r"https?://apply[.]workable[.]com/", low):
         signals.append(f"signal:workable_embed:{normalize_source_url(page_url) or page_url}")
     return signals
 
@@ -151,8 +154,10 @@ def check_static_source(
         # _collect_embedded_signals
         for embedded_link in html_extractor.extract_embedded_job_urls(html, page_url):
             weak_links.add(embedded_link)
-            low_embedded = str(embedded_link or "").lower()
-            if low_embedded.endswith("/search.json") and ".jobs.personio.de/" in low_embedded:
+            parsed_embedded = urlparse(str(embedded_link or ""))
+            if (parsed_embedded.path or "").lower().endswith("/search.json") and (
+                host_matches_subdomain(parsed_embedded.hostname, "jobs.personio.de")
+            ):
                 try:
                     personio_json = fetch_text(embedded_link, timeout_s)
                     personio_count = html_extractor.parse_personio_search_count(personio_json)

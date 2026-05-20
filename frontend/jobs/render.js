@@ -64,21 +64,40 @@ function compactStaticSourceLabel(rawName) {
   return "Static source";
 }
 
+function sourceUrlHostMatches(sourceUrl, domain) {
+  try {
+    const host = new URL(String(sourceUrl || "")).hostname.toLowerCase().replace(/\.$/, "");
+    const normalizedDomain = String(domain || "").toLowerCase().replace(/^\./, "");
+    return Boolean(
+      host
+      && normalizedDomain
+      && (host === normalizedDomain || host.endsWith(`.${normalizedDomain}`))
+    );
+  } catch {
+    return false;
+  }
+}
+
 function detectAdapterFromSource(sourceName, sourceUrl) {
   const name = String(sourceName || "").toLowerCase();
-  const url = String(sourceUrl || "").toLowerCase();
 
   // Check for common adapter patterns
-  if (name.includes("lever") || url.includes("lever.co")) return "Lever";
-  if (name.includes("greenhouse") || url.includes("greenhouse.io") || url.includes("app.greenhouse.io")) return "Greenhouse";
-  if (name.includes("teamtailor") || url.includes("teamtailor.com")) return "Teamtailor";
-  if (name.includes("smartrecruiters") || url.includes("smartrecruiters.com")) return "SmartRecruiters";
-  if (name.includes("workable") || url.includes("workable.com")) return "Workable";
-  if (name.includes("personio") || url.includes("personio.com")) return "Personio";
-  if (name.includes("ashby") || url.includes("ashbyhq.com")) return "Ashby";
-  if (name.includes("pinpoint") || url.includes("pinpointhq.com")) return "Pinpoint";
-  if (name.includes("recruitee") || url.includes("recruitee.com")) return "Recruitee";
-  if (name.includes("gamesmap") || url.includes("gamesmap.com")) return "Gamesmap";
+  if (name.includes("lever") || sourceUrlHostMatches(sourceUrl, "lever.co")) return "Lever";
+  if (name.includes("greenhouse") || sourceUrlHostMatches(sourceUrl, "greenhouse.io")) {
+    return "Greenhouse";
+  }
+  if (name.includes("teamtailor") || sourceUrlHostMatches(sourceUrl, "teamtailor.com")) {
+    return "Teamtailor";
+  }
+  if (name.includes("smartrecruiters") || sourceUrlHostMatches(sourceUrl, "smartrecruiters.com")) {
+    return "SmartRecruiters";
+  }
+  if (name.includes("workable") || sourceUrlHostMatches(sourceUrl, "workable.com")) return "Workable";
+  if (name.includes("personio") || sourceUrlHostMatches(sourceUrl, "personio.com")) return "Personio";
+  if (name.includes("ashby") || sourceUrlHostMatches(sourceUrl, "ashbyhq.com")) return "Ashby";
+  if (name.includes("pinpoint") || sourceUrlHostMatches(sourceUrl, "pinpointhq.com")) return "Pinpoint";
+  if (name.includes("recruitee") || sourceUrlHostMatches(sourceUrl, "recruitee.com")) return "Recruitee";
+  if (name.includes("gamesmap") || sourceUrlHostMatches(sourceUrl, "gamesmap.com")) return "Gamesmap";
   if (name.includes("sheet") || name.includes("google")) return "Sheet";
 
   return "Manual Website";

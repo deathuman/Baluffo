@@ -17,6 +17,8 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from src.url_hosts import url_host_matches_domain
+
 FETCH_REPORT_NAME = "jobs-fetch-report.json"
 PARSER_DIRECTORY_CAUSES = {
     "parser_or_directory_text_pollution",
@@ -147,7 +149,7 @@ def _sample_family(row: dict[str, Any]) -> tuple[str, str]:
         or any(fragment in link for fragment in parser_noise_links)
     ):
         return "parser_static_noise", "fix_static_extraction_filter"
-    if not static_source and ("/rd/" in link or "gracklehq.com" in link):
+    if not static_source and ("/rd/" in link or url_host_matches_domain(link, "gracklehq.com")):
         return "provider_or_job_detail_candidate", "review_provider_identity_or_sparse_key"
     return "needs_manual_review", "manual_dedup_review"
 

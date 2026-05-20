@@ -17,6 +17,7 @@ from src.source_discovery.url_patches import (
     save_url_patch_manifest,
 )
 from src.source_registry import URL_PATCH_MANIFEST_PATH, load_json_object, normalize_source_url
+from src.url_hosts import url_host_matches_domain
 
 DEFAULT_REPORT_PATH = Path("data/source-discovery-report.json")
 
@@ -25,7 +26,7 @@ async def _auto_resolve(redirects):
     results = {}
     for row in redirects:
         original = normalize_source_url(str(row.get("url") or ""))
-        if not original or "linkedin.com" in original.lower():
+        if not original or url_host_matches_domain(original, "linkedin.com"):
             continue
         final_url, status, _chain = await resolve_url(original)
         normalized_final = normalize_source_url(final_url)

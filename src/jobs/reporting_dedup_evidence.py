@@ -23,6 +23,7 @@ from src.jobs.common.smartrecruiters_identity import (
 from src.jobs.models import CanonicalJob
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
 from src.shared.json_shapes import json_object_rows
+from src.url_hosts import host_matches_domain
 
 TOP_MERGED_LIMIT = 10
 RISKY_EXAMPLE_LIMIT = 10
@@ -1528,7 +1529,7 @@ def _is_wargaming_greenhouse_careers_vacancy_alias(
     provider_values = [*provider_ids, *provider_urls]
     has_wargaming_greenhouse = any(
         "wargamingen" in norm_text(value) for value in provider_values
-    ) and any("greenhouse.io" in _url_host(url) for url in provider_urls)
+    ) and any(host_matches_domain(_url_host(url), "greenhouse.io") for url in provider_urls)
     has_wargaming_vacancy_detail = any(
         _url_host(url) == "wargaming.com"
         and _url_path(url).lower().startswith("/en/careers/vacancy_")

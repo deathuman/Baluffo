@@ -40,6 +40,7 @@ from src.jobs.text_utils import (
 )
 from src.jobs.transport import PooledRedirectResolver
 from src.shared.utils import env_flag
+from src.url_hosts import host_matches_domain
 
 from .common import config as common_config
 
@@ -565,7 +566,7 @@ def _google_sheets_title_slug_segments(job_link: str) -> list[str]:
     candidates: list[str] = []
     if host == "jobs.smartrecruiters.com" and len(parts) >= 2:
         candidates.append(parts[-1])
-    if host.endswith("myworkdayjobs.com") or "myworkdayjobs.com" in host:
+    if host_matches_domain(host, "myworkdayjobs.com"):
         candidates.append(parts[-1])
 
     lowered_parts = [part.lower() for part in parts]

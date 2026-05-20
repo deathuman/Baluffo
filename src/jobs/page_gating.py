@@ -16,6 +16,7 @@ from src.jobs.adapters.html_parsers import (
 from src.jobs.common.no_openings import contains_no_openings_marker
 from src.jobs.text_utils import clean_text
 from src.scrapers import domain_profiles
+from src.url_hosts import host_matches_domain
 
 _REGULAR_PAGE_TOKENS = (
     "about",
@@ -272,11 +273,17 @@ def _source_specific_words(text: str) -> set[str]:
 
 def _job_link_slug_words(candidate_url: str) -> set[str]:
     parsed = urlparse(clean_text(candidate_url) or "")
-    host = parsed.netloc.lower()
+    host = (parsed.hostname or "").lower()
     parts = [part for part in parsed.path.lower().split("/") if part]
     if host == "itch.io" and len(parts) >= 3 and parts[0] == "j":
         return _source_specific_words(parts[2])
-    if host.endswith(".teamtailor.com") and len(parts) >= 2 and parts[0] == "jobs":
+    if (
+        host != "teamtailor.com"
+        and host != "teamtailor.com"
+        and host_matches_domain(host, "teamtailor.com")
+        and len(parts) >= 2
+        and parts[0] == "jobs"
+    ):
         slug = parts[1]
         slug_parts = slug.split("-", 1)
         if len(slug_parts) == 2 and slug_parts[0].isdigit():
@@ -293,13 +300,23 @@ def _itch_noise(source_lower: str, title: str, job_link: str, host: str) -> bool
     return bool(title_words and slug_words and not title_words.issubset(slug_words))
 
 
+def _source_matches_domain_path(source_url: str, domain: str, path_prefix: str) -> bool:
+    parsed = urlparse(source_url if "://" in source_url else f"https://{source_url}")
+    return host_matches_domain(parsed.hostname, domain) and parsed.path.lower().startswith(
+        path_prefix
+    )
+
+
 def _stardock_noise(source_lower: str, title_lower: str, host: str, path: str) -> bool:
-    if "stardock.com/careers" not in source_lower:
+    if not _source_matches_domain_path(source_lower, "stardock.com", "/careers"):
         return False
-    if host.endswith("stardock.com") and path.startswith("/products"):
+    if host_matches_domain(host, "stardock.com") and path.startswith("/products"):
         return True
     external_non_job = (
-        host and not host.endswith("stardock.com") and "careers" not in path and "jobs" not in path
+        host
+        and not host_matches_domain(host, "stardock.com")
+        and "careers" not in path
+        and "jobs" not in path
     )
     title_noise = (
         "corporate software solutions" in title_lower
@@ -309,9 +326,9 @@ def _stardock_noise(source_lower: str, title_lower: str, host: str, path: str) -
 
 
 def _immutable_noise(source_lower: str, title_lower: str, host: str, path: str) -> bool:
-    if "immutable.com/jobs" not in source_lower:
+    if not _source_matches_domain_path(source_lower, "immutable.com", "/jobs"):
         return False
-    product_page = host.endswith("immutable.com") and not path.startswith("/jobs")
+    product_page = host_matches_domain(host, "immutable.com") and not path.startswith("/jobs")
     marketing_title = (
         "purpose-built for gaming" in title_lower or "automated marketing" in title_lower
     )
@@ -320,7 +337,7 @@ def _immutable_noise(source_lower: str, title_lower: str, host: str, path: str) 
 
 def _wbd_noise(source_lower: str, path: str) -> bool:
     return (
-        "careers.wbd.com/global/en/wb-games-jobs" in source_lower
+        _source_matches_domain_path(source_lower, "careers.wbd.com", "/global/en/wb-games-jobs")
         and "/global/en/c/" in path
         and path.endswith("-jobs")
     )
@@ -333,7 +350,7 @@ def _gs_studio_noise(source_lower: str, title_lower: str, path: str) -> bool:
 
 
 def _flix_noise(source_lower: str, title_lower: str, path: str) -> bool:
-    return "flixinteractive.com" in source_lower and (
+    return _source_matches_domain_path(source_lower, "flixinteractive.com", "/") and (
         "speculative-application" in path
         or "don't see" in title_lower
         or "don’t see" in title_lower
@@ -342,8 +359,8 @@ def _flix_noise(source_lower: str, title_lower: str, path: str) -> bool:
 
 def _stillfront_noise(source_lower: str, host: str) -> bool:
     return (
-        "stillfront.com/en/career/join-the-team" in source_lower
-        and host.endswith(".teamtailor.com")
+        _source_matches_domain_path(source_lower, "stillfront.com", "/en/career/join-the-team")
+        and host_matches_domain(host, "teamtailor.com")
         and host != "stillfront.teamtailor.com"
     )
 
@@ -351,7 +368,9 @@ def _stillfront_noise(source_lower: str, host: str) -> bool:
 def _dorado_noise(source_lower: str, title_lower: str, host: str) -> bool:
     if "doradogames.com/careers" not in source_lower:
         return False
-    external_aggregator = host.endswith("linkedin.com") or host.endswith("mercor.com")
+    external_aggregator = host_matches_domain(host, "linkedin.com") or host_matches_domain(
+        host, "mercor.com"
+    )
     non_game_title = any(
         fragment in title_lower
         for fragment in (
@@ -375,7 +394,9 @@ def _hitica_noise(source_lower: str, title_lower: str, host: str) -> bool:
 
 
 def _baobab_noise(source_lower: str, host: str) -> bool:
-    return "baobabstudios.com/about" in source_lower and host.endswith("linkedin.com")
+    return _source_matches_domain_path(
+        source_lower, "baobabstudios.com", "/about"
+    ) and host_matches_domain(host, "linkedin.com")
 
 
 def _talent_pool_noise(title_lower: str, path: str) -> bool:

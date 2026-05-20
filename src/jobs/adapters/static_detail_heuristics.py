@@ -28,6 +28,7 @@ from src.jobs.page_gating import (
     looks_like_static_parser_noise_title,
 )
 from src.jobs.text_utils import clean_text, norm_text, normalize_url, sanitize_location_text
+from src.url_hosts import host_matches_domain
 
 from .static_runtime_support import StaticSourceRuntimeConfig, _as_dict
 
@@ -348,12 +349,12 @@ def is_probable_job_detail_url(
     default_query_keys: list[str],
 ) -> bool:
     parsed = urlparse(candidate_url)
-    host = parsed.netloc.lower()
+    host = (parsed.hostname or "").lower()
     path = parsed.path.lower()
     query = parsed.query.lower()
-    if host == "linkedin.com" or host.endswith(".linkedin.com") or host.endswith(".linkedin.cn"):
+    if host_matches_domain(host, "linkedin.com") or host_matches_domain(host, "linkedin.cn"):
         return False
-    if host.endswith("larian.com") and "/careers/location/" in path:
+    if host_matches_domain(host, "larian.com") and "/careers/location/" in path:
         return False
     path_tokens = list(default_path_tokens)
     query_keys = list(default_query_keys)
@@ -408,8 +409,8 @@ def add_detail_link(
         link_rejections["dead_listing_page"] += 1
         return
     parsed = urlparse(absolute)
-    host = parsed.netloc.lower()
-    if host == "linkedin.com" or host.endswith(".linkedin.com") or host.endswith(".linkedin.cn"):
+    host = (parsed.hostname or "").lower()
+    if host_matches_domain(host, "linkedin.com") or host_matches_domain(host, "linkedin.cn"):
         link_rejections["dead_listing_page"] += 1
         return
     probable_job_detail = is_probable_job_detail_url(

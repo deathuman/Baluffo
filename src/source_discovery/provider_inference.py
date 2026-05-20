@@ -4,6 +4,8 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import ParseResult, urlparse
 
+from src.url_hosts import host_matches_any_domain_pattern, host_matches_domain
+
 from .scoring import careers_keyword_count, clean_token, studio_domain_match
 
 PROVIDER_DISPLAY_NAMES = {
@@ -23,7 +25,7 @@ PROVIDER_DISPLAY_NAMES = {
     "workday": "Workday",
 }
 
-_HOST_FRAGMENT_ADAPTERS = (
+_HOST_DOMAIN_PATTERNS = (
     ("greenhouse", ("boards.greenhouse.io", "jobs.greenhouse.io", "boards-api.greenhouse.io")),
     ("ashby", ("jobs.ashbyhq.com",)),
     ("bamboohr", ("bamboohr.com", ".bamboohr.com")),
@@ -39,7 +41,7 @@ _HOST_FRAGMENT_ADAPTERS = (
 
 
 def _is_oraclecloud_host(host: str) -> bool:
-    return host == "oraclecloud.com" or host.endswith(".oraclecloud.com")
+    return host_matches_domain(host, "oraclecloud.com")
 
 
 def _is_oracle_hcm_candidate_path(path: str) -> bool:
@@ -54,15 +56,15 @@ def _is_oracle_hcm_candidate_path(path: str) -> bool:
 def infer_provider_adapter(host: str, path: str) -> str | None:
     if _is_oraclecloud_host(host) and _is_oracle_hcm_candidate_path(path):
         return "oracle_hcm"
-    for adapter, fragments in _HOST_FRAGMENT_ADAPTERS:
-        if any(fragment in host for fragment in fragments):
+    for adapter, patterns in _HOST_DOMAIN_PATTERNS:
+        if host_matches_any_domain_pattern(host, patterns):
             return adapter
-    if ("api.lever.co" in host and "/v0/postings/" in path) or (
-        "lever.co" in host and host != "api.lever.co"
+    if (host == "api.lever.co" and "/v0/postings/" in path) or (
+        host_matches_domain(host, "lever.co") and host != "api.lever.co"
     ):
         return "lever"
-    if ("api.smartrecruiters.com" in host and "/companies/" in path) or (
-        "jobs.smartrecruiters.com" in host
+    if (host == "api.smartrecruiters.com" and "/companies/" in path) or (
+        host == "jobs.smartrecruiters.com"
     ):
         return "smartrecruiters"
     return None
@@ -106,7 +108,7 @@ def _greenhouse_candidate(
 ) -> dict[str, Any] | None:
     slug = (
         clean_token(path.split("/boards/", 1)[1].split("/", 1)[0])
-        if "boards-api.greenhouse.io" in host and "/boards/" in path
+        if host == "boards-api.greenhouse.io" and "/boards/" in path
         else clean_token((_path_tokens(path) or [""])[0])
     )
     if not slug:
@@ -140,13 +142,13 @@ def _lever_candidate(
 
 
 def _smartrecruiters_company_id(host: str, path: str) -> str:
-    if "api.smartrecruiters.com" in host and "/companies/" in path:
+    if host == "api.smartrecruiters.com" and "/companies/" in path:
         pieces = _path_tokens(path)
         if "companies" in pieces:
             idx = pieces.index("companies")
             if idx + 1 < len(pieces):
                 return pieces[idx + 1].strip()
-    if "jobs.smartrecruiters.com" in host:
+    if host == "jobs.smartrecruiters.com":
         return (_path_tokens(path) or [""])[0].strip()
     return ""
 
@@ -175,7 +177,11 @@ def _workable_candidate(
     path: str,
     _studio: str,
 ) -> dict[str, Any] | None:
-    if host.endswith(".workable.com") and host != "apply.workable.com":
+    if (
+        host != "workable.com"
+        and host != "apply.workable.com"
+        and host_matches_domain(host, "workable.com")
+    ):
         account = host.split(".workable.com", 1)[0].strip().lower()
     else:
         account = ((_path_tokens(path) or [""])[-1]).strip().lower()
@@ -350,7 +356,7 @@ def _workday_candidate(
     path: str,
     studio: str,
 ) -> dict[str, Any] | None:
-    if not host.endswith(".myworkdayjobs.com"):
+    if host == "myworkdayjobs.com" or not host_matches_domain(host, "myworkdayjobs.com"):
         return None
     listing_path = path.rstrip("/")
     if not listing_path:
@@ -399,7 +405,7 @@ def provider_candidate(
     evidence_score: int,
 ) -> dict[str, Any] | None:
     parsed = urlparse(url)
-    host = (parsed.netloc or "").lower()
+    host = (parsed.hostname or "").lower()
     path = parsed.path or ""
     builder = _PROVIDER_CANDIDATE_BUILDERS.get(adapter)
     if builder is None:
@@ -428,7 +434,7 @@ def infer_web_candidate(
         parsed = urlparse(url)
     except ValueError:
         return None
-    adapter = infer_provider_adapter((parsed.netloc or "").lower(), parsed.path or "")
+    adapter = infer_provider_adapter((parsed.hostname or "").lower(), parsed.path or "")
     if not adapter:
         return None
     evidence_score = (
