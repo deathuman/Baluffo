@@ -300,8 +300,18 @@ def _itch_noise(source_lower: str, title: str, job_link: str, host: str) -> bool
     return bool(title_words and slug_words and not title_words.issubset(slug_words))
 
 
+def _source_url_text(source_url: str) -> str:
+    text = clean_text(source_url)
+    marker = "listing_url:"
+    marker_index = text.lower().rfind(marker)
+    if marker_index >= 0:
+        return text[marker_index + len(marker) :]
+    return text
+
+
 def _source_matches_domain_path(source_url: str, domain: str, path_prefix: str) -> bool:
-    parsed = urlparse(source_url if "://" in source_url else f"https://{source_url}")
+    source_text = _source_url_text(source_url)
+    parsed = urlparse(source_text if "://" in source_text else f"https://{source_text}")
     return host_matches_domain(parsed.hostname, domain) and parsed.path.lower().startswith(
         path_prefix
     )
