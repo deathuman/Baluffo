@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 from urllib.error import URLError
 
+from src import source_sync_crypto as _source_sync_crypto
 from src.shared.github_https import (
     GITHUB_CA_BUNDLE_ENV,
     build_github_ssl_context,
@@ -96,6 +97,100 @@ def normalize_packaged_payload(module: Any, payload: dict[str, Any]) -> dict[str
     }
 
 
+def _decrypt_passphrase_private_key(
+    module: Any, normalized: dict[str, str], env_map: dict[str, str]
+) -> str:
+    passphrase = str(env_map.get(module.PACKAGED_SYNC_PASSPHRASE_ENV) or "").strip()
+    if not passphrase:
+        raise RuntimeError(
+            f"Missing {module.PACKAGED_SYNC_PASSPHRASE_ENV} for passphrase-encrypted sync key."
+        )
+    return module.decrypt_private_key_pem_with_passphrase(
+        normalized["privateKeyPemEnc"],
+        salt_b64=normalized["keySalt"],
+        app_id=normalized["appId"],
+        installation_id=normalized["installationId"],
+        passphrase=passphrase,
+    )
+
+
+def _decrypt_embedded_v2_private_key(
+    module: Any,
+    normalized: dict[str, str],
+    *,
+    passphrase: str,
+) -> str:
+    if passphrase:
+        try:
+            return module.decrypt_private_key_pem_with_passphrase(
+                normalized["privateKeyPemEnc"],
+                salt_b64=normalized["keySalt"],
+                app_id=normalized["appId"],
+                installation_id=normalized["installationId"],
+                passphrase=passphrase,
+            )
+        except Exception:
+            pass
+    return _source_sync_crypto.decrypt_private_key_pem_for_embedded(
+        normalized["privateKeyPemEnc"],
+        salt_b64=normalized["keySalt"],
+        app_id=normalized["appId"],
+        installation_id=normalized["installationId"],
+        hint=normalized["embeddedKeyHint"],
+        version=normalized["embeddedKeyVersion"],
+    )
+
+
+def _decrypt_embedded_private_key(
+    module: Any, normalized: dict[str, str], env_map: dict[str, str]
+) -> str:
+    passphrase = str(env_map.get(module.PACKAGED_SYNC_PASSPHRASE_ENV) or "").strip()
+    if _source_sync_crypto.is_v2_encrypted_private_key(normalized["privateKeyPemEnc"]):
+        return _decrypt_embedded_v2_private_key(
+            module,
+            normalized,
+            passphrase=passphrase,
+        )
+    if not passphrase:
+        passphrase = _source_sync_crypto.build_legacy_embedded_passphrase(
+            hint=normalized["embeddedKeyHint"],
+            version=normalized["embeddedKeyVersion"],
+        )
+    return module.decrypt_private_key_pem_with_passphrase(
+        normalized["privateKeyPemEnc"],
+        salt_b64=normalized["keySalt"],
+        app_id=normalized["appId"],
+        installation_id=normalized["installationId"],
+        passphrase=passphrase,
+    )
+
+
+def _decrypt_encrypted_private_key(
+    module: Any,
+    normalized: dict[str, str],
+    env_map: dict[str, str],
+    *,
+    key_derivation: str,
+) -> tuple[str, str]:
+    if key_derivation == module.KEY_DERIVATION_PASSPHRASE:
+        return _decrypt_passphrase_private_key(module, normalized, env_map), key_derivation
+    if key_derivation == module.KEY_DERIVATION_EMBEDDED:
+        return _decrypt_embedded_private_key(module, normalized, env_map), key_derivation
+    if key_derivation in {"", module.KEY_DERIVATION_MACHINE}:
+        return (
+            module.decrypt_private_key_pem(
+                normalized["privateKeyPemEnc"],
+                salt_b64=normalized["keySalt"],
+                app_id=normalized["appId"],
+                installation_id=normalized["installationId"],
+            ),
+            module.KEY_DERIVATION_MACHINE,
+        )
+    if key_derivation == module.KEY_DERIVATION_PLAINTEXT:
+        return normalized["privateKeyPem"], key_derivation
+    raise RuntimeError(f"Unsupported keyDerivation mode: {key_derivation}")
+
+
 def load_packaged_sync_config(module: Any, *, env: dict[str, str] | None = None) -> Any | None:
     env_map: dict[str, str] = env if isinstance(env, dict) else dict(os.environ)
     config_path = next(
@@ -134,45 +229,12 @@ def load_packaged_sync_config(module: Any, *, env: dict[str, str] | None = None)
         private_key_pem = module._read_local_wrapped_key(config_path, fingerprint)
     if not private_key_pem and normalized["privateKeyPemEnc"] and normalized["keySalt"]:
         try:
-            if key_derivation == module.KEY_DERIVATION_PASSPHRASE:
-                passphrase = str(env_map.get(module.PACKAGED_SYNC_PASSPHRASE_ENV) or "").strip()
-                if not passphrase:
-                    raise RuntimeError(
-                        f"Missing {module.PACKAGED_SYNC_PASSPHRASE_ENV} for passphrase-encrypted sync key."
-                    )
-                private_key_pem = module.decrypt_private_key_pem_with_passphrase(
-                    normalized["privateKeyPemEnc"],
-                    salt_b64=normalized["keySalt"],
-                    app_id=normalized["appId"],
-                    installation_id=normalized["installationId"],
-                    passphrase=passphrase,
-                )
-            elif key_derivation == module.KEY_DERIVATION_EMBEDDED:
-                passphrase = str(env_map.get(module.PACKAGED_SYNC_PASSPHRASE_ENV) or "").strip()
-                if not passphrase:
-                    passphrase = module.build_embedded_passphrase(
-                        hint=normalized["embeddedKeyHint"],
-                        version=normalized["embeddedKeyVersion"],
-                    )
-                private_key_pem = module.decrypt_private_key_pem_with_passphrase(
-                    normalized["privateKeyPemEnc"],
-                    salt_b64=normalized["keySalt"],
-                    app_id=normalized["appId"],
-                    installation_id=normalized["installationId"],
-                    passphrase=passphrase,
-                )
-            elif key_derivation in {"", module.KEY_DERIVATION_MACHINE}:
-                key_derivation = module.KEY_DERIVATION_MACHINE
-                private_key_pem = module.decrypt_private_key_pem(
-                    normalized["privateKeyPemEnc"],
-                    salt_b64=normalized["keySalt"],
-                    app_id=normalized["appId"],
-                    installation_id=normalized["installationId"],
-                )
-            elif key_derivation == module.KEY_DERIVATION_PLAINTEXT:
-                private_key_pem = normalized["privateKeyPem"]
-            else:
-                raise RuntimeError(f"Unsupported keyDerivation mode: {key_derivation}")
+            private_key_pem, key_derivation = _decrypt_encrypted_private_key(
+                module,
+                normalized,
+                env_map,
+                key_derivation=key_derivation,
+            )
         except Exception as exc:  # noqa: BLE001
             if key_derivation == module.KEY_DERIVATION_MACHINE:
                 decryption_error = (

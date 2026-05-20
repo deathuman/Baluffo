@@ -85,6 +85,7 @@ def test_key_derivation_encryption_round_trips_and_fingerprint_are_stable() -> N
         installation_id="456",
         key=machine_key,
     )
+    assert encrypted.startswith(crypto.PRIVATE_KEY_ENCRYPTION_PREFIX_V2)
     assert (
         crypto.decrypt_private_key_pem(encrypted, key=machine_key)
         == "-----BEGIN KEY-----\nabc\n-----END KEY-----"
@@ -118,6 +119,29 @@ def test_key_derivation_encryption_round_trips_and_fingerprint_are_stable() -> N
             "embeddedKeyHint": "hint",
             "embeddedKeyVersion": "v1",
         }
+    )
+
+
+def test_legacy_private_key_ciphertexts_remain_decryptable() -> None:
+    salt_b64 = "bGVnYWN5LW1hY2hpbmUtc2FsdA"
+    legacy_ciphertext = "ja_DzZxWecmT1TkB54TnhJZAnFkpxPgNKZYlY9Ju4rUKVsE7ye09haNBUJzUImHwz22adxX42Z73FHBjugYAkbjDYO4"
+    legacy_key = crypto.derive_legacy_private_key_binding_key(
+        salt_b64=salt_b64,
+        app_id="123456",
+        installation_id="999999",
+        machine_fingerprint="machine-a",
+    )
+
+    assert not crypto.is_v2_encrypted_private_key(legacy_ciphertext)
+    assert crypto.decrypt_private_key_pem(legacy_ciphertext, key=legacy_key) == (
+        "-----BEGIN RSA PRIVATE KEY-----\nlegacy\n-----END RSA PRIVATE KEY-----"
+    )
+    assert (
+        crypto.build_legacy_embedded_passphrase(hint="legacy-hint", version="v1")
+        == "c0758de5f707c4a2a82569b78d7e53216a7fcc40a23c53bb5f97e538"
+    )
+    assert crypto.build_embedded_passphrase(hint="legacy-hint", version="v1") != (
+        "c0758de5f707c4a2a82569b78d7e53216a7fcc40a23c53bb5f97e538"
     )
 
 

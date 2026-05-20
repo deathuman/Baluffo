@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src import source_sync
+from src import source_sync, source_sync_crypto
 
 
 def build_packaged_sync_payload(
@@ -30,7 +30,7 @@ def build_packaged_sync_payload(
     private_key_pem: str,
     salt: str = "",
     plaintext: bool = False,
-    key_derivation: str = source_sync.KEY_DERIVATION_MACHINE,
+    key_derivation: str = source_sync.KEY_DERIVATION_EMBEDDED,
     portable_passphrase_env: str = "",
     embedded_key_hint: str = "",
     embedded_key_version: str = source_sync.EMBEDDED_KEY_VERSION_DEFAULT,
@@ -57,17 +57,13 @@ def build_packaged_sync_payload(
 
     normalized_passphrase_env = str(portable_passphrase_env or "").strip()
     normalized_derivation = (
-        str(key_derivation or source_sync.KEY_DERIVATION_MACHINE).strip().lower()
+        str(key_derivation or source_sync.KEY_DERIVATION_EMBEDDED).strip().lower()
     )
-    if plaintext:
-        normalized_derivation = source_sync.KEY_DERIVATION_PLAINTEXT
-    if normalized_derivation == source_sync.KEY_DERIVATION_PLAINTEXT and normalized_passphrase_env:
-        raise RuntimeError("--plaintext and --portable-passphrase-env are mutually exclusive.")
-
-    if normalized_derivation == source_sync.KEY_DERIVATION_PLAINTEXT:
-        payload["keyDerivation"] = source_sync.KEY_DERIVATION_PLAINTEXT
-        payload["privateKeyPem"] = private_key_pem
-        return payload
+    if plaintext or normalized_derivation == source_sync.KEY_DERIVATION_PLAINTEXT:
+        raise RuntimeError(
+            "Plaintext packaged sync config generation is no longer supported. "
+            "Use machine, passphrase, or embedded key derivation."
+        )
 
     salt_b64 = str(salt or "").strip() or source_sync._base64url_encode(secrets.token_bytes(18))  # noqa: SLF001
     if normalized_derivation == source_sync.KEY_DERIVATION_EMBEDDED:
@@ -78,17 +74,17 @@ def build_packaged_sync_payload(
             str(embedded_key_version or source_sync.EMBEDDED_KEY_VERSION_DEFAULT).strip()
             or source_sync.EMBEDDED_KEY_VERSION_DEFAULT
         )
-        passphrase = source_sync.build_embedded_passphrase(hint=hint, version=version)
         payload["keyDerivation"] = source_sync.KEY_DERIVATION_EMBEDDED
         payload["embeddedKeyHint"] = hint
         payload["embeddedKeyVersion"] = version
         payload["keySalt"] = salt_b64
-        payload["privateKeyPemEnc"] = source_sync.encrypt_private_key_pem_with_passphrase(
+        payload["privateKeyPemEnc"] = source_sync_crypto.encrypt_private_key_pem_for_embedded(
             private_key_pem,
             salt_b64=salt_b64,
             app_id=payload["appId"],
             installation_id=payload["installationId"],
-            passphrase=passphrase,
+            hint=hint,
+            version=version,
         )
         return payload
 
@@ -153,20 +149,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Optional base64url salt. If omitted, a new random salt is generated.",
     )
     parser.add_argument(
-        "--plaintext",
-        action="store_true",
-        help="Write privateKeyPem in plaintext for local testing only.",
-    )
-    parser.add_argument(
         "--key-derivation",
-        default=source_sync.KEY_DERIVATION_MACHINE,
+        default=source_sync.KEY_DERIVATION_EMBEDDED,
         choices=[
             source_sync.KEY_DERIVATION_MACHINE,
             source_sync.KEY_DERIVATION_PASSPHRASE,
             source_sync.KEY_DERIVATION_EMBEDDED,
-            source_sync.KEY_DERIVATION_PLAINTEXT,
         ],
-        help="Private key derivation mode.",
+        help="Private key derivation mode. Defaults to embedded for portable packaged configs.",
     )
     parser.add_argument(
         "--portable-passphrase-env",
@@ -203,7 +193,6 @@ def main(argv: list[str] | None = None) -> int:
         allowed_path_prefix=str(args.allowed_path_prefix),
         private_key_pem=private_key_pem,
         salt=str(args.salt),
-        plaintext=bool(args.plaintext),
         key_derivation=str(args.key_derivation),
         portable_passphrase_env=str(args.portable_passphrase_env),
         embedded_key_hint=str(args.embedded_key_hint),

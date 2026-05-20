@@ -32,6 +32,8 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 - Remote CI gates are aligned with the new Oracle HCM provider defaults and the dependency security audit no longer fails on `idna`.
 
 ### Security
+- Packaged source-sync private keys now use a `v2.` AES-GCM envelope with HKDF-SHA256 machine/embedded derivation and PBKDF2-HMAC-SHA256 passphrase derivation, while legacy no-prefix packaged configs remain decryptable.
+- The sync config build helper no longer generates plaintext private-key configs, and sync/package warnings avoid echoing sensitive-looking build inputs or remote snapshot key names.
 - Updated the locked Python dependency `idna` to `3.15` to resolve `CVE-2026-45409`.
 
 ## [0.2.1] - 2026-05-18

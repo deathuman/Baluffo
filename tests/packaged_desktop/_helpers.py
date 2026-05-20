@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from src import source_sync
+from src import source_sync, source_sync_crypto
 from src.app_version import APP_VERSION
 
 
@@ -32,14 +32,13 @@ def _write_packaged_sync_bundle_config(
                 "embeddedKeyHint": "sync-smoke-hint",
                 "embeddedKeyVersion": "v1",
                 "keySalt": salt_b64,
-                "privateKeyPemEnc": source_sync.encrypt_private_key_pem_with_passphrase(
+                "privateKeyPemEnc": source_sync_crypto.encrypt_private_key_pem_for_embedded(
                     private_key_pem,
                     salt_b64=salt_b64,
                     app_id="123456",
                     installation_id="999999",
-                    passphrase=source_sync.build_embedded_passphrase(
-                        hint="sync-smoke-hint", version="v1"
-                    ),
+                    hint="sync-smoke-hint",
+                    version="v1",
                 ),
             }
         )

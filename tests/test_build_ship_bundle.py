@@ -240,6 +240,8 @@ def test_bundle_generates_packaged_sync_config_from_build_env() -> None:
         assert packaged_config["allowedBranch"] == "main"
         assert packaged_config["allowedPathPrefix"] == "baluffo/source-sync.json"
         assert packaged_config["keyDerivation"] == "embedded"
+        assert "privateKeyPem" not in packaged_config
+        assert packaged_config["privateKeyPemEnc"].startswith("v2.")
 
 
 def test_bundle_embeds_desktop_update_public_keys_from_build_env() -> None:
@@ -471,6 +473,7 @@ def test_bundle_normalizes_machine_bound_packaged_sync_config_for_portable_build
         bundled_config = json.loads(bundled_config_path.read_text(encoding="utf-8"))
         assert bundled_config["keyDerivation"] == "embedded"
         assert bundled_config["privateKeyPemEnc"] != source_payload["privateKeyPemEnc"]
+        assert bundled_config["privateKeyPemEnc"].startswith("v2.")
         loaded_config = source_sync.load_packaged_sync_config(
             env={source_sync.PACKAGED_SYNC_CONFIG_ENV: str(bundled_config_path)}
         )

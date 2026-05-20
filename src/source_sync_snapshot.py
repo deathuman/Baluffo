@@ -511,8 +511,8 @@ def _warn_unexpected_remote_snapshot_keys(payload: dict[str, Any]) -> None:
     unexpected_keys = sorted(key for key in payload if key not in _REMOTE_SNAPSHOT_TOP_LEVEL_KEYS)
     if unexpected_keys:
         logger.warning(
-            "Remote sync snapshot contains unexpected top-level keys: %s",
-            ", ".join(unexpected_keys),
+            "Remote sync snapshot contains unexpected top-level keys: count=%d",
+            len(unexpected_keys),
         )
 
 

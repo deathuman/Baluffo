@@ -8,6 +8,7 @@ from urllib.error import HTTPError, URLError
 import pytest
 
 from src import source_sync as sync
+from src import source_sync_crypto
 from src.shared import github_https
 from tests.source_sync_helpers import source_sync_test_root  # noqa: F401
 
@@ -181,6 +182,7 @@ def test_encrypt_and_decrypt_private_key_round_trip():
     encrypted = sync.encrypt_private_key_pem(
         private_key, salt_b64=salt_b64, app_id="1", installation_id="2"
     )
+    assert encrypted.startswith("v2.")
     decrypted = sync.decrypt_private_key_pem(
         encrypted, salt_b64=salt_b64, app_id="1", installation_id="2"
     )
@@ -197,6 +199,7 @@ def test_passphrase_encrypt_and_decrypt_private_key_round_trip():
         installation_id="2",
         passphrase="unit-passphrase",
     )
+    assert encrypted.startswith("v2.")
     decrypted = sync.decrypt_private_key_pem_with_passphrase(
         encrypted,
         salt_b64=salt_b64,
@@ -218,13 +221,13 @@ def test_config_status_covers_supported_states(source_sync_test_root):
         installation_id="999999",
         passphrase="shared-secret",
     )
-    embedded_passphrase = sync.build_embedded_passphrase(hint="embedded-hint-01", version="v1")
-    embedded_encrypted = sync.encrypt_private_key_pem_with_passphrase(
+    embedded_key_encrypted = source_sync_crypto.encrypt_private_key_pem_for_embedded(
         private_key,
         salt_b64=salt_embedded,
         app_id="123456",
         installation_id="999999",
-        passphrase=embedded_passphrase,
+        hint="embedded-hint-01",
+        version="v1",
     )
 
     cases = [
@@ -288,7 +291,7 @@ def test_config_status_covers_supported_states(source_sync_test_root):
                 "embeddedKeyHint": "embedded-hint-01",
                 "embeddedKeyVersion": "v1",
                 "keySalt": salt_embedded,
-                "privateKeyPemEnc": embedded_encrypted,
+                "privateKeyPemEnc": embedded_key_encrypted,
                 "privateKeyPem": "",
             },
             "expected": {"ready": True, "state": "ready"},
@@ -503,6 +506,7 @@ def test_read_remote_snapshot_normalizes_legacy_rows_and_warns_on_extra_keys(
     assert active["id"] == sync.source_identity(legacy_row)
     assert active["stateChangedAt"] == snapshot["generatedAt"]
     assert any("unexpected top-level keys" in message for message in caplog.messages)
+    assert not any("legacyTag" in message for message in caplog.messages)
 
 
 def test_read_remote_snapshot_rejects_non_object_rows(source_sync_test_root, caplog):

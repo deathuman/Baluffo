@@ -25,7 +25,7 @@ Expected JSON shape:
   "embeddedKeyHint": "build-generated-hint",
   "embeddedKeyVersion": "v1",
   "keySalt": "base64url-random-salt",
-  "privateKeyPemEnc": "base64url-encrypted-private-key"
+  "privateKeyPemEnc": "v2.base64url-encrypted-private-key-envelope"
 }
 ```
 
@@ -41,11 +41,14 @@ The encrypted key supports three derivation modes implemented in `src/source_syn
 - `machine`: key material is derived from machine identity, app id, installation id, and `keySalt`
 - `passphrase`: key material is derived from app id, installation id, `keySalt`, and `BALUFFO_SYNC_KEY_PASSPHRASE`
 - `embedded`: key material is derived from `embeddedKeyHint` + embedded runtime constants (deterrence only)
-- the private key PEM is XOR-encrypted with a SHA-256 keystream
+- current generated `privateKeyPemEnc` values use a `v2.` AES-GCM envelope
+- `machine` and `embedded` v2 keys use HKDF-SHA256; `passphrase` v2 keys use PBKDF2-HMAC-SHA256
+- legacy no-prefix ciphertexts remain decryptable for existing packaged configs
 - plaintext private keys should not be shipped in production bundles
 - on Windows, decrypted key material is re-wrapped into a local DPAPI cache for subsequent launches
 
-For local tests only, `privateKeyPem` may be supplied instead of `privateKeyPemEnc`.
+For local compatibility fixtures only, `privateKeyPem` may be read instead of `privateKeyPemEnc`.
+The build helper no longer generates plaintext packaged configs.
 
 ## Build-time notes
 
@@ -85,11 +88,11 @@ python scripts/build_sync_app_config.py `
   --allowed-repo owner/repo `
   --allowed-branch main `
   --allowed-path-prefix baluffo/source-sync.json `
-  --key-derivation embedded `
   --private-key C:\path\to\github-app-private-key.pem `
   --embedded-key-version v1
 ```
 
+The helper defaults to `embedded` derivation so generated configs remain portable across machines.
 For portable passphrase mode instead of embedded mode, set:
 
 ```powershell
@@ -114,7 +117,7 @@ Supported build-time inputs:
 - optional: `BALUFFO_SYNC_BUILD_ALLOWED_REPO`
 - optional: `BALUFFO_SYNC_BUILD_ALLOWED_BRANCH`
 - optional: `BALUFFO_SYNC_BUILD_ALLOWED_PATH_PREFIX`
-- optional: `BALUFFO_SYNC_BUILD_KEY_DERIVATION` (`embedded` default, `machine`, `passphrase`, or `plaintext`)
+- optional: `BALUFFO_SYNC_BUILD_KEY_DERIVATION` (`embedded` default, `machine`, or `passphrase`)
 - optional: `BALUFFO_SYNC_BUILD_PASSPHRASE_ENV`
 - optional: `BALUFFO_SYNC_BUILD_EMBEDDED_KEY_HINT`
 - optional: `BALUFFO_SYNC_BUILD_EMBEDDED_KEY_VERSION`
@@ -136,8 +139,6 @@ $env:BALUFFO_SYNC_BUILD_REPO="your-org/job-sources-backup"
 $env:BALUFFO_SYNC_BUILD_PRIVATE_KEY_PATH="C:\secrets\github-app-private-key.pem"
 npm run build:ship-bundle
 ```
-
-For local-only testing, add `--plaintext` to write `privateKeyPem` directly instead of the encrypted form.
 
 ## Security note
 

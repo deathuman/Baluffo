@@ -389,10 +389,7 @@ def _resolve_packaged_sync_config() -> Path | None:
         f"WARNING: Packaged GitHub App sync config not found. "
         f"Sync will be disabled in this build. "
         f"Searched: {searched_paths}. "
-        f"To enable sync, provide a config file or build env vars "
-        f"({PACKAGED_SYNC_BUILD_ENV['app_id']}, {PACKAGED_SYNC_BUILD_ENV['installation_id']}, "
-        f"{PACKAGED_SYNC_BUILD_ENV['repo']}, and {PACKAGED_SYNC_BUILD_ENV['private_key_path']} or "
-        f"{PACKAGED_SYNC_BUILD_ENV['private_key_pem']}). "
+        f"To enable sync, provide a config file or the documented packaged sync build inputs. "
         f"See {PACKAGED_SYNC_CONFIG_TEMPLATE_PATH}."
     )
     return None
