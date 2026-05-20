@@ -1,6 +1,10 @@
 import pytest
 
-from scripts.build_sync_app_config import build_packaged_sync_payload, parse_args
+from scripts.build_sync_app_config import (
+    build_packaged_sync_payload,
+    parse_args,
+    write_packaged_sync_config,
+)
 from src import source_sync, source_sync_crypto
 
 _PRIVATE_KEY = "-----BEGIN RSA PRIVATE KEY-----\nTEST\n-----END RSA PRIVATE KEY-----\n"
@@ -78,6 +82,17 @@ def test_plaintext_packaged_sync_payload_generation_is_rejected() -> None:
             **_payload_kwargs(),
             key_derivation=source_sync.KEY_DERIVATION_PLAINTEXT,
         )
+
+
+def test_packaged_sync_writer_rejects_plaintext_private_key(tmp_path) -> None:
+    payload = build_packaged_sync_payload(
+        **_payload_kwargs(),
+        embedded_key_hint="writer-guard",
+    )
+    payload["privateKeyPem"] = _PRIVATE_KEY
+
+    with pytest.raises(RuntimeError, match="refuses plaintext privateKeyPem"):
+        write_packaged_sync_config(tmp_path / "github-app-sync-config.json", payload)
 
 
 def test_cli_key_derivation_defaults_to_embedded() -> None:

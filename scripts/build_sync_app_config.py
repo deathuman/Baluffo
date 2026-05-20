@@ -116,6 +116,11 @@ def build_packaged_sync_payload(
 
 
 def write_packaged_sync_config(output_path: Path, payload: dict) -> Path:
+    if str(payload.get("privateKeyPem") or "").strip():
+        raise RuntimeError(
+            "Packaged sync config writer refuses plaintext privateKeyPem. "
+            "Use encrypted privateKeyPemEnc."
+        )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
