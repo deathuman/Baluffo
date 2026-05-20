@@ -10,6 +10,30 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.15] - 2026-05-20
+
+### Added
+- Oracle HCM provider API support, including provider inference, JSON parsing, adapter registration, and fixture-backed coverage.
+- Provider coverage migration tooling that stages pending provider candidates, reports validation gaps, and recommends focused next actions without requiring a full discovery rerun.
+- Google Sheets and static-source title sanitization evidence, including an audit helper and regression corpus for noisy or source-name-only titles.
+- Deterministic first-run Jobs regression coverage for packaged desktop bootstrap, retry, and feed-loading behavior.
+
+### Changed
+- Source-policy soak reports now distinguish provider migration staging, pending-provider fetch evidence, unsupported ATS advisories, and provider validation debugging.
+- Jobs title normalization now preserves useful role specificity while rejecting source names, location fragments, and non-job boilerplate before rows reach reports or the frontend feed.
+- Packaged first-run Jobs startup now uses tighter cache-busting, runtime-state, and bootstrap guards for stale bundled/runtime artifacts.
+- Release and testing docs now describe the first-run packaged smoke lane and the Python dependency security audit path.
+
+### Fixed
+- Closing the packaged desktop browser window no longer leaves the launcher, site child, or bridge child running because `/ops/health` polling can no longer refresh desktop-window owner activity.
+- First-run Jobs regressions after `0.2.1` no longer show stale packaged rows, loop bootstrap retries, or leave the page in a blank no-data state while the starter feed is being prepared.
+- Google Sheets and static-source rows with source-name or boilerplate titles are sanitized or dropped consistently before dedup, reports, storage, and frontend rendering.
+- Provider migration validation can now fetch explicitly staged pending provider rows without changing default fetch behavior or promoting local registry state.
+- Remote CI gates are aligned with the new Oracle HCM provider defaults and the dependency security audit no longer fails on `idna`.
+
+### Security
+- Updated the locked Python dependency `idna` to `3.15` to resolve `CVE-2026-45409`.
+
 ## [0.2.1] - 2026-05-18
 
 ### Added
@@ -24,7 +48,6 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 - First-run Jobs pipeline tooltip and status copy now describe the bootstrap phase instead of the normal refresh cadence.
 
 ### Fixed
-- Closing the packaged desktop browser window no longer leaves the launcher, site child, or bridge child running because `/ops/health` polling can no longer refresh desktop-window owner activity.
 - First-run Jobs now suppresses stale packaged/runtime rows, starts one Google Sheets bootstrap, serves the promoted feed after success, and avoids the repeated fetch loop.
 - Admin and Jobs navigation no longer pay the one-minute cold-start validation cost after first-run bootstrap recovery.
 - Jobs rows with empty normalized titles are filtered before render, and the first-run empty state now explains that jobs are still being prepared.

@@ -26,6 +26,7 @@ def test_release_docs_cover_the_current_public_release_line(repo_root: Path) -> 
     release_text = (docs_dir / "RELEASE.md").read_text(encoding="utf-8")
     app_version = get_app_version()
     top_release = _section(changelog_text, f"## [{app_version}]")
+    release_0_2_1 = _section(changelog_text, "## [0.2.1]")
     release_0_2_01 = _section(changelog_text, "## [0.2.01]")
     release_0_2_0 = _section(changelog_text, "## [0.2.0]")
     release_0_1_1 = _section(changelog_text, "## [0.1.1]")
@@ -44,12 +45,17 @@ def test_release_docs_cover_the_current_public_release_line(repo_root: Path) -> 
         heading in top_release for heading in ("### Added", "### Changed", "### Fixed", "### Notes")
     )
     assert "\n- " in top_release
-    assert "Saved Jobs tracking polish" in top_release
-    assert "Previous release-note viewing" in top_release
-    assert "flash the Baluffo taskbar button" in top_release
-    assert "first-run Jobs notice" in top_release
-    assert "starts one Google Sheets bootstrap" in top_release
-    assert "one-minute cold-start validation cost" in top_release
+    assert "Oracle HCM provider API support" in top_release
+    assert "Provider coverage migration tooling" in top_release
+    assert "title sanitization evidence" in top_release
+    assert "First-run Jobs regressions after `0.2.1`" in top_release
+    assert "CVE-2026-45409" in top_release
+    assert "Saved Jobs tracking polish" in release_0_2_1
+    assert "Previous release-note viewing" in release_0_2_1
+    assert "flash the Baluffo taskbar button" in release_0_2_1
+    assert "first-run Jobs notice" in release_0_2_1
+    assert "starts one Google Sheets bootstrap" in release_0_2_1
+    assert "one-minute cold-start validation cost" in release_0_2_1
     assert "Windows portable updater handoff" in release_0_2_01
     assert "optional `psutil`" in release_0_2_01
     assert "non-secret diagnostics" in release_0_2_01
