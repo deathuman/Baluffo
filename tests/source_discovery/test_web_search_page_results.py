@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import src.source_discovery.web_search_candidates as web_candidates
+from src.url_hosts import url_host_matches_domain
 
 from ._helpers import workspace_tmpdir
 
@@ -31,7 +32,7 @@ def test_web_page_result_records_seed_and_web_recoverable_fetch_failures() -> No
         def fetcher(url: str, _timeout_s: int) -> str:
             if url == "https://seed.example/careers":
                 raise RuntimeError("timeout seed page")
-            if "duckduckgo.com" in url:
+            if url_host_matches_domain(url, "duckduckgo.com"):
                 return '<a href="https://search.example/careers">Careers</a>'
             if url == "https://search.example/careers":
                 raise RuntimeError("429 web page")
@@ -76,7 +77,7 @@ def test_web_page_result_records_seed_and_web_js_shell_candidates() -> None:
         def fetcher(url: str, _timeout_s: int) -> str:
             if url == "https://seed.example/careers":
                 return shell
-            if "duckduckgo.com" in url:
+            if url_host_matches_domain(url, "duckduckgo.com"):
                 return '<a href="https://search.example/careers">Careers</a>'
             if url == "https://search.example/careers":
                 return shell
@@ -113,7 +114,7 @@ def test_web_page_result_preserves_seed_and_web_successful_page_analysis() -> No
         def fetcher(url: str, _timeout_s: int) -> str:
             if url == "https://seed.example/careers":
                 return '<a href="https://boards.greenhouse.io/seedstudio/jobs/1">Role</a>'
-            if "duckduckgo.com" in url:
+            if url_host_matches_domain(url, "duckduckgo.com"):
                 return '<a href="https://search.example/careers">Careers</a>'
             if url == "https://search.example/careers":
                 return '<a href="https://boards.greenhouse.io/searchstudio/jobs/1">Role</a>'

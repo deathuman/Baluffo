@@ -539,8 +539,7 @@ def test_gamedevmap_dry_run_rerun_reasons_select_prior_rejections() -> None:
             rerun_reasons="no_careers_evidence",
         )
 
-    assert "https://recover.example.com" in calls
-    assert "https://skip.example.com" in calls
+    assert {"https://recover.example.com", "https://skip.example.com"}.issubset(set(calls))
     assert output["progress"]["rerunReasons"] == ["no_careers_evidence"]
     assert output["summary"]["activeCandidates"] == 1
 

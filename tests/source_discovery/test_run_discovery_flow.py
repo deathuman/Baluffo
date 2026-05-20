@@ -1,4 +1,6 @@
 # ruff: noqa: F401
+from src.url_hosts import url_host
+
 from ._helpers import (
     FIXTURES_DIR,
     GENERATOR_DISABLED_DISCOVERY_CONFIG,
@@ -120,9 +122,9 @@ def test_discovery_report_snapshot_contract() -> None:
         ):
 
             def fake_fetch(url: str, _: int) -> str:
-                if "api.lever.co" in url:
+                if url_host(url) == "api.lever.co":
                     return json.dumps([{"id": 1}, {"id": 2}])
-                if "boards-api.greenhouse.io" in url:
+                if url_host(url) == "boards-api.greenhouse.io":
                     return json.dumps({"jobs": [{}]})
                 raise RuntimeError(f"unexpected URL: {url}")
 
@@ -492,9 +494,9 @@ def test_run_discovery_dynamic_tracks_stage_metrics_and_queue_contract() -> None
         ) as paths:
 
             def fake_fetch(url: str, _: int) -> str:
-                if "api.lever.co" in url:
+                if url_host(url) == "api.lever.co":
                     return json.dumps([{"id": 1}, {"id": 2}, {"id": 3}])
-                if "boards-api.greenhouse.io" in url:
+                if url_host(url) == "boards-api.greenhouse.io":
                     return json.dumps({"jobs": [{}, {}]})
                 raise RuntimeError(f"unexpected URL: {url}")
 
@@ -1274,7 +1276,7 @@ def test_run_discovery_uses_seed_careers_pages_without_web_search() -> None:
             def fake_fetch(url: str, _: int) -> str:
                 if url == "https://example.com/careers":
                     return '<a href="https://boards.greenhouse.io/example-studio/jobs/123">Job</a>'
-                if "boards-api.greenhouse.io" in url:
+                if url_host(url) == "boards-api.greenhouse.io":
                     return json.dumps({"jobs": [{}, {}]})
                 raise RuntimeError(f"unexpected URL: {url}")
 

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+from src.url_hosts import url_host, url_host_matches_domain
+
 from ._helpers import discovery_orchestrator, mock, override_discovery_runtime, sd, workspace_tmpdir
 
 
@@ -77,11 +79,11 @@ def test_run_discovery_default_web_search_audit_reuses_artifact() -> None:
             def fake_fetch(url: str, _timeout_s: int) -> str:
                 if url == "https://seed.example/careers":
                     return '<a href="https://boards.greenhouse.io/seedstudio/jobs/1">Role</a>'
-                if "duckduckgo.com" in url:
+                if url_host_matches_domain(url, "duckduckgo.com"):
                     return '<a href="https://search.example/careers">Careers</a>'
                 if url == "https://search.example/careers":
                     return '<a href="https://boards.greenhouse.io/searchstudio/jobs/1">Role</a>'
-                if "boards-api.greenhouse.io" in url:
+                if url_host(url) == "boards-api.greenhouse.io":
                     return json.dumps({"jobs": [{}, {}]})
                 raise RuntimeError(f"unexpected URL: {url}")
 
@@ -119,7 +121,7 @@ def test_run_discovery_default_web_search_audit_reuses_artifact() -> None:
             }
 
             def cache_fetch(url: str, _timeout_s: int) -> str:
-                if "boards-api.greenhouse.io" in url:
+                if url_host(url) == "boards-api.greenhouse.io":
                     return json.dumps({"jobs": [{}, {}]})
                 raise AssertionError(
                     "fresh web-search audit artifact should bypass discovery fetch"
@@ -169,7 +171,7 @@ def test_run_discovery_default_web_search_audit_respects_no_web_search() -> None
             def fake_fetch(url: str, _timeout_s: int) -> str:
                 if url == "https://seed.example/careers":
                     return '<a href="https://boards.greenhouse.io/seedstudio/jobs/1">Role</a>'
-                if "boards-api.greenhouse.io" in url:
+                if url_host(url) == "boards-api.greenhouse.io":
                     return json.dumps({"jobs": [{}]})
                 raise AssertionError(
                     "web-search fetch should not run when include_web_search is false"

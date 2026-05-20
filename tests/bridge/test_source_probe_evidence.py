@@ -7,6 +7,7 @@ from src.bridge.source_probe_evidence import (
     ProbeFetchResponse,
     probe_source_evidence,
 )
+from src.url_hosts import url_host_matches_domain
 
 
 def test_static_probe_uses_browser_like_headers_for_krafton_style_403() -> None:
@@ -143,7 +144,7 @@ def test_static_probe_counts_embedded_lever_board_before_no_jobs() -> None:
 
     def fake_fetch(url: str, _timeout_s: int, **_kwargs):
         seen_urls.append(url)
-        if "api.lever.co" in url:
+        if url_host_matches_domain(url, "api.lever.co"):
             return ProbeFetchResponse(200, url, lever_payload)
         return ProbeFetchResponse(200, url, page_html)
 
@@ -200,7 +201,7 @@ def test_static_probe_counts_ubisoft_algolia_search_page() -> None:
     def fake_fetch(url: str, _timeout_s: int, *, headers: dict[str, str]):
         seen_urls.append(url)
         seen_headers.append(headers)
-        if "algolia.net" in url:
+        if url_host_matches_domain(url, "algolia.net"):
             return ProbeFetchResponse(200, url, algolia_payload)
         return ProbeFetchResponse(200, url, page_html)
 

@@ -302,7 +302,7 @@ def test_static_registry_scope_conflicts_classifies_shadowed_cross_host(
         "reasons": ["shadowed_cross_host", "all_off_listing_hosts_covered"],
     }
     assert "`narrow_static_scope`" in markdown
-    assert "https://www.stillfront.com/en/career/" in markdown
+    assert proposal["removePages"][0] in markdown
     assert "`False`" in markdown
 
 

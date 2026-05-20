@@ -596,7 +596,7 @@ def test_parse_ashby_jobs_from_html_fixture() -> None:
         _fixture("ashby_jobs.html"), "https://jobs.ashbyhq.com/jagex/jobs", "Jagex"
     )
     assert len(rows) == 2
-    assert all("jobs.ashbyhq.com" in row["jobLink"] for row in rows)
+    assert {row["jobLink"].split("/", 3)[2] for row in rows} == {"jobs.ashbyhq.com"}
 
 
 def test_parse_ashby_jobs_from_embedded_careers_links() -> None:
@@ -1175,7 +1175,7 @@ def test_run_greenhouse_boards_source_with_fixture() -> None:
         ):
 
             def fake_fetch(url: str, _: int) -> str:
-                assert "boards-api.greenhouse.io" in url
+                assert url.split("/", 3)[2] == "boards-api.greenhouse.io"
                 assert "guerrilla-games" in url
                 return payload
 

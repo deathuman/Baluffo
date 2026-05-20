@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 import src.source_discovery.web_search_candidates as web_candidates
 from src.source_discovery import directory_audit
+from src.url_hosts import url_host_matches_domain
 
 from ._helpers import workspace_tmpdir, write_web_search_browser_recovery_artifact
 
@@ -50,7 +51,7 @@ def _seeds() -> list[dict[str, object]]:
 def _fetcher(url: str, _timeout_s: int) -> str:
     if url == "https://seed.example/careers":
         return '<a href="https://boards.greenhouse.io/seedstudio/jobs/1">Role</a>'
-    if "duckduckgo.com" in url:
+    if url_host_matches_domain(url, "duckduckgo.com"):
         return '<a href="https://search.example/careers">Careers</a>'
     if url == "https://search.example/careers":
         return '<a href="https://boards.greenhouse.io/searchstudio/jobs/1">Role</a>'
@@ -145,7 +146,7 @@ def test_web_search_directory_audit_tuning_config_changes_signature() -> None:
 
         def counting_fetch(url: str, _timeout_s: int) -> str:
             calls["count"] += 1
-            if "duckduckgo.com" in url:
+            if url_host_matches_domain(url, "duckduckgo.com"):
                 return '<a href="https://search.example/careers">Careers</a>'
             if url == "https://search.example/careers":
                 return '<a href="https://boards.greenhouse.io/searchstudio/jobs/1">Role</a>'
@@ -192,7 +193,7 @@ def test_web_search_directory_audit_records_link_diagnostics_and_caps_samples() 
         audit_path = root / "web-audit.json"
 
         def diagnostic_fetch(url: str, _timeout_s: int) -> str:
-            if "duckduckgo.com" in url:
+            if url_host_matches_domain(url, "duckduckgo.com"):
                 return "".join(
                     [
                         '<a href="https://noise.example/about">About</a>',
@@ -302,7 +303,7 @@ def test_web_search_directory_audit_records_search_and_page_fetch_failures() -> 
         audit_path = root / "web-audit.json"
 
         def failing_fetch(url: str, _timeout_s: int) -> str:
-            if "duckduckgo.com" in url:
+            if url_host_matches_domain(url, "duckduckgo.com"):
                 raise RuntimeError("search blocked")
             raise RuntimeError("page blocked")
 
@@ -332,7 +333,7 @@ def test_web_search_directory_audit_records_browser_recovery_candidates() -> Non
         def browser_candidate_fetch(url: str, _timeout_s: int) -> str:
             if url == "https://seed.example/careers":
                 return '<html><div id="root"></div><script src="/app.js"></script></html>'
-            if "duckduckgo.com" in url:
+            if url_host_matches_domain(url, "duckduckgo.com"):
                 return '<a href="https://search.example/careers">Careers</a>'
             raise RuntimeError("403 forbidden")
 
@@ -419,7 +420,7 @@ def test_web_search_directory_audit_default_web_recovery_finds_static_candidate(
         audit_path = root / "web-audit.json"
 
         def fetcher(url: str, _timeout_s: int) -> str:
-            if "duckduckgo.com" in url:
+            if url_host_matches_domain(url, "duckduckgo.com"):
                 return '<a href="https://web-recover.example/careers">Careers</a>'
             if url == "https://web-recover.example/careers":
                 return "<html><body>Web Recover Studio</body></html>"
@@ -483,7 +484,7 @@ def test_web_search_directory_audit_opt_in_recovery_miss_and_failure_are_diagnos
                 return "<html><body>No roles</body></html>"
             if url.startswith("https://seed-miss.example/"):
                 return "<html><body>Still no roles</body></html>"
-            if "duckduckgo.com" in url:
+            if url_host_matches_domain(url, "duckduckgo.com"):
                 return '<a href="https://web-fail.example/careers">Careers</a>'
             if url == "https://web-fail.example/careers":
                 return "<html><body>No roles</body></html>"
@@ -523,7 +524,7 @@ def test_web_search_directory_audit_opt_in_recovery_skips_fetch_failures_and_js_
         def fetcher(url: str, _timeout_s: int) -> str:
             if url == "https://seed-shell.example/careers":
                 return shell
-            if "duckduckgo.com" in url:
+            if url_host_matches_domain(url, "duckduckgo.com"):
                 return '<a href="https://web-fail.example/careers">Careers</a>'
             if url == "https://web-fail.example/careers":
                 raise RuntimeError("429 web page")

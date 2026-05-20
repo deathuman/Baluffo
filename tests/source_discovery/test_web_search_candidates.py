@@ -6,6 +6,7 @@ import src.source_discovery.directory_fetch as directory_fetch
 import src.source_discovery.web_search_candidates as web_candidates
 from src.source_discovery.directory_page_recovery import http_recovery_request_from_context
 from src.source_discovery.page_outcomes import FetchedPageContext
+from src.url_hosts import url_host_matches_domain
 
 from ._helpers import web_audit_rows
 
@@ -314,7 +315,7 @@ def test_web_audit_web_search_records_search_and_page_fetch_failures(
     ]
 
     def fake_fetch(url: str, _timeout: int) -> str:
-        if "duckduckgo.com" in url:
+        if url_host_matches_domain(url, "duckduckgo.com"):
             return '<a href="https://example.com/careers">Careers</a>'
         raise AssertionError(f"unexpected direct fetch: {url}")
 
@@ -356,7 +357,7 @@ def test_web_search_readiness_preserves_page_jobs_failures_and_provenance(monkey
     seen_page_jobs = []
 
     def fake_fetch(url: str, _timeout: int) -> str:
-        if "duckduckgo.com" in url:
+        if url_host_matches_domain(url, "duckduckgo.com"):
             return '<a href="https://example.com/careers">Careers</a>'
         raise AssertionError(f"unexpected direct fetch: {url}")
 
@@ -440,7 +441,7 @@ def test_web_audit_web_search_uses_direct_provider_links_without_page_fetch(
     seen_page_jobs = []
 
     def fake_fetch(url: str, _timeout: int) -> str:
-        if "duckduckgo.com" in url:
+        if url_host_matches_domain(url, "duckduckgo.com"):
             return '<a href="https://jobs.smartrecruiters.com/ExampleStudio/123">Role</a>'
         raise AssertionError(f"unexpected page fetch: {url}")
 

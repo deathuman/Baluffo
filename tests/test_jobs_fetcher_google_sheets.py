@@ -4,6 +4,7 @@ from unittest import mock
 
 from src import jobs_fetcher as jf
 from src.shared.json_io import read_json
+from src.url_hosts import url_host_matches_domain
 from tests.helpers.job_fixtures import _fixture
 from tests.helpers.temp_paths import workspace_tmpdir
 
@@ -202,7 +203,9 @@ def test_canonicalize_google_sheets_rows_uses_redirect_cache_once_for_duplicates
     assert stats["redirect_candidates"] == 2
     assert stats["redirect_resolved"] == 2
     assert stats["redirect_cache_hits"] == 1
-    assert all("smartrecruiters.com" in row.jobLink for row in canonical_rows)
+    assert all(
+        url_host_matches_domain(row.jobLink, "smartrecruiters.com") for row in canonical_rows
+    )
 
 
 def test_canonicalize_google_sheets_rows_falls_back_when_redirect_resolution_fails() -> None:
@@ -280,7 +283,9 @@ def test_run_pipeline_tracks_google_sheets_redirect_stats_in_report_and_state() 
         with mock.patch.object(jf, "build_redirect_resolver", return_value=_FakeResolver()):
 
             def fake_fetch(url: str, _: int) -> str:
-                if "docs.google.com" in url or "allorigins.win" in url:
+                if url_host_matches_domain(url, "docs.google.com") or url_host_matches_domain(
+                    url, "allorigins.win"
+                ):
                     return csv_text
                 if (
                     url
@@ -387,7 +392,9 @@ def test_run_pipeline_reuses_and_persists_google_sheets_redirect_cache() -> None
         ) as builder:
 
             def fake_fetch(url: str, _: int) -> str:
-                if "docs.google.com" in url or "allorigins.win" in url:
+                if url_host_matches_domain(url, "docs.google.com") or url_host_matches_domain(
+                    url, "allorigins.win"
+                ):
                     return csv_text
                 raise RuntimeError(f"Unexpected URL: {url}")
 

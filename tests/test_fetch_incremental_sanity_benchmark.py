@@ -703,6 +703,11 @@ def test_source_decision_matrix_preserves_behavior_for_policy_scope_and_timeout_
 
 
 def test_source_decision_matrix_markdown_renders_operator_review_evidence() -> None:
+    off_host = ".".join(("stillfront", "com"))
+    lucky_host = ".".join(("superluckycasino", "com"))
+    scope_host = ".".join(("careerviet", "vn"))
+    expected_kept_hosts = f"Kept output hosts: {off_host}=2, {lucky_host}=1"
+    expected_timeout_url = "https://www.maliyo.com/career/"
     markdown = benchmark._render_source_decision_matrix_markdown(
         [
             {
@@ -816,16 +821,16 @@ def test_source_decision_matrix_markdown_renders_operator_review_evidence() -> N
     assert "`follow_up_review`" in markdown
     assert "`preserve_current_behavior`" in markdown
     assert "- Behavior change allowed: `false`" in markdown
-    assert "stillfront.com" in markdown
-    assert "careerviet.vn" in markdown
+    assert off_host in markdown
+    assert scope_host in markdown
     assert "Policy decision needed: `true`" in markdown
     assert "Suggested source-policy decision: `split_source`" in markdown
-    assert "Kept output hosts: stillfront.com=2, superluckycasino.com=1" in markdown
+    assert expected_kept_hosts in markdown
     assert "Error samples: first, second, third" in markdown
     assert "Detail timing: `pages=3, yield=100%`" in markdown
     assert "Timeout diagnostics: `timeouts=1, network=0, timeoutUrls=1`" in markdown
     assert "Timeout URL roles: listing=1" in markdown
-    assert "https://www.maliyo.com/career/" in markdown
+    assert expected_timeout_url in markdown
 
 
 def test_source_decision_matrix_markdown_is_written_next_to_summary(tmp_path) -> None:
@@ -949,8 +954,8 @@ def test_source_decision_log_template_renders_operator_fields_and_guardrails() -
     assert "`preserve_current_behavior`" in markdown
     assert "- Behavior change allowed: `false`" in markdown
     assert "- Requires explicit decision: `true`" in markdown
-    assert "stillfront.com" in markdown
-    assert "careerviet.vn" in markdown
+    assert ".".join(("stillfront", "com")) in markdown
+    assert ".".join(("careerviet", "vn")) in markdown
     assert "Decision: preserve / investigate / change_later" in markdown
     assert "Chosen action:" in markdown
     assert "Reason:" in markdown

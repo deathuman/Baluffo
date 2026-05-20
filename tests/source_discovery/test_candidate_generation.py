@@ -99,7 +99,7 @@ def test_async_probe_candidate_mirrors_sync_probe_count() -> None:
     }
 
     async def fake_async_fetch(url: str, _timeout: int) -> str:
-        assert "boards-api.greenhouse.io" in url
+        assert url.split("/", 3)[2] == "boards-api.greenhouse.io"
         return '{"jobs":[{"id":1,"title":"Gameplay Role 1","absolute_url":"https://job-boards.greenhouse.io/example/jobs/1"},{"id":2,"title":"Gameplay Role 2","absolute_url":"https://job-boards.greenhouse.io/example/jobs/2"},{"id":3,"title":"Gameplay Role 3","absolute_url":"https://job-boards.greenhouse.io/example/jobs/3"}]}'
 
     ok, count, error = asyncio.run(
@@ -609,7 +609,7 @@ def test_web_audit_web_search_prefers_explicit_careers_links_from_result_pages()
     ]
 
     def fake_fetch(url: str, _: int) -> str:
-        if "duckduckgo.com" in url:
+        if url.split("/", 3)[2] == "duckduckgo.com":
             return '<a href="https://example.com/jobs">Example Studio</a>'
         if url == "https://example.com/jobs":
             return """
@@ -789,9 +789,9 @@ def test_probe_candidate_uses_fallback_when_primary_fails() -> None:
     }
 
     def fake_fetch(url: str, _: int) -> str:
-        if "boards-api.greenhouse.io" in url:
+        if url.split("/", 3)[2] == "boards-api.greenhouse.io":
             raise RuntimeError("HTTP Error 404: Not Found")
-        if "boards.greenhouse.io/example" in url:
+        if url.split("/", 3)[2] == "boards.greenhouse.io" and "/example" in url:
             return '<a href="https://boards.greenhouse.io/example/jobs/123">Role</a>'
         raise RuntimeError(f"unexpected URL: {url}")
 

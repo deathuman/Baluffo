@@ -1,6 +1,7 @@
 from src.bridge import registry_conflict_adjudication
 from src.bridge.registry_conflict_adjudication import _parse_jobs, _probe_row
 from src.bridge.source_probe_evidence import ProbeFetchResponse, probe_source_evidence
+from src.url_hosts import url_host_matches_domain
 
 
 def test_conflict_adjudication_provider_probe_reconstructs_compact_source_id(
@@ -261,7 +262,7 @@ def test_conflict_adjudication_static_probe_counts_embedded_lever_board(
     """
 
     def fake_fetch(url: str, _timeout_s: int, **_kwargs) -> ProbeFetchResponse:
-        if "api.lever.co" in url:
+        if url_host_matches_domain(url, "api.lever.co"):
             return ProbeFetchResponse(200, url, lever_payload)
         return ProbeFetchResponse(200, url, page_html)
 
@@ -321,7 +322,7 @@ def test_conflict_adjudication_static_probe_counts_ubisoft_algolia_search(
     """
 
     def fake_fetch(url: str, _timeout_s: int, **_kwargs) -> ProbeFetchResponse:
-        if "algolia.net" in url:
+        if url_host_matches_domain(url, "algolia.net"):
             return ProbeFetchResponse(200, url, algolia_payload)
         return ProbeFetchResponse(200, url, page_html)
 
