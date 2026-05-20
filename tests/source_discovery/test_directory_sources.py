@@ -1,4 +1,6 @@
 # ruff: noqa: F401
+from src.source_discovery import gamesmap_parsing
+
 from ._helpers import (
     FIXTURES_DIR,
     DiscoveryReportSummarySchema,
@@ -471,6 +473,18 @@ def test_gamesmap_category_filter_rejects_blocked_entries() -> None:
         config["gamesmap"]["allowedCategoryTokens"],
         config["gamesmap"]["blockedCategoryTokens"],
     )
+
+
+def test_gamesmap_strip_html_tags_strips_malformed_script_and_style_end_tags() -> None:
+    html = """
+        <script>Script Studio Developer</script
+            ignored>
+        <style>Style Publisher</style
+            ignored>
+        <span>Visible Studio</span>
+    """
+
+    assert gamesmap_parsing._strip_html_tags(html) == "Visible Studio"
 
 
 def test_gamesmap_matches_category_uses_token_aware_rules() -> None:

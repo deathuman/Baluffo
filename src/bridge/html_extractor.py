@@ -361,8 +361,8 @@ def extract_external_job_links_from_scripts(
 
 
 def extract_text_job_signals(html: str, page_url: str) -> list[str]:
-    sanitized = re.sub(r"(?is)<script\b[^>]*>.*?</script\s*>", " ", html)
-    sanitized = re.sub(r"(?is)<style\b[^>]*>.*?</style\s*>", " ", sanitized)
+    sanitized = re.sub(r"(?is)<script\b[^>]*>.*?</script\b[^>]*>", " ", html)
+    sanitized = re.sub(r"(?is)<style\b[^>]*>.*?</style\b[^>]*>", " ", sanitized)
     text = re.sub(r"(?is)<[^>]+>", " ", sanitized)
     text = re.sub(r"\s+", " ", text).strip().lower()
     if not text:
