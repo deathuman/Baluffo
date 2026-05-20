@@ -267,7 +267,7 @@ export async function initJobsFeed(deps) {
 
   function setFirstRunStartupState(detail = "first_run_bootstrap") {
     if (typeof setJobsStartupState === "function") {
-      setJobsStartupState("loading", detail);
+      setJobsStartupState("interactive", detail);
     }
   }
 

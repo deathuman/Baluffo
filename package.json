@@ -36,7 +36,7 @@
     "test:frontend:packaged:first-run": "npm run check:python-version && python src/packaged_desktop_smoke.py --open-path desktop-probe.html --node-smoke-script tests/frontend/packaged-desktop-smoke.first-run-jobs.mjs --runtime-timeout 60 --playwright-timeout 240",
     "test:frontend:packaged:jobs-pipeline": "npm run check:python-version && python src/packaged_desktop_smoke.py --node-smoke-script tests/frontend/packaged-desktop-smoke.jobs-pipeline.mjs --playwright-timeout 300",
     "test:frontend:packaged:admin-startup": "npm run check:python-version && python src/packaged_desktop_smoke.py --open-path admin.html --node-smoke-script tests/frontend/packaged-desktop-smoke.admin-startup.mjs --playwright-timeout 120",
-    "test:frontend:packaged:fetch-evidence": "npm run check:python-version && python src/packaged_desktop_smoke.py --node-smoke-script tests/frontend/packaged-desktop-smoke.fetch-evidence.mjs --playwright-timeout 300",
+    "test:frontend:packaged:fetch-evidence": "npm run check:python-version && python src/packaged_desktop_smoke.py --open-path admin.html --node-smoke-script tests/frontend/packaged-desktop-smoke.fetch-evidence.mjs --playwright-timeout 300",
     "test:frontend:packaged:orchestrated": "npm run check:python-version && python src/packaged_desktop_smoke.py --exe-path _out/latest/build/portable/Baluffo.exe",
     "test:frontend:packaged:headed": "npm run check:python-version && python src/packaged_desktop_smoke.py --headed --pause-on-failure",
     "probe:desktop:startup:cold": "npm run probe:desktop:startup:jobs:cold",

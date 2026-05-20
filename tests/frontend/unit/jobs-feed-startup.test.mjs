@@ -219,6 +219,11 @@ test("initJobsFeed skips packaged feeds and auto-starts bootstrap on desktop col
   assert.deepEqual(calls.allJobs[0], []);
   assert.deepEqual(calls.rendered[0], { stage: "first_run_bootstrap", rowCount: 0 });
   assert.equal(calls.interactive[0], "first_run_bootstrap");
+  assert.deepEqual(calls.startupStates.at(-1), {
+    state: "interactive",
+    detail: "first_run_bootstrap"
+  });
+  assert.notEqual(calls.startupStates.at(-1)?.state, "loading");
   assert.equal(calls.metrics.find(metric => metric.event === "jobs_first_run_gate_evaluated")?.payload.action, "start");
   assert.equal(calls.notices.length, 1);
   assert.equal(calls.notices[0].title, "Preparing first-run jobs");

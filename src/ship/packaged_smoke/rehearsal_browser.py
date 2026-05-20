@@ -195,7 +195,7 @@ def run_packaged_browser_job_rehearsal(
             data_dir=runtime_data_dir,
             stdout_path=runtime_stdout_path,
             stderr_path=runtime_stderr_path,
-            open_path="jobs.html",
+            open_path="desktop-probe.html",
             startup_probe=False,
             env=runtime_env,
         )
@@ -205,7 +205,7 @@ def run_packaged_browser_job_rehearsal(
             requested_bridge_port=requested_bridge_port,
             expected_data_dir=runtime_data_dir,
             timeout_s=runtime_timeout_s,
-            open_path="jobs.html",
+            open_path="desktop-probe.html",
             env=runtime_env,
         )
         actual_site_port = int(runtime_state.get("actualSitePort") or requested_site_port)

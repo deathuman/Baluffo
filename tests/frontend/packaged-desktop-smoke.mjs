@@ -53,6 +53,13 @@ async function gotoDesktop(page, relativePath) {
   );
 }
 
+async function throwJobsReadinessTimeout(page, label, error) {
+  const snapshot = await page.evaluate(() => {
+    const text = selector => String(document.querySelector(selector)?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 500); return { startupState: document.body?.getAttribute("data-jobs-startup-state") || "", startupDetail: document.body?.getAttribute("data-jobs-startup-detail") || "", hasLocalDataApi: Boolean(window.JobAppLocalData), sourceStatus: text("#source-status"), jobsListText: text("#jobs-list") };
+  }).catch(error => ({ evaluationError: error instanceof Error ? error.message : String(error) }));
+  throw new Error(`${label}: ${error instanceof Error ? error.message : String(error)}. Jobs readiness snapshot: ${JSON.stringify(snapshot, null, 2)}`);
+}
+
 async function signInWithProfile(page, buttonSelector, profileName, expectedFocusSelector) {
   await page.locator(buttonSelector).click();
   const profileInput = page.locator("#local-auth-name-input");
@@ -61,23 +68,16 @@ async function signInWithProfile(page, buttonSelector, profileName, expectedFocu
   await profileInput.press("Enter");
   await profileInput.waitFor({ state: "detached", timeout: 10_000 });
   if (expectedFocusSelector) {
-    await page.waitForFunction(
-      selector => document.activeElement === document.querySelector(selector),
-      expectedFocusSelector,
-      { timeout: 10_000 }
-    );
+    await page.waitForFunction(selector => document.activeElement === document.querySelector(selector), expectedFocusSelector, { timeout: 10_000 });
   }
 }
 
 async function waitForDesktopAdapter(page) {
-  await page.waitForFunction(() => Boolean(window.JobAppLocalData), null, { timeout: 30_000 });
+  await page.waitForFunction(() => Boolean(window.JobAppLocalData), null, { timeout: 30_000 }).catch(error => throwJobsReadinessTimeout(page, "Timed out waiting for desktop local-data adapter", error));
 }
 
 async function assertJobsPageReady(page) {
-  await page.waitForFunction(() => {
-    const state = document.body?.getAttribute("data-jobs-startup-state") || "loading";
-    return state === "interactive" || state === "error";
-  }, null, { timeout: 30_000 });
+  await page.waitForFunction(() => ["interactive", "error"].includes(document.body?.getAttribute("data-jobs-startup-state") || "loading"), null, { timeout: 30_000 }).catch(error => throwJobsReadinessTimeout(page, "Timed out waiting for Jobs startup state", error));
   const startupState = await page.locator("body").getAttribute("data-jobs-startup-state");
   assert.notEqual(startupState, "loading", "jobs page should not stay in loading state");
   await page.locator("#refresh-jobs-btn").waitFor({ state: "visible", timeout: 20_000 });

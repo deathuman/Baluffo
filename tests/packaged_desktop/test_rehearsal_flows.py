@@ -443,7 +443,7 @@ def test_run_packaged_browser_job_rehearsal_passes_with_attached_pid_proof() -> 
                         },
                     ],
                 },
-            ),
+            ) as wait_runtime_mock,
             mock.patch.object(
                 smoke,
                 "_select_browser_shutdown_proof",
@@ -483,6 +483,8 @@ def test_run_packaged_browser_job_rehearsal_passes_with_attached_pid_proof() -> 
     assert launch_mock.call_args.kwargs["env"][
         smoke.desktop_app_mod.PREFERRED_BROWSER_PATH_ENV
     ] == ("C:/Chrome/chrome.exe")
+    assert launch_mock.call_args.kwargs["open_path"] == "desktop-probe.html"
+    assert wait_runtime_mock.call_args.kwargs["open_path"] == "desktop-probe.html"
     terminate_browser_mock.assert_called_once_with(333)
     wait_pid_exit_mock.assert_called_once_with(333, timeout_s=15.0)
     wait_process_exit_mock.assert_called_once_with(runtime_process, timeout_s=45.0)

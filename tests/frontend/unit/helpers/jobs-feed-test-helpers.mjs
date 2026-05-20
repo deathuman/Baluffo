@@ -9,6 +9,7 @@ export function createBaseDeps(overrides = {}) {
     allJobs: [],
     initialized: [],
     rendered: [],
+    startupStates: [],
     interactive: []
   };
   return {
@@ -42,6 +43,10 @@ export function createBaseDeps(overrides = {}) {
       fetchJobsReport: async () => null,
       startJobsBootstrap: async () => ({ started: true }),
       windowObject: { localStorage: new Map() },
+      setJobsStartupState: (state, detail = "") => calls.startupStates.push({
+        state: String(state || ""),
+        detail: String(detail || "")
+      }),
       setHasInitializedJobsFeed: value => calls.initialized.push(Boolean(value)),
       scheduleNonCriticalStartupWork: () => {},
       applyPendingAutoRefreshSignal: async () => {},

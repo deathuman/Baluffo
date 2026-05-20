@@ -105,7 +105,7 @@ async function seedBridgeRuntimeBase(page) {
   }, BRIDGE_RUNTIME_BASE);
 }
 
-async function expectJobsPageReady(page, timeout = 90000) {
+async function expectJobsPageReady(page, timeout = 90000, expectLoadedStatus = true) {
   await page.waitForFunction(() => {
     const state = document.body?.getAttribute("data-jobs-startup-state") || "loading";
     return state === "interactive" || state === "error";
@@ -114,13 +114,14 @@ async function expectJobsPageReady(page, timeout = 90000) {
   await expect(page.locator("#refresh-jobs-btn")).toBeEnabled();
   await expect(page.locator("#auth-sign-in-btn")).toBeEnabled();
   await expect(page.locator("#jobs-list")).not.toContainText(/Loading jobs/i);
-  await expect(page.locator("#source-status")).toContainText(/^Loaded \d[\d,]* jobs/i, { timeout });
+  if (expectLoadedStatus) await expect(page.locator("#source-status")).toContainText(/^Loaded \d[\d,]* jobs/i, { timeout });
 }
 
 async function expectDesktopUpdateToggleUsable(page, timeout = 15000) {
   const updateToggle = page.locator("#desktop-update-toggle-btn");
   await expect(updateToggle).toBeVisible({ timeout });
   await expect(updateToggle).toBeEnabled({ timeout });
+  await page.locator("[data-jobs-first-run-notice='true'] button").click({ timeout: 1000 }).catch(() => {});
   await updateToggle.click();
   await expect(page.locator("#desktop-update-panel")).toBeVisible({ timeout });
 }
@@ -347,7 +348,7 @@ test("jobs admin badge reaches online state after navigating back from saved", a
 test("desktop jobs update toggle stays usable after Jobs to Saved to Jobs navigation", async ({ page }) => {
   await seedBridgeRuntimeBase(page);
   await page.goto(`/jobs.html${DESKTOP_RUNTIME_QUERY}`);
-  await expectJobsPageReady(page);
+  await expectJobsPageReady(page, 90000, false);
   await expectDesktopUpdateToggleUsable(page);
 
   await signInWithProfile(page, "#auth-sign-in-btn", "Desktop Smoke User", "#saved-jobs-btn");
@@ -357,14 +358,14 @@ test("desktop jobs update toggle stays usable after Jobs to Saved to Jobs naviga
 
   await page.click("#jobs-page-btn");
   await page.waitForURL("**/jobs.html**");
-  await expectJobsPageReady(page);
+  await expectJobsPageReady(page, 90000, false);
   await expectDesktopUpdateToggleUsable(page);
 });
 
 test("desktop jobs update toggle stays usable after Jobs to Admin to Jobs navigation", async ({ page }) => {
   await seedBridgeRuntimeBase(page);
   await page.goto(`/jobs.html${DESKTOP_RUNTIME_QUERY}`);
-  await expectJobsPageReady(page);
+  await expectJobsPageReady(page, 90000, false);
   await expectDesktopUpdateToggleUsable(page);
 
   const adminBtn = page.locator("#admin-page-btn");
@@ -375,7 +376,7 @@ test("desktop jobs update toggle stays usable after Jobs to Admin to Jobs naviga
 
   await page.click("#admin-jobs-btn");
   await page.waitForURL("**/jobs.html**");
-  await expectJobsPageReady(page);
+  await expectJobsPageReady(page, 90000, false);
   await expectDesktopUpdateToggleUsable(page);
 });
 
