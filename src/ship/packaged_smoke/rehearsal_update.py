@@ -70,6 +70,25 @@ def _remove_optional_psutil_runtime(portable_root: Path) -> list[str]:
     return removed
 
 
+def _prepare_desktop_update_rehearsal_roots(
+    *,
+    portable_root: Path,
+    artifacts_dir: Path,
+    public_keys: dict[str, str],
+) -> tuple[Path, Path, list[str]]:
+    deps = _root()
+    source = portable_root.expanduser().resolve()
+    install_root = artifacts_dir / "portable-install"
+    target_root = artifacts_dir / "portable-update-target"
+    for root_dir in (install_root, target_root):
+        if root_dir.exists():
+            shutil.rmtree(root_dir)
+        shutil.copytree(source, root_dir)
+        deps._inject_desktop_update_public_keys(root_dir, public_keys)
+    source_psutil_removed = _remove_optional_psutil_runtime(install_root)
+    return install_root, target_root, source_psutil_removed
+
+
 def _seed_rehearsal_local_data(data_dir: Path) -> dict[str, Any]:
     deps = _root()
     store = deps.LocalDataStore(deps.LocalDataPaths.from_data_dir(data_dir))
@@ -227,6 +246,25 @@ def _wait_for_process_exit(process: subprocess.Popen[Any], *, timeout_s: float) 
     raise TimeoutError("Packaged runtime did not exit for helper handoff in time.")
 
 
+def _confirmed_install_handoff_status(paths: Any) -> dict[str, Any]:
+    deps = _root()
+    if not paths.handoff_request_path.exists():
+        return {}
+    try:
+        status = json.loads(paths.install_state_path.read_text(encoding="utf-8"))
+    except Exception:
+        status = {}
+    if not isinstance(status, dict):
+        return {}
+    install_state = str(status.get("installState") or "").strip().lower()
+    pending_states = getattr(
+        deps.desktop_update_mod,
+        "HANDOFF_PENDING_INSTALL_STATES",
+        frozenset({"handoff_requested", "waiting_for_exit"}),
+    )
+    return status if install_state in pending_states else {}
+
+
 def _wait_for_install_handoff_confirmation(
     *,
     bridge_port: int,
@@ -238,11 +276,22 @@ def _wait_for_install_handoff_confirmation(
     deadline = deps.time.monotonic() + max(5.0, float(timeout_s))
     last_status: dict[str, Any] = {}
     while deps.time.monotonic() < deadline:
+        disk_status = _confirmed_install_handoff_status(paths)
+        if disk_status:
+            return disk_status
         handoff_marker_exists = paths.handoff_request_path.exists()
-        status_code, status_payload = deps.request_json(
-            f"http://127.0.0.1:{bridge_port}/app/update-status?t={deps.time.time_ns()}",
-            timeout_s=10.0,
-        )
+        try:
+            status_code, status_payload = deps.request_json(
+                f"http://127.0.0.1:{bridge_port}/app/update-status?t={deps.time.time_ns()}",
+                timeout_s=10.0,
+            )
+        except OSError as exc:
+            disk_status = _confirmed_install_handoff_status(paths)
+            if disk_status:
+                return disk_status
+            last_status = {"error": str(exc), "handoffRequestPresent": handoff_marker_exists}
+            deps.time.sleep(0.2)
+            continue
         if status_code != 200:
             raise RuntimeError(
                 f"Packaged update handoff status failed: {status_payload or {'status': status_code}}"
@@ -261,6 +310,26 @@ def _wait_for_install_handoff_confirmation(
         "Packaged runtime did not confirm updater handoff in time: "
         f"{last_status or {'handoffRequestPresent': paths.handoff_request_path.exists()}}"
     )
+
+
+def _post_install_update_handoff(
+    *,
+    bridge_port: int,
+    paths: Any,
+    timeout_s: float,
+) -> tuple[int, dict[str, Any]]:
+    deps = _root()
+    try:
+        return deps.post_json(
+            f"http://127.0.0.1:{bridge_port}/app/install-update",
+            {},
+            timeout_s=timeout_s,
+        )
+    except OSError:
+        handoff_status = _confirmed_install_handoff_status(paths)
+        if not handoff_status:
+            raise
+        return 200, {"started": True, "status": handoff_status}
 
 
 def _wait_for_relaunched_runtime(
@@ -400,17 +469,16 @@ def run_desktop_update_rehearsal(
     private_key = deps.desktop_update_mod.Ed25519PrivateKey.generate()
     public_key_b64 = base64.b64encode(private_key.public_key().public_bytes_raw()).decode("ascii")
     key_id = "desktop-ed25519-rehearsal"
-    deps._inject_desktop_update_public_keys(portable_root, {key_id: public_key_b64})
-    install_root = artifacts_dir / "portable-install"
-    if install_root.exists():
-        shutil.rmtree(install_root)
-    shutil.copytree(portable_root, install_root)
-    source_psutil_removed = _remove_optional_psutil_runtime(install_root)
+    install_root, target_root, source_psutil_removed = _prepare_desktop_update_rehearsal_roots(
+        portable_root=portable_root,
+        artifacts_dir=artifacts_dir,
+        public_keys={key_id: public_key_b64},
+    )
     install_exe = install_root / "Baluffo.exe"
     data_dir = install_root / "ship" / "data"
     seeded = deps._seed_rehearsal_local_data(data_dir)
     target_zip = deps._archive_portable_dir(
-        portable_root,
+        target_root,
         artifacts_dir / "baluffo-portable-update.zip",
     )
     manifest = {
@@ -551,9 +619,9 @@ def run_desktop_update_rehearsal(
                     "Update status poll failed during rehearsal: "
                     f"{download_status or {'status': status_code}}"
                 )
-        status_code, install_payload = deps.post_json(
-            f"http://127.0.0.1:{initial_bridge_port}/app/install-update",
-            {},
+        status_code, install_payload = _post_install_update_handoff(
+            bridge_port=initial_bridge_port,
+            paths=paths,
             timeout_s=max(30.0, runtime_timeout_s),
         )
         if status_code != 200:

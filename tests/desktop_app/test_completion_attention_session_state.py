@@ -87,6 +87,8 @@ def test_launch_desktop_app_saves_attention_window_identity_and_session_root() -
         bridge_process=mock.ANY,
         browser_process=browser_process,
         browser_pid=303,
+        browser_name="msedge",
+        browser_path="C:/Edge/msedge.exe",
         launch_accepted_elapsed_ms=mock.ANY,
         require_window=True,
         background_active_work_recovery=False,

@@ -1,18 +1,3 @@
 {
-  "allowlist": [
-    {
-      "id": "PYSEC-2017-83",
-      "package": "scrapy",
-      "reason": "Baluffo does not use Scrapy's affected file-download storage path; the advisory has no fixed version for Scrapy 2.15.0.",
-      "owner": "@deathuman",
-      "review_by": "2026-07-24"
-    },
-    {
-      "id": "CVE-2026-42304",
-      "package": "twisted",
-      "reason": "Baluffo uses Twisted transitively through Scrapy but does not expose twisted.names DNS server parsing; the only advertised fix is a Twisted release candidate, so review before adopting a prerelease runtime dependency.",
-      "owner": "@deathuman",
-      "review_by": "2026-06-30"
-    }
-  ]
+  "allowlist": []
 }

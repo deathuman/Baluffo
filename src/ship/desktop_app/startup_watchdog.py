@@ -170,6 +170,9 @@ def watch_browser_session(
     bridge_process: subprocess.Popen[str] | None = None,
     browser_process: subprocess.Popen[str] | None = None,
     browser_pid: int = 0,
+    browser_name: str = "",
+    browser_path: str = "",
+    browser_profile_dir_hash: str = "",
     launch_accepted_elapsed_ms: int = 0,
     heartbeat_idle_timeout_s: float = HEARTBEAT_IDLE_TIMEOUT_S,
     require_window: bool = True,
@@ -269,6 +272,10 @@ def watch_browser_session(
                     "desktop_browser_process_exited_waiting_for_bridge",
                     elapsedMs=int((time.perf_counter() - started_mono) * 1000),
                     returnCode=int(return_code or 0),
+                    browser=str(browser_name or ""),
+                    browserPath=str(browser_path or ""),
+                    browserPid=int(browser_pid or 0),
+                    browserProfileDirHash=str(browser_profile_dir_hash or ""),
                 )
                 api._append_startup_trace(
                     data_dir,

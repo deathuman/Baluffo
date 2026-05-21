@@ -99,24 +99,100 @@ def _wait_for_process_exit_pid(pid: int, *, timeout_s: float = 5.0) -> bool:
     return not api.is_process_alive(pid)
 
 
-def _windows_terminate_process_tree_by_pid(pid: int) -> bool:
+def _truncate_diagnostic_text(value: object, *, limit: int = 500) -> str:
+    text = str(value or "").strip()
+    return text if len(text) <= limit else f"{text[:limit]}..."
+
+
+def _windows_api_terminate_process_by_pid(pid: int, *, timeout_s: float = 5.0) -> dict[str, object]:
     api = desktop_api()
-    if api.os.name != "nt":
-        return False
-    pid = int(pid or 0)
-    if pid <= 0:
-        return False
+    result: dict[str, object] = {
+        "windowsApiAttempted": False,
+        "windowsApiOpened": False,
+        "windowsApiTerminateCalled": False,
+        "windowsApiTerminateOk": False,
+        "windowsApiWaitResult": -1,
+        "windowsApiErrorCode": 0,
+        "windowsApiError": "",
+        "windowsApiExited": False,
+    }
+    if api.os.name != "nt" or int(pid or 0) <= 0:
+        return result
+    result["windowsApiAttempted"] = True
+    access = api._PROCESS_TERMINATE | api._PROCESS_SYNCHRONIZE
+    handle = api.ctypes.windll.kernel32.OpenProcess(access, False, int(pid))
+    if not handle:
+        code = int(api.ctypes.windll.kernel32.GetLastError() or 0)
+        result["windowsApiErrorCode"] = code
+        result["windowsApiError"] = api._truncate_diagnostic_text(
+            api.ctypes.FormatError(code) if code else "OpenProcess failed"
+        )
+        return result
+    result["windowsApiOpened"] = True
     try:
-        api.subprocess.run(
+        result["windowsApiTerminateCalled"] = True
+        ok = bool(api.ctypes.windll.kernel32.TerminateProcess(handle, 1))
+        result["windowsApiTerminateOk"] = ok
+        if not ok:
+            code = int(api.ctypes.windll.kernel32.GetLastError() or 0)
+            result["windowsApiErrorCode"] = code
+            result["windowsApiError"] = api._truncate_diagnostic_text(
+                api.ctypes.FormatError(code) if code else "TerminateProcess failed"
+            )
+            return result
+        wait_ms = int(max(0.2, float(timeout_s)) * 1000)
+        wait_result = int(api.ctypes.windll.kernel32.WaitForSingleObject(handle, wait_ms))
+        result["windowsApiWaitResult"] = wait_result
+        result["windowsApiExited"] = wait_result != api._WAIT_TIMEOUT
+        return result
+    finally:
+        api.ctypes.windll.kernel32.CloseHandle(handle)
+
+
+def _windows_terminate_process_tree_details_by_pid(pid: int) -> dict[str, object]:
+    api = desktop_api()
+    result: dict[str, object] = {
+        "pid": int(pid or 0),
+        "taskkillAttempted": False,
+        "taskkillReturnCode": -1,
+        "taskkillStdout": "",
+        "taskkillStderr": "",
+        "taskkillError": "",
+        "taskkillExited": False,
+        "fallbackMethod": "",
+        "terminated": False,
+        "processAliveAfter": False,
+    }
+    if api.os.name != "nt":
+        return result
+    pid = int(pid or 0)
+    result["pid"] = pid
+    if pid <= 0:
+        return result
+    try:
+        result["taskkillAttempted"] = True
+        completed = api.subprocess.run(
             ["taskkill", "/PID", str(pid), "/T", "/F"],
-            stdout=api.subprocess.DEVNULL,
-            stderr=api.subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
             check=False,
             timeout=10,
         )
-    except OSError:
-        return not bool(api.is_process_alive(pid))
-    return bool(api._wait_for_process_exit_pid(pid, timeout_s=15.0))
+        result["taskkillReturnCode"] = int(completed.returncode or 0)
+        result["taskkillStdout"] = api._truncate_diagnostic_text(completed.stdout)
+        result["taskkillStderr"] = api._truncate_diagnostic_text(completed.stderr)
+    except api.subprocess.TimeoutExpired as exc:
+        result["taskkillError"] = api._truncate_diagnostic_text(exc)
+    except OSError as exc:
+        result["taskkillError"] = api._truncate_diagnostic_text(exc)
+    if api._wait_for_process_exit_pid(pid, timeout_s=15.0):
+        result["taskkillExited"] = True
+    else:
+        result.update(api._windows_api_terminate_process_by_pid(pid, timeout_s=5.0))
+        result["fallbackMethod"] = "windows-api"
+    result["processAliveAfter"] = bool(api.is_process_alive(pid))
+    result["terminated"] = not bool(result["processAliveAfter"])
+    return result
 
 
 def _windows_process_image_matches(pid: int, *, expected_exe_path: object) -> bool:
@@ -139,6 +215,7 @@ def _trace_stale_runtime_reclaim(
     pid: int = 0,
     port: int = 0,
     confirmed: bool = False,
+    **details: object,
 ) -> None:
     api = desktop_api()
     api._append_startup_trace(
@@ -150,6 +227,7 @@ def _trace_stale_runtime_reclaim(
         pid=int(pid or 0),
         port=int(port or 0),
         confirmed=bool(confirmed),
+        **details,
     )
 
 
@@ -161,8 +239,9 @@ def _stale_runtime_reclaim_result(
     pid: int = 0,
     port: int = 0,
     confirmed: bool = False,
+    **details: object,
 ) -> dict[str, object]:
-    return {
+    result: dict[str, object] = {
         "target": str(target or ""),
         "status": str(status or ""),
         "reason": str(reason or ""),
@@ -170,6 +249,8 @@ def _stale_runtime_reclaim_result(
         "port": int(port or 0),
         "confirmed": bool(confirmed),
     }
+    result.update(details)
+    return result
 
 
 def _get_windows_process_image_path(pid: int) -> str:
@@ -568,11 +649,22 @@ def _windows_try_reclaim_stale_bridge_process(
             reason="bridge_image_path_mismatch",
             pid=listener_pid,
             port=bridge_port,
+            listenerPidsBefore=sorted(listener_pids),
+            imagePathMatched=False,
         )
         api._trace_stale_runtime_reclaim(data_dir, **result)
         return result
-    api._windows_terminate_process_tree_by_pid(listener_pid)
-    if api._pids_listening_on_tcp_port_windows(bridge_port):
+    target_alive_before = bool(api.is_process_alive(listener_pid))
+    termination = api._windows_terminate_process_tree_details_by_pid(listener_pid)
+    listener_pids_after = sorted(api._pids_listening_on_tcp_port_windows(bridge_port))
+    termination_details = {
+        **{key: value for key, value in termination.items() if key != "pid"},
+        "listenerPidsBefore": sorted(listener_pids),
+        "listenerPidsAfter": listener_pids_after,
+        "imagePathMatched": True,
+        "targetAliveBefore": target_alive_before,
+    }
+    if listener_pids_after:
         result = _stale_runtime_reclaim_result(
             "bridge",
             status="failed",
@@ -580,6 +672,7 @@ def _windows_try_reclaim_stale_bridge_process(
             pid=listener_pid,
             port=bridge_port,
             confirmed=True,
+            **termination_details,
         )
         api._trace_stale_runtime_reclaim(data_dir, **result)
         return result
@@ -590,6 +683,7 @@ def _windows_try_reclaim_stale_bridge_process(
         pid=listener_pid,
         port=bridge_port,
         confirmed=True,
+        **termination_details,
     )
     api._trace_stale_runtime_reclaim(data_dir, **result)
     return result
@@ -688,11 +782,22 @@ def _windows_try_reclaim_stale_site_process(
             reason="site_image_path_mismatch",
             pid=listener_pid,
             port=site_port,
+            listenerPidsBefore=sorted(listener_pids),
+            imagePathMatched=False,
         )
         api._trace_stale_runtime_reclaim(data_dir, **result)
         return result
-    api._windows_terminate_process_tree_by_pid(listener_pid)
-    if api._pids_listening_on_tcp_port_windows(site_port):
+    target_alive_before = bool(api.is_process_alive(listener_pid))
+    termination = api._windows_terminate_process_tree_details_by_pid(listener_pid)
+    listener_pids_after = sorted(api._pids_listening_on_tcp_port_windows(site_port))
+    termination_details = {
+        **{key: value for key, value in termination.items() if key != "pid"},
+        "listenerPidsBefore": sorted(listener_pids),
+        "listenerPidsAfter": listener_pids_after,
+        "imagePathMatched": True,
+        "targetAliveBefore": target_alive_before,
+    }
+    if listener_pids_after:
         result = _stale_runtime_reclaim_result(
             "site",
             status="failed",
@@ -700,6 +805,7 @@ def _windows_try_reclaim_stale_site_process(
             pid=listener_pid,
             port=site_port,
             confirmed=True,
+            **termination_details,
         )
         api._trace_stale_runtime_reclaim(data_dir, **result)
         return result
@@ -710,6 +816,7 @@ def _windows_try_reclaim_stale_site_process(
         pid=listener_pid,
         port=site_port,
         confirmed=True,
+        **termination_details,
     )
     api._trace_stale_runtime_reclaim(data_dir, **result)
     return result

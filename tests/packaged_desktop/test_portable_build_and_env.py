@@ -41,7 +41,7 @@ def test_ensure_portable_exe_uses_rebuild_output_dir_when_requested() -> None:
                 requested_exe, rebuild=True, rebuild_output_dir=rebuilt_dir
             )
         assert resolved == rebuilt_exe.resolve()
-        build_mock.assert_called_once_with(rebuilt_dir)
+        build_mock.assert_called_once_with(rebuilt_dir, force=True)
 
 
 def test_run_portable_build_cleans_pyinstaller_scratch_dirs_for_explicit_output_dir() -> None:
@@ -57,8 +57,20 @@ def test_run_portable_build_cleans_pyinstaller_scratch_dirs_for_explicit_output_
             exe_path = smoke.run_portable_build(output_dir)
         assert exe_path == output_dir / "Baluffo.exe"
         run_mock.assert_called_once()
+        command = run_mock.call_args.args[0]
+        assert "--bundle-version" in command
+        assert (
+            command[command.index("--bundle-version") + 1]
+            == smoke.expected_portable_build_version()
+        )
+        assert "--force" not in command
         for name in smoke.PORTABLE_BUILD_SCRATCH_NAMES:
             assert not (output_dir.parent / name).exists()
+
+        with mock.patch.object(smoke.subprocess, "run") as forced_run_mock:
+            smoke.run_portable_build(output_dir, force=True)
+        forced_command = forced_run_mock.call_args.args[0]
+        assert "--force" in forced_command
 
 
 def test_prune_packaged_smoke_artifacts_keeps_recent_runs_and_current_dir() -> None:
@@ -129,6 +141,48 @@ def test_select_startup_probe_browser_prefers_chrome_then_brave_then_edge() -> N
     }
 
 
+def test_select_startup_probe_browser_prefers_explicit_browser_path() -> None:
+    with mock.patch.object(
+        smoke.desktop_app_mod,
+        "chromium_app_mode_supported",
+        return_value=True,
+    ):
+        selected = smoke.select_startup_probe_browser(
+            {smoke.desktop_app_mod.PREFERRED_BROWSER_PATH_ENV: "C:/Playwright/chrome.exe"}
+        )
+
+    assert selected == {
+        "browserName": "chrome",
+        "browserPath": "C:/Playwright/chrome.exe",
+    }
+
+
+def test_resolve_playwright_chromium_uses_host_env_when_runtime_localappdata_is_isolated() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp)
+        chromium_path = root / "ms-playwright" / "chromium" / "chrome.exe"
+        chromium_path.parent.mkdir(parents=True)
+        chromium_path.write_text("chrome", encoding="utf-8")
+        completed = smoke.subprocess.CompletedProcess(
+            ["node"],
+            0,
+            stdout=f"{chromium_path}\n",
+            stderr="",
+        )
+        smoke.packaged_smoke_build_env_mod._PLAYWRIGHT_CHROMIUM_PATH_CACHE = None
+        with (
+            mock.patch.object(smoke, "resolve_node_command", return_value=["node"]),
+            mock.patch.object(smoke.subprocess, "run", return_value=completed) as run_mock,
+            mock.patch.dict(smoke.os.environ, {"LOCALAPPDATA": "C:/host-localappdata"}),
+        ):
+            resolved = smoke.resolve_playwright_chromium_executable(
+                {"LOCALAPPDATA": "C:/isolated-runtime-localappdata"}
+            )
+
+    assert resolved == str(chromium_path.resolve())
+    assert run_mock.call_args.kwargs["env"]["LOCALAPPDATA"] == "C:/host-localappdata"
+
+
 def test_select_startup_probe_browser_uses_edge_only_when_other_candidates_unavailable() -> None:
     candidates = [
         {"name": "chrome", "path": "C:/Chrome/chrome.exe"},
@@ -174,40 +228,37 @@ def test_select_startup_probe_browser_fails_when_no_supported_candidate_exists()
             smoke.select_startup_probe_browser({})
 
 
-def test_ensure_portable_exe_rebuilds_default_dist_when_exe_older_than_sources() -> None:
+def test_ensure_portable_exe_rebuilds_default_dist_when_fingerprint_is_stale() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         fake_default = Path(tmp) / "dist" / "baluffo-portable" / "Baluffo.exe"
         fake_default.parent.mkdir(parents=True, exist_ok=True)
         fake_default.write_text("old", encoding="utf-8")
-        old = 1_000_000.0
-        os.utime(fake_default, (old, old))
         with (
             mock.patch.object(smoke, "DEFAULT_EXE_PATH", fake_default),
+            mock.patch.object(
+                smoke,
+                "portable_build_status",
+                return_value={"fresh": False, "status": "stale"},
+            ),
             mock.patch.object(smoke, "run_portable_build", return_value=fake_default) as build_mock,
         ):
             smoke.ensure_portable_exe(fake_default, rebuild=False)
-        build_mock.assert_called_once_with(None)
+        build_mock.assert_called_once_with(None, force=False)
 
 
-def test_default_portable_exe_becomes_stale_when_frontend_asset_is_newer() -> None:
+def test_default_portable_exe_becomes_stale_when_fingerprint_is_not_current() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
-        root = Path(tmp)
-        fake_default = root / "dist" / "baluffo-portable" / "Baluffo.exe"
-        frontend_asset = root / "frontend" / "jobs" / "app" / "feed.js"
+        fake_default = Path(tmp) / "dist" / "baluffo-portable" / "Baluffo.exe"
         fake_default.parent.mkdir(parents=True, exist_ok=True)
-        frontend_asset.parent.mkdir(parents=True, exist_ok=True)
         fake_default.write_text("old", encoding="utf-8")
-        frontend_asset.write_text("newer", encoding="utf-8")
-        old = 1_000_000.0
-        new = old + 100
-        os.utime(fake_default, (old, old))
-        os.utime(frontend_asset, (new, new))
 
         with (
-            mock.patch.object(smoke, "ROOT", root),
             mock.patch.object(smoke, "DEFAULT_EXE_PATH", fake_default),
-            mock.patch.object(smoke, "_PORTABLE_EXE_FRESHNESS_MARKERS", ()),
-            mock.patch.object(smoke, "_PORTABLE_EXE_FRESHNESS_DIRS", (root / "frontend",)),
+            mock.patch.object(
+                smoke,
+                "portable_build_status",
+                return_value={"fresh": False, "status": "stale"},
+            ),
         ):
             assert smoke._default_portable_exe_stale(fake_default) is True
 
@@ -273,6 +324,23 @@ def test_collect_packaged_smoke_env_diagnostics_reports_paths_and_elevation() ->
         with (
             mock.patch.object(smoke, "DEFAULT_EXE_PATH", exe_path),
             mock.patch.object(smoke, "is_windows_process_elevated", return_value=True),
+            mock.patch.object(
+                smoke,
+                "portable_build_status",
+                return_value={
+                    "status": "fresh",
+                    "expectedFingerprint": "expected-fingerprint",
+                    "actualFingerprint": "actual-fingerprint",
+                },
+            ),
+            mock.patch.object(
+                smoke,
+                "read_portable_build_provenance",
+                return_value={
+                    "fingerprint": "actual-fingerprint",
+                    "cacheStatus": "hit",
+                },
+            ),
         ):
             diagnostics = smoke.collect_packaged_smoke_env_diagnostics(
                 artifacts_dir=root / "artifacts",
@@ -288,6 +356,11 @@ def test_collect_packaged_smoke_env_diagnostics_reports_paths_and_elevation() ->
         assert diagnostics["exePathSource"] == "default-dist"
         assert diagnostics["explicitExePathFreshness"] == "n/a"
         assert diagnostics["rebuiltPortableExe"] is False
+        assert diagnostics["portableBuildFingerprint"] == "actual-fingerprint"
+        assert diagnostics["portableBuildCacheStatus"] == "hit"
+        assert diagnostics["portableBuildFreshness"] == "fresh"
+        assert diagnostics["portableBuildExpectedFingerprint"] == "expected-fingerprint"
+        assert diagnostics["portableBuildActualFingerprint"] == "actual-fingerprint"
         assert diagnostics["artifactsDirWritable"]
         assert diagnostics["exeParentWritable"]
         assert diagnostics["nodePath"] == "C:/Program Files/nodejs/node.exe"
@@ -329,6 +402,23 @@ def test_collect_packaged_smoke_env_diagnostics_reports_rebuilt_default_dist() -
         with (
             mock.patch.object(smoke, "DEFAULT_EXE_PATH", exe_path),
             mock.patch.object(smoke, "is_windows_process_elevated", return_value=False),
+            mock.patch.object(
+                smoke,
+                "portable_build_status",
+                return_value={
+                    "status": "fresh",
+                    "expectedFingerprint": "expected-fingerprint",
+                    "actualFingerprint": "actual-fingerprint",
+                },
+            ),
+            mock.patch.object(
+                smoke,
+                "read_portable_build_provenance",
+                return_value={
+                    "fingerprint": "actual-fingerprint",
+                    "cacheStatus": "miss",
+                },
+            ),
         ):
             diagnostics = smoke.collect_packaged_smoke_env_diagnostics(
                 artifacts_dir=root / "artifacts",
@@ -343,6 +433,7 @@ def test_collect_packaged_smoke_env_diagnostics_reports_rebuilt_default_dist() -
         assert diagnostics["exePathSource"] == "rebuilt-dist"
         assert diagnostics["explicitExePathFreshness"] == "n/a"
         assert diagnostics["rebuiltPortableExe"] is True
+        assert diagnostics["portableBuildCacheStatus"] == "miss"
 
 
 def test_packaged_pipeline_smoke_mode_is_enabled_only_for_jobs_pipeline_script() -> None:
@@ -404,14 +495,31 @@ def test_packaged_runtime_env_overrides_can_isolate_local_appdata_per_run() -> N
 
 def test_packaged_runtime_env_overrides_sets_startup_profile_mode_for_probes() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
-        overrides = smoke.packaged_runtime_env_overrides(
-            artifacts_dir=Path(tmp) / "artifacts",
-            startup_probe=True,
-            profile_mode="warm",
-        )
+        with mock.patch.object(smoke, "preferred_packaged_desktop_browser_env", return_value={}):
+            overrides = smoke.packaged_runtime_env_overrides(
+                artifacts_dir=Path(tmp) / "artifacts",
+                startup_probe=True,
+                profile_mode="warm",
+            )
 
         assert overrides["BALUFFO_DESKTOP_ALLOW_EDGE_APP_MODE"] == "1"
         assert overrides[smoke.desktop_app_mod.STARTUP_PROFILE_MODE_ENV] == "warm"
+
+
+def test_packaged_runtime_env_overrides_prefers_playwright_chromium_for_probes() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        browser_path = str(Path(tmp) / "chromium" / "chrome.exe")
+        with mock.patch.object(
+            smoke,
+            "preferred_packaged_desktop_browser_env",
+            return_value={smoke.desktop_app_mod.PREFERRED_BROWSER_PATH_ENV: browser_path},
+        ):
+            overrides = smoke.packaged_runtime_env_overrides(
+                artifacts_dir=Path(tmp) / "artifacts",
+                startup_probe=True,
+            )
+
+    assert overrides[smoke.desktop_app_mod.PREFERRED_BROWSER_PATH_ENV] == browser_path
 
 
 def test_classify_subprocess_error_marks_spawn_eperm() -> None:

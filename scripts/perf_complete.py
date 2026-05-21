@@ -593,8 +593,6 @@ def run_sync_rehearsal(
     ]
     if exe_path is not None:
         command.extend(["--exe-path", str(exe_path)])
-    else:
-        command.append("--rebuild")
     command_result = run_monitored_command(
         command,
         stdout_path=output_dir / "sync" / "stdout.log",

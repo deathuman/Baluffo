@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import importlib.metadata
 import importlib.util
 import json
 import os
@@ -17,11 +19,94 @@ from zipfile import ZIP_DEFLATED, ZipFile
 ROOT = Path(__file__).resolve().parents[1]
 DIST_DIR = ROOT / "dist" / "baluffo-portable"
 LATEST_PORTABLE_DIR = ROOT / "_out" / "latest" / "build" / "portable"
+BUILD_CACHE_ROOT = ROOT / "_out" / "portable-build-cache"
 DEFAULT_EXE_NAME = "Baluffo"
 DEFAULT_ICON_PATH = ROOT / "favicon.ico"
+PORTABLE_BUILD_PROVENANCE_FILE = ".baluffo-portable-build.json"
+CACHE_MANIFEST_FILE = "manifest.json"
+CACHE_SCHEMA_VERSION = 1
+PORTABLE_BUILD_VERSION_ENV = "BALUFFO_PORTABLE_BUILD_VERSION"
 PLAYWRIGHT_BROWSER_NAME = "chromium-headless-shell"
 PLAYWRIGHT_BROWSER_CACHE_PREFIX = "chromium_headless_shell"
 PLAYWRIGHT_BROWSER_EXE_NAME = "chrome-headless-shell.exe"
+BUILD_INPUT_FILES = (
+    "baluffo.config.json",
+    "baluffo.config.local.json",
+    "favicon.ico",
+    "index.html",
+    "jobs.html",
+    "saved.html",
+    "admin.html",
+    "theme.js",
+    "startup-probe.js",
+    "desktop-probe-css.html",
+    "desktop-probe.html",
+    "desktop-probe-head.html",
+    "desktop-probe-inline.html",
+    "README.md",
+    "package.json",
+    "package-lock.json",
+    "requirements-lock.txt",
+    "docs/RELEASE.md",
+    "docs/update-manifest.schema.json",
+    "docs/desktop-update-manifest.schema.json",
+    "packaging/README.md",
+    "packaging/github-app-sync-config.template.json",
+    "packaging/github-app-sync-config.json",
+    "packaging/github-app-sync-config.localkey.json",
+    "packaging/desktop-update-public-keys.json",
+    "scripts/build_portable_exe.py",
+    "scripts/build_ship_bundle.py",
+    "scripts/build_frontend_runtime_config.py",
+    "scripts/build_sync_app_config.py",
+)
+BUILD_INPUT_DIRS = (
+    "src",
+    "frontend",
+    "probes",
+    "styles",
+    "data/contracts",
+    "data/defaults",
+)
+BUILD_ENV_VALUE_NAMES = (
+    "BALUFFO_SYNC_APP_CONFIG_PATH",
+    "BALUFFO_SYNC_BUILD_APP_ID",
+    "BALUFFO_SYNC_BUILD_INSTALLATION_ID",
+    "BALUFFO_SYNC_BUILD_REPO",
+    "BALUFFO_SYNC_BUILD_BRANCH",
+    "BALUFFO_SYNC_BUILD_PATH",
+    "BALUFFO_SYNC_BUILD_ALLOWED_REPO",
+    "BALUFFO_SYNC_BUILD_ALLOWED_BRANCH",
+    "BALUFFO_SYNC_BUILD_ALLOWED_PATH_PREFIX",
+    "BALUFFO_SYNC_BUILD_PRIVATE_KEY_PATH",
+    "BALUFFO_SYNC_BUILD_PRIVATE_KEY_PEM",
+    "BALUFFO_SYNC_BUILD_KEY_DERIVATION",
+    "BALUFFO_SYNC_BUILD_PASSPHRASE_ENV",
+    "BALUFFO_SYNC_BUILD_EMBEDDED_KEY_HINT",
+    "BALUFFO_SYNC_BUILD_EMBEDDED_KEY_VERSION",
+    "BALUFFO_SYNC_BUILD_KEY_SALT",
+    "BALUFFO_SYNC_KEY_PASSPHRASE",
+    "BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_JSON",
+    "BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_PATH",
+    "BALUFFO_DESKTOP_UPDATE_REPO",
+)
+BUILD_ENV_FILE_VALUE_NAMES = (
+    "BALUFFO_SYNC_APP_CONFIG_PATH",
+    "BALUFFO_SYNC_BUILD_CONFIG_PATH",
+    "BALUFFO_SYNC_BUILD_PRIVATE_KEY_PATH",
+    "BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_PATH",
+)
+PACKAGE_VERSION_NAMES = (
+    "PyInstaller",
+    "playwright",
+    "pydantic",
+    "scrapy",
+    "scrapy-playwright",
+    "twisted",
+    "certifi",
+)
+BUILD_SKIP_DIR_NAMES = {"__pycache__", ".pytest_cache", "node_modules"}
+BUILD_SKIP_FILE_SUFFIXES = {".pyc", ".pyo"}
 OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES = tuple(
     package_name
     for package_name in ("certifi",)
@@ -130,6 +215,358 @@ if str(ROOT) not in sys.path:
 from scripts.build_ship_bundle import DEFAULT_BUNDLE_VERSION, build_bundle
 from src.python_version_guard import ensure_required_python
 from src.ship.update_manager import REQUIRED_VERSION_FILES
+
+
+def _sha256_bytes(payload: bytes) -> str:
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _sha256_text(text: str) -> str:
+    return _sha256_bytes(str(text).encode("utf-8", errors="surrogatepass"))
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _relative_key(path: Path) -> str:
+    resolved = Path(path).expanduser().resolve()
+    try:
+        return resolved.relative_to(ROOT).as_posix()
+    except ValueError:
+        return resolved.name
+
+
+def _iter_build_input_paths() -> list[Path]:
+    paths: list[Path] = []
+    seen: set[Path] = set()
+
+    def add(candidate: Path) -> None:
+        try:
+            resolved = candidate.expanduser().resolve()
+        except OSError:
+            return
+        if resolved in seen or not resolved.is_file():
+            return
+        seen.add(resolved)
+        paths.append(resolved)
+
+    for rel_path in BUILD_INPUT_FILES:
+        add(ROOT / rel_path)
+    for rel_dir in BUILD_INPUT_DIRS:
+        root_dir = ROOT / rel_dir
+        if not root_dir.is_dir():
+            continue
+        for path in root_dir.rglob("*"):
+            if not path.is_file():
+                continue
+            parts = set(path.parts)
+            if parts.intersection(BUILD_SKIP_DIR_NAMES):
+                continue
+            if path.suffix.lower() in BUILD_SKIP_FILE_SUFFIXES:
+                continue
+            add(path)
+    return sorted(paths, key=_relative_key)
+
+
+def _safe_package_version(package_name: str) -> str:
+    try:
+        return importlib.metadata.version(package_name)
+    except importlib.metadata.PackageNotFoundError:
+        return ""
+
+
+def _installed_playwright_browser_revision() -> str:
+    try:
+        import playwright
+
+        browsers_json = (
+            Path(playwright.__file__).resolve().parent / "driver" / "package" / "browsers.json"
+        )
+        payload = json.loads(browsers_json.read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    browsers = payload.get("browsers") if isinstance(payload, dict) else None
+    if not isinstance(browsers, list):
+        return ""
+    for browser in browsers:
+        if isinstance(browser, dict) and browser.get("name") == PLAYWRIGHT_BROWSER_NAME:
+            return str(browser.get("revision") or "").strip()
+    return ""
+
+
+def _git_remote_digest() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return ""
+    if result.returncode != 0:
+        return ""
+    return _sha256_text(str(result.stdout or "").strip())
+
+
+def _env_digests(env: dict[str, str] | None = None) -> dict[str, dict[str, str | bool]]:
+    env_map = env if env is not None else os.environ
+    rows: dict[str, dict[str, str | bool]] = {}
+    for name in sorted(set(BUILD_ENV_VALUE_NAMES).union(BUILD_ENV_FILE_VALUE_NAMES)):
+        raw_value = str(env_map.get(name) or "")
+        row: dict[str, str | bool] = {
+            "present": bool(raw_value),
+            "valueSha256": _sha256_text(raw_value) if raw_value else "",
+        }
+        if name in BUILD_ENV_FILE_VALUE_NAMES and raw_value:
+            candidate = Path(raw_value).expanduser()
+            try:
+                resolved = candidate.resolve()
+                row["filePresent"] = resolved.is_file()
+                row["fileSha256"] = _sha256_file(resolved) if resolved.is_file() else ""
+            except OSError:
+                row["filePresent"] = False
+                row["fileSha256"] = ""
+        rows[name] = row
+    return rows
+
+
+def _file_digests() -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for path in _iter_build_input_paths():
+        rows.append({"path": _relative_key(path), "sha256": _sha256_file(path)})
+    return rows
+
+
+def portable_build_fingerprint(
+    *,
+    version: str,
+    exe_name: str = DEFAULT_EXE_NAME,
+    icon_path: Path | None = None,
+    env: dict[str, str] | None = None,
+) -> dict[str, object]:
+    resolved_icon = Path(icon_path or DEFAULT_ICON_PATH).expanduser().resolve()
+    inputs: dict[str, object] = {
+        "schemaVersion": CACHE_SCHEMA_VERSION,
+        "bundleVersion": str(version or DEFAULT_BUNDLE_VERSION).strip(),
+        "exeName": str(exe_name or DEFAULT_EXE_NAME).strip(),
+        "icon": {
+            "present": resolved_icon.is_file(),
+            "sha256": _sha256_file(resolved_icon) if resolved_icon.is_file() else "",
+            "suffix": resolved_icon.suffix.lower(),
+        },
+        "python": {
+            "version": sys.version,
+            "executableName": Path(sys.executable).name,
+            "platform": sys.platform,
+        },
+        "packages": {name: _safe_package_version(name) for name in PACKAGE_VERSION_NAMES},
+        "playwrightBrowserRevision": _installed_playwright_browser_revision(),
+        "gitRemoteSha256": _git_remote_digest(),
+        "pyinstaller": {
+            "hiddenImports": list(MAIN_RUNTIME_HIDDEN_IMPORTS),
+            "collectData": list(MAIN_RUNTIME_COLLECT_DATA_PACKAGES),
+            "collectAll": list(MAIN_RUNTIME_COLLECT_ALL_PACKAGES),
+            "excludedModules": list(MAIN_RUNTIME_EXCLUDED_MODULES),
+            "updaterHiddenImports": list(UPDATER_HELPER_HIDDEN_IMPORTS),
+            "updaterCollectData": list(UPDATER_HELPER_COLLECT_DATA_PACKAGES),
+        },
+        "envDigests": _env_digests(env),
+        "files": _file_digests(),
+    }
+    fingerprint = _sha256_text(json.dumps(inputs, sort_keys=True, separators=(",", ":")))
+    return {"fingerprint": fingerprint, "inputs": inputs}
+
+
+def _cache_entry_dir(fingerprint: str, cache_root: Path = BUILD_CACHE_ROOT) -> Path:
+    return Path(cache_root).expanduser().resolve() / str(fingerprint)
+
+
+def _cache_portable_dir(fingerprint: str, cache_root: Path = BUILD_CACHE_ROOT) -> Path:
+    return _cache_entry_dir(fingerprint, cache_root) / "portable"
+
+
+def _remove_path_with_retry(path: Path) -> None:
+    if not path.exists():
+        return
+    last_error: Exception | None = None
+    for _ in range(10):
+        try:
+            if path.is_dir():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+            last_error = None
+            break
+        except PermissionError as exc:
+            last_error = exc
+            time.sleep(0.25)
+    if path.exists():
+        raise RuntimeError(f"Could not clear path due to a file lock: {path}") from last_error
+
+
+def _copy_portable_tree(source: Path, target: Path) -> None:
+    resolved_source = Path(source).expanduser().resolve()
+    resolved_target = Path(target).expanduser().resolve()
+    if resolved_source == resolved_target:
+        return
+    _remove_path_with_retry(resolved_target)
+    resolved_target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(resolved_source, resolved_target)
+
+
+def _portable_tree_valid(portable_root: Path, *, exe_name: str = DEFAULT_EXE_NAME) -> bool:
+    root = Path(portable_root).expanduser().resolve()
+    if not (root / f"{exe_name}.exe").is_file():
+        return False
+    if not (root / "BaluffoUpdater.exe").is_file():
+        return False
+    if not (root / "ship").is_dir():
+        return False
+    try:
+        validate_playwright_browser_payload(root)
+    except RuntimeError:
+        return False
+    return True
+
+
+def _cache_entry_valid(
+    *,
+    fingerprint: str,
+    cache_root: Path = BUILD_CACHE_ROOT,
+    exe_name: str = DEFAULT_EXE_NAME,
+) -> bool:
+    entry = _cache_entry_dir(fingerprint, cache_root)
+    manifest_path = entry / CACHE_MANIFEST_FILE
+    portable = entry / "portable"
+    if not manifest_path.is_file() or not portable.is_dir():
+        return False
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if str(manifest.get("fingerprint") or "") != str(fingerprint):
+        return False
+    return _portable_tree_valid(portable, exe_name=exe_name)
+
+
+def portable_build_provenance_path(portable_root: Path) -> Path:
+    return Path(portable_root).expanduser().resolve() / PORTABLE_BUILD_PROVENANCE_FILE
+
+
+def read_portable_build_provenance(portable_root: Path) -> dict[str, object]:
+    path = portable_build_provenance_path(portable_root)
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _write_portable_build_provenance(
+    portable_root: Path,
+    *,
+    fingerprint: str,
+    version: str,
+    exe_name: str,
+    cache_status: str,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "schemaVersion": CACHE_SCHEMA_VERSION,
+        "fingerprint": str(fingerprint),
+        "bundleVersion": str(version),
+        "exeName": str(exe_name),
+        "cacheStatus": str(cache_status),
+        "generatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    portable_build_provenance_path(portable_root).write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return payload
+
+
+def _store_cache_entry(
+    output_dir: Path,
+    *,
+    fingerprint_payload: dict[str, object],
+    cache_root: Path = BUILD_CACHE_ROOT,
+    exe_name: str = DEFAULT_EXE_NAME,
+) -> Path:
+    fingerprint = str(fingerprint_payload["fingerprint"])
+    if not _portable_tree_valid(output_dir, exe_name=exe_name):
+        raise RuntimeError(f"Portable build is incomplete; refusing to cache: {output_dir}")
+    entry = _cache_entry_dir(fingerprint, cache_root)
+    temp_entry = entry.with_name(f"{entry.name}.tmp-{os.getpid()}")
+    _remove_path_with_retry(temp_entry)
+    temp_entry.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(Path(output_dir).expanduser().resolve(), temp_entry / "portable")
+    manifest = {
+        "schemaVersion": CACHE_SCHEMA_VERSION,
+        "fingerprint": fingerprint,
+        "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "inputs": fingerprint_payload.get("inputs") or {},
+    }
+    (temp_entry / CACHE_MANIFEST_FILE).write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _remove_path_with_retry(entry)
+    try:
+        temp_entry.replace(entry)
+    except PermissionError:
+        _remove_path_with_retry(entry)
+        entry.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(temp_entry / "portable", entry / "portable")
+        shutil.copy2(temp_entry / CACHE_MANIFEST_FILE, entry / CACHE_MANIFEST_FILE)
+        _remove_path_with_retry(temp_entry)
+    return entry
+
+
+def portable_build_status(
+    portable_root: Path,
+    *,
+    version: str = DEFAULT_BUNDLE_VERSION,
+    exe_name: str = DEFAULT_EXE_NAME,
+    icon_path: Path | None = None,
+    env: dict[str, str] | None = None,
+) -> dict[str, object]:
+    resolved_root = Path(portable_root).expanduser().resolve()
+    fingerprint_payload = portable_build_fingerprint(
+        version=version,
+        exe_name=exe_name,
+        icon_path=icon_path or DEFAULT_ICON_PATH,
+        env=env,
+    )
+    expected = str(fingerprint_payload["fingerprint"])
+    provenance = read_portable_build_provenance(resolved_root)
+    actual = str(provenance.get("fingerprint") or "")
+    exe_missing = not (resolved_root / f"{exe_name}.exe").is_file()
+    tree_valid = bool(not exe_missing and _portable_tree_valid(resolved_root, exe_name=exe_name))
+    fresh = bool(tree_valid and actual and actual == expected)
+    if exe_missing:
+        status = "missing"
+    elif not tree_valid:
+        status = "unusable"
+    elif not actual:
+        status = "unproven"
+    elif actual != expected:
+        status = "stale"
+    else:
+        status = "fresh"
+    return {
+        "fresh": fresh,
+        "status": status,
+        "expectedFingerprint": expected,
+        "actualFingerprint": actual,
+        "provenance": provenance,
+    }
 
 
 def _playwright_browser_cache_candidates() -> list[Path]:
@@ -281,19 +718,7 @@ def resolve_icon_path(icon_arg: str = "") -> Path:
 
 def build_portable_layout(output_dir: Path, version: str) -> Path:
     if output_dir.exists():
-        last_error: Exception | None = None
-        for _ in range(10):
-            try:
-                shutil.rmtree(output_dir)
-                last_error = None
-                break
-            except PermissionError as exc:
-                last_error = exc
-                time.sleep(0.25)
-        if output_dir.exists():
-            raise RuntimeError(
-                f"Could not clear existing portable output directory due to a file lock: {output_dir}"
-            ) from last_error
+        _remove_path_with_retry(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     build_bundle(output_dir / "ship", version)
     return output_dir
@@ -449,11 +874,66 @@ def mirror_latest_portable(output_dir: Path, latest_dir: Path = LATEST_PORTABLE_
         raise RuntimeError(f"Portable executable missing; refusing latest mirror: {source}")
     if source == target:
         return target
-    if target.exists():
-        shutil.rmtree(target)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(source, target)
+    _copy_portable_tree(source, target)
     return target
+
+
+def build_or_reuse_portable(
+    *,
+    output_dir: Path,
+    version: str,
+    exe_name: str,
+    icon_path: Path,
+    force: bool = False,
+    cache_root: Path = BUILD_CACHE_ROOT,
+) -> tuple[Path, Path, dict[str, object]]:
+    fingerprint_payload = portable_build_fingerprint(
+        version=version,
+        exe_name=exe_name,
+        icon_path=icon_path,
+    )
+    fingerprint = str(fingerprint_payload["fingerprint"])
+    cache_hit = (not force) and _cache_entry_valid(
+        fingerprint=fingerprint,
+        cache_root=cache_root,
+        exe_name=exe_name,
+    )
+    if cache_hit:
+        cache_portable = _cache_portable_dir(fingerprint, cache_root)
+        _copy_portable_tree(cache_portable, output_dir)
+        provenance = _write_portable_build_provenance(
+            output_dir,
+            fingerprint=fingerprint,
+            version=version,
+            exe_name=exe_name,
+            cache_status="hit",
+        )
+        print(f"Portable build cache hit: {fingerprint}")
+        return output_dir / f"{exe_name}.exe", output_dir / "BaluffoUpdater.exe", provenance
+
+    portable_root = build_portable_layout(output_dir, version)
+    exe_path = run_pyinstaller(
+        portable_root,
+        exe_name=exe_name,
+        icon_path=icon_path,
+        bundle_version=version,
+    )
+    helper_path = run_helper_pyinstaller(portable_root, icon_path=icon_path)
+    provenance = _write_portable_build_provenance(
+        portable_root,
+        fingerprint=fingerprint,
+        version=version,
+        exe_name=exe_name,
+        cache_status="force-rebuild" if force else "miss",
+    )
+    _store_cache_entry(
+        portable_root,
+        fingerprint_payload=fingerprint_payload,
+        cache_root=cache_root,
+        exe_name=exe_name,
+    )
+    print(f"Portable build cache stored: {fingerprint}")
+    return exe_path, helper_path, provenance
 
 
 def parse_args() -> argparse.Namespace:
@@ -464,6 +944,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--icon", default="")
     parser.add_argument("--skip-zip", action="store_true")
     parser.add_argument("--skip-latest-mirror", action="store_true")
+    parser.add_argument("--force", action="store_true", help="Bypass the portable build cache.")
     return parser.parse_args()
 
 
@@ -472,22 +953,26 @@ def main() -> int:
     args = parse_args()
     output_dir = Path(args.output_dir).expanduser().resolve()
     version = str(args.bundle_version).strip() or DEFAULT_BUNDLE_VERSION
-    portable_root = build_portable_layout(output_dir, version)
     exe_name = str(args.exe_name).strip() or DEFAULT_EXE_NAME
     icon_path = resolve_icon_path(str(args.icon or ""))
-    exe_path = run_pyinstaller(
-        portable_root, exe_name=exe_name, icon_path=icon_path, bundle_version=version
+    exe_path, helper_path, provenance = build_or_reuse_portable(
+        output_dir=output_dir,
+        version=version,
+        exe_name=exe_name,
+        icon_path=icon_path,
+        force=bool(args.force),
     )
-    helper_path = run_helper_pyinstaller(portable_root, icon_path=icon_path)
     print(f"Portable executable ready: {exe_path}")
     print(f"Updater helper ready: {helper_path}")
-    print(f"Ship bundle root: {portable_root / 'ship'}")
+    print(f"Ship bundle root: {output_dir / 'ship'}")
     print(f"Executable icon: {icon_path}")
+    print(f"Portable build fingerprint: {provenance.get('fingerprint')}")
+    print(f"Portable build cache status: {provenance.get('cacheStatus')}")
     if not args.skip_zip:
-        archive = create_zip(portable_root, version=version)
+        archive = create_zip(output_dir, version=version)
         print(f"Portable archive: {archive}")
     if not args.skip_latest_mirror:
-        latest_path = mirror_latest_portable(portable_root)
+        latest_path = mirror_latest_portable(output_dir)
         print(f"Latest portable mirror: {latest_path}")
     return 0
 

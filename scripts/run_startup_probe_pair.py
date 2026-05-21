@@ -102,7 +102,7 @@ def cold_startup_probe_args(
     exe_path: Path | None = None,
     profile_record_only: bool = False,
 ) -> list[str]:
-    launch_args = ["--exe-path", str(exe_path)] if exe_path is not None else ["--rebuild"]
+    launch_args = ["--exe-path", str(exe_path)] if exe_path is not None else []
     record_args = ["--profile-record-only"] if profile_record_only else []
     return [
         *launch_args,

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 root: Any | None = None
+_PLAYWRIGHT_CHROMIUM_PATH_CACHE: str | None = None
 
 
 def _root() -> Any:
@@ -26,6 +27,12 @@ def choose_free_port() -> int:
         return int(handle.getsockname()[1])
 
 
+def expected_portable_build_version() -> str:
+    deps = _root()
+    version = str(deps.os.environ.get(deps.PORTABLE_BUILD_VERSION_ENV) or "").strip()
+    return version or str(deps.DEFAULT_BUNDLE_VERSION)
+
+
 def _default_portable_exe_stale(exe_path: Path) -> bool:
     deps = _root()
     resolved = Path(exe_path).expanduser().resolve()
@@ -33,17 +40,12 @@ def _default_portable_exe_stale(exe_path: Path) -> bool:
         return False
     if not resolved.is_file():
         return False
-    try:
-        exe_mtime = resolved.stat().st_mtime
-    except OSError:
-        return True
-    for marker in deps._iter_portable_exe_freshness_markers():
-        try:
-            if marker.is_file() and marker.stat().st_mtime > exe_mtime:
-                return True
-        except OSError:
-            continue
-    return False
+    status = deps.portable_build_status(
+        resolved.parent,
+        version=deps.expected_portable_build_version(),
+        exe_name=resolved.stem,
+    )
+    return not bool(status.get("fresh"))
 
 
 def _exe_path_uses_default_dist(exe_path: Path) -> bool:
@@ -58,6 +60,14 @@ def _portable_exe_marker_staleness(exe_path: Path) -> str:
         return "missing"
     if not resolved.is_file():
         return "unusable"
+    provenance = deps.read_portable_build_provenance(resolved.parent)
+    if provenance:
+        status = deps.portable_build_status(
+            resolved.parent,
+            version=deps.expected_portable_build_version(),
+            exe_name=resolved.stem,
+        )
+        return str(status.get("status") or "unproven")
     try:
         exe_mtime = resolved.stat().st_mtime
     except OSError:
@@ -81,13 +91,16 @@ def _iter_portable_exe_freshness_markers() -> list[Path]:
     return markers
 
 
-def run_portable_build(output_dir: Path | None = None) -> Path:
+def run_portable_build(output_dir: Path | None = None, *, force: bool = False) -> Path:
     deps = _root()
     command = [sys.executable, str(deps.ROOT / "scripts" / "build_portable_exe.py")]
+    command.extend(["--bundle-version", deps.expected_portable_build_version()])
     target_dir = None
     if output_dir:
         target_dir = Path(output_dir).expanduser().resolve()
         command.extend(["--output-dir", str(target_dir), "--skip-zip"])
+    if force:
+        command.append("--force")
     subprocess.run(command, cwd=deps.ROOT, check=True)
     if target_dir is not None:
         deps.cleanup_portable_build_scratch(target_dir)
@@ -112,11 +125,74 @@ def select_startup_probe_browser(env: dict[str, str] | None = None) -> dict[str,
     return {
         str(key): str(value)
         for key, value in deps.select_startup_probe_browser_policy(
-            deps.desktop_app_mod.resolve_chromium_browser_candidates(),
+            deps.desktop_app_mod.resolve_chromium_browser_candidates(env_map),
             chromium_app_mode_supported=deps.desktop_app_mod.chromium_app_mode_supported,
             env=env_map,
         ).items()
     }
+
+
+def _usable_chromium_executable(path: object) -> str:
+    text = str(path or "").strip()
+    if not text:
+        return ""
+    candidate = Path(text).expanduser()
+    if "headless" in candidate.name.lower():
+        return ""
+    try:
+        resolved = candidate.resolve()
+    except OSError:
+        return ""
+    return str(resolved) if resolved.is_file() else ""
+
+
+def resolve_playwright_chromium_executable(env: dict[str, str] | None = None) -> str:
+    deps = _root()
+    global _PLAYWRIGHT_CHROMIUM_PATH_CACHE
+    env_map = env if env is not None else deps.os.environ
+    explicit = _usable_chromium_executable(
+        env_map.get(deps.desktop_app_mod.PREFERRED_BROWSER_PATH_ENV)
+    )
+    if explicit:
+        return explicit
+    if _PLAYWRIGHT_CHROMIUM_PATH_CACHE is not None:
+        return _PLAYWRIGHT_CHROMIUM_PATH_CACHE
+    _PLAYWRIGHT_CHROMIUM_PATH_CACHE = ""
+    node_command = deps.resolve_node_command()
+    script = (
+        "import('@playwright/test').then(({chromium})=>"
+        "console.log(chromium.executablePath())).catch(()=>process.exit(1))"
+    )
+    try:
+        completed = deps.subprocess.run(
+            [*node_command, "-e", script],
+            cwd=deps.ROOT,
+            env=dict(deps.os.environ),
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, deps.subprocess.TimeoutExpired):
+        return ""
+    if int(completed.returncode or 0) != 0:
+        return ""
+    _PLAYWRIGHT_CHROMIUM_PATH_CACHE = _usable_chromium_executable(completed.stdout)
+    return _PLAYWRIGHT_CHROMIUM_PATH_CACHE
+
+
+def preferred_packaged_desktop_browser_env(env: dict[str, str] | None = None) -> dict[str, str]:
+    deps = _root()
+    env_map = env if env is not None else deps.os.environ
+    browser_path = resolve_playwright_chromium_executable(env_map)
+    if browser_path:
+        return {deps.desktop_app_mod.PREFERRED_BROWSER_PATH_ENV: browser_path}
+    try:
+        selected = select_startup_probe_browser(dict(env_map))
+    except RuntimeError:
+        return {}
+    selected_path = str(selected.get("browserPath") or "").strip()
+    return {deps.desktop_app_mod.PREFERRED_BROWSER_PATH_ENV: selected_path} if selected_path else {}
 
 
 def prune_packaged_smoke_artifacts(
@@ -271,6 +347,16 @@ def collect_packaged_smoke_env_diagnostics(
     resolved = Path(exe_path).expanduser().resolve()
     uses_default_dist = deps._exe_path_uses_default_dist(requested)
     rebuilt_portable_used = rebuilt_portable_dir is not None and uses_default_dist
+    default_status = (
+        deps.portable_build_status(
+            resolved.parent,
+            version=deps.expected_portable_build_version(),
+            exe_name=resolved.stem,
+        )
+        if uses_default_dist and resolved.parent.exists()
+        else {}
+    )
+    build_provenance = deps.read_portable_build_provenance(resolved.parent)
     explicit_freshness = (
         "n/a" if uses_default_dist else deps._portable_exe_marker_staleness(requested)
     )
@@ -291,6 +377,11 @@ def collect_packaged_smoke_env_diagnostics(
         "exePathSource": exe_path_source,
         "explicitExePathFreshness": explicit_freshness,
         "rebuiltPortableExe": rebuilt_portable_used,
+        "portableBuildFingerprint": str(build_provenance.get("fingerprint") or ""),
+        "portableBuildCacheStatus": str(build_provenance.get("cacheStatus") or ""),
+        "portableBuildFreshness": str(default_status.get("status") or ""),
+        "portableBuildExpectedFingerprint": str(default_status.get("expectedFingerprint") or ""),
+        "portableBuildActualFingerprint": str(default_status.get("actualFingerprint") or ""),
         "nodeCommand": node_cmd,
         "nodePath": str(node_cmd[0]) if node_cmd else "",
         "nodeSmokeScript": str(node_smoke_script),
@@ -404,6 +495,10 @@ def packaged_runtime_env_overrides(
         overrides[deps.desktop_app_mod.STARTUP_PROFILE_MODE_ENV] = (
             "warm" if str(profile_mode or "").strip().lower() == "warm" else "cold"
         )
+        merged_env = dict(deps.os.environ)
+        merged_env.update(overrides)
+        for key, value in deps.preferred_packaged_desktop_browser_env(merged_env).items():
+            overrides.setdefault(key, value)
     return overrides
 
 
@@ -420,7 +515,7 @@ def ensure_portable_exe(
     if not (rebuild or not exe.is_file() or stale):
         return exe
     build_dir = rebuild_output_dir if rebuild and rebuild_output_dir is not None else None
-    built_exe = deps.run_portable_build(build_dir)
+    built_exe = deps.run_portable_build(build_dir, force=bool(rebuild))
     final = Path(built_exe).expanduser().resolve()
     if not final.is_file():
         raise RuntimeError(f"Packaged desktop executable not found: {final}")

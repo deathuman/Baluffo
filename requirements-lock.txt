@@ -120,7 +120,7 @@ requests-file==3.0.1
     # via tldextract
 ruff==0.15.9
     # via -r requirements.txt
-scrapy==2.15.0
+scrapy==2.16.0
     # via
     #   -r requirements.txt
     #   scrapy-playwright
@@ -134,8 +134,10 @@ setuptools==82.0.1
     #   pyinstaller-hooks-contrib
 tldextract==5.3.1
     # via scrapy
-twisted==25.5.0
-    # via scrapy
+twisted==26.4.0
+    # via
+    #   -r requirements.txt
+    #   scrapy
 typing-extensions==4.15.0
     # via
     #   pydantic

@@ -80,6 +80,21 @@ def test_valid_allowlist_entries_become_ignore_args(tmp_path: Path, monkeypatch)
     ]
 
 
+def test_committed_security_inputs_close_python_security_caveats(repo_root: Path) -> None:
+    requirements = (repo_root / "requirements.txt").read_text(encoding="utf-8")
+    lock = (repo_root / "requirements-lock.txt").read_text(encoding="utf-8")
+    advisory_ids = security_audit.load_allowlist(
+        repo_root / "tools" / "security" / "pip-audit-allowlist.json",
+        today=date(2026, 5, 21),
+    )
+
+    assert "Scrapy==2.16.0" in requirements
+    assert "Twisted==26.4.0" in requirements
+    assert "scrapy==2.16.0" in lock
+    assert "twisted==26.4.0" in lock
+    assert advisory_ids == []
+
+
 def test_run_audit_propagates_pip_audit_exit_code(tmp_path: Path, monkeypatch) -> None:
     requirements = tmp_path / "requirements-lock.txt"
     report = tmp_path / ".tmp" / "security" / "pip-audit.json"

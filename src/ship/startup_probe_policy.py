@@ -94,13 +94,18 @@ def startup_metric_fields(row: dict[str, Any]) -> dict[str, Any]:
     return merged
 
 
+def _embedded_missing_events(missing_events: set[str]) -> list[str]:
+    startup_events = set(STARTUP_REQUIRED_EVENTS)
+    return sorted(event for event in missing_events if event not in startup_events)
+
+
 def startup_probe_browser_details(
     rows: list[dict[str, Any]],
     *,
     preferred_browser_name: str = "",
     preferred_browser_path: str = "",
-) -> dict[str, str | bool]:
-    details: dict[str, str | bool] = {
+) -> dict[str, Any]:
+    details: dict[str, Any] = {
         "preferredBrowserName": str(preferred_browser_name or "").strip().lower(),
         "preferredBrowserPath": str(preferred_browser_path or "").strip(),
         "selectedBrowserName": "",
@@ -111,6 +116,11 @@ def startup_probe_browser_details(
         "windowClosedReason": "",
         "handoffEvidence": "",
         "handoffFailed": False,
+        "browserExitedBeforeHandoff": False,
+        "browserExitReturnCode": 0,
+        "browserExitName": "",
+        "browserExitPath": "",
+        "browserExitProfileDirHash": "",
     }
     for row in rows:
         event = str(row.get("event") or "").strip()
@@ -128,6 +138,14 @@ def startup_probe_browser_details(
             details["handoffEvidence"] = str(fields.get("evidence") or "").strip().lower()
         elif event == "desktop_browser_watchdog_handoff_failed":
             details["handoffFailed"] = True
+        elif event == "desktop_browser_process_exited_waiting_for_bridge":
+            details["browserExitedBeforeHandoff"] = True
+            details["browserExitReturnCode"] = int(fields.get("returnCode") or 0)
+            details["browserExitName"] = str(fields.get("browser") or "").strip().lower()
+            details["browserExitPath"] = str(fields.get("browserPath") or "").strip()
+            details["browserExitProfileDirHash"] = str(
+                fields.get("browserProfileDirHash") or ""
+            ).strip()
     return details
 
 
@@ -148,6 +166,12 @@ def classify_startup_probe_failure(
     if details["launchMode"] == "default-browser":
         return "non-authoritative browser launch", "non_authoritative_browser_launch"
     if details["launchError"] and details["launchMode"] == REQUIRED_STARTUP_PROBE_LAUNCH_MODE:
+        return "browser runtime startup failed", "browser_runtime_startup_failed"
+    if (
+        details["launchMode"] == REQUIRED_STARTUP_PROBE_LAUNCH_MODE
+        and details["browserExitedBeforeHandoff"]
+        and _embedded_missing_events(missing_events)
+    ):
         return "browser runtime startup failed", "browser_runtime_startup_failed"
     if details["handoffFailed"]:
         return "browser handoff/runtime startup failed", "browser_handoff_runtime_startup_failed"
@@ -192,6 +216,11 @@ def refine_startup_probe_summary(
         preferred_browser_path=preferred_browser_path,
     )
     refined.update(details)
+    missing_events = {
+        str(event or "").strip() for event in (refined.get("missingEvents") or []) if event
+    }
+    if details["browserExitedBeforeHandoff"]:
+        refined["browserExitMissingEvents"] = _embedded_missing_events(missing_events)
     classification, _category = classify_startup_probe_failure(
         rows, error_message=error_message, summary=refined
     )

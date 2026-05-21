@@ -80,8 +80,9 @@ Current repo launch shape:
 
 Install Serena once, then run OpenCode from the repo root so it can use the committed repo config.
 Unlike Codex's registered MCP entry, this committed OpenCode config still expects `serena` on `PATH`.
-If OpenCode cannot resolve `serena`, restart your shell/session or change the local command to the
-explicit `serena.exe` path.
+If OpenCode cannot resolve `serena`, restart your shell/session, add the user-local tool directory to
+`PATH`, or override the command in machine-local client configuration. Do not commit absolute
+`serena.exe` paths to `opencode.json`; the tracked file stays portable across machines.
 
 ## Baluffo Local Project Setup
 

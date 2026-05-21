@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 root: Any | None = None
 
@@ -21,14 +20,8 @@ def _as_dict(value: Any) -> dict[str, Any]:
 
 
 def _preferred_desktop_browser_env() -> dict[str, str]:
-    try:
-        from src.ship.desktop_app import resolve_chromium_browser_candidates
-    except Exception:
-        return {}
-    candidates = cast(Callable[[], list[dict[str, Any]]], resolve_chromium_browser_candidates)()
-    first_candidate = _as_dict(candidates[0]) if candidates else {}
-    browser_path = str(first_candidate.get("path") or "").strip()
-    return {"BALUFFO_DESKTOP_BROWSER_PATH": browser_path} if browser_path else {}
+    deps = _root()
+    return deps.preferred_packaged_desktop_browser_env(deps.os.environ)
 
 
 def _select_packaged_browser_job_browser(
@@ -36,6 +29,7 @@ def _select_packaged_browser_job_browser(
 ) -> tuple[dict[str, str], dict[str, str]]:
     deps = _root()
     env_map = dict(env or deps.os.environ)
+    env_map.update(deps.preferred_packaged_desktop_browser_env(env_map))
     try:
         selected = deps.select_startup_probe_browser(env_map)
     except RuntimeError as base_exc:
@@ -60,7 +54,8 @@ def _select_browser_shutdown_proof(rows: list[dict[str, Any]]) -> dict[str, Any]
     deps = _root()
     attached_fields = deps.find_startup_metric_fields(rows, "desktop_browser_job_attached") or {}
     attached_pid = int(attached_fields.get("pid") or 0)
-    if attached_pid > 0 and deps.desktop_app_mod.is_process_alive(attached_pid):
+    attached_alive = bool(attached_pid > 0 and deps.desktop_app_mod.is_process_alive(attached_pid))
+    if attached_alive:
         return {
             "proofSource": "attached-browser-pid",
             "proofPid": attached_pid,
@@ -76,15 +71,24 @@ def _select_browser_shutdown_proof(rows: list[dict[str, Any]]) -> dict[str, Any]
         or {}
     )
     window_pid = int(window_fields.get("windowPid") or 0)
-    if window_pid > 0 and deps.desktop_app_mod.is_process_alive(window_pid):
+    window_alive = bool(window_pid > 0 and deps.desktop_app_mod.is_process_alive(window_pid))
+    if window_alive:
         return {
             "proofSource": "window-pid",
             "proofPid": window_pid,
             "attachedPid": attached_pid,
             "windowPid": window_pid,
         }
+    events = ",".join(
+        str(row.get("event") or "").strip()
+        for row in rows[:8]
+        if str(row.get("event") or "").strip()
+    )
     raise RuntimeError(
-        "Packaged browser job rehearsal could not establish a live attached PID or visible window PID."
+        "Packaged browser job rehearsal could not establish a live attached PID "
+        "or visible window PID "
+        f"(attachedPid={attached_pid}, attachedAlive={attached_alive}, "
+        f"windowPid={window_pid}, windowAlive={window_alive}, events={events or 'none'})."
     )
 
 
@@ -98,16 +102,24 @@ def _wait_for_pid_exit(pid: int, *, timeout_s: float) -> None:
     raise TimeoutError(f"Managed browser pid {int(pid or 0)} remained alive after launcher exit.")
 
 
-def _terminate_browser_proof_process(pid: int) -> None:
+def _wait_for_launcher_exit(process: Any, *, timeout_s: float) -> None:
     deps = _root()
-    normalized_pid = int(pid or 0)
+    deadline = deps.time.monotonic() + max(5.0, float(timeout_s))
+    while deps.time.monotonic() < deadline:
+        if process is None or process.poll() is not None:
+            return
+        deps.time.sleep(0.5)
+    raise TimeoutError("Packaged browser job rehearsal launcher did not exit after shutdown.")
+
+
+def _terminate_launcher_process_only(process: Any) -> None:
+    deps = _root()
+    normalized_pid = int(getattr(process, "pid", 0) or 0)
     if normalized_pid <= 0:
-        raise RuntimeError(
-            "Packaged browser close rehearsal had no browser proof PID to terminate."
-        )
+        raise RuntimeError("Packaged browser job rehearsal had no launcher PID to terminate.")
     if deps.os.name == "nt":
         deps.subprocess.run(
-            ["taskkill", "/PID", str(normalized_pid), "/T", "/F"],
+            ["taskkill", "/PID", str(normalized_pid), "/F"],
             stdout=deps.subprocess.DEVNULL,
             stderr=deps.subprocess.DEVNULL,
             check=False,
@@ -251,12 +263,12 @@ def run_packaged_browser_job_rehearsal(
             raise RuntimeError(
                 "Packaged browser job rehearsal proof PID was not alive before launcher shutdown."
             )
-        deps._terminate_browser_proof_process(proof_pid)
-        deps._wait_for_pid_exit(proof_pid, timeout_s=max(15.0, float(runtime_timeout_s)))
-        deps._wait_for_process_exit(
+        deps._terminate_launcher_process_only(runtime_process)
+        deps._wait_for_launcher_exit(
             runtime_process,
             timeout_s=max(45.0, float(runtime_timeout_s)),
         )
+        deps._wait_for_pid_exit(proof_pid, timeout_s=max(15.0, float(runtime_timeout_s)))
         deps._wait_for_desktop_ports_released(
             actual_site_port,
             actual_bridge_port,

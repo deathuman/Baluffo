@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from scripts import build_portable_exe as _portable_build_mod
 from src import source_sync as _source_sync_mod
 from src.local_data_store import LocalDataPaths as _LocalDataPaths
 from src.local_data_store import LocalDataStore as _LocalDataStore
@@ -79,6 +80,8 @@ from src.ship.startup_profile import (
 from src.ship.startup_telemetry import read_startup_metrics as _read_startup_metrics_file
 
 DEFAULT_EXE_PATH = ROOT / "dist" / "baluffo-portable" / "Baluffo.exe"
+DEFAULT_BUNDLE_VERSION = _portable_build_mod.DEFAULT_BUNDLE_VERSION
+PORTABLE_BUILD_VERSION_ENV = _portable_build_mod.PORTABLE_BUILD_VERSION_ENV
 DEFAULT_REPORT_PATH = ROOT / "data" / "packaged-desktop-smoke-report.json"
 DEFAULT_ARTIFACT_ROOT = ROOT / ".tmp" / "packaged-desktop-smoke"
 DEFAULT_ARTIFACT_RETENTION_RUNS = 2
@@ -185,6 +188,12 @@ _iter_portable_exe_freshness_markers = (
 run_portable_build = packaged_smoke_build_env_mod.run_portable_build
 cleanup_portable_build_scratch = packaged_smoke_build_env_mod.cleanup_portable_build_scratch
 select_startup_probe_browser = packaged_smoke_build_env_mod.select_startup_probe_browser
+resolve_playwright_chromium_executable = (
+    packaged_smoke_build_env_mod.resolve_playwright_chromium_executable
+)
+preferred_packaged_desktop_browser_env = (
+    packaged_smoke_build_env_mod.preferred_packaged_desktop_browser_env
+)
 prune_packaged_smoke_artifacts = packaged_smoke_build_env_mod.prune_packaged_smoke_artifacts
 resolve_node_command = packaged_smoke_build_env_mod.resolve_node_command
 write_text = packaged_smoke_build_env_mod.write_text
@@ -207,6 +216,9 @@ packaged_fetch_evidence_smoke_mode = packaged_smoke_build_env_mod.packaged_fetch
 packaged_bootstrap_smoke_mode = packaged_smoke_build_env_mod.packaged_bootstrap_smoke_mode
 packaged_runtime_env_overrides = packaged_smoke_build_env_mod.packaged_runtime_env_overrides
 ensure_portable_exe = packaged_smoke_build_env_mod.ensure_portable_exe
+expected_portable_build_version = packaged_smoke_build_env_mod.expected_portable_build_version
+portable_build_status = _portable_build_mod.portable_build_status
+read_portable_build_provenance = _portable_build_mod.read_portable_build_provenance
 
 launch_packaged_exe = packaged_smoke_runtime_mod.launch_packaged_exe
 launch_packaged_command = packaged_smoke_runtime_mod.launch_packaged_command
@@ -256,7 +268,8 @@ _wait_for_install_handoff_confirmation = (
     packaged_smoke_rehearsals_mod._wait_for_install_handoff_confirmation
 )
 _wait_for_pid_exit = packaged_smoke_rehearsals_mod._wait_for_pid_exit
-_terminate_browser_proof_process = packaged_smoke_rehearsals_mod._terminate_browser_proof_process
+_wait_for_launcher_exit = packaged_smoke_rehearsals_mod._wait_for_launcher_exit
+_terminate_launcher_process_only = packaged_smoke_rehearsals_mod._terminate_launcher_process_only
 _wait_for_desktop_ports_released = packaged_smoke_rehearsals_mod._wait_for_desktop_ports_released
 _wait_for_relaunched_runtime = packaged_smoke_rehearsals_mod._wait_for_relaunched_runtime
 _verify_rehearsal_local_data = packaged_smoke_rehearsals_mod._verify_rehearsal_local_data

@@ -23,7 +23,7 @@ env:
 
 jobs:
   windows-portable:
-    runs-on: windows-latest
+    runs-on: windows-2022
     env:
       BALUFFO_SYNC_BUILD_APP_ID: ${{ secrets.BALUFFO_SYNC_BUILD_APP_ID }}
       BALUFFO_SYNC_BUILD_INSTALLATION_ID: ${{ secrets.BALUFFO_SYNC_BUILD_INSTALLATION_ID }}
@@ -66,6 +66,7 @@ jobs:
             }
           }
           "BALUFFO_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "BALUFFO_PORTABLE_BUILD_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           if (-not [string]::IsNullOrWhiteSpace($releaseTag)) {
             "BALUFFO_RELEASE_TAG=$releaseTag" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           } elseif ("${{ github.ref_type }}" -eq "tag") {
@@ -153,6 +154,7 @@ jobs:
         run: |
           npm run test:frontend:unit
           npm run test:py:extended
+          python scripts/build_portable_exe.py --bundle-version ${{ env.BALUFFO_VERSION }} --skip-zip
           npm run test:frontend:packaged
           npm run test:frontend:packaged:sync-rehearsal
           npm run test:frontend:packaged:update-rehearsal
@@ -164,7 +166,7 @@ jobs:
 
       - name: Upload smoke test artifacts on failure
         if: failure() && steps.release_gates.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: smoke-test-artifacts-${{ github.run_number }}
           path: |
@@ -198,26 +200,26 @@ jobs:
           python scripts/build_desktop_update_release.py --version ${{ env.BALUFFO_VERSION }} --github-repo ${{ github.repository }} --key-id ${{ env.BALUFFO_DESKTOP_UPDATE_KEY_ID }}
 
       - name: Upload portable artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: baluffo-portable-${{ env.BALUFFO_VERSION }}
           path: dist/baluffo-portable-${{ env.BALUFFO_VERSION }}.zip
 
       - name: Upload ship artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: baluffo-ship-${{ env.BALUFFO_VERSION }}
           path: dist/baluffo-ship-${{ env.BALUFFO_VERSION }}.zip
 
       - name: Upload desktop update manifest artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: baluffo-desktop-update-manifest-${{ env.BALUFFO_VERSION }}
           path: dist/baluffo-desktop-update-manifest.json
 
       - name: Publish GitHub release
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
-        uses: softprops/action-gh-release@v2.6.1
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.BALUFFO_RELEASE_TAG }}
           name: Baluffo ${{ env.BALUFFO_RELEASE_TAG }}

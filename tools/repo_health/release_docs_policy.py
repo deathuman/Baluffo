@@ -218,6 +218,10 @@ def test_serena_tooling_is_first_class_for_codex_and_opencode(repo_root: Path) -
     assert "There is no separate JavaScript Serena language key; use `typescript`" in serena_text
     assert "Node.js and npm" in serena_text
     assert "OpenCode-specific context" in serena_text
+    assert "Do not commit absolute" in serena_text
+    assert "Do not commit absolute" in (repo_root / "tools" / "mcp" / "BASIC_MEMORY.md").read_text(
+        encoding="utf-8"
+    )
     assert "tools/mcp/SERENA.md" in contributing_text
     assert "tools/mcp/SERENA.md" in readme_text
     assert "tools/mcp/README.md" not in contributing_text
@@ -235,6 +239,12 @@ def test_serena_tooling_is_first_class_for_codex_and_opencode(repo_root: Path) -
         "--context",
         "ide",
         "--project-from-cwd",
+    ]
+    assert opencode["mcp"]["basic-memory"]["command"] == [
+        "basic-memory",
+        "mcp",
+        "--project",
+        "baluffo-memory",
     ]
 
 
@@ -305,20 +315,23 @@ def test_package_json_build_aliases_use_leaf_builders(repo_root: Path) -> None:
     assert scripts["build:portable-exe"] == (
         "npm run check:python-version && python scripts/build_portable_exe.py"
     )
+    assert scripts["build:portable-exe:prepare"] == (
+        "npm run check:python-version && python scripts/build_portable_exe.py --skip-zip"
+    )
     assert scripts["test:frontend:packaged"] == (
         "npm run check:python-version && python src/packaged_desktop_smoke.py"
     )
     assert scripts["test:frontend:packaged:sync-rehearsal"] == (
-        "npm run check:python-version && python src/packaged_desktop_smoke.py --sync-rehearsal --rebuild --runtime-timeout 60"
+        "npm run check:python-version && python src/packaged_desktop_smoke.py --sync-rehearsal --runtime-timeout 60"
     )
     assert scripts["test:frontend:packaged:browser-job-rehearsal"] == (
-        "npm run check:python-version && python src/packaged_desktop_smoke.py --browser-job-rehearsal --rebuild --runtime-timeout 60"
+        "npm run check:python-version && python src/packaged_desktop_smoke.py --browser-job-rehearsal --runtime-timeout 60"
     )
     assert scripts["test:frontend:packaged:first-run"] == (
         "npm run check:python-version && python src/packaged_desktop_smoke.py --open-path desktop-probe.html --node-smoke-script tests/frontend/packaged-desktop-smoke.first-run-jobs.mjs --runtime-timeout 60 --playwright-timeout 240"
     )
     assert scripts["release:preflight"] == (
-        "npm run lint:precommit && npm run test:py:extended && npm run test:frontend:unit && npm run test:frontend:packaged && npm run test:frontend:packaged:admin-startup && npm run test:frontend:packaged:sync-rehearsal && npm run test:frontend:packaged:update-rehearsal && npm run test:frontend:packaged:orphan-reclaim-rehearsal && npm run test:frontend:packaged:browser-job-rehearsal && npm run test:frontend:packaged:first-run && npm run test:frontend:packaged:jobs-pipeline && npm run probe:desktop:startup:jobs:cold"
+        "npm run lint:precommit && npm run test:py:extended && npm run test:frontend:unit && npm run build:portable-exe:prepare && npm run test:frontend:packaged && npm run test:frontend:packaged:admin-startup && npm run test:frontend:packaged:sync-rehearsal && npm run test:frontend:packaged:update-rehearsal && npm run test:frontend:packaged:orphan-reclaim-rehearsal && npm run test:frontend:packaged:browser-job-rehearsal && npm run test:frontend:packaged:first-run && npm run test:frontend:packaged:jobs-pipeline && npm run probe:desktop:startup:jobs:cold"
     )
     assert (
         "_out/latest/build/portable/Baluffo.exe"

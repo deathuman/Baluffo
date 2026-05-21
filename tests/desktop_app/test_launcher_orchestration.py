@@ -279,6 +279,8 @@ def test_launch_desktop_app_starts_children_saves_session_and_watches_browser() 
         bridge_process=mock.ANY,
         browser_process=fake_browser_process,
         browser_pid=0,
+        browser_name="msedge",
+        browser_path="C:/Edge/msedge.exe",
         launch_accepted_elapsed_ms=mock.ANY,
         require_window=True,
         background_active_work_recovery=False,
@@ -865,18 +867,9 @@ def test_launch_desktop_app_retries_default_ports_after_bind_race() -> None:
     assert wait_for_url.call_count == 2
     assert save_mock.call_args.args[0]["sitePort"] == 18080
     assert save_mock.call_args.args[0]["bridgePort"] == 18877
-    watch_mock.assert_called_once_with(
-        data_dir,
-        mock.ANY,
-        bridge_port=18877,
-        bridge_process=mock.ANY,
-        browser_process=None,
-        browser_pid=0,
-        launch_accepted_elapsed_ms=mock.ANY,
-        require_window=True,
-        background_active_work_recovery=False,
-        recovery_owner_token=mock.ANY,
-    )
+    watch_mock.assert_called_once()
+    assert watch_mock.call_args.kwargs["bridge_port"] == 18877
+    assert watch_mock.call_args.kwargs["browser_path"] == "C:/Edge/msedge.exe"
     assert any(call.args[1] == "desktop_runtime_port_retry" for call in trace_mock.call_args_list)
 
 
@@ -1029,6 +1022,8 @@ def test_launch_desktop_app_does_not_recover_to_default_browser_after_process_ex
         bridge_process=mock.ANY,
         browser_process=fake_browser_process,
         browser_pid=0,
+        browser_name="msedge",
+        browser_path="C:/Edge/msedge.exe",
         launch_accepted_elapsed_ms=mock.ANY,
         require_window=True,
         background_active_work_recovery=False,

@@ -79,19 +79,41 @@ def test_github_workflows_use_project_node_runtime_and_playwright_bridge_owner(
     repo_root: Path,
 ) -> None:
     workflows = sorted((repo_root / ".github" / "workflows").glob("*.yml"))
+    workflow_text_by_path = {path: path.read_text(encoding="utf-8") for path in workflows}
     setup_node_workflows = [
-        path for path in workflows if "actions/setup-node" in path.read_text(encoding="utf-8")
+        path
+        for path, workflow_text in workflow_text_by_path.items()
+        if "actions/setup-node" in workflow_text
     ]
     assert setup_node_workflows, "At least one workflow should configure Node."
 
     for workflow_path in setup_node_workflows:
-        workflow_text = workflow_path.read_text(encoding="utf-8")
+        workflow_text = workflow_text_by_path[workflow_path]
         assert (
             'node-version: "25.8.0"' in workflow_text or "node-version: '25.8.0'" in workflow_text
         ), f"{workflow_path.relative_to(repo_root)} should pin project Node to 25.8.0."
         assert "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true" in workflow_text, (
             f"{workflow_path.relative_to(repo_root)} should keep GitHub JavaScript actions on Node 24."
         )
+
+    release_workflow_text = workflow_text_by_path[
+        repo_root / ".github" / "workflows" / "build-portable-exe.yml"
+    ]
+    assert "runs-on: windows-2022" in release_workflow_text
+    assert "runs-on: windows-latest" not in release_workflow_text
+
+    forbidden_node20_actions = (
+        "actions/upload-artifact@v4",
+        "actions/setup-python@v5",
+        "actions/setup-node@v5",
+        "actions/checkout@v4",
+        "softprops/action-gh-release@v2",
+    )
+    for workflow_path, workflow_text in workflow_text_by_path.items():
+        for action_ref in forbidden_node20_actions:
+            assert action_ref not in workflow_text, (
+                f"{workflow_path.relative_to(repo_root)} should not use Node 20-era action {action_ref}."
+            )
 
     test_workflow_text = (repo_root / ".github" / "workflows" / "test.yml").read_text(
         encoding="utf-8"
@@ -244,16 +266,16 @@ def test_package_json_packaged_smoke_scripts_use_direct_dist_by_default(repo_roo
         "npm run check:python-version && python src/packaged_desktop_smoke.py"
     )
     assert scripts["test:frontend:packaged:sync-rehearsal"] == (
-        "npm run check:python-version && python src/packaged_desktop_smoke.py --sync-rehearsal --rebuild --runtime-timeout 60"
+        "npm run check:python-version && python src/packaged_desktop_smoke.py --sync-rehearsal --runtime-timeout 60"
     )
     assert scripts["test:frontend:packaged:update-rehearsal"] == (
-        "npm run check:python-version && python src/packaged_desktop_smoke.py --desktop-update-rehearsal --rebuild --runtime-timeout 60"
+        "npm run check:python-version && python src/packaged_desktop_smoke.py --desktop-update-rehearsal --runtime-timeout 60"
     )
     assert scripts["test:frontend:packaged:orphan-reclaim-rehearsal"] == (
-        "npm run check:python-version && python src/packaged_desktop_smoke.py --orphan-reclaim-rehearsal --rebuild --runtime-timeout 60"
+        "npm run check:python-version && python src/packaged_desktop_smoke.py --orphan-reclaim-rehearsal --runtime-timeout 60"
     )
     assert scripts["test:frontend:packaged:browser-job-rehearsal"] == (
-        "npm run check:python-version && python src/packaged_desktop_smoke.py --browser-job-rehearsal --rebuild --runtime-timeout 60"
+        "npm run check:python-version && python src/packaged_desktop_smoke.py --browser-job-rehearsal --runtime-timeout 60"
     )
     assert scripts["test:frontend:packaged:first-run"] == (
         "npm run check:python-version && python src/packaged_desktop_smoke.py --open-path desktop-probe.html --node-smoke-script tests/frontend/packaged-desktop-smoke.first-run-jobs.mjs --runtime-timeout 60 --playwright-timeout 240"

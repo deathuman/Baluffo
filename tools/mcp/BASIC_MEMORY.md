@@ -101,8 +101,9 @@ Baluffo already commits the `basic-memory` entry in `opencode.json`:
 
 Install Basic Memory once, then run OpenCode from the repo root so it can use the committed repo config.
 The committed config expects `basic-memory` on `PATH`.
-If OpenCode cannot resolve `basic-memory`, restart your shell/session or change the local command to the
-explicit `basic-memory.exe` path.
+If OpenCode cannot resolve `basic-memory`, restart your shell/session, add the user-local tool directory
+to `PATH`, or override the command in machine-local client configuration. Do not commit absolute
+`basic-memory.exe` paths to `opencode.json`; the tracked file stays portable across machines.
 
 Verified OpenCode health should show both required MCPs connected:
 

@@ -119,9 +119,14 @@ def _wait_for_pid_exit(pid: int, *, timeout_s: float) -> None:
     rehearsal_browser_mod._wait_for_pid_exit(pid, timeout_s=timeout_s)
 
 
-def _terminate_browser_proof_process(pid: int) -> None:
+def _wait_for_launcher_exit(process: Any, *, timeout_s: float) -> None:
     _root()
-    rehearsal_browser_mod._terminate_browser_proof_process(pid)
+    rehearsal_browser_mod._wait_for_launcher_exit(process, timeout_s=timeout_s)
+
+
+def _terminate_launcher_process_only(process: Any) -> None:
+    _root()
+    rehearsal_browser_mod._terminate_launcher_process_only(process)
 
 
 def _wait_for_desktop_ports_released(*ports: int, timeout_s: float) -> None:

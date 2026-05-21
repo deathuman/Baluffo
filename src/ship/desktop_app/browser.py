@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import subprocess
@@ -17,12 +18,12 @@ from .config import (
     CHROMIUM_PROCESS_READY_TIMEOUT_S,
     CHROMIUM_PROCESS_READY_TIMEOUTS_S,
     JOBS_COLD_START_ENV,
+    PREFERRED_BROWSER_PATH_ENV,
     STARTUP_PROFILE_MODE_ENV,
 )
 
 DISABLE_LEAN_BROWSER_FLAGS_ENV = "BALUFFO_DESKTOP_DISABLE_LEAN_BROWSER_FLAGS"
 LEAN_CHROMIUM_APP_FLAGS = (
-    "--disable-background-mode",
     "--disable-background-networking",
     "--disable-component-extensions-with-background-pages",
     "--disable-component-update",
@@ -63,6 +64,31 @@ def _as_float(value: object, default: float = 0.0) -> float:
     return default
 
 
+def _profile_dir_hash(profile_dir: Path) -> str:
+    text = str(profile_dir.expanduser().resolve()).lower()
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+
+
+def _chromium_browser_name_from_path(path: str) -> str:
+    name = Path(str(path or "")).name.lower()
+    if "msedge" in name:
+        return "msedge"
+    if "brave" in name:
+        return "brave"
+    return "chrome"
+
+
+def _preferred_browser_candidate(path: object) -> dict[str, str] | None:
+    raw_path = str(path or "").strip()
+    if not raw_path:
+        return None
+    return {
+        "name": _chromium_browser_name_from_path(raw_path),
+        "path": raw_path,
+        "source": "preferred-env",
+    }
+
+
 def resolve_registry_app_path(executable_name: str) -> str:
     api = desktop_api()
     if api.os.name != "nt":
@@ -79,10 +105,16 @@ def resolve_registry_app_path(executable_name: str) -> str:
     return ""
 
 
-def resolve_chromium_browser_candidates() -> list[dict[str, str]]:
+def resolve_chromium_browser_candidates(env: dict[str, str] | None = None) -> list[dict[str, str]]:
     api = desktop_api()
+    env_map: Mapping[str, str] = env if env is not None else {}
     candidates: list[dict[str, str]] = []
     seen: set[str] = set()
+    preferred = api._preferred_browser_candidate(env_map.get(PREFERRED_BROWSER_PATH_ENV))
+    if preferred:
+        normalized = str(Path(preferred["path"]).expanduser().resolve()).lower()
+        seen.add(normalized)
+        candidates.append(preferred)
     for browser_name, executable_name in CHROMIUM_BROWSER_CANDIDATES:
         for candidate in (
             shutil.which(browser_name),
@@ -104,6 +136,26 @@ def resolve_chromium_browser_candidates() -> list[dict[str, str]]:
             )
             break
     return candidates
+
+
+def _browser_candidates_for_launch(
+    env: dict[str, str] | None,
+    preferred_browser_path: str,
+) -> list[dict[str, str]]:
+    api = desktop_api()
+    candidates = api.resolve_chromium_browser_candidates(env)
+    preferred_candidate = api._preferred_browser_candidate(preferred_browser_path)
+    if preferred_candidate:
+        preferred_resolved = str(Path(preferred_candidate["path"]).expanduser().resolve()).lower()
+        if all(str(row.get("path") or "").lower() != preferred_resolved for row in candidates):
+            candidates.insert(0, preferred_candidate)
+    preferred = str(preferred_browser_path).strip().lower()
+    if not preferred:
+        return candidates
+    return sorted(
+        candidates,
+        key=lambda item: 0 if str(item.get("path") or "").lower() == preferred else 1,
+    )
 
 
 def chromium_app_mode_supported(
@@ -241,14 +293,9 @@ def launch_browser_for_url(
 ) -> dict[str, object]:
     api = desktop_api()
     profile_dir = api.resolve_browser_profile_dir(env)
+    browser_profile_dir_hash = api._profile_dir_hash(profile_dir)
     clear_profile_caches = api.should_clear_browser_profile_caches(env)
-    candidates = api.resolve_chromium_browser_candidates()
-    preferred = str(preferred_browser_path).strip().lower()
-    if preferred_browser_path:
-        candidates = sorted(
-            candidates,
-            key=lambda item: 0 if str(item.get("path") or "").lower() == preferred else 1,
-        )
+    candidates = api._browser_candidates_for_launch(env, preferred_browser_path)
 
     def _trace(event: str, event_mono: float, **fields: object) -> None:
         if not callable(trace_hook):
@@ -267,6 +314,7 @@ def launch_browser_for_url(
             "mode": "chromium-app",
             "browser": str(candidate.get("name") or ""),
             "browserPath": browser_path,
+            "browserProfileDirHash": browser_profile_dir_hash,
         }
         try:
             process = api.launch_chromium_app(
@@ -382,6 +430,7 @@ def launch_browser_for_url(
                 "processReadyTimeoutMs": int(float(ready_timeout_s) * 1000),
                 "processReadyPollIntervalMs": int(float(poll_interval_s) * 1000),
                 "spawnToAcceptMs": spawn_to_accept_ms,
+                "browserProfileDirHash": browser_profile_dir_hash,
             }
         return_code = process.poll()
         if int(return_code or 0) == 0:
@@ -454,6 +503,7 @@ def launch_browser_for_url(
                 "processReadyTimeoutMs": int(float(ready_timeout_s) * 1000),
                 "processReadyPollIntervalMs": int(float(poll_interval_s) * 1000),
                 "spawnToAcceptMs": spawn_to_accept_ms,
+                "browserProfileDirHash": browser_profile_dir_hash,
             }
         api.terminate_process(process)
     launch_started_mono = time.perf_counter()
@@ -484,4 +534,5 @@ def launch_browser_for_url(
         "processReadyTimeoutMs": 0,
         "processReadyPollIntervalMs": 0,
         "spawnToAcceptMs": 0,
+        "browserProfileDirHash": browser_profile_dir_hash,
     }

@@ -1,5 +1,6 @@
 pyinstaller==6.19.0
-Scrapy==2.15.0
+Scrapy==2.16.0
+Twisted==26.4.0
 scrapy-playwright~=0.0.46
 httpx==0.28.1
 pydantic~=2.13

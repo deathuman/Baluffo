@@ -169,6 +169,7 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Python dependency security audit | `npm run security:python` |
 | Build ship bundle | `npm run build:ship-bundle` |
 | Build portable EXE | `npm run build:portable-exe` |
+| Prepare shared portable EXE | `npm run build:portable-exe:prepare` |
 | Ship bundle leaf builder | `python scripts/build_ship_bundle.py --bundle-version <version>` |
 | Portable EXE leaf builder | `python scripts/build_portable_exe.py --bundle-version <version>` |
 | Python perf timing | `npm run perf:py:timing` |
@@ -185,15 +186,15 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Admin startup packaged smoke gate | `npm run test:frontend:packaged:admin-startup` |
 | Packaged desktop updater rehearsal | `npm run test:frontend:packaged:update-rehearsal` |
 | Orchestrated packaged smoke gate | `npm run test:frontend:packaged:orchestrated` |
-| Rebuild-backed packaged Jobs diagnostic | `npm run probe:desktop:startup:cold` |
-| Rebuild-backed packaged Jobs cold-start release gate | `npm run probe:desktop:startup:jobs:cold` |
-| Rebuild-backed packaged Admin diagnostic | `npm run probe:desktop:startup:admin:cold` |
+| Cache-backed packaged Jobs diagnostic | `npm run probe:desktop:startup:cold` |
+| Cache-backed packaged Jobs cold-start release gate | `npm run probe:desktop:startup:jobs:cold` |
+| Cache-backed packaged Admin diagnostic | `npm run probe:desktop:startup:admin:cold` |
 | One file | `python -m pytest tests/<path/to/test_*.py> -q` |
 | Admin bridge | `python -m pytest tests/admin/ -q` |
 | GameDevMap discovery lane | `python -m pytest -q tests/source_discovery -k gamedevmap`, then `python -m pytest -q tests/source_discovery`, then `npm run lint:precommit` |
 | Match developer lane directly | `python -m pytest tests -q -m "not slow and not packaging and not release" --color=no --basetemp=.tmp/pytest/basetemp` |
 
-Use `npm run release:preflight` when you are about to push a release commit, move a release tag, or publish release artifacts. It runs the pre-commit gate, the full Python lane, frontend unit tests, and the packaged desktop release lanes in canonical order.
+Use `npm run release:preflight` when you are about to push a release commit, move a release tag, or publish release artifacts. It runs the pre-commit gate, the full Python lane, frontend unit tests, prepares the shared portable EXE once, and then runs the packaged desktop release lanes in canonical order.
 
 **Shared fixtures (where they are defined):**
 
@@ -220,7 +221,9 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 
 - Direct packaging commands own `dist/` outputs and refresh the convenience mirror at `_out/latest/build/portable`:
   - `npm run build:portable-exe`
+  - `npm run build:portable-exe:prepare`
   - `python scripts/build_portable_exe.py`
+- Portable EXE builds are content-addressed under `_out/portable-build-cache`. Use `python scripts/build_portable_exe.py --force` or `npm run build:portable-exe -- --force` only when you intentionally want to bypass the cache.
 - Portable builds must stay self-contained but browser-minimal: `_internal/playwright/driver/package/.local-browsers/` may contain only the `chromium_headless_shell-*` directory required by packaged Playwright `browsers.json`.
 - `npm run test:frontend:packaged*`
 - `npm run test:frontend:packaged:sync-rehearsal`
@@ -229,13 +232,15 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 - `npm run test:frontend:packaged:first-run`
 - `npm run test:frontend:packaged:admin-startup`
 - `npm run test:frontend:packaged:update-rehearsal`
-  - The update rehearsal removes optional `_internal/psutil*` from the source install copy before launch, so the source-side handoff verifier must pass through the dependency-free Windows PID fallback.
+  - Packaged test lanes reuse the default portable EXE when its build fingerprint is current. Explicit `--exe-path` values are never auto-rebuilt, and `src/packaged_desktop_smoke.py --rebuild` is an opt-in debugging escape hatch.
+  - Cold startup probes isolate runtime data/profile state instead of requiring a fresh executable build.
+  - The update rehearsal copies the portable build before injecting rehearsal public keys or removing optional `_internal/psutil*`, so cached and `dist/` portable roots stay pristine while the source-side handoff verifier still passes through the dependency-free Windows PID fallback.
 - Orchestrated build and verify commands own `_out/runs/...` and the rest of `_out/latest/...`:
   - `npm run build`
   - `npm run verify`
   - `python scripts/orchestrator.py build`
   - `python scripts/orchestrator.py verify`
-- `build:portable-exe -- --skip-latest-mirror` can be used for an isolated `dist/` build when the latest mirror should not move.
+- `build:portable-exe -- --skip-latest-mirror` can be used for an isolated `dist/` materialization when the latest mirror should not move.
 
 ## Test ownership rules
 

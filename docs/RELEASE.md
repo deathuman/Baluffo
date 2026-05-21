@@ -260,7 +260,7 @@ Before any release:
 
 ### Portable EXE Verification
 
-1. Build the portable EXE for the target version.
+1. Build the cache-backed portable EXE for the target version.
 2. Confirm:
    - `dist\baluffo-portable\Baluffo.exe` exists
    - `dist\baluffo-portable-<version>.zip` exists
@@ -281,7 +281,7 @@ npm run test:frontend:packaged:update-rehearsal
 npm run probe:desktop:startup:jobs:cold
 ```
 
-These packaged smoke commands validate the direct `dist\baluffo-portable\Baluffo.exe` artifact. Local portable builds also mirror the successful output to `_out\latest\build\portable\Baluffo.exe` so the familiar latest path does not remain stale after `npm run build:portable-exe`.
+These packaged smoke commands validate the direct `dist\baluffo-portable\Baluffo.exe` artifact. Normal release and perf lanes reuse the same content-addressed portable build when its fingerprint is current; cold startup coverage gets a fresh runtime data/profile state rather than a rebuilt executable. Local portable builds also mirror the successful output to `_out\latest\build\portable\Baluffo.exe` so the familiar latest path does not remain stale after `npm run build:portable-exe`.
 The first-run packaged smoke is deterministic: it opens Jobs from a cold isolated runtime, exercises the real bootstrap route with `BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_MODE=controlled-success`, avoids live Google Sheets, asserts the running report/task state, renders the promoted one-row feed, and captures computed-style checked light/dark popup artifacts.
 The Jobs-page packaged smoke is now a terminal-success gate: it must launch the Jobs pipeline, observe visible running progress, and then reach a non-error terminal state. It uses a smoke-only stub-success pipeline mode so the lane stays deterministic and does not run the full real discovery/fetch/sync workload.
 The packaged sync rehearsal gate validates the shipped `github-app-sync-config.json` inside the artifact, fails if it is machine-derived, and then drives `/sync/test` against a local fake GitHub App endpoint so the release gate exercises packaged auth/read portability without hitting real GitHub.
@@ -289,7 +289,7 @@ The updater rehearsal gate exercises the real packaged `N -> N+1` helper-driven 
 The orphan-reclaim rehearsal gate seeds stale packaged `site` / `bridge` children plus stale desktop session state, relaunches the packaged app on the same ports, and fails unless startup metrics prove the launcher reclaimed both stale children instead of retrying or silently degrading.
 The browser-job rehearsal gate forces managed Chromium app-mode launch, requires early browser job-attachment telemetry, and then kills only `Baluffo.exe` to prove the attached/live browser PID exits before any smoke cleanup backstop runs.
 
-Optional additional rebuild-backed smoke validation:
+Optional additional cache-backed smoke validation:
 
 ```powershell
 npm run probe:desktop:startup:cold

@@ -54,6 +54,20 @@ def _child_env_for(
     return env
 
 
+def _browser_watch_diagnostics(launch_result: dict[str, object]) -> dict[str, str]:
+    fields = (
+        ("browser_name", "browserName"),
+        ("browser_path", "browserPath"),
+        ("browser_profile_dir_hash", "browserProfileDirHash"),
+    )
+    diagnostics: dict[str, str] = {}
+    for output_key, launch_key in fields:
+        value = str(launch_result.get(launch_key) or "")
+        if value:
+            diagnostics[output_key] = value
+    return diagnostics
+
+
 def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
     api = desktop_api()
     launcher_token = uuid.uuid4().hex
@@ -475,6 +489,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 and launch_mode not in {"browser-launch-recovery", "active-work-browser-recovery"},
                 background_active_work_recovery=launch_mode == "active-work-browser-recovery",
                 recovery_owner_token=owner_token,
+                **_browser_watch_diagnostics(launch_result),
             )
             if (
                 config.startup_probe

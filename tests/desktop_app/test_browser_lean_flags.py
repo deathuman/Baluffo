@@ -14,6 +14,7 @@ def test_build_browser_launch_command_includes_lean_flags_without_risky_process_
 
     for flag in desktop_app.LEAN_CHROMIUM_APP_FLAGS:
         assert flag in command
+    assert "--disable-background-mode" not in command
     assert "--single-process" not in command
     assert "--disable-gpu" not in command
     assert not any(part.startswith("--renderer-process-limit") for part in command)

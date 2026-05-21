@@ -97,6 +97,43 @@ def test_desktop_update_rehearsal_removes_optional_psutil_from_source_runtime() 
         assert (internal_dir / "keep.txt").is_file()
 
 
+def test_desktop_update_rehearsal_prepares_copies_without_mutating_source_portable() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp)
+        portable_root = root / "portable"
+        artifacts_dir = root / "artifacts"
+        internal_dir = portable_root / "_internal"
+        app_dir = portable_root / "ship" / "app"
+        version_dir = app_dir / "versions" / "1.2.3" / "packaging"
+        internal_dir.mkdir(parents=True)
+        version_dir.mkdir(parents=True)
+        (internal_dir / "psutil").mkdir()
+        (internal_dir / "psutil" / "__init__.py").write_text("", encoding="utf-8")
+        (internal_dir / "_psutil_windows.pyd").write_bytes(b"pyd")
+        (app_dir / "current.txt").write_text("1.2.3\n", encoding="utf-8")
+        public_keys_name = smoke.desktop_update_mod.PUBLIC_KEYS_FILE
+
+        install_root, target_root, removed = (
+            smoke.packaged_smoke_rehearsal_update_mod._prepare_desktop_update_rehearsal_roots(
+                portable_root=portable_root,
+                artifacts_dir=artifacts_dir,
+                public_keys={"test-key": "cHVibGlj"},
+            )
+        )
+
+        assert sorted(Path(item).as_posix() for item in removed) == [
+            "_internal/_psutil_windows.pyd",
+            "_internal/psutil",
+        ]
+        assert (portable_root / "_internal" / "psutil").is_dir()
+        assert not (app_dir / public_keys_name).exists()
+        assert not (version_dir / public_keys_name).exists()
+        assert not (install_root / "_internal" / "psutil").exists()
+        assert (target_root / "_internal" / "psutil").is_dir()
+        assert (install_root / "ship" / "app" / public_keys_name).is_file()
+        assert (target_root / "ship" / "app" / public_keys_name).is_file()
+
+
 def test_packaged_sync_rehearsal_server_serves_fake_github_app_flow() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         portable_root = Path(tmp) / "portable"
@@ -248,13 +285,20 @@ def test_run_packaged_smoke_can_run_sync_rehearsal_mode() -> None:
 
 
 def test_select_packaged_browser_job_browser_enables_edge_when_needed() -> None:
-    with mock.patch.object(
-        smoke,
-        "select_startup_probe_browser",
-        side_effect=[
-            RuntimeError("No supported managed Chromium probe browser available."),
-            {"browserName": "msedge", "browserPath": "C:/Edge/msedge.exe"},
-        ],
+    with (
+        mock.patch.object(
+            smoke,
+            "select_startup_probe_browser",
+            side_effect=[
+                RuntimeError("No supported managed Chromium probe browser available."),
+                {"browserName": "msedge", "browserPath": "C:/Edge/msedge.exe"},
+            ],
+        ),
+        mock.patch.object(
+            smoke,
+            "preferred_packaged_desktop_browser_env",
+            return_value={},
+        ),
     ):
         selected, env_overrides = smoke._select_packaged_browser_job_browser({})
 
@@ -333,8 +377,14 @@ def test_select_browser_shutdown_proof_fails_without_live_attached_or_window_pid
     ]
 
     with mock.patch.object(smoke.desktop_app_mod, "is_process_alive", return_value=False):
-        with pytest.raises(RuntimeError, match="live attached PID or visible window PID"):
+        with pytest.raises(RuntimeError) as exc_info:
             smoke._select_browser_shutdown_proof(rows)
+    error = str(exc_info.value)
+    assert "live attached PID or visible window PID" in error
+    assert "attachedPid=333" in error
+    assert "attachedAlive=False" in error
+    assert "windowPid=0" in error
+    assert "desktop_browser_job_attached" in error
 
 
 def test_wait_for_packaged_runtime_with_port_pivot_prefers_env_scoped_session_root() -> None:
@@ -407,6 +457,7 @@ def test_run_packaged_browser_job_rehearsal_passes_with_attached_pid_proof() -> 
         exe_path = root / "Baluffo.exe"
         exe_path.write_text("exe", encoding="utf-8")
         runtime_process = mock.Mock(spec=subprocess.Popen)
+        runtime_process.pid = 222
         stdout_handle = mock.Mock()
         stderr_handle = mock.Mock()
 
@@ -457,10 +508,10 @@ def test_run_packaged_browser_job_rehearsal_passes_with_attached_pid_proof() -> 
             mock.patch.object(smoke.desktop_app_mod, "is_process_alive", return_value=True),
             mock.patch.object(
                 smoke,
-                "_terminate_browser_proof_process",
-            ) as terminate_browser_mock,
+                "_terminate_launcher_process_only",
+            ) as terminate_launcher_mock,
             mock.patch.object(smoke, "_wait_for_pid_exit") as wait_pid_exit_mock,
-            mock.patch.object(smoke, "_wait_for_process_exit") as wait_process_exit_mock,
+            mock.patch.object(smoke, "_wait_for_launcher_exit") as wait_launcher_exit_mock,
             mock.patch.object(
                 smoke,
                 "_wait_for_desktop_ports_released",
@@ -485,9 +536,9 @@ def test_run_packaged_browser_job_rehearsal_passes_with_attached_pid_proof() -> 
     ] == ("C:/Chrome/chrome.exe")
     assert launch_mock.call_args.kwargs["open_path"] == "desktop-probe.html"
     assert wait_runtime_mock.call_args.kwargs["open_path"] == "desktop-probe.html"
-    terminate_browser_mock.assert_called_once_with(333)
+    terminate_launcher_mock.assert_called_once_with(runtime_process)
+    wait_launcher_exit_mock.assert_called_once_with(runtime_process, timeout_s=45.0)
     wait_pid_exit_mock.assert_called_once_with(333, timeout_s=15.0)
-    wait_process_exit_mock.assert_called_once_with(runtime_process, timeout_s=45.0)
     wait_ports_released_mock.assert_called_once_with(8080, 8877, timeout_s=15.0)
     assert payload["details"]["browserCloseShutdown"] is True
     assert payload["details"]["desktopPortsReleased"] is True
@@ -966,6 +1017,29 @@ def test_run_desktop_update_rehearsal_clears_session_state_only_after_runtime_ex
             assert not session_state_path.exists()
             return {"session": {"launcherPid": 7001, "bridgePort": 7002, "sitePort": 7003}}
 
+        def fake_post_json(url: str, *args, **kwargs):  # noqa: ANN002, ANN003
+            if "/app/check-for-update" in url:
+                return 200, {"status": {"updateAvailable": True, "availability": "available"}}
+            if "/app/download-update" in url:
+                return 200, {
+                    "started": True,
+                    "status": {"downloadState": "downloaded", "installState": "ready"},
+                }
+            assert "/app/install-update" in url
+            paths.handoff_request_path.parent.mkdir(parents=True, exist_ok=True)
+            paths.handoff_request_path.write_text("{}", encoding="utf-8")
+            paths.install_state_path.write_text(
+                json.dumps(
+                    {
+                        "downloadState": "downloaded",
+                        "installState": "handoff_requested",
+                        "installStage": "preparing",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            raise ConnectionResetError("[WinError 10054] reset after handoff")
+
         def fake_request_json(url: str, *, timeout_s: float = 10.0, **kwargs):  # noqa: ANN001, ANN003
             assert "/app/update-status" in url
             paths.handoff_request_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1010,20 +1084,7 @@ def test_run_desktop_update_rehearsal_clears_session_state_only_after_runtime_ex
             mock.patch.object(
                 smoke,
                 "post_json",
-                side_effect=[
-                    (
-                        200,
-                        {"status": {"updateAvailable": True, "availability": "available"}},
-                    ),
-                    (
-                        200,
-                        {
-                            "started": True,
-                            "status": {"downloadState": "downloaded", "installState": "ready"},
-                        },
-                    ),
-                    (200, {"started": True, "exitRequested": True}),
-                ],
+                side_effect=fake_post_json,
             ),
             mock.patch.object(smoke, "request_json", side_effect=fake_request_json),
             mock.patch.object(

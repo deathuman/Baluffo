@@ -329,7 +329,7 @@ def test_windows_try_reclaim_stale_bridge_process_returns_not_found_without_list
 
 
 def test_windows_try_reclaim_stale_bridge_process_kills_strong_listener() -> None:
-    terminate_mock = mock.Mock(return_value=True)
+    terminate_mock = mock.Mock(return_value={"terminated": True})
 
     with (
         mock.patch.object(desktop_app.os, "name", "nt"),
@@ -352,7 +352,7 @@ def test_windows_try_reclaim_stale_bridge_process_kills_strong_listener() -> Non
         mock.patch.object(desktop_app, "_windows_process_image_matches", return_value=True),
         mock.patch.object(
             desktop_app,
-            "_windows_terminate_process_tree_by_pid",
+            "_windows_terminate_process_tree_details_by_pid",
             terminate_mock,
         ),
     ):
@@ -374,7 +374,7 @@ def test_windows_try_reclaim_stale_bridge_process_kills_strong_listener() -> Non
 def test_windows_try_reclaim_stale_bridge_process_accepts_listener_clear_after_forced_kill() -> (
     None
 ):
-    terminate_mock = mock.Mock(return_value=False)
+    terminate_mock = mock.Mock(return_value={"terminated": False})
 
     with (
         mock.patch.object(desktop_app.os, "name", "nt"),
@@ -397,7 +397,7 @@ def test_windows_try_reclaim_stale_bridge_process_accepts_listener_clear_after_f
         mock.patch.object(desktop_app, "_windows_process_image_matches", return_value=True),
         mock.patch.object(
             desktop_app,
-            "_windows_terminate_process_tree_by_pid",
+            "_windows_terminate_process_tree_details_by_pid",
             terminate_mock,
         ),
     ):
@@ -429,7 +429,7 @@ def test_windows_try_reclaim_stale_bridge_process_skips_when_listener_is_ambiguo
         ),
         mock.patch.object(
             desktop_app,
-            "_windows_terminate_process_tree_by_pid",
+            "_windows_terminate_process_tree_details_by_pid",
             terminate_mock,
         ),
     ):
@@ -448,24 +448,24 @@ def test_windows_try_reclaim_stale_bridge_process_skips_when_listener_is_ambiguo
     terminate_mock.assert_not_called()
 
 
-def test_windows_terminate_process_tree_by_pid_waits_for_forced_taskkill_exit() -> None:
-    run_mock = mock.Mock()
+def test_windows_terminate_process_tree_details_waits_for_forced_taskkill_exit() -> None:
+    run_mock = mock.Mock(return_value=subprocess.CompletedProcess(["taskkill"], 0))
     wait_mock = mock.Mock(return_value=True)
-
     with (
         mock.patch.object(desktop_app.os, "name", "nt"),
         mock.patch.object(desktop_app.subprocess, "run", run_mock),
         mock.patch.object(desktop_app, "_wait_for_process_exit_pid", wait_mock),
+        mock.patch.object(desktop_app, "is_process_alive", return_value=False),
     ):
-        result = desktop_app._windows_terminate_process_tree_by_pid(323)
+        result = desktop_app._windows_terminate_process_tree_details_by_pid(323)
 
-    assert result is True
+    assert result["terminated"] is True
     run_mock.assert_called_once()
     wait_mock.assert_called_once_with(323, timeout_s=15.0)
 
 
 def test_windows_try_reclaim_stale_site_process_kills_when_stored_pid_matches() -> None:
-    terminate_mock = mock.Mock(return_value=True)
+    terminate_mock = mock.Mock(return_value={"terminated": True})
 
     with (
         mock.patch.object(desktop_app.os, "name", "nt"),
@@ -479,7 +479,7 @@ def test_windows_try_reclaim_stale_site_process_kills_when_stored_pid_matches() 
         mock.patch.object(desktop_app, "_windows_process_image_matches", return_value=True),
         mock.patch.object(
             desktop_app,
-            "_windows_terminate_process_tree_by_pid",
+            "_windows_terminate_process_tree_details_by_pid",
             terminate_mock,
         ),
     ):
@@ -499,7 +499,7 @@ def test_windows_try_reclaim_stale_site_process_kills_when_stored_pid_matches() 
 
 
 def test_windows_try_reclaim_stale_site_process_accepts_listener_clear_after_forced_kill() -> None:
-    terminate_mock = mock.Mock(return_value=False)
+    terminate_mock = mock.Mock(return_value={"terminated": False})
 
     with (
         mock.patch.object(desktop_app.os, "name", "nt"),
@@ -513,7 +513,7 @@ def test_windows_try_reclaim_stale_site_process_accepts_listener_clear_after_for
         mock.patch.object(desktop_app, "_windows_process_image_matches", return_value=True),
         mock.patch.object(
             desktop_app,
-            "_windows_terminate_process_tree_by_pid",
+            "_windows_terminate_process_tree_details_by_pid",
             terminate_mock,
         ),
     ):
@@ -546,7 +546,7 @@ def test_windows_try_reclaim_stale_site_process_requires_bridge_confirmation_wit
         mock.patch.object(desktop_app, "_windows_process_image_matches", return_value=True),
         mock.patch.object(
             desktop_app,
-            "_windows_terminate_process_tree_by_pid",
+            "_windows_terminate_process_tree_details_by_pid",
             terminate_mock,
         ),
     ):
@@ -567,7 +567,7 @@ def test_windows_try_reclaim_stale_site_process_requires_bridge_confirmation_wit
 def test_windows_try_reclaim_stale_site_process_can_reclaim_without_pid_after_bridge_confirmation() -> (
     None
 ):
-    terminate_mock = mock.Mock(return_value=True)
+    terminate_mock = mock.Mock(return_value={"terminated": True})
 
     with (
         mock.patch.object(desktop_app.os, "name", "nt"),
@@ -580,7 +580,7 @@ def test_windows_try_reclaim_stale_site_process_can_reclaim_without_pid_after_br
         mock.patch.object(desktop_app, "_windows_process_image_matches", return_value=True),
         mock.patch.object(
             desktop_app,
-            "_windows_terminate_process_tree_by_pid",
+            "_windows_terminate_process_tree_details_by_pid",
             terminate_mock,
         ),
     ):

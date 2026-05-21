@@ -33,7 +33,8 @@ def test_run_startup_probe_pair_reuses_cold_build_for_warm(tmp_path: Path, monke
         assert check is False
         commands.append(command)
         if len(commands) == 1:
-            assert "--rebuild" in command
+            assert "--rebuild" not in command
+            assert "--exe-path" not in command
             cold_report_path = Path(command[command.index("--report-path") + 1])
             cold_report_path.parent.mkdir(parents=True, exist_ok=True)
             cold_report_path.write_text(
