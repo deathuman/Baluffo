@@ -933,9 +933,9 @@ provider loaders and may add `--force-refresh-all`; it remains validation-only a
 registry/Admin state.
 
 `review_one_migration_link` may only be selected when at least one
-`providerCoverageLinkBackfill.reviewCandidates[]` row has `apiEligible=true`. Blocked link
-candidates, including ambiguous or provider-shaped self-link rows, must select
-`resolve_link_ambiguity` or another non-mutating action instead.
+`providerCoverageLinkBackfill.reviewCandidates[]` row has `apiEligible=true`. Only actionable
+blocked link candidates may select `resolve_link_ambiguity`; provider-shaped self-link diagnostics
+must not drive the next action by themselves.
 
 ### Provider coverage link backfill review surface
 
@@ -949,11 +949,17 @@ The section may expose both actionable and blocked review queues:
 | Field | Type | Description |
 |---|---|---|
 | `candidateLinkCount` | `number` | Total provider/static candidate links found for the backfill review surface. |
-| `reviewCandidates` | `Array<Object>` | Actionable rows with `apiEligible=true`; these are the only rows that expose apply actions in Admin. |
+| `reviewCandidates` | `Array<Object>` | Review-surface rows. Only rows with `apiEligible=true` expose apply actions in Admin. |
 | `blockedCount` | `number` | Count of candidate links that are not yet reviewable. |
 | `blockedReasonCounts` | `object` | Aggregate blocker counts across blocked candidates. |
 | `disambiguationBlockerCounts` | `object` | Aggregate lower-level blocker counts across blocked candidates, grouped by `disambiguationBlockers`. |
 | `blockedCandidates` | `Array<Object>` | Read-only blocked candidate rows with blocker reasons, disambiguation blockers, and evidence. |
+| `actionableBlockedCount` | `number` | Count of blocked candidates that still need operator or report-disambiguation work. |
+| `nonActionableBlockedCount` | `number` | Count of blocked candidates retained only as diagnostics. |
+| `actionableBlockedCandidates` | `Array<Object>` | Blocked candidates allowed to drive `resolve_link_ambiguity`. |
+| `nonActionableBlockedCandidates` | `Array<Object>` | Blocked candidates that must not drive the next action by themselves. |
+| `actionableBlockedReasonCounts` | `object` | Aggregate actionability reasons for actionable blocked candidates. |
+| `nonActionableBlockedReasonCounts` | `object` | Aggregate actionability reasons for diagnostic blocked candidates. |
 | `blockedExamples` | `Array<Object>` | Capped stable sample of blocked candidates for read-only rendering. |
 | `disambiguationBlockedExamples` | `Array<Object>` | Capped stable sample of blocked candidates used to explain the lower-level disambiguation blocker split. |
 | `linkedCandidates` | `Array<Object>` | Already-linked provider/static rows shown for read-only visibility. |
@@ -964,9 +970,10 @@ capture the queue blocker, while `disambiguationBlockerCounts` explain the lower
 for each blocked candidate.
 
 Provider-to-provider or provider-shaped self-links are blocked diagnostics, not actionable review
-rows. They may appear under `blockedCandidates` with blockers such as
-`provider_shaped_self_link` or `provider_shaped_static_identity` and `apiEligible=false`, but they
-must not appear in `reviewCandidates`.
+rows. They may appear under `blockedCandidates` and `nonActionableBlockedCandidates` with blockers
+such as `provider_shaped_self_link` or `provider_shaped_static_identity` and `apiEligible=false`,
+but they must not appear in `reviewCandidates` as applyable rows or drive `resolve_link_ambiguity`
+by themselves.
 
 Blocked candidate rows may include source-state evidence fields such as `lastStatus`,
 `lastKeptCount`, `lastSuccessfulAt`, `lastFetchedAt`, `providerCoverageStatus`,

@@ -8,6 +8,7 @@ import re
 from urllib.parse import parse_qs, urljoin, urlparse
 
 from src.jobs.adapters.html_parsers import (
+    iter_anchor_fragments,
     strip_html_text,
 )
 from src.jobs.models import RawJob
@@ -153,26 +154,58 @@ def parse_breezy_jobs_html(
     jobs: list[RawJob] = []
     company = clean_text(fallback_company) or urlparse(board_url).hostname or "Unknown"
     seen_links = set()
-    pattern = re.compile(
-        r'(?is)<a[^>]+href=["\'](?P<href>[^"\']+/p/[^"\']+)["\'][^>]*>(?P<label>.*?)</a>'
-    )
-    for match in pattern.finditer(html_text):
-        link = urljoin(board_url, clean_text(match.group("href")))
+    for anchor in iter_anchor_fragments(html_text or ""):
+        href = clean_text(anchor.get("href"))
+        if not href:
+            continue
+        link = urljoin(board_url, href)
+        if "/p/" not in (urlparse(link).path or "").lower():
+            continue
         if not link or link in seen_links:
             continue
         seen_links.add(link)
-        label = clean_text(re.sub(r"%[A-Z0-9_]+%", " ", strip_html_text(match.group("label"))))
-        title = label.replace("Apply", "").strip()
+        body_html = anchor.get("body", "")
+        title_match = re.search(r"(?is)<h[1-3][^>]*>(.*?)</h[1-3]>", body_html)
+        title_source = title_match.group(1) if title_match else anchor.get("text") or body_html
+        title = clean_text(re.sub(r"%[A-Z0-9_]+%", " ", strip_html_text(title_source)))
+        title = re.sub(r"(?i)\s*\bApply\b\s*$", "", title).strip()
         title = re.sub(r"\s+", " ", title)
         if not title:
             continue
-        context_window = html_text[match.end() : match.end() + 400]
+        context_start = -1
+        for quote in ('"', "'"):
+            context_start = (html_text or "").find(f"href={quote}{href}{quote}")
+            if context_start >= 0:
+                break
+        if context_start < 0:
+            context_start = (html_text or "").find(body_html)
+        context_window = (html_text or "")[max(0, context_start) : max(0, context_start) + 700]
+        location_match = re.search(
+            r'(?is)<li[^>]*class=["\'][^"\']*location[^"\']*["\'][^>]*>.*?<span[^>]*>(.*?)</span>',
+            body_html,
+        )
+        type_match = re.search(
+            r'(?is)<li[^>]*class=["\'][^"\']*type[^"\']*["\'][^>]*>.*?<span[^>]*>(.*?)</span>',
+            body_html,
+        )
         context_text = clean_text(re.sub(r"%[A-Z0-9_]+%", " ", strip_html_text(context_window)))
+        location_text = (
+            clean_text(strip_html_text(location_match.group(1))) if location_match else ""
+        )
+        type_text = clean_text(
+            re.sub(
+                r"%[A-Z0-9_]+%",
+                " ",
+                strip_html_text(type_match.group(1)) if type_match else "",
+            )
+        )
         city = ""
         country = "Unknown"
         work_type = ""
         if "WORLDWIDE" in context_window.upper() or "remote" in context_text.lower():
             city, country, work_type = "Remote", "Remote", "Remote"
+        elif location_text:
+            city, country, _region = parse_generic_location_fields(location_text)
         jobs.append(
             {
                 "sourceJobId": f"breezy:{hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
@@ -181,7 +214,7 @@ def parse_breezy_jobs_html(
                 "city": city,
                 "country": country,
                 "workType": work_type,
-                "contractType": "",
+                "contractType": type_text,
                 "jobLink": link,
                 "sector": "Game",
                 "postedAt": "",

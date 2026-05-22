@@ -155,12 +155,12 @@ def test_exact_advisory_identity_resolves_rule_ambiguity(tmp_path: Path) -> None
 
     assert section["candidateLinkCount"] == 1
     assert section["highConfidenceLinkCount"] == 1
-    assert section["resolvedByAdvisoryIdentityCount"] == 1
+    assert section["resolvedByAdvisoryIdentityCount"] == 0
     assert section["mediumConfidenceLinkCount"] == 0
-    assert candidate["staticSourceId"] == "static:cdpr-advisory"
+    assert candidate["staticSourceId"] == "static:cdpr-active"
     assert candidate["confidence"] >= 0.9
     assert candidate["recommendedAction"] == "backfill_migration_identity_candidate"
-    assert "advisory_identity_disambiguation" in candidate["reasons"]
+    assert "redundant_static_rule_exact_match" in candidate["reasons"]
     review = section["reviewCandidates"][0]
     assert review["confidenceTier"] == "high"
     assert review["apiEligible"] is True

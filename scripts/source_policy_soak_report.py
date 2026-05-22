@@ -49,6 +49,7 @@ from src.source_discovery.provider_migration_advisory import (
     enrich_provider_migration_rows,
 )
 from src.source_registry_identity import source_identity
+from src.source_registry_io import load_json_array as load_registry_json_array
 
 SCHEMA_VERSION = "1.0"
 JSON_REPORT_NAME = "source-policy-soak-report.json"
@@ -72,6 +73,10 @@ ARTIFACT_PATHS = {
 REGISTRY_SEED_PATHS = {
     "source-registry-active.json": "defaults/source-registry-active.seed.json",
     "source-registry-pending.json": "defaults/source-registry-pending.seed.json",
+}
+LEAN_REGISTRY_ARTIFACT_NAMES = {
+    "source-registry-active.json",
+    "source-registry-pending.json",
 }
 
 SOURCE_SYNC_ALLOWED_KEYS = {"schemaVersion", "generatedAt", "source", "active", "pending"}
@@ -186,6 +191,8 @@ def _read_json_artifact(path: Path) -> tuple[Any, str, str]:
         payload = read_json(source_path, None)
         if payload is None:
             return {}, "malformed", f"{source_path.name} is malformed"
+        if path.name in LEAN_REGISTRY_ARTIFACT_NAMES:
+            payload = load_registry_json_array(path, [])
     except (OSError, json.JSONDecodeError) as exc:
         return {}, "malformed", f"{source_path.name} is malformed: {exc}"
     return payload, status, ""
@@ -1216,6 +1223,11 @@ def _provider_coverage_next_action_section(
     bucket_counts = as_json_object(gaps.get("bucketCounts"))
     review_candidates = json_object_rows(link_backfill.get("reviewCandidates"))
     blocked_candidates = json_object_rows(link_backfill.get("blockedCandidates"))
+    actionable_blocked_candidates = json_object_rows(
+        link_backfill.get("actionableBlockedCandidates")
+    )
+    if "actionableBlockedCandidates" not in link_backfill:
+        actionable_blocked_candidates = blocked_candidates
     api_eligible_review_count = sum(
         1 for row in review_candidates if as_json_object(row).get("apiEligible") is True
     )
@@ -1278,6 +1290,10 @@ def _provider_coverage_next_action_section(
         "reviewCandidateCount": len(review_candidates),
         "apiEligibleReviewCandidateCount": api_eligible_review_count,
         "blockedLinkCandidateCount": len(blocked_candidates),
+        "actionableBlockedLinkCandidateCount": len(actionable_blocked_candidates),
+        "nonActionableBlockedLinkCandidateCount": max(
+            0, len(blocked_candidates) - len(actionable_blocked_candidates)
+        ),
         "unsupportedProviderDetectedCount": int(
             bucket_counts.get("unsupportedProviderDetected") or 0
         ),
@@ -1437,10 +1453,10 @@ def _provider_coverage_next_action_section(
             requires_human_approval=True,
             blocked_by=["requires_explicit_admin_migration_link_action"],
         )
-    if len(blocked_candidates) > 0:
+    if len(actionable_blocked_candidates) > 0:
         return section(
             "resolve_link_ambiguity",
-            "Provider/static link candidates exist, but none are currently API-eligible for review.",
+            "Actionable provider/static link candidates exist, but none are currently API-eligible for review.",
             safe_local_commands=[
                 _safe_command(
                     "python",
@@ -1454,7 +1470,7 @@ def _provider_coverage_next_action_section(
             blocked_by=sorted(
                 {
                     clean_text(blocker)
-                    for row in blocked_candidates
+                    for row in actionable_blocked_candidates
                     for blocker in as_json_list(row.get("blockers"))
                     if clean_text(blocker)
                 }
@@ -2609,8 +2625,23 @@ def _provider_shaped_static_link_blockers(
     return []
 
 
+def _registry_static_candidate(
+    static: dict[str, Any], registry_static_rows: list[dict[str, Any]]
+) -> dict[str, Any]:
+    static_id = clean_text(static.get("staticSourceId"))
+    static_url = clean_text(static.get("staticUrl"))
+    for candidate in registry_static_rows:
+        if static_id and static_id == clean_text(candidate.get("staticSourceId")):
+            return dict(candidate)
+        if static_url and static_url == clean_text(candidate.get("staticUrl")):
+            return dict(candidate)
+    return {}
+
+
 def _advisory_link_rows(
-    provider: dict[str, Any], advisory_rows: list[dict[str, Any]]
+    provider: dict[str, Any],
+    advisory_rows: list[dict[str, Any]],
+    registry_static_rows: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     provider_keys = _provider_identity_keys(provider)
     rows: list[dict[str, Any]] = []
@@ -2625,11 +2656,13 @@ def _advisory_link_rows(
         static = _advisory_static_candidate(advisory)
         if not static:
             continue
-        blockers = _provider_shaped_static_link_blockers(provider, static)
+        registry_static = _registry_static_candidate(static, registry_static_rows)
+        link_static = registry_static or static
+        blockers = _provider_shaped_static_link_blockers(provider, link_static)
         rows.append(
             _provider_link_row(
                 provider,
-                static,
+                link_static,
                 confidence=0.8,
                 reasons=["provider_migration_advisory_exact_identity"],
                 blockers=blockers,
@@ -2712,6 +2745,74 @@ def _is_candidate_link(row: dict[str, Any]) -> bool:
     return action not in {"already_linked", "insufficient_evidence"}
 
 
+def _dedupe_link_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    unique: list[dict[str, Any]] = []
+    seen: dict[tuple[Any, ...], int] = {}
+    action_priority = {
+        "already_linked": 4,
+        "backfill_migration_identity_candidate": 3,
+        "needs_review": 2,
+        "ambiguous_static_match": 1,
+        "insufficient_evidence": 0,
+    }
+    for row in rows:
+        blockers = tuple(_link_blockers(row))
+        static_id = clean_text(row.get("staticSourceId"))
+        static_url = clean_text(row.get("staticUrl"))
+        signature = (
+            clean_text(row.get("providerSourceId")),
+            static_id,
+            static_url,
+            blockers,
+        )
+        if not static_id and not static_url:
+            signature = (
+                *signature,
+                clean_text(row.get("recommendedAction")),
+                round(float(row.get("confidence") or 0), 2),
+                tuple(_link_reasons(row)),
+            )
+        if signature not in seen:
+            seen[signature] = len(unique)
+            unique.append(row)
+            continue
+        index = seen[signature]
+        existing = unique[index]
+        existing_rank = (
+            action_priority.get(clean_text(existing.get("recommendedAction")), -1),
+            float(existing.get("confidence") or 0),
+        )
+        row_rank = (
+            action_priority.get(clean_text(row.get("recommendedAction")), -1),
+            float(row.get("confidence") or 0),
+        )
+        merged = dict(row if row_rank > existing_rank else existing)
+        merged["reasons"] = sorted({*_link_reasons(existing), *_link_reasons(row)})
+        merged["blockers"] = sorted({*_link_blockers(existing), *_link_blockers(row)})
+        unique[index] = merged
+    return unique
+
+
+def _suppress_unbacked_advisory_links_when_registry_link_exists(
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    has_registry_backed_candidate = any(
+        clean_text(row.get("registryState")) in {"active", "pending"}
+        and clean_text(row.get("recommendedAction"))
+        in {"backfill_migration_identity_candidate", "needs_review"}
+        and not _link_blockers(row)
+        for row in rows
+    )
+    if not has_registry_backed_candidate:
+        return rows
+    return [
+        row
+        for row in rows
+        if clean_text(row.get("registryState")) in {"active", "pending"}
+        or "provider_migration_advisory_exact_identity" not in set(_link_reasons(row))
+    ]
+
+
 def _has_exact_link_evidence(row: dict[str, Any]) -> bool:
     reasons = set(_link_reasons(row))
     return bool(
@@ -2741,6 +2842,87 @@ def _is_strong_source_state_candidate(row: dict[str, Any]) -> bool:
     return clean_text(row.get("lastStatus")) == "ok" or bool(
         clean_text(row.get("lastSuccessfulAt"))
     )
+
+
+def _static_url_key(row: dict[str, Any]) -> str:
+    url = clean_text(row.get("staticUrl"))
+    if not url:
+        return ""
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return norm_text(url).rstrip("/")
+    host = (parsed.netloc or "").lower()
+    host = host[4:] if host.startswith("www.") else host
+    path = (parsed.path or "/").rstrip("/").lower() or "/"
+    query = (parsed.query or "").lower()
+    return f"{host}{path}?{query}" if query else f"{host}{path}"
+
+
+def _active_registry_static_link(row: dict[str, Any]) -> bool:
+    return (
+        _registry_backed_static_link(row)
+        and clean_text(row.get("registryState")) == "active"
+        and not bool(row.get("hiddenFromDefault"))
+        and not clean_text(row.get("duplicateOfSourceId"))
+    )
+
+
+def _positive_static_history(row: dict[str, Any]) -> bool:
+    if _int_value(row.get("lastKeptCount")) <= 0:
+        return False
+    if (
+        clean_text(row.get("providerCoverageStatus"))
+        and _int_value(row.get("providerCoverageConsecutiveSuccesses")) < 2
+    ):
+        return False
+    return clean_text(row.get("lastStatus")) == "ok" or bool(
+        clean_text(row.get("lastSuccessfulAt"))
+    )
+
+
+def _deterministic_static_ambiguity_resolution(
+    ambiguous: list[dict[str, Any]],
+) -> tuple[dict[str, Any], list[dict[str, Any]], str, float] | None:
+    registry_static = [row for row in ambiguous if _registry_backed_static_link(row)]
+    if not registry_static:
+        return None
+    non_registry = [row for row in ambiguous if row not in registry_static]
+    if (
+        len(registry_static) == 1
+        and non_registry
+        and all(_provider_shaped_static_identity(row) for row in non_registry)
+    ):
+        selected = registry_static[0]
+        return (
+            selected,
+            [row for row in ambiguous if row is not selected],
+            "registry_static_disambiguation",
+            0.95,
+        )
+
+    url_keys = {_static_url_key(row) for row in registry_static if _static_url_key(row)}
+    if len(registry_static) > 1 and len(url_keys) == 1:
+        active = [row for row in registry_static if _active_registry_static_link(row)]
+        if len(active) == 1:
+            selected = active[0]
+            return (
+                selected,
+                [row for row in ambiguous if row is not selected],
+                "active_static_canonical_url_disambiguation",
+                0.95,
+            )
+
+    positive_history = [row for row in registry_static if _positive_static_history(row)]
+    if len(registry_static) > 1 and len(positive_history) == 1:
+        selected = positive_history[0]
+        return (
+            selected,
+            [row for row in ambiguous if row is not selected],
+            "static_history_disambiguation",
+            0.8,
+        )
+    return None
 
 
 def _with_selected_link(
@@ -2849,9 +3031,50 @@ def _provider_coverage_link_backfill_sort_key(row: dict[str, Any]) -> tuple[Any,
 
 
 def _blocked_link_candidates(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    blocked = [{**row, "apiEligible": False} for row in rows if _link_blockers(row)]
+    blocked = []
+    for row in rows:
+        if not _link_blockers(row):
+            continue
+        actionability, reason = _blocked_link_actionability(row)
+        blocked.append(
+            {
+                **row,
+                "apiEligible": False,
+                "actionability": actionability,
+                "actionabilityReason": reason,
+            }
+        )
     blocked.sort(key=_provider_coverage_link_backfill_sort_key)
     return blocked
+
+
+def _provider_shaped_static_identity(row: dict[str, Any]) -> bool:
+    static_id = norm_text(row.get("staticSourceId"))
+    if not static_id:
+        return False
+    if static_id == norm_text(row.get("providerSourceId")):
+        return True
+    static_adapter = static_id.split(":", 1)[0]
+    return static_adapter in {norm_text(provider) for provider in SUPPORTED_PROVIDERS}
+
+
+def _registry_backed_static_link(row: dict[str, Any]) -> bool:
+    return (
+        clean_text(row.get("registryState")) in {"active", "pending"}
+        and bool(clean_text(row.get("staticSourceId")))
+        and not _provider_shaped_static_identity(row)
+    )
+
+
+def _blocked_link_actionability(row: dict[str, Any]) -> tuple[str, str]:
+    blockers = set(_link_blockers(row))
+    if "provider_shaped_self_link" in blockers or "provider_shaped_static_identity" in blockers:
+        return "non_actionable", "provider_shaped_self_link"
+    if "ambiguous_static_match" in blockers:
+        if _registry_backed_static_link(row):
+            return "actionable", "registry_backed_ambiguous_static_match"
+        return "non_actionable", "unbacked_ambiguous_static_match"
+    return "actionable", "blocked_link_requires_review"
 
 
 def _potential_review_link(row: dict[str, Any]) -> bool:
@@ -2893,6 +3116,8 @@ def _disambiguation_blocker_counts(rows: list[dict[str, Any]]) -> dict[str, int]
 
 def _recommended_api_payload(row: dict[str, Any]) -> dict[str, Any]:
     confidence = round(float(row.get("confidence") or 0), 2)
+    if not _registry_backed_static_link(row):
+        return {}
     recommended_action = (
         "backfill_migration_identity_candidate" if confidence >= 0.9 else "needs_review"
     )
@@ -3030,6 +3255,15 @@ def _resolve_provider_link_rows(
             reason="source_state_disambiguation",
         )
 
+    deterministic = _deterministic_static_ambiguity_resolution(ambiguous)
+    if deterministic:
+        selected, ignored, reason, confidence = deterministic
+        return [
+            _with_selected_link(selected, confidence=confidence, reason=reason),
+            *[_with_ignored_alternative(row, f"resolved_by_{reason}") for row in ignored],
+            *[row for row in rows if row not in ambiguous],
+        ], _resolution_example(selected=selected, ignored=ignored, reason=reason)
+
     ranked = sorted(ambiguous, key=lambda row: _int_value(row.get("evidenceScore")), reverse=True)
     for rank, row in enumerate(ranked, start=1):
         row["disambiguationRank"] = rank
@@ -3144,6 +3378,13 @@ def _provider_coverage_link_backfill_section(
         for row in active_providers
         if clean_text(row.get("migrationSourceIdentity"))
     ]
+    registry_static_rows = _static_candidates(
+        [
+            *[{**row, "_soakRegistryState": "active"} for row in active_rows],
+            *[{**row, "_soakRegistryState": "pending"} for row in pending_rows],
+        ],
+        source_state_rows,
+    )
     static_rows = _static_candidates(
         [
             *[{**row, "_soakRegistryState": "active"} for row in active_rows],
@@ -3162,35 +3403,51 @@ def _provider_coverage_link_backfill_section(
     resolution_examples: list[dict[str, Any]] = []
     resolved_by_advisory = 0
     resolved_by_source_state = 0
+    resolved_by_registry_static = 0
     for provider in active_without_identity:
-        provider_links = [
-            *_rule_link_rows(provider, static_rows),
-            *_advisory_link_rows(provider, [*discovery_candidates, *enriched_advisory]),
-        ]
+        provider_links = _dedupe_link_rows(
+            [
+                *_rule_link_rows(provider, registry_static_rows),
+                *_advisory_link_rows(
+                    provider,
+                    [*discovery_candidates, *enriched_advisory],
+                    registry_static_rows,
+                ),
+            ]
+        )
         provider_links, resolution = _resolve_provider_link_rows(provider_links)
+        provider_links = _suppress_unbacked_advisory_links_when_registry_link_exists(provider_links)
         if resolution:
             resolution_examples.append(resolution)
             if resolution.get("resolutionReason") == "advisory_identity_disambiguation":
                 resolved_by_advisory += 1
             elif resolution.get("resolutionReason") == "source_state_disambiguation":
                 resolved_by_source_state += 1
+            elif resolution.get("resolutionReason") in {
+                "registry_static_disambiguation",
+                "active_static_canonical_url_disambiguation",
+                "static_history_disambiguation",
+            }:
+                resolved_by_registry_static += 1
         exact_static_ids = {
             clean_text(row.get("staticSourceId"))
             for row in provider_links
             if _has_exact_link_evidence(row)
         }
-        provider_diagnostics = [
-            *_provider_weak_host_rows(
-                provider,
-                static_rows,
-                excluded_static_ids={static_id for static_id in exact_static_ids if static_id},
-            ),
-            *_company_name_only_blockers(
-                provider,
-                static_rows,
-                excluded_static_ids={static_id for static_id in exact_static_ids if static_id},
-            ),
-        ]
+        provider_diagnostics = _dedupe_link_rows(
+            [
+                *_provider_weak_host_rows(
+                    provider,
+                    static_rows,
+                    excluded_static_ids={static_id for static_id in exact_static_ids if static_id},
+                ),
+                *_company_name_only_blockers(
+                    provider,
+                    static_rows,
+                    excluded_static_ids={static_id for static_id in exact_static_ids if static_id},
+                ),
+            ]
+        )
         if provider_links:
             links.extend(provider_links)
             diagnostic_rows.extend(provider_diagnostics)
@@ -3215,9 +3472,16 @@ def _provider_coverage_link_backfill_section(
             )
         )
     links.extend(diagnostic_rows)
+    links = _dedupe_link_rows(links)
     _block_colliding_static_link_targets(links)
     candidate_links = [row for row in links if _is_candidate_link(row)]
     blocked_candidates = _blocked_link_candidates(candidate_links)
+    actionable_blocked_candidates = [
+        row for row in blocked_candidates if clean_text(row.get("actionability")) == "actionable"
+    ]
+    non_actionable_blocked_candidates = [
+        row for row in blocked_candidates if clean_text(row.get("actionability")) != "actionable"
+    ]
     blocker_counts = Counter(
         blocker for row in links for blocker in row.get("blockers", []) if clean_text(blocker)
     )
@@ -3228,6 +3492,16 @@ def _provider_coverage_link_backfill_section(
         if clean_text(blocker)
     )
     disambiguation_blocker_counts = _disambiguation_blocker_counts(blocked_candidates)
+    actionable_blocked_reason_counts = Counter(
+        clean_text(row.get("actionabilityReason"))
+        for row in actionable_blocked_candidates
+        if clean_text(row.get("actionabilityReason"))
+    )
+    non_actionable_blocked_reason_counts = Counter(
+        clean_text(row.get("actionabilityReason"))
+        for row in non_actionable_blocked_candidates
+        if clean_text(row.get("actionabilityReason"))
+    )
     ambiguity_groups = _ambiguity_groups(links)
     exact_rule_match_count = sum(
         1 for row in links if "redundant_static_rule_exact_match" in set(_link_reasons(row))
@@ -3269,11 +3543,18 @@ def _provider_coverage_link_backfill_section(
         "insufficientEvidenceCount": int(blocker_counts.get("insufficient_evidence") or 0),
         "resolvedBySourceStateCount": resolved_by_source_state,
         "resolvedByAdvisoryIdentityCount": resolved_by_advisory,
+        "resolvedByRegistryStaticCount": resolved_by_registry_static,
         "unresolvedAmbiguousCount": int(blocker_counts.get("ambiguous_static_match") or 0),
         "blockedReasonCounts": dict(
             sorted(blocked_reason_counts.items(), key=lambda item: (-item[1], item[0]))
         ),
         "disambiguationBlockerCounts": disambiguation_blocker_counts,
+        "actionableBlockedCount": len(actionable_blocked_candidates),
+        "nonActionableBlockedCount": len(non_actionable_blocked_candidates),
+        "actionableBlockedReasonCounts": dict(sorted(actionable_blocked_reason_counts.items())),
+        "nonActionableBlockedReasonCounts": dict(
+            sorted(non_actionable_blocked_reason_counts.items())
+        ),
         "rejectedLinkCount": sum(
             1
             for row in links
@@ -3286,6 +3567,8 @@ def _provider_coverage_link_backfill_section(
         "ambiguityResolutionExamples": resolution_examples[:8],
         "reviewCandidates": review_candidates,
         "blockedCandidates": blocked_candidates,
+        "actionableBlockedCandidates": actionable_blocked_candidates,
+        "nonActionableBlockedCandidates": non_actionable_blocked_candidates,
         "blockedExamples": blocked_candidates[:PROVIDER_COVERAGE_LINK_BACKFILL_EXAMPLE_LIMIT],
         "disambiguationBlockedExamples": blocked_candidates[
             :PROVIDER_COVERAGE_LINK_BACKFILL_EXAMPLE_LIMIT

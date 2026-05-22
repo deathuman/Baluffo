@@ -1,11 +1,11 @@
 # Provider Discovery Coverage Gap Plan
 
-> - **Status:** Active plan, advisory-only
+> - **Status:** Closed as evidence-saturated, advisory-only
 > - **Use this when:** improving ATS/provider discovery coverage, provider migration staging evidence, or Admin/Ops visibility without adding Apify or another crawler runtime
 > - **Canonical for:** next-step provider discovery coverage strategy and provider coverage gap report requirements
 > - **Not canonical for:** provider adapter runtime behavior, report payload contracts, source registry policy, or source cleanup authority
 > - **Then inspect:** [`../scraping-pipeline.md`](../scraping-pipeline.md), [`../source-policy-runbook.md`](../source-policy-runbook.md), [`../adapter-plugin-inventory.md`](../adapter-plugin-inventory.md), and [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md)
-> - **Last updated:** 2026-05-19
+> - **Last updated:** 2026-05-22
 
 ## Summary
 
@@ -178,3 +178,92 @@ Implemented scope:
 4. Kept unsafe Oracle CE URLs unsupported and made auth-gated or empty Oracle fetch evidence non-promotable rather than another provider fetch/debug loop.
 
 Runtime validation should still treat Oracle CE 401/403 or empty tenant responses as a useful decision outcome: the family is structurally supported, but those tenant examples are not promotable unless public requisition payloads return real kept jobs.
+
+## Validated-Count Reassessment Slice (Implemented 2026-05-22)
+
+Current provider coverage work should stay focused on candidates that can raise validated-provider count. Broad discovery, unsupported-family adapters, and migration-link cleanup are lower priority until fresh evidence shows new solvable coverage.
+
+Fresh targeted refresh completed on 2026-05-22:
+
+```powershell
+python src/jobs_fetcher.py --only-sources workday_sources,bamboohr_sources,breezy_sources,oracle_hcm_sources --force-refresh-all --include-pending-provider-migration --quiet
+python scripts/source_policy_soak_report.py --data-dir data --out-dir _out
+```
+
+Resulting state:
+
+- Source-policy soak status remained `warning`; `providerCoverageNextAction.action` remained `none`.
+- Provider coverage stayed at `18/26` validated, with `6` needs-review and `2` failed.
+- Gap counts stayed at `fetchedButNotValidated=9`, `validatedProviderMissingMigrationSourceIdentity=9`, and all unsupported/probe/not-fetched/static-still-active buckets at `0`.
+- Validation diagnostics stayed at `zeroKeptFetched=7`, `fetchError=2`, `validated=17`, `notFetched=0`, `missingDetailEvidence=0`.
+
+Direct probes of the remaining blockers did not show public postings missed by adapters:
+
+- TiMi Workday CXS endpoint returned HTTP 200 with `total=0` and `jobPostings=[]`.
+- Wolcen, Reforged, Expression, Eleventh Hour, and Beamdog BambooHR `/careers/list` endpoints returned HTTP 200 with `meta.totalCount=0` and empty `result`.
+- Lemon Sky BambooHR `/careers/list` returned HTTP 401, matching the adapter failure class.
+- IllFonic Breezy board returned HTML but no public `/p/` posting links.
+- Glass Egg Oracle HCM requisition endpoint returned HTTP 200 with `count=0`, `hasMore=false`, and empty `items`.
+
+Conclusion: no validated-count code change is justified from the current remaining 8 blockers. Keep those candidates pending/failed with non-promotable evidence until fresh public postings appear. The next meaningful provider-coverage improvement is either reviewed migration-link cleanup for already validated providers or a fresh discovery run to produce a new candidate set.
+
+## Fresh Candidate Wave Slice (Implemented 2026-05-22)
+
+Fresh discovery was run against normal runtime artifacts to look for a new supported-provider candidate wave:
+
+```powershell
+python src/source_discovery.py --preset uncapped --top 0 --timeout 12 --gameprog-enabled --gamedevmap-enabled
+python scripts/source_policy_soak_report.py --data-dir data --out-dir _out
+```
+
+Baseline pending provider-migration rows before discovery were captured in `_out/provider-fresh-wave-baseline.json`: `26` rows split as `13` BambooHR, `8` Workday, `4` Breezy, and `1` Oracle HCM.
+
+Fresh discovery results:
+
+- Discovery generated `996` candidates, `452` survived dedupe, `252` validated, and `133` were auto-approved through the existing discovery policy.
+- Discovery final registry counts were `active=2063`, `pending=194`, `rejected=0`.
+- Provider migration review found `252` candidates but `0` stageable/staged provider-migration candidates.
+- Pending provider-migration rows remained unchanged: `26` current rows, `0` new IDs, `0` removed IDs.
+- Provider-migration staging blockers were dominated by existing coverage rather than new solvable validation work: `duplicate_active=161`, `duplicate_pending=19`, `adapter_mismatch=74`, `existing_provider=4`, `insufficient_evidence=83`, and `non_stageable_action=91`.
+
+Final soak after discovery remained `warning` with provider validation unchanged:
+
+- `validated_provider=18`, `needs_review=6`, `failed_provider=2`, total provider candidates `26`.
+- Gap buckets remained `fetchedButNotValidated=9`, `validatedProviderMissingMigrationSourceIdentity=9`, and all unsupported/probe/not-fetched/static-still-active buckets at `0`.
+- No targeted provider validation fetch was run for new candidates because discovery staged no new pending provider-migration rows.
+- `providerCoverageNextAction.action` changed to `review_one_migration_link`, with `4` API-eligible medium-confidence review candidates from existing link-backfill evidence.
+
+Conclusion: this fresh candidate wave improved general discovery/source coverage through normal auto-approval, but it did not create new provider-migration validation work or raise the `18/26` provider validated count. The next meaningful provider-coverage task is reviewed migration-link cleanup for the existing API-eligible candidates, not more parser work on the saturated pending set.
+
+## Closeout Reassessment (Closed 2026-05-22)
+
+This plan is closed as evidence-saturated. Current evidence shows no meaningful provider discovery coverage work remains in this plan without fresh external state, new provider candidates, or a separate source-policy cleanup scope.
+
+Final closeout state:
+
+- Source-policy soak status remains `warning`, but provider discovery coverage is no longer the active blocker.
+- Provider validation counts are `validated_provider=20`, `needs_review=6`, and `failed_provider=2`.
+- Provider coverage gap counts are `fetchedButNotValidated=9`, `validatedProviderMissingMigrationSourceIdentity=9`, and `staticStillActiveDespiteValidatedProvider=2`.
+- Unsupported/probe/not-fetched buckets are all `0`.
+- Link-backfill has `0` API-eligible review actions.
+- `providerCoverageNextAction.action` is `resolve_link_ambiguity`, not provider parser/debug work or human migration-link approval.
+
+Remaining blocker classification:
+
+- `fetchedButNotValidated` rows are non-promotable until fresh public postings appear; recent targeted probes showed zero public postings or auth/empty-board outcomes rather than parser misses.
+- `validatedProviderMissingMigrationSourceIdentity` rows have no safe bulk link path; future work should only apply reviewed registry-backed static matches.
+- `staticStillActiveDespiteValidatedProvider` is source-policy/static suppression cleanup, not provider discovery coverage.
+- `provider_shaped_self_link` and `ambiguous_static_match` are link-backfill diagnostics, not new provider coverage work.
+
+Future reopen triggers:
+
+- Fresh discovery stages new supported-provider migration candidates.
+- A repeated unsupported-provider family appears with enough evidence to justify a narrow adapter plan.
+- A registry-backed API-eligible migration-link candidate appears.
+- Fresh public postings appear for a currently non-promotable pending provider row.
+
+Out of scope for this closeout:
+
+- No API, schema, source registry, suppression, or fetcher contract changes.
+- No static row edits, source cleanup, bulk migration-link actions, new adapter, new crawler, new dependency, or source-sync mutation.
+- Runtime artifacts under `data/` and `_out/` remain evidence only and are not commit targets by default.
