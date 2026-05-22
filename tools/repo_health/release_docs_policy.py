@@ -26,6 +26,7 @@ def test_release_docs_cover_the_current_public_release_line(repo_root: Path) -> 
     release_text = (docs_dir / "RELEASE.md").read_text(encoding="utf-8")
     app_version = get_app_version()
     top_release = _section(changelog_text, f"## [{app_version}]")
+    release_0_2_15 = _section(changelog_text, "## [0.2.15]")
     release_0_2_1 = _section(changelog_text, "## [0.2.1]")
     release_0_2_01 = _section(changelog_text, "## [0.2.01]")
     release_0_2_0 = _section(changelog_text, "## [0.2.0]")
@@ -45,11 +46,16 @@ def test_release_docs_cover_the_current_public_release_line(repo_root: Path) -> 
         heading in top_release for heading in ("### Added", "### Changed", "### Fixed", "### Notes")
     )
     assert "\n- " in top_release
-    assert "Oracle HCM provider API support" in top_release
-    assert "Provider coverage migration tooling" in top_release
-    assert "title sanitization evidence" in top_release
-    assert "First-run Jobs regressions after `0.2.1`" in top_release
-    assert "CVE-2026-45409" in top_release
+    assert "Remote Python CI" in top_release
+    assert "First-run Google Sheets bootstrap" in top_release
+    assert "Google Sheets category-style titles" in top_release
+    assert "URL-derived title repair" in top_release
+    assert "Remote OK parser filtering" in top_release
+    assert "Oracle HCM provider API support" in release_0_2_15
+    assert "Provider coverage migration tooling" in release_0_2_15
+    assert "title sanitization evidence" in release_0_2_15
+    assert "First-run Jobs regressions after `0.2.1`" in release_0_2_15
+    assert "CVE-2026-45409" in release_0_2_15
     assert "Saved Jobs tracking polish" in release_0_2_1
     assert "Previous release-note viewing" in release_0_2_1
     assert "flash the Baluffo taskbar button" in release_0_2_1
