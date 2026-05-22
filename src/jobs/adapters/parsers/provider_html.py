@@ -146,6 +146,50 @@ def parse_ashby_jobs_from_html(
     ]
 
 
+def _breezy_template_text(html_fragment: str) -> str:
+    return clean_text(re.sub(r"%[A-Z0-9_]+%", " ", strip_html_text(html_fragment)))
+
+
+def _breezy_anchor_title(anchor: dict[str, str]) -> str:
+    body_html = anchor.get("body", "")
+    title_match = re.search(r"(?is)<h[1-3][^>]*>(.*?)</h[1-3]>", body_html)
+    title_source = title_match.group(1) if title_match else anchor.get("text") or body_html
+    title = _breezy_template_text(title_source)
+    title = re.sub(r"(?i)\s*\bApply\b\s*$", "", title).strip()
+    return re.sub(r"\s+", " ", title)
+
+
+def _breezy_anchor_context(html_text: str, href: str, body_html: str) -> str:
+    source_html = html_text or ""
+    context_start = -1
+    for quote in ('"', "'"):
+        context_start = source_html.find(f"href={quote}{href}{quote}")
+        if context_start >= 0:
+            break
+    if context_start < 0:
+        context_start = source_html.find(body_html)
+    return source_html[max(0, context_start) : max(0, context_start) + 700]
+
+
+def _breezy_meta_text(body_html: str, class_name: str) -> str:
+    match = re.search(
+        rf'(?is)<li[^>]*class=["\'][^"\']*{class_name}[^"\']*["\'][^>]*>.*?<span[^>]*>(.*?)</span>',
+        body_html,
+    )
+    return _breezy_template_text(match.group(1)) if match else ""
+
+
+def _breezy_location_fields(
+    *, context_window: str, context_text: str, location_text: str
+) -> tuple[str, str, str]:
+    if "WORLDWIDE" in context_window.upper() or "remote" in context_text.lower():
+        return "Remote", "Remote", "Remote"
+    if location_text:
+        city, country, _region = parse_generic_location_fields(location_text)
+        return city, country, ""
+    return "", "Unknown", ""
+
+
 def parse_breezy_jobs_html(
     html_text: str,
     board_url: str,
@@ -165,47 +209,16 @@ def parse_breezy_jobs_html(
             continue
         seen_links.add(link)
         body_html = anchor.get("body", "")
-        title_match = re.search(r"(?is)<h[1-3][^>]*>(.*?)</h[1-3]>", body_html)
-        title_source = title_match.group(1) if title_match else anchor.get("text") or body_html
-        title = clean_text(re.sub(r"%[A-Z0-9_]+%", " ", strip_html_text(title_source)))
-        title = re.sub(r"(?i)\s*\bApply\b\s*$", "", title).strip()
-        title = re.sub(r"\s+", " ", title)
+        title = _breezy_anchor_title(anchor)
         if not title:
             continue
-        context_start = -1
-        for quote in ('"', "'"):
-            context_start = (html_text or "").find(f"href={quote}{href}{quote}")
-            if context_start >= 0:
-                break
-        if context_start < 0:
-            context_start = (html_text or "").find(body_html)
-        context_window = (html_text or "")[max(0, context_start) : max(0, context_start) + 700]
-        location_match = re.search(
-            r'(?is)<li[^>]*class=["\'][^"\']*location[^"\']*["\'][^>]*>.*?<span[^>]*>(.*?)</span>',
-            body_html,
+        context_window = _breezy_anchor_context(html_text, href, body_html)
+        context_text = _breezy_template_text(context_window)
+        city, country, work_type = _breezy_location_fields(
+            context_window=context_window,
+            context_text=context_text,
+            location_text=_breezy_meta_text(body_html, "location"),
         )
-        type_match = re.search(
-            r'(?is)<li[^>]*class=["\'][^"\']*type[^"\']*["\'][^>]*>.*?<span[^>]*>(.*?)</span>',
-            body_html,
-        )
-        context_text = clean_text(re.sub(r"%[A-Z0-9_]+%", " ", strip_html_text(context_window)))
-        location_text = (
-            clean_text(strip_html_text(location_match.group(1))) if location_match else ""
-        )
-        type_text = clean_text(
-            re.sub(
-                r"%[A-Z0-9_]+%",
-                " ",
-                strip_html_text(type_match.group(1)) if type_match else "",
-            )
-        )
-        city = ""
-        country = "Unknown"
-        work_type = ""
-        if "WORLDWIDE" in context_window.upper() or "remote" in context_text.lower():
-            city, country, work_type = "Remote", "Remote", "Remote"
-        elif location_text:
-            city, country, _region = parse_generic_location_fields(location_text)
         jobs.append(
             {
                 "sourceJobId": f"breezy:{hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
@@ -214,7 +227,7 @@ def parse_breezy_jobs_html(
                 "city": city,
                 "country": country,
                 "workType": work_type,
-                "contractType": type_text,
+                "contractType": _breezy_meta_text(body_html, "type"),
                 "jobLink": link,
                 "sector": "Game",
                 "postedAt": "",
