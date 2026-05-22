@@ -10,6 +10,13 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+### Fixed
+- Google Sheets provider title hydration now supports Ashby hosted-board pages for `jobs.ashbyhq.com/{board}/{posting_id}` links.
+- Google Sheets provider title hydration now supports Workable widget feeds for `apply.workable.com/{account}/j/{shortcode}` links.
+- Remote OK now reports a successful empty source when all valid feed rows are filtered out by sanitizer rules.
+- Remote OK parser filtering now rejects generic community and open-pool non-job titles such as `Join Our Community`.
+- Remote OK parser filtering now ignores description-only game keyword matches, reducing non-game remote job contamination before canonicalization.
+
 ## [0.2.15] - 2026-05-20
 
 ### Added

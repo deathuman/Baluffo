@@ -28,6 +28,22 @@ def normalize_contract_type(contract_text: Any, title: Any = "") -> str:
     return "Unknown"
 
 
+_REMOTE_OK_GENERIC_NON_JOB_TITLE_PATTERNS = (
+    re.compile(r"^join (our )?(talent )?community$"),
+    re.compile(r"^(join )?(our )?talent (community|pool)$"),
+    re.compile(r"^(general|open|spontaneous) application$"),
+    re.compile(r"^general interest$"),
+    re.compile(r"^join our team$"),
+)
+
+
+def _looks_like_remote_ok_generic_non_job_title(title: Any) -> bool:
+    normalized = norm_text(title)
+    return bool(normalized) and any(
+        pattern.search(normalized) for pattern in _REMOTE_OK_GENERIC_NON_JOB_TITLE_PATTERNS
+    )
+
+
 def parse_remote_ok_payload(payload: Any, *, looks_like_game_job) -> list[RawJob]:
     """
     Parse RemoteOK API responses into RawJob rows.
@@ -51,10 +67,11 @@ def parse_remote_ok_payload(payload: Any, *, looks_like_game_job) -> list[RawJob
         tags_text = (
             " ".join(str(tag) for tag in tags) if isinstance(tags, list) else clean_text(tags)
         )
-        description = clean_text(row.get("description"))
         if not title or not company:
             continue
-        if not looks_like_game_job(title, company, tags_text, description):
+        if _looks_like_remote_ok_generic_non_job_title(title):
+            continue
+        if not looks_like_game_job(title, company, tags_text):
             continue
         location = clean_text(row.get("location") or "Remote")
         remote = "remote" in norm_text(location)

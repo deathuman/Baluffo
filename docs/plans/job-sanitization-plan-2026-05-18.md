@@ -6,6 +6,116 @@ Investigation into non-game-development job contamination in `jobs-unified.csv` 
 
 ## 0. Progress Log
 
+### 2026-05-22 — P1.3 Google Sheets Ashby title hydration implemented
+
+**Status:** P1.3 implementation complete; focused tests and targeted Google Sheets refresh completed.
+
+**Implemented:**
+- Added Ashby hosted-board HTML support to the Google Sheets provider title resolver.
+- Supported links are `jobs.ashbyhq.com/{board}/{posting_id}`; resolver fetches the board root and reuses the existing Ashby HTML parser.
+- Ashby rows now match by posting ID or normalized job URL.
+- No output schema, canonical drop reason, strict sector gate, or Google Sheets company rewrite was added.
+
+**Verification:**
+- `python -m pytest -q tests/test_jobs_fetcher_google_sheets.py` — **20 passed**
+- `python -m pytest -q tests/test_jobs_fetcher_providers.py tests/test_jobs_fetcher_quality.py tests/test_jobs_fetcher_pipeline.py` — **149 passed**
+
+**Audit after P1.3 support expansion:**
+- Current-artifact audit command: `python scripts/audit_jobs_sanitizer.py --input-csv data/jobs-unified.csv --report-json data/jobs-fetch-report.json --limit 20`
+- Current-artifact provider-hydration target coverage now reports **722** eligible rows.
+- Newly covered Ashby family: `jobs.ashbyhq.com` **95** provider-hydration targets.
+- Targeted refresh command: `python -m src.jobs.pipeline --output-dir _out/job-sanitization/google-sheets-p1-3-audit --only-sources google_sheets,google_sheets_1er2oaxo,google_sheets_1mvqhxat --no-seed-existing-output --no-preserve-previous-on-empty --force-refresh-all --ignore-circuit-breaker --quiet`
+- Targeted refresh result: output jobs **7,987**, failed sources **0**.
+- Targeted refresh audit: category-style titles **1,472**, provider-hydration targets **677**, suspicious exact titles `Administartive` **11** and `Account-management` **8**.
+- Remaining provider-hydration target domains after refresh: `job-boards.greenhouse.io` **319**, `jobs.lever.co` **152**, `jobs.ashbyhq.com` **65**, `boards.greenhouse.io` **50**, `jobs.eu.lever.co` **39**, `apply.workable.com` **38**, `job-boards.eu.greenhouse.io` **14**.
+
+**Stop condition / next decision:**
+- Remote OK is clean at source level after P1.1.
+- Greenhouse, Lever, Workable, and Ashby hydration are implemented.
+- Remaining residue is dominated by stale/missing provider postings on already-supported providers plus deeper unsupported providers such as Jobvite, BambooHR, Personio, Feishu, and company-specific pages.
+- Do not add strict sector gating or broad drops without a product decision. The next meaningful code plan should choose one provider family, likely Jobvite or BambooHR, or pivot to policy-based filtering.
+
+### 2026-05-22 — P1.2 Google Sheets Workable title hydration implemented
+
+**Status:** P1.2 implementation complete; focused Google Sheets, provider, quality, and pipeline verification passed.
+
+**Implemented:**
+- Added Workable widget-feed support to the Google Sheets provider title resolver.
+- Supported links are `apply.workable.com/{account}/j/{shortcode}` and feed lookup uses `https://apply.workable.com/api/v1/widget/accounts/{account}?details=true`.
+- Workable rows now match by `shortcode`, `id`, normalized `url`, or normalized `shortlink`.
+- No output schema, canonical drop reason, strict sector gate, or Google Sheets company rewrite was added.
+
+**Verification:**
+- `python -m pytest -q tests/test_jobs_fetcher_google_sheets.py` — **19 passed**
+- `python -m pytest -q tests/test_jobs_fetcher_providers.py` — **69 passed**
+- `python -m pytest -q tests/test_jobs_fetcher_quality.py tests/test_jobs_fetcher_pipeline.py` — **80 passed**
+
+**Audit after P1.2 support expansion:**
+- Command: `python scripts/audit_jobs_sanitizer.py --input-csv data/jobs-unified.csv --report-json data/jobs-fetch-report.json --limit 20`
+- Current local rows: **15,183** total; **7,516** Google Sheets rows.
+- Remaining Google Sheets category-style titles in current artifacts: **1,580**.
+- Remaining URL-title repair candidates: **0**.
+- Provider-hydration target coverage now includes Workable and reports **627** eligible current-artifact rows.
+- Newly covered Workable family: `apply.workable.com` **56** provider-hydration targets.
+- Top provider-hydration target domains after P1.2: `job-boards.greenhouse.io` **315**, `jobs.lever.co` **152**, `apply.workable.com` **56**, `boards.greenhouse.io` **51**, `jobs.eu.lever.co` **39**, `job-boards.eu.greenhouse.io` **14**.
+
+**Next code-slice recommendation:**
+1. Re-run a targeted Google Sheets refresh when live title-repair impact is needed.
+2. If Workable repair impact is confirmed and Remote OK remains clean, evaluate the next unsupported provider family by implementation risk: Ashby or Jobvite.
+
+### 2026-05-22 — P1.1 Remote OK generic non-job title filter implemented
+
+**Status:** P1.1 implementation complete; focused parser coverage and targeted Remote OK refresh completed.
+
+**Implemented:**
+- Added a Remote OK parser-stage guard for generic community/open-pool titles such as `Join Our Community`, talent community/pool titles, general/open/spontaneous applications, general interest, and `Join Our Team`.
+- The guard runs before the Remote OK title/company/tag game-evidence check so `community` cannot pass only because it contains the substring `unity`.
+- Real role titles such as `Community Manager` remain eligible when they have normal game evidence.
+- No output schema, canonical drop reason, strict sector gate, or Google Sheets company rewrite was added.
+- Remote OK now treats a valid feed whose rows are all filtered out as a successful empty source instead of a failed source.
+
+**Verification:**
+- `python -m pytest -q tests/test_jobs_fetcher_providers.py` — **69 passed**
+- Targeted refresh command: `python -m src.jobs.pipeline --output-dir _out/job-sanitization/remote-ok-p1-audit --only-sources remote_ok --no-seed-existing-output --no-preserve-previous-on-empty --force-refresh-all --ignore-circuit-breaker --quiet`
+- Targeted refresh result: output jobs **0**, failed sources **0**. The command still returned nonzero because the targeted no-output run does not produce a successful feed artifact, but the source-level validation passed and no obvious Remote OK non-job rows remained.
+
+### 2026-05-22 — Remote OK P1 follow-up audit completed
+
+**Status:** Audit complete; next code slice should stay on Remote OK before returning to Google Sheets.
+
+**Remote OK targeted refresh:**
+- Command: `python -m src.jobs.pipeline --output-dir _out/job-sanitization/remote-ok-p1-audit --only-sources remote_ok --no-seed-existing-output --no-preserve-previous-on-empty --force-refresh-all --ignore-circuit-breaker --quiet`
+- Result: output jobs **1**, failed sources **0**.
+- Remaining row: `Join Our Community` at `Tripadvisor`, source `remote_ok`, link `https://remoteok.com/remote-jobs/remote-join-our-community-tripadvisor-1131674`.
+- Classification: P1 removed the broad pre-refresh Remote OK contamination, but the remaining row is still a generic community/non-job listing that passed via title/company/tag evidence.
+
+**Current `data/` Google Sheets audit:**
+- Command: `python scripts/audit_jobs_sanitizer.py --input-csv data/jobs-unified.csv --report-json data/jobs-fetch-report.json --limit 40`
+- Current local rows: **15,183** total; **7,516** Google Sheets rows.
+- Remaining Google Sheets category-style titles: **1,580**.
+- Remaining URL-title repair candidates: **0**.
+- Remaining provider-hydration targets: **571**.
+- Remaining suspicious exact titles: `Administartive` **10**, `Account-management` **8**.
+- Top provider-hydration target domains: `job-boards.greenhouse.io` **315**, `jobs.lever.co` **152**, `boards.greenhouse.io` **51**, `jobs.eu.lever.co` **39**, `job-boards.eu.greenhouse.io` **14**.
+
+**Next code-slice recommendation:**
+1. P1.1 generic community/open-pool filtering is now implemented.
+2. Re-run a targeted Remote OK refresh when live source confirmation is needed.
+3. If Remote OK yields zero obvious non-job rows, return to the Google Sheets provider-hydration target backlog.
+
+### 2026-05-22 — P1 Remote OK description-only noise hardening implemented
+
+**Status:** P1 implementation complete; focused parser and pipeline verification completed.
+
+**Implemented:**
+- Remote OK parsing now accepts rows only when game evidence appears in the title, company, or tags.
+- Description-only game keyword matches no longer keep rows, which targets known Remote OK contamination such as therapist, attorney, and CNC/manufacturing postings.
+- The change stays in the parser-stage Remote OK filter; no canonical drop reason, output schema, strict sector gate, or Google Sheets company rewrite was added.
+
+**Verification:**
+- `python -m pytest -q tests/test_jobs_fetcher_providers.py` — passed.
+- `python -m pytest -q tests/test_jobs_fetcher_quality.py tests/test_jobs_fetcher_pipeline.py` — passed.
+
 ### 2026-05-18 — P0.4 Google Sheets provider title hydration implemented
 
 **Status:** P0.4 implementation complete; fresh Google Sheets-only pipeline refresh completed.
@@ -209,7 +319,6 @@ python scripts/audit_jobs_sanitizer.py --input-csv _out/latest/build/portable/sh
 
 **Still open:**
 - Run a fresh full pipeline and compare `loss.canonicalDropReasons.google_sheets_category_row`, `loss.canonicalDropReasons.non_job_static_page`, final output counts, and sample kept/dropped rows.
-- Decide P1 handling for `remote_ok`.
 - Decide whether to add a known non-game employer/domain list beyond the conservative P0 evidence terms.
 - Decide whether to add opt-in strict game-only output gating.
 - Decide whether/how to repair Google Sheets employer attribution.
@@ -792,11 +901,11 @@ The google_sheets adapter currently reads the sheet's context company name as th
 
 ### Layer 5 — Remote OK Keyword Hardening (Low Effort, ~1 hr)
 
-**Implementation status:** Not started; intentionally deferred from P0.
+**Implementation status:** P1 and P1.1 complete as of 2026-05-22.
 
-`remote_ok` fetches from a general API with game keyword filters but returns non-game results. Fix:
-- Filter: require that game keywords appear in the `title` (not just the `description`)
-- Or: Exclude `remote_ok` where `profession == "other"` AND sector != "Game"
+`remote_ok` fetches from a general API with game keyword filters but returns non-game results.
+The P1 fix keeps rows only when game evidence appears in the title, company, or tags; description-only keyword matches are filtered before canonicalization.
+The follow-up audit found one remaining live row, `Join Our Community` at Tripadvisor, so P1.1 rejects generic community/open-pool titles before returning to Google Sheets hydration work.
 
 ### Layer 6 — Non-Development Role Policy
 
@@ -818,7 +927,10 @@ Decide whether corporate roles at game companies (HR, accounting, legal, admin a
 | **P0** | Google Sheets category-label detector (Layer 2) | **Done, conservative** | ~2-4h | Drops category-label rows with non-game/no-game evidence while preserving ambiguous game-adjacent corrupted rows |
 | **P0.1** | Expand Google Sheets category labels and add ATS link-employer mismatch evidence | **Done** | ~1-2h | Catches latest-build `Account-management`/`Administartive` rows where sheet company and linked employer disagree |
 | **P0.2** | Add sanitizer audit command and residual high-confidence link-employer evidence | **Done** | ~1h | Catches remaining `shine.com`, `bebee.com`, and broad-`interactive` SmartRecruiters false negatives |
-| **P1** | Remote OK post-fetch game-title filter (Layer 5) | Not started | ~1h | Removes ~38 non-game remote jobs (DoorDash, CNC Machinist, Attorney, Therapist) |
+| **P1** | Remote OK post-fetch game-title filter (Layer 5) | **Done** | ~1h | Removes description-only non-game remote jobs (DoorDash, CNC Machinist, Attorney, Therapist) |
+| **P1.1** | Remote OK generic community/open-pool title filter | **Done** | ~30m | Removes remaining live `Join Our Community`-style Remote OK non-job rows before shifting back to Google Sheets |
+| **P1.2** | Google Sheets Workable provider title hydration | **Done** | ~1h | Adds `apply.workable.com` widget-feed title repair coverage for 56 current-artifact provider-hydration targets |
+| **P1.3** | Google Sheets Ashby provider title hydration | **Done** | ~1h | Adds `jobs.ashbyhq.com` hosted-board title repair coverage for 95 current-artifact provider-hydration targets |
 | **P1** | Expand known non-game employer/domain evidence in canonicalization | Partially started via P0 evidence terms | ~2h | Blocks rows where actual employer is McDonald's, Walmart, Domino's, etc. — even if mislabeled "Game" sector |
 | **P2** | Add configurable sector-gate filter (Layer 3) | Not started | ~1-2h | Allows strict game-only mode |
 | **P3** | Fix google_sheets `company` field (Layer 4) | Not started | ~4h | Prevents misleading employer attribution |

@@ -14,6 +14,7 @@ from urllib.parse import quote, unquote, urlparse
 
 from src.jobs.adapters import community
 from src.jobs.adapters.parsers.location import normalize_location_details
+from src.jobs.adapters.parsers.provider_html import parse_ashby_jobs_from_html
 from src.jobs.common.datetime_utils import to_iso
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.common.heuristics import (
@@ -683,6 +684,8 @@ _GOOGLE_SHEETS_GREENHOUSE_HOSTS = frozenset(
     }
 )
 _GOOGLE_SHEETS_LEVER_HOSTS = frozenset({"jobs.lever.co", "jobs.eu.lever.co"})
+_GOOGLE_SHEETS_WORKABLE_HOSTS = frozenset({"apply.workable.com"})
+_GOOGLE_SHEETS_ASHBY_HOSTS = frozenset({"jobs.ashbyhq.com"})
 
 
 def _google_sheets_provider_title_target(
@@ -709,17 +712,41 @@ def _google_sheets_provider_title_target(
             return None
         feed_url = f"https://api.lever.co/v0/postings/{quote(account, safe='')}?mode=json"
         return "lever", account, feed_url, (f"id:{posting_id}", f"url:{normalized_link}")
+    if host in _GOOGLE_SHEETS_WORKABLE_HOSTS and len(parts) >= 3 and parts[1].lower() == "j":
+        account = clean_text(parts[0])
+        shortcode = clean_text(parts[2])
+        if not account or not shortcode:
+            return None
+        feed_url = (
+            "https://apply.workable.com/api/v1/widget/accounts/"
+            f"{quote(account, safe='')}?details=true"
+        )
+        return "workable", account, feed_url, (f"id:{shortcode}", f"url:{normalized_link}")
+    if host in _GOOGLE_SHEETS_ASHBY_HOSTS and len(parts) >= 2:
+        board = clean_text(parts[0])
+        posting_id = clean_text(parts[-1])
+        if not board or not posting_id or posting_id.lower() == "jobs":
+            return None
+        feed_url = f"https://jobs.ashbyhq.com/{quote(board, safe='')}"
+        return "ashby", board, feed_url, (f"id:{posting_id}", f"url:{normalized_link}")
     return None
 
 
 def _google_sheets_provider_title_lookup_keys(provider: str, row: dict[str, Any]) -> set[str]:
     keys: set[str] = set()
-    for value in (row.get("id"), row.get("internal_job_id"), row.get("requisitionCode")):
+    for value in (
+        row.get("id"),
+        row.get("internal_job_id"),
+        row.get("requisitionCode"),
+        row.get("shortcode"),
+    ):
         text = clean_text(value)
         if text:
             keys.add(f"id:{text}")
     if provider == "greenhouse":
         urls = (row.get("absolute_url"), row.get("url"))
+    elif provider == "workable":
+        urls = (row.get("url"), row.get("shortlink"))
     else:
         urls = (row.get("hostedUrl"), row.get("applyUrl"), row.get("url"))
     for value in urls:
@@ -738,6 +765,8 @@ def _google_sheets_provider_title_from_row(provider: str, row: dict[str, Any]) -
 def _google_sheets_provider_title_map(provider: str, payload: Any) -> dict[str, str]:
     if provider == "greenhouse":
         rows = payload.get("jobs") if isinstance(payload, dict) else None
+    elif provider == "workable":
+        rows = payload.get("jobs") if isinstance(payload, dict) else None
     else:
         rows = payload if isinstance(payload, list) else None
     if not isinstance(rows, list):
@@ -751,6 +780,22 @@ def _google_sheets_provider_title_map(provider: str, payload: Any) -> dict[str, 
             continue
         for key in _google_sheets_provider_title_lookup_keys(provider, row_value):
             title_by_key.setdefault(key, title)
+    return title_by_key
+
+
+def _google_sheets_ashby_title_map(feed_url: str, html_text: str) -> dict[str, str]:
+    rows = parse_ashby_jobs_from_html(html_text, feed_url, "")
+    title_by_key: dict[str, str] = {}
+    for row in rows:
+        title = sanitize_public_text(row.get("title"))
+        if not title:
+            continue
+        source_job_id = clean_text(row.get("sourceJobId"))
+        if source_job_id.startswith("ashby:"):
+            title_by_key.setdefault(f"id:{source_job_id.removeprefix('ashby:')}", title)
+        normalized = normalize_url(row.get("jobLink"))
+        if normalized:
+            title_by_key.setdefault(f"url:{normalized}", title)
     return title_by_key
 
 
@@ -852,7 +897,10 @@ class GoogleSheetsProviderTitleResolver:
                 self._retries,
                 self._backoff_s,
             )
-            title_by_key = _google_sheets_provider_title_map(provider, json.loads(text))
+            if provider == "ashby":
+                title_by_key = _google_sheets_ashby_title_map(feed_url, text)
+            else:
+                title_by_key = _google_sheets_provider_title_map(provider, json.loads(text))
         except (RuntimeError, OSError, ValueError):
             with self._lock:
                 self._stats["title_hydration_errors"] += 1

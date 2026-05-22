@@ -152,16 +152,25 @@ def run_google_sheets_source(
 def run_remote_ok_source(
     *, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float
 ) -> list[RawJob]:
+    def _valid_remote_ok_payload(payload: Any) -> bool:
+        return isinstance(payload, list) or (
+            isinstance(payload, dict) and isinstance(payload.get("jobs"), list)
+        )
+
     errors: list[str] = []
     for url in REMOTE_OK_URLS:
+        valid_empty = False
 
         def _attempt(url: str = url) -> list[RawJob]:
+            nonlocal valid_empty
             text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
-            parsed = _parse_remote_ok_payload(
-                json.loads(text), looks_like_game_job=looks_like_game_job
-            )
+            payload = json.loads(text)
+            parsed = _parse_remote_ok_payload(payload, looks_like_game_job=looks_like_game_job)
             if parsed:
                 return parsed
+            if _valid_remote_ok_payload(payload):
+                valid_empty = True
+                return []
             errors.append(f"{url}: empty/invalid payload")
             return []
 
@@ -169,7 +178,7 @@ def run_remote_ok_source(
             errors.append(f"{url}: {exc}")
 
         parsed = run_recoverable_adapter_attempt(_attempt, _record_error)
-        if parsed:
+        if parsed or valid_empty:
             return parsed
     raise (
         AdapterValidationError.from_errors(errors)
