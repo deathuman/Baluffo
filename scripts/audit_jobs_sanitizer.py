@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -19,6 +18,7 @@ if str(ROOT_DIR) not in sys.path:
 from src.jobs.canonicalize import (
     _derive_google_sheets_title_from_url,
     _google_sheets_provider_title_target,
+    _is_google_sheets_category_label,
 )
 
 DEFAULT_SUSPICIOUS_TITLES = ("Account-management", "Administartive")
@@ -46,7 +46,7 @@ def _host(row: dict[str, str]) -> str:
 
 
 def _category_style_title(title: str) -> bool:
-    return bool(re.fullmatch(r"[A-Za-z0-9]+(?:-[A-Za-z0-9&]+)+", title or ""))
+    return _is_google_sheets_category_label(title)
 
 
 def _print_counter(title: str, counter: Counter[str], limit: int) -> None:
@@ -128,6 +128,7 @@ def main() -> int:
             repaired_title := _derive_google_sheets_title_from_url(
                 source=row.get("source") or "",
                 title=row.get("title") or "",
+                company=row.get("company") or "",
                 job_link=row.get("jobLink") or "",
             )
         )

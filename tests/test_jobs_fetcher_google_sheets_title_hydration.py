@@ -3,9 +3,10 @@ import json
 from src import jobs_fetcher as jf
 
 
-def test_canonicalize_google_sheets_rows_hydrates_greenhouse_and_lever_titles() -> None:
+def test_canonicalize_google_sheets_rows_hydrates_supported_category_titles() -> None:
     greenhouse_feed = "https://boards-api.greenhouse.io/v1/boards/examplegames/jobs?content=true"
     lever_feed = "https://api.lever.co/v0/postings/coda?mode=json"
+    workable_feed = "https://apply.workable.com/api/v1/widget/accounts/examplegames?details=true"
     calls: dict[str, int] = {}
 
     def fake_fetch(url: str, _timeout: int) -> str:
@@ -16,7 +17,7 @@ def test_canonicalize_google_sheets_rows_hydrates_greenhouse_and_lever_titles() 
                     "jobs": [
                         {
                             "id": 12345,
-                            "title": "Senior Product Manager",
+                            "title": "Influencer Manager",
                             "absolute_url": "https://job-boards.greenhouse.io/examplegames/jobs/12345",
                         }
                     ]
@@ -27,12 +28,24 @@ def test_canonicalize_google_sheets_rows_hydrates_greenhouse_and_lever_titles() 
                 [
                     {
                         "id": "11111111-2222-3333-4444-555555555555",
-                        "text": "Digital Marketing Manager",
+                        "text": "Influencer Marketing Manager",
                         "hostedUrl": (
                             "https://jobs.lever.co/coda/11111111-2222-3333-4444-555555555555"
                         ),
                     }
                 ]
+            )
+        if url == workable_feed:
+            return json.dumps(
+                {
+                    "jobs": [
+                        {
+                            "shortcode": "ABC123",
+                            "title": "Influencer Partnerships Manager",
+                            "url": "https://apply.workable.com/examplegames/j/ABC123/",
+                        }
+                    ]
+                }
             )
         raise AssertionError(f"Unexpected URL: {url}")
 
@@ -46,7 +59,7 @@ def test_canonicalize_google_sheets_rows_hydrates_greenhouse_and_lever_titles() 
         [
             {
                 "sourceJobId": "sheet-1",
-                "title": "Product-management",
+                "title": "Influencer-marketing",
                 "company": "Example Games",
                 "city": "Remote",
                 "country": "Unknown",
@@ -57,7 +70,7 @@ def test_canonicalize_google_sheets_rows_hydrates_greenhouse_and_lever_titles() 
             },
             {
                 "sourceJobId": "sheet-2",
-                "title": "Digital-marketing",
+                "title": "Influencer-marketing",
                 "company": "Coda",
                 "city": "Remote",
                 "country": "Unknown",
@@ -66,6 +79,17 @@ def test_canonicalize_google_sheets_rows_hydrates_greenhouse_and_lever_titles() 
                 "jobLink": ("https://jobs.lever.co/coda/11111111-2222-3333-4444-555555555555"),
                 "sector": "Tech",
             },
+            {
+                "sourceJobId": "sheet-3",
+                "title": "Influencer-marketing",
+                "company": "Example Games",
+                "city": "Remote",
+                "country": "Unknown",
+                "workType": "Remote",
+                "contractType": "Full-time",
+                "jobLink": "https://apply.workable.com/examplegames/j/ABC123/",
+                "sector": "Game",
+            },
         ],
         source="google_sheets",
         fetched_at="2026-03-13T00:00:00+00:00",
@@ -73,16 +97,17 @@ def test_canonicalize_google_sheets_rows_hydrates_greenhouse_and_lever_titles() 
     )
 
     assert [row.title for row in canonical_rows] == [
-        "Senior Product Manager",
-        "Digital Marketing Manager",
+        "Influencer Manager",
+        "Influencer Marketing Manager",
+        "Influencer Partnerships Manager",
     ]
     assert not drop_reasons
-    assert stats["title_hydration_candidates"] == 2
-    assert stats["title_hydration_feed_fetches"] == 2
-    assert stats["title_hydration_repaired"] == 2
+    assert stats["title_hydration_candidates"] == 3
+    assert stats["title_hydration_feed_fetches"] == 3
+    assert stats["title_hydration_repaired"] == 3
     assert stats["title_hydration_missed"] == 0
     assert stats["title_hydration_errors"] == 0
-    assert calls == {greenhouse_feed: 1, lever_feed: 1}
+    assert calls == {greenhouse_feed: 1, lever_feed: 1, workable_feed: 1}
 
 
 def test_canonicalize_google_sheets_rows_reuses_title_hydration_feed_cache() -> None:
@@ -194,7 +219,7 @@ def test_canonicalize_google_sheets_rows_hydrates_broad_animation_titles() -> No
     assert stats["title_hydration_repaired"] == 1
 
 
-def test_canonicalize_google_sheets_rows_keeps_unsupported_missing_and_failed_hydration() -> None:
+def test_canonicalize_google_sheets_rows_drops_unhydrated_category_titles() -> None:
     missing_feed = "https://boards-api.greenhouse.io/v1/boards/missingboard/jobs?content=true"
     broken_feed = "https://boards-api.greenhouse.io/v1/boards/brokenboard/jobs?content=true"
 
@@ -217,9 +242,7 @@ def test_canonicalize_google_sheets_rows_keeps_unsupported_missing_and_failed_hy
                 "sourceJobId": "sheet-1",
                 "title": "Product-management",
                 "company": "Example Games",
-                "jobLink": (
-                    "https://jobs.ashbyhq.com/examplegames/3eabb716-eaef-432e-ad88-f3e16d01e54b"
-                ),
+                "jobLink": "https://jobs.unsupported.example/examplegames/3eabb716-eaef-432e-ad88-f3e16d01e54b",
                 "sector": "Game",
             },
             {
@@ -249,13 +272,8 @@ def test_canonicalize_google_sheets_rows_keeps_unsupported_missing_and_failed_hy
         title_hydration_resolver=resolver,
     )
 
-    assert [row.title for row in canonical_rows] == [
-        "Product-management",
-        "Ui-art",
-        "Product-management",
-        "Digital-marketing",
-    ]
-    assert not drop_reasons
+    assert canonical_rows == []
+    assert drop_reasons == {"google_sheets_category_row": 4}
     assert stats["title_hydration_candidates"] == 2
     assert stats["title_hydration_feed_fetches"] == 2
     assert stats["title_hydration_repaired"] == 0

@@ -174,6 +174,20 @@ def _normalize_detail_stats(stats: dict[str, Any]) -> dict[str, Any]:
         "title_hydration_missed": _clamped_int(stats.get("title_hydration_missed"), 0, 0),
         "title_hydration_errors": _clamped_int(stats.get("title_hydration_errors"), 0, 0),
         "title_hydration_ms": _clamped_int(stats.get("title_hydration_ms"), 0, 0),
+        "category_link_status_candidates": _clamped_int(
+            stats.get("category_link_status_candidates"), 0, 0
+        ),
+        "category_link_status_checked": _clamped_int(
+            stats.get("category_link_status_checked"), 0, 0
+        ),
+        "category_link_status_cache_hits": _clamped_int(
+            stats.get("category_link_status_cache_hits"), 0, 0
+        ),
+        "category_link_status_stale_dropped": _clamped_int(
+            stats.get("category_link_status_stale_dropped"), 0, 0
+        ),
+        "category_link_status_errors": _clamped_int(stats.get("category_link_status_errors"), 0, 0),
+        "category_link_status_ms": _clamped_int(stats.get("category_link_status_ms"), 0, 0),
         "parse_csv_ms": _clamped_int(stats.get("parse_csv_ms"), 0, 0),
         "listing_fetch_ms": _clamped_int(stats.get("listing_fetch_ms"), 0, 0),
         "listing_browser_fallbacks": _clamped_int(stats.get("listing_browser_fallbacks"), 0, 0),

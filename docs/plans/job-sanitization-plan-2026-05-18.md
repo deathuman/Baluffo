@@ -6,6 +6,64 @@ Investigation into non-game-development job contamination in `jobs-unified.csv` 
 
 ## 0. Progress Log
 
+### 2026-05-22 — P1.5 Google Sheets category-title and stale-link cleanup implemented
+
+**Status:** P1.5 implementation complete; targeted Google Sheets refresh passed.
+
+**Implemented:**
+- Added a shared Google Sheets category-title predicate used by category-row drops, URL-title repair eligibility, provider-hydration eligibility, provider-title category rejection, and sanitizer audit reporting.
+- The predicate keeps the curated exact labels and adds conservative residual hyphenated bucket labels such as `Influencer-marketing`, `3d-art`, `Motion-design`, and `Audio-engineering`.
+- Google Sheets category-style rows now run through hard static/noise checks, bounded live link status validation, URL-title repair, provider hydration, and a final category-style guard.
+- Live link validation is limited to suspicious Google Sheets category-style rows. It uses HEAD with GET fallback, caches by normalized URL, and only treats `404` or `410` as terminal stale-link drops.
+- Stale category links and still-unrepaired category titles continue to use the existing `google_sheets_category_row` drop reason; no output schema, drop reason, provider API, dependency, or frontend rendering change was added.
+- `scripts/audit_jobs_sanitizer.py` now uses the shared canonical predicate and passes company into URL-title derivation.
+
+**Portable artifact evidence before refresh:**
+- Source artifact: `C:\Users\Andrea\Desktop\ocr_debug\portable\ship\data\jobs-unified.csv`.
+- Audit command: `python scripts/audit_jobs_sanitizer.py --input-csv C:\Users\Andrea\Desktop\ocr_debug\portable\ship\data\jobs-unified.csv --report-json C:\Users\Andrea\Desktop\ocr_debug\portable\ship\data\jobs-fetch-report.json --limit 40`.
+- Current stale artifact rows: **15,178** total; **7,679** Google Sheets rows.
+- Shared predicate residual category-style titles: **1,906**.
+- URL-title repair candidates: **172**.
+- Provider-hydration targets: **881**.
+- `Influencer-marketing` rows in the stale artifact: **41**; top related repair candidates include `Influencer Manager`, `Influencer Relations Talent Manager US`, and `Senior Influencer Sales Lead`.
+
+**Targeted refresh evidence:**
+- Command: `python -m src.jobs.pipeline --output-dir _out/job-sanitization/google-sheets-category-link-audit --only-sources google_sheets,google_sheets_1er2oaxo,google_sheets_1mvqhxat --no-seed-existing-output --no-preserve-previous-on-empty --force-refresh-all --ignore-circuit-breaker --quiet`.
+- Targeted refresh result: output jobs **6,171**, failed sources **0**.
+- Final refresh audit: category-style titles **0**, URL-title repair candidates **0**, provider-hydration targets **0**, suspicious exact titles **0**.
+- Canonical drops in the scratch report: `google_sheets_category_row` **26,865**, `non_job_static_page` **12**, and `missing_job_link` **11**.
+- Category-link validation stats in the scratch report: candidates **5,960**, checked **5,830**, stale drops **1,051**, errors **0**.
+- Supported-provider hydration stats in the scratch report: candidates **2,429**, repaired **1,089**, missed **1,340**.
+
+**Verification:**
+- `python -m pytest -q tests/test_jobs_fetcher_google_sheets_sanitizer.py` — **24 passed**.
+- `python -m pytest -q tests/test_jobs_fetcher_google_sheets_title_hydration.py tests/test_jobs_fetcher_quality.py tests/test_jobs_fetcher_pipeline.py` — **85 passed**.
+
+**Stop condition / next decision:**
+- Remote OK source cleanup and the current Google Sheets category-title cleanup are complete for the planned sanitizer slices.
+- Remaining future work should be evidence-driven provider coverage, not broad category-title policy: inspect the refreshed scratch output for real stale-provider families or non-game rows before choosing Jobvite, BambooHR, Personio, Feishu, or all-link liveness validation.
+
+### 2026-05-22 — P1.4 generalized Google Sheets URL-title repair hardening implemented
+
+**Status:** P1.4 implementation complete; focused sanitizer coverage added.
+
+**Implemented:**
+- Hardened Google Sheets URL-title repair at the slug-candidate layer instead of adding provider-specific Breezy or Comeet branches.
+- Pure opaque URL segments such as UUIDs, numeric request IDs, long compact alphanumeric IDs with digits, and short dotted posting codes such as `1C.E4E` can no longer become titles.
+- Opaque leading and trailing ID affixes are stripped only when the remaining slug has title evidence, preserving numeric role terms such as `2D`, `3D`, `Web3`, `UI`, `UX`, and `QA`.
+- Account/company slugs without role evidence are rejected as URL-derived titles, preventing account names such as `Homa Games` from replacing category titles.
+- No output schema, canonical drop reason, strict sector gate, provider hydration API, dependency, or frontend rendering change was added.
+
+**Portable artifact evidence:**
+- Source artifact: `C:\Users\Andrea\Desktop\ocr_debug\portable\ship\data\jobs-unified.csv`.
+- Observed prior to the fix: **28** Google Sheets titles with leading compact opaque ID prefixes and **9** Comeet-style terminal-code title rows.
+- Screenshot examples now target repair to `Technical Artist`, `Senior Product Analyst`, `Graphic Designer`, and `Product Monetization Manager` on the next canonicalization run.
+
+**Verification:**
+- `python -m pytest -q tests/test_jobs_fetcher_google_sheets_sanitizer.py` — **20 passed**.
+- `python -m pytest -q tests/test_jobs_fetcher_google_sheets_title_hydration.py tests/test_jobs_fetcher_quality.py tests/test_jobs_fetcher_pipeline.py` — **85 passed**.
+- Read-only portable artifact audit confirmed all screenshot examples repair to the expected titles, account slugs remain rejected, numeric-role repairs remain intact, and derived outputs with long opaque IDs are **0**.
+
 ### 2026-05-22 — P1.3 Google Sheets Ashby title hydration implemented
 
 **Status:** P1.3 implementation complete; focused tests and targeted Google Sheets refresh completed.

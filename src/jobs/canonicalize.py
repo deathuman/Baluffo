@@ -6,6 +6,8 @@ import json
 import re
 import threading
 import time
+import urllib.error
+import urllib.request
 from collections import Counter
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -333,13 +335,37 @@ def _google_sheets_category_term_matches(value: Any, term_keys: frozenset[str]) 
     return bool(_google_sheets_category_label_keys(value) & term_keys)
 
 
-def _is_google_sheets_category_label(value: Any) -> bool:
+def _is_google_sheets_exact_category_label(value: Any) -> bool:
     return _google_sheets_category_term_matches(value, _GOOGLE_SHEETS_CATEGORY_LABEL_KEYS)
 
 
+def _looks_like_google_sheets_residual_category_label(value: Any) -> bool:
+    raw = clean_text(value)
+    if not re.fullmatch(r"[A-Za-z0-9]+(?:-[A-Za-z0-9&]+)+", raw):
+        return False
+    tokens = set(_google_sheets_slug_tokens(raw))
+    if not tokens or tokens & _GOOGLE_SHEETS_RESIDUAL_CATEGORY_VETO_TOKENS:
+        return False
+    return bool(tokens & _GOOGLE_SHEETS_RESIDUAL_CATEGORY_TOKENS)
+
+
+def _is_google_sheets_category_label(value: Any) -> bool:
+    return _is_google_sheets_exact_category_label(
+        value
+    ) or _looks_like_google_sheets_residual_category_label(value)
+
+
 def _is_google_sheets_game_adjacent_category_label(value: Any) -> bool:
-    return _google_sheets_category_term_matches(
-        value, _GOOGLE_SHEETS_GAME_ADJACENT_CATEGORY_LABEL_KEYS
+    if _google_sheets_category_term_matches(
+        value,
+        _GOOGLE_SHEETS_GAME_ADJACENT_CATEGORY_LABEL_KEYS,
+    ):
+        return True
+    if not _looks_like_google_sheets_residual_category_label(value):
+        return False
+    return bool(
+        set(_google_sheets_slug_tokens(value))
+        & _GOOGLE_SHEETS_RESIDUAL_GAME_ADJACENT_CATEGORY_TOKENS
     )
 
 
@@ -383,11 +409,14 @@ _GOOGLE_SHEETS_TITLECASE_UPPER_TOKENS = frozenset(
         "c#",
         "c++",
         "crm",
+        "cfx",
+        "fx",
         "hr",
         "ios",
         "ip",
         "it",
         "qa",
+        "td",
         "ui",
         "uk",
         "us",
@@ -423,6 +452,235 @@ _GOOGLE_SHEETS_SPECIFIC_TITLE_TOKENS = frozenset(
         "technical",
     }
 )
+_GOOGLE_SHEETS_TITLE_EVIDENCE_TOKENS = frozenset(
+    {
+        "account",
+        "administrator",
+        "analyst",
+        "analytics",
+        "animation",
+        "animator",
+        "architect",
+        "art",
+        "artist",
+        "assistant",
+        "associate",
+        "backend",
+        "brand",
+        "builder",
+        "business",
+        "c++",
+        "cinematic",
+        "client",
+        "community",
+        "concept",
+        "consultant",
+        "content",
+        "coordinator",
+        "counsel",
+        "creative",
+        "customer",
+        "data",
+        "designer",
+        "developer",
+        "development",
+        "devops",
+        "director",
+        "economy",
+        "engineer",
+        "engineering",
+        "environment",
+        "executive",
+        "frontend",
+        "full",
+        "gameplay",
+        "generalist",
+        "graphic",
+        "head",
+        "intern",
+        "internship",
+        "lead",
+        "legal",
+        "manager",
+        "marketing",
+        "material",
+        "monetization",
+        "operations",
+        "owner",
+        "producer",
+        "product",
+        "programmer",
+        "project",
+        "qa",
+        "receptionist",
+        "recruiter",
+        "research",
+        "researcher",
+        "sales",
+        "senior",
+        "software",
+        "specialist",
+        "stack",
+        "strategist",
+        "strategy",
+        "support",
+        "systems",
+        "td",
+        "technical",
+        "tester",
+        "texture",
+        "ui",
+        "unity",
+        "unreal",
+        "user",
+        "ux",
+        "video",
+        "web3",
+        "writer",
+    }
+)
+_GOOGLE_SHEETS_RESIDUAL_CATEGORY_TOKENS = frozenset(
+    {
+        "account",
+        "administrative",
+        "analysis",
+        "animation",
+        "art",
+        "audio",
+        "business",
+        "campaign",
+        "community",
+        "concept",
+        "content",
+        "customer",
+        "cyber",
+        "data",
+        "design",
+        "development",
+        "devops",
+        "editing",
+        "engineering",
+        "environment",
+        "finance",
+        "frontend",
+        "game",
+        "graphic",
+        "influencer",
+        "infrastructure",
+        "legal",
+        "level",
+        "live",
+        "localization",
+        "management",
+        "marketing",
+        "media",
+        "motion",
+        "network",
+        "operations",
+        "production",
+        "program",
+        "project",
+        "public",
+        "quality",
+        "relation",
+        "relations",
+        "research",
+        "sales",
+        "security",
+        "social",
+        "software",
+        "sound",
+        "system",
+        "technical",
+        "testing",
+        "ui",
+        "ux",
+        "video",
+        "web",
+    }
+)
+_GOOGLE_SHEETS_RESIDUAL_CATEGORY_VETO_TOKENS = frozenset(
+    {
+        "administrator",
+        "analyst",
+        "architect",
+        "artist",
+        "assistant",
+        "associate",
+        "consultant",
+        "coordinator",
+        "designer",
+        "developer",
+        "director",
+        "engineer",
+        "executive",
+        "intern",
+        "internship",
+        "junior",
+        "lead",
+        "manager",
+        "principal",
+        "producer",
+        "programmer",
+        "recruiter",
+        "researcher",
+        "senior",
+        "specialist",
+        "staff",
+        "tester",
+        "writer",
+    }
+)
+_GOOGLE_SHEETS_RESIDUAL_GAME_ADJACENT_CATEGORY_TOKENS = frozenset(
+    {
+        "animation",
+        "art",
+        "audio",
+        "community",
+        "concept",
+        "design",
+        "editing",
+        "game",
+        "graphic",
+        "influencer",
+        "level",
+        "live",
+        "localization",
+        "marketing",
+        "media",
+        "motion",
+        "production",
+        "rendering",
+        "social",
+        "sound",
+        "technical",
+        "ui",
+        "ux",
+        "video",
+    }
+)
+
+
+def _google_sheets_slug_tokens(value: Any) -> list[str]:
+    raw = clean_text(value)
+    if not raw:
+        return []
+    return [
+        token.lower() for token in re.findall(r"[A-Za-z0-9+#]+", raw.replace("&", " ")) if token
+    ]
+
+
+def _google_sheets_slug_has_title_evidence(value: Any) -> bool:
+    return bool(set(_google_sheets_slug_tokens(value)) & _GOOGLE_SHEETS_TITLE_EVIDENCE_TOKENS)
+
+
+def _google_sheets_slug_identity_key(value: Any) -> str:
+    tokens = [token for token in _google_sheets_slug_tokens(value) if not token.isdigit()]
+    return " ".join(tokens)
+
+
+def _google_sheets_compact_id_pattern() -> str:
+    return r"(?=[a-z0-9]*\d)[a-z0-9]{10,}"
 
 
 def _looks_like_google_sheets_opaque_slug_segment(segment: str) -> bool:
@@ -430,6 +688,8 @@ def _looks_like_google_sheets_opaque_slug_segment(segment: str) -> bool:
     if not normalized:
         return True
     if normalized in _GOOGLE_SHEETS_TITLE_SLUG_STOP_SEGMENTS:
+        return True
+    if re.fullmatch(r"(?=[a-z0-9.]*\d)[a-z0-9]{1,4}\.[a-z0-9]{2,6}", normalized):
         return True
     if re.fullmatch(r"(?:r|jr|req|job)?[-_]?\d{4,}", normalized):
         return True
@@ -440,6 +700,8 @@ def _looks_like_google_sheets_opaque_slug_segment(segment: str) -> bool:
         return True
     compact = re.sub(r"[-_]", "", normalized)
     if re.fullmatch(r"[0-9a-f]{16,}", compact):
+        return True
+    if re.fullmatch(_google_sheets_compact_id_pattern(), normalized):
         return True
     return bool(
         re.fullmatch(r"[a-z0-9]{12,}", compact)
@@ -452,19 +714,30 @@ def _strip_google_sheets_title_slug_ids(segment: str) -> str:
     slug = unquote(segment or "").strip().strip("/").strip("-_")
     if not slug:
         return ""
-    slug = re.sub(r"^\d{6,}[-_]+", "", slug)
-    slug = re.sub(
-        r"[-_]+(?:r|jr|req|job|wd)?\d{3,}[a-z0-9]*$",
-        "",
-        slug,
-        flags=re.IGNORECASE,
+    compact_id = _google_sheets_compact_id_pattern()
+    strip_patterns = (
+        rf"(?P<id>{compact_id})[-_]+(?P<rest>.+)",
+        rf"(?P<rest>.+?)[-_]+(?P<id>{compact_id})",
+        r"\d{6,}[-_]+(?P<rest>.+)",
+        r"(?P<rest>.+?)[-_]+(?:r|jr|req|job|wd)?[-_]?\d{3,}[a-z0-9]*(?:[-_]\d+)?",
+        (
+            r"(?P<rest>.+?)[-_]+"
+            r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+        ),
     )
-    slug = re.sub(
-        r"[-_]+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-        "",
-        slug,
-        flags=re.IGNORECASE,
-    )
+    changed = True
+    while changed:
+        changed = False
+        for pattern in strip_patterns:
+            match = re.fullmatch(pattern, slug, flags=re.IGNORECASE)
+            if not match:
+                continue
+            rest = match.group("rest").strip().strip("-_")
+            if not _google_sheets_slug_has_title_evidence(rest):
+                continue
+            slug = rest
+            changed = True
+            break
     return slug.strip().strip("-_")
 
 
@@ -483,12 +756,7 @@ def _google_sheets_titlecase_from_slug_text(text: str) -> str:
 
 
 def _google_sheets_title_tokens(value: Any) -> list[str]:
-    raw = clean_text(value)
-    if not raw:
-        return []
-    return [
-        token.lower() for token in re.findall(r"[A-Za-z0-9+#]+", raw.replace("&", " ")) if token
-    ]
+    return _google_sheets_slug_tokens(value)
 
 
 def _google_sheets_animation_family(value: Any) -> set[str]:
@@ -531,7 +799,11 @@ def _should_accept_google_sheets_repaired_title(original: str, candidate: str) -
     return _is_stricter_same_family_google_sheets_title(original, candidate)
 
 
-def _google_sheets_title_candidate_from_slug(segment: str) -> str:
+def _google_sheets_title_candidate_from_slug(
+    segment: str,
+    *,
+    blocked_identity_keys: set[str] | None = None,
+) -> str:
     if _looks_like_google_sheets_opaque_slug_segment(segment):
         return ""
     raw_slug = unquote(segment or "").strip().strip("/").strip("-_")
@@ -539,6 +811,13 @@ def _google_sheets_title_candidate_from_slug(segment: str) -> str:
     if _looks_like_google_sheets_opaque_slug_segment(slug):
         return ""
     stripped_ats_id = slug.lower() != raw_slug.lower()
+    has_title_evidence = _google_sheets_slug_has_title_evidence(slug)
+    if not has_title_evidence and _google_sheets_slug_identity_key(slug) in (
+        blocked_identity_keys or set()
+    ):
+        return ""
+    if not has_title_evidence:
+        return ""
     slug_text = re.sub(r"[-_+]+", " ", slug)
     slug_text = re.sub(r"\s+", " ", slug_text).strip()
     title = _google_sheets_titlecase_from_slug_text(slug_text)
@@ -592,10 +871,31 @@ def _google_sheets_title_slug_segments(job_link: str) -> list[str]:
     return ordered_candidates
 
 
+def _google_sheets_blocked_title_identity_keys(job_link: str, company: str) -> set[str]:
+    blocked = {_google_sheets_slug_identity_key(company)}
+    parsed = urlparse(clean_text(job_link) or "")
+    parts = [unquote(part).strip() for part in parsed.path.split("/") if part.strip()]
+    lowered_parts = [part.lower() for part in parts]
+
+    for marker in ("j", "p", "job", "jobs", "job-detail", "job-details"):
+        if marker not in lowered_parts:
+            continue
+        marker_index = lowered_parts.index(marker)
+        if marker_index > 0:
+            blocked.add(_google_sheets_slug_identity_key(parts[marker_index - 1]))
+
+    if len(parts) >= 2 and _looks_like_google_sheets_opaque_slug_segment(parts[-1]):
+        blocked.add(_google_sheets_slug_identity_key(parts[-2]))
+
+    blocked.discard("")
+    return blocked
+
+
 def _derive_google_sheets_title_from_url(
     *,
     source: str,
     title: str,
+    company: str,
     job_link: str,
 ) -> str:
     if not clean_text(source).startswith("google_sheets"):
@@ -603,8 +903,12 @@ def _derive_google_sheets_title_from_url(
     repairable_broad_title = _is_google_sheets_repairable_broad_title(title)
     if not _is_google_sheets_category_label(title) and not repairable_broad_title:
         return ""
+    blocked_identity_keys = _google_sheets_blocked_title_identity_keys(job_link, company)
     for segment in _google_sheets_title_slug_segments(job_link):
-        candidate = _google_sheets_title_candidate_from_slug(segment)
+        candidate = _google_sheets_title_candidate_from_slug(
+            segment,
+            blocked_identity_keys=blocked_identity_keys,
+        )
         if candidate and _should_accept_google_sheets_repaired_title(title, candidate):
             return candidate
     return ""
@@ -632,6 +936,7 @@ def _google_sheets_repaired_title_or_reason(
     company: str,
     job_link: str,
     title_hydration_resolver: GoogleSheetsProviderTitleResolver | None,
+    category_link_status_resolver: GoogleSheetsCategoryLinkStatusResolver | None = None,
 ) -> tuple[str | None, str]:
     if _looks_like_google_sheets_category_row_noise(
         source=source,
@@ -641,12 +946,28 @@ def _google_sheets_repaired_title_or_reason(
     ):
         return None, "google_sheets_category_row"
 
+    is_category_title = clean_text(source).startswith(
+        "google_sheets"
+    ) and _is_google_sheets_category_label(title)
+    if (
+        is_category_title
+        and category_link_status_resolver is not None
+        and category_link_status_resolver.is_stale(job_link)
+    ):
+        category_link_status_resolver.note_stale_drop()
+        return None, "google_sheets_category_row"
+
     repaired_title = _derive_google_sheets_title_from_url(
         source=source,
         title=title,
+        company=company,
         job_link=job_link,
     )
     if repaired_title:
+        if _is_google_sheets_category_label(repaired_title):
+            if is_category_title:
+                return None, "google_sheets_category_row"
+            return title, ""
         return _validated_opening_title_or_reason(
             title=repaired_title,
             job_link=job_link,
@@ -654,11 +975,21 @@ def _google_sheets_repaired_title_or_reason(
         )
 
     if title_hydration_resolver is None:
+        if is_category_title:
+            return None, "google_sheets_category_row"
         return title, ""
     hydrated_title = title_hydration_resolver.resolve_title(job_link)
     if not hydrated_title:
+        if is_category_title:
+            return None, "google_sheets_category_row"
+        return title, ""
+    if _is_google_sheets_category_label(hydrated_title):
+        if is_category_title:
+            return None, "google_sheets_category_row"
         return title, ""
     if not _should_accept_google_sheets_repaired_title(title, hydrated_title):
+        if is_category_title:
+            return None, "google_sheets_category_row"
         return title, ""
     return _validated_opening_title_or_reason(
         title=hydrated_title,
@@ -675,6 +1006,14 @@ _GOOGLE_SHEETS_TITLE_HYDRATION_STAT_KEYS = (
     "title_hydration_missed",
     "title_hydration_errors",
     "title_hydration_ms",
+)
+_GOOGLE_SHEETS_CATEGORY_LINK_STAT_KEYS = (
+    "category_link_status_candidates",
+    "category_link_status_checked",
+    "category_link_status_cache_hits",
+    "category_link_status_stale_dropped",
+    "category_link_status_errors",
+    "category_link_status_ms",
 )
 _GOOGLE_SHEETS_GREENHOUSE_HOSTS = frozenset(
     {
@@ -911,6 +1250,116 @@ class GoogleSheetsProviderTitleResolver:
                 self._stats["title_hydration_ms"] += elapsed_ms
                 self._cache[cache_key] = title_by_key
         return title_by_key
+
+
+class GoogleSheetsCategoryLinkStatusResolver:
+    """Per-run liveness resolver for suspicious Google Sheets category-title rows."""
+
+    def __init__(
+        self,
+        *,
+        timeout_s: int,
+        fetch_status: Callable[[str, int], int] | None = None,
+    ) -> None:
+        self._timeout_s = max(1, int(timeout_s or 1))
+        self._fetch_status = fetch_status or self._default_fetch_status
+        self._cache: dict[str, int] = {}
+        self._stats: Counter[str] = Counter()
+        self._lock = threading.Lock()
+
+    def prefetch(self, job_links: Sequence[str], *, concurrency: int = 1) -> None:
+        normalized_links = [normalize_url(link) for link in job_links if normalize_url(link)]
+        unique_links = list(dict.fromkeys(normalized_links))
+        with self._lock:
+            self._stats["category_link_status_candidates"] += len(normalized_links)
+            pending = [link for link in unique_links if link not in self._cache]
+            self._stats["category_link_status_cache_hits"] += len(unique_links) - len(pending)
+        if not pending:
+            return
+        started = time.perf_counter()
+        max_workers = max(1, min(int(concurrency or 1), len(pending)))
+        try:
+            if max_workers <= 1:
+                for link in pending:
+                    self._ensure_status(link, track_ms=False)
+                return
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = [
+                    executor.submit(self._ensure_status, link, track_ms=False) for link in pending
+                ]
+                for future in as_completed(futures):
+                    future.result()
+        finally:
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
+            with self._lock:
+                self._stats["category_link_status_ms"] += elapsed_ms
+
+    def is_stale(self, job_link: str) -> bool:
+        normalized_link = normalize_url(job_link)
+        if not normalized_link:
+            return False
+        return self._ensure_status(normalized_link) in {404, 410}
+
+    def note_stale_drop(self) -> None:
+        with self._lock:
+            self._stats["category_link_status_stale_dropped"] += 1
+
+    def snapshot_stats(self) -> dict[str, int]:
+        with self._lock:
+            return {
+                key: int(self._stats.get(key, 0)) for key in _GOOGLE_SHEETS_CATEGORY_LINK_STAT_KEYS
+            }
+
+    def _ensure_status(self, job_link: str, *, track_ms: bool = True) -> int:
+        normalized_link = normalize_url(job_link)
+        with self._lock:
+            cached = self._cache.get(normalized_link)
+            if cached is not None:
+                return cached
+        started = time.perf_counter() if track_ms else 0.0
+        status = 0
+        try:
+            status = int(self._fetch_status(normalized_link, self._timeout_s) or 0)
+            with self._lock:
+                self._stats["category_link_status_checked"] += 1
+        except (RuntimeError, OSError, ValueError):
+            with self._lock:
+                self._stats["category_link_status_errors"] += 1
+            status = 0
+        finally:
+            with self._lock:
+                if track_ms:
+                    self._stats["category_link_status_ms"] += int(
+                        (time.perf_counter() - started) * 1000
+                    )
+                self._cache[normalized_link] = status
+        return status
+
+    @staticmethod
+    def _default_fetch_status(url: str, timeout_s: int) -> int:
+        last_error: Exception | None = None
+        for method in ("HEAD", "GET"):
+            try:
+                request = urllib.request.Request(
+                    url,
+                    headers={"User-Agent": "Mozilla/5.0"},
+                    method=method,
+                )
+                with urllib.request.urlopen(request, timeout=max(1, int(timeout_s or 1))) as resp:
+                    return int(getattr(resp, "status", 0) or 0)
+            except urllib.error.HTTPError as exc:
+                code = int(getattr(exc, "code", 0) or 0)
+                if method == "HEAD" and code in {400, 403, 405, 429, 500, 501, 503}:
+                    last_error = exc
+                    continue
+                return code
+            except (OSError, ValueError) as exc:
+                last_error = exc
+                if method == "HEAD":
+                    continue
+                break
+        _ = last_error
+        return 0
 
 
 def _google_sheets_url_evidence_text(job_link: str) -> str:
@@ -1475,6 +1924,7 @@ def canonicalize_job_with_reason(
     resolve_redirect_url: Callable[[str], str] | None = None,
     resolved_job_link: Any = None,
     title_hydration_resolver: GoogleSheetsProviderTitleResolver | None = None,
+    category_link_status_resolver: GoogleSheetsCategoryLinkStatusResolver | None = None,
 ) -> tuple[CanonicalJob | None, str]:
     if not isinstance(raw, dict):
         return None, "invalid_payload"
@@ -1517,6 +1967,7 @@ def canonicalize_job_with_reason(
         company=company,
         job_link=normalized_link,
         title_hydration_resolver=title_hydration_resolver,
+        category_link_status_resolver=category_link_status_resolver,
     )
     if drop_reason:
         return None, drop_reason
@@ -1705,6 +2156,7 @@ def _google_sheet_title_hydration_candidate_link(
         or _derive_google_sheets_title_from_url(
             source=source,
             title=title,
+            company=company,
             job_link=normalized_link,
         )
     ):
@@ -1737,6 +2189,42 @@ def _google_sheet_title_hydration_candidate_links(
     return candidate_links
 
 
+def _google_sheet_category_link_status_candidate_links(
+    *,
+    raw_rows: Sequence[RawJob],
+    source: str,
+    resolved_links: dict[int, str],
+) -> list[str]:
+    if not clean_text(source).startswith("google_sheets"):
+        return []
+    candidate_links: list[str] = []
+    for idx, raw in enumerate(raw_rows):
+        if not isinstance(raw, dict):
+            continue
+        title = sanitize_public_text(raw.get("title"))
+        company = normalize_company_value(sanitize_public_text(raw.get("company")))
+        normalized_link = _google_sheet_final_link(raw, idx, resolved_links)
+        if not title or not company or not normalized_link:
+            continue
+        if not _is_google_sheets_category_label(title):
+            continue
+        if looks_like_source_specific_static_noise_row(
+            title=title,
+            job_link=normalized_link,
+            source_name=source,
+        ):
+            continue
+        if _looks_like_google_sheets_category_row_noise(
+            source=source,
+            title=title,
+            company=company,
+            job_link=normalized_link,
+        ):
+            continue
+        candidate_links.append(normalized_link)
+    return candidate_links
+
+
 def _canonicalize_google_sheet_rows_with_resolved_links(
     *,
     raw_rows: Sequence[RawJob],
@@ -1744,6 +2232,7 @@ def _canonicalize_google_sheet_rows_with_resolved_links(
     fetched_at: str,
     resolved_links: dict[int, str],
     title_hydration_resolver: GoogleSheetsProviderTitleResolver | None,
+    category_link_status_resolver: GoogleSheetsCategoryLinkStatusResolver | None,
 ) -> tuple[list[CanonicalJob], Counter[str], int]:
     canonical_started = time.perf_counter()
     canonical_batch: list[CanonicalJob] = []
@@ -1755,6 +2244,7 @@ def _canonicalize_google_sheet_rows_with_resolved_links(
             fetched_at=fetched_at,
             resolved_job_link=resolved_links.get(idx),
             title_hydration_resolver=title_hydration_resolver,
+            category_link_status_resolver=category_link_status_resolver,
         )
         if normalized:
             canonical_batch.append(normalized)
@@ -1773,6 +2263,7 @@ def _google_sheet_redirect_stats(
     redirect_resolve_ms: int,
     canonicalize_ms: int,
     title_hydration_stats: dict[str, int] | None = None,
+    category_link_status_stats: dict[str, int] | None = None,
 ) -> dict[str, int]:
     redirect_resolved = sum(
         1
@@ -1793,6 +2284,8 @@ def _google_sheet_redirect_stats(
     }
     for key in _GOOGLE_SHEETS_TITLE_HYDRATION_STAT_KEYS:
         stats[key] = int((title_hydration_stats or {}).get(key) or 0)
+    for key in _GOOGLE_SHEETS_CATEGORY_LINK_STAT_KEYS:
+        stats[key] = int((category_link_status_stats or {}).get(key) or 0)
     return stats
 
 
@@ -1804,6 +2297,7 @@ def canonicalize_google_sheets_rows(
     redirect_resolver: PooledRedirectResolver | None = None,
     redirect_concurrency: int = DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY,
     title_hydration_resolver: GoogleSheetsProviderTitleResolver | None = None,
+    category_link_status_resolver: GoogleSheetsCategoryLinkStatusResolver | None = None,
 ) -> tuple[list[CanonicalJob], Counter, dict[str, int]]:
     redirect_concurrency = max(
         1, int(redirect_concurrency or DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY)
@@ -1819,6 +2313,15 @@ def canonicalize_google_sheets_rows(
         redirect_resolver=redirect_resolver,
         redirect_concurrency=redirect_concurrency,
     )
+    if category_link_status_resolver is not None:
+        category_link_status_resolver.prefetch(
+            _google_sheet_category_link_status_candidate_links(
+                raw_rows=raw_rows,
+                source=source,
+                resolved_links=resolved_links,
+            ),
+            concurrency=redirect_concurrency,
+        )
     if title_hydration_resolver is not None:
         title_hydration_resolver.prefetch(
             _google_sheet_title_hydration_candidate_links(
@@ -1836,6 +2339,7 @@ def canonicalize_google_sheets_rows(
             fetched_at=fetched_at,
             resolved_links=resolved_links,
             title_hydration_resolver=title_hydration_resolver,
+            category_link_status_resolver=category_link_status_resolver,
         )
     )
     return (
@@ -1853,6 +2357,11 @@ def canonicalize_google_sheets_rows(
                 if title_hydration_resolver is not None
                 else None
             ),
+            category_link_status_stats=(
+                category_link_status_resolver.snapshot_stats()
+                if category_link_status_resolver is not None
+                else None
+            ),
         ),
     )
 
@@ -1868,6 +2377,7 @@ class CanonicalNormalizer(JobProcessor):
         redirect_resolver: PooledRedirectResolver | None = None,
         redirect_concurrency: int = DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY,
         title_hydration_resolver: GoogleSheetsProviderTitleResolver | None = None,
+        category_link_status_resolver: GoogleSheetsCategoryLinkStatusResolver | None = None,
     ) -> None:
         self.source = source
         self.fetched_at = fetched_at
@@ -1875,6 +2385,7 @@ class CanonicalNormalizer(JobProcessor):
         self.redirect_resolver = redirect_resolver
         self.redirect_concurrency = redirect_concurrency
         self.title_hydration_resolver = title_hydration_resolver
+        self.category_link_status_resolver = category_link_status_resolver
         self.stats: dict[str, Any] = {}
         self.drop_reasons: Counter[str] = Counter()
 
@@ -1890,6 +2401,7 @@ class CanonicalNormalizer(JobProcessor):
                 redirect_resolver=self.redirect_resolver,
                 redirect_concurrency=self.redirect_concurrency,
                 title_hydration_resolver=self.title_hydration_resolver,
+                category_link_status_resolver=self.category_link_status_resolver,
             )
             return canonical_batch
 

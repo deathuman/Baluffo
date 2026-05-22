@@ -11,6 +11,8 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 ## [Unreleased]
 
 ### Fixed
+- Google Sheets category-style titles now must repair, hydrate, or drop, with bounded `404`/`410` link validation for suspicious category rows only.
+- Google Sheets URL-derived title repair now strips opaque ATS/job ID affixes and skips pure posting-code path segments without hardcoding specific providers.
 - Google Sheets provider title hydration now supports Ashby hosted-board pages for `jobs.ashbyhq.com/{board}/{posting_id}` links.
 - Google Sheets provider title hydration now supports Workable widget feeds for `apply.workable.com/{account}/j/{shortcode}` links.
 - Remote OK now reports a successful empty source when all valid feed rows are filtered out by sanitizer rules.

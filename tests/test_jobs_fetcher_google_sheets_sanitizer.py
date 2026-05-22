@@ -128,6 +128,131 @@ def test_canonicalize_google_sheets_rows_drops_expanded_category_labels() -> Non
     assert drop_reasons["google_sheets_category_row"] == 2
 
 
+def test_google_sheets_url_title_repair_strips_opaque_id_affixes() -> None:
+    rows = [
+        {
+            "sourceJobId": "sheet-1",
+            "title": "Technical-art",
+            "company": "Example Games",
+            "city": "Remote",
+            "country": "Unknown",
+            "workType": "Remote",
+            "contractType": "Full-time",
+            "jobLink": "https://jobs.example.test/p/05e34dd23a3b01-technical-artist",
+            "sector": "Game",
+        },
+        {
+            "sourceJobId": "sheet-2",
+            "title": "Product-management",
+            "company": "Example Games",
+            "city": "Remote",
+            "country": "Unknown",
+            "workType": "Remote",
+            "contractType": "Full-time",
+            "jobLink": (
+                "https://jobs.example.test/openings/"
+                "senior-product-manager-e1c434bd6b7a434a9712312ab6e99bb1"
+            ),
+            "sector": "Game",
+        },
+    ]
+
+    canonical_rows, drop_reasons, _stats = jf.canonicalize_google_sheets_rows(
+        rows,
+        source="google_sheets",
+        fetched_at="2026-05-22T00:00:00+00:00",
+    )
+
+    assert [row.title for row in canonical_rows] == [
+        "Technical Artist",
+        "Senior Product Manager",
+    ]
+    assert not drop_reasons
+
+
+def test_google_sheets_url_title_repair_skips_terminal_codes_for_title_segments() -> None:
+    canonical_rows, drop_reasons, _stats = jf.canonicalize_google_sheets_rows(
+        [
+            {
+                "sourceJobId": "sheet-1",
+                "title": "Graphic-design",
+                "company": "Example Games",
+                "city": "Remote",
+                "country": "Unknown",
+                "workType": "Remote",
+                "contractType": "Full-time",
+                "jobLink": "https://jobs.example.test/jobs/example-games/67.001/graphic-designer/0B.56A",
+                "sector": "Game",
+            }
+        ],
+        source="google_sheets",
+        fetched_at="2026-05-22T00:00:00+00:00",
+    )
+
+    assert [row.title for row in canonical_rows] == ["Graphic Designer"]
+    assert not drop_reasons
+
+
+def test_google_sheets_url_title_repair_does_not_use_account_slug_as_title() -> None:
+    canonical_rows, drop_reasons, _stats = jf.canonicalize_google_sheets_rows(
+        [
+            {
+                "sourceJobId": "sheet-1",
+                "title": "Product-management",
+                "company": "Homa Games",
+                "city": "Remote",
+                "country": "Unknown",
+                "workType": "Remote",
+                "contractType": "Full-time",
+                "jobLink": "https://apply.example.test/homa-games/j/F424388045",
+                "sector": "Game",
+            }
+        ],
+        source="google_sheets",
+        fetched_at="2026-05-22T00:00:00+00:00",
+    )
+
+    assert canonical_rows == []
+    assert drop_reasons == {"google_sheets_category_row": 1}
+
+
+def test_google_sheets_url_title_repair_preserves_numeric_roles_and_abbreviations() -> None:
+    cases = [
+        ("Technical-art", "https://jobs.example.test/jobs/2d-artist", "2D Artist"),
+        ("Technical-art", "https://jobs.example.test/jobs/3d-artist", "3D Artist"),
+        (
+            "Product-management",
+            "https://jobs.example.test/jobs/web3-gameplay-engineer",
+            "Web3 Gameplay Engineer",
+        ),
+        ("Technical-art", "https://jobs.example.test/jobs/fx-td", "FX TD"),
+        ("Technical-art", "https://jobs.example.test/jobs/cfx-td", "CFX TD"),
+        ("Technical-art", "https://jobs.example.test/jobs/art-td", "Art TD"),
+    ]
+
+    canonical_rows, drop_reasons, _stats = jf.canonicalize_google_sheets_rows(
+        [
+            {
+                "sourceJobId": f"sheet-{index}",
+                "title": title,
+                "company": "Example Games",
+                "city": "Remote",
+                "country": "Unknown",
+                "workType": "Remote",
+                "contractType": "Full-time",
+                "jobLink": job_link,
+                "sector": "Game",
+            }
+            for index, (title, job_link, _expected) in enumerate(cases, start=1)
+        ],
+        source="google_sheets",
+        fetched_at="2026-05-22T00:00:00+00:00",
+    )
+
+    assert [row.title for row in canonical_rows] == [expected for _title, _link, expected in cases]
+    assert not drop_reasons
+
+
 def test_canonicalize_google_sheets_rows_drops_link_employer_mismatches() -> None:
     rows = [
         {
@@ -500,7 +625,7 @@ def test_canonicalize_google_sheets_rows_strips_short_numeric_ats_suffixes() -> 
     assert not drop_reasons
 
 
-def test_canonicalize_google_sheets_rows_preserves_opaque_category_title_urls() -> None:
+def test_canonicalize_google_sheets_rows_drops_opaque_category_title_urls() -> None:
     canonical_rows, drop_reasons, _stats = jf.canonicalize_google_sheets_rows(
         [
             {
@@ -519,8 +644,8 @@ def test_canonicalize_google_sheets_rows_preserves_opaque_category_title_urls() 
         fetched_at="2026-03-13T00:00:00+00:00",
     )
 
-    assert [row.title for row in canonical_rows] == ["Product-management"]
-    assert not drop_reasons
+    assert canonical_rows == []
+    assert drop_reasons == {"google_sheets_category_row": 1}
 
 
 def test_canonicalize_google_sheets_rows_drops_repaired_static_non_openings() -> None:
@@ -546,7 +671,7 @@ def test_canonicalize_google_sheets_rows_drops_repaired_static_non_openings() ->
     assert drop_reasons["non_job_static_page"] == 1
 
 
-def test_canonicalize_google_sheets_rows_preserves_ambiguous_game_category_rows() -> None:
+def test_canonicalize_google_sheets_rows_drops_unrepaired_ambiguous_category_rows() -> None:
     rows = [
         {
             "sourceJobId": "sheet-1",
@@ -578,8 +703,8 @@ def test_canonicalize_google_sheets_rows_preserves_ambiguous_game_category_rows(
         fetched_at="2026-03-13T00:00:00+00:00",
     )
 
-    assert [row.title for row in canonical_rows] == ["Product-management", "Vfx"]
-    assert not drop_reasons
+    assert canonical_rows == []
+    assert drop_reasons == {"google_sheets_category_row": 2}
 
 
 def test_canonicalize_google_sheets_rows_drops_ambiguous_category_with_non_game_evidence() -> None:

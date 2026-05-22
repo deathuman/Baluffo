@@ -6,7 +6,11 @@ from collections import Counter
 from collections.abc import Mapping
 from typing import Any, Protocol
 
-from src.jobs.canonicalize import CanonicalNormalizer, GoogleSheetsProviderTitleResolver
+from src.jobs.canonicalize import (
+    CanonicalNormalizer,
+    GoogleSheetsCategoryLinkStatusResolver,
+    GoogleSheetsProviderTitleResolver,
+)
 from src.jobs.common.taxonomy import (
     ClassificationContext,
     FailureBucket,
@@ -287,12 +291,16 @@ def _canonicalize_source_rows(
     progress_callback: Any,
 ) -> tuple[list[CanonicalJob], dict[str, int], int]:
     title_hydration_resolver = None
+    category_link_status_resolver = None
     if name.startswith("google_sheets"):
         title_hydration_resolver = GoogleSheetsProviderTitleResolver(
             fetch_text=fetch_text_limited,
             timeout_s=config.timeout_s,
             retries=config.retries,
             backoff_s=config.backoff_s,
+        )
+        category_link_status_resolver = GoogleSheetsCategoryLinkStatusResolver(
+            timeout_s=config.timeout_s
         )
     normalizer = CanonicalNormalizer(
         source=name,
@@ -301,6 +309,7 @@ def _canonicalize_source_rows(
         redirect_resolver=redirect_resolver,
         redirect_concurrency=config.google_sheets_redirect_concurrency,
         title_hydration_resolver=title_hydration_resolver,
+        category_link_status_resolver=category_link_status_resolver,
     )
     canonical_batch = normalizer.process(raw_rows)
     kept = len(canonical_batch)
@@ -521,6 +530,15 @@ def _apply_csv_stage_timings(
                 "title_hydration_ms",
             ):
                 stats[hydration_key] = int(google_sheet_redirect_stats.get(hydration_key) or 0)
+            for link_status_key in (
+                "category_link_status_candidates",
+                "category_link_status_checked",
+                "category_link_status_cache_hits",
+                "category_link_status_stale_dropped",
+                "category_link_status_errors",
+                "category_link_status_ms",
+            ):
+                stats[link_status_key] = int(google_sheet_redirect_stats.get(link_status_key) or 0)
     stage_timings.update(
         {
             "parseCsv": int(parse_csv_ms),
