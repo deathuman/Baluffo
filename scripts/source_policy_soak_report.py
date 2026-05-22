@@ -171,6 +171,12 @@ PROVIDER_COVERAGE_NEXT_ACTION_PRIORITY = {
     "resolve_link_ambiguity": 6,
     "none": 0,
 }
+PROVIDER_COVERAGE_REVIEW_BLOCKING_DISAMBIGUATION_REASONS = frozenset(
+    {
+        "insufficient_provider_success_history",
+        "source_state_not_ok",
+    }
+)
 
 
 def _read_json_artifact(path: Path) -> tuple[Any, str, str]:
@@ -2936,7 +2942,13 @@ def _with_selected_link(
     updated["recommendedAction"] = (
         "backfill_migration_identity_candidate" if confidence >= 0.9 else "needs_review"
     )
-    updated["blockers"] = []
+    updated["blockers"] = sorted(
+        {
+            clean_text(blocker)
+            for blocker in as_json_list(row.get("disambiguationBlockers"))
+            if clean_text(blocker) in PROVIDER_COVERAGE_REVIEW_BLOCKING_DISAMBIGUATION_REASONS
+        }
+    )
     updated["reasons"] = sorted({*_link_reasons(row), reason})
     return updated
 

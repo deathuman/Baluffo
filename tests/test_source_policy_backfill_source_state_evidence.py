@@ -158,12 +158,12 @@ def test_source_state_without_validated_provider_status_stays_blocked(
     report = soak.build_soak_report(data_dir)
     section = report["sections"]["providerCoverageLinkBackfill"]
 
-    assert section["candidateLinkCount"] == 2
+    assert section["candidateLinkCount"] == 1
     assert section["reviewCandidates"] == []
     blocked = next(
         row for row in section["blockedCandidates"] if row["staticSourceId"] == "static:cdpr-active"
     )
-    assert "ambiguous_static_match" in blocked["blockers"]
+    assert "source_state_not_ok" in blocked["blockers"]
     assert "source_state_not_ok" in blocked["disambiguationBlockers"]
 
 

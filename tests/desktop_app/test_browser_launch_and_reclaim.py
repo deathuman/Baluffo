@@ -516,6 +516,7 @@ def test_windows_try_reclaim_stale_site_process_accepts_listener_clear_after_for
             "_windows_terminate_process_tree_details_by_pid",
             terminate_mock,
         ),
+        mock.patch.object(desktop_app, "is_process_alive", return_value=True),
     ):
         result = desktop_app._windows_try_reclaim_stale_site_process(
             {
@@ -568,7 +569,6 @@ def test_windows_try_reclaim_stale_site_process_can_reclaim_without_pid_after_br
     None
 ):
     terminate_mock = mock.Mock(return_value={"terminated": True})
-
     with (
         mock.patch.object(desktop_app.os, "name", "nt"),
         mock.patch.object(desktop_app, "_append_startup_trace"),

@@ -113,6 +113,15 @@ def canonicalize_existing_output_row(
     payload = normalized.to_dict()
     if clean_text(row.get("dedupKey")):
         payload["dedupKey"] = clean_text(row.get("dedupKey"))
+    source_bundle = row.get("sourceBundle")
+    if isinstance(source_bundle, list):
+        bundle_rows = [dict(item) for item in source_bundle if isinstance(item, dict)]
+        if bundle_rows:
+            payload["sourceBundle"] = bundle_rows
+            payload["sourceBundleCount"] = max(
+                len(bundle_rows),
+                int(row.get("sourceBundleCount") or payload.get("sourceBundleCount") or 0),
+            )
     return payload
 
 

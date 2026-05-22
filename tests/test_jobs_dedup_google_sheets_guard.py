@@ -23,13 +23,13 @@ def _google_sheets_job(*, title: str, company: str, link: str, source_job_id: st
 
 def test_deduplicate_jobs_keeps_google_sheets_generic_role_bucket_detail_urls_separate() -> None:
     first = _google_sheets_job(
-        title="Product-management",
+        title="Animator",
         company="eBay",
         link="https://jobs.ebayinc.com/us/en/job/R0065718",
         source_job_id="sheet-5632",
     )
     second = _google_sheets_job(
-        title="Product-management",
+        title="Animator",
         company="eBay",
         link="https://jobs.ebayinc.com/us/en/job/R0068764",
         source_job_id="sheet-30257",
@@ -139,15 +139,15 @@ def test_deduplicate_jobs_does_not_replace_qualified_animation_bucket_with_later
 
 def test_deduplicate_jobs_still_merges_google_sheets_generic_role_bucket_same_url() -> None:
     first = _google_sheets_job(
-        title="Localization",
+        title="Animator",
         company="Mercor",
-        link="https://work.mercor.com/explore/localization",
+        link="https://work.mercor.com/explore/animation",
         source_job_id="sheet-1164",
     )
     second = _google_sheets_job(
-        title="Localization",
+        title="Animator",
         company="Mercor",
-        link="https://work.mercor.com/explore/localization",
+        link="https://work.mercor.com/explore/animation",
         source_job_id="sheet-17079",
     )
     assert first is not None
@@ -169,7 +169,7 @@ def test_deduplicate_jobs_still_merges_google_sheets_generic_role_bucket_same_ur
     assert evidence["dedupAuditGate"]["lifecycleUxReady"] is True
 
 
-def test_deduplicate_jobs_keeps_google_sheets_taxonomy_bucket_detail_urls_separate() -> None:
+def test_google_sheets_taxonomy_category_titles_drop_before_dedup() -> None:
     for title in ("Mobile-development", "System-design", "Software-development-&-engineering"):
         first = _google_sheets_job(
             title=title,
@@ -183,15 +183,8 @@ def test_deduplicate_jobs_keeps_google_sheets_taxonomy_bucket_detail_urls_separa
             link=f"https://example.com/jobs/{title}/two",
             source_job_id=f"{title}-2",
         )
-        assert first is not None
-        assert second is not None
-
-        rows, stats = jf.deduplicate_jobs([first, second])
-
-        assert int(stats["outputCount"]) == 2
-        assert int(stats["mergedCount"]) == 0
-        assert int(stats["sheetRoleBucketGuardBlockedCount"]) == 2
-        assert sorted(row.jobLink for row in rows) == sorted([first.jobLink, second.jobLink])
+        assert first is None
+        assert second is None
 
 
 def test_google_sheets_guard_audit_counts_uncapped_blocked_attempts() -> None:

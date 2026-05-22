@@ -9,29 +9,29 @@ from tests.helpers.temp_paths import workspace_tmpdir
 def test_seeded_existing_output_marks_dedup_bundle_collisions_as_carried() -> None:
     existing = [
         {
-            "title": "Product-management",
-            "company": "eBay",
+            "title": "Senior Engineer",
+            "company": "Studio One",
             "city": "Remote",
             "country": "Remote",
             "workType": "Remote",
             "contractType": "Full-time",
             "jobLink": "https://example.com/jobs/1",
             "sector": "Game",
-            "source": "google_sheets",
-            "sourceJobId": "sheet-1",
+            "source": "greenhouse:slug:studio-one",
+            "sourceJobId": "gh-1",
             "sourceBundleCount": 2,
             "sourceBundle": [
                 {
-                    "source": "google_sheets",
-                    "sourceJobId": "sheet-1",
+                    "source": "greenhouse:slug:studio-one",
+                    "sourceJobId": "gh-1",
                     "jobLink": "https://example.com/jobs/1",
-                    "adapter": "google_sheets",
+                    "adapter": "greenhouse",
                 },
                 {
-                    "source": "google_sheets",
-                    "sourceJobId": "sheet-2",
-                    "jobLink": "https://example.com/jobs/2",
-                    "adapter": "google_sheets",
+                    "source": "greenhouse:slug:studio-one",
+                    "sourceJobId": "gh-1",
+                    "jobLink": "https://example.com/jobs/1",
+                    "adapter": "greenhouse",
                 },
             ],
         }
@@ -54,5 +54,5 @@ def test_seeded_existing_output_marks_dedup_bundle_collisions_as_carried() -> No
         evidence = report["dedupEvidence"]
         assert evidence["currentRunSourceBundleCollisionCount"] == 0
         assert evidence["carriedSourceBundleCollisionCount"] == 1
-        assert evidence["dedupAuditGate"]["carriedHighRiskReviewQueueCount"] == 1
+        assert evidence["dedupAuditGate"]["carriedCollisionLikelyHistoricalCount"] == 1
         assert evidence["dedupAuditGate"]["currentRunHighRiskReviewQueueCount"] == 0
