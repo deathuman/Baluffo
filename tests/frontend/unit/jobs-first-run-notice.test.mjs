@@ -16,7 +16,7 @@ test("openFirstRunJobsNotice renders the first-run jobs popup", () => {
 
   openFirstRunJobsNotice({
     title: "Preparing first-run jobs",
-    body: "This can take about 4 minutes.",
+    body: "This can take several minutes.",
     primaryLabel: "Got it",
     documentTarget: doc,
     windowTarget: doc.defaultView
@@ -37,7 +37,10 @@ test("openFirstRunJobsNotice renders the first-run jobs popup", () => {
   assert.equal(panel.attributes.role, "dialog");
   assert.equal(panel.attributes["aria-modal"], "true");
   assert.equal(doc.find(node => node.id === "jobs-first-run-notice-title").textContent, "Preparing first-run jobs");
-  assert.match(doc.find(node => node.id === "jobs-first-run-notice-body").textContent, /4 minutes/);
+  assert.match(
+    doc.find(node => node.id === "jobs-first-run-notice-body").textContent,
+    /several minutes/
+  );
   assert.equal(button.textContent, "Got it");
   assert.equal(doc.activeElement, button);
 

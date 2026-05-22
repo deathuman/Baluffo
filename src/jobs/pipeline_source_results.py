@@ -34,6 +34,7 @@ _CANONICAL_DROP_REASON_KEYS = (
     "non_job_static_page",
     "google_sheets_category_row",
 )
+_GOOGLE_SHEETS_CATEGORY_LINK_STATUS_TIMEOUT_S = 4
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -300,7 +301,10 @@ def _canonicalize_source_rows(
             backoff_s=config.backoff_s,
         )
         category_link_status_resolver = GoogleSheetsCategoryLinkStatusResolver(
-            timeout_s=config.timeout_s
+            timeout_s=min(
+                int(config.timeout_s or _GOOGLE_SHEETS_CATEGORY_LINK_STATUS_TIMEOUT_S),
+                _GOOGLE_SHEETS_CATEGORY_LINK_STATUS_TIMEOUT_S,
+            )
         )
     normalizer = CanonicalNormalizer(
         source=name,
@@ -310,6 +314,7 @@ def _canonicalize_source_rows(
         redirect_concurrency=config.google_sheets_redirect_concurrency,
         title_hydration_resolver=title_hydration_resolver,
         category_link_status_resolver=category_link_status_resolver,
+        progress_callback=progress_callback,
     )
     canonical_batch = normalizer.process(raw_rows)
     kept = len(canonical_batch)

@@ -55,6 +55,7 @@ OUTPUT_FIELDS = common_config.OUTPUT_FIELDS
 LIGHTWEIGHT_OUTPUT_FIELDS = common_config.LIGHTWEIGHT_OUTPUT_FIELDS
 TARGET_PROFESSIONS = common_config.TARGET_PROFESSIONS
 DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = community.DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY
+GOOGLE_SHEETS_CATEGORY_LINK_STATUS_CONCURRENCY = 32
 DEFAULT_CANONICAL_STRICT_URL = common_config.DEFAULT_CANONICAL_STRICT_URL
 REDIRECT_RESOLUTION_SKIP_SOURCES = {"gracklehq"}
 _GOOGLE_SHEETS_CATEGORY_LABEL_TERMS = frozenset(
@@ -939,19 +940,6 @@ def _google_sheets_original_title_or_category_drop(
     return title, ""
 
 
-def _google_sheets_category_link_is_stale(
-    *,
-    is_category_title: bool,
-    job_link: str,
-    category_link_status_resolver: GoogleSheetsCategoryLinkStatusResolver | None,
-) -> bool:
-    if not is_category_title:
-        return False
-    if category_link_status_resolver is None:
-        return False
-    return category_link_status_resolver.is_stale(job_link)
-
-
 def _validated_google_sheets_candidate_title_or_reason(
     *,
     original_title: str,
@@ -990,7 +978,6 @@ def _google_sheets_repaired_title_or_reason(
     company: str,
     job_link: str,
     title_hydration_resolver: GoogleSheetsProviderTitleResolver | None,
-    category_link_status_resolver: GoogleSheetsCategoryLinkStatusResolver | None = None,
 ) -> tuple[str | None, str]:
     if _looks_like_google_sheets_category_row_noise(
         source=source,
@@ -1003,14 +990,6 @@ def _google_sheets_repaired_title_or_reason(
     is_category_title = clean_text(source).startswith(
         "google_sheets"
     ) and _is_google_sheets_category_label(title)
-    if _google_sheets_category_link_is_stale(
-        is_category_title=is_category_title,
-        job_link=job_link,
-        category_link_status_resolver=category_link_status_resolver,
-    ):
-        category_link_status_resolver.note_stale_drop()
-        return None, "google_sheets_category_row"
-
     repaired_title = _derive_google_sheets_title_from_url(
         source=source,
         title=title,
@@ -1313,7 +1292,13 @@ class GoogleSheetsCategoryLinkStatusResolver:
         self._stats: Counter[str] = Counter()
         self._lock = threading.Lock()
 
-    def prefetch(self, job_links: Sequence[str], *, concurrency: int = 1) -> None:
+    def prefetch(
+        self,
+        job_links: Sequence[str],
+        *,
+        concurrency: int = 1,
+        progress_callback: Callable[..., Any] | None = None,
+    ) -> None:
         normalized_links = [normalize_url(link) for link in job_links if normalize_url(link)]
         unique_links = list(dict.fromkeys(normalized_links))
         with self._lock:
@@ -1323,22 +1308,57 @@ class GoogleSheetsCategoryLinkStatusResolver:
         if not pending:
             return
         started = time.perf_counter()
+        last_progress_at = started
+
+        def emit_status_progress(completed: int, *, force: bool = False) -> None:
+            nonlocal last_progress_at
+            if progress_callback is None:
+                return
+            now = time.perf_counter()
+            if not force and completed < len(pending) and now - last_progress_at < 2.0:
+                return
+            last_progress_at = now
+            stats = self.snapshot_stats()
+            progress_callback(
+                phase_key="checking_category_links",
+                phase_label="Checking category links",
+                counts={
+                    "categoryLinkStatusCandidates": len(normalized_links),
+                    "categoryLinkStatusChecked": int(
+                        stats.get("category_link_status_checked") or 0
+                    ),
+                    "categoryLinkStatusCompleted": completed,
+                    "categoryLinkStatusStaleDropped": int(
+                        stats.get("category_link_status_stale_dropped") or 0
+                    ),
+                    "categoryLinkStatusErrors": int(stats.get("category_link_status_errors") or 0),
+                },
+                message=(
+                    "Checking repaired Google Sheets category links: "
+                    f"{completed} of {len(pending)} checked."
+                ),
+            )
+
+        emit_status_progress(0, force=True)
         max_workers = max(1, min(int(concurrency or 1), len(pending)))
         try:
             if max_workers <= 1:
-                for link in pending:
+                for completed, link in enumerate(pending, start=1):
                     self._ensure_status(link, track_ms=False)
+                    emit_status_progress(completed)
                 return
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = [
                     executor.submit(self._ensure_status, link, track_ms=False) for link in pending
                 ]
-                for future in as_completed(futures):
+                for completed, future in enumerate(as_completed(futures), start=1):
                     future.result()
+                    emit_status_progress(completed)
         finally:
             elapsed_ms = int((time.perf_counter() - started) * 1000)
             with self._lock:
                 self._stats["category_link_status_ms"] += elapsed_ms
+            emit_status_progress(len(pending), force=True)
 
     def is_stale(self, job_link: str) -> bool:
         normalized_link = normalize_url(job_link)
@@ -1970,7 +1990,6 @@ def canonicalize_job_with_reason(
     resolve_redirect_url: Callable[[str], str] | None = None,
     resolved_job_link: Any = None,
     title_hydration_resolver: GoogleSheetsProviderTitleResolver | None = None,
-    category_link_status_resolver: GoogleSheetsCategoryLinkStatusResolver | None = None,
 ) -> tuple[CanonicalJob | None, str]:
     if not isinstance(raw, dict):
         return None, "invalid_payload"
@@ -2013,7 +2032,6 @@ def canonicalize_job_with_reason(
         company=company,
         job_link=normalized_link,
         title_hydration_resolver=title_hydration_resolver,
-        category_link_status_resolver=category_link_status_resolver,
     )
     if drop_reason:
         return None, drop_reason
@@ -2235,40 +2253,108 @@ def _google_sheet_title_hydration_candidate_links(
     return candidate_links
 
 
-def _google_sheet_category_link_status_candidate_links(
+def _is_surviving_google_sheets_category_link_status_candidate(
     *,
-    raw_rows: Sequence[RawJob],
+    raw: RawJob,
     source: str,
-    resolved_links: dict[int, str],
-) -> list[str]:
+    normalized: CanonicalJob,
+) -> bool:
     if not clean_text(source).startswith("google_sheets"):
-        return []
-    candidate_links: list[str] = []
-    for idx, raw in enumerate(raw_rows):
-        if not isinstance(raw, dict):
-            continue
-        title = sanitize_public_text(raw.get("title"))
-        company = normalize_company_value(sanitize_public_text(raw.get("company")))
-        normalized_link = _google_sheet_final_link(raw, idx, resolved_links)
-        if not title or not company or not normalized_link:
-            continue
-        if not _is_google_sheets_category_label(title):
-            continue
-        if looks_like_source_specific_static_noise_row(
-            title=title,
-            job_link=normalized_link,
-            source_name=source,
-        ):
-            continue
-        if _looks_like_google_sheets_category_row_noise(
-            source=source,
-            title=title,
-            company=company,
-            job_link=normalized_link,
-        ):
-            continue
-        candidate_links.append(normalized_link)
-    return candidate_links
+        return False
+    if not isinstance(raw, dict):
+        return False
+    raw_title = sanitize_public_text(raw.get("title"))
+    if not _is_google_sheets_category_label(raw_title):
+        return False
+    if _is_google_sheets_category_label(normalized.title):
+        return False
+    return bool(normalize_url(normalized.jobLink))
+
+
+def _emit_google_sheets_progress(
+    progress_callback: Callable[..., Any] | None,
+    *,
+    phase_key: str,
+    phase_label: str,
+    counts: dict[str, Any],
+    message: str,
+) -> None:
+    if progress_callback is None:
+        return
+    progress_callback(
+        phase_key=phase_key,
+        phase_label=phase_label,
+        counts=counts,
+        message=message,
+    )
+
+
+def _filter_stale_google_sheet_category_links(
+    *,
+    canonical_batch: list[CanonicalJob],
+    candidate_indexes: list[int],
+    category_link_status_resolver: GoogleSheetsCategoryLinkStatusResolver | None,
+    drop_reasons: Counter[str],
+    redirect_concurrency: int,
+    progress_callback: Callable[..., Any] | None,
+) -> list[CanonicalJob]:
+    if category_link_status_resolver is None or not candidate_indexes:
+        return canonical_batch
+    candidate_links = [
+        canonical_batch[idx].jobLink
+        for idx in candidate_indexes
+        if 0 <= idx < len(canonical_batch) and normalize_url(canonical_batch[idx].jobLink)
+    ]
+    _emit_google_sheets_progress(
+        progress_callback,
+        phase_key="checking_category_links",
+        phase_label="Checking category links",
+        counts={
+            "categoryLinkStatusCandidates": len(candidate_links),
+            "categoryLinkStatusChecked": 0,
+            "categoryLinkStatusStaleDropped": 0,
+            "categoryLinkStatusErrors": 0,
+        },
+        message=f"Checking {len(candidate_links)} repaired Google Sheets category links.",
+    )
+    category_link_status_resolver.prefetch(
+        candidate_links,
+        concurrency=max(
+            redirect_concurrency,
+            min(GOOGLE_SHEETS_CATEGORY_LINK_STATUS_CONCURRENCY, len(candidate_links) or 1),
+        ),
+        progress_callback=progress_callback,
+    )
+    stale_indexes = {
+        idx
+        for idx in candidate_indexes
+        if 0 <= idx < len(canonical_batch)
+        and category_link_status_resolver.is_stale(canonical_batch[idx].jobLink)
+    }
+    if not stale_indexes:
+        return canonical_batch
+    for _idx in stale_indexes:
+        category_link_status_resolver.note_stale_drop()
+    drop_reasons["google_sheets_category_row"] += len(stale_indexes)
+    stats = category_link_status_resolver.snapshot_stats()
+    _emit_google_sheets_progress(
+        progress_callback,
+        phase_key="checking_category_links",
+        phase_label="Checking category links",
+        counts={
+            "categoryLinkStatusCandidates": len(candidate_links),
+            "categoryLinkStatusChecked": int(stats.get("category_link_status_checked") or 0),
+            "categoryLinkStatusStaleDropped": int(
+                stats.get("category_link_status_stale_dropped") or 0
+            ),
+            "categoryLinkStatusErrors": int(stats.get("category_link_status_errors") or 0),
+        },
+        message=(
+            "Checked repaired Google Sheets category links; "
+            f"dropped {len(stale_indexes)} stale rows."
+        ),
+    )
+    return [row for idx, row in enumerate(canonical_batch) if idx not in stale_indexes]
 
 
 def _canonicalize_google_sheet_rows_with_resolved_links(
@@ -2279,9 +2365,13 @@ def _canonicalize_google_sheet_rows_with_resolved_links(
     resolved_links: dict[int, str],
     title_hydration_resolver: GoogleSheetsProviderTitleResolver | None,
     category_link_status_resolver: GoogleSheetsCategoryLinkStatusResolver | None,
+    redirect_concurrency: int,
+    progress_callback: Callable[..., Any] | None,
 ) -> tuple[list[CanonicalJob], Counter[str], int]:
     canonical_started = time.perf_counter()
+    last_progress_at = canonical_started
     canonical_batch: list[CanonicalJob] = []
+    category_link_candidate_indexes: list[int] = []
     drop_reasons: Counter[str] = Counter()
     for idx, raw in enumerate(raw_rows):
         normalized, drop_reason = canonicalize_job_with_reason(
@@ -2290,12 +2380,42 @@ def _canonicalize_google_sheet_rows_with_resolved_links(
             fetched_at=fetched_at,
             resolved_job_link=resolved_links.get(idx),
             title_hydration_resolver=title_hydration_resolver,
-            category_link_status_resolver=category_link_status_resolver,
         )
         if normalized:
+            if _is_surviving_google_sheets_category_link_status_candidate(
+                raw=raw,
+                source=source,
+                normalized=normalized,
+            ):
+                category_link_candidate_indexes.append(len(canonical_batch))
             canonical_batch.append(normalized)
         elif drop_reason:
             drop_reasons[drop_reason] += 1
+        now = time.perf_counter()
+        if ((idx + 1) % 1000 == 0) or (now - last_progress_at >= 2.0):
+            last_progress_at = now
+            _emit_google_sheets_progress(
+                progress_callback,
+                phase_key="normalizing_rows",
+                phase_label="Normalizing rows",
+                counts={
+                    "fetchedCount": len(raw_rows),
+                    "normalizedCount": idx + 1,
+                    "keptCount": len(canonical_batch),
+                    "canonicalDropped": sum(drop_reasons.values()),
+                },
+                message=(
+                    f"Normalizing Google Sheets rows: {idx + 1} of {len(raw_rows)} processed."
+                ),
+            )
+    canonical_batch = _filter_stale_google_sheet_category_links(
+        canonical_batch=canonical_batch,
+        candidate_indexes=category_link_candidate_indexes,
+        category_link_status_resolver=category_link_status_resolver,
+        drop_reasons=drop_reasons,
+        redirect_concurrency=redirect_concurrency,
+        progress_callback=progress_callback,
+    )
     canonicalize_ms = int((time.perf_counter() - canonical_started) * 1000)
     return canonical_batch, drop_reasons, canonicalize_ms
 
@@ -2344,6 +2464,7 @@ def canonicalize_google_sheets_rows(
     redirect_concurrency: int = DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY,
     title_hydration_resolver: GoogleSheetsProviderTitleResolver | None = None,
     category_link_status_resolver: GoogleSheetsCategoryLinkStatusResolver | None = None,
+    progress_callback: Callable[..., Any] | None = None,
 ) -> tuple[list[CanonicalJob], Counter, dict[str, int]]:
     redirect_concurrency = max(
         1, int(redirect_concurrency or DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY)
@@ -2359,15 +2480,6 @@ def canonicalize_google_sheets_rows(
         redirect_resolver=redirect_resolver,
         redirect_concurrency=redirect_concurrency,
     )
-    if category_link_status_resolver is not None:
-        category_link_status_resolver.prefetch(
-            _google_sheet_category_link_status_candidate_links(
-                raw_rows=raw_rows,
-                source=source,
-                resolved_links=resolved_links,
-            ),
-            concurrency=redirect_concurrency,
-        )
     if title_hydration_resolver is not None:
         title_hydration_resolver.prefetch(
             _google_sheet_title_hydration_candidate_links(
@@ -2386,6 +2498,8 @@ def canonicalize_google_sheets_rows(
             resolved_links=resolved_links,
             title_hydration_resolver=title_hydration_resolver,
             category_link_status_resolver=category_link_status_resolver,
+            redirect_concurrency=redirect_concurrency,
+            progress_callback=progress_callback,
         )
     )
     return (
@@ -2424,6 +2538,7 @@ class CanonicalNormalizer(JobProcessor):
         redirect_concurrency: int = DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY,
         title_hydration_resolver: GoogleSheetsProviderTitleResolver | None = None,
         category_link_status_resolver: GoogleSheetsCategoryLinkStatusResolver | None = None,
+        progress_callback: Callable[..., Any] | None = None,
     ) -> None:
         self.source = source
         self.fetched_at = fetched_at
@@ -2432,6 +2547,7 @@ class CanonicalNormalizer(JobProcessor):
         self.redirect_concurrency = redirect_concurrency
         self.title_hydration_resolver = title_hydration_resolver
         self.category_link_status_resolver = category_link_status_resolver
+        self.progress_callback = progress_callback
         self.stats: dict[str, Any] = {}
         self.drop_reasons: Counter[str] = Counter()
 
@@ -2448,6 +2564,7 @@ class CanonicalNormalizer(JobProcessor):
                 redirect_concurrency=self.redirect_concurrency,
                 title_hydration_resolver=self.title_hydration_resolver,
                 category_link_status_resolver=self.category_link_status_resolver,
+                progress_callback=self.progress_callback,
             )
             return canonical_batch
 

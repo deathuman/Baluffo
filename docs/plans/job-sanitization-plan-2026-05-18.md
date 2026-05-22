@@ -6,6 +6,31 @@ Investigation into non-game-development job contamination in `jobs-unified.csv` 
 
 ## 0. Progress Log
 
+### 2026-05-22 — P1.6 first-run Google Sheets bootstrap timeout fix implemented
+
+**Status:** P1.6 implementation complete; live targeted refresh now finishes under the first-run timeout.
+
+**Implemented:**
+- Moved category-link `404`/`410` validation after URL-title repair/provider hydration, so category rows that will be dropped unchanged are not live-checked.
+- Added Google Sheets normalization and category-link validation progress callbacks so long bootstrap normalization phases keep task-live heartbeat evidence fresh.
+- Kept stale-link semantics unchanged for surviving repaired/hydrated category rows: only `404` or `410` drops with existing `google_sheets_category_row`.
+- Capped category-link liveness checks to a short `4s` timeout and raised their bounded concurrency to `32`, so slow domains become nonterminal instead of blocking first-run bootstrap.
+- Updated first-run UI copy from time-specific “about 4 minutes” to time-neutral “several minutes” and kept the frontend waiting while task-live heartbeat evidence is fresh.
+
+**Regression evidence:**
+- Portable build investigated: `C:\Users\Andrea\Desktop\ocr_debug\portable`, build fingerprint `83063d1e2cf7289aed2676c43737774c14b2ea7ac5b4c6840bc5f905a14c86c9`.
+- Observed stale run: two smaller Sheets sources completed in **15.3s** and **34.6s**, while the large `google_sheets` source stalled in `normalizing_rows` after fetching **30,928** rows.
+- Pre-fix validation pass still checked **3,238** category links and spent about **257s** in category-link status checks, causing the frontend wait to exceed the first-run timeout.
+
+**Verification:**
+- `python -m pytest -q tests/test_jobs_fetcher_google_sheets_category_links.py tests/test_jobs_fetcher_google_sheets_sanitizer.py tests/test_jobs_fetcher_google_sheets_title_hydration.py` — **33 passed**.
+- `python -m pytest -q tests/test_jobs_fetcher_quality.py tests/test_jobs_fetcher_pipeline.py` — **80 passed**.
+- `npm run test:frontend:unit -- tests/frontend/unit/jobs-feed-startup.test.mjs tests/frontend/unit/jobs-feed-bootstrap-confirm.test.mjs tests/frontend/unit/jobs-first-run-notice.test.mjs tests/frontend/unit/jobs-runtime-list-view.test.mjs` — passed.
+- Targeted refresh command: `python -m src.jobs.pipeline --output-dir _out/job-sanitization/google-sheets-bootstrap-timeout-fix-audit --only-sources google_sheets,google_sheets_1er2oaxo,google_sheets_1mvqhxat --no-seed-existing-output --no-preserve-previous-on-empty --force-refresh-all --ignore-circuit-breaker --quiet`.
+- Targeted refresh result after fix: output jobs **6,167**, failed sources **0**, wall time about **155s**.
+- Final scratch audit: category-style titles **0**, URL-title repair candidates **0**, provider-hydration targets **0**, suspicious exact titles **0**.
+- Final category-link stats: candidates **3,238**, checked **3,209**, stale drops **425**, errors **0**, status-check elapsed **~97s**.
+
 ### 2026-05-22 — P1.5 Google Sheets category-title and stale-link cleanup implemented
 
 **Status:** P1.5 implementation complete; targeted Google Sheets refresh passed.

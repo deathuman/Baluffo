@@ -227,12 +227,79 @@ test("initJobsFeed skips packaged feeds and auto-starts bootstrap on desktop col
   assert.equal(calls.metrics.find(metric => metric.event === "jobs_first_run_gate_evaluated")?.payload.action, "start");
   assert.equal(calls.notices.length, 1);
   assert.equal(calls.notices[0].title, "Preparing first-run jobs");
-  assert.match(calls.notices[0].body, /about 4 minutes/);
+  assert.match(calls.notices[0].body, /several minutes/);
   assert.equal(calls.notices[0].primaryLabel, "Got it");
   assert.equal(calls.notices[0].reason, "start");
-  assert.equal(calls.sourceStatus.at(-1), "Refreshing first-run sheet jobs. This can take about 4 minutes...");
+  assert.equal(
+    calls.sourceStatus.at(-1),
+    "Refreshing first-run sheet jobs. This can take several minutes..."
+  );
   assert.deepEqual(calls.showError, []);
   assert.equal(storage.has("baluffo_jobs_bootstrap_auto_started"), false);
+});
+
+test("initJobsFeed keeps waiting past first-run timeout while task-live heartbeat is fresh", async () => {
+  const { localStorage } = createLocalStorage();
+  let reportCalls = 0;
+  let taskLiveCalls = 0;
+  let refreshOptions = null;
+  const { calls, deps } = createBaseDeps({
+    isDesktopRuntimeMode: () => true,
+    windowObject: { localStorage },
+    bootstrapPollIntervalMs: 0,
+    bootstrapTimeoutMs: 1,
+    bootstrapProgressStaleMs: 90_000,
+    fetchJobsReport: async () => {
+      reportCalls += 1;
+      if (reportCalls <= 2) return { summary: { outputCount: 0 } };
+      return {
+        finishedAt: "2026-05-17T10:00:00+00:00",
+        summary: { status: "ok", outputCount: 3, coverageScope: "bootstrap_sheets" }
+      };
+    },
+    fetchJobsTaskLive: async () => {
+      taskLiveCalls += 1;
+      return {
+        active: true,
+        heartbeatAt: new Date().toISOString(),
+        taskProgress: { active: true, updatedAt: new Date().toISOString() }
+      };
+    },
+    startJobsBootstrap: async () => ({ started: true, runId: "jobs_bootstrap_live" }),
+    refreshJobsNow: async options => {
+      refreshOptions = options;
+      return true;
+    }
+  });
+
+  await initJobsFeed(deps);
+
+  assert.equal(taskLiveCalls >= 1, true);
+  assert.deepEqual(refreshOptions, { manual: false, firstLoad: true });
+  assert.deepEqual(calls.showError, []);
+});
+
+test("initJobsFeed times out when first-run task-live heartbeat is stale", async () => {
+  const { localStorage } = createLocalStorage();
+  const { calls, deps } = createBaseDeps({
+    isDesktopRuntimeMode: () => true,
+    windowObject: { localStorage },
+    bootstrapPollIntervalMs: 0,
+    bootstrapTimeoutMs: 1,
+    bootstrapProgressStaleMs: 1,
+    fetchJobsReport: async () => ({ summary: { outputCount: 0 } }),
+    fetchJobsTaskLive: async () => ({
+      active: true,
+      heartbeatAt: "2026-01-01T00:00:00.000Z",
+      taskProgress: { active: true, updatedAt: "2026-01-01T00:00:00.000Z" }
+    }),
+    startJobsBootstrap: async () => ({ started: true, runId: "jobs_bootstrap_stale" })
+  });
+
+  await initJobsFeed(deps);
+
+  assert.equal(calls.showError.length, 1);
+  assert.match(calls.showError[0], /first-run sheet refresh timed out/);
 });
 
 test("initJobsFeed does not await the first-run notice before bootstrap polling", async () => {

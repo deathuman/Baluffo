@@ -17,12 +17,13 @@ const BOOTSTRAP_AUTO_START_KEY = "baluffo_jobs_bootstrap_auto_started";
 const BOOTSTRAP_LAUNCH_COLD_START_HANDLED_KEY = "baluffo_jobs_bootstrap_launch_cold_start_handled";
 const LOCAL_FEED_MISSING_MESSAGE = "Local jobs feed is missing or unreadable. Retry quick refresh or run Update jobs to rebuild the full feed.";
 const EMPTY_TITLE_FEED_MESSAGE = "Jobs feed contained no displayable positions. Retry quick refresh or run Update jobs to rebuild the full feed.";
-const FIRST_RUN_BOOTSTRAP_STATUS = "Refreshing first-run sheet jobs. This can take about 4 minutes...";
+const FIRST_RUN_BOOTSTRAP_STATUS = "Refreshing first-run sheet jobs. This can take several minutes...";
 const FIRST_RUN_BOOTSTRAP_CONFIRMING_STATUS = "Confirming first-run sheet refresh started...";
 const FIRST_RUN_BOOTSTRAP_UNCONFIRMED_MESSAGE = "Could not confirm first-run sheet refresh started. Retry quick refresh or open Admin.";
+const FIRST_RUN_BOOTSTRAP_PROGRESS_STALE_MS = 90 * 1000;
 const FIRST_RUN_BOOTSTRAP_NOTICE = Object.freeze({
   title: "Preparing first-run jobs",
-  body: "Baluffo is fetching the starter Google Sheets job feed. The first refresh can take about 4 minutes. You can keep this window open; jobs will appear automatically when the refresh finishes.",
+  body: "Baluffo is fetching the starter Google Sheets job feed. The first refresh can take several minutes. You can keep this window open; jobs will appear automatically when the refresh finishes.",
   primaryLabel: "Got it"
 });
 
@@ -82,6 +83,41 @@ function isActiveBootstrapReport(report) {
   const scope = coverageScope(report).toLowerCase();
   const runId = reportRunId(report);
   return scope === "bootstrap_sheets" || runId.startsWith("jobs_bootstrap_");
+}
+
+function timestampMs(value) {
+  const timestamp = Date.parse(String(value || ""));
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function latestBootstrapProgressTimestamp(payload) {
+  if (!payload || typeof payload !== "object") return 0;
+  const candidates = [
+    payload.heartbeatAt,
+    payload.updatedAt,
+    payload.taskProgress?.updatedAt,
+    payload.runtime?.lifecycle?.heartbeatAt
+  ].map(timestampMs);
+  for (const workItem of (Array.isArray(payload.workItems) ? payload.workItems : [])) {
+    candidates.push(timestampMs(workItem?.heartbeatAt));
+    candidates.push(timestampMs(workItem?.progress?.updatedAt));
+  }
+  return Math.max(0, ...candidates);
+}
+
+function isFreshBootstrapProgress(payload, { now = Date.now(), staleMs } = {}) {
+  if (!payload || typeof payload !== "object") return false;
+  const status = String(payload.status || "").trim().toLowerCase();
+  const active = Boolean(
+    payload.active
+      || payload.taskProgress?.active
+      || status === "running"
+      || isActiveBootstrapReport(payload)
+  );
+  if (!active) return false;
+  const latestProgressAt = latestBootstrapProgressTimestamp(payload);
+  if (!latestProgressAt) return false;
+  return now - latestProgressAt <= Math.max(1000, Number(staleMs) || FIRST_RUN_BOOTSTRAP_PROGRESS_STALE_MS);
 }
 
 function bootstrapStartHasRunningEvidence(payload) {
@@ -234,6 +270,7 @@ export async function initJobsFeed(deps) {
     refreshJobsNow,
     updateLastUpdatedText,
     fetchJobsReport,
+    fetchJobsTaskLive,
     desktopJobsColdStart = false,
     startJobsBootstrap,
     windowObject,
@@ -244,6 +281,7 @@ export async function initJobsFeed(deps) {
     bootstrapConfirmIntervalMs = 1000,
     bootstrapPollIntervalMs = 1500,
     bootstrapTimeoutMs = 5 * 60 * 1000,
+    bootstrapProgressStaleMs = FIRST_RUN_BOOTSTRAP_PROGRESS_STALE_MS,
     setHasInitializedJobsFeed,
     scheduleNonCriticalStartupWork,
     applyPendingAutoRefreshSignal,
@@ -374,8 +412,10 @@ export async function initJobsFeed(deps) {
         }
         const pollInterval = Math.max(0, Number(bootstrapPollIntervalMs) || 0);
         const deadline = Date.now() + Math.max(1000, Number(bootstrapTimeoutMs) || 120000);
-        while (Date.now() < deadline) {
+        let latestFreshProgressAt = 0;
+        for (;;) {
           await new Promise(resolve => setTimeout(resolve, pollInterval));
+          const now = Date.now();
           const nextReport = await fetchJobsReport({ timeoutMs: 1500 }).catch(() => null);
           if (isSuccessfulJobsFetchReport(nextReport)) {
             if (typeof setProgress === "function") setProgress(false);
@@ -389,6 +429,28 @@ export async function initJobsFeed(deps) {
           if (isTerminalFailedJobsFetchReport(nextReport)) {
             throw new Error(bootstrapRetryMessage(nextReport));
           }
+          const taskLive = typeof fetchJobsTaskLive === "function"
+            ? await fetchJobsTaskLive({ timeoutMs: 1500 }).catch(() => null)
+            : null;
+          if (
+            isFreshBootstrapProgress(taskLive, { now, staleMs: bootstrapProgressStaleMs })
+            || isFreshBootstrapProgress(nextReport, { now, staleMs: bootstrapProgressStaleMs })
+          ) {
+            latestFreshProgressAt = now;
+          }
+          if (now < deadline) {
+            continue;
+          }
+          if (
+            latestFreshProgressAt
+            && now - latestFreshProgressAt <= Math.max(
+              1000,
+              Number(bootstrapProgressStaleMs) || FIRST_RUN_BOOTSTRAP_PROGRESS_STALE_MS
+            )
+          ) {
+            continue;
+          }
+          break;
         }
         throw new Error("first-run sheet refresh timed out");
       } catch (err) {

@@ -4,7 +4,7 @@ import { sanitizeUrl, toContractClass, capitalizeFirst } from "../runtime-utils.
 
 const EMPTY_STATE_MESSAGES = Object.freeze({
   first_run_bootstrap: "Preparing first-run jobs. Baluffo is fetching the starter Google Sheets feed; "
-    + "jobs will appear here automatically. This can take about 4 minutes.",
+    + "jobs will appear here automatically. This can take several minutes.",
   default: "No jobs found matching your filters."
 });
 

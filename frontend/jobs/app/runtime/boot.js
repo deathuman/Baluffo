@@ -63,6 +63,9 @@ export function createJobsBoot(deps) {
       refreshJobsNow: options => deps.feedController.refreshJobsNow(options),
       updateLastUpdatedText: timestamp => deps.feedController.updateLastUpdatedText(timestamp),
       fetchJobsReport: options => deps.feedController.fetchJobsReport(options),
+      fetchJobsTaskLive: (options = {}) => deps.callJobsBridge("/ops/task-live/fetch", {
+        timeoutMs: Number(options?.timeoutMs) > 0 ? Number(options.timeoutMs) : 1500
+      }),
       desktopJobsColdStart: deps.desktopJobsColdStart,
       startJobsBootstrap: (options = {}) => deps.callJobsBridge("/tasks/run-jobs-bootstrap", {
         method: "POST",

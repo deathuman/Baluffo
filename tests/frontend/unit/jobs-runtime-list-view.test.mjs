@@ -82,7 +82,7 @@ test("jobs list view explains the expected first-run empty state", () => {
 
   assert.match(jobsList.innerHTML, /Preparing first-run jobs\./);
   assert.match(jobsList.innerHTML, /starter Google Sheets feed/);
-  assert.match(jobsList.innerHTML, /about 4 minutes/);
+  assert.match(jobsList.innerHTML, /several minutes/);
   assert.doesNotMatch(jobsList.innerHTML, /No jobs found matching your filters/);
   assert.equal(resultsSummary.textContent, "0 jobs");
 });
