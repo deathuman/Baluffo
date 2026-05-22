@@ -929,6 +929,60 @@ def _validated_opening_title_or_reason(
     return title, ""
 
 
+def _google_sheets_original_title_or_category_drop(
+    title: str,
+    *,
+    is_category_title: bool,
+) -> tuple[str | None, str]:
+    if is_category_title:
+        return None, "google_sheets_category_row"
+    return title, ""
+
+
+def _google_sheets_category_link_is_stale(
+    *,
+    is_category_title: bool,
+    job_link: str,
+    category_link_status_resolver: GoogleSheetsCategoryLinkStatusResolver | None,
+) -> bool:
+    if not is_category_title:
+        return False
+    if category_link_status_resolver is None:
+        return False
+    return category_link_status_resolver.is_stale(job_link)
+
+
+def _validated_google_sheets_candidate_title_or_reason(
+    *,
+    original_title: str,
+    candidate_title: str,
+    is_category_title: bool,
+    job_link: str,
+    source: str,
+) -> tuple[str | None, str]:
+    if _is_google_sheets_category_label(candidate_title):
+        return _google_sheets_original_title_or_category_drop(
+            original_title,
+            is_category_title=is_category_title,
+        )
+    return _validated_opening_title_or_reason(
+        title=candidate_title,
+        job_link=job_link,
+        source=source,
+    )
+
+
+def _should_reject_google_sheets_hydrated_title(
+    original_title: str,
+    hydrated_title: str,
+) -> bool:
+    if not hydrated_title:
+        return True
+    if _is_google_sheets_category_label(hydrated_title):
+        return True
+    return not _should_accept_google_sheets_repaired_title(original_title, hydrated_title)
+
+
 def _google_sheets_repaired_title_or_reason(
     *,
     title: str,
@@ -949,10 +1003,10 @@ def _google_sheets_repaired_title_or_reason(
     is_category_title = clean_text(source).startswith(
         "google_sheets"
     ) and _is_google_sheets_category_label(title)
-    if (
-        is_category_title
-        and category_link_status_resolver is not None
-        and category_link_status_resolver.is_stale(job_link)
+    if _google_sheets_category_link_is_stale(
+        is_category_title=is_category_title,
+        job_link=job_link,
+        category_link_status_resolver=category_link_status_resolver,
     ):
         category_link_status_resolver.note_stale_drop()
         return None, "google_sheets_category_row"
@@ -964,33 +1018,25 @@ def _google_sheets_repaired_title_or_reason(
         job_link=job_link,
     )
     if repaired_title:
-        if _is_google_sheets_category_label(repaired_title):
-            if is_category_title:
-                return None, "google_sheets_category_row"
-            return title, ""
-        return _validated_opening_title_or_reason(
-            title=repaired_title,
+        return _validated_google_sheets_candidate_title_or_reason(
+            original_title=title,
+            candidate_title=repaired_title,
+            is_category_title=is_category_title,
             job_link=job_link,
             source=source,
         )
 
     if title_hydration_resolver is None:
-        if is_category_title:
-            return None, "google_sheets_category_row"
-        return title, ""
+        return _google_sheets_original_title_or_category_drop(
+            title,
+            is_category_title=is_category_title,
+        )
     hydrated_title = title_hydration_resolver.resolve_title(job_link)
-    if not hydrated_title:
-        if is_category_title:
-            return None, "google_sheets_category_row"
-        return title, ""
-    if _is_google_sheets_category_label(hydrated_title):
-        if is_category_title:
-            return None, "google_sheets_category_row"
-        return title, ""
-    if not _should_accept_google_sheets_repaired_title(title, hydrated_title):
-        if is_category_title:
-            return None, "google_sheets_category_row"
-        return title, ""
+    if _should_reject_google_sheets_hydrated_title(title, hydrated_title):
+        return _google_sheets_original_title_or_category_drop(
+            title,
+            is_category_title=is_category_title,
+        )
     return _validated_opening_title_or_reason(
         title=hydrated_title,
         job_link=job_link,
