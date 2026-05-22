@@ -181,6 +181,7 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Packaged sync rehearsal | `npm run test:frontend:packaged:sync-rehearsal` |
 | Packaged orphan reclaim rehearsal | `npm run test:frontend:packaged:orphan-reclaim-rehearsal` |
 | Packaged browser job rehearsal | `npm run test:frontend:packaged:browser-job-rehearsal` |
+| Packaged desktop lifecycle rehearsal | `npm run test:frontend:packaged:desktop-lifecycle-rehearsal` |
 | Packaged deterministic Jobs first-run gate | `npm run test:frontend:packaged:first-run` |
 | Jobs-page no-Admin packaged smoke gate | `npm run test:frontend:packaged:jobs-pipeline` |
 | Admin startup packaged smoke gate | `npm run test:frontend:packaged:admin-startup` |
@@ -229,6 +230,7 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 - `npm run test:frontend:packaged:sync-rehearsal`
 - `npm run test:frontend:packaged:orphan-reclaim-rehearsal`
 - `npm run test:frontend:packaged:browser-job-rehearsal`
+- `npm run test:frontend:packaged:desktop-lifecycle-rehearsal`
 - `npm run test:frontend:packaged:first-run`
 - `npm run test:frontend:packaged:admin-startup`
 - `npm run test:frontend:packaged:update-rehearsal`
@@ -344,6 +346,18 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
   - killing only `Baluffo.exe` causes that proof PID to exit before any generic smoke cleanup runs.
 - Use this lane for packaged browser supervision, Chromium app-mode launch changes, and Windows Job Object browser-lifecycle fixes.
 
+## Packaged Desktop Lifecycle Rehearsal Contract
+
+- `npm run test:frontend:packaged:desktop-lifecycle-rehearsal` is the packaged desktop-window liveness and shutdown gate for the portable desktop runtime.
+- It must prove all of the following:
+  - the packaged runtime accepts a short smoke-only `--owner-idle-timeout-s` override while production defaults remain unchanged,
+  - a controlled desktop page can lose `/app/desktop-session-lifecycle` POST/beacon traffic while continuing non-health page traffic such as `/ops/task-state`,
+  - the launcher and bridge stay alive past the owner idle timeout while that non-health page traffic continues,
+  - owner activity advances from non-health page traffic; `/ops/health` polling alone remains excluded,
+  - after the controlled page traffic stops, the launcher exits and releases the site/bridge ports,
+  - terminating the managed Chromium app-mode browser/window exits the launcher, browser proof PID, and site/bridge ports without generic cleanup hiding leftovers.
+- This lane is required for desktop-window liveness, owner idle timeout, lifecycle heartbeat, launcher shutdown, or orphan-process cleanup changes.
+
 ## Release/build regression picks
 
 Use the narrowest check that matches the risky path:
@@ -352,6 +366,7 @@ Use the narrowest check that matches the risky path:
 - Packaged sync config, auth portability, or sync release-gate changes: `npm run test:frontend:packaged:sync-rehearsal`
 - Packaged desktop supervision, stale-runtime recovery, or launcher self-heal changes: `npm run test:frontend:packaged:orphan-reclaim-rehearsal`
 - Packaged Chromium supervision or managed-browser shutdown propagation changes: `npm run test:frontend:packaged:browser-job-rehearsal`
+- Desktop-window liveness, owner idle timeout, lifecycle heartbeat, launcher shutdown, or orphan-process cleanup changes: `npm run test:frontend:packaged:desktop-lifecycle-rehearsal`
 - Packaged Jobs first-run, cold empty-state, bootstrap confirm/retry, or popup theme changes: `npm run test:frontend:packaged:first-run`
 - Packaged Admin startup, overview, or heavy ops-payload loading changes: `npm run test:frontend:packaged:admin-startup`
 - Packaged updater, desktop handoff, or release-manifest changes: `npm run test:frontend:packaged:update-rehearsal`

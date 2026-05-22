@@ -223,6 +223,10 @@ python -c "from src.bridge.source_check_api import trigger_source_check; print(t
 
 Fixed desktop-window builds shut down the owned launcher, site child, and bridge child shortly after the Baluffo browser window closes when no critical fetch, discovery, pipeline, or sync task is active. During active work, the launcher may keep the bridge alive temporarily for the existing background recovery path, but `/ops/health` polling alone must not keep the process tree alive.
 
+If a visible desktop page closes unexpectedly with `admin_bridge_owner_session_exit_requested`, inspect `ship\data\admin-bridge-events.jsonl` for non-health page routes such as `/ops/task-state`, `/ops/dashboard-health`, `/tasks/run-jobs-pipeline-status`, or `/app/update-status` between the last lifecycle heartbeat and shutdown. Those page-originated routes are a fallback liveness signal; `/ops/health` remains excluded so the launcher watchdog cannot keep a closed window alive by itself.
+
+For release or shutdown-path changes, run `npm run test:frontend:packaged:desktop-lifecycle-rehearsal`. It covers the false-idle case where lifecycle POST/beacon traffic stops while non-health page traffic continues, then verifies real window shutdown releases the launcher, browser proof PID, and default desktop ports.
+
 Diagnostics:
 
 | Check | Action |

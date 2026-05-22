@@ -131,6 +131,48 @@ def _terminate_launcher_process_only(process: Any) -> None:
         return
 
 
+def _terminate_pid(pid: int, *, label: str, graceful_timeout_s: float = 5.0) -> None:
+    deps = _root()
+    normalized_pid = int(pid or 0)
+    if normalized_pid <= 0:
+        raise RuntimeError(f"Packaged lifecycle rehearsal had no {label} PID to terminate.")
+    if not deps.desktop_app_mod.is_process_alive(normalized_pid):
+        return
+    if deps.os.name == "nt":
+        try:
+            deps.subprocess.run(
+                ["taskkill", "/PID", str(normalized_pid)],
+                stdout=deps.subprocess.DEVNULL,
+                stderr=deps.subprocess.DEVNULL,
+                check=False,
+                timeout=max(3.0, float(graceful_timeout_s)),
+            )
+        except deps.subprocess.TimeoutExpired:
+            pass
+        deadline = deps.time.monotonic() + max(1.0, float(graceful_timeout_s))
+        while deps.time.monotonic() < deadline:
+            if not deps.desktop_app_mod.is_process_alive(normalized_pid):
+                return
+            deps.time.sleep(0.25)
+        try:
+            deps.subprocess.run(
+                ["taskkill", "/PID", str(normalized_pid), "/F"],
+                stdout=deps.subprocess.DEVNULL,
+                stderr=deps.subprocess.DEVNULL,
+                check=False,
+                timeout=max(3.0, float(graceful_timeout_s)),
+            )
+        except deps.subprocess.TimeoutExpired as exc:
+            raise TimeoutError(
+                f"Timed out terminating packaged lifecycle rehearsal {label} pid {normalized_pid}."
+            ) from exc
+        return
+    try:
+        deps.os.kill(normalized_pid, 15)
+    except OSError:
+        return
+
+
 def _wait_for_desktop_ports_released(*ports: int, timeout_s: float) -> None:
     deps = _root()
     deadline = deps.time.monotonic() + max(5.0, float(timeout_s))
@@ -151,6 +193,57 @@ def _wait_for_desktop_ports_released(*ports: int, timeout_s: float) -> None:
         "Packaged browser close rehearsal left desktop ports listening: "
         + ", ".join(f"{port}={pids}" for port, pids in sorted(last_active.items()))
     )
+
+
+def _run_desktop_lifecycle_node_probe(
+    *,
+    site_base_url: str,
+    bridge_base_url: str,
+    artifacts_dir: Path,
+    owner_idle_timeout_s: float,
+    runtime_timeout_s: float,
+) -> dict[str, Any]:
+    deps = _root()
+    node_artifacts_dir = artifacts_dir / "desktop-lifecycle-false-idle-node"
+    node_script = deps.ROOT / "tests" / "frontend" / "packaged-desktop-smoke.desktop-lifecycle.mjs"
+    stdout_path = artifacts_dir / "desktop-lifecycle-false-idle-node.stdout.log"
+    stderr_path = artifacts_dir / "desktop-lifecycle-false-idle-node.stderr.log"
+    command = [*deps.resolve_node_command(), str(node_script)]
+    env = deps.build_packaged_smoke_env(
+        site_base_url=site_base_url,
+        bridge_base_url=bridge_base_url,
+        artifacts_dir=node_artifacts_dir,
+        headed=False,
+        pause_on_failure=False,
+    )
+    env.update(deps.packaged_runtime_env_overrides(node_script))
+    env["PACKAGED_DESKTOP_OWNER_IDLE_TIMEOUT_S"] = str(float(owner_idle_timeout_s))
+    completed = deps.subprocess.run(
+        command,
+        cwd=deps.ROOT,
+        env=env,
+        timeout=max(45.0, float(owner_idle_timeout_s) + float(runtime_timeout_s)),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    deps.write_text(stdout_path, str(completed.stdout or ""))
+    deps.write_text(stderr_path, str(completed.stderr or ""))
+    report_path = Path(env["PACKAGED_SMOKE_REPORT_PATH"])
+    report_payload = deps.read_packaged_node_smoke_payload(report_path)
+    if int(completed.returncode) != 0 or not bool(report_payload.get("ok")):
+        errors = report_payload.get("errors")
+        if isinstance(errors, list) and errors:
+            raise RuntimeError(str(errors[0]))
+        raise RuntimeError(
+            str(completed.stderr or completed.stdout or "Desktop lifecycle node probe failed.")
+        )
+    return {
+        "reportPath": str(report_path),
+        "stdout": str(stdout_path),
+        "stderr": str(stderr_path),
+        "scenarios": list(report_payload.get("scenarios") or []),
+    }
 
 
 def run_packaged_browser_job_rehearsal(
@@ -338,6 +431,273 @@ def run_packaged_browser_job_rehearsal(
             actual_bridge_port,
         )
         deps.clear_packaged_desktop_session_state(runtime_env)
+
+
+def run_packaged_desktop_lifecycle_rehearsal(
+    *,
+    exe_path: Path,
+    artifacts_dir: Path,
+    runtime_timeout_s: float,
+) -> dict[str, Any]:
+    deps = _root()
+    started = time.perf_counter()
+    owner_idle_timeout_s = 10.0
+    details: dict[str, Any] = {
+        "ownerIdleTimeoutSeconds": owner_idle_timeout_s,
+    }
+    if deps.os.name != "nt":
+        return {
+            "name": "Packaged desktop lifecycle rehearsal",
+            "slug": "packaged-desktop-lifecycle-rehearsal",
+            "status": "failed",
+            "durationMs": int((time.perf_counter() - started) * 1000),
+            "error": "Packaged desktop lifecycle rehearsal requires Windows.",
+            "details": details,
+        }
+
+    false_env = deps.os.environ.copy()
+    false_env.update(
+        deps.packaged_runtime_env_overrides(
+            artifacts_dir=artifacts_dir,
+            session_scope="desktop-lifecycle-rehearsal-false-idle",
+        )
+    )
+    close_env = deps.os.environ.copy()
+    close_env.update(
+        deps.packaged_runtime_env_overrides(
+            artifacts_dir=artifacts_dir,
+            session_scope="desktop-lifecycle-rehearsal-close-cleanup",
+        )
+    )
+    deps.clear_packaged_desktop_session_state(false_env)
+    deps.clear_packaged_desktop_session_state(close_env)
+
+    false_runtime_process = None
+    false_stdout_handle = None
+    false_stderr_handle = None
+    close_runtime_process = None
+    close_stdout_handle = None
+    close_stderr_handle = None
+    false_requested_site_port = deps.choose_free_port()
+    false_requested_bridge_port = deps.choose_free_port()
+    close_requested_site_port = deps.choose_free_port()
+    close_requested_bridge_port = deps.choose_free_port()
+    false_actual_site_port = false_requested_site_port
+    false_actual_bridge_port = false_requested_bridge_port
+    close_actual_site_port = close_requested_site_port
+    close_actual_bridge_port = close_requested_bridge_port
+    false_proof_pid = 0
+    close_proof_pid = 0
+    false_runtime_data_dir = artifacts_dir / "false-idle-runtime-data"
+    close_runtime_data_dir = artifacts_dir / "close-cleanup-runtime-data"
+    false_runtime_data_dir.mkdir(parents=True, exist_ok=True)
+    close_runtime_data_dir.mkdir(parents=True, exist_ok=True)
+    false_stdout_path = artifacts_dir / "desktop-lifecycle-false-idle-runtime.stdout.log"
+    false_stderr_path = artifacts_dir / "desktop-lifecycle-false-idle-runtime.stderr.log"
+    false_metrics_path = artifacts_dir / "desktop-lifecycle-false-idle.startup-metrics.json"
+    close_stdout_path = artifacts_dir / "desktop-lifecycle-close-cleanup-runtime.stdout.log"
+    close_stderr_path = artifacts_dir / "desktop-lifecycle-close-cleanup-runtime.stderr.log"
+    close_metrics_path = artifacts_dir / "desktop-lifecycle-close-cleanup.startup-metrics.json"
+    details.update(
+        {
+            "falseIdleRuntimeStdout": str(false_stdout_path),
+            "falseIdleRuntimeStderr": str(false_stderr_path),
+            "falseIdleStartupMetrics": str(false_metrics_path),
+            "closeCleanupRuntimeStdout": str(close_stdout_path),
+            "closeCleanupRuntimeStderr": str(close_stderr_path),
+            "closeCleanupStartupMetrics": str(close_metrics_path),
+        }
+    )
+    try:
+        false_env["BALUFFO_DESKTOP_NO_BROWSER"] = "1"
+        false_runtime_process, false_stdout_handle, false_stderr_handle = deps.launch_packaged_exe(
+            exe_path,
+            site_port=false_requested_site_port,
+            bridge_port=false_requested_bridge_port,
+            data_dir=false_runtime_data_dir,
+            stdout_path=false_stdout_path,
+            stderr_path=false_stderr_path,
+            open_path="saved.html",
+            startup_probe=False,
+            owner_idle_timeout_s=owner_idle_timeout_s,
+            env=false_env,
+        )
+        false_state = deps.wait_for_packaged_runtime_with_port_pivot(
+            false_runtime_process,
+            requested_site_port=false_requested_site_port,
+            requested_bridge_port=false_requested_bridge_port,
+            expected_data_dir=false_runtime_data_dir,
+            timeout_s=runtime_timeout_s,
+            open_path="saved.html",
+            env=false_env,
+        )
+        false_actual_site_port = int(false_state.get("actualSitePort") or false_requested_site_port)
+        false_actual_bridge_port = int(
+            false_state.get("actualBridgePort") or false_requested_bridge_port
+        )
+        false_metrics_rows = list(false_state.get("startupMetrics") or [])
+        deps.write_json(false_metrics_path, {"rows": false_metrics_rows})
+        false_launch_mode = deps.startup_metric_launch_mode(false_metrics_rows)
+        if false_launch_mode != "no-browser":
+            raise RuntimeError(
+                "Packaged desktop lifecycle rehearsal false-idle phase required "
+                f"no-browser launch mode; desktop launch mode was '{false_launch_mode or 'unknown'}'."
+            )
+        node_probe = deps._run_desktop_lifecycle_node_probe(
+            site_base_url=f"http://127.0.0.1:{false_actual_site_port}",
+            bridge_base_url=f"http://127.0.0.1:{false_actual_bridge_port}",
+            artifacts_dir=artifacts_dir,
+            owner_idle_timeout_s=owner_idle_timeout_s,
+            runtime_timeout_s=runtime_timeout_s,
+        )
+        details.update(
+            {
+                "falseIdleSessionRoot": str(
+                    deps.packaged_desktop_session_paths(false_env)["sessionRoot"]
+                ),
+                "falseIdleRequestedSitePort": false_requested_site_port,
+                "falseIdleRequestedBridgePort": false_requested_bridge_port,
+                "falseIdleActualSitePort": false_actual_site_port,
+                "falseIdleActualBridgePort": false_actual_bridge_port,
+                "falseIdleSelectedBrowserName": str(false_launch_mode or "no-browser"),
+                "falseIdleSelectedBrowserPath": "",
+                "falseIdleProofPid": false_proof_pid,
+                "falseIdleProofSource": "controlled-playwright-page",
+                "falseIdleNodeReport": str(node_probe.get("reportPath") or ""),
+                "falseIdleNodeStdout": str(node_probe.get("stdout") or ""),
+                "falseIdleNodeStderr": str(node_probe.get("stderr") or ""),
+                "falseIdleOwnerActivityAdvanced": True,
+                "falseIdleBridgeStayedAlivePastTimeout": True,
+            }
+        )
+        deps._wait_for_launcher_exit(
+            false_runtime_process,
+            timeout_s=max(30.0, float(runtime_timeout_s) + owner_idle_timeout_s),
+        )
+        deps._wait_for_pid_exit(false_proof_pid, timeout_s=max(15.0, float(runtime_timeout_s)))
+        deps._wait_for_desktop_ports_released(
+            false_actual_site_port,
+            false_actual_bridge_port,
+            timeout_s=max(15.0, float(runtime_timeout_s) / 2.0),
+        )
+        details["falseIdleShutdownAfterTrafficStopped"] = True
+        details["falseIdleDesktopPortsReleased"] = True
+
+        close_selected_browser, close_browser_env = deps._select_packaged_browser_job_browser(
+            close_env
+        )
+        close_env.update(close_browser_env)
+        close_runtime_process, close_stdout_handle, close_stderr_handle = deps.launch_packaged_exe(
+            exe_path,
+            site_port=close_requested_site_port,
+            bridge_port=close_requested_bridge_port,
+            data_dir=close_runtime_data_dir,
+            stdout_path=close_stdout_path,
+            stderr_path=close_stderr_path,
+            open_path="desktop-probe.html",
+            startup_probe=False,
+            env=close_env,
+        )
+        close_state = deps.wait_for_packaged_runtime_with_port_pivot(
+            close_runtime_process,
+            requested_site_port=close_requested_site_port,
+            requested_bridge_port=close_requested_bridge_port,
+            expected_data_dir=close_runtime_data_dir,
+            timeout_s=runtime_timeout_s,
+            open_path="desktop-probe.html",
+            env=close_env,
+        )
+        close_actual_site_port = int(close_state.get("actualSitePort") or close_requested_site_port)
+        close_actual_bridge_port = int(
+            close_state.get("actualBridgePort") or close_requested_bridge_port
+        )
+        close_metrics_rows = list(close_state.get("startupMetrics") or [])
+        deps.write_json(close_metrics_path, {"rows": close_metrics_rows})
+        close_launch_mode = deps.startup_metric_launch_mode(close_metrics_rows)
+        if close_launch_mode != "chromium-app":
+            raise RuntimeError(
+                "Packaged desktop lifecycle rehearsal close-cleanup phase required "
+                f"chromium-app launch mode; desktop launch mode was '{close_launch_mode or 'unknown'}'."
+            )
+        close_proof = deps._select_browser_shutdown_proof(close_metrics_rows)
+        close_proof_pid = int(close_proof.get("proofPid") or 0)
+        if close_proof_pid <= 0 or not deps.desktop_app_mod.is_process_alive(close_proof_pid):
+            raise RuntimeError(
+                "Packaged desktop lifecycle rehearsal close-cleanup proof PID was not alive."
+            )
+        deps._terminate_pid(close_proof_pid, label="managed browser")
+        deps._wait_for_launcher_exit(
+            close_runtime_process,
+            timeout_s=max(30.0, float(runtime_timeout_s)),
+        )
+        deps._wait_for_pid_exit(close_proof_pid, timeout_s=max(15.0, float(runtime_timeout_s)))
+        deps._wait_for_desktop_ports_released(
+            close_actual_site_port,
+            close_actual_bridge_port,
+            timeout_s=max(15.0, float(runtime_timeout_s) / 2.0),
+        )
+        details.update(
+            {
+                "closeCleanupSessionRoot": str(
+                    deps.packaged_desktop_session_paths(close_env)["sessionRoot"]
+                ),
+                "closeCleanupRequestedSitePort": close_requested_site_port,
+                "closeCleanupRequestedBridgePort": close_requested_bridge_port,
+                "closeCleanupActualSitePort": close_actual_site_port,
+                "closeCleanupActualBridgePort": close_actual_bridge_port,
+                "closeCleanupSelectedBrowserName": str(
+                    close_selected_browser.get("browserName") or ""
+                ),
+                "closeCleanupSelectedBrowserPath": str(
+                    close_selected_browser.get("browserPath") or ""
+                ),
+                "closeCleanupProofPid": close_proof_pid,
+                "closeCleanupProofSource": str(close_proof.get("proofSource") or ""),
+                "closeCleanupLauncherExited": True,
+                "closeCleanupBrowserExited": True,
+                "closeCleanupDesktopPortsReleased": True,
+            }
+        )
+        return {
+            "name": "Packaged desktop lifecycle rehearsal",
+            "slug": "packaged-desktop-lifecycle-rehearsal",
+            "status": "passed",
+            "durationMs": int((time.perf_counter() - started) * 1000),
+            "error": "",
+            "details": details,
+        }
+    except Exception as exc:
+        return {
+            "name": "Packaged desktop lifecycle rehearsal",
+            "slug": "packaged-desktop-lifecycle-rehearsal",
+            "status": "failed",
+            "durationMs": int((time.perf_counter() - started) * 1000),
+            "error": str(exc),
+            "details": details,
+        }
+    finally:
+        deps.terminate_process_tree(false_runtime_process)
+        deps.terminate_process_tree(close_runtime_process)
+        if false_stdout_handle is not None:
+            false_stdout_handle.close()
+        if false_stderr_handle is not None:
+            false_stderr_handle.close()
+        if close_stdout_handle is not None:
+            close_stdout_handle.close()
+        if close_stderr_handle is not None:
+            close_stderr_handle.close()
+        deps.cleanup_orphaned_desktop_ports_nt(
+            false_requested_site_port,
+            false_requested_bridge_port,
+            false_actual_site_port,
+            false_actual_bridge_port,
+            close_requested_site_port,
+            close_requested_bridge_port,
+            close_actual_site_port,
+            close_actual_bridge_port,
+        )
+        deps.clear_packaged_desktop_session_state(false_env)
+        deps.clear_packaged_desktop_session_state(close_env)
 
 
 def run_packaged_orphan_reclaim_rehearsal(

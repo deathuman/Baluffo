@@ -434,6 +434,7 @@ def test_launch_desktop_app_defers_bridge_spawn_until_site_ready() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
     config = desktop_runtime_config(
         data_dir=data_dir,
+        owner_idle_timeout_s=7.5,
     )
     call_log: list[str] = []
     site_env: dict[str, str] = {}
@@ -450,6 +451,8 @@ def test_launch_desktop_app_defers_bridge_spawn_until_site_ready() -> None:
             call_log.append("spawn_site")
             return SimpleNamespace(pid=101)
         if child_mode == "__child_bridge__":
+            assert "--owner-idle-timeout-s" in command
+            assert command[command.index("--owner-idle-timeout-s") + 1] == "7.5"
             call_log.append("spawn_bridge")
             return SimpleNamespace(pid=202)
         raise AssertionError(f"unexpected child command: {command!r}")

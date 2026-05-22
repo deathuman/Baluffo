@@ -163,6 +163,13 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                     elapsedMs=site_ready_elapsed_ms,
                     url=str(open_url),
                 )
+                owner_idle_timeout_s = float(config.owner_idle_timeout_s or 0.0)
+                if owner_idle_timeout_s <= 0.0:
+                    owner_idle_timeout_s = (
+                        STARTUP_PROBE_BRIDGE_OWNER_IDLE_TIMEOUT_S
+                        if config.startup_probe
+                        else PACKAGED_BRIDGE_OWNER_IDLE_TIMEOUT_S
+                    )
                 bridge_process = api.start_child_process(
                     api.build_child_command(
                         "bridge",
@@ -175,11 +182,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                         owner_token=owner_token,
                         desktop_session_id=desktop_session_id,
                         started_by=str(api.os.getpid()),
-                        owner_idle_timeout_s=(
-                            STARTUP_PROBE_BRIDGE_OWNER_IDLE_TIMEOUT_S
-                            if config.startup_probe
-                            else PACKAGED_BRIDGE_OWNER_IDLE_TIMEOUT_S
-                        ),
+                        owner_idle_timeout_s=owner_idle_timeout_s,
                     ),
                     extra_env=child_env,
                     job_handle=desktop_job,

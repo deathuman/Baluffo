@@ -90,6 +90,7 @@ class DesktopRuntimeConfig:
     no_browser: bool = False
     site_port_explicit: bool = False
     bridge_port_explicit: bool = False
+    owner_idle_timeout_s: float = 0.0
 
 
 def _truthy_env(value: object) -> bool:
@@ -131,6 +132,10 @@ def create_runtime_config(args: argparse.Namespace) -> DesktopRuntimeConfig:
     jobs_cold_start = bool(
         api.open_path_is_jobs_entry(open_path) and jobs_cold_start_required(data_dir)
     )
+    owner_idle_timeout_s = max(
+        0.0,
+        float(getattr(args, "owner_idle_timeout_s", 0.0) or 0.0),
+    )
     return DesktopRuntimeConfig(
         ship_root=ship_root,
         site_port=site_port,
@@ -146,6 +151,7 @@ def create_runtime_config(args: argparse.Namespace) -> DesktopRuntimeConfig:
         no_browser=_truthy_env(os.environ.get(NO_BROWSER_ENV)),
         site_port_explicit=site_port_explicit,
         bridge_port_explicit=bridge_port_explicit,
+        owner_idle_timeout_s=owner_idle_timeout_s,
     )
 
 

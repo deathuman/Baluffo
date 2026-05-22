@@ -234,6 +234,7 @@ Before any release:
    - `npm run test:frontend:packaged:update-rehearsal`
    - `npm run test:frontend:packaged:orphan-reclaim-rehearsal`
    - `npm run test:frontend:packaged:browser-job-rehearsal`
+   - `npm run test:frontend:packaged:desktop-lifecycle-rehearsal`
    - `npm run test:frontend:packaged:first-run`
    - `npm run test:frontend:packaged:jobs-pipeline`
    - `npm run probe:desktop:startup:jobs:cold`
@@ -275,6 +276,7 @@ npm run test:frontend:packaged
 npm run test:frontend:packaged:sync-rehearsal
 npm run test:frontend:packaged:orphan-reclaim-rehearsal
 npm run test:frontend:packaged:browser-job-rehearsal
+npm run test:frontend:packaged:desktop-lifecycle-rehearsal
 npm run test:frontend:packaged:first-run
 npm run test:frontend:packaged:jobs-pipeline
 npm run test:frontend:packaged:update-rehearsal
@@ -288,6 +290,7 @@ The packaged sync rehearsal gate validates the shipped `github-app-sync-config.j
 The updater rehearsal gate exercises the real packaged `N -> N+1` helper-driven install path, including portable ZIP download staging, relaunch verification, and preservation of `ship\data\local-user-data`.
 The orphan-reclaim rehearsal gate seeds stale packaged `site` / `bridge` children plus stale desktop session state, relaunches the packaged app on the same ports, and fails unless startup metrics prove the launcher reclaimed both stale children instead of retrying or silently degrading.
 The browser-job rehearsal gate forces managed Chromium app-mode launch, requires early browser job-attachment telemetry, and then kills only `Baluffo.exe` to prove the attached/live browser PID exits before any smoke cleanup backstop runs.
+The desktop lifecycle rehearsal gate blocks desktop lifecycle POST/beacon traffic from a controlled page while non-health page traffic continues, proves the owner session does not false-idle-close past a short smoke-only timeout, then proves real page/window shutdown releases the launcher, browser proof PID, and desktop ports.
 
 Optional additional cache-backed smoke validation:
 

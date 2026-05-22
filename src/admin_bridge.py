@@ -426,7 +426,8 @@ def build_fetcher_args_from_payload(payload: dict[str, Any]) -> tuple[list[str],
 
 def mark_desktop_session_activity(path: str) -> None:
     owner_mode = str(getattr(RUNTIME_CONFIG, "owner_mode", "") or "").strip()
-    if owner_mode == "desktop-window":
+    route_path = str(path or "").strip()
+    if owner_mode == "desktop-window" and route_path == "/ops/health":
         return
     if not bool(getattr(RUNTIME_CONFIG, "desktop_mode", False)):
         return

@@ -450,12 +450,13 @@ class BridgeApi:
 
     def mark_desktop_session_activity(self, path: str) -> None:
         owner_mode = str(getattr(self.runtime_config, "owner_mode", "") or "").strip()
-        if owner_mode == "desktop-window":
+        route_path = str(path or "").strip()
+        if owner_mode == "desktop-window" and route_path == "/ops/health":
             return
         if not bool(getattr(self.runtime_config, "desktop_mode", False)):
             return
         # Keep routes compatible with the legacy module-global `DESKTOP_SESSION_ACTIVITY_AT`.
-        self._mark_desktop_session_activity(path)
+        self._mark_desktop_session_activity(route_path)
         try:
             self.DESKTOP_SESSION_ACTIVITY_AT = str(self.now_iso() or "")
         except Exception:  # noqa: BLE001

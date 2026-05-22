@@ -37,6 +37,30 @@ def test_create_runtime_config_defaults_to_fixed_desktop_ports() -> None:
     assert config.open_path == "admin.html"
     assert config.jobs_cold_start is False
     assert config.title == desktop_app.WINDOW_TITLE
+    assert config.owner_idle_timeout_s == 0.0
+
+
+def test_create_runtime_config_preserves_owner_idle_timeout_override() -> None:
+    root = Path("C:/tmp/baluffo-ship")
+    args = argparse.Namespace(
+        root=str(root),
+        site_port=0,
+        bridge_port=0,
+        bridge_host="127.0.0.1",
+        data_dir="",
+        open_path="jobs.html",
+        title="",
+        port=0,
+        bind_host="127.0.0.1",
+        child_mode="",
+        desktop_runtime=False,
+        startup_probe=False,
+        owner_idle_timeout_s=7.5,
+    )
+    with mock.patch.object(desktop_app, "resolve_ship_root", return_value=root):
+        config = desktop_app.create_runtime_config(args)
+
+    assert config.owner_idle_timeout_s == 7.5
 
 
 def test_create_runtime_config_defaults_to_jobs_entry() -> None:

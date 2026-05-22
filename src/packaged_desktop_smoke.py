@@ -270,7 +270,9 @@ _wait_for_install_handoff_confirmation = (
 _wait_for_pid_exit = packaged_smoke_rehearsals_mod._wait_for_pid_exit
 _wait_for_launcher_exit = packaged_smoke_rehearsals_mod._wait_for_launcher_exit
 _terminate_launcher_process_only = packaged_smoke_rehearsals_mod._terminate_launcher_process_only
+_terminate_pid = packaged_smoke_rehearsals_mod._terminate_pid
 _wait_for_desktop_ports_released = packaged_smoke_rehearsals_mod._wait_for_desktop_ports_released
+_run_desktop_lifecycle_node_probe = packaged_smoke_rehearsals_mod._run_desktop_lifecycle_node_probe
 _wait_for_relaunched_runtime = packaged_smoke_rehearsals_mod._wait_for_relaunched_runtime
 _verify_rehearsal_local_data = packaged_smoke_rehearsals_mod._verify_rehearsal_local_data
 _preferred_desktop_browser_env = packaged_smoke_rehearsals_mod._preferred_desktop_browser_env
@@ -285,6 +287,9 @@ run_packaged_sync_rehearsal = packaged_smoke_rehearsals_mod.run_packaged_sync_re
 run_desktop_update_rehearsal = packaged_smoke_rehearsals_mod.run_desktop_update_rehearsal
 run_packaged_browser_job_rehearsal = (
     packaged_smoke_rehearsals_mod.run_packaged_browser_job_rehearsal
+)
+run_packaged_desktop_lifecycle_rehearsal = (
+    packaged_smoke_rehearsals_mod.run_packaged_desktop_lifecycle_rehearsal
 )
 run_packaged_orphan_reclaim_rehearsal = (
     packaged_smoke_rehearsals_mod.run_packaged_orphan_reclaim_rehearsal
@@ -315,6 +320,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--desktop-update-rehearsal", action="store_true")
     parser.add_argument("--orphan-reclaim-rehearsal", action="store_true")
     parser.add_argument("--browser-job-rehearsal", action="store_true")
+    parser.add_argument("--desktop-lifecycle-rehearsal", action="store_true")
     parser.add_argument("--profile-only", action="store_true")
     parser.add_argument("--profile-mode", choices=("cold", "warm"), default="cold")
     parser.add_argument("--profile-record-only", action="store_true")

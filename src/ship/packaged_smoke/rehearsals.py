@@ -129,9 +129,36 @@ def _terminate_launcher_process_only(process: Any) -> None:
     rehearsal_browser_mod._terminate_launcher_process_only(process)
 
 
+def _terminate_pid(pid: int, *, label: str, graceful_timeout_s: float = 5.0) -> None:
+    _root()
+    rehearsal_browser_mod._terminate_pid(
+        pid,
+        label=label,
+        graceful_timeout_s=graceful_timeout_s,
+    )
+
+
 def _wait_for_desktop_ports_released(*ports: int, timeout_s: float) -> None:
     _root()
     rehearsal_browser_mod._wait_for_desktop_ports_released(*ports, timeout_s=timeout_s)
+
+
+def _run_desktop_lifecycle_node_probe(
+    *,
+    site_base_url: str,
+    bridge_base_url: str,
+    artifacts_dir: Path,
+    owner_idle_timeout_s: float,
+    runtime_timeout_s: float,
+) -> dict[str, Any]:
+    _root()
+    return rehearsal_browser_mod._run_desktop_lifecycle_node_probe(
+        site_base_url=site_base_url,
+        bridge_base_url=bridge_base_url,
+        artifacts_dir=artifacts_dir,
+        owner_idle_timeout_s=owner_idle_timeout_s,
+        runtime_timeout_s=runtime_timeout_s,
+    )
 
 
 def _wait_for_relaunched_runtime(
@@ -220,6 +247,20 @@ def run_packaged_browser_job_rehearsal(
 ) -> dict[str, Any]:
     _root()
     return rehearsal_browser_mod.run_packaged_browser_job_rehearsal(
+        exe_path=exe_path,
+        artifacts_dir=artifacts_dir,
+        runtime_timeout_s=runtime_timeout_s,
+    )
+
+
+def run_packaged_desktop_lifecycle_rehearsal(
+    *,
+    exe_path: Path,
+    artifacts_dir: Path,
+    runtime_timeout_s: float,
+) -> dict[str, Any]:
+    _root()
+    return rehearsal_browser_mod.run_packaged_desktop_lifecycle_rehearsal(
         exe_path=exe_path,
         artifacts_dir=artifacts_dir,
         runtime_timeout_s=runtime_timeout_s,

@@ -97,6 +97,95 @@ def _apply_rehearsal_result(
     return report
 
 
+def _run_rehearsal_mode_if_requested(
+    *,
+    args: argparse.Namespace,
+    report: dict[str, Any],
+    exe_path: Path,
+    artifacts_dir: Path,
+) -> dict[str, Any] | None:
+    deps = _root()
+    runtime_timeout_s = float(args.runtime_timeout or deps.DEFAULT_RUNTIME_TIMEOUT_S)
+    if bool(args.desktop_update_rehearsal):
+        rehearsal = deps.run_desktop_update_rehearsal(
+            exe_path=exe_path,
+            artifacts_dir=artifacts_dir,
+            runtime_timeout_s=runtime_timeout_s,
+        )
+        return _apply_rehearsal_result(
+            report,
+            rehearsal,
+            artifact_mappings=(
+                ("helperStdoutLog", "helperStdout"),
+                ("helperStderrLog", "helperStderr"),
+                ("helperDiagnosticsLog", "helperDiagnostics"),
+            ),
+            failure_step="desktop-update-rehearsal",
+            failure_message="Packaged desktop update rehearsal failed.",
+        )
+    if bool(args.orphan_reclaim_rehearsal):
+        rehearsal = deps.run_packaged_orphan_reclaim_rehearsal(
+            exe_path=exe_path,
+            artifacts_dir=artifacts_dir,
+            runtime_timeout_s=runtime_timeout_s,
+        )
+        return _apply_rehearsal_result(
+            report,
+            rehearsal,
+            artifact_mappings=(
+                ("runtimeStdout", "orphanRehearsalRuntimeStdout"),
+                ("runtimeStderr", "orphanRehearsalRuntimeStderr"),
+                ("staleSiteStdout", "orphanRehearsalSiteStdout"),
+                ("staleSiteStderr", "orphanRehearsalSiteStderr"),
+                ("staleBridgeStdout", "orphanRehearsalBridgeStdout"),
+                ("staleBridgeStderr", "orphanRehearsalBridgeStderr"),
+            ),
+            failure_step="packaged-orphan-reclaim-rehearsal",
+            failure_message="Packaged orphan reclaim rehearsal failed.",
+        )
+    if bool(args.browser_job_rehearsal):
+        rehearsal = deps.run_packaged_browser_job_rehearsal(
+            exe_path=exe_path,
+            artifacts_dir=artifacts_dir,
+            runtime_timeout_s=runtime_timeout_s,
+        )
+        return _apply_rehearsal_result(
+            report,
+            rehearsal,
+            artifact_mappings=(
+                ("runtimeStdout", "browserJobRehearsalRuntimeStdout"),
+                ("runtimeStderr", "browserJobRehearsalRuntimeStderr"),
+                ("startupMetrics", "browserJobRehearsalStartupMetrics"),
+            ),
+            failure_step="packaged-browser-job-rehearsal",
+            failure_message="Packaged browser job rehearsal failed.",
+        )
+    if bool(getattr(args, "desktop_lifecycle_rehearsal", False)):
+        rehearsal = deps.run_packaged_desktop_lifecycle_rehearsal(
+            exe_path=exe_path,
+            artifacts_dir=artifacts_dir,
+            runtime_timeout_s=runtime_timeout_s,
+        )
+        return _apply_rehearsal_result(
+            report,
+            rehearsal,
+            artifact_mappings=(
+                ("falseIdleRuntimeStdout", "desktopLifecycleFalseIdleRuntimeStdout"),
+                ("falseIdleRuntimeStderr", "desktopLifecycleFalseIdleRuntimeStderr"),
+                ("falseIdleStartupMetrics", "desktopLifecycleFalseIdleStartupMetrics"),
+                ("falseIdleNodeReport", "desktopLifecycleFalseIdleNodeReport"),
+                ("falseIdleNodeStdout", "desktopLifecycleFalseIdleNodeStdout"),
+                ("falseIdleNodeStderr", "desktopLifecycleFalseIdleNodeStderr"),
+                ("closeCleanupRuntimeStdout", "desktopLifecycleCloseRuntimeStdout"),
+                ("closeCleanupRuntimeStderr", "desktopLifecycleCloseRuntimeStderr"),
+                ("closeCleanupStartupMetrics", "desktopLifecycleCloseStartupMetrics"),
+            ),
+            failure_step="packaged-desktop-lifecycle-rehearsal",
+            failure_message="Packaged desktop lifecycle rehearsal failed.",
+        )
+    return None
+
+
 def _append_startup_profile_scenario(
     report: dict[str, Any],
     *,
@@ -417,60 +506,14 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
                 failure_step="packaged-sync-rehearsal",
                 failure_message="Packaged sync rehearsal failed.",
             )
-        if bool(args.desktop_update_rehearsal):
-            rehearsal = deps.run_desktop_update_rehearsal(
-                exe_path=exe_path,
-                artifacts_dir=artifacts_dir,
-                runtime_timeout_s=float(args.runtime_timeout or deps.DEFAULT_RUNTIME_TIMEOUT_S),
-            )
-            return _apply_rehearsal_result(
-                report,
-                rehearsal,
-                artifact_mappings=(
-                    ("helperStdoutLog", "helperStdout"),
-                    ("helperStderrLog", "helperStderr"),
-                    ("helperDiagnosticsLog", "helperDiagnostics"),
-                ),
-                failure_step="desktop-update-rehearsal",
-                failure_message="Packaged desktop update rehearsal failed.",
-            )
-        if bool(args.orphan_reclaim_rehearsal):
-            rehearsal = deps.run_packaged_orphan_reclaim_rehearsal(
-                exe_path=exe_path,
-                artifacts_dir=artifacts_dir,
-                runtime_timeout_s=float(args.runtime_timeout or deps.DEFAULT_RUNTIME_TIMEOUT_S),
-            )
-            return _apply_rehearsal_result(
-                report,
-                rehearsal,
-                artifact_mappings=(
-                    ("runtimeStdout", "orphanRehearsalRuntimeStdout"),
-                    ("runtimeStderr", "orphanRehearsalRuntimeStderr"),
-                    ("staleSiteStdout", "orphanRehearsalSiteStdout"),
-                    ("staleSiteStderr", "orphanRehearsalSiteStderr"),
-                    ("staleBridgeStdout", "orphanRehearsalBridgeStdout"),
-                    ("staleBridgeStderr", "orphanRehearsalBridgeStderr"),
-                ),
-                failure_step="packaged-orphan-reclaim-rehearsal",
-                failure_message="Packaged orphan reclaim rehearsal failed.",
-            )
-        if bool(args.browser_job_rehearsal):
-            rehearsal = deps.run_packaged_browser_job_rehearsal(
-                exe_path=exe_path,
-                artifacts_dir=artifacts_dir,
-                runtime_timeout_s=float(args.runtime_timeout or deps.DEFAULT_RUNTIME_TIMEOUT_S),
-            )
-            return _apply_rehearsal_result(
-                report,
-                rehearsal,
-                artifact_mappings=(
-                    ("runtimeStdout", "browserJobRehearsalRuntimeStdout"),
-                    ("runtimeStderr", "browserJobRehearsalRuntimeStderr"),
-                    ("startupMetrics", "browserJobRehearsalStartupMetrics"),
-                ),
-                failure_step="packaged-browser-job-rehearsal",
-                failure_message="Packaged browser job rehearsal failed.",
-            )
+        rehearsal_report = _run_rehearsal_mode_if_requested(
+            args=args,
+            report=report,
+            exe_path=exe_path,
+            artifacts_dir=artifacts_dir,
+        )
+        if rehearsal_report is not None:
+            return rehearsal_report
         if profile_mode == "warm":
             deps.run_warmup_launch(
                 exe_path,

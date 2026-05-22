@@ -35,6 +35,7 @@ def launch_packaged_exe(
     stderr_path: Path,
     open_path: str = "jobs.html",
     startup_probe: bool = False,
+    owner_idle_timeout_s: float = 0.0,
     env: dict[str, str] | None = None,
 ) -> tuple[subprocess.Popen[Any], Any, Any]:
     return runtime_process.launch_packaged_exe(
@@ -46,6 +47,7 @@ def launch_packaged_exe(
         stderr_path=stderr_path,
         open_path=open_path,
         startup_probe=startup_probe,
+        owner_idle_timeout_s=owner_idle_timeout_s,
         env=env,
     )
 

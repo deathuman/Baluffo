@@ -17,6 +17,7 @@ def launch_packaged_exe(
     stderr_path: Path,
     open_path: str = "jobs.html",
     startup_probe: bool = False,
+    owner_idle_timeout_s: float = 0.0,
     env: dict[str, str] | None = None,
 ) -> tuple[subprocess.Popen[Any], Any, Any]:
     stdout_path.parent.mkdir(parents=True, exist_ok=True)
@@ -36,6 +37,8 @@ def launch_packaged_exe(
     ]
     if startup_probe:
         command.append("--startup-probe")
+    if float(owner_idle_timeout_s or 0.0) > 0.0:
+        command.extend(["--owner-idle-timeout-s", str(float(owner_idle_timeout_s))])
     process = subprocess.Popen(
         command,
         cwd=exe_path.parent,
