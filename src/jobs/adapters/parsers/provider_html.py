@@ -118,7 +118,7 @@ def _ashby_link_job(link: str, anchor_text: str, fallback_company: str) -> RawJo
         return None
     location_details = normalize_location_details("")
     return {
-        "sourceJobId": f"ashby:{ashby_jid or hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
+        "sourceJobId": f"ashby:{ashby_jid or hashlib.sha256(link.encode('utf-8')).hexdigest()[:10]}",
         "title": title,
         "company": clean_text(fallback_company) or "Unknown",
         "city": "",
