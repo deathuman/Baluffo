@@ -317,7 +317,7 @@ def watch_browser_session(
             if require_window and browser_process is None:
                 window_open = api._is_baluffo_browser_window_open(
                     browser_pid=browser_pid,
-                    allow_title_fallback=True,
+                    allow_title_fallback=not (browser_exit_logged and browser_pid > 0),
                 )
                 if window_open:
                     window_missing_logged = False

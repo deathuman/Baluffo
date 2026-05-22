@@ -13,6 +13,7 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 ## [0.2.16] - 2026-05-23
 
 ### Fixed
+- Desktop launcher shutdown now pins post-handoff window liveness to the managed browser PID, so unrelated Baluffo-titled windows cannot keep packaged lifecycle shutdown alive.
 - Remote Python CI now preserves carried `sourceBundle` evidence when seeding existing Jobs output and keeps source-policy review candidates blocked when provider validation evidence is explicitly not OK.
 - First-run Google Sheets bootstrap no longer live-validates thousands of category rows that would be dropped anyway, and the UI now stays in progress while backend heartbeats remain fresh.
 - Google Sheets category-style titles now must repair, hydrate, or drop, with bounded `404`/`410` link validation for suspicious category rows only.

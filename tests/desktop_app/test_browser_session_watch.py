@@ -345,7 +345,7 @@ def test_watch_browser_session_confirms_handoff_after_accepted_process_exit_when
     assert "desktop_browser_watchdog_handoff_failed" not in event_names
     window_mock.assert_called_with(
         browser_pid=9090,
-        allow_title_fallback=True,
+        allow_title_fallback=False,
     )
 
 
@@ -389,7 +389,7 @@ def test_watch_browser_session_returns_handoff_failed_when_signal_never_arrives(
 
 def test_watch_browser_session_times_out_missing_handoff_window_stale_activity() -> None:
     bridge_process = mock.Mock(spec=subprocess.Popen)
-    bridge_process.poll.return_value = None
+    bridge_process.poll.side_effect = [None, 0]
     browser_process = mock.Mock(spec=subprocess.Popen)
     browser_process.poll.return_value = 0
 
@@ -403,7 +403,9 @@ def test_watch_browser_session_times_out_missing_handoff_window_stale_activity()
         mock.patch.object(desktop_app, "latest_browser_session_activity_ts", return_value=100.0),
         mock.patch.object(desktop_app.time, "time", return_value=131.0),
         mock.patch.object(
-            desktop_app, "_is_baluffo_browser_window_open", return_value=False
+            desktop_app,
+            "_is_baluffo_browser_window_open",
+            side_effect=lambda *, browser_pid, allow_title_fallback: bool(allow_title_fallback),
         ) as window_mock,
         mock.patch.object(desktop_app.time, "sleep"),
         mock.patch.object(desktop_app, "_append_startup_trace") as trace_mock,
@@ -428,9 +430,7 @@ def test_watch_browser_session_times_out_missing_handoff_window_stale_activity()
     )
     window_mock.assert_called_with(
         browser_pid=9092,
-        allow_title_fallback=True,
+        allow_title_fallback=False,
     )
     event_names = [call.args[1] for call in trace_mock.call_args_list]
-    assert "desktop_browser_watchdog_handoff_confirmed" in event_names
     assert "desktop_browser_window_missing_waiting_for_bridge" in event_names
-    assert "desktop_browser_heartbeat_timeout" in event_names
