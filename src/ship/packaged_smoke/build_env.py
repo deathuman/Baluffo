@@ -453,7 +453,7 @@ def packaged_bootstrap_smoke_mode(node_smoke_script: Path) -> str:
     deps = _root()
     resolved = Path(node_smoke_script).expanduser().resolve()
     if resolved == deps.FIRST_RUN_JOBS_NODE_SMOKE_SCRIPT.resolve():
-        return "controlled-success"
+        return "controlled-heartbeat-success"
     return ""
 
 
@@ -482,7 +482,11 @@ def packaged_runtime_env_overrides(
         if bootstrap_mode:
             overrides["BALUFFO_PACKAGED_SMOKE_RUNTIME"] = "1"
             overrides["BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_MODE"] = bootstrap_mode
-            overrides["BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_DELAY_MS"] = "8000"
+            overrides["BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_DELAY_MS"] = (
+                "12000" if bootstrap_mode == "controlled-heartbeat-success" else "8000"
+            )
+            if bootstrap_mode == "controlled-heartbeat-success":
+                overrides["BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_HEARTBEAT_MS"] = "1000"
     if artifacts_dir is not None:
         local_app_data = deps.packaged_desktop_local_appdata_root(
             artifacts_dir,

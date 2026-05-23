@@ -69,7 +69,7 @@ export function createJobsBoot(deps) {
       desktopJobsColdStart: deps.desktopJobsColdStart,
       startJobsBootstrap: (options = {}) => deps.callJobsBridge("/tasks/run-jobs-bootstrap", {
         method: "POST",
-        body: { source: "jobs_first_run", forceBootstrap: true },
+        body: { source: "jobs_first_run" },
         allowStatuses: [409],
         timeoutMs: Number(options?.timeoutMs) > 0
           ? Number(options.timeoutMs)

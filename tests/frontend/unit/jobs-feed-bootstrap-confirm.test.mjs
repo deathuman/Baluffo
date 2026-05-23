@@ -210,7 +210,7 @@ test("initJobsFeed shows an unconfirmed start error without writing failed marke
   assert.equal(storage.has("baluffo_jobs_bootstrap_auto_started"), false);
 });
 
-test("initJobsFeed retry re-renders first-run progress and reattaches to running bootstrap", async () => {
+test("initJobsFeed retry re-renders first-run progress and loads completed feed before restarting", async () => {
   const { localStorage } = createLocalStorage();
   let reportCalls = 0;
   let bootstrapStarts = 0;
@@ -261,7 +261,7 @@ test("initJobsFeed retry re-renders first-run progress and reattaches to running
   };
   await retryCallback({ currentTarget: retryButton });
 
-  assert.equal(bootstrapStarts, 3);
+  assert.equal(bootstrapStarts, 2);
   assert.equal(renderedStates.length, 2);
   assert.equal(renderedStates[0].emptyStateReason, "first_run_bootstrap");
   assert.equal(renderedStates[1].emptyStateReason, "first_run_bootstrap");

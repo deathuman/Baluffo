@@ -379,8 +379,8 @@ def test_jobs_bootstrap_rejects_when_runtime_feed_artifacts_are_loadable() -> No
         assert called is False
 
 
-def test_jobs_bootstrap_force_bypasses_successful_runtime_feed_guard() -> None:
-    with workspace_tmpdir("task-launch-bootstrap-runtime-feed-force") as data_dir:
+def test_jobs_bootstrap_first_run_force_does_not_bypass_successful_runtime_feed_guard() -> None:
+    with workspace_tmpdir("task-launch-bootstrap-runtime-feed-first-run-force") as data_dir:
         api = _task_launch_api(data_dir)
         api._start_bootstrap_lifecycle_watch = lambda **_kwargs: None  # type: ignore[method-assign]  # noqa: SLF001
         _write_successful_runtime_feed_shell(data_dir)
@@ -402,9 +402,74 @@ def test_jobs_bootstrap_force_bypasses_successful_runtime_feed_guard() -> None:
             schema_version=1,
         )
 
+        assert result["started"] is False
+        assert result["alreadyCompleted"] is True
+        assert result["error"] == "runtime_feed_already_available"
+        assert called is False
+
+
+def test_jobs_bootstrap_internal_force_can_bypass_successful_runtime_feed_guard() -> None:
+    with workspace_tmpdir("task-launch-bootstrap-runtime-feed-internal-force") as data_dir:
+        api = _task_launch_api(data_dir)
+        api._start_bootstrap_lifecycle_watch = lambda **_kwargs: None  # type: ignore[method-assign]  # noqa: SLF001
+        _write_successful_runtime_feed_shell(data_dir)
+        write_atomic_if_changed(data_dir / "jobs-unified.json", '[{"id":"job-1"}]')
+        write_atomic_if_changed(data_dir / "jobs-unified-light.json", '[{"id":"job-1"}]')
+        write_atomic_if_changed(data_dir / "jobs-unified.csv", "id,title\njob-1,Tools Programmer\n")
+        called = False
+
+        def run_background_script(*_args: Any, **_kwargs: Any) -> int:
+            nonlocal called
+            called = True
+            return 1234
+
+        result = api.start_jobs_bootstrap_task(
+            {"forceBootstrap": True, "source": "packaged_smoke"},
+            normalize_fetch_report_contract=lambda payload: payload,
+            run_background_script=run_background_script,
+            save_json_atomic=_save_json_atomic,
+            schema_version=1,
+        )
+
         assert result["started"] is True
         assert result["task"] == "jobs_bootstrap"
         assert called is True
+
+
+def test_jobs_bootstrap_lifecycle_heartbeat_uses_fresh_owner_time() -> None:
+    with workspace_tmpdir("task-launch-bootstrap-fresh-heartbeat") as data_dir:
+        api = _task_launch_api(data_dir)
+        staging_dir = api._bootstrap_staging_dir("jobs_bootstrap_test")  # noqa: SLF001
+        staging_dir.mkdir(parents=True)
+        _save_json_atomic(
+            staging_dir / "jobs-fetch-tasks.json",
+            {
+                "runId": "jobs_bootstrap_test",
+                "heartbeatAt": "2026-05-17T11:59:00+00:00",
+                "taskProgress": {
+                    "active": True,
+                    "phaseKey": "normalizing_rows",
+                    "updatedAt": "2026-05-17T11:59:00+00:00",
+                },
+                "summary": {"outputCount": 12},
+            },
+        )
+        heartbeats: list[dict[str, Any]] = []
+
+        def heartbeat_lifecycle_run(run_id: str, task_type: str, **kwargs: Any) -> dict[str, Any]:
+            heartbeats.append({"runId": run_id, "taskType": task_type, **kwargs})
+            return {}
+
+        api._heartbeat_bootstrap_lifecycle_from_staging(  # noqa: SLF001
+            run_id="jobs_bootstrap_test",
+            staging_dir=staging_dir,
+            heartbeat_lifecycle_run=heartbeat_lifecycle_run,
+        )
+
+        assert heartbeats[-1]["heartbeat_at"] == "2026-05-17T12:00:00+00:00"
+        assert heartbeats[-1]["progress"]["updatedAt"] == "2026-05-17T12:00:00+00:00"
+        assert heartbeats[-1]["progress"]["active"] is True
+        assert heartbeats[-1]["summary"]["coverageScope"] == BOOTSTRAP_COVERAGE_SCOPE
 
 
 def test_jobs_bootstrap_allows_recovery_when_successful_report_has_corrupt_rows() -> None:

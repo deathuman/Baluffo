@@ -1186,7 +1186,13 @@ class GoogleSheetsProviderTitleResolver:
     def supports(self, job_link: str) -> bool:
         return _google_sheets_provider_title_target(job_link) is not None
 
-    def prefetch(self, job_links: Sequence[str], *, concurrency: int = 1) -> None:
+    def prefetch(
+        self,
+        job_links: Sequence[str],
+        *,
+        concurrency: int = 1,
+        progress_callback: Callable[..., Any] | None = None,
+    ) -> None:
         targets = [
             target
             for link in job_links
@@ -1201,17 +1207,47 @@ class GoogleSheetsProviderTitleResolver:
         if not pending:
             return
         max_workers = max(1, min(int(concurrency or 1), len(pending)))
+
+        def emit_title_progress(completed: int, *, force: bool = False) -> None:
+            if progress_callback is None:
+                return
+            if not force and completed < len(pending):
+                return
+            stats = self.snapshot_stats()
+            progress_callback(
+                phase_key="hydrating_sheet_titles",
+                phase_label="Hydrating sheet titles",
+                counts={
+                    "titleHydrationCandidates": len(targets),
+                    "titleHydrationFeedsPending": len(pending),
+                    "titleHydrationFeedsCompleted": completed,
+                    "titleHydrationFeedFetches": int(
+                        stats.get("title_hydration_feed_fetches") or 0
+                    ),
+                    "titleHydrationErrors": int(stats.get("title_hydration_errors") or 0),
+                },
+                message=(
+                    "Hydrating Google Sheets provider titles: "
+                    f"{completed} of {len(pending)} feeds checked."
+                ),
+            )
+
+        emit_title_progress(0, force=True)
         if max_workers <= 1:
-            for provider, feed_key, feed_url, _lookup_keys in pending:
+            for completed, (provider, feed_key, feed_url, _lookup_keys) in enumerate(
+                pending, start=1
+            ):
                 self._ensure_feed(provider, feed_key, feed_url)
+                emit_title_progress(completed)
             return
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [
                 executor.submit(self._ensure_feed, provider, feed_key, feed_url)
                 for provider, feed_key, feed_url, _lookup_keys in pending
             ]
-            for future in as_completed(futures):
+            for completed, future in enumerate(as_completed(futures), start=1):
                 future.result()
+                emit_title_progress(completed)
 
     def resolve_title(self, job_link: str) -> str:
         target = _google_sheets_provider_title_target(job_link)
@@ -2132,6 +2168,7 @@ def _resolve_google_sheet_redirects(
     redirect_candidates: list[tuple[int, str]],
     redirect_resolver: PooledRedirectResolver | None,
     redirect_concurrency: int,
+    progress_callback: Callable[..., Any] | None = None,
 ) -> tuple[dict[int, str], dict[str, Any], dict[str, Any], int]:
     snapshot_stats = getattr(redirect_resolver, "snapshot_stats", None)
     resolver_stats_before = snapshot_stats() if callable(snapshot_stats) else {}
@@ -2143,12 +2180,14 @@ def _resolve_google_sheet_redirects(
             resolved_links = _resolve_redirects_serial(
                 redirect_candidates=redirect_candidates,
                 resolve_fn=resolve_fn,
+                progress_callback=progress_callback,
             )
         else:
             resolved_links = _resolve_redirects_parallel(
                 redirect_candidates=redirect_candidates,
                 resolve_fn=resolve_fn,
                 redirect_concurrency=redirect_concurrency,
+                progress_callback=progress_callback,
             )
     redirect_resolve_ms = int((time.perf_counter() - redirect_started) * 1000)
     resolver_stats_after = snapshot_stats() if callable(snapshot_stats) else {}
@@ -2159,8 +2198,18 @@ def _resolve_redirects_serial(
     *,
     redirect_candidates: list[tuple[int, str]],
     resolve_fn: Callable[[str], str],
+    progress_callback: Callable[..., Any] | None = None,
 ) -> dict[int, str]:
-    return {row_idx: resolve_fn(url) for row_idx, url in redirect_candidates}
+    resolved_links: dict[int, str] = {}
+    for completed, (row_idx, url) in enumerate(redirect_candidates, start=1):
+        resolved_links[row_idx] = resolve_fn(url)
+        _emit_redirect_progress(
+            progress_callback,
+            redirect_candidates=redirect_candidates,
+            resolved_links=resolved_links,
+            completed=completed,
+        )
+    return resolved_links
 
 
 def _resolve_redirects_parallel(
@@ -2168,6 +2217,7 @@ def _resolve_redirects_parallel(
     redirect_candidates: list[tuple[int, str]],
     resolve_fn: Callable[[str], str],
     redirect_concurrency: int,
+    progress_callback: Callable[..., Any] | None = None,
 ) -> dict[int, str]:
     resolved_links: dict[int, str] = {}
     with ThreadPoolExecutor(
@@ -2176,9 +2226,45 @@ def _resolve_redirects_parallel(
         future_map = {
             executor.submit(resolve_fn, url): row_idx for row_idx, url in redirect_candidates
         }
-        for future in as_completed(future_map):
+        for completed, future in enumerate(as_completed(future_map), start=1):
             resolved_links[future_map[future]] = future.result()
+            _emit_redirect_progress(
+                progress_callback,
+                redirect_candidates=redirect_candidates,
+                resolved_links=resolved_links,
+                completed=completed,
+            )
     return resolved_links
+
+
+def _emit_redirect_progress(
+    progress_callback: Callable[..., Any] | None,
+    *,
+    redirect_candidates: list[tuple[int, str]],
+    resolved_links: dict[int, str],
+    completed: int,
+) -> None:
+    if progress_callback is None:
+        return
+    total = len(redirect_candidates)
+    if completed < total and completed % 100 != 0:
+        return
+    resolved_count = sum(
+        1
+        for idx, original in redirect_candidates
+        if normalize_url(resolved_links.get(idx))
+        and normalize_url(resolved_links.get(idx)) != normalize_url(original)
+    )
+    progress_callback(
+        phase_key="resolving_sheet_redirects",
+        phase_label="Resolving sheet redirects",
+        counts={
+            "redirectCandidates": total,
+            "redirectCompleted": completed,
+            "redirectResolved": int(resolved_count),
+        },
+        message=f"Resolving Google Sheets redirects: {completed} of {total} checked.",
+    )
 
 
 def _google_sheet_final_link(raw: RawJob, idx: int, resolved_links: dict[int, str]) -> str:
@@ -2470,6 +2556,17 @@ def canonicalize_google_sheets_rows(
         1, int(redirect_concurrency or DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY)
     )
     redirect_candidates = _google_sheet_redirect_candidates(raw_rows)
+    _emit_google_sheets_progress(
+        progress_callback,
+        phase_key="resolving_sheet_redirects",
+        phase_label="Resolving sheet redirects",
+        counts={
+            "redirectCandidates": len(redirect_candidates),
+            "redirectCompleted": 0,
+            "redirectResolved": 0,
+        },
+        message=f"Resolving {len(redirect_candidates)} Google Sheets redirect links.",
+    )
     (
         resolved_links,
         resolver_stats_before,
@@ -2479,6 +2576,7 @@ def canonicalize_google_sheets_rows(
         redirect_candidates=redirect_candidates,
         redirect_resolver=redirect_resolver,
         redirect_concurrency=redirect_concurrency,
+        progress_callback=progress_callback,
     )
     if title_hydration_resolver is not None:
         title_hydration_resolver.prefetch(
@@ -2489,6 +2587,7 @@ def canonicalize_google_sheets_rows(
                 title_hydration_resolver=title_hydration_resolver,
             ),
             concurrency=redirect_concurrency,
+            progress_callback=progress_callback,
         )
     canonical_batch, drop_reasons, canonicalize_ms = (
         _canonicalize_google_sheet_rows_with_resolved_links(

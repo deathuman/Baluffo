@@ -10,6 +10,13 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.17] - 2026-05-23
+
+### Fixed
+- First-run Google Sheets bootstrap now avoids duplicate Retry launches after a feed exists and keeps/rechecks progress during long redirect and title-hydration phases before showing timeout.
+- Jobs first-run Retry now loads an already completed runtime feed before trying to start another bootstrap.
+- Packaged first-run smoke now exercises the real Jobs UI bootstrap request under a long-active heartbeat mode, catching timeout/recovery regressions without live Google Sheets.
+
 ## [0.2.16] - 2026-05-23
 
 ### Fixed

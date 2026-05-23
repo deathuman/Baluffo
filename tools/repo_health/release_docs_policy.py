@@ -26,6 +26,7 @@ def test_release_docs_cover_the_current_public_release_line(repo_root: Path) -> 
     release_text = (docs_dir / "RELEASE.md").read_text(encoding="utf-8")
     app_version = get_app_version()
     top_release = _section(changelog_text, f"## [{app_version}]")
+    release_0_2_16 = _section(changelog_text, "## [0.2.16]")
     release_0_2_15 = _section(changelog_text, "## [0.2.15]")
     release_0_2_1 = _section(changelog_text, "## [0.2.1]")
     release_0_2_01 = _section(changelog_text, "## [0.2.01]")
@@ -46,11 +47,13 @@ def test_release_docs_cover_the_current_public_release_line(repo_root: Path) -> 
         heading in top_release for heading in ("### Added", "### Changed", "### Fixed", "### Notes")
     )
     assert "\n- " in top_release
-    assert "Remote Python CI" in top_release
     assert "First-run Google Sheets bootstrap" in top_release
-    assert "Google Sheets category-style titles" in top_release
-    assert "URL-derived title repair" in top_release
-    assert "Remote OK parser filtering" in top_release
+    assert "Jobs first-run Retry" in top_release
+    assert "Packaged first-run smoke" in top_release
+    assert "Remote Python CI" in release_0_2_16
+    assert "Google Sheets category-style titles" in release_0_2_16
+    assert "URL-derived title repair" in release_0_2_16
+    assert "Remote OK parser filtering" in release_0_2_16
     assert "Oracle HCM provider API support" in release_0_2_15
     assert "Provider coverage migration tooling" in release_0_2_15
     assert "title sanitization evidence" in release_0_2_15

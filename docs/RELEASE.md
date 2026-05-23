@@ -284,7 +284,7 @@ npm run probe:desktop:startup:jobs:cold
 ```
 
 These packaged smoke commands validate the direct `dist\baluffo-portable\Baluffo.exe` artifact. Normal release and perf lanes reuse the same content-addressed portable build when its fingerprint is current; cold startup coverage gets a fresh runtime data/profile state rather than a rebuilt executable. Local portable builds also mirror the successful output to `_out\latest\build\portable\Baluffo.exe` so the familiar latest path does not remain stale after `npm run build:portable-exe`.
-The first-run packaged smoke is deterministic: it opens Jobs from a cold isolated runtime, exercises the real bootstrap route with `BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_MODE=controlled-success`, avoids live Google Sheets, asserts the running report/task state, renders the promoted one-row feed, and captures computed-style checked light/dark popup artifacts.
+The first-run packaged smoke is deterministic: it opens Jobs from a cold isolated runtime, lets the real Jobs UI start the bootstrap route with `BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_MODE=controlled-heartbeat-success`, avoids live Google Sheets, keeps the backend active past a smoke-shortened UI timeout boundary with fresh task-live heartbeats, asserts the running report/task state, renders the promoted one-row feed, verifies no duplicate post-success bootstrap starts, and captures computed-style checked light/dark popup artifacts.
 The Jobs-page packaged smoke is now a terminal-success gate: it must launch the Jobs pipeline, observe visible running progress, and then reach a non-error terminal state. It uses a smoke-only stub-success pipeline mode so the lane stays deterministic and does not run the full real discovery/fetch/sync workload.
 The packaged sync rehearsal gate validates the shipped `github-app-sync-config.json` inside the artifact, fails if it is machine-derived, and then drives `/sync/test` against a local fake GitHub App endpoint so the release gate exercises packaged auth/read portability without hitting real GitHub.
 The updater rehearsal gate exercises the real packaged `N -> N+1` helper-driven install path, including portable ZIP download staging, relaunch verification, and preservation of `ship\data\local-user-data`.
@@ -298,7 +298,7 @@ Optional additional cache-backed smoke validation:
 npm run probe:desktop:startup:cold
 ```
 
-Release preflight already includes `npm run probe:desktop:startup:jobs:cold` as the separate cold Jobs startup threshold gate. For a warmer startup path, use `npm run probe:desktop:startup:warm`.
+Release preflight already includes `npm run probe:desktop:startup:jobs:cold` as the separate cold Jobs startup threshold gate. That probe is startup-profile coverage only; first-run bootstrap timeout/recovery correctness belongs to `npm run test:frontend:packaged:first-run`. For a warmer startup path, use `npm run probe:desktop:startup:warm`.
 For the canonical startup measurement architecture and the preferred `perf:startup:*` command surface, see [`startup-probe-architecture.md`](startup-probe-architecture.md).
 
 4. Confirm desktop startup, bridge readiness, the full packaged smoke, and the Jobs-page no-Admin pipeline smoke all pass in the smoke output.

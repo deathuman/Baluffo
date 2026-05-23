@@ -9,7 +9,6 @@ import {
   dismissFirstRunNotice,
   fetchBridgeJson as fetchBridgeJsonWithBase,
   isActiveTaskRow,
-  postBridgeJson as postBridgeJsonWithBase,
   setThemeAndViewport,
   waitUntil
 } from "./helpers/packaged-first-run-smoke-helpers.mjs";
@@ -29,6 +28,8 @@ const bridgeUrl = new URL(BRIDGE_BASE);
 const BRIDGE_PORT = bridgeUrl.port || "8877";
 const BRIDGE_HOST = bridgeUrl.hostname || "127.0.0.1";
 const FIRST_RUN_TITLE = "Packaged First-Run Technical Cinematic Animator";
+const FIRST_RUN_SMOKE_QUERY =
+  "jobsColdStart=1&jobsFirstRunBootstrapTimeoutMs=3000&jobsFirstRunBootstrapProgressStaleMs=10000";
 const VIEWPORTS = [
   { name: "desktop", width: 1280, height: 860 },
   { name: "mobile", width: 390, height: 760 }
@@ -49,17 +50,6 @@ async function gotoDesktop(page, relativePath) {
 
 async function fetchBridgeJson(apiRequest, relativePath, label) {
   return fetchBridgeJsonWithBase(apiRequest, BRIDGE_BASE, relativePath, label);
-}
-
-async function postBridgeJson(apiRequest, relativePath, data, label, allowedStatuses = []) {
-  return postBridgeJsonWithBase(
-    apiRequest,
-    BRIDGE_BASE,
-    relativePath,
-    data,
-    label,
-    allowedStatuses
-  );
 }
 
 async function assertNoSeededJobsArtifacts(apiRequest) {
@@ -85,32 +75,44 @@ async function waitForFirstRunUi(page) {
     const listText = String(document.querySelector("#jobs-list")?.textContent || "");
     const state = document.body?.getAttribute("data-jobs-startup-state") || "";
     return Boolean(document.querySelector(".jobs-first-run-notice"))
-      || /Preparing first-run jobs|Could not confirm first-run/i.test(bodyText)
+      || /Preparing first-run jobs/i.test(bodyText)
       || (state === "error" && /Retry|first-run/i.test(listText + bodyText));
   }, null, { timeout: 30_000 });
   const bodyText = String(await page.locator("body").innerText({ timeout: 10_000 }) || "");
   const listText = String(await page.locator("#jobs-list").textContent({ timeout: 10_000 }) || "");
   assert.doesNotMatch(bodyText, /Bridge timed out/i, "first-run UI must not show raw bridge timeout");
+  assert.doesNotMatch(bodyText, /first-run sheet refresh timed out|Retry quick refresh/i, "first-run UI must stay in progress while bootstrap is active");
   assert.match(
     `${bodyText}\n${listText}`,
-    /Preparing first-run jobs|Could not confirm first-run|Retry quick refresh/i,
-    "cold Jobs page should show first-run progress or retryable first-run UI"
+    /Preparing first-run jobs/i,
+    "cold Jobs page should show first-run progress"
   );
 }
 
-async function attachOrStartBootstrap(apiRequest) {
-  const payload = await postBridgeJson(
-    apiRequest,
-    "/tasks/run-jobs-bootstrap",
-    { source: "packaged_first_run_smoke_probe", forceBootstrap: true },
-    "controlled bootstrap probe",
-    [409]
-  );
-  assert.equal(payload?.smokeMode, "controlled-success", "bootstrap route should expose controlled smoke mode");
+function isBootstrapRequest(request) {
+  try {
+    const url = new URL(request.url());
+    return request.method() === "POST" && url.pathname === "/tasks/run-jobs-bootstrap";
+  } catch {
+    return false;
+  }
+}
+
+async function waitForUiBootstrapRequest(requests, startIndex = 0) {
+  return waitUntil("UI bootstrap request", async () => requests.slice(startIndex).find(isBootstrapRequest) || null, 15_000);
+}
+
+async function assertUiBootstrapRequest(request) {
+  const body = JSON.parse(request.postData() || "{}");
+  assert.deepEqual(body, { source: "jobs_first_run" }, "Jobs UI bootstrap request must not force duplicate refreshes");
+  const response = await request.response();
+  assert.equal(Boolean(response?.ok()), true, "Jobs UI bootstrap request should receive a successful bridge response");
+  const payload = await response.json();
+  assert.equal(payload?.smokeMode, "controlled-heartbeat-success", "bootstrap route should expose long-heartbeat smoke mode");
   assert.equal(
-    Boolean(payload?.started || payload?.alreadyRunning),
+    Boolean(payload?.started || payload?.alreadyRunning || payload?.alreadyCompleted),
     true,
-    "bootstrap probe should start or attach to the running first-run bootstrap"
+    "UI bootstrap should start, attach, or report already-completed state"
   );
   assert.match(String(payload?.runId || ""), /^jobs_bootstrap_[a-f0-9]{10}$/i);
   return payload;
@@ -160,11 +162,47 @@ async function waitForPromotedFeed(page, apiRequest, runId) {
   assert.match(sourceStatus, /Sheet-limited first-run refresh/i);
   const bodyText = String(await page.locator("body").innerText({ timeout: 10_000 }) || "");
   assert.doesNotMatch(bodyText, /Bridge timed out/i, "promoted first-run feed must not show raw timeout text");
+  assert.doesNotMatch(bodyText, /first-run sheet refresh timed out|Retry quick refresh/i, "promoted first-run feed must not show timeout or retry UI");
   const response = await apiRequest.get(`${BASE_URL}/data/jobs-unified-light.json?firstRun=${encodeURIComponent(runId)}`);
   assert.equal(response.ok(), true, "promoted first-run feed should be served from static JSON");
   const rows = await response.json();
   assert.equal(rows?.[0]?.title, FIRST_RUN_TITLE);
   return report;
+}
+
+async function assertActiveHeartbeatWithoutTimeout(page, apiRequest, runId) {
+  const deadline = Date.now() + 5_000;
+  let heartbeatSeen = false;
+  while (Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 500));
+    const bodyText = String(await page.locator("body").innerText({ timeout: 10_000 }) || "");
+    assert.doesNotMatch(bodyText, /first-run sheet refresh timed out|Retry quick refresh|Bridge timed out/i, "fresh bootstrap heartbeat must suppress timeout UI");
+    const taskLive = await fetchBridgeJson(apiRequest, "/ops/task-live/fetch", "fetch task-live").catch(() => null);
+    if (String(taskLive?.runId || "") === runId && taskLive?.active) {
+      const heartbeatAt = Date.parse(String(taskLive?.heartbeatAt || taskLive?.taskProgress?.updatedAt || ""));
+      if (Number.isFinite(heartbeatAt) && Date.now() - heartbeatAt < 10_000) {
+        heartbeatSeen = true;
+      }
+    }
+  }
+  assert.equal(heartbeatSeen, true, "task-live should expose a fresh active bootstrap heartbeat");
+}
+
+async function assertNoDuplicateBootstrapAfterSuccess(page, requests) {
+  const startIndex = requests.length;
+  await gotoDesktop(page, `jobs.html?${FIRST_RUN_SMOKE_QUERY}`);
+  await page.waitForFunction(
+    title => String(document.querySelector("#jobs-list")?.innerText || "").includes(title),
+    FIRST_RUN_TITLE,
+    { timeout: 30_000 }
+  );
+  await new Promise(resolve => setTimeout(resolve, 1_000));
+  const duplicateRequests = requests.slice(startIndex).filter(isBootstrapRequest);
+  for (const request of duplicateRequests) {
+    const response = await request.response();
+    const payload = response ? await response.json() : {};
+    assert.equal(payload?.alreadyCompleted, true, "post-success cold reload must not start a second bootstrap");
+  }
 }
 
 async function seedExistingProfile(page) {
@@ -230,13 +268,20 @@ async function main() {
     browser = await chromium.launch({ headless: !HEADED });
     context = await browser.newContext({ viewport: VIEWPORTS[0] });
     const page = await context.newPage();
-    await gotoDesktop(page, "jobs.html?jobsColdStart=1");
+    const bootstrapRequests = [];
+    page.on("request", request => {
+      if (isBootstrapRequest(request)) bootstrapRequests.push(request);
+    });
+    await gotoDesktop(page, `jobs.html?${FIRST_RUN_SMOKE_QUERY}`);
     await waitForFirstRunUi(page);
-    const startPayload = await attachOrStartBootstrap(apiRequest);
+    const uiBootstrapRequest = await waitForUiBootstrapRequest(bootstrapRequests);
+    const startPayload = await assertUiBootstrapRequest(uiBootstrapRequest);
     const runId = String(startPayload.runId || "");
     const runningEvidence = await waitForRunningBootstrapEvidence(apiRequest, runId);
+    await assertActiveHeartbeatWithoutTimeout(page, apiRequest, runId);
     await captureVisuals(page, styles);
     const terminalReport = await waitForPromotedFeed(page, apiRequest, runId);
+    await assertNoDuplicateBootstrapAfterSuccess(page, bootstrapRequests);
     const styleReportPath = path.join(OUTPUT_DIR, "first-run-style-report.json");
     await fs.writeFile(styleReportPath, `${JSON.stringify(styles, null, 2)}\n`, "utf8");
     report.artifacts.styleReport = styleReportPath;

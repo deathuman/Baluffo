@@ -27,6 +27,21 @@ const FIRST_RUN_BOOTSTRAP_NOTICE = Object.freeze({
   primaryLabel: "Got it"
 });
 
+export function jobsFirstRunBootstrapNumberOverride(windowObject, key, fallback) {
+  try {
+    const search = String(windowObject?.location?.search || "");
+    const params = new URLSearchParams(search);
+    if (params.get("desktop") !== "1" || params.get("jobsColdStart") !== "1") {
+      return fallback;
+    }
+    const value = params.get(key);
+    const numeric = Number(value);
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function reportFinishedTimestamp(report) {
   const finishedAt = String(report?.finishedAt || "").trim();
   if (!finishedAt) return null;
@@ -280,8 +295,16 @@ export async function initJobsFeed(deps) {
     bootstrapConfirmTimeoutMs = 20000,
     bootstrapConfirmIntervalMs = 1000,
     bootstrapPollIntervalMs = 1500,
-    bootstrapTimeoutMs = 5 * 60 * 1000,
-    bootstrapProgressStaleMs = FIRST_RUN_BOOTSTRAP_PROGRESS_STALE_MS,
+    bootstrapTimeoutMs = jobsFirstRunBootstrapNumberOverride(
+      windowObject,
+      "jobsFirstRunBootstrapTimeoutMs",
+      5 * 60 * 1000
+    ),
+    bootstrapProgressStaleMs = jobsFirstRunBootstrapNumberOverride(
+      windowObject,
+      "jobsFirstRunBootstrapProgressStaleMs",
+      FIRST_RUN_BOOTSTRAP_PROGRESS_STALE_MS
+    ),
     setHasInitializedJobsFeed,
     scheduleNonCriticalStartupWork,
     applyPendingAutoRefreshSignal,
@@ -309,20 +332,36 @@ export async function initJobsFeed(deps) {
     }
   }
 
-  function renderFirstRunBootstrapState() {
-    if (typeof setAllJobs === "function") setAllJobs([]);
-    stateHubSet("jobsFeedCount", 0);
-    stateHubSet("jobsLastUpdated", "");
-    recalculateItemsPerPage();
+    function renderFirstRunBootstrapState() {
+      if (typeof setAllJobs === "function") setAllJobs([]);
+      stateHubSet("jobsFeedCount", 0);
+      stateHubSet("jobsLastUpdated", "");
+      recalculateItemsPerPage();
     updateFilterOptions();
     applyStateToFilters();
     applyFiltersAndRender({
       resetPage: false,
-      emptyStateReason: "first_run_bootstrap"
-    });
-  }
+        emptyStateReason: "first_run_bootstrap"
+      });
+    }
 
-  try {
+    async function loadCompletedFirstRunFeed(report = null) {
+      const candidate = report || (
+        typeof fetchJobsReport === "function"
+          ? await fetchJobsReport({ timeoutMs: 1500 }).catch(() => null)
+          : null
+      );
+      if (!isSuccessfulJobsFetchReport(candidate)) return false;
+      const loaded = await refreshJobsNow({ manual: false, firstLoad: true });
+      if (loaded) {
+        clearBootstrapAutoStart(windowObject);
+        if (typeof setProgress === "function") setProgress(false);
+        return true;
+      }
+      return false;
+    }
+
+    try {
     initAuth();
 
     const desktopMode = isDesktopRuntimeMode();
@@ -388,6 +427,7 @@ export async function initJobsFeed(deps) {
     }
 
     async function startBootstrapAndLoad({ explicit = false } = {}) {
+      if (explicit && await loadCompletedFirstRunFeed()) return true;
       if (explicit) clearBootstrapAutoStart(windowObject);
       markBootstrapRunning(windowObject);
       setFirstRunStartupState();
@@ -403,9 +443,11 @@ export async function initJobsFeed(deps) {
         if (startedPayload?.alreadyCompleted) {
           if (typeof setProgress === "function") setProgress(false);
           const loaded = await refreshJobsNow({ manual: false, firstLoad: true });
-          clearBootstrapAutoStart(windowObject);
-          if (!loaded) throw new Error(LOCAL_FEED_MISSING_MESSAGE);
-          return true;
+          if (loaded) {
+            clearBootstrapAutoStart(windowObject);
+            return true;
+          }
+          throw new Error(LOCAL_FEED_MISSING_MESSAGE);
         }
         if (!startedPayload?.started && !startedPayload?.alreadyRunning) {
           throw new Error(String(startedPayload?.error || "bootstrap did not start"));
@@ -418,12 +460,7 @@ export async function initJobsFeed(deps) {
           const now = Date.now();
           const nextReport = await fetchJobsReport({ timeoutMs: 1500 }).catch(() => null);
           if (isSuccessfulJobsFetchReport(nextReport)) {
-            if (typeof setProgress === "function") setProgress(false);
-            const loaded = await refreshJobsNow({ manual: false, firstLoad: true });
-            if (loaded) {
-              clearBootstrapAutoStart(windowObject);
-              return true;
-            }
+            if (await loadCompletedFirstRunFeed(nextReport)) return true;
             throw new Error(LOCAL_FEED_MISSING_MESSAGE);
           }
           if (isTerminalFailedJobsFetchReport(nextReport)) {
@@ -439,6 +476,18 @@ export async function initJobsFeed(deps) {
             latestFreshProgressAt = now;
           }
           if (now < deadline) {
+            continue;
+          }
+          const finalReport = await fetchJobsReport({ timeoutMs: 1500 }).catch(() => null);
+          if (isSuccessfulJobsFetchReport(finalReport)) {
+            if (await loadCompletedFirstRunFeed(finalReport)) return true;
+            throw new Error(LOCAL_FEED_MISSING_MESSAGE);
+          }
+          const finalTaskLive = typeof fetchJobsTaskLive === "function"
+            ? await fetchJobsTaskLive({ timeoutMs: 1500 }).catch(() => null)
+            : null;
+          if (isFreshBootstrapProgress(finalTaskLive, { now: Date.now(), staleMs: bootstrapProgressStaleMs })) {
+            latestFreshProgressAt = Date.now();
             continue;
           }
           if (

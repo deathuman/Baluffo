@@ -261,14 +261,17 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 
 - `npm run test:frontend:packaged:first-run` is the deterministic packaged Jobs first-run gate.
 - It launches the packaged runtime on `desktop-probe.html` first, then the node smoke script opens `jobs.html` so the first Jobs page load belongs to the test, not to startup profiling or readiness probing.
-- The lane sets `BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_MODE=controlled-success` only for this smoke script. The real `/tasks/run-jobs-bootstrap` route and lifecycle/report promotion path run, but the bootstrap feed is a deterministic one-row sheet-scoped fixture and does not call live Google Sheets.
+- The lane sets `BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_MODE=controlled-heartbeat-success` only for this smoke script. The real Jobs UI starts `/tasks/run-jobs-bootstrap`, the route and lifecycle/report promotion path run, but the bootstrap feed is a deterministic one-row sheet-scoped fixture and does not call live Google Sheets.
+- The smoke uses URL-scoped first-run timeout overrides so the backend remains active past the UI timeout boundary in seconds rather than minutes, with fresh task-live heartbeats suppressing timeout UI.
 - It must prove all of the following:
   - the isolated runtime data dir starts without row-bearing `jobs-unified*` artifacts,
-  - cold Jobs startup shows first-run progress or retryable first-run UI, not a silent empty list,
-  - no visible `Bridge timed out` text appears,
-  - the bridge bootstrap route starts or reattaches with `smokeMode: "controlled-success"`,
+  - cold Jobs startup shows first-run progress, not a silent empty list or retry UI,
+  - no visible `Bridge timed out` or `first-run sheet refresh timed out` text appears while task-live heartbeat is fresh,
+  - the UI bootstrap request body is exactly `{ "source": "jobs_first_run" }` and does not include `forceBootstrap`,
+  - the bridge bootstrap route starts or reattaches with `smokeMode: "controlled-heartbeat-success"`,
   - task state and fetch report evidence show a running bootstrap before promotion,
   - the deterministic feed promotes and renders,
+  - a post-success cold reload does not start a second bootstrap,
   - sheet-limited first-run coverage messaging remains visible after the feed renders,
   - light and dark first-run/local-auth popup screenshots are captured at desktop and mobile widths,
   - computed popup style assertions cover overlay opacity, panel bounds, light surfaces, readable text, controls, inputs, and selects.

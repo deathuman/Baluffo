@@ -789,12 +789,16 @@ class TaskLaunchApi:
             == "source-runs"
         )
 
+    def _packaged_smoke_bootstrap_controlled_mode(self) -> str:
+        if str(os.getenv("BALUFFO_PACKAGED_SMOKE_RUNTIME") or "").strip() != "1":
+            return ""
+        mode = str(os.getenv("BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_MODE") or "").strip().lower()
+        if mode in {"controlled-success", "controlled-heartbeat-success"}:
+            return mode
+        return ""
+
     def _packaged_smoke_bootstrap_controlled_success_enabled(self) -> bool:
-        return (
-            str(os.getenv("BALUFFO_PACKAGED_SMOKE_RUNTIME") or "").strip() == "1"
-            and str(os.getenv("BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_MODE") or "").strip().lower()
-            == "controlled-success"
-        )
+        return bool(self._packaged_smoke_bootstrap_controlled_mode())
 
     def _packaged_smoke_bootstrap_delay_s(self) -> float:
         raw_delay_ms = os.getenv("BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_DELAY_MS")
@@ -803,6 +807,14 @@ class TaskLaunchApi:
         except (TypeError, ValueError):
             delay_ms = 8000
         return max(0.0, min(60.0, delay_ms / 1000.0))
+
+    def _packaged_smoke_bootstrap_heartbeat_s(self) -> float:
+        raw_heartbeat_ms = os.getenv("BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_HEARTBEAT_MS")
+        try:
+            heartbeat_ms = int(str(raw_heartbeat_ms or "1000").strip())
+        except (TypeError, ValueError):
+            heartbeat_ms = 1000
+        return max(0.1, min(10.0, heartbeat_ms / 1000.0))
 
     def _packaged_smoke_fetch_source_runs_report(
         self,
@@ -986,6 +998,7 @@ class TaskLaunchApi:
             }
             for index, source_name in enumerate(BOOTSTRAP_SHEET_SOURCE_NAMES)
         ]
+        smoke_mode = self._packaged_smoke_bootstrap_controlled_mode() or "controlled-success"
         return self._with_bootstrap_metadata(
             {
                 "runId": run_id,
@@ -996,7 +1009,7 @@ class TaskLaunchApi:
                 "runtime": {
                     "seedFromExistingOutput": False,
                     "incrementalCacheEnabled": False,
-                    "smokeMode": "controlled-success",
+                    "smokeMode": smoke_mode,
                     "lifecycle": {
                         "owner": "fetch_report",
                         "heartbeatAt": finished_at,
@@ -1007,7 +1020,7 @@ class TaskLaunchApi:
                     "outputCount": 1,
                     "failedSources": 0,
                     "sourceCount": len(BOOTSTRAP_SHEET_SOURCE_NAMES),
-                    "smokeMode": "controlled-success",
+                    "smokeMode": smoke_mode,
                 },
                 "sources": sources,
             },
@@ -1019,16 +1032,18 @@ class TaskLaunchApi:
         *,
         run_id: str,
         started_at: str,
+        heartbeat_at: str | None = None,
         save_json_atomic: Callable[[Path, Any], None],
         staging_dir: Path,
     ) -> None:
+        updated_at = str(heartbeat_at or started_at)
         save_json_atomic(
             staging_dir / "jobs-fetch-tasks.json",
             {
                 "runId": run_id,
                 "startedAt": started_at,
                 "finishedAt": "",
-                "heartbeatAt": started_at,
+                "heartbeatAt": updated_at,
                 "summary": {
                     "coverageScope": BOOTSTRAP_COVERAGE_SCOPE,
                     "outputCount": 0,
@@ -1041,7 +1056,7 @@ class TaskLaunchApi:
                     "mode": "indeterminate",
                     "ratio": 0.0,
                     "counts": {},
-                    "updatedAt": started_at,
+                    "updatedAt": updated_at,
                 },
             },
         )
@@ -1112,7 +1127,23 @@ class TaskLaunchApi:
         save_json_atomic: Callable[[Path, Any], None],
     ) -> None:
         try:
-            time.sleep(self._packaged_smoke_bootstrap_delay_s())
+            delay_s = self._packaged_smoke_bootstrap_delay_s()
+            if self._packaged_smoke_bootstrap_controlled_mode() == "controlled-heartbeat-success":
+                deadline = time.monotonic() + delay_s
+                while True:
+                    remaining_s = deadline - time.monotonic()
+                    if remaining_s <= 0:
+                        break
+                    time.sleep(min(self._packaged_smoke_bootstrap_heartbeat_s(), remaining_s))
+                    self._write_packaged_smoke_bootstrap_running_tasks(
+                        run_id=run_id,
+                        started_at=started_at,
+                        heartbeat_at=self._deps.now_iso(),
+                        save_json_atomic=save_json_atomic,
+                        staging_dir=staging_dir,
+                    )
+            else:
+                time.sleep(delay_s)
             self._write_packaged_smoke_bootstrap_terminal_staging(
                 run_id=run_id,
                 started_at=started_at,
@@ -1158,6 +1189,7 @@ class TaskLaunchApi:
         heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None],
     ) -> dict[str, Any]:
         pid = os.getpid()
+        smoke_mode = self._packaged_smoke_bootstrap_controlled_mode() or "controlled-success"
         self._record_active_bootstrap_process(run_id=run_id, started_at=started_at, pid=pid)
         self._write_bootstrap_running_report(
             report_shell=report_shell,
@@ -1232,7 +1264,7 @@ class TaskLaunchApi:
             preset="bootstrap_sheets",
             pid=pid,
             args=" ".join(spawn_args),
-            smokeMode="controlled-success",
+            smokeMode=smoke_mode,
         )
         return {
             "started": True,
@@ -1244,7 +1276,7 @@ class TaskLaunchApi:
             "args": spawn_args,
             "pid": pid,
             "startedAt": started_at,
-            "smokeMode": "controlled-success",
+            "smokeMode": smoke_mode,
         }
 
     def _start_packaged_smoke_source_runs_fetch(
@@ -1706,7 +1738,9 @@ class TaskLaunchApi:
         response["preset"] = "bootstrap_sheets"
         response["coverageScope"] = BOOTSTRAP_COVERAGE_SCOPE
         if self._packaged_smoke_bootstrap_controlled_success_enabled():
-            response["smokeMode"] = "controlled-success"
+            response["smokeMode"] = (
+                self._packaged_smoke_bootstrap_controlled_mode() or "controlled-success"
+            )
         self._deps.bridge_log(
             "info",
             "task_start_attached_existing",
@@ -2304,22 +2338,41 @@ class TaskLaunchApi:
     ) -> None:
         if not callable(heartbeat_lifecycle_run):
             return
+        heartbeat_at = self._deps.now_iso()
         tasks = read_json(staging_dir / "jobs-fetch-tasks.json", {})
         if not isinstance(tasks, dict):
+            heartbeat_lifecycle_run(
+                run_id,
+                "fetch",
+                heartbeat_at=heartbeat_at,
+                stage="running",
+                progress={"active": True, "phaseKey": "running", "updatedAt": heartbeat_at},
+                summary={"coverageScope": BOOTSTRAP_COVERAGE_SCOPE},
+            )
             return
         if str(tasks.get("runId") or "").strip() != str(run_id or "").strip():
+            heartbeat_lifecycle_run(
+                run_id,
+                "fetch",
+                heartbeat_at=heartbeat_at,
+                stage="running",
+                progress={"active": True, "phaseKey": "running", "updatedAt": heartbeat_at},
+                summary={"coverageScope": BOOTSTRAP_COVERAGE_SCOPE},
+            )
             return
         if str(tasks.get("finishedAt") or "").strip():
             return
         progress = dict(tasks.get("taskProgress") or {})
         summary = dict(tasks.get("summary") or {})
+        progress["active"] = True
+        progress["updatedAt"] = heartbeat_at
         if summary:
             summary["coverageScope"] = BOOTSTRAP_COVERAGE_SCOPE
         phase = str(progress.get("phaseKey") or progress.get("phase") or "")
         heartbeat_lifecycle_run(
             run_id,
             "fetch",
-            heartbeat_at=str(tasks.get("heartbeatAt") or self._deps.now_iso()),
+            heartbeat_at=heartbeat_at,
             stage=phase.strip() or "running",
             progress=progress or None,
             summary=summary or None,
@@ -2432,12 +2485,14 @@ class TaskLaunchApi:
         get_lifecycle_run_history_rows: Callable[[], list[dict[str, Any]]] = lambda: [],
     ) -> dict[str, Any]:
         payload_data = payload if isinstance(payload, dict) else {}
+        source = str(payload_data.get("source") or "").strip()
         raw_force_bootstrap = payload_data.get("forceBootstrap")
         force_bootstrap = (
             raw_force_bootstrap
             if isinstance(raw_force_bootstrap, bool)
             else str(raw_force_bootstrap or "").strip().lower() in {"1", "true", "yes", "on"}
         )
+        user_first_run_bootstrap = source == "jobs_first_run"
         lock_context = (
             self._deps.task_state_lock if self._deps.task_state_lock is not None else nullcontext()
         )
@@ -2452,7 +2507,9 @@ class TaskLaunchApi:
                     "alreadyCompleted": True,
                     "error": "full_pipeline_already_completed",
                 }
-            if not force_bootstrap and self._has_successful_runtime_feed():
+            if (
+                not force_bootstrap or user_first_run_bootstrap
+            ) and self._has_successful_runtime_feed():
                 return {
                     "started": False,
                     "task": "jobs_bootstrap",

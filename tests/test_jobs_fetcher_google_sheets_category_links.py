@@ -44,6 +44,14 @@ class _FakeCategoryLinkStatusResolver:
         }
 
 
+class _FakeRedirectResolver:
+    def snapshot_stats(self) -> dict[str, int]:
+        return {}
+
+    def resolve(self, _url: str) -> str:
+        return "https://jobs.example.test/openings/gameplay-programmer"
+
+
 def test_google_sheets_category_title_repairs_from_safe_url_slug() -> None:
     canonical_rows, drop_reasons, stats = jf.canonicalize_google_sheets_rows(
         [
@@ -200,6 +208,81 @@ def test_google_sheets_provider_hydrated_category_title_gets_status_checked() ->
     assert not drop_reasons
     assert stats["category_link_status_candidates"] == 1
     assert status_resolver.prefetched == [job_link]
+
+
+def test_google_sheets_redirect_resolution_emits_progress_callback() -> None:
+    progress_events = []
+
+    def progress_callback(**payload):
+        progress_events.append(payload)
+
+    canonical_rows, drop_reasons, stats = jf.canonicalize_google_sheets_rows(
+        [
+            {
+                "sourceJobId": "sheet-1",
+                "title": "Gameplay Programmer",
+                "company": "Example Games",
+                "jobLink": "https://gracklehq.com/rd/example",
+                "sector": "Game",
+            }
+        ],
+        source="google_sheets",
+        fetched_at="2026-05-22T00:00:00+00:00",
+        redirect_resolver=_FakeRedirectResolver(),
+        progress_callback=progress_callback,
+    )
+
+    assert [row.title for row in canonical_rows] == ["Gameplay Programmer"]
+    assert not drop_reasons
+    assert stats["redirect_candidates"] == 1
+    assert any(event.get("phase_key") == "resolving_sheet_redirects" for event in progress_events)
+
+
+def test_google_sheets_provider_title_hydration_emits_progress_callback() -> None:
+    progress_events = []
+    job_link = "https://job-boards.greenhouse.io/examplegames/jobs/12345"
+
+    def progress_callback(**payload):
+        progress_events.append(payload)
+
+    def fake_fetch(_url: str, _timeout: int) -> str:
+        return json.dumps(
+            {
+                "jobs": [
+                    {
+                        "id": 12345,
+                        "title": "Influencer Manager",
+                        "absolute_url": job_link,
+                    }
+                ]
+            }
+        )
+
+    canonical_rows, drop_reasons, stats = jf.canonicalize_google_sheets_rows(
+        [
+            {
+                "sourceJobId": "sheet-1",
+                "title": "Influencer-marketing",
+                "company": "Example Games",
+                "jobLink": job_link,
+                "sector": "Game",
+            }
+        ],
+        source="google_sheets",
+        fetched_at="2026-05-22T00:00:00+00:00",
+        title_hydration_resolver=jf.GoogleSheetsProviderTitleResolver(
+            fetch_text=fake_fetch,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0.0,
+        ),
+        progress_callback=progress_callback,
+    )
+
+    assert [row.title for row in canonical_rows] == ["Influencer Manager"]
+    assert not drop_reasons
+    assert stats["title_hydration_feed_fetches"] == 1
+    assert any(event.get("phase_key") == "hydrating_sheet_titles" for event in progress_events)
 
 
 def test_google_sheets_category_status_resolver_error_does_not_drop() -> None:
