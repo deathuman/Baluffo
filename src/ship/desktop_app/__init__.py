@@ -47,7 +47,6 @@ from src.ship.startup_telemetry import (
     wait_for_url,
 )
 
-from . import _windows as _windows_module
 from . import browser as _browser_module
 from . import config as _config_module
 from . import launcher as _launcher_module
@@ -55,6 +54,11 @@ from . import launcher_diagnostics as _launcher_diagnostics_module
 from . import process as _process_module
 from . import session as _session_module
 from . import startup as _startup_module
+
+if os.name == "nt":
+    from . import _windows as _platform_module
+else:
+    from . import _linux as _platform_module
 
 _COMPAT_MODULES = (
     _startup_module,
@@ -64,7 +68,7 @@ _COMPAT_MODULES = (
     _launcher_diagnostics_module,
     _config_module,
     _browser_module,
-    _windows_module,
+    _platform_module,
 )
 
 __all__ = [

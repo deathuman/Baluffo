@@ -68,6 +68,12 @@ The primary Windows-only module. Contains:
 - TCP port listener PID → `psutil.net_connections()` or `/proc/net/tcp`
 - Job objects → Use process groups (`os.setpgid`, `os.killpg`) or `psutil` process tree management
 
+**Current facade symbols consumed by platform-neutral desktop code:**
+- `_current_exe_path` is used by launcher/session state; Phase 0.0 re-exports it from the Linux stub, and a later cleanup can move it to a common platform-neutral module.
+- `_normalize_path_text`, `_get_windows_process_image_path`, and `_get_windows_process_start_ts` are used by session identity checks; Linux dispatch must provide safe equivalents or route those checks through a platform-neutral identity helper.
+- `_enumerate_visible_desktop_windows` and `_find_baluffo_visible_window` are used by startup reveal and browser-window liveness paths; Linux equivalents can safely return empty/`None` for the headless target.
+- `_windows_create_kill_on_close_job`, `_windows_try_assign_pid_to_job`, `_windows_close_desktop_job`, and `_windows_reclaim_stale_runtime_children` are called from launcher/process/session flow through the compat facade; Linux dispatch must provide no-op or process-group equivalents under the same facade contract, or callers must be renamed to platform-neutral wrappers first.
+
 ### 2. `src/ship/desktop_update_shared.py` — `_pid_is_running_windows()` (lines 374–396)
 
 Uses `kernel32.OpenProcess`/`GetExitCodeProcess`/`CloseHandle`. On Linux this is never called (guarded by `sys.platform == "win32"` at line 410 and `psutil` is tried first). The only fix needed is guarding the `from ctypes import wintypes` at line 13.
@@ -132,6 +138,7 @@ These changes make `pip install` succeed and fix the import-time crash so that t
 
 | # | Change | Files | Risk |
 |---|--------|-------|------|
+| 0.0 | **Add `_linux.py` no-op compat stub and platform-dependent dispatch** — wire the Linux module into `_COMPAT_MODULES` only on non-Windows so Windows ordering and behavior remain unchanged | `src/ship/desktop_app/_linux.py`, `src/ship/desktop_app/__init__.py`, `tests/desktop_app/test_compat_dispatch_integrity.py` | Low — validates dispatch in isolation before Linux behavior |
 | 0.1 | **Fix `desktop_update_shared.py` import guard** — wrap `from ctypes import wintypes` in `if sys.platform == "win32":` with an else branch that creates a placeholder module | `src/ship/desktop_update_shared.py` | Low — Windows code path unchanged |
 | 0.2 | **Guard `desktop_update.py` import of `desktop_update_shared`** — the chain `__init__.py` → `desktop_update` → `desktop_update_shared` crashes on import. Move the `from src.ship.desktop_update import ...` in `__init__.py` behind a lazy import or try/except | `src/ship/desktop_app/__init__.py` | Low — lazy import, fallback on Linux |
 | 0.3 | **Remove `pywin32-ctypes` from `requirements-lock.txt`** — or regenerate lockfile without it. `pyinstaller` already handles its own deps at build time | `requirements-lock.txt` | Low — Windows CI builds pin their own env |
@@ -139,6 +146,8 @@ These changes make `pip install` succeed and fix the import-time crash so that t
 | 0.5 | **Add `--linux` marker to the expected Windows-path test** to clean up test output | `tests/` | None |
 
 **Verification after Phase 0:**
+- Windows dispatch canary passes: `python -m pytest -q tests/desktop_app/test_compat_dispatch_integrity.py`
+- `npm run test:py:extended` passes on Windows before any real Linux behavior is added
 - `npm run test:py` passes on Linux
 - `npm run dev:bridge` starts on Linux
 - `npm run dev:pipeline` runs on Linux
@@ -146,7 +155,7 @@ These changes make `pip install` succeed and fix the import-time crash so that t
 
 ### Phase 1: Platform Abstraction Layer (`_linux.py`)
 
-Create `src/ship/desktop_app/_linux.py` as a counterpart to `_windows.py`. This is the largest phase.
+Fill out `src/ship/desktop_app/_linux.py` as the real counterpart to `_windows.py`. Phase 0.0 creates the no-op stub first so dispatch wiring is proven separately from Linux behavior.
 
 The compat facade at `src/ship/desktop_app/_compat.py` already provides `desktop_api()` → `desktop_app` module. The `__init__.py` already conditionally imports based on `os.name`:
 
@@ -160,21 +169,23 @@ if os.name == "nt":
 The pattern for `_linux.py` is:
 - `__init__.py` imports both `_windows` and `_linux` (both can be imported safely on either platform since they only define functions)
 - Or: use `_compat.py` to choose which platform module to export
+- Do not rely on adding extra `os.name != "nt"` guards inside `_windows.py`; Phase 0.0 removes `_windows.py` from non-Windows dispatch, so missing facade attributes are the compatibility risk.
 
 | # | Change | Files | Risk |
 |---|--------|-------|------|
-| 1.1 | **Create `_linux.py`** — implement Linux equivalents for all public functions in `_windows.py` that are called through the compat dispatch | `src/ship/desktop_app/_linux.py` (new) | Medium |
+| 1.1 | **Replace `_linux.py` stubs with real Linux behavior** — implement Linux equivalents for all public functions in `_windows.py` that are called through the compat dispatch | `src/ship/desktop_app/_linux.py` | Medium |
 | 1.2 | **Update `__init__.py`** — add `_linux` to `_COMPAT_MODULES` or choose platform-specific dispatch | `src/ship/desktop_app/__init__.py` | Low |
-| 1.3 | **Implement process management** — `_pids_listening_on_tcp_port_linux()`, `_wait_for_process_exit_pid()`, `_linux_terminate_process_by_pid()`, `_linux_process_image_matches()` using `psutil` and `/proc` | `_linux.py` | Medium |
-| 1.4 | **Implement process tree management** — `_linux_terminate_process_tree_details_by_pid()`, `_stale_runtime_reclaim_result()`, `_linux_try_reclaim_stale_bridge_process()`, `_linux_try_reclaim_stale_site_process()`, `_linux_reclaim_stale_runtime_children()` using `psutil.Process.children()` and process groups | `_linux.py` | Medium |
-| 1.5 | **Implement job-object alternative** — `_linux_create_process_group()`, `_linux_assign_pid_to_group()`, `_linux_close_process_group()` using `os.setpgid()` / `os.killpg()` | `_linux.py` | Medium |
+| 1.3 | **Implement process management under the existing facade contract** — fill `_pids_listening_on_tcp_port_windows()`, `_wait_for_process_exit_pid()`, `_windows_terminate_process_tree_details_by_pid()`, and `_windows_process_image_matches()` in `_linux.py` using `psutil` and `/proc`, or rename callers to platform-neutral wrappers in the same change | `_linux.py` | Medium |
+| 1.4 | **Implement process tree reclaim under the existing facade contract** — fill `_windows_try_reclaim_stale_bridge_process()`, `_windows_try_reclaim_stale_site_process()`, and `_windows_reclaim_stale_runtime_children()` using `psutil.Process.children()` and process groups | `_linux.py` | Medium |
+| 1.5 | **Implement job-object alternative** — keep `_windows_create_kill_on_close_job()`, `_windows_try_assign_pid_to_job()`, and `_windows_close_desktop_job()` as no-ops or process-group wrappers until callers are renamed to platform-neutral names | `_linux.py` | Medium |
 | 1.6 | **Window enumeration → stubs** — `_find_baluffo_visible_window()`, `_enumerate_visible_desktop_windows()`, `_windows_window_is_cloaked()` etc. return empty/None on headless Linux. X11/Wayland support is deferred | `_linux.py` | Low — no-op fallback |
-| 1.7 | **Implement process identity helpers** — `get_windows_process_image_path()` → readlink `/proc/{pid}/exe`, `get_windows_process_start_ts()` → `/proc/{pid}/stat` | `_linux.py` | Low |
+| 1.7 | **Implement process identity helpers** — `_get_windows_process_image_path()` → readlink `/proc/{pid}/exe`, `_get_windows_process_start_ts()` → `/proc/{pid}/stat` | `_linux.py` | Low |
 | 1.8 | **Update `show_native_message`** — the existing `os.name == "nt"` guard already handles this; optionally add `notify-send` or zenity on Linux | `launcher_diagnostics.py` | Low |
 
 **Verification after Phase 1:**
 - `python -c "from src.ship.desktop_app._linux import *"` succeeds
 - All new functions have at least a smoke test
+- Windows dispatch canary remains green: `python -m pytest -q tests/desktop_app/test_compat_dispatch_integrity.py`
 - `npm run test:py` still passes on Windows (no regressions)
 
 ### Phase 2: XDG Base Directory Support
@@ -290,7 +301,7 @@ keyring    # System keyring for credential storage on Linux
 
 | File | Phase | Purpose |
 |------|-------|---------|
-| `src/ship/desktop_app/_linux.py` | 1 | Linux counterpart to `_windows.py` |
+| `src/ship/desktop_app/_linux.py` | 0, 1 | No-op compat stub first, then Linux counterpart to `_windows.py` |
 | `scripts/dev_admin_supervisor.sh` | 4 | Bash launcher equivalent of `.ps1` |
 | `.github/workflows/test-linux.yml` | 5 | Linux CI workflow (optional) |
 
@@ -299,12 +310,12 @@ keyring    # System keyring for credential storage on Linux
 | File | Phase | Change |
 |------|-------|--------|
 | `src/ship/desktop_update_shared.py` | 0 | Guard `from ctypes import wintypes` with `sys.platform == "win32"` |
-| `src/ship/desktop_app/__init__.py` | 0 | Lazy-import desktop_update on Linux |
+| `src/ship/desktop_app/__init__.py` | 0 | Platform-select `_windows.py`/`_linux.py` dispatch and lazy-import desktop_update on Linux |
 | `requirements-lock.txt` | 0 | Remove or regenerate without `pywin32-ctypes` |
 | `requirements.txt` | 0, 3 | Add `psutil`, `keyring` |
 | `src/ship/desktop_app/config.py` | 2, 4 | XDG fallback, Linux browser candidates |
 | `src/source_sync_runtime.py` | 3 | Linux crypto path |
-| `src/ship/desktop_app/__init__.py` | 1 | Wire `_linux.py` module |
+| `src/ship/desktop_app/__init__.py` | 1 | Preserve platform dispatch while replacing Linux stubs with real behavior |
 | `package.json` | 4, 5 | Add Linux-specific npm scripts |
 | `docs/WSL_SETUP.md` | 6 | Update with new capabilities |
 | `docs/INDEX.md` | 6 | Add this plan |
