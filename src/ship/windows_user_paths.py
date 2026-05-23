@@ -60,6 +60,16 @@ def _write_report(path: Path, report: dict[str, Any]) -> None:
     tmp_path.replace(path)
 
 
+def _completed_migration_report_exists(path: Path) -> bool:
+    if not path.exists():
+        return False
+    try:
+        existing_report = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(existing_report, dict) and bool(existing_report.get("completed"))
+
+
 def migrate_legacy_windows_user_data(
     legacy_data_dir: Path,
     target_data_dir: Path,
@@ -69,18 +79,13 @@ def migrate_legacy_windows_user_data(
     legacy = Path(legacy_data_dir).expanduser().resolve()
     target = Path(target_data_dir).expanduser().resolve()
     report_path = windows_user_data_migration_report_path(target)
-    if report_path.exists():
-        try:
-            existing_report = json.loads(report_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            existing_report = {}
-        if bool(existing_report.get("completed")):
-            return {
-                "status": "already_migrated",
-                "legacyDataDir": str(legacy),
-                "targetDataDir": str(target),
-                "reportPath": str(report_path),
-            }
+    if _completed_migration_report_exists(report_path):
+        return {
+            "status": "already_migrated",
+            "legacyDataDir": str(legacy),
+            "targetDataDir": str(target),
+            "reportPath": str(report_path),
+        }
 
     timestamp = (now or datetime.now(UTC)).astimezone(UTC).isoformat()
     report: dict[str, Any] = {
