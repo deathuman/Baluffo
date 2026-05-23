@@ -292,7 +292,12 @@ def _helper_relaunch_verify_timeout_s(
         return float(default)
 
 
-def _launch_executable(executable_path: Path, *, clear_app_version_override: bool = False) -> None:
+def _launch_executable(
+    executable_path: Path,
+    *,
+    clear_app_version_override: bool = False,
+    data_dir: Path | str | None = None,
+) -> None:
     if not executable_path.is_file():
         raise RuntimeError(f"Desktop executable not found: {executable_path}")
     module = _module()
@@ -302,9 +307,12 @@ def _launch_executable(executable_path: Path, *, clear_app_version_override: boo
         int(getattr(subprocess_mod, "CREATE_NEW_PROCESS_GROUP", 0)) if os_mod.name == "nt" else 0
     )
     env = None
-    if clear_app_version_override:
+    if clear_app_version_override or data_dir is not None:
         env = os_mod.environ.copy()
+    if clear_app_version_override and env is not None:
         env.pop("BALUFFO_APP_VERSION_OVERRIDE", None)
+    if data_dir is not None and env is not None:
+        env["BALUFFO_DATA_DIR"] = str(Path(data_dir).expanduser().resolve())
     subprocess_mod.Popen(  # noqa: S603
         [str(executable_path)],
         cwd=str(executable_path.parent),

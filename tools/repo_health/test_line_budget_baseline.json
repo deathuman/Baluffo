@@ -61,7 +61,7 @@
     "tests/source_discovery/test_run_discovery_flow.py": 1467,
     "tests/test_build_ship_bundle.py": 572,
     "tests/test_desktop_update.py": 1752,
-    "tests/test_desktop_updater.py": 628,
+    "tests/test_desktop_updater.py": 640,
     "tests/test_jobs_fetcher_google_sheets.py": 489,
     "tests/test_jobs_fetcher_parsing.py": 784,
     "tests/test_fetch_incremental_sanity_benchmark.py": 1142,

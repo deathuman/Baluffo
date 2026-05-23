@@ -38,11 +38,12 @@ def _write_install_plan(
     return plan
 
 
-def test_launch_executable_uses_install_root_as_cwd_and_can_clear_version_override(
+def test_launch_executable_uses_install_root_as_cwd_and_can_set_data_dir(
     monkeypatch,
 ) -> None:
     with workspace_tmpdir("desktop-updater") as tmp:
         install_root = Path(tmp) / "portable"
+        data_dir = Path(tmp) / "AppData" / "Roaming" / "Baluffo"
         runtime_exe = install_root / "Baluffo.exe"
         runtime_exe.parent.mkdir(parents=True, exist_ok=True)
         runtime_exe.write_text("exe", encoding="utf-8")
@@ -50,12 +51,17 @@ def test_launch_executable_uses_install_root_as_cwd_and_can_clear_version_overri
         monkeypatch.setenv("BALUFFO_APP_VERSION_OVERRIDE", "0.0.9")
         monkeypatch.setattr(updater.subprocess, "Popen", popen_mock)
 
-        updater._launch_executable(runtime_exe, clear_app_version_override=True)
+        updater._launch_executable(
+            runtime_exe,
+            clear_app_version_override=True,
+            data_dir=data_dir,
+        )
 
         _, kwargs = popen_mock.call_args
         assert kwargs["cwd"] == str(install_root)
         assert isinstance(kwargs["env"], dict)
         assert "BALUFFO_APP_VERSION_OVERRIDE" not in kwargs["env"]
+        assert kwargs["env"]["BALUFFO_DATA_DIR"] == str(data_dir.resolve())
 
 
 def test_helper_diagnostics_path_prefers_plan_field() -> None:
@@ -319,13 +325,19 @@ def test_run_install_uses_env_override_for_relaunch_verification_timeout(monkeyp
         monkeypatch.setattr(updater.zipfile, "ZipFile", mock.Mock(return_value=zip_context))
         monkeypatch.setattr(updater, "_copy_install_snapshot", lambda *args, **kwargs: None)
         monkeypatch.setattr(updater, "_sync_extract_to_install", lambda *args, **kwargs: None)
-        monkeypatch.setattr(updater, "_launch_executable", lambda *args, **kwargs: None)
+        launch_executable = mock.Mock()
+        monkeypatch.setattr(updater, "_launch_executable", launch_executable)
         monkeypatch.setattr(updater, "_verify_target_startup", verify_startup)
         monkeypatch.setattr(updater, "_finalize_success", lambda *args, **kwargs: None)
 
         result = updater.run_install(paths.install_plan_path)
 
         assert result == {"ok": True, "installedVersion": "1.4.0"}
+        launch_executable.assert_called_once_with(
+            install_root / "Baluffo.exe",
+            clear_app_version_override=True,
+            data_dir=data_dir.resolve(),
+        )
         verify_startup.assert_called_once_with(mock.ANY, timeout_s=6.0)
 
 

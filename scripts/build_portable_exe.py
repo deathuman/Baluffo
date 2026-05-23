@@ -132,6 +132,7 @@ OPTIONAL_SCRAPY_RUNTIME_PACKAGES = tuple(
     if importlib.util.find_spec(package_name) is not None
 )
 MAIN_RUNTIME_HIDDEN_IMPORTS = (
+    "encodings.idna",
     "src.admin_bridge",
     "src.app_version",
     "src.baluffo_config",
@@ -203,6 +204,7 @@ MAIN_RUNTIME_EXCLUDED_MODULES = (
     "hamcrest",
 )
 UPDATER_HELPER_HIDDEN_IMPORTS = (
+    "encodings.idna",
     "src.shared.github_https",
     *OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES,
     "tkinter",
