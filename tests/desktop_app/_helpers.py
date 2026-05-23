@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from src.ship import desktop_app
+from src.ship.desktop_app import _windows as windows_desktop_app
 
 
 def desktop_runtime_config(**overrides: object) -> desktop_app.DesktopRuntimeConfig:
@@ -51,6 +52,30 @@ def stale_launcher_session(**overrides: object) -> dict[str, object]:
     return values
 
 
+_WINDOWS_COMPAT_ATTRS = tuple(
+    name
+    for name in dir(windows_desktop_app)
+    if name.startswith("_") and not (name.startswith("__") and name.endswith("__"))
+)
+
+
+@contextlib.contextmanager
+def _patch_windows_compat_facade():
+    fake_windows_os = SimpleNamespace(name="nt")
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(mock.patch.object(desktop_app, "os", fake_windows_os))
+        for name in _WINDOWS_COMPAT_ATTRS:
+            stack.enter_context(
+                mock.patch.object(
+                    desktop_app,
+                    name,
+                    getattr(windows_desktop_app, name),
+                    create=True,
+                )
+            )
+        yield
+
+
 @contextlib.contextmanager
 def _patch_windows_desktop_app(
     kernel32: object,
@@ -70,7 +95,7 @@ def _patch_windows_desktop_app(
     )
 
     with contextlib.ExitStack() as stack:
-        stack.enter_context(mock.patch.object(desktop_app.os, "name", "nt"))
+        stack.enter_context(_patch_windows_compat_facade())
         stack.enter_context(mock.patch.object(desktop_app, "ctypes", fake_ctypes, create=True))
         stack.enter_context(
             mock.patch.object(desktop_app, "_PROCESS_ASSIGN_TO_JOB_ACCESS", 0x0101, create=True)

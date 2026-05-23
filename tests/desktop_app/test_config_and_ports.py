@@ -6,6 +6,7 @@ from unittest import mock
 import pytest
 
 from src.ship import desktop_app, windows_user_paths
+from src.ship.desktop_app import config as config_mod
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -130,10 +131,9 @@ def test_create_runtime_config_windows_packaged_uses_appdata_and_migrates_legacy
         )
         with (
             mock.patch.object(desktop_app, "resolve_ship_root", return_value=ship_root),
-            mock.patch.object(desktop_app.os, "name", "nt"),
-            mock.patch.object(desktop_app.sys, "frozen", True, create=True),
+            mock.patch.object(config_mod, "_is_windows_packaged_runtime", return_value=True),
             mock.patch.dict(
-                desktop_app.os.environ,
+                config_mod.os.environ,
                 {
                     "APPDATA": str(appdata),
                     "LOCALAPPDATA": str(localappdata),
@@ -171,10 +171,9 @@ def test_create_runtime_config_preserves_env_data_dir_override_for_packaged_wind
         )
         with (
             mock.patch.object(desktop_app, "resolve_ship_root", return_value=ship_root),
-            mock.patch.object(desktop_app.os, "name", "nt"),
-            mock.patch.object(desktop_app.sys, "frozen", True, create=True),
+            mock.patch.object(config_mod, "_is_windows_packaged_runtime", return_value=True),
             mock.patch.dict(
-                desktop_app.os.environ,
+                config_mod.os.environ,
                 {"BALUFFO_DATA_DIR": str(override_data)},
                 clear=False,
             ),

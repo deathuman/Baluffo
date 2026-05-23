@@ -5,7 +5,7 @@ from unittest import mock
 
 from src.ship import desktop_app
 
-from ._helpers import _patch_windows_desktop_app
+from ._helpers import _patch_windows_compat_facade, _patch_windows_desktop_app
 
 
 def test_windows_terminate_process_details_falls_back_to_windows_api() -> None:
@@ -48,7 +48,7 @@ def test_stale_bridge_reclaim_failure_includes_termination_diagnostics() -> None
     }
 
     with (
-        mock.patch.object(desktop_app.os, "name", "nt"),
+        _patch_windows_compat_facade(),
         mock.patch.object(desktop_app, "_append_startup_trace", trace_mock),
         mock.patch.object(
             desktop_app,

@@ -410,7 +410,7 @@ def test_publish_success_marker_when_ready_async_writes_legacy_marker_for_old_ha
             lambda bridge_port, *, app_version, timeout_s: {"appVersion": APP_VERSION},
         )
         monkeypatch.setattr(desktop_app.threading, "Thread", ImmediateThread)
-        monkeypatch.setattr(desktop_app.os, "name", "nt")
+        monkeypatch.setattr(desktop_app, "os", SimpleNamespace(name="nt"))
         monkeypatch.setattr(desktop_app.sys, "frozen", True, raising=False)
 
         desktop_app.publish_success_marker_when_ready_async(config, launcher_token="token-1")
@@ -450,7 +450,7 @@ def test_publish_success_marker_when_ready_async_skips_legacy_marker_without_han
             lambda bridge_port, *, app_version, timeout_s: {"appVersion": APP_VERSION},
         )
         monkeypatch.setattr(desktop_app.threading, "Thread", ImmediateThread)
-        monkeypatch.setattr(desktop_app.os, "name", "nt")
+        monkeypatch.setattr(desktop_app, "os", SimpleNamespace(name="nt"))
         monkeypatch.setattr(desktop_app.sys, "frozen", True, raising=False)
 
         desktop_app.publish_success_marker_when_ready_async(config, launcher_token="token-1")

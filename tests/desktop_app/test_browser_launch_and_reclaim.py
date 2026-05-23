@@ -9,7 +9,7 @@ import pytest
 from src.ship import desktop_app
 from tests.helpers.temp_paths import workspace_tmpdir
 
-from ._helpers import _patch_windows_desktop_app
+from ._helpers import _patch_windows_compat_facade, _patch_windows_desktop_app
 
 
 def test_resolve_chromium_browser_candidates_prefers_chrome_then_brave_then_edge() -> None:
@@ -292,7 +292,7 @@ def test_diagnose_instance_conflict_blocks_when_stale_runtime_cleanup_fails() ->
 
 def test_windows_try_reclaim_stale_bridge_process_skips_when_owner_token_missing() -> None:
     with (
-        mock.patch.object(desktop_app.os, "name", "nt"),
+        _patch_windows_compat_facade(),
         mock.patch.object(desktop_app, "_append_startup_trace"),
     ):
         result = desktop_app._windows_try_reclaim_stale_bridge_process(
@@ -310,7 +310,7 @@ def test_windows_try_reclaim_stale_bridge_process_skips_when_owner_token_missing
 
 def test_windows_try_reclaim_stale_bridge_process_returns_not_found_without_listener() -> None:
     with (
-        mock.patch.object(desktop_app.os, "name", "nt"),
+        _patch_windows_compat_facade(),
         mock.patch.object(desktop_app, "_append_startup_trace"),
         mock.patch.object(desktop_app, "_pids_listening_on_tcp_port_windows", return_value=set()),
     ):
@@ -332,7 +332,7 @@ def test_windows_try_reclaim_stale_bridge_process_kills_strong_listener() -> Non
     terminate_mock = mock.Mock(return_value={"terminated": True})
 
     with (
-        mock.patch.object(desktop_app.os, "name", "nt"),
+        _patch_windows_compat_facade(),
         mock.patch.object(desktop_app, "_append_startup_trace"),
         mock.patch.object(
             desktop_app,
@@ -377,7 +377,7 @@ def test_windows_try_reclaim_stale_bridge_process_accepts_listener_clear_after_f
     terminate_mock = mock.Mock(return_value={"terminated": False})
 
     with (
-        mock.patch.object(desktop_app.os, "name", "nt"),
+        _patch_windows_compat_facade(),
         mock.patch.object(desktop_app, "_append_startup_trace"),
         mock.patch.object(
             desktop_app,
@@ -420,7 +420,7 @@ def test_windows_try_reclaim_stale_bridge_process_skips_when_listener_is_ambiguo
     terminate_mock = mock.Mock()
 
     with (
-        mock.patch.object(desktop_app.os, "name", "nt"),
+        _patch_windows_compat_facade(),
         mock.patch.object(desktop_app, "_append_startup_trace"),
         mock.patch.object(
             desktop_app,
@@ -452,7 +452,7 @@ def test_windows_terminate_process_tree_details_waits_for_forced_taskkill_exit()
     run_mock = mock.Mock(return_value=subprocess.CompletedProcess(["taskkill"], 0))
     wait_mock = mock.Mock(return_value=True)
     with (
-        mock.patch.object(desktop_app.os, "name", "nt"),
+        _patch_windows_compat_facade(),
         mock.patch.object(desktop_app.subprocess, "run", run_mock),
         mock.patch.object(desktop_app, "_wait_for_process_exit_pid", wait_mock),
         mock.patch.object(desktop_app, "is_process_alive", return_value=False),
@@ -468,7 +468,7 @@ def test_windows_try_reclaim_stale_site_process_kills_when_stored_pid_matches() 
     terminate_mock = mock.Mock(return_value={"terminated": True})
 
     with (
-        mock.patch.object(desktop_app.os, "name", "nt"),
+        _patch_windows_compat_facade(),
         mock.patch.object(desktop_app, "_append_startup_trace"),
         mock.patch.object(
             desktop_app,
@@ -502,7 +502,7 @@ def test_windows_try_reclaim_stale_site_process_accepts_listener_clear_after_for
     terminate_mock = mock.Mock(return_value={"terminated": False})
 
     with (
-        mock.patch.object(desktop_app.os, "name", "nt"),
+        _patch_windows_compat_facade(),
         mock.patch.object(desktop_app, "_append_startup_trace"),
         mock.patch.object(
             desktop_app,
@@ -536,7 +536,7 @@ def test_windows_try_reclaim_stale_site_process_requires_bridge_confirmation_wit
     terminate_mock = mock.Mock()
 
     with (
-        mock.patch.object(desktop_app.os, "name", "nt"),
+        _patch_windows_compat_facade(),
         mock.patch.object(desktop_app, "_append_startup_trace"),
         mock.patch.object(
             desktop_app,
@@ -569,7 +569,7 @@ def test_windows_try_reclaim_stale_site_process_can_reclaim_without_pid_after_br
 ):
     terminate_mock = mock.Mock(return_value={"terminated": True})
     with (
-        mock.patch.object(desktop_app.os, "name", "nt"),
+        _patch_windows_compat_facade(),
         mock.patch.object(desktop_app, "_append_startup_trace"),
         mock.patch.object(
             desktop_app,
@@ -1233,7 +1233,7 @@ def test_find_baluffo_visible_window_accepts_same_pid_chromium_window_without_ba
     None
 ):
     with (
-        mock.patch.object(desktop_app.os, "name", "nt"),
+        _patch_windows_compat_facade(),
         mock.patch.object(
             desktop_app,
             "_enumerate_visible_desktop_windows",
