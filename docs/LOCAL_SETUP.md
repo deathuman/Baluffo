@@ -12,7 +12,7 @@
 | Mode | Runtime | Storage owner |
 |------|---------|---------------|
 | Browser pages | Static site only | Browser `localStorage` + IndexedDB |
-| Desktop / launcher | Local site + local bridge | Bridge-backed file store under `data/local-user-data/` |
+| Desktop / launcher | Local site + local bridge | Bridge-backed file store under the configured data root |
 
 ## Storage model
 
@@ -22,10 +22,11 @@
 - Browser mode is local-only and does not require the bridge.
 
 ### Desktop-local mode
-- Profiles live in `data/local-user-data/profiles.json`.
-- Current session lives in `data/local-user-data/session.json`.
-- Per-user data lives under `data/local-user-data/users/<uid>/`.
+- Repo/source profiles live in `data/local-user-data/profiles.json`.
+- Windows packaged profiles live in `%APPDATA%\Baluffo\local-user-data\profiles.json`.
+- Current sessions and per-user data live under the same configured `local-user-data` root.
 - Desktop pages read/write local data through `/desktop-local-data/*`, not browser IndexedDB/localStorage.
+- Windows packaged desktop keeps session/browser transient state under `%LOCALAPPDATA%\Baluffo\`. Legacy packaged `ship\data\` is copied into `%APPDATA%\Baluffo\` on first launch when no completed migration report exists.
 
 ## Code routing
 

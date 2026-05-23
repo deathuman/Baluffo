@@ -381,6 +381,88 @@ def test_publish_success_marker_when_ready_async_writes_marker_after_startup_rea
     }
 
 
+def test_publish_success_marker_when_ready_async_writes_legacy_marker_for_old_handoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with workspace_tmpdir("desktop-success-marker-legacy") as tmp:
+        ship_root = Path(tmp) / "portable" / "ship"
+        data_dir = Path(tmp) / "AppData" / "Roaming" / "Baluffo"
+        config = desktop_runtime_config(ship_root=ship_root, data_dir=data_dir)
+        legacy_paths = desktop_app.DesktopUpdatePaths.from_data_dir(
+            ship_root / "data",
+            ship_root=ship_root,
+        )
+        legacy_paths.install_plan_path.parent.mkdir(parents=True, exist_ok=True)
+        legacy_paths.install_plan_path.write_text("{}", encoding="utf-8")
+
+        class ImmediateThread:
+            def __init__(self, *, target, name, daemon) -> None:
+                self._target = target
+                self.name = name
+                self.daemon = daemon
+
+            def start(self) -> None:
+                self._target()
+
+        monkeypatch.setattr(
+            desktop_app,
+            "wait_for_desktop_startup_ready",
+            lambda bridge_port, *, app_version, timeout_s: {"appVersion": APP_VERSION},
+        )
+        monkeypatch.setattr(desktop_app.threading, "Thread", ImmediateThread)
+        monkeypatch.setattr(desktop_app.os, "name", "nt")
+        monkeypatch.setattr(desktop_app.sys, "frozen", True, raising=False)
+
+        desktop_app.publish_success_marker_when_ready_async(config, launcher_token="token-1")
+
+        primary_paths = desktop_app.DesktopUpdatePaths.from_data_dir(
+            data_dir,
+            ship_root=ship_root,
+        )
+        assert primary_paths.success_marker_path.is_file()
+        assert legacy_paths.success_marker_path.is_file()
+
+
+def test_publish_success_marker_when_ready_async_skips_legacy_marker_without_handoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with workspace_tmpdir("desktop-success-marker-no-legacy") as tmp:
+        ship_root = Path(tmp) / "portable" / "ship"
+        data_dir = Path(tmp) / "AppData" / "Roaming" / "Baluffo"
+        config = desktop_runtime_config(ship_root=ship_root, data_dir=data_dir)
+        legacy_paths = desktop_app.DesktopUpdatePaths.from_data_dir(
+            ship_root / "data",
+            ship_root=ship_root,
+        )
+
+        class ImmediateThread:
+            def __init__(self, *, target, name, daemon) -> None:
+                self._target = target
+                self.name = name
+                self.daemon = daemon
+
+            def start(self) -> None:
+                self._target()
+
+        monkeypatch.setattr(
+            desktop_app,
+            "wait_for_desktop_startup_ready",
+            lambda bridge_port, *, app_version, timeout_s: {"appVersion": APP_VERSION},
+        )
+        monkeypatch.setattr(desktop_app.threading, "Thread", ImmediateThread)
+        monkeypatch.setattr(desktop_app.os, "name", "nt")
+        monkeypatch.setattr(desktop_app.sys, "frozen", True, raising=False)
+
+        desktop_app.publish_success_marker_when_ready_async(config, launcher_token="token-1")
+
+        primary_paths = desktop_app.DesktopUpdatePaths.from_data_dir(
+            data_dir,
+            ship_root=ship_root,
+        )
+        assert primary_paths.success_marker_path.is_file()
+        assert not legacy_paths.success_marker_path.exists()
+
+
 def test_publish_success_marker_when_ready_async_records_classified_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

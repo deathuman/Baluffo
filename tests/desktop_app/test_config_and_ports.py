@@ -1,10 +1,11 @@
 import argparse
+import json
 from pathlib import Path
 from unittest import mock
 
 import pytest
 
-from src.ship import desktop_app
+from src.ship import desktop_app, windows_user_paths
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -38,6 +39,152 @@ def test_create_runtime_config_defaults_to_fixed_desktop_ports() -> None:
     assert config.jobs_cold_start is False
     assert config.title == desktop_app.WINDOW_TITLE
     assert config.owner_idle_timeout_s == 0.0
+
+
+def test_windows_user_paths_resolve_roaming_local_cache_and_fallbacks() -> None:
+    env = {
+        "APPDATA": "C:/Users/Andrea/AppData/Roaming",
+        "LOCALAPPDATA": "C:/Users/Andrea/AppData/Local",
+    }
+    fallback_env = {"USERPROFILE": "C:/Users/Andrea"}
+
+    assert windows_user_paths.windows_roaming_app_data_dir(env) == Path(
+        "C:/Users/Andrea/AppData/Roaming/Baluffo"
+    )
+    assert windows_user_paths.windows_local_app_data_dir(env) == Path(
+        "C:/Users/Andrea/AppData/Local/Baluffo"
+    )
+    assert windows_user_paths.windows_cache_dir(env) == Path(
+        "C:/Users/Andrea/AppData/Local/Baluffo/cache"
+    )
+    assert windows_user_paths.windows_roaming_app_data_dir(fallback_env) == Path(
+        "C:/Users/Andrea/AppData/Roaming/Baluffo"
+    )
+    assert windows_user_paths.windows_local_app_data_dir(fallback_env) == Path(
+        "C:/Users/Andrea/AppData/Local/Baluffo"
+    )
+
+
+def test_windows_legacy_user_data_migration_copies_without_overwriting() -> None:
+    with workspace_tmpdir("windows-user-data-migration") as tmp:
+        legacy = Path(tmp) / "portable" / "ship" / "data"
+        target = Path(tmp) / "AppData" / "Roaming" / "Baluffo"
+        (legacy / "local-user-data").mkdir(parents=True)
+        (legacy / "local-user-data" / "profile.json").write_text(
+            '{"name":"legacy"}', encoding="utf-8"
+        )
+        (legacy / "jobs-unified.json").write_text("[{}]", encoding="utf-8")
+        (target / "jobs-unified.json").parent.mkdir(parents=True)
+        (target / "jobs-unified.json").write_text("existing", encoding="utf-8")
+
+        report = windows_user_paths.migrate_legacy_windows_user_data(legacy, target)
+        report_path = windows_user_paths.windows_user_data_migration_report_path(target)
+
+        assert report["status"] == "copied_with_conflicts"
+        assert (target / "local-user-data" / "profile.json").read_text(
+            encoding="utf-8"
+        ) == '{"name":"legacy"}'
+        assert (target / "jobs-unified.json").read_text(encoding="utf-8") == "existing"
+        assert (legacy / "jobs-unified.json").is_file()
+        persisted = json.loads(report_path.read_text(encoding="utf-8"))
+        assert persisted["completed"] is True
+        assert persisted["conflicts"] == ["jobs-unified.json"]
+
+        second_report = windows_user_paths.migrate_legacy_windows_user_data(legacy, target)
+
+    assert second_report["status"] == "already_migrated"
+
+
+def test_windows_legacy_user_data_migration_marks_missing_legacy_data() -> None:
+    with workspace_tmpdir("windows-user-data-migration-missing") as tmp:
+        legacy = Path(tmp) / "portable" / "ship" / "data"
+        target = Path(tmp) / "AppData" / "Roaming" / "Baluffo"
+
+        report = windows_user_paths.migrate_legacy_windows_user_data(legacy, target)
+
+        assert report["status"] == "legacy_missing"
+        assert windows_user_paths.windows_user_data_migration_report_path(target).is_file()
+
+
+def test_create_runtime_config_windows_packaged_uses_appdata_and_migrates_legacy() -> None:
+    with workspace_tmpdir("desktop-config-windows-appdata") as tmp:
+        ship_root = Path(tmp) / "portable" / "ship"
+        appdata = Path(tmp) / "AppData" / "Roaming"
+        localappdata = Path(tmp) / "AppData" / "Local"
+        legacy_data = ship_root / "data"
+        legacy_data.mkdir(parents=True)
+        (legacy_data / "jobs-unified.json").write_text("[{}]", encoding="utf-8")
+        args = argparse.Namespace(
+            root=str(ship_root),
+            site_port=0,
+            bridge_port=0,
+            bridge_host="127.0.0.1",
+            data_dir="",
+            open_path="admin.html",
+            title="",
+            port=0,
+            bind_host="127.0.0.1",
+            child_mode="",
+            desktop_runtime=False,
+            startup_probe=False,
+        )
+        with (
+            mock.patch.object(desktop_app, "resolve_ship_root", return_value=ship_root),
+            mock.patch.object(desktop_app.os, "name", "nt"),
+            mock.patch.object(desktop_app.sys, "frozen", True, create=True),
+            mock.patch.dict(
+                desktop_app.os.environ,
+                {
+                    "APPDATA": str(appdata),
+                    "LOCALAPPDATA": str(localappdata),
+                    "BALUFFO_DATA_DIR": "",
+                },
+                clear=False,
+            ),
+        ):
+            config = desktop_app.create_runtime_config(args)
+
+        assert config.data_dir == (appdata / "Baluffo").resolve()
+        assert (config.data_dir / "jobs-unified.json").read_text(encoding="utf-8") == "[{}]"
+        assert (legacy_data / "jobs-unified.json").is_file()
+        assert windows_user_paths.windows_user_data_migration_report_path(config.data_dir).is_file()
+
+
+def test_create_runtime_config_preserves_env_data_dir_override_for_packaged_windows() -> None:
+    with workspace_tmpdir("desktop-config-windows-env-data-dir") as tmp:
+        ship_root = Path(tmp) / "portable" / "ship"
+        override_data = Path(tmp) / "override-data"
+        (ship_root / "data").mkdir(parents=True)
+        args = argparse.Namespace(
+            root=str(ship_root),
+            site_port=0,
+            bridge_port=0,
+            bridge_host="127.0.0.1",
+            data_dir="",
+            open_path="admin.html",
+            title="",
+            port=0,
+            bind_host="127.0.0.1",
+            child_mode="",
+            desktop_runtime=False,
+            startup_probe=False,
+        )
+        with (
+            mock.patch.object(desktop_app, "resolve_ship_root", return_value=ship_root),
+            mock.patch.object(desktop_app.os, "name", "nt"),
+            mock.patch.object(desktop_app.sys, "frozen", True, create=True),
+            mock.patch.dict(
+                desktop_app.os.environ,
+                {"BALUFFO_DATA_DIR": str(override_data)},
+                clear=False,
+            ),
+        ):
+            config = desktop_app.create_runtime_config(args)
+
+        assert config.data_dir == override_data.resolve()
+        assert not windows_user_paths.windows_user_data_migration_report_path(
+            override_data
+        ).exists()
 
 
 def test_create_runtime_config_preserves_owner_idle_timeout_override() -> None:

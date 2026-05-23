@@ -313,10 +313,11 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 - `npm run test:frontend:packaged:update-rehearsal` is the packaged `N -> N+1` updater gate for the portable desktop runtime.
 - It must prove all of the following:
   - the packaged app can surface an available update and hand off install to `BaluffoUpdater.exe`,
+  - the install plan carries the resolved `dataDir` so helper state, downloads, rollback metadata, logs, and success markers stay under the external Windows data root,
   - the helper installs the target portable ZIP and relaunches the target runtime successfully,
   - the target runtime reaches desktop startup readiness and writes the post-install success marker,
   - seeded local profile data, saved jobs, notes, and attachments remain intact across the update.
-- Use this lane for updater-helper, desktop session/handoff, release-manifest, and portable runtime mutation changes.
+- Use this lane for updater-helper, desktop session/handoff, release-manifest, Windows packaged data-root migration, and portable runtime mutation changes.
 
 ## Packaged Sync Rehearsal Contract
 
@@ -372,7 +373,7 @@ Use the narrowest check that matches the risky path:
 - Desktop-window liveness, owner idle timeout, lifecycle heartbeat, launcher shutdown, or orphan-process cleanup changes: `npm run test:frontend:packaged:desktop-lifecycle-rehearsal`
 - Packaged Jobs first-run, cold empty-state, bootstrap confirm/retry, or popup theme changes: `npm run test:frontend:packaged:first-run`
 - Packaged Admin startup, overview, or heavy ops-payload loading changes: `npm run test:frontend:packaged:admin-startup`
-- Packaged updater, desktop handoff, or release-manifest changes: `npm run test:frontend:packaged:update-rehearsal`
+- Packaged updater, desktop handoff, Windows packaged data-root migration, or release-manifest changes: `npm run test:frontend:packaged:update-rehearsal`
 - Packaged Jobs startup threshold changes: `npm run probe:desktop:startup:jobs:cold`
 - Bridge route wiring or task-launch signature changes: focused `tests/bridge/...` plus `tests/test_pipeline_execution.py` for worker-path coverage
 - Admin task buttons, presets, or busy-state changes: focused frontend unit tests plus the nearest admin bridge payload test

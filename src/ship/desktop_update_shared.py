@@ -520,15 +520,32 @@ class DesktopUpdatePaths:
     helper_diagnostics_log_path: Path
 
     @staticmethod
-    def from_data_dir(data_dir: Path) -> DesktopUpdatePaths:
+    def from_data_dir(
+        data_dir: Path,
+        *,
+        install_root: Path | None = None,
+        ship_root: Path | None = None,
+    ) -> DesktopUpdatePaths:
         deps = _root()
         resolved_data = deps._resolve_runtime_path(data_dir)
-        ship_root = resolved_data.parent
-        install_root = ship_root.parent if ship_root.name.lower() == "ship" else ship_root
+        resolved_ship = (
+            deps._resolve_runtime_path(ship_root)
+            if ship_root is not None
+            else (
+                deps._resolve_runtime_path(install_root) / "ship"
+                if install_root is not None
+                else resolved_data.parent
+            )
+        )
+        resolved_install = (
+            deps._resolve_runtime_path(install_root)
+            if install_root is not None
+            else (resolved_ship.parent if resolved_ship.name.lower() == "ship" else resolved_ship)
+        )
         updater_dir = resolved_data / "updater"
         return DesktopUpdatePaths(
-            install_root=install_root,
-            ship_root=ship_root,
+            install_root=resolved_install,
+            ship_root=resolved_ship,
             data_dir=resolved_data,
             updater_dir=updater_dir,
             downloads_dir=updater_dir / "downloads",

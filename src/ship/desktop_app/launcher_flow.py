@@ -37,8 +37,15 @@ def _as_int(value: object, default: int = 0) -> int:
 def _child_env_for(
     api: object, current_config: DesktopRuntimeConfig, session_root: Path
 ) -> dict[str, str]:
+    install_root = (
+        current_config.ship_root.parent
+        if current_config.ship_root.name.lower() == "ship"
+        else current_config.ship_root
+    )
     env = {
         "BALUFFO_DATA_DIR": str(current_config.data_dir),
+        "BALUFFO_SHIP_ROOT": str(current_config.ship_root),
+        "BALUFFO_INSTALL_ROOT": str(install_root),
         "BALUFFO_DESKTOP_MODE": "1",
         "BALUFFO_DESKTOP_BRIDGE_HOST": str(current_config.bridge_host),
         "BALUFFO_DESKTOP_BRIDGE_PORT": str(int(current_config.bridge_port)),
@@ -604,7 +611,12 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             reason=stop_reason,
         )
         if stop_reason == "update_install_requested":
-            api.launch_staged_update_helper(api.DesktopUpdatePaths.from_data_dir(config.data_dir))
+            api.launch_staged_update_helper(
+                api.DesktopUpdatePaths.from_data_dir(
+                    config.data_dir,
+                    ship_root=config.ship_root,
+                )
+            )
         if config.startup_probe:
             summary = api.summarize_startup_metrics(
                 api.read_startup_metrics(config.data_dir),

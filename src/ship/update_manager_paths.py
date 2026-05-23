@@ -34,9 +34,9 @@ class ShipPaths:
     logs: Path
 
     @staticmethod
-    def from_root(root: Path) -> ShipPaths:
+    def from_root(root: Path, *, data_dir: Path | None = None) -> ShipPaths:
         app = root / "app"
-        data = root / "data"
+        data = Path(data_dir).expanduser().resolve() if data_dir is not None else root / "data"
         return ShipPaths(
             root=root,
             app=app,

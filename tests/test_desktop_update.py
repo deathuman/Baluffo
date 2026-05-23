@@ -36,6 +36,7 @@ def _write_credible_handoff_request(
         {
             "planVersion": 1,
             "installRoot": str(paths.install_root),
+            "dataDir": str(paths.data_dir),
             "tempHelperPath": str(paths.install_root / du.DESKTOP_UPDATE_HELPER_NAME),
             "targetVersion": "1.4.0",
             "currentVersion": "0.1.0",
@@ -59,6 +60,66 @@ def _write_credible_handoff_request(
             "installState": str(install_state),
         },
     )
+
+
+def _prepare_ready_install(
+    data_dir: Path,
+    *,
+    install_root: Path | None = None,
+    ship_root: Path | None = None,
+) -> tuple[du.DesktopUpdatePaths, du.DesktopUpdateService, Path]:
+    paths = du.DesktopUpdatePaths.from_data_dir(
+        data_dir,
+        install_root=install_root,
+        ship_root=ship_root,
+    )
+    helper_path = paths.install_root / du.DESKTOP_UPDATE_HELPER_NAME
+    download_path = paths.downloads_dir / "baluffo-portable-1.4.0.zip"
+    helper_path.parent.mkdir(parents=True, exist_ok=True)
+    helper_path.write_text("helper", encoding="utf-8")
+    download_path.parent.mkdir(parents=True, exist_ok=True)
+    download_path.write_text("zip", encoding="utf-8")
+    du.write_json_atomic(
+        paths.manifest_cache_path,
+        {
+            "manifest": {
+                "schema_version": 2,
+                "key_id": "desktop-ed25519-test",
+                "channel": "stable",
+                "version": "1.4.0",
+                "published_at": "2026-04-14T12:00:00Z",
+                "release_notes_url": "https://example.com/release",
+                "min_desktop_updater_version": "2.0.0",
+                "min_supported_current_version": "0.1.0",
+                "data_schema_version": "2",
+                "rollback_allowed": True,
+                "portable_artifact": {
+                    "url": "https://example.com/baluffo-portable-1.4.0.zip",
+                    "sha256": du.compute_sha256(download_path),
+                    "size_bytes": int(download_path.stat().st_size),
+                },
+                "migration_plan": [],
+                "signature": "ignored-for-test",
+            }
+        },
+    )
+    du.save_status(
+        paths,
+        {
+            **du.default_status_payload(current_version="0.1.0"),
+            "availability": "available",
+            "updateAvailable": True,
+            "downloadState": "downloaded",
+            "downloadedZipPath": str(download_path),
+        },
+    )
+    service = du.DesktopUpdateService(
+        data_dir=data_dir,
+        install_root=install_root,
+        ship_root=ship_root,
+        current_version_getter=lambda: "0.1.0",
+    )
+    return paths, service, download_path
 
 
 def test_canonical_manifest_bytes_sorts_keys_and_omits_signature() -> None:
@@ -127,6 +188,20 @@ def test_desktop_update_paths_resolve_install_root() -> None:
     assert paths.install_state_path == Path(
         "C:/Portable/Baluffo/ship/data/updater/install-state.json"
     )
+
+
+def test_desktop_update_paths_support_external_windows_data_root() -> None:
+    data_dir = Path("C:/Users/Andrea/AppData/Roaming/Baluffo")
+    paths = du.DesktopUpdatePaths.from_data_dir(
+        data_dir,
+        install_root=Path("C:/Portable/Baluffo"),
+        ship_root=Path("C:/Portable/Baluffo/ship"),
+    )
+
+    assert paths.install_root == Path("C:/Portable/Baluffo")
+    assert paths.ship_root == Path("C:/Portable/Baluffo/ship")
+    assert paths.data_dir == data_dir
+    assert paths.install_state_path == data_dir / "updater" / "install-state.json"
 
 
 def test_compare_versions_uses_baluffo_release_ordering() -> None:
@@ -1418,6 +1493,7 @@ def test_request_install_writes_plan_and_launches_helper() -> None:
         assert plan["launcherPid"] == 1234
         assert plan["launcherToken"] == "token-1"
         assert plan["targetVersion"] == "1.4.0"
+        assert plan["dataDir"] == str(paths.data_dir)
         assert plan["helperStdoutPath"] == str(paths.helper_stdout_log_path)
         assert plan["helperStderrPath"] == str(paths.helper_stderr_log_path)
         assert plan["helperDiagnosticsPath"] == str(paths.helper_diagnostics_log_path)
@@ -1439,6 +1515,54 @@ def test_request_install_not_ready_leaves_no_partial_handoff_artifacts() -> None
 
         assert result["started"] is False
         assert result["errorCode"] == "install_not_ready"
+        assert not paths.install_plan_path.exists()
+        assert not paths.handoff_request_path.exists()
+
+
+def test_request_install_fails_preflight_when_data_root_lacks_space() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+        paths, service, _download_path = _prepare_ready_install(data_dir)
+
+        with mock.patch.object(
+            du.shutil,
+            "disk_usage",
+            return_value=mock.Mock(free=1),
+        ):
+            result = service.request_install()
+
+        assert result["started"] is False
+        assert result["errorCode"] == "install_preflight_failed"
+        assert "data root" in result["error"]
+        assert not paths.install_plan_path.exists()
+        assert not paths.handoff_request_path.exists()
+
+
+def test_request_install_fails_preflight_when_install_root_lacks_space() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        install_root = Path(tmp) / "portable"
+        ship_root = install_root / "ship"
+        data_dir = Path(tmp) / "AppData" / "Roaming" / "Baluffo"
+        paths, service, _download_path = _prepare_ready_install(
+            data_dir,
+            install_root=install_root,
+            ship_root=ship_root,
+        )
+        high_space = mock.Mock(free=10**9)
+        low_space = mock.Mock(free=1)
+
+        with mock.patch.object(
+            du.shutil,
+            "disk_usage",
+            side_effect=[high_space, low_space],
+        ) as disk_usage_mock:
+            result = service.request_install()
+
+        assert result["started"] is False
+        assert result["errorCode"] == "install_preflight_failed"
+        assert "install root" in result["error"]
+        assert disk_usage_mock.call_args_list[0].args[0] == paths.updater_dir
+        assert disk_usage_mock.call_args_list[1].args[0] == paths.install_root
         assert not paths.install_plan_path.exists()
         assert not paths.handoff_request_path.exists()
 
@@ -1588,6 +1712,7 @@ def test_launch_staged_update_helper_uses_logged_spawn_contract() -> None:
             {
                 "planVersion": 1,
                 "installRoot": str(install_root),
+                "dataDir": str(paths.data_dir),
                 "tempHelperPath": str(temp_helper),
                 "targetVersion": "1.4.0",
                 "currentVersion": "0.1.0",
@@ -1620,5 +1745,8 @@ def test_launch_staged_update_helper_uses_logged_spawn_contract() -> None:
         assert isinstance(kwargs["env"], dict)
         assert kwargs["env"]["TEMP"] == str(du.helper_runtime_tmpdir())
         assert kwargs["env"]["TMP"] == str(du.helper_runtime_tmpdir())
+        assert kwargs["env"]["BALUFFO_DATA_DIR"] == str(paths.data_dir)
+        assert kwargs["env"]["BALUFFO_INSTALL_ROOT"] == str(paths.install_root)
+        assert kwargs["env"]["BALUFFO_SHIP_ROOT"] == str(paths.ship_root)
         assert Path(str(kwargs["stdout"].name)).resolve() == paths.helper_stdout_log_path.resolve()
         assert Path(str(kwargs["stderr"].name)).resolve() == paths.helper_stderr_log_path.resolve()

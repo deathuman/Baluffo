@@ -241,6 +241,13 @@ def launch_staged_update_helper(paths: Any) -> None:
     env = deps.os.environ.copy()
     env["TEMP"] = str(runtime_tmpdir)
     env["TMP"] = str(runtime_tmpdir)
+    data_dir = str(plan.get("dataDir") or "").strip()
+    install_root = str(plan.get("installRoot") or "").strip()
+    if data_dir:
+        env["BALUFFO_DATA_DIR"] = data_dir
+    if install_root:
+        env["BALUFFO_INSTALL_ROOT"] = install_root
+        env["BALUFFO_SHIP_ROOT"] = str(deps._resolve_runtime_path(install_root) / "ship")
     if deps.os.name == "nt":
         creationflags = int(getattr(deps.subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
     with (
@@ -663,6 +670,7 @@ def validate_install_plan(plan: dict[str, Any]) -> dict[str, Any]:
     required = (
         "planVersion",
         "installRoot",
+        "dataDir",
         "tempHelperPath",
         "targetVersion",
         "currentVersion",

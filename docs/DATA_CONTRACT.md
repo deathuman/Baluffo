@@ -312,7 +312,7 @@ pairs.
 
 ## 2. Desktop Local Data
 
-Desktop local data is file-backed under `data/local-user-data/`. `src/local_data_store.py` remains the stable import surface, while persisted row shapes are defined by the dedicated local-data schemas in `src/core/schemas.py`.
+Desktop local data is file-backed under the configured data root. Repo/source runs default to `data/local-user-data/`; Windows packaged desktop defaults to `%APPDATA%\Baluffo\local-user-data\`. Legacy packaged `ship\data\local-user-data\` is a first-launch migration source only. `src/local_data_store.py` remains the stable import surface, while persisted row shapes are defined by the dedicated local-data schemas in `src/core/schemas.py`.
 
 ### 2.1 Persisted saved-job row
 
@@ -620,7 +620,7 @@ the runtime config or runtime keys into tool config.
 | **bridge.log_format** | `"human"` | Log format (`human` or `jsonl`) |
 | **bridge.log_level** | `"info"` | Log level (`info` or `debug`) |
 | **bridge.quiet_requests** | `false` | Suppress request logging |
-| **storage.data_dir** | `"data"` | Runtime data directory |
+| **storage.data_dir** | `"data"` | Runtime data directory for repo/source runs; Windows packaged desktop defaults to `%APPDATA%\Baluffo\` unless `--data-dir` or `BALUFFO_DATA_DIR` is set |
 | **storage.source_discovery_config_path** | `"data/source-discovery-config.json"` | Source discovery settings path |
 | **storage.source_discovery_log_path** | `"data/source-discovery.log"` | Source discovery log path |
 | **storage.social_sources_config_path** | `"data/social-sources-config.json"` | Social source settings path |

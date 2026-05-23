@@ -14,9 +14,11 @@ from tests.helpers.temp_paths import workspace_tmpdir
 def _write_install_plan(
     plan_path: Path, install_root: Path, rollback_root: Path, zip_path: Path
 ) -> dict[str, object]:
+    data_dir = plan_path.parent.parent
     plan = {
         "planVersion": 1,
         "installRoot": str(install_root),
+        "dataDir": str(data_dir),
         "tempHelperPath": str(install_root / "BaluffoUpdater.exe"),
         "targetVersion": "1.4.0",
         "currentVersion": "0.1.0",
@@ -579,8 +581,13 @@ def test_run_install_records_specific_failure_when_relaunch_verification_fails(
 def test_verify_target_startup_retries_after_transient_bridge_refusal(monkeypatch) -> None:
     with workspace_tmpdir("desktop-updater") as tmp:
         install_root = Path(tmp) / "portable"
-        data_dir = install_root / "ship" / "data"
-        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        ship_root = install_root / "ship"
+        data_dir = Path(tmp) / "AppData" / "Roaming" / "Baluffo"
+        paths = du.DesktopUpdatePaths.from_data_dir(
+            data_dir,
+            install_root=install_root,
+            ship_root=ship_root,
+        )
         rollback_root = paths.rollback_root / "1.4.0-20260414-120000"
         plan = _write_install_plan(
             paths.install_plan_path,

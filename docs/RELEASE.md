@@ -13,7 +13,7 @@ Important rules:
 
 - The ship bundle is the canonical update channel.
 - The portable EXE is a packaged distribution built on top of the ship bundle, not a separate updater model.
-- Persistent runtime data must remain outside versioned app folders in the ship bundle, and inside `ship\data\` for the portable EXE layout.
+- Persistent runtime data must remain outside versioned app folders. Windows packaged desktop defaults to `%APPDATA%\Baluffo\`; `ship\data\` is only the legacy packaged migration source.
 
 ## Versioning Policy
 
@@ -60,7 +60,7 @@ Updater and manifest rules:
 - The canonical signed-release path is `.github/workflows/build-portable-exe.yml`: tagged or workflow-dispatch release runs read the desktop update signing values from GitHub repository secrets and publish the signed manifest plus release assets. Local shells are not expected to have that private key unless explicitly configured for emergency/manual release work.
 - Release secrets must stay in GitHub encrypted secrets or local environment variables. Do not commit `packaging\github-app-sync-config.json`, `packaging\github-app-sync-config.localkey.json`, `baluffo.config.local.json`, private key PEMs, desktop update signing keys, or copied release secret values.
 - Desktop release selection must ignore GitHub drafts and prereleases and compare Baluffo release versions with the shared Baluffo-specific ordering, not lexically.
-- The packaged desktop updater must download only the portable ZIP, preserve `ship\data\`, hand off runtime mutation to a temp-copied `BaluffoUpdater.exe`, and require both `/ops/health.startupReady == true` and `ship\data\updater\post-install-success.json` before finalizing success.
+- The packaged desktop updater must download only the portable ZIP, preserve the resolved external data root, hand off runtime mutation to a temp-copied `BaluffoUpdater.exe`, and require both `/ops/health.startupReady == true` and `%APPDATA%\Baluffo\updater\post-install-success.json` before finalizing success on Windows packaged installs. During migration from older helpers that do not understand `dataDir`, the target app may also write a transition-only `ship\data\updater\post-install-success.json` marker for legacy source-helper verification.
 
 Migration and retention rules:
 
@@ -186,8 +186,11 @@ Portable layout:
 
 - `Baluffo.exe`: desktop entrypoint
 - `ship\`: embedded ship bundle
-- `ship\data\`: runtime and user data
-- `ship\data\local-user-data\`: desktop-specific saved jobs, notes, activity, attachments, and profile data
+- `%APPDATA%\Baluffo\`: Windows packaged runtime and user data
+- `%APPDATA%\Baluffo\local-user-data\`: desktop-specific saved jobs, notes, activity, attachments, and profile data
+- `%LOCALAPPDATA%\Baluffo\`: desktop session, browser profile, and transient local state
+- `%LOCALAPPDATA%\Baluffo\cache\`: cache directory
+- `ship\data\`: legacy packaged data source copied to `%APPDATA%\Baluffo\` on first Windows packaged launch when no completed migration report exists
 - `_internal\playwright\driver\package\.local-browsers\`: exactly one `chromium_headless_shell-<revision>` directory matching packaged Playwright `browsers.json`
 
 Runtime notes:
@@ -201,15 +204,15 @@ Runtime notes:
 Portable desktop in-app update flow:
 
 - Baluffo checks for desktop updates on startup with throttling and when the user clicks `Check for updates`.
-- Update state lives under `ship\data\updater\`.
+- Update state lives under the resolved data root, `%APPDATA%\Baluffo\updater\` for Windows packaged installs.
 - The jobs-page desktop UI must surface `Check for updates`, `Download`, `Install and restart`, install-progress, and failure/retry states.
 - Background download failures must remain visible in the Jobs-page updater panel, using the persisted updater `lastError` and a retry download action instead of reverting to the generic available-update CTA.
-- The updater downloads the portable ZIP from the selected GitHub release and never overwrites `ship\data\` from the downloaded artifact.
+- The updater downloads the portable ZIP from the selected GitHub release and never overwrites the resolved data root from the downloaded artifact.
 - Install handoff writes `install-plan.json`, copies `BaluffoUpdater.exe` to a temp path outside the install root, and closes the running app before the helper mutates the runtime.
 - Install handoff liveness checks must work without optional `psutil`; the Windows fallback uses process handles, not `os.kill(pid, 0)`.
-- Handoff failures before helper launch write `ship\data\updater\handoff-diagnostics.json` with non-secret verifier predicates.
+- Handoff failures before helper launch write `%APPDATA%\Baluffo\updater\handoff-diagnostics.json` on Windows packaged installs with non-secret verifier predicates.
 - The helper owns extraction, rollback snapshotting, optional migrations, target relaunch, and rollback-on-failure.
-- First-launch success requires desktop session state, `baluffo-bridge` health in desktop mode, `startupReady == true`, the target app version, and a fresh `ship\data\updater\post-install-success.json`.
+- First-launch success requires desktop session state, `baluffo-bridge` health in desktop mode, `startupReady == true`, the target app version, and a fresh `%APPDATA%\Baluffo\updater\post-install-success.json` on Windows packaged installs. `ship\data\updater\post-install-success.json` is compatibility-only for old source helpers with legacy handoff artifacts.
 - The release workflow must publish the portable ZIP, ship recovery ZIP, desktop manifest, and release notes together for desktop in-app updates to work.
 - Desktop update status may include cached stable GitHub release-note history as `releaseNotesHistory`; the scalar latest-release `releaseNotes*` fields remain the compatibility contract.
 - Releases that require the fixed source-side handoff checker must set `min_desktop_updater_version` to `2.0.1` or newer; do not move or replace an already published release tag to recover affected installs.
@@ -287,7 +290,7 @@ These packaged smoke commands validate the direct `dist\baluffo-portable\Baluffo
 The first-run packaged smoke is deterministic: it opens Jobs from a cold isolated runtime, lets the real Jobs UI start the bootstrap route with `BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_MODE=controlled-heartbeat-success`, avoids live Google Sheets, keeps the backend active past a smoke-shortened UI timeout boundary with fresh task-live heartbeats, asserts the running report/task state, renders the promoted one-row feed, verifies no duplicate post-success bootstrap starts, and captures computed-style checked light/dark popup artifacts.
 The Jobs-page packaged smoke is now a terminal-success gate: it must launch the Jobs pipeline, observe visible running progress, and then reach a non-error terminal state. It uses a smoke-only stub-success pipeline mode so the lane stays deterministic and does not run the full real discovery/fetch/sync workload.
 The packaged sync rehearsal gate validates the shipped `github-app-sync-config.json` inside the artifact, fails if it is machine-derived, and then drives `/sync/test` against a local fake GitHub App endpoint so the release gate exercises packaged auth/read portability without hitting real GitHub.
-The updater rehearsal gate exercises the real packaged `N -> N+1` helper-driven install path, including portable ZIP download staging, relaunch verification, and preservation of `ship\data\local-user-data`.
+The updater rehearsal gate exercises the real packaged `N -> N+1` helper-driven install path, including portable ZIP download staging, relaunch verification, and preservation of the resolved local-data root.
 The orphan-reclaim rehearsal gate seeds stale packaged `site` / `bridge` children plus stale desktop session state, relaunches the packaged app on the same ports, and fails unless startup metrics prove the launcher reclaimed both stale children instead of retrying or silently degrading.
 The browser-job rehearsal gate forces managed Chromium app-mode launch, requires early browser job-attachment telemetry, and then kills only `Baluffo.exe` to prove the attached/live browser PID exits before any smoke cleanup backstop runs.
 The desktop lifecycle rehearsal gate blocks desktop lifecycle POST/beacon traffic from a controlled page while non-health page traffic continues, proves the owner session does not false-idle-close past a short smoke-only timeout, then proves real page/window shutdown releases the launcher, browser proof PID, and desktop ports.

@@ -67,11 +67,19 @@ class DesktopUpdateService:
         self,
         *,
         data_dir: Path,
+        install_root: Path | None = None,
+        ship_root: Path | None = None,
         current_version_getter: Callable[[], str] | None = None,
     ) -> None:
         deps = _root()
         self._deps = deps
-        self.paths = deps.DesktopUpdatePaths.from_data_dir(data_dir)
+        env_install_root = str(deps.os.environ.get("BALUFFO_INSTALL_ROOT") or "").strip()
+        env_ship_root = str(deps.os.environ.get("BALUFFO_SHIP_ROOT") or "").strip()
+        self.paths = deps.DesktopUpdatePaths.from_data_dir(
+            data_dir,
+            install_root=install_root or (Path(env_install_root) if env_install_root else None),
+            ship_root=ship_root or (Path(env_ship_root) if env_ship_root else None),
+        )
         self._current_version_getter = current_version_getter or deps.get_app_version
         self._lock = deps.threading.RLock()
         self._download_thread: Any | None = None
@@ -575,11 +583,16 @@ class DesktopUpdateService:
             raise RuntimeError(f"Installed desktop updater helper not found: {helper_path}")
         self.paths.updater_dir.mkdir(parents=True, exist_ok=True)
         self.paths.rollback_root.mkdir(parents=True, exist_ok=True)
-        usage = deps.shutil.disk_usage(self.paths.updater_dir)
         required_free = max(int(zip_path.stat().st_size) * 3, 128 * 1024 * 1024)
-        if int(usage.free) < required_free:
+        data_root_usage = deps.shutil.disk_usage(self.paths.updater_dir)
+        if int(data_root_usage.free) < required_free:
             raise RuntimeError(
-                "Not enough free disk space for desktop update staging and rollback."
+                "Not enough free disk space in the desktop update data root for staging and rollback."
+            )
+        install_root_usage = deps.shutil.disk_usage(self.paths.install_root)
+        if int(install_root_usage.free) < required_free:
+            raise RuntimeError(
+                "Not enough free disk space in the Baluffo install root for runtime replacement."
             )
 
     def request_install(self) -> dict[str, Any]:
@@ -643,6 +656,7 @@ class DesktopUpdateService:
                 plan = {
                     "planVersion": 1,
                     "installRoot": str(self.paths.install_root),
+                    "dataDir": str(self.paths.data_dir),
                     "tempHelperPath": str(temp_helper),
                     "targetVersion": str(manifest.get("version") or "").strip(),
                     "currentVersion": self.current_version(),

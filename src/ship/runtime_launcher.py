@@ -476,9 +476,10 @@ def resolve_runtime_layout(
     root: str | Path | None = None, *, data_dir: str | Path | None = None
 ) -> RuntimeLayout:
     bundle_root = resolve_root(root)
-    paths = update_manager.ShipPaths.from_root(bundle_root)
+    default_paths = update_manager.ShipPaths.from_root(bundle_root)
+    resolved_data_dir = Path(data_dir).expanduser().resolve() if data_dir else default_paths.data
+    paths = update_manager.ShipPaths.from_root(bundle_root, data_dir=resolved_data_dir)
     update_manager.ensure_state(paths)
-    resolved_data_dir = Path(data_dir).expanduser().resolve() if data_dir else paths.data
     current_version = paths.current.read_text(encoding="utf-8").strip()
     if not current_version:
         raise RuntimeError("Current version pointer is empty.")
@@ -730,7 +731,8 @@ def run_bridge_server(
     checked_version = str(startup_check_result.get("current_version") or "").strip()
     if checked_version and checked_version != layout.current_version:
         updated_active_root = (
-            update_manager.ShipPaths.from_root(layout.root).versions / checked_version
+            update_manager.ShipPaths.from_root(layout.root, data_dir=layout.data_dir).versions
+            / checked_version
         )
         layout = RuntimeLayout(
             root=layout.root,
@@ -742,7 +744,10 @@ def run_bridge_server(
     bridge_script = layout.active_root / "src" / "admin_bridge.py"
     if not bridge_script.exists():
         raise RuntimeError(f"Admin bridge entrypoint not found: {bridge_script}")
+    install_root = layout.root.parent if layout.root.name.lower() == "ship" else layout.root
     os.environ["BALUFFO_DATA_DIR"] = str(layout.data_dir)
+    os.environ["BALUFFO_SHIP_ROOT"] = str(layout.root)
+    os.environ["BALUFFO_INSTALL_ROOT"] = str(install_root)
     if desktop_mode:
         os.environ["BALUFFO_DESKTOP_MODE"] = "1"
     else:

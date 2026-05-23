@@ -44,7 +44,7 @@
 | Possible Cause | Solution |
 |----------------|----------|
 | Browser mode: IndexedDB issue | Check browser console for IndexedDB errors |
-| Desktop mode: file permissions | Ensure `data/local-user-data/` is writable |
+| Desktop mode: file permissions | Ensure the configured data root is writable (`data/local-user-data/` for repo/source runs, `%APPDATA%\Baluffo\local-user-data\` for Windows packaged desktop) |
 | Guest mode | Sign in if you want seen/saved job state to persist; guest browsing is intentionally non-persistent |
 
 ### Desktop sign-in creates an unexpected new profile
@@ -52,7 +52,7 @@
 | Possible Cause | Solution |
 |----------------|----------|
 | Existing profile list did not load | Use the desktop sign-in `Retry` path first; only choose `Create new profile` when you intentionally want a new local profile |
-| Bridge/local data unavailable | Confirm the bridge is running and `data/local-user-data/` is readable/writable |
+| Bridge/local data unavailable | Confirm the bridge is running and the configured `local-user-data` directory is readable/writable |
 
 ### UI elements not responding
 
@@ -70,7 +70,7 @@
 | Saved page loads but shows profile restore/sign-in instead of saved rows | Open the desktop URL: `http://127.0.0.1:8080/saved.html?desktop=1&bridgePort=8877&bridgeHost=127.0.0.1` |
 | Bridge-backed page still does not load saved data | Confirm both ports respond with `Test-NetConnection 127.0.0.1 -Port 8080` and `Test-NetConnection 127.0.0.1 -Port 8877` |
 
-Use a bare static server only for static markup/CSS fixtures. For real Saved-page visual QA, use `npm run dev:bridge` so desktop local data comes from the file-backed bridge store under `data/local-user-data/`.
+Use a bare static server only for static markup/CSS fixtures. For real Saved-page visual QA, use `npm run dev:bridge` so desktop local data comes from the file-backed bridge store under the configured data root.
 
 ---
 
@@ -223,7 +223,7 @@ python -c "from src.bridge.source_check_api import trigger_source_check; print(t
 
 Fixed desktop-window builds shut down the owned launcher, site child, and bridge child shortly after the Baluffo browser window closes when no critical fetch, discovery, pipeline, or sync task is active. During active work, the launcher may keep the bridge alive temporarily for the existing background recovery path, but `/ops/health` polling alone must not keep the process tree alive.
 
-If a visible desktop page closes unexpectedly with `admin_bridge_owner_session_exit_requested`, inspect `ship\data\admin-bridge-events.jsonl` for non-health page routes such as `/ops/task-state`, `/ops/dashboard-health`, `/tasks/run-jobs-pipeline-status`, or `/app/update-status` between the last lifecycle heartbeat and shutdown. Those page-originated routes are a fallback liveness signal; `/ops/health` remains excluded so the launcher watchdog cannot keep a closed window alive by itself.
+If a visible desktop page closes unexpectedly with `admin_bridge_owner_session_exit_requested`, inspect `%APPDATA%\Baluffo\admin-bridge-events.jsonl` for Windows packaged desktop, or the configured data root for dev/custom `--data-dir` runs. Look for non-health page routes such as `/ops/task-state`, `/ops/dashboard-health`, `/tasks/run-jobs-pipeline-status`, or `/app/update-status` between the last lifecycle heartbeat and shutdown. Those page-originated routes are a fallback liveness signal; `/ops/health` remains excluded so the launcher watchdog cannot keep a closed window alive by itself.
 
 For release or shutdown-path changes, run `npm run test:frontend:packaged:desktop-lifecycle-rehearsal`. It covers the false-idle case where lifecycle POST/beacon traffic stops while non-health page traffic continues, then verifies real window shutdown releases the launcher, browser proof PID, and default desktop ports.
 
@@ -231,8 +231,8 @@ Diagnostics:
 
 | Check | Action |
 |-------|--------|
-| Startup trace | Inspect `ship\data\desktop-startup-metrics.jsonl` for `desktop_browser_window_missing_waiting_for_bridge` followed by `desktop_browser_heartbeat_timeout` |
-| Bridge events | Inspect `ship\data\admin-bridge-events.jsonl`; repeated `/ops/health` entries should not advance the desktop-window owner activity timestamp |
+| Startup trace | Inspect `%APPDATA%\Baluffo\desktop-startup-metrics.jsonl` for Windows packaged desktop, or the configured data root for dev/custom runs |
+| Bridge events | Inspect `%APPDATA%\Baluffo\admin-bridge-events.jsonl`; repeated `/ops/health` entries should not advance the desktop-window owner activity timestamp |
 | Session state | Inspect `%LOCALAPPDATA%\Baluffo\desktop-session.json` for stale `sitePid`, `bridgePid`, `sitePort`, and `bridgePort` values |
 | Live ports | Check `127.0.0.1:8080` and `127.0.0.1:8877` only if the stuck `Baluffo.exe` children are still present |
 
@@ -241,14 +241,16 @@ Diagnostics:
 | Check | Action |
 |-------|--------|
 | Failed background download | Open the updater panel again and confirm whether it now shows the persisted error with `Try download again` |
-| Persisted updater state | Inspect `ship\data\updater\install-state.json` for `downloadState`, `installState`, and `lastError` |
-| Handoff diagnostics | If the app reports that it could not confirm updater handoff, inspect `ship\data\updater\handoff-diagnostics.json`; it records non-secret verifier predicates such as PID liveness and session match |
-| Helper diagnostics | If install handoff starts, inspect `ship\data\updater\desktop-updater-helper.*.log` and `desktop-updater-helper.diagnostics.jsonl` |
-| Bad staged ZIP | Delete only the failed file under `ship\data\updater\downloads\` if it remains after a failed attempt, then retry the download |
+| Persisted updater state | Inspect `%APPDATA%\Baluffo\updater\install-state.json` for `downloadState`, `installState`, and `lastError` |
+| Handoff diagnostics | If the app reports that it could not confirm updater handoff, inspect `%APPDATA%\Baluffo\updater\handoff-diagnostics.json`; it records non-secret verifier predicates such as PID liveness and session match |
+| Helper diagnostics | If install handoff starts, inspect `%APPDATA%\Baluffo\updater\desktop-updater-helper.*.log` and `desktop-updater-helper.diagnostics.jsonl` |
+| Bad staged ZIP | Delete only the failed file under `%APPDATA%\Baluffo\updater\downloads\` if it remains after a failed attempt, then retry the download |
+
+New Windows packaged installs use `%APPDATA%\Baluffo\updater\post-install-success.json` as the canonical updater success marker. During migration from older source helpers, `ship\data\updater\post-install-success.json` can also appear as a transition-only compatibility marker.
 
 ### Portable update from `v0.1.33` reports `install_handoff_unconfirmed`
 
-`v0.1.33` can falsely reject a live Windows launcher during install handoff when the packaged runtime lacks optional `psutil`. A target ZIP cannot repair that already-installed source-side checker. Close Baluffo, extract a fixed portable release `v0.2.1` or newer, preserve/copy the old `ship\data\` into the new extracted folder, and start the new `Baluffo.exe`. Do not move or rewrite the published `v0.2.0` release tag to work around this.
+`v0.1.33` can falsely reject a live Windows launcher during install handoff when the packaged runtime lacks optional `psutil`. A target ZIP cannot repair that already-installed source-side checker. Close Baluffo, extract a fixed portable release `v0.2.1` or newer, keep the old `ship\data\` available for first-launch migration or copy it into `%APPDATA%\Baluffo\`, and start the new `Baluffo.exe`. Do not move or rewrite the published `v0.2.0` release tag to work around this.
 
 ### Ship bundle launcher fails
 

@@ -120,7 +120,8 @@ def publish_success_marker_when_ready_async(
     timeout_s: float = HEARTBEAT_STARTUP_TIMEOUT_S,
 ) -> None:
     api = desktop_api()
-    paths = api.DesktopUpdatePaths.from_data_dir(config.data_dir)
+    paths = api.DesktopUpdatePaths.from_data_dir(config.data_dir, ship_root=config.ship_root)
+    legacy_paths = _legacy_update_success_marker_paths(config)
 
     def worker() -> None:
         try:
@@ -135,6 +136,21 @@ def publish_success_marker_when_ready_async(
                 bridge_port=int(config.bridge_port),
                 launcher_token=str(launcher_token or ""),
             )
+            if legacy_paths is not None:
+                try:
+                    api.write_success_marker(
+                        legacy_paths,
+                        app_version=str(ready_payload.get("appVersion") or api.get_app_version()),
+                        bridge_port=int(config.bridge_port),
+                        launcher_token=str(launcher_token or ""),
+                    )
+                except (OSError, RuntimeError) as exc:
+                    api._append_startup_trace(
+                        config.data_dir,
+                        "desktop_legacy_success_marker_write_failed",
+                        path=str(legacy_paths.success_marker_path),
+                        error=str(exc),
+                    )
         except api.DesktopStartupReadyTimeout as exc:
             api._append_startup_trace(
                 config.data_dir,
@@ -160,6 +176,26 @@ def publish_success_marker_when_ready_async(
         name="baluffo-success-marker",
         daemon=True,
     ).start()
+
+
+def _legacy_update_success_marker_paths(config: DesktopRuntimeConfig):
+    api = desktop_api()
+    if api.os.name != "nt" or not bool(getattr(api.sys, "frozen", False)):
+        return None
+    legacy_data_dir = config.ship_root / "data"
+    try:
+        if legacy_data_dir.resolve() == config.data_dir.resolve():
+            return None
+    except OSError:
+        if legacy_data_dir == config.data_dir:
+            return None
+    legacy_paths = api.DesktopUpdatePaths.from_data_dir(
+        legacy_data_dir,
+        ship_root=config.ship_root,
+    )
+    if legacy_paths.handoff_request_path.exists() or legacy_paths.install_plan_path.exists():
+        return legacy_paths
+    return None
 
 
 def watch_browser_session(

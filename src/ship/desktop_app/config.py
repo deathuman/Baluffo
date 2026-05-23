@@ -11,6 +11,11 @@ from pathlib import Path
 
 from src.baluffo_config import get_desktop_defaults
 from src.ship.jobs_first_run_state import jobs_cold_start_required
+from src.ship.windows_user_paths import (
+    default_windows_packaged_data_dir,
+    migrate_legacy_windows_user_data,
+    windows_local_app_data_dir,
+)
 
 from ._compat import desktop_api
 
@@ -116,6 +121,21 @@ def open_path_is_jobs_entry(open_path: str) -> bool:
     return path.rsplit("/", 1)[-1] == "jobs.html"
 
 
+def _is_windows_packaged_runtime() -> bool:
+    return os.name == "nt" and bool(getattr(sys, "frozen", False))
+
+
+def _resolve_default_data_dir(ship_root: Path) -> Path:
+    env_data_dir = str(os.environ.get("BALUFFO_DATA_DIR") or "").strip()
+    if env_data_dir:
+        return Path(env_data_dir).expanduser().resolve()
+    if _is_windows_packaged_runtime():
+        data_dir = default_windows_packaged_data_dir(os.environ).resolve()
+        migrate_legacy_windows_user_data(ship_root / "data", data_dir)
+        return data_dir
+    return ship_root / "data"
+
+
 def create_runtime_config(args: argparse.Namespace) -> DesktopRuntimeConfig:
     api = desktop_api()
     ship_root = api.resolve_ship_root(args.root or None)
@@ -126,7 +146,7 @@ def create_runtime_config(args: argparse.Namespace) -> DesktopRuntimeConfig:
     data_dir = (
         Path(args.data_dir).expanduser().resolve()
         if str(args.data_dir or "").strip()
-        else ship_root / "data"
+        else _resolve_default_data_dir(ship_root)
     )
     open_path = str(args.open_path or DEFAULT_OPEN_PATH).lstrip("/") or DEFAULT_OPEN_PATH
     jobs_cold_start = bool(
@@ -262,13 +282,7 @@ def resolve_browser_session_root(env: dict[str, str] | None = None) -> Path:
     candidates: list[tuple[Path, str]] = []
     if env_override:
         candidates.append((Path(env_override).expanduser().resolve(), "env"))
-    base = str(env_map.get("LOCALAPPDATA") or "").strip()
-    if base:
-        candidates.append((Path(base).expanduser().resolve() / "Baluffo", "localappdata"))
-    else:
-        candidates.append(
-            ((Path.home() / "AppData" / "Local" / "Baluffo").resolve(), "home-localappdata")
-        )
+    candidates.append((windows_local_app_data_dir(env_map).resolve(), "localappdata"))
     username = str(env_map.get("USERNAME") or env_map.get("USER") or "user").strip() or "user"
     candidates.append(
         ((Path(tempfile.gettempdir()) / f"Baluffo-{username}").resolve(), "temp-user")

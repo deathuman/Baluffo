@@ -40,7 +40,7 @@ def recover_previous(root: Path) -> dict[str, Any]:
 
 
 def startup_check(root: Path, data_dir: Path) -> dict[str, Any]:
-    paths = ShipPaths.from_root(root.resolve())
+    paths = ShipPaths.from_root(root.resolve(), data_dir=data_dir)
     state = ensure_state(paths)
     validate_data_dir(paths, data_dir)
 

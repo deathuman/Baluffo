@@ -206,8 +206,12 @@ def _verify_target_startup(plan: dict[str, Any], *, timeout_s: float = 90.0) -> 
     module = _module()
     session_root = Path(str(plan.get("desktopSessionRoot") or "")).expanduser().resolve()
     session_state_path = session_root / "desktop-session.json"
+    install_root = Path(str(plan.get("installRoot") or "")).expanduser().resolve()
+    data_dir = Path(str(plan.get("dataDir") or "")).expanduser().resolve()
     success_marker = module.DesktopUpdatePaths.from_data_dir(
-        Path(str(plan.get("installRoot") or "")).expanduser().resolve() / "ship" / "data"
+        data_dir,
+        install_root=install_root,
+        ship_root=install_root / "ship",
     ).success_marker_path
     target_version = str(plan.get("targetVersion") or "").strip()
     deadline = module.time.monotonic() + max(10.0, float(timeout_s))
@@ -242,7 +246,7 @@ def _verify_target_startup(plan: dict[str, Any], *, timeout_s: float = 90.0) -> 
     raise RuntimeError("Updated desktop app did not report startup readiness in time.")
 
 
-def _restore_data_backup_if_needed(ship_root: Path, status: dict[str, Any]) -> None:
+def _restore_data_backup_if_needed(ship_root: Path, data_dir: Path, status: dict[str, Any]) -> None:
     module = _module()
     backup_ref_text = str(status.get("migrationBackupPath") or "").strip()
     if not backup_ref_text:
@@ -251,7 +255,7 @@ def _restore_data_backup_if_needed(ship_root: Path, status: dict[str, Any]) -> N
     if not backup_ref.exists():
         return
     module.update_manager.restore_data_backup(
-        module.update_manager.ShipPaths.from_root(ship_root),
+        module.update_manager.ShipPaths.from_root(ship_root, data_dir=data_dir),
         backup_ref,
     )
 
@@ -317,7 +321,7 @@ def _recover_interrupted_install(
         install_stage="recovering",
         lastError="",
     )
-    module._restore_data_backup_if_needed(ship_root, status)
+    module._restore_data_backup_if_needed(ship_root, paths.data_dir, status)
     module._restore_install_snapshot(install_root, rollback_root)
     with contextlib.suppress(OSError):
         shutil.rmtree(rollback_root)
@@ -337,8 +341,12 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
     plan = module.validate_install_plan(json.loads(plan_path.read_text(encoding="utf-8")))
     install_root = Path(str(plan.get("installRoot") or "")).expanduser().resolve()
     ship_root = install_root / "ship"
-    data_dir = ship_root / "data"
-    paths = module.DesktopUpdatePaths.from_data_dir(data_dir)
+    data_dir = Path(str(plan.get("dataDir") or "")).expanduser().resolve()
+    paths = module.DesktopUpdatePaths.from_data_dir(
+        data_dir,
+        install_root=install_root,
+        ship_root=ship_root,
+    )
     rollback_root = Path(str(plan.get("rollbackPath") or "")).expanduser().resolve()
     existing_status = module.load_status(paths)
     progress = progress if progress is not None else module.NullProgressWindow()
@@ -419,7 +427,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
                 rollbackPath=str(rollback_root),
             )
             backup_ref = module.update_manager.create_data_backup(
-                module.update_manager.ShipPaths.from_root(ship_root)
+                module.update_manager.ShipPaths.from_root(ship_root, data_dir=data_dir)
             )
             module._status_for_stage(
                 paths,
@@ -445,7 +453,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
                 migrationBackupPath=str(backup_ref),
             )
             module.update_manager.run_migrations(
-                module.update_manager.ShipPaths.from_root(ship_root),
+                module.update_manager.ShipPaths.from_root(ship_root, data_dir=data_dir),
                 migration_plan,
                 backup_ref,
             )
@@ -474,7 +482,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
         if backup_ref is not None:
             with contextlib.suppress(Exception):
                 module.update_manager.restore_data_backup(
-                    module.update_manager.ShipPaths.from_root(ship_root),
+                    module.update_manager.ShipPaths.from_root(ship_root, data_dir=data_dir),
                     backup_ref,
                 )
         current_status = module._status_for_stage(
