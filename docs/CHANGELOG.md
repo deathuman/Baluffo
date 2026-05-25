@@ -10,6 +10,20 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.18] - 2026-05-25
+
+### Added
+- Linux packaged desktop support now includes platform abstraction, credential storage support, launch scripts, AppRun/desktop metadata, AppImage packaging, and Linux smoke tooling.
+- Release automation now publishes a Linux AppImage alongside the Windows portable and ship-bundle assets for `v*` release tags.
+
+### Changed
+- Windows packaged desktop data now defaults to `%APPDATA%\Baluffo`, with first-launch legacy `ship\data` migration and migration reports.
+- Desktop updater handoff, relaunch, rollback, and success-marker paths now preserve the planned external data root instead of deriving state from legacy `ship\data`.
+
+### Fixed
+- Linux CI no longer fails Windows desktop compat tests by resolving Windows-specific facade calls through Linux stubs.
+- CI complexity checks now keep the Ruff baseline metadata aligned with the pinned Ruff version.
+
 ## [0.2.17] - 2026-05-23
 
 ### Fixed

@@ -26,6 +26,7 @@ def test_release_docs_cover_the_current_public_release_line(repo_root: Path) -> 
     release_text = (docs_dir / "RELEASE.md").read_text(encoding="utf-8")
     app_version = get_app_version()
     top_release = _section(changelog_text, f"## [{app_version}]")
+    release_0_2_17 = _section(changelog_text, "## [0.2.17]")
     release_0_2_16 = _section(changelog_text, "## [0.2.16]")
     release_0_2_15 = _section(changelog_text, "## [0.2.15]")
     release_0_2_1 = _section(changelog_text, "## [0.2.1]")
@@ -47,9 +48,15 @@ def test_release_docs_cover_the_current_public_release_line(repo_root: Path) -> 
         heading in top_release for heading in ("### Added", "### Changed", "### Fixed", "### Notes")
     )
     assert "\n- " in top_release
-    assert "First-run Google Sheets bootstrap" in top_release
-    assert "Jobs first-run Retry" in top_release
-    assert "Packaged first-run smoke" in top_release
+    assert "Linux packaged desktop support" in top_release
+    assert "Release automation now publishes a Linux AppImage" in top_release
+    assert "%APPDATA%\\Baluffo" in top_release
+    assert "external data root" in top_release
+    assert "Windows-specific facade calls through Linux stubs" in top_release
+    assert "Ruff baseline metadata" in top_release
+    assert "First-run Google Sheets bootstrap" in release_0_2_17
+    assert "Jobs first-run Retry" in release_0_2_17
+    assert "Packaged first-run smoke" in release_0_2_17
     assert "Remote Python CI" in release_0_2_16
     assert "Google Sheets category-style titles" in release_0_2_16
     assert "URL-derived title repair" in release_0_2_16
