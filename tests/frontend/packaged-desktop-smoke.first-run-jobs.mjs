@@ -265,7 +265,7 @@ async function main() {
     await fs.mkdir(OUTPUT_DIR, { recursive: true });
     apiRequest = await playwrightRequest.newContext();
     await assertNoSeededJobsArtifacts(apiRequest);
-    browser = await chromium.launch({ headless: !HEADED });
+    browser = await chromium.launch({ headless: !HEADED, ...(process.env.PACKAGED_SMOKE_SYSTEM_CHROMIUM === "1" ? { channel: "chromium" } : {}) });
     context = await browser.newContext({ viewport: VIEWPORTS[0] });
     const page = await context.newPage();
     const bootstrapRequests = [];

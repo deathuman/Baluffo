@@ -1,0 +1,21 @@
+#!/bin/bash
+set -euo pipefail
+
+APPDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PATH="${APPDIR}/usr/bin:${PATH}"
+export LD_LIBRARY_PATH="${APPDIR}/usr/lib:${LD_LIBRARY_PATH:-}"
+
+if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
+    export PLAYWRIGHT_SYSTEM_CHROMIUM=1
+    export PACKAGED_SMOKE_SYSTEM_CHROMIUM=1
+fi
+
+cd "$APPDIR"
+
+EXEC="${APPDIR}/baluffo"
+if [ ! -x "$EXEC" ]; then
+    echo "Error: baluffo executable not found at $EXEC"
+    exit 1
+fi
+
+exec "$EXEC" "$@"

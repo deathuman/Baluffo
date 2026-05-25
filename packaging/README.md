@@ -46,6 +46,27 @@ The encrypted key supports three derivation modes implemented in `src/source_syn
 - legacy no-prefix ciphertexts remain decryptable for existing packaged configs
 - plaintext private keys should not be shipped in production bundles
 - on Windows, decrypted key material is re-wrapped into a local DPAPI cache for subsequent launches
+- on Linux, decrypted key material is re-wrapped using `cryptography.fernet.Fernet` with a key stored via system keyring (falling back to `~/.config/baluffo/sync.key`, 0o600 permissions). The cache file (`.localkey.json`) uses `schemaVersion: 2` with a `"wrapped"` field; old `schemaVersion: 1` caches with `"dpapi"` field are silently ignored on Linux.
+- on Linux, generate the packaged config with equivalent bash syntax:
+  ```bash
+  python scripts/build_sync_app_config.py \
+    --app-id 123456 \
+    --installation-id 98765432 \
+    --repo owner/repo \
+    --allowed-repo owner/repo \
+    --allowed-branch main \
+    --allowed-path-prefix baluffo/source-sync.json \
+    --private-key /path/to/github-app-private-key.pem \
+    --embedded-key-version v1
+  ```
+- on Linux, build-time env vars use standard shell syntax:
+  ```bash
+  export BALUFFO_SYNC_BUILD_APP_ID="123456"
+  export BALUFFO_SYNC_BUILD_INSTALLATION_ID="98765432"
+  export BALUFFO_SYNC_BUILD_REPO="your-org/job-sources-backup"
+  export BALUFFO_SYNC_BUILD_PRIVATE_KEY_PATH="/path/to/github-app-private-key.pem"
+  npm run build:ship-bundle
+  ```
 
 For local compatibility fixtures only, `privateKeyPem` may be read instead of `privateKeyPemEnc`.
 The build helper no longer generates plaintext packaged configs.

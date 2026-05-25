@@ -211,6 +211,7 @@ def test_launch_desktop_app_reclaims_stale_session_before_resolving_explicit_por
     start_child_mock.assert_not_called()
 
 
+@pytest.mark.windows
 def test_launch_desktop_app_starts_children_saves_session_and_watches_browser() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
     config = desktop_runtime_config(
@@ -289,6 +290,7 @@ def test_launch_desktop_app_starts_children_saves_session_and_watches_browser() 
     clear_mock.assert_called_once()
 
 
+@pytest.mark.windows
 def test_launch_desktop_app_does_not_attach_startup_probe_browser_to_job() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
     config = desktop_runtime_config(
@@ -883,6 +885,7 @@ def test_launch_desktop_app_can_skip_browser_launch_for_packaged_rehearsal() -> 
     )
 
 
+@pytest.mark.windows
 def test_launch_desktop_app_retries_default_ports_after_bind_race() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
     original_config = desktop_runtime_config(
@@ -958,6 +961,7 @@ def test_launch_desktop_app_retries_default_ports_after_bind_race() -> None:
     assert any(call.args[1] == "desktop_runtime_port_retry" for call in trace_mock.call_args_list)
 
 
+@pytest.mark.windows
 def test_launch_desktop_app_keeps_explicit_ports_fail_fast_after_bind_race() -> None:
     config = desktop_runtime_config(
         site_port_explicit=True,
@@ -1050,6 +1054,7 @@ def test_launch_desktop_app_spawns_update_helper_from_launcher_on_install_reques
     assert helper_paths.install_root == config.ship_root
 
 
+@pytest.mark.windows
 def test_launch_desktop_app_does_not_recover_to_default_browser_after_process_exit() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
     config = desktop_runtime_config(
@@ -1116,6 +1121,7 @@ def test_launch_desktop_app_does_not_recover_to_default_browser_after_process_ex
     )
 
 
+@pytest.mark.windows
 def test_launch_desktop_app_attempts_one_browser_relaunch_when_active_work_loses_heartbeat() -> (
     None
 ):
@@ -1203,6 +1209,7 @@ def test_launch_desktop_app_attempts_one_browser_relaunch_when_active_work_loses
     show_message_mock.assert_not_called()
 
 
+@pytest.mark.windows
 def test_launch_desktop_app_enters_background_recovery_after_recovery_budget_is_exhausted() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
     config = desktop_runtime_config(
@@ -1281,6 +1288,7 @@ def test_launch_desktop_app_enters_background_recovery_after_recovery_budget_is_
     assert "Active tasks: fetch" in show_message_mock.call_args.args[1]
 
 
+@pytest.mark.windows
 def test_launch_desktop_app_enters_background_recovery_for_process_exit() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
     config = desktop_runtime_config(
@@ -1357,6 +1365,7 @@ def test_launch_desktop_app_enters_background_recovery_for_process_exit() -> Non
     assert "Active tasks: pipeline" in show_message_mock.call_args.args[1]
 
 
+@pytest.mark.windows
 def test_launch_desktop_app_still_shows_fatal_message_when_bridge_health_is_lost() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
     config = desktop_runtime_config(
@@ -1497,6 +1506,7 @@ def test_launch_desktop_app_keeps_runtime_alive_when_browser_launch_fails() -> N
     )
 
 
+@pytest.mark.windows
 def test_launch_desktop_app_fails_when_bridge_attach_fails() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
     config = desktop_runtime_config(
@@ -1539,6 +1549,7 @@ def test_launch_desktop_app_fails_when_bridge_attach_fails() -> None:
     launch_browser_mock.assert_not_called()
 
 
+@pytest.mark.windows
 def test_launch_desktop_app_recovers_when_initial_browser_attach_fails() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
     config = desktop_runtime_config(

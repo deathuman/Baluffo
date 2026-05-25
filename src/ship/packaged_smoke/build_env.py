@@ -13,6 +13,7 @@ from typing import Any
 
 root: Any | None = None
 _PLAYWRIGHT_CHROMIUM_PATH_CACHE: str | None = None
+_PATH_TYPE = type(Path("."))
 
 
 def _root() -> Any:
@@ -178,6 +179,11 @@ def resolve_playwright_chromium_executable(env: dict[str, str] | None = None) ->
     if int(completed.returncode or 0) != 0:
         return ""
     _PLAYWRIGHT_CHROMIUM_PATH_CACHE = _usable_chromium_executable(completed.stdout)
+    if _PLAYWRIGHT_CHROMIUM_PATH_CACHE:
+        return _PLAYWRIGHT_CHROMIUM_PATH_CACHE
+    system_chromium = deps.shutil.which("chromium-browser") or deps.shutil.which("chromium")
+    if system_chromium:
+        _PLAYWRIGHT_CHROMIUM_PATH_CACHE = system_chromium
     return _PLAYWRIGHT_CHROMIUM_PATH_CACHE
 
 
@@ -255,8 +261,8 @@ def packaged_desktop_local_appdata_root(
     artifacts_dir: Path, *, session_scope: str = "runtime"
 ) -> Path:
     deps = _root()
-    base = Path(artifacts_dir).expanduser().resolve() / "desktop-localappdata"
-    return Path(base / str(deps.slugify_token(session_scope)))
+    base = _PATH_TYPE(str(artifacts_dir)).expanduser().resolve() / "desktop-localappdata"
+    return _PATH_TYPE(base / str(deps.slugify_token(session_scope)))
 
 
 def packaged_desktop_session_paths(env: dict[str, str] | None = None) -> dict[str, Path]:
@@ -264,7 +270,7 @@ def packaged_desktop_session_paths(env: dict[str, str] | None = None) -> dict[st
     env_map = env if env is not None else deps.os.environ
     session_root = deps.desktop_update_mod.resolve_desktop_session_root(env_map)
     return {
-        "localAppData": Path(str(env_map.get("LOCALAPPDATA") or "")).expanduser().resolve(),
+        "localAppData": _PATH_TYPE(str(env_map.get("LOCALAPPDATA") or "")).expanduser().resolve(),
         "sessionRoot": session_root,
         "sessionState": session_root / deps.DESKTOP_SESSION_STATE_FILE,
         "instanceLock": session_root / deps.DESKTOP_INSTANCE_LOCK_FILE,

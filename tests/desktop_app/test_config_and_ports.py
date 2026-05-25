@@ -42,6 +42,7 @@ def test_create_runtime_config_defaults_to_fixed_desktop_ports() -> None:
     assert config.owner_idle_timeout_s == 0.0
 
 
+@pytest.mark.windows
 def test_windows_user_paths_resolve_roaming_local_cache_and_fallbacks() -> None:
     env = {
         "APPDATA": "C:/Users/Andrea/AppData/Roaming",
@@ -66,6 +67,7 @@ def test_windows_user_paths_resolve_roaming_local_cache_and_fallbacks() -> None:
     )
 
 
+@pytest.mark.windows
 def test_windows_legacy_user_data_migration_copies_without_overwriting() -> None:
     with workspace_tmpdir("windows-user-data-migration") as tmp:
         legacy = Path(tmp) / "portable" / "ship" / "data"
@@ -96,6 +98,7 @@ def test_windows_legacy_user_data_migration_copies_without_overwriting() -> None
     assert second_report["status"] == "already_migrated"
 
 
+@pytest.mark.windows
 def test_windows_legacy_user_data_migration_marks_missing_legacy_data() -> None:
     with workspace_tmpdir("windows-user-data-migration-missing") as tmp:
         legacy = Path(tmp) / "portable" / "ship" / "data"
@@ -107,6 +110,7 @@ def test_windows_legacy_user_data_migration_marks_missing_legacy_data() -> None:
         assert windows_user_paths.windows_user_data_migration_report_path(target).is_file()
 
 
+@pytest.mark.windows
 def test_create_runtime_config_windows_packaged_uses_appdata_and_migrates_legacy() -> None:
     with workspace_tmpdir("desktop-config-windows-appdata") as tmp:
         ship_root = Path(tmp) / "portable" / "ship"
@@ -150,6 +154,7 @@ def test_create_runtime_config_windows_packaged_uses_appdata_and_migrates_legacy
         assert windows_user_paths.windows_user_data_migration_report_path(config.data_dir).is_file()
 
 
+@pytest.mark.windows
 def test_create_runtime_config_preserves_env_data_dir_override_for_packaged_windows() -> None:
     with workspace_tmpdir("desktop-config-windows-env-data-dir") as tmp:
         ship_root = Path(tmp) / "portable" / "ship"
@@ -417,18 +422,22 @@ def test_resolve_browser_session_root_falls_back_to_runtime_temp_when_standard_l
         root = Path(tmp)
         temp_root = root / "temp"
         localappdata_root = root / "localappdata"
-        env = {"LOCALAPPDATA": str(localappdata_root), "USERNAME": "tester"}
+        xdg_root = root / "xdg-data"
+        env = {
+            "LOCALAPPDATA": str(localappdata_root),
+            "USERNAME": "tester",
+            "XDG_DATA_HOME": str(xdg_root),
+        }
         local_candidate = (localappdata_root / "Baluffo").resolve()
+        xdg_candidate = (xdg_root / "Baluffo").resolve()
         temp_candidate = (temp_root / "Baluffo-tester").resolve()
+        blocked_parents = {local_candidate, xdg_candidate, temp_candidate}
         original_write_text = Path.write_text
 
         monkeypatch.setattr(desktop_app.tempfile, "gettempdir", lambda: str(temp_root))
 
         def blocked_write_text(self: Path, *args: object, **kwargs: object) -> int:
-            if self.name == ".baluffo-write-probe" and self.parent in {
-                local_candidate,
-                temp_candidate,
-            }:
+            if self.name == ".baluffo-write-probe" and self.parent in blocked_parents:
                 raise OSError("blocked for test")
             return original_write_text(self, *args, **kwargs)
 

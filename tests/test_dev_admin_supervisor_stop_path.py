@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
 from src import dev_admin_supervisor as supervisor
 from tests.helpers.temp_paths import workspace_tmpdir
 
@@ -140,6 +142,7 @@ def test_stop_owned_session_clears_artifacts_even_when_a_pid_is_stubborn() -> No
         assert str(reset_report.get("runId") or "") == ""
 
 
+@pytest.mark.windows
 def test_terminate_pid_uses_bounded_taskkill_on_windows() -> None:
     with (
         mock.patch.object(supervisor.os, "name", "nt"),

@@ -234,6 +234,7 @@ def test_pid_is_running_rejects_zombie_psutil_processes() -> None:
         assert du.pid_is_running(4242) is False
 
 
+@pytest.mark.windows
 def test_pid_is_running_windows_fallback_accepts_live_pid_without_psutil() -> None:
     kernel32 = mock.Mock()
     kernel32.OpenProcess.return_value = 99
@@ -264,6 +265,7 @@ def test_pid_is_running_windows_fallback_accepts_live_pid_without_psutil() -> No
     kernel32.CloseHandle.assert_called_once_with(99)
 
 
+@pytest.mark.windows
 def test_pid_is_running_windows_fallback_rejects_open_failed_pid_without_psutil() -> None:
     kernel32 = mock.Mock()
     kernel32.OpenProcess.return_value = 0
@@ -715,6 +717,7 @@ def test_resolve_release_repo_repairs_missing_current_pointer() -> None:
 def test_resolve_desktop_session_root_falls_back_to_temp_when_primary_is_not_writable() -> None:
     with workspace_tmpdir("desktop-update") as tmp:
         local_app_data = Path(tmp) / "local-app-data"
+        xdg_data = Path(tmp) / "xdg-data"
         temp_root = Path(tmp) / "temp-root"
         original_write_text = Path.write_text
 
@@ -726,7 +729,8 @@ def test_resolve_desktop_session_root_falls_back_to_temp_when_primary_is_not_wri
             newline: str | None = None,
         ) -> int:
             path_text = str(self)
-            if ".baluffo-write-probe" in path_text and "local-app-data" in path_text:
+            blocked = {"local-app-data", "xdg-data"}
+            if ".baluffo-write-probe" in path_text and any(p in path_text for p in blocked):
                 raise OSError("read-only")
             return original_write_text(
                 self, data, encoding=encoding, errors=errors, newline=newline
@@ -737,6 +741,7 @@ def test_resolve_desktop_session_root_falls_back_to_temp_when_primary_is_not_wri
                 du.os.environ,
                 {
                     "LOCALAPPDATA": str(local_app_data),
+                    "XDG_DATA_HOME": str(xdg_data),
                     "USERNAME": "tester",
                     "TEMP": str(temp_root),
                     "TMP": str(temp_root),
@@ -773,19 +778,23 @@ def test_resolve_desktop_session_root_falls_back_to_runtime_temp_when_standard_l
         root = Path(tmp)
         temp_root = root / "temp"
         localappdata_root = root / "localappdata"
-        env = {"LOCALAPPDATA": str(localappdata_root), "USERNAME": "tester"}
+        xdg_root = root / "xdg-data"
+        env = {
+            "LOCALAPPDATA": str(localappdata_root),
+            "USERNAME": "tester",
+            "XDG_DATA_HOME": str(xdg_root),
+        }
         local_candidate = (localappdata_root / "Baluffo").resolve()
+        xdg_candidate = (xdg_root / "Baluffo").resolve()
         temp_candidate = (temp_root / "Baluffo-tester").resolve()
+        blocked_parents = {local_candidate, xdg_candidate, temp_candidate}
         original_write_text = Path.write_text
 
         monkeypatch.setattr(desktop_app_config.tempfile, "gettempdir", lambda: str(temp_root))
         monkeypatch.setattr(desktop_app_config, "_RUNTIME_SESSION_ROOT", None)
 
         def blocked_write_text(self: Path, *args: object, **kwargs: object) -> int:
-            if self.name == ".baluffo-write-probe" and self.parent in {
-                local_candidate,
-                temp_candidate,
-            }:
+            if self.name == ".baluffo-write-probe" and self.parent in blocked_parents:
                 raise OSError("blocked for test")
             return original_write_text(self, *args, **kwargs)
 
@@ -1700,6 +1709,7 @@ def test_run_download_worker_failure_clears_install_ready_state_and_bad_zip() ->
         assert not target.exists()
 
 
+@pytest.mark.windows
 def test_launch_staged_update_helper_uses_logged_spawn_contract() -> None:
     with workspace_tmpdir("desktop-update") as tmp:
         install_root = Path(tmp) / "portable"

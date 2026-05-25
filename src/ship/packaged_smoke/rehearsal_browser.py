@@ -254,7 +254,7 @@ def run_packaged_browser_job_rehearsal(
 ) -> dict[str, Any]:
     deps = _root()
     started = time.perf_counter()
-    if deps.os.name != "nt":
+    if deps.sys.platform != "win32":
         return {
             "name": "Packaged browser job rehearsal",
             "slug": "packaged-browser-job-rehearsal",
@@ -445,7 +445,7 @@ def run_packaged_desktop_lifecycle_rehearsal(
     details: dict[str, Any] = {
         "ownerIdleTimeoutSeconds": owner_idle_timeout_s,
     }
-    if deps.os.name != "nt":
+    if deps.sys.platform != "win32":
         return {
             "name": "Packaged desktop lifecycle rehearsal",
             "slug": "packaged-desktop-lifecycle-rehearsal",

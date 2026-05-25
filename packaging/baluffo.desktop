@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Baluffo
+Comment=Game dev job aggregator
+Exec=baluffo
+Icon=baluffo
+Categories=Office;
+Terminal=false
+StartupWMClass=baluffo

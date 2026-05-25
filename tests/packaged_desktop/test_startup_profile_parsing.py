@@ -18,6 +18,7 @@ def test_local_address_matches_listen_port() -> None:
     assert smoke._local_address_matches_listen_port("[::1]:9090", 9090) is True
 
 
+@pytest.mark.windows
 def test_pids_listening_on_tcp_port_windows_parses_netstat() -> None:
     sample = (
         "\n"

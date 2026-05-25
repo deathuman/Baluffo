@@ -769,15 +769,19 @@ def build_bundle(output_dir: Path, version: str) -> Path:
         _copy_file(ROOT / "src" / "ship" / rel, tooling_dir / rel)
 
     # Launcher scripts + ship runbook.
-    _copy_file(ROOT / "src" / "ship" / "run-bridge.ps1", output_dir / "run-bridge.ps1")
-    _copy_file(ROOT / "src" / "ship" / "run-site.ps1", output_dir / "run-site.ps1")
-    _copy_file(ROOT / "src" / "ship" / "run-all.ps1", output_dir / "run-all.ps1")
-    _copy_file(ROOT / "src" / "ship" / "apply-update.ps1", output_dir / "apply-update.ps1")
-    _copy_file(ROOT / "src" / "ship" / "recover-previous.ps1", output_dir / "recover-previous.ps1")
-    _copy_file(
-        ROOT / "src" / "ship" / "create-support-bundle.ps1",
-        output_dir / "create-support-bundle.ps1",
-    )
+    _launcher_ext = ".sh" if sys.platform != "win32" else ".ps1"
+    for _name in (
+        "run-bridge",
+        "run-site",
+        "run-all",
+        "apply-update",
+        "recover-previous",
+        "create-support-bundle",
+    ):
+        _copy_file(
+            ROOT / "src" / "ship" / f"{_name}{_launcher_ext}",
+            output_dir / f"{_name}{_launcher_ext}",
+        )
     _copy_file(ROOT / "docs" / "RELEASE.md", output_dir / "RELEASE_GUIDE.md")
     _copy_file(
         ROOT / "docs" / "update-manifest.schema.json", output_dir / "UPDATE_MANIFEST_SCHEMA.json"
@@ -837,8 +841,10 @@ def main() -> int:
     args = parse_args()
     version = str(args.bundle_version).strip() or DEFAULT_BUNDLE_VERSION
     out = build_bundle(Path(args.output_dir).expanduser().resolve(), version)
+    _launcher_ext = ".sh" if sys.platform != "win32" else ".ps1"
+    _launcher_names = [f"{n}{_launcher_ext}" for n in ("run-bridge", "run-site", "run-all")]
     print(f"Ship bundle ready: {out}")
-    print(f"Launchers: {out / 'run-bridge.ps1'} | {out / 'run-site.ps1'} | {out / 'run-all.ps1'}")
+    print("Launchers: " + " | ".join(str(out / n) for n in _launcher_names))
     return 0
 
 

@@ -92,3 +92,9 @@ def make_test_root(codex_tmp_root: Path):
 
     for root in created:
         remove_workspace_tmpdir(root)
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line(
+        "markers", "windows: Test requires Windows-specific APIs; skipped on Linux."
+    )

@@ -476,6 +476,7 @@ def test_wait_for_packaged_runtime_with_port_pivot_prefers_env_scoped_session_ro
         fetch_mock.assert_any_call("http://127.0.0.1:9002/ops/health", timeout_s=1.0)
 
 
+@pytest.mark.windows
 def test_run_packaged_browser_job_rehearsal_passes_with_attached_pid_proof() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         root = Path(tmp)
@@ -489,7 +490,7 @@ def test_run_packaged_browser_job_rehearsal_passes_with_attached_pid_proof() -> 
         stderr_handle = mock.Mock()
 
         with (
-            mock.patch.object(smoke.os, "name", "nt"),
+            mock.patch.object(smoke.sys, "platform", "win32"),
             mock.patch.object(
                 smoke,
                 "_select_packaged_browser_job_browser",
@@ -571,6 +572,7 @@ def test_run_packaged_browser_job_rehearsal_passes_with_attached_pid_proof() -> 
     assert payload["details"]["desktopPortsReleased"] is True
 
 
+@pytest.mark.windows
 def test_run_packaged_browser_job_rehearsal_fails_when_attach_metric_is_missing() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         root = Path(tmp)
@@ -583,7 +585,7 @@ def test_run_packaged_browser_job_rehearsal_fails_when_attach_metric_is_missing(
         stderr_handle = mock.Mock()
 
         with (
-            mock.patch.object(smoke.os, "name", "nt"),
+            mock.patch.object(smoke.sys, "platform", "win32"),
             mock.patch.object(
                 smoke,
                 "_select_packaged_browser_job_browser",
@@ -686,6 +688,7 @@ def test_run_packaged_smoke_can_run_browser_job_rehearsal_mode() -> None:
     rehearsal_mock.assert_called_once()
 
 
+@pytest.mark.windows
 def test_run_packaged_desktop_lifecycle_rehearsal_passes_when_both_phases_complete() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         root = Path(tmp)
@@ -714,7 +717,7 @@ def test_run_packaged_desktop_lifecycle_rehearsal_passes_when_both_phases_comple
         ]
 
         with (
-            mock.patch.object(smoke.os, "name", "nt"),
+            mock.patch.object(smoke.sys, "platform", "win32"),
             mock.patch.object(
                 smoke,
                 "packaged_runtime_env_overrides",
@@ -857,6 +860,7 @@ def test_run_packaged_smoke_can_run_desktop_lifecycle_rehearsal_mode() -> None:
         assert saved["ok"] is True
 
 
+@pytest.mark.windows
 def test_run_packaged_orphan_reclaim_rehearsal_passes_when_metrics_prove_reclaim() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         root = Path(tmp)
@@ -931,6 +935,7 @@ def test_run_packaged_orphan_reclaim_rehearsal_passes_when_metrics_prove_reclaim
     wait_exit_mock.assert_any_call(stale_bridge_process, timeout_s=15.0)
 
 
+@pytest.mark.windows
 def test_run_packaged_orphan_reclaim_rehearsal_fails_when_site_reclaim_metric_is_missing() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         root = Path(tmp)
@@ -996,6 +1001,7 @@ def test_run_packaged_orphan_reclaim_rehearsal_fails_when_site_reclaim_metric_is
     assert "site reclaim" in payload["error"]
 
 
+@pytest.mark.windows
 def test_run_packaged_orphan_reclaim_rehearsal_fails_when_runtime_retries_ports() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         root = Path(tmp)
@@ -1168,6 +1174,7 @@ def test_wait_for_relaunched_runtime_prefers_explicit_session_env_over_global_st
         fetch_mock.assert_called_once_with("http://127.0.0.1:4567/ops/health", timeout_s=5.0)
 
 
+@pytest.mark.windows
 def test_run_desktop_update_rehearsal_clears_session_state_only_after_runtime_exit() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         root = Path(tmp)

@@ -71,6 +71,9 @@ CHROMIUM_BROWSER_CANDIDATES = (
     ("chrome", "chrome.exe"),
     ("brave", "brave.exe"),
     ("msedge", "msedge.exe"),
+    ("google-chrome", "google-chrome-stable"),
+    ("brave-browser", "brave-browser-stable"),
+    ("chromium", "chromium-browser"),
 )
 PREFERRED_BROWSER_PATH_ENV = "BALUFFO_DESKTOP_BROWSER_PATH"
 NO_BROWSER_ENV = "BALUFFO_DESKTOP_NO_BROWSER"
@@ -282,6 +285,11 @@ def resolve_browser_session_root(env: dict[str, str] | None = None) -> Path:
     candidates: list[tuple[Path, str]] = []
     if env_override:
         candidates.append((Path(env_override).expanduser().resolve(), "env"))
+    if os.name != "nt":
+        xdg_data = str(env_map.get("XDG_DATA_HOME") or "").strip()
+        if not xdg_data:
+            xdg_data = str(Path.home() / ".local" / "share")
+        candidates.append((Path(xdg_data) / "Baluffo", "xdg-data"))
     candidates.append((windows_local_app_data_dir(env_map).resolve(), "localappdata"))
     username = str(env_map.get("USERNAME") or env_map.get("USER") or "user").strip() or "user"
     candidates.append(

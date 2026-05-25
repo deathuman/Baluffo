@@ -4,6 +4,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+import pytest
+
 from src.app_version import APP_VERSION
 from src.ship import desktop_app
 from tests.desktop_app._helpers import desktop_runtime_config
@@ -54,6 +56,7 @@ def _patch_desktop_launch(config, *, launch_result, watch_result="heartbeat_time
     return stack, launch_mock, save_mock, watch_mock
 
 
+@pytest.mark.windows
 def test_launch_desktop_app_saves_attention_window_identity_and_session_root() -> None:
     config = desktop_runtime_config(data_dir=Path("C:/tmp/baluffo-ship/data"))
     browser_process = mock.Mock(spec=subprocess.Popen)

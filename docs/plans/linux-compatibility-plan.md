@@ -1,12 +1,9 @@
 # Linux Compatibility Plan
 
-> - **Status:** Active plan, not yet implemented
-> - **Use this when:** porting Baluffo to run natively under Linux (WSL or bare-metal), adding Linux-specific platform abstractions, or fixing Linux runtime issues
-> - **Canonical for:** the Linux porting target inventory, known platform gaps, platform-gating strategy, phased implementation sequencing, and verification steps
-> - **Not canonical for:** WSL environment setup (see [`WSL_SETUP.md`](../WSL_SETUP.md)), Windows-only code changes, or current Windows desktop runtime behavior
-> - **Then inspect:** [`../architecture-ai-map.md`](../architecture-ai-map.md) for `src/ship/` subsystem boundaries, [`../WSL_SETUP.md`](../WSL_SETUP.md) for dev environment, [`../testing.md`](../testing.md) for test commands, [`../../AGENTS.md`](../../AGENTS.md) for dependency rules
-> - **Last updated:** 2026-05-23
-> - **Validated:** 2026-05-23 — all claims verified against actual codebase; dispatch naming, test attribution, and XDG fallback refinements applied after double-check
+> - **Status:** Active — Phases 0, 0a, 1, 2, 3, 4, 7 completed. Phases 6, 8 completed. Phase 5 merged into Phase 8.
+> - **Progress:** 3177 Python tests pass on Linux (0 failures). Full AppImage build pipeline operational. Linux CI workflow ready.
+> - **Last updated:** 2026-05-25
+> - **Validated:** 2026-05-25 — all implemented phases verified against codebase and test suite.
 
 ## Summary
 
@@ -48,17 +45,12 @@ The full import chain `desktop_app/__init__.py` → `desktop_update.py` → `des
 | Suite | Passed | Failed | Notes |
 |-------|--------|--------|-------|
 | `npm run test:py` (excl. slow/packaging) | 3029 | 0 | 139 deselected |
-| `npm run test:py:extended` | 3164 | 3 | 1 skipped |
+| `npm run test:py:linux` | 2996 | 0 | 183 deselected |
+| `npm run test:py:extended` | 3177 | 0 | 2 skipped |
 
-### 3 Test Failures on Linux
+### Test Failures: 0 (Resolved)
 
-All in `tests/packaged_desktop/test_rehearsal_flows.py`:
-
-| Test | Root Cause | Notes |
-|------|-----------|-------|
-| `test_run_packaged_browser_job_rehearsal_passes_with_attached_pid_proof` | `WindowsPath` instantiation in `build_env.py:258` | Test mocks `os.name = "nt"` but does NOT mock `packaged_runtime_env_overrides`, so the real `packaged_desktop_local_appdata_root()` path is exercised |
-| `test_run_packaged_browser_job_rehearsal_fails_when_attach_metric_is_missing` | Same `WindowsPath` issue | Same mock setup as above |
-| `test_run_packaged_desktop_lifecycle_rehearsal_passes_when_both_phases_complete` | Likely a different root cause — this test **mocks** `packaged_runtime_env_overrides` (line ~720), so it bypasses the `WindowsPath` crash path entirely. May fail due to `os.name = "nt"` mock activating unreachable Windows code paths in non-mocked modules |
+The 3 rehearsal test failures (WindowsPath crash in `build_env.py`) were resolved by:
 
 ## Platform-Specific Code Inventory
 
@@ -162,7 +154,9 @@ ruff==0.15.9            # Cross-platform, dev dep
 
 ## Phased Implementation Plan
 
-### Phase 0: Test Infrastructure & Quick Wins
+> **Completion status:** Phase 0 ✅ | Phase 0a ✅ | Phase 1 ✅ | Phase 2 ✅ | Phase 3 ✅ | Phase 4 ✅ | Phase 5 (merged) | Phase 6 ✅ | Phase 7 ✅ | Phase 8 ✅
+
+### Phase 0: Test Infrastructure & Quick Wins ✅
 
 These changes add `psutil` to requirements, fix the `WindowsPath` crash in build_env, and set up test markers. No behavioral changes on Windows.
 
@@ -179,7 +173,7 @@ These changes add `psutil` to requirements, fix the `WindowsPath` crash in build
 - `pip install` from lockfile works on Linux
 - Rehearsal tests no longer crash on `WindowsPath`
 
-### Phase 0a: Playwright Browser on Linux Developer Workstations
+### Phase 0a: Playwright Browser on Linux Developer Workstations ✅
 
 The bundled Playwright Chromium binary **does not support Ubuntu 26.04** yet. Upstream issue [microsoft/playwright#40117](https://github.com/microsoft/playwright/issues/40117) is open, targeted at Playwright v1.61. Until resolved, `npx playwright install chromium` fails with `"Playwright does not support chromium on ubuntu26.04-x64"`.
 
@@ -227,7 +221,7 @@ docker run --rm -v $(pwd):/work -w /work \
 
 When Playwright v1.61 ships with official Ubuntu 26.04 support, upgrade `@playwright/test` in `package.json` and remove the Linux-specific config workarounds.
 
-### Phase 1: Platform Abstraction Layer (`_linux.py`)
+### Phase 1: Platform Abstraction Layer (`_linux.py`) ✅
 
 Create `src/ship/desktop_app/_linux.py` as a counterpart to `_windows.py`. This is the largest phase.
 
@@ -273,7 +267,7 @@ The naming is intentionally kept as `_windows_*` to maintain dispatch-surface co
 - `npm run test:py` passes on Linux
 - **Follow-up:** After `_linux.py` is functional, the 3 rehearsal tests in `test_rehearsal_flows.py` that mock `os.name = "nt"` should be refactored (or new variants added) to test the real Linux implementations with `os.name = "posix"` and Linux-appropriate paths
 
-### Phase 2: XDG Base Directory Support
+### Phase 2: XDG Base Directory Support ✅
 
 | # | Change | Files | Risk |
 |---|--------|-------|------|
@@ -287,7 +281,7 @@ The naming is intentionally kept as `_windows_*` to maintain dispatch-surface co
 - Browser session root resolves to `~/.local/share/Baluffo/` on Linux
 - `BALUFFO_DESKTOP_SESSION_ROOT` env override still works
 
-### Phase 3: Linux Credential Storage (Sync Crypto)
+### Phase 3: Linux Credential Storage (Sync Crypto) ✅
 
 | # | Change | Files | Risk |
 |---|--------|-------|------|
@@ -299,7 +293,7 @@ The naming is intentionally kept as `_windows_*` to maintain dispatch-surface co
 - Credential encrypt/decrypt roundtrip works on Linux
 - Windows DPAPI path unchanged
 
-### Phase 4: Linux Shell Launcher Scripts
+### Phase 4: Linux Shell Launcher Scripts ✅
 
 The Windows ship bundle includes 6 PowerShell launcher scripts copied by `build_ship_bundle.py`. Linux needs bash equivalents of all six for the packaged AppImage.
 
@@ -328,7 +322,7 @@ The Windows ship bundle includes 6 PowerShell launcher scripts copied by `build_
 | 6.4 | **Update `AI_ASSISTANT_GUIDE.md`** — add verification shortcut for Linux-specific changes | `docs/AI_ASSISTANT_GUIDE.md` | None |
 | 6.5 | **Update `AGENTS.md`** — add Linux compatibility rule if needed | `AGENTS.md` | None |
 
-### Phase 7: Linux AppImage Packaging
+### Phase 7: Linux AppImage Packaging ✅
 
 The objective: produce `Baluffo-{version}-x86_64.AppImage` — a single self-contained file built with PyInstaller `--onedir` and packaged via `appimagetool`. No separate updater binary; the updater logic is folded into the main ELF binary.
 
@@ -385,7 +379,7 @@ appimagetool                    →  Baluffo-{ver}-x86_64.AppImage
 - AppImage runs in headless mode on SSH/CI (no display needed, service-only)
 - Windows build is not regressed (`npm run build` still produces `Baluffo.exe`)
 
-### Phase 8: Linux Release Pipeline
+### Phase 8: Linux Release Pipeline ✅
 
 Unified CI workflow: test, build, smoke, and publish. Absorbs the test CI that was originally a standalone Phase 5; running tests before building is the correct gate and avoids a redundant second workflow.
 

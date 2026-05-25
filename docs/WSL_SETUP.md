@@ -5,7 +5,7 @@
 > - **Canonical for:** WSL environment setup, available tooling, and daily workflow
 > - **Not canonical for:** local storage model, release sequencing, or the full verification matrix
 > - **Then inspect:** [`LOCAL_SETUP.md`](LOCAL_SETUP.md) for local-first commands, [`testing.md`](testing.md) for test lanes, and [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) for AI agent context
-> - **Last updated:** 2026-05-23
+> - **Last updated:** 2026-05-25
 
 ## Why WSL
 
@@ -166,6 +166,29 @@ swap=4GB
 ```
 
 Apply changes: `wsl --shutdown` then restart WSL.
+
+## Linux Compatibility Status
+
+As of May 2026, the Linux compatibility plan (see [`docs/plans/linux-compatibility-plan.md`](plans/linux-compatibility-plan.md)) is fully implemented. Here's what works on Linux:
+
+### Test suite
+
+| Command | Status | Notes |
+|---------|--------|-------|
+| `npm run test:py:linux` | Passes (2996 tests) | Excludes `@pytest.mark.windows` tests |
+| `npm run test:py:extended` | Passes (3177 tests) | Full suite, including Windows-marked tests |
+| `npm run test:frontend:linux` | Opt-in | Requires system `chromium-browser`; set `PLAYWRIGHT_SYSTEM_CHROMIUM=1` |
+| `npm run dev:bridge` | Works | No changes needed |
+| `npm run dev:pipeline` | Works | No changes needed |
+
+### New capabilities
+
+- **Platform abstraction:** `src/ship/desktop_app/_linux.py` provides Linux equivalents of all `_windows.py` functions (process management, stale runtime reclamation, TCP port listening). Platform dispatch is handled at import time in `__init__.py`.
+- **XDG paths:** Session root resolves to `~/.local/share/Baluffo/` on Linux. Config uses `~/.config/baluffo/`.
+- **Credential storage:** Sync key cache uses `cryptography.fernet.Fernet` with a key stored via system keyring, falling back to `~/.config/baluffo/sync.key` (0o600).
+- **Shell launchers:** Seven `.sh` scripts in `src/ship/` mirror the PowerShell `.ps1` launchers: `run-bridge.sh`, `run-site.sh`, `run-all.sh`, `apply-update.sh`, `recover-previous.sh`, `create-support-bundle.sh`, `dev_admin_supervisor.sh`.
+- **AppImage build:** `npm run build:linux` produces a self-contained `Baluffo-{version}-x86_64.AppImage` via PyInstaller + appimagetool. CI workflow at `.github/workflows/build-linux.yml`.
+- **Playwright workaround:** Ubuntu 26.04 uses system `chromium-browser` via `PLAYWRIGHT_SYSTEM_CHROMIUM=1` and `PACKAGED_SMOKE_SYSTEM_CHROMIUM=1` env vars. Once Playwright v1.61 ships, the bundled Chromium can replace this workaround.
 
 ## Known limitations
 

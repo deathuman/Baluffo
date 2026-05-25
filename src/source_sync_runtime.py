@@ -289,6 +289,64 @@ def local_key_cache_path(config_path: Path) -> Path:
     return config_path.with_suffix(".localkey.json")
 
 
+def _resolve_xdg_config_root() -> Path:
+    xdg_config = os.environ.get("XDG_CONFIG_HOME", "")
+    if not xdg_config:
+        xdg_config = str(Path.home() / ".config")
+    return Path(xdg_config) / "baluffo"
+
+
+def _get_fernet_key() -> bytes:
+    import base64
+
+    from cryptography.fernet import Fernet
+
+    try:
+        import keyring
+    except ImportError:
+        keyring = None
+
+    if keyring is not None:
+        try:
+            stored = keyring.get_password("Baluffo", "sync-fernet-key")
+            if stored:
+                return base64.urlsafe_b64decode(stored)
+        except Exception:
+            pass
+
+    key_dir = _resolve_xdg_config_root()
+    key_file = key_dir / "sync.key"
+    if key_file.exists():
+        try:
+            return key_file.read_bytes()
+        except OSError:
+            pass
+
+    new_key = Fernet.generate_key()
+    key_dir.mkdir(parents=True, exist_ok=True)
+    key_file.write_bytes(new_key)
+    key_file.chmod(0o600)
+    return new_key
+
+
+def _encrypt_data(root_mod: Any, raw: bytes) -> str:
+    if os.name == "nt":
+        return dpapi_protect(root_mod, raw)
+    from cryptography.fernet import Fernet
+
+    fernet = Fernet(_get_fernet_key())
+    return fernet.encrypt(raw).decode("ascii")
+
+
+def _decrypt_data(root_mod: Any, encoded: str) -> bytes:
+    if os.name == "nt":
+        return dpapi_unprotect(root_mod, encoded)
+    from cryptography.fernet import Fernet
+
+    fernet = Fernet(_get_fernet_key())
+    return fernet.decrypt(encoded.encode("ascii"))
+
+
 def read_local_wrapped_key(root_mod: Any, config_path: Path, fingerprint: str) -> str:
     cache_path = local_key_cache_path(config_path)
     try:
@@ -299,11 +357,11 @@ def read_local_wrapped_key(root_mod: Any, config_path: Path, fingerprint: str) -
         return ""
     if str(payload.get("fingerprint") or "").strip() != str(fingerprint or "").strip():
         return ""
-    wrapped = str(payload.get("dpapi") or "").strip()
+    wrapped = str(payload.get("wrapped") or payload.get("dpapi") or "").strip()
     if not wrapped:
         return ""
     try:
-        return dpapi_unprotect(root_mod, wrapped).decode("utf-8")
+        return _decrypt_data(root_mod, wrapped).decode("utf-8")
     except Exception:
         return ""
 
@@ -314,13 +372,11 @@ def write_local_wrapped_key(
     fingerprint: str,
     private_key_pem: str,
 ) -> None:
-    if os.name != "nt":
-        return
-    wrapped = dpapi_protect(root_mod, str(private_key_pem or "").encode("utf-8"))
+    wrapped = _encrypt_data(root_mod, str(private_key_pem or "").encode("utf-8"))
     payload = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "fingerprint": str(fingerprint or ""),
-        "dpapi": wrapped,
+        "wrapped": wrapped,
         "updatedAt": root_mod.now_iso(),
     }
     cache_path = local_key_cache_path(config_path)

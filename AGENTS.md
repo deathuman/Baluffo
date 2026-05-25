@@ -12,6 +12,7 @@ These are the non-negotiable repo rules.
 - Preserve public job text, locations, and other persisted or user-facing data contracts when changing normalization, adapters, or report payloads.
 - Validate dead-code or boundary-cleanup analyzer findings against actual imports before acting. Known caveat: `tools/repo_health/bin/analyze_refactorability.py` uses word-boundary composition-root matching, so `src.jobs.*` and `src.bridge.*` leaf imports can appear as false positives.
 - Before manual dead-code hunting, check the pre-push Vulture hook and `whitelist.py`; the whitelist records known false positives and intentionally retained schema or compatibility symbols.
+- Keep `_linux.py` implementations in sync with `_windows.py` when adding new platform-specific helpers in `src/ship/desktop_app/`. Test both `npm run test:py:linux` and `npm run test:py:extended` when touching desktop_app internals. Platform dispatch in `__init__.py` uses `_COMPAT_MODULES` ordering at import time — do not rely on runtime fallthrough for platform switching.
 
 ## Rule Placement
 

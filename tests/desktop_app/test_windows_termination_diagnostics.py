@@ -3,11 +3,14 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+import pytest
+
 from src.ship import desktop_app
 
 from ._helpers import _patch_windows_compat_facade, _patch_windows_desktop_app
 
 
+@pytest.mark.windows
 def test_windows_terminate_process_details_falls_back_to_windows_api() -> None:
     kernel32 = SimpleNamespace(
         OpenProcess=mock.Mock(return_value=55),
@@ -36,6 +39,7 @@ def test_windows_terminate_process_details_falls_back_to_windows_api() -> None:
     assert details["terminated"] is True
 
 
+@pytest.mark.windows
 def test_stale_bridge_reclaim_failure_includes_termination_diagnostics() -> None:
     trace_mock = mock.Mock()
     termination = {

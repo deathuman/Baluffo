@@ -67,6 +67,7 @@ def test_build_browser_launch_command_uses_app_mode_profile_and_new_window() -> 
     assert any(part.startswith("--user-data-dir=") for part in command)
 
 
+@pytest.mark.windows
 def test_launch_chromium_app_clears_cache_dirs_before_launch_when_requested(tmp_path: Path) -> None:
     profile_dir = tmp_path / "desktop-browser-profile"
     cache_dir = profile_dir / "Default" / "Cache"
@@ -290,6 +291,7 @@ def test_diagnose_instance_conflict_blocks_when_stale_runtime_cleanup_fails() ->
     assert result["target"] == "bridge"
 
 
+@pytest.mark.windows
 def test_windows_try_reclaim_stale_bridge_process_skips_when_owner_token_missing() -> None:
     with (
         _patch_windows_compat_facade(),
@@ -308,6 +310,7 @@ def test_windows_try_reclaim_stale_bridge_process_skips_when_owner_token_missing
     assert result["reason"] == "missing_desktop_owner_token"
 
 
+@pytest.mark.windows
 def test_windows_try_reclaim_stale_bridge_process_returns_not_found_without_listener() -> None:
     with (
         _patch_windows_compat_facade(),
@@ -328,6 +331,7 @@ def test_windows_try_reclaim_stale_bridge_process_returns_not_found_without_list
     assert result["reason"] == "no_listener_on_expected_port"
 
 
+@pytest.mark.windows
 def test_windows_try_reclaim_stale_bridge_process_kills_strong_listener() -> None:
     terminate_mock = mock.Mock(return_value={"terminated": True})
 
@@ -371,6 +375,7 @@ def test_windows_try_reclaim_stale_bridge_process_kills_strong_listener() -> Non
     terminate_mock.assert_called_once_with(202)
 
 
+@pytest.mark.windows
 def test_windows_try_reclaim_stale_bridge_process_accepts_listener_clear_after_forced_kill() -> (
     None
 ):
@@ -416,6 +421,7 @@ def test_windows_try_reclaim_stale_bridge_process_accepts_listener_clear_after_f
     terminate_mock.assert_called_once_with(202)
 
 
+@pytest.mark.windows
 def test_windows_try_reclaim_stale_bridge_process_skips_when_listener_is_ambiguous() -> None:
     terminate_mock = mock.Mock()
 
@@ -448,6 +454,7 @@ def test_windows_try_reclaim_stale_bridge_process_skips_when_listener_is_ambiguo
     terminate_mock.assert_not_called()
 
 
+@pytest.mark.windows
 def test_windows_terminate_process_tree_details_waits_for_forced_taskkill_exit() -> None:
     run_mock = mock.Mock(return_value=subprocess.CompletedProcess(["taskkill"], 0))
     wait_mock = mock.Mock(return_value=True)
@@ -464,6 +471,7 @@ def test_windows_terminate_process_tree_details_waits_for_forced_taskkill_exit()
     wait_mock.assert_called_once_with(323, timeout_s=15.0)
 
 
+@pytest.mark.windows
 def test_windows_try_reclaim_stale_site_process_kills_when_stored_pid_matches() -> None:
     terminate_mock = mock.Mock(return_value={"terminated": True})
 
@@ -498,6 +506,7 @@ def test_windows_try_reclaim_stale_site_process_kills_when_stored_pid_matches() 
     terminate_mock.assert_called_once_with(101)
 
 
+@pytest.mark.windows
 def test_windows_try_reclaim_stale_site_process_accepts_listener_clear_after_forced_kill() -> None:
     terminate_mock = mock.Mock(return_value={"terminated": False})
 
@@ -532,6 +541,7 @@ def test_windows_try_reclaim_stale_site_process_accepts_listener_clear_after_for
     terminate_mock.assert_called_once_with(101)
 
 
+@pytest.mark.windows
 def test_windows_try_reclaim_stale_site_process_requires_bridge_confirmation_without_pid() -> None:
     terminate_mock = mock.Mock()
 
@@ -564,6 +574,7 @@ def test_windows_try_reclaim_stale_site_process_requires_bridge_confirmation_wit
     terminate_mock.assert_not_called()
 
 
+@pytest.mark.windows
 def test_windows_try_reclaim_stale_site_process_can_reclaim_without_pid_after_bridge_confirmation() -> (
     None
 ):
@@ -810,6 +821,7 @@ def test_launch_browser_for_url_uses_warm_probe_cache_policy_for_chrome() -> Non
     )
 
 
+@pytest.mark.windows
 def test_terminate_process_uses_taskkill_tree_on_windows() -> None:
     fake_process = mock.Mock(spec=subprocess.Popen)
     fake_process.pid = 4321
@@ -930,6 +942,7 @@ def test_launch_browser_for_url_marks_reveal_inferred_when_visible_window_not_ob
     )
 
 
+@pytest.mark.windows
 def test_launch_browser_for_url_treats_clean_exit_after_reveal_as_detached() -> None:
     fake_process = mock.Mock(spec=subprocess.Popen)
     fake_process.pid = 654
@@ -1126,6 +1139,7 @@ def test_launch_browser_for_url_stops_before_readiness_when_job_attach_fails() -
     ]
 
 
+@pytest.mark.windows
 def test_windows_try_assign_pid_to_job_raises_when_open_process_fails() -> None:
     kernel32 = SimpleNamespace(
         GetLastError=mock.Mock(return_value=5),
@@ -1140,6 +1154,7 @@ def test_windows_try_assign_pid_to_job_raises_when_open_process_fails() -> None:
             desktop_app._windows_try_assign_pid_to_job(11, 123)
 
 
+@pytest.mark.windows
 def test_windows_try_assign_pid_to_job_raises_when_assign_process_fails() -> None:
     kernel32 = SimpleNamespace(
         GetLastError=mock.Mock(return_value=5),
@@ -1161,6 +1176,7 @@ def test_windows_try_assign_pid_to_job_raises_when_assign_process_fails() -> Non
     kernel32.CloseHandle.assert_called_once_with(99)
 
 
+@pytest.mark.windows
 def test_start_child_process_terminates_child_when_job_attach_fails() -> None:
     fake_process = SimpleNamespace(pid=321)
 
@@ -1181,6 +1197,7 @@ def test_start_child_process_terminates_child_when_job_attach_fails() -> None:
     assert popen_mock.call_args.kwargs["close_fds"] is True
 
 
+@pytest.mark.windows
 def test_windows_create_kill_on_close_job_marks_handle_non_inheritable() -> None:
     kernel32 = mock.Mock()
     kernel32.CreateJobObjectW.return_value = 77
@@ -1195,6 +1212,7 @@ def test_windows_create_kill_on_close_job_marks_handle_non_inheritable() -> None
     kernel32.SetInformationJobObject.assert_called_once()
 
 
+@pytest.mark.windows
 def test_is_process_alive_returns_false_for_signaled_windows_process_handle() -> None:
     kernel32 = SimpleNamespace(
         OpenProcess=mock.Mock(return_value=55),
@@ -1210,6 +1228,7 @@ def test_is_process_alive_returns_false_for_signaled_windows_process_handle() ->
     kernel32.CloseHandle.assert_called_once_with(55)
 
 
+@pytest.mark.windows
 def test_is_process_alive_returns_true_for_running_windows_process_handle() -> None:
     def _get_exit_code(_handle: int, exit_code_ptr: object) -> int:
         exit_code_ptr._obj.value = 259
@@ -1229,6 +1248,7 @@ def test_is_process_alive_returns_true_for_running_windows_process_handle() -> N
     kernel32.CloseHandle.assert_called_once_with(55)
 
 
+@pytest.mark.windows
 def test_find_baluffo_visible_window_accepts_same_pid_chromium_window_without_baluffo_title() -> (
     None
 ):

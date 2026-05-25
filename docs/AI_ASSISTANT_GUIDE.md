@@ -5,7 +5,7 @@
 > - **Canonical for:** task routing, minimal read order, common repo misconceptions, and AI editing rules
 > - **Not canonical for:** data contracts, endpoint payloads, or deep subsystem ownership detail
 > - **Then inspect:** [`architecture-ai-map.md`](architecture-ai-map.md) for task-to-files routing, plus one matching contract or workflow doc
-> - **Last updated:** 2026-05-17
+> - **Last updated:** 2026-05-25
 
 Read this first. Then load only the smallest additional docs needed.
 
@@ -64,6 +64,8 @@ If Serena memory and repo docs ever diverge, the repo docs stay canonical.
 | Bridge changes | `python -m pytest tests/admin/ -q` |
 | Pipeline/fetcher | `python -m pytest tests/test_jobs_fetcher_*.py -q` |
 | Jobs helper consolidation | For `_as_list`, `_as_dict`, and `_as_dict_rows`, first verify the jobs copies still share identical list/dict/drop-non-dicts semantics; bridge `_as_dict` helpers are not identical |
+| Linux Python tests | `npm run test:py:linux` |
+| Linux frontend tests | `npm run test:frontend:linux` |
 | Full verification | `npm run verify` |
 
 ## Codex In-App Browser Visual QA

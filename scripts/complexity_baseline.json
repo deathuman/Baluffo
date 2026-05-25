@@ -1,5 +1,5 @@
 {
-  "ruff_version": "0.15.9",
+  "ruff_version": "0.15.14",
   "rule": "C901",
   "threshold": 10,
   "scope": [
@@ -66,6 +66,8 @@
     "src/shared/http_batch.py::_fetch_pages_batched_async": 12,
     "src/ship/desktop_app/_windows.py::_windows_try_reclaim_stale_bridge_process": 12,
     "src/ship/desktop_app/_windows.py::_windows_try_reclaim_stale_site_process": 11,
+    "src/ship/desktop_app/_linux.py::_windows_try_reclaim_stale_bridge_process": 12,
+    "src/ship/desktop_app/_linux.py::_windows_try_reclaim_stale_site_process": 11,
     "src/ship/desktop_app/browser.py::launch_browser_for_url": 16,
     "src/fetch_incremental_sanity_benchmark.py::_next_optimization_targets": 11,
     "src/fetch_incremental_sanity_benchmark.py::_select_loaders": 13,

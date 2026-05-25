@@ -134,7 +134,7 @@ async function main() {
   let apiRequest;
   try {
     await fs.mkdir(OUTPUT_DIR, { recursive: true });
-    browser = await chromium.launch({ headless: !HEADED });
+    browser = await chromium.launch({ headless: !HEADED, ...(process.env.PACKAGED_SMOKE_SYSTEM_CHROMIUM === "1" ? { channel: "chromium" } : {}) });
     context = await browser.newContext({ baseURL: BASE_URL });
     await installLifecycleBlocker(context);
     page = await context.newPage();

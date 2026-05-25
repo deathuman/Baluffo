@@ -12,6 +12,7 @@ pytestmark = [pytest.mark.packaging, pytest.mark.slow]
 
 
 @pytest.mark.slow
+@pytest.mark.windows
 def test_run_packaged_smoke_writes_failure_report_on_runtime_timeout() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         root = Path(tmp)
@@ -71,6 +72,7 @@ def test_run_packaged_smoke_writes_failure_report_on_runtime_timeout() -> None:
         assert stderr_handle.close.call_count >= 1
 
 
+@pytest.mark.windows
 def test_run_packaged_smoke_preserves_failure_metrics_on_runtime_timeout() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         root = Path(tmp)
@@ -276,6 +278,7 @@ def test_capture_runtime_snapshot_preserves_versioned_startup_metrics() -> None:
         assert storage_health["storage"]["authorityModes"]["sourceRuns"] == "sqlite"
 
 
+@pytest.mark.windows
 def test_run_embedded_runtime_probe_writes_versioned_startup_metrics_snapshot() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         root = Path(tmp)
@@ -453,6 +456,7 @@ def test_run_packaged_smoke_profile_only_waits_for_jobs_startup_events() -> None
         assert "smokeReport" not in payload["artifacts"]
 
 
+@pytest.mark.windows
 def test_run_warmup_launch_uses_warm_startup_profile_mode() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         root = Path(tmp)
@@ -830,6 +834,7 @@ def test_run_packaged_smoke_fails_startup_probe_when_no_managed_browser_is_avail
         terminate_mock.assert_called_once_with(None)
 
 
+@pytest.mark.windows
 def test_run_packaged_smoke_classifies_default_browser_launch_as_non_authoritative() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         root = Path(tmp)
@@ -910,6 +915,7 @@ def test_run_packaged_smoke_classifies_default_browser_launch_as_non_authoritati
         assert payload["probeBrowser"]["selectedBrowserName"] == "msedge"
 
 
+@pytest.mark.windows
 def test_run_packaged_smoke_classifies_chromium_app_crash_before_jobs_markers() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         root = Path(tmp)

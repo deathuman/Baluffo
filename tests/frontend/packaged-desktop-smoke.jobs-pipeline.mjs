@@ -262,7 +262,7 @@ async function main() {
   let apiRequest;
   const pageErrors = [];
   try {
-    browser = await chromium.launch({ headless: process.env.PACKAGED_SMOKE_HEADED !== "1" });
+    browser = await chromium.launch({ headless: process.env.PACKAGED_SMOKE_HEADED !== "1", ...(process.env.PACKAGED_SMOKE_SYSTEM_CHROMIUM === "1" ? { channel: "chromium" } : {}) });
     context = await browser.newContext({ baseURL: BASE_URL, acceptDownloads: true });
     page = await context.newPage();
     page.on("pageerror", error => pageErrors.push(String(error?.message || error)));

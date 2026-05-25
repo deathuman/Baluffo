@@ -80,6 +80,10 @@ from src.ship.startup_profile import (
 from src.ship.startup_telemetry import read_startup_metrics as _read_startup_metrics_file
 
 DEFAULT_EXE_PATH = ROOT / "dist" / "baluffo-portable" / "Baluffo.exe"
+DEFAULT_ELF_PATH = ROOT / "dist" / "baluffo-portable" / "baluffo" / "baluffo"
+DEFAULT_APPIMAGE_PATH = (
+    ROOT / "dist" / f"Baluffo-{_portable_build_mod.DEFAULT_BUNDLE_VERSION}-x86_64.AppImage"
+)
 DEFAULT_BUNDLE_VERSION = _portable_build_mod.DEFAULT_BUNDLE_VERSION
 PORTABLE_BUILD_VERSION_ENV = _portable_build_mod.PORTABLE_BUILD_VERSION_ENV
 DEFAULT_REPORT_PATH = ROOT / "data" / "packaged-desktop-smoke-report.json"

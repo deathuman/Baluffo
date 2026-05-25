@@ -5,7 +5,7 @@
 > - **Canonical for:** test commands, targeted test routing, and fixture references
 > - **Not canonical for:** runtime architecture or data contracts
 > - **Then inspect:** the nearest `tests/` module for the subsystem you changed
-> - **Last updated:** 2026-05-15
+> - **Last updated:** 2026-05-25
 
 This document owns the verification matrix for Baluffo. Keep build, test, and fixture guidance here instead of repeating command tables in routing docs.
 
@@ -30,6 +30,14 @@ Run the full Python suite when you need release-level confidence:
 ```bash
 npm run test:py:extended
 ```
+
+Run the Linux-compatible suite (skips `@pytest.mark.windows` tests):
+
+```bash
+npm run test:py:linux
+```
+
+This skips tests using Windows-only APIs (`ctypes.windll`, `winreg`, pefile). Use this on Linux, macOS, or CI. Tests marked `@pytest.mark.windows` are registered in `pytest.ini` and are automatically excluded by this lane.
 
 **Direct local filtering:** To reproduce the developer lane directly from pytest:
 

@@ -5,7 +5,7 @@
 > - **Canonical for:** wiki routing, doc discovery, and the default AI read path
 > - **Not canonical for:** payload details, route contracts, or subsystem implementation behavior
 > - **Then inspect:** [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`architecture-ai-map.md`](architecture-ai-map.md), and one matching contract or workflow doc
-> - **Last updated:** 2026-05-23
+> - **Last updated:** 2026-05-25
 
 Use this page as the wiki home. Start here, load the minimum active docs you need, and use git history for old cleanup/refactor details unless the task explicitly needs historical provenance.
 
@@ -149,6 +149,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | Review Windows packaged data migration | [`plans/windows-user-data-migration-plan.md`](plans/windows-user-data-migration-plan.md) | [`RELEASE.md`](RELEASE.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`LOCAL_SETUP.md`](LOCAL_SETUP.md), [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md), [`testing.md`](testing.md) |
 | Review read-only lifecycle UX | [`archive/read-only-lifecycle-ux-closeout.md`](archive/read-only-lifecycle-ux-closeout.md) | [`snapshots/read-only-lifecycle-ux-implementation-2026-05-03.md`](snapshots/read-only-lifecycle-ux-implementation-2026-05-03.md), [`source-policy-runbook.md`](source-policy-runbook.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md) |
 | Review source-sync production readiness | [`archive/source-sync-production-readiness-closeout.md`](archive/source-sync-production-readiness-closeout.md) | [`environments.md`](environments.md), [`sync-contract.md`](sync-contract.md), [`testing.md`](testing.md) |
+| Port or build for Linux | [`plans/linux-compatibility-plan.md`](plans/linux-compatibility-plan.md) | [`WSL_SETUP.md`](WSL_SETUP.md), [`testing.md`](testing.md) |
 | Review completed task/progress lifecycle closeout | [`archive/task-lifecycle-ledger-plan.md`](archive/task-lifecycle-ledger-plan.md) | [`admin-bridge-api.md`](admin-bridge-api.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`testing.md`](testing.md) |
 
 ## Recommended AI read sequence

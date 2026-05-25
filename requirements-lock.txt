@@ -27,6 +27,7 @@ cryptography==46.0.7
     # via
     #   pyopenssl
     #   scrapy
+    #   secretstorage
     #   service-identity
 cssselect==1.4.0
     # via
@@ -61,14 +62,30 @@ itemadapter==0.13.1
     #   scrapy
 itemloaders==1.4.0
     # via scrapy
+jaraco-classes==3.4.0
+    # via keyring
+jaraco-context==6.1.2
+    # via keyring
+jaraco-functools==4.5.0
+    # via keyring
+jeepney==0.9.0
+    # via
+    #   keyring
+    #   secretstorage
 jmespath==1.1.0
     # via
     #   itemloaders
     #   parsel
+keyring==25.7.0
+    # via -r requirements.txt
 lxml==6.1.0
     # via
     #   parsel
     #   scrapy
+more-itertools==11.1.0
+    # via
+    #   jaraco-classes
+    #   jaraco-functools
 packaging==26.1
     # via
     #   incremental
@@ -80,12 +97,12 @@ parsel==1.11.0
     # via
     #   itemloaders
     #   scrapy
-pefile==2024.8.26
-    # via pyinstaller
 playwright==1.58.0
     # via scrapy-playwright
 protego==0.6.0
     # via scrapy
+psutil==7.0.0
+    # via -r requirements.txt
 pyasn1==0.6.3
     # via
     #   pyasn1-modules
@@ -108,8 +125,6 @@ pyinstaller-hooks-contrib==2026.4
     # via pyinstaller
 pyopenssl==26.0.0
     # via scrapy
-pywin32-ctypes==0.2.3
-    # via pyinstaller
 queuelib==1.9.0
     # via scrapy
 requests==2.33.1
@@ -126,6 +141,8 @@ scrapy==2.16.0
     #   scrapy-playwright
 scrapy-playwright==0.0.46
     # via -r requirements.txt
+secretstorage==3.5.0
+    # via keyring
 service-identity==24.2.0
     # via scrapy
 setuptools==82.0.1

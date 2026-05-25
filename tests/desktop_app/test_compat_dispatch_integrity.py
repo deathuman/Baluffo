@@ -4,6 +4,7 @@ import pytest
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows dispatch contract")
+@pytest.mark.windows
 def test_windows_functions_resolve_to_windows_module_on_windows() -> None:
     """Every _windows_* facade function must resolve to _windows.py's implementation."""
     from src.ship import desktop_app

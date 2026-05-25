@@ -5,7 +5,7 @@
 > - **Canonical for:** system boundaries, task routing, compatibility-surface detail, and the expanded verification matrix
 > - **Not canonical for:** endpoint payloads or data schema details
 > - **Then inspect:** the minimal source files listed in the task table, plus the matching contract doc if shape changes are involved
-> - **Last updated:** 2026-05-17
+> - **Last updated:** 2026-05-25
 >
 > Start with [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) first. Retired boundary-charter detail now lives in git history; this map is the current routing source.
 > For any file described below as a stable thin surface, compatibility surface, or monkeypatch surface, preserve the root-level exported names that tests or leaf modules patch through that root unless the matching contract tests and docs are updated in the same change.
@@ -47,7 +47,8 @@ src/ship/desktop_app/ (desktop runtime package)
   -> launcher_{flow,diagnostics,recovery}.py own launch flow, diagnostics, and recovery helpers
   -> startup.py stays the package-private readiness/watchdog surface
   -> startup_{ready,watchdog}.py own readiness, handoff, heartbeat, and watchdog flow
-  -> browser.py / session.py / _windows.py / config.py own focused helpers
+  -> browser.py / session.py / _windows.py / _linux.py / config.py own focused helpers
+  -> __init__.py dispatches _windows or _linux via _COMPAT_MODULES based on os.name
 
 src/packaged_desktop_smoke.py (stable packaged smoke entrypoint / monkeypatch surface)
   -> src/ship/packaged_smoke/{common,startup_metrics,orchestrator,build_env,runtime,rehearsals}.py
@@ -237,6 +238,8 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 | Pipeline/fetcher | `python -m pytest tests/test_jobs_fetcher_*.py -q` |
 | Desktop launcher | `python -m pytest tests/desktop_app/ -q` |
 | Packaged desktop smoke | `python -m pytest tests/packaged_desktop/ -q` |
+| Linux Python tests | `npm run test:py:linux` |
+| Linux frontend tests | `PLAYWRIGHT_SYSTEM_CHROMIUM=1 npm run test:frontend:linux` |
 | Full verification | `npm run verify` |
 
 See [`testing.md`](testing.md) for more commands.

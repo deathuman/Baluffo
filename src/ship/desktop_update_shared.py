@@ -320,6 +320,11 @@ def _resolve_desktop_session_root_fallback(env: dict[str, str] | None = None) ->
     candidates: list[Path] = []
     if env_override:
         candidates.append(Path(env_override).expanduser().resolve())
+    if deps.os.name != "nt":
+        xdg_data = str(env_map.get("XDG_DATA_HOME") or "").strip()
+        if not xdg_data:
+            xdg_data = str(Path.home() / ".local" / "share")
+        candidates.append(Path(xdg_data) / "Baluffo")
     local_app_data = str(env_map.get("LOCALAPPDATA") or "").strip()
     if local_app_data:
         candidates.append(Path(local_app_data).expanduser().resolve() / "Baluffo")

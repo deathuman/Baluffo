@@ -1,4 +1,5 @@
 import json
+import sys
 from pathlib import Path
 from unittest import mock
 
@@ -13,6 +14,8 @@ from tests.helpers.ship_bundle import copy_minimal_app_version
 from tests.helpers.temp_paths import workspace_tmpdir
 
 pytestmark = pytest.mark.packaging
+
+_LAUNCHER_EXT = ".sh" if sys.platform != "win32" else ".ps1"
 
 
 def _build_with_temp_packaged_config(
@@ -55,8 +58,8 @@ def test_bundle_contains_runtime_assets_and_seeded_runtime_data_only() -> None:
         )
         output = _build_with_temp_packaged_config(tmp)
         version_root = output / "app" / "versions" / "1.2.3"
-        assert (output / "run-site.ps1").exists()
-        assert (output / "run-bridge.ps1").exists()
+        assert (output / f"run-site{_LAUNCHER_EXT}").exists()
+        assert (output / f"run-bridge{_LAUNCHER_EXT}").exists()
         assert (output / "RELEASE_GUIDE.md").exists()
         assert (output / "app" / "update-manifest.json").exists()
         assert (output / "DESKTOP_UPDATE_MANIFEST_SCHEMA.json").exists()

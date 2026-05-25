@@ -314,6 +314,7 @@ def test_parse_packaged_node_smoke_report_reads_scenarios() -> None:
         assert rows[1]["error"] == "unlock failed"
 
 
+@pytest.mark.windows
 def test_collect_packaged_smoke_env_diagnostics_reports_paths_and_elevation() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         root = Path(tmp)
@@ -369,6 +370,7 @@ def test_collect_packaged_smoke_env_diagnostics_reports_paths_and_elevation() ->
         assert diagnostics["isElevated"]
 
 
+@pytest.mark.windows
 def test_collect_packaged_smoke_env_diagnostics_reports_explicit_path_freshness() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         root = Path(tmp)
@@ -393,6 +395,7 @@ def test_collect_packaged_smoke_env_diagnostics_reports_explicit_path_freshness(
         assert diagnostics["rebuiltPortableExe"] is False
 
 
+@pytest.mark.windows
 def test_collect_packaged_smoke_env_diagnostics_reports_rebuilt_default_dist() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         root = Path(tmp)
