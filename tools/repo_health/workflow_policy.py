@@ -72,7 +72,7 @@ def test_lint_workflow_uses_canonical_precommit_entrypoints() -> None:
     assert "npm run security:python" in workflow_text, (
         f"{workflow_path.name} should run the Python dependency security audit."
     )
-    assert "ruff==0.15.9" in (root / "requirements-lock.txt").read_text(encoding="utf-8")
+    assert "ruff==0.15.14" in (root / "requirements-lock.txt").read_text(encoding="utf-8")
 
 
 def test_github_workflows_use_project_node_runtime_and_playwright_bridge_owner(
@@ -138,7 +138,7 @@ def test_lint_workflow_enforces_ruff_import_sorting() -> None:
 
     assert "I" in ruff_config["lint"]["select"]
     assert "id: ruff-check" in pre_commit_text
-    assert "rev: v0.15.9" in pre_commit_text
+    assert "rev: v0.15.14" in pre_commit_text
     assert package["scripts"]["lint:precommit:ci"] == (
         "python scripts/precommit_gate.py --mode all --exclude-root data"
     )

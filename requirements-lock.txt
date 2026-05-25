@@ -133,7 +133,7 @@ requests==2.33.1
     #   tldextract
 requests-file==3.0.1
     # via tldextract
-ruff==0.15.9
+ruff==0.15.14
     # via -r requirements.txt
 scrapy==2.16.0
     # via
