@@ -1,5 +1,5 @@
 {
-  "ruff_version": "0.15.14",
+  "ruff_version": "0.15.9",
   "rule": "C901",
   "threshold": 10,
   "scope": [

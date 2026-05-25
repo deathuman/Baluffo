@@ -151,7 +151,7 @@ def test_lint_workflow_enforces_source_complexity_baseline() -> None:
     )
     precommit_gate = (root / "scripts" / "precommit_gate.py").read_text(encoding="utf-8")
 
-    assert baseline["ruff_version"] == "0.15.14"
+    assert baseline["ruff_version"] == "0.15.9"
     assert baseline["rule"] == "C901"
     assert baseline["threshold"] == 10
     assert baseline["scope"] == ["src"]
