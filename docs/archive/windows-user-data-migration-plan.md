@@ -1,8 +1,7 @@
 # Windows User Data Migration Plan
 
-> - **Status:** Implemented
-> - **Use this when:** moving Windows packaged Baluffo data away from executable-adjacent `ship\data`, preparing Windows `--onefile`, or changing portable updater data handling
-> - **Not canonical for:** Linux/XDG/AppImage behavior; use `docs/plans/linux-compatibility-plan.md` for that
+> - **Status:** Archived — implemented and shipped to `main` (2026-05-25). See git history for implementation detail.
+> - **Not canonical for:** Linux/XDG/AppImage behavior; use [`linux-compatibility-plan.md`](linux-compatibility-plan.md) for that
 
 ## Summary
 
@@ -36,6 +35,6 @@ Repo/source defaults and explicit overrides still use the configured `data` root
 ## Assumptions
 
 - Scope is Windows only.
-- Linux/XDG/AppImage behavior remains in `docs/plans/linux-compatibility-plan.md`.
+- Linux/XDG/AppImage behavior is documented in [`linux-compatibility-plan.md`](linux-compatibility-plan.md) (archived).
 - Migration copies data and leaves legacy `ship\data` untouched.
 - No new dependency is introduced for Windows path resolution.

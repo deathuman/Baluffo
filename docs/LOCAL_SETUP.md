@@ -5,7 +5,7 @@
 > - **Canonical for:** browser-local vs desktop-local behavior, local-data routing, and local runtime setup
 > - **Not canonical for:** release sequencing or the full verification matrix
 > - **Then inspect:** [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`admin-bridge-api.md`](admin-bridge-api.md), [`testing.md`](testing.md), and [`RELEASE.md`](RELEASE.md) as needed
-> - **Last updated:** 2026-04-23
+> - **Last updated:** 2026-05-25
 
 ## Local-first modes
 
@@ -24,9 +24,10 @@
 ### Desktop-local mode
 - Repo/source profiles live in `data/local-user-data/profiles.json`.
 - Windows packaged profiles live in `%APPDATA%\Baluffo\local-user-data\profiles.json`.
+- Linux packaged profiles live in `~/.local/share/Baluffo/local-user-data/profiles.json`.
 - Current sessions and per-user data live under the same configured `local-user-data` root.
 - Desktop pages read/write local data through `/desktop-local-data/*`, not browser IndexedDB/localStorage.
-- Windows packaged desktop keeps session/browser transient state under `%LOCALAPPDATA%\Baluffo\`. Legacy packaged `ship\data\` is copied into `%APPDATA%\Baluffo\` on first launch when no completed migration report exists.
+- Windows packaged desktop keeps session/browser transient state under `%LOCALAPPDATA%\Baluffo\`. Linux uses `~/.cache/Baluffo/`. Legacy packaged `ship\data\` is copied into the data root on first launch when no completed migration report exists.
 
 ## Code routing
 
@@ -64,6 +65,9 @@
 | Developer Python lane | `npm run test:py` |
 | Frontend smoke lane | `npm run test:smoke` |
 | Full verification | `npm run verify` |
+| Build Linux AppImage | `npm run build:linux` |
+| Python tests (Linux) | `npm run test:py:linux` |
+| Frontend tests (Linux) | `npm run test:frontend:linux` |
 
 ## Related docs
 

@@ -172,7 +172,7 @@ Apply changes: `wsl --shutdown` then restart WSL.
 
 ## Linux Compatibility Status
 
-As of May 2026, the Linux compatibility plan (see [`docs/plans/linux-compatibility-plan.md`](plans/linux-compatibility-plan.md)) is fully implemented. Here's what works on Linux:
+As of May 2026, the Linux compatibility plan (see [`docs/archive/linux-compatibility-plan.md`](archive/linux-compatibility-plan.md)) is fully implemented. Here's what works on Linux:
 
 ### Test suite
 

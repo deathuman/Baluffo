@@ -4,6 +4,11 @@
 
 This repository now keeps active documentation in `docs/` and relies on git history for detailed cleanup records, old refactor charters, and completed task logs. The archive is intentionally small so the docs remain useful for a personal project.
 
+Latest archives:
+
+- Completed Linux compatibility implementation lives in [`linux-compatibility-plan.md`](linux-compatibility-plan.md). All 8 phases shipped to `main` on 2026-05-25.
+- Completed Windows packaged user-data migration lives in [`windows-user-data-migration-plan.md`](windows-user-data-migration-plan.md). Implementation shipped to `main` on 2026-05-25.
+
 Use the active docs first:
 
 - [`../INDEX.md`](../INDEX.md) for routing.

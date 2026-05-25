@@ -94,6 +94,18 @@ netstat -ano | findstr :8877
 taskkill /PID <PID> /F
 ```
 
+On Linux:
+
+```bash
+# Find process using port 8877
+lsof -i :8877
+# or
+fuser 8877/tcp
+
+# Kill the process
+kill <PID>
+```
+
 If you intentionally want the bridge without the owned site/browser supervisor, use the expert-only bridge command:
 
 ```powershell
@@ -251,6 +263,45 @@ New Windows packaged installs use `%APPDATA%\Baluffo\updater\post-install-succes
 ### Portable update from `v0.1.33` reports `install_handoff_unconfirmed`
 
 `v0.1.33` can falsely reject a live Windows launcher during install handoff when the packaged runtime lacks optional `psutil`. A target ZIP cannot repair that already-installed source-side checker. Close Baluffo, extract a fixed portable release `v0.2.1` or newer, keep the old `ship\data\` available for first-launch migration or copy it into `%APPDATA%\Baluffo\`, and start the new `Baluffo.exe`. Do not move or rewrite the published `v0.2.0` release tag to work around this.
+
+### Linux AppImage won't start
+
+| Symptom | Action |
+|---------|--------|
+| `fuse: failed to exec` or `Cannot mount AppImage` | Install FUSE: `sudo apt install libfuse2` (Ubuntu 24.04+ ships FUSE3 by default, which is not compatible) |
+| FUSE unavailable (container/headless CI) | Extract and run directly: `./Baluffo-*.AppImage --appimage-extract-and-run` |
+| `GLIBC not found` | Build on the oldest supported glibc distro (CI uses `ubuntu-latest` / Ubuntu 24.04) |
+| `Permission denied` | `chmod +x Baluffo-*.AppImage` |
+
+### Linux port already in use
+
+```bash
+# Find process using port 8877
+lsof -i :8877
+# or
+fuser 8877/tcp
+
+# Kill the process (replace <PID> with actual PID)
+kill <PID>
+```
+
+### Linux system Chromium not found
+
+Playwright frontend smoke tests need `chromium-browser` on Ubuntu 26.04 (bundled Chromium is not yet supported):
+
+```bash
+sudo apt install chromium-browser
+```
+
+Set `PLAYWRIGHT_SYSTEM_CHROMIUM=1` or use `npm run test:frontend:linux` which sets it automatically.
+
+### Linux session paths
+
+| Data | Windows | Linux |
+|------|---------|-------|
+| Config/data root | `%APPDATA%\Baluffo\` | `~/.local/share/Baluffo/` |
+| Session/transient | `%LOCALAPPDATA%\Baluffo\` | `~/.cache/Baluffo/` |
+| Sync key | DPAPI (machine-protected) | System keyring, fallback `~/.config/baluffo/sync.key` (0o600) |
 
 ### Ship bundle launcher fails
 

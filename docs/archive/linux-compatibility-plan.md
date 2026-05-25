@@ -1,9 +1,6 @@
 # Linux Compatibility Plan
 
-> - **Status:** Active — Phases 0, 0a, 1, 2, 3, 4, 7 completed. Phases 6, 8 completed. Phase 5 merged into Phase 8.
-> - **Progress:** 3177 Python tests pass on Linux (0 failures). Full AppImage build pipeline operational. Linux CI workflow ready.
-> - **Last updated:** 2026-05-25
-> - **Validated:** 2026-05-25 — all implemented phases verified against codebase and test suite.
+> - **Status:** Archived — all 8 phases completed and shipped to `main` (2026-05-25). See git history for implementation detail.
 
 ## Summary
 

@@ -177,9 +177,11 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Python dependency security audit | `npm run security:python` |
 | Build ship bundle | `npm run build:ship-bundle` |
 | Build portable EXE | `npm run build:portable-exe` |
+| Build Linux AppImage | `npm run build:linux` |
 | Prepare shared portable EXE | `npm run build:portable-exe:prepare` |
 | Ship bundle leaf builder | `python scripts/build_ship_bundle.py --bundle-version <version>` |
 | Portable EXE leaf builder | `python scripts/build_portable_exe.py --bundle-version <version>` |
+| Linux AppImage leaf builder | `python scripts/build_portable_linux.py` |
 | Python perf timing | `npm run perf:py:timing` |
 | Complete perf report | `npm run perf:complete` |
 | Discovery perf sanity | `npm run perf:discovery:benchmark` |
@@ -375,6 +377,7 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 Use the narrowest check that matches the risky path:
 
 - Packaging or portable EXE changes: `python scripts/build_portable_exe.py`
+- Linux packaging or AppImage changes: `npm run build:linux` then `bash scripts/smoke_test_appimage.sh`
 - Packaged sync config, auth portability, or sync release-gate changes: `npm run test:frontend:packaged:sync-rehearsal`
 - Packaged desktop supervision, stale-runtime recovery, or launcher self-heal changes: `npm run test:frontend:packaged:orphan-reclaim-rehearsal`
 - Packaged Chromium supervision or managed-browser shutdown propagation changes: `npm run test:frontend:packaged:browser-job-rehearsal`

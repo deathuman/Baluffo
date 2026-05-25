@@ -468,6 +468,7 @@ def test_index_routes_current_process_docs_only(repo_root: Path) -> None:
         "docs/archive/end-to-end-benchmarking-plan.md",
         "docs/archive/external-memory-mcp-policy-plan.md",
         "docs/archive/jobs-fetcher-aggressive-simplification-closeout.md",
+        "docs/archive/linux-compatibility-plan.md",
         "docs/archive/read-only-lifecycle-ux-closeout.md",
         "docs/archive/runtime-storage-and-sync-architecture-plan.md",
         "docs/archive/source-discovery-adapter-follow-ups-closeout.md",
@@ -477,6 +478,7 @@ def test_index_routes_current_process_docs_only(repo_root: Path) -> None:
         "docs/archive/task-lifecycle-ledger-plan.md",
         "docs/archive/task-progress-operational-console-closeout.md",
         "docs/archive/task_lifecycle_ledger_closeout_plan.md",
+        "docs/archive/windows-user-data-migration-plan.md",
     ]
 
 

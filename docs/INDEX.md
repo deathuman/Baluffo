@@ -76,9 +76,6 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`plans/post-0.2.0-desktop-runtime-ram-reduction-plan.md`](plans/post-0.2.0-desktop-runtime-ram-reduction-plan.md) | Plans / Follow-Ups | You are revisiting desktop runtime RAM reduction, packaged startup memory, or static site process consolidation after v0.2.0 |
 | [`plans/optional-playwright-browser-download-plan.md`](plans/optional-playwright-browser-download-plan.md) | Plans / Follow-Ups | You are moving Playwright browser binaries out of the portable ZIP or making packaged browser fallback an optional first-start download |
 | [`plans/cloakbrowser-enhanced-browser-fallback-ab-test-plan.md`](plans/cloakbrowser-enhanced-browser-fallback-ab-test-plan.md) | Plans / Follow-Ups | You are evaluating CloakBrowser as an optional enhanced browser fallback or measuring blocked/challenged career-page recovery |
-| [`plans/windows-user-data-migration-plan.md`](plans/windows-user-data-migration-plan.md) | Plans / Implemented | You are reviewing Windows packaged `%APPDATA%\Baluffo` data-root migration, legacy `ship\data` copy behavior, or updater `dataDir` handling |
-| [`plans/linux-compatibility-plan.md`](plans/linux-compatibility-plan.md) | Plans / Follow-Ups | You are porting Baluffo to Linux, implementing `_linux.py`, fixing import-time crashes, or adding XDG/credential support for Linux |
-
 | [`snapshots/jobs-dead-source-evidence-2026-04-29.md`](snapshots/jobs-dead-source-evidence-2026-04-29.md) | Snapshots / Evidence | You are auditing the first evidence-backed physical deletion batch for dead jobs sources |
 | [`snapshots/jobs-source-family-evidence-2026-04-30.md`](snapshots/jobs-source-family-evidence-2026-04-30.md) | Snapshots / Evidence | You are choosing the next deletion-first jobs fetcher source-family slice |
 | [`snapshots/dedup-lifecycle-readiness-closure-2026-05-03.md`](snapshots/dedup-lifecycle-readiness-closure-2026-05-03.md) | Snapshots / Evidence | You are checking why the broad dedup lifecycle readiness plan closed without starting lifecycle UX |
@@ -123,6 +120,8 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`archive/static-scope-conflict-dry-run-decisions.md`](archive/static-scope-conflict-dry-run-decisions.md) | Archived operator record | Historical static scope conflict dry-run decisions and Arrowhead apply-safe evidence |
 | [`archive/source-discovery-adapter-follow-ups-closeout.md`](archive/source-discovery-adapter-follow-ups-closeout.md) | Archived closeout | Closed source-discovery adapter follow-ups tracker |
 | [`archive/external-memory-mcp-policy-plan.md`](archive/external-memory-mcp-policy-plan.md) | Archived plan with closeout | Completed external memory MCP policy and setup implementation |
+| [`archive/linux-compatibility-plan.md`](archive/linux-compatibility-plan.md) | Archived plan | Completed Linux compatibility implementation: all 8 phases shipped to `main` on 2026-05-25 |
+| [`archive/windows-user-data-migration-plan.md`](archive/windows-user-data-migration-plan.md) | Archived plan | Completed Windows packaged user-data migration; shipped to `main` on 2026-05-25 |
 
 ## Quick Routing by Goal
 
@@ -146,10 +145,10 @@ Important for maintenance, release, and support workflows, but usually not the f
 | Revisit desktop RAM reduction | [`plans/post-0.2.0-desktop-runtime-ram-reduction-plan.md`](plans/post-0.2.0-desktop-runtime-ram-reduction-plan.md) | [`startup-probe-architecture.md`](startup-probe-architecture.md), [`architecture-ai-map.md`](architecture-ai-map.md), [`testing.md`](testing.md) |
 | Make packaged browser fallback optional | [`plans/optional-playwright-browser-download-plan.md`](plans/optional-playwright-browser-download-plan.md) | [`RELEASE.md`](RELEASE.md), [`testing.md`](testing.md), [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md), [`scraping-pipeline.md`](scraping-pipeline.md) |
 | A/B test enhanced browser fallback | [`plans/cloakbrowser-enhanced-browser-fallback-ab-test-plan.md`](plans/cloakbrowser-enhanced-browser-fallback-ab-test-plan.md) | [`scraping-pipeline.md`](scraping-pipeline.md), [`adapter-plugin-inventory.md`](adapter-plugin-inventory.md), [`testing.md`](testing.md) |
-| Review Windows packaged data migration | [`plans/windows-user-data-migration-plan.md`](plans/windows-user-data-migration-plan.md) | [`RELEASE.md`](RELEASE.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`LOCAL_SETUP.md`](LOCAL_SETUP.md), [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md), [`testing.md`](testing.md) |
+| Review Windows packaged data migration | [`archive/windows-user-data-migration-plan.md`](archive/windows-user-data-migration-plan.md) | [`RELEASE.md`](RELEASE.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`LOCAL_SETUP.md`](LOCAL_SETUP.md), [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md), [`testing.md`](testing.md) |
 | Review read-only lifecycle UX | [`archive/read-only-lifecycle-ux-closeout.md`](archive/read-only-lifecycle-ux-closeout.md) | [`snapshots/read-only-lifecycle-ux-implementation-2026-05-03.md`](snapshots/read-only-lifecycle-ux-implementation-2026-05-03.md), [`source-policy-runbook.md`](source-policy-runbook.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md) |
 | Review source-sync production readiness | [`archive/source-sync-production-readiness-closeout.md`](archive/source-sync-production-readiness-closeout.md) | [`environments.md`](environments.md), [`sync-contract.md`](sync-contract.md), [`testing.md`](testing.md) |
-| Port or build for Linux | [`plans/linux-compatibility-plan.md`](plans/linux-compatibility-plan.md) | [`WSL_SETUP.md`](WSL_SETUP.md), [`testing.md`](testing.md) |
+| Review Linux compatibility implementation | [`archive/linux-compatibility-plan.md`](archive/linux-compatibility-plan.md) | [`WSL_SETUP.md`](WSL_SETUP.md), [`testing.md`](testing.md) |
 | Review completed task/progress lifecycle closeout | [`archive/task-lifecycle-ledger-plan.md`](archive/task-lifecycle-ledger-plan.md) | [`admin-bridge-api.md`](admin-bridge-api.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`testing.md`](testing.md) |
 
 ## Recommended AI read sequence

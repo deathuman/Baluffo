@@ -217,6 +217,76 @@ Portable desktop in-app update flow:
 - Desktop update status may include cached stable GitHub release-note history as `releaseNotesHistory`; the scalar latest-release `releaseNotes*` fields remain the compatibility contract.
 - Releases that require the fixed source-side handoff checker must set `min_desktop_updater_version` to `2.0.1` or newer; do not move or replace an already published release tag to recover affected installs.
 
+### Linux AppImage
+
+Prerequisites:
+
+```bash
+python -m pip install -r requirements-lock.txt
+# appimagetool is auto-fetched from GitHub Releases and cached at _out/appimagetool/
+```
+
+Preferred build command:
+
+```bash
+npm run build:linux
+```
+
+Direct Python entrypoint for operator/debug use:
+
+```bash
+python scripts/build_portable_linux.py
+```
+
+Default icon:
+
+- AppImage builds use the checked-in `packaging/baluffo.png` (converted from `favicon.ico`).
+
+Default output:
+
+- `dist/Baluffo-{version}-x86_64.AppImage`
+
+AppDir layout before appimagetool packaging:
+
+- `dist/baluffo-linux/baluffo` — ELF executable
+- `dist/baluffo-linux/_internal/` — Python runtime and dependencies
+- `dist/baluffo-linux/ship/` — embedded ship bundle with `.sh` launcher scripts
+
+Key differences from the Windows portable EXE build:
+
+| Aspect | Windows | Linux |
+|--------|---------|-------|
+| PyInstaller flags | `--windowed --onedir` | `--onedir` (no `--windowed`) |
+| Entry point | Same `desktop_app/__main__.py` | Same, with `_linux.py` platform dispatch |
+| Updater | Separate `BaluffoUpdater.exe` (`--onefile`) | Folded into main binary |
+| Output binary | `Baluffo.exe` | `baluffo` (ELF) |
+| Icon | `favicon.ico` | `packaging/baluffo.png` |
+| Launcher scripts | `.ps1` in `ship/` | `.sh` in `ship/` |
+| Distribution format | `.zip` | `.AppImage` |
+| CI runner | `windows-2022` | `ubuntu-latest` |
+| CI workflow | `.github/workflows/build-portable-exe.yml` | `.github/workflows/build-linux.yml` |
+
+Runtime notes:
+
+- The AppImage is self-contained and runs on any glibc-compatible Linux distribution.
+- Desktop runtime starts the local static site and admin bridge in the background, same as Windows.
+- No separate updater binary; the updater logic is folded into the main ELF binary.
+- On headless systems (no `$DISPLAY` or `$WAYLAND_DISPLAY`), the launcher runs in service-only mode.
+- Playwright Chromium is deferred until upstream v1.61; AppRun sets `PLAYWRIGHT_SYSTEM_CHROMIUM=1`, relying on system `chromium-browser` for frontend smoke tests.
+
+Linux AppImage smoke test:
+
+```bash
+bash scripts/smoke_test_appimage.sh
+```
+
+This launches the AppImage in headless mode, polls the bridge and site HTTP endpoints, verifies responses, and terminates cleanly.
+
+AppImage execution notes:
+
+- Direct execution requires FUSE: `sudo apt install libfuse2` on Ubuntu 24.04+. Use `--appimage-extract-and-run` as a FUSE-free workaround.
+- CI workflows use `--appimage-extract-and-run` to avoid FUSE dependencies on runner images.
+
 ## Verification Checklist
 
 ### Shared Release Gates
@@ -240,8 +310,13 @@ Before any release:
    - `npm run test:frontend:packaged:desktop-lifecycle-rehearsal`
    - `npm run test:frontend:packaged:first-run`
    - `npm run test:frontend:packaged:jobs-pipeline`
-   - `npm run probe:desktop:startup:jobs:cold`
-   For CI release failures, inspect artifacts before inferring root cause:
+    - `npm run probe:desktop:startup:jobs:cold`
+    - Linux lanes:
+      - `npm run test:py:linux`
+      - `npm run test:frontend:linux`
+      - `npm run build:linux`
+      - `bash scripts/smoke_test_appimage.sh`
+    For CI release failures, inspect artifacts before inferring root cause:
    - `gh run view <run-id> --log-failed`
    - `gh run download <run-id> --dir .tmp/release-run-<run-id>`
    - Inspect the packaged smoke report JSON first when a packaged desktop lane fails.
