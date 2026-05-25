@@ -93,7 +93,10 @@ All commands run inside WSL after `cd`-ing to the project root.
 | Python tests | `npm run test:py` |
 | Frontend smoke tests | `npm run test:smoke` (requires Playwright — see note below) |
 | Full build | `npm run build` |
+| Build Linux AppImage | `npm run build:linux` |
 | Full verification | `npm run verify` |
+| Python tests (Linux) | `npm run test:py:linux` (excludes Windows-only tests) |
+| Frontend tests (Linux) | `npm run test:frontend:linux` (requires `PLAYWRIGHT_SYSTEM_CHROMIUM=1`) |
 | Python lint | `npm run lint:py` |
 | Python type check | `npm run typecheck:py` |
 | Frontend lint | `npm run lint:frontend` |
