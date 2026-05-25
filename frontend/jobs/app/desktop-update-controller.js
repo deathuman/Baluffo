@@ -425,7 +425,7 @@ export function createJobsDesktopUpdateController({
   async function startAutoCheck() {
     if (!isDesktopRuntimeMode?.() || state.autoCheckStarted) return;
     state.autoCheckStarted = true;
-    await checkForUpdates({ force: false, silent: true, openPanel: false, autoOpenImportant: true });
+    await checkForUpdates({ force: true, silent: true, openPanel: false, autoOpenImportant: true });
   }
 
   return {

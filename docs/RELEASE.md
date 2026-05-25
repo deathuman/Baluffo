@@ -203,7 +203,7 @@ Runtime notes:
 
 Portable desktop in-app update flow:
 
-- Baluffo checks for desktop updates on startup with throttling and when the user clicks `Check for updates`.
+- Baluffo performs one fresh, silent desktop update check on Jobs-page startup and when the user clicks `Check for updates`; non-forced internal checks may still reuse the manifest cache.
 - Update state lives under the resolved data root, `%APPDATA%\Baluffo\updater\` for Windows packaged installs.
 - The jobs-page desktop UI must surface `Check for updates`, `Download`, `Install and restart`, install-progress, and failure/retry states.
 - Background download failures must remain visible in the Jobs-page updater panel, using the persisted updater `lastError` and a retry download action instead of reverting to the generic available-update CTA.

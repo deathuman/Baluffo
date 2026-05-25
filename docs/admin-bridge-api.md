@@ -45,7 +45,7 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/app/update-status` | Desktop updater/install status; `currentVersion` is the installed app version |
-| POST | `/app/check-for-update` | Check GitHub release/update manifest state |
+| POST | `/app/check-for-update` | Check GitHub release/update manifest state; `{force: true}` bypasses the manifest cache |
 | POST | `/app/download-update` | Start desktop update download |
 | POST | `/app/install-update` | Start install-and-restart handoff |
 | POST | `/app/desktop-session-lifecycle` | Desktop session heartbeat / closing lifecycle |
