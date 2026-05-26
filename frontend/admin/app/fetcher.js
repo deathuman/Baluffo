@@ -97,6 +97,10 @@ export function createAdminFetcherController({
     launchLink.remove();
   }
 
+  /**
+   * @param {import("../../shared/types.js").RunFetcherRequest} [runOptions]
+   * @returns {Promise<void>}
+   */
   async function triggerJobsFetcherTask(runOptions = {}) {
     if (state.adminBusyState.fetcherRun || state.adminBusyState.fetcherWatch || state.adminBusyState.fetcherReportLoad || state.adminBusyState.liveFetchRunning) {
       showToast("Fetcher task is already running.", "info");
@@ -113,6 +117,7 @@ export function createAdminFetcherController({
         returnMeta: true
       });
       const bridgeStatus = Number(bridgeResponse?.status || 200);
+      /** @type {import("../../shared/types.js").TaskStartResponse|null} */
       const bridge = bridgeResponse?.data || bridgeResponse || null;
       if (bridge && bridge.started) {
         watchController.attachToActiveFetchRun(bridge);

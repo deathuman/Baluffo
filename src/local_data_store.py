@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Thin compatibility facade for the file-backed local desktop data store."""
+"""Thin compatibility facade for the file-backed local desktop data store.
+
+AI boundary: this file owns `LocalDataStore` facade compatibility only.
+AI boundary implement in: `src.local_data_store_*` and tracking leaves.
+AI boundary search before contracts: `frontend/shared/local-data` callers.
+AI boundary verify: local-data tests plus `npm run test:refactor:changed`.
+"""
 
 from __future__ import annotations
 

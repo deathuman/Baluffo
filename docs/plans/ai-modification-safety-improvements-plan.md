@@ -157,6 +157,11 @@ Remaining gap: risky code paths are protected by tests and docs, but the code ca
 
 ### 1. Add Local AI Boundary Markers
 
+Completed 2026-05-26 for the first safety slice. The highest-risk
+compatibility roots and GET/POST route surfaces now carry compact local
+AI-boundary headers. Keep future marker maintenance concise and focused on
+ownership, caller searches, and the narrowest verification lane.
+
 Add compact headers to the highest-risk compatibility roots and route surfaces:
 
 - [`../../src/admin_bridge.py`](../../src/admin_bridge.py)
@@ -213,6 +218,12 @@ Keep exceptions explicit for low-value diagnostics: internal routes should carry
 an inventory rationale rather than being forced into the public API reference.
 
 ### 3. Add Lightweight Typed Payload Contracts
+
+Started 2026-05-26 for the first safety slice. Shared live-task/task-state
+Python `TypedDict` contracts and frontend JSDoc typedefs now cover the first
+bridge/frontend boundaries. Continue this section incrementally; do not convert
+the advisory contracts into runtime validation unless a narrower behavior plan
+requires it.
 
 Add narrow typing where it reduces accidental field drift. Prefer `TypedDict`, dataclasses, existing Pydantic schemas, and JSDoc typedefs.
 

@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Thin helper executable root for portable desktop in-app updates."""
+"""Thin helper executable root for portable desktop in-app updates.
+
+AI boundary: this file owns helper CLI compatibility and root patch seams only.
+AI boundary implement in: `desktop_updater_{ui,release,install}.py` leaves.
+AI boundary search before contracts: updater state, release, install, UI callers.
+AI boundary verify: updater rehearsal lane plus `npm run test:refactor:changed`.
+"""
 
 from __future__ import annotations
 

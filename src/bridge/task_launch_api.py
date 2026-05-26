@@ -13,7 +13,7 @@ from collections.abc import Callable
 from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 from src.bridge import storage_health as storage_health_mod
 from src.bridge.task_admission import (
@@ -94,6 +94,47 @@ class TaskLaunchDeps:
     source_runtime_store: Callable[[], Any] | None = None
     job_runtime_store: Callable[[], Any] | None = None
     record_storage_diagnostic: Callable[..., None] | None = None
+
+
+class RunFetcherRequest(TypedDict, total=False):
+    preset: str
+    maxWorkers: int
+    maxPerDomain: int
+    fetchStrategy: str
+    adapterHttpConcurrency: int
+    sourceTtlMinutes: int
+    hotSourceCadenceMinutes: int
+    coldSourceCadenceMinutes: int
+    circuitBreakerFailures: int
+    circuitBreakerCooldownMinutes: int
+    browserFallbackCooldownMinutes: int
+    skipSuccessfulSources: bool
+    respectSourceCadence: bool
+    ignoreCircuitBreaker: bool
+    quiet: bool
+    socialEnabled: bool
+    onlySources: list[str]
+
+
+class JobsBootstrapRequest(TypedDict, total=False):
+    source: str
+    forceBootstrap: bool
+
+
+class TaskStartResponse(TypedDict, total=False):
+    started: bool
+    alreadyRunning: bool
+    alreadyCompleted: bool
+    runId: str
+    task: str
+    taskType: str
+    preset: str
+    coverageScope: str
+    args: list[str]
+    pid: int
+    startedAt: str
+    status: str
+    error: str
 
 
 class TaskLaunchApi:
@@ -639,7 +680,9 @@ class TaskLaunchApi:
             ]
         )
 
-    def build_fetcher_args_from_payload(self, payload: dict[str, Any]) -> tuple[list[str], str]:
+    def build_fetcher_args_from_payload(
+        self, payload: RunFetcherRequest | dict[str, Any]
+    ) -> tuple[list[str], str]:
         data = payload if isinstance(payload, dict) else {}
         preset = str(data.get("preset") or "default").strip().lower()
         args: list[str] = []
@@ -745,7 +788,7 @@ class TaskLaunchApi:
         self,
         *,
         get_lifecycle_current_runs: Callable[[], list[dict[str, Any]]],
-    ) -> dict[str, Any] | None:
+    ) -> TaskStartResponse | None:
         active_metadata = get_active_lifecycle_task_metadata(
             "fetch",
             lifecycle_rows=list(get_lifecycle_current_runs() or []),
@@ -2469,7 +2512,7 @@ class TaskLaunchApi:
 
     def start_jobs_bootstrap_task(
         self,
-        payload: dict[str, Any] | None = None,
+        payload: JobsBootstrapRequest | dict[str, Any] | None = None,
         *,
         normalize_fetch_report_contract: Callable[[dict[str, Any]], dict[str, Any]],
         run_background_script: Callable[..., int],
@@ -2483,7 +2526,7 @@ class TaskLaunchApi:
         ),
         get_lifecycle_current_runs: Callable[[], list[dict[str, Any]]] = lambda: [],
         get_lifecycle_run_history_rows: Callable[[], list[dict[str, Any]]] = lambda: [],
-    ) -> dict[str, Any]:
+    ) -> TaskStartResponse:
         payload_data = payload if isinstance(payload, dict) else {}
         source = str(payload_data.get("source") or "").strip()
         raw_force_bootstrap = payload_data.get("forceBootstrap")
@@ -2670,7 +2713,7 @@ class TaskLaunchApi:
 
     def start_fetcher_task(
         self,
-        payload: dict[str, Any] | None = None,
+        payload: RunFetcherRequest | dict[str, Any] | None = None,
         *,
         append_run_history: Callable[[dict[str, Any]], dict[str, Any]],
         normalize_fetch_report_contract: Callable[[dict[str, Any]], dict[str, Any]],
@@ -2686,7 +2729,7 @@ class TaskLaunchApi:
             lambda *_args, **_kwargs: None
         ),
         get_lifecycle_current_runs: Callable[[], list[dict[str, Any]]] = lambda: [],
-    ) -> dict[str, Any]:
+    ) -> TaskStartResponse:
         lock_context = (
             self._deps.task_state_lock if self._deps.task_state_lock is not None else nullcontext()
         )
@@ -2807,4 +2850,12 @@ class TaskLaunchApi:
             }
 
 
-__all__ = ["TaskLaunchApi", "TaskLaunchDeps", "TaskLaunchPaths", "TaskLaunchRuntime"]
+__all__ = [
+    "JobsBootstrapRequest",
+    "RunFetcherRequest",
+    "TaskLaunchApi",
+    "TaskLaunchDeps",
+    "TaskLaunchPaths",
+    "TaskLaunchRuntime",
+    "TaskStartResponse",
+]

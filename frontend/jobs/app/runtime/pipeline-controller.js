@@ -10,14 +10,26 @@ import {
 
 const BLOCKING_TASK_TYPES = new Set(["pipeline", "fetch", "discovery", "sync"]);
 
+/**
+ * @param {import("../../../shared/types.js").TaskStatePayload|null|undefined} payload
+ * @returns {Array<import("../../../shared/types.js").TaskStateRow>}
+ */
 function getTaskStateRows(payload) {
   return Array.isArray(payload?.tasks) ? payload.tasks : [];
 }
 
+/**
+ * @param {import("../../../shared/types.js").TaskStateRow|null|undefined} task
+ * @returns {string}
+ */
 function normalizeTaskType(task) {
   return String(task?.taskType || task?.type || "").trim().toLowerCase();
 }
 
+/**
+ * @param {import("../../../shared/types.js").TaskStateRow} task
+ * @returns {{active: boolean, stage: string, startedAt: string, progress?: {label: string}}}
+ */
 function buildBlockingTaskPayload(task) {
   const taskType = normalizeTaskType(task);
   const taskProgress = task?.taskProgress && typeof task.taskProgress === "object"
@@ -43,12 +55,20 @@ function buildBlockingTaskPayload(task) {
   return payload;
 }
 
+/**
+ * @param {import("../../../shared/types.js").TaskStateRow|null|undefined} task
+ * @returns {string}
+ */
 function taskCoverageScope(task) {
   const summary = task?.summary && typeof task.summary === "object" ? task.summary : {};
   const runtime = task?.runtime && typeof task.runtime === "object" ? task.runtime : {};
   return String(task?.coverageScope || summary.coverageScope || runtime.coverageScope || "").trim();
 }
 
+/**
+ * @param {import("../../../shared/types.js").TaskStateRow|null|undefined} task
+ * @returns {boolean}
+ */
 function isFirstRunBootstrapTask(task) {
   const runId = String(task?.runId || "").trim();
   const taskName = String(task?.task || task?.name || "").trim();
@@ -57,6 +77,11 @@ function isFirstRunBootstrapTask(task) {
     || taskCoverageScope(task) === "bootstrap_sheets";
 }
 
+/**
+ * @param {import("../../../shared/types.js").TaskStatePayload|null|undefined} taskStatePayload
+ * @param {string} [trackedRunId]
+ * @returns {import("../../../shared/types.js").TaskStateRow|null}
+ */
 function getBlockingTask(taskStatePayload, trackedRunId = "") {
   const tasks = getTaskStateRows(taskStatePayload);
   const activeTasks = tasks.filter(task => (

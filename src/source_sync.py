@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""GitHub App-backed source registry sync helpers."""
+"""GitHub App-backed source registry sync compatibility surface.
+
+AI boundary: this file owns stable sync constants, exports, and patch seams.
+AI boundary implement in: `src.source_sync_{config,runtime,snapshot,crypto}.py`.
+AI boundary search before contracts: bridge sync callers and frontend sync clients.
+AI boundary verify: focused source-sync tests plus `npm run test:refactor:changed`.
+"""
 
 from __future__ import annotations
 

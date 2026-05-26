@@ -1,3 +1,11 @@
+"""GET route surface for the admin bridge.
+
+AI boundary owns: GET route dispatch and response wiring only.
+AI boundary implement in: bridge services/leaves behind `BridgeApi`.
+AI boundary search before contracts: frontend callers, route inventory, API docs.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused GET tests.
+"""
+
 from __future__ import annotations
 
 import io

@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Stable thin bridge entrypoint and compatibility wrapper surface."""
+"""AI boundary owns: bridge startup, root exports, compatibility patch seams.
+AI boundary implement in: `src.bridge.*` leaves and admin entrypoint helpers.
+AI boundary search before contracts: route handlers, frontend callers, API docs.
+AI boundary verify: `npm run test:refactor:changed` plus focused bridge tests."""
 
 from __future__ import annotations
 
@@ -15,9 +18,8 @@ from typing import Any, cast
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# Allow running via `py src/admin_bridge.py` from repo root (or elsewhere).
-# When executed as a script, Python puts `.../Baluffo/src` on sys.path, not the repo root,
-# so absolute imports like `import src.jobs...` would fail without this.
+# Allow script execution from any cwd by adding the repo root to sys.path.
+# Without this, `py src/admin_bridge.py` exposes only `.../Baluffo/src`.
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 

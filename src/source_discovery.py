@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Stable thin CLI entrypoint for source discovery.
 
-All discovery implementation lives in `src.source_discovery.*`.
+AI boundary: this file owns CLI entry compatibility only.
+AI boundary implement in: `src.source_discovery.*` leaves.
+AI boundary search before contracts: bridge discovery routes and Admin callers.
+AI boundary verify: source-discovery tests plus `npm run test:refactor:changed`.
 """
 
 from __future__ import annotations

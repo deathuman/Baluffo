@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Release-gating smoke runner for the packaged Baluffo desktop executable."""
+"""Release-gating smoke runner for the packaged Baluffo desktop executable.
+
+AI boundary: this file owns packaged-smoke CLI/root patch compatibility only.
+AI boundary implement in: `src.ship.packaged_smoke.*` and updater/runtime leaves.
+AI boundary search before contracts: packaged frontend smoke scripts.
+AI boundary verify: matching packaged lane plus `npm run test:refactor:changed`.
+"""
 
 from __future__ import annotations
 

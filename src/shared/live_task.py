@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TypedDict, cast
 
 from src.shared.json_shapes import (
     as_json_object,
@@ -14,6 +14,85 @@ LIVE_TASK_EVENT_SCHEMA_VERSION = 1
 LIVE_TASK_EVENT_DEFAULT_NAME = "live_task_event"
 
 
+class LiveTaskProgress(TypedDict, total=False):
+    active: bool
+    phaseKey: str
+    phaseLabel: str
+    mode: str
+    ratio: float
+    counts: dict[str, Any]
+    targetLabel: str
+    targetUrl: str
+    waitReason: str
+    updatedAt: str
+
+
+class LiveTaskWorkItem(TypedDict, total=False):
+    id: str
+    name: str
+    status: str
+    startedAt: str
+    finishedAt: str
+    durationMs: int
+    heartbeatAt: str
+    error: str
+    progress: LiveTaskProgress
+
+
+class LiveTaskEvent(TypedDict, total=False):
+    schemaVersion: int
+    timestamp: str
+    level: str
+    event: str
+    taskType: str
+    runId: str
+    workItemId: str
+    phaseKey: str
+    message: str
+    target: str
+    targetUrl: str
+
+
+class LiveTaskPayload(TypedDict, total=False):
+    taskType: str
+    status: str
+    active: bool
+    runId: str
+    startedAt: str
+    finishedAt: str
+    heartbeatAt: str
+    taskProgress: LiveTaskProgress
+    summary: dict[str, Any]
+    workItems: list[LiveTaskWorkItem]
+    recentEvents: list[LiveTaskEvent]
+    outputs: dict[str, Any]
+
+
+class TaskStateRow(LiveTaskPayload, total=False):
+    type: str
+    id: str
+    lifecycleStatus: str
+    stage: str
+    parentRunId: str
+    parentTaskType: str
+    ownerKind: str
+    ownerPid: int
+    progress: LiveTaskProgress
+    workItemCount: int
+    workItemsTruncated: bool
+    recentEventCount: int
+    recentEventsTruncated: bool
+    error: str
+    label: str
+
+
+class TaskStatePayload(TypedDict, total=False):
+    tasks: list[TaskStateRow]
+    count: int
+    diagnostics: list[dict[str, Any]]
+    summary: bool
+
+
 def _clamped_int(value: Any, default: int = 0) -> int:
     try:
         return max(0, int(value))
@@ -21,7 +100,7 @@ def _clamped_int(value: Any, default: int = 0) -> int:
         return int(default)
 
 
-def normalize_live_task_progress(payload: dict[str, Any] | None) -> dict[str, Any]:
+def normalize_live_task_progress(payload: dict[str, Any] | None) -> LiveTaskProgress:
     src = as_json_object(payload)
     mode = clean_text(src.get("mode")).lower()
     if mode not in {"determinate", "indeterminate"}:
@@ -64,7 +143,7 @@ def normalize_live_task_progress(payload: dict[str, Any] | None) -> dict[str, An
     }
 
 
-def normalize_live_task_work_item(payload: dict[str, Any] | None) -> dict[str, Any]:
+def normalize_live_task_work_item(payload: dict[str, Any] | None) -> LiveTaskWorkItem:
     src = as_json_object(payload)
     item_id = clean_text(src.get("id")) or clean_text(src.get("name"))
     return {
@@ -85,7 +164,7 @@ def normalize_live_task_event(
     *,
     default_task_type: str = "",
     default_run_id: str = "",
-) -> dict[str, Any]:
+) -> LiveTaskEvent:
     src = as_json_object(payload)
     level = clean_text(src.get("level")).lower() or "info"
     if level not in {"debug", "muted", "info", "warn", "error", "success", "warning"}:
@@ -114,7 +193,7 @@ def normalize_live_task_payload(
     run_id: str = "",
     started_at: str = "",
     finished_at: str = "",
-) -> dict[str, Any]:
+) -> LiveTaskPayload:
     src = as_json_object(payload)
     rows = src.get("workItems")
     if not isinstance(rows, list):
@@ -147,10 +226,16 @@ def normalize_live_task_payload(
 
 def build_live_task_contract_fields(
     payload: dict[str, Any] | None,
-) -> dict[str, Any]:
+) -> LiveTaskPayload:
     normalized = normalize_live_task_payload(payload)
-    work_items = [dict(row) for row in json_object_rows(normalized.get("workItems"))]
-    recent_events = [dict(row) for row in json_object_rows(normalized.get("recentEvents"))]
+    work_items = [
+        cast(LiveTaskWorkItem, dict(row))
+        for row in json_object_rows(normalized.get("workItems"))
+    ]
+    recent_events = [
+        cast(LiveTaskEvent, dict(row))
+        for row in json_object_rows(normalized.get("recentEvents"))
+    ]
     return {
         "heartbeatAt": clean_text(normalized.get("heartbeatAt")),
         "taskProgress": normalize_live_task_progress(normalized.get("taskProgress")),
@@ -161,8 +246,8 @@ def build_live_task_contract_fields(
 
 def snapshot_live_task_work_items(
     payload: dict[str, dict[str, Any]] | list[dict[str, Any]] | None,
-) -> list[dict[str, Any]]:
-    return [dict(row) for row in json_object_values(payload)]
+) -> list[LiveTaskWorkItem]:
+    return [cast(LiveTaskWorkItem, dict(row)) for row in json_object_values(payload)]
 
 
 def build_live_task_progress_payload(
@@ -177,7 +262,7 @@ def build_live_task_progress_payload(
     target_url: str = "",
     wait_reason: str = "",
     updated_at: str = "",
-) -> dict[str, Any]:
+) -> LiveTaskProgress:
     return normalize_live_task_progress(
         {
             "active": bool(active),
@@ -205,7 +290,7 @@ def build_live_task_work_item(
     heartbeat_at: str = "",
     error: str = "",
     progress: dict[str, Any] | None = None,
-) -> dict[str, Any]:
+) -> LiveTaskWorkItem:
     return normalize_live_task_work_item(
         {
             "id": item_id,
@@ -235,7 +320,7 @@ def build_live_task_payload(
     work_items: list[dict[str, Any]] | None = None,
     recent_events: list[dict[str, Any]] | None = None,
     outputs: dict[str, Any] | None = None,
-) -> dict[str, Any]:
+) -> LiveTaskPayload:
     return normalize_live_task_payload(
         {
             "taskType": clean_text(task_type),

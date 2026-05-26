@@ -10,7 +10,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from src import fetcher_metrics as fetcher_metrics_module
 from src.bridge import ops_health as _ops_health
@@ -21,6 +21,7 @@ from src.bridge import report_normalizer
 from src.bridge import run_history_api as _run_history_api
 from src.bridge.fetch_report_review_state import load_fetch_report_with_dedup_review_state
 from src.shared.json_shapes import as_json_object
+from src.shared.live_task import LiveTaskPayload, TaskStatePayload, TaskStateRow
 from src.source_registry_io import load_runtime_evidence
 
 
@@ -330,7 +331,7 @@ def _enrich_pipeline_rows_with_children(
             task_by_key[key] = _enrich_pipeline_row_with_child(row, child)
 
 
-def _pipeline_status_to_task_row(pipeline_status: dict[str, Any]) -> dict[str, Any]:
+def _pipeline_status_to_task_row(pipeline_status: dict[str, Any]) -> TaskStateRow:
     status = pipeline_status if isinstance(pipeline_status, dict) else {}
     active = bool(status.get("active"))
     return {
@@ -384,7 +385,7 @@ _TASK_STATE_SUMMARY_KEYS = {
 }
 
 
-def _compact_task_state_row(row: dict[str, Any]) -> dict[str, Any]:
+def _compact_task_state_row(row: dict[str, Any]) -> TaskStateRow:
     compact = {key: row.get(key) for key in _TASK_STATE_SUMMARY_KEYS if key in row}
     work_items = row.get("workItems")
     if isinstance(work_items, list):
@@ -395,10 +396,10 @@ def _compact_task_state_row(row: dict[str, Any]) -> dict[str, Any]:
         compact["recentEventCount"] = len(recent_events)
         compact["recentEvents"] = list(recent_events[-5:])
         compact["recentEventsTruncated"] = len(recent_events) > 5
-    return compact
+    return cast(TaskStateRow, compact)
 
 
-def _compact_task_state_payload(payload: dict[str, Any]) -> dict[str, Any]:
+def _compact_task_state_payload(payload: dict[str, Any]) -> TaskStatePayload:
     tasks = [
         _compact_task_state_row(row) for row in payload.get("tasks", []) if isinstance(row, dict)
     ]
@@ -605,7 +606,7 @@ class OpsApi:
     def get_task_live_payload(
         self,
         task_type: str,
-    ) -> dict[str, Any]:
+    ) -> LiveTaskPayload:
         projection = self.get_projected_run_history()
         return _ops_task_live.get_task_live_payload(
             self._task_live_context(),
@@ -613,7 +614,7 @@ class OpsApi:
             projection=projection,
         )
 
-    def get_current_task_state_payload(self) -> dict[str, Any]:
+    def get_current_task_state_payload(self) -> TaskStatePayload:
         lifecycle_current = [dict(row) for row in self._deps.get_lifecycle_current_runs()]
         projection = self.get_projected_run_history()
         fetch_live_payload = _ops_task_live.get_task_live_payload(
@@ -715,7 +716,7 @@ class OpsApi:
             "diagnostics": diagnostics,
         }
 
-    def get_current_task_state_summary_payload(self) -> dict[str, Any]:
+    def get_current_task_state_summary_payload(self) -> TaskStatePayload:
         return _compact_task_state_payload(self.get_current_task_state_payload())
 
     def compute_fetcher_metrics(self, *, window_runs: int = 20) -> dict[str, Any]:
