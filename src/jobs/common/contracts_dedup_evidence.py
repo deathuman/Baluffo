@@ -6,7 +6,6 @@ from typing import Any, TypedDict
 
 type JsonObject = dict[str, Any]
 type IntCountMap = dict[str, int]
-type StringListMap = dict[str, list[str]]
 type MergeExampleMap = dict[str, list[DedupMergeExampleRow]]
 
 
