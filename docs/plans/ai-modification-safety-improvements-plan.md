@@ -353,17 +353,21 @@ architecture in both coordinator and leaf modules.
 
 ### 7. Partition Admin Ops Rendering
 
-Split [`../../frontend/admin/render/ops-summary.js`](../../frontend/admin/render/ops-summary.js) by display ownership while preserving current exported functions:
+Completed 2026-05-26. The 2,099-line `ops-summary.js` coordinator was split
+into three leaf modules behind the five stable public entrypoints.
 
-- dedup evidence and audit gate rendering
-- provider/static disagreement rendering
-- source-policy rendering
-- fetch metrics rendering
-- task lane rendering
+New modules under `frontend/admin/render/`:
 
-Add JSDoc imports from shared typedefs so field names are easier to discover before changing backend payloads.
+- `ops-summary-dedup.js` — dedup gate, audit, review, dedup-lists
+- `ops-summary-provider-static.js` — provider/static disagreement rows
+- `ops-summary-source-policy.js` — source-health/coverage/cleanup
 
-Acceptance guard: frontend unit tests cover representative payloads for each partition, including missing optional fields.
+The coordinator dropped from 2,099 to 798 lines and retains all five
+exports plus generic section builders.  All payload-specific formatters
+live in leaf modules.
+
+Acceptance guard verified: `npm run test:frontend:unit` → 567 frontend
+unit tests pass (0 failures).  Import DAG cycle-free.
 
 ### 8. Label Discovery And Static Adapter Flow Stages
 
@@ -405,7 +409,7 @@ Acceptance guard: changes to these files use the relevant packaged rehearsal lan
 3. Dedup evidence split. **Done 2026-05-26.**
 4. Registry conflict split. **Done 2026-05-26.**
 5. Task launch extraction. **Done 2026-05-26.**
-6. Admin Ops render partition.
+6. Admin Ops render partition. **Done 2026-05-26.**
 7. Discovery/static stage labels and limited extraction.
 8. Packaged desktop local labels and side-effect naming cleanup.
 
