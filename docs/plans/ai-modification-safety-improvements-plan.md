@@ -287,6 +287,33 @@ Acceptance guard: the final `dedupEvidence` payload remains byte-contract compat
 
 ### 5. Split Registry Conflict Ownership
 
+Completed 2026-05-26. The 3,600-line coordinator was split into four leaf modules
+behind the three stable public entrypoints (`derive_registry_conflict_queue`,
+`load_registry_conflicts_payload`, `apply_registry_conflict_safe_demotions`).
+
+New modules under `src/bridge/`:
+
+- `registry_conflicts_row.py` — all constants, row classification, URL/identity
+  analysis, source state merge, adjudication helpers, audit builders, and
+  `_compare_registry_rows`
+- `registry_conflicts_automation.py` — conflict triage/review, all 11
+  `_analyze_*` safe automation functions, blocker/eligibility helpers
+- `registry_conflicts_demotions.py` — safe demotion state management and
+  mutation targets (`_apply_*_targets`)
+- `registry_conflicts_summary.py` — summary/cache payload assembly including
+  `summarize_registry_conflicts_payload` and cache helpers
+
+The coordinator file (`registry_conflicts.py`) dropped from 3,600 lines to 446
+lines and retains only the three public entrypoints. All SAFE_AUTO_DEMOTE_*
+constants are defined in module 1 and re-exported by the coordinator.
+
+Import DAG (no cycles): coordinator → modules 1/2/3; module 2 → module 1;
+module 3 → module 1/2; module 4 → module 1.
+
+Acceptance guard verified: 77 registry conflict + 310 bridge + 181 admin tests
+all pass. `/registry/conflicts` and `/registry/conflicts/auto-demote-safe`
+routes preserve existing payload shape and reversible behavior.
+
 Refactor [`../../src/bridge/registry_conflicts.py`](../../src/bridge/registry_conflicts.py) behind the existing public entrypoints:
 
 - keep `derive_registry_conflict_queue(...)` stable
@@ -366,7 +393,7 @@ Acceptance guard: changes to these files use the relevant packaged rehearsal lan
 1. Route contract inventory and local AI boundary markers.
 2. Typed payload contracts for task-live/task-state and `/tasks/run-fetcher`.
 3. Dedup evidence split. **Done 2026-05-26.**
-4. Registry conflict split.
+4. Registry conflict split. **Done 2026-05-26.**
 5. Task launch extraction.
 6. Admin Ops render partition.
 7. Discovery/static stage labels and limited extraction.

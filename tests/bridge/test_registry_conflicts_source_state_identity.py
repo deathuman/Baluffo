@@ -3,9 +3,9 @@ from __future__ import annotations
 from typing import Any
 
 from src.bridge.registry_conflicts import (
-    _merge_fetch_report_source_details,
     derive_registry_conflict_queue,
 )
+from src.bridge.registry_conflicts_row import _merge_fetch_report_source_details
 
 OLD_FOCUS_ID = "recruitee:api_url:https://focushomeinteractive.recruitee.com/api/offers/"
 NEW_FOCUS_ID = "recruitee:api_url:https://focusentertainment.recruitee.com/api/offers/"
