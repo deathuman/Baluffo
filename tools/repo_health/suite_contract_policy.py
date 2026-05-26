@@ -1194,6 +1194,21 @@ def test_admin_bridge_delegates_task_launch_orchestration_to_bridge_module(repo_
     task_launch_api = (repo_root / "src" / "bridge" / "task_launch_api.py").read_text(
         encoding="utf-8"
     )
+    fetcher_args_mod = (repo_root / "src" / "bridge" / "task_launch_fetcher_args.py").read_text(
+        encoding="utf-8"
+    )
+    source_runs_mod = (repo_root / "src" / "bridge" / "task_launch_source_runs.py").read_text(
+        encoding="utf-8"
+    )
+    jobs_feed_mod = (repo_root / "src" / "bridge" / "task_launch_jobs_feed.py").read_text(
+        encoding="utf-8"
+    )
+    lifecycle_mod = (repo_root / "src" / "bridge" / "task_launch_fetch_lifecycle.py").read_text(
+        encoding="utf-8"
+    )
+    bs_storage_mod = (repo_root / "src" / "bridge" / "task_launch_bootstrap_storage.py").read_text(
+        encoding="utf-8"
+    )
     run_script_fn = _find_function(admin_bridge_tree, "run_background_script")
     fetcher_args_fn = _find_function(admin_bridge_tree, "build_fetcher_args_from_payload")
 
@@ -1204,9 +1219,39 @@ def test_admin_bridge_delegates_task_launch_orchestration_to_bridge_module(repo_
     assert "run_background_script" in _function_call_names(run_script_fn)
     admin_bridge = (repo_root / "src" / "admin_bridge.py").read_text(encoding="utf-8")
     assert "--max-workers" not in admin_bridge
+
+    # Coordinator assertions
     assert "class TaskLaunchApi:" in task_launch_api
     assert "def run_background_script(" in task_launch_api
+    assert "def start_fetcher_task(" in task_launch_api
+    assert "def start_jobs_bootstrap_task(" in task_launch_api
     assert "def build_fetcher_args_from_payload(" in task_launch_api
+    assert "def build_fetcher_extra_env_from_preset(" in task_launch_api
+
+    # Module 1: fetcher args
+    assert "def build_fetcher_args_from_payload(" in fetcher_args_mod
+    assert "def build_fetcher_extra_env_from_preset(" in fetcher_args_mod
+    assert "from src.bridge.task_launch_api" not in fetcher_args_mod
+
+    # Module 2: source runs
+    assert "def mirror_fetch_source_runs(" in source_runs_mod
+    assert "from src.bridge.task_launch_api" not in source_runs_mod
+
+    # Module 3: jobs feed
+    assert "def mirror_jobs_feed_rows(" in jobs_feed_mod
+    assert "from src.bridge.task_launch_api" not in jobs_feed_mod
+
+    # Module 4: fetch lifecycle
+    assert "class FetchLifecycleContext:" in lifecycle_mod
+    assert "def watch_fetch_lifecycle(" in lifecycle_mod
+    assert "def close_fetch_lifecycle_from_report(" in lifecycle_mod
+    assert "def start_fetch_lifecycle_watch(" in lifecycle_mod
+    assert "from src.bridge.task_launch_api" not in lifecycle_mod
+
+    # Module 5: bootstrap storage
+    assert "def snapshot_bootstrap_storage_state(" in bs_storage_mod
+    assert "def restore_bootstrap_storage_state(" in bs_storage_mod
+    assert "from src.bridge.task_launch_api" not in bs_storage_mod
 
 
 def test_admin_bridge_delegates_ops_orchestration_to_bridge_module(repo_root: Path) -> None:

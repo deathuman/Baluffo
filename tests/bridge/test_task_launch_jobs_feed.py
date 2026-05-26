@@ -211,7 +211,9 @@ def test_fetch_lifecycle_close_rolls_back_jobs_feed_when_sqlite_export_fails(
             def fail_export(*_args: Any, **_kwargs: Any) -> bool:
                 raise OSError("disk full")
 
-            monkeypatch.setattr("src.bridge.task_launch_api.write_atomic_if_changed", fail_export)
+            monkeypatch.setattr(
+                "src.bridge.task_launch_jobs_feed.write_atomic_if_changed", fail_export
+            )
             report = {
                 "runId": "fetch_jobs_1",
                 "finishedAt": "2026-05-12T12:00:00+00:00",

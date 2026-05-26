@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import re
 import shutil
 import sqlite3
 import threading
@@ -15,10 +14,69 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TypedDict
 
-from src.bridge import storage_health as storage_health_mod
 from src.bridge.task_admission import (
     build_duplicate_start_payload,
     get_active_lifecycle_task_metadata,
+)
+from src.bridge.task_launch_bootstrap_storage import (
+    BootstrapStorageContext,
+)
+from src.bridge.task_launch_bootstrap_storage import (
+    restore_bootstrap_storage_state as _bs_restore_storage_state,
+)
+from src.bridge.task_launch_bootstrap_storage import (
+    snapshot_bootstrap_storage_state as _bs_snapshot_storage_state,
+)
+from src.bridge.task_launch_fetch_lifecycle import (
+    FetchLifecycleContext,
+)
+from src.bridge.task_launch_fetch_lifecycle import (
+    active_fetch_start_response as _active_fetch_start_response,
+)
+from src.bridge.task_launch_fetch_lifecycle import (
+    close_fetch_lifecycle_from_report as _close_fetch_lifecycle_report,
+)
+from src.bridge.task_launch_fetch_lifecycle import (
+    fetch_report_shell as _fetch_report_shell_fn,
+)
+from src.bridge.task_launch_fetch_lifecycle import (
+    fetch_summary_is_failed as _fetch_summary_is_failed_fn,
+)
+from src.bridge.task_launch_fetch_lifecycle import (
+    heartbeat_fetch_lifecycle_from_tasks as _heartbeat_fetch_lifecycle_tasks,
+)
+from src.bridge.task_launch_fetch_lifecycle import (
+    reset_fetch_approval_state as _reset_fetch_approval_state_fn,
+)
+from src.bridge.task_launch_fetch_lifecycle import (
+    start_fetch_lifecycle_watch as _start_fetch_lifecycle_watch_fn,
+)
+from src.bridge.task_launch_fetch_lifecycle import (
+    watch_fetch_lifecycle as _watch_fetch_lifecycle_fn,
+)
+from src.bridge.task_launch_fetch_lifecycle import (
+    write_fetch_launch_failure as _write_fetch_launch_failure_fn,
+)
+from src.bridge.task_launch_fetcher_args import (
+    RunFetcherRequest,
+)
+from src.bridge.task_launch_fetcher_args import (
+    build_fetcher_args_from_payload as _build_fetcher_args_from_payload,
+)
+from src.bridge.task_launch_fetcher_args import (
+    build_fetcher_extra_env_from_preset as _build_fetcher_extra_env_from_preset,
+)
+from src.bridge.task_launch_jobs_feed import (
+    JobsFeedContext,
+)
+from src.bridge.task_launch_jobs_feed import (
+    mirror_jobs_feed_rows as _mirror_jobs_feed_rows,
+)
+from src.bridge.task_launch_source_runs import (
+    SourceRunContext,
+)
+from src.bridge.task_launch_source_runs import (
+    mirror_fetch_source_runs as _mirror_fetch_source_runs,
 )
 from src.jobs.common import config as jobs_common_config
 from src.jobs.state_lifecycle import read_job_lifecycle_state, write_job_lifecycle_state
@@ -35,8 +93,6 @@ from src.shared.json_io import (
     read_json_text,
 )
 from src.ship.jobs_first_run_state import has_successful_runtime_jobs_report
-from src.storage import EvidenceArchiveStore, JobRuntimeStore, SourceRuntimeStore
-from src.storage.job_runtime import jobs_feed_rows_hash
 
 BOOTSTRAP_SHEET_SOURCE_NAMES = (
     "google_sheets",
@@ -96,26 +152,6 @@ class TaskLaunchDeps:
     record_storage_diagnostic: Callable[..., None] | None = None
 
 
-class RunFetcherRequest(TypedDict, total=False):
-    preset: str
-    maxWorkers: int
-    maxPerDomain: int
-    fetchStrategy: str
-    adapterHttpConcurrency: int
-    sourceTtlMinutes: int
-    hotSourceCadenceMinutes: int
-    coldSourceCadenceMinutes: int
-    circuitBreakerFailures: int
-    circuitBreakerCooldownMinutes: int
-    browserFallbackCooldownMinutes: int
-    skipSuccessfulSources: bool
-    respectSourceCadence: bool
-    ignoreCircuitBreaker: bool
-    quiet: bool
-    socialEnabled: bool
-    onlySources: list[str]
-
-
 class JobsBootstrapRequest(TypedDict, total=False):
     source: str
     forceBootstrap: bool
@@ -146,6 +182,110 @@ class TaskLaunchApi:
         self._deps = deps
         self._active_bootstrap_processes: dict[str, dict[str, Any]] = {}
         self._active_bootstrap_process_lock = threading.RLock()
+        self._source_run_ctx: SourceRunContext | None = None
+        self._jobs_feed_ctx: JobsFeedContext | None = None
+        self._bootstrap_storage_ctx: BootstrapStorageContext | None = None
+        self._fetch_lifecycle_ctx: FetchLifecycleContext | None = None
+
+    @property
+    def _source_run_context(self) -> SourceRunContext:
+        if self._source_run_ctx is None:
+            self._source_run_ctx = SourceRunContext(
+                data_dir=self._runtime.data_dir,
+                jobs_fetch_report=self._paths.jobs_fetch_report,
+                now_iso=self._deps.now_iso,
+                bridge_log=self._deps.bridge_log,
+                save_json_atomic=self._deps.save_json_atomic,
+                record_storage_diagnostic=self._deps.record_storage_diagnostic,
+                source_runtime_store_factory=self._deps.source_runtime_store,
+            )
+        return self._source_run_ctx
+
+    @property
+    def _jobs_feed_context(self) -> JobsFeedContext:
+        if self._jobs_feed_ctx is None:
+            self._jobs_feed_ctx = JobsFeedContext(
+                data_dir=self._runtime.data_dir,
+                jobs_fetch_report=self._paths.jobs_fetch_report,
+                now_iso=self._deps.now_iso,
+                bridge_log=self._deps.bridge_log,
+                save_json_atomic=self._deps.save_json_atomic,
+                record_storage_diagnostic=self._deps.record_storage_diagnostic,
+                job_runtime_store_factory=self._deps.job_runtime_store,
+            )
+        return self._jobs_feed_ctx
+
+    @property
+    def _bootstrap_storage_context(self) -> BootstrapStorageContext:
+        if self._bootstrap_storage_ctx is None:
+            self._bootstrap_storage_ctx = BootstrapStorageContext(
+                now_iso=self._deps.now_iso,
+                bridge_log=self._deps.bridge_log,
+                source_run_ctx=self._source_run_context,
+                jobs_feed_ctx=self._jobs_feed_context,
+            )
+        return self._bootstrap_storage_ctx
+
+    def _build_fetch_lifecycle_context(
+        self,
+        *,
+        normalize_fetch_report_contract: (Callable[[dict[str, Any]], dict[str, Any]] | None) = None,
+        load_json_object: Callable[[Path, Any], Any] | None = None,
+        load_runtime_evidence: Callable[[Path, Any], Any] | None = None,
+        save_json_atomic: Callable[[Path, Any], None] | None = None,
+        finish_lifecycle_run: Callable[..., dict[str, Any]] | None = None,
+        fail_lifecycle_run: Callable[..., dict[str, Any]] | None = None,
+        heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None] | None = None,
+    ) -> FetchLifecycleContext:
+        return FetchLifecycleContext(
+            jobs_fetch_report=self._paths.jobs_fetch_report,
+            jobs_fetch_tasks=self._paths.jobs_fetch_tasks,
+            approval_state=self._paths.approval_state,
+            now_iso=self._deps.now_iso,
+            bridge_log=self._deps.bridge_log,
+            pid_is_running=self._deps.pid_is_running,
+            normalize_fetch_report_contract=normalize_fetch_report_contract or (lambda r: r),
+            load_json_object=load_json_object or self._deps.load_json_object,
+            load_runtime_evidence=load_runtime_evidence,
+            save_json_atomic=save_json_atomic or self._deps.save_json_atomic,
+            finish_lifecycle_run=finish_lifecycle_run or (lambda *_a, **_kw: {}),
+            fail_lifecycle_run=fail_lifecycle_run or (lambda *_a, **_kw: {}),
+            heartbeat_lifecycle_run=heartbeat_lifecycle_run or (lambda *_a, **_kw: None),
+            mirror_fetch_source_runs=lambda report: _mirror_fetch_source_runs(
+                self._source_run_context, report
+            ),
+            mirror_jobs_feed_rows=lambda report: _mirror_jobs_feed_rows(
+                self._jobs_feed_context, report
+            ),
+        )
+
+    @property
+    def _fetch_lifecycle_context(self) -> FetchLifecycleContext:
+        if self._fetch_lifecycle_ctx is None:
+            self._fetch_lifecycle_ctx = FetchLifecycleContext(
+                jobs_fetch_report=self._paths.jobs_fetch_report,
+                jobs_fetch_tasks=self._paths.jobs_fetch_tasks,
+                approval_state=self._paths.approval_state,
+                now_iso=self._deps.now_iso,
+                bridge_log=self._deps.bridge_log,
+                pid_is_running=self._deps.pid_is_running,
+                normalize_fetch_report_contract=None,  # set lazily by caller
+                load_json_object=self._deps.load_json_object,
+                load_runtime_evidence=self._deps.load_runtime_evidence,
+                save_json_atomic=self._deps.save_json_atomic,
+                finish_lifecycle_run=lambda *_a, **_kw: {},
+                fail_lifecycle_run=lambda *_a, **_kw: {},
+                heartbeat_lifecycle_run=lambda *_a, **_kw: None,
+                mirror_fetch_source_runs=lambda report: _mirror_fetch_source_runs(
+                    self._source_run_context, report
+                ),
+                mirror_jobs_feed_rows=lambda report: _mirror_jobs_feed_rows(
+                    self._jobs_feed_context, report
+                ),
+            )
+        return self._fetch_lifecycle_ctx
+
+    # ── Thin wrappers → task_launch_source_runs ──
 
     def _record_source_run_diagnostic(
         self,
@@ -155,23 +295,14 @@ class TaskLaunchApi:
         message: str = "",
         details: dict[str, Any] | None = None,
     ) -> None:
-        recorder = self._deps.record_storage_diagnostic
-        if recorder is not None:
-            recorder(
-                surface="sourceRuns",
-                code=code,
-                ok=ok,
-                message=message,
-                details=dict(details or {}),
-            )
-            return
-        storage_health_mod.record_storage_diagnostic(
-            self._runtime.data_dir,
-            surface="sourceRuns",
+        from src.bridge.task_launch_source_runs import _record_source_run_diagnostic
+
+        _record_source_run_diagnostic(
+            self._source_run_context,
             code=code,
             ok=ok,
             message=message,
-            details=dict(details or {}),
+            details=details,
         )
 
     def _record_jobs_feed_diagnostic(
@@ -182,92 +313,35 @@ class TaskLaunchApi:
         message: str = "",
         details: dict[str, Any] | None = None,
     ) -> None:
-        recorder = self._deps.record_storage_diagnostic
-        if recorder is not None:
-            recorder(
-                surface="jobsFeed",
-                code=code,
-                ok=ok,
-                message=message,
-                details=dict(details or {}),
-            )
-            return
-        storage_health_mod.record_storage_diagnostic(
-            self._runtime.data_dir,
-            surface="jobsFeed",
+        from src.bridge.task_launch_jobs_feed import _record_jobs_feed_diagnostic
+
+        _record_jobs_feed_diagnostic(
+            self._jobs_feed_context,
             code=code,
             ok=ok,
             message=message,
-            details=dict(details or {}),
+            details=details,
         )
 
     def _source_runtime_store(self) -> Any | None:
-        store_factory = self._deps.source_runtime_store
-        if store_factory is not None:
-            try:
-                return store_factory()
-            except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
-                self._record_source_run_diagnostic(
-                    code="source_runs_store_unavailable",
-                    ok=False,
-                    message=str(exc),
-                )
-                return None
-        try:
-            return SourceRuntimeStore(storage_health_mod.get_storage_store(self._runtime.data_dir))
-        except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
-            self._record_source_run_diagnostic(
-                code="source_runs_store_unavailable",
-                ok=False,
-                message=str(exc),
-            )
-            return None
+        from src.bridge.task_launch_source_runs import _open_source_runtime_store
+
+        return _open_source_runtime_store(self._source_run_context)
 
     def _job_runtime_store(self) -> Any | None:
-        store_factory = self._deps.job_runtime_store
-        if store_factory is not None:
-            try:
-                return store_factory()
-            except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
-                self._record_jobs_feed_diagnostic(
-                    code="jobs_feed_store_unavailable",
-                    ok=False,
-                    message=str(exc),
-                )
-                return None
-        try:
-            return JobRuntimeStore(storage_health_mod.get_storage_store(self._runtime.data_dir))
-        except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
-            self._record_jobs_feed_diagnostic(
-                code="jobs_feed_store_unavailable",
-                ok=False,
-                message=str(exc),
-            )
-            return None
+        from src.bridge.task_launch_jobs_feed import _open_job_runtime_store
+
+        return _open_job_runtime_store(self._jobs_feed_context)
 
     def _source_runs_mode(self, runtime_store: Any) -> str:
-        try:
-            modes = runtime_store.store.get_authority_modes()
-        except (AttributeError, RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
-            self._record_source_run_diagnostic(
-                code="source_runs_authority_mode_unavailable",
-                ok=False,
-                message=str(exc),
-            )
-            return "json"
-        return str((modes or {}).get("sourceRuns") or "json").strip().lower()
+        from src.bridge.task_launch_source_runs import _source_runs_mode
+
+        return _source_runs_mode(self._source_run_context, runtime_store)
 
     def _jobs_feed_mode(self, runtime_store: Any) -> str:
-        try:
-            modes = runtime_store.store.get_authority_modes()
-        except (AttributeError, RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
-            self._record_jobs_feed_diagnostic(
-                code="jobs_feed_authority_mode_unavailable",
-                ok=False,
-                message=str(exc),
-            )
-            return "json"
-        return str((modes or {}).get("jobsFeed") or "json").strip().lower()
+        from src.bridge.task_launch_jobs_feed import _jobs_feed_mode
+
+        return _jobs_feed_mode(self._jobs_feed_context, runtime_store)
 
     def _rollback_source_runs_to_json(
         self,
@@ -277,15 +351,14 @@ class TaskLaunchApi:
         message: str,
         details: dict[str, Any] | None = None,
     ) -> None:
-        try:
-            runtime_store.store.set_authority_mode("sourceRuns", "json", reason=code)
-        except (AttributeError, RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
-            message = f"{message}; rollback failed: {exc}"
-        self._record_source_run_diagnostic(
+        from src.bridge.task_launch_source_runs import _rollback_source_runs_to_json
+
+        _rollback_source_runs_to_json(
+            self._source_run_context,
+            runtime_store,
             code=code,
-            ok=False,
             message=message,
-            details=dict(details or {}),
+            details=details,
         )
 
     def _rollback_jobs_feed_to_json(
@@ -296,137 +369,55 @@ class TaskLaunchApi:
         message: str,
         details: dict[str, Any] | None = None,
     ) -> None:
-        try:
-            runtime_store.store.set_authority_mode("jobsFeed", "json", reason=code)
-        except (AttributeError, RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
-            message = f"{message}; rollback failed: {exc}"
-        self._record_jobs_feed_diagnostic(
+        from src.bridge.task_launch_jobs_feed import _rollback_jobs_feed_to_json
+
+        _rollback_jobs_feed_to_json(
+            self._jobs_feed_context,
+            runtime_store,
             code=code,
-            ok=False,
             message=message,
-            details=dict(details or {}),
+            details=details,
         )
 
-    def _source_parity_rows(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        return [
-            {
-                "name": str(row.get("name") or "").strip(),
-                "status": str(row.get("status") or "").strip().lower(),
-                "adapter": str(row.get("adapter") or "").strip(),
-                "fetchStrategy": str(row.get("fetchStrategy") or "").strip(),
-                "studio": str(row.get("studio") or "").strip(),
-                "fetchedCount": int(row.get("fetchedCount") or 0),
-                "keptCount": int(row.get("keptCount") or 0),
-                "lowConfidenceDropped": int(row.get("lowConfidenceDropped") or 0),
-                "error": str(row.get("error") or "").strip(),
-                "durationMs": int(row.get("durationMs") or 0),
-            }
-            for row in rows
-            if isinstance(row, dict)
-        ]
+    @staticmethod
+    def _source_parity_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        from src.bridge.task_launch_source_runs import _source_parity_rows
+
+        return _source_parity_rows(rows)
 
     def _mirror_fetch_source_runs(self, report: dict[str, Any]) -> bool:
-        run_id = str(report.get("runId") or "").strip()
-        source_rows = [row for row in report.get("sources") or [] if isinstance(row, dict)]
-        if not run_id or not source_rows:
-            return False
-        runtime_store = self._source_runtime_store()
-        if runtime_store is None:
-            return False
-        mode = self._source_runs_mode(runtime_store)
-        if mode not in {"shadow", "sqlite"}:
-            return False
-        try:
-            runtime_store.upsert_source_runs(
-                run_id=run_id,
-                rows=source_rows,
-                evidence_ref={"reportPath": str(self._paths.jobs_fetch_report)},
-            )
-            sqlite_rows = runtime_store.source_runs(run_id=run_id, limit=max(1, len(source_rows)))
-            if self._source_parity_rows(sqlite_rows) != self._source_parity_rows(source_rows):
-                self._rollback_source_runs_to_json(
-                    runtime_store,
-                    code="source_runs_projection_mismatch",
-                    message="SQLite source_runs projection did not match fetch report JSON",
-                    details={
-                        "jsonCount": len(source_rows),
-                        "sqliteCount": len(sqlite_rows),
-                    },
-                )
-                return False
-            self._record_source_run_diagnostic(
-                code="source_runs_projection_match",
-                ok=True,
-                details={"rowCount": len(source_rows)},
-            )
-            if mode == "sqlite":
-                self._archive_and_compact_fetch_report(
-                    report,
-                    runtime_store=runtime_store,
-                    source_rows=source_rows,
-                )
-            return mode == "sqlite"
-        except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
-            self._rollback_source_runs_to_json(
-                runtime_store,
-                code="source_runs_shadow_write_failed",
-                message=str(exc),
-            )
-            return False
+        return _mirror_fetch_source_runs(self._source_run_context, report)
+
+    # ── Jobs-feed thin wrappers ──
 
     def _jobs_feed_path(self) -> Path:
-        return self._paths.jobs_fetch_report.with_name("jobs-unified.json")
+        from src.bridge.task_launch_jobs_feed import _jobs_feed_path
+
+        return _jobs_feed_path(self._paths.jobs_fetch_report)
 
     def _jobs_feed_light_path(self) -> Path:
-        return self._paths.jobs_fetch_report.with_name("jobs-unified-light.json")
+        from src.bridge.task_launch_jobs_feed import _jobs_feed_light_path
+
+        return _jobs_feed_light_path(self._paths.jobs_fetch_report)
 
     def _jobs_feed_csv_path(self) -> Path:
-        return self._paths.jobs_fetch_report.with_name("jobs-unified.csv")
+        from src.bridge.task_launch_jobs_feed import _jobs_feed_csv_path
+
+        return _jobs_feed_csv_path(self._paths.jobs_fetch_report)
 
     def _read_jobs_feed_rows(self) -> list[dict[str, Any]] | None:
-        path = self._jobs_feed_path()
-        if existing_json_candidate(path) is None:
-            return None
-        payload = read_json(path, None)
-        if isinstance(payload, list):
-            return [dict(row) for row in payload if isinstance(row, dict)]
-        if isinstance(payload, dict) and isinstance(payload.get("jobs"), list):
-            return [dict(row) for row in payload["jobs"] if isinstance(row, dict)]
-        return None
+        from src.bridge.task_launch_jobs_feed import _read_jobs_feed_rows
+
+        return _read_jobs_feed_rows(self._paths.jobs_fetch_report)
 
     def _export_jobs_feed_from_sqlite(self, runtime_store: Any) -> bool:
-        try:
-            rows = runtime_store.current_rows()
-            write_atomic_if_changed(
-                self._jobs_feed_path(),
-                serialize_rows_for_json(rows, jobs_common_config.OUTPUT_FIELDS),
-            )
-            write_atomic_if_changed(
-                self._jobs_feed_light_path(),
-                serialize_rows_for_json(rows, jobs_common_config.LIGHTWEIGHT_OUTPUT_FIELDS),
-            )
-            write_atomic_if_changed(
-                self._jobs_feed_csv_path(),
-                serialize_rows_for_csv(rows, jobs_common_config.OUTPUT_FIELDS),
-            )
-            self._record_jobs_feed_diagnostic(
-                code="jobs_feed_sqlite_export_written",
-                ok=True,
-                details={
-                    "rowCount": len(rows),
-                    "json": str(self._jobs_feed_path()),
-                    "lightJson": str(self._jobs_feed_light_path()),
-                    "csv": str(self._jobs_feed_csv_path()),
-                },
-            )
-            return True
-        except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
-            self._rollback_jobs_feed_to_json(
-                runtime_store,
-                code="jobs_feed_sqlite_export_failed",
-                message=str(exc),
-            )
-            return False
+        from src.bridge.task_launch_jobs_feed import export_jobs_feed_from_sqlite
+
+        return export_jobs_feed_from_sqlite(
+            self._jobs_feed_context,
+            runtime_store,
+            jobs_fetch_report=self._paths.jobs_fetch_report,
+        )
 
     def _mirror_jobs_feed_rows(
         self,
@@ -434,59 +425,11 @@ class TaskLaunchApi:
         *,
         cleanup_old_generations: bool = True,
     ) -> bool:
-        run_id = str(report.get("runId") or "").strip()
-        if not run_id:
-            return False
-        rows = self._read_jobs_feed_rows()
-        if rows is None:
-            return False
-        runtime_store = self._job_runtime_store()
-        if runtime_store is None:
-            return False
-        mode = self._jobs_feed_mode(runtime_store)
-        if mode not in {"shadow", "sqlite"}:
-            return False
-        try:
-            expected_hash = jobs_feed_rows_hash(rows)
-            staged = runtime_store.stage_feed(run_id=run_id, rows=rows)
-            staged_rows = runtime_store.rows_for_generation(staged.generation)
-            if len(staged_rows) != len(rows) or jobs_feed_rows_hash(staged_rows) != expected_hash:
-                self._rollback_jobs_feed_to_json(
-                    runtime_store,
-                    code="jobs_feed_projection_mismatch",
-                    message="SQLite jobs feed projection did not match jobs-unified.json",
-                    details={
-                        "jsonCount": len(rows),
-                        "sqliteCount": len(staged_rows),
-                    },
-                )
-                return False
-            runtime_store.publish_generation(
-                staged.generation,
-                expected_row_count=len(rows),
-                expected_row_hash=expected_hash,
-            )
-            if mode == "sqlite" and not self._export_jobs_feed_from_sqlite(runtime_store):
-                return False
-            if cleanup_old_generations:
-                runtime_store.cleanup_old_generations()
-            self._record_jobs_feed_diagnostic(
-                code="jobs_feed_projection_match",
-                ok=True,
-                details={
-                    "rowCount": len(rows),
-                    "generation": staged.generation,
-                    "mode": mode,
-                },
-            )
-            return True
-        except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
-            self._rollback_jobs_feed_to_json(
-                runtime_store,
-                code="jobs_feed_shadow_write_failed",
-                message=str(exc),
-            )
-            return False
+        return _mirror_jobs_feed_rows(
+            self._jobs_feed_context,
+            report,
+            cleanup_old_generations=cleanup_old_generations,
+        )
 
     def _archive_and_compact_fetch_report(
         self,
@@ -495,56 +438,14 @@ class TaskLaunchApi:
         runtime_store: Any,
         source_rows: list[dict[str, Any]],
     ) -> None:
-        if not any(
-            isinstance(row.get("details"), list) and row.get("details") for row in source_rows
-        ):
-            return
-        run_id = str(report.get("runId") or "").strip()
-        try:
-            archive = EvidenceArchiveStore(self._runtime.data_dir)
-            archive_entry = archive.write_archive(
-                run_id=run_id,
-                kind="source-details",
-                payload={
-                    "schemaVersion": 1,
-                    "runId": run_id,
-                    "sources": source_rows,
-                },
-            )
-            runtime_store.upsert_source_runs(
-                run_id=run_id,
-                rows=source_rows,
-                evidence_ref={"sourceDetailsArchive": archive_entry},
-            )
-            compact_sources = [
-                {key: value for key, value in row.items() if key != "details"}
-                for row in source_rows
-            ]
-            compact_report = {
-                **dict(report),
-                "sources": compact_sources,
-                "sourceRuns": {
-                    "format": "sqlite",
-                    "rowCount": len(source_rows),
-                    "sourceDetailsArchive": archive_entry,
-                },
-            }
-            self._deps.save_json_atomic(self._paths.jobs_fetch_report, compact_report)
-            self._record_source_run_diagnostic(
-                code="fetch_report_compacted",
-                ok=True,
-                details={
-                    "rowCount": len(source_rows),
-                    "archivePath": str(archive_entry.get("path") or ""),
-                    "archiveSizeBytes": int(archive_entry.get("sizeBytes") or 0),
-                },
-            )
-        except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
-            self._record_source_run_diagnostic(
-                code="fetch_report_compaction_failed",
-                ok=False,
-                message=str(exc),
-            )
+        from src.bridge.task_launch_source_runs import _archive_and_compact_fetch_report
+
+        _archive_and_compact_fetch_report(
+            self._source_run_context,
+            report,
+            runtime_store=runtime_store,
+            source_rows=source_rows,
+        )
 
     def run_background_script(
         self,
@@ -633,198 +534,44 @@ class TaskLaunchApi:
         )
         return int(proc.pid)
 
+    # ── Thin wrappers that delegate to leaf module ──
+
     @staticmethod
     def _set_cli_option(args: list[str], option: str, value: str) -> None:
-        try:
-            index = args.index(option)
-        except ValueError:
-            args.extend([option, value])
-            return
-        if index + 1 < len(args):
-            args[index + 1] = value
-        else:
-            args.append(value)
+        from src.bridge.task_launch_fetcher_args import _set_cli_option
 
-    def _apply_fetcher_shared_runtime_args(
-        self,
-        args: list[str],
-        *,
-        max_workers: int,
-        max_per_domain: int,
-        fetch_strategy: str,
-        adapter_http_concurrency: int,
-        hot_cadence: int,
-        cold_cadence: int,
-        circuit_failures: int,
-        circuit_cooldown: int,
-        browser_fallback_cooldown: int,
-    ) -> None:
-        args.extend(["--max-workers", str(max_workers), "--max-per-domain", str(max_per_domain)])
-        args.extend(
-            [
-                "--fetch-strategy",
-                fetch_strategy,
-                "--adapter-http-concurrency",
-                str(adapter_http_concurrency),
-            ]
-        )
-        args.extend(["--circuit-breaker-failures", str(circuit_failures)])
-        args.extend(["--circuit-breaker-cooldown-minutes", str(circuit_cooldown)])
-        args.extend(["--browser-fallback-cooldown-minutes", str(browser_fallback_cooldown)])
-        args.extend(
-            [
-                "--hot-source-cadence-minutes",
-                str(hot_cadence),
-                "--cold-source-cadence-minutes",
-                str(cold_cadence),
-            ]
-        )
+        _set_cli_option(args, option, value)
 
     def build_fetcher_args_from_payload(
         self, payload: RunFetcherRequest | dict[str, Any]
     ) -> tuple[list[str], str]:
-        data = payload if isinstance(payload, dict) else {}
-        preset = str(data.get("preset") or "default").strip().lower()
-        args: list[str] = []
-
-        max_workers = self._deps.safe_int(
-            data.get("maxWorkers"), jobs_common_config.DEFAULT_FETCH_MAX_WORKERS, 1, 16
+        return _build_fetcher_args_from_payload(
+            payload,
+            safe_int=self._deps.safe_int,
+            default_source_loaders=self._deps.default_source_loaders,
+            failed_source_names_from_latest_report=self._deps.failed_source_names_from_latest_report,
         )
-        max_per_domain = self._deps.safe_int(
-            data.get("maxPerDomain"), jobs_common_config.DEFAULT_FETCH_MAX_PER_DOMAIN, 1, 6
-        )
-        fetch_strategy = str(data.get("fetchStrategy") or "auto").strip().lower()
-        if fetch_strategy not in {"auto", "http", "browser"}:
-            fetch_strategy = "auto"
-        adapter_http_concurrency = self._deps.safe_int(
-            data.get("adapterHttpConcurrency"),
-            jobs_common_config.DEFAULT_ADAPTER_HTTP_CONCURRENCY,
-            1,
-            128,
-        )
-        source_ttl = self._deps.safe_int(data.get("sourceTtlMinutes"), 360, 0, 1440)
-        hot_cadence = self._deps.safe_int(data.get("hotSourceCadenceMinutes"), 15, 1, 240)
-        cold_cadence = self._deps.safe_int(data.get("coldSourceCadenceMinutes"), 60, 1, 1440)
-        circuit_failures = self._deps.safe_int(data.get("circuitBreakerFailures"), 3, 0, 20)
-        circuit_cooldown = self._deps.safe_int(
-            data.get("circuitBreakerCooldownMinutes"), 180, 0, 24 * 60
-        )
-        browser_fallback_cooldown = self._deps.safe_int(
-            data.get("browserFallbackCooldownMinutes"), 30, 0, 24 * 60
-        )
-
-        self._apply_fetcher_shared_runtime_args(
-            args,
-            max_workers=max_workers,
-            max_per_domain=max_per_domain,
-            fetch_strategy=fetch_strategy,
-            adapter_http_concurrency=adapter_http_concurrency,
-            hot_cadence=hot_cadence,
-            cold_cadence=cold_cadence,
-            circuit_failures=circuit_failures,
-            circuit_cooldown=circuit_cooldown,
-            browser_fallback_cooldown=browser_fallback_cooldown,
-        )
-
-        if preset == "incremental":
-            args.extend(["--skip-successful-sources", "--source-ttl-minutes", str(source_ttl)])
-        elif preset == "retry_failed":
-            available_names = {name for name, _loader in self._deps.default_source_loaders()}
-            failed_names = self._deps.failed_source_names_from_latest_report(available_names)
-            if failed_names:
-                args.extend(["--only-sources", ",".join(failed_names)])
-            args.extend(["--ignore-circuit-breaker"])
-        elif preset == "uncapped":
-            args.extend(["--force-refresh-all", "--ignore-circuit-breaker"])
-            self._set_cli_option(args, "--max-workers", "50")
-            self._set_cli_option(args, "--max-per-domain", "5")
-            self._set_cli_option(
-                args,
-                "--static-detail-concurrency",
-                str(jobs_common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY),
-            )
-            self._set_cli_option(args, "--source-ttl-minutes", "0")
-        elif preset == "force_full":
-            args.extend(["--ignore-circuit-breaker"])
-        else:
-            preset = "default"
-
-        if bool(data.get("skipSuccessfulSources")) and "--skip-successful-sources" not in args:
-            args.append("--skip-successful-sources")
-            args.extend(["--source-ttl-minutes", str(source_ttl)])
-        if bool(data.get("respectSourceCadence")) and "--respect-source-cadence" not in args:
-            args.append("--respect-source-cadence")
-        if bool(data.get("ignoreCircuitBreaker")) and "--ignore-circuit-breaker" not in args:
-            args.append("--ignore-circuit-breaker")
-        if bool(data.get("quiet")) and "--quiet" not in args:
-            args.append("--quiet")
-        social_enabled = data.get("socialEnabled")
-        if social_enabled is None:
-            social_enabled = True
-        if bool(social_enabled) and "--social-enabled" not in args:
-            args.append("--social-enabled")
-
-        only_sources = data.get("onlySources")
-        if isinstance(only_sources, list):
-            sanitized = [str(item).strip() for item in only_sources if str(item).strip()]
-            if sanitized:
-                args.extend(["--only-sources", ",".join(sanitized)])
-        return args, preset
 
     def build_fetcher_extra_env_from_preset(self, preset: str) -> dict[str, str]:
-        normalized_preset = str(preset or "").strip().lower()
-        if normalized_preset != "uncapped":
-            return {}
-        return {
-            "BALUFFO_FETCH_SEED_EXISTING_OUTPUT": "1",
-            "BALUFFO_STATIC_SOURCE_TIME_BUDGET_S": "180",
-            "BALUFFO_STATIC_LOW_YIELD_DETAIL_CAP": "0",
-            "BALUFFO_STATIC_VERY_LOW_YIELD_DETAIL_CAP": "0",
-            "BALUFFO_STATIC_DETAIL_HEURISTICS_PROFILE": "broad",
-            "BALUFFO_UNCAPPED_DEEP_STATIC": "1",
-        }
+        return _build_fetcher_extra_env_from_preset(preset)
 
     def _active_fetch_start_response(
         self,
         *,
         get_lifecycle_current_runs: Callable[[], list[dict[str, Any]]],
     ) -> TaskStartResponse | None:
-        active_metadata = get_active_lifecycle_task_metadata(
-            "fetch",
-            lifecycle_rows=list(get_lifecycle_current_runs() or []),
-            pid_is_running=self._deps.pid_is_running,
+        ctx = self._build_fetch_lifecycle_context()
+        return _active_fetch_start_response(
+            ctx, get_lifecycle_current_runs=get_lifecycle_current_runs
         )
-        if not active_metadata:
-            return None
-        response = build_duplicate_start_payload("jobs_fetcher", "fetch", active_metadata)
-        self._deps.bridge_log(
-            "info",
-            "task_start_attached_existing",
-            task="jobs_fetcher",
-            taskType="fetch",
-            runId=str(response.get("runId") or ""),
-            pid=int(response.get("pid") or 0),
-        )
-        return response
 
     def _fetch_report_shell(
         self, *, run_id: str, started_at: str, schema_version: int
     ) -> dict[str, Any]:
-        return {
-            "runId": run_id,
-            "schemaVersion": schema_version,
-            "startedAt": started_at,
-            "finishedAt": "",
-            "runtime": {
-                "lifecycle": {
-                    "owner": "fetch_report",
-                    "heartbeatAt": started_at,
-                }
-            },
-            "summary": {"outputCount": 0, "failedSources": 0, "sourceCount": 0},
-            "sources": [],
-            "outputs": {"report": str(self._paths.jobs_fetch_report)},
-        }
+        ctx = self._build_fetch_lifecycle_context()
+        return _fetch_report_shell_fn(
+            ctx, run_id=run_id, started_at=started_at, schema_version=schema_version
+        )
 
     def _packaged_smoke_fetch_source_runs_enabled(self) -> bool:
         return (
@@ -1415,55 +1162,21 @@ class TaskLaunchApi:
         save_json_atomic: Callable[[Path, Any], None],
         fail_lifecycle_run: Callable[..., dict[str, Any]],
     ) -> dict[str, Any]:
-        finished_at = self._deps.now_iso()
-        failure_summary = {"error": error, "failedSources": 1, "outputCount": 0}
-        fail_lifecycle_run(
-            run_id,
-            "fetch",
-            finished_at=finished_at,
-            terminal_reason="launch_failed",
-            summary=failure_summary,
+        ctx = self._build_fetch_lifecycle_context(
+            normalize_fetch_report_contract=normalize_fetch_report_contract,
+            fail_lifecycle_run=fail_lifecycle_run,
         )
-        save_json_atomic(
-            self._paths.jobs_fetch_report,
-            normalize_fetch_report_contract(
-                {
-                    **report_shell,
-                    "finishedAt": finished_at,
-                    "runtime": {
-                        "lifecycle": {
-                            "owner": "fetch_report",
-                            "heartbeatAt": finished_at,
-                        }
-                    },
-                    "summary": {**failure_summary, "sourceCount": 0},
-                    "sources": [
-                        {
-                            "name": "jobs_fetcher.py",
-                            "status": "error",
-                            "error": error,
-                        }
-                    ],
-                }
-            ),
-        )
-        self._deps.bridge_log(
-            "error",
-            "task_start_failed",
-            runId=run_id,
-            task="jobs_fetcher",
+        return _write_fetch_launch_failure_fn(
+            ctx,
+            run_id=run_id,
+            started_at=started_at,
             preset=preset,
+            spawn_args=spawn_args,
             error=error,
+            report_shell=report_shell,
+            append_run_history=append_run_history,
+            prune_started_rows_for_type=prune_started_rows_for_type,
         )
-        return {
-            "started": False,
-            "runId": run_id,
-            "task": "jobs_fetcher",
-            "preset": preset,
-            "args": spawn_args,
-            "startedAt": started_at,
-            "error": error,
-        }
 
     def _reset_fetch_approval_state(
         self,
@@ -1471,17 +1184,15 @@ class TaskLaunchApi:
         load_json_object: Callable[[Path, Any], Any],
         save_json_atomic: Callable[[Path, Any], None],
     ) -> None:
-        approval = load_json_object(self._paths.approval_state, {"approvedSinceLastRun": 0})
-        if not isinstance(approval, dict):
-            approval = {"approvedSinceLastRun": 0}
-        approval["approvedSinceLastRun"] = 0
-        save_json_atomic(self._paths.approval_state, approval)
-
-    def _fetch_summary_is_failed(self, summary: dict[str, Any]) -> bool:
-        status = str(summary.get("status") or "").strip().lower()
-        return bool(
-            status in {"error", "failed", "failure"} or str(summary.get("error") or "").strip()
+        ctx = self._build_fetch_lifecycle_context(
+            load_json_object=load_json_object,
+            save_json_atomic=save_json_atomic,
         )
+        _reset_fetch_approval_state_fn(ctx)
+
+    @staticmethod
+    def _fetch_summary_is_failed(summary: dict[str, Any]) -> bool:
+        return _fetch_summary_is_failed_fn(summary)
 
     def _close_fetch_lifecycle_from_report(
         self,
@@ -1493,31 +1204,14 @@ class TaskLaunchApi:
         fail_lifecycle_run: Callable[..., dict[str, Any]],
         load_runtime_evidence: Callable[[Path, Any], Any] | None = None,
     ) -> bool:
-        reader = load_runtime_evidence if callable(load_runtime_evidence) else load_json_object
-        report = normalize_fetch_report_contract(reader(self._paths.jobs_fetch_report, {}))
-        finished = str(report.get("finishedAt") or "").strip()
-        if str(report.get("runId") or "").strip() != run_id or not finished:
-            return False
-        self._mirror_fetch_source_runs(report)
-        summary = dict(report.get("summary") or {})
-        if self._fetch_summary_is_failed(summary):
-            fail_lifecycle_run(
-                run_id,
-                "fetch",
-                finished_at=finished,
-                terminal_reason="failed",
-                summary=summary,
-            )
-            return True
-        self._mirror_jobs_feed_rows(report)
-        finish_lifecycle_run(
-            run_id,
-            "fetch",
-            finished_at=finished,
-            terminal_reason="completed",
-            summary=summary,
+        ctx = self._build_fetch_lifecycle_context(
+            normalize_fetch_report_contract=normalize_fetch_report_contract,
+            load_json_object=load_json_object,
+            load_runtime_evidence=load_runtime_evidence,
+            finish_lifecycle_run=finish_lifecycle_run,
+            fail_lifecycle_run=fail_lifecycle_run,
         )
-        return True
+        return _close_fetch_lifecycle_report(ctx, run_id=run_id)
 
     def _heartbeat_fetch_lifecycle_from_tasks(
         self,
@@ -1527,29 +1221,12 @@ class TaskLaunchApi:
         heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None],
         load_runtime_evidence: Callable[[Path, Any], Any] | None = None,
     ) -> None:
-        if not callable(heartbeat_lifecycle_run):
-            return
-        reader = load_runtime_evidence if callable(load_runtime_evidence) else load_json_object
-        tasks = reader(self._paths.jobs_fetch_tasks, {})
-        if not isinstance(tasks, dict):
-            return
-        if str(tasks.get("runId") or "").strip() != str(run_id or "").strip():
-            return
-        if str(tasks.get("finishedAt") or "").strip():
-            return
-        progress = tasks.get("taskProgress")
-        summary = tasks.get("summary")
-        progress_payload = dict(progress) if isinstance(progress, dict) else {}
-        summary_payload = dict(summary) if isinstance(summary, dict) else {}
-        phase = str(progress_payload.get("phaseKey") or progress_payload.get("phase") or "")
-        heartbeat_lifecycle_run(
-            run_id,
-            "fetch",
-            heartbeat_at=str(tasks.get("heartbeatAt") or self._deps.now_iso()),
-            stage=phase.strip() or "running",
-            progress=progress_payload or None,
-            summary=summary_payload or None,
+        ctx = self._build_fetch_lifecycle_context(
+            load_json_object=load_json_object,
+            load_runtime_evidence=load_runtime_evidence,
+            heartbeat_lifecycle_run=heartbeat_lifecycle_run,
         )
+        _heartbeat_fetch_lifecycle_tasks(ctx, run_id=run_id)
 
     def _watch_fetch_lifecycle(
         self,
@@ -1563,42 +1240,15 @@ class TaskLaunchApi:
         heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None],
         load_runtime_evidence: Callable[[Path, Any], Any] | None = None,
     ) -> None:
-        while True:
-            if self._close_fetch_lifecycle_from_report(
-                run_id=run_id,
-                normalize_fetch_report_contract=normalize_fetch_report_contract,
-                load_json_object=load_json_object,
-                finish_lifecycle_run=finish_lifecycle_run,
-                fail_lifecycle_run=fail_lifecycle_run,
-                load_runtime_evidence=load_runtime_evidence,
-            ):
-                return
-            if self._deps.pid_is_running(int(pid)):
-                self._heartbeat_fetch_lifecycle_from_tasks(
-                    run_id=run_id,
-                    load_json_object=load_json_object,
-                    heartbeat_lifecycle_run=heartbeat_lifecycle_run,
-                    load_runtime_evidence=load_runtime_evidence,
-                )
-                time.sleep(2.0)
-                continue
-            break
-        if self._close_fetch_lifecycle_from_report(
-            run_id=run_id,
+        ctx = self._build_fetch_lifecycle_context(
             normalize_fetch_report_contract=normalize_fetch_report_contract,
             load_json_object=load_json_object,
+            load_runtime_evidence=load_runtime_evidence,
             finish_lifecycle_run=finish_lifecycle_run,
             fail_lifecycle_run=fail_lifecycle_run,
-            load_runtime_evidence=load_runtime_evidence,
-        ):
-            return
-        fail_lifecycle_run(
-            run_id,
-            "fetch",
-            finished_at=self._deps.now_iso(),
-            terminal_reason="owner_inactive_without_terminal_report",
-            summary={"error": "owner_inactive_without_terminal_report"},
+            heartbeat_lifecycle_run=heartbeat_lifecycle_run,
         )
+        _watch_fetch_lifecycle_fn(ctx, run_id=run_id, pid=int(pid))
 
     def _start_fetch_lifecycle_watch(
         self,
@@ -1612,21 +1262,15 @@ class TaskLaunchApi:
         heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None],
         load_runtime_evidence: Callable[[Path, Any], Any] | None = None,
     ) -> None:
-        threading.Thread(
-            target=self._watch_fetch_lifecycle,
-            kwargs={
-                "run_id": run_id,
-                "pid": int(pid),
-                "normalize_fetch_report_contract": normalize_fetch_report_contract,
-                "load_json_object": load_json_object,
-                "finish_lifecycle_run": finish_lifecycle_run,
-                "fail_lifecycle_run": fail_lifecycle_run,
-                "heartbeat_lifecycle_run": heartbeat_lifecycle_run,
-                "load_runtime_evidence": load_runtime_evidence,
-            },
-            name=f"fetch-lifecycle-watch-{run_id}",
-            daemon=True,
-        ).start()
+        ctx = self._build_fetch_lifecycle_context(
+            normalize_fetch_report_contract=normalize_fetch_report_contract,
+            load_json_object=load_json_object,
+            load_runtime_evidence=load_runtime_evidence,
+            finish_lifecycle_run=finish_lifecycle_run,
+            fail_lifecycle_run=fail_lifecycle_run,
+            heartbeat_lifecycle_run=heartbeat_lifecycle_run,
+        )
+        _start_fetch_lifecycle_watch_fn(ctx, run_id=run_id, pid=int(pid))
 
     @staticmethod
     def _history_task_type(row: dict[str, Any]) -> str:
@@ -2005,232 +1649,71 @@ class TaskLaunchApi:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(data)
 
+    # ── Thin wrappers → task_launch_bootstrap_storage ──
+
     @staticmethod
     def _storage_identifier(name: str) -> str:
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", str(name or "")):
-            raise ValueError(f"unsafe storage identifier: {name}")
-        return f'"{name}"'
+        from src.bridge.task_launch_bootstrap_storage import _storage_identifier
 
-    def _insert_storage_rows(self, conn: Any, table: str, rows: list[dict[str, Any]]) -> None:
-        if not rows:
-            return
-        columns = list(rows[0].keys())
-        column_sql = ", ".join(self._storage_identifier(column) for column in columns)
-        placeholders = ", ".join("?" for _column in columns)
-        conn.executemany(
-            (
-                f"INSERT INTO {self._storage_identifier(table)} ({column_sql}) "
-                f"VALUES ({placeholders})"
-            ),
-            [tuple(row.get(column) for column in columns) for row in rows],
-        )
+        return _storage_identifier(name)
 
+    @staticmethod
+    def _insert_storage_rows(conn: Any, table: str, rows: list[dict[str, Any]]) -> None:
+        from src.bridge.task_launch_bootstrap_storage import _insert_storage_rows
+
+        _insert_storage_rows(conn, table, rows)
+
+    @staticmethod
     def _upsert_storage_rows(
-        self,
         conn: Any,
         table: str,
         rows: list[dict[str, Any]],
         *,
         key_columns: tuple[str, ...],
     ) -> None:
-        if not rows:
-            return
-        columns = list(rows[0].keys())
-        column_sql = ", ".join(self._storage_identifier(column) for column in columns)
-        placeholders = ", ".join("?" for _column in columns)
-        key_sql = ", ".join(self._storage_identifier(column) for column in key_columns)
-        update_columns = [column for column in columns if column not in set(key_columns)]
-        update_sql = ", ".join(
-            f"{self._storage_identifier(column)} = excluded.{self._storage_identifier(column)}"
-            for column in update_columns
-        )
-        conflict_sql = f"DO UPDATE SET {update_sql}" if update_sql else "DO NOTHING"
-        conn.executemany(
-            (
-                f"INSERT INTO {self._storage_identifier(table)} ({column_sql}) "
-                f"VALUES ({placeholders}) ON CONFLICT({key_sql}) {conflict_sql}"
-            ),
-            [tuple(row.get(column) for column in columns) for row in rows],
-        )
+        from src.bridge.task_launch_bootstrap_storage import _upsert_storage_rows
+
+        _upsert_storage_rows(conn, table, rows, key_columns=key_columns)
 
     @staticmethod
     def _bootstrap_source_id(row: dict[str, Any], ordinal: int) -> str:
-        raw = (
-            str(row.get("sourceKey") or "").strip()
-            or str(row.get("sourceId") or "").strip()
-            or str(row.get("id") or "").strip()
-            or str(row.get("name") or "").strip()
-            or f"source_{ordinal + 1}"
-        )
-        source_key = re.sub(r"\s+", "_", raw.lower())[:240] or f"source_{ordinal + 1}"
-        return f"fetch:{source_key}"
+        from src.bridge.task_launch_bootstrap_storage import _bootstrap_source_id
+
+        return _bootstrap_source_id(row, ordinal)
 
     def _snapshot_bootstrap_source_runs_storage(self, report: dict[str, Any]) -> dict[str, Any]:
-        run_id = str(report.get("runId") or "").strip()
-        runtime_store = self._source_runtime_store()
-        if runtime_store is None or not run_id:
-            return {}
-        store = runtime_store.store
-        source_run_rows = store.execute_read(
-            "SELECT * FROM source_runs WHERE run_id = ?",
-            (run_id,),
+        from src.bridge.task_launch_bootstrap_storage import (
+            snapshot_bootstrap_source_runs_storage,
         )
-        source_ids = {
-            self._bootstrap_source_id(row, index)
-            for index, row in enumerate(report.get("sources") or [])
-            if isinstance(row, dict)
-        }
-        source_ids.update(str(row.get("source_id") or "").strip() for row in source_run_rows)
-        source_rows: dict[str, list[dict[str, Any]]] = {}
-        for source_id in sorted(source_id for source_id in source_ids if source_id):
-            source_rows[source_id] = store.execute_read(
-                "SELECT * FROM sources WHERE id = ?",
-                (source_id,),
-            )
-        return {
-            "store": store,
-            "mode": self._source_runs_mode(runtime_store),
-            "runId": run_id,
-            "sourceRunRows": source_run_rows,
-            "sourceRows": source_rows,
-        }
+
+        return snapshot_bootstrap_source_runs_storage(self._bootstrap_storage_context, report)
 
     def _snapshot_bootstrap_jobs_feed_storage(self, report: dict[str, Any]) -> dict[str, Any]:
-        run_id = str(report.get("runId") or "").strip()
-        runtime_store = self._job_runtime_store()
-        if runtime_store is None or not run_id:
-            return {}
-        store = runtime_store.store
-        preexisting_generations = {
-            str(row.get("feed_generation") or "").strip()
-            for row in store.execute_read(
-                "SELECT DISTINCT feed_generation FROM jobs WHERE run_id = ?",
-                (run_id,),
-            )
-        }
-        return {
-            "store": store,
-            "mode": self._jobs_feed_mode(runtime_store),
-            "runId": run_id,
-            "feedStateRows": store.execute_read("SELECT * FROM job_feed_state WHERE id = 1"),
-            "preexistingRunGenerations": sorted(
-                generation for generation in preexisting_generations if generation
-            ),
-        }
+        from src.bridge.task_launch_bootstrap_storage import (
+            snapshot_bootstrap_jobs_feed_storage,
+        )
+
+        return snapshot_bootstrap_jobs_feed_storage(self._bootstrap_storage_context, report)
 
     def _snapshot_bootstrap_storage_state(self, report: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "sourceRuns": self._snapshot_bootstrap_source_runs_storage(report),
-            "jobsFeed": self._snapshot_bootstrap_jobs_feed_storage(report),
-        }
+        return _bs_snapshot_storage_state(self._bootstrap_storage_context, report)
 
     def _restore_bootstrap_source_runs_storage(self, snapshot: dict[str, Any]) -> None:
-        if not snapshot:
-            return
-        store = snapshot.get("store")
-        run_id = str(snapshot.get("runId") or "").strip()
-        if store is None or not run_id:
-            return
+        from src.bridge.task_launch_bootstrap_storage import (
+            restore_bootstrap_source_runs_storage,
+        )
 
-        def restore(conn: Any) -> None:
-            conn.execute("DELETE FROM source_runs WHERE run_id = ?", (run_id,))
-            source_rows_by_id = dict(snapshot.get("sourceRows") or {})
-            for source_id, rows in source_rows_by_id.items():
-                if rows:
-                    self._upsert_storage_rows(conn, "sources", list(rows), key_columns=("id",))
-                    continue
-                referenced = conn.execute(
-                    "SELECT 1 FROM source_runs WHERE source_id = ? LIMIT 1",
-                    (source_id,),
-                ).fetchone()
-                if referenced is None:
-                    conn.execute("DELETE FROM sources WHERE id = ?", (source_id,))
-            self._insert_storage_rows(
-                conn, "source_runs", list(snapshot.get("sourceRunRows") or [])
-            )
-            conn.execute(
-                """
-                INSERT INTO storage_authority_modes(surface, mode, reason, updated_at)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(surface) DO UPDATE SET
-                    mode = excluded.mode,
-                    reason = excluded.reason,
-                    updated_at = excluded.updated_at
-                """,
-                (
-                    "sourceRuns",
-                    str(snapshot.get("mode") or "json"),
-                    "bootstrap_storage_rollback",
-                    self._deps.now_iso(),
-                ),
-            )
-
-        store.write(restore)
+        restore_bootstrap_source_runs_storage(self._bootstrap_storage_context, snapshot)
 
     def _restore_bootstrap_jobs_feed_storage(self, snapshot: dict[str, Any]) -> None:
-        if not snapshot:
-            return
-        store = snapshot.get("store")
-        run_id = str(snapshot.get("runId") or "").strip()
-        if store is None or not run_id:
-            return
+        from src.bridge.task_launch_bootstrap_storage import (
+            restore_bootstrap_jobs_feed_storage,
+        )
 
-        def restore(conn: Any) -> None:
-            rows = conn.execute(
-                "SELECT DISTINCT feed_generation FROM jobs WHERE run_id = ?",
-                (run_id,),
-            ).fetchall()
-            preexisting_generations = set(snapshot.get("preexistingRunGenerations") or [])
-            for row in rows:
-                generation = str(row["feed_generation"] or "").strip()
-                if not generation or generation in preexisting_generations:
-                    continue
-                conn.execute("DELETE FROM job_sources WHERE feed_generation = ?", (generation,))
-                conn.execute("DELETE FROM jobs WHERE feed_generation = ?", (generation,))
-            conn.execute("DELETE FROM job_feed_state WHERE id = 1")
-            self._insert_storage_rows(
-                conn, "job_feed_state", list(snapshot.get("feedStateRows") or [])
-            )
-            conn.execute(
-                """
-                INSERT INTO storage_authority_modes(surface, mode, reason, updated_at)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(surface) DO UPDATE SET
-                    mode = excluded.mode,
-                    reason = excluded.reason,
-                    updated_at = excluded.updated_at
-                """,
-                (
-                    "jobsFeed",
-                    str(snapshot.get("mode") or "json"),
-                    "bootstrap_storage_rollback",
-                    self._deps.now_iso(),
-                ),
-            )
-
-        store.write(restore)
+        restore_bootstrap_jobs_feed_storage(self._bootstrap_storage_context, snapshot)
 
     def _restore_bootstrap_storage_state(self, snapshot: dict[str, Any]) -> None:
-        for surface, restore in (
-            ("sourceRuns", self._restore_bootstrap_source_runs_storage),
-            ("jobsFeed", self._restore_bootstrap_jobs_feed_storage),
-        ):
-            try:
-                restore(dict(snapshot.get(surface) or {}))
-            except (
-                AttributeError,
-                RuntimeError,
-                OSError,
-                sqlite3.Error,
-                TypeError,
-                ValueError,
-            ) as exc:
-                self._deps.bridge_log(
-                    "error",
-                    "bootstrap_storage_rollback_failed",
-                    surface=surface,
-                    error=str(exc),
-                )
+        _bs_restore_storage_state(self._bootstrap_storage_context, snapshot)
 
     def _merge_bootstrap_state_artifacts(self, staging_dir: Path) -> None:
         sheet_names = set(BOOTSTRAP_SHEET_SOURCE_NAMES)
