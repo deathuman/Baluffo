@@ -14,12 +14,6 @@ from src.source_registry_io import load_json_object
 
 from . import audit_ledger, candidate_collections
 from . import browser_recovery as browser_recovery_helpers
-from .audit_config import (
-    audit_artifact_path,
-    audit_ttl_minutes,
-    config_section,
-    int_config_value,
-)
 from .config import (
     DEFAULT_DISCOVERY_CONFIG,
     DUCKDUCKGO_HTML_SEARCH,
@@ -39,7 +33,6 @@ from .directory_page_recovery import (
     http_recovery_request_from_context,
     merge_scan_result_payloads,
     recovery_result_candidates_from_strategy,
-    resolve_recovery_url_limit,
     run_recovery_for_requests,
 )
 from .page_diagnostics import browser_recoverable_error, looks_like_js_shell
@@ -59,6 +52,18 @@ from .probe_runtime import (
 )
 from .provider_inference import infer_web_candidate as shared_infer_web_candidate
 from .scoring import careers_keyword_count, unique_string_list
+from .web_search_config import (
+    _web_search_audit_path,
+    _web_search_audit_ttl_minutes,
+    _web_search_browser_recovery_batch_size,
+    _web_search_browser_recovery_concurrency,
+    _web_search_browser_recovery_max_batches,
+    _web_search_browser_recovery_timeout_s,
+    _web_search_max_links_per_query,
+    _web_search_max_queries,
+    _web_search_recovery_enabled,
+    _web_search_recovery_url_limit,
+)
 from .web_search_extract import extract_links_from_html
 from .web_search_fetch import fetch_text
 
@@ -80,6 +85,7 @@ _PREVALIDATED_BROWSER_DOMAIN_CAP = int(
 )
 
 
+# pure inference helper
 def infer_web_candidate(
     url: str,
     studio: str,
@@ -95,6 +101,7 @@ def infer_web_candidate(
     )
 
 
+# pure inference helper
 def infer_provider_candidates_from_html(
     page_url: str,
     html: str,
@@ -142,6 +149,7 @@ def infer_provider_candidates_from_html(
     return collapse_competing_candidates(candidates)
 
 
+# pure — builds search queries from studio seeds
 def build_web_search_queries(
     studio_seeds: list[dict[str, Any]],
     max_queries: int = 18,
@@ -163,6 +171,7 @@ def build_web_search_queries(
     return queries[:max_queries]
 
 
+# pure — builds directory fetch job dict
 def _page_job(
     *,
     url: str,
@@ -181,6 +190,7 @@ def _page_job(
     )
 
 
+# mutation — modifies in-place state
 def _append_page_analysis_outcome(
     *,
     page_url: str,
@@ -203,6 +213,7 @@ def _append_page_analysis_outcome(
     return outcome.found_candidates
 
 
+# pure — page outcome classification
 def _web_page_analysis_outcome(
     *,
     page_url: str,
@@ -243,6 +254,7 @@ def _web_page_analysis_outcome(
     return outcome
 
 
+# pure — recovery result candidate extraction
 def _web_recovery_result_candidates(
     result: dict[str, Any],
     request: DirectoryRecoveryRequest,
@@ -268,6 +280,7 @@ def _web_recovery_result_candidates(
     )
 
 
+# mutation — modifies in-place state
 def _append_browser_recovery_candidate(
     browser_recovery_candidates: list[dict[str, Any]],
     *,
@@ -293,89 +306,7 @@ def _append_browser_recovery_candidate(
     )
 
 
-def _web_search_config_section(config: dict[str, Any] | None) -> dict[str, Any]:
-    return config_section(
-        config,
-        "webSearch",
-        defaults=dict(DEFAULT_DISCOVERY_CONFIG.get("webSearch") or {}),
-    )
-
-
-def _web_search_audit_path(config: dict[str, Any] | None) -> Path:
-    cfg = _web_search_config_section(config)
-    return audit_artifact_path(
-        cfg,
-        default_filename="web-search-discovery-audit.json",
-    )
-
-
-def _web_search_audit_ttl_minutes(config: dict[str, Any] | None) -> int:
-    return audit_ttl_minutes(_web_search_config_section(config))
-
-
-def _web_search_recovery_enabled(config: dict[str, Any] | None) -> bool:
-    cfg = _web_search_config_section(config)
-    return bool(cfg.get("activeAuditRecoveryEnabled", True))
-
-
-def _web_search_recovery_url_limit(config: dict[str, Any] | None) -> int:
-    return resolve_recovery_url_limit(_web_search_config_section(config))
-
-
-def _web_search_max_queries(config: dict[str, Any] | None) -> int:
-    return int_config_value(
-        _web_search_config_section(config),
-        "maxQueries",
-        default=24,
-    )
-
-
-def _web_search_max_links_per_query(config: dict[str, Any] | None) -> int:
-    return int_config_value(
-        _web_search_config_section(config),
-        "maxLinksPerQuery",
-        default=8,
-    )
-
-
-def _web_search_browser_recovery_batch_size(config: dict[str, Any] | None) -> int:
-    return int_config_value(
-        _web_search_config_section(config),
-        "browserRecoveryBatchSize",
-        default=50,
-    )
-
-
-def _web_search_browser_recovery_max_batches(config: dict[str, Any] | None) -> int:
-    return int_config_value(
-        _web_search_config_section(config),
-        "browserRecoveryMaxBatchesPerRun",
-        default=1,
-    )
-
-
-def _web_search_browser_recovery_concurrency(config: dict[str, Any] | None) -> int:
-    return int_config_value(
-        _web_search_config_section(config),
-        "browserRecoveryConcurrency",
-        default=2,
-        minimum=1,
-    )
-
-
-def _web_search_browser_recovery_timeout_s(
-    config: dict[str, Any] | None,
-    timeout_s: int,
-) -> int:
-    configured = int_config_value(
-        _web_search_config_section(config),
-        "browserRecoveryTimeoutSeconds",
-        default=15,
-        minimum=1,
-    )
-    return max(1, min(max(1, int(timeout_s)), configured))
-
-
+# pure — hash-based cache busting
 def _seed_catalog_signature(studio_seeds: list[dict[str, Any]]) -> dict[str, Any]:
     normalized = [
         {
@@ -392,6 +323,7 @@ def _seed_catalog_signature(studio_seeds: list[dict[str, Any]]) -> dict[str, Any
     }
 
 
+# pure — cache validation signature builder
 def _web_search_audit_signature(
     *,
     studio_seeds: list[dict[str, Any]],
@@ -415,6 +347,7 @@ def _web_search_audit_signature(
     }
 
 
+# orchestration — network + mutation
 def _run_web_page_job_stage(
     timeout_s: int,
     *,
@@ -523,6 +456,7 @@ def _run_web_page_job_stage(
     }
 
 
+# orchestration — network + mutation
 def _scan_seed_careers_page_candidates(
     timeout_s: int,
     *,
@@ -611,6 +545,7 @@ def _scan_seed_careers_page_candidates(
     }
 
 
+# pure — builds audit sample record
 def _sample_web_search_query(query: str, seed: dict[str, Any]) -> dict[str, Any]:
     return {
         "query": query,
@@ -618,11 +553,13 @@ def _sample_web_search_query(query: str, seed: dict[str, Any]) -> dict[str, Any]
     }
 
 
+# mutation — modifies in-place state
 def _append_bounded_sample(samples: list[dict[str, Any]], sample: dict[str, Any]) -> None:
     if len(samples) < WEB_SEARCH_AUDIT_SAMPLE_LIMIT:
         samples.append(sample)
 
 
+# mutation — modifies in-place state
 def _queue_web_search_link(
     *,
     link: str,
@@ -658,6 +595,7 @@ def _queue_web_search_link(
     return "page_job", False
 
 
+# mutation — modifies in-place state
 def _record_web_page_result(
     *,
     result: dict[str, Any],
@@ -732,6 +670,7 @@ def _record_web_page_result(
     return 1, 0
 
 
+# orchestration — network + mutation
 def _run_web_http_recovery(
     *,
     timeout_s: int,
@@ -777,6 +716,7 @@ def _run_web_http_recovery(
     )
 
 
+# pure — filters summary dict to recovery keys
 def _recovery_summary_fields(summary: dict[str, Any]) -> dict[str, int]:
     return {
         key: int(summary.get(key) or 0)
@@ -785,6 +725,7 @@ def _recovery_summary_fields(summary: dict[str, Any]) -> dict[str, int]:
     }
 
 
+# orchestration — network + mutation
 def _scan_web_search_candidates(
     timeout_s: int,
     *,
@@ -911,6 +852,7 @@ def _scan_web_search_candidates(
     }
 
 
+# pure — merges scan result dicts
 def _merge_web_scan_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     return merge_scan_result_payloads(
         results,
@@ -924,6 +866,7 @@ def _merge_web_scan_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     )
 
 
+# pure — decorates candidate with probe evidence
 def _candidate_with_probe_evidence(candidate: dict[str, Any], jobs_found: int) -> dict[str, Any]:
     return probe_candidate_with_probe_evidence(
         candidate,
@@ -932,6 +875,7 @@ def _candidate_with_probe_evidence(candidate: dict[str, Any], jobs_found: int) -
     )
 
 
+# pure — thin delegation to rendered_static_probe_result
 def _browser_static_probe_result_from_rendered_html(
     candidate: dict[str, Any],
     *,
@@ -945,11 +889,13 @@ def _browser_static_probe_result_from_rendered_html(
     )
 
 
+# mutation — artifact read (load from disk)
 def _load_web_search_browser_recovery_artifact(output_path: Path) -> dict[str, Any]:
     payload = load_json_object(output_path, {})
     return payload if isinstance(payload, dict) else {}
 
 
+# pure — returns empty artifact skeleton
 def _initial_web_search_browser_recovery_artifact() -> dict[str, Any]:
     return {
         "schemaVersion": WEB_SEARCH_AUDIT_SCHEMA_VERSION,
@@ -962,6 +908,7 @@ def _initial_web_search_browser_recovery_artifact() -> dict[str, Any]:
     }
 
 
+# mutation — records browser fetch failure
 def _record_web_browser_recovery_fetch_failure(
     _row: dict[str, Any],
     source_url: str,
@@ -979,6 +926,7 @@ def _record_web_browser_recovery_fetch_failure(
     return []
 
 
+# pure — page analysis for browser-rendered page
 def _analyze_web_browser_recovery_success(
     row: dict[str, Any],
     source_url: str,
@@ -1003,12 +951,14 @@ def _analyze_web_browser_recovery_success(
     )
 
 
+# pure — deduplication
 def _finalize_web_browser_recovery_candidates(
     candidates: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     return unique_sources(candidates), []
 
 
+# browser recovery callback chain: web_search analyze_fetches
 def _analyze_web_browser_recovery_fetches(
     fetch_results: list[tuple[dict[str, Any], str, str, int]],
     *,
@@ -1041,6 +991,7 @@ def _analyze_web_browser_recovery_fetches(
     )
 
 
+# strategy factory — browser recovery batch wrapper
 def _analyze_web_browser_recovery_batch(
     fetch_results: list[tuple[dict[str, Any], str, str, int]],
     browser_recovery: dict[str, Any],
@@ -1058,6 +1009,7 @@ def _analyze_web_browser_recovery_batch(
     )
 
 
+# pure — applies queue/domain caps to probe results
 def _validated_web_browser_recovery_rows(
     combined_probe_results: list[tuple[dict[str, Any], bool, int, str, int]],
 ) -> list[dict[str, Any]]:
@@ -1074,6 +1026,7 @@ def _validated_web_browser_recovery_rows(
     ]
 
 
+# mutation — modifies in-place state
 def _apply_web_browser_recovery_probe_results(
     artifact: dict[str, Any],
     combined_probe_results: list[tuple[dict[str, Any], bool, int, str, int]],
@@ -1089,6 +1042,7 @@ def _apply_web_browser_recovery_probe_results(
     )
 
 
+# orchestration — coordinates network + mutation
 def run_web_search_directory_audit(
     timeout_s: int,
     *,
@@ -1109,6 +1063,7 @@ def run_web_search_directory_audit(
     recovery_enabled = _web_search_recovery_enabled(config)
     recovery_url_limit = _web_search_recovery_url_limit(config)
 
+    # pure helper
     def _scan(scan_timeout_s: int) -> dict[str, Any]:
         results: list[dict[str, Any]] = []
         if include_seed_careers:
@@ -1195,6 +1150,7 @@ def run_web_search_directory_audit(
     )
 
 
+# orchestration — coordinates network + mutation
 def run_web_search_browser_recovery(
     timeout_s: int,
     *,

@@ -26,6 +26,19 @@ from .gamedevmap import (
     parse_gamedevmap_csv,
     select_gamedevmap_representative_rows,
 )
+from .gamedevmap_rejection import (
+    _error_text,
+    _gamedevmap_probe_failed_rejection,
+    _gamedevmap_zero_jobs_rejection,
+    _normalize_failure_bucket,
+    _rejection,
+    _row_url,
+)
+from .gamedevmap_rerun import (
+    _parse_rerun_reasons,
+    _prune_rerun_rejections,
+    _select_rerun_rows,
+)
 from .io_runtime import endpoint_url
 from .page_analysis import analyze_fetched_page
 from .page_diagnostics import (
@@ -61,12 +74,6 @@ from .web_search import (
 
 DRY_RUN_SCHEMA_VERSION = 3
 LAST_GAMEDEVMAP_AUDIT_REPORT_SUMMARY: dict[str, Any] = {}
-GAMEDEVMAP_RERUN_REASONS = {
-    "homepage_fetch_failed",
-    "no_careers_evidence",
-    "probe_failed",
-    "zero_jobs",
-}
 PRIMARY_RECOVERY_PATHS = ("/careers", "/jobs")
 SECONDARY_RECOVERY_PATHS = (
     "/join-us",
@@ -90,7 +97,6 @@ THIRD_PARTY_PROFILE_HOSTS = {
     "linktr.ee",
     "sites.google.com",
 }
-TECHNICAL_REJECTION_REASONS = {"bad_provider_inference", "homepage_fetch_failed", "probe_failed"}
 
 
 def gamedevmap_active_dry_run_path() -> Path:
@@ -114,10 +120,6 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return int(default)
 
 
-def _row_url(row: dict[str, Any]) -> str:
-    return str(row.get("url") or "").strip()
-
-
 def _candidate_url_key(candidate: dict[str, Any]) -> str:
     raw = str(
         candidate.get("listing_url")
@@ -136,58 +138,6 @@ def _host(url: str) -> str:
 
 def _host_in(host: str, blocked_hosts: set[str]) -> bool:
     return recovery_url_planner.host_in(host, blocked_hosts)
-
-
-def _normalize_failure_bucket(reason: str, detail: str = "") -> str:
-    reason_key = str(reason or "").strip()
-    detail_key = str(detail or "").strip()
-    if reason_key in TECHNICAL_REJECTION_REASONS or detail_key == "recovery_fetch_failed":
-        return "technical_failure"
-    if reason_key in {"no_careers_evidence", "zero_jobs"}:
-        return "coverage_miss"
-    return "other"
-
-
-def _error_text(result: dict[str, Any]) -> str:
-    error = str(result.get("error") or "").strip()
-    if error:
-        return error
-    failure = result.get("failure")
-    if isinstance(failure, dict):
-        error = str(failure.get("error") or "").strip()
-        if error:
-            return error
-    return ""
-
-
-def _rejection(
-    *,
-    reason: str,
-    row: dict[str, Any] | None = None,
-    candidate: dict[str, Any] | None = None,
-    error: str = "",
-    jobs_found: int = 0,
-    reason_detail: str = "",
-    failure_bucket: str = "",
-) -> dict[str, Any]:
-    detail = str(reason_detail or "").strip()
-    payload: dict[str, Any] = {
-        "reason": str(reason),
-        "reasonDetail": detail,
-        "failureBucket": str(failure_bucket or _normalize_failure_bucket(reason, detail)),
-        "error": str(error or ""),
-        "jobsFound": max(0, int(jobs_found or 0)),
-    }
-    if isinstance(row, dict):
-        payload["studio"] = str(row.get("studio") or "")
-        payload["url"] = _row_url(row)
-        payload["sourceDirectoryEntryUrl"] = str(row.get("sourceDirectoryEntryUrl") or "")
-    if isinstance(candidate, dict):
-        payload["candidate"] = dict(candidate)
-        payload["sourceId"] = probe_candidate_id(candidate)
-        payload["adapter"] = str(candidate.get("adapter") or "")
-        payload["name"] = str(candidate.get("name") or "")
-    return payload
 
 
 def _initial_artifact(
@@ -1299,63 +1249,6 @@ def _filter_bad_provider_inferences(
     )
 
 
-def _parse_rerun_reasons(value: str | list[str] | tuple[str, ...] | None) -> set[str]:
-    if not value:
-        return set()
-    raw_items: list[str] = []
-    if isinstance(value, str):
-        raw_items = value.split(",")
-    else:
-        raw_items = [str(item) for item in value]
-    return {
-        item.strip()
-        for item in raw_items
-        if item.strip() and item.strip() in GAMEDEVMAP_RERUN_REASONS
-    }
-
-
-def _rejection_row_key(rejection: dict[str, Any]) -> str:
-    return active_audit_runtime.rejection_rerun_key(rejection)
-
-
-def _row_keys(row: dict[str, Any]) -> set[str]:
-    return active_audit_runtime.row_identity_keys(
-        row,
-        url=_row_url(row),
-        entry_url=str(row.get("sourceDirectoryEntryUrl") or "").strip(),
-    )
-
-
-def _select_rerun_rows(
-    artifact: dict[str, Any],
-    representative_rows: list[dict[str, Any]],
-    rerun_reasons: set[str],
-) -> tuple[list[dict[str, Any]], set[str]]:
-    return active_audit_runtime.select_rerun_rows(
-        artifact,
-        representative_rows,
-        rerun_reasons,
-        rejected_key="rejectedForActivation",
-        rejection_key_fn=_rejection_row_key,
-        row_keys_fn=_row_keys,
-    )
-
-
-def _prune_rerun_rejections(
-    artifact: dict[str, Any],
-    *,
-    rerun_reasons: set[str],
-    rerun_row_keys: set[str],
-) -> None:
-    active_audit_runtime.prune_rerun_rejections(
-        artifact,
-        rejected_key="rejectedForActivation",
-        rerun_reasons=rerun_reasons,
-        rerun_row_keys=rerun_row_keys,
-        rejection_key_fn=_rejection_row_key,
-    )
-
-
 async def _probe_candidates_async(
     candidates: list[dict[str, Any]],
     *,
@@ -1363,24 +1256,6 @@ async def _probe_candidates_async(
     fetcher,
 ) -> list[tuple[dict[str, Any], bool, int, str, int]]:
     return await shared_probe_candidates_async(candidates, timeout_s=timeout_s, fetcher=fetcher)
-
-
-def _gamedevmap_probe_failed_rejection(candidate: dict[str, Any], error: str) -> dict[str, Any]:
-    return _rejection(
-        reason="probe_failed",
-        candidate=candidate,
-        error=error,
-        reason_detail="probe_failed",
-    )
-
-
-def _gamedevmap_zero_jobs_rejection(candidate: dict[str, Any], jobs_found: int) -> dict[str, Any]:
-    return _rejection(
-        reason="zero_jobs",
-        candidate=candidate,
-        jobs_found=jobs_found,
-        reason_detail="zero_jobs",
-    )
 
 
 def _prepare_gamedevmap_active_batch_rows(

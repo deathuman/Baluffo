@@ -57,6 +57,7 @@ _EXTERNAL_DETAIL_FANOUT_HOST_THRESHOLD = 2
 _EXTERNAL_DETAIL_FANOUT_LINK_CAP = 8
 
 
+# pure — budget arithmetic + TimeoutError gate
 def _effective_timeout_or_raise(
     *,
     timeout_s: int,
@@ -72,11 +73,13 @@ def _effective_timeout_or_raise(
     return effective_timeout_s
 
 
+# pure — URL host normalization
 def _normalized_host(url: str) -> str:
     host = (urlparse(clean_text(url) or "").hostname or "").lower()
     return host[4:] if host.startswith("www.") else host
 
 
+# mutation — modifies in-place state
 def _cap_external_detail_fanout(
     ctx: StaticSourceContext,
     *,
@@ -123,6 +126,7 @@ class StaticListingStageState:
     batch_meta: dict[str, dict[str, Any]] = field(default_factory=dict)
     lock: Lock = field(default_factory=Lock)
 
+    # pure helper
     def note_terminal_reason(self, reason: str, ctx: StaticSourceContext) -> None:
         clean_reason = clean_text(reason)
         if not clean_reason:
@@ -132,6 +136,7 @@ class StaticListingStageState:
                 self.terminal_reason = clean_reason
                 ctx.stats["listing_terminal_reason"] = clean_reason
 
+    # pure helper
     def record_batch_meta(self, url: str, **payload: Any) -> None:
         with self.lock:
             self.batch_meta[url] = {
@@ -139,15 +144,18 @@ class StaticListingStageState:
                 **payload,
             }
 
+    # pure helper
     def clear_batch_meta(self) -> None:
         with self.lock:
             self.batch_meta.clear()
 
+    # pure helper
     def increment_browser_fallbacks(self) -> None:
         with self.lock:
             self.browser_fallbacks = int(self.browser_fallbacks or 0) + 1
 
 
+# pure — classifier
 def _needs_detail_location_resolution(
     row: dict[str, Any], link: str = "", location_hint: str = ""
 ) -> bool:
@@ -161,6 +169,7 @@ def _needs_detail_location_resolution(
     return not city and bool(hint)
 
 
+# mutation — modifies in-place state
 def _apply_one_man_studio_cleanup(
     ctx: StaticSourceContext, plugin_jobs: list[dict[str, Any]]
 ) -> None:
@@ -201,11 +210,13 @@ def _apply_one_man_studio_cleanup(
             row["locationSummary"] = ""
 
 
+# mutation — registry-facing artifact update
 def _complete_source_without_generic_flow(ctx: StaticSourceContext) -> None:
     update_source_detail_taxonomy(ctx.entry_report)
     ctx.details.append(ctx.entry_report)
 
 
+# mutation — finalizes stats on ctx
 def _finish_generic_source(ctx: StaticSourceContext, stage_state: StaticListingStageState) -> None:
     current_gate_wait_ms, current_gate_wait_count = ctx.current_domain_gate_wait_stats()
     ctx.stats["listing_browser_fallbacks"] = int(stage_state.browser_fallbacks or 0)
@@ -283,6 +294,7 @@ def _finish_generic_source(ctx: StaticSourceContext, stage_state: StaticListingS
     ctx.details.append(ctx.entry_report)
 
 
+# mutation — artifact read/write + network (revalidation)
 def _handle_skip_and_revalidation(ctx: StaticSourceContext) -> bool:
     ctx.emit_source_progress(
         phase_key="static_prepare",
@@ -331,6 +343,7 @@ def _handle_skip_and_revalidation(ctx: StaticSourceContext) -> bool:
     return False
 
 
+# pure — builds AdapterPluginContext from ctx
 def _static_plugin_context(ctx: StaticSourceContext) -> AdapterPluginContext | None:
     host = ""
     if ctx.pages:
@@ -351,6 +364,7 @@ def _static_plugin_context(ctx: StaticSourceContext) -> AdapterPluginContext | N
     )
 
 
+# network — calls plugin.run() with HTTP fetch
 def _invoke_static_plugin(ctx: StaticSourceContext, plugin: Any) -> list[dict[str, Any]]:
     return list(
         plugin.run(
@@ -369,6 +383,7 @@ def _invoke_static_plugin(ctx: StaticSourceContext, plugin: Any) -> list[dict[st
     )
 
 
+# mutation — sets ctx.entry_report meta fields
 def _apply_static_plugin_meta(ctx: StaticSourceContext, plugin_meta: dict[str, Any]) -> None:
     ctx.entry_report["classification"] = clean_text(plugin_meta.get("classification"))
     ctx.entry_report["browserFallbackRecommended"] = bool(
@@ -393,6 +408,7 @@ def _apply_static_plugin_meta(ctx: StaticSourceContext, plugin_meta: dict[str, A
         ctx.entry_report["error"] = meta_error
 
 
+# network + mutation — reclassifies empty listings
 def _probe_empty_plugin_listing(ctx: StaticSourceContext, classification: str) -> str:
     if classification in {"dead_listing_page", "empty_confirmed"} or not ctx.pages:
         return classification
@@ -430,6 +446,7 @@ def _probe_empty_plugin_listing(ctx: StaticSourceContext, classification: str) -
     return "dead_listing_page"
 
 
+# mutation — sets errors/warnings on ctx.entry_report
 def _record_empty_plugin_result(ctx: StaticSourceContext) -> None:
     classification = clean_text(ctx.entry_report.get("classification"))
     empty_confirmed = bool(ctx.entry_report.get("emptyConfirmed")) or (
@@ -458,6 +475,7 @@ def _record_empty_plugin_result(ctx: StaticSourceContext) -> None:
         ctx.errors.append(f"static:{ctx.source_name}: {ctx.entry_report.get('error')}")
 
 
+# mutation — finalizes plugin job results on ctx
 def _finalize_plugin_fast_path(
     ctx: StaticSourceContext,
     plugin_jobs: list[dict[str, Any]],
@@ -479,6 +497,7 @@ def _finalize_plugin_fast_path(
     _record_empty_plugin_result(ctx)
 
 
+# orchestration — plugin selection + invoke + finalize
 def _run_plugin_fast_path(ctx: StaticSourceContext) -> bool:
     plugin_ctx = _static_plugin_context(ctx)
     if plugin_ctx is None:
@@ -496,6 +515,7 @@ def _run_plugin_fast_path(ctx: StaticSourceContext) -> bool:
         return False
 
 
+# pure — error text classification
 def _should_try_listing_browser_fallback(
     url: str,
     error_text: str,
@@ -516,14 +536,17 @@ def _should_try_listing_browser_fallback(
     return False, ""
 
 
+# pure — reads ctx field
 def _source_studio(ctx: StaticSourceContext) -> str:
     return clean_text(ctx.source.get("studio")) or ctx.company or ctx.source_name
 
 
+# pure — reads ctx field
 def _source_label(ctx: StaticSourceContext) -> str:
     return clean_text(ctx.source.get("name")) or ctx.company or ctx.source_name
 
 
+# mutation — modifies in-place state
 def _append_parsed_listing_rows(ctx: StaticSourceContext, listing_html: str, page_url: str) -> int:
     emitted_count = 0
     parsed = parse_jobpostings_from_html(
@@ -544,6 +567,7 @@ def _append_parsed_listing_rows(ctx: StaticSourceContext, listing_html: str, pag
     return emitted_count
 
 
+# mutation — modifies in-place state
 def _fetch_rendered_detail_rows(
     ctx: StaticSourceContext, link: str, title: str, source_budget_s: int
 ) -> list[Any]:
@@ -571,6 +595,7 @@ def _fetch_rendered_detail_rows(
     return detail_result.get("rows") or []
 
 
+# mutation — modifies in-place state
 def _append_rendered_detail_rows(ctx: StaticSourceContext, rows: list[Any]) -> int:
     emitted_count = 0
     for emitted_row in rows:
@@ -583,6 +608,7 @@ def _append_rendered_detail_rows(ctx: StaticSourceContext, rows: list[Any]) -> i
     return emitted_count
 
 
+# mutation — modifies in-place state
 def _append_rendered_row(
     ctx: StaticSourceContext, raw_row: dict[str, Any], source_budget_s: int
 ) -> tuple[int, bool]:
@@ -613,6 +639,7 @@ def _append_rendered_row(
     return 0, False
 
 
+# mutation — modifies in-place state
 def _append_rendered_card_rows(
     ctx: StaticSourceContext, listing_html: str, page_url: str, source_budget_s: int
 ) -> tuple[int, bool]:
@@ -632,6 +659,7 @@ def _append_rendered_card_rows(
     return emitted_count, has_job_like_title
 
 
+# mutation — modifies in-place state
 def _record_listing_only_rendered_meta(ctx: StaticSourceContext) -> None:
     ctx.source["_staticPluginMeta"] = {
         "detailFetchRequired": False,
@@ -640,6 +668,7 @@ def _record_listing_only_rendered_meta(ctx: StaticSourceContext) -> None:
     ctx.emit_heartbeat()
 
 
+# mutation — modifies in-place state
 def _add_listing_detail_link(
     ctx: StaticSourceContext,
     detail_links: list[tuple[str, str]],
@@ -670,6 +699,7 @@ def _add_listing_detail_link(
         ctx.dead_listing_page_examples.append(f"{candidate_url} | {ctx.company}")
 
 
+# mutation — modifies in-place state
 def _collect_listing_detail_links(
     ctx: StaticSourceContext,
     detail_links: list[tuple[str, str]],
@@ -719,6 +749,7 @@ def _collect_listing_detail_links(
         )
 
 
+# mutation — modifies in-place state
 def _extract_listing_candidates(
     ctx: StaticSourceContext,
     *,
@@ -768,6 +799,7 @@ class _StaticDetailTraversalState:
     redirect_loop_count: int = 0
 
 
+# mutation — modifies in-place state
 def _stop_detail_traversal_adaptively(
     ctx: StaticSourceContext,
     plan: StaticDetailTraversalPlan,
@@ -781,6 +813,7 @@ def _stop_detail_traversal_adaptively(
         )
 
 
+# mutation — modifies in-place state
 def _next_detail_batch_size(
     ctx: StaticSourceContext,
     plan: StaticDetailTraversalPlan,
@@ -804,6 +837,7 @@ def _next_detail_batch_size(
     return max(1, min(batch_size, batch_budget_cap))
 
 
+# pure — builds fetch job dicts
 def _build_detail_batch_jobs(detail_batch: list[tuple[str, str]]) -> list[dict[str, Any]]:
     return [
         {
@@ -814,6 +848,7 @@ def _build_detail_batch_jobs(detail_batch: list[tuple[str, str]]) -> list[dict[s
     ]
 
 
+# network — makes HTTP requests
 def _fetch_detail_job(
     ctx: StaticSourceContext,
     plan: StaticDetailTraversalPlan,
@@ -846,6 +881,7 @@ def _fetch_detail_job(
     return html
 
 
+# mutation — modifies in-place state
 def _emit_detail_batch_progress(
     ctx: StaticSourceContext,
     plan: StaticDetailTraversalPlan,
@@ -876,6 +912,7 @@ def _emit_detail_batch_progress(
     )
 
 
+# mutation — modifies in-place state
 def _record_detail_fetch_error(
     ctx: StaticSourceContext,
     plan: StaticDetailTraversalPlan,
@@ -904,6 +941,7 @@ def _record_detail_fetch_error(
         _stop_detail_traversal_adaptively(ctx, plan, state)
 
 
+# mutation — modifies in-place state
 def _apply_detail_result(ctx: StaticSourceContext, detail_result: dict[str, Any]) -> None:
     rejected_classification = clean_text(detail_result.get("rejectedClassification"))
     if rejected_classification == "dead_listing_page":
@@ -923,6 +961,7 @@ def _apply_detail_result(ctx: StaticSourceContext, detail_result: dict[str, Any]
         ctx.jobs.append(row)
 
 
+# mutation — modifies in-place state
 def _process_detail_result_row(
     ctx: StaticSourceContext,
     plan: StaticDetailTraversalPlan,
@@ -971,6 +1010,7 @@ def _process_detail_result_row(
     ctx.emit_heartbeat()
 
 
+# pure — budget check with optional source stop
 def _detail_budget_exhausted(
     ctx: StaticSourceContext,
     plan: StaticDetailTraversalPlan,
@@ -989,6 +1029,7 @@ def _detail_budget_exhausted(
     return True
 
 
+# network — makes HTTP requests
 def _run_detail_batch(
     ctx: StaticSourceContext,
     plan: StaticDetailTraversalPlan,
@@ -1039,6 +1080,7 @@ def _run_detail_batch(
         state.index = detail_batch_start + len(detail_batch)
 
 
+# mutation — modifies in-place state
 def _finish_detail_traversal(
     ctx: StaticSourceContext,
     *,
@@ -1055,6 +1097,7 @@ def _finish_detail_traversal(
     ctx.stats["domain_gate_wait_count"] = int(current_gate_wait_count)
 
 
+# orchestration — coordinates network + mutation
 def _run_static_detail_traversal(
     ctx: StaticSourceContext,
     plan: StaticDetailTraversalPlan,
@@ -1078,6 +1121,7 @@ def _run_static_detail_traversal(
 
 
 class StaticFetchRunner:
+    # pure helper
     def __init__(self, ctx: StaticSourceContext) -> None:
         self.ctx = ctx
         self.config = ctx.runtime_config
@@ -1099,6 +1143,7 @@ class StaticFetchRunner:
         self.stop_source = False
         self.anti_bot_browser_retry = bool(ctx.source.get("antiBotBrowserRetry"))
 
+    # pure helper
     def run(self) -> None:
         for batch_start in range(0, len(self.cleaned_pages), self.listing_batch_size):
             if self.stop_source:
@@ -1114,6 +1159,7 @@ class StaticFetchRunner:
             self._run_listing_batch(listing_batch_jobs)
         _finish_generic_source(self.ctx, self.stage_state)
 
+    # pure helper
     def _build_listing_batch(self, batch_start: int) -> list[dict[str, Any]]:
         listing_batch_jobs: list[dict[str, Any]] = []
         page_batch = self.cleaned_pages[batch_start : batch_start + self.listing_batch_size]
@@ -1138,6 +1184,7 @@ class StaticFetchRunner:
             )
         return listing_batch_jobs
 
+    # pure helper
     def _page_budget_exhausted(self, page_url, source_budget_s, reserve_s) -> bool:
         if not static_source_budget_exhausted(
             deadline_monotonic=float(self.ctx.source_deadline),
@@ -1147,6 +1194,7 @@ class StaticFetchRunner:
         self.ctx.stop_for_budget_exhaustion(target_url=page_url, source_budget_s=source_budget_s)
         return True
 
+    # network — makes HTTP requests
     def _fetch_listing_html_sync(self, url: str, *, effective_timeout_s: int) -> str:
         try:
             return fetch_with_retries(
@@ -1168,6 +1216,7 @@ class StaticFetchRunner:
                 backoff_s=self.deps.backoff_s,
             )
 
+    # network — makes HTTP requests
     def _listing_fetch_timeout(self, batch_job: dict[str, Any]) -> int:
         payload = _as_dict(batch_job.get("payload") if isinstance(batch_job, dict) else {})
         source_budget_s = int(
@@ -1180,6 +1229,7 @@ class StaticFetchRunner:
             source_budget_s=source_budget_s,
         )
 
+    # mutation — modifies in-place state
     def _record_fetch_meta(self, url, started, timeout_s, fallback_used, fallback_error) -> None:
         self.stage_state.record_batch_meta(
             url,
@@ -1190,6 +1240,7 @@ class StaticFetchRunner:
             browserFallbackError=fallback_error,
         )
 
+    # mutation — modifies in-place state
     def _note_listing_fetch_failure(self, err_str: str, attempted: bool, reason: str) -> None:
         if not attempted:
             if reason != "timeout":
@@ -1203,6 +1254,7 @@ class StaticFetchRunner:
         terminal_reason = "blocked_after_browser_fallback" if blocked else "browser_fallback_empty"
         self.stage_state.note_terminal_reason(terminal_reason, self.ctx)
 
+    # mutation — modifies in-place state
     def _log_playwright_fallback(self, url: str, reason: str, html: str) -> None:
         print(
             f"[static] playwright_fallback_used url={url!r} reason={reason} got_html={bool(html)}",
@@ -1210,9 +1262,11 @@ class StaticFetchRunner:
             flush=True,
         )
 
+    # pure — display helper
     def _listing_position_label(self) -> str:
         return f"Listing {self.progress_state['listingPagesVisited']}/{max(1, len(self.pages))}"
 
+    # network — makes HTTP requests
     def _fetch_listing_job(self, batch_job: dict[str, Any], url: str, _timeout_s: int) -> str:
         del _timeout_s
         fetch_started = time.perf_counter()
@@ -1235,6 +1289,7 @@ class StaticFetchRunner:
         )
         return html
 
+    # network — makes HTTP requests
     def _sync_browser_fallback(self, url: str, err_str: str) -> tuple[str, bool, str]:
         html = ""
         fallback_error = ""
@@ -1258,6 +1313,7 @@ class StaticFetchRunner:
             raise RuntimeError(err_str)
         return html, attempted, fallback_error
 
+    # network — makes HTTP requests
     async def _fetch_listing_job_async(self, client, batch_job, url, _timeout_s):
         del _timeout_s
         fetch_started = time.perf_counter()
@@ -1303,6 +1359,7 @@ class StaticFetchRunner:
         )
         return html
 
+    # mutation — modifies in-place state
     def _on_listing_batch_progress(self, completed: int, total: int) -> None:
         completed_count = max(0, int(completed or 0))
         total_count = max(1, int(total or 0))
@@ -1320,6 +1377,7 @@ class StaticFetchRunner:
             ),
         )
 
+    # network — makes HTTP requests
     def _run_listing_batch(self, listing_batch_jobs: list[dict[str, Any]]) -> None:
         self.stage_state.clear_batch_meta()
         self.ctx.emit_source_progress(
@@ -1357,6 +1415,7 @@ class StaticFetchRunner:
                 break
             self._process_listing_result(result)
 
+    # pure — extracts context from fetch result
     def _listing_result_context(self, result: dict[str, Any]) -> tuple[str, dict[str, Any], int]:
         page_url = clean_text(result.get("url"))
         payload = _as_dict(result.get("payload"))
@@ -1368,6 +1427,7 @@ class StaticFetchRunner:
         self.ctx.sync_source_deadline(source_budget_s)
         return page_url, domain_profile, source_budget_s
 
+    # orchestration — coordinates network + mutation
     def _process_listing_result(self, result: dict[str, Any]) -> None:
         page_url, domain_profile, source_budget_s = self._listing_result_context(result)
         if not page_url:
@@ -1428,6 +1488,7 @@ class StaticFetchRunner:
                 self.stop_source = True
             self.ctx.emit_heartbeat()
 
+    # mutation — modifies in-place state
     def _prepare_listing_htmls(self, page_url: str, result: dict[str, Any]) -> list[str]:
         listing_meta = self.stage_state.batch_meta.get(page_url) or {}
         self.stats["listing_fetch_ms"] += int(listing_meta.get("durationMs") or 0)
@@ -1478,6 +1539,7 @@ class StaticFetchRunner:
             )
         return listing_htmls
 
+    # mutation — modifies in-place state
     def _extract_listing_page(self, page_url, source_budget_s, listing_htmls):
         extraction_started = time.perf_counter()
         self.ctx.emit_source_progress(
@@ -1513,6 +1575,7 @@ class StaticFetchRunner:
         )
         return detail_links, listing_jobs_found
 
+    # mutation — modifies in-place state
     def _apply_listing_fingerprint(self, detail_links, listing_htmls):
         listing_fingerprint = hashlib.sha1("\n".join(listing_htmls).encode("utf-8")).hexdigest()
         previous_listing_fingerprint = clean_text(
@@ -1535,6 +1598,7 @@ class StaticFetchRunner:
             return []
         return detail_links
 
+    # strategy factory — builds StaticDetailTraversalPlan
     def _detail_plan(
         self, page_url, source_budget_s, domain_profile, detail_links, listing_jobs_found
     ):
@@ -1620,6 +1684,7 @@ class StaticFetchRunner:
             source_budget_s=source_budget_s,
         )
 
+    # mutation — modifies in-place state
     def _emit_detail_traversal_start(self, page_url, detail_links) -> None:
         self.ctx.emit_source_progress(
             phase_key="static_detail_traversal",
@@ -1637,6 +1702,7 @@ class StaticFetchRunner:
         self.ctx.emit_heartbeat()
 
 
+# orchestration — coordinates network + mutation
 def process_static_source(ctx: StaticSourceContext) -> None:
     if _handle_skip_and_revalidation(ctx):
         return
