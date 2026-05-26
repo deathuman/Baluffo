@@ -371,21 +371,24 @@ unit tests pass (0 failures).  Import DAG cycle-free.
 
 ### 8. Label Discovery And Static Adapter Flow Stages
 
-For discovery and static adapter files, clarify stage boundaries before deeper refactors:
+Completed 2026-05-26 for the first safety slice.  AI boundary markers
+(pure / mutation / network / orchestration / registry) added to all ~144
+functions across the three highest-risk discovery and static-adapter
+files.  Three small, stateless leaf modules extracted where the helper
+groups have no dependency on the orchestrator:
 
-- classify pure row/candidate inference helpers
-- classify artifact read/write helpers
-- classify runtime/network/probe helpers
-- classify mutation or registry-facing helpers
+New modules under `src/source_discovery/`:
 
-Then extract only where this lowers risk:
+- `gamedevmap_rejection.py` — rejection row formatting helpers
+- `gamedevmap_rerun.py` — rerun selection/prune helpers
+- `web_search_config.py` — web-search config reader helpers
 
-- stage result dataclasses for repeated dict payloads
-- small modules for browser recovery artifact handling
-- small modules for page outcome/candidate assembly
-- plugin/static listing flow helpers that align with [`static-plugin-simple-runner-migration-plan.md`](static-plugin-simple-runner-migration-plan.md)
+The static-listing plugin fast-path extraction was deferred — a subtle
+runtime issue with plugin registry resolution surfaced during testing.
+Marker comments remain as architectural guidance for future extraction.
 
-Acceptance guard: discovery yield, source-policy report shape, and static adapter behavior stay unchanged unless a separate behavior plan says otherwise.
+Acceptance guard verified: 629 discovery + static-adapter tests pass.
+Ruff, gitleaks, line-budget, and all repo guardrails pass.
 
 ### 9. Add Packaged Desktop Risk Labels And Verification Hooks
 
@@ -410,7 +413,7 @@ Acceptance guard: changes to these files use the relevant packaged rehearsal lan
 4. Registry conflict split. **Done 2026-05-26.**
 5. Task launch extraction. **Done 2026-05-26.**
 6. Admin Ops render partition. **Done 2026-05-26.**
-7. Discovery/static stage labels and limited extraction.
+7. Discovery/static stage labels and limited extraction. **Done 2026-05-26.**
 8. Packaged desktop local labels and side-effect naming cleanup.
 
 This order makes later refactors safer by first improving searchability and route/payload visibility.
