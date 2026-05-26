@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from src.jobs.reporting_dedup_evidence import (
-    _provider_static_collision_review_hint,
-    build_dedup_evidence,
-)
+from src.jobs.common.dedup_evidence_provider_static import _provider_static_collision_review_hint
+from src.jobs.reporting_dedup_evidence import build_dedup_evidence
 from tests.test_jobs_dedup_provider_static_title_company import _provider_static_row
 
 

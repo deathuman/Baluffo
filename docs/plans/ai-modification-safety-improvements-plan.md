@@ -5,7 +5,7 @@
 > - **Canonical for:** proposed sequencing for making high-risk code easier for AI and human maintainers to modify safely
 > - **Not canonical for:** current endpoint payloads, data schemas, runtime behavior, release requirements, or subsystem ownership
 > - **Then inspect:** [`../AI_ASSISTANT_GUIDE.md`](../AI_ASSISTANT_GUIDE.md), [`../architecture-ai-map.md`](../architecture-ai-map.md), [`../admin-bridge-api.md`](../admin-bridge-api.md), [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md), [`../storage-contract.md`](../storage-contract.md), and [`../testing.md`](../testing.md)
-> - **Last updated:** 2026-05-13
+> - **Last updated:** 2026-05-26
 
 ## Summary
 
@@ -253,6 +253,27 @@ Use the new types at boundary helper signatures first. Do not attempt to type ev
 
 ### 4. Split Dedup Evidence Ownership
 
+Completed 2026-05-26. The 3,653-line coordinator was split into five leaf modules
+behind the two stable public entrypoints (`build_dedup_evidence`, `build_dedup_audit_gate`),
+which remain in the coordinator file. A shared bundle module (`dedup_evidence_bundle.py`)
+prevents circular imports and hosts the pure computation layer.
+
+New modules under `src/jobs/common/`:
+
+- `dedup_evidence_bundle.py` — shared low-risk computation helpers (source classes,
+  URL parsing, identity analysis, tokenization, constant enums)
+- `dedup_evidence_google_sheets.py` — Google Sheets role-bucket audit helpers
+- `dedup_evidence_provider_static.py` — provider/static disagreement helpers
+- `dedup_evidence_merge.py` — merge-example and non-primary merge gate helpers
+- `dedup_evidence_audit_gate.py` — final audit-gate detail assembly helpers
+
+The coordinator file (`reporting_dedup_evidence.py`) dropped from 3,653 lines to
+1,133 lines and retains only the two public entrypoints, `_job_summary`, and the
+review queue / cause helpers that need cross-module summary fields.
+
+Acceptance guard verified: the final `dedupEvidence` payload remains byte-contract
+compatible (123 dedup tests, 181 admin tests, 310 bridge tests all pass).
+
 Refactor [`../../src/jobs/reporting_dedup_evidence.py`](../../src/jobs/reporting_dedup_evidence.py) behind the existing public entrypoints:
 
 - keep `build_dedup_evidence(...)` stable
@@ -344,7 +365,7 @@ Acceptance guard: changes to these files use the relevant packaged rehearsal lan
 
 1. Route contract inventory and local AI boundary markers.
 2. Typed payload contracts for task-live/task-state and `/tasks/run-fetcher`.
-3. Dedup evidence split.
+3. Dedup evidence split. **Done 2026-05-26.**
 4. Registry conflict split.
 5. Task launch extraction.
 6. Admin Ops render partition.
@@ -362,7 +383,7 @@ This order makes later refactors safer by first improving searchability and rout
 | Route inventory or route contract tests | focused route inventory test plus `python -m pytest tests/admin/ -q` when bridge routes move |
 | `/tasks/run-fetcher` payload or launch parsing | `python -m pytest tests/admin/test_admin_bridge_task_launch.py -q` and nearest frontend unit test |
 | Task-state/task-live payload typing | `python -m pytest tests/admin/ -q` plus `npm run test:frontend:unit` when frontend view models change |
-| Dedup evidence split | focused dedup tests under `tests/test_jobs_dedup_*.py` and fetch report normalization tests |
+| Dedup evidence split | focused dedup tests under `tests/test_jobs_dedup_*.py` and fetch report normalization tests | **Verified 2026-05-26: 123 dedup tests, 181 admin tests, 310 bridge tests all pass.** |
 | Registry conflict split | focused registry conflict/Admin route tests under `tests/admin/` |
 | Admin Ops rendering split | `npm run test:frontend:unit` |
 | Static adapter/discovery flow stage extraction | nearest `tests/jobs_static/` or `tests/source_discovery/` slice |
