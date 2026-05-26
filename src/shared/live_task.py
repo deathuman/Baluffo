@@ -229,12 +229,10 @@ def build_live_task_contract_fields(
 ) -> LiveTaskPayload:
     normalized = normalize_live_task_payload(payload)
     work_items = [
-        cast(LiveTaskWorkItem, dict(row))
-        for row in json_object_rows(normalized.get("workItems"))
+        cast(LiveTaskWorkItem, dict(row)) for row in json_object_rows(normalized.get("workItems"))
     ]
     recent_events = [
-        cast(LiveTaskEvent, dict(row))
-        for row in json_object_rows(normalized.get("recentEvents"))
+        cast(LiveTaskEvent, dict(row)) for row in json_object_rows(normalized.get("recentEvents"))
     ]
     return {
         "heartbeatAt": clean_text(normalized.get("heartbeatAt")),
