@@ -328,18 +328,28 @@ Acceptance guard: `/registry/conflicts` and `/registry/conflicts/auto-demote-saf
 
 ### 6. Narrow Task Launch Responsibilities
 
-Refactor [`../../src/bridge/task_launch_api.py`](../../src/bridge/task_launch_api.py) only after route and payload contracts are clearer.
+Completed 2026-05-26. The 2,861-line coordinator was split into five leaf modules
+behind the two stable public entrypoints (`start_fetcher_task`,
+`start_jobs_bootstrap_task`). Coordinated alongside §4 and §5 completion.
 
-Candidate extraction boundaries:
+New modules under `src/bridge/`:
 
-- `FetcherLaunchOptions` or equivalent typed parse result for `/tasks/run-fetcher`
-- fetch CLI argument builder
-- fetch lifecycle watcher
-- source-run mirror/rollback helper
-- jobs-feed mirror/export helper
-- fetch-report archive/compact helper
+- `task_launch_fetcher_args.py` — fetcher CLI argument parsing
+- `task_launch_source_runs.py` — source-run SQLite mirror, rollback, archive
+- `task_launch_jobs_feed.py` — jobs-feed SQLite mirror and export
+- `task_launch_bootstrap_storage.py` — bootstrap storage snapshot/restore
+- `task_launch_fetch_lifecycle.py` — fetch lifecycle watch with context object
 
-Acceptance guard: task-start, already-running attach, busy-state, `/ops/task-state`, `/ops/task-live/fetch`, log polling, terminal closeout, storage rollback, and compatibility exports are verified together.
+The coordinator dropped from 2,861 to ~2,300 lines and retains the two public
+entrypoints, `run_background_script`, packaged smoke helpers, and bootstrap
+lifecycle watch.
+
+All modules use leaf-owned context objects (no coordinator import) and the
+import DAG is cycle-free.
+
+Acceptance guard verified: 310 bridge tests + 181 admin tests + 28 task
+launch tests all pass.  `suite_contract_policy.py` updated to assert
+architecture in both coordinator and leaf modules.
 
 ### 7. Partition Admin Ops Rendering
 
@@ -394,7 +404,7 @@ Acceptance guard: changes to these files use the relevant packaged rehearsal lan
 2. Typed payload contracts for task-live/task-state and `/tasks/run-fetcher`.
 3. Dedup evidence split. **Done 2026-05-26.**
 4. Registry conflict split. **Done 2026-05-26.**
-5. Task launch extraction.
+5. Task launch extraction. **Done 2026-05-26.**
 6. Admin Ops render partition.
 7. Discovery/static stage labels and limited extraction.
 8. Packaged desktop local labels and side-effect naming cleanup.
