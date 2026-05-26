@@ -15,6 +15,14 @@ import {
   stableOpsSignature
 } from "./ops-shared.js";
 
+/** @typedef {import("../../shared/types.js").DedupIntCountMap} DedupIntCountMap */
+/** @typedef {import("../../shared/types.js").DedupMergeExampleRow} DedupMergeExampleRow */
+/** @typedef {import("../../shared/types.js").DedupReviewQueueRow} DedupReviewQueueRow */
+/** @typedef {import("../../shared/types.js").GoogleSheetsRoleBucketAuditPayload} GoogleSheetsRoleBucketAuditPayload */
+/** @typedef {import("../../shared/types.js").DedupAuditGateDetail} DedupAuditGateDetail */
+/** @typedef {import("../../shared/types.js").DedupAuditGatePayload} DedupAuditGatePayload */
+/** @typedef {import("../../shared/types.js").FetcherMetricsPayload} FetcherMetricsPayload */
+
 export function renderAdminOpsAlerts(alertsEl, alerts, handlers = {}) {
   if (!alertsEl) return;
   const canPatchInPlace = Boolean(alertsEl && alertsEl.dataset);
@@ -429,6 +437,9 @@ function formatDedupReviewQueueCauseCounts(causeCounts) {
   ].join(", ");
 }
 
+/**
+ * @param {DedupAuditGatePayload|null|undefined} gate
+ */
 function formatDedupAuditGate(gate) {
   const auditGate = gate && typeof gate === "object" ? gate : {};
   const status = String(auditGate?.status || "unknown").replaceAll("_", " ");
@@ -466,6 +477,9 @@ function formatDedupAuditGate(gate) {
   ].join("; ");
 }
 
+/**
+ * @param {Object|null|undefined} row
+ */
 function formatDedupAuditGateExampleDetails(row) {
   const title = String(row?.title || "Untitled");
   const company = String(row?.company || "Unknown company");
@@ -516,6 +530,9 @@ function formatDedupAuditGateExampleDetails(row) {
   `;
 }
 
+/**
+ * @param {DedupIntCountMap|Object|null|undefined} counts
+ */
 function formatDedupAuditGateDetailCounts(counts) {
   const values = counts && typeof counts === "object" ? counts : {};
   const labels = Object.entries(values)
@@ -525,6 +542,12 @@ function formatDedupAuditGateDetailCounts(counts) {
   return labels.length ? labels.join(", ") : "none";
 }
 
+/**
+ * @param {DedupAuditGatePayload|null|undefined} auditGate
+ * @param {Array<string>} keys
+ * @param {string} type
+ * @returns {Array<DedupAuditGateDetail>}
+ */
 function fallbackDedupGateDetails(auditGate, keys, type) {
   const labels = {
     current_run_non_primary_merges_need_review: "Current-run non-primary merges",
@@ -560,6 +583,10 @@ function fallbackDedupGateDetails(auditGate, keys, type) {
   }));
 }
 
+/**
+ * @param {DedupAuditGateDetail|null|undefined} detail
+ * @param {string} type
+ */
 function formatDedupAuditGateDetailCard(detail, type) {
   const item = detail && typeof detail === "object" ? detail : {};
   const label = String(item?.label || item?.key || "Unknown issue");
@@ -585,6 +612,9 @@ function formatDedupAuditGateDetailCard(detail, type) {
   `;
 }
 
+/**
+ * @param {DedupAuditGatePayload|null|undefined} gate
+ */
 function formatDedupAuditGateCard(gate) {
   const auditGate = gate && typeof gate === "object" ? gate : {};
   const status = String(auditGate?.status || "unknown").replaceAll("_", " ");
@@ -657,6 +687,10 @@ function formatDedupAuditGateCard(gate) {
   `;
 }
 
+/**
+ * @param {Array<Object>|null|undefined} rows
+ * @param {string} emptyText
+ */
 function formatDedupAuditGateExamples(rows, emptyText) {
   const examples = Array.isArray(rows) ? rows : [];
   if (!examples.length) return escapeHtml(emptyText);
@@ -1157,6 +1191,9 @@ function formatDedupGoogleSheetsRoleBucketAuditCounts(auditCounts) {
   ].join(", ");
 }
 
+/**
+ * @param {GoogleSheetsRoleBucketAuditPayload|null|undefined} audit
+ */
 function formatDedupGoogleSheetsRoleBucketAuditSummary(audit) {
   const summary = audit && typeof audit === "object" ? audit : {};
   const classificationCounts = summary?.classificationCounts && typeof summary.classificationCounts === "object"
@@ -1238,6 +1275,10 @@ function formatDedupGoogleSheetsWeakGroupingAuditCounts(auditCounts) {
   ].join(", ");
 }
 
+/**
+ * @param {Array<DedupMergeExampleRow>|null|undefined} rows
+ * @param {string} emptyText
+ */
 function formatDedupMergedRows(rows, emptyText) {
   const mergedRows = Array.isArray(rows) ? rows : [];
   if (!mergedRows.length) return escapeHtml(emptyText);
@@ -1340,6 +1381,10 @@ function formatDedupRiskRows(rows, emptyText) {
   `;
 }
 
+/**
+ * @param {Array<DedupReviewQueueRow>|null|undefined} rows
+ * @param {string} emptyText
+ */
 function formatDedupReviewQueueRows(rows, emptyText) {
   const queueRows = Array.isArray(rows) ? rows : [];
   if (!queueRows.length) return escapeHtml(emptyText);
@@ -1397,6 +1442,10 @@ function formatDedupReviewQueueRows(rows, emptyText) {
   `;
 }
 
+/**
+ * @param {FetcherMetricsPayload|null|undefined} metrics
+ * @param {Object} [options]
+ */
 function buildDedupListsContent(metrics, options = {}) {
   const latest = metrics?.latestRun || {};
   const dedupEvidence = latest?.dedupEvidence && typeof latest.dedupEvidence === "object" ? latest.dedupEvidence : {};
@@ -1557,6 +1606,11 @@ function wireDedupReviewActions(container, rowGroups, onDedupReviewAction) {
   });
 }
 
+/**
+ * @param {HTMLElement|null|undefined} dedupEl
+ * @param {FetcherMetricsPayload|null|undefined} metrics
+ * @param {Object} [options]
+ */
 export function renderAdminOpsDedupLists(dedupEl, metrics, options = {}) {
   if (!dedupEl) return;
   const latest = metrics?.latestRun || {};
@@ -1573,6 +1627,12 @@ export function renderAdminOpsDedupLists(dedupEl, metrics, options = {}) {
   wireDedupReviewActions(dedupEl, content.rowGroups, options?.onDedupReviewAction);
 }
 
+/**
+ * @param {HTMLElement|null|undefined} metricsEl
+ * @param {FetcherMetricsPayload|null|undefined} metrics
+ * @param {Object|null} [failureSummary]
+ * @param {Object} [options]
+ */
 export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary = null, options = {}) {
   if (!metricsEl) return;
   const latest = metrics?.latestRun || {};

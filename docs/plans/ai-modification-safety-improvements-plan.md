@@ -225,6 +225,10 @@ bridge/frontend boundaries. Continue this section incrementally; do not convert
 the advisory contracts into runtime validation unless a narrower behavior plan
 requires it.
 
+Continued 2026-05-26 with advisory dedup evidence and audit-gate Python
+contracts plus matching Admin/Ops JSDoc contracts. The full dedup builder split
+remains pending.
+
 Add narrow typing where it reduces accidental field drift. Prefer `TypedDict`, dataclasses, existing Pydantic schemas, and JSDoc typedefs.
 
 Candidate Python contracts:

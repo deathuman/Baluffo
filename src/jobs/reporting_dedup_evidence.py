@@ -9,6 +9,15 @@ from typing import Any
 from urllib.parse import urlparse
 
 from src.jobs.adapters.location_rules import classify_city_garbage
+from src.jobs.common.contracts_dedup_evidence import (
+    DedupAuditGateDetail,
+    DedupAuditGatePayload,
+    DedupEvidencePayload,
+    DedupMergeExampleRow,
+    DedupReviewQueueRow,
+    GoogleSheetsRoleBucketAuditPayload,
+    ProviderStaticDisagreementRow,
+)
 from src.jobs.common.contracts_dedup_review_state import (
     dedup_disagreement_gate_disposition,
     dedup_operator_review_fields,
@@ -1386,7 +1395,7 @@ def _job_summary(row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]) ->
 
 def _provider_static_disagreement_example(
     summary: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]
-) -> dict[str, Any]:
+) -> ProviderStaticDisagreementRow:
     provider_items = _items_for_source_class(bundle, "provider")
     static_items = _items_for_source_class(bundle, "static")
     provider_urls_all = _clean_values(provider_items, "jobLink", normalize_urls=True)
@@ -1499,7 +1508,7 @@ def _provider_static_disagreement_example(
 
 def _provider_static_row_with_gate_fields(
     row: Mapping[str, Any], review_state: Any
-) -> dict[str, Any]:
+) -> ProviderStaticDisagreementRow:
     review_pair = find_dedup_review_pair(review_state or {}, row)
     disposition, gate_evidence = dedup_disagreement_gate_disposition(row, review_pair)
     with_gate = {
@@ -1960,7 +1969,7 @@ def _google_sheets_role_bucket_audit_classification(summary: Mapping[str, Any]) 
     return "unresolved_current_run_role_bucket"
 
 
-def _google_sheets_guard_audit_example(row: Mapping[str, Any]) -> dict[str, Any]:
+def _google_sheets_guard_audit_example(row: Mapping[str, Any]) -> DedupMergeExampleRow:
     return {
         "classification": "fixed_by_generic_role_guard",
         "title": clean_text(row.get("incomingTitle")),
@@ -1984,7 +1993,7 @@ def _google_sheets_guard_audit_example(row: Mapping[str, Any]) -> dict[str, Any]
     }
 
 
-def _google_sheets_role_bucket_audit_example(summary: Mapping[str, Any]) -> dict[str, Any]:
+def _google_sheets_role_bucket_audit_example(summary: Mapping[str, Any]) -> DedupReviewQueueRow:
     classification = _google_sheets_role_bucket_audit_classification(summary)
     evidence = [
         f"classification:{classification or 'unknown'}",
@@ -2026,7 +2035,7 @@ def _google_sheets_role_bucket_audit_summary(
     guard_samples: Sequence[Mapping[str, Any]],
     guard_blocked_count: int,
     limit: int = 10,
-) -> dict[str, Any]:
+) -> GoogleSheetsRoleBucketAuditPayload:
     classification_counts: Counter[str] = Counter()
     examples: list[dict[str, Any]] = []
     current_run_count = 0
@@ -2116,14 +2125,14 @@ def _merge_reason_counts(dedup_stats: Mapping[str, Any]) -> dict[str, int]:
     }
 
 
-def _current_run_merge_examples(dedup_stats: Mapping[str, Any]) -> list[dict[str, Any]]:
-    examples: list[dict[str, Any]] = []
+def _current_run_merge_examples(dedup_stats: Mapping[str, Any]) -> list[DedupMergeExampleRow]:
+    examples: list[DedupMergeExampleRow] = []
     for row in json_object_rows(dedup_stats.get("collisionSamples")):
         examples.append(_current_run_merge_example(row))
     return examples
 
 
-def _current_run_merge_example(row: Mapping[str, Any]) -> dict[str, Any]:
+def _current_run_merge_example(row: Mapping[str, Any]) -> DedupMergeExampleRow:
     merge_reason = clean_text(row.get("reason")) or "unknown"
     gate_tier = clean_text(row.get("gateTier"))
     gate_tier_reason = clean_text(row.get("gateTierReason"))
@@ -2157,7 +2166,7 @@ def _current_run_merge_example(row: Mapping[str, Any]) -> dict[str, Any]:
 
 def _current_run_merge_examples_by_reason(
     dedup_stats: Mapping[str, Any], *, limit_per_reason: int = 5
-) -> dict[str, list[dict[str, Any]]]:
+) -> dict[str, list[DedupMergeExampleRow]]:
     by_reason = {
         "secondaryKey": [],
         "sparseIdentity": [],
@@ -2191,7 +2200,7 @@ def _current_run_merge_examples_by_reason(
     return by_reason
 
 
-def _empty_blocking_merge_examples_by_reason() -> dict[str, list[dict[str, Any]]]:
+def _empty_blocking_merge_examples_by_reason() -> dict[str, list[DedupMergeExampleRow]]:
     return {
         "secondaryKey": [],
         "sparseIdentity": [],
@@ -2210,7 +2219,7 @@ def _blocking_merge_reason_key(raw_reason: Any) -> str:
 
 
 def _append_blocking_merge_example(
-    bucket: list[dict[str, Any]], row: Mapping[str, Any], *, limit: int
+    bucket: list[DedupMergeExampleRow], row: Mapping[str, Any], *, limit: int
 ) -> None:
     if len(bucket) >= max(0, int(limit)):
         return
@@ -2221,7 +2230,7 @@ def _append_blocking_merge_example(
 
 def _blocking_merge_examples_from_sample_map(
     samples_by_reason: Mapping[str, Any], *, limit_per_reason: int
-) -> dict[str, list[dict[str, Any]]]:
+) -> dict[str, list[DedupMergeExampleRow]]:
     by_reason = _empty_blocking_merge_examples_by_reason()
     for raw_reason, raw_rows in samples_by_reason.items():
         key = _blocking_merge_reason_key(raw_reason)
@@ -2232,7 +2241,7 @@ def _blocking_merge_examples_from_sample_map(
 
 def _blocking_merge_examples_from_legacy_samples(
     dedup_stats: Mapping[str, Any], *, limit_per_reason: int
-) -> dict[str, list[dict[str, Any]]]:
+) -> dict[str, list[DedupMergeExampleRow]]:
     by_reason = _empty_blocking_merge_examples_by_reason()
     rows_by_reason = _current_run_merge_examples_by_reason(
         dedup_stats, limit_per_reason=limit_per_reason
@@ -2248,7 +2257,7 @@ def _blocking_merge_examples_from_legacy_samples(
 
 def _current_run_blocking_merge_examples_by_reason(
     dedup_stats: Mapping[str, Any], *, limit_per_reason: int = 5
-) -> dict[str, list[dict[str, Any]]]:
+) -> dict[str, list[DedupMergeExampleRow]]:
     samples_by_reason = dedup_stats.get("currentRunBlockingMergeSamplesByReason")
     if isinstance(samples_by_reason, Mapping):
         return _blocking_merge_examples_from_sample_map(
@@ -2326,8 +2335,8 @@ def _review_cause_counts_by_key(counts: Mapping[str, Any]) -> dict[str, int]:
 
 def _audit_gate_merge_examples(
     dedup_evidence: Mapping[str, Any], *, blocking: bool
-) -> list[dict[str, Any]]:
-    examples: list[dict[str, Any]] = []
+) -> list[DedupMergeExampleRow]:
+    examples: list[DedupMergeExampleRow] = []
     for row in json_object_rows(dedup_evidence.get("currentRunMergeExamples")):
         if bool(row.get("blocksLifecycle")) is not blocking:
             continue
@@ -2349,8 +2358,8 @@ def _audit_gate_merge_examples(
 
 def _audit_gate_provider_static_examples(
     dedup_evidence: Mapping[str, Any], *, disposition: str
-) -> list[dict[str, Any]]:
-    examples: list[dict[str, Any]] = []
+) -> list[ProviderStaticDisagreementRow]:
+    examples: list[ProviderStaticDisagreementRow] = []
     for row in json_object_rows(dedup_evidence.get("providerStaticDisagreementExamples")):
         if clean_text(row.get("disagreementGateDisposition")) != disposition:
             continue
@@ -2377,8 +2386,8 @@ def _audit_gate_provider_static_examples(
 
 def _audit_gate_review_queue_examples(
     dedup_evidence: Mapping[str, Any], *, origin: str | None, blocking: bool
-) -> list[dict[str, Any]]:
-    examples: list[dict[str, Any]] = []
+) -> list[DedupReviewQueueRow]:
+    examples: list[DedupReviewQueueRow] = []
     for row in json_object_rows(dedup_evidence.get("reviewQueue")):
         cause = clean_text(row.get("suspectedCause"))
         if cause not in DEDUP_AUDIT_GATE_BLOCKER_CAUSES:
@@ -2406,8 +2415,10 @@ def _audit_gate_review_queue_examples(
     return examples
 
 
-def _audit_gate_carried_bundle_examples(dedup_evidence: Mapping[str, Any]) -> list[dict[str, Any]]:
-    examples: list[dict[str, Any]] = []
+def _audit_gate_carried_bundle_examples(
+    dedup_evidence: Mapping[str, Any],
+) -> list[DedupReviewQueueRow]:
+    examples: list[DedupReviewQueueRow] = []
     for row in json_object_rows(dedup_evidence.get("carriedBundleExamples")):
         examples.append(
             {
@@ -2434,7 +2445,7 @@ def _audit_gate_detail(
     next_action: str,
     counts: Mapping[str, Any],
     examples: Sequence[Mapping[str, Any]],
-) -> dict[str, Any]:
+) -> DedupAuditGateDetail:
     return {
         "key": key,
         "label": label,
@@ -2469,9 +2480,9 @@ def _build_audit_gate_details(
     provider_static_reviewed_safe_warning_count: int,
     provider_static_disagreement_gate_counts: Mapping[str, Any],
     carried_collision_likely_historical_count: int,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    blocker_details: list[dict[str, Any]] = []
-    warning_details: list[dict[str, Any]] = []
+) -> tuple[list[DedupAuditGateDetail], list[DedupAuditGateDetail]]:
+    blocker_details: list[DedupAuditGateDetail] = []
+    warning_details: list[DedupAuditGateDetail] = []
     blocker_set = set(blockers)
     warning_set = set(warnings)
 
@@ -2759,7 +2770,7 @@ def _audit_gate_blockers_and_warnings(
     return blockers, warnings
 
 
-def _audit_gate_examples(dedup_evidence: Mapping[str, Any]) -> list[dict[str, Any]]:
+def _audit_gate_examples(dedup_evidence: Mapping[str, Any]) -> list[DedupReviewQueueRow]:
     provider_static_examples = json_object_rows(
         dedup_evidence.get("providerStaticDisagreementExamples")
     )
@@ -2854,7 +2865,7 @@ def _audit_gate_examples(dedup_evidence: Mapping[str, Any]) -> list[dict[str, An
     return examples
 
 
-def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
+def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> DedupAuditGatePayload:
     """Summarize whether dedup evidence is ready for read-only lifecycle UX."""
     merged_count = max(0, int(dedup_evidence.get("mergedCount") or 0))
     source_bundle_collision_count = max(
@@ -3132,7 +3143,7 @@ def build_dedup_evidence(
     risky_limit: int = RISKY_EXAMPLE_LIMIT,
     seeded_from_existing_output: bool = False,
     review_state: Any = None,
-) -> dict[str, Any]:
+) -> DedupEvidencePayload:
     """Build compact diagnostics without changing dedup decisions."""
     rows = [_payload(row) for row in canonical_rows]
     composition: Counter[str] = Counter()
