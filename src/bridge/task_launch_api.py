@@ -259,32 +259,6 @@ class TaskLaunchApi:
             ),
         )
 
-    @property
-    def _fetch_lifecycle_context(self) -> FetchLifecycleContext:
-        if self._fetch_lifecycle_ctx is None:
-            self._fetch_lifecycle_ctx = FetchLifecycleContext(
-                jobs_fetch_report=self._paths.jobs_fetch_report,
-                jobs_fetch_tasks=self._paths.jobs_fetch_tasks,
-                approval_state=self._paths.approval_state,
-                now_iso=self._deps.now_iso,
-                bridge_log=self._deps.bridge_log,
-                pid_is_running=self._deps.pid_is_running,
-                normalize_fetch_report_contract=None,  # set lazily by caller
-                load_json_object=self._deps.load_json_object,
-                load_runtime_evidence=self._deps.load_runtime_evidence,
-                save_json_atomic=self._deps.save_json_atomic,
-                finish_lifecycle_run=lambda *_a, **_kw: {},
-                fail_lifecycle_run=lambda *_a, **_kw: {},
-                heartbeat_lifecycle_run=lambda *_a, **_kw: None,
-                mirror_fetch_source_runs=lambda report: _mirror_fetch_source_runs(
-                    self._source_run_context, report
-                ),
-                mirror_jobs_feed_rows=lambda report: _mirror_jobs_feed_rows(
-                    self._jobs_feed_context, report
-                ),
-            )
-        return self._fetch_lifecycle_ctx
-
     # ── Thin wrappers → task_launch_source_runs ──
 
     def _record_source_run_diagnostic(
@@ -409,15 +383,6 @@ class TaskLaunchApi:
         from src.bridge.task_launch_jobs_feed import _read_jobs_feed_rows
 
         return _read_jobs_feed_rows(self._paths.jobs_fetch_report)
-
-    def _export_jobs_feed_from_sqlite(self, runtime_store: Any) -> bool:
-        from src.bridge.task_launch_jobs_feed import export_jobs_feed_from_sqlite
-
-        return export_jobs_feed_from_sqlite(
-            self._jobs_feed_context,
-            runtime_store,
-            jobs_fetch_report=self._paths.jobs_fetch_report,
-        )
 
     def _mirror_jobs_feed_rows(
         self,
@@ -1190,10 +1155,6 @@ class TaskLaunchApi:
         )
         _reset_fetch_approval_state_fn(ctx)
 
-    @staticmethod
-    def _fetch_summary_is_failed(summary: dict[str, Any]) -> bool:
-        return _fetch_summary_is_failed_fn(summary)
-
     def _close_fetch_lifecycle_from_report(
         self,
         *,
@@ -1227,28 +1188,7 @@ class TaskLaunchApi:
             heartbeat_lifecycle_run=heartbeat_lifecycle_run,
         )
         _heartbeat_fetch_lifecycle_tasks(ctx, run_id=run_id)
-
-    def _watch_fetch_lifecycle(
-        self,
-        *,
-        run_id: str,
-        pid: int,
-        normalize_fetch_report_contract: Callable[[dict[str, Any]], dict[str, Any]],
-        load_json_object: Callable[[Path, Any], Any],
-        finish_lifecycle_run: Callable[..., dict[str, Any]],
-        fail_lifecycle_run: Callable[..., dict[str, Any]],
-        heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None],
-        load_runtime_evidence: Callable[[Path, Any], Any] | None = None,
-    ) -> None:
-        ctx = self._build_fetch_lifecycle_context(
-            normalize_fetch_report_contract=normalize_fetch_report_contract,
-            load_json_object=load_json_object,
-            load_runtime_evidence=load_runtime_evidence,
-            finish_lifecycle_run=finish_lifecycle_run,
-            fail_lifecycle_run=fail_lifecycle_run,
-            heartbeat_lifecycle_run=heartbeat_lifecycle_run,
-        )
-        _watch_fetch_lifecycle_fn(ctx, run_id=run_id, pid=int(pid))
+        return
 
     def _start_fetch_lifecycle_watch(
         self,
