@@ -1,3 +1,5 @@
+"""Side effects: Chromium browser launch, registry reads, profile cache clearing. Verify: npm run test:frontend:packaged:browser-job-rehearsal."""
+
 from __future__ import annotations
 
 import hashlib
@@ -89,7 +91,7 @@ def _preferred_browser_candidate(path: object) -> dict[str, str] | None:
     }
 
 
-def resolve_registry_app_path(executable_name: str) -> str:
+def _resolve_browser_from_registry_app_paths(executable_name: str) -> str:
     api = desktop_api()
     if api.os.name != "nt":
         return ""
@@ -119,7 +121,7 @@ def resolve_chromium_browser_candidates(env: dict[str, str] | None = None) -> li
         for candidate in (
             shutil.which(browser_name),
             shutil.which(executable_name),
-            api.resolve_registry_app_path(executable_name),
+            api._resolve_browser_from_registry_app_paths(executable_name),
         ):
             path = str(candidate or "").strip()
             if not path:

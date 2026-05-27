@@ -1,3 +1,5 @@
+"""Side effects: instance lock acquisition, stale session reconciliation, runtime cleanup. Verify: npm run test:frontend:packaged:orphan-reclaim-rehearsal."""
+
 from __future__ import annotations
 
 from pathlib import Path

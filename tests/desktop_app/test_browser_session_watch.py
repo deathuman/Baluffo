@@ -256,7 +256,7 @@ def test_load_active_critical_desktop_tasks_uses_summary_route() -> None:
             ],
         }
 
-    with mock.patch.object(desktop_session, "fetch_json", side_effect=fake_fetch_json):
+    with mock.patch.object(desktop_session, "_fetch_json", side_effect=fake_fetch_json):
         active_tasks = desktop_app._load_active_critical_desktop_tasks(
             Path("C:/tmp"),
             bridge_port=8877,

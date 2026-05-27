@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stable desktop runtime facade for focused desktop_app modules."""
+"""Stable desktop runtime facade. AI boundary: compat facade / __getattr__ proxy / _COMPAT_MODULES ordering only. AI boundary implement in: desktop_app leaf modules (config, process, session, browser, startup, launcher, etc.). AI boundary verify: matching packaged rehearsal lane."""
 
 from __future__ import annotations
 

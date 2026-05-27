@@ -26,7 +26,7 @@ def test_resolve_chromium_browser_candidates_prefers_chrome_then_brave_then_edge
                 "brave.exe": "C:/Brave/brave.exe",
             }.get(name, ""),
         ),
-        mock.patch.object(desktop_app, "resolve_registry_app_path", return_value=""),
+        mock.patch.object(desktop_app, "_resolve_browser_from_registry_app_paths", return_value=""),
     ):
         candidates = desktop_app.resolve_chromium_browser_candidates()
 
@@ -38,7 +38,7 @@ def test_resolve_chromium_browser_candidates_uses_registry_fallback() -> None:
         mock.patch.object(desktop_app.shutil, "which", return_value=""),
         mock.patch.object(
             desktop_app,
-            "resolve_registry_app_path",
+            "_resolve_browser_from_registry_app_paths",
             side_effect=lambda name: (
                 "C:/Users/me/AppData/Local/Google/Chrome/chrome.exe" if name == "chrome.exe" else ""
             ),
@@ -461,7 +461,7 @@ def test_windows_terminate_process_tree_details_waits_for_forced_taskkill_exit()
     with (
         _patch_windows_compat_facade(),
         mock.patch.object(desktop_app.subprocess, "run", run_mock),
-        mock.patch.object(desktop_app, "_wait_for_process_exit_pid", wait_mock),
+        mock.patch.object(desktop_app, "_poll_process_exit_until_timeout", wait_mock),
         mock.patch.object(desktop_app, "is_process_alive", return_value=False),
     ):
         result = desktop_app._windows_terminate_process_tree_details_by_pid(323)

@@ -26,7 +26,7 @@ def test_windows_terminate_process_details_falls_back_to_windows_api() -> None:
             "run",
             return_value=subprocess.CompletedProcess(["taskkill"], 0, stdout="ok", stderr=""),
         ),
-        mock.patch.object(desktop_app, "_wait_for_process_exit_pid", return_value=False),
+        mock.patch.object(desktop_app, "_poll_process_exit_until_timeout", return_value=False),
         mock.patch.object(desktop_app, "is_process_alive", return_value=False),
     ):
         details = desktop_app._windows_terminate_process_tree_details_by_pid(323)

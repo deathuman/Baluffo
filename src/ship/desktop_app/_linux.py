@@ -1,3 +1,5 @@
+"""Side effects: process ownership, stale runtime reclaim, Linux API abstraction. Verify: npm run test:frontend:packaged:orphan-reclaim-rehearsal."""
+
 from __future__ import annotations
 
 import os
@@ -125,7 +127,7 @@ def _pids_listening_on_tcp_port_windows(port: int) -> set[int]:
     return pids
 
 
-def _wait_for_process_exit_pid(pid: int, *, timeout_s: float = 5.0) -> bool:
+def _poll_process_exit_until_timeout(pid: int, *, timeout_s: float = 5.0) -> bool:
     if int(pid or 0) <= 0:
         return True
     deadline = time.monotonic() + max(0.0, float(timeout_s))
@@ -213,7 +215,7 @@ def _windows_api_terminate_process_by_pid(pid: int, *, timeout_s: float = 5.0) -
             os.kill(pid, signal.SIGKILL)
             result["signal"] = "SIGKILL"
             result["signalSent"] = True
-            result["exited"] = _wait_for_process_exit_pid(pid, timeout_s=timeout_s)
+            result["exited"] = _poll_process_exit_until_timeout(pid, timeout_s=timeout_s)
         except OSError as exc:
             result["errorCode"] = getattr(exc, "errno", 0)
             result["error"] = str(exc)
@@ -229,7 +231,7 @@ def _windows_api_terminate_process_by_pid(pid: int, *, timeout_s: float = 5.0) -
         except psutil.TimeoutExpired:
             proc.kill()
             result["signal"] = "SIGKILL"
-            result["exited"] = _wait_for_process_exit_pid(pid, timeout_s=3.0)
+            result["exited"] = _poll_process_exit_until_timeout(pid, timeout_s=3.0)
     except psutil.NoSuchProcess:
         result["exited"] = True
     except (psutil.AccessDenied, OSError) as exc:
@@ -260,7 +262,7 @@ def _windows_terminate_process_tree_details_by_pid(pid: int) -> dict[str, object
         result["killAttempted"] = True
         result["killError"] = "psutil_unavailable"
         result.update(_windows_api_terminate_process_by_pid(pid, timeout_s=10.0))
-        result["processAliveAfter"] = not _wait_for_process_exit_pid(pid, timeout_s=0.0)
+        result["processAliveAfter"] = not _poll_process_exit_until_timeout(pid, timeout_s=0.0)
         result["terminated"] = not bool(result["processAliveAfter"])
         return result
     result["killAttempted"] = True
@@ -288,7 +290,7 @@ def _windows_terminate_process_tree_details_by_pid(pid: int) -> dict[str, object
         result["killError"] = _truncate_diagnostic_text(exc)
         result.update(_windows_api_terminate_process_by_pid(pid, timeout_s=10.0))
         result["fallbackMethod"] = "per-process-graceful"
-    result["processAliveAfter"] = not _wait_for_process_exit_pid(pid, timeout_s=0.0)
+    result["processAliveAfter"] = not _poll_process_exit_until_timeout(pid, timeout_s=0.0)
     result["terminated"] = not bool(result["processAliveAfter"])
     return result
 
@@ -298,6 +300,7 @@ _JOB_TRACKED_PIDS: dict[int, set[int]] = {}
 
 
 def _windows_create_kill_on_close_job() -> int | None:
+    # Linux emulation: global PID dict + SIGTERM/SIGKILL replaces Win32 Job Object API.
     global _NEXT_JOB_ID
     _NEXT_JOB_ID += 1
     _JOB_TRACKED_PIDS[_NEXT_JOB_ID] = set()

@@ -1,3 +1,5 @@
+"""Side effects: instance locking, bridge health checks, stale runtime reclaim. Verify: npm run test:frontend:packaged:desktop-lifecycle-rehearsal."""
+
 from __future__ import annotations
 
 import contextlib
@@ -166,6 +168,7 @@ def acquire_instance_lock(
     deadline = time.monotonic() + max(0.2, float(timeout_s))
     while time.monotonic() < deadline:
         try:
+            # O_CREAT|O_EXCL|O_RDWR provides atomic cross-process file-based locking.
             handle = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_RDWR)
         except FileExistsError:
             lock_payload = api._read_instance_lock_payload(path)
@@ -257,7 +260,8 @@ def is_process_alive(pid: int) -> bool:
         return False
 
 
-def fetch_json(url: str, timeout_s: float = 2.5) -> dict[str, object]:
+def _fetch_json(url: str, timeout_s: float = 2.5) -> dict[str, object]:
+    # HTTP GET to an external URL — network side effect.
     with urllib.request.urlopen(url, timeout=timeout_s) as response:  # noqa: S310
         payload = json.loads(response.read().decode("utf-8", errors="replace") or "{}")
     return payload if isinstance(payload, dict) else {}
@@ -270,7 +274,9 @@ def is_baluffo_bridge_healthy(
     require_desktop_mode: bool = False,
 ) -> bool:
     try:
-        payload = fetch_json(f"http://127.0.0.1:{int(bridge_port)}/ops/health", timeout_s=timeout_s)
+        payload = _fetch_json(
+            f"http://127.0.0.1:{int(bridge_port)}/ops/health", timeout_s=timeout_s
+        )
     except (OSError, ValueError, urllib.error.URLError, json.JSONDecodeError):
         return False
     if str(payload.get("service") or "") != "baluffo-bridge":
@@ -282,7 +288,9 @@ def is_baluffo_bridge_healthy(
 
 def get_baluffo_bridge_health(bridge_port: int, *, timeout_s: float = 2.0) -> dict[str, object]:
     try:
-        payload = fetch_json(f"http://127.0.0.1:{int(bridge_port)}/ops/health", timeout_s=timeout_s)
+        payload = _fetch_json(
+            f"http://127.0.0.1:{int(bridge_port)}/ops/health", timeout_s=timeout_s
+        )
     except (OSError, ValueError, urllib.error.URLError, json.JSONDecodeError):
         return {}
     return payload if str(payload.get("service") or "") == "baluffo-bridge" else {}
@@ -418,7 +426,7 @@ def _load_active_critical_desktop_tasks(
     allow_disk_fallback: bool = True,
 ) -> list[dict[str, str]]:
     try:
-        payload = fetch_json(
+        payload = _fetch_json(
             f"http://127.0.0.1:{int(bridge_port)}/ops/task-state?view=summary",
             timeout_s=timeout_s,
         )

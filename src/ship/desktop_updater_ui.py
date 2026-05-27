@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""UI and diagnostics helpers for the portable desktop updater helper."""
+"""UI and diagnostics helpers. Side effects: tkinter windows, executable launch, native dialogs. Verify: npm run test:frontend:packaged:update-rehearsal."""
 
 from __future__ import annotations
 

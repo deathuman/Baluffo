@@ -1,3 +1,5 @@
+"""Side effects: process ownership, src-module isolation. Verify: npm run test:frontend:packaged:desktop-lifecycle-rehearsal."""
+
 from __future__ import annotations
 
 import contextlib
@@ -83,6 +85,7 @@ def start_child_process(
         env = api.os.environ.copy()
         env.update({key: str(value) for key, value in extra_env.items()})
     if api.os.name == "nt":
+        # CREATE_NO_WINDOW suppresses console; CREATE_NEW_PROCESS_GROUP enables targeted terminate.
         proc = api.subprocess.Popen(
             list(command),
             stdout=api.subprocess.DEVNULL,
@@ -102,6 +105,7 @@ def start_child_process(
             env=env,
         )
     if job_handle and proc.pid:
+        # Attach child to kill-on-close job for guaranteed cleanup on launcher exit.
         try:
             api._windows_try_assign_pid_to_job(job_handle, int(proc.pid))
         except OSError:
@@ -155,7 +159,7 @@ def _patched_syspath(path: Path):
 
 
 @contextlib.contextmanager
-def _isolated_src_package():
+def _isolate_src_package_modules():
     saved = {
         name: module
         for name, module in sys.modules.items()

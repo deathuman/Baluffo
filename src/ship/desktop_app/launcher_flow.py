@@ -1,3 +1,5 @@
+"""Side effects: desktop launch orchestration, job object lifecycle, update handoff. Verify: npm run test:frontend:packaged:desktop-lifecycle-rehearsal."""
+
 from __future__ import annotations
 
 import traceback
@@ -124,6 +126,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             try:
                 child_env = _child_env_for(api, config, session_root)
                 api.ensure_runtime_ports(config)
+                # Kill-on-close job ensures all child processes terminate on launcher exit.
                 desktop_job = api._windows_create_kill_on_close_job()
                 api._append_startup_trace(
                     config.data_dir,
@@ -610,6 +613,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             elapsedMs=int((api.time.perf_counter() - started_mono) * 1000),
             reason=stop_reason,
         )
+        # Launches BaluffoUpdater.exe on session stop — updater helper handoff.
         if stop_reason == "update_install_requested":
             api.launch_staged_update_helper(
                 api.DesktopUpdatePaths.from_data_dir(

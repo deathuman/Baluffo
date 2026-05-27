@@ -1,3 +1,5 @@
+"""Side effects: port allocation, legacy data migration, packaging detection. Verify: npm run test:py:extended."""
+
 from __future__ import annotations
 
 import argparse
@@ -128,7 +130,7 @@ def _is_windows_packaged_runtime() -> bool:
     return os.name == "nt" and bool(getattr(sys, "frozen", False))
 
 
-def _resolve_default_data_dir(ship_root: Path) -> Path:
+def _resolve_and_migrate_default_data_dir(ship_root: Path) -> Path:
     env_data_dir = str(os.environ.get("BALUFFO_DATA_DIR") or "").strip()
     if env_data_dir:
         return Path(env_data_dir).expanduser().resolve()
@@ -149,7 +151,7 @@ def create_runtime_config(args: argparse.Namespace) -> DesktopRuntimeConfig:
     data_dir = (
         Path(args.data_dir).expanduser().resolve()
         if str(args.data_dir or "").strip()
-        else _resolve_default_data_dir(ship_root)
+        else _resolve_and_migrate_default_data_dir(ship_root)
     )
     open_path = str(args.open_path or DEFAULT_OPEN_PATH).lstrip("/") or DEFAULT_OPEN_PATH
     jobs_cold_start = bool(
@@ -183,6 +185,7 @@ def _port_is_available(host: str, port: int) -> bool:
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            # SO_EXCLUSIVEADDRUSE prevents stale processes from re-binding the same port.
             with contextlib.suppress(OSError):
                 sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
         try:

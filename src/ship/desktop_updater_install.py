@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install, recovery, and startup verification helpers for the updater helper executable."""
+"""Install, recovery, and startup verification helpers. Side effects: install mutation, rollback snapshot, relaunch verification. Verify: npm run test:frontend:packaged:update-rehearsal."""
 
 from __future__ import annotations
 
@@ -99,7 +99,7 @@ def _as_dict(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
 
 
-def _status_for_stage(
+def _save_install_stage_status(
     paths: DesktopUpdatePaths,
     *,
     install_state: str,
@@ -268,7 +268,7 @@ def _finalize_success(
         shutil.rmtree(rollback_root)
     module.clear_success_marker(paths)
     return _as_dict(
-        module._status_for_stage(
+        module._save_install_stage_status(
             paths,
             install_state="installed",
             install_stage="installed",
@@ -315,7 +315,7 @@ def _recover_interrupted_install(
             return True
     if stage not in MUTATING_INSTALL_STAGES:
         return False
-    module._status_for_stage(
+    module._save_install_stage_status(
         paths,
         install_state="installing",
         install_stage="recovering",
@@ -325,7 +325,7 @@ def _recover_interrupted_install(
     module._restore_install_snapshot(install_root, rollback_root)
     with contextlib.suppress(OSError):
         shutil.rmtree(rollback_root)
-    module._status_for_stage(
+    module._save_install_stage_status(
         paths,
         install_state="idle",
         install_stage="idle",
@@ -382,7 +382,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
         )
         if recovered_as_complete:
             return {"ok": True, "installedVersion": str(plan.get("targetVersion") or "")}
-        module._status_for_stage(
+        module._save_install_stage_status(
             paths,
             install_state="handoff_requested",
             install_stage="preparing",
@@ -390,7 +390,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
             rollbackPath=str(rollback_root),
         )
         progress.update(module.install_stage_label("waiting_for_exit", "waiting_for_exit"))
-        module._status_for_stage(
+        module._save_install_stage_status(
             paths,
             install_state="waiting_for_exit",
             install_stage="waiting_for_exit",
@@ -401,17 +401,18 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
         module.clear_handoff_request(paths)
 
         progress.update(module.install_stage_label("installing", "extracting"))
-        module._status_for_stage(
+        module._save_install_stage_status(
             paths,
             install_state="installing",
             install_stage="extracting",
             rollbackPath=str(rollback_root),
         )
+        # extractall is not atomic; rollback snapshot is taken before this call.
         with module.zipfile.ZipFile(zip_path, "r") as archive:
             archive.extractall(temp_extract)
         module.clear_success_marker(paths)
         rollback_root.mkdir(parents=True, exist_ok=True)
-        module._status_for_stage(
+        module._save_install_stage_status(
             paths,
             install_state="installing",
             install_stage="snapshotting",
@@ -420,7 +421,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
         module._copy_install_snapshot(install_root, rollback_root)
         migration_plan = list(manifest.get("migration_plan") or [])
         if migration_plan:
-            module._status_for_stage(
+            module._save_install_stage_status(
                 paths,
                 install_state="installing",
                 install_stage="backup",
@@ -429,14 +430,14 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
             backup_ref = module.update_manager.create_data_backup(
                 module.update_manager.ShipPaths.from_root(ship_root, data_dir=data_dir)
             )
-            module._status_for_stage(
+            module._save_install_stage_status(
                 paths,
                 install_state="installing",
                 install_stage="backup",
                 rollbackPath=str(rollback_root),
                 migrationBackupPath=str(backup_ref),
             )
-        module._status_for_stage(
+        module._save_install_stage_status(
             paths,
             install_state="installing",
             install_stage="replacing",
@@ -445,7 +446,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
         )
         module._sync_extract_to_install(install_root, temp_extract)
         if migration_plan:
-            module._status_for_stage(
+            module._save_install_stage_status(
                 paths,
                 install_state="installing",
                 install_stage="migrating",
@@ -458,7 +459,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
                 backup_ref,
             )
         progress.update(module.install_stage_label("verifying", "relaunching"))
-        module._status_for_stage(
+        module._save_install_stage_status(
             paths,
             install_state="verifying",
             install_stage="relaunching",
@@ -470,7 +471,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
             clear_app_version_override=True,
             data_dir=data_dir,
         )
-        module._status_for_stage(
+        module._save_install_stage_status(
             paths,
             install_state="verifying",
             install_stage="verifying",
@@ -489,7 +490,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
                     module.update_manager.ShipPaths.from_root(ship_root, data_dir=data_dir),
                     backup_ref,
                 )
-        current_status = module._status_for_stage(
+        current_status = module._save_install_stage_status(
             paths,
             install_state="failed",
             install_stage="rolling_back",
@@ -501,7 +502,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
             module._restore_install_snapshot(install_root, rollback_root)
         with contextlib.suppress(Exception):
             module._launch_executable(install_root / "Baluffo.exe", data_dir=data_dir)
-        module._status_for_stage(
+        module._save_install_stage_status(
             paths,
             install_state="failed",
             install_stage="failed",

@@ -1,4 +1,4 @@
-"""Desktop update service and helper contracts for portable Baluffo installs."""
+"""Desktop update service and helper facade. AI boundary: compat proxy / re-export only. AI boundary implement in: desktop_update_shared, desktop_updater_release, desktop_updater_install, desktop_updater_ui. AI boundary verify: npm run test:frontend:packaged:update-rehearsal."""
 
 from __future__ import annotations
 

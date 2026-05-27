@@ -8,7 +8,7 @@ from src.ship import desktop_app
 def test_resolve_chromium_browser_candidates_prefers_explicit_browser_path() -> None:
     with (
         mock.patch.object(desktop_app.shutil, "which", return_value=""),
-        mock.patch.object(desktop_app, "resolve_registry_app_path", return_value=""),
+        mock.patch.object(desktop_app, "_resolve_browser_from_registry_app_paths", return_value=""),
     ):
         candidates = desktop_app.resolve_chromium_browser_candidates(
             {desktop_app.PREFERRED_BROWSER_PATH_ENV: "C:/Playwright/chrome.exe"}

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Release and artifact recovery helpers for the portable desktop updater helper."""
+"""Release and artifact recovery helpers. Side effects: GitHub API calls, manifest recovery, download verification. Verify: npm run test:frontend:packaged:update-rehearsal."""
 
 from __future__ import annotations
 

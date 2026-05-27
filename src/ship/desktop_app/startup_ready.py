@@ -1,3 +1,5 @@
+"""Side effects: startup readiness proof, bridge health polling. Verify: npm run test:frontend:packaged:admin-startup."""
+
 from __future__ import annotations
 
 import json
@@ -320,7 +322,7 @@ def classify_desktop_startup_state(
 ) -> tuple[str, dict[str, object]]:
     api = desktop_api()
     try:
-        payload = api.fetch_json(
+        payload = api._fetch_json(
             f"http://127.0.0.1:{int(bridge_port)}/ops/health", timeout_s=timeout_s
         )
     except (OSError, ValueError, json.JSONDecodeError):

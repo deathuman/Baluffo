@@ -1,4 +1,4 @@
-"""Shared desktop-update helpers behind the root compatibility surface."""
+"""Shared desktop-update helpers. Side effects: manifest verification, file downloads, process liveness checks. Verify: npm run test:frontend:packaged:update-rehearsal."""
 
 from __future__ import annotations
 

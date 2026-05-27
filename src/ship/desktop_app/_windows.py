@@ -1,3 +1,5 @@
+"""Side effects: process ownership, stale runtime reclaim, Windows API abstraction. Verify: npm run test:frontend:packaged:orphan-reclaim-rehearsal."""
+
 from __future__ import annotations
 
 import contextlib
@@ -56,6 +58,7 @@ def _local_address_matches_listen_port(local_addr: str, port: int) -> bool:
 
 
 def _pids_listening_on_tcp_port_windows(port: int) -> set[int]:
+    # Runs netstat -ano -p tcp to enumerate listening PIDs without psutil dependency.
     api = desktop_api()
     pids: set[int] = set()
     if api.os.name != "nt" or int(port or 0) <= 0:
@@ -89,7 +92,7 @@ def _pids_listening_on_tcp_port_windows(port: int) -> set[int]:
     return pids
 
 
-def _wait_for_process_exit_pid(pid: int, *, timeout_s: float = 5.0) -> bool:
+def _poll_process_exit_until_timeout(pid: int, *, timeout_s: float = 5.0) -> bool:
     api = desktop_api()
     deadline = time.monotonic() + max(0.2, float(timeout_s))
     while time.monotonic() < deadline:
@@ -185,7 +188,7 @@ def _windows_terminate_process_tree_details_by_pid(pid: int) -> dict[str, object
         result["taskkillError"] = api._truncate_diagnostic_text(exc)
     except OSError as exc:
         result["taskkillError"] = api._truncate_diagnostic_text(exc)
-    if api._wait_for_process_exit_pid(pid, timeout_s=15.0):
+    if api._poll_process_exit_until_timeout(pid, timeout_s=15.0):
         result["taskkillExited"] = True
     else:
         result.update(api._windows_api_terminate_process_by_pid(pid, timeout_s=5.0))
@@ -395,6 +398,7 @@ def _windows_raise_last_error(message: str) -> None:
 
 
 def _windows_create_kill_on_close_job() -> int | None:
+    # Kernel job object: when handle closes, kernel auto-terminates all attached PIDs.
     api = desktop_api()
     if api.os.name != "nt":
         return None
@@ -448,6 +452,7 @@ def _windows_close_desktop_job(job_handle: int | None) -> None:
 
 
 def _windows_window_is_cloaked(hwnd: int) -> bool:
+    # 14 = DWMWA_CLOAKED; detects DWM-hidden windows that pass IsWindowVisible.
     api = desktop_api()
     if api.os.name != "nt":
         return False

@@ -110,7 +110,7 @@ def main(argv: list[str] | None = None) -> int:
             with (
                 api._pushd(runtime_root),
                 api._patched_syspath(runtime_root),
-                api._isolated_src_package(),
+                api._isolate_src_package_modules(),
             ):
                 api.runpy.run_path(str(script_path), run_name="__main__")
             return 0
