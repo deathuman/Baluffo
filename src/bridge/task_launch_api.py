@@ -40,19 +40,10 @@ from src.bridge.task_launch_fetch_lifecycle import (
     fetch_report_shell as _fetch_report_shell_fn,
 )
 from src.bridge.task_launch_fetch_lifecycle import (
-    fetch_summary_is_failed as _fetch_summary_is_failed_fn,
-)
-from src.bridge.task_launch_fetch_lifecycle import (
-    heartbeat_fetch_lifecycle_from_tasks as _heartbeat_fetch_lifecycle_tasks,
-)
-from src.bridge.task_launch_fetch_lifecycle import (
     reset_fetch_approval_state as _reset_fetch_approval_state_fn,
 )
 from src.bridge.task_launch_fetch_lifecycle import (
     start_fetch_lifecycle_watch as _start_fetch_lifecycle_watch_fn,
-)
-from src.bridge.task_launch_fetch_lifecycle import (
-    watch_fetch_lifecycle as _watch_fetch_lifecycle_fn,
 )
 from src.bridge.task_launch_fetch_lifecycle import (
     write_fetch_launch_failure as _write_fetch_launch_failure_fn,
@@ -185,7 +176,6 @@ class TaskLaunchApi:
         self._source_run_ctx: SourceRunContext | None = None
         self._jobs_feed_ctx: JobsFeedContext | None = None
         self._bootstrap_storage_ctx: BootstrapStorageContext | None = None
-        self._fetch_lifecycle_ctx: FetchLifecycleContext | None = None
 
     @property
     def _source_run_context(self) -> SourceRunContext:
@@ -1174,22 +1164,6 @@ class TaskLaunchApi:
         )
         return _close_fetch_lifecycle_report(ctx, run_id=run_id)
 
-    def _heartbeat_fetch_lifecycle_from_tasks(
-        self,
-        *,
-        run_id: str,
-        load_json_object: Callable[[Path, Any], Any],
-        heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None],
-        load_runtime_evidence: Callable[[Path, Any], Any] | None = None,
-    ) -> None:
-        ctx = self._build_fetch_lifecycle_context(
-            load_json_object=load_json_object,
-            load_runtime_evidence=load_runtime_evidence,
-            heartbeat_lifecycle_run=heartbeat_lifecycle_run,
-        )
-        _heartbeat_fetch_lifecycle_tasks(ctx, run_id=run_id)
-        return
-
     def _start_fetch_lifecycle_watch(
         self,
         *,
@@ -1621,36 +1595,8 @@ class TaskLaunchApi:
 
         return _bootstrap_source_id(row, ordinal)
 
-    def _snapshot_bootstrap_source_runs_storage(self, report: dict[str, Any]) -> dict[str, Any]:
-        from src.bridge.task_launch_bootstrap_storage import (
-            snapshot_bootstrap_source_runs_storage,
-        )
-
-        return snapshot_bootstrap_source_runs_storage(self._bootstrap_storage_context, report)
-
-    def _snapshot_bootstrap_jobs_feed_storage(self, report: dict[str, Any]) -> dict[str, Any]:
-        from src.bridge.task_launch_bootstrap_storage import (
-            snapshot_bootstrap_jobs_feed_storage,
-        )
-
-        return snapshot_bootstrap_jobs_feed_storage(self._bootstrap_storage_context, report)
-
     def _snapshot_bootstrap_storage_state(self, report: dict[str, Any]) -> dict[str, Any]:
         return _bs_snapshot_storage_state(self._bootstrap_storage_context, report)
-
-    def _restore_bootstrap_source_runs_storage(self, snapshot: dict[str, Any]) -> None:
-        from src.bridge.task_launch_bootstrap_storage import (
-            restore_bootstrap_source_runs_storage,
-        )
-
-        restore_bootstrap_source_runs_storage(self._bootstrap_storage_context, snapshot)
-
-    def _restore_bootstrap_jobs_feed_storage(self, snapshot: dict[str, Any]) -> None:
-        from src.bridge.task_launch_bootstrap_storage import (
-            restore_bootstrap_jobs_feed_storage,
-        )
-
-        restore_bootstrap_jobs_feed_storage(self._bootstrap_storage_context, snapshot)
 
     def _restore_bootstrap_storage_state(self, snapshot: dict[str, Any]) -> None:
         _bs_restore_storage_state(self._bootstrap_storage_context, snapshot)
