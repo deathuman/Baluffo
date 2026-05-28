@@ -1,6 +1,6 @@
 # Job Sanitization Plan — 2026-05-18
 
-> **Last updated:** 2026-05-29 — confidence audit: 15 loopholes closed, P2 specs concretized, P3 deferred, open questions resolved
+> **Last updated:** 2026-05-29 — dual-pass confidence audit: 30 loopholes closed; P2 specs concretized against live source code; existing frozenset/mechanisms cross-referenced; bridge integration, data contract, verification commands specified
 
 Investigation into non-game-development job contamination in `jobs-unified.csv` and strategy for filtering.
 
@@ -433,7 +433,7 @@ python scripts/audit_jobs_sanitizer.py --input-csv _out/latest/build/portable/sh
 
 | Scope | What | Effort | Rationale |
 |---|---|---|---|
-| **P2.0** | Expand known non-game employer/domain evidence in canonicalization | ~3h | Categories N, O, M, R, Q, F documented but not yet gated. In inventory: McDonald's, Walmart, DoorDash, BlackRock, Enverus, Lockheed Martin, Thales, AECOM, Enphase Energy, Lucid Hearing, etc. |
+| **P2.0** | Expand known non-game employer/domain evidence | ~1.5h | Extends existing `_GOOGLE_SHEETS_NON_GAME_EVIDENCE_TERMS` frozenset (60+ terms) with ~25 new entries across 7 priority tiers. See Layer 7 below. |
 | **P2.1** | Sector-gate filter (`BALUFFO_STRICT_GAME_ONLY`) | ~2h | Broad gate; depends on P2.0 for accuracy. See §5.3 for concrete spec. |
 | **P2.2** | Category P (Unknown Company dedup bug): real game jobs whose company + title are corrupted by google_sheets dedup | ~3h | ~50+ rows; Scopely, CDPR, ArenaNet jobs mislabeled as "Unknown company" with category titles. Not contamination — data quality issue in dedup merging. |
 
@@ -448,9 +448,9 @@ python scripts/audit_jobs_sanitizer.py --input-csv _out/latest/build/portable/sh
 
 | Remaining Item | Confidence | Key Risk |
 |---|---|---|
-| P2.0 (employer evidence) | **92%** | Categories well-documented (7 categories, ~400 rows); risk is over-matching false positives on ambiguous company names |
-| P2.1 (sector gate) | **85%** | Mechanically simple but depends on P2.0 accuracy; Category D mislabeling risk |
-| P2.2 (dedup bug) | **80%** | Touches dedup merge logic; need to guarantee no output-schema regression |
+| P2.0 (employer evidence) | **97%** | ~25 new frozenset entries extending existing 60+ terms; 7 categories well-documented; risk is over-matching false positives on ambiguous company names mitigated by conservative category-label guard |
+| P2.1 (sector gate) | **90%** | Mechanically simple but depends on P2.0 accuracy; bridge env-var passthrough now specified; Category D mislabeling risk quantified |
+| P2.2 (dedup bug) | **85%** | Touches dedup merge logic in `dedup.py`; Google Sheets-specific functions confirmed at lines 246-782; test files exist; need to guarantee no output-schema regression |
 | P3.0 (company field) | **70%** | Schema change risk (company is a dedup key); best approach (URL extraction) may only work for ~60% of rows |
 | P3.1 (role policy) | **95%** | Decision-only: 30min discussion, no code |
 
@@ -459,6 +459,13 @@ python scripts/audit_jobs_sanitizer.py --input-csv _out/latest/build/portable/sh
 - Broad single-word-title heuristic (rejected: too aggressive, risks false positives on corrupted real game rows)
 - Full-platform provider title hydration (Jobvite, BambooHR, Personio, Feishu) — evidence-driven only
 - Upstream Google Sheets coordination (Open Question 2) — separate non-technical effort
+
+### Known Limitations (not blocking; would need separate evidence)
+
+- **Category K — AjnaLens Field Engineers (~20 rows):** Category-label titles ("Software-development-&-engineering") at an AR/VR hardware company whose company name passes game detection. The actual roles are field installation/maintenance, not game development. The existing category-label detector preserves these because AjnaLens is game-adjacent. Fixing this would require role-level content analysis, which is out of scope for P2.
+- **Category G — Uncovered social media/marketing employers (~15 rows):** Employers like BetterMe, Autodesk, Stibo Systems, Devoteam, Coda, Polygon Labs are not in the frozenset and have moderate false-positive risk (Autodesk has game middleware; Polygon Labs is blockchain, not game). These are intentionally left as evidence-driven follow-ups.
+- **Category U — Legal/compliance at non-game employers (~15 rows):** PayPal, Motorola Solutions, FICO, Trupanion, Wolters Kluwer, Pluralsight, etc. are partially covered by P2.0 financial services tier but legal departments at these companies are a distinct subcategory. Low volume; deferred to evidence-driven follow-up.
+- **Category S — Non-job pages scraped as jobs (~5 rows):** "Charity & Philanthropy" at Uplift Games, "Living Green & Philanthropy" at LeapFrog, Absurd Ventures project page. These are static-source scraping errors, not Google Sheets contamination. They hit the existing `non_job_static_page` drop path only if the title matches known non-job patterns. Generic corporate responsibility pages with unusual titles may still pass through. Fixing them requires per-source scraping heuristics, out of scope for P2.
 
 ---
 
@@ -967,18 +974,24 @@ SOURCE DISCOVERY ──→ SOURCE REGISTRY ──→ JOBS FETCHING ──→ CAN
 
 ---
 
-## 4. Existing Filtering Mechanisms (None for Content)
+## 4. Existing Filtering Mechanisms
 
 | Filter | File | What it catches | Relevant to non-game? |
 |---|---|---|---|
-| Static noise filter | `page_gating.py:336-357` | 7 source-specific rules (itch.io, Stardock, Immutable, WB, GS Studio, Flix, Stillfront) | **Directly extensible** |
-| Sector labeling | `normalizers.py:83-93` | Labels every job as `Game` or `Tech` | **Label only — never used to filter** |
+| Static noise filter (11 rules) | `page_gating.py` (lines 295-416) | itch.io, Stardock, Immutable, WBD, GS Studio, Flix, Stillfront, Dorado, Hitica, Baobab, talent-pool/generic applications | **Directly extensible** |
+| Google Sheets category-label detector | `canonicalize.py` (line 933+) | Drops exact category-label titles with non-game evidence from `google_sheets*` sources | **P0 core** |
+| Google Sheets URL-slug title repair | `canonicalize.py` (line 803+) | Repairs category-label titles from URL path slugs (SmartRecruiters, Workday, PlayStation, generic) | **P0.3 additive** |
+| Provider title hydration | `canonicalize.py` (line 1055+) | Greenhouse/Lever/Workable/Ashby feed-based title resolution for `google_sheets*` rows | **P0.4-P1.3 additive** |
+| Category-link stale validation | `canonicalize.py` (line 1316+) | HEAD→GET bounded live link status; drops `404`/`410` category-link rows | **P1.5 additive** |
+| Sector labeling | `normalizers.py` | Labels every job as `Game` or `Tech` | **Label only — never used to filter** |
 | Game detection | `game_detection.py` | `has_positive_game_evidence()` multi-factor check | Used only for labeling |
-| Quality score | `heuristics.py:91` | % of required fields filled | Structural, not content |
-| Focus score | `heuristics.py:128` | Weights toward technical-artist roles | Not a game filter |
+| Quality score | `heuristics.py` | % of required fields filled | Structural, not content |
+| Focus score | `heuristics.py` | Weights toward technical-artist roles | Not a game filter |
 | Source auto-approval | `source_registry_auto_approval.py` | Technical health of sources | No content check |
 | Discovery suppression | `source_discovery/core_thresholds.py` | Low-evidence static sources blocked | Technical, not content |
-| **Non-game content filter** | **DOES NOT EXIST** | --- | **Entirely missing** |
+| Remote OK game-evidence guard | Remote OK parser | Keeps rows only with title/company/tag game evidence | **P1-P1.1** |
+| Non-game employer evidence | `canonicalize.py` (line 211+) | 60+ frozenset employer substrings checked against company+link text | **P0.2-P0.1; extended by P2.0** |
+| **Sector-gate filter** | **Layer 8** (P2.1) | Drops `sector != "Game"` when `BALUFFO_STRICT_GAME_ONLY=1` | **Not yet implemented** |
 
 ---
 
@@ -1016,9 +1029,11 @@ Add a detector in `canonicalize.py` that checks whether a title from a `google_s
 
 **Expected impact:** Removes a large share of the Google Sheets structural category rows while reducing false-negative risk for corrupted real game rows. P0.1 specifically targets the 1,371 latest-build `Account-management`/`Administartive` rows and related category labels; exact live impact still needs validation from a fresh full pipeline run.
 
-### Layer 3 — Sector-Based Output Gate (Low Effort, ~1-2 hrs)
+### Layer 3 — Sector-Based Output Gate (Superseded by Layer 8, ~1-2 hrs)
 
-**Implementation status:** Not started; intentionally deferred from P0.
+**Implementation status:** Superseded by Layer 8's concrete P2.1 specification (see below). The original Layer 3 proposal below is retained for historical reference; all implementation decisions now use the Layer 8 spec.
+
+Original proposal (superseded):
 
 Add a filter gated behind config flag `BALUFFO_STRICT_GAME_ONLY` that drops all `sector != "Game"` jobs at the finalize stage.
 
@@ -1053,34 +1068,37 @@ Decide whether corporate roles at game companies (HR, accounting, legal, admin a
 - **Included but flagged** — Add `corporateRole: true` metadata field
 - **Included as-is** — Legitimate jobs within game studios
 
-### Layer 7 — Non-Game Employer/Domain Evidence Expansion (P2.0, ~3h)
+### Layer 7 — Non-Game Employer/Domain Evidence Expansion (P2.0, ~1.5h)
 
-**Concrete scope.** Add high-confidence non-game employer patterns to the Google Sheets category-row drop guard in `src/jobs/canonicalize.py`. The extraction is source-aware: apply only to `google_sheets*` rows whose title matches a known category label.
+**Concrete scope.** Extend the existing `_GOOGLE_SHEETS_NON_GAME_EVIDENCE_TERMS` frozenset in `src/jobs/canonicalize.py` (lines 211-272, currently 60+ terms) with additional high-confidence non-game employer substrings. The existing guard `_has_google_sheets_non_game_evidence()` (line 1543) already checks company text and jobLink text against these terms for `google_sheets*` rows with category-label titles — P2.0 only adds terms missing from the current set.
 
-**Target categories from the inventory (ordered by risk of false positives → lowest first):**
+**Employers ALREADY covered by existing frozenset:** `mcdonalds` ("mcdonald"), `walmart`, `doordash`, `transunion`, `visa`, `pwc`, `enverus`, `energyjobline` ("energy jobline"), `enphase`, `lockheed` ("lockheed"), `thalesgroup` ("thales"), `aecom`, `culinagroup` ("culina"), `cardahealth` ("carda health"), `greencrossvet` ("greencross"), `labcorp`, `philips`, `medhealth`, `waymanlearningtrust` ("wayman learning trust"), `kipp`, `motorola`, `northrop grumman`, `illumina`, `paypal`, `salesforce`, `servicenow`.
 
-| Priority | Category | Employers/Patterns | Rows impacted |
+**Employers NOT YET covered (P2.0 additions, ~25 new terms):**
+
+| Priority | Category | New terms to add | Rows impacted |
 |---|---|---|---|
-| 1 | M — Major non-game corps | `mcdonalds`, `walmart`, `doordash`, `netflix` (non-studio), `apple` (non-Arcade) | ~40 |
-| 2 | N — Financial services | `blackrock`, `saxobank`, `londonstockexchange`, `morningstar`, `mufg`, `guardianlife`, `transunion`, `visa.com` (non-game), `pwc`, `trupanion` | ~40 |
-| 3 | O — Energy / Oil & Gas | `enverus`, `energyjobline`, `enphase`, `gevernova`, `silfabsolar`, `questglobal` (nuclear) | ~20 |
-| 4 | Q — Defense / Aerospace | `lockheedmartin`, `thalesgroup`, `aecom` (rail/transit only) | ~15 |
-| 5 | R — Logistics / Trucking | `culinagroup`, `dpdgroup`, `deangelocontracting`, `arienscompany`, `pentair`, `therankgroup`, `westgateresorts`, `trekbikes` (warehouse only) | ~2 |
-| 6 | F — Healthcare/Medical | `cardahealth`, `spavia`, `greencrossvet`, `portmandentex`, `labcorp`, `philips` (clinical roles only), `medhealth` | ~20 |
-| 7 | H — Classroom Teachers | `waymanlearningtrust`, `kipp` (schools), `universityofauckland` (ECE), `aspect2`, `calvaryeducation`, `cae.com` (flight sim training) | ~15 |
+| 1 | M — Major non-game corps | `netflix` (non-studio filtering via existing company-guard), `apple` (non-Arcade, existing title-guard) | ~5 |
+| 2 | N — Financial services | `blackrock`, `saxobank`, `london stock exchange`, `morningstar`, `mufg`, `guardian life`, `trupanion`, `simcorp`, `clearwater`, `vertex`, `globalization partners` | ~25 |
+| 3 | O — Energy (uncovered subset) | `ge vernova`, `silfab solar`, `quest global`, `veracity`, `dnv` | ~8 |
+| 4 | Q — Defense (uncovered subset) | `segula technologies` (railway) | ~2 |
+| 5 | R — Logistics (uncovered subset) | `dpd`, `deangelo`, `ariens`, `pentair`, `the rank group`, `westgate resorts`, `trek bikes` (warehouse context) | ~5 |
+| 6 | F — Healthcare (uncovered subset) | `spavia`, `portman dentex`, `dental hygienist` | ~5 |
+| 7 | H — Classroom Teachers (uncovered subset) | `university of auckland`, `aspect2`, `calvary education`, `cae` (flight sim training) | ~4 |
 
-**Total expected impact:** ~150 additional rows dropped beyond current P0 coverage.
+**Total newly added terms:** ~25. **Total additional rows impacted:** ~50-60 (down from original ~150 estimate — most high-volume categories already covered).
 
 **Implementation approach:**
-- Parse the normalized host from each Google Sheets row's `jobLink`.
-- Match against a hardcoded set of known non-game domain/employer patterns kept in a single `_NON_GAME_EMPLOYER_HOSTS` dict (not a config file — keep it code-side for reproducibility).
-- The guard runs after category-label matching and before URL-title repair; non-game-employer-tagged rows get `google_sheets_category_row` drop reason.
-- No output schema, no frontend rendering, no bridge/route changes.
+- Extend the existing `_GOOGLE_SHEETS_NON_GAME_EVIDENCE_TERMS` frozenset in `src/jobs/canonicalize.py` (NOT create a new data structure — the existing `_has_google_sheets_non_game_evidence()` function at line 1543 already uses this frozenset correctly).
+- The matching approach is text-based substring matching against company name and jobLink text (existing behavior), NOT host-based URL parsing. This is intentionally simpler and catches cases where the employer appears anywhere in the link text, not just in the host.
+- Terms are added as lowercase space-separated names in the frozenset (align with existing code conventions, e.g. `"carda health"`, `"lucid hearing"`).
+- No output schema, no frontend rendering, no bridge/route changes, no new drop reason.
 
 **Verification:**
-- `python -m pytest tests/test_jobs_fetcher_google_sheets_sanitizer.py` — extend with test rows for each targeted employer category (minimum: 1 row per priority tier).
+- `python -m pytest tests/test_jobs_fetcher_google_sheets_sanitizer.py` — extend with test rows for each priority tier (minimum: 1 row per tier).
 - `python -m pytest tests/test_jobs_fetcher_pipeline.py` — existing pipeline tests must pass unchanged.
-- `python scripts/audit_jobs_sanitizer.py --input-csv data/jobs-unified.csv --report-json data/jobs-fetch-report.json` — verify targeted employers appear in `google_sheets_category_row` drops and not in kept rows.
+- `python scripts/audit_jobs_sanitizer.py --input-csv data/jobs-unified.csv --report-json data/jobs-fetch-report.json --limit 50` — verify newly targeted employers appear in drop samples.
+- Targeted refresh: `python -m src.jobs.pipeline --output-dir _out/job-sanitization/p2.0-employer-audit --only-sources google_sheets,google_sheets_1er2oaxo,google_sheets_1mvqhxat --no-seed-existing-output --force-refresh-all --ignore-circuit-breaker --quiet` — verify output counts stable vs. P1.6 baseline (~6,167 rows), dropped rows attributable to new employer terms.
 
 ### Layer 8 — Sector-Gate Output Filter (P2.1, ~2h)
 
@@ -1088,20 +1106,26 @@ Decide whether corporate roles at game companies (HR, accounting, legal, admin a
 
 *Config mechanism:* Environment variable `BALUFFO_STRICT_GAME_ONLY=1`. Not a CLI flag (so it survives multiple pipeline invocations). Not a bridge route (this is an output pipeline concern, not a UI concern). Read once at pipeline startup in `src/jobs/common/config.py`.
 
+*Bridge integration:* The bridge's `task_launch_api.py` (line 446+) passes `BALUFFO_*` env vars to child pipeline processes via an explicit allowlist. `BALUFFO_STRICT_GAME_ONLY` must be added to the child-process env dict alongside existing vars such as `BALUFFO_DATA_DIR`, `BALUFFO_FETCH_RUN_ID`, etc. Without this, the bridge would strip the env var before the pipeline child sees it. This is a **1-line addition** to `src/bridge/task_launch_api.py`.
+
 *Insertion point:* `src/jobs/pipeline_finalize.py`, after dedup and before CSV/JSON write. This is after `canonicalize.py` sector labeling and `dedup.py` merge, so the gate sees the final row set with all metadata intact.
 
 *Behavior:*
 - When `BALUFFO_STRICT_GAME_ONLY=1`: keep only rows with `sector == "Game"`. All others are dropped with a new drop reason `sector_gate_filtered` recorded in the source-report loss diagnostics.
 - When unset or `0`: no change to current behavior.
 
-*UI exposure:* Add a status line in the pipeline report JSON (`source-report`) showing `sectorGateFiltered: N` when the gate is active. No frontend or bridge changes required — the filtered output simply has fewer rows and the report file carries the evidence.
+*UI exposure:* Add a status line in the pipeline report JSON (`source-report`) showing `sectorGateFiltered: N` when the gate is active. No frontend changes required — the frontend's `feed.js` already handles variable row counts and the `sector` field is a first-class frontend filter dimension (see `frontend/jobs/app/runtime/filters-ui.js`). The filtered output simply has fewer rows and the report file carries the evidence.
+
+*Data contract:* `docs/DATA_CONTRACT.md` line 769 documents stable drop reasons including `google_sheets_category_row` and `non_job_static_page`. After P2.1 implementation, add `sector_gate_filtered` to this list as an additive drop reason visible in the report JSON (not in `jobs-unified.csv`/`.json`/`.light.json`).
 
 *Interaction with P2.0:* The sector gate's accuracy depends on P2.0 fixing Category D mislabeling (Google Sheets rows mislabeled `sector: Game`). P2.0 should be implemented before or alongside P2.1. The gate is safe even without P2.0 — it just passes through some non-game rows — because P2.0's employer evidence catches the worst mislabeling.
 
 *Testing:*
-- `tests/test_jobs_pipeline_sector_gate.py` (new): unit test the gate function in isolation.
-- `tests/test_jobs_fetcher_pipeline.py` (extend): integration test with `BALUFFO_STRICT_GAME_ONLY=1`, verify dropped counts.
-- `npm run test:frontend:unit` — confirm no regression; the frontend doesn't know about the gate.
+- `tests/test_jobs_pipeline_sector_gate.py` (new): unit test the gate function in isolation with mock rows.
+- `tests/test_jobs_fetcher_pipeline.py` (extend): integration test with `BALUFFO_STRICT_GAME_ONLY=1`, verify dropped counts and report diagnostics.
+- `npm run test:frontend:unit` — confirm no regression; the frontend doesn't need to know about the gate.
+
+*Verification command:* `BALUFFO_STRICT_GAME_ONLY=1 python -m src.jobs.pipeline --output-dir _out/job-sanitization/p2.1-sector-gate-audit --only-sources google_sheets,google_sheets_1er2oaxo,google_sheets_1mvqhxat --no-seed-existing-output --force-refresh-all --ignore-circuit-breaker --quiet`
 
 ### Layer 9 — Dedup "Unknown Company" Bug Fix (P2.2, ~3h)
 
@@ -1109,17 +1133,21 @@ Decide whether corporate roles at game companies (HR, accounting, legal, admin a
 
 **Root cause (hypothesis to validate before implementation):** The google_sheets dedup path replaces a provider-adapter row's title with the Google Sheets category label during merge, while also losing the company name. This happens when a Google Sheets row and a provider row match by link but the dedup logic favors the Google Sheets `title` (category label) over the provider's real job title, and the Google Sheets `company` is empty or "Unknown."
 
+**Existing code context.** `src/jobs/dedup.py` already contains Google Sheets-specific functions: `_is_google_sheets_row()` (line 246), `_has_google_sheets_generic_role_title()` (line 251), `_has_sheet_role_bucket_title()` (line 268), `_blocks_google_sheets_generic_role_url_merge()` (line 768), and `_record_google_sheets_generic_role_guard_sample()` (line 782). The fix should integrate with these existing guards.
+
 **Implementation approach:**
-1. Audit the dedup merge path in `src/jobs/dedup.py` or the google_sheets-specific dedup logic to confirm the root cause.
-2. Fix the merge preference: when a Google Sheets row has a recognized category-label title AND a provider row has a real job title, prefer the provider row's `title` and `company` over the Google Sheets values.
-3. The fix applies only when the Google Sheets title is a known category label (use the same predicate from P0/P1.5) AND the provider row has a non-empty, non-category-label title.
+1. Audit the dedup merge path in `src/jobs/dedup.py` to confirm the root cause — specifically how Google Sheets rows interact with provider rows at merge time.
+2. Fix the merge preference: when a Google Sheets row has a recognized category-label title (use the same shared category-title predicate from P0/P1.5 in `canonicalize.py`) AND a provider row has a real job title, prefer the provider row's `title` and `company` over the Google Sheets values.
+3. The fix applies only when the Google Sheets title is a known category label AND the provider row has a non-empty, non-category-label title.
 4. No output schema change. No new drop reason — these rows were never dropped; their metadata was simply wrong.
 
 **Testing:**
-- `tests/test_jobs_dedup_google_sheets_guard.py` (extend): add test cases where a category-label Google Sheets row meets a provider row with a real title; verify the merged row keeps the provider's title and company.
+- `tests/test_jobs_dedup_google_sheets_guard.py` (extend): add test cases where a category-label Google Sheets row collides with a provider row having a real title; verify the merged row keeps the provider's `title` and `company`.
 - `python -m pytest tests/test_jobs_fetcher_google_sheets.py tests/test_jobs_fetcher_pipeline.py` — existing tests must pass unchanged (no regression in output schema or dedup behavior).
 
-**Confidence caveat:** This item touches dedup merge logic, which is central to output stability. The fix surface is narrow (category-label guard in merge preference) but the exact code path needs audit before coding. The 80% confidence reflects this prerequisite — after the audit, confidence would rise to ~90%.
+**Verification command:** `python -m src.jobs.pipeline --output-dir _out/job-sanitization/p2.2-dedup-audit --only-sources google_sheets,google_sheets_1er2oaxo,google_sheets_1mvqhxat,greenhouse_sources,lever_sources,workable_sources,gracklehq_sources,smartrecruiters_sources --no-seed-existing-output --force-refresh-all --ignore-circuit-breaker --quiet` — then grep output for `"Unknown company"` to verify count → 0.
+
+**Confidence caveat:** This item touches dedup merge logic, which is central to output stability. The fix surface is narrow (category-label guard in merge preference) but the exact code path needs audit before coding. After the audit, confidence rises to ~90%. The Google Sheets-specific dedup functions already exist in `dedup.py` (lines 246-782), so the integration surface is well-understood.
 
 ---
 
@@ -1177,11 +1205,8 @@ Decide whether corporate roles at game companies (HR, accounting, legal, admin a
 | `src/jobs/adapters/static_sources.py` | Static source loader builder |
 | `src/jobs/adapters/static_detail_heuristics.py` | Detail link classification for static scrapers |
 | `src/jobs/adapters/community/__init__.py` | Google Sheets adapter (Layer 4 company field fix) |
-| `src/jobs/dedup.py` or `src/jobs/dedup_google_sheets_guard.py` | Dedup merge logic (Layer 9 "Unknown Company" fix) |
-| `scripts/audit_jobs_sanitizer.py` | Read-only audit command for employer/domain verification |
-| `tests/test_jobs_fetcher_google_sheets_sanitizer.py` | Google Sheets sanitizer tests (Layers 2, 7) |
+| `src/jobs/dedup.py` | Dedup merge logic (Layer 9 "Unknown Company" fix) |
 | `tests/test_jobs_dedup_google_sheets_guard.py` | Dedup guard tests (Layer 9) |
-| `tests/test_jobs_pipeline_sector_gate.py` | Sector gate unit tests (new, Layer 8) |
 
 ---
 
