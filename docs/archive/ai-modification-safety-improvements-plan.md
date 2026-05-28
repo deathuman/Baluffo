@@ -148,7 +148,7 @@ Risk: these modules coordinate staged audits, recovery artifacts, browser/HTTP f
 Current good signals:
 
 - [`../scraping-pipeline.md`](../scraping-pipeline.md) and [`../adapter-plugin-inventory.md`](../adapter-plugin-inventory.md) route subsystem ownership.
-- Static plugin migration work is already tracked separately in [`../plans/static-plugin-simple-runner-migration-plan.md`](../plans/static-plugin-simple-runner-migration-plan.md).
+- Static plugin migration work is already tracked separately in [`../archive/static-plugin-simple-runner-migration-plan.md`](../archive/static-plugin-simple-runner-migration-plan.md).
 
 Remaining gap: stage-result shapes are mostly dict-shaped, and the long flow files do not consistently advertise which helpers are pure classifiers, mutating artifact writers, or external-network/runtime stages.
 

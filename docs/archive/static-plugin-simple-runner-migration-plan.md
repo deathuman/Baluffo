@@ -1,6 +1,6 @@
 # Static Plugin Simple Runner Migration Plan
 
-> - **Status:** Complete — Phases 1-4 shipped 2026-05-28, loophole-audited
+> - **Status:** Archived — fully implemented 2026-05-28
 > - **Use this when:** continuing the migration of custom static adapter plugins onto the shared simple static plugin runner
 > - **Canonical for:** phased migration strategy, candidate ordering, acceptance criteria, and risk boundaries for `SimpleStaticPlugin` adoption
 > - **Not canonical for:** live source inventory, static plugin runtime contracts, provider/static suppression policy, or current extraction behavior

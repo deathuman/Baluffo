@@ -477,6 +477,7 @@ def test_index_routes_current_process_docs_only(repo_root: Path) -> None:
         "docs/archive/source-discovery-adapter-follow-ups-closeout.md",
         "docs/archive/source-sync-production-readiness-closeout.md",
         "docs/archive/static-outlier-source-conflict-decisions.md",
+        "docs/archive/static-plugin-simple-runner-migration-plan.md",
         "docs/archive/static-scope-conflict-dry-run-decisions.md",
         "docs/archive/task-lifecycle-ledger-plan.md",
         "docs/archive/task-progress-operational-console-closeout.md",
