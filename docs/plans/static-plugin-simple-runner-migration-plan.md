@@ -1,82 +1,130 @@
 # Static Plugin Simple Runner Migration Plan
 
-> - **Status:** Future work
+> - **Status:** Future work, loophole-audited 2026-05-28
 > - **Use this when:** continuing the migration of custom static adapter plugins onto the shared simple static plugin runner
 > - **Canonical for:** phased migration strategy, candidate ordering, acceptance criteria, and risk boundaries for `SimpleStaticPlugin` adoption
 > - **Not canonical for:** live source inventory, static plugin runtime contracts, provider/static suppression policy, or current extraction behavior
 > - **Then inspect:** [`../adapter-plugin-inventory.md`](../adapter-plugin-inventory.md), [`../scraping-pipeline.md`](../scraping-pipeline.md), [`../architecture-ai-map.md`](../architecture-ai-map.md), and [`../testing.md`](../testing.md)
-> - **Last updated:** 2026-05-13
+> - **Last updated:** 2026-05-28
+
+## Confidence statement
+
+This plan has been loophole-audited against the codebase on 2026-05-28. Every custom static plugin was read and assessed for migration compatibility. 14 loopholes were identified and closed across candidate classification, runner extension needs, test validation strategy, row construction consistency, and code example accuracy.
 
 ## Summary
 
 Continue the existing static plugin migration by converting straightforward custom static plugins to the shared `SimpleStaticPlugin` runner in small, behavior-preserving batches.
 
-This is not greenfield architecture work. The shared runner already exists at `src/jobs/adapters/plugins/static/_runner.py`, and several plugins already use it. The next value is to reduce repeated fetch, parse, row-stamping, and static diagnostic boilerplate without weakening source-report classification, browser fallback routing, or plugin-specific extraction behavior.
+This is not greenfield architecture work. The shared runner already exists at `src/jobs/adapters/plugins/static/_runner.py` (444 lines), and 8 plugins already use it. The next value is to reduce repeated fetch, parse, row-stamping, and static diagnostic boilerplate without weakening source-report classification, browser fallback routing, or plugin-specific extraction behavior.
 
-The right shape is incremental migration. Do not attempt a single broad conversion of every remaining custom plugin.
+The shared runner's contract: **one page → one fetch (with optional Playwright fallback) → one `parse_html(ctx)` call → automatic row stamping → automatic meta recording.** Any plugin that fetches sub-pages during parsing, does multi-page crawling, or extracts JSON/non-HTML data cannot fit this model without a different runner contract.
+
+## Loophole audit (2026-05-28)
+
+Each loophole was validated against the actual codebase. The fix describes what changed in this plan.
+
+**L1 — Blizzard cannot be migrated (closed):** Blizzard (`blizzard.py`, 217 lines) does multi-page crawling: extracts role links from listing → fetches each role page → extracts search result links → fetches search result pages → parses individual jobs. This fetches dozens of sub-pages inside the parse loop. The shared runner expects one HTML input per call. Fix: blizzard is **not convertible** — reclassify from Phase 1 second batch to "deferred — not convertible to SimpleStaticPlugin."
+
+**L2 — Milestone cannot be easily migrated (closed):** Milestone (`milestone.py`, 179 lines) does Intervieweb iframe extraction: searches the listing HTML for a script tag pointing to `announces_js.php`, extracts query parameters, builds an iframe URL, fetches it, and parses Intervieweb's proprietary format. This needs `fetch_text` available inside the parse step. Fix: milestone is **not convertible** — reclassify from Phase 1 second batch to "deferred — not convertible to SimpleStaticPlugin."
+
+**L3 — Activision's mid-parse browser retry needs wrapping (closed):** Activision (`activision.py`, 167 lines) has a non-standard flow: try generic parser → if zero rows AND `try_playwright` available → re-fetch with browser → parse again → if still zero → custom anchor regex fallback. The `SimpleStaticContext` doesn't expose `try_playwright` or fetching. Fix: activision stays in Phase 1 but the conversion wraps the mid-parse retry inside `_parse_html()` by passing `try_playwright` via closure, rather than changing the runner. The parse function calls `try_playwright` to re-render the HTML, then re-runs the generic parser on the new HTML. If browser retry also fails, falls back to anchor regex. The `SimpleStaticPlugin` spec sets `playwright_on_js_shell=True` so the runner handles the first fetch's JS shell case; the mid-parse retry is an additional safety net for pages that look like HTML but produce zero generic parser rows.
+
+**L4 — record_failure_meta=False has no runner equivalent (closed):** Both `supercell.py` (line 88) and `larian.py` (line 88) pass `record_failure_meta=False` to `fetch_static_plugin_html_with_browser_fallback`. The shared runner's `_fetch_html` does NOT use that function — it has its own fetch implementation that calls `fetch_text` + optional `try_playwright` (lines 305-333 of `_runner.py`). The runner records fetch failure meta only when `spec.parser_stale_hint` is set. When supercell and larian are migrated, their entire fetch path is replaced by the runner's `_fetch_html`. Behavior: if `parser_stale_hint` is set on the spec, the runner records fetch failure meta AND stale meta. If not set, no meta is recorded (similar to the custom plugins' `record_failure_meta=False` behavior). Fix: set `parser_stale_hint` on the spec for both supercell and larian to ensure the runner records stale/failure meta appropriately. The custom `record_failure_meta=False` call is irrelevant after migration since `fetch_static_plugin_html_with_browser_fallback` is no longer called.
+
+**L5 — Remedy's Jobylon wrapping pattern documented (closed):** Remedy (`remedy.py`, 82 lines) has a Jobylon API pre-parse step: before trying the generic HTML parser, it calls `extract_jobylon_v1_jobs()` to fetch structured data. If Jobylon succeeds, it returns immediately. Fix: the conversion wraps `run_simple_static_plugin`: try Jobylon API first; if it returns rows, stamp them with `stamp_static_plugin_rows` and return; if Jobylon fails or returns empty, proceed with `run_simple_static_plugin(..., require_generic_parser=True)`.
+
+**L6 — No test fixture comparison strategy (closed):** The plan said "preserve behavior" but didn't describe how to verify. Fix: for each converted plugin, save the HTML output of a representative fetch page(s) as a local test fixture before conversion. After conversion, run both old and new plugin against the same fixture HTML and assert that output rows have identical `sourceJobId`, `company`, `jobLink`, `adapter`, `studio`, and `source` fields. The fixture lives in `tests/fixtures/static-plugin-migration/` and is NOT committed (too large). The comparison is done manually during the conversion session using the fixture.
+
+**L7 — Riot is structurally similar to migrated plugins (closed):** Riot (`riot.py`, 149 lines) uses the same anchor-iteration → text-extraction → location-normalization pattern as already-migrated plugins (embark, globalstep, climax, lionbridge). Differences: manual dict construction instead of `static_job_row`, custom `sector` field assignment based on craft tokens, and no `stamp_static_plugin_rows` usage. Fix: promote riot from "review before converting" to Phase 1 second batch. The migration switches to `static_job_row(ctx, ...)` for row construction, which handles adapter/studio/source stamping automatically. The custom sector logic is preserved in `_parse_html()` by setting `sector=craft or "Game"` on the raw row before returning.
+
+**L8 — Non-convertible plugins explicitly classified (closed):** The plan listed all 15 custom plugins as "need individual review." The audit found 7 plugins that cannot fit the single-page SimpleStaticPlugin model. Fix: explicit classification added:
+
+| Plugin | Reason non-convertible |
+|--------|----------------------|
+| `blizzard.py` | Multi-page crawling (sub-page parsing loop) |
+| `milestone.py` | Iframe sub-page fetch during parsing |
+| `frontier.py` | CSS-class-specific li-block + window-based parsing |
+| `ncsoft.py` | Per-job detail-page fetching loop |
+| `nintendo_csod.py` | CSS-class-specific li-block parsing |
+| `sheet_studios.py` | Multi-module integration (rendered_cards + detail resolution) |
+| `amanotes.py` | JSON-LD extraction (no HTML parsing) |
+| `littlechicken.py` | Multi-page listing + detail merge loop |
+
+**L9 — ats_wrappers.py has an alternative migration path (closed):** `ats_wrappers.py` uses `_rendered_cards.extract_rendered_card_jobs()`. The `_rendered_cards.py` module provides its own `run_rendered_cards_plugin()` runner. Fix: `ats_wrappers.py` could be migrated to use `run_rendered_cards_plugin()` instead of SimpleStaticPlugin. This is a different migration (rendered-cards-based, not simple runner). Keep it in "review before converting" with a note about this alternative.
+
+**L10 — supercell and larian share the same two-stage parse pattern (closed):** Both use: generic parser first → if zero rows → `static_detail_link_rows()` with `domain_profiles` anchor link fallback. This is the same pattern in two plugins. Per the plan's own rule ("extend SimpleStaticPlugin only when at least two candidate plugins need the same option"), this justifies a shared helper. Fix: extract a `generic_parser_then_detail_links` helper during Phase 0 or Phase 2 that wraps the parse function and the detail-link fallback into one callable. Both supercell and larian use it.
+
+**L11 — hrmos.py already demonstrates custom overrides pattern (closed):** `hrmos.py` (130 lines) already uses `run_simple_static_plugin()` directly with `company_override` and `source_id_override`. This proves the pattern works for plugins that need per-call overrides. Fix: document this as the reference pattern for plugins that need runtime overrides (like activision's URL canonicalization).
+
+**L12 — Remedy code example used wrong function names (closed):** The code example referenced `_heuristics.build_static_plugin_meta_result(source_row)` which doesn't exist. The actual function is `build_static_plugin_meta(classification, *, ...)` at `_heuristics.py:108`. Also, `stamp_static_plugin_rows` takes `company` and `source_name` as keyword arguments, not `source_row` (line 220 of `_runner.py`). The `run` function returns `list[RawJob]` only — meta is written to `source_row` as a side effect by the runner's internal `_meta()` calls, not returned. Fix: updated the code example to use `stamp_static_plugin_rows(rows=jobylon_rows, company=company, source_name=source_name)` and return just the row list. The `simple_static_run()` call passes kwargs correctly.
+
+**L13 — Runner's internal fetch path differs from assumed behavior (closed):** The shared runner's `_fetch_html` (lines 305-333) does NOT use `fetch_static_plugin_html_with_browser_fallback`. It has its own implementation: `fetch_text` → optional `try_playwright` on error → optional `try_playwright` for JS shell. The runner records fetch failure meta at lines 320-328 only when `spec.parser_stale_hint` is set. Fix: L4 updated to describe the actual runner behavior. Both supercell and larian need `parser_stale_hint` set on the spec.
+
+**L14 — Only one existing plugin uses `require_generic_parser=True` (closed):** `cdprojektred.py` is the only existing adopter that sets `require_generic_parser=True` and uses `simple_static_run()`. The runner validates this flag at line 368 — if set but `parse_jobpostings_from_html` is not callable, the runner bails. The Remedy code example correctly sets `require_generic_parser=True`. Fix: verified against cdprojektred's pattern.
 
 ## Decision
 
-This is worth pursuing as future work now, with a bounded first batch.
+This is worth pursuing as future work, with the bounded first batch described below.
 
 Expected payoff:
-
-- Reduce duplicated static plugin scaffolding.
+- Reduce duplicated static plugin scaffolding across 5 plugins in Phases 0-1.
 - Make static plugin behavior easier to audit.
 - Preserve a single place for common static fetch, Playwright fallback, row stamping, and parser-stale metadata behavior.
 - Lower the cost of adding future static plugins that fit the simple listing-parser model.
 
 Primary risk:
+- Some static plugins are intentionally custom extractors. 8 plugins are now explicitly classified as non-convertible. The remaining 4 (after batch 1) are reviewed individually.
 
-- Some static plugins are intentionally custom extractors. Forcing them into `SimpleStaticPlugin` may hide important behavior, create awkward runner options, or regress source diagnostics.
+## Current State
 
-## Current State Observed
+### Shared runner
+- `src/jobs/adapters/plugins/static/_runner.py` (444 lines)
+- Provides: `SimpleStaticPlugin` spec, `SimpleStaticContext`, `run_simple_static_plugin()`, `simple_static_run()` factory, 11 helper functions (identity handler, row builders, fetch/browser helpers, stamping, meta recording, detail link extraction)
 
-Observed on 2026-05-13 from `src/jobs/adapters/plugins/static/` and `docs/adapter-plugin-inventory.md`.
+### Existing SimpleStaticPlugin adopters (8)
+`cdprojektred.py`, `climax.py`, `embark.py`, `globalstep.py`, `hrmos.py` (partial — uses `run_simple_static_plugin` directly), `jobvite.py`, `lionbridge.py`, `naconstudiomilan.py`
 
-Shared runner:
+### Conversion candidates
 
-- `src/jobs/adapters/plugins/static/_runner.py`
+#### Phase 0 — First batch (confirmable, ~3 plugins)
+| Plugin | Lines | Key behavior to preserve | Migration risk |
+|--------|-------|------------------------|----------------|
+| `remedy.py` | 82 | Jobylon API pre-parse → generic parser fallback. Wraps runner. | Low |
+| `supercell.py` | 106 | Generic parser → domain-profile `static_detail_link_rows` fallback. `record_failure_meta=False` accepted. | Low |
+| `larian.py` | 108 | Same pattern as supercell. | Low |
 
-Existing `SimpleStaticPlugin` adopters:
+#### Phase 1 — Second batch (reviewed, ~2 plugins)
+| Plugin | Lines | Key behavior to preserve | Migration risk |
+|--------|-------|------------------------|----------------|
+| `activision.py` | 167 | URL canonicalization + mid-parse browser retry + custom anchor regex fallback. `try_playwright` passed via closure. Custom `extractor_hint` for empty recording. | Medium |
+| `riot.py` | 149 | Promoted from "review before converting." Anchor iteration + text extraction + craft/sector assignment. Switch to `static_job_row` for row stamping. No Playwright needed. | Low-Medium |
 
-- `cdprojektred.py`
-- `climax.py`
-- `embark.py`
-- `globalstep.py`
-- `hrmos.py`
-- `jobvite.py`
-- `lionbridge.py`
-- `naconstudiomilan.py`
+#### Review before converting (2 plugins)
+| Plugin | Lines | Notes |
+|--------|-------|-------|
+| `ats_wrappers.py` | 139 | Uses `_rendered_cards.extract_rendered_card_jobs()`. Alternative: migrate to `run_rendered_cards_plugin()`. |
+| `kojima.py` | 216 | Custom `maybe_fetch_kojima_job_listing_html` injection + role-pattern filtering. May or may not fit. |
 
-Registered custom static plugins that still need individual review:
+#### Not convertible to SimpleStaticPlugin (8 plugins)
+| Plugin | Lines | Reason |
+|--------|-------|--------|
+| `blizzard.py` | 217 | Multi-page crawling (sub-page parsing loop) |
+| `milestone.py` | 179 | Intervieweb iframe sub-page fetch during parsing |
+| `frontier.py` | 321 | CSS-class-specific li-block + window-based parsing |
+| `ncsoft.py` | 311 | Per-job detail-page fetching loop |
+| `nintendo_csod.py` | 326 | CSS-class-specific li-block parsing |
+| `sheet_studios.py` | 388 | Multi-module integration (rendered_cards + detail resolution) |
+| `amanotes.py` | 129 | JSON-LD extraction from script tags — no HTML parsing |
+| `littlechicken.py` | 219 | Multi-page listing + detail merge loop |
 
-- `activision.py`
-- `amanotes.py`
-- `ats_wrappers.py`
-- `blizzard.py`
-- `frontier.py`
-- `kojima.py`
-- `larian.py`
-- `littlechicken.py`
-- `milestone.py`
-- `ncsoft.py`
-- `nintendo_csod.py`
-- `remedy.py`
-- `riot.py`
-- `sheet_studios.py`
-- `supercell.py`
-
-Special registered path:
-
-- `_rendered_cards.py` is registered directly as `rendered_cards` and should be treated as a shared extractor, not as a normal simple-plugin conversion target.
+(closed L1, L2, L8, L9, L10, L11)
 
 ## Goals
 
-- Convert the next simple custom plugins to `SimpleStaticPlugin` without changing output rows or diagnostics.
+- Convert the 5 plugins in Phase 0 and Phase 1 to `SimpleStaticPlugin` without changing output rows or diagnostics.
 - Keep static plugin registration stable in `src/jobs/adapters/plugins/static/register.py`.
 - Preserve `_staticPluginMeta` classifications, browser fallback recommendations, empty confirmed behavior, parser stale hints, and source report outcomes.
-- Extend `SimpleStaticPlugin` only when at least two candidate plugins need the same option.
+- Extract a `generic_parser_then_detail_links` shared helper for the supercell/larian pattern (closed L10).
 - Keep complex extractors readable even if they remain custom.
 
 ## Non-Goals
@@ -85,105 +133,154 @@ Special registered path:
 - Do not add new Python or Node dependencies.
 - Do not rewrite complex extraction logic just to hit a line-count target.
 - Do not alter static adapter public loader names, plugin family names, or report payload contracts.
+- Do not attempt to migrate the 8 plugins classified as non-convertible.
 - Do not change browser fallback queue eligibility unless the specific plugin already had incorrect diagnostics and the behavior change is explicitly reviewed.
-
-## Candidate Priority
-
-| Priority | Plugins | Rationale |
-|----------|---------|-----------|
-| First batch | `remedy.py`, `supercell.py`, `larian.py` | Already small or already use shared `_runner` helpers; likely convertable with low runner churn. |
-| Second batch | `activision.py`, `blizzard.py`, `milestone.py` | Similar HTML-first patterns with shared fetch, JS-shell, stamp, and empty-parse handling. |
-| Review before converting | `amanotes.py`, `ats_wrappers.py`, `kojima.py`, `littlechicken.py`, `riot.py` | May fit with small runner extensions, but inspect behavior first. |
-| Defer by default | `frontier.py`, `ncsoft.py`, `nintendo_csod.py`, `sheet_studios.py`, `_rendered_cards.py` | Larger or specialized extractors; forcing them into the simple runner is likely counterproductive. |
 
 ## Phase 0: Preparation
 
 Before converting a batch:
 
-- Pick at most three plugins.
-- Inspect only those plugin files and the shared runner.
+- Pick at most three plugins (recommended: remedy, supercell, larian).
+- For each plugin, save the HTML output of a representative fetch as a local fixture in `tests/fixtures/static-plugin-migration/{plugin_name}/` (closed L6).
 - Record the behavior each plugin must preserve: handled host identity, fetch fallback behavior, empty parse behavior, row fields, source naming, and parser stale metadata.
-- Prefer existing focused tests if they cover the plugin.
-- Add narrow tests only when a plugin currently lacks coverage for behavior that could regress during conversion.
+- Run the existing focused static plugin unit tests to establish a baseline.
+- Do NOT commit the HTML fixtures (too large). Use them locally during conversion to compare old vs. new output.
 
-Recommended first batch:
+## Phase 1: Convert First-Batch Plugins
 
-- `remedy.py`
-- `supercell.py`
-- `larian.py`
+### Remedy (Jobylon wrapper)
 
-## Phase 1: Convert Low-Risk Plugins
+The Remedy migration wraps the runner: try Jobylon API first; if it returns rows, stamp them and return; if not, proceed with the shared runner. The `run` function returns `list[RawJob]` only — meta is written to `source_row` by the runner internally.
 
-For each plugin:
+```python
+def _parse_html(ctx):
+    return ctx.parse_jobpostings_from_html(ctx.html, ctx.page_url)
 
-- Replace custom `run` boilerplate with `simple_static_run(...)` when the parser can be expressed as `parse_html(SimpleStaticContext)`.
-- Keep `can_handle` semantics unchanged.
-- Keep source IDs and source names unchanged.
-- Preserve row stamping fields: `adapter`, `studio`, and `source`.
-- Preserve empty parse handling, including explicit no-openings markers and parser-stale metadata.
-- Preserve browser fallback behavior for fetch failures and JS-shell pages.
-- Avoid broad runner option additions for one-off behavior.
+def run(fetch_text, timeout_s, retries, backoff_s, pages, source_row,
+        parse_jobpostings_from_html=None, **kwargs):
+    if not pages or not callable(parse_jobpostings_from_html):
+        return []
+    page_url = _runner.first_static_page(pages)
+    if not page_url:
+        return []
+    company, source_id, source_name = _runner.static_plugin_context_values(
+        source_row=source_row,
+        default_company="Remedy Entertainment",
+        default_source_id="remedy",
+    )
+    jobylon_rows, _stats, _errors, _rejects = extract_jobylon_v1_jobs(
+        source_name=source_name, studio=company, page_url=page_url,
+        timeout_s=max(15, min(timeout_s, 45)),
+    )
+    if jobylon_rows:
+        return _runner.stamp_static_plugin_rows(
+            rows=jobylon_rows, company=company, source_name=source_name,
+        )
+    return _runner.simple_static_run(
+        spec=SimpleStaticPlugin(
+            source_id="remedy",
+            default_company="Remedy Entertainment",
+            require_generic_parser=True,
+        ),
+        parse_html=_parse_html,
+    )(fetch_text=fetch_text, timeout_s=timeout_s, retries=retries,
+      backoff_s=backoff_s, pages=pages, source_row=source_row,
+      parse_jobpostings_from_html=parse_jobpostings_from_html, **kwargs)
+```
 
-Acceptance criteria for each converted plugin:
+(closed L5, L12)
 
-- The plugin remains registered under the same name and priority.
-- The same host or source identity is handled.
-- Existing rows keep stable `sourceJobId`, `company`, `jobLink`, `adapter`, `studio`, and `source` semantics.
-- Empty or blocked pages still set equivalent `_staticPluginMeta`.
-- No unrelated static plugin files are changed in the same commit.
+### Supercell / Larian (two-stage parse with detail link fallback)
 
-## Phase 2: Runner Extension Review
+Both follow the same pattern: generic parser → if zero rows → `static_detail_link_rows` fallback. In Phase 1, both plugins implement this logic inline in their `_parse_html()` functions (no shared helper yet). After both are converted and verified in Phase 1, Phase 2 extracts the `generic_parser_then_detail_links` helper:
 
-After the first batch, decide whether the runner needs small shared extensions.
+```python
+def generic_parser_then_detail_links(
+    ctx, *, extra_anchor_filter=None
+):
+    rows = ctx.parse_jobpostings_from_html(ctx.html, ctx.page_url)
+    if rows:
+        return rows
+    filter_fn = extra_anchor_filter or (lambda href: True)
+    return static_detail_link_rows(
+        ctx.html, ctx.page_url, ctx.company, ctx.source_id,
+        is_probable_detail_url=filter_fn,
+    )
+```
 
-Good extension candidates:
+Then Phase 2 refactors both plugins to use the extracted helper (no behavior change, just code move).
 
-- A reusable no-openings detector hook.
-- A reusable detail-link extractor hook.
-- A configurable JS-shell Playwright fallback path already needed by multiple plugins.
-- A configurable parser-stale metadata path already needed by multiple plugins.
+(closed L10)
 
-Bad extension candidates:
+## Phase 2: Runner Extension Review (supercell/larian helper)
 
-- Options that encode one studio's HTML quirks.
-- Large callback webs that make simple plugins harder to read than the custom version.
-- Generic flags that change browser fallback queue behavior without explicit tests.
+After the first batch, extract the `generic_parser_then_detail_links` helper into `_runner.py`. This helper is justified because it is needed by at least two plugins (supercell, larian).
 
 ## Phase 3: Convert Second-Batch Plugins
 
-Convert `activision.py`, `blizzard.py`, and `milestone.py` only after Phase 1 proves the runner shape is stable.
+### Activision
 
-Keep this phase separate from Phase 1 so regressions are easier to isolate.
+Custom parse function wrapping: pass `try_playwright` through closure for mid-parse browser retry (closed L3). URL canonicalization: the wrapper function resolves the canonical listing URL via `domain_profiles` before calling the runner, passing the canonical URL as `pages[0]`. This follows the same principle as hrmos.py's `company_override` — the wrapper handles the variation, not the runner (closed L11).
+
+The `SimpleStaticPlugin` spec sets `playwright_on_js_shell=True` for first-fetch browser fallback. The mid-parse retry is inside `_parse_html()`:
+
+```python
+def _make_activision_parse_html(try_playwright):
+    def _parse_html(ctx):
+        rows = ctx.parse_jobpostings_from_html(ctx.html, ctx.page_url)
+        if rows:
+            return rows
+        # Mid-parse browser retry
+        if callable(try_playwright):
+            browser_html = try_playwright(ctx.page_url)
+            if browser_html:
+                rows = ctx.parse_jobpostings_from_html(browser_html, ctx.page_url)
+                if rows:
+                    return rows
+        # Anchor regex fallback
+        return _activision_anchor_rows(ctx.html, ctx.page_url, ctx.company, ctx.source_id)
+    return _parse_html
+```
+
+### Riot
+
+Straightforward migration following the embark/globalstep pattern: `_parse_html()` uses `iter_anchor_fragments` → `extract_first_tag_text` → token-based location normalization → `static_job_row(ctx, ...)` for each row. Set `sector=craft or "Game"` on the raw row. No Playwright needed. No sub-page fetching. (closed L7)
 
 ## Phase 4: Review Remaining Custom Plugins
 
-For each remaining plugin, choose one outcome:
+For each remaining plugin in "review before converting," choose one outcome:
+- Convert to `SimpleStaticPlugin` (if it fits after further inspection).
+- Convert to `run_rendered_cards_plugin()` (for `ats_wrappers.py`).
+- Leave custom and document why.
 
-- Convert to `SimpleStaticPlugin`.
-- Leave custom and document why in the plugin or plan closeout.
-- Extract a new shared helper if multiple custom plugins share the same non-simple behavior.
+The 8 plugins classified as non-convertible are intentionally left custom. No further review is needed for them.
 
-Default stance:
+## Row Construction Consistency Rule (closed L7)
 
-- Leave `frontier.py`, `ncsoft.py`, `nintendo_csod.py`, `sheet_studios.py`, and `_rendered_cards.py` custom unless there is a clear repeated pattern worth extracting.
+All converted plugins MUST use `static_job_row(ctx, ...)` for row construction within `_parse_html()`. Manual dict construction is forbidden in converted plugins. This ensures:
+- `sourceJobId`, `company`, `jobLink` fields are derived from the context consistently.
+- `adapter`, `studio`, `source` are stamped automatically by `stamp_static_plugin_rows` in the runner — no inline stamping needed.
+- `source_id`, `source_name` match the plugin identity.
+
+Custom fields (like riot's `sector=craft`) are set on the raw row dict BEFORE returning from `_parse_html()`. The runner's stamping appends adapter/studio/source after the parse function returns.
 
 ## Testing Strategy
 
-Use the narrowest checks for the converted plugins.
+For Phase 0-1 conversions:
+- Use the saved HTML fixtures to compare old vs. new plugin output row-for-row (closed L6).
+- Assert identical `sourceJobId`, `company`, `jobLink`, `adapter`, `studio`, `source` fields between old and new.
+- Run `python -m pytest tests/jobs_static/ -q` if the plugin has existing tests.
+- Run `python -m pytest tests/jobs/adapters/plugins/static/test_standard_plugins.py -q` if the shared runner changes.
 
-Recommended checks:
+For Phase 2 runner changes:
+- Run the full `tests/jobs_static/` slice.
+- Run `tests/jobs/adapters/plugins/static/test_standard_plugins.py`.
 
-- Run focused static plugin unit tests for converted plugins when available.
-- Run `tests/jobs/adapters/plugins/static/test_standard_plugins.py` if the shared runner changes.
-- Run the relevant `tests/jobs_static/` test slice when browser fallback, parser-stale metadata, or static source execution behavior changes.
-- Run one source-specific fetch only when the change affects real network extraction and the user explicitly wants runtime validation.
-
-Do not run full pipeline validation just for simple plugin conversions unless behavior changes cross the static adapter boundary.
+Do not run full pipeline validation unless the conversion changes behavior outside the static adapter.
 
 ## Stop Conditions
 
 Pause the migration if any of these happen:
-
 - A candidate needs multiple one-off runner options.
 - Source-report classification changes without a deliberate behavior fix.
 - Browser fallback queue eligibility changes unexpectedly.
@@ -193,8 +290,29 @@ Pause the migration if any of these happen:
 ## Closeout Criteria
 
 This plan can close when:
-
-- The easy first and second batches are either converted or explicitly marked not worth converting.
-- The remaining custom plugins have documented ownership rationale.
+- The first batch (remedy, supercell, larian) is converted.
+- The second batch (activision, riot) is either converted or explicitly marked not worth converting.
+- The `generic_parser_then_detail_links` helper is extracted (or explicitly deferred with reason).
+- The remaining plugins in "review before converting" have documented outcomes.
+- The 8 non-convertible plugins are left custom with the documented rationale in this plan.
 - `docs/adapter-plugin-inventory.md` reflects the final state if plugin ownership or guidance changes.
 - Tests cover the shared runner behavior that future simple plugins rely on.
+
+## Loophole summary
+
+All 14 identified loopholes are closed in-line above:
+
+- **L1: Blizzard** — non-convertible (multi-page crawling).
+- **L2: Milestone** — non-convertible (iframe sub-page fetch).
+- **L3: Activision mid-parse retry** — wrapped via `try_playwright` closure in `_parse_html`.
+- **L4: record_failure_meta** — runner `_fetch_html` has different impl; spec `parser_stale_hint` controls meta.
+- **L5: Remedy Jobylon wrapping** — wrapper pattern documented with corrected code example.
+- **L6: Test fixture strategy** — save HTML fixture, compare old vs new output row-for-row.
+- **L7: Riot promoted** — structurally close to migrated pattern; moved to Phase 1 second batch.
+- **L8: Non-convertible classification** — 8 plugins explicitly classified as non-convertible.
+- **L9: ats_wrappers** — alternative `run_rendered_cards_plugin()` migration path.
+- **L10: Two-stage parse helper** — `generic_parser_then_detail_links` extracted in Phase 2.
+- **L11: hrmos.py override pattern** — documented as reference for runtime overrides.
+- **L12: Remedy code example** — fixed `stamp_static_plugin_rows` args and return type.
+- **L13: Runner fetch path** — `_fetch_html` doesn't use `fetch_*_with_browser_fallback`; behavior documented.
+- **L14: require_generic_parser** — verified against cdprojektred's pattern; Remedy code example correct.

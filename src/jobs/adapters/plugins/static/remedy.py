@@ -4,11 +4,11 @@ from collections.abc import Callable
 from typing import Any
 
 from src.jobs.adapters.plugins.static._runner import (
-    fetch_static_plugin_html,
+    SimpleStaticContext,
+    SimpleStaticPlugin,
     first_static_page,
-    record_static_plugin_empty_parse,
+    simple_static_run,
     stamp_static_plugin_rows,
-    static_plugin_blocked_by_js_shell,
     static_plugin_context_values,
 )
 from src.jobs.adapters.plugins.types import AdapterPluginContext
@@ -19,6 +19,15 @@ from src.scrapers.providers.jobylon_v1 import extract_jobylon_v1_jobs
 def can_handle(ctx: AdapterPluginContext) -> bool:
     identity = (ctx.source_identity or "").strip().lower()
     return identity in ("www.remedygames.com", "remedygames.com")
+
+
+def _parse_html(ctx: SimpleStaticContext) -> list[dict[str, Any]]:
+    return ctx.parse_jobpostings_from_html(
+        ctx.html,
+        base_url=ctx.page_url,
+        fallback_company=ctx.company,
+        fallback_source_id_prefix=f"static:{ctx.source_id}",
+    )
 
 
 def run(
@@ -32,7 +41,6 @@ def run(
     parse_jobpostings_from_html: Callable[..., list[dict[str, Any]]] | None = None,
     **kwargs: Any,
 ) -> list[RawJob]:
-    _ = (retries, backoff_s, kwargs)
     if not pages or not callable(parse_jobpostings_from_html):
         return []
     page_url = first_static_page(pages)
@@ -40,43 +48,36 @@ def run(
         return []
     company, source_id, source_name = static_plugin_context_values(
         source_row=source_row,
-        default_company="Remedy",
+        default_company="Remedy Entertainment",
         default_source_id="remedy",
         default_source_name="remedy",
     )
-    html = fetch_static_plugin_html(
-        fetch_text=fetch_text,
-        page_url=page_url,
-        timeout_s=timeout_s,
-        source_row=source_row,
-    )
-    if not html or static_plugin_blocked_by_js_shell(
-        html=html,
-        page_url=page_url,
-        source_row=source_row,
-    ):
-        return []
-
-    jobylon_jobs, _stats, _jobylon_errors, _rejects = extract_jobylon_v1_jobs(
+    jobylon_rows, _stats, _jobylon_errors, _rejects = extract_jobylon_v1_jobs(
         source_name=source_name,
         studio=company,
         page_url=page_url,
         timeout_s=max(15, min(timeout_s, 45)),
     )
-    if jobylon_jobs:
+    if jobylon_rows:
         return stamp_static_plugin_rows(
-            rows=jobylon_jobs,
+            rows=jobylon_rows,
             company=company,
             source_name=source_name,
         )
-
-    rows = parse_jobpostings_from_html(
-        html,
-        base_url=page_url,
-        fallback_company=company,
-        fallback_source_id_prefix=f"static:{source_id}",
+    return simple_static_run(
+        spec=SimpleStaticPlugin(
+            source_id="remedy",
+            default_company="Remedy Entertainment",
+            require_generic_parser=True,
+        ),
+        parse_html=_parse_html,
+    )(
+        fetch_text=fetch_text,
+        timeout_s=timeout_s,
+        retries=retries,
+        backoff_s=backoff_s,
+        pages=pages,
+        source_row=source_row,
+        parse_jobpostings_from_html=parse_jobpostings_from_html,
+        **kwargs,
     )
-    cleaned = stamp_static_plugin_rows(rows=rows, company=company, source_name=source_name)
-    if not cleaned:
-        record_static_plugin_empty_parse(html=html, page_url=page_url, source_row=source_row)
-    return cleaned
