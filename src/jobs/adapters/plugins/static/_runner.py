@@ -156,49 +156,6 @@ def fetch_static_plugin_html(
         return ""
 
 
-def fetch_static_plugin_html_with_browser_fallback(
-    *,
-    fetch_text: Callable[[str, int], str],
-    page_url: str,
-    timeout_s: int,
-    source_row: dict[str, Any],
-    try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
-    browser_timeout_s: int = 30,
-    record_failure_meta: bool = True,
-) -> str:
-    try:
-        return fetch_text(page_url, timeout_s)
-    except Exception as exc:  # noqa: BLE001
-        if try_playwright:
-            html, _ = try_playwright(page_url, max(3, min(timeout_s, browser_timeout_s)))
-            if html:
-                return html
-        if record_failure_meta:
-            classification, recommend = _heuristics.classify_fetch_exception(exc)
-            _meta(
-                source_row,
-                classification,
-                browser_fallback_recommended=bool(recommend),
-                extractor_hint="fetch_failed",
-                error=str(exc),
-            )
-        return ""
-
-
-def render_static_plugin_js_shell(
-    *,
-    html: str,
-    page_url: str,
-    timeout_s: int,
-    try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
-    browser_timeout_s: int = 30,
-) -> str:
-    if html and try_playwright and _heuristics.detect_js_shell(html):
-        rendered_html, _ = try_playwright(page_url, max(3, min(timeout_s, browser_timeout_s)))
-        return rendered_html or html
-    return html
-
-
 def static_plugin_blocked_by_js_shell(
     *,
     html: str,
