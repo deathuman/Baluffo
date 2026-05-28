@@ -449,8 +449,8 @@ python scripts/audit_jobs_sanitizer.py --input-csv _out/latest/build/portable/sh
 | Remaining Item | Confidence | Key Risk |
 |---|---|---|
 | P2.0 (employer evidence) | **97%** | ~25 new frozenset entries extending existing 60+ terms; 7 categories well-documented; risk is over-matching false positives on ambiguous company names mitigated by conservative category-label guard |
-| P2.1 (sector gate) | **90%** | Mechanically simple but depends on P2.0 accuracy; bridge env-var passthrough now specified; Category D mislabeling risk quantified |
-| P2.2 (dedup bug) | **85%** | Touches dedup merge logic in `dedup.py`; Google Sheets-specific functions confirmed at lines 246-782; test files exist; need to guarantee no output-schema regression |
+| P2.1 (sector gate) | **98%** | Mechanically simple; bridge env var passthrough confirmed automatic via `os.environ.copy()` — no bridge code changes; depends on P2.0 accuracy; Category D mislabeling risk quantified and contained |
+| P2.2 (dedup bug) | **92%** | Root cause validated: `_blocks_google_sheets_generic_role_url_merge()` only guards GS↔GS, not GS↔Provider; fix is narrow (extend guard condition); Google Sheets-specific dedup functions confirmed at lines 246-782; test file exists; remaining risk is ensuring no output-schema regression |
 | P3.0 (company field) | **70%** | Schema change risk (company is a dedup key); best approach (URL extraction) may only work for ~60% of rows |
 | P3.1 (role policy) | **95%** | Decision-only: 30min discussion, no code |
 
@@ -1106,7 +1106,7 @@ Decide whether corporate roles at game companies (HR, accounting, legal, admin a
 
 *Config mechanism:* Environment variable `BALUFFO_STRICT_GAME_ONLY=1`. Not a CLI flag (so it survives multiple pipeline invocations). Not a bridge route (this is an output pipeline concern, not a UI concern). Read once at pipeline startup in `src/jobs/common/config.py`.
 
-*Bridge integration:* The bridge's `task_launch_api.py` (line 446+) passes `BALUFFO_*` env vars to child pipeline processes via an explicit allowlist. `BALUFFO_STRICT_GAME_ONLY` must be added to the child-process env dict alongside existing vars such as `BALUFFO_DATA_DIR`, `BALUFFO_FETCH_RUN_ID`, etc. Without this, the bridge would strip the env var before the pipeline child sees it. This is a **1-line addition** to `src/bridge/task_launch_api.py`.
+*Bridge integration:* The bridge's `_run_child_process()` (line 445) uses `child_env = os.environ.copy()` which preserves the ENTIRE parent environment, then adds bridge-specific overrides on top. `BALUFFO_STRICT_GAME_ONLY=1` set in the bridge's parent process (or startup env) automatically flows through to the pipeline child. **No bridge code changes required.** If the env var is not set, the bridge passes nothing and the pipeline sees it unset → default behavior preserved.
 
 *Insertion point:* `src/jobs/pipeline_finalize.py`, after dedup and before CSV/JSON write. This is after `canonicalize.py` sector labeling and `dedup.py` merge, so the gate sees the final row set with all metadata intact.
 
@@ -1131,9 +1131,13 @@ Decide whether corporate roles at game companies (HR, accounting, legal, admin a
 
 **Problem.** Category P in the inventory (line 768-779): ~50+ rows show `company: "Unknown company"` with category-label titles instead of real job titles. These are REAL game jobs at Scopely, CDPR, ArenaNet, People Can Fly, Insomniac, etc. whose company name and title were corrupted by the google_sheets dedup merge.
 
-**Root cause (hypothesis to validate before implementation):** The google_sheets dedup path replaces a provider-adapter row's title with the Google Sheets category label during merge, while also losing the company name. This happens when a Google Sheets row and a provider row match by link but the dedup logic favors the Google Sheets `title` (category label) over the provider's real job title, and the Google Sheets `company` is empty or "Unknown."
+**Root cause (validated against source):** `_blocks_google_sheets_generic_role_url_merge()` at `dedup.py:768-779` only guards collisions between TWO Google Sheets rows (line 774: both `current` and `target` must be `_is_google_sheets_row`). When a Google Sheets category-label row collides with a PROVIDER row (Greenhouse, Lever, etc.), the guard returns `False` and the merge proceeds — potentially replacing the provider row's real `title` and `company` with the Google Sheets category label and sheet-context company. Category P rows arise from exactly this cross-source merge scenario.
 
-**Existing code context.** `src/jobs/dedup.py` already contains Google Sheets-specific functions: `_is_google_sheets_row()` (line 246), `_has_google_sheets_generic_role_title()` (line 251), `_has_sheet_role_bucket_title()` (line 268), `_blocks_google_sheets_generic_role_url_merge()` (line 768), and `_record_google_sheets_generic_role_guard_sample()` (line 782). The fix should integrate with these existing guards.
+**Existing code context.**
+- `_is_google_sheets_row()` (line 246): identifies Google Sheets rows by source prefix.
+- `_has_sheet_role_bucket_title()` (line 268): expanded role-bucket detection covering category labels.
+- `_blocks_google_sheets_generic_role_url_merge()` (line 768): blocks merges between two Google Sheets rows with different primary URLs. **Does NOT handle cross-source (Google Sheets↔Provider) merges.**
+- `_record_google_sheets_generic_role_guard_sample()` (line 782): records guard impact samples for audit.
 
 **Implementation approach:**
 1. Audit the dedup merge path in `src/jobs/dedup.py` to confirm the root cause — specifically how Google Sheets rows interact with provider rows at merge time.
