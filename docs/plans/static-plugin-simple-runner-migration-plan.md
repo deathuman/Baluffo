@@ -1,6 +1,6 @@
 # Static Plugin Simple Runner Migration Plan
 
-> - **Status:** Future work, loophole-audited 2026-05-28
+> - **Status:** Complete — Phases 1-4 shipped 2026-05-28, loophole-audited
 > - **Use this when:** continuing the migration of custom static adapter plugins onto the shared simple static plugin runner
 > - **Canonical for:** phased migration strategy, candidate ordering, acceptance criteria, and risk boundaries for `SimpleStaticPlugin` adoption
 > - **Not canonical for:** live source inventory, static plugin runtime contracts, provider/static suppression policy, or current extraction behavior
@@ -12,6 +12,20 @@
 This plan has been loophole-audited against the codebase on 2026-05-28. Every custom static plugin was read and assessed for migration compatibility. 14 loopholes were identified and closed across candidate classification, runner extension needs, test validation strategy, row construction consistency, and code example accuracy.
 
 ## Summary
+
+This plan is now complete. 5 plugins were converted to `SimpleStaticPlugin`, 1 shared helper was extracted, and 10 plugins were assessed and left custom with documented rationale.
+
+| Outcome | Count | Plugins |
+|---------|-------|---------|
+| **Converted** | 5 | remedy, supercell, larian, activision, riot |
+| **Not convertible** | 10 | blizzard, milestone, frontier, ncsoft, nintendo_csod, sheet_studios, amanotes, littlechicken, ats_wrappers, kojima |
+| **Runner extended** | 1 | `generic_parser_then_detail_links` helper for supercell/larian pattern |
+| **Existing adopters** | 8 | cdprojektred, climax, embark, globalstep, hrmos, jobvite, lionbridge, naconstudiomilan |
+| **Left as shared module** | 1 | `_rendered_cards.py` (not a plugin — shared extraction module) |
+
+All 183 static plugin tests pass. All pre-commit gates pass.
+
+Original plan summary:
 
 Continue the existing static plugin migration by converting straightforward custom static plugins to the shared `SimpleStaticPlugin` runner in small, behavior-preserving batches.
 
@@ -99,11 +113,12 @@ Primary risk:
 | `activision.py` | 167 | URL canonicalization + mid-parse browser retry + custom anchor regex fallback. `try_playwright` passed via closure. Custom `extractor_hint` for empty recording. | Medium |
 | `riot.py` | 149 | Promoted from "review before converting." Anchor iteration + text extraction + craft/sector assignment. Switch to `static_job_row` for row stamping. No Playwright needed. | Low-Medium |
 
-#### Review before converting (2 plugins)
-| Plugin | Lines | Notes |
-|--------|-------|-------|
-| `ats_wrappers.py` | 139 | Uses `_rendered_cards.extract_rendered_card_jobs()`. Alternative: migrate to `run_rendered_cards_plugin()`. |
-| `kojima.py` | 216 | Custom `maybe_fetch_kojima_job_listing_html` injection + role-pattern filtering. May or may not fit. |
+#### Review before converting (2 plugins, both reviewed 2026-05-28)
+
+| Plugin | Lines | Review outcome |
+|--------|-------|---------------|
+| `ats_wrappers.py` | 139 | **Not convertible.** Uses `extract_rendered_card_jobs()` — rendered-cards-based, not simple static. Alternative: migrate to `run_rendered_cards_plugin()` (separate migration). |
+| `kojima.py` | 216 | **Not convertible.** Unique `maybe_fetch_kojima_job_listing_html` pre-fetch injection + role-pattern filter + excluded paths logic. No other plugin shares this pattern. |
 
 #### Not convertible to SimpleStaticPlugin (8 plugins)
 | Plugin | Lines | Reason |
@@ -248,12 +263,26 @@ Straightforward migration following the embark/globalstep pattern: `_parse_html(
 
 ## Phase 4: Review Remaining Custom Plugins
 
-For each remaining plugin in "review before converting," choose one outcome:
-- Convert to `SimpleStaticPlugin` (if it fits after further inspection).
-- Convert to `run_rendered_cards_plugin()` (for `ats_wrappers.py`).
-- Leave custom and document why.
+Review completed 2026-05-28.
 
-The 8 plugins classified as non-convertible are intentionally left custom. No further review is needed for them.
+### ats_wrappers.py — Not convertible to SimpleStaticPlugin
+
+`ats_wrappers.py` (139 lines) uses `extract_rendered_card_jobs()` from `_rendered_cards.py` — not the generic HTML parser. It has no `parse_jobpostings_from_html` parameter. The plugin is a rendered-cards-based extractor with custom `_ATS_HREF_TOKENS`, `allow_any_anchor=True`, manual source name stamping, and multi-branch empty/no-openings/ATS detection.
+
+**Outcome: Leave custom.** This plugin could potentially be migrated to `_rendered_cards.run_rendered_cards_plugin()` instead of SimpleStaticPlugin, but that is a separate migration path (rendered-cards-based, not simple runner). The `run_rendered_cards_plugin()` runner at `_rendered_cards.py:906` handles fetch + Playwright fallback + meta recording, which would replace most of `ats_wrappers.py`'s current boilerplate. This would be a single-plugin migration using a different runner — outside the scope of the SimpleStaticPlugin migration.
+
+### kojima.py — Not convertible to SimpleStaticPlugin
+
+`kojima.py` (216 lines) has a unique pre-fetch injection: `maybe_fetch_kojima_job_listing_html`. This custom function is called during fetching to potentially replace the HTML with a dynamically-fetched version before any parsing happens. The SimpleStaticPlugin runner's `_fetch_html` does not support custom pre-fetch hooks, and adding a spec field for this one plugin's unique need would violate the "extend only when at least two candidates need the same option" rule.
+
+Additional custom behaviors that don't fit the runner model:
+- Role-pattern filter (`re.compile(r"(programmer|artist|designer|...)"`) that rejects link text not matching game-industry roles
+- Excluded paths list (`/en/careers`, `/en/careers_interview`, etc.)
+- `<br>`-based line splitting for text extraction
+- Default country fallback to "Japan"
+- The `maybe_fetch_kojima_job_listing_html` parameter is passed through `**kwargs` to the run function. If the runner received it, it would be silently discarded (line 367 of `_runner.py`).
+
+**Outcome: Leave custom.** The `maybe_fetch_kojima_job_listing_html` injection is a unique pre-fetch requirement. No other plugin has this behavior. The role-pattern filtering and excluded-paths logic are site-specific.
 
 ## Row Construction Consistency Rule (closed L7)
 
@@ -290,13 +319,13 @@ Pause the migration if any of these happen:
 ## Closeout Criteria
 
 This plan can close when:
-- The first batch (remedy, supercell, larian) is converted.
-- The second batch (activision, riot) is either converted or explicitly marked not worth converting.
-- The `generic_parser_then_detail_links` helper is extracted (or explicitly deferred with reason).
-- The remaining plugins in "review before converting" have documented outcomes.
-- The 8 non-convertible plugins are left custom with the documented rationale in this plan.
+- The first batch (remedy, supercell, larian) is converted. ✅ `913a473c`
+- The second batch (activision, riot) is converted. ✅ `bfd01a5c`
+- The `generic_parser_then_detail_links` helper is extracted. ✅ `bfd01a5c`
+- The remaining plugins in "review before converting" have documented outcomes. ✅ 2026-05-28
+- The 8 non-convertible plugins are left custom with the documented rationale in this plan. ✅
 - `docs/adapter-plugin-inventory.md` reflects the final state if plugin ownership or guidance changes.
-- Tests cover the shared runner behavior that future simple plugins rely on.
+- Tests cover the shared runner behavior that future simple plugins rely on. ✅ All 183 pass.
 
 ## Loophole summary
 
