@@ -8,6 +8,7 @@ Latest archives:
 
 - Completed Linux compatibility implementation lives in [`linux-compatibility-plan.md`](linux-compatibility-plan.md). All 8 phases shipped to `main` on 2026-05-25.
 - Completed Windows packaged user-data migration lives in [`windows-user-data-migration-plan.md`](windows-user-data-migration-plan.md). Implementation shipped to `main` on 2026-05-25.
+- Completed AI modification safety improvements live in [`ai-modification-safety-improvements-plan.md`](ai-modification-safety-improvements-plan.md). All nine sections (boundary markers, route inventory, typed contracts, builder splits, Admin Ops partition, discovery stage labels, packaged desktop side-effect labels) shipped to `main` by 2026-05-27; deferred §3 typed-contract follow-ups are tracked in the closeout.
 
 Use the active docs first:
 

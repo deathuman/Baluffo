@@ -176,6 +176,7 @@ def _restore_install_snapshot(install_root: Path, rollback_root: Path) -> None:
         shutil.copy2(path, target)
 
 
+# install mutation: deletes files not in new extract, copies extracted content
 def _sync_extract_to_install(install_root: Path, extracted_root: Path) -> None:
     target_paths = {
         path.relative_to(extracted_root).as_posix()

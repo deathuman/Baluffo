@@ -54,7 +54,7 @@ If Serena memory and repo docs ever diverge, the repo docs stay canonical.
 | Bridge changes only need backend tests | Verify both Python backend and frontend/runtime callers as needed |
 | UI selectors can be guessed | Use `frontend/shared/ui/selectors.js` |
 | Endpoint payloads can be assumed | Check [`admin-bridge-api.md`](admin-bridge-api.md) first |
-| Dedup/reporting pressure has no known hotspot | `src/jobs/reporting_dedup_evidence.py` is the current primary split candidate: 3,641 lines, 122 functions, with `build_dedup_evidence()` and `build_dedup_audit_gate()` as the large public builders |
+| Dedup/reporting pressure has no known hotspot | The dedup evidence coordinator (`reporting_dedup_evidence.py`) and registry conflict coordinator (`registry_conflicts.py`) were split into leaf modules in 2026-05; public entrypoints remain stable in the coordinator files |
 
 ## Verification Shortcuts
 

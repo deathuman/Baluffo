@@ -1,11 +1,48 @@
 # AI Modification Safety Improvements Plan
 
-> - **Status:** Active plan, advisory-only
-> - **Use this when:** reducing AI edit risk around compatibility roots, bridge route contracts, large report builders, task lifecycle/storage flows, or packaged desktop release surfaces
-> - **Canonical for:** proposed sequencing for making high-risk code easier for AI and human maintainers to modify safely
+> - **Status:** Archived plan with closeout
+> - **Use this when:** reviewing why AI boundary markers, dedup/conflict/task-launch splits, Admin Ops partitioning, discovery stage labels, and packaged desktop side-effect labels were added; or understanding the risk audit patterns that informed these changes
+> - **Canonical for:** historical scope, sequencing rationale, completed implementation record, and deferred follow-ups
 > - **Not canonical for:** current endpoint payloads, data schemas, runtime behavior, release requirements, or subsystem ownership
 > - **Then inspect:** [`../AI_ASSISTANT_GUIDE.md`](../AI_ASSISTANT_GUIDE.md), [`../architecture-ai-map.md`](../architecture-ai-map.md), [`../admin-bridge-api.md`](../admin-bridge-api.md), [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md), [`../storage-contract.md`](../storage-contract.md), and [`../testing.md`](../testing.md)
-> - **Last updated:** 2026-05-26
+> - **Archived:** 2026-05-27
+
+## Closeout
+
+All nine implementation sections are complete. The four discrete builder splits
+(§4–§6), the Admin Ops render partition (§7), the discovery/adapter stage labels
+(§8), and the packaged desktop side-effect labels (§9) shipped to `main` between
+2026-05-13 and 2026-05-27.
+
+AI boundary markers (§1) now live on all nine compatibility roots and GET/POST
+route dispatch files. The route contract inventory (§2) is checked by
+`npm run lint:repo-guardrails routes`. Typed payload contracts (§3) cover task
+launch, task-state, dedup evidence, audit gate, provider/static disagreement,
+and fetcher metrics in both Python `TypedDict` and frontend JSDoc typedefs.
+
+Four typed-contract candidates from §3 were deferred as follow-ups:
+registry conflict card rows, safe-automation result rows, source-policy
+recommendation/review rows, and desktop-local-data route payloads. All four
+are deferrable — the registry conflict card (deeply nested, 25+ fields)
+would be the largest single addition. The normalize functions and existing
+Pydantic schemas serve as informal schema documentation in the interim.
+
+The static-listing plugin fast-path extraction (§8) was deferred — marker
+comments remain as architectural guidance.
+
+Open Questions resolved:
+- Route inventory lives in `tools/repo_health/bridge_route_inventory.py`
+  (Python data module, checked by guardrail).
+- `frontend/shared/types.js` stayed as a single unified JSDoc typedef file.
+- `TypedDict` and Pydantic are used pragmatically: Pydantic for core data
+  contracts (`src/core/schemas.py`), `TypedDict` for bridge boundary
+  payloads, JSDoc for frontend shapes.
+
+All acceptance criteria are met: compatibility roots remain thin, route
+changes have clear frontend caller lists and verification lanes, large
+report builders are split without changing output shape, no new dependencies
+were introduced, and no public payload or persisted data contract was
+changed unintentionally.
 
 ## Summary
 
@@ -111,7 +148,7 @@ Risk: these modules coordinate staged audits, recovery artifacts, browser/HTTP f
 Current good signals:
 
 - [`../scraping-pipeline.md`](../scraping-pipeline.md) and [`../adapter-plugin-inventory.md`](../adapter-plugin-inventory.md) route subsystem ownership.
-- Static plugin migration work is already tracked separately in [`static-plugin-simple-runner-migration-plan.md`](static-plugin-simple-runner-migration-plan.md).
+- Static plugin migration work is already tracked separately in [`../plans/static-plugin-simple-runner-migration-plan.md`](../plans/static-plugin-simple-runner-migration-plan.md).
 
 Remaining gap: stage-result shapes are mostly dict-shaped, and the long flow files do not consistently advertise which helpers are pure classifiers, mutating artifact writers, or external-network/runtime stages.
 
@@ -392,6 +429,18 @@ Ruff, gitleaks, line-budget, and all repo guardrails pass.
 
 ### 9. Add Packaged Desktop Risk Labels And Verification Hooks
 
+Completed 2026-05-27. Side-effect labels added to three files: `_windows.py` (6
+process ownership and stale runtime reclaim comments), `_linux.py` (6 mirror
+comments with platform-appropriate wording), and `desktop_updater_install.py`
+(1 install mutation comment).  Only truly non-obvious side effects commented;
+functions with clear names (e.g. `_windows_api_terminate_process_by_pid`,
+`_copy_install_snapshot`, `_verify_target_startup`) left unlabeled.
+
+Verification via `npm run lint:repo-guardrails` (all 9 groups pass); relevant
+rehearsal lanes are `npm run test:frontend:packaged:orphan-reclaim-rehearsal`,
+`npm run test:frontend:packaged:browser-job-rehearsal`, and
+`npm run test:frontend:packaged:update-rehearsal`.
+
 For packaged desktop and updater code, prefer explicit side-effect names over generic helper names:
 
 - process ownership
@@ -414,7 +463,7 @@ Acceptance guard: changes to these files use the relevant packaged rehearsal lan
 5. Task launch extraction. **Done 2026-05-26.**
 6. Admin Ops render partition. **Done 2026-05-26.**
 7. Discovery/static stage labels and limited extraction. **Done 2026-05-26.**
-8. Packaged desktop local labels and side-effect naming cleanup.
+8. Packaged desktop local labels and side-effect naming cleanup. **Done 2026-05-27.**
 
 This order makes later refactors safer by first improving searchability and route/payload visibility.
 
@@ -431,7 +480,7 @@ This order makes later refactors safer by first improving searchability and rout
 | Registry conflict split | focused registry conflict/Admin route tests under `tests/admin/` |
 | Admin Ops rendering split | `npm run test:frontend:unit` |
 | Static adapter/discovery flow stage extraction | nearest `tests/jobs_static/` or `tests/source_discovery/` slice |
-| Packaged desktop/updater naming or flow changes | matching packaged rehearsal lane from [`../testing.md`](../testing.md) |
+| Packaged desktop/updater naming or flow changes | matching packaged rehearsal lane from [`../testing.md`](../testing.md) | **Done 2026-05-27: side-effect labels added to `_windows.py`, `_linux.py`, `desktop_updater_install.py`.** |
 
 For compatibility root changes, run `npm run test:refactor:changed`.
 
@@ -445,12 +494,14 @@ For compatibility root changes, run `npm run test:refactor:changed`.
 - No new dependencies are introduced.
 - No persisted data contract, public job text, route path, release behavior, or compatibility export changes unintentionally.
 
-## Open Questions
+## Open Questions (resolved)
 
-- Whether route inventory should live as a Markdown table, a small Python data module, a JS data module, or both. Prefer the lowest-maintenance option that can be checked by tests.
-- Whether `frontend/shared/types.js` should remain the single JSDoc typedef file or split into route-specific typedef modules.
-- Whether typed contract work should extend the existing Pydantic schemas or stay as `TypedDict` for diagnostic payloads that are intentionally lenient.
+- **Route inventory format:** Resolved — lives in `tools/repo_health/bridge_route_inventory.py` (Python data module, checked by `npm run lint:repo-guardrails routes`).
+- **types.js split:** Resolved — kept as a single unified JSDoc typedef file under `frontend/shared/types.js`.
+- **TypedDict vs Pydantic:** Resolved — both used pragmatically: Pydantic for core data contracts (`src/core/schemas.py`), `TypedDict` for bridge boundary payloads, JSDoc for frontend shapes.
 
 ## Notes
 
 This plan is a safety and maintainability plan. It should not be used as permission to change behavior in dedup, registry automation, discovery, storage authority, or packaged update flows. Behavior changes need their own narrower plan or task.
+
+The archive preserves the full risk audit, implementation record, and deferred follow-up tracking. For current AI editing guidance, start with [`docs/AI_ASSISTANT_GUIDE.md`](../AI_ASSISTANT_GUIDE.md) and [`docs/architecture-ai-map.md`](../architecture-ai-map.md).

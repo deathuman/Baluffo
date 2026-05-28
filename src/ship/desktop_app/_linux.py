@@ -299,6 +299,7 @@ _NEXT_JOB_ID: int = 0
 _JOB_TRACKED_PIDS: dict[int, set[int]] = {}
 
 
+# process ownership: kills tracked children via SIGTERM/SIGKILL when "closed"
 def _windows_create_kill_on_close_job() -> int | None:
     # Linux emulation: global PID dict + SIGTERM/SIGKILL replaces Win32 Job Object API.
     global _NEXT_JOB_ID
@@ -307,6 +308,7 @@ def _windows_create_kill_on_close_job() -> int | None:
     return _NEXT_JOB_ID
 
 
+# process ownership: binds PID to job -- process killed when job handle closes
 def _windows_try_assign_pid_to_job(job_handle: int, pid: int) -> None:
     if not job_handle or pid <= 0:
         return
@@ -314,6 +316,7 @@ def _windows_try_assign_pid_to_job(job_handle: int, pid: int) -> None:
         _JOB_TRACKED_PIDS[job_handle].add(int(pid))
 
 
+# process ownership: closes "job" -- SIGTERM/SIGKILL for all tracked children
 def _windows_close_desktop_job(job_handle: int | None) -> None:
     if not job_handle:
         return
@@ -365,6 +368,7 @@ def _runtime_reclaim_not_applicable(target: str) -> dict[str, object]:
     }
 
 
+# stale runtime reclaim: terminates stale bridge process
 def _windows_try_reclaim_stale_bridge_process(
     stale_state: dict[str, object],
     *,
@@ -509,6 +513,7 @@ def _windows_try_reclaim_stale_bridge_process(
     return result
 
 
+# stale runtime reclaim: terminates stale site process
 def _windows_try_reclaim_stale_site_process(
     stale_state: dict[str, object],
     *,
@@ -642,6 +647,7 @@ def _windows_try_reclaim_stale_site_process(
     return result
 
 
+# stale runtime reclaim: orchestrator -- terminates bridge + site if stale
 def _windows_reclaim_stale_runtime_children(
     stale_state: dict[str, object],
     *,

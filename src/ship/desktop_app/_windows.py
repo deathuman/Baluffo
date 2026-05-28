@@ -397,6 +397,7 @@ def _windows_raise_last_error(message: str) -> None:
     raise OSError(code, f"{message}: {detail or 'Unknown Windows error'}")
 
 
+# process ownership: Win32 Job Object -- children killed when handle closes
 def _windows_create_kill_on_close_job() -> int | None:
     # Kernel job object: when handle closes, kernel auto-terminates all attached PIDs.
     api = desktop_api()
@@ -423,6 +424,7 @@ def _windows_create_kill_on_close_job() -> int | None:
     return int(job)
 
 
+# process ownership: binds PID to job -- process killed when job handle closes
 def _windows_try_assign_pid_to_job(job_handle: int, pid: int) -> None:
     api = desktop_api()
     if api.os.name != "nt" or not job_handle or pid <= 0:
@@ -444,6 +446,7 @@ def _windows_try_assign_pid_to_job(job_handle: int, pid: int) -> None:
         api.ctypes.windll.kernel32.CloseHandle(hproc)
 
 
+# process ownership: closes job handle -- triggers KillOnClose for all children
 def _windows_close_desktop_job(job_handle: int | None) -> None:
     api = desktop_api()
     if api.os.name != "nt" or not job_handle:
@@ -550,6 +553,7 @@ def _find_baluffo_visible_window(
     return title_matches[0] if title_matches else None
 
 
+# stale runtime reclaim: terminates stale bridge process
 def _windows_try_reclaim_stale_bridge_process(
     stale_state: dict[str, object],
     *,
@@ -694,6 +698,7 @@ def _windows_try_reclaim_stale_bridge_process(
     return result
 
 
+# stale runtime reclaim: terminates stale site process
 def _windows_try_reclaim_stale_site_process(
     stale_state: dict[str, object],
     *,
@@ -827,6 +832,7 @@ def _windows_try_reclaim_stale_site_process(
     return result
 
 
+# stale runtime reclaim: orchestrator -- terminates bridge + site if stale
 def _windows_reclaim_stale_runtime_children(
     stale_state: dict[str, object],
     *,
