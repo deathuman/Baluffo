@@ -33,6 +33,28 @@ export function appendAdminLogRow(container, event, options = {}) {
   text.textContent = formatLogEventText(event);
 
   row.append(stamp, text);
+
+  const normalizedLevel = normalizeLogLevel(event.level);
+  if (normalizedLevel === "error" || normalizedLevel === "warn") {
+    const detail = document.createElement("div");
+    detail.className = "fetcher-log-detail";
+    detail.textContent = JSON.stringify({
+      level: normalizedLevel,
+      scope: event.scope,
+      sourceId: event.sourceId,
+      message: formatLogEventText(event),
+      timestamp: event.timestamp
+    }, null, 2);
+    row.appendChild(detail);
+
+    row.setAttribute("role", "button");
+    row.setAttribute("tabindex", "0");
+    row.setAttribute("aria-expanded", "false");
+    row.addEventListener("click", () => {
+      const expanded = row.classList.toggle("expanded");
+      row.setAttribute("aria-expanded", expanded ? "true" : "false");
+    });
+  }
   container.appendChild(row);
 
   while (container.children.length > maxRows) {

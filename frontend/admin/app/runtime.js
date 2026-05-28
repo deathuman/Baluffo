@@ -75,13 +75,8 @@ const UNKNOWN_ERROR_TEXT = "unknown error";
 const state = createAdminRuntimeState();
 
 let refs = {};
-let authController;
-let syncController;
-let opsController;
-let fetcherController;
-let discoveryController;
-let registryController;
-let overviewController;
+let authController, syncController, opsController, fetcherController, discoveryController;
+let registryController, overviewController, actionCenterController, inspectorController;
 let restoreActiveRunWatches;
 const startupMetrics = createAdminStartupMetrics({
   emitStartupMetric: (event, payload) => emitAdminStartupMetricFromData(ADMIN_BRIDGE_BASE, event, payload)
@@ -253,6 +248,8 @@ function bootAdminPage() {
     discoveryController,
     registryController,
     overviewController,
+    actionCenterController,
+    inspectorController,
     restoreActiveRunWatches
   } = composeAdminControllers({
     state,
@@ -309,6 +306,7 @@ function bootAdminPage() {
     onSetSourceFilter: setSourceFilter
   });
   authController.initAdminPage();
+  actionCenterController.startPolling(); inspectorController.init();
   Promise.resolve(restoreActiveRunWatches?.()).catch(() => {});
 }
 

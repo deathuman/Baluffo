@@ -23,6 +23,30 @@
 
     <p id="admin-source-status" data-ui="admin-source-status" class="source-status">Loading admin overview...</p>
 
+    <section id="admin-action-center" data-ui="admin-action-center" class="action-center-panel">
+      <div class="action-center-header">
+        <h2 class="action-center-title">Action Center</h2>
+      </div>
+      <div id="admin-action-center-items" data-ui="admin-action-center-items" class="action-center-items">
+        <div class="action-center-item action-center-item-ok">
+          <div class="action-center-item-body">
+            <span class="action-center-item-icon">&#x25CB;</span>
+            <span class="action-center-item-summary">Loading operational signals&#x2026;</span>
+          </div>
+        </div>
+      </div>
+      <div class="action-center-footer">
+        <button id="admin-action-center-copy-btn" data-ui="admin-action-center-copy-btn" class="btn action-center-copy-btn" data-tooltip="Copy all health, sync, and storage diagnostics to clipboard">Copy all diagnostics</button>
+      </div>
+    </section>
+
+    <nav class="admin-section-nav">
+      <a href="#admin-ops-section">Ops</a>
+      <a href="#admin-fetcher-section">Fetcher</a>
+      <a href="#admin-discovery-section">Discovery</a>
+      <a href="#admin-sync-section">Sync</a>
+    </nav>
+
     <section id="admin-content" data-ui="admin-content" class="admin-panel">
       <div class="admin-toolbar">
         <h2 class="admin-section-title">Stored Profiles Overview</h2>
@@ -34,7 +58,7 @@
       <div id="admin-totals" data-ui="admin-totals" class="admin-totals"></div>
       <div id="admin-users-list" data-ui="admin-users-list" class="jobs-list"></div>
 
-      <section class="admin-fetcher-panel admin-ops-panel">
+      <section id="admin-ops-section" class="admin-fetcher-panel admin-ops-panel">
         <div class="admin-fetcher-header">
           <h3 class="admin-fetcher-title">Operations Health</h3>
           <div class="admin-fetcher-actions">
@@ -81,7 +105,7 @@
         </div>
       </section>
 
-      <section class="admin-fetcher-panel">
+      <section id="admin-fetcher-section" class="admin-fetcher-panel">
         <div class="admin-fetcher-header">
           <h3 class="admin-fetcher-title">Fetcher Output</h3>
           <div class="admin-fetcher-actions">
@@ -115,9 +139,9 @@
         <div id="admin-fetcher-log" data-ui="admin-fetcher-log" class="admin-fetcher-log" role="log" aria-live="polite"></div>
       </section>
 
-      <section class="admin-fetcher-panel admin-discovery-panel">
+      <section id="admin-discovery-section" class="admin-fetcher-panel admin-discovery-panel">
         <div class="admin-fetcher-header">
-          <h3 class="admin-fetcher-title">Source Discovery</h3>
+          <h3 class="admin-fetcher-title">Source Discovery <span id="admin-discovery-pending-badge" data-ui="discoveryPendingBadge" class="admin-discovery-pending-badge hidden"></span></h3>
         </div>
         <div class="admin-discovery-layout">
           <div class="admin-discovery-top-row">
@@ -234,7 +258,7 @@
         </div>
       </section>
 
-      <section class="admin-fetcher-panel admin-sync-panel">
+      <section id="admin-sync-section" class="admin-fetcher-panel admin-sync-panel">
         <div class="admin-fetcher-header">
           <div class="admin-sync-title-wrap">
             <h3 class="admin-fetcher-title">Source Sync</h3>
@@ -265,6 +289,16 @@
 
     <div class="jobs-footer admin-page-footer">
       <p data-ui="app-version" class="jobs-footer-version" hidden></p>
+    </div>
+  </div>
+
+  <div id="admin-inspector-overlay" data-ui="inspectorOverlay" class="inspector-overlay hidden">
+    <div id="admin-inspector-panel" data-ui="inspectorPanel" class="inspector-panel" role="dialog" aria-modal="true" aria-label="Entity inspector">
+      <div class="inspector-header">
+        <h3 id="admin-inspector-title" data-ui="inspectorTitle" class="inspector-title">Inspector</h3>
+        <button id="admin-inspector-close-btn" data-ui="inspectorCloseBtn" class="btn inspector-close-btn" aria-label="Close inspector">&times;</button>
+      </div>
+      <div id="admin-inspector-content" data-ui="inspectorContent" class="inspector-content"></div>
     </div>
   </div>
 

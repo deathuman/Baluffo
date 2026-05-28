@@ -1,11 +1,11 @@
 # Cold-Run Jobs Freshness Strategy Plan
 
-> - **Status:** Active strategy plan
-> - **Use this when:** improving first-run Jobs freshness, bootstrap refresh, packaged jobs artifact stripping, or limited-coverage messaging
-> - **Canonical for:** planned cold-run UX strategy and loophole guardrails
-> - **Not canonical for:** final route contracts until implemented
+> - **Status:** Archived — fully implemented 2026-05-28
+> - **Use this when:** verifying the cold-run bootstrap behavior, inspecting the pre-implementation strategy and loophole audit
+> - **Canonical for:** archived cold-run UX strategy record
+> - **Not canonical for:** current route contracts; see active docs instead
 > - **Then inspect:** [`../AI_ASSISTANT_GUIDE.md`](../AI_ASSISTANT_GUIDE.md), [`../architecture-ai-map.md`](../architecture-ai-map.md), [`../admin-bridge-api.md`](../admin-bridge-api.md), [`../fetcher-runtime-contracts.md`](../fetcher-runtime-contracts.md), [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md), [`../testing.md`](../testing.md)
-> - **Last updated:** 2026-05-17
+> - **Last updated:** 2026-05-28
 
 ## Summary
 

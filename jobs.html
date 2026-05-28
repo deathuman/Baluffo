@@ -49,6 +49,14 @@
 
     <div id="fetch-progress" data-ui="fetch-progress" class="fetch-progress hidden"></div>
     <p id="source-status" data-ui="source-status" class="source-status" aria-live="polite"></p>
+    <div id="recent-views-bar" data-ui="recent-views-bar" class="recent-views-bar hidden" aria-label="Recent views"></div>
+    <div id="saved-views-bar" data-ui="saved-views-bar" class="saved-views-bar hidden" aria-label="Saved filter presets">
+      <span class="saved-views-label">Saved views:</span>
+      <select id="saved-views-dropdown" data-ui="saved-views-dropdown" class="saved-view-dropdown hidden" aria-label="Load saved view">
+        <option value="">Load...</option>
+      </select>
+      <button id="saved-views-delete-btn" data-ui="saved-views-delete-btn" class="saved-view-delete-btn hidden" aria-label="Delete selected saved view">Delete</button>
+    </div>
     <section
       id="desktop-update-panel"
       data-ui="desktop-update-panel"

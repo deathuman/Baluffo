@@ -462,6 +462,7 @@ def test_index_routes_current_process_docs_only(repo_root: Path) -> None:
         "docs/archive/admin-health-dashboard-console-closeout.md",
         "docs/archive/ai-modification-safety-improvements-plan.md",
         "docs/archive/bridge-route-inventory-guardrail-plan.md",
+        "docs/archive/cold-run-jobs-freshness-strategy-plan.md",
         "docs/archive/dedup-current-run-blocker-review-closeout.md",
         "docs/archive/dedup-google-sheets-role-bucket-audit-closeout.md",
         "docs/archive/dedup-lifecycle-readiness-closeout.md",

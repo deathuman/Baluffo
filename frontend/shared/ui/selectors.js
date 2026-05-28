@@ -67,6 +67,10 @@ export const UI_TOKENS = Object.freeze({
     quickFiltersResetBtn: "quick-filters-reset-btn",
     dataSourcesList: "data-sources-list",
     dataSourcesCaption: "data-sources-caption",
+    recentViewsBar: "recent-views-bar",
+    savedViewsBar: "saved-views-bar",
+    savedViewsDropdown: "saved-views-dropdown",
+    savedViewsDeleteBtn: "saved-views-delete-btn",
     // Dynamic item tokens
     jobRow: "job-row",
     saveJobBtn: "save-job-btn"
@@ -221,6 +225,15 @@ export const UI_TOKENS = Object.freeze({
     sourcePolicyActionBtn: "admin-source-policy-action-btn",
     sourcePolicyMigrationLinkActionBtn: "admin-source-policy-migration-link-action-btn",
     registryConflictActionBtn: "admin-registry-conflict-action-btn",
-    registryConflictCheckBtn: "admin-registry-conflict-check-btn"
+    registryConflictCheckBtn: "admin-registry-conflict-check-btn",
+    actionCenterPanel: "admin-action-center",
+    actionCenterItems: "admin-action-center-items",
+    actionCenterCopyBtn: "admin-action-center-copy-btn",
+    discoveryPendingBadge: "admin-discovery-pending-badge",
+    inspectorOverlay: "admin-inspector-overlay",
+    inspectorPanel: "admin-inspector-panel",
+    inspectorTitle: "admin-inspector-title",
+    inspectorContent: "admin-inspector-content",
+    inspectorCloseBtn: "admin-inspector-close-btn"
   }
 });

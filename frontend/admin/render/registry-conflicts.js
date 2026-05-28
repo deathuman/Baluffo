@@ -606,7 +606,7 @@ function renderConflictCard(card, cardIndex, options = {}) {
     : "";
   const detailCount = rationale.length + diffs.reduce((total, diff) => total + listValue(diff?.fields).length, 0);
   return `
-    <section class="admin-registry-conflict-card" data-registry-conflict-card="${cardIndex}">
+    <section class="admin-registry-conflict-card" data-registry-conflict-card="${cardIndex}" data-conflict-key="${escapeHtml(familyKey)}">
       <div class="admin-registry-conflict-card-head">
         <div class="admin-registry-conflict-card-title">
           <div class="admin-registry-conflict-family">${escapeHtml(familyKey)}</div>

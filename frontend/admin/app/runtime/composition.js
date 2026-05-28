@@ -27,6 +27,8 @@ import { createAdminOpsController, formatBytes } from "../ops.js?v=16";
 import { createAdminRegistryController } from "../registry.js?v=14";
 import { createAdminSyncController } from "../sync.js?v=13";
 import { createAdminOverviewController } from "./overview.js?v=13";
+import { createActionCenterController } from "../action-center.js";
+import { createAdminInspectorController } from "../inspector.js";
 
 export function composeAdminControllers({
   state,
@@ -210,6 +212,22 @@ export function composeAdminControllers({
     getErrorMessage
   });
 
+  const actionCenterController = createActionCenterController({
+    refs,
+    getBridge,
+    postBridge,
+    showToast,
+    logAdminError
+  });
+
+  const inspectorController = createAdminInspectorController({
+    refs,
+    getBridge,
+    postBridge,
+    showToast,
+    logAdminError
+  });
+
   authController = createAdminAuthController({
     refs,
     emitAdminStartupMetric,
@@ -251,6 +269,8 @@ export function composeAdminControllers({
     discoveryController,
     registryController,
     overviewController,
+    actionCenterController,
+    inspectorController,
     restoreActiveRunWatches
   };
 }

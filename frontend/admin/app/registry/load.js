@@ -325,6 +325,15 @@ export function createRegistryLoadController({
           refs.adminDiscoverySummaryEl.textContent = summaryText;
           refs.adminDiscoverySummaryEl.innerHTML = `<div>${summaryText}</div>`;
         }
+        if (refs.discoveryPendingBadgeEl) {
+          const pendingCount = Number(pending?.summary?.pendingCount || 0);
+          if (pendingCount > 0) {
+            refs.discoveryPendingBadgeEl.textContent = pendingCount > 999 ? "999+" : pendingCount.toLocaleString();
+            refs.discoveryPendingBadgeEl.classList.remove("hidden");
+          } else {
+            refs.discoveryPendingBadgeEl.classList.add("hidden");
+          }
+        }
         if (refs.adminDiscoveryReviewEl) {
           refs.adminDiscoveryReviewEl.innerHTML = renderDiscoveryCandidateReviewHtml(
             report?.candidateReview,

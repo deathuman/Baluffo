@@ -74,7 +74,16 @@ const ADMIN_REF_DEFINITIONS = Object.freeze({
   adminFetcherProgressBadgeEl: { token: "fetcherProgressBadge" },
   adminDiscoveryProgressBadgeEl: { token: "discoveryProgressBadge" },
   adminOpsProgressBadgeEl: { token: "opsProgressBadge" },
-  adminSourceFilterBtnEls: { token: "sourceFilterBtn", all: true }
+  adminSourceFilterBtnEls: { token: "sourceFilterBtn", all: true },
+  actionCenterPanelEl: { token: "actionCenterPanel" },
+  actionCenterItemsEl: { token: "actionCenterItems" },
+  actionCenterCopyBtnEl: { token: "actionCenterCopyBtn" },
+  discoveryPendingBadgeEl: { token: "discoveryPendingBadge" },
+  inspectorOverlayEl: { token: "inspectorOverlay" },
+  inspectorPanelEl: { token: "inspectorPanel" },
+  inspectorTitleEl: { token: "inspectorTitle" },
+  inspectorContentEl: { token: "inspectorContent" },
+  inspectorCloseBtnEl: { token: "inspectorCloseBtn" }
 });
 
 function resolveAdminRef(doc, tokens, definition) {

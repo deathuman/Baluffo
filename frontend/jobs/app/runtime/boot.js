@@ -7,6 +7,7 @@ import { cacheJobsDom } from "../dom.js";
 import { createJobsDesktopUpdateController } from "../desktop-update.js";
 import { initJobsFeed } from "../feed.js?v=10";
 import { scheduleNonCriticalStartup } from "../startup.js";
+import { recordRecentView, getRecentViews, listFilterPresets, applyFilterPreset, saveFilterPreset, deleteFilterPreset } from "../saved-views.js";
 
 export function createJobsBoot(deps) {
   function cacheDom() {
@@ -144,7 +145,92 @@ export function createJobsBoot(deps) {
       return;
     }
     init().catch(err => deps.handleJobsStartupFailure("Error initializing jobs", err));
+    scheduleNonCriticalStartup(deps.windowObject, () => { initSavedViews(); });
   }
+
+  function initSavedViews() {
+    const w = deps.windowObject;
+    const recentBar = w.document.getElementById("recent-views-bar");
+    const savedBar = w.document.getElementById("saved-views-bar");
+    const dropdown = w.document.getElementById("saved-views-dropdown");
+    const deleteBtn = w.document.getElementById("saved-views-delete-btn");
+    const url = `${w.location.pathname}${w.location.search}`;
+    recordRecentView(url, w.document.title || url, "jobs");
+
+    if (recentBar) {
+      const views = getRecentViews(5);
+      if (views.length > 0) {
+        recentBar.classList.remove("hidden");
+        const label = w.document.createElement("span");
+        label.className = "recent-views-label";
+        label.textContent = "Recent:";
+        recentBar.appendChild(label);
+        for (const v of views) {
+          const link = w.document.createElement("a");
+          link.className = "recent-view-link";
+          link.href = v.url;
+          link.textContent = v.label;
+          recentBar.appendChild(link);
+        }
+      }
+    }
+
+    function renderPresets() {
+      if (!savedBar || !dropdown) return;
+      const presets = listFilterPresets();
+      if (presets.length === 0) { savedBar.classList.add("hidden"); return; }
+      savedBar.classList.remove("hidden");
+      dropdown.classList.remove("hidden");
+      dropdown.innerHTML = `<option value="">Load...</option>${presets.map(p => `<option value="${escapeAttr(p.name)}">${escapeHtml(p.label)}</option>`).join("")}`;
+      if (deleteBtn) deleteBtn.classList.remove("hidden");
+    }
+
+    if (dropdown) {
+      dropdown.addEventListener("change", () => {
+        const name = dropdown.value;
+        if (!name) return;
+        const state = applyFilterPreset(name, { filters: deps.runtimeState.pageState?.filters || {} });
+        if (state) {
+          deps.runtimeState.pageState = { ...deps.runtimeState.pageState, ...state };
+          if (typeof deps.writeStateToUrl === "function") deps.writeStateToUrl(deps.runtimeState.pageState);
+          deps.applyFiltersAndRender({ resetPage: true });
+          showToast(`Loaded view: ${name}`, "success");
+        }
+      });
+    }
+
+    if (deleteBtn) {
+      deleteBtn.addEventListener("click", () => {
+        const name = dropdown.value;
+        if (!name) return;
+        deleteFilterPreset(name);
+        renderPresets();
+        showToast(`Deleted view: ${name}`, "info");
+      });
+    }
+
+    const saveBtn = w.document.getElementById("saved-views-save-btn");
+    if (!saveBtn && savedBar) {
+      const btn = w.document.createElement("button");
+      btn.id = "saved-views-save-btn";
+      btn.className = "saved-view-save-btn";
+      btn.textContent = "Save current";
+      btn.addEventListener("click", () => {
+        const name = prompt("Name this view:");
+        if (!name || !String(name).trim()) return;
+        const state = deps.runtimeState.pageState || { filters: {}, currentPage: 1 };
+        saveFilterPreset(String(name).trim(), state, deps.defaultFilters || {});
+        renderPresets();
+        showToast(`Saved view: ${name}`, "success");
+      });
+      savedBar.insertBefore(btn, deleteBtn);
+    }
+
+    renderPresets();
+  }
+
+  function escapeAttr(s) { return String(s || "").replace(/"/g, "&quot;").replace(/</g, "&lt;"); }
+  function escapeHtml(s) { const d = deps.documentObject.createElement("div"); d.textContent = String(s || ""); return d.innerHTML; }
 
   return {
     bootJobsPage,
