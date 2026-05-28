@@ -1,10 +1,10 @@
 # Daily-Trust UX Strategy Plan
 
-> - **Status:** Active strategy plan
-> - **Use this when:** improving Baluffo's frontend/admin experience so it feels trustworthy for daily use, especially around operational health, recovery, diagnostics, exploration, and workflow polish
-> - **Canonical for:** prioritized daily-trust UX direction, dependency evaluation stance, loophole guardrails, and acceptance gates for trust-oriented UI work
-> - **Not canonical for:** bridge route payload contracts, saved-job data model contracts, storage authority behavior, packaging/release behavior, or approval to add dependencies
-> - **Then inspect:** [`../AI_ASSISTANT_GUIDE.md`](../AI_ASSISTANT_GUIDE.md), [`../architecture-ai-map.md`](../architecture-ai-map.md), [`../admin-bridge-api.md`](../admin-bridge-api.md), [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md), [`../storage-contract.md`](../storage-contract.md), [`../testing.md`](../testing.md), and [`saved-job-tracker-improvements-plan.md`](saved-job-tracker-improvements-plan.md)
+> - **Status:** Archived — fully implemented 2026-05-28
+> - **Use this when:** reviewing the implementation history of daily-trust UX improvements (workspace Action Center, right inspector, recovery actions, saved views, explain-this-state overlays, system map, demo fixtures)
+> - **Canonical for:** archived daily-trust UX strategy record
+> - **Not canonical for:** current frontend behavior; see active docs and source files instead
+> - **Then inspect:** [`../AI_ASSISTANT_GUIDE.md`](../AI_ASSISTANT_GUIDE.md), [`../architecture-ai-map.md`](../architecture-ai-map.md), [`../admin-bridge-api.md`](../admin-bridge-api.md), [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md), [`../storage-contract.md`](../storage-contract.md), [`../testing.md`](../testing.md)
 > - **Last updated:** 2026-05-28
 
 ## Confidence statement

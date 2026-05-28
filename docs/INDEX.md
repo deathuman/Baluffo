@@ -5,7 +5,7 @@
 > - **Canonical for:** wiki routing, doc discovery, and the default AI read path
 > - **Not canonical for:** payload details, route contracts, or subsystem implementation behavior
 > - **Then inspect:** [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`architecture-ai-map.md`](architecture-ai-map.md), and one matching contract or workflow doc
-> - **Last updated:** 2026-05-25
+> - **Last updated:** 2026-05-28
 
 Use this page as the wiki home. Start here, load the minimum active docs you need, and use git history for old cleanup/refactor details unless the task explicitly needs historical provenance.
 
@@ -70,7 +70,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`plans/dedup-pressure-reduction-plan.md`](plans/dedup-pressure-reduction-plan.md) | Plans / Follow-Ups | You are reducing registry/dedup conflict volume after the sheet role-bucket guard and actionable Dedup badge split |
 | [`plans/provider-discovery-coverage-gap-plan.md`](plans/provider-discovery-coverage-gap-plan.md) | Plans / Follow-Ups | You are improving ATS/provider discovery coverage, provider migration staging evidence, or provider coverage gap reporting without adding Apify |
 | [`plans/static-plugin-simple-runner-migration-plan.md`](plans/static-plugin-simple-runner-migration-plan.md) | Plans / Follow-Ups | You are continuing the static plugin migration onto `SimpleStaticPlugin` in bounded behavior-preserving batches |
-| [`plans/daily-trust-ux-strategy-plan.md`](plans/daily-trust-ux-strategy-plan.md) | Plans / Follow-Ups | You are improving daily-use trust, UX polish, recovery affordances, diagnostics, saved exploration, or contributor-facing system maps |
+| [`archive/daily-trust-ux-strategy-plan.md`](archive/daily-trust-ux-strategy-plan.md) | Plans / Follow-Ups | Archived — workspace Action Center, right inspector, recovery actions, saved views, explain-this-state overlays, system map, and demo fixtures; all shipped to `main` 2026-05-28 |
 | [`archive/cold-run-jobs-freshness-strategy-plan.md`](archive/cold-run-jobs-freshness-strategy-plan.md) | Plans / Follow-Ups | Archived — cold-run bootstrap, artifact stripping, and limited-coverage UX; all shipped to `main` 2026-05-28 |
 | [`plans/post-0.2.0-desktop-runtime-ram-reduction-plan.md`](plans/post-0.2.0-desktop-runtime-ram-reduction-plan.md) | Plans / Follow-Ups | You are revisiting desktop runtime RAM reduction, packaged startup memory, or static site process consolidation after v0.2.0 |
 | [`plans/optional-playwright-browser-download-plan.md`](plans/optional-playwright-browser-download-plan.md) | Plans / Follow-Ups | You are moving Playwright browser binaries out of the portable ZIP or making packaged browser fallback an optional first-start download |
@@ -141,7 +141,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | Continue static plugin migration | [`plans/static-plugin-simple-runner-migration-plan.md`](plans/static-plugin-simple-runner-migration-plan.md) | [`adapter-plugin-inventory.md`](adapter-plugin-inventory.md), [`scraping-pipeline.md`](scraping-pipeline.md), [`testing.md`](testing.md) |
 | Review AI modification safety improvements | [`archive/ai-modification-safety-improvements-plan.md`](archive/ai-modification-safety-improvements-plan.md) | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`architecture-ai-map.md`](architecture-ai-map.md), [`admin-bridge-api.md`](admin-bridge-api.md), [`testing.md`](testing.md) |
 | Review completed bridge route inventory guardrail | [`archive/bridge-route-inventory-guardrail-plan.md`](archive/bridge-route-inventory-guardrail-plan.md) | [`admin-bridge-api.md`](admin-bridge-api.md), [`testing.md`](testing.md), [`../tools/repo_health/bridge_route_inventory.py`](../tools/repo_health/bridge_route_inventory.py) |
-| Improve daily-use trust UX | [`plans/daily-trust-ux-strategy-plan.md`](plans/daily-trust-ux-strategy-plan.md) | [`admin-bridge-api.md`](admin-bridge-api.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`storage-contract.md`](storage-contract.md), [`testing.md`](testing.md) |
+| Improve daily-use trust UX | [`archive/daily-trust-ux-strategy-plan.md`](archive/daily-trust-ux-strategy-plan.md) | [`admin-bridge-api.md`](admin-bridge-api.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`storage-contract.md`](storage-contract.md), [`testing.md`](testing.md) |
 | Revisit desktop RAM reduction | [`plans/post-0.2.0-desktop-runtime-ram-reduction-plan.md`](plans/post-0.2.0-desktop-runtime-ram-reduction-plan.md) | [`startup-probe-architecture.md`](startup-probe-architecture.md), [`architecture-ai-map.md`](architecture-ai-map.md), [`testing.md`](testing.md) |
 | Make packaged browser fallback optional | [`plans/optional-playwright-browser-download-plan.md`](plans/optional-playwright-browser-download-plan.md) | [`RELEASE.md`](RELEASE.md), [`testing.md`](testing.md), [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md), [`scraping-pipeline.md`](scraping-pipeline.md) |
 | A/B test enhanced browser fallback | [`plans/cloakbrowser-enhanced-browser-fallback-ab-test-plan.md`](plans/cloakbrowser-enhanced-browser-fallback-ab-test-plan.md) | [`scraping-pipeline.md`](scraping-pipeline.md), [`adapter-plugin-inventory.md`](adapter-plugin-inventory.md), [`testing.md`](testing.md) |
