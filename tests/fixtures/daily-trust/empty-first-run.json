@@ -1,0 +1,67 @@
+{
+  "_meta": {
+    "fixture": "empty-first-run",
+    "description": "Empty first-run state — no successful runtime report, fetch never run.",
+    "use": "Jobs page first-run bootstrap UI, Action Center critical stale_fetch"
+  },
+  "ops_health": {
+    "service": "baluffo-bridge",
+    "status": "critical",
+    "kpis": {
+      "lastSuccessfulFetchAge": "",
+      "sevenDayFetchSuccessRate": 0,
+      "failedSourceRatioLatest": 0,
+      "avgFetchDurationMs7d": 0,
+      "pendingApprovalsCount": 0
+    },
+    "alerts": [
+      {
+        "id": "fetch_never_run",
+        "severity": "warning",
+        "message": "No fetch has completed yet. Run Jobs Fetcher to populate job listings.",
+        "dismissible": false,
+        "triggeredAt": "2026-05-28T00:00:00Z"
+      },
+      {
+        "id": "pipeline_never_run",
+        "severity": "warning",
+        "message": "No successful full Jobs pipeline has run yet. Coverage is limited until the full pipeline completes.",
+        "dismissible": false,
+        "triggeredAt": "2026-05-28T00:00:00Z"
+      }
+    ],
+    "summary": {"activeAlertCount": 2}
+  },
+  "fetch_report": {
+    "runId": "",
+    "startedAt": "",
+    "finishedAt": "",
+    "summary": {
+      "outputCount": 0,
+      "failedSources": 0,
+      "sourceCount": 0
+    },
+    "sources": []
+  },
+  "sync_status": {
+    "ok": true,
+    "config": {"enabled": false, "ready": false},
+    "runtime": {
+      "lastPullAt": "",
+      "lastError": "",
+      "lastResult": "",
+      "lastAction": ""
+    }
+  },
+  "storage_health": {
+    "ok": true,
+    "storage": {
+      "healthy": true,
+      "migrationVersion": 8,
+      "walMode": true,
+      "quickCheck": "ok",
+      "authorityModes": {"sourceRuns": "sqlite", "jobsFeed": "sqlite"},
+      "diagnostics": []
+    }
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "_meta": {
+    "fixture": "stale-fetch",
+    "description": "Stale fetch — last successful fetch was 14 hours ago, exceeding the 12h threshold.",
+    "use": "Action Center stale fetch signal, Ops Health stale_fetch alert"
+  },
+  "ops_health": {
+    "service": "baluffo-bridge",
+    "status": "warning",
+    "kpis": {
+      "lastSuccessfulFetchAge": "14h",
+      "sevenDayFetchSuccessRate": 0.95,
+      "failedSourceRatioLatest": 0,
+      "avgFetchDurationMs7d": 46000,
+      "pendingApprovalsCount": 0
+    },
+    "alerts": [
+      {
+        "id": "stale_fetch",
+        "severity": "warning",
+        "message": "Last successful fetch is older than 12h. A full Jobs Fetcher run is suggested to update the jobs listing.",
+        "value": 14,
+        "triggeredAt": "2026-05-28T14:00:00Z",
+        "dismissible": true
+      }
+    ],
+    "summary": {"activeAlertCount": 1}
+  },
+  "fetch_report": {
+    "runId": "fixture-fetch-005",
+    "startedAt": "2026-05-28T00:00:00Z",
+    "finishedAt": "2026-05-28T00:14:00Z",
+    "summary": {
+      "outputCount": 6000,
+      "failedSources": 0,
+      "sourceCount": 120,
+      "status": "ok",
+      "coverageScope": "full"
+    },
+    "sources": []
+  },
+  "sync_status": {
+    "ok": true,
+    "config": {"enabled": true, "ready": true},
+    "runtime": {
+      "lastPullAt": "2026-05-28T00:00:00Z",
+      "lastError": "",
+      "lastResult": "ok",
+      "lastAction": "pull"
+    }
+  },
+  "storage_health": {
+    "ok": true,
+    "storage": {
+      "healthy": true,
+      "migrationVersion": 8,
+      "walMode": true,
+      "quickCheck": "ok",
+      "authorityModes": {"sourceRuns": "sqlite", "jobsFeed": "sqlite"},
+      "diagnostics": []
+    }
+  }
+}

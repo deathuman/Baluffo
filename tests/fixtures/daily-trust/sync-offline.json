@@ -1,0 +1,54 @@
+{
+  "_meta": {
+    "fixture": "sync-offline",
+    "description": "Sync is offline/failed — last pull returned an error.",
+    "use": "Action Center sync status signal, sync section error display"
+  },
+  "ops_health": {
+    "service": "baluffo-bridge",
+    "status": "warning",
+    "kpis": {
+      "lastSuccessfulFetchAge": "2h",
+      "sevenDayFetchSuccessRate": 0.98,
+      "failedSourceRatioLatest": 0.02,
+      "avgFetchDurationMs7d": 48000,
+      "pendingApprovalsCount": 1
+    },
+    "alerts": [],
+    "summary": {"activeAlertCount": 0}
+  },
+  "fetch_report": {
+    "runId": "fixture-fetch-003",
+    "startedAt": "2026-05-28T09:00:00Z",
+    "finishedAt": "2026-05-28T09:12:00Z",
+    "summary": {
+      "outputCount": 6200,
+      "failedSources": 2,
+      "sourceCount": 120,
+      "status": "ok",
+      "coverageScope": "full"
+    },
+    "sources": []
+  },
+  "sync_status": {
+    "ok": true,
+    "config": {"enabled": true, "ready": true},
+    "runtime": {
+      "lastPullAt": "2026-05-28T06:00:00Z",
+      "lastError": "GitHub API rate limit exceeded",
+      "lastResult": "error",
+      "lastAction": "pull"
+    }
+  },
+  "storage_health": {
+    "ok": true,
+    "storage": {
+      "healthy": true,
+      "migrationVersion": 8,
+      "walMode": true,
+      "quickCheck": "ok",
+      "authorityModes": {"sourceRuns": "sqlite", "jobsFeed": "sqlite"},
+      "diagnostics": []
+    }
+  }
+}

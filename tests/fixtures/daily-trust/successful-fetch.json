@@ -1,0 +1,60 @@
+{
+  "_meta": {
+    "fixture": "successful-fetch",
+    "description": "Successful fetch with fresh jobs — all sources return data with no failures.",
+    "use": "Action Center healthy state, Ops Health KPIs, fetch report display"
+  },
+  "ops_health": {
+    "service": "baluffo-bridge",
+    "status": "healthy",
+    "kpis": {
+      "lastSuccessfulFetchAge": "0h",
+      "sevenDayFetchSuccessRate": 1.0,
+      "failedSourceRatioLatest": 0,
+      "avgFetchDurationMs7d": 45000,
+      "pendingApprovalsCount": 0
+    },
+    "alerts": [],
+    "summary": {
+      "activeAlertCount": 0
+    }
+  },
+  "fetch_report": {
+    "runId": "fixture-fetch-success-001",
+    "startedAt": "2026-05-28T10:00:00Z",
+    "finishedAt": "2026-05-28T10:15:00Z",
+    "summary": {
+      "outputCount": 6500,
+      "failedSources": 0,
+      "sourceCount": 120,
+      "status": "ok",
+      "coverageScope": "full"
+    },
+    "sources": []
+  },
+  "sync_status": {
+    "ok": true,
+    "config": {
+      "enabled": true,
+      "ready": true
+    },
+    "runtime": {
+      "lastPullAt": "2026-05-28T06:00:00Z",
+      "lastPushAt": "2026-05-27T23:00:00Z",
+      "lastError": "",
+      "lastResult": "ok",
+      "lastAction": "pull"
+    }
+  },
+  "storage_health": {
+    "ok": true,
+    "storage": {
+      "healthy": true,
+      "migrationVersion": 8,
+      "walMode": true,
+      "quickCheck": "ok",
+      "authorityModes": {"sourceRuns": "sqlite", "jobsFeed": "sqlite"},
+      "diagnostics": []
+    }
+  }
+}

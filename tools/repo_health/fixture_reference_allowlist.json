@@ -1,1 +1,8 @@
-[]
+[
+  {"path": "tests/fixtures/daily-trust/empty-first-run.json", "reason": "Demo fixture for first-run bootstrap UX — referenced by the daily-trust UX strategy plan for future Playwright tests."},
+  {"path": "tests/fixtures/daily-trust/failed-fetch.json", "reason": "Demo fixture for failed fetch with retryable source failures — referenced by the daily-trust UX strategy plan for future Playwright tests."},
+  {"path": "tests/fixtures/daily-trust/stale-fetch.json", "reason": "Demo fixture for stale fetch (>12h) state — referenced by the daily-trust UX strategy plan for future Playwright tests."},
+  {"path": "tests/fixtures/daily-trust/storage-unhealthy.json", "reason": "Demo fixture for unhealthy storage state — referenced by the daily-trust UX strategy plan for future Playwright tests."},
+  {"path": "tests/fixtures/daily-trust/successful-fetch.json", "reason": "Demo fixture for successful fetch with all green state — referenced by the daily-trust UX strategy plan for future Playwright tests."},
+  {"path": "tests/fixtures/daily-trust/sync-offline.json", "reason": "Demo fixture for sync offline/error state — referenced by the daily-trust UX strategy plan for future Playwright tests."}
+]

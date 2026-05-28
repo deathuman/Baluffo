@@ -1,0 +1,62 @@
+{
+  "_meta": {
+    "fixture": "storage-unhealthy",
+    "description": "Storage is unhealthy — SQLite quick check failed with a diagnostic error.",
+    "use": "Action Center storage health signal, storage health section"
+  },
+  "ops_health": {
+    "service": "baluffo-bridge",
+    "status": "critical",
+    "kpis": {
+      "lastSuccessfulFetchAge": "1h",
+      "sevenDayFetchSuccessRate": 0.97,
+      "failedSourceRatioLatest": 0.03,
+      "avgFetchDurationMs7d": 49000,
+      "pendingApprovalsCount": 0
+    },
+    "alerts": [],
+    "summary": {"activeAlertCount": 0}
+  },
+  "fetch_report": {
+    "runId": "fixture-fetch-004",
+    "startedAt": "2026-05-28T10:00:00Z",
+    "finishedAt": "2026-05-28T10:14:00Z",
+    "summary": {
+      "outputCount": 6100,
+      "failedSources": 1,
+      "sourceCount": 120,
+      "status": "ok",
+      "coverageScope": "full"
+    },
+    "sources": []
+  },
+  "sync_status": {
+    "ok": true,
+    "config": {"enabled": true, "ready": true},
+    "runtime": {
+      "lastPullAt": "2026-05-28T06:00:00Z",
+      "lastError": "",
+      "lastResult": "ok",
+      "lastAction": "pull"
+    }
+  },
+  "storage_health": {
+    "ok": false,
+    "storage": {
+      "healthy": false,
+      "migrationVersion": 8,
+      "walMode": true,
+      "quickCheck": "fail",
+      "authorityModes": {"sourceRuns": "sqlite", "jobsFeed": "sqlite"},
+      "diagnostics": [
+        {
+          "surface": "sourceRuns",
+          "code": "source_runs_store_unavailable",
+          "ok": false,
+          "message": "SQLite integrity check failed on sourceRuns table",
+          "details": {"errorCode": 11}
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "_meta": {
+    "fixture": "failed-fetch",
+    "description": "Failed fetch with retryable source failures — partial output with some failed sources.",
+    "use": "Action Center failed sources signal, Ops Health degraded reliability alert"
+  },
+  "ops_health": {
+    "service": "baluffo-bridge",
+    "status": "warning",
+    "kpis": {
+      "lastSuccessfulFetchAge": "0h",
+      "sevenDayFetchSuccessRate": 0.92,
+      "failedSourceRatioLatest": 0.15,
+      "avgFetchDurationMs7d": 52000,
+      "pendingApprovalsCount": 3
+    },
+    "alerts": [
+      {
+        "id": "degraded_reliability",
+        "severity": "warning",
+        "message": "Failed source ratio is 15% (threshold 25%).",
+        "dismissible": true,
+        "triggeredAt": "2026-05-28T11:00:00Z"
+      }
+    ],
+    "summary": {
+      "activeAlertCount": 1
+    }
+  },
+  "fetch_report": {
+    "runId": "fixture-fetch-failed-002",
+    "startedAt": "2026-05-28T11:00:00Z",
+    "finishedAt": "2026-05-28T11:18:00Z",
+    "summary": {
+      "outputCount": 5800,
+      "failedSources": 18,
+      "sourceCount": 120,
+      "status": "ok",
+      "coverageScope": "full"
+    },
+    "sources": [
+      {"name": "supercell", "status": "error", "error": "Connection timeout"},
+      {"name": "remedy", "status": "error", "error": "Blocked by challenge page"}
+    ]
+  },
+  "sync_status": {
+    "ok": true,
+    "config": {"enabled": true, "ready": true},
+    "runtime": {
+      "lastPullAt": "2026-05-28T06:00:00Z",
+      "lastError": "",
+      "lastResult": "ok",
+      "lastAction": "pull"
+    }
+  },
+  "storage_health": {
+    "ok": true,
+    "storage": {
+      "healthy": true,
+      "migrationVersion": 8,
+      "walMode": true,
+      "quickCheck": "ok",
+      "authorityModes": {"sourceRuns": "sqlite", "jobsFeed": "sqlite"},
+      "diagnostics": []
+    }
+  }
+}
