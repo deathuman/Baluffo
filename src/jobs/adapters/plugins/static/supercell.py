@@ -6,8 +6,8 @@ from typing import Any
 from src.jobs.adapters.plugins.static._runner import (
     SimpleStaticContext,
     SimpleStaticPlugin,
+    generic_parser_then_detail_links,
     simple_static_run,
-    static_detail_link_rows,
 )
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
@@ -20,21 +20,10 @@ def can_handle(ctx: AdapterPluginContext) -> bool:
 
 
 def _parse_html(ctx: SimpleStaticContext) -> list[dict[str, Any]]:
-    rows = ctx.parse_jobpostings_from_html(
-        ctx.html,
-        base_url=ctx.page_url,
-        fallback_company=ctx.company,
-        fallback_source_id_prefix=f"static:{ctx.source_id}",
-    )
-    if rows:
-        return rows
     profile = domain_profiles.domain_profile_for_url(ctx.page_url)
-    return static_detail_link_rows(
-        html=ctx.html,
-        page_url=ctx.page_url,
-        company=ctx.company,
-        source_id=ctx.source_id,
-        is_probable_detail_url=lambda url: domain_profiles.is_probable_job_detail_url(url, profile),
+    return generic_parser_then_detail_links(
+        ctx,
+        extra_anchor_filter=lambda url: domain_profiles.is_probable_job_detail_url(url, profile),
     )
 
 

@@ -6,14 +6,10 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
-from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.static._runner import (
-    fetch_static_plugin_html,
-    first_static_page,
-    record_static_plugin_empty_parse,
-    stamp_static_plugin_rows,
-    static_plugin_blocked_by_js_shell,
-    static_plugin_context_values,
+    SimpleStaticContext,
+    SimpleStaticPlugin,
+    simple_static_run,
 )
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
@@ -38,25 +34,9 @@ def _canonical_page_url(page_url: str) -> str:
     return urlunparse((parsed.scheme or "https", parsed.netloc, canonical_path, "", "", ""))
 
 
-def _generic_rows(
-    *,
-    html: str,
-    page_url: str,
-    company: str,
-    source_id: str,
-    parse_jobpostings_from_html: Callable[..., list[dict[str, Any]]],
-) -> list[dict[str, Any]]:
-    return parse_jobpostings_from_html(
-        html,
-        base_url=page_url,
-        fallback_company=company,
-        fallback_source_id_prefix=f"static:{source_id}",
-    )
-
-
 def _activision_anchor_rows(*, html: str, company: str, source_id: str) -> list[RawJob]:
     rows: list[RawJob] = []
-    seen = set()
+    seen: set[str] = set()
     for match in re.finditer(
         r'(?is)<a[^>]+href=["\']([^"\']+/job/[^"\']+)["\'][^>]*>(.*?)</a>', html
     ):
@@ -82,21 +62,6 @@ def _activision_anchor_rows(*, html: str, company: str, source_id: str) -> list[
     return rows
 
 
-def _record_activision_empty(*, html: str, page_url: str, source_row: dict[str, Any]) -> None:
-    ats_links = _heuristics.detect_outbound_ats_links(html, base_url=page_url)
-    if _heuristics.detect_no_openings(html):
-        record_static_plugin_empty_parse(html=html, page_url=page_url, source_row=source_row)
-        return
-    source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
-        _heuristics.CLASSIFICATION_PARSER_STALE,
-        browser_fallback_recommended=False,
-        extractor_hint="search_results_present_but_plugin_empty",
-        ats_links=ats_links,
-        detail_fetch_required=False,
-        detail_traversal_mode="listing_only",
-    )
-
-
 def run(
     *,
     fetch_text: Callable[[str, int], str],
@@ -109,59 +74,52 @@ def run(
     try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
     **kwargs: Any,
 ) -> list[RawJob]:
-    _ = (retries, backoff_s, kwargs)
     if not pages or not callable(parse_jobpostings_from_html):
         return []
-    page_url = first_static_page(pages)
+    page_url = _canonical_page_url(pages[0] if pages else "")
     if not page_url:
         return []
-    page_url = _canonical_page_url(page_url)
-    company, source_id, source_name = static_plugin_context_values(
-        source_row=source_row,
-        default_company="Activision",
-        default_source_id="activision",
-        default_source_name="activision",
-    )
-    html = fetch_static_plugin_html(
-        fetch_text=fetch_text,
-        page_url=page_url,
-        timeout_s=timeout_s,
-        source_row=source_row,
-    )
-    if not html or static_plugin_blocked_by_js_shell(
-        html=html,
-        page_url=page_url,
-        source_row=source_row,
-    ):
-        return []
 
-    rows = _generic_rows(
-        html=html,
-        page_url=page_url,
-        company=company,
-        source_id=source_id,
-        parse_jobpostings_from_html=parse_jobpostings_from_html,
-    )
-    if not rows and callable(try_playwright):
-        browser_html, _ = try_playwright(page_url, max(3, min(timeout_s, 20)))
-        if browser_html:
-            html = browser_html
-            rows = _generic_rows(
-                html=html,
-                page_url=page_url,
-                company=company,
-                source_id=source_id,
-                parse_jobpostings_from_html=parse_jobpostings_from_html,
-            )
-    if not rows:
-        rows = _activision_anchor_rows(html=html, company=company, source_id=source_id)
-    cleaned = stamp_static_plugin_rows(rows=rows, company=company, source_name=source_name)
-    if not cleaned:
-        _record_activision_empty(html=html, page_url=page_url, source_row=source_row)
-    else:
-        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
-            _heuristics.CLASSIFICATION_OK_WITH_JOBS,
-            detail_fetch_required=False,
-            detail_traversal_mode="listing_only",
+    def _parse_html(ctx: SimpleStaticContext) -> list[dict[str, Any]]:
+        rows = ctx.parse_jobpostings_from_html(
+            ctx.html,
+            base_url=ctx.page_url,
+            fallback_company=ctx.company,
+            fallback_source_id_prefix=f"static:{ctx.source_id}",
         )
-    return cleaned
+        if rows:
+            return rows
+        if callable(try_playwright):
+            browser_html, _ = try_playwright(ctx.page_url, max(3, min(timeout_s, 20)))
+            if browser_html:
+                rows = ctx.parse_jobpostings_from_html(
+                    browser_html,
+                    base_url=ctx.page_url,
+                    fallback_company=ctx.company,
+                    fallback_source_id_prefix=f"static:{ctx.source_id}",
+                )
+                if rows:
+                    return rows
+        return _activision_anchor_rows(html=ctx.html, company=ctx.company, source_id=ctx.source_id)
+
+    return simple_static_run(
+        spec=SimpleStaticPlugin(
+            source_id="activision",
+            default_company="Activision",
+            playwright_on_js_shell=True,
+            parser_stale_hint="search_results_present_but_plugin_empty",
+            empty_detail_fetch_required=False,
+            empty_detail_traversal_mode="listing_only",
+        ),
+        parse_html=_parse_html,
+    )(
+        fetch_text=fetch_text,
+        timeout_s=timeout_s,
+        retries=retries,
+        backoff_s=backoff_s,
+        pages=[page_url],
+        source_row=source_row,
+        parse_jobpostings_from_html=parse_jobpostings_from_html,
+        try_playwright=try_playwright,
+        **kwargs,
+    )

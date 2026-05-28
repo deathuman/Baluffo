@@ -10,7 +10,12 @@ from src.jobs.adapters.html_parsers import (
     html_fragment_lines,
     iter_anchor_fragments,
 )
-from src.jobs.adapters.plugins.static import _heuristics
+from src.jobs.adapters.plugins.static._runner import (
+    SimpleStaticContext,
+    SimpleStaticPlugin,
+    simple_static_run,
+    static_job_row,
+)
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.adapters.provider_parsers import normalize_location_details
 from src.jobs.models import RawJob
@@ -22,76 +27,17 @@ def can_handle(ctx: AdapterPluginContext) -> bool:
     return identity == "www.riotgames.com"
 
 
-def run(
-    *,
-    fetch_text: Callable[[str, int], str],
-    timeout_s: int,
-    retries: int,
-    backoff_s: float,
-    pages: list[str],
-    source_row: dict[str, Any],
-    **kwargs: Any,
-) -> list[RawJob]:
-    _ = (retries, backoff_s, kwargs)
-    if not pages:
-        return []
-    page_url = clean_text(pages[0])
-    if not page_url:
-        return []
-
-    try:
-        html = fetch_text(page_url, timeout_s)
-    except Exception as exc:  # noqa: BLE001
-        classification, recommend = _heuristics.classify_fetch_exception(exc)
-        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
-            classification,
-            browser_fallback_recommended=bool(recommend),
-            extractor_hint="fetch_failed",
-            error=str(exc),
-        )
-        return []
-
-    jobs = _parse_listing_rows(
-        html=html,
-        page_url=page_url,
-        company=clean_text(
-            source_row.get("company") or source_row.get("studio") or source_row.get("name")
-        )
-        or "Riot Games",
-        source_id=clean_text(source_row.get("id")) or "riot",
-        source_name=clean_text(source_row.get("name")) or "Riot Games",
-    )
-    if not jobs:
-        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
-            _heuristics.CLASSIFICATION_PARSER_STALE,
-            browser_fallback_recommended=False,
-            extractor_hint="riot_listing_present_but_plugin_empty",
-            detail_fetch_required=False,
-            detail_traversal_mode="listing_only",
-        )
-        return []
-
-    source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
-        _heuristics.CLASSIFICATION_OK_WITH_JOBS,
-        detail_fetch_required=False,
-        detail_traversal_mode="listing_only",
-    )
-    return jobs
-
-
-def _parse_listing_rows(
-    *, html: str, page_url: str, company: str, source_id: str, source_name: str
-) -> list[RawJob]:
-    jobs: list[RawJob] = []
+def _parse_html(ctx: SimpleStaticContext) -> list[dict[str, Any]]:
+    jobs: list[dict[str, Any]] = []
     seen: set[str] = set()
 
-    for anchor in iter_anchor_fragments(html or ""):
+    for anchor in iter_anchor_fragments(ctx.html or ""):
         href = clean_text(anchor.get("href"))
         if "/en/j/" not in href:
             continue
         if not href:
             continue
-        absolute = clean_text(urljoin(page_url, href))
+        absolute = clean_text(urljoin(ctx.page_url, href))
         if not absolute or absolute in seen:
             continue
         lines = html_fragment_lines(anchor.get("body", ""))
@@ -126,24 +72,56 @@ def _parse_listing_rows(
             ):
                 location = line
         location_details = normalize_location_details(location)
-        jobs.append(
-            {
-                "sourceJobId": f"static:{source_id}:{hashlib.sha1(absolute.encode('utf-8')).hexdigest()[:10]}",
-                "title": title,
-                "company": company,
-                "city": clean_text(location_details.get("city")),
-                "country": clean_text(location_details.get("country")) or "Unknown",
-                "workType": "",
-                "contractType": "",
-                "jobLink": absolute,
-                "sector": craft or "Game",
-                "postedAt": "",
-                "adapter": "static",
-                "studio": company,
-                "source": source_name,
-                "summary": " | ".join(lines[1:5]),
-                "locations": location_details.get("locations") or [],
-                "locationSummary": clean_text(location_details.get("locationSummary")),
-            }
+        row = static_job_row(
+            ctx,
+            link=absolute,
+            title=title,
+            company=ctx.company,
+            city=clean_text(location_details.get("city")),
+            country=clean_text(location_details.get("country")) or "Unknown",
+            workType="",
+            contractType="",
+            postedAt="",
         )
+        row["sourceJobId"] = (
+            f"static:{ctx.source_id}:{hashlib.sha1(absolute.encode('utf-8')).hexdigest()[:10]}"
+        )
+        row["sector"] = craft or "Game"
+        row["summary"] = " | ".join(lines[1:5])
+        row["locations"] = location_details.get("locations") or []
+        row["locationSummary"] = clean_text(location_details.get("locationSummary"))
+        jobs.append(row)
     return jobs
+
+
+_riot_run = simple_static_run(
+    spec=SimpleStaticPlugin(
+        source_id="riot",
+        default_company="Riot Games",
+        parser_stale_hint="riot_listing_present_but_plugin_empty",
+        empty_detail_fetch_required=False,
+        empty_detail_traversal_mode="listing_only",
+    ),
+    parse_html=_parse_html,
+)
+
+
+def run(
+    *,
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+    pages: list[str],
+    source_row: dict[str, Any],
+    **kwargs: Any,
+) -> list[RawJob]:
+    return _riot_run(
+        fetch_text=fetch_text,
+        timeout_s=timeout_s,
+        retries=retries,
+        backoff_s=backoff_s,
+        pages=pages,
+        source_row=source_row,
+        **kwargs,
+    )

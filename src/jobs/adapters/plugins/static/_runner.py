@@ -302,6 +302,28 @@ def static_detail_link_rows(
     return rows
 
 
+def generic_parser_then_detail_links(
+    ctx: SimpleStaticContext,
+    *,
+    extra_anchor_filter: Callable[[str], bool] | None = None,
+) -> list[dict[str, Any]]:
+    rows = ctx.parse_jobpostings_from_html(
+        ctx.html,
+        base_url=ctx.page_url,
+        fallback_company=ctx.company,
+        fallback_source_id_prefix=f"static:{ctx.source_id}",
+    )
+    if rows:
+        return rows
+    return static_detail_link_rows(
+        html=ctx.html,
+        page_url=ctx.page_url,
+        company=ctx.company,
+        source_id=ctx.source_id,
+        is_probable_detail_url=extra_anchor_filter or (lambda _href: True),
+    )
+
+
 def _fetch_html(
     fetch_text: Callable[[str, int], str],
     page_url: str,
