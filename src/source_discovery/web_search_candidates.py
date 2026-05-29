@@ -51,7 +51,8 @@ from .probe_runtime import (
     rendered_static_probe_result,
 )
 from .provider_inference import infer_web_candidate as shared_infer_web_candidate
-from .scoring import careers_keyword_count, unique_string_list
+from .provider_inference import provider_candidate
+from .scoring import careers_keyword_count, studio_domain_match, unique_string_list
 from .web_search_config import (
     _web_search_audit_path,
     _web_search_audit_ttl_minutes,
@@ -127,7 +128,22 @@ def infer_provider_candidates_from_html(
     embedded_urls = extract_links_from_html(html)
     embedded_urls.extend(find_urls_in_text(str(html or "")))
     if "teamtailor" in str(html or "").lower() and careers_keyword_count(page_url):
-        embedded_urls.append(page_url)
+        inferred = provider_candidate(
+            studio=studio,
+            adapter="teamtailor",
+            url=page_url,
+            nl_priority=nl_priority,
+            discovery_method=discovery_method,
+            evidence_types=["html_embed", "html_ats_signature", "careers_page"],
+            evidence_source="html",
+            evidence_score=28
+            + (12 if studio_domain_match(studio, page_url) else 0)
+            + (4 if careers_keyword_count(page_url) else 0)
+            + 12,
+        )
+        if inferred:
+            inferred["careersUrl"] = page_url
+            candidates.append(inferred)
     seen = set()
     for raw_url in embedded_urls:
         url = str(raw_url or "").strip()
