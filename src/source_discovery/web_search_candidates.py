@@ -50,8 +50,8 @@ from .probe_runtime import (
 from .probe_runtime import (
     rendered_static_probe_result,
 )
+from .provider_inference import infer_provider_adapter, provider_candidate
 from .provider_inference import infer_web_candidate as shared_infer_web_candidate
-from .provider_inference import provider_candidate
 from .scoring import careers_keyword_count, studio_domain_match, unique_string_list
 from .web_search_config import (
     _web_search_audit_path,
@@ -67,6 +67,22 @@ from .web_search_config import (
 )
 from .web_search_extract import extract_links_from_html
 from .web_search_fetch import fetch_text
+
+# Map of (adapter_name, html_substring_signature) for detecting
+# ATS providers on custom domains via HTML content inspection.
+# Only included adapters whose candidate builders are either:
+#   a) truly runtime-flexible (BambooHR, Teamtailor — use any domain), or
+#   b) safely return None on custom domains (Workday, SmartRecruiters).
+# Greenhouse, Lever, and Workable are excluded because their builders
+# fall through to path-based slug/account extraction that produces
+# garbage on arbitrary URLs (e.g. slug="jobs" from /jobs path).
+_ATS_HTML_SIGNATURES: list[tuple[str, str]] = [
+    ("bamboohr", "bamboohr"),
+    ("teamtailor", "teamtailor"),
+    ("workday", "myworkdayjobs"),
+    ("workday", "workday"),
+    ("smartrecruiters", "smartrecruiters"),
+]
 
 WEB_SEARCH_AUDIT_SCHEMA_VERSION = 2
 WEB_SEARCH_AUDIT_FAILURE_SAMPLE_LIMIT = 10_000
@@ -127,23 +143,32 @@ def infer_provider_candidates_from_html(
         candidates.append(page_candidate)
     embedded_urls = extract_links_from_html(html)
     embedded_urls.extend(find_urls_in_text(str(html or "")))
-    if "teamtailor" in str(html or "").lower() and careers_keyword_count(page_url):
-        inferred = provider_candidate(
-            studio=studio,
-            adapter="teamtailor",
-            url=page_url,
-            nl_priority=nl_priority,
-            discovery_method=discovery_method,
-            evidence_types=["html_embed", "html_ats_signature", "careers_page"],
-            evidence_source="html",
-            evidence_score=28
-            + (12 if studio_domain_match(studio, page_url) else 0)
-            + (4 if careers_keyword_count(page_url) else 0)
-            + 12,
-        )
-        if inferred:
-            inferred["careersUrl"] = page_url
-            candidates.append(inferred)
+    html_lower = str(html or "").lower()
+    keyword_match = careers_keyword_count(page_url)
+    if keyword_match:
+        parsed = urlparse(page_url)
+        host = (parsed.hostname or "").lower()
+        path = parsed.path or ""
+        if infer_provider_adapter(host, path) is None:
+            for _adapter, _sig in _ATS_HTML_SIGNATURES:
+                if _sig in html_lower:
+                    inferred = provider_candidate(
+                        studio=studio,
+                        adapter=_adapter,
+                        url=page_url,
+                        nl_priority=nl_priority,
+                        discovery_method=discovery_method,
+                        evidence_types=["html_embed", "html_ats_signature", "careers_page"],
+                        evidence_source="html",
+                        evidence_score=28
+                        + (12 if studio_domain_match(studio, page_url) else 0)
+                        + 4  # keyword_match already confirmed True
+                        + 12,
+                    )
+                    if inferred:
+                        inferred["careersUrl"] = page_url
+                        candidates.append(inferred)
+                    break
     seen = set()
     for raw_url in embedded_urls:
         url = str(raw_url or "").strip()
