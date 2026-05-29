@@ -3542,11 +3542,11 @@
     "name": "Lionbridge Games (Sheet)",
     "studio": "Lionbridge Games",
     "company": "Lionbridge Games",
-    "adapter": "static",
+    "adapter": "teamtailor",
     "pages": [
       "https://careers.lionbridge.com/jobs/search/search-page-games"
     ],
-    "listing_url": "https://careers.lionbridge.com/jobs/search/search-page-games",
+    "listing_url": "https://careers.lionbridge.com/jobs",
     "nlPriority": false,
     "discoveryMethod": "sheet_directory",
     "discoveryStage": "sheet_directory",
@@ -3562,7 +3562,7 @@
     "sourceDirectory": "game_studios_sheet",
     "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
     "sourceDirectoryEntryUrl": "https://careers.lionbridge.com/jobs/search/search-page-games",
-    "id": "static:listing_url:https://careers.lionbridge.com/jobs/search/search-page-games",
+    "id": "teamtailor:listing_url:https://careers.lionbridge.com/jobs",
     "discoveredAt": "2026-04-10T12:54:49.913699+00:00",
     "score": 48,
     "reasons": [
@@ -3598,7 +3598,8 @@
     "lastPromotedAt": "2026-04-10T12:55:27.565044+00:00",
     "lastDemotedAt": "",
     "enabledByDefault": true,
-    "promotionReason": "manual_review_only"
+    "promotionReason": "manual_review_only",
+    "base_url": "https://careers.lionbridge.com"
   },
   {
     "name": "KOJIMA PRODUCTIONS (Sheet)",
@@ -4535,11 +4536,11 @@
     "name": "Fatshark AB (Sheet)",
     "studio": "Fatshark AB",
     "company": "Fatshark AB",
-    "adapter": "static",
+    "adapter": "teamtailor",
     "pages": [
       "https://jobs.fatsharkgames.com/#jobs"
     ],
-    "listing_url": "https://jobs.fatsharkgames.com/#jobs",
+    "listing_url": "https://jobs.fatsharkgames.com",
     "nlPriority": false,
     "discoveryMethod": "sheet_directory",
     "discoveryStage": "sheet_directory",
@@ -4555,7 +4556,7 @@
     "sourceDirectory": "game_studios_sheet",
     "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
     "sourceDirectoryEntryUrl": "https://jobs.fatsharkgames.com/#jobs",
-    "id": "static:listing_url:https://jobs.fatsharkgames.com/#jobs",
+    "id": "teamtailor:listing_url:https://jobs.fatsharkgames.com",
     "discoveredAt": "2026-04-10T12:54:49.913203+00:00",
     "score": 48,
     "reasons": [
@@ -4591,7 +4592,8 @@
     "lastPromotedAt": "2026-04-10T12:55:27.565044+00:00",
     "lastDemotedAt": "",
     "enabledByDefault": true,
-    "promotionReason": "manual_review_only"
+    "promotionReason": "manual_review_only",
+    "base_url": "https://jobs.fatsharkgames.com"
   },
   {
     "name": "PLAION (Sheet)",
@@ -4845,11 +4847,11 @@
     "name": "Vivid Games (Sheet)",
     "studio": "Vivid Games",
     "company": "Vivid Games",
-    "adapter": "static",
+    "adapter": "teamtailor",
     "pages": [
       "https://jobs.vividgames.com/#jobs"
     ],
-    "listing_url": "https://jobs.vividgames.com/#jobs",
+    "listing_url": "https://jobs.vividgames.com",
     "nlPriority": false,
     "discoveryMethod": "sheet_directory",
     "discoveryStage": "sheet_directory",
@@ -4865,7 +4867,7 @@
     "sourceDirectory": "game_studios_sheet",
     "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
     "sourceDirectoryEntryUrl": "https://jobs.vividgames.com/#jobs",
-    "id": "static:listing_url:https://jobs.vividgames.com/#jobs",
+    "id": "teamtailor:listing_url:https://jobs.vividgames.com",
     "discoveredAt": "2026-04-10T12:54:49.914684+00:00",
     "score": 47,
     "reasons": [
@@ -4901,7 +4903,8 @@
     "lastPromotedAt": "2026-04-10T12:55:27.565044+00:00",
     "lastDemotedAt": "",
     "enabledByDefault": true,
-    "promotionReason": "manual_review_only"
+    "promotionReason": "manual_review_only",
+    "base_url": "https://jobs.vividgames.com"
   },
   {
     "name": "Treyarch (Sheet)",
@@ -5280,7 +5283,7 @@
     "name": "Arrowhead Game Studios (Sheet)",
     "studio": "Arrowhead Game Studios",
     "company": "Arrowhead Game Studios",
-    "adapter": "static",
+    "adapter": "teamtailor",
     "pages": [
       "https://jobs.arrowheadgamestudios.com/jobs"
     ],
@@ -5300,7 +5303,7 @@
     "sourceDirectory": "game_studios_sheet",
     "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
     "sourceDirectoryEntryUrl": "https://jobs.arrowheadgamestudios.com/jobs",
-    "id": "static:listing_url:https://jobs.arrowheadgamestudios.com/jobs",
+    "id": "teamtailor:listing_url:https://jobs.arrowheadgamestudios.com/jobs",
     "discoveredAt": "2026-04-10T12:54:49.912686+00:00",
     "score": 45,
     "reasons": [
@@ -5336,7 +5339,8 @@
     "lastPromotedAt": "2026-04-10T12:55:27.565044+00:00",
     "lastDemotedAt": "",
     "enabledByDefault": true,
-    "promotionReason": "manual_review_only"
+    "promotionReason": "manual_review_only",
+    "base_url": "https://jobs.arrowheadgamestudios.com"
   },
   {
     "name": "Wildlife Studios (Sheet)",
@@ -5466,11 +5470,11 @@
     "name": "Resolution Games (Sheet)",
     "studio": "Resolution Games",
     "company": "Resolution Games",
-    "adapter": "static",
+    "adapter": "teamtailor",
     "pages": [
       "https://jobs.resolutiongames.com/"
     ],
-    "listing_url": "https://jobs.resolutiongames.com/",
+    "listing_url": "https://jobs.resolutiongames.com",
     "nlPriority": false,
     "discoveryMethod": "sheet_directory",
     "discoveryStage": "sheet_directory",
@@ -5486,7 +5490,7 @@
     "sourceDirectory": "game_studios_sheet",
     "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
     "sourceDirectoryEntryUrl": "https://jobs.resolutiongames.com/",
-    "id": "static:listing_url:https://jobs.resolutiongames.com/",
+    "id": "teamtailor:listing_url:https://jobs.resolutiongames.com",
     "discoveredAt": "2026-04-10T12:54:49.914185+00:00",
     "score": 44,
     "reasons": [
@@ -5522,7 +5526,8 @@
     "lastPromotedAt": "2026-04-10T12:55:27.565044+00:00",
     "lastDemotedAt": "",
     "enabledByDefault": true,
-    "promotionReason": "manual_review_only"
+    "promotionReason": "manual_review_only",
+    "base_url": "https://jobs.resolutiongames.com"
   },
   {
     "name": "Play Magic (Sheet)",
@@ -5900,7 +5905,7 @@
     "name": "Radical Forge (Sheet)",
     "studio": "Radical Forge",
     "company": "Radical Forge",
-    "adapter": "static",
+    "adapter": "teamtailor",
     "pages": [
       "https://careers.radicalforge.com/jobs"
     ],
@@ -5920,7 +5925,7 @@
     "sourceDirectory": "game_studios_sheet",
     "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
     "sourceDirectoryEntryUrl": "https://careers.radicalforge.com/jobs",
-    "id": "static:listing_url:https://careers.radicalforge.com/jobs",
+    "id": "teamtailor:listing_url:https://careers.radicalforge.com/jobs",
     "discoveredAt": "2026-04-10T12:54:49.914117+00:00",
     "score": 42,
     "reasons": [
@@ -5956,7 +5961,8 @@
     "lastPromotedAt": "2026-04-10T12:55:27.565044+00:00",
     "lastDemotedAt": "",
     "enabledByDefault": true,
-    "promotionReason": "manual_review_only"
+    "promotionReason": "manual_review_only",
+    "base_url": "https://careers.radicalforge.com"
   },
   {
     "name": "One Man Studio (Sheet)",
@@ -6521,7 +6527,7 @@
     "name": "Star Stable Entertainment AB (Sheet)",
     "studio": "Star Stable Entertainment AB",
     "company": "Star Stable Entertainment AB",
-    "adapter": "static",
+    "adapter": "teamtailor",
     "pages": [
       "https://jobs.starstableentertainment.com/jobs"
     ],
@@ -6541,7 +6547,7 @@
     "sourceDirectory": "game_studios_sheet",
     "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
     "sourceDirectoryEntryUrl": "https://jobs.starstableentertainment.com/jobs",
-    "id": "static:listing_url:https://jobs.starstableentertainment.com/jobs",
+    "id": "teamtailor:listing_url:https://jobs.starstableentertainment.com/jobs",
     "discoveredAt": "2026-04-10T12:54:49.914447+00:00",
     "score": 39,
     "reasons": [
@@ -6577,7 +6583,8 @@
     "lastPromotedAt": "2026-04-10T12:55:27.565044+00:00",
     "lastDemotedAt": "",
     "enabledByDefault": true,
-    "promotionReason": "manual_review_only"
+    "promotionReason": "manual_review_only",
+    "base_url": "https://jobs.starstableentertainment.com"
   },
   {
     "name": "Playtika (Sheet)",
@@ -6645,7 +6652,7 @@
     "name": "Nimble Giant (Sheet)",
     "studio": "Nimble Giant",
     "company": "Nimble Giant",
-    "adapter": "static",
+    "adapter": "teamtailor",
     "pages": [
       "https://careers.nimblegiant.com/jobs"
     ],
@@ -6665,7 +6672,7 @@
     "sourceDirectory": "game_studios_sheet",
     "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
     "sourceDirectoryEntryUrl": "https://careers.nimblegiant.com/jobs",
-    "id": "static:listing_url:https://careers.nimblegiant.com/jobs",
+    "id": "teamtailor:listing_url:https://careers.nimblegiant.com/jobs",
     "discoveredAt": "2026-04-10T12:54:49.913938+00:00",
     "score": 39,
     "reasons": [
@@ -6701,7 +6708,8 @@
     "lastPromotedAt": "2026-04-10T12:55:27.565044+00:00",
     "lastDemotedAt": "",
     "enabledByDefault": true,
-    "promotionReason": "manual_review_only"
+    "promotionReason": "manual_review_only",
+    "base_url": "https://careers.nimblegiant.com"
   },
   {
     "name": "Matryoshka Games (Sheet)",
@@ -7138,72 +7146,10 @@
     "promotionReason": "manual_review_only"
   },
   {
-    "name": "Raw Power Games (Sheet)",
-    "studio": "Raw Power Games",
-    "company": "Raw Power Games",
-    "adapter": "static",
-    "pages": [
-      "https://careers.rawpowergames.com/jobs"
-    ],
-    "listing_url": "https://careers.rawpowergames.com/jobs",
-    "nlPriority": false,
-    "discoveryMethod": "sheet_directory",
-    "discoveryStage": "sheet_directory",
-    "careersUrl": "https://careers.rawpowergames.com/jobs",
-    "evidenceSource": "game_studios_sheet",
-    "evidenceTypes": [
-      "sheet_directory",
-      "sheet_row",
-      "sheet_roles_open_yes"
-    ],
-    "evidenceScore": 46,
-    "weakSignal": false,
-    "sourceDirectory": "game_studios_sheet",
-    "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-    "sourceDirectoryEntryUrl": "https://careers.rawpowergames.com/jobs",
-    "id": "static:listing_url:https://careers.rawpowergames.com/jobs",
-    "discoveredAt": "2026-04-10T12:54:49.914131+00:00",
-    "score": 37,
-    "reasons": [
-      "evidence_signal",
-      "live_jobs_detected"
-    ],
-    "sampleCount": 14,
-    "jobsFound": 14,
-    "confidence": "high",
-    "lastProbedAt": "2026-04-10T12:55:26.712753+00:00",
-    "deferred": false,
-    "candidateState": "live",
-    "rankScore": 52,
-    "rankReasons": [
-      "high_confidence",
-      "jobs_found_bonus",
-      "evidence_rank_bonus",
-      "existing_registry_match"
-    ],
-    "promotionLane": "manual_review",
-    "approvedAt": "2026-04-10T12:54:49.914131+00:00",
-    "approvedBy": "registry_migration_v2",
-    "liveAt": "2026-04-10T12:54:49.914131+00:00",
-    "quarantinedAt": "",
-    "quarantineReason": "",
-    "deferCount": 0,
-    "firstDeferredAt": "",
-    "lastDeferredAt": "",
-    "registryState": "active",
-    "pendingReason": "",
-    "stateChangedAt": "2026-04-10T12:55:27.565044+00:00",
-    "stateChangedBy": "discovery_auto_approve",
-    "lastPromotedAt": "2026-04-10T12:55:27.565044+00:00",
-    "lastDemotedAt": "",
-    "enabledByDefault": true,
-    "promotionReason": "manual_review_only"
-  },
-  {
     "name": "Playnetic (Sheet)",
     "studio": "Playnetic",
     "company": "Playnetic",
-    "adapter": "static",
+    "adapter": "teamtailor",
     "pages": [
       "https://careers.playnetic.com/jobs"
     ],
@@ -7223,7 +7169,7 @@
     "sourceDirectory": "game_studios_sheet",
     "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
     "sourceDirectoryEntryUrl": "https://careers.playnetic.com/jobs",
-    "id": "static:listing_url:https://careers.playnetic.com/jobs",
+    "id": "teamtailor:listing_url:https://careers.playnetic.com/jobs",
     "discoveredAt": "2026-04-10T12:54:49.914066+00:00",
     "score": 37,
     "reasons": [
@@ -7259,7 +7205,8 @@
     "lastPromotedAt": "2026-04-10T12:55:27.565044+00:00",
     "lastDemotedAt": "",
     "enabledByDefault": true,
-    "promotionReason": "manual_review_only"
+    "promotionReason": "manual_review_only",
+    "base_url": "https://careers.playnetic.com"
   },
   {
     "name": "Code Wizards (Sheet)",
@@ -7948,7 +7895,7 @@
     "name": "10 Chambers (Sheet)",
     "studio": "10 Chambers",
     "company": "10 Chambers",
-    "adapter": "static",
+    "adapter": "teamtailor",
     "pages": [
       "https://careers.10chambers.com/jobs"
     ],
@@ -7968,7 +7915,7 @@
     "sourceDirectory": "game_studios_sheet",
     "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
     "sourceDirectoryEntryUrl": "https://careers.10chambers.com/jobs",
-    "id": "static:listing_url:https://careers.10chambers.com/jobs",
+    "id": "teamtailor:listing_url:https://careers.10chambers.com/jobs",
     "discoveredAt": "2026-04-10T12:54:49.912539+00:00",
     "score": 36,
     "reasons": [
@@ -8004,7 +7951,8 @@
     "lastPromotedAt": "2026-04-10T12:55:27.565044+00:00",
     "lastDemotedAt": "",
     "enabledByDefault": true,
-    "promotionReason": "manual_review_only"
+    "promotionReason": "manual_review_only",
+    "base_url": "https://careers.10chambers.com"
   },
   {
     "name": "Steer Studios (Sheet)",
@@ -8444,7 +8392,7 @@
     "name": "Steel City Interactive (Sheet)",
     "studio": "Steel City Interactive",
     "company": "Steel City Interactive",
-    "adapter": "static",
+    "adapter": "teamtailor",
     "pages": [
       "https://careers.steelcityinteractive.co.uk/jobs"
     ],
@@ -8464,7 +8412,7 @@
     "sourceDirectory": "game_studios_sheet",
     "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
     "sourceDirectoryEntryUrl": "https://careers.steelcityinteractive.co.uk/jobs",
-    "id": "static:listing_url:https://careers.steelcityinteractive.co.uk/jobs",
+    "id": "teamtailor:listing_url:https://careers.steelcityinteractive.co.uk/jobs",
     "discoveredAt": "2026-04-10T12:54:49.914457+00:00",
     "score": 34,
     "reasons": [
@@ -8500,7 +8448,8 @@
     "lastPromotedAt": "2026-04-10T12:55:27.565044+00:00",
     "lastDemotedAt": "",
     "enabledByDefault": true,
-    "promotionReason": "manual_review_only"
+    "promotionReason": "manual_review_only",
+    "base_url": "https://careers.steelcityinteractive.co.uk"
   },
   {
     "name": "Remote Control Productions (Sheet)",
@@ -8879,7 +8828,7 @@
     "name": "Redhill Games (Sheet)",
     "studio": "Redhill Games",
     "company": "Redhill Games",
-    "adapter": "static",
+    "adapter": "teamtailor",
     "pages": [
       "https://careers.redhillgames.com/jobs"
     ],
@@ -8899,7 +8848,7 @@
     "sourceDirectory": "game_studios_sheet",
     "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
     "sourceDirectoryEntryUrl": "https://careers.redhillgames.com/jobs",
-    "id": "static:listing_url:https://careers.redhillgames.com/jobs",
+    "id": "teamtailor:listing_url:https://careers.redhillgames.com/jobs",
     "discoveredAt": "2026-04-10T12:54:49.914152+00:00",
     "score": 33,
     "reasons": [
@@ -8935,13 +8884,14 @@
     "lastPromotedAt": "2026-04-10T12:55:27.565044+00:00",
     "lastDemotedAt": "",
     "enabledByDefault": true,
-    "promotionReason": "manual_review_only"
+    "promotionReason": "manual_review_only",
+    "base_url": "https://careers.redhillgames.com"
   },
   {
     "name": "OtherSide Entertainment (Sheet)",
     "studio": "OtherSide Entertainment",
     "company": "OtherSide Entertainment",
-    "adapter": "static",
+    "adapter": "teamtailor",
     "pages": [
       "https://careers.otherside-e.com/jobs"
     ],
@@ -8961,7 +8911,7 @@
     "sourceDirectory": "game_studios_sheet",
     "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
     "sourceDirectoryEntryUrl": "https://careers.otherside-e.com/jobs",
-    "id": "static:listing_url:https://careers.otherside-e.com/jobs",
+    "id": "teamtailor:listing_url:https://careers.otherside-e.com/jobs",
     "discoveredAt": "2026-04-10T12:54:49.913978+00:00",
     "score": 33,
     "reasons": [
@@ -8997,7 +8947,8 @@
     "lastPromotedAt": "2026-04-10T12:55:27.565044+00:00",
     "lastDemotedAt": "",
     "enabledByDefault": true,
-    "promotionReason": "manual_review_only"
+    "promotionReason": "manual_review_only",
+    "base_url": "https://careers.otherside-e.com"
   },
   {
     "name": "Next Level Games (Sheet)",
@@ -31115,11 +31066,11 @@
     "name": "Moon Rover (Sheet)",
     "studio": "Moon Rover",
     "company": "Moon Rover",
-    "adapter": "static",
+    "adapter": "teamtailor",
     "pages": [
       "https://jobs.moonrover.games/#jobs"
     ],
-    "listing_url": "https://jobs.moonrover.games/#jobs",
+    "listing_url": "https://jobs.moonrover.games",
     "nlPriority": false,
     "discoveryMethod": "sheet_directory",
     "discoveryStage": "sheet_directory",
@@ -31135,7 +31086,7 @@
     "sourceDirectory": "game_studios_sheet",
     "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
     "sourceDirectoryEntryUrl": "https://jobs.moonrover.games/#jobs",
-    "id": "static:listing_url:https://jobs.moonrover.games/#jobs",
+    "id": "teamtailor:listing_url:https://jobs.moonrover.games",
     "discoveredAt": "2026-04-10T14:16:16.901588+00:00",
     "score": 22,
     "reasons": [
@@ -31171,7 +31122,8 @@
     "lastPromotedAt": "2026-04-10T14:16:32.234071+00:00",
     "lastDemotedAt": "",
     "enabledByDefault": true,
-    "promotionReason": "weak_candidate"
+    "promotionReason": "weak_candidate",
+    "base_url": "https://jobs.moonrover.games"
   },
   {
     "name": "Studio 444 (Sheet)",
@@ -32209,11 +32161,11 @@
     "name": "Studio Drydock (Sheet)",
     "studio": "Studio Drydock",
     "company": "Studio Drydock",
-    "adapter": "static",
+    "adapter": "teamtailor",
     "pages": [
       "https://jobs.studiodrydock.com/"
     ],
-    "listing_url": "https://jobs.studiodrydock.com/",
+    "listing_url": "https://jobs.studiodrydock.com",
     "nlPriority": false,
     "discoveryMethod": "sheet_directory",
     "discoveryStage": "sheet_directory",
@@ -32229,7 +32181,7 @@
     "sourceDirectory": "game_studios_sheet",
     "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
     "sourceDirectoryEntryUrl": "https://jobs.studiodrydock.com/",
-    "id": "static:listing_url:https://jobs.studiodrydock.com/",
+    "id": "teamtailor:listing_url:https://jobs.studiodrydock.com",
     "discoveredAt": "2026-03-21T13:10:56.612464+00:00",
     "score": 9,
     "reasons": [
@@ -32260,7 +32212,8 @@
     "stateChangedBy": "discovery_auto_approve",
     "lastPromotedAt": "2026-04-10T14:16:32.234071+00:00",
     "lastDemotedAt": "2026-03-21T13:10:56.612464+00:00",
-    "promotionReason": "weak_candidate"
+    "promotionReason": "weak_candidate",
+    "base_url": "https://jobs.studiodrydock.com"
   },
   {
     "name": "PortalOne, inc (Sheet)",
