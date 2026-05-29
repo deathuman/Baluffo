@@ -1061,7 +1061,7 @@ def test_should_skip_source_by_cadence_uses_hot_and_cold_windows() -> None:
 
 
 def test_get_incremental_cache_decision_prefers_skip_and_listing_modes() -> None:
-    from src.jobs import state as state_pkg
+    import src.jobs.state_incremental as state_pkg
 
     now = jf.datetime.now(jf.timezone.utc)
     rows = {
@@ -1093,7 +1093,7 @@ def test_get_incremental_cache_decision_prefers_skip_and_listing_modes() -> None
 def test_get_incremental_cache_decision_treats_future_next_eligible_after_run_as_skip_fresh() -> (
     None
 ):
-    from src.jobs import state as state_pkg
+    import src.jobs.state_incremental as state_pkg
 
     now = jf.datetime.now(jf.timezone.utc)
     rows = {
@@ -1278,8 +1278,8 @@ def test_run_pipeline_force_refresh_all_can_seed_existing_output_via_env() -> No
 def test_apply_incremental_cache_exclusions_keeps_provider_family_loader_for_board_level_refresh() -> (
     None
 ):
+    import src.jobs.state_incremental as state_pkg
     from src.jobs import pipeline_loader_selection as selection_pkg
-    from src.jobs import state as state_pkg
 
     now = jf.datetime.now(jf.timezone.utc)
     future = (now + jf.timedelta(minutes=10)).isoformat()
@@ -1791,8 +1791,8 @@ def test_teamtailor_sources_fetch_sources_with_bounded_concurrency() -> None:
 def test_apply_incremental_cache_exclusions_keeps_social_multi_feed_loaders_for_detail_level_refresh() -> (
     None
 ):
+    import src.jobs.state_incremental as state_pkg
     from src.jobs import pipeline_loader_selection as selection_pkg
-    from src.jobs import state as state_pkg
 
     now = jf.datetime.now(jf.timezone.utc)
     future = (now + jf.timedelta(minutes=10)).isoformat()

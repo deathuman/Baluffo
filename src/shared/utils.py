@@ -89,3 +89,15 @@ def coerce_str(value: Any, default: str) -> str:
     """Coerce value to non-empty str; return default if stripped empty."""
     text = str(value or "").strip()
     return text or str(default)
+
+
+def _as_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _as_dict_rows(value: Any) -> list[dict[str, Any]]:
+    return [item for item in _as_list(value) if isinstance(item, dict)]

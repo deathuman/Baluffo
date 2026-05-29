@@ -5,8 +5,9 @@ import sys
 from pathlib import Path
 from unittest import mock
 
-from src.jobs import adapters, canonicalize, dedup, parsers, registry, transport
+from src.jobs import adapters, canonicalize, dedup, registry, transport
 from src.jobs import common as jobs_common
+from src.jobs.adapters.html_parsers import parse_jobpostings_from_html
 from src.jobs.models import CanonicalJob
 
 
@@ -92,7 +93,7 @@ def test_canonical_job_from_mapping_collapses_sequence_text_fields() -> None:
 
 
 def test_parsers_keep_extraction_raw_and_dedup_accepts_typed_records() -> None:
-    rows = parsers.parse_jobpostings_from_html(
+    rows = parse_jobpostings_from_html(
         """
         <script type="application/ld+json">
         {

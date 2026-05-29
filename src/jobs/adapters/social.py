@@ -18,7 +18,7 @@ from src.jobs.adapters.recovery import run_recoverable_adapter_attempt
 from src.jobs.common.diagnostics import SOURCE_DIAGNOSTICS, set_source_diagnostics
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.models import RawJob
-from src.jobs.state import get_incremental_cache_decision
+from src.jobs.state_incremental import get_incremental_cache_decision
 from src.jobs.text_utils import clean_text
 
 from ..common import config as common_config

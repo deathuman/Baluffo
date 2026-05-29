@@ -83,10 +83,10 @@ from src.bridge.source_helpers import (
 from src.bridge.sync_state import SYNC_CONFIG_PATH_DEFAULT, SYNC_RUNTIME_PATH_DEFAULT
 from src.contracts import SCHEMA_VERSION as _SCHEMA_VERSION
 from src.jobs.adapters import default_source_loaders as _default_source_loaders
+from src.jobs.adapters.html_parsers import parse_jobpostings_from_html as _parse_html
 from src.jobs.common.registry_defaults import (
     DEFAULT_STUDIO_SOURCE_REGISTRY as _DEFAULT_STUDIO_SOURCE_REGISTRY,
 )
-from src.jobs.parsers import parse_jobpostings_from_html as _parse_jobpostings_from_html
 from src.jobs.transport import normalize_url as _normalize_job_url
 from src.shared.utils import now_iso as _now_iso
 from src.shared.utils import now_utc
@@ -159,7 +159,7 @@ find_existing_source_by_url = _find_existing_source_by_url
 find_existing_static_source_by_studio_domain = _find_existing_static_source_by_studio_domain
 infer_studio_name_from_host = _infer_studio_name_from_host
 is_tombstoned = _is_tombstoned
-parse_jobpostings_from_html = _parse_jobpostings_from_html
+parse_jobpostings_from_html = _parse_html
 normalize_job_url = _normalize_job_url
 ensure_source_id = _ensure_source_id
 normalize_source_url = _normalize_source_url

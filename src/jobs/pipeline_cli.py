@@ -18,17 +18,10 @@ from src.jobs.state_source_state import (
 )
 from src.jobs.text_utils import clean_text
 from src.jobs_fetcher_registry import SOURCE_REPORT_META
+from src.shared.utils import _as_dict, _as_list
 
 DEFAULT_SOCIAL_LOOKBACK_MINUTES = common_config.DEFAULT_SOCIAL_LOOKBACK_MINUTES
 load_social_config = common_social.load_social_config
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
-def _as_list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
 
 
 def _default_loaders_for_args(

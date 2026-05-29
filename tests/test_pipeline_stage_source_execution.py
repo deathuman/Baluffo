@@ -6,11 +6,11 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from src.jobs import pipeline_stage_source_execution as stage_mod
+from src.jobs.browser_fallback import BROWSER_FALLBACK_STATE_KEY
 from src.jobs.pipeline_stage_source_execution import (
     SourceExecutionStageConfig,
     run_source_execution_stage,
 )
-from src.jobs.state import BROWSER_FALLBACK_STATE_KEY
 
 
 class _ThreadLocal:

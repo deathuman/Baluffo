@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from src.jobs.state import get_incremental_cache_decision
+from src.jobs.state_incremental import get_incremental_cache_decision
 from src.jobs.text_utils import clean_text
 from src.jobs.transport import conditional_revalidate_url
 

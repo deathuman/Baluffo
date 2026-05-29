@@ -21,7 +21,7 @@ from src.jobs.text_utils import clean_text, norm_text, normalize_url
 from src.jobs_fetcher_registry import EXCLUDED_DEFAULT_SOURCES, SOURCE_REPORT_META
 from src.pipeline_io import write_atomic_if_changed, write_text_if_changed
 from src.shared.json_io import read_json_object
-from src.shared.utils import now_iso
+from src.shared.utils import _as_dict, _as_dict_rows, _as_list, now_iso
 
 from . import state_incremental as _state_incremental
 from .common import url as common_url
@@ -235,10 +235,6 @@ def set_browser_fallback_state(
         source_state_rows.pop(BROWSER_FALLBACK_STATE_KEY, None)
 
 
-def _as_dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
 def _source_health_text(*values: Any) -> str:
     for value in values:
         text = clean_text(value)
@@ -308,14 +304,6 @@ def derive_source_health_fields(row: dict[str, Any]) -> dict[str, Any]:
         "health": health,
         "healthReason": reason,
     }
-
-
-def _as_list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
-
-
-def _as_dict_rows(value: Any) -> list[dict[str, Any]]:
-    return [item for item in _as_list(value) if isinstance(item, dict)]
 
 
 def source_rows_fingerprint(rows: Sequence[dict[str, Any]]) -> str:

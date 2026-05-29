@@ -42,7 +42,7 @@ from src.jobs.adapters.static_runtime_support import (
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.common.http import HttpStatusError
 from src.jobs.page_gating import classify_job_page, looks_like_job_title_candidate
-from src.jobs.state import should_skip_static_source_for_structured_migration
+from src.jobs.state_source_state import should_skip_static_source_for_structured_migration
 from src.jobs.text_utils import clean_text, normalize_url, sanitize_location_text
 from src.jobs.transport import conditional_revalidate_url
 from src.scrapers.domain_profiles import domain_profile_for_url

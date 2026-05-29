@@ -16,7 +16,7 @@ from src.jobs.adapters.parsers.location import parse_generic_location_fields
 from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.registry import registry_entries
-from src.jobs.state import get_incremental_cache_decision
+from src.jobs.state_incremental import get_incremental_cache_decision
 from src.jobs.text_utils import clean_text, normalize_url
 
 

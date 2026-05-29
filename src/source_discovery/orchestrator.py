@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from src import source_registry as source_registry_module
-from src.jobs.state import read_source_state as _read_source_state
+from src.jobs.state_source_state import read_source_state as _read_source_state
 from src.shared.profile_utils import run_profiled
 from src.shared.utils import now_iso
 from src.source_registry import (

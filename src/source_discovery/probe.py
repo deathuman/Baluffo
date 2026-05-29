@@ -13,10 +13,10 @@ from typing import Any
 from urllib.parse import parse_qsl, urljoin, urlparse
 from xml.etree import ElementTree as ET
 
+from src.jobs.adapters.html_parsers import parse_jobpostings_from_html
 from src.jobs.adapters.parsers.json_payloads import parse_greenhouse_jobs_payload
 from src.jobs.adapters.parsers.provider_html import parse_jazzhr_jobs_html
 from src.jobs.common.no_openings import contains_no_openings_marker, visible_text_from_html
-from src.jobs.parsers import parse_jobpostings_from_html
 from src.url_hosts import host_matches_domain_pattern, host_matches_subdomain
 
 from .io_runtime import endpoint_url

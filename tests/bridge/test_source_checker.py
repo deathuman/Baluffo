@@ -3,7 +3,7 @@ from __future__ import annotations
 import src.admin_bridge as admin_bridge
 from src.bridge import html_extractor, source_checker
 from src.bridge.source_check_api import _reconstruct_probe_candidate
-from src.jobs.parsers import parse_jobpostings_from_html
+from src.jobs.adapters.html_parsers import parse_jobpostings_from_html
 from src.source_registry import source_identity
 
 

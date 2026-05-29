@@ -77,7 +77,7 @@ from src.pipeline_io import (
     write_text_if_changed,
 )
 from src.shared.json_shapes import json_object_rows
-from src.shared.utils import now_iso
+from src.shared.utils import _as_list, now_iso
 
 from .common import config as common_config
 from .common import health as health_module
@@ -92,10 +92,6 @@ _MISSING_COUNTRY_PLACEHOLDERS = {"", "unknown", "n/a", "na", "none", "null"}
 
 def _is_missing_country_placeholder(value: Any) -> bool:
     return norm_text(value) in _MISSING_COUNTRY_PLACEHOLDERS
-
-
-def _as_list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
 
 
 def _apply_final_location_quality_guardrail(rows: list[dict[str, Any]]) -> dict[str, Any]:

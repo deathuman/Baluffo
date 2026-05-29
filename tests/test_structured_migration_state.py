@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.jobs import state as jobs_state
+import src.jobs.state_source_state as jobs_state
 
 
 def _structured_report(

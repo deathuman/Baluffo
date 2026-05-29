@@ -182,7 +182,7 @@ class RefactorabilityAnalyzer:
         try:
             content = file_path.read_text(encoding="utf-8")
             for root in COMPOSITION_ROOTS:
-                pattern = rf"^from\s+{re.escape(root)}\b|^import\s+{re.escape(root)}\b"
+                pattern = rf"^from\s+{re.escape(root)}\s+import\b|^import\s+{re.escape(root)}\s*$"
                 matches = re.findall(pattern, content, re.MULTILINE)
                 if matches:
                     violations.append(

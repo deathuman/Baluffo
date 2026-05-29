@@ -21,6 +21,7 @@ from src.jobs.common.taxonomy import (
 from src.jobs.models import CanonicalJob
 from src.jobs.text_utils import clean_text, norm_text
 from src.jobs_fetcher_registry import SOURCE_REPORT_META
+from src.shared.utils import _as_dict, _as_dict_rows, _as_list
 
 from .reporting_summary import format_source_error
 from .state_source_records import source_rows_fingerprint
@@ -35,18 +36,6 @@ _CANONICAL_DROP_REASON_KEYS = (
     "google_sheets_category_row",
 )
 _GOOGLE_SHEETS_CATEGORY_LINK_STATUS_TIMEOUT_S = 4
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
-def _as_list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
-
-
-def _as_dict_rows(value: Any) -> list[dict[str, Any]]:
-    return [item for item in _as_list(value) if isinstance(item, dict)]
 
 
 def _build_loader_kwargs(

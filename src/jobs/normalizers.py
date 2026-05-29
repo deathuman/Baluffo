@@ -35,6 +35,9 @@ COUNTRY_NAME_TO_CODE = {
 }
 
 
+# These are private duplicates of clean_text / norm_text in text_utils.py.
+# Cannot import from text_utils.py because it imports COUNTRY_NAME_TO_CODE and
+# normalize_country from this module, creating a circular dependency.
 def _clean_text(value: Any) -> str:
     return str(value or "").strip()
 
