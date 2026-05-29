@@ -21,6 +21,22 @@ _LANDING_PAGE_SEGMENTS = frozenset(
         "positions",
         "openings",
         "vacancy",
+        # Non-English landing page segments
+        "stellenanzeigen",
+        "karriere",
+        "offene-stellen",
+        "emploi",
+        "recrutement",
+        "offres",
+        "trabajo",
+        "trabajos",
+        "empleo",
+        "vacantes",
+        "lavora",
+        "offerte",
+        "posizioni-aperte",
+        "vagas",
+        "carreiras",
     }
 )
 

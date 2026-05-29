@@ -120,6 +120,32 @@ CAREERS_URL_HINTS: tuple[str, ...] = (
     "open-positions",
     "vacancies",
     "work-with-us",
+    # Non-English career page keywords
+    "stellenanzeigen",  # German: job postings
+    "karriere",  # German: career
+    "offene-stellen",  # German: open positions
+    "emploi",  # French: job
+    "recrutement",  # French: recruitment
+    "offres",  # French: job offers
+    "trabajo",  # Spanish: job (also matches "trabajos")
+    "empleo",  # Spanish: employment
+    "vacantes",  # Spanish: vacancies
+    "lavora",  # Italian: works (careers)
+    "offerte",  # Italian: job offers
+    "posizioni-aperte",  # Italian: open positions
+    "vagas",  # Portuguese: vacancies
+    "carreiras",  # Portuguese: careers
+    "recruitment",
+    "openings",
+    "recruit",
+    "hiring",
+    # CJK career keywords
+    "採用",  # Japanese: recruitment
+    "キャリア",  # Japanese: career (katakana)
+    "求人",  # Japanese: job posting
+    "채용",  # Korean: recruitment
+    "招聘",  # Chinese: recruitment
+    "职业",  # Chinese: career
 )
 GENERIC_STATIC_BLOCKED_DOMAINS: tuple[str, ...] = (
     "linkedin.com",
