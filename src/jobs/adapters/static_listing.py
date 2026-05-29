@@ -1517,6 +1517,24 @@ class StaticFetchRunner:
                 if html2:
                     self.stage_state.increment_browser_fallbacks()
                     html = html2
+        listing_path = urlparse(page_url).path or ""
+        if self.deps.try_playwright and html and "/jobs" in listing_path:
+            jobs_path_timeout_s = effective_timeout_for_remaining_budget(
+                timeout_s=max(1, effective_timeout_s),
+                remaining_budget_s=self.ctx.remaining_budget_s(),
+            )
+            parsed_pre = parse_jobpostings_from_html(
+                html,
+                base_url=page_url,
+                fallback_company=self.ctx.company,
+                fallback_source_id_prefix=f"static:{self.source_name}",
+            )
+            if not parsed_pre and jobs_path_timeout_s > 0:
+                html2, _ = self.deps.try_playwright(page_url, jobs_path_timeout_s)
+                self._log_playwright_fallback(page_url, "jobs_path", html2)
+                if html2:
+                    self.stage_state.increment_browser_fallbacks()
+                    html = html2
         listing_htmls = [html]
         try:
             dynamic_listing_timeout_s = effective_timeout_for_remaining_budget(
