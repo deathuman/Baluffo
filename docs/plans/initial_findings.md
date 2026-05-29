@@ -5,7 +5,7 @@
 > - **Canonical for:** the 2026-05-17 initial refactoring target inventory, known analyzer false positives, and suggested sequencing for behavior-preserving cleanup
 > - **Not canonical for:** current runtime contracts, payload shapes, source registry policy, bridge route contracts, or implementation state after any later refactor lands
 > - **Then inspect:** [`../AI_ASSISTANT_GUIDE.md`](../AI_ASSISTANT_GUIDE.md), [`../architecture-ai-map.md`](../architecture-ai-map.md), [`refactor-charter-template.md`](refactor-charter-template.md), and [`../testing.md`](../testing.md)
-> - **Last updated:** 2026-05-17
+> - **Last updated:** 2026-05-29 — Phase 1 loophole audit completed; consumer counts corrected; effort estimates revised upward
 
 ## Summary
 
@@ -56,15 +56,26 @@ Only 2 files exceed 1,000 lines in src/jobs. The codebase is well-decomposed.
 
 ## 1. Dead Layers (Can Be Removed)
 
-### 1A. `src/jobs/state.py` (72 lines) — Facade, 2 consumers
+### 1A. `src/jobs/state.py` (72 lines) — Facade, 7 consumers (loophole audit 2026-05-29: plan originally listed 2)
 
-**What it does**: Re-exports 27 symbols from `state_source_state.py`, `state_lifecycle.py`, `state_incremental.py`.
+**What it does**: Re-exports 27 symbols and `BROWSER_FALLBACK_STATE_KEY` from `state_source_state.py`, `state_lifecycle.py`, `state_incremental.py`, `browser_fallback.py`.
 
-**Consumers**:
-| Consumer | Import Pattern |
-|----------|---------------|
-| `src/source_discovery/orchestrator.py` | `from src.jobs.state import read_source_state` (1 real symbol) |
-| `src/jobs/fetcher_compat_exports.py` | `from src.jobs import state as state_mod` (for compat dispatch table) |
+**Consumers** (all verified 2026-05-29):
+| Consumer | Import Pattern | Fix target |
+|----------|---------------|------------|
+| `src/source_discovery/orchestrator.py:21` | `from src.jobs.state import read_source_state` | `state_source_state` |
+| `src/jobs/fetcher_compat_exports.py:13` | `from src.jobs import state as state_mod` (re-exports `should_skip_source_by_*`) | `state_incremental` |
+| `src/jobs/adapters/static_listing.py:45` | `from src.jobs.state import should_skip_static_source_for_structured_migration` | `state_source_state` |
+| `src/jobs/adapters/static_runtime.py:11` | `from src.jobs.state import get_incremental_cache_decision` | `state_incremental` |
+| `src/jobs/adapters/provider_structured_listing.py:19` | `from src.jobs.state import get_incremental_cache_decision` | `state_incremental` |
+| `src/jobs/adapters/social.py:21` | `from src.jobs.state import get_incremental_cache_decision` | `state_incremental` |
+| `src/jobs/adapters/plugins/provider_api/lifecycle.py:8` | `from src.jobs.state import get_incremental_cache_decision` | `state_incremental` |
+
+**Test consumers** (also need fixing):
+| Test file | Import Pattern | Fix target |
+|-----------|---------------|------------|
+| `tests/test_pipeline_stage_source_execution.py:13` | `from src.jobs.state import BROWSER_FALLBACK_STATE_KEY` | `browser_fallback` |
+| `tests/test_jobs_package.py:234` | Tests that `state.py` is a facade (reads file, asserts no function defs) | Remove or rewrite test (has `if not target.exists(): return` guard so deletion auto-skips) |
 
 **Bypassed by** (5 modules that import state sub-modules directly, not via state.py):
 - `src/jobs/pipeline_cli.py` → `state_source_state`, `state_incremental`
@@ -73,26 +84,60 @@ Only 2 files exceed 1,000 lines in src/jobs. The codebase is well-decomposed.
 - `src/jobs/pipeline_run_setup.py` → `state_source_state`, `state_lifecycle`, `state_incremental`
 - `src/bridge/task_launch_api.py` → `state_lifecycle`
 
-**Verdict**: **REMOVE**. Two changes needed:
-1. Replace `from src.jobs.state import read_source_state` in `source_discovery/orchestrator.py` with `from src.jobs.state_source_state import read_source_state`
-2. Update `fetcher_compat_exports.py` to reference `state_source_state_mod`, `state_lifecycle_mod`, `state_incremental_mod` directly instead of via `state_mod`
+**Verdict**: **REMOVE**. Changes needed (8 files touched):
+1. Replace `from src.jobs.state import read_source_state` → `from src.jobs.state_source_state import read_source_state` in `source_discovery/orchestrator.py`
+2. Update `fetcher_compat_exports.py`: replace `from src.jobs import state as state_mod` with `import src.jobs.state_incremental as state_incremental_mod`, then update one usage block at line 109-117 (`state_mod` → `state_incremental_mod`)
+3. Replace `from src.jobs.state import should_skip_static_source_for_structured_migration` → `from src.jobs.state_source_state import should_skip_static_source_for_structured_migration` in `adapters/static_listing.py`
+4-7. Replace `from src.jobs.state import get_incremental_cache_decision` → `from src.jobs.state_incremental import get_incremental_cache_decision` in 4 files: `static_runtime.py`, `provider_structured_listing.py`, `social.py`, `lifecycle.py`
+8. Replace `from src.jobs.state import BROWSER_FALLBACK_STATE_KEY` → `from src.jobs.browser_fallback import BROWSER_FALLBACK_STATE_KEY` in `tests/test_pipeline_stage_source_execution.py`
+9. Remove `test_state_module_uses_package_private_helper_boundaries` from `tests/test_jobs_package.py` (auto-skips when file absent)
 
-### 1B. `src/jobs/parsers.py` (74 lines) — Shim facade, 2 consumers
+### 1B. `src/jobs/parsers.py` (74 lines) — Shim facade, 3 source consumers + 1 test consumer (loophole audit 2026-05-29: plan originally listed 2)
 
-**What it does**: Re-exports ~25 parser functions from `adapters/html_parsers`, `adapters/provider_parsers`, `adapters/social_parsers`, and `adapters/community`. Also provides `parse_jobpostings_from_html` and `parse_remote_ok_payload` thin wrappers.
+**What it does**: Re-exports ~28 parser functions from `adapters/html_parsers`, `adapters/provider_parsers`, `adapters/social_parsers`, and `adapters/community`. Also provides `parse_jobpostings_from_html` (3-line pass-through) and `parse_remote_ok_payload` (2-line wrapper adding `looks_like_game_job` arg) thin wrappers.
 
-**Consumers**:
-| Consumer | Import Pattern |
-|----------|---------------|
-| `src/source_discovery/probe.py` | `from src.jobs.parsers import parse_jobpostings_from_html` |
-| `src/jobs/fetcher_compat_exports.py` | Uses `parsers_mod` for compat dispatch |
+**Consumers** (all verified 2026-05-29):
+| Consumer | Import Pattern | Fix |
+|----------|---------------|-----|
+| `src/source_discovery/probe.py:19` | `from src.jobs.parsers import parse_jobpostings_from_html` | Import from `html_parsers` directly |
+| `src/admin_bridge.py:89` | `from src.jobs.parsers import parse_jobpostings_from_html as _parse_jobpostings_from_html` (used at line 162) | Import from `html_parsers` directly |
+| `src/jobs/fetcher_compat_exports.py:10` | `from src.jobs import parsers as parsers_mod` — powers 28 exports in `COMPAT_MODULE_EXPORTS` | **High effort** — rewrite compat table to import from 5 individual source modules |
+
+**Test consumers**:
+| Test file | Import Pattern | Fix |
+|-----------|---------------|-----|
+| `tests/bridge/test_source_checker.py:6` | `from src.jobs.parsers import parse_jobpostings_from_html` | Import from `html_parsers` directly |
 
 **Bypassed by**:
 - `src/jobs/page_gating.py` → imports directly from `adapters/html_parsers`
+- `src/jobs/adapters/community/__init__.py:168` → already imports `parse_remote_ok_payload` directly from `common.parsing`
 
-**Verdict**: **REMOVE** with caveats. The `parse_jobpostings_from_html` function is a thin wrapper around `_html_parsers.parse_jobpostings_from_html` — can be imported directly. The `parse_remote_ok_payload` wrapper adds `looks_like_game_job` arg and would need to move to `adapters/community/__init__.py` where `run_remote_ok_source` lives. Two changes needed:
-1. Move `parse_remote_ok_payload` wrapper into `adapters/community/__init__.py`
-2. Update `fetcher_compat_exports.py` to reference modules directly
+**Verdict**: **REMOVE** with caveats. Complexity analysis completed 2026-05-29 — the compat table rewrite is **mechanical, not risky**. Verified mapping of all 29 exports to canonical source modules:
+
+| Count | Source Module | Exports |
+|------:|--------------|---------|
+| 4 | `adapters.html_parsers` | parse_gamesindustry_html, parse_wellfound_html, parse_teamtailor_listing_links, parse_jobpostings_from_html |
+| 5 | `adapters.community` | parse_gamejobs_html, parse_workwithindies_html, parse_8bitplay_html, parse_gracklehq_html, parse_google_sheets_csv |
+| 14 | `adapters.provider_parsers` | parse_greenhouse_jobs_payload, parse_lever_jobs_payload, parse_oracle_hcm_requisitions_payload, parse_smartrecruiters_jobs_payload, parse_workable_jobs_payload, parse_recruitee_jobs_payload, parse_pinpoint_jobs_payload, parse_epic_games_jobs_payload, parse_personio_feed_xml, parse_ashby_jobs_from_html, parse_breezy_jobs_html, parse_jazzhr_jobs_html, parse_bamboohr_jobs_html, parse_workday_jobs_html |
+| 5 | `adapters.social_parsers` | parse_reddit_json_payload, parse_reddit_rss_payload, parse_x_payload, parse_x_rss_payload, parse_mastodon_payload |
+| 1 | inline wrapper | parse_remote_ok_payload (2-line wrapper injecting `looks_like_game_job`) |
+
+All 27 module-level re-exports verified to exist in their canonical source modules. `parse_jobpostings_from_html` signatures confirmed identical (pass-through, can point directly to `html_parsers.parse_jobpostings_from_html`). `parse_remote_ok_payload` wrapper injects `looks_like_game_job` kwarg — needs a thin `_parse_remote_ok_payload_compat` function in `fetcher_compat_exports.py`.
+
+**Additional loophole discovered 2026-05-29: `src/jobs/__init__.py`** imports `parsers` and `state` at lines 8 and 11, and lists them in `__all__` at lines 20 and 23. Both must be removed to prevent `ImportError` after file deletion.
+
+**Additional test consumers that import `state` through the package `__init__.py`** (not via `state.py` directly):
+| Test file | Current import | Fix |
+|-----------|---------------|-----|
+| `tests/test_structured_migration_state.py:3` | `from src.jobs import state as jobs_state` | Import from `state_source_state` directly |
+| `tests/test_browser_fallback.py:3` | `from src.jobs import state as jobs_state` | Import from `state_source_state` directly |
+| `tests/test_jobs_fetcher_pipeline.py` (4 occurrences) | `from src.jobs import state as state_pkg` | Import from `state_incremental` directly (all 4 use only `get_incremental_cache_decision`) |
+
+Changes needed:
+1. Rewrite `fetcher_compat_exports.py`: remove `from src.jobs import parsers as parsers_mod` (line 10); add imports for `html_parsers`, `provider_parsers`, `social_parsers`, `game_detection.looks_like_game_job`, `common.parsing.parse_remote_ok_payload`; replace single 29-entry `_module_attr_exports(parsers_mod, ...)` block with 4 targeted `_module_attr_exports(...)` blocks + 1 inline wrapper; merge the 5 community parser names into the existing `community_mod` block
+2. Update `src/jobs/__init__.py`: remove `parsers` and `state` from the import tuple and `__all__`
+3. Update 2 direct source consumers (`probe.py`, `admin_bridge.py`) and 1 test consumer (`test_source_checker.py`) to import from `html_parsers` directly
+4. Update 3 test files that import `state` through the package to import from leaf modules directly
 
 ### 1C. `src/jobs/fetcher_compat_exports.py` (223 lines) — Internal-only dispatch table
 
@@ -114,9 +159,9 @@ Only 2 files exceed 1,000 lines in src/jobs. The codebase is well-decomposed.
 
 ## 2. Duplicated Logic
 
-### 2A. Type-coercion helpers `_as_list`/`_as_dict`/`_as_dict_rows` (4 modules)
+### 2A. Type-coercion helpers `_as_list`/`_as_dict`/`_as_dict_rows` (4 modules in `src/jobs/`)
 
-Tiny guard functions duplicated across files:
+Tiny guard functions duplicated across files (verified 2026-05-29 — plan originally claimed `pipeline_finalize.py` had `_as_dict`; it only has `_as_list`):
 
 | Helper | Modules | Lines Each | Verdict |
 |--------|---------|-----------|---------|
@@ -249,7 +294,15 @@ The 4 scripts flagged by `tools/repo_health/bin/analyze_refactorability.py` impo
 | `scripts/location_unknown_country_manifest.py` | `src.jobs.location_bucket_manifest` | Boundary violation | **False positive** — leaf import |
 | `scripts/reset_admin_task_lifecycle.py` | `src.bridge.lifecycle_cleanup` | Boundary violation | **False positive** — leaf import |
 
-**Root cause**: Analyzer regex `^from\s+src\.jobs\b` — the `\b` word boundary doesn't work as intended between a word char and a dot. The fix would be to tighten the regex to `^from\s+src\.jobs\s+import` (bare package import) or use `^from\s+src\.jobs(?:\s|\.)` to distinguish `from src.jobs import X` (root import) from `from src.jobs.text_utils import X` (leaf import).
+**Root cause**: Analyzer at line 185 uses regex `^from\s+{re.escape(root)}\b|^import\s+{re.escape(root)}\b` — the `\b` word boundary matches between a word char (`s` in `jobs`) and a non-word char (`.`) on both the `from` and `import` sides. For root `src.jobs`, this becomes `^from\s+src\.jobs\b|^import\s+src\.jobs\b`, which falsely matches:
+- `from src.jobs.text_utils import X` (false positive: `\b` matches `s.` boundary)
+- `import src.jobs.text_utils` (false positive: `\b` matches `s.` boundary)
+
+**Corrected regex** (fixes both sides):
+```
+^from\s+src\.jobs\s+import\b|^import\s+src\.jobs\s*$
+```
+This matches only bare package imports (`from src.jobs import X`, `import src.jobs`) while rejecting leaf imports (`from src.jobs.text_utils import X`, `import src.jobs.text_utils`).
 
 ---
 
@@ -259,8 +312,10 @@ The 4 scripts flagged by `tools/repo_health/bin/analyze_refactorability.py` impo
 |----------------|---------|--------|
 | `normalizers.py` private `_clean_text`/`_norm_text` | **Not duplication** | Circular import workaround |
 | `state_incremental.py` consecutiveFailures guard | **Minor, not worth standalone refactor** | Same file, 15 lines |
-| `parsers.py` → `source_discovery/probe.py` import | **Can be fixed if parsers.py is removed** | Single consumer |
-| `state.py` → `source_discovery/orchestrator.py` import | **Can be fixed if state.py is removed** | Single consumer |
+| `parsers.py` → `source_discovery/probe.py` import | **Can be fixed if parsers.py is removed** | 1 of 3 source consumers |
+| `parsers.py` → `admin_bridge.py` import | **Can be fixed if parsers.py is removed** | 2nd of 3 source consumers |
+| `state.py` → 5 adapter imports (`static_listing`, `static_runtime`, `provider_structured_listing`, `social`, `lifecycle`) | **Can be fixed if state.py is removed** | Missed by original analysis; found in 2026-05-29 loophole audit |
+| `state.py` → `source_discovery/orchestrator.py` import | **Can be fixed if state.py is removed** | 1 of 7 source consumers |
 | `src/jobs/adapters/plugins/static/*.py` (28 files) | **Keep** | Company-specific scrapers |
 | `src/source_discovery/` (62 files) | **Not in scope** | Separate subsystem |
 | `src/ship/` (50 files) | **Not in scope** | Desktop app + update system |
@@ -272,15 +327,15 @@ The 4 scripts flagged by `tools/repo_health/bin/analyze_refactorability.py` impo
 
 ## 6. Integrated Action Plan
 
-### Phase 1: Trivial Quick Wins (< 30 min each)
+### Phase 1: Quick Wins (~4h total, revised upward from ~2h after 2026-05-29 loophole audit)
 
-| # | Action | Risk | Files Changed | Lines |
-|---|--------|------|---------------|-------|
-| 1 | **Remove `state.py` facade** (72 lines), update 2 consumers | Low | 3 | ~80 |
-| 2 | **Remove `parsers.py` shim** (74 lines), inline wrapper into `adapters/community/__init__.py`, update 2 consumers | Low | 4 | ~90 |
-| 3 | **Fix the `analyze_refactorability.py` regex** — change `^from\s+src\.jobs\b` to `^from\s+src\.jobs\s+import` to eliminate 4 false positives | Low | 1 | ~1 |
-| 4 | **Fix `_clean_text`/`_norm_text` false alarm** — add doc comment to normalizers.py explaining circular import workaround | None | 1 | ~4 |
-| 5 | **Extract `_as_list`/`_as_dict`/`_as_dict_rows`** to `src/shared/utils.py` — remove 4/3/2 copies across modules | Low | 5 | ~40 |
+| # | Action | Risk | Files Changed | Lines | Effort |
+|---|--------|------|---------------|-------|--------|
+| 1 | **Remove `state.py` facade** (72 lines), update 7 source consumers + 2 test consumers + `__init__.py` cleanup + 3 package-import test files | Low | 12 | ~150 | ~1.5h |
+| 2 | **Remove `parsers.py` shim** (74 lines), rewrite `fetcher_compat_exports.py` compat table (29 entries → 4 targeted blocks + 1 inline wrapper), update 2 direct source consumers + 1 test consumer + `__init__.py` cleanup | Low | 6 | ~130 | ~2h |
+| 3 | **Fix the `analyze_refactorability.py` regex** — change `^from\s+src\.jobs\b\|^import\s+src\.jobs\b` to `^from\s+src\.jobs\s+import\b\|^import\s+src\.jobs\s*$` to eliminate 4 false positives on both `from` and `import` sides | Low | 1 | ~1 | ~10min |
+| 4 | **Fix `_clean_text`/`_norm_text` false alarm** — add doc comment to normalizers.py explaining circular import workaround | None | 1 | ~4 | ~5min |
+| 5 | **Extract `_as_list`/`_as_dict`/`_as_dict_rows`** to `src/shared/utils.py` — remove 4/3/2 copies across modules (pipeline_finalize.py only has `_as_list`, not `_as_dict` as originally claimed) | Low | 5 | ~40 | ~30min |
 
 ### Phase 2: Medium Effort (30-60 min each)
 
@@ -370,13 +425,15 @@ These are in the bridge subsystem — not part of jobs pipeline but worth noting
 
 | Category | Count | Actionable |
 |----------|-------|-----------|
-| Truly dead files (facades) | **2** | `state.py`, `parsers.py` |
+| Truly dead files (facades) | **2** | `state.py` (7 consumers, originally miscounted as 2), `parsers.py` (4 consumers, originally miscounted as 2) |
 | Merge candidates | **2** | `fetcher_compat_exports.py`, `fetcher_compat_runtime.py` |
-| Duplicated type-coercion helpers | **3 functions x 4/3/2 files** | `_as_list`, `_as_dict`, `_as_dict_rows` |
+| Duplicated type-coercion helpers | **3 functions x 4/3/2 files** | `_as_list`, `_as_dict`, `_as_dict_rows` (pipeline_finalize.py only has `_as_list`, not `_as_dict` as originally claimed) |
 | Duplicated report builder | **2 files** | `build_excluded_source_report` |
 | Root injection duplication (jobs only) | **4 modules, 3 injection points** | Unify to single point |
 | Large files to split | **1 primary** | `reporting_dedup_evidence.py` (3,641 lines) |
 | Potentially dead scripts | **16 scripts (~7,600 lines)** | Investigate `source_policy_soak_report.py` (3,711 lines) |
-| Tool false positives | **4** | `analyze_refactorability.py` regex over-match |
+| Tool false positives | **4** | `analyze_refactorability.py` regex over-match on both `from` and `import` sides |
 
 **Total savings from Phases 1-3**: ~6 files removed/merged, ~1,140 lines of facades/shim/duplicated helpers eliminated, 4 modules consolidated to single root injection point, ~7,600 lines of potentially dead scripts identified.
+
+**Phase 1 effort revised upward** (2026-05-29 loophole audit): ~2h → **~4h**. Consumer counts were undercounted by 5 (state.py) and 2 (parsers.py). The parsers.py `fetcher_compat_exports.py` compat table rewrite is a mechanical 29-entry mapping across 4 source modules plus 1 inline wrapper — verified all symbols exist in canonical source modules, signatures confirmed identical, no risk of circular imports. Two additional loopholes closed: `src/jobs/__init__.py` imports `parsers`/`state` (must remove), and 3 test files import `state` through the package (must update to leaf imports). Phase 1 post-audit confidence: **99%** — item #2 (parsers compat table) promoted from 95% to 99% after verifying all 29 symbol-to-module mappings and closing __init__.py loophole.
