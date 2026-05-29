@@ -53,7 +53,27 @@ def _is_oracle_hcm_candidate_path(path: str) -> bool:
     return tokens[-1] == "jobs"
 
 
-def infer_provider_adapter(host: str, path: str) -> str | None:
+# ATS HTML content signatures used by infer_provider_adapter() fallback.
+# Mirrors _ATS_HTML_SIGNATURES in web_search_candidates.py:
+# only adapters whose builders are runtime-flexible or safely return None.
+_ATS_HTML_FALLBACK: list[tuple[str, str]] = [
+    ("bamboohr", "bamboohr"),
+    ("teamtailor", "teamtailor"),
+    ("workday", "myworkdayjobs"),
+    ("workday", "workday"),
+    ("smartrecruiters", "smartrecruiters"),
+]
+
+
+def _html_matches_any_provider(html: str) -> str | None:
+    html_lower = html.lower()
+    for adapter, signature in _ATS_HTML_FALLBACK:
+        if signature in html_lower:
+            return adapter
+    return None
+
+
+def infer_provider_adapter(host: str, path: str, html: str | None = None) -> str | None:
     if _is_oraclecloud_host(host) and _is_oracle_hcm_candidate_path(path):
         return "oracle_hcm"
     for adapter, patterns in _HOST_DOMAIN_PATTERNS:
@@ -67,6 +87,8 @@ def infer_provider_adapter(host: str, path: str) -> str | None:
         host == "jobs.smartrecruiters.com"
     ):
         return "smartrecruiters"
+    if html:
+        return _html_matches_any_provider(html)
     return None
 
 
