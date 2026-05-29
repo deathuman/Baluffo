@@ -313,7 +313,13 @@ def _fetch_html(
 
 
 def _blocked_by_page_gate(
-    html: str, page_url: str, source_row: dict[str, Any], company: str, spec: SimpleStaticPlugin
+    html: str,
+    page_url: str,
+    source_row: dict[str, Any],
+    company: str,
+    spec: SimpleStaticPlugin,
+    try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
+    timeout_s: int = 10,
 ) -> bool:
     if not spec.use_page_gate:
         return False
@@ -323,6 +329,16 @@ def _blocked_by_page_gate(
     if job_like:
         return False
     if gate_reason == "dead_listing_page":
+        if try_playwright:
+            rendered_html, _ = try_playwright(page_url, max(3, min(timeout_s, 30)))
+            if rendered_html and rendered_html != html:
+                job_like2, _ = classify_job_page(
+                    rendered_html,
+                    page_url,
+                    profile=source_row if isinstance(source_row, dict) else None,
+                )
+                if job_like2:
+                    return False
         source_row["_staticPluginMeta"] = dead_listing_page_meta(page_url=page_url, company=company)
     return True
 
@@ -357,7 +373,7 @@ def run_simple_static_plugin(
     html = _fetch_html(fetch_text, page_url, timeout_s, source_row, spec, try_playwright)
     if not html:
         return []
-    if _blocked_by_page_gate(html, page_url, source_row, company, spec):
+    if _blocked_by_page_gate(html, page_url, source_row, company, spec, try_playwright, timeout_s):
         return []
     rows = [
         row

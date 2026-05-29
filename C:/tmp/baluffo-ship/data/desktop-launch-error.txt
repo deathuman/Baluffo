@@ -1,0 +1,16 @@
+Traceback (most recent call last):
+  File "/home/Andrea/code/Baluffo/src/ship/desktop_app/launcher_flow.py", line 183, in launch_desktop_app
+    bridge_process = api.start_child_process(
+        api.build_child_command(
+    ...<13 lines>...
+        job_handle=desktop_job,
+    )
+  File "/usr/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1245, in _execute_mock_call
+    raise result
+OSError: bridge attach failed

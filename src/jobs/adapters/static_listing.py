@@ -68,6 +68,39 @@ _ATS_SIGNATURE_HINTS: list[tuple[str, str]] = [
     ("workable", "workable"),
 ]
 
+_CAREERS_LANDING_TOKENS = (
+    "careers",
+    "career",
+    "jobs",
+    "job",
+    "join-us",
+    "open-positions",
+    "vacancies",
+    "work-with-us",
+    "openings",
+    "vacancy",
+    "positions",
+    "recruitment",
+    "karriere",
+    "stellenanzeigen",
+    "emploi",
+    "recrutement",
+    "vacantes",
+    "lavora",
+    "offerte",
+    "vagas",
+)
+
+
+def _careers_landing_url(url: str) -> bool:
+    """Check if URL host+path suggests a career listing page."""
+    try:
+        parsed = urlparse(str(url or ""))
+    except ValueError:
+        return False
+    text = f"{(parsed.hostname or '').lower()}{(parsed.path or '').lower()}"
+    return any(token in text for token in _CAREERS_LANDING_TOKENS)
+
 
 # pure — budget arithmetic + TimeoutError gate
 def _effective_timeout_or_raise(
@@ -1557,6 +1590,23 @@ class StaticFetchRunner:
                         f"consider adapter reclassification"
                     )
                     break
+        if self.deps.try_playwright and html and _careers_landing_url(page_url):
+            empty_fallback_timeout_s = effective_timeout_for_remaining_budget(
+                timeout_s=max(1, effective_timeout_s),
+                remaining_budget_s=self.ctx.remaining_budget_s(),
+            )
+            parsed_pre = parse_jobpostings_from_html(
+                html,
+                base_url=page_url,
+                fallback_company=self.ctx.company,
+                fallback_source_id_prefix=f"static:{self.source_name}",
+            )
+            if not parsed_pre and empty_fallback_timeout_s > 0:
+                html2, _ = self.deps.try_playwright(page_url, empty_fallback_timeout_s)
+                self._log_playwright_fallback(page_url, "empty_page", html2)
+                if html2:
+                    self.stage_state.increment_browser_fallbacks()
+                    html = html2
         listing_htmls = [html]
         try:
             dynamic_listing_timeout_s = effective_timeout_for_remaining_budget(
