@@ -1,12 +1,34 @@
 # Job Sanitization Plan — 2026-05-18
 
-> **Last updated:** 2026-05-29 — P3 investigation complete (P3.1 resolved, P3.0 design refined as Layer 4); P3.0 execution depends on P2.0 first. P2 summary: 8/8 code references verified against live source; 88/88 tests pass; both GS-only (6,028 jobs) and full-source (12,826 jobs) pipelines audited; all contamination categories mapped; bridge/frontend/contract impact assessed; P2 implementation order: P2.0 + P2.2 (parallel) → P2.1 (after P2.0)
+> **Last updated:** 2026-05-29 — P3 investigation complete: 17 non-game employers added to close P3.0 escape paths (confidence 85% → 98%). P3.0 design refined as Layer 4. P3.1 resolved (leave as-is). P3.0 execution depends on P2.0 first. P2 summary: 8/8 code references verified against live source; 88/88 tests pass; both GS-only (6,028 jobs) and full-source (12,826 jobs) pipelines audited; all contamination categories mapped; bridge/frontend/contract impact assessed; P2 implementation order: P2.0 + P2.2 (parallel) → P2.1 (after P2.0)
 
 Investigation into non-game-development job contamination in `jobs-unified.csv` and strategy for filtering.
 
 ---
 
 ## 0. Progress Log
+
+### 2026-05-29 — P3 gap closure analysis: 17 non-game employers added to close P3.0 escape paths
+
+**Status:** Gap analysis completed. All 15 non-game employers with ATS-covered URLs that would escape after P3.0 URL extraction have been identified and added to the non-game evidence terms. Also added 2 P2.0 Priority 6 items (Spavia, Portman Dentex) that were specified in the P2.0 plan but never added. P3.0 confidence raised 85% → 98%.
+
+**Gap analysis findings:**
+- The mismatch check (`_has_google_sheets_link_employer_mismatch_without_game_evidence`) compares the CURRENT company value against the URL employer. After P3.0 sets company to the URL-extracted value, the check sees a match and becomes blind for ATS-covered URLs.
+- 15 non-game employers with SmartRecruiters/Workday URLs were NOT in the evidence terms → would survive after P3.0+P2.0.
+- 2 P2.0 Priority 6 healthcare employers (Spavia, Portman Dentex) listed in the P2.0 spec but absent from the frozenset.
+- ~15 uncertain employers with unknown ATS: if P3.0 extraction fails (custom career site), original sheet company stays → mismatch check still works.
+
+**17 terms added to `_GOOGLE_SHEETS_NON_GAME_EVIDENCE_TERMS`:** `kpn`, `sgs`, `rexel`, `wind river`, `unilever`, `scalable gmbh`, `turner & townsend`, `devoteam`, `cae`, `nike`, `axel springer`, `flywire`, `ramboll`, `trellix`, `pluralsight`, `spavia`, `portman dentex`.
+
+**Verification:** 109 google sheets/pipeline/dedup tests pass. One test fixture updated (Nike row correctly dropped).
+
+**Updated confidence assessment:**
+| Item | Before | After |
+|------|--------|-------|
+| P2.0 (employer evidence) | 97% | 97% (no change) |
+| P3.0 (company field) | 85% | **98%** |
+
+See P3.0 Gap Closure section below for full employer detail.
 
 ### 2026-05-29 — P3 investigation: plan updated with refined P3.0 design
 
@@ -461,7 +483,7 @@ python scripts/audit_jobs_sanitizer.py --input-csv _out/latest/build/portable/sh
 | P2.0 (employer evidence) | **97%** | ~25 new frozenset entries extending existing 60+ terms; 7 categories well-documented; risk is over-matching false positives on ambiguous company names mitigated by conservative category-label guard |
 | P2.1 (sector gate) | **98%** | Mechanically simple; bridge env var passthrough confirmed automatic via `os.environ.copy()` — no bridge code changes; depends on P2.0 accuracy; Category D mislabeling risk quantified and contained |
 | P2.2 (dedup bug) | **92%** | Root cause validated: `_blocks_google_sheets_generic_role_url_merge()` only guards GS↔GS, not GS↔Provider; fix is narrow (extend guard condition); Google Sheets-specific dedup functions confirmed at lines 246-782; test file exists; remaining risk is ensuring no output-schema regression |
-| P3.0 (company field) | **85%** | 16 ATS host patterns designed; additive fallback keeps sheet company when extraction fails. Risk: depends on P2.0 for non-game evidence coverage. Risk: dedup secondary-key changes could affect merge behavior. ~85% row coverage from ATS subdomain/path extraction. |
+| P3.0 (company field) | **98%** | 16 ATS host patterns designed; additive fallback keeps sheet company when extraction fails. 17 gap employers identified and added to non-game evidence terms (2026-05-29). No known escape paths for non-game rows after P2.0 gaps closed. Dedup merge risk assessed as low (primary URL key unaffected; secondary/sparse keys change away from false sheet-company groupings).
 | P3.1 (role policy) | **—** | Resolved: leave as-is (P0 policy). |
 
 ### Definitively Out of Scope
@@ -1139,6 +1161,36 @@ Then verify output CSV no longer has rows with sheet-owner company names (e.g., 
 - No output schema changes — `company` field already exists
 - No frontend changes — company is a display field, already rendered
 - No bridge/route changes — bridge passes pipeline output through as-is
+
+### P3.0 Gap Closure — Non-Game Evidence Terms (2026-05-29)
+
+**Added 17 employers to `_GOOGLE_SHEETS_NON_GAME_EVIDENCE_TERMS`** in `src/jobs/canonicalize.py` to close all known escape paths when URL extraction replaces the sheet company:
+
+| Employer | ATS | Category context | Est. rows |
+|----------|-----|-----------------|-----------|
+| KPN | SmartRecruiters | Sheet "Mighty Games" → KPN telecom | ~few |
+| SGS | SmartRecruiters | Certification company mislabeled Game | ~few |
+| REXEL | SmartRecruiters | Electrical distribution | ~few |
+| Wind River | SmartRecruiters | Enterprise software | ~few |
+| Unilever | SmartRecruiters | Consumer goods, mislabeled Game | ~few |
+| Scalable GmbH | SmartRecruiters | Investment manager | ~few |
+| Turner & Townsend | SmartRecruiters | Construction consultancy | ~few |
+| Devoteam | SmartRecruiters | IT consulting | ~few |
+| CAE | Workday | Flight simulator training | ~few |
+| Nike | Workday | Retail/sportswear | ~few |
+| Axel Springer | SmartRecruiters | Publishing | ~few |
+| Flywire | SmartRecruiters | Payments | ~few |
+| Ramboll | SmartRecruiters | Engineering consulting | ~few |
+| Trellix | SmartRecruiters | Cybersecurity | ~few |
+| Pluralsight | SmartRecruiters | Tech learning | ~few |
+| Spavia | SmartRecruiters (likely) | Healthcare (P2.0 Priority 6) | ~few |
+| Portman Dentex | SmartRecruiters (likely) | Dental (P2.0 Priority 6) | ~few |
+
+**Verification after gap closure:**
+- `python -m pytest tests/test_jobs_fetcher_google_sheets*.py tests/test_jobs_dedup_google_sheets*.py tests/test_jobs_fetcher_pipeline.py -q` — **109 passed** (0 regressions)
+- 1 test fixture updated: Nike `Product-management` row removed from `test_canonicalize_google_sheets_rows_repairs_category_titles_from_safe_url_slugs` — Nike is correctly dropped as non-game after term addition
+
+**Remaining risk:** ~15 uncertain employers with unknown ATS coverage (GoDaddy, Unisys, Adtran, etc.). If P3.0 extraction fails for their URLs (custom career site, not ATS), original sheet company stays → mismatch check still works → safe. If they later add ATS-hosted URLs, they'd need corresponding evidence terms.
 
 ### Layer 5 — Remote OK Keyword Hardening (Low Effort, ~1 hr)
 

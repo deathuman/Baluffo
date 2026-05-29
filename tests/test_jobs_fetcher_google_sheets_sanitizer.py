@@ -402,17 +402,6 @@ def test_canonicalize_google_sheets_rows_repairs_category_titles_from_safe_url_s
     rows = [
         {
             "sourceJobId": "sheet-1",
-            "title": "Product-management",
-            "company": "Nike",
-            "city": "Hilversum",
-            "country": "NL",
-            "workType": "Hybrid",
-            "contractType": "Full-time",
-            "jobLink": "https://careers.nike.com/senior-professional-producer-brand-creative-emea-production/job/R-81187",
-            "sector": "Tech",
-        },
-        {
-            "sourceJobId": "sheet-2",
             "title": "Administartive",
             "company": "People Can Fly",
             "city": "Warsaw",
@@ -423,7 +412,7 @@ def test_canonicalize_google_sheets_rows_repairs_category_titles_from_safe_url_s
             "sector": "Game",
         },
         {
-            "sourceJobId": "sheet-3",
+            "sourceJobId": "sheet-2",
             "title": "Technical-art",
             "company": "Gameloft",
             "city": "Paris",
@@ -434,7 +423,7 @@ def test_canonicalize_google_sheets_rows_repairs_category_titles_from_safe_url_s
             "sector": "Game",
         },
         {
-            "sourceJobId": "sheet-4",
+            "sourceJobId": "sheet-3",
             "title": "Technical-art",
             "company": "Unknown company",
             "city": "Hoevelaken",
@@ -445,7 +434,7 @@ def test_canonicalize_google_sheets_rows_repairs_category_titles_from_safe_url_s
             "sector": "Game",
         },
         {
-            "sourceJobId": "sheet-5",
+            "sourceJobId": "sheet-4",
             "title": "Administartive",
             "company": "CD PROJEKT RED",
             "city": "Warsaw",
@@ -464,7 +453,6 @@ def test_canonicalize_google_sheets_rows_repairs_category_titles_from_safe_url_s
     )
 
     assert [row.title for row in canonical_rows] == [
-        "Senior Professional Producer Brand Creative Emea Production",
         "Office Specialist",
         "Senior Office Administrator",
         "Product Manager Accounting Software",

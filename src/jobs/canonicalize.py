@@ -304,7 +304,25 @@ _GOOGLE_SHEETS_NON_GAME_EVIDENCE_TERMS = frozenset(
         "walmart",
         "wayman learning trust",
         "westgate resorts",
+        "wind river",
         "wynn resorts",
+        # P3.0 gap closure: non-game employers with ATS URLs that lose mismatch-check coverage after URL extraction
+        "axel springer",
+        "cae",
+        "devoteam",
+        "flywire",
+        "kpn",
+        "nike",
+        "pluralsight",
+        "portman dentex",
+        "ramboll",
+        "rexel",
+        "scalable gmbh",
+        "sgs",
+        "spavia",
+        "trellix",
+        "turner & townsend",
+        "unilever",
     }
 )
 _GOOGLE_SHEETS_BEBEE_NON_GAME_EMPLOYER_MARKERS = (
