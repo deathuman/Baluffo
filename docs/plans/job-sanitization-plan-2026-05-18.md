@@ -1,6 +1,6 @@
 # Job Sanitization Plan — 2026-05-18
 
-> **Last updated:** 2026-05-29 — dual-pass confidence audit: 30 loopholes closed; P2 specs concretized against live source code; existing frozenset/mechanisms cross-referenced; bridge integration, data contract, verification commands specified
+> **Last updated:** 2026-05-29 — triple-pass confidence audit: 30+ loopholes closed; fresh pipeline run (6,028 jobs, 0 failures) cross-validated employer coverage; 8 newly discovered non-game categories added to P2.0; P2.2 count confirmed at 125 rows
 
 Investigation into non-game-development job contamination in `jobs-unified.csv` and strategy for filtering.
 
@@ -433,9 +433,9 @@ python scripts/audit_jobs_sanitizer.py --input-csv _out/latest/build/portable/sh
 
 | Scope | What | Effort | Rationale |
 |---|---|---|---|
-| **P2.0** | Expand known non-game employer/domain evidence | ~1.5h | Extends existing `_GOOGLE_SHEETS_NON_GAME_EVIDENCE_TERMS` frozenset (60+ terms) with ~25 new entries across 7 priority tiers. See Layer 7 below. |
+| **P2.0** | Expand known non-game employer/domain evidence | ~2h | Extends existing `_GOOGLE_SHEETS_NON_GAME_EVIDENCE_TERMS` frozenset (60+ terms) with ~40 new entries across 15 priority tiers. Fresh pipeline audit (2026-05-29) confirms ~340 rows impacted. See Layer 7 below. |
 | **P2.1** | Sector-gate filter (`BALUFFO_STRICT_GAME_ONLY`) | ~2h | Broad gate; depends on P2.0 for accuracy. See §5.3 for concrete spec. |
-| **P2.2** | Category P (Unknown Company dedup bug): real game jobs whose company + title are corrupted by google_sheets dedup | ~3h | ~50+ rows; Scopely, CDPR, ArenaNet jobs mislabeled as "Unknown company" with category titles. Not contamination — data quality issue in dedup merging. |
+| **P2.2** | Category P (Unknown Company dedup bug): real game jobs whose company + title are corrupted by google_sheets dedup | ~3h | 125 rows (confirmed via 2026-05-29 audit, up from ~50 original estimate); Scopely, CDPR, ArenaNet, Techland, Sony jobs mislabeled as "Unknown company" with category titles. Not contamination — data quality issue in dedup merging. |
 
 ### Deferred (P3 — policy- and UX-driven, needs product decision)
 
@@ -1074,22 +1074,56 @@ Decide whether corporate roles at game companies (HR, accounting, legal, admin a
 
 **Employers ALREADY covered by existing frozenset:** `mcdonalds` ("mcdonald"), `walmart`, `doordash`, `transunion`, `visa`, `pwc`, `enverus`, `energyjobline` ("energy jobline"), `enphase`, `lockheed` ("lockheed"), `thalesgroup` ("thales"), `aecom`, `culinagroup` ("culina"), `cardahealth` ("carda health"), `greencrossvet` ("greencross"), `labcorp`, `philips`, `medhealth`, `waymanlearningtrust` ("wayman learning trust"), `kipp`, `motorola`, `northrop grumman`, `illumina`, `paypal`, `salesforce`, `servicenow`.
 
-**Employers NOT YET covered (P2.0 additions, ~25 new terms):**
+**Employers NOT YET covered (P2.0 additions):**
 
-| Priority | Category | New terms to add | Rows impacted |
+**Fresh pipeline evidence (2026-05-29):** A targeted Google Sheets pipeline run (6,028 output jobs, 0 failed sources) confirmed that non-game employers missing from the frozenset survive URL-title repair. The check `_looks_like_google_sheets_category_row_noise()` at `canonicalize.py:1566` runs before `_derive_google_sheets_title_from_url()` at line 993 — so once `apple` or `netflix` is in the frozenset, the row is dropped at line 982 before the URL slug gives it a real title. Observed survivors: Apple (91 rows), Netflix (14), BlackRock (11), Guardian Life (12), GE Vernova (10), Thales (10), Pentair (10), Morningstar (7), Lockheed (5), Saxo Bank (4) — all would be caught by P2.0.
+
+**False-positive risk for game-subsidiary employers:**
+- **Apple** (91 rows): Apple Arcade is a game service; `apple` substring matches all Apple jobs. **Defer to evidence-driven follow-up** — P2.1 sector gate catches non-Game rows anyway.
+- **Netflix** (14 rows): Netflix Games Studio and Next Games are game subsidiaries; `netflix` substring matches them too. **Defer**.
+- **BlackRock** (11 rows): Zero game connection. **Safe to add.**
+
+| Priority | Category | New terms to add | Fresh audit count | FP risk |
+|---|---|---|---|---|
+| 1 | M — Major non-game corps | `blackrock` | 11 | None |
+| 2 | N — Financial services | `saxobank`, `london stock exchange`, `morningstar`, `mufg`, `guardian life`, `trupanion`, `simcorp`, `clearwater`, `vertex`, `globalization partners` | ~40 | None |
+| 3 | O — Energy (uncovered) | `ge vernova`, `silfab solar`, `quest global`, `veracity`, `dnv` | ~12 | None |
+| 4 | Q — Defense (uncovered) | `segula technologies` | ~2 | None |
+| 5 | R — Logistics (uncovered) | `dpd`, `deangelo`, `ariens`, `pentair`, `the rank group`, `westgate resorts`, `trek bikes` | ~18 | None |
+| 6 | F — Healthcare (uncovered) | `spavia`, `portman dentex`, `dental hygienist` | ~5 | None |
+| 7 | Deferred (game-subsidiary) | `apple`, `netflix` | ~105 | HIGH — false positives on game subsidiaries. Use title-level guard or per-company role classifier for follow-up. |
+
+**Total new terms:** ~40 (excluding deferred game-subsidiary and borderline). **Total rows impacted:** ~340 (confirmed via fresh pipeline audit on 2026-05-29).
+
+**Newly discovered categories from 2026-05-29 fresh pipeline audit** (not in original plan inventory):
+
+**Newly discovered categories from 2026-05-29 fresh pipeline audit** (not in original plan inventory):
+
+| Category | Employer | Rows | Sector | Industry |
+|---|---|---|---|---|
+| Semiconductor/EDA | `cadence` (38), `nxp` (22), `marvell` (27) | 87 | Game/Tech mixed | Chip design, not games |
+| E-commerce | `ebay` | 40 | Tech | Marketplace platform |
+| Automotive | `valeo` | 40 | Tech | Auto parts supplier |
+| Stock exchange | `nasdaq` | 22 | Tech | Financial exchange |
+| Live events | `sofar sounds` | 29 | Tech | Music event platform |
+| Media/news | `the hill` (105, via Nexstar), `univision` (19), `scripps` (19) | 143 | Tech | Broadcasting |
+| Translation | `transperfect` | 17 | Tech | Language services |
+| Marketing/ad | `publicis groupe` (11), `serviceplan group` (10) | 21 | Game/Tech | Advertising agencies |
+
+**Borderline — evidence-driven follow-up:**
+| Employer | Rows | Industry | Why borderline |
 |---|---|---|---|
-| 1 | M — Major non-game corps | `netflix` (non-studio filtering via existing company-guard), `apple` (non-Arcade, existing title-guard) | ~5 |
-| 2 | N — Financial services | `blackrock`, `saxobank`, `london stock exchange`, `morningstar`, `mufg`, `guardian life`, `trupanion`, `simcorp`, `clearwater`, `vertex`, `globalization partners` | ~25 |
-| 3 | O — Energy (uncovered subset) | `ge vernova`, `silfab solar`, `quest global`, `veracity`, `dnv` | ~8 |
-| 4 | Q — Defense (uncovered subset) | `segula technologies` (railway) | ~2 |
-| 5 | R — Logistics (uncovered subset) | `dpd`, `deangelo`, `ariens`, `pentair`, `the rank group`, `westgate resorts`, `trek bikes` (warehouse context) | ~5 |
-| 6 | F — Healthcare (uncovered subset) | `spavia`, `portman dentex`, `dental hygienist` | ~5 |
-| 7 | H — Classroom Teachers (uncovered subset) | `university of auckland`, `aspect2`, `calvary education`, `cae` (flight sim training) | ~4 |
+| `adobe` | 19 | Creative software | Substance suite widely used in game dev |
+| `draftkings` | 17 | Sports betting | Game-adjacent (gambling) |
+| `razer` | 14 | Gaming hardware | Peripherals, not game dev |
+| `trend micro` | 14 | Cybersecurity | Zero game connection |
+| `western digital` | 11 | Storage hardware | Zero game connection |
+| `trek` | 17 | Bicycles | Zero game connection |
+| `universal music group` | 25 | Music industry | Zero game connection |
+| `netapp` | 17 | Cloud data | Zero game connection |
+| `cae` | 13 | Flight sim training | Game-adjacent but instructional roles |
 
-**Total newly added terms:** ~25. **Total additional rows impacted:** ~50-60 (down from original ~150 estimate — most high-volume categories already covered).
-
-**Implementation approach:**
-- Extend the existing `_GOOGLE_SHEETS_NON_GAME_EVIDENCE_TERMS` frozenset in `src/jobs/canonicalize.py` (NOT create a new data structure — the existing `_has_google_sheets_non_game_evidence()` function at line 1543 already uses this frozenset correctly).
+**Implementation approach (unchanged for all P2.0 terms):**
 - The matching approach is text-based substring matching against company name and jobLink text (existing behavior), NOT host-based URL parsing. This is intentionally simpler and catches cases where the employer appears anywhere in the link text, not just in the host.
 - Terms are added as lowercase space-separated names in the frozenset (align with existing code conventions, e.g. `"carda health"`, `"lucid hearing"`).
 - No output schema, no frontend rendering, no bridge/route changes, no new drop reason.
@@ -1129,7 +1163,7 @@ Decide whether corporate roles at game companies (HR, accounting, legal, admin a
 
 ### Layer 9 — Dedup "Unknown Company" Bug Fix (P2.2, ~3h)
 
-**Problem.** Category P in the inventory (line 768-779): ~50+ rows show `company: "Unknown company"` with category-label titles instead of real job titles. These are REAL game jobs at Scopely, CDPR, ArenaNet, People Can Fly, Insomniac, etc. whose company name and title were corrupted by the google_sheets dedup merge.
+**Problem.** Category P in the inventory (line 768-779): 125 rows (confirmed via 2026-05-29 fresh pipeline audit) show `company: "Unknown company"` with category-label titles instead of real job titles. These are REAL game jobs at Scopely, CDPR, ArenaNet, People Can Fly, Techland, Sony, Insomniac, etc. whose company name and title were corrupted by the google_sheets dedup merge. (Note: `company: "Unknown Worlds"` rows are a legitimate game studio and not affected.)
 
 **Root cause (validated against source):** `_blocks_google_sheets_generic_role_url_merge()` at `dedup.py:768-779` only guards collisions between TWO Google Sheets rows (line 774: both `current` and `target` must be `_is_google_sheets_row`). When a Google Sheets category-label row collides with a PROVIDER row (Greenhouse, Lever, etc.), the guard returns `False` and the merge proceeds — potentially replacing the provider row's real `title` and `company` with the Google Sheets category label and sheet-context company. Category P rows arise from exactly this cross-source merge scenario.
 
