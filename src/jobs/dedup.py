@@ -771,6 +771,12 @@ def _blocks_google_sheets_generic_role_url_merge(
     target: CanonicalJob,
     current_primary: str,
 ) -> bool:
+    if _is_google_sheets_row(current) and _has_sheet_role_bucket_title(current):
+        if not _is_google_sheets_row(target):
+            return True
+        target_primary = fingerprint_url(target.jobLink)
+        if _has_sheet_role_bucket_title(target):
+            return bool(current_primary and target_primary and current_primary != target_primary)
     if not _is_google_sheets_row(current) or not _is_google_sheets_row(target):
         return False
     if not _has_sheet_role_bucket_title(current) and not _has_sheet_role_bucket_title(target):

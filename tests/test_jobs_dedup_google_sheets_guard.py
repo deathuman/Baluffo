@@ -66,6 +66,47 @@ def test_deduplicate_jobs_keeps_google_sheets_generic_role_bucket_detail_urls_se
     )
 
 
+def test_deduplicate_jobs_blocks_google_sheets_category_label_into_provider_merge() -> None:
+    gs = jf.canonicalize_job(
+        {
+            "title": "Animator",
+            "company": "Unknown company",
+            "city": "Remote",
+            "country": "Unknown",
+            "locations": [{"city": "Remote", "country": "Unknown"}],
+            "jobLink": "https://job-boards.greenhouse.io/scopely/jobs/8490814002",
+            "sector": "Game",
+            "sourceJobId": "sheet-5000",
+        },
+        source="google_sheets",
+        fetched_at="2026-03-20T00:00:00Z",
+    )
+    provider = jf.canonicalize_job(
+        {
+            "title": "Senior Product Manager Economy Monopoly GO",
+            "company": "Scopely",
+            "city": "Culver City",
+            "country": "United States",
+            "locations": [{"city": "Culver City", "country": "United States"}],
+            "jobLink": "https://job-boards.eu.greenhouse.io/scopely/jobs/8490814002",
+            "sector": "Game",
+            "sourceJobId": "greenhouse:scopely:8490814002",
+        },
+        source="greenhouse_boards",
+        fetched_at="2026-03-20T00:00:00Z",
+    )
+    assert gs is not None
+    assert provider is not None
+
+    rows, stats = jf.deduplicate_jobs([provider, gs])
+
+    assert int(stats["outputCount"]) == 2
+    assert int(stats["mergedCount"]) == 0
+    assert sorted(row.title for row in rows) == sorted(
+        ["Animator", "Senior Product Manager Economy Monopoly GO"]
+    )
+
+
 def test_deduplicate_jobs_keeps_google_sheets_animator_buckets_on_different_urls_separate() -> None:
     first = _google_sheets_job(
         title="Animator",

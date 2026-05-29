@@ -9,6 +9,7 @@ from typing import Any
 from src.contracts import SCHEMA_VERSION
 from src.core.contracts import validate_canonical_jobs_payload
 from src.jobs.canonicalize import snapshot_sector_quality_audit
+from src.jobs.common.config import STRICT_GAME_ONLY_ENABLED
 from src.jobs.common.contracts_dedup_review_state import read_dedup_review_state_artifact
 from src.jobs.common.contracts_fetch_report import normalize_fetch_report_payload
 from src.jobs.common.contracts_provider_coverage import build_provider_coverage_summary
@@ -271,6 +272,41 @@ def _merge_source_health_report_payload(
     report_payload["sourceHealth"] = normalize_source_health_payload(
         report_payload.get("sourceHealth"), merged_source_rows
     )
+
+
+def _apply_sector_gate(
+    deduped_payload_rows: list[dict[str, Any]],
+    source_reports: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int]:
+    if not STRICT_GAME_ONLY_ENABLED:
+        return deduped_payload_rows, 0
+    game_rows: list[dict[str, Any]] = []
+    non_game_by_source: Counter[str] = Counter()
+    for row in deduped_payload_rows:
+        if not isinstance(row, dict):
+            continue
+        if row.get("sector") == "Game":
+            game_rows.append(row)
+        else:
+            source = clean_text(row.get("source"))
+            if source:
+                non_game_by_source[source] += 1
+    dropped = len(deduped_payload_rows) - len(game_rows)
+    if dropped:
+        for report in source_reports:
+            if not isinstance(report, dict):
+                continue
+            loss = report.get("loss")
+            if not isinstance(loss, dict):
+                continue
+            source_name = clean_text(report.get("name"))
+            source_dropped = non_game_by_source.get(source_name, 0)
+            if source_dropped:
+                drop_reasons = loss.setdefault("canonicalDropReasons", {})
+                drop_reasons["sector_gate_filtered"] = (
+                    int(drop_reasons.get("sector_gate_filtered") or 0) + source_dropped
+                )
+    return game_rows, dropped
 
 
 def _quality_reports(deduped_payload_rows: list[dict[str, Any]]) -> tuple[dict[str, Any], ...]:
@@ -581,6 +617,9 @@ def finalize_pipeline_run(
 
     dedup_stats["outputCount"] = len(deduped_rows)
     deduped_payload_rows = [row.to_dict() for row in deduped_rows]
+    deduped_payload_rows, sector_gate_dropped = _apply_sector_gate(
+        deduped_payload_rows, source_reports
+    )
     (
         location_quality_audit,
         sector_quality_audit,

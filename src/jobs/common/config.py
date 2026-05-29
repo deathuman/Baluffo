@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -155,6 +156,12 @@ DEFAULT_REDIRECT_HEADERS = {
 
 LIFECYCLE_REMOVE_TO_ARCHIVE_DAYS = 14
 LIFECYCLE_ARCHIVE_RETENTION_DAYS = 120
+
+STRICT_GAME_ONLY_ENABLED = os.environ.get("BALUFFO_STRICT_GAME_ONLY", "").strip() in (
+    "1",
+    "true",
+    "yes",
+)
 
 TARGET_PROFESSIONS = {"technical-artist", "environment-artist"}
 
