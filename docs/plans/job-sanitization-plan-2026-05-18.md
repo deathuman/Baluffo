@@ -1,12 +1,22 @@
 # Job Sanitization Plan — 2026-05-18
 
-> **Last updated:** 2026-05-29 — implementation-ready: 8/8 code references verified against live source; 88/88 tests pass; both GS-only (6,028 jobs) and full-source (12,826 jobs) pipelines audited; all contamination categories mapped; bridge/frontend/contract impact assessed; P2 implementation order: P2.0 + P2.2 (parallel) → P2.1 (after P2.0)
+> **Last updated:** 2026-05-29 — P3 investigation complete (P3.1 resolved, P3.0 design refined as Layer 4); P3.0 execution depends on P2.0 first. P2 summary: 8/8 code references verified against live source; 88/88 tests pass; both GS-only (6,028 jobs) and full-source (12,826 jobs) pipelines audited; all contamination categories mapped; bridge/frontend/contract impact assessed; P2 implementation order: P2.0 + P2.2 (parallel) → P2.1 (after P2.0)
 
 Investigation into non-game-development job contamination in `jobs-unified.csv` and strategy for filtering.
 
 ---
 
 ## 0. Progress Log
+
+### 2026-05-29 — P3 investigation: plan updated with refined P3.0 design
+
+**Status:** P3 investigation complete. P3.1 resolved (leave as-is). P3.0 design refined and documented below.
+
+**P3.1 decision:** Corporate/hospitality role policy stays as-is per P0 — include real openings at real game companies. No code changes.
+
+**P3.0 design:** New `src/jobs/job_link_company.py` module extracting company from jobLink URL for 16 ATS hosts. Replaces existing `_company_from_smartrecruiters_url()` in google_sheets.py. Execution depends on P2.0 first (link-employer mismatch check loses effectiveness when company matches URL — expanded non-game evidence terms catch those rows instead).
+
+See updated Layer 4 specification below.
 
 ### 2026-05-22 — P1.6 first-run Google Sheets bootstrap timeout fix implemented
 
@@ -437,12 +447,12 @@ python scripts/audit_jobs_sanitizer.py --input-csv _out/latest/build/portable/sh
 | **P2.1** | Sector-gate filter (`BALUFFO_STRICT_GAME_ONLY`) | ~2h | Broad gate; depends on P2.0 for accuracy. See §5.3 for concrete spec. |
 | **P2.2** | Category P (Unknown Company dedup bug): real game jobs whose company + title are corrupted by google_sheets dedup | ~3h | 125 rows (confirmed via 2026-05-29 audit, up from ~50 original estimate); Scopely, CDPR, ArenaNet, Techland, Sony jobs mislabeled as "Unknown company" with category titles. Not contamination — data quality issue in dedup merging. |
 
-### Deferred (P3 — policy- and UX-driven, needs product decision)
+### Deferred (P3 — policy- and UX-driven)
 
 | Scope | What | Effort | Status |
-|---|---|---|---|
-| **P3.0** | Fix google_sheets `company` field | ~4h | Deferred: approach choice (URL extraction vs. blanking vs. upstream column) needs product decision before implementation |
-| **P3.1** | Corporate/hospitality role policy: filter, flag, or leave | ~30m | Deferred: P0 policy is "include them." UX toggle/filtering is a product decision. |
+|---|---|---|---|---|
+| **P3.0** | Fix google_sheets `company` field via URL extraction | ~4h | **Design complete** (2026-05-29): new `src/jobs/job_link_company.py` module, 16 ATS host patterns, additive fallback. Execution depends on P2.0 first (link-employer mismatch check loses effectiveness when company matches URL). See Layer 4 below for spec. |
+| **P3.1** | Corporate/hospitality role policy: filter, flag, or leave | ~30m | **Resolved 2026-05-29:** Leave as-is (P0 policy). No code changes needed. |
 
 ### Confidence Assessment
 
@@ -451,8 +461,8 @@ python scripts/audit_jobs_sanitizer.py --input-csv _out/latest/build/portable/sh
 | P2.0 (employer evidence) | **97%** | ~25 new frozenset entries extending existing 60+ terms; 7 categories well-documented; risk is over-matching false positives on ambiguous company names mitigated by conservative category-label guard |
 | P2.1 (sector gate) | **98%** | Mechanically simple; bridge env var passthrough confirmed automatic via `os.environ.copy()` — no bridge code changes; depends on P2.0 accuracy; Category D mislabeling risk quantified and contained |
 | P2.2 (dedup bug) | **92%** | Root cause validated: `_blocks_google_sheets_generic_role_url_merge()` only guards GS↔GS, not GS↔Provider; fix is narrow (extend guard condition); Google Sheets-specific dedup functions confirmed at lines 246-782; test file exists; remaining risk is ensuring no output-schema regression |
-| P3.0 (company field) | **70%** | Schema change risk (company is a dedup key); best approach (URL extraction) may only work for ~60% of rows |
-| P3.1 (role policy) | **95%** | Decision-only: 30min discussion, no code |
+| P3.0 (company field) | **85%** | 16 ATS host patterns designed; additive fallback keeps sheet company when extraction fails. Risk: depends on P2.0 for non-game evidence coverage. Risk: dedup secondary-key changes could affect merge behavior. ~85% row coverage from ATS subdomain/path extraction. |
+| P3.1 (role policy) | **—** | Resolved: leave as-is (P0 policy). |
 
 ### Definitively Out of Scope
 
@@ -1045,14 +1055,90 @@ Add a filter gated behind config flag `BALUFFO_STRICT_GAME_ONLY` that drops all 
 - Risk: Category D rows (mislabeled as "Game") would pass through — Layer 2 catches most of these
 - Risk: Legitimate game jobs mislabeled as "Tech" would be dropped
 
-### Layer 4 — Google Sheets Adapter: Override `company` field (Medium, ~4 hrs)
+### Layer 4 — Google Sheets Adapter: Override `company` field (P3.0, ~4 hrs)
 
-**Implementation status:** Not started; intentionally deferred from P0.
+**Implementation status:** Design complete as of 2026-05-29. Execution depends on P2.0 first.
 
-The google_sheets adapter currently reads the sheet's context company name as the job's `company`. Instead:
-- Parse the actual employer from the `jobLink` URL (extract domain → company name via reverse domain lookup)
-- Or: Allow the sheet to specify `actual_company` as a separate column
-- Or: Leave `company` blank/untrustworthy for google_sheets rows, flag for manual review
+**Problem.** The `company` field in Google Sheets rows is the sheet owner/maintainer (e.g., `"Mighty Games"`), NOT the hiring organization (e.g., `"KPMG"`, `"AccorHotel"`). This corrupts dedup grouping, the frontend display, and the non-game evidence classification.
+
+**Approach: URL extraction via new `src/jobs/job_link_company.py` module.**
+
+Create a pure function `company_from_job_link(job_link: str) -> str` that extracts the most likely company/employer name from a job posting URL by matching known ATS host patterns. Returns the extracted name in raw slug form, or empty string if no confident extraction is possible.
+
+**Supported ATS hosts (16):**
+
+| # | ATS | URL pattern | Extraction rule | Example → Output |
+|---|---|---|---|---|
+| 1 | **SmartRecruiters** | `//jobs.smartrecruiters.com/{slug}/{id}` | path[0] | `Scopely/7440001` → `Scopely` |
+| 2 | **Greenhouse** | `//boards.greenhouse.io/{slug}` | path[0] | `hoyoverse/jobs/123` → `hoyoverse` |
+| 3 | **Greenhouse EU** | `//job-boards.{eu.}greenhouse.io/{slug}` | path[0] | `guerrilla-games/...` → `guerrilla-games` |
+| 4 | **Lever** | `//jobs.lever.co/{slug}` | path[0] | `xsolla/58126ec2` → `xsolla` |
+| 5 | **Lever EU** | `//jobs.eu.lever.co/{slug}` | path[0] | `ubisoft/...` → `ubisoft` |
+| 6 | **Workable** | `//apply.workable.com/{slug}/j/{code}` | path[0] (if parts[1]=="j") | `followloop/j/97BEDE` → `followloop` |
+| 7 | **Ashby** | `//jobs.ashbyhq.com/{board}` | path[0] | `stellarentertainment/8615...` → `stellarentertainment` |
+| 8 | **Workday** | `//{company}.myworkdayjobs.com` | subdomain, strip `.wd#` | `xboxgaming.wd1.myworkdayjobs.com` → `xboxgaming` |
+| 9 | **BambooHR** | `//{company}.bamboohr.com` | subdomain | `beamdog.bamboohr.com` → `beamdog` |
+| 10 | **Breezy** | `//{company}.breezy.hr` | subdomain | `illfonic.breezy.hr/p/...` → `illfonic` |
+| 11 | **Teamtailor** | `//{company}.teamtailor.com` | subdomain | `pushgaming.teamtailor.com/jobs/...` → `pushgaming` |
+| 12 | **Personio** | `//{company}.jobs.personio.de` | subdomain before `.jobs` | `innogames.jobs.personio.de/xml` → `innogames` |
+| 13 | **Himalayas** | `//himalayas.app/companies/{slug}` | path[1] (if parts[0]=="companies") | `canary-technologies/jobs/...` → `canary-technologies` |
+| 14 | **Shine** | `//shine.com/jobs/.../{slug}` | path[-2] | `zecruiters-jobconnect-private-limited/...` → `zecruiters-jobconnect-private-limited` |
+| 15 | **JazzHR** | `//{company}.applytojob.com` | subdomain | `lostboysinteractive.applytojob.com` → `lostboysinteractive` |
+| 16 | **Recruitee** | `//{company}.recruitee.com` | subdomain | `focushomeinteractive.recruitee.com/o/...` → `focushomeinteractive` |
+
+**Not included:** bebee (keyword-only extraction, not reliable), Oracle HCM (complex multi-subdomain), LinkedIn (no direct board URL).
+
+**Module internal structure:**
+```
+company_from_job_link(job_link)
+├── _subdomain_company(host)        # {company}.bamboohr.com → company
+├── _workday_company(host)          # {company}.wd#.myworkdayjobs.com → company
+├── _personio_company(host)         # {company}.jobs.personio.de → company
+├── _host_path_company(host, parts) # {host}/{slug}/... → slug
+└── all delegate to _extract_company_name(raw_slug)  # clean, validate length, reject UUIDs
+```
+
+**Integration** (in `google_sheets.py:323-324`):
+```python
+# Replace this:
+if _needs_company_inference(company):
+    company = _company_from_smartrecruiters_url(job_link) or company
+
+# With this:
+extracted = company_from_job_link(job_link)
+if extracted:
+    company = extracted
+elif _needs_company_inference(company):
+    company = company_from_job_link(job_link) or company
+```
+
+Always prefers URL-extracted company over sheet company. Safe because P2.0 runs first — expanded non-game evidence terms catch rows that the mismatch check used to catch.
+
+**Migrations:**
+- `_company_from_smartrecruiters_url()` in `google_sheets.py` → removed (replaced by new module)
+- `_google_sheets_link_employer_candidate()` host patterns for SC/Himalayas/Shine in `canonicalize.py:1525-1540` → kept for evidence mismatch check (independent of company value)
+
+**Dedup implications:**
+- Changing company changes `dedup_secondary_key()` (norm_text(company)) and `_sparse_identity_key()` (normalized_company_identity)
+- Rows that previously shared sheet company but had different real employers will no longer merge via secondary/sparse keys (desirable)
+- Rows with URL-extracted company that matches a provider row's company will merge correctly via primary URL matches (the fingerprint_url match runs first and is unaffected)
+- The `_blocks_google_sheets_generic_role_url_merge()` guard is title- and url-based, not company-based — unaffected
+
+**Testing:**
+- `tests/test_job_link_company.py` (new): 1 test per ATS host with real URL patterns from codebase; edge cases for empty URL, malformed URL, unknown host, UUID rejection, workday `.wd#` stripping
+- `tests/test_jobs_fetcher_google_sheets_sanitizer.py`: update existing tests that depend on `company="Mighty Games"` — rows should now be dropped by non-game evidence terms (P2.0), not by mismatch check; confirm test expectations match new drop path
+- Full suite: `python -m pytest tests/test_jobs_fetcher_google_sheets*.py tests/test_jobs_dedup*.py tests/test_jobs_fetcher_pipeline.py` — 0 regressions
+
+**Verification command:**
+```bash
+python -m src.jobs.pipeline --output-dir _out/job-sanitization/p3.0-company-audit --only-sources google_sheets,google_sheets_1er2oaxo,google_sheets_1mvqhxat --no-seed-existing-output --force-refresh-all --ignore-circuit-breaker --quiet
+```
+Then verify output CSV no longer has rows with sheet-owner company names (e.g., `"Mighty Games"`, `"Jellyfish"`, `"Gardens Interactive"`) as company — they should be replaced with URL-extracted employer names or dropped via P2.0 evidence terms. Count `"Unknown company"` rows — should not increase significantly.
+
+**Keep unchanged:**
+- No output schema changes — `company` field already exists
+- No frontend changes — company is a display field, already rendered
+- No bridge/route changes — bridge passes pipeline output through as-is
 
 ### Layer 5 — Remote OK Keyword Hardening (Low Effort, ~1 hr)
 
@@ -1224,8 +1310,8 @@ Decide whether corporate roles at game companies (HR, accounting, legal, admin a
 
 | Phase | Action | Effort | Status |
 |---|---|---|---|
-| **P3.0** | Fix google_sheets `company` field | ~4h | Needs product decision: URL extraction vs. blanking vs. upstream column |
-| **P3.1** | Corporate/hospitality role policy toggle | ~0.5h | P0 policy: include. Filter/flagging decision needed. |
+| **P3.0** | Fix google_sheets `company` field via URL extraction | ~4h | Design complete (2026-05-29). See Layer 4. Execution depends on P2.0 first. |
+| **P3.1** | Corporate/hospitality role policy toggle | ~0.5h | **Resolved 2026-05-29:** Leave as-is (P0 policy). No code changes. |
 
 
 
@@ -1245,6 +1331,7 @@ Decide whether corporate roles at game companies (HR, accounting, legal, admin a
 | `data/defaults/source-registry-active.seed.json` | Source registry entries for problematic static sources |
 | `src/jobs/adapters/static_sources.py` | Static source loader builder |
 | `src/jobs/adapters/static_detail_heuristics.py` | Detail link classification for static scrapers |
+| `src/jobs/job_link_company.py` | **New** — URL-to-company extraction module (P3.0, Layer 4) |
 | `src/jobs/adapters/community/__init__.py` | Google Sheets adapter (Layer 4 company field fix) |
 | `src/jobs/dedup.py` | Dedup merge logic (Layer 9 "Unknown Company" fix) |
 | `tests/test_jobs_dedup_google_sheets_guard.py` | Dedup guard tests (Layer 9) |
@@ -1256,7 +1343,7 @@ Decide whether corporate roles at game companies (HR, accounting, legal, admin a
 1. **Resolved for P0:** Show all real openings at game companies, including corporate/admin roles. Later UX/filtering can revisit corporate-role flagging.
 2. **Deferred:** Whether Google Sheets maintainers are aware their category rows emit as job listings is a separate, non-technical upstream coordination task. No code path exists for this; deferred indefinitely.
 3. **Resolved:** The sector gate is opt-in via `BALUFFO_STRICT_GAME_ONLY=1` env var. Never on by default. See Layer 8 specification.
-4. **Resolved:** For P2.0, parse the normalized host from `jobLink` and match against a hardcoded dict of known non-game employer domains. See Layer 7. For P3.0 (company rewrite), the approach is deferred until a product decision is made; URL extraction from the link host is the most likely approach (~60% coverage), with blanking as fallback.
+4. **Resolved:** For P2.0, parse the normalized host from `jobLink` and match against a hardcoded dict of known non-game employer domains. See Layer 7. For P3.0 (company rewrite), **resolved 2026-05-29**: URL extraction via new `src/jobs/job_link_company.py` module (16 ATS host patterns). Execution depends on P2.0 first. See Layer 4 for full spec.
 5. **Resolved:** `remote_ok` is NOT excluded entirely. P1+P1.1 filters removed all non-game rows; the source remains active and produces valid game-job rows when present. If non-game contamination returns through API changes, the existing title/company/tag game-evidence guard catches it.
 6. **Resolved for P0:** Use conservative evidence-backed filtering. Do not drop every category label until fresh pipeline evidence quantifies false negatives. P0-P1.6 followed this policy; remaining P2 work continues the same evidence-driven posture.
 7. **New — Answered:** The Category F (Healthcare) section appears out of order in the inventory because it was discovered after the initial write-up. Plan text preserved for historical reference; the Layer 7 non-game employer spec includes it at priority tier 6.
