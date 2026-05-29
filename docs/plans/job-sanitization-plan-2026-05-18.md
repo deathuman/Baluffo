@@ -1,6 +1,6 @@
 # Job Sanitization Plan — 2026-05-18
 
-> **Last updated:** 2026-05-29 — quadruple-pass confidence audit: 33+ loopholes closed; fresh Google Sheets pipeline (6,028 jobs) + full-source pipeline (12,826 jobs, 262 failed) cross-validated; 8 new non-game employer categories + 2 new static-source scraping contaminations discovered; P2.2 confirmed at 112 rows; all findings incorporated
+> **Last updated:** 2026-05-29 — implementation-ready: 8/8 code references verified against live source; 88/88 tests pass; both GS-only (6,028 jobs) and full-source (12,826 jobs) pipelines audited; all contamination categories mapped; bridge/frontend/contract impact assessed; P2 implementation order: P2.0 + P2.2 (parallel) → P2.1 (after P2.0)
 
 Investigation into non-game-development job contamination in `jobs-unified.csv` and strategy for filtering.
 
