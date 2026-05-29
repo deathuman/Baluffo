@@ -1,6 +1,6 @@
 # Job Sanitization Plan — 2026-05-18
 
-> **Last updated:** 2026-05-29 — triple-pass confidence audit: 30+ loopholes closed; fresh pipeline run (6,028 jobs, 0 failures) cross-validated employer coverage; 8 newly discovered non-game categories added to P2.0; P2.2 count confirmed at 125 rows
+> **Last updated:** 2026-05-29 — quadruple-pass confidence audit: 33+ loopholes closed; fresh Google Sheets pipeline (6,028 jobs) + full-source pipeline (12,826 jobs, 262 failed) cross-validated; 8 new non-game employer categories + 2 new static-source scraping contaminations discovered; P2.2 confirmed at 112 rows; all findings incorporated
 
 Investigation into non-game-development job contamination in `jobs-unified.csv` and strategy for filtering.
 
@@ -462,6 +462,9 @@ python scripts/audit_jobs_sanitizer.py --input-csv _out/latest/build/portable/sh
 
 ### Known Limitations (not blocking; would need separate evidence)
 
+- **2026-05-29 full-source pipeline audit additions:**
+  - **New: itch.io navigation scraped as jobs (32 rows):** `static_source::static:listing_url:https://itch.io/jobs` produces rows where itch.io sidebar/navigation links (e.g., "Remote friendly", "Skip to main content", "XBox One", "Directory", "Developer Logs", city names, tool names) are scraped as job listings. The existing `_itch_noise()` in `page_gating.py` (line 295) catches some but not all — the slug-based noise check misses cases where the title matches the URL slug. Fix: add explicit noise patterns for known itch.io non-job titles, or audit the source registry to remove `https://itch.io/jobs` as a listing source (the page IS a legitimate game job board — the issue is the scraper following sidebar links as detail pages).
+  - **New: White Widget agency/services pages scraped as jobs (26 rows):** A design/development agency whose careers, services, and industry pages are all scraped as job listings. "UX Strategy & Product Discovery", "Security Audits & Risk Assessment" are service pages, not jobs. Some rows ARE real jobs (QA Engineer, iOS Engineer) at a non-game agency. Fix: add White Widget to status-page noise rules with title patterns for service/industry pages, or add `whitewidget.com` to the existing source-specific noise functions.
 - **Category K — AjnaLens Field Engineers (~20 rows):** Category-label titles ("Software-development-&-engineering") at an AR/VR hardware company whose company name passes game detection. The actual roles are field installation/maintenance, not game development. The existing category-label detector preserves these because AjnaLens is game-adjacent. Fixing this would require role-level content analysis, which is out of scope for P2.
 - **Category G — Uncovered social media/marketing employers (~15 rows):** Employers like BetterMe, Autodesk, Stibo Systems, Devoteam, Coda, Polygon Labs are not in the frozenset and have moderate false-positive risk (Autodesk has game middleware; Polygon Labs is blockchain, not game). These are intentionally left as evidence-driven follow-ups.
 - **Category U — Legal/compliance at non-game employers (~15 rows):** PayPal, Motorola Solutions, FICO, Trupanion, Wolters Kluwer, Pluralsight, etc. are partially covered by P2.0 financial services tier but legal departments at these companies are a distinct subcategory. Low volume; deferred to evidence-driven follow-up.
