@@ -470,6 +470,7 @@ def test_index_routes_current_process_docs_only(repo_root: Path) -> None:
         "docs/archive/dedup-provider-static-disagreement-reconciliation-closeout.md",
         "docs/archive/end-to-end-benchmarking-plan.md",
         "docs/archive/external-memory-mcp-policy-plan.md",
+        "docs/archive/job-sanitization-plan-2026-05-18.md",
         "docs/archive/jobs-fetcher-aggressive-simplification-closeout.md",
         "docs/archive/linux-compatibility-plan.md",
         "docs/archive/read-only-lifecycle-ux-closeout.md",

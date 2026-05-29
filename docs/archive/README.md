@@ -6,6 +6,7 @@ This repository now keeps active documentation in `docs/` and relies on git hist
 
 Latest archives:
 
+- Completed job sanitization (all P0–P3 phases) lives in [`job-sanitization-plan-2026-05-18.md`](job-sanitization-plan-2026-05-18.md). 12 slices shipped: static noise rules, Google Sheets category-title detection, URL-slug title repair, provider hydration (GH/Lever/Workable/Ashby), stale-link validation, bootstrap timeout fix, Remote OK game-evidence hardening, employer-evidence expansion (60→116 terms), sector-gate env var, dedup sparse-identity guard fix, and company-field URL extraction (16 ATS hosts). 506 tests pass. All shipped to `main` by 2026-05-29.
 - Completed Linux compatibility implementation lives in [`linux-compatibility-plan.md`](linux-compatibility-plan.md). All 8 phases shipped to `main` on 2026-05-25.
 - Completed Windows packaged user-data migration lives in [`windows-user-data-migration-plan.md`](windows-user-data-migration-plan.md). Implementation shipped to `main` on 2026-05-25.
 - Completed AI modification safety improvements live in [`ai-modification-safety-improvements-plan.md`](ai-modification-safety-improvements-plan.md). All nine sections (boundary markers, route inventory, typed contracts, builder splits, Admin Ops partition, discovery stage labels, packaged desktop side-effect labels) shipped to `main` by 2026-05-27; deferred §3 typed-contract follow-ups are tracked in the closeout.

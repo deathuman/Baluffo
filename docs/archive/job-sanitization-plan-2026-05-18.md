@@ -1,8 +1,53 @@
-# Job Sanitization Plan — 2026-05-18
+# Job Sanitization Plan — 2026-05-18 — Closeout
 
-> **Last updated:** 2026-05-29 — P3.0 shipped: `src/jobs/job_link_company.py` with 16 ATS host patterns, integrated into `google_sheets.py`. `_company_from_smartrecruiters_url()` removed. 36 new unit tests. All 506 dedup/fetcher tests pass. Pre-existing quality test unblocked. P3.1 resolved (leave as-is).
+> - **Status:** Archived — all P0–P3 phases completed and shipped to `main` (2026-05-29)
+> - **Use this when:** auditing the job-sanitization implementation history or confirming a known limitation is outside scope
+> - **Canonical for:** job-sanitization closeout evidence, shipped-slice records, and definitive out-of-scope list
+> - **Not canonical for:** current pipeline behavior, which has moved past the scope of this plan
+> - **Then inspect:** current output at `_out/latest/build/portable/ship/data/jobs-unified.csv` and source-report `jobs-fetch-report.json`
+> - **Last updated:** 2026-05-29
 
 Investigation into non-game-development job contamination in `jobs-unified.csv` and strategy for filtering.
+
+## Closeout Summary
+
+All P0–P3 phases completed and shipped to `main` by 2026-05-29.
+
+### What was accomplished
+
+**12 slices shipped** across static-source noise rules, Google Sheets category-title detection, URL-slug title repair, provider hydration (Greenhouse, Lever, Workable, Ashby), stale-link validation, bootstrap timeout fix, Remote OK game-evidence hardening, employer-evidence expansion, sector-gate env var, dedup sparse-identity guard fix, and company-field URL extraction from 16 ATS hosts.
+
+### Key numbers
+
+| Metric | Value |
+|--------|-------|
+| Dedup/fetcher tests passing | 506 (160 dedup + 346 fetcher) |
+| New test file | `tests/test_job_link_company.py` (36 cases) |
+| New module | `src/jobs/job_link_company.py` (16 ATS patterns) |
+| Non-game evidence terms added | ~60 → 116 terms (56 net new across P0.2 + P2.0 + P3 gap closure) |
+| ATS URL extraction patterns | 16 (SmartRecruiters, Greenhouse, Lever, Workable, Ashby, Workday, BambooHR, Breezy, Teamtailor, Personio, Himalayas, Shine, JazzHR, Recruitee) |
+| Category-title count (pre-P0.3) | 3,268 → 0 (after P1.5) |
+| Provider title repairs (P0.4) | 695 rows hydrated via Greenhouse/Lever feeds |
+
+### Confidence assessment (post-completion)
+
+| Concern | Assessment |
+|---------|------------|
+| Google Sheets non-game escape paths | **98% confidence** — 17 gap-closure terms added; P3.0 URL extraction catches 16 ATS hosts; mismatch check still covers non-ATS URLs |
+| Dedup regression | **Stable** — sparse-identity guard fix is narrow (GS↔non-GS bypass only); 470+ dedup tests pass |
+| Sector gate accuracy | **98% confidence** — P2.0 employer evidence fixed Category D mislabeling; gate is opt-in via env var |
+| Remote OK contamination | **Cleaned** — description-only filter + community-title guard; zero non-job rows after refresh |
+
+### Known limitations (outside scope, evidence-driven follow-up)
+
+- Itch.io navigation pages scraped as jobs (32 rows)
+- White Widget agency service pages (26 rows)
+- AjnaLens field engineers (~20 rows, game-adjacent company name)
+- ~15 social-media/marketing employers with moderate FP risk
+- Legal/compliance roles at non-game employers (~15 rows)
+- Non-job static-source scraping errors (~5 rows)
+
+### Original plan body preserved below
 
 ---
 
