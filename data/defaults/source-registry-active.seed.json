@@ -5773,68 +5773,6 @@
     "promotionReason": "manual_review_only"
   },
   {
-    "name": "People can Fly Studio (Sheet)",
-    "studio": "People can Fly Studio",
-    "company": "People can Fly Studio",
-    "adapter": "static",
-    "pages": [
-      "https://careers.smartrecruiters.com/PeopleCanFly"
-    ],
-    "listing_url": "https://careers.smartrecruiters.com/PeopleCanFly",
-    "nlPriority": false,
-    "discoveryMethod": "sheet_directory",
-    "discoveryStage": "sheet_directory",
-    "careersUrl": "https://careers.smartrecruiters.com/PeopleCanFly",
-    "evidenceSource": "game_studios_sheet",
-    "evidenceTypes": [
-      "sheet_directory",
-      "sheet_row",
-      "sheet_roles_open_yes"
-    ],
-    "evidenceScore": 46,
-    "weakSignal": false,
-    "sourceDirectory": "game_studios_sheet",
-    "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-    "sourceDirectoryEntryUrl": "https://careers.smartrecruiters.com/PeopleCanFly",
-    "id": "static:listing_url:https://careers.smartrecruiters.com/peoplecanfly",
-    "discoveredAt": "2026-04-10T12:54:49.914032+00:00",
-    "score": 43,
-    "reasons": [
-      "evidence_signal",
-      "live_jobs_detected"
-    ],
-    "sampleCount": 20,
-    "jobsFound": 20,
-    "confidence": "high",
-    "lastProbedAt": "2026-04-10T12:55:26.657724+00:00",
-    "deferred": false,
-    "candidateState": "live",
-    "rankScore": 58,
-    "rankReasons": [
-      "high_confidence",
-      "jobs_found_bonus",
-      "evidence_rank_bonus",
-      "existing_registry_match"
-    ],
-    "promotionLane": "manual_review",
-    "approvedAt": "2026-04-10T12:54:49.914032+00:00",
-    "approvedBy": "registry_migration_v2",
-    "liveAt": "2026-04-10T12:54:49.914032+00:00",
-    "quarantinedAt": "",
-    "quarantineReason": "",
-    "deferCount": 0,
-    "firstDeferredAt": "",
-    "lastDeferredAt": "",
-    "registryState": "active",
-    "pendingReason": "",
-    "stateChangedAt": "2026-04-10T12:55:27.565044+00:00",
-    "stateChangedBy": "discovery_auto_approve",
-    "lastPromotedAt": "2026-04-10T12:55:27.565044+00:00",
-    "lastDemotedAt": "",
-    "enabledByDefault": true,
-    "promotionReason": "manual_review_only"
-  },
-  {
     "name": "AMD (Sheet)",
     "studio": "AMD",
     "company": "AMD",
@@ -7867,68 +7805,6 @@
     "approvedAt": "2026-04-10T12:54:49.913199+00:00",
     "approvedBy": "registry_migration_v2",
     "liveAt": "2026-04-10T12:54:49.913199+00:00",
-    "quarantinedAt": "",
-    "quarantineReason": "",
-    "deferCount": 0,
-    "firstDeferredAt": "",
-    "lastDeferredAt": "",
-    "registryState": "active",
-    "pendingReason": "",
-    "stateChangedAt": "2026-04-10T12:55:27.565044+00:00",
-    "stateChangedBy": "discovery_auto_approve",
-    "lastPromotedAt": "2026-04-10T12:55:27.565044+00:00",
-    "lastDemotedAt": "",
-    "enabledByDefault": true,
-    "promotionReason": "manual_review_only"
-  },
-  {
-    "name": "Epoch Games (Sheet)",
-    "studio": "Epoch Games",
-    "company": "Epoch Games",
-    "adapter": "static",
-    "pages": [
-      "https://careers.smartrecruiters.com/EpochGames"
-    ],
-    "listing_url": "https://careers.smartrecruiters.com/EpochGames",
-    "nlPriority": false,
-    "discoveryMethod": "sheet_directory",
-    "discoveryStage": "sheet_directory",
-    "careersUrl": "https://careers.smartrecruiters.com/EpochGames",
-    "evidenceSource": "game_studios_sheet",
-    "evidenceTypes": [
-      "sheet_directory",
-      "sheet_row",
-      "sheet_roles_open_yes"
-    ],
-    "evidenceScore": 46,
-    "weakSignal": false,
-    "sourceDirectory": "game_studios_sheet",
-    "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-    "sourceDirectoryEntryUrl": "https://careers.smartrecruiters.com/EpochGames",
-    "id": "static:listing_url:https://careers.smartrecruiters.com/epochgames",
-    "discoveredAt": "2026-04-10T12:54:49.913167+00:00",
-    "score": 36,
-    "reasons": [
-      "evidence_signal",
-      "live_jobs_detected"
-    ],
-    "sampleCount": 13,
-    "jobsFound": 13,
-    "confidence": "high",
-    "lastProbedAt": "2026-04-10T12:55:26.065289+00:00",
-    "deferred": false,
-    "candidateState": "live",
-    "rankScore": 51,
-    "rankReasons": [
-      "high_confidence",
-      "jobs_found_bonus",
-      "evidence_rank_bonus",
-      "existing_registry_match"
-    ],
-    "promotionLane": "manual_review",
-    "approvedAt": "2026-04-10T12:54:49.913167+00:00",
-    "approvedBy": "registry_migration_v2",
-    "liveAt": "2026-04-10T12:54:49.913167+00:00",
     "quarantinedAt": "",
     "quarantineReason": "",
     "deferCount": 0,
@@ -10929,7 +10805,7 @@
     "name": "Giants Software (Sheet)",
     "studio": "Giants Software",
     "company": "Giants Software",
-    "adapter": "static",
+    "adapter": "smartrecruiters",
     "pages": [
       "https://careers.smartrecruiters.com/GIANTSSoftwareGmbH"
     ],
@@ -10949,7 +10825,7 @@
     "sourceDirectory": "game_studios_sheet",
     "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
     "sourceDirectoryEntryUrl": "https://careers.smartrecruiters.com/GIANTSSoftwareGmbH",
-    "id": "static:listing_url:https://careers.smartrecruiters.com/giantssoftwaregmbh",
+    "id": "smartrecruiters:company_id:giantssoftwaregmbh",
     "discoveredAt": "2026-04-10T12:54:49.913365+00:00",
     "score": 31,
     "reasons": [
@@ -19182,7 +19058,7 @@
     "name": "Heart Machine (Sheet)",
     "studio": "Heart Machine",
     "company": "Heart Machine",
-    "adapter": "static",
+    "adapter": "smartrecruiters",
     "pages": [
       "https://careers.smartrecruiters.com/HeartMachine"
     ],
@@ -19202,7 +19078,7 @@
     "sourceDirectory": "game_studios_sheet",
     "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
     "sourceDirectoryEntryUrl": "https://careers.smartrecruiters.com/HeartMachine",
-    "id": "static:listing_url:https://careers.smartrecruiters.com/heartmachine",
+    "id": "smartrecruiters:company_id:heartmachine",
     "discoveredAt": "2026-04-10T12:54:49.913471+00:00",
     "score": 26,
     "reasons": [
