@@ -5,7 +5,7 @@
 > - **Canonical for:** ATS detection on custom domains, static→{ats} reclassification, web-search HTML-signature detection, static-adapter Playwright gate heuristics, discovery-pipeline keyword expansion, and systemic static-inference improvements
 > - **Not canonical for:** the ATS runner implementations themselves, static plugin registry maintenance, or the generic static extraction heuristics
 > - **Then inspect:** [`provider_inference.py`](../../src/source_discovery/provider_inference.py), [`web_search_candidates.py`](../../src/source_discovery/web_search_candidates.py), [`static_listing.py`](../../src/jobs/adapters/static_listing.py), [`source-registry-active.seed.json`](../../data/defaults/source-registry-active.seed.json)
-> - **Last updated:** 2026-05-29 (Phase 2a restructured as independent `/jobs` path gate; expanded with Phases 5–7: domain heuristic, non-English keywords, broader JS-shell detection, dead-listing retry, empty-page fallback, ATS feedback, re-probing, reclassification, threshold reduction)
+> - **Last updated:** 2026-05-29 (Phases 1-6a shipped; 5a/5c deferred with closeout root-cause analysis; 6b/6c in progress)
 
 Systematic fix to detect ATS-powered career sites on **custom domains** (e.g., `careers.foolstheory.com/jobs` — Teamtailor, but no `teamtailor.com` in the host). The current inference system only recognises ATS providers by known hosting-domain patterns (`*.teamtailor.com`, `boards.greenhouse.io`, etc.). Custom-domain sites always fall through to `"adapter": "static"`, where the generic scraper misses jobs or produces noisy results.
 
@@ -526,9 +526,9 @@ In the source-policy soak report (`source-policy-runbook.md` pathway), add a rep
 | Phase 1 | Run web search discovery against a studio with a Teamtailor custom domain; verify candidate has `adapter: "teamtailor"`. Run pipeline tests. |
 | Phase 2 | Run static pipeline against a Teamtailor JS shell with 4+ nav links; verify Playwright is triggered and jobs are extracted. |
 | Phase 3 | `git diff` registry changes; verify each changed source produces jobs in dedicated adapter. |
-| Phase 5a | `infer_provider_adapter("careers.foolstheory.com", "/jobs")` returns `"static"` with elevated evidence. |
+| Phase 5a | **Deferred** (D1) — return-value dead end; evidence booster in `build_static_candidate_from_page()` is alternative. |
 | Phase 5b | `careers_keyword_count("stellenanzeigen")` returns ≥1. Page with Japanese "採用" passes keyword gate. |
-| Phase 5c | `build_static_candidate_from_page` accepts page with `/jobs` in URL but no HTML keywords. |
+| Phase 5c | **Deferred** (D2) — recovery pipeline conflict; Phase 2a handles this at adapter level. |
 | Phase 6a | `detect_js_shell("<div id=\"root\">...long text...</div>")` returns True. |
 | Phase 6b | Static source that returns dead-listing HTML via HTTP retries with Playwright and recovers jobs. |
 | Phase 6c | Static source with zero HTTP jobs but career keywords triggers Playwright fallback. |
@@ -539,6 +539,36 @@ In the source-policy soak report (`source-policy-runbook.md` pathway), add a rep
 | Phase 7e | Probe against `careers.example.com/jobs` produces diagnostic if HTML contains `teamtailor`. |
 | Phase 7f | Report includes "static sources with /jobs" section grouped by suspected ATS. |
 | All | Pre-commit gate passes (`npm run lint:precommit:changed`). Run full test suite: `python -m pytest tests/test_jobs_fetcher_quality.py tests/test_jobs_fetcher_pipeline.py tests/test_source_discovery*.py tests/test_provider*.py -q`. |
+
+## Deferred Investigations
+
+Items that were planned but blocked by discovered implementation constraints.
+
+### D1 — Phase 5a: Domain-name heuristic return value
+
+**Planned:** `_infer_from_domain_name()` returning `"static"` from `infer_provider_adapter()` to signal elevated evidence for career-pattern URLs.
+
+**Blocked by:** `"static"` is not a recognized adapter in `_PROVIDER_CANDIDATE_BUILDERS`. `provider_candidate(adapter="static")` returns `None`. Returning `"static"` from `infer_provider_adapter()` has no practical effect — all callers that check its return value either ignore the non-None string or feed it to `provider_candidate()` which returns `None`.
+
+Additionally, returning `"static"` would break the HTML-signature detection guard (`if infer_provider_adapter(host, path) is None:`) in `infer_provider_candidates_from_html()`, preventing HTML-signature detection from firing for career-pattern URLs.
+
+**Investigating after:** Phase 5b (non-English keywords — committed) and Phase 2a (adapter-side Playwright gate — committed) provide better coverage for the same problem. The domain-name heuristic could be revived as an evidence booster in `build_static_candidate_from_page()` rather than in `infer_provider_adapter()`.
+
+### D2 — Phase 5c: Relaxed candidate gating recovery pipeline conflict
+
+**Planned:** `build_static_candidate_from_page()` skipping evidence requirements (detail_links, jsonld_hits) for `/jobs` URLs.
+
+**Blocked by:** The recovery pipeline (GameDevMap, Gameprog, Gamesmap, sheet directory, web search) depends on the strict evidence gating to filter out recovery-fetched pages that contain "No roles" / "No openings" text. Relaxing the gate causes these pages to become candidates, increasing `recoveredStaticCandidates` counts and breaking 14+ recovery tests.
+
+**Investigating after:** Phase 2a (committed) already handles the Fool's Theory case correctly at the adapter level. The candidate gate could be revisited with a more nuanced signal — e.g., only relaxing when the HTML contains SPA framework tokens (indicating JS-rendered content), not just when the URL path matches `/jobs`.
+
+### D3 — Greenhouse, Lever, Workable HTML-signature false positives
+
+**Planned:** HTML-signature detection for all 7 ATS in Phase 1b.
+
+**Blocked by:** The candidate builders for Greenhouse (`_greenhouse_candidate`), Lever (`_lever_candidate`), and Workable (`_workable_candidate`) fall through to path-based slug/account extraction on arbitrary URLs. For any custom domain URL containing `<a href="https://boards.greenhouse.io/...">`, the builder would extract `slug="jobs"` or `slug="careers"` from the page URL path and create a garbage candidate with invalid API URLs.
+
+**Investigating after:** The builders need host-restriction gates for the fallthrough path. For Greenhouse: only extract slug from path when host is a known greenhouse domain. For Lever: only extract account from path when host matches lever.co. For Workable: only extract account from path when host matches workable.com. Until this builder hardening is done, these 3 adapters are excluded from `_ATS_HTML_SIGNATURES` and `_ATS_HTML_FALLBACK`.
 
 ## Known Limitations
 
