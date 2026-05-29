@@ -5,7 +5,7 @@
 > - **Canonical for:** ATS detection on custom domains, static→{ats} reclassification, web-search HTML-signature detection, static-adapter Playwright gate heuristics, discovery-pipeline keyword expansion, and systemic static-inference improvements
 > - **Not canonical for:** the ATS runner implementations themselves, static plugin registry maintenance, or the generic static extraction heuristics
 > - **Then inspect:** [`provider_inference.py`](../../src/source_discovery/provider_inference.py), [`web_search_candidates.py`](../../src/source_discovery/web_search_candidates.py), [`static_listing.py`](../../src/jobs/adapters/static_listing.py), [`source-registry-active.seed.json`](../../data/defaults/source-registry-active.seed.json)
-> - **Last updated:** 2026-05-29 (expanded with Phases 5–7: domain heuristic, non-English keywords, broader JS-shell detection, dead-listing retry, empty-page fallback, ATS feedback, re-probing, reclassification, threshold reduction)
+> - **Last updated:** 2026-05-29 (Phase 2a restructured as independent `/jobs` path gate; expanded with Phases 5–7: domain heuristic, non-English keywords, broader JS-shell detection, dead-listing retry, empty-page fallback, ATS feedback, re-probing, reclassification, threshold reduction)
 
 Systematic fix to detect ATS-powered career sites on **custom domains** (e.g., `careers.foolstheory.com/jobs` — Teamtailor, but no `teamtailor.com` in the host). The current inference system only recognises ATS providers by known hosting-domain patterns (`*.teamtailor.com`, `boards.greenhouse.io`, etc.). Custom-domain sites always fall through to `"adapter": "static"`, where the generic scraper misses jobs or produces noisy results.
 
@@ -132,28 +132,50 @@ Where `_html_matches_any_provider()` uses the same signature map as 1b.
 
 **Priority: High.** Reduces job loss from already-misclassified sources.
 
-#### 2a — Relax the JS shell gate
+#### 2a — Add independent `/jobs` path Playwright gate
 
-In `_prepare_listing_htmls()` (`static_listing.py:1502-1519`), the current gate:
-
-```python
-if detect_js_shell(html) and len(all_links) < 3 and len(all_jobs) == 0:
-    try_playwright(page_url, timeout_s)
-```
-
-Change to: if `detect_js_shell(html)` is True AND the listing URL contains `/jobs` in its path (strong signal it's an ATS page), always try Playwright regardless of link count. This catches Teamtailor custom domains with 3+ nav links.
+In `_prepare_listing_htmls()` (`static_listing.py:1502-1519`), the current gate is entirely inside a `detect_js_shell(html)` check:
 
 ```python
-listing_path = urlparse(ctx.listing_url).path or ""
-should_playwright = detect_js_shell(html) and (
-    len(all_links) < 3
-    or "/jobs" in listing_path  # ATS custom-domain signal
-)
-if should_playwright and len(all_jobs) == 0:
-    try_playwright(page_url, timeout_s)
+if detect_js_shell(html) and ...:
+    # only reached when JS shell detected
 ```
 
-**File:** `src/jobs/adapters/static_listing.py` (lines 1502-1519)
+This means pages with visible text > 180 chars (nav menus, cookie banners, footer) never trigger Playwright, even if they're clearly career pages. Add an **independent** Playwright gate that fires whenever the listing URL's path contains `/jobs` — a strong signal it's an ATS career page regardless of JS shell detection:
+
+```python
+# ── Existing gate (unchanged) ──
+if self.deps.try_playwright and html and detect_js_shell(html):
+    parsed_pre = parse_jobpostings_from_html(html, ...)
+    link_count = ...
+    if not parsed_pre and link_count < 3 and dynamic_listing_timeout_s > 0:
+        html2, _ = self.deps.try_playwright(page_url, dynamic_listing_timeout_s)
+        if html2:
+            html = html2
+
+# ── NEW: independent /jobs path gate ──
+# Catches ATS custom-domain pages that are not minimal JS shells
+# (e.g. Teamtailor with nav + cookie banner + footer > 180 chars).
+# This fires independently of detect_js_shell — the /jobs path is
+# itself strong evidence the page is a career listing.
+listing_path = urlparse(page_url).path or ""
+if self.deps.try_playwright and html and "/jobs" in listing_path:
+    jobs_path_timeout_s = effective_timeout_for_remaining_budget(
+        timeout_s=max(1, effective_timeout_s),
+        remaining_budget_s=self.ctx.remaining_budget_s(),
+    )
+    parsed_pre = parse_jobpostings_from_html(html, ...)
+    if not parsed_pre and jobs_path_timeout_s > 0:
+        html2, _ = self.deps.try_playwright(page_url, jobs_path_timeout_s)
+        self._log_playwright_fallback(page_url, "jobs_path", html2)
+        if html2:
+            self.stage_state.increment_browser_fallbacks()
+            html = html2
+```
+
+This is **not gated behind `detect_js_shell`** — it fires independently for any URL with `/jobs` in its path, regardless of text length, link count, or SPA tokens. Together with Phase 6a (broader JS shell detection) and Phase 6c (empty-page fallback), the three adapter-time Playwright triggers form a layered safety net.
+
+**File:** `src/jobs/adapters/static_listing.py` (lines 1502-1519, new block inserted after existing gate)
 **Effort:** ~0.5h
 
 #### 2b — Add ATS detection advisory in the static pipeline
