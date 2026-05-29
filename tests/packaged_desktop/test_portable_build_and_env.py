@@ -479,7 +479,7 @@ def test_packaged_fetch_evidence_smoke_mode_is_deterministic_by_default() -> Non
     )
 
 
-def test_packaged_runtime_env_overrides_can_isolate_local_appdata_per_run() -> None:
+def test_packaged_runtime_env_overrides_can_isolate_appdata_per_run() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         artifacts_dir = Path(tmp) / "artifacts"
         overrides = smoke.packaged_runtime_env_overrides(
@@ -490,6 +490,11 @@ def test_packaged_runtime_env_overrides_can_isolate_local_appdata_per_run() -> N
 
         assert overrides["BALUFFO_PACKAGED_SMOKE_PIPELINE_MODE"] == "stub-success"
         assert overrides["BALUFFO_PACKAGED_SMOKE_FETCH_MODE"] == "source-runs"
+        assert Path(overrides["APPDATA"]).resolve() == (
+            smoke.packaged_desktop_roaming_appdata_root(
+                artifacts_dir, session_scope="jobs-pipeline"
+            ).resolve()
+        )
         assert Path(overrides["LOCALAPPDATA"]).resolve() == (
             smoke.packaged_desktop_local_appdata_root(
                 artifacts_dir, session_scope="jobs-pipeline"

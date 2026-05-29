@@ -265,6 +265,14 @@ def packaged_desktop_local_appdata_root(
     return _PATH_TYPE(base / str(deps.slugify_token(session_scope)))
 
 
+def packaged_desktop_roaming_appdata_root(
+    artifacts_dir: Path, *, session_scope: str = "runtime"
+) -> Path:
+    deps = _root()
+    base = _PATH_TYPE(str(artifacts_dir)).expanduser().resolve() / "desktop-appdata"
+    return _PATH_TYPE(base / str(deps.slugify_token(session_scope)))
+
+
 def packaged_desktop_session_paths(env: dict[str, str] | None = None) -> dict[str, Path]:
     deps = _root()
     env_map = env if env is not None else deps.os.environ
@@ -391,6 +399,7 @@ def collect_packaged_smoke_env_diagnostics(
         "nodeCommand": node_cmd,
         "nodePath": str(node_cmd[0]) if node_cmd else "",
         "nodeSmokeScript": str(node_smoke_script),
+        "appData": str(env_map.get("APPDATA") or ""),
         "localAppData": str(env_map.get("LOCALAPPDATA") or ""),
         "tmp": str(env_map.get("TMP") or ""),
         "temp": str(env_map.get("TEMP") or ""),
@@ -494,11 +503,17 @@ def packaged_runtime_env_overrides(
             if bootstrap_mode == "controlled-heartbeat-success":
                 overrides["BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_HEARTBEAT_MS"] = "1000"
     if artifacts_dir is not None:
+        roaming_app_data = deps.packaged_desktop_roaming_appdata_root(
+            artifacts_dir,
+            session_scope=session_scope,
+        )
         local_app_data = deps.packaged_desktop_local_appdata_root(
             artifacts_dir,
             session_scope=session_scope,
         )
+        roaming_app_data.mkdir(parents=True, exist_ok=True)
         local_app_data.mkdir(parents=True, exist_ok=True)
+        overrides["APPDATA"] = str(roaming_app_data)
         overrides["LOCALAPPDATA"] = str(local_app_data)
     if startup_probe:
         overrides["BALUFFO_DESKTOP_ALLOW_EDGE_APP_MODE"] = "1"

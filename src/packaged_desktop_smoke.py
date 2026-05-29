@@ -210,6 +210,9 @@ write_text = packaged_smoke_build_env_mod.write_text
 packaged_desktop_local_appdata_root = (
     packaged_smoke_build_env_mod.packaged_desktop_local_appdata_root
 )
+packaged_desktop_roaming_appdata_root = (
+    packaged_smoke_build_env_mod.packaged_desktop_roaming_appdata_root
+)
 packaged_desktop_session_paths = packaged_smoke_build_env_mod.packaged_desktop_session_paths
 clear_packaged_desktop_session_state = (
     packaged_smoke_build_env_mod.clear_packaged_desktop_session_state

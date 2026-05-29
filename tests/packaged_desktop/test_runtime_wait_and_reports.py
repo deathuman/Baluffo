@@ -1071,6 +1071,11 @@ def test_run_packaged_smoke_uses_artifact_local_session_root_even_when_global_se
             payload = smoke.run_packaged_smoke(args)
 
         assert payload["ok"] is True
+        assert Path(captured_env["APPDATA"]).resolve() == (
+            smoke.packaged_desktop_roaming_appdata_root(
+                artifacts_dir, session_scope="runtime"
+            ).resolve()
+        )
         assert Path(captured_env["LOCALAPPDATA"]).resolve() == (
             smoke.packaged_desktop_local_appdata_root(
                 artifacts_dir, session_scope="runtime"

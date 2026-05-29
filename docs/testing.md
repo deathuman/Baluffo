@@ -246,6 +246,7 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 - `npm run test:frontend:packaged:update-rehearsal`
   - Packaged test lanes reuse the default portable EXE when its build fingerprint is current. Explicit `--exe-path` values are never auto-rebuilt, and `src/packaged_desktop_smoke.py --rebuild` is an opt-in debugging escape hatch.
   - Cold startup probes isolate runtime data/profile state instead of requiring a fresh executable build.
+  - Packaged smoke and rehearsal launches isolate both `%APPDATA%` and `%LOCALAPPDATA%` under the lane artifact directory so missing data-root overrides cannot write rehearsal state into real Windows user data.
   - The update rehearsal copies the portable build before injecting rehearsal public keys or removing optional `_internal/psutil*`, so cached and `dist/` portable roots stay pristine while the source-side handoff verifier still passes through the dependency-free Windows PID fallback.
 - Orchestrated build and verify commands own `_out/runs/...` and the rest of `_out/latest/...`:
   - `npm run build`

@@ -1271,7 +1271,10 @@ def test_run_desktop_update_rehearsal_clears_session_state_only_after_runtime_ex
             mock.patch.object(
                 smoke,
                 "packaged_runtime_env_overrides",
-                return_value={"LOCALAPPDATA": str(root / "desktop-localappdata")},
+                return_value={
+                    "APPDATA": str(root / "desktop-appdata"),
+                    "LOCALAPPDATA": str(root / "desktop-localappdata"),
+                },
             ),
             mock.patch.object(smoke, "_preferred_desktop_browser_env", return_value={}),
             mock.patch.object(smoke, "clear_packaged_desktop_session_state"),
@@ -1312,6 +1315,8 @@ def test_run_desktop_update_rehearsal_clears_session_state_only_after_runtime_ex
             )
 
         assert result["status"] == "passed"
+        assert captured_env["APPDATA"] == str(root / "desktop-appdata")
+        assert captured_env["LOCALAPPDATA"] == str(root / "desktop-localappdata")
         assert captured_env["BALUFFO_DESKTOP_UPDATER_NO_DIALOG"] == "1"
         assert captured_env["BALUFFO_DESKTOP_UPDATER_VERIFY_TIMEOUT_S"] == "10"
 

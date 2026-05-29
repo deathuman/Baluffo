@@ -136,7 +136,7 @@ def _resolve_and_migrate_default_data_dir(ship_root: Path) -> Path:
         return Path(env_data_dir).expanduser().resolve()
     if _is_windows_packaged_runtime():
         data_dir = default_windows_packaged_data_dir(os.environ).resolve()
-        migrate_legacy_windows_user_data(ship_root / "data", data_dir)
+        migrate_legacy_windows_user_data(ship_root / "data", data_dir, env_map=os.environ)
         return data_dir
     return ship_root / "data"
 

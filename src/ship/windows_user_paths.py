@@ -70,11 +70,54 @@ def _completed_migration_report_exists(path: Path) -> bool:
     return isinstance(existing_report, dict) and bool(existing_report.get("completed"))
 
 
+def _legacy_path_has_packaged_smoke_marker(path: Path) -> bool:
+    return any(str(part).strip().lower() == "packaged-desktop-smoke" for part in path.parts)
+
+
+def _legacy_profiles_include_rehearsal_user(legacy: Path) -> bool:
+    profiles_path = legacy / "local-user-data" / "profiles.json"
+    try:
+        raw = json.loads(profiles_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    rows = raw if isinstance(raw, list) else []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        uid = str(row.get("id") or "").strip().lower()
+        name = str(row.get("name") or "").strip().lower()
+        if uid == "local_packaged_update_rehearsal" or name == "packaged update rehearsal":
+            return True
+    return False
+
+
+def _target_is_default_windows_packaged_data_dir(
+    target: Path, env_map: Mapping[str, str] | None
+) -> bool:
+    try:
+        return target == default_windows_packaged_data_dir(env_map).resolve()
+    except OSError:
+        return False
+
+
+def _should_skip_packaged_smoke_migration(
+    legacy: Path,
+    target: Path,
+    env_map: Mapping[str, str] | None,
+) -> bool:
+    if not _target_is_default_windows_packaged_data_dir(target, env_map):
+        return False
+    return _legacy_path_has_packaged_smoke_marker(
+        legacy
+    ) or _legacy_profiles_include_rehearsal_user(legacy)
+
+
 def migrate_legacy_windows_user_data(
     legacy_data_dir: Path,
     target_data_dir: Path,
     *,
     now: datetime | None = None,
+    env_map: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     legacy = Path(legacy_data_dir).expanduser().resolve()
     target = Path(target_data_dir).expanduser().resolve()
@@ -101,6 +144,11 @@ def migrate_legacy_windows_user_data(
     }
 
     target.mkdir(parents=True, exist_ok=True)
+    if _should_skip_packaged_smoke_migration(legacy, target, env_map):
+        report["status"] = "skipped_packaged_smoke_rehearsal"
+        report["completed"] = True
+        _write_report(report_path, report)
+        return report
     if legacy == target:
         report["status"] = "same_path"
         report["completed"] = True

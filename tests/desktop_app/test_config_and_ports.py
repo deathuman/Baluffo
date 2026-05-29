@@ -99,6 +99,55 @@ def test_windows_legacy_user_data_migration_copies_without_overwriting() -> None
 
 
 @pytest.mark.windows
+def test_windows_legacy_user_data_migration_skips_packaged_smoke_rehearsal_source() -> None:
+    with workspace_tmpdir("windows-user-data-migration-rehearsal") as tmp:
+        root = Path(tmp)
+        appdata = root / "AppData" / "Roaming"
+        legacy = (
+            root
+            / ".tmp"
+            / "packaged-desktop-smoke"
+            / "run-1"
+            / "portable-install"
+            / "ship"
+            / "data"
+        )
+        target = appdata / "Baluffo"
+        profiles_path = legacy / "local-user-data" / "profiles.json"
+        profiles_path.parent.mkdir(parents=True)
+        profiles_path.write_text(
+            json.dumps(
+                [
+                    {
+                        "id": "local_packaged_update_rehearsal",
+                        "name": "Packaged Update Rehearsal",
+                        "email": "",
+                    }
+                ]
+            ),
+            encoding="utf-8",
+        )
+        (legacy / "jobs-unified.json").write_text("[{}]", encoding="utf-8")
+
+        report = windows_user_paths.migrate_legacy_windows_user_data(
+            legacy,
+            target,
+            env_map={"APPDATA": str(appdata)},
+        )
+
+        assert report["status"] == "skipped_packaged_smoke_rehearsal"
+        assert report["completed"] is True
+        assert not (target / "local-user-data" / "profiles.json").exists()
+        assert not (target / "jobs-unified.json").exists()
+        persisted = json.loads(
+            windows_user_paths.windows_user_data_migration_report_path(target).read_text(
+                encoding="utf-8"
+            )
+        )
+        assert persisted["status"] == "skipped_packaged_smoke_rehearsal"
+
+
+@pytest.mark.windows
 def test_windows_legacy_user_data_migration_marks_missing_legacy_data() -> None:
     with workspace_tmpdir("windows-user-data-migration-missing") as tmp:
         legacy = Path(tmp) / "portable" / "ship" / "data"
