@@ -10,6 +10,7 @@ from typing import Any
 from urllib.parse import quote
 
 from src.jobs.adapters.parsers.location import normalize_location_details
+from src.jobs.job_link_company import company_from_job_link
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
 
@@ -188,22 +189,6 @@ def _normalize_company_value(value: Any) -> str:
     return company
 
 
-def _needs_company_inference(company: str) -> bool:
-    normalized = norm_text(company)
-    return not normalized or normalized in {norm_text(UNKNOWN_COMPANY_LABEL), "unknown"}
-
-
-def _company_from_smartrecruiters_url(url: str) -> str:
-    match = re.search(r"(?:jobs\.)?smartrecruiters\.com/([^/]+)/\d", url)
-    if match:
-        raw = match.group(1)
-        cleaned = re.sub(r"-+", " ", raw).strip()
-        if cleaned.isupper():
-            return cleaned
-        return cleaned.title()
-    return ""
-
-
 def _resolve_company_name(
     row: Sequence[str], primary_idx: int, candidate_indexes: Sequence[int]
 ) -> str:
@@ -320,8 +305,9 @@ def _google_sheets_row_to_job(
     job_link = resolve_google_sheets_job_link(row, columns["link"])
     if not title:
         return None
-    if _needs_company_inference(company):
-        company = _company_from_smartrecruiters_url(job_link) or company
+    extracted = company_from_job_link(job_link)
+    if extracted:
+        company = extracted
     if not company:
         return None
     location_details = _normalize_sheet_location(

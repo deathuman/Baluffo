@@ -1,12 +1,23 @@
 # Job Sanitization Plan — 2026-05-18
 
-> **Last updated:** 2026-05-29 — Dedup sparse-identity guard fix: GS bucket-title rows merge into non-GS rows when normalized company+title matches (pre-existing quality test unblocked). P3 gap closure (17 terms) and investigation complete. P3.0 design refined (depends on P2.0). P3.1 resolved (leave as-is). P2 items shipped; 470 dedup/fetcher tests pass.
+> **Last updated:** 2026-05-29 — P3.0 shipped: `src/jobs/job_link_company.py` with 16 ATS host patterns, integrated into `google_sheets.py`. `_company_from_smartrecruiters_url()` removed. 36 new unit tests. All 506 dedup/fetcher tests pass. Pre-existing quality test unblocked. P3.1 resolved (leave as-is).
 
 Investigation into non-game-development job contamination in `jobs-unified.csv` and strategy for filtering.
 
 ---
 
 ## 0. Progress Log
+
+### 2026-05-29 — P3.0 shipped: company field URL extraction
+
+**Status:** `src/jobs/job_link_company.py` module implemented and integrated. `_company_from_smartrecruiters_url()` removed from `google_sheets.py`. Company field now always extracted from jobLink URL for 16 ATS hosts before falling back to sheet value.
+
+**Files changed:**
+- `src/jobs/job_link_company.py` (new): `company_from_job_link()` → delegates to `_subdomain_company`, `_workday_company`, `_personio_company`, `_host_path_company`; all normalized via `_extract_company_name`.
+- `src/jobs/adapters/community/google_sheets.py`: replaced `_needs_company_inference` + `_company_from_smartrecruiters_url` with direct call to `company_from_job_link`. Removed both dead functions.
+- `tests/test_job_link_company.py` (new): 36 tests covering all 16 ATS patterns plus edge cases (empty URL, UUID rejection, single-char rejection, title casing, all-caps preservation).
+
+**Verification:** 506 dedup/fetcher tests pass (160 dedup + 346 fetcher). No regressions. Pre-commit gate clean.
 
 ### 2026-05-29 — P3 gap closure analysis: 17 non-game employers added to close P3.0 escape paths
 
@@ -1362,20 +1373,14 @@ Category P rows (125) were created before the P2 guard existed and reflect a sep
 | P1.5 | Category-link stale validation + residual labels | ~2h | 1,051 stale drops; remaining category titles → 0 |
 | P1.6 | Bootstrap timeout fix | ~1.5h | Bootstrap completes under timeout |
 
-### Remaining — Implementation (P2)
-
-| Phase | Action | Effort | Spec |
-|---|---|---|---|
-| **P2.0** | Expand known non-game employer/domain evidence | ~3h | See Layer 7 below |
-| **P2.1** | Sector-gate filter (`BALUFFO_STRICT_GAME_ONLY`) | ~2h | See Layer 8 below |
-| **P2.2** | Fix Category P "Unknown Company" dedup bug | ~3h | See Layer 9 below |
-
-### Deferred — Policy/UX Decision Required (P3)
+### Remaining (P3.0)
 
 | Phase | Action | Effort | Status |
 |---|---|---|---|
-| **P3.0** | Fix google_sheets `company` field via URL extraction | ~4h | Design complete (2026-05-29). See Layer 4. Execution depends on P2.0 first. |
+| **P3.0** | Fix google_sheets `company` field via URL extraction | ~4h | **Shipped 2026-05-29.** See Layer 4. P2.0 gap-closure terms shipped — escape window covered. |
 | **P3.1** | Corporate/hospitality role policy toggle | ~0.5h | **Resolved 2026-05-29:** Leave as-is (P0 policy). No code changes. |
+
+### All P0-P3 items shipped. Plan closed.
 
 
 
