@@ -34,26 +34,28 @@ def visible_text_len(html: str) -> int:
 def detect_js_shell(html: str) -> bool:
     """Best-effort detection for JS-rendered app shells.
 
-    This is intentionally conservative: it aims to detect pages that almost
-    certainly require a browser/JS to render listings.
+    SPA framework tokens alone are sufficient evidence — nav menus,
+    cookie banners, and footers can produce >180 chars of visible text
+    while the actual job listings are still JS-rendered.
+    Very short text with SPA-related tokens is also evidence.
     """
     s = normalize_html(html)
     lower = s.lower()
-    if visible_text_len(s) < 180:
-        # Very little visible text; if also looks like an SPA shell, flag it.
-        if any(
-            tok in lower
-            for tok in (
-                '<div id="root"',
-                '<div id="app"',
-                "data-reactroot",
-                "ng-version",
-                "__next_data__",
-            )
-        ):
-            return True
-        if any(tok in lower for tok in ("window.__", "webpackjsonp", "react", "next.js")):
-            return True
+
+    _spa_div_tokens = (
+        '<div id="root"',
+        '<div id="app"',
+        "data-reactroot",
+        "ng-version",
+        "__next_data__",
+    )
+    _spa_framework_tokens = ("window.__", "webpackjsonp", "react", "next.js")
+
+    has_spa_div = any(tok in lower for tok in _spa_div_tokens)
+    has_spa_framework = any(tok in lower for tok in _spa_framework_tokens)
+
+    if has_spa_div or has_spa_framework:
+        return True
     return False
 
 
