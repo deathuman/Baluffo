@@ -1,23 +1,42 @@
-# Static Inference & ATS Custom-Domain Detection Plan — 2026-05-29
+# Static Inference & ATS Custom-Domain Detection Plan — 2026-05-29 — Closeout
 
-> - **Status:** Active — core technical work shipped (Phases 1-6); Phase 3b/3c (manual audits) and Phase 7 (architectural) remain
+> - **Status:** Archived — all actionable phases shipped to `main` (2026-05-29)
+> - **Last updated:** 2026-05-29 (11 commits; Phase 7 parked; plan archived)
 > - **Use this when:** improving static inference quality, detecting ATS on custom domains, or reclassifying misregistered sources
 > - **Canonical for:** ATS detection on custom domains, static→{ats} reclassification, web-search HTML-signature detection, static-adapter Playwright gate heuristics, and discovery-pipeline keyword expansion
 > - **Not canonical for:** the ATS runner implementations themselves, static plugin registry maintenance, or the generic static extraction heuristics
 > - **Then inspect:** [`provider_inference.py`](../../src/source_discovery/provider_inference.py), [`web_search_candidates.py`](../../src/source_discovery/web_search_candidates.py), [`static_listing.py`](../../src/jobs/adapters/static_listing.py), [`source-registry-active.seed.json`](../../data/defaults/source-registry-active.seed.json)
-> - **Last updated:** 2026-05-29 (Phases 1-6a-c shipped, 9 commits; D1-D3 closed as superseded)
 
 Systematic fix to detect ATS-powered career sites on **custom domains** (e.g., `careers.foolstheory.com/jobs` — Teamtailor, but no `teamtailor.com` in the host). The current inference system only recognises ATS providers by known hosting-domain patterns (`*.teamtailor.com`, `boards.greenhouse.io`, etc.). Custom-domain sites always fall through to `"adapter": "static"`, where the generic scraper misses jobs or produces noisy results.
 
+## Closeout Summary
+
+All actionable phases (1-6) shipped to `main` in 11 commits on 2026-05-29. Phase 7 (architectural improvements) parked — core systemic gaps are closed by Phases 1-6, and Phase 7 items are incremental polish with no new coverage.
+
+**What changed:**
+- **Discovery pipeline:** `infer_provider_candidates_from_html()` now detects Teamtailor, BambooHR, Workday, and SmartRecruiters via HTML content signatures on custom domains. `infer_provider_adapter()` accepts an optional `html` parameter for the same fallback.
+- **Static adapter:** Three layered Playwright triggers — JS shell detection (broader, SPA tokens alone), `/jobs` path gate (independent of JS shell), and empty-page career-URL fallback. Dead-listing pages retry with browser rendering. ATS signature diagnostic warnings logged when detected at runtime.
+- **Registry:** 21 sources reclassified (4 SmartRecruiters in Phase 3a, 15 custom-domain Teamtailor in Phase 3b), 2 duplicates removed (Phase 3a), 1 additional duplicate removed (Phase 3c — Lost Boys Interactive). 34 legitimate co-existing static+ATS entries kept.
+- **Keywords:** `CAREERS_URL_HINTS` expanded with 25+ non-English career terms (German, French, Spanish, Italian, Portuguese, Japanese, Korean, Chinese). `_LANDING_PAGE_SEGMENTS` expanded with European equivalents.
+
+**Verification:** 3215 tests pass across `tests/`, `tests/jobs_static/`, `tests/source_discovery/`. All repo guardrails green.
+
+**Known limitations remaining:**
+- Greenhouse, Lever, Workable HTML-signature detection not enabled (builder path-based fallthrough would produce garbage on custom domains — D3)
+- No dedicated runners for Jobvite, HRMOS, Comeet, Simplicant, GoHire (static adapter with new Playwright gates handles them)
+- Phase 7 architectural items parked (reclassification path, re-probing script, threshold reduction, probe diagnostics, ATS report)
+
 ## Implementation Status (2026-05-29)
 
-### Shipped (9 commits)
+### Shipped (11 commits)
 
 | Phase | Commits | Description |
 |-------|---------|-------------|
 | 1a–c | 3 | HTML-signature detection for Teamtailor, BambooHR, Workday, SmartRecruiters in discovery pipeline + HTML fallback on `infer_provider_adapter()` |
 | 2a–b | 2 | Independent `/jobs` path Playwright gate + ATS signature diagnostic warnings in static adapter |
 | 3a | 1 | 4 SmartRecruiters registry fixes (2 removed, 2 reclassified) |
+| 3b | 1 | 15 custom-domain Teamtailor sources reclassified (verified via webfetch) + 1 duplicate removed |
+| 3c | 1 | 1 true duplicate removed (Lost Boys Interactive on JazzHR domain); 34 legitimate co-existing entries kept |
 | 5b | 1 | Non-English career keywords (6 languages, 25+ terms across `CAREERS_URL_HINTS` and `_LANDING_PAGE_SEGMENTS`) |
 | 6a | 1 | Broader JS shell detection (SPA tokens alone trigger Playwright, not requiring text < 180) |
 | 6b+6c | 1 | Dead-listing browser retry in `_blocked_by_page_gate` + empty-page Playwright fallback in `_prepare_listing_htmls` |
@@ -30,13 +49,11 @@ Systematic fix to detect ATS-powered career sites on **custom domains** (e.g., `
 | D2 | Relaxed candidate gating (Phase 5c) | Closed — superseded by Phase 2a at correct architectural layer |
 | D3 | Builder hardening (Greenhouse/Lever/Workable) | Closed — superseded by embedded-URL extraction + Phase 2b diagnostics |
 
-### Remaining (lower priority)
+### Parked
 
-| Phase | Work | Effort | Type |
-|-------|------|--------|------|
-| 3b | Audit ~16 custom-domain static sources (manual web fetches) | ~1-2h | One-time manual verification |
-| 3c | Resolve 31 static duplicates in registry | ~1h | Manual registry review |
-| 7a–f | Architectural improvements (ATS feedback, re-probing, reclassification, threshold reduction, probe diagnostics, reporting) | ~6-8h | Code + architecture |
+| Phase | Work | Reason |
+|-------|------|--------|
+| 7a–f | Architectural improvements | Core systemic gaps closed by Phases 1-6. Phase 7 items are incremental polish (ATS feedback loop, re-probing script, reclassification path, threshold reduction, probe diagnostics, reporting) with no new coverage. Deferred until a concrete use case demands them. |
 
 ## Root Causes
 

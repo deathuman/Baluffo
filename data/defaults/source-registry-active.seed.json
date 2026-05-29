@@ -31250,68 +31250,6 @@
     "promotionReason": "weak_candidate"
   },
   {
-    "name": "Lost Boys Interactive (Sheet)",
-    "studio": "Lost Boys Interactive",
-    "company": "Lost Boys Interactive",
-    "adapter": "static",
-    "pages": [
-      "https://lostboysinteractive.applytojob.com/apply"
-    ],
-    "listing_url": "https://lostboysinteractive.applytojob.com/apply",
-    "nlPriority": false,
-    "discoveryMethod": "sheet_directory",
-    "discoveryStage": "sheet_directory",
-    "careersUrl": "https://lostboysinteractive.applytojob.com/apply",
-    "evidenceSource": "game_studios_sheet",
-    "evidenceTypes": [
-      "sheet_directory",
-      "sheet_row",
-      "sheet_roles_open_speculative"
-    ],
-    "evidenceScore": 18,
-    "weakSignal": true,
-    "sourceDirectory": "game_studios_sheet",
-    "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-    "sourceDirectoryEntryUrl": "https://lostboysinteractive.applytojob.com/apply",
-    "id": "static:listing_url:https://lostboysinteractive.applytojob.com/apply",
-    "discoveredAt": "2026-04-10T14:16:16.901582+00:00",
-    "score": 13,
-    "reasons": [
-      "evidence_signal",
-      "live_jobs_detected"
-    ],
-    "sampleCount": 4,
-    "jobsFound": 4,
-    "confidence": "medium",
-    "lastProbedAt": "2026-04-10T14:16:31.910101+00:00",
-    "deferred": false,
-    "candidateState": "live",
-    "rankScore": 17,
-    "rankReasons": [
-      "medium_confidence",
-      "jobs_found_bonus",
-      "evidence_rank_bonus",
-      "existing_registry_match"
-    ],
-    "promotionLane": "manual_review",
-    "approvedAt": "2026-04-10T14:16:16.901582+00:00",
-    "approvedBy": "registry_migration_v2",
-    "liveAt": "2026-04-10T14:16:16.901582+00:00",
-    "quarantinedAt": "",
-    "quarantineReason": "",
-    "deferCount": 0,
-    "firstDeferredAt": "",
-    "lastDeferredAt": "",
-    "registryState": "active",
-    "pendingReason": "",
-    "stateChangedAt": "2026-04-10T14:16:32.234071+00:00",
-    "stateChangedBy": "discovery_auto_approve",
-    "lastPromotedAt": "2026-04-10T14:16:32.234071+00:00",
-    "lastDemotedAt": "",
-    "enabledByDefault": true,
-    "promotionReason": "weak_candidate"
-  },
-  {
     "name": "Little Red Zombies (Sheet)",
     "studio": "Little Red Zombies",
     "company": "Little Red Zombies",

@@ -461,6 +461,7 @@ def test_index_routes_current_process_docs_only(repo_root: Path) -> None:
         "docs/archive/README.md",
         "docs/archive/admin-health-dashboard-console-closeout.md",
         "docs/archive/ai-modification-safety-improvements-plan.md",
+        "docs/archive/ats-custom-domain-detection-plan.md",
         "docs/archive/bridge-route-inventory-guardrail-plan.md",
         "docs/archive/cold-run-jobs-freshness-strategy-plan.md",
         "docs/archive/daily-trust-ux-strategy-plan.md",
