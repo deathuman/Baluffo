@@ -5,7 +5,7 @@
 > - **Canonical for:** wiki routing, doc discovery, and the default AI read path
 > - **Not canonical for:** payload details, route contracts, or subsystem implementation behavior
 > - **Then inspect:** [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`architecture-ai-map.md`](architecture-ai-map.md), and one matching contract or workflow doc
-> - **Last updated:** 2026-05-28
+> - **Last updated:** 2026-05-29
 
 Use this page as the wiki home. Start here, load the minimum active docs you need, and use git history for old cleanup/refactor details unless the task explicitly needs historical provenance.
 
@@ -75,6 +75,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`plans/post-0.2.0-desktop-runtime-ram-reduction-plan.md`](plans/post-0.2.0-desktop-runtime-ram-reduction-plan.md) | Plans / Follow-Ups | You are revisiting desktop runtime RAM reduction, packaged startup memory, or static site process consolidation after v0.2.0 |
 | [`plans/optional-playwright-browser-download-plan.md`](plans/optional-playwright-browser-download-plan.md) | Plans / Follow-Ups | You are moving Playwright browser binaries out of the portable ZIP or making packaged browser fallback an optional first-start download |
 | [`plans/cloakbrowser-enhanced-browser-fallback-ab-test-plan.md`](plans/cloakbrowser-enhanced-browser-fallback-ab-test-plan.md) | Plans / Follow-Ups | You are evaluating CloakBrowser as an optional enhanced browser fallback or measuring blocked/challenged career-page recovery |
+| [`plans/job-sanitization-plan-2026-05-18.md`](plans/job-sanitization-plan-2026-05-18.md) | Plans / Follow-Ups | You are continuing job sanitization work: P0-P1.6 complete; P2.0 (employer evidence frozenset), P2.1 (sector gate), and P2.2 (dedup guard) shipped 2026-05-29; plan is implementation-ready with 97% confidence |
 | [`snapshots/jobs-dead-source-evidence-2026-04-29.md`](snapshots/jobs-dead-source-evidence-2026-04-29.md) | Snapshots / Evidence | You are auditing the first evidence-backed physical deletion batch for dead jobs sources |
 | [`snapshots/jobs-source-family-evidence-2026-04-30.md`](snapshots/jobs-source-family-evidence-2026-04-30.md) | Snapshots / Evidence | You are choosing the next deletion-first jobs fetcher source-family slice |
 | [`snapshots/dedup-lifecycle-readiness-closure-2026-05-03.md`](snapshots/dedup-lifecycle-readiness-closure-2026-05-03.md) | Snapshots / Evidence | You are checking why the broad dedup lifecycle readiness plan closed without starting lifecycle UX |
@@ -138,6 +139,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | Triage refactoring or dead-code candidates | [`plans/initial_findings.md`](plans/initial_findings.md) | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`architecture-ai-map.md`](architecture-ai-map.md), [`testing.md`](testing.md) |
 | Validate provider/static source-policy workflow | [`source-policy-runbook.md`](source-policy-runbook.md) | [`scraping-pipeline.md`](scraping-pipeline.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md) |
 | Improve provider discovery coverage | [`plans/provider-discovery-coverage-gap-plan.md`](plans/provider-discovery-coverage-gap-plan.md) | [`scraping-pipeline.md`](scraping-pipeline.md), [`source-policy-runbook.md`](source-policy-runbook.md), [`adapter-plugin-inventory.md`](adapter-plugin-inventory.md) |
+| Continue job sanitization / filtering | [`plans/job-sanitization-plan-2026-05-18.md`](plans/job-sanitization-plan-2026-05-18.md) | [`scraping-pipeline.md`](scraping-pipeline.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`testing.md`](testing.md) |
 | Continue static plugin migration | [`archive/static-plugin-simple-runner-migration-plan.md`](archive/static-plugin-simple-runner-migration-plan.md) | [`adapter-plugin-inventory.md`](adapter-plugin-inventory.md), [`scraping-pipeline.md`](scraping-pipeline.md), [`testing.md`](testing.md) |
 | Review AI modification safety improvements | [`archive/ai-modification-safety-improvements-plan.md`](archive/ai-modification-safety-improvements-plan.md) | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`architecture-ai-map.md`](architecture-ai-map.md), [`admin-bridge-api.md`](admin-bridge-api.md), [`testing.md`](testing.md) |
 | Review completed bridge route inventory guardrail | [`archive/bridge-route-inventory-guardrail-plan.md`](archive/bridge-route-inventory-guardrail-plan.md) | [`admin-bridge-api.md`](admin-bridge-api.md), [`testing.md`](testing.md), [`../tools/repo_health/bridge_route_inventory.py`](../tools/repo_health/bridge_route_inventory.py) |
