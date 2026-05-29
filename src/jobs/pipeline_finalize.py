@@ -615,11 +615,13 @@ def finalize_pipeline_run(
         )
     )
 
-    dedup_stats["outputCount"] = len(deduped_rows)
     deduped_payload_rows = [row.to_dict() for row in deduped_rows]
-    deduped_payload_rows, sector_gate_dropped = _apply_sector_gate(
+    deduped_payload_rows, _sector_gate_dropped = _apply_sector_gate(
         deduped_payload_rows, source_reports
     )
+    dedup_stats["outputCount"] = len(deduped_payload_rows)
+    if _sector_gate_dropped:
+        dedup_stats["sectorGateFiltered"] = _sector_gate_dropped
     (
         location_quality_audit,
         sector_quality_audit,
