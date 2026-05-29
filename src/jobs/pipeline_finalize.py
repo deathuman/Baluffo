@@ -274,6 +274,25 @@ def _merge_source_health_report_payload(
     )
 
 
+def _record_sector_gate_loss(
+    source_reports: list[dict[str, Any]],
+    non_game_by_source: Counter[str],
+) -> None:
+    for report in source_reports:
+        if not isinstance(report, dict):
+            continue
+        loss = report.get("loss")
+        if not isinstance(loss, dict):
+            continue
+        source_name = clean_text(report.get("name"))
+        source_dropped = non_game_by_source.get(source_name, 0)
+        if source_dropped:
+            drop_reasons = loss.setdefault("canonicalDropReasons", {})
+            drop_reasons["sector_gate_filtered"] = (
+                int(drop_reasons.get("sector_gate_filtered") or 0) + source_dropped
+            )
+
+
 def _apply_sector_gate(
     deduped_payload_rows: list[dict[str, Any]],
     source_reports: list[dict[str, Any]],
@@ -293,19 +312,7 @@ def _apply_sector_gate(
                 non_game_by_source[source] += 1
     dropped = len(deduped_payload_rows) - len(game_rows)
     if dropped:
-        for report in source_reports:
-            if not isinstance(report, dict):
-                continue
-            loss = report.get("loss")
-            if not isinstance(loss, dict):
-                continue
-            source_name = clean_text(report.get("name"))
-            source_dropped = non_game_by_source.get(source_name, 0)
-            if source_dropped:
-                drop_reasons = loss.setdefault("canonicalDropReasons", {})
-                drop_reasons["sector_gate_filtered"] = (
-                    int(drop_reasons.get("sector_gate_filtered") or 0) + source_dropped
-                )
+        _record_sector_gate_loss(source_reports, non_game_by_source)
     return game_rows, dropped
 
 
