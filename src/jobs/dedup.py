@@ -877,14 +877,15 @@ def _find_sparse_merge_target(
         target=target,
         current_primary=primary,
     ):
-        _record_google_sheets_generic_role_guard_sample(
-            samples=google_sheets_generic_role_guard_samples,
-            counts=google_sheets_generic_role_guard_counts,
-            blocked_merge_reason="sparse_identity",
-            current=current,
-            target=target,
-        )
-        return None, "", True
+        if _is_google_sheets_row(target):
+            _record_google_sheets_generic_role_guard_sample(
+                samples=google_sheets_generic_role_guard_samples,
+                counts=google_sheets_generic_role_guard_counts,
+                blocked_merge_reason="sparse_identity",
+                current=current,
+                target=target,
+            )
+            return None, "", True
     if _has_meaningful_locations(target) and current_has_meaningful_locations:
         return None, "", False
     if _blocks_trusted_distinct_non_primary_merge(

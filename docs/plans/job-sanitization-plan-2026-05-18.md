@@ -1,6 +1,6 @@
 # Job Sanitization Plan — 2026-05-18
 
-> **Last updated:** 2026-05-29 — P3 investigation complete: 17 non-game employers added to close P3.0 escape paths (confidence 85% → 98%). P3.0 design refined as Layer 4. P3.1 resolved (leave as-is). P3.0 execution depends on P2.0 first. P2 summary: 8/8 code references verified against live source; 88/88 tests pass; both GS-only (6,028 jobs) and full-source (12,826 jobs) pipelines audited; all contamination categories mapped; bridge/frontend/contract impact assessed; P2 implementation order: P2.0 + P2.2 (parallel) → P2.1 (after P2.0)
+> **Last updated:** 2026-05-29 — Dedup sparse-identity guard fix: GS bucket-title rows merge into non-GS rows when normalized company+title matches (pre-existing quality test unblocked). P3 gap closure (17 terms) and investigation complete. P3.0 design refined (depends on P2.0). P3.1 resolved (leave as-is). P2 items shipped; 470 dedup/fetcher tests pass.
 
 Investigation into non-game-development job contamination in `jobs-unified.csv` and strategy for filtering.
 
@@ -20,7 +20,7 @@ Investigation into non-game-development job contamination in `jobs-unified.csv` 
 
 **17 terms added to `_GOOGLE_SHEETS_NON_GAME_EVIDENCE_TERMS`:** `kpn`, `sgs`, `rexel`, `wind river`, `unilever`, `scalable gmbh`, `turner & townsend`, `devoteam`, `cae`, `nike`, `axel springer`, `flywire`, `ramboll`, `trellix`, `pluralsight`, `spavia`, `portman dentex`.
 
-**Verification:** 109 google sheets/pipeline/dedup tests pass. One test fixture updated (Nike row correctly dropped).
+**Verification:** 110 google sheets/pipeline/dedup tests pass (quality test re-enabled). One test fixture updated (Nike row correctly dropped).
 
 **Updated confidence assessment:**
 | Item | Before | After |
@@ -29,6 +29,12 @@ Investigation into non-game-development job contamination in `jobs-unified.csv` 
 | P3.0 (company field) | 85% | **98%** |
 
 See P3.0 Gap Closure section below for full employer detail.
+
+### 2026-05-29 — Dedup sparse-identity guard fix: pre-existing quality test unblocked
+
+**Status:** `_find_sparse_merge_target` now bypasses `_blocks_google_sheets_generic_role_url_merge()` when the target is a non-Google-Sheets row. The guard's `if not _is_google_sheets_row(target): return True` branch (line 775-776) was overly aggressive — it blocked ALL merges where a GS row with a bucket-classified title collided with any non-GS target, even when the normalized company+title identity (sparse identity) confirmed the same job. Fix at `src/jobs/dedup.py:875`: guard only blocks when target IS also a GS row. When target is non-GS (static source/provider), the sparse identity match takes precedence. The meaningful-locations and trusted-distinct checks still apply.
+
+**Verification:** 110 quality/dedup/GS tests pass (124 dedup + 346 fetcher = 470). Test `test_deduplicate_jobs_merges_sparse_stellar_technical_artist_variant_into_richer_row` re-enabled. No dedup or pipeline test regression.
 
 ### 2026-05-29 — P3 investigation: plan updated with refined P3.0 design
 
@@ -1306,12 +1312,18 @@ Decide whether corporate roles at game companies (HR, accounting, legal, admin a
 
 **Problem.** Category P in the inventory (line 768-779): 125 rows (confirmed via 2026-05-29 fresh pipeline audit) show `company: "Unknown company"` with category-label titles instead of real job titles. These are REAL game jobs at Scopely, CDPR, ArenaNet, People Can Fly, Techland, Sony, Insomniac, etc. whose company name and title were corrupted by the google_sheets dedup merge. (Note: `company: "Unknown Worlds"` rows are a legitimate game studio and not affected.)
 
-**Root cause (validated against source):** `_blocks_google_sheets_generic_role_url_merge()` at `dedup.py:768-779` only guards collisions between TWO Google Sheets rows (line 774: both `current` and `target` must be `_is_google_sheets_row`). When a Google Sheets category-label row collides with a PROVIDER row (Greenhouse, Lever, etc.), the guard returns `False` and the merge proceeds — potentially replacing the provider row's real `title` and `company` with the Google Sheets category label and sheet-context company. Category P rows arise from exactly this cross-source merge scenario.
+**Root cause (validated against source):** When `_find_sparse_merge_target` and `_find_secondary_merge_target` were added, `_blocks_google_sheets_generic_role_url_merge()` at `dedup.py:768-785` was designed to block two types of dangerous merges:
+- GS↔GS collisions with different primary URLs where at least one row has a bucket title (lines 782-785)
+- GS↔non-GS collisions where the GS row has a bucket role title (lines 774-776)
+
+The GS↔non-GS block at line 775-776 was correct for the secondary-key path (same company, different role — weak evidence) but overly aggressive for the sparse-identity path (same normalized company+title — strong evidence). Fixed 2026-05-29: `_find_sparse_merge_target` now bypasses the guard when target is non-GS.
+
+Category P rows (125) were created before the P2 guard existed and reflect a separate issue: when a provider row arrives AFTER a GS row in processing order, `current` is the provider row and the guard returns `False` at line 780 (`not _is_google_sheets_row(current)` → True), allowing the merge. The merged row can inherit the GS bucket title. Pre-P2 guard, this also happened for [provider, GS] order.
 
 **Existing code context.**
 - `_is_google_sheets_row()` (line 246): identifies Google Sheets rows by source prefix.
 - `_has_sheet_role_bucket_title()` (line 268): expanded role-bucket detection covering category labels.
-- `_blocks_google_sheets_generic_role_url_merge()` (line 768): blocks merges between two Google Sheets rows with different primary URLs. **Does NOT handle cross-source (Google Sheets↔Provider) merges.**
+- `_blocks_google_sheets_generic_role_url_merge()` (line 768): blocks GS↔GS merges with different primary URLs (at least one bucket title) AND GS↔non-GS merges when GS row has bucket title. Fixed 2026-05-29: sparse-identity path bypasses the GS↔non-GS block when sparse identity matches.
 - `_record_google_sheets_generic_role_guard_sample()` (line 782): records guard impact samples for audit.
 
 **Implementation approach:**
