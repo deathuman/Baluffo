@@ -1534,6 +1534,35 @@ class StaticFetchRunner:
             self.ctx.emit_heartbeat()
 
     # mutation — modifies in-place state
+    def _try_playwright_fallback(
+        self,
+        html: str,
+        page_url: str,
+        timeout_s: int,
+        label: str,
+        condition: bool,
+    ) -> str:
+        if not (self.deps.try_playwright and condition and html):
+            return html
+        fallback_timeout_s = effective_timeout_for_remaining_budget(
+            timeout_s=max(1, timeout_s),
+            remaining_budget_s=self.ctx.remaining_budget_s(),
+        )
+        parsed_pre = parse_jobpostings_from_html(
+            html,
+            base_url=page_url,
+            fallback_company=self.ctx.company,
+            fallback_source_id_prefix=f"static:{self.source_name}",
+        )
+        if parsed_pre or fallback_timeout_s <= 0:
+            return html
+        html2, _ = self.deps.try_playwright(page_url, fallback_timeout_s)
+        self._log_playwright_fallback(page_url, label, html2)
+        if html2:
+            self.stage_state.increment_browser_fallbacks()
+            return html2
+        return html
+
     def _prepare_listing_htmls(self, page_url: str, result: dict[str, Any]) -> list[str]:
         listing_meta = self.stage_state.batch_meta.get(page_url) or {}
         self.stats["listing_fetch_ms"] += int(listing_meta.get("durationMs") or 0)
@@ -1544,42 +1573,21 @@ class StaticFetchRunner:
             self.stats["fetch_cache_hits"] += 1
         effective_timeout_s = int(listing_meta.get("timeoutS") or self.deps.timeout_s)
         html = str(result.get("text") or "")
-        if self.deps.try_playwright and html and detect_js_shell(html):
-            dynamic_listing_timeout_s = effective_timeout_for_remaining_budget(
-                timeout_s=max(1, effective_timeout_s),
-                remaining_budget_s=self.ctx.remaining_budget_s(),
-            )
-            parsed_pre = parse_jobpostings_from_html(
-                html,
-                base_url=page_url,
-                fallback_company=self.ctx.company,
-                fallback_source_id_prefix=f"static:{self.source_name}",
-            )
-            link_count = len(re.findall(r'(?is)<a[^>]+href=["\']([^"\']+)["\']', html))
-            if not parsed_pre and link_count < 3 and dynamic_listing_timeout_s > 0:
-                html2, _ = self.deps.try_playwright(page_url, dynamic_listing_timeout_s)
-                self._log_playwright_fallback(page_url, "js_shell", html2)
-                if html2:
-                    self.stage_state.increment_browser_fallbacks()
-                    html = html2
+        html = self._try_playwright_fallback(
+            html,
+            page_url,
+            effective_timeout_s,
+            "js_shell",
+            bool(html and detect_js_shell(html)),
+        )
         listing_path = urlparse(page_url).path or ""
-        if self.deps.try_playwright and html and "/jobs" in listing_path:
-            jobs_path_timeout_s = effective_timeout_for_remaining_budget(
-                timeout_s=max(1, effective_timeout_s),
-                remaining_budget_s=self.ctx.remaining_budget_s(),
-            )
-            parsed_pre = parse_jobpostings_from_html(
-                html,
-                base_url=page_url,
-                fallback_company=self.ctx.company,
-                fallback_source_id_prefix=f"static:{self.source_name}",
-            )
-            if not parsed_pre and jobs_path_timeout_s > 0:
-                html2, _ = self.deps.try_playwright(page_url, jobs_path_timeout_s)
-                self._log_playwright_fallback(page_url, "jobs_path", html2)
-                if html2:
-                    self.stage_state.increment_browser_fallbacks()
-                    html = html2
+        html = self._try_playwright_fallback(
+            html,
+            page_url,
+            effective_timeout_s,
+            "jobs_path",
+            bool(html and "/jobs" in listing_path),
+        )
         if html:
             html_lower = html.lower()
             for _adapter, _sig in _ATS_SIGNATURE_HINTS:
@@ -1590,23 +1598,13 @@ class StaticFetchRunner:
                         f"consider adapter reclassification"
                     )
                     break
-        if self.deps.try_playwright and html and _careers_landing_url(page_url):
-            empty_fallback_timeout_s = effective_timeout_for_remaining_budget(
-                timeout_s=max(1, effective_timeout_s),
-                remaining_budget_s=self.ctx.remaining_budget_s(),
-            )
-            parsed_pre = parse_jobpostings_from_html(
-                html,
-                base_url=page_url,
-                fallback_company=self.ctx.company,
-                fallback_source_id_prefix=f"static:{self.source_name}",
-            )
-            if not parsed_pre and empty_fallback_timeout_s > 0:
-                html2, _ = self.deps.try_playwright(page_url, empty_fallback_timeout_s)
-                self._log_playwright_fallback(page_url, "empty_page", html2)
-                if html2:
-                    self.stage_state.increment_browser_fallbacks()
-                    html = html2
+        html = self._try_playwright_fallback(
+            html,
+            page_url,
+            effective_timeout_s,
+            "empty_page",
+            bool(html and _careers_landing_url(page_url)),
+        )
         listing_htmls = [html]
         try:
             dynamic_listing_timeout_s = effective_timeout_for_remaining_budget(
