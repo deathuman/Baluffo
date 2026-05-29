@@ -56,6 +56,18 @@ from .static_runtime import StaticSourceContext
 _EXTERNAL_DETAIL_FANOUT_HOST_THRESHOLD = 2
 _EXTERNAL_DETAIL_FANOUT_LINK_CAP = 8
 
+# (adapter_name, html_substring) pairs for diagnostic warnings
+# when a static source's page HTML contains an ATS signature.
+_ATS_SIGNATURE_HINTS: list[tuple[str, str]] = [
+    ("teamtailor", "teamtailor"),
+    ("greenhouse", "greenhouse.io"),
+    ("bamboohr", "bamboohr"),
+    ("workday", "myworkdayjobs"),
+    ("smartrecruiters", "smartrecruiters"),
+    ("lever", "lever.co"),
+    ("workable", "workable"),
+]
+
 
 # pure — budget arithmetic + TimeoutError gate
 def _effective_timeout_or_raise(
@@ -1535,6 +1547,16 @@ class StaticFetchRunner:
                 if html2:
                     self.stage_state.increment_browser_fallbacks()
                     html = html2
+        if html:
+            html_lower = html.lower()
+            for _adapter, _sig in _ATS_SIGNATURE_HINTS:
+                if _sig in html_lower:
+                    self.ctx.warnings.append(
+                        f"static:{self.source_name}:{page_url}: "
+                        f"HTML contains {_adapter} signature — "
+                        f"consider adapter reclassification"
+                    )
+                    break
         listing_htmls = [html]
         try:
             dynamic_listing_timeout_s = effective_timeout_for_remaining_budget(
