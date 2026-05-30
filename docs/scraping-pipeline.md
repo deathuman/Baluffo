@@ -88,6 +88,7 @@ See also: `docs/DATA_CONTRACT.md` for report shapes and `docs/architecture-ai-ma
 - Recommended (full fetcher): From repo root, set `PYTHONPATH` to the repo root and run the jobs fetcher module:
   `python src/jobs_fetcher.py` (optionally with `--ignore-circuit-breaker`). This runs all default source loaders including static and scrapy_static.
 - npm script: `npm run dev:pipeline` runs the current `src/jobs/pipeline.py` entrypoint with `PYTHONPATH` set to the current directory so that `src` resolves; runtime setup, source execution, task-state helpers, and late-stage report assembly are internal jobs-fetcher implementation details that may be collapsed when the replacement keeps the same active fetch behavior.
+- Shipped-artifact gate: after a full run, validate the generated feed with `python scripts/jobs_artifact_quality_gate.py <output-dir> --json`. The gate blocks exact source-category titles such as `Art` and `Design`, blocks `Unknown company` rows when strong company evidence still exists on the resolved link or same Grackle bundle, and downgrades generic-host survivors to warnings with examples.
 
 ## 5) Runtime evidence soak report
 

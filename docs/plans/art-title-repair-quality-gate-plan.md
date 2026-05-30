@@ -1,6 +1,6 @@
 # Google Sheets Title Column, Redirect Company Repair, and Category Gate Plan
 
-> - **Status:** Active plan, parser/redirect/company hardening implemented on 2026-05-30; final shipped-artifact quality gate and full live-pipeline validation still pending
+> - **Status:** Active follow-up plan, parser/redirect/company hardening implemented and validated on 2026-05-30; shipped-artifact gate tooling and fresh live-pipeline validation also completed on 2026-05-30, with remaining blockers now isolated to static-source category-page rows
 > - **Use this when:** Fixing misleading Google Sheets category titles such as `Art`, Grackle redirect rows with `Unknown company`, or related exact source-category leaks.
 > - **Canonical for:** The root cause that the default Google Sheets `gviz` CSV can make `Job Category` look like the title column, the redirect-cache loophole that can preserve unresolved Grackle URLs, and the product policy that likely-live jobs must not be dropped only because title or company extraction failed.
 > - **Not canonical for:** Broad company-name inference without redirect/provider evidence, public job payload schema changes, or frontend display changes.
@@ -26,6 +26,7 @@ Drop-only cleanup is still rejected. Baluffo is a job-finding app, so a likely-l
 - Parsing the same live default sheet through `gviz` produced many category titles: `Art: 210`, `Design: 329`, `Animation: 105`, `Product-management: 906`.
 - Parsing the direct `export?format=csv` endpoint for the same sheet preserved the real header row and produced `Art: 0`, `Design: 0`, `Animation: 0`, `Product-management: 0`.
 - Exact `Animator` is not the same class of bug in the current evidence. Exact `Animator` had 7 rows across mixed sources, and the German Games Industry sheet has at least one real `Job` cell whose title is exactly `Animator`. The broader category leak there is `Animation`, not `Animator`.
+- A fresh live pipeline run to `_out/art-title-quality-gate-20260530-live` on 2026-05-30 produced 39,147 final rows. The shipped-artifact gate found zero Google Sheets exact category-title leaks, zero `Unknown company` rows with strong redirect/provider company evidence, 154 weak-evidence `Unknown company` Grackle survivors, and 215 exact category-title blockers that all came from static sources (`214 static_source::...`, `1 scrapy_static_sources`).
 - One non-Google-Sheets exact `Art` example came from a static Neon Giant / Teamtailor-shaped row with listing URL `https://www.neongiant.se/en/careers` and application URL `https://jobs.neongiant.se/jobs/1518164-rockstar/applications/new`; the detail page exposes the specific title `Rockstar`.
 - The local final artifact has 204 rows with `Unknown company` and Grackle redirect URLs; all 204 are from the default `google_sheets` source.
 - Of those 204 Grackle/`Unknown company` rows, 140 also have category-like titles such as `Product-management`, `Game-design`, `Game-production`, `Vfx`, `Technical-art`, `Animation`, `Gameplay`, `Localization`, `Rendering`, `Social-media`, `Live-ops`, `Ui-art`, `Environment-art`, or `Art`.
@@ -185,4 +186,4 @@ rg -n "Google Sheets Title|Job Category|gviz|Grackle|Unknown company|quality gat
 - Dropping proven dead or no-openings URLs is acceptable and remains separate from title-extraction failure.
 - Generic company inference beyond redirect/provider/sibling evidence is out of scope.
 - Parser, redirect-cache hardening, redirect-backed provider company repair, and same-opening title-preference implementation landed on 2026-05-30 in `src/jobs/adapters/community/google_sheets.py`, `src/jobs/transport.py`, `src/jobs/canonicalize.py`, and `src/jobs/dedup.py`.
-- Final shipped-artifact quality gate enforcement and a fresh live-source pipeline validation remain follow-up work.
+- Final shipped-artifact quality gate tooling and a fresh live-source pipeline validation were completed on 2026-05-30. The remaining follow-up is static-source cleanup for exact category-page titles such as `Legal`, `Community`, `Marketing`, `Account`, `QA`, `Audio`, `Research`, `Security`, `Engineering`, `Finance`, and `Web`.
