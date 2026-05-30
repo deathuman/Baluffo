@@ -237,11 +237,15 @@ class PooledRedirectResolver:
                     continue
                 if not is_supported_redirect_url(normalized_key):
                     continue
+                if normalized_key == normalized_value:
+                    continue
                 self._cache[normalized_key] = normalized_value
 
     def snapshot_cache(self) -> dict[str, str]:
         with self._lock:
-            return dict(self._cache)
+            return {
+                key: value for key, value in self._cache.items() if key and value and key != value
+            }
 
     def close(self) -> None:
         client = self._client

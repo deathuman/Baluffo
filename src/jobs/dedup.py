@@ -340,6 +340,20 @@ def company_preference_score(job: CanonicalJob | dict[str, Any]) -> int:
     return 2
 
 
+def _company_display_quality(value: Any) -> int:
+    company = clean_text(value)
+    if not company:
+        return 0
+    if norm_text(company) in {norm_text(common_config.UNKNOWN_COMPANY_LABEL), "unknown"}:
+        return 1
+    score = 10
+    if " " in company:
+        score += 1
+    if re.search(r"[A-Za-z][A-Za-z\s-]*\d+$", company):
+        score -= 3
+    return score
+
+
 def choose_base_record(
     left: CanonicalJob, right: CanonicalJob
 ) -> tuple[CanonicalJob, CanonicalJob]:
@@ -398,6 +412,8 @@ def _animation_title_family(value: Any) -> set[str]:
 def _is_more_specific_same_family_title(current_title: Any, candidate_title: Any) -> bool:
     if norm_text(current_title) == norm_text(candidate_title):
         return False
+    if not _is_repairable_broad_sheet_title(current_title):
+        return False
     current_family = _animation_title_family(current_title)
     if not current_family or not current_family & _animation_title_family(candidate_title):
         return False
@@ -412,8 +428,24 @@ def _is_more_specific_same_family_title(current_title: Any, candidate_title: Any
     return bool(candidate_gain & _SHEET_SPECIFIC_TITLE_TOKENS)
 
 
+def _is_more_specific_same_opening_title(current_title: Any, candidate_title: Any) -> bool:
+    if norm_text(current_title) == norm_text(candidate_title):
+        return False
+    current_identity = _normalize_title_identity(current_title) or clean_text(current_title)
+    candidate_identity = _normalize_title_identity(candidate_title) or clean_text(candidate_title)
+    if not current_identity or not candidate_identity:
+        return False
+    if not looks_like_job_title_candidate(candidate_identity):
+        return False
+    current_tokens = _title_tokens(current_identity)
+    candidate_tokens = _title_tokens(candidate_identity)
+    if len(candidate_tokens) <= len(current_tokens):
+        return False
+    return set(current_tokens).issubset(set(candidate_tokens))
+
+
 def _prefer_specific_title(merged: dict[str, Any], other_dict: dict[str, Any]) -> None:
-    if not _is_google_sheets_row(merged):
+    if not (_is_google_sheets_row(merged) or _is_google_sheets_row(other_dict)):
         return
     if fingerprint_url(merged.get("jobLink")) != fingerprint_url(other_dict.get("jobLink")):
         return
@@ -421,14 +453,19 @@ def _prefer_specific_title(merged: dict[str, Any], other_dict: dict[str, Any]) -
     candidate_title = clean_text(other_dict.get("title"))
     if not current_title or not candidate_title:
         return
-    if not _is_repairable_broad_sheet_title(current_title):
-        return
-    if _is_more_specific_same_family_title(current_title, candidate_title):
+    if _is_more_specific_same_family_title(
+        current_title, candidate_title
+    ) or _is_more_specific_same_opening_title(current_title, candidate_title):
         merged["title"] = candidate_title
 
 
 def _prefer_company_and_posted_at(merged: dict[str, Any], other_dict: dict[str, Any]) -> None:
     if company_preference_score(other_dict) > company_preference_score(merged):
+        merged["company"] = clean_text(other_dict.get("company"))
+    elif company_preference_score(other_dict) == company_preference_score(merged) and (
+        _company_display_quality(other_dict.get("company"))
+        > _company_display_quality(merged.get("company"))
+    ):
         merged["company"] = clean_text(other_dict.get("company"))
     if posted_ts(other_dict.get("postedAt")) > posted_ts(merged.get("postedAt")):
         merged["postedAt"] = to_iso(other_dict.get("postedAt"))

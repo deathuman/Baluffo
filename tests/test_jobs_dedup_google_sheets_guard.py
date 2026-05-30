@@ -178,6 +178,46 @@ def test_deduplicate_jobs_does_not_replace_qualified_animation_bucket_with_later
     assert rows[0].title == "Technical Animator"
 
 
+def test_deduplicate_jobs_prefers_more_specific_same_opening_title_for_resolved_sheet_row() -> None:
+    resolved_sheet_row = jf.canonicalize_job(
+        {
+            "title": "Senior Design Director",
+            "company": "Unknown company",
+            "city": "Los Angeles",
+            "country": "United States",
+            "locations": [{"city": "Los Angeles", "country": "United States"}],
+            "jobLink": "https://believer.gg/jobs/7f038142-b3aa-4562-9578-2237d4b2d88a",
+            "sector": "Tech",
+            "sourceJobId": "sheet-32",
+        },
+        source="google_sheets",
+        fetched_at="2026-03-20T00:00:00Z",
+    )
+    sibling = jf.canonicalize_job(
+        {
+            "title": "Design Director",
+            "company": "Believer Entertainment",
+            "city": "Los Angeles",
+            "country": "United States",
+            "locations": [{"city": "Los Angeles", "country": "United States"}],
+            "jobLink": "https://believer.gg/jobs/7f038142-b3aa-4562-9578-2237d4b2d88a",
+            "sector": "Tech",
+            "sourceJobId": "sheet-2534",
+        },
+        source="google_sheets_1er2oaxo",
+        fetched_at="2026-03-20T00:00:00Z",
+    )
+    assert resolved_sheet_row is not None
+    assert sibling is not None
+
+    rows, stats = jf.deduplicate_jobs([sibling, resolved_sheet_row])
+
+    assert int(stats["outputCount"]) == 1
+    assert int(stats["mergedCount"]) == 1
+    assert rows[0].title == "Senior Design Director"
+    assert rows[0].company == "Believer Entertainment"
+
+
 def test_deduplicate_jobs_still_merges_google_sheets_generic_role_bucket_same_url() -> None:
     first = _google_sheets_job(
         title="Animator",

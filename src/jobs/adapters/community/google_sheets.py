@@ -45,9 +45,9 @@ def google_sheet_candidate_urls(sheet_id: str, gid: str) -> list[str]:
     )
     pub_csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/pub?output=csv"
     return [
+        csv_url,
         gviz_csv_url,
         pub_csv_url,
-        csv_url,
         f"https://api.allorigins.win/raw?url={quote(csv_url, safe='')}",
         f"https://api.allorigins.win/raw?url={quote(gviz_csv_url, safe='')}",
     ]
@@ -87,6 +87,67 @@ def find_company_column(headers: Sequence[str]) -> int:
             or "organization" in header
             or "organisation" in header
         ) and not any(part in header for part in ("type", "category", "sector", "industry")):
+            return idx
+    return -1
+
+
+_GOOGLE_SHEETS_TITLE_EXACT_HEADERS = (
+    "title",
+    "job title",
+    "position title",
+    "role title",
+)
+_GOOGLE_SHEETS_TITLE_EXCLUDED_TOKENS = frozenset(
+    {
+        "category",
+        "categories",
+        "company",
+        "contract",
+        "country",
+        "city",
+        "department",
+        "discipline",
+        "employment",
+        "function",
+        "industry",
+        "level",
+        "link",
+        "location",
+        "postal",
+        "remote",
+        "sector",
+        "source",
+        "status",
+        "type",
+        "work",
+    }
+)
+
+
+def _is_google_sheets_excluded_title_header(header: str) -> bool:
+    tokens = set(norm_text(header).split())
+    return bool(tokens & _GOOGLE_SHEETS_TITLE_EXCLUDED_TOKENS)
+
+
+def find_title_column(headers: Sequence[str]) -> int:
+    normalized = [norm_text(header) for header in headers]
+    for name in _GOOGLE_SHEETS_TITLE_EXACT_HEADERS:
+        needle = norm_text(name)
+        if needle in normalized:
+            return normalized.index(needle)
+    for idx, header in enumerate(normalized):
+        if _is_google_sheets_excluded_title_header(header):
+            continue
+        if header.endswith(" title") or " title " in header:
+            return idx
+    for exact_name in ("job", "role", "position"):
+        if exact_name in normalized:
+            return normalized.index(exact_name)
+    for idx, header in enumerate(normalized):
+        if _is_google_sheets_excluded_title_header(header):
+            continue
+        header_tokens = set(header.split())
+        if header_tokens & {"job", "jobs", "role", "roles", "position", "positions"}:
             return idx
     return -1
 
@@ -227,16 +288,8 @@ def _google_sheets_header_index(rows: list[list[str]]) -> int:
         normalized = [norm_text(cell) for cell in row if norm_text(cell)]
         if not normalized:
             continue
-        has_title = any(
-            token in header
-            for header in normalized
-            for token in ("title", "role", "job", "position")
-        )
-        has_company = any(
-            token in header
-            for header in normalized
-            for token in ("company", "studio", "employer", "organization", "organisation")
-        )
+        has_title = find_title_column(row) >= 0
+        has_company = find_company_column(row) >= 0
         has_location = (
             "city" in normalized
             or "country" in normalized
@@ -250,9 +303,7 @@ def _google_sheets_header_index(rows: list[list[str]]) -> int:
 
 def _google_sheets_column_indexes(headers: Sequence[str]) -> dict[str, Any]:
     company_idx = find_company_column(headers)
-    title_idx = find_column_index(
-        headers, ["title", "role", "job", "position"], ["title", "role", "job", "position"]
-    )
+    title_idx = find_title_column(headers)
     return {
         "company": company_idx,
         "companyCandidates": company_name_candidate_indexes(headers, company_idx),

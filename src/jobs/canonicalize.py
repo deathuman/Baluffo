@@ -29,6 +29,7 @@ from src.jobs.common.heuristics import (
 from src.jobs.common.parsing import normalize_contract_type
 from src.jobs.common.url import is_supported_redirect_url
 from src.jobs.interfaces import JobProcessor
+from src.jobs.job_link_company import company_from_job_link
 from src.jobs.models import CanonicalJob, RawJob
 from src.jobs.normalizers import normalize_country, normalize_sector, normalize_work_type
 from src.jobs.page_gating import looks_like_source_specific_static_noise_row
@@ -1746,6 +1747,25 @@ def _resolve_job_link(
     return normalized_link, clean_text(raw.get("jobLink"))
 
 
+def _repair_google_sheets_company_from_resolved_link(
+    *,
+    source: str,
+    company: str,
+    normalized_link: str,
+) -> str:
+    if not clean_text(source).startswith("google_sheets"):
+        return company
+    if norm_text(company) not in {norm_text(UNKNOWN_COMPANY_LABEL), "unknown"}:
+        return company
+    resolved_company = normalize_company_value(company_from_job_link(normalized_link))
+    if not resolved_company or norm_text(resolved_company) in {
+        norm_text(UNKNOWN_COMPANY_LABEL),
+        "unknown",
+    }:
+        return company
+    return resolved_company
+
+
 def _normalize_source_bundle(value: Any) -> list[dict[str, Any]]:
     entries = value
     if isinstance(entries, str):
@@ -2099,6 +2119,11 @@ def canonicalize_job_with_reason(
     )
     if not normalized_link:
         return None, "missing_job_link"
+    company = _repair_google_sheets_company_from_resolved_link(
+        source=source,
+        company=company,
+        normalized_link=normalized_link,
+    )
     if env_flag("BALUFFO_CANONICAL_STRICT_URL", DEFAULT_CANONICAL_STRICT_URL) and raw_link:
         if not normalized_link:
             return None, "invalid_url"

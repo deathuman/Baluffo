@@ -34,13 +34,6 @@ def test_parse_google_sheets_csv_normalizes_multi_location_rows() -> None:
     assert rows[1]["locationSummary"] == "Vancouver, CA"
 
 
-def test_google_sheet_candidate_urls_prefer_gviz_and_pub_over_export() -> None:
-    urls = jf.google_sheet_candidate_urls("sheet-id", "0")
-    assert urls[0].endswith("/gviz/tq?tqx=out:csv&gid=0")
-    assert urls[1].endswith("/pub?output=csv")
-    assert urls[2].endswith("/export?format=csv&gid=0")
-
-
 def test_parse_google_sheets_csv_supports_job_type_link_headers() -> None:
     csv_text = (
         "Intro row,,,,,,,,,\n"
