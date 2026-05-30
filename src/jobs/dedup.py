@@ -701,7 +701,7 @@ def _merge_records_with_source_bundle_state(
     location_entries: list[dict[str, Any]],
     placeholder_location_entries: list[dict[str, Any]],
     location_keys: set[str],
-) -> tuple[CanonicalJob, int]:
+) -> tuple[dict[str, Any], int]:
     base, other = choose_base_record(existing, candidate)
     merged = dict(base.to_dict())
     other_dict = other.to_dict()
@@ -716,7 +716,6 @@ def _merge_records_with_source_bundle_state(
         count=source_bundle_count,
         incoming=candidate_dict,
     )
-    merged["sourceBundle"] = _source_bundle_working_sample(source_bundle)
     merged["sourceBundleCount"] = source_bundle_count
     _extend_location_state(
         location_entries=location_entries,
@@ -724,15 +723,12 @@ def _merge_records_with_source_bundle_state(
         location_keys=location_keys,
         incoming=candidate_dict,
     )
-    _apply_location_state_sample(
-        merged=merged,
-        location_entries=location_entries,
-        placeholder_location_entries=placeholder_location_entries,
-    )
+    merged["sourceBundle"] = []
+    merged["locations"] = []
 
     merged["qualityScore"] = compute_quality_score(merged)
     merged["focusScore"] = compute_focus_score(merged)
-    return CanonicalJob.from_mapping(merged), source_bundle_count
+    return merged, source_bundle_count
 
 
 def _is_unknown_company(job: dict[str, Any]) -> bool:
@@ -1366,7 +1362,7 @@ def _merge_into_target(
     placeholder_location_entries_by_idx: list[list[dict[str, Any]]],
     location_keys_by_idx: list[set[str]],
 ) -> None:
-    merged, source_bundle_count = _merge_records_with_source_bundle_state(
+    merged_payload, source_bundle_count = _merge_records_with_source_bundle_state(
         existing=merged_rows[target_idx],
         candidate=current,
         source_bundle=source_bundles_by_idx[target_idx],
@@ -1377,7 +1373,7 @@ def _merge_into_target(
         location_keys=location_keys_by_idx[target_idx],
     )
     source_bundle_counts_by_idx[target_idx] = source_bundle_count
-    merged_payload = merged.to_dict()
+    merged = CanonicalJob.from_mapping(merged_payload)
     primary = fingerprint_url(merged_payload.get("jobLink"))
     secondary = dedup_secondary_key(merged)
     merged_social_key = _social_key(merged_payload)

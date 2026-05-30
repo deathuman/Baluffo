@@ -75,6 +75,43 @@ def test_registry_conflicts_prefers_career_source_over_stale_homepage_alias() ->
     assert automation["targetIds"] == ["static:listing_url:https://10chambers.com"]
 
 
+def test_registry_conflicts_prefers_provider_career_source_over_stale_homepage_alias() -> None:
+    state = {
+        "active": [
+            {
+                "id": "teamtailor:listing_url:https://careers.10chambers.com/jobs",
+                "name": "10 Chambers (Sheet)",
+                "studio": "10 Chambers",
+                "adapter": "teamtailor",
+                "registryState": "active",
+                "jobsFound": 0,
+                "rankScore": 51,
+                "score": 36,
+            },
+            {
+                "id": "static:listing_url:https://10chambers.com",
+                "name": "10 Chambers (GameDevMap)",
+                "studio": "10 Chambers",
+                "adapter": "static",
+                "registryState": "active",
+                "jobsFound": 2,
+                "rankScore": 35,
+                "score": 22,
+            },
+        ],
+        "pending": [],
+        "rejected": [],
+    }
+
+    card = derive_registry_conflict_queue(state)["conflicts"][0]
+
+    assert card["winner"]["id"] == "teamtailor:listing_url:https://careers.10chambers.com/jobs"
+    automation = card["safeAutomation"]
+    assert automation["eligible"] is True
+    assert automation["action"] == "auto_demote_provider_static_weaker_source"
+    assert automation["targetIds"] == ["static:listing_url:https://10chambers.com"]
+
+
 def test_registry_conflicts_safe_automation_skips_broad_same_host_listing_variant() -> None:
     state = {
         "active": [

@@ -1010,6 +1010,14 @@ def process_detail_html(
                 default_path_tokens=default_path_tokens,
                 default_query_keys=default_query_keys,
             )
+            concrete_fallback_title = bool(
+                page_title
+                and not category_repair_needed
+                and not static_container_detail_url
+                and not looks_like_category_container_url(detail)
+                and not has_static_container_artifact_evidence(page_title, detail)
+                and looks_like_job_title_candidate(page_title)
+            )
             listing_like = bool(
                 nested_detail_links
                 or static_container_detail_url
@@ -1017,7 +1025,23 @@ def process_detail_html(
                 or gate_reason == "job_listing_anchors"
                 or (category_repair_needed and job_like)
             )
-            if listing_like:
+            if concrete_fallback_title and job_like:
+                nested_detail_links = []
+                rows, rejected_classification, rejected_example = _fallback_detail_rows(
+                    detail=detail,
+                    detail_title=detail_title,
+                    detail_html=detail_html,
+                    company=company,
+                    source_name=source_name,
+                    source=source,
+                    ignored_link_titles=ignored_link_titles,
+                    apply_target_url=apply_target_url,
+                    inferred_city=inferred_city,
+                    inferred_country=inferred_country,
+                    inferred_work_type=inferred_work_type,
+                    inferred_contract_type=inferred_contract_type,
+                )
+            elif listing_like:
                 rejected_classification = (
                     "dead_listing_page"
                     if gate_reason == "dead_listing_page"

@@ -154,9 +154,7 @@ def _row_urls(row: dict[str, Any]) -> list[str]:
     return urls
 
 
-def _static_url_host_paths(row: dict[str, Any]) -> set[tuple[str, str]]:
-    if str(row.get("adapter") or "").strip().lower() != "static":
-        return set()
+def _source_url_host_paths(row: dict[str, Any]) -> set[tuple[str, str]]:
     host_paths: set[tuple[str, str]] = set()
     for url in _row_urls(row):
         parsed = urlparse(url)
@@ -166,6 +164,12 @@ def _static_url_host_paths(row: dict[str, Any]) -> set[tuple[str, str]]:
         path = parsed.path.strip().lower().rstrip("/") or "/"
         host_paths.add((host, path))
     return host_paths
+
+
+def _static_url_host_paths(row: dict[str, Any]) -> set[tuple[str, str]]:
+    if str(row.get("adapter") or "").strip().lower() != "static":
+        return set()
+    return _source_url_host_paths(row)
 
 
 def _family_tokens(family_key: str) -> set[str]:
@@ -232,7 +236,7 @@ def _is_homepage_static_alias_of_career_source(
         host_path
         for candidate in family_rows
         if candidate is not row
-        for host_path in _static_url_host_paths(candidate)
+        for host_path in _source_url_host_paths(candidate)
         if _is_careerish_path(host_path[1])
     ]
     return any(
@@ -247,7 +251,7 @@ def _is_homepage_static_alias_of_career_source(
 def _is_career_static_alias_of_homepage_source(
     row: dict[str, Any], family_rows: list[dict[str, Any]], family_key: str
 ) -> bool:
-    row_host_paths = _static_url_host_paths(row)
+    row_host_paths = _source_url_host_paths(row)
     if not row_host_paths or not any(_is_careerish_path(path) for _host, path in row_host_paths):
         return False
     homepage_host_paths = [
@@ -269,10 +273,6 @@ def _is_career_static_alias_of_homepage_source(
 def _static_destination_preference(
     row: dict[str, Any], family_rows: list[dict[str, Any]], family_key: str
 ) -> int:
-    if any(
-        str(candidate.get("adapter") or "").strip().lower() != "static" for candidate in family_rows
-    ):
-        return 0
     if _is_career_static_alias_of_homepage_source(row, family_rows, family_key):
         return 1
     if _is_homepage_static_alias_of_career_source(row, family_rows, family_key):

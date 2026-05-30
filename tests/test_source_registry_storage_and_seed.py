@@ -173,7 +173,8 @@ def test_default_ten_chambers_seed_keeps_valid_empty_careers_source_over_homepag
         Path("data/defaults/source-registry-active.seed.json").read_text(encoding="utf-8")
     )
     rows_by_id = {str(row.get("id") or ""): row for row in active_rows}
-    careers = rows_by_id["static:listing_url:https://careers.10chambers.com/jobs"]
+    careers_source_id = "teamtailor:listing_url:https://careers.10chambers.com/jobs"
+    careers = rows_by_id[careers_source_id]
     stale_homepage = {
         "id": "static:listing_url:https://10chambers.com",
         "name": "10 Chambers (GameDevMap)",
@@ -194,6 +195,6 @@ def test_default_ten_chambers_seed_keeps_valid_empty_careers_source_over_homepag
     )
     conflict = payload["conflicts"][0]
 
-    assert conflict["winner"]["id"] == "static:listing_url:https://careers.10chambers.com/jobs"
+    assert conflict["winner"]["id"] == careers_source_id
     assert conflict["safeAutomation"]["eligible"] is True
     assert conflict["safeAutomation"]["targetIds"] == ["static:listing_url:https://10chambers.com"]

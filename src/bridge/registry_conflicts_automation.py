@@ -732,19 +732,50 @@ def _provider_static_shape_blockers(
     return blocked
 
 
+def _is_provider_career_source_homepage_static_alias(
+    provider: dict[str, Any], static: dict[str, Any], family_key: str
+) -> bool:
+    if not _is_provider_row(provider) or not _is_static_row(static):
+        return False
+    return _has_homepage_to_career_site_path(
+        family_key=family_key,
+        winner_host_paths=_static_url_host_paths(provider),
+        loser_host_paths=_static_url_host_paths(static),
+    )
+
+
+def _provider_static_target_sort_key(row: dict[str, Any]) -> tuple[int, str]:
+    return (-_row_jobs_evidence(row), _row_identity(row))
+
+
 def _provider_static_target_analysis(
-    static_rows: list[dict[str, Any]], winner_jobs: int | None
+    static_rows: list[dict[str, Any]],
+    winner_jobs: int | None,
+    *,
+    provider: dict[str, Any],
+    family_key: str,
+    sort_by_evidence: bool = False,
 ) -> tuple[list[str], list[int], list[str]]:
     target_ids: list[str] = []
     static_job_counts: list[int] = []
     blocked: list[str] = []
-    for static in static_rows:
+    target_rows = (
+        sorted(static_rows, key=_provider_static_target_sort_key)
+        if sort_by_evidence
+        else static_rows
+    )
+    for static in target_rows:
         loser_jobs = _jobs_found_count(static)
         if loser_jobs is None:
             blocked.append("static_missing_jobs_found")
             continue
         static_job_counts.append(loser_jobs)
-        if winner_jobs is not None and loser_jobs > winner_jobs:
+        homepage_alias = _is_provider_career_source_homepage_static_alias(
+            provider,
+            static,
+            family_key,
+        )
+        if winner_jobs is not None and loser_jobs > winner_jobs and not homepage_alias:
             blocked.append("static_jobs_higher_than_provider")
             continue
         target_id = _row_identity(static)
@@ -768,17 +799,23 @@ def _analyze_provider_static_automation(
     provider = provider_rows[0] if len(provider_rows) == 1 else winner
     blocked = _provider_static_shape_blockers(rows, provider_rows, static_rows)
     winner_jobs = _jobs_found_count(provider)
+    homepage_alias_mode = any(
+        _is_provider_career_source_homepage_static_alias(provider, static, family_key)
+        for static in static_rows
+    )
 
     if not _is_provider_row(provider):
         blocked.append("winner_must_be_provider")
     if winner_jobs is None:
         blocked.append("winner_missing_jobs_found")
-    elif winner_jobs <= 0:
+    elif winner_jobs <= 0 and not homepage_alias_mode:
         blocked.append("winner_has_no_jobs_found")
 
     target_ids, static_job_counts, target_blockers = _provider_static_target_analysis(
         static_rows,
         winner_jobs,
+        provider=provider,
+        family_key=family_key,
     )
     blocked.extend(target_blockers)
 
@@ -792,12 +829,19 @@ def _analyze_provider_static_automation(
         if len(static_job_counts) == 1
         else ", ".join(str(count) for count in static_job_counts)
     )
-    return _eligible_multi_automation(
-        target_ids,
-        (
+    if homepage_alias_mode:
+        reason = (
+            f"{family_key} has an active provider careers source and static homepage "
+            f"alias source(s) with {static_count_text} stale job count evidence."
+        )
+    else:
+        reason = (
             f"{family_key} has an active provider source with {winner_jobs} jobs and "
             f"equal-or-lower-yield active static source(s) with {static_count_text} jobs."
-        ),
+        )
+    return _eligible_multi_automation(
+        target_ids,
+        reason,
         action=SAFE_AUTO_DEMOTE_PROVIDER_STATIC_ACTION,
         label=SAFE_AUTO_DEMOTE_PROVIDER_STATIC_LABEL,
     )
@@ -896,6 +940,9 @@ def _analyze_provider_redirect_static_automation(
     static_targets, static_job_counts, target_blockers = _provider_static_target_analysis(
         static_rows,
         provider_jobs,
+        provider=provider,
+        family_key=family_key,
+        sort_by_evidence=True,
     )
     blocked.extend(target_blockers)
     target_ids = [*provider_targets, *static_targets]
@@ -1421,7 +1468,11 @@ def _analyze_safe_automation(
         return static_result
     if any(_row_state(row) == "pending" and _is_provider_like_row(row) for row in rows):
         return pending_provider_result
-    if _is_provider_row(winner) and any(_is_static_row(row) for row in losers):
+    if (
+        _is_provider_row(winner)
+        and any(_is_static_row(row) for row in losers)
+        and sum(1 for row in rows if _is_provider_row(row)) == 1
+    ):
         return provider_static_result
     return provider_result
 
