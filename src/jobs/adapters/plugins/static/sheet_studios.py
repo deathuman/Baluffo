@@ -17,6 +17,7 @@ from src.jobs.adapters.static_detail_heuristics import (
     _is_one_man_studio_noise_city,
     process_detail_link,
 )
+from src.jobs.common.exact_category_titles import is_exact_category_title
 from src.jobs.models import RawJob
 from src.jobs.page_gating import classify_job_page, looks_like_job_title_candidate
 from src.jobs.text_utils import clean_text, sanitize_location_text
@@ -201,9 +202,37 @@ def _detail_rows(
         ignored_link_titles=set(),
     )
     rows = result.get("rows") if isinstance(result, dict) else []
-    return [row for row in rows if isinstance(row, dict)], result if isinstance(
-        result, dict
-    ) else {}
+    detail_rows = [row for row in rows if isinstance(row, dict)]
+    if detail_rows or not isinstance(result, dict):
+        return detail_rows, result if isinstance(result, dict) else {}
+    nested_rows: list[dict[str, Any]] = []
+    for nested in list(result.get("nestedDetailLinks") or [])[:12]:
+        nested_link = clean_text((nested or {}).get("url"))
+        if not nested_link:
+            continue
+        nested_result = process_detail_link(
+            detail=nested_link,
+            detail_title=clean_text((nested or {}).get("title")),
+            source_started=time.perf_counter(),
+            static_source_time_budget_s=max(5, int(timeout_s) * 2),
+            fetch_html_cached=lambda url, **kwargs: _fetch_static_html(
+                fetch_text,
+                timeout_s,
+                fetch_html_cached,
+                url,
+                **kwargs,
+            ),
+            timeout_s=timeout_s,
+            detail_retries=max(0, int(retries)),
+            company=company,
+            source_name=source_id,
+            source=source_row,
+            ignored_link_titles=set(),
+        )
+        nested_rows.extend(
+            row for row in (nested_result.get("rows") or []) if isinstance(row, dict)
+        )
+    return nested_rows, result
 
 
 def _append_detail_rows(
@@ -237,10 +266,14 @@ def _enrich_rendered_rows(
         row["source"] = source_name
         _sanitize_row_locations(row, source_name=source_id, source=source_row)
         title = clean_text(row.get("title"))
+        exact_category = is_exact_category_title(title)
         detail_link = clean_text(row.get("jobLink"))
         needs_detail = _needs_rendered_detail_resolution(row)
         if detail_link and (
-            one_man or (title and not looks_like_job_title_candidate(title)) or needs_detail
+            one_man
+            or exact_category
+            or (title and not looks_like_job_title_candidate(title))
+            or needs_detail
         ):
             detail_rows, detail_result = _detail_rows(
                 detail_link,
@@ -255,6 +288,8 @@ def _enrich_rendered_rows(
             )
             if detail_rows:
                 _append_detail_rows(enriched, detail_rows, source_name=source_name, company=company)
+                continue
+            if exact_category:
                 continue
             if detail_result.get("rejectedClassification"):
                 continue

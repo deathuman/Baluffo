@@ -147,3 +147,51 @@ def test_jobs_artifact_quality_gate_does_not_block_exact_role_shaped_title(tmp_p
 
     assert report["status"] == "pass"
     assert report["counts"]["exactCategoryTitleLeaks"] == 0
+
+
+def test_jobs_artifact_quality_gate_blocks_static_exact_category_title_with_container_evidence(
+    tmp_path: Path,
+) -> None:
+    csv_path = tmp_path / "jobs-unified.csv"
+    _write_csv(
+        csv_path,
+        [
+            {
+                "id": "1",
+                "title": "VFX",
+                "company": "Digital Confectioners",
+                "jobLink": "https://www.digitalconfectioners.com/jobs/vfx",
+                "source": "scrapy_static_sources",
+                "sourceJobId": "static:vfx",
+            }
+        ],
+    )
+
+    report = analyze_jobs_artifact(str(csv_path))
+
+    assert report["status"] == "blocked"
+    assert report["counts"]["exactCategoryTitleLeaks"] == 1
+
+
+def test_jobs_artifact_quality_gate_does_not_block_exact_category_term_without_static_or_sheet_evidence(
+    tmp_path: Path,
+) -> None:
+    csv_path = tmp_path / "jobs-unified.csv"
+    _write_csv(
+        csv_path,
+        [
+            {
+                "id": "1",
+                "title": "Design",
+                "company": "Example Provider",
+                "jobLink": "https://job-boards.greenhouse.io/example/jobs/123",
+                "source": "greenhouse_boards",
+                "sourceJobId": "greenhouse:example:123",
+            }
+        ],
+    )
+
+    report = analyze_jobs_artifact(str(csv_path))
+
+    assert report["status"] == "pass"
+    assert report["counts"]["exactCategoryTitleLeaks"] == 0

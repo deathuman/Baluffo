@@ -39,6 +39,7 @@ from src.jobs.adapters.static_runtime_support import (
     static_source_budget_exhausted,
     update_source_detail_taxonomy,
 )
+from src.jobs.common.exact_category_titles import is_exact_category_title
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.common.http import HttpStatusError
 from src.jobs.page_gating import classify_job_page, looks_like_job_title_candidate
@@ -129,9 +130,9 @@ def _cap_external_detail_fanout(
     ctx: StaticSourceContext,
     *,
     page_url: str,
-    detail_links: list[tuple[str, str]],
+    detail_links: list[StaticDetailCandidate],
     cap: int = _EXTERNAL_DETAIL_FANOUT_LINK_CAP,
-) -> list[tuple[str, str]]:
+) -> list[StaticDetailCandidate]:
     if len(detail_links) <= cap:
         return detail_links
     page_host = _normalized_host(page_url)
@@ -139,21 +140,21 @@ def _cap_external_detail_fanout(
         return detail_links
     external_hosts = {
         host
-        for detail_url, _title in detail_links
-        if (host := _normalized_host(detail_url)) and host != page_host
+        for candidate in detail_links
+        if (host := _normalized_host(candidate.url)) and host != page_host
     }
     if len(external_hosts) <= _EXTERNAL_DETAIL_FANOUT_HOST_THRESHOLD:
         return detail_links
-    capped: list[tuple[str, str]] = []
+    capped: list[StaticDetailCandidate] = []
     external_kept = 0
-    for detail_url, title in detail_links:
-        host = _normalized_host(detail_url)
+    for candidate in detail_links:
+        host = _normalized_host(candidate.url)
         if not host or host == page_host:
-            capped.append((detail_url, title))
+            capped.append(candidate)
             continue
         if external_kept >= cap:
             continue
-        capped.append((detail_url, title))
+        capped.append(candidate)
         external_kept += 1
     pruned = max(0, len(detail_links) - len(capped))
     if pruned:
@@ -162,6 +163,61 @@ def _cap_external_detail_fanout(
         )
         ctx.link_rejections["non_job_url"] += pruned
     return capped
+
+
+@dataclass(frozen=True)
+class StaticDetailCandidate:
+    url: str
+    title: str = ""
+    depth: int = 0
+    parent_url: str = ""
+
+
+def _is_provisional_exact_category_row(row: dict[str, Any]) -> bool:
+    return is_exact_category_title(row.get("title"))
+
+
+def _append_detail_candidate(
+    detail_links: list[StaticDetailCandidate],
+    detail_seen: set[str],
+    seen_links: set[str],
+    *,
+    candidate_url: str,
+    anchor_text: str,
+    depth: int,
+    parent_url: str,
+) -> bool:
+    absolute = normalize_url(candidate_url)
+    if not absolute or absolute in detail_seen or absolute in seen_links:
+        return False
+    detail_seen.add(absolute)
+    detail_links.append(
+        StaticDetailCandidate(
+            url=absolute,
+            title=clean_text(anchor_text),
+            depth=max(0, int(depth or 0)),
+            parent_url=clean_text(parent_url),
+        )
+    )
+    return True
+
+
+def _source_detail_key(ctx: StaticSourceContext) -> str:
+    if ctx.selected_source_count == 1:
+        return ctx.run_deps.diagnostics_name
+    return ctx.source_name
+
+
+def _nested_detail_limit_for(ctx: StaticSourceContext, discovered_links: int) -> int:
+    return source_detail_limit_for(
+        _source_detail_key(ctx),
+        source_state_rows=ctx.run_deps.source_state_rows,
+        discovered_links=discovered_links,
+        listing_jobs_found=0,
+        low_yield_detail_cap=ctx.runtime_config.low_yield_detail_cap,
+        very_low_yield_detail_cap=ctx.runtime_config.very_low_yield_detail_cap,
+        uncapped_deep_static=ctx.runtime_config.uncapped_deep_static,
+    )
 
 
 @dataclass
@@ -592,8 +648,15 @@ def _source_label(ctx: StaticSourceContext) -> str:
 
 
 # mutation — modifies in-place state
-def _append_parsed_listing_rows(ctx: StaticSourceContext, listing_html: str, page_url: str) -> int:
+def _append_parsed_listing_rows(
+    ctx: StaticSourceContext,
+    listing_html: str,
+    page_url: str,
+    detail_links: list[StaticDetailCandidate],
+    detail_seen: set[str],
+) -> tuple[int, int]:
     emitted_count = 0
+    provisional_count = 0
     parsed = parse_jobpostings_from_html(
         listing_html,
         base_url=page_url,
@@ -602,6 +665,19 @@ def _append_parsed_listing_rows(ctx: StaticSourceContext, listing_html: str, pag
     )
     for row in parsed:
         link = normalize_url(row.get("jobLink"))
+        if _is_provisional_exact_category_row(row):
+            provisional_count += 1
+            if link:
+                _append_detail_candidate(
+                    detail_links,
+                    detail_seen,
+                    ctx.seen_links,
+                    candidate_url=link,
+                    anchor_text=clean_text(row.get("title")),
+                    depth=0,
+                    parent_url=page_url,
+                )
+            continue
         if not link or link in ctx.seen_links:
             continue
         ctx.seen_links.add(link)
@@ -609,7 +685,7 @@ def _append_parsed_listing_rows(ctx: StaticSourceContext, listing_html: str, pag
         row["studio"] = _source_studio(ctx)
         ctx.jobs.append(row)
         emitted_count += 1
-    return emitted_count
+    return emitted_count, provisional_count
 
 
 # mutation — modifies in-place state
@@ -628,6 +704,8 @@ def _fetch_rendered_detail_rows(
         source_name=ctx.source_name,
         source=ctx.source,
         ignored_link_titles=ctx.ignored_link_titles,
+        default_path_tokens=ctx.runtime_config.default_path_tokens,
+        default_query_keys=ctx.runtime_config.default_query_keys,
     )
     ctx.stats["detail_pages_visited"] += 1
     ctx.emit_source_progress(
@@ -655,39 +733,61 @@ def _append_rendered_detail_rows(ctx: StaticSourceContext, rows: list[Any]) -> i
 
 # mutation — modifies in-place state
 def _append_rendered_row(
-    ctx: StaticSourceContext, raw_row: dict[str, Any], source_budget_s: int
-) -> tuple[int, bool]:
+    ctx: StaticSourceContext,
+    raw_row: dict[str, Any],
+    source_budget_s: int,
+    page_url: str,
+    detail_links: list[StaticDetailCandidate],
+    detail_seen: set[str],
+) -> tuple[int, bool, int]:
     row = dict(raw_row)
     if clean_text(row.pop("_renderedCardMode", "")) == "fallback":
-        return 0, False
+        return 0, False, 0
     row["adapter"] = "static"
     row["studio"] = _source_studio(ctx)
     row["source"] = _source_label(ctx)
     title = clean_text(row.get("title"))
     link = normalize_url(row.get("jobLink"))
     location_hint = clean_text(row.pop("_locationHint", ""))
+    if _is_provisional_exact_category_row(row):
+        if link:
+            _append_detail_candidate(
+                detail_links,
+                detail_seen,
+                ctx.seen_links,
+                candidate_url=link,
+                anchor_text=title,
+                depth=0,
+                parent_url=page_url,
+            )
+        return 0, False, 1
     if not link or link in ctx.seen_links:
-        return 0, False
+        return 0, False, 0
     job_like = looks_like_job_title_candidate(title)
     needs_lookup = (not job_like) or _needs_detail_location_resolution(row, link, location_hint)
     if not needs_lookup:
         ctx.seen_links.add(link)
         ctx.jobs.append(row)
-        return 1, True
+        return 1, True, 0
     emitted_rows = _fetch_rendered_detail_rows(ctx, link, title, source_budget_s)
     if emitted_rows:
         ctx.seen_links.add(link)
-        return _append_rendered_detail_rows(ctx, emitted_rows), job_like
+        return _append_rendered_detail_rows(ctx, emitted_rows), job_like, 0
     if row:
         ctx.jobs.append(row)
-        return 1, False
-    return 0, False
+        return 1, False, 0
+    return 0, False, 0
 
 
 # mutation — modifies in-place state
 def _append_rendered_card_rows(
-    ctx: StaticSourceContext, listing_html: str, page_url: str, source_budget_s: int
-) -> tuple[int, bool]:
+    ctx: StaticSourceContext,
+    listing_html: str,
+    page_url: str,
+    source_budget_s: int,
+    detail_links: list[StaticDetailCandidate],
+    detail_seen: set[str],
+) -> tuple[int, bool, int]:
     rendered_rows = extract_rendered_card_jobs(
         listing_html,
         page_url=page_url,
@@ -697,11 +797,20 @@ def _append_rendered_card_rows(
     )
     emitted_count = 0
     has_job_like_title = False
+    provisional_count = 0
     for raw_row in rendered_rows:
-        count, job_like = _append_rendered_row(ctx, raw_row, source_budget_s)
+        count, job_like, provisional = _append_rendered_row(
+            ctx,
+            raw_row,
+            source_budget_s,
+            page_url,
+            detail_links,
+            detail_seen,
+        )
         emitted_count += count
         has_job_like_title = has_job_like_title or (job_like and count > 0)
-    return emitted_count, has_job_like_title
+        provisional_count += provisional
+    return emitted_count, has_job_like_title, provisional_count
 
 
 # mutation — modifies in-place state
@@ -716,7 +825,7 @@ def _record_listing_only_rendered_meta(ctx: StaticSourceContext) -> None:
 # mutation — modifies in-place state
 def _add_listing_detail_link(
     ctx: StaticSourceContext,
-    detail_links: list[tuple[str, str]],
+    detail_links: list[StaticDetailCandidate],
     detail_seen: set[str],
     candidate_url: str,
     anchor_text: str,
@@ -724,8 +833,9 @@ def _add_listing_detail_link(
     page_url: str,
 ) -> None:
     dead_listing_count_before = int(ctx.link_rejections.get("dead_listing_page", 0))
+    new_links: list[tuple[str, str]] = []
     add_detail_link(
-        detail_links,
+        new_links,
         detail_seen,
         ctx.seen_links,
         ctx.link_rejections,
@@ -737,6 +847,15 @@ def _add_listing_detail_link(
         default_path_tokens=ctx.runtime_config.default_path_tokens,
         default_query_keys=ctx.runtime_config.default_query_keys,
     )
+    for detail_url, detail_title in new_links:
+        detail_links.append(
+            StaticDetailCandidate(
+                url=detail_url,
+                title=clean_text(detail_title),
+                depth=0,
+                parent_url=page_url,
+            )
+        )
     if (
         int(ctx.link_rejections.get("dead_listing_page", 0)) > dead_listing_count_before
         and len(ctx.dead_listing_page_examples) < 5
@@ -747,7 +866,7 @@ def _add_listing_detail_link(
 # mutation — modifies in-place state
 def _collect_listing_detail_links(
     ctx: StaticSourceContext,
-    detail_links: list[tuple[str, str]],
+    detail_links: list[StaticDetailCandidate],
     detail_seen: set[str],
     listing_html: str,
     page_url: str,
@@ -801,19 +920,34 @@ def _extract_listing_candidates(
     page_url: str,
     source_budget_s: int,
     listing_htmls: list[str],
-) -> tuple[int, list[tuple[str, str]]]:
-    detail_links: list[tuple[str, str]] = []
+) -> tuple[int, list[StaticDetailCandidate], int]:
+    detail_links: list[StaticDetailCandidate] = []
     detail_seen: set[str] = set()
     listing_jobs_found = 0
+    provisional_rows_found = 0
     for listing_html in listing_htmls:
         ctx.emit_heartbeat()
-        listing_jobs_found += _append_parsed_listing_rows(ctx, listing_html, page_url)
+        parsed_count, parsed_provisional = _append_parsed_listing_rows(
+            ctx,
+            listing_html,
+            page_url,
+            detail_links,
+            detail_seen,
+        )
+        listing_jobs_found += parsed_count
+        provisional_rows_found += parsed_provisional
         if listing_jobs_found == 0:
-            rendered_count, has_job_like_title = _append_rendered_card_rows(
-                ctx, listing_html, page_url, source_budget_s
+            rendered_count, has_job_like_title, rendered_provisional = _append_rendered_card_rows(
+                ctx,
+                listing_html,
+                page_url,
+                source_budget_s,
+                detail_links,
+                detail_seen,
             )
             listing_jobs_found += rendered_count
-            if listing_jobs_found > 0 and has_job_like_title:
+            provisional_rows_found += rendered_provisional
+            if listing_jobs_found > 0 and has_job_like_title and provisional_rows_found == 0:
                 _record_listing_only_rendered_meta(ctx)
                 continue
         _collect_listing_detail_links(
@@ -823,13 +957,13 @@ def _extract_listing_candidates(
             listing_html,
             page_url,
         )
-    return listing_jobs_found, detail_links
+    return listing_jobs_found, detail_links, provisional_rows_found
 
 
 @dataclass(frozen=True)
 class StaticDetailTraversalPlan:
     page_url: str
-    detail_links: list[tuple[str, str]]
+    detail_links: list[StaticDetailCandidate]
     detail_concurrency: int
     detail_retries: int
     source_budget_s: int
@@ -842,6 +976,7 @@ class _StaticDetailTraversalState:
     stop_source: bool = False
     off_domain_failure_count: int = 0
     redirect_loop_count: int = 0
+    scheduled_urls: set[str] = field(default_factory=set)
 
 
 # mutation — modifies in-place state
@@ -883,13 +1018,17 @@ def _next_detail_batch_size(
 
 
 # pure — builds fetch job dicts
-def _build_detail_batch_jobs(detail_batch: list[tuple[str, str]]) -> list[dict[str, Any]]:
+def _build_detail_batch_jobs(detail_batch: list[StaticDetailCandidate]) -> list[dict[str, Any]]:
     return [
         {
-            "url": detail,
-            "payload": {"detailTitle": detail_title},
+            "url": candidate.url,
+            "payload": {
+                "detailTitle": candidate.title,
+                "detailDepth": candidate.depth,
+                "parentUrl": candidate.parent_url,
+            },
         }
-        for detail, detail_title in detail_batch
+        for candidate in detail_batch
     ]
 
 
@@ -987,7 +1126,7 @@ def _record_detail_fetch_error(
 
 
 # mutation — modifies in-place state
-def _apply_detail_result(ctx: StaticSourceContext, detail_result: dict[str, Any]) -> None:
+def _record_detail_rejection(ctx: StaticSourceContext, detail_result: dict[str, Any]) -> None:
     rejected_classification = clean_text(detail_result.get("rejectedClassification"))
     if rejected_classification == "dead_listing_page":
         ctx.link_rejections["dead_listing_page"] += 1
@@ -998,12 +1137,80 @@ def _apply_detail_result(ctx: StaticSourceContext, detail_result: dict[str, Any]
                 ctx.dead_listing_page_examples.append(example)
     elif detail_result.get("parseEmpty"):
         ctx.link_rejections["detail_parse_empty"] += 1
-    for row in detail_result.get("rows") or []:
+
+
+def _append_detail_result_rows(ctx: StaticSourceContext, rows: list[dict[str, Any]]) -> int:
+    appended = 0
+    for row in rows:
+        if not isinstance(row, dict) or _is_provisional_exact_category_row(row):
+            continue
         link = normalize_url(row.get("jobLink"))
         if not link or link in ctx.seen_links:
             continue
         ctx.seen_links.add(link)
         ctx.jobs.append(row)
+        appended += 1
+    return appended
+
+
+def _enqueue_nested_detail_links(
+    ctx: StaticSourceContext,
+    plan: StaticDetailTraversalPlan,
+    state: _StaticDetailTraversalState,
+    *,
+    parent_url: str,
+    parent_depth: int,
+    nested_links: list[dict[str, Any]],
+) -> int:
+    if parent_depth >= 1:
+        return 0
+    child_candidates: list[StaticDetailCandidate] = []
+    for item in nested_links:
+        if not isinstance(item, dict):
+            continue
+        child_url = normalize_url(item.get("url"))
+        if not child_url or child_url in ctx.seen_links or child_url in state.scheduled_urls:
+            continue
+        child_candidates.append(
+            StaticDetailCandidate(
+                url=child_url,
+                title=clean_text(item.get("title")),
+                depth=parent_depth + 1,
+                parent_url=parent_url,
+            )
+        )
+    if not child_candidates:
+        return 0
+    nested_profile = domain_profile_for_url(parent_url)
+    profile_external_cap = max(0, int(nested_profile.get("max_external_detail_links") or 0))
+    child_candidates = _cap_external_detail_fanout(
+        ctx,
+        page_url=parent_url,
+        detail_links=child_candidates,
+        cap=profile_external_cap or _EXTERNAL_DETAIL_FANOUT_LINK_CAP,
+    )
+    nested_limit = _nested_detail_limit_for(ctx, len(child_candidates))
+    profile_max_detail_links = max(0, int(nested_profile.get("max_detail_links") or 0))
+    if profile_max_detail_links > 0:
+        nested_limit = (
+            min(nested_limit, profile_max_detail_links)
+            if nested_limit
+            else profile_max_detail_links
+        )
+    if nested_limit and nested_limit < len(child_candidates):
+        child_candidates = child_candidates[:nested_limit]
+    added = 0
+    for candidate in child_candidates:
+        if candidate.url in ctx.seen_links or candidate.url in state.scheduled_urls:
+            continue
+        state.scheduled_urls.add(candidate.url)
+        plan.detail_links.append(candidate)
+        added += 1
+    if added:
+        ctx.stats["candidate_links_found"] = (
+            int(ctx.stats.get("candidate_links_found") or 0) + added
+        )
+    return added
 
 
 # mutation — modifies in-place state
@@ -1019,6 +1226,7 @@ def _process_detail_result_row(
         return
     detail_payload = _as_dict(detail_result_row.get("payload"))
     detail_title = clean_text(detail_payload.get("detailTitle"))
+    detail_depth = max(0, int(detail_payload.get("detailDepth") or 0))
     ctx.stats["detail_pages_visited"] += 1
     ctx.emit_source_progress(
         phase_key="static_detail_traversal",
@@ -1048,10 +1256,24 @@ def _process_detail_result_row(
         source_name=ctx.source_name,
         source=ctx.source,
         ignored_link_titles=ctx.ignored_link_titles,
+        default_path_tokens=ctx.runtime_config.default_path_tokens,
+        default_query_keys=ctx.runtime_config.default_query_keys,
     )
     ctx.stats["fetch_cache_hits"] += 1 if detail_result.get("cacheHit") else 0
     ctx.stats["detail_fetch_ms"] += int(detail_result.get("fetchMs") or 0)
-    _apply_detail_result(ctx, detail_result)
+    appended_rows = _append_detail_result_rows(ctx, detail_result.get("rows") or [])
+    nested_scheduled = 0
+    if appended_rows == 0:
+        nested_scheduled = _enqueue_nested_detail_links(
+            ctx,
+            plan,
+            state,
+            parent_url=detail,
+            parent_depth=detail_depth,
+            nested_links=detail_result.get("nestedDetailLinks") or [],
+        )
+    if appended_rows == 0 and nested_scheduled == 0:
+        _record_detail_rejection(ctx, detail_result)
     ctx.emit_heartbeat()
 
 
@@ -1150,6 +1372,7 @@ def _run_static_detail_traversal(
     detail_fetch_started = time.perf_counter()
     detail_fetch_base_ms = int(ctx.stats.get("detail_fetch_ms") or 0)
     state = _StaticDetailTraversalState()
+    state.scheduled_urls = {candidate.url for candidate in plan.detail_links if candidate.url}
     while int(state.index or 0) < len(plan.detail_links):
         if state.stop or state.stop_source:
             break
@@ -1502,10 +1725,14 @@ class StaticFetchRunner:
                 self.stop_source = True
                 return
             listing_htmls = self._prepare_listing_htmls(page_url, result)
-            detail_links, listing_jobs_found = self._extract_listing_page(
+            detail_links, listing_jobs_found, provisional_rows_found = self._extract_listing_page(
                 page_url, source_budget_s, listing_htmls
             )
-            detail_links = self._apply_listing_fingerprint(detail_links, listing_htmls)
+            detail_links = self._apply_listing_fingerprint(
+                detail_links,
+                listing_htmls,
+                provisional_rows_found=provisional_rows_found,
+            )
             if not detail_links:
                 self.ctx.emit_heartbeat()
                 return
@@ -1513,7 +1740,12 @@ class StaticFetchRunner:
                 self.stop_source = True
                 return
             detail_plan = self._detail_plan(
-                page_url, source_budget_s, domain_profile, detail_links, listing_jobs_found
+                page_url,
+                source_budget_s,
+                domain_profile,
+                detail_links,
+                listing_jobs_found,
+                provisional_rows_found,
             )
             if detail_plan is None:
                 self.ctx.emit_heartbeat()
@@ -1639,7 +1871,7 @@ class StaticFetchRunner:
             event_level="muted",
             message=f"Extracting listing candidates for {self.source_name}.",
         )
-        listing_jobs_found, detail_links = _extract_listing_candidates(
+        listing_jobs_found, detail_links, provisional_rows_found = _extract_listing_candidates(
             self.ctx,
             page_url=page_url,
             source_budget_s=source_budget_s,
@@ -1661,10 +1893,16 @@ class StaticFetchRunner:
                 f"{'' if len(detail_links) == 1 else 's'} for {self.source_name}."
             ),
         )
-        return detail_links, listing_jobs_found
+        return detail_links, listing_jobs_found, provisional_rows_found
 
     # mutation — modifies in-place state
-    def _apply_listing_fingerprint(self, detail_links, listing_htmls):
+    def _apply_listing_fingerprint(
+        self,
+        detail_links: list[StaticDetailCandidate],
+        listing_htmls: list[str],
+        *,
+        provisional_rows_found: int,
+    ) -> list[StaticDetailCandidate]:
         listing_fingerprint = hashlib.sha1("\n".join(listing_htmls).encode("utf-8")).hexdigest()
         previous_listing_fingerprint = clean_text(
             (self.ctx.state_entry or {}).get("lastListingFingerprint")
@@ -1678,6 +1916,7 @@ class StaticFetchRunner:
             previous_listing_fingerprint
             and listing_fingerprint == previous_listing_fingerprint
             and not self.deps.force_refresh_all
+            and provisional_rows_found <= 0
         ):
             self.entry_report["cacheDecision"] = "listing_only"
             self.entry_report["cacheDecisionReason"] = "listing_fingerprint_unchanged"
@@ -1688,16 +1927,20 @@ class StaticFetchRunner:
 
     # strategy factory — builds StaticDetailTraversalPlan
     def _detail_plan(
-        self, page_url, source_budget_s, domain_profile, detail_links, listing_jobs_found
+        self,
+        page_url,
+        source_budget_s,
+        domain_profile,
+        detail_links,
+        listing_jobs_found,
+        provisional_rows_found,
     ):
-        source_key = (
-            self.deps.diagnostics_name if self.ctx.selected_source_count == 1 else self.source_name
-        )
+        source_key = _source_detail_key(self.ctx)
         probable_detail_links = [
-            (detail, detail_title)
-            for detail, detail_title in detail_links
+            candidate
+            for candidate in detail_links
             if is_probable_job_detail_url(
-                detail,
+                candidate.url,
                 self.ctx.source,
                 default_path_tokens=self.config.default_path_tokens,
                 default_query_keys=self.config.default_query_keys,
@@ -1717,9 +1960,6 @@ class StaticFetchRunner:
             source_key=source_key,
             source_state_rows=self.deps.source_state_rows,
         )
-        self.entry_report["detailTraversalMode"] = mode
-        if mode == "listing_only":
-            return None
         source_has_listing_rows = self.ctx.current_source_kept_count() > 0
         if (
             detail_links
@@ -1752,6 +1992,15 @@ class StaticFetchRunner:
                 if detail_limit
                 else profile_max_detail_links
             )
+        if mode == "listing_only" and provisional_rows_found > 0:
+            mode = (
+                "capped_detail"
+                if detail_limit and detail_limit < len(detail_links)
+                else "full_detail"
+            )
+        self.entry_report["detailTraversalMode"] = mode
+        if mode == "listing_only":
+            return None
         if detail_limit and detail_limit < len(detail_links):
             detail_links = detail_links[:detail_limit]
         return StaticDetailTraversalPlan(

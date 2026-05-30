@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-import re
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -17,13 +16,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.jobs.canonicalize import (
-    _GOOGLE_SHEETS_CATEGORY_LABEL_TERMS,
-    _GOOGLE_SHEETS_RESIDUAL_CATEGORY_TOKENS,
-    _GOOGLE_SHEETS_RESIDUAL_CATEGORY_VETO_TOKENS,
-)
 from src.jobs.common.config import UNKNOWN_COMPANY_LABEL
-from src.jobs.common.dedup_evidence_bundle import CATEGORY_TITLE_TERMS
+from src.jobs.common.exact_category_titles import (
+    is_exact_category_title,
+    looks_like_category_container_url,
+)
 from src.jobs.job_link_company import company_from_job_link
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
 
@@ -39,50 +36,6 @@ def _load_rows(value: str) -> list[dict[str, str]]:
     path = _resolve_csv_path(value)
     with path.open(encoding="utf-8", newline="") as handle:
         return [dict(row) for row in csv.DictReader(handle)]
-
-
-def _category_label_keys(value: Any) -> set[str]:
-    raw = clean_text(value)
-    if not raw:
-        return set()
-    spaced = norm_text(raw.replace("-", " ").replace("_", " ").replace("&", " and "))
-    compact_and = norm_text(raw.replace("-", " ").replace("_", " ").replace("&", " "))
-    return {
-        key
-        for key in {
-            norm_text(raw),
-            spaced,
-            compact_and,
-            spaced.replace(" ", "-"),
-            compact_and.replace(" ", "-"),
-        }
-        if key
-    }
-
-
-_EXACT_CATEGORY_LABEL_TERMS = frozenset(
-    set(_GOOGLE_SHEETS_CATEGORY_LABEL_TERMS)
-    | set(_GOOGLE_SHEETS_RESIDUAL_CATEGORY_TOKENS)
-    | set(CATEGORY_TITLE_TERMS)
-)
-_EXACT_CATEGORY_LABEL_KEYS = frozenset(
-    key for term in _EXACT_CATEGORY_LABEL_TERMS for key in _category_label_keys(term)
-)
-_EXACT_CATEGORY_VETO_TOKENS = frozenset(_GOOGLE_SHEETS_RESIDUAL_CATEGORY_VETO_TOKENS)
-
-
-def _category_tokens(value: Any) -> set[str]:
-    raw = norm_text(value)
-    if not raw:
-        return set()
-    return {token for token in re.split(r"[^a-z0-9]+", raw) if token}
-
-
-def _is_exact_category_title(value: Any) -> bool:
-    keys = _category_label_keys(value)
-    if not keys or not (keys & _EXACT_CATEGORY_LABEL_KEYS):
-        return False
-    return not bool(_category_tokens(value) & _EXACT_CATEGORY_VETO_TOKENS)
 
 
 def _parsed_bundle(value: Any) -> list[dict[str, Any]]:
@@ -138,6 +91,28 @@ def _example(
     }
 
 
+def _has_exact_category_evidence(row: dict[str, Any]) -> bool:
+    if not is_exact_category_title(row.get("title")):
+        return False
+    source = clean_text(row.get("source"))
+    if source.startswith("google_sheets") or source == "scrapy_static_sources":
+        return True
+    if source.startswith("static_source::"):
+        return True
+    if looks_like_category_container_url(row.get("jobLink")):
+        return True
+    for item in _parsed_bundle(row.get("sourceBundle")):
+        bundle_source = clean_text(item.get("source"))
+        if bundle_source.startswith("google_sheets") or bundle_source.startswith("static_source::"):
+            return True
+        if clean_text(item.get("adapter")) in {
+            "static",
+            "scrapy_static",
+        } and looks_like_category_container_url(item.get("jobLink")):
+            return True
+    return False
+
+
 def analyze_jobs_artifact(value: str) -> dict[str, Any]:
     rows = _load_rows(value)
     exact_category_examples: list[dict[str, str]] = []
@@ -149,7 +124,7 @@ def analyze_jobs_artifact(value: str) -> dict[str, Any]:
             for url in _gracklehq_bundle_urls(row):
                 gracklehq_known_company_by_url[url].add(company)
 
-    exact_category_rows = [row for row in rows if _is_exact_category_title(row.get("title"))]
+    exact_category_rows = [row for row in rows if _has_exact_category_evidence(row)]
     for row in exact_category_rows[:20]:
         exact_category_examples.append(_example(row, evidence="exact_source_category_title"))
 

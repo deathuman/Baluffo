@@ -18,6 +18,7 @@ from src.jobs.canonicalize import (
     to_iso,
 )
 from src.jobs.common.datetime_utils import posted_ts
+from src.jobs.common.exact_category_titles import is_exact_category_title
 from src.jobs.interfaces import JobProcessor
 from src.jobs.models import CanonicalJob
 from src.jobs.page_gating import looks_like_job_title_candidate
@@ -445,13 +446,23 @@ def _is_more_specific_same_opening_title(current_title: Any, candidate_title: An
 
 
 def _prefer_specific_title(merged: dict[str, Any], other_dict: dict[str, Any]) -> None:
-    if not (_is_google_sheets_row(merged) or _is_google_sheets_row(other_dict)):
-        return
     if fingerprint_url(merged.get("jobLink")) != fingerprint_url(other_dict.get("jobLink")):
         return
     current_title = clean_text(merged.get("title"))
     candidate_title = clean_text(other_dict.get("title"))
     if not current_title or not candidate_title:
+        return
+    current_exact_category = is_exact_category_title(current_title)
+    candidate_exact_category = is_exact_category_title(candidate_title)
+    if current_exact_category and not candidate_exact_category:
+        merged["title"] = candidate_title
+        return
+    if not (
+        _is_google_sheets_row(merged)
+        or _is_google_sheets_row(other_dict)
+        or current_exact_category
+        or candidate_exact_category
+    ):
         return
     if _is_more_specific_same_family_title(
         current_title, candidate_title

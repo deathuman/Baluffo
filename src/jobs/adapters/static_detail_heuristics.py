@@ -18,6 +18,10 @@ from src.jobs.adapters.parsers.location import parse_generic_location_fields
 from src.jobs.adapters.plugins.static._rendered_cards import (
     extract_rendered_card_jobs as _extract_rendered_card_jobs,
 )
+from src.jobs.common.exact_category_titles import (
+    is_exact_category_title,
+    looks_like_category_container_url,
+)
 from src.jobs.common.greenhouse_identity import greenhouse_job_identity_from_url
 from src.jobs.models import RawJob
 from src.jobs.page_gating import (
@@ -28,11 +32,23 @@ from src.jobs.page_gating import (
     looks_like_static_parser_noise_title,
 )
 from src.jobs.text_utils import clean_text, norm_text, normalize_url, sanitize_location_text
+from src.shared.regex import find_urls_in_text
 from src.url_hosts import host_matches_domain
 
 from .static_runtime_support import StaticSourceRuntimeConfig, _as_dict
 
 extract_rendered_card_jobs = _extract_rendered_card_jobs
+
+_DEFAULT_DETAIL_PATH_TOKENS = [
+    "/job/",
+    "/jobs/",
+    "/jobdetail/",
+    "/career/",
+    "/careers/",
+    "/position/",
+    "/positions/",
+]
+_DEFAULT_DETAIL_QUERY_KEYS = ["job_id", "gh_jid", "jid", "jobid"]
 
 KNOWN_NON_JOB_DETAIL_HOSTS = (
     "discord.com",
@@ -691,6 +707,109 @@ def _detail_title_from_url(detail: str, detail_title: str, ignored_link_titles: 
     )
 
 
+def _concrete_detail_rows(rows: list[RawJob]) -> list[RawJob]:
+    concrete: list[RawJob] = []
+    for row in rows:
+        if isinstance(row, dict) and not is_exact_category_title(row.get("title")):
+            concrete.append(row)
+    return concrete
+
+
+def _rendered_detail_rows(
+    *,
+    detail_html: str,
+    detail: str,
+    company: str,
+    source_name: str,
+    source: dict[str, Any],
+) -> list[RawJob]:
+    rendered_rows = extract_rendered_card_jobs(
+        detail_html,
+        page_url=detail,
+        company=company,
+        source_id=source_name,
+        allow_any_anchor=True,
+    )
+    rows: list[RawJob] = []
+    for raw_row in rendered_rows:
+        if not isinstance(raw_row, dict) or is_exact_category_title(raw_row.get("title")):
+            continue
+        row = dict(raw_row)
+        row["company"] = clean_text(row.get("company")) or company
+        row["adapter"] = "static"
+        row["studio"] = clean_text(source.get("studio")) or company or source_name
+        rows.append(row)
+    return rows
+
+
+def _nested_detail_candidates(
+    *,
+    detail_html: str,
+    page_url: str,
+    source: dict[str, Any],
+    default_path_tokens: list[str],
+    default_query_keys: list[str],
+) -> list[dict[str, str]]:
+    detail_links: list[tuple[str, str]] = []
+    detail_seen: set[str] = set()
+    link_rejections: Counter[str] = Counter()
+    pattern = (
+        r'(?is)<(?:div|tr)[^>]*class=["\'][^"\']*job-listing-item[^"\']*["\']'
+        r"[^>]*>(.*?)</(?:div|tr)>"
+    )
+    for row_match in re.finditer(pattern, detail_html):
+        row_html = row_match.group(1) or ""
+        link_match = re.search(r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', row_html)
+        if not link_match:
+            continue
+        anchor_text = strip_html_text(re.sub(r"(?is)<[^>]+>", " ", link_match.group(2) or ""))
+        add_detail_link(
+            detail_links,
+            detail_seen,
+            set(),
+            link_rejections,
+            candidate_url=clean_text(link_match.group(1)),
+            anchor_text=anchor_text,
+            enforce_heuristics=False,
+            page_url=page_url,
+            source=source,
+            default_path_tokens=default_path_tokens,
+            default_query_keys=default_query_keys,
+        )
+    for match in re.finditer(r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', detail_html):
+        anchor_text = strip_html_text(re.sub(r"(?is)<[^>]+>", " ", match.group(2) or ""))
+        add_detail_link(
+            detail_links,
+            detail_seen,
+            set(),
+            link_rejections,
+            candidate_url=clean_text(match.group(1)),
+            anchor_text=anchor_text,
+            enforce_heuristics=True,
+            page_url=page_url,
+            source=source,
+            default_path_tokens=default_path_tokens,
+            default_query_keys=default_query_keys,
+        )
+    for raw_url in find_urls_in_text(detail_html):
+        add_detail_link(
+            detail_links,
+            detail_seen,
+            set(),
+            link_rejections,
+            candidate_url=clean_text(raw_url),
+            anchor_text="",
+            enforce_heuristics=True,
+            page_url=page_url,
+            source=source,
+            default_path_tokens=default_path_tokens,
+            default_query_keys=default_query_keys,
+        )
+    return [
+        {"url": url, "title": clean_text(title)} for url, title in detail_links if clean_text(url)
+    ]
+
+
 def _fallback_detail_rows(
     *,
     detail: str,
@@ -722,7 +841,10 @@ def _fallback_detail_rows(
         return [], classification, f"{detail} | {parsed_title}" if parsed_title else detail
     title = _detail_title_from_url(detail, detail_title, ignored_link_titles)
     title_ok = bool(
-        title and not re.fullmatch(r"\d+", title) and looks_like_job_title_candidate(title)
+        title
+        and not re.fullmatch(r"\d+", title)
+        and looks_like_job_title_candidate(title)
+        and not is_exact_category_title(title)
     )
     if not title_ok:
         return [], "dead_listing_page", f"{detail} | {title}" if title else detail
@@ -789,6 +911,8 @@ def process_detail_html(
     source_name: str,
     source: dict[str, Any],
     ignored_link_titles: set[str],
+    default_path_tokens: list[str] | None = None,
+    default_query_keys: list[str] | None = None,
 ) -> dict[str, Any]:
     parse_started = time.perf_counter()
     detail_jobs = parse_jobpostings_from_html(
@@ -819,33 +943,83 @@ def process_detail_html(
             if apply_target_url:
                 row["jobLink"] = apply_target_url
     parse_ms = int((time.perf_counter() - parse_started) * 1000)
+    default_path_tokens = list(default_path_tokens or _DEFAULT_DETAIL_PATH_TOKENS)
+    default_query_keys = list(default_query_keys or _DEFAULT_DETAIL_QUERY_KEYS)
+    concrete_rows = _concrete_detail_rows(detail_jobs)
     rejected_classification = ""
     rejected_example = ""
-    if detail_jobs:
+    nested_detail_links: list[dict[str, str]] = []
+    if concrete_rows:
         rows = []
-        for row in detail_jobs:
+        for row in concrete_rows:
             row["adapter"] = "static"
             row["studio"] = clean_text(source.get("studio")) or company or source_name
             rows.append(row)
         parse_empty = False
     else:
-        parse_empty = True
-        rows, rejected_classification, rejected_example = _fallback_detail_rows(
-            detail=detail,
-            detail_title=detail_title,
+        rows = _rendered_detail_rows(
             detail_html=detail_html,
+            detail=detail,
             company=company,
             source_name=source_name,
             source=source,
-            ignored_link_titles=ignored_link_titles,
-            apply_target_url=apply_target_url,
-            inferred_city=inferred_city,
-            inferred_country=inferred_country,
-            inferred_work_type=inferred_work_type,
-            inferred_contract_type=inferred_contract_type,
         )
+        if rows:
+            parse_empty = False
+        else:
+            parse_empty = True
+            page_title = clean_text(detail_title)
+            category_repair_needed = (
+                is_exact_category_title(page_title)
+                or looks_like_category_container_url(detail)
+                or bool(detail_jobs)
+            )
+            job_like, gate_reason = classify_job_page(
+                detail_html,
+                detail,
+                page_title=page_title,
+                profile=source if isinstance(source, dict) else None,
+            )
+            nested_detail_links = _nested_detail_candidates(
+                detail_html=detail_html,
+                page_url=detail,
+                source=source if isinstance(source, dict) else {},
+                default_path_tokens=default_path_tokens,
+                default_query_keys=default_query_keys,
+            )
+            listing_like = bool(
+                nested_detail_links
+                or looks_like_category_container_url(detail)
+                or gate_reason == "job_listing_anchors"
+                or (category_repair_needed and job_like)
+            )
+            if listing_like:
+                rejected_classification = (
+                    "dead_listing_page"
+                    if gate_reason == "dead_listing_page"
+                    or category_repair_needed
+                    or looks_like_category_container_url(detail)
+                    else "needs_review"
+                )
+                rejected_example = f"{detail} | {page_title}" if page_title else detail
+            else:
+                rows, rejected_classification, rejected_example = _fallback_detail_rows(
+                    detail=detail,
+                    detail_title=detail_title,
+                    detail_html=detail_html,
+                    company=company,
+                    source_name=source_name,
+                    source=source,
+                    ignored_link_titles=ignored_link_titles,
+                    apply_target_url=apply_target_url,
+                    inferred_city=inferred_city,
+                    inferred_country=inferred_country,
+                    inferred_work_type=inferred_work_type,
+                    inferred_contract_type=inferred_contract_type,
+                )
     return {
         "rows": rows,
+        "nestedDetailLinks": nested_detail_links,
         "parseEmpty": parse_empty,
         "fetchMs": int(fetch_ms),
         "parseMs": parse_ms,
@@ -868,6 +1042,8 @@ def process_detail_link(
     source_name: str,
     source: dict[str, Any],
     ignored_link_titles: set[str],
+    default_path_tokens: list[str] | None = None,
+    default_query_keys: list[str] | None = None,
 ) -> dict[str, Any]:
     fetch_started = time.perf_counter()
     if is_malformed_or_self_detail_url(detail):
@@ -905,4 +1081,6 @@ def process_detail_link(
         source_name=source_name,
         source=source,
         ignored_link_titles=ignored_link_titles,
+        default_path_tokens=default_path_tokens,
+        default_query_keys=default_query_keys,
     )

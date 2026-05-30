@@ -21,6 +21,23 @@ def _google_sheets_job(*, title: str, company: str, link: str, source_job_id: st
     )
 
 
+def _canonical_job(*, title: str, company: str, link: str, source_job_id: str, source: str):
+    return jf.canonicalize_job(
+        {
+            "title": title,
+            "company": company,
+            "city": "",
+            "country": "Unknown",
+            "locations": [{"city": "", "country": "Unknown"}],
+            "jobLink": link,
+            "sector": "Game",
+            "sourceJobId": source_job_id,
+        },
+        source=source,
+        fetched_at="2026-03-20T00:00:00Z",
+    )
+
+
 def test_deduplicate_jobs_keeps_google_sheets_generic_role_bucket_detail_urls_separate() -> None:
     first = _google_sheets_job(
         title="Animator",
@@ -216,6 +233,31 @@ def test_deduplicate_jobs_prefers_more_specific_same_opening_title_for_resolved_
     assert int(stats["mergedCount"]) == 1
     assert rows[0].title == "Senior Design Director"
     assert rows[0].company == "Believer Entertainment"
+
+
+def test_deduplicate_jobs_prefers_concrete_static_title_over_exact_category_same_url() -> None:
+    broad = _canonical_job(
+        title="VFX",
+        company="Digital Confectioners",
+        link="https://www.digitalconfectioners.com/jobs/vfx",
+        source_job_id="static-vfx",
+        source="scrapy_static_sources",
+    )
+    concrete = _canonical_job(
+        title="VFX Artist",
+        company="Digital Confectioners",
+        link="https://www.digitalconfectioners.com/jobs/vfx",
+        source_job_id="static-vfx-artist",
+        source="static_source::Digital Confectioners",
+    )
+    assert broad is not None
+    assert concrete is not None
+
+    rows, stats = jf.deduplicate_jobs([broad, concrete])
+
+    assert int(stats["outputCount"]) == 1
+    assert int(stats["mergedCount"]) == 1
+    assert rows[0].title == "VFX Artist"
 
 
 def test_deduplicate_jobs_still_merges_google_sheets_generic_role_bucket_same_url() -> None:
