@@ -21,6 +21,7 @@ from src.jobs.common.exact_category_titles import (
     has_static_container_artifact_evidence,
     is_exact_category_title,
     looks_like_category_container_url,
+    looks_like_static_container_url,
 )
 from src.jobs.job_link_company import company_from_job_link
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
@@ -114,32 +115,49 @@ def _has_exact_category_evidence(row: dict[str, Any]) -> bool:
     return False
 
 
-def _source_has_static_or_sheet_evidence(value: Any) -> bool:
+def _static_container_evidence_kind(value: Any, adapter: Any = "") -> str:
+    if clean_text(adapter) in {"static", "scrapy_static"}:
+        return "static"
     source = clean_text(value)
-    return (
-        source.startswith("google_sheets")
-        or source.startswith("static_source::")
-        or source == "scrapy_static_sources"
-    )
+    if source.startswith("static_source::") or source == "scrapy_static_sources":
+        return "static"
+    if source.startswith("google_sheets"):
+        return "sheet"
+    return ""
+
+
+def _has_static_container_artifact_for_source(
+    title: Any,
+    url: Any,
+    *,
+    source: Any = "",
+    adapter: Any = "",
+) -> bool:
+    if not has_static_container_artifact_evidence(title, url):
+        return False
+    evidence_kind = _static_container_evidence_kind(source, adapter)
+    if evidence_kind == "static":
+        return True
+    if evidence_kind == "sheet":
+        return looks_like_static_container_url(url) or looks_like_category_container_url(url)
+    return False
 
 
 def _has_static_container_artifact_evidence(row: dict[str, Any]) -> bool:
     if is_exact_category_title(row.get("title")):
         return False
-    source_evidence = _source_has_static_or_sheet_evidence(row.get("source"))
-    if source_evidence and has_static_container_artifact_evidence(
-        row.get("title"), row.get("jobLink")
+    if _has_static_container_artifact_for_source(
+        row.get("title"),
+        row.get("jobLink"),
+        source=row.get("source"),
     ):
         return True
     for item in _parsed_bundle(row.get("sourceBundle")):
-        bundle_source = clean_text(item.get("source"))
-        bundle_adapter = clean_text(item.get("adapter"))
-        bundle_evidence = _source_has_static_or_sheet_evidence(bundle_source) or bundle_adapter in {
-            "static",
-            "scrapy_static",
-        }
-        if bundle_evidence and has_static_container_artifact_evidence(
-            row.get("title"), item.get("jobLink") or row.get("jobLink")
+        if _has_static_container_artifact_for_source(
+            row.get("title"),
+            item.get("jobLink") or row.get("jobLink"),
+            source=item.get("source"),
+            adapter=item.get("adapter"),
         ):
             return True
     return False

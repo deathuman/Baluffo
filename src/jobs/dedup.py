@@ -180,6 +180,8 @@ _GUERRILLA_GAMESJOBSDIRECT_STATIC_SOURCE = (
     "static_source::static:listing_url:https://www.gamesjobsdirect.com/jobs-with-"
     "8608_guerrilla-games?page=1"
 )
+_SOURCE_BUNDLE_OUTPUT_SAMPLE_LIMIT = 128
+_LOCATION_DEDUP_WORKING_SAMPLE_LIMIT = 128
 
 
 def _is_meaningful_location_value(value: Any) -> bool:
@@ -522,11 +524,56 @@ def _merge_source_bundle(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return bundle
 
 
+def _source_bundle_count_from_row(row: dict[str, Any], bundle: list[dict[str, Any]]) -> int:
+    try:
+        count = int(row.get("sourceBundleCount") or 0)
+    except (TypeError, ValueError):
+        count = 0
+    return max(0, count, len(bundle))
+
+
+def _source_bundle_working_sample(bundle: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [dict(item) for item in bundle[: max(0, int(_SOURCE_BUNDLE_OUTPUT_SAMPLE_LIMIT))]]
+
+
+def _source_bundle_state_from_payload(
+    payload: dict[str, Any],
+) -> tuple[list[dict[str, Any]], set[str], int]:
+    bundle = _merge_source_bundle([payload])
+    keys = {_bundle_key(item) for item in bundle}
+    return bundle, keys, _source_bundle_count_from_row(payload, bundle)
+
+
+def _extend_source_bundle_state(
+    *,
+    bundle: list[dict[str, Any]],
+    keys: set[str],
+    count: int,
+    incoming: dict[str, Any],
+) -> int:
+    incoming_bundle = _merge_source_bundle([incoming])
+    incoming_count = _source_bundle_count_from_row(incoming, incoming_bundle)
+    added = 0
+    for item in incoming_bundle:
+        key = _bundle_key(item)
+        if key in keys:
+            continue
+        keys.add(key)
+        bundle.append(item)
+        added += 1
+    hidden_incoming_count = max(0, incoming_count - len(incoming_bundle))
+    return max(count + added + hidden_incoming_count, len(keys), count)
+
+
 def _normalized_location_item(item: dict[str, Any]) -> dict[str, Any]:
     return {
         "city": clean_text(item.get("city")),
         "country": clean_text(item.get("country")),
     }
+
+
+def _location_key(item: dict[str, Any]) -> str:
+    return "|".join([norm_text(item.get("city")), norm_text(item.get("country"))])
 
 
 def _collect_location_entries(
@@ -580,12 +627,55 @@ def _location_summary_from_entries(entries: list[dict[str, Any]]) -> str:
     )
 
 
-def _apply_merged_locations(
+def _location_state_from_payload(
+    payload: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], set[str]]:
+    location_entries, placeholder_location_entries = _collect_location_entries([payload])
+    keys = {_location_key(item) for item in location_entries}
+    return location_entries, placeholder_location_entries, keys
+
+
+def _extend_location_state(
+    *,
+    location_entries: list[dict[str, Any]],
+    placeholder_location_entries: list[dict[str, Any]],
+    location_keys: set[str],
+    incoming: dict[str, Any],
+) -> None:
+    incoming_locations, incoming_placeholders = _collect_location_entries([incoming])
+    for item in incoming_locations:
+        key = _location_key(item)
+        if key in location_keys:
+            continue
+        location_keys.add(key)
+        location_entries.append(item)
+    if not location_entries and not placeholder_location_entries and incoming_placeholders:
+        placeholder_location_entries.extend(incoming_placeholders[:1])
+
+
+def _apply_location_state_sample(
     *,
     merged: dict[str, Any],
-    rows: list[dict[str, Any]],
+    location_entries: list[dict[str, Any]],
+    placeholder_location_entries: list[dict[str, Any]],
 ) -> None:
-    location_entries, placeholder_location_entries = _collect_location_entries(rows)
+    if location_entries:
+        sample = [
+            dict(item)
+            for item in location_entries[: max(0, int(_LOCATION_DEDUP_WORKING_SAMPLE_LIMIT))]
+        ]
+        merged["locations"] = sample
+        merged["locationSummary"] = _location_summary_from_entries(sample)
+    elif placeholder_location_entries:
+        merged["locations"] = [dict(item) for item in placeholder_location_entries[:1]]
+
+
+def _apply_location_state(
+    *,
+    merged: dict[str, Any],
+    location_entries: list[dict[str, Any]],
+    placeholder_location_entries: list[dict[str, Any]],
+) -> None:
     if location_entries:
         normalized_locations = normalize_location_details(location_entries)
         merged_locations = normalized_locations.get("locations") or location_entries
@@ -598,10 +688,20 @@ def _apply_merged_locations(
         if not merged["locationSummary"] and merged_locations:
             merged["locationSummary"] = _location_summary_from_entries(merged_locations)
     elif placeholder_location_entries:
-        merged["locations"] = placeholder_location_entries
+        merged["locations"] = [dict(item) for item in placeholder_location_entries[:1]]
 
 
-def merge_records(existing: CanonicalJob, candidate: CanonicalJob) -> CanonicalJob:
+def _merge_records_with_source_bundle_state(
+    *,
+    existing: CanonicalJob,
+    candidate: CanonicalJob,
+    source_bundle: list[dict[str, Any]],
+    source_bundle_keys: set[str],
+    source_bundle_count: int,
+    location_entries: list[dict[str, Any]],
+    placeholder_location_entries: list[dict[str, Any]],
+    location_keys: set[str],
+) -> tuple[CanonicalJob, int]:
     base, other = choose_base_record(existing, candidate)
     merged = dict(base.to_dict())
     other_dict = other.to_dict()
@@ -609,15 +709,30 @@ def merge_records(existing: CanonicalJob, candidate: CanonicalJob) -> CanonicalJ
     _prefer_company_and_posted_at(merged, other_dict)
     _prefer_specific_title(merged, other_dict)
 
-    merge_rows = [existing.to_dict(), candidate.to_dict(), merged]
-    bundle = _merge_source_bundle(merge_rows)
-    merged["sourceBundle"] = bundle
-    merged["sourceBundleCount"] = len(bundle)
-    _apply_merged_locations(merged=merged, rows=merge_rows)
+    candidate_dict = candidate.to_dict()
+    source_bundle_count = _extend_source_bundle_state(
+        bundle=source_bundle,
+        keys=source_bundle_keys,
+        count=source_bundle_count,
+        incoming=candidate_dict,
+    )
+    merged["sourceBundle"] = _source_bundle_working_sample(source_bundle)
+    merged["sourceBundleCount"] = source_bundle_count
+    _extend_location_state(
+        location_entries=location_entries,
+        placeholder_location_entries=placeholder_location_entries,
+        location_keys=location_keys,
+        incoming=candidate_dict,
+    )
+    _apply_location_state_sample(
+        merged=merged,
+        location_entries=location_entries,
+        placeholder_location_entries=placeholder_location_entries,
+    )
 
     merged["qualityScore"] = compute_quality_score(merged)
     merged["focusScore"] = compute_focus_score(merged)
-    return CanonicalJob.from_mapping(merged)
+    return CanonicalJob.from_mapping(merged), source_bundle_count
 
 
 def _is_unknown_company(job: dict[str, Any]) -> bool:
@@ -991,8 +1106,25 @@ def _append_new_dedup_row(
     by_sparse_identity: dict[str, int],
     by_social: dict[str, int],
     by_smartrecruiters_title_location_alias: dict[str, int],
+    source_bundles_by_idx: list[list[dict[str, Any]]],
+    source_bundle_keys_by_idx: list[set[str]],
+    source_bundle_counts_by_idx: list[int],
+    location_entries_by_idx: list[list[dict[str, Any]]],
+    placeholder_location_entries_by_idx: list[list[dict[str, Any]]],
+    location_keys_by_idx: list[set[str]],
 ) -> None:
     item = dict(payload)
+    source_bundle, source_bundle_keys, source_bundle_count = _source_bundle_state_from_payload(item)
+    location_entries, placeholder_location_entries, location_keys = _location_state_from_payload(
+        item
+    )
+    item["sourceBundle"] = _source_bundle_working_sample(source_bundle)
+    item["sourceBundleCount"] = source_bundle_count
+    _apply_location_state_sample(
+        merged=item,
+        location_entries=location_entries,
+        placeholder_location_entries=placeholder_location_entries,
+    )
     item["dedupKey"] = _dedup_key(
         item=item,
         primary=primary,
@@ -1002,6 +1134,12 @@ def _append_new_dedup_row(
     item["qualityScore"] = compute_quality_score(item)
     item["focusScore"] = compute_focus_score(item)
     merged_rows.append(CanonicalJob.from_mapping(item))
+    source_bundles_by_idx.append(source_bundle)
+    source_bundle_keys_by_idx.append(source_bundle_keys)
+    source_bundle_counts_by_idx.append(source_bundle_count)
+    location_entries_by_idx.append(location_entries)
+    placeholder_location_entries_by_idx.append(placeholder_location_entries)
+    location_keys_by_idx.append(location_keys)
     _index_row_keys(
         idx=len(merged_rows) - 1,
         primary=primary,
@@ -1221,8 +1359,24 @@ def _merge_into_target(
     by_sparse_identity: dict[str, int],
     by_social: dict[str, int],
     by_smartrecruiters_title_location_alias: dict[str, int],
+    source_bundles_by_idx: list[list[dict[str, Any]]],
+    source_bundle_keys_by_idx: list[set[str]],
+    source_bundle_counts_by_idx: list[int],
+    location_entries_by_idx: list[list[dict[str, Any]]],
+    placeholder_location_entries_by_idx: list[list[dict[str, Any]]],
+    location_keys_by_idx: list[set[str]],
 ) -> None:
-    merged = merge_records(merged_rows[target_idx], current)
+    merged, source_bundle_count = _merge_records_with_source_bundle_state(
+        existing=merged_rows[target_idx],
+        candidate=current,
+        source_bundle=source_bundles_by_idx[target_idx],
+        source_bundle_keys=source_bundle_keys_by_idx[target_idx],
+        source_bundle_count=source_bundle_counts_by_idx[target_idx],
+        location_entries=location_entries_by_idx[target_idx],
+        placeholder_location_entries=placeholder_location_entries_by_idx[target_idx],
+        location_keys=location_keys_by_idx[target_idx],
+    )
+    source_bundle_counts_by_idx[target_idx] = source_bundle_count
     merged_payload = merged.to_dict()
     primary = fingerprint_url(merged_payload.get("jobLink"))
     secondary = dedup_secondary_key(merged)
@@ -1251,6 +1405,35 @@ def _merge_into_target(
         row=merged_rows[target_idx],
         by_smartrecruiters_title_location_alias=by_smartrecruiters_title_location_alias,
     )
+
+
+def _attach_source_bundle_state(
+    *,
+    rows: list[CanonicalJob],
+    source_bundles_by_idx: list[list[dict[str, Any]]],
+    source_bundle_counts_by_idx: list[int],
+    location_entries_by_idx: list[list[dict[str, Any]]],
+    placeholder_location_entries_by_idx: list[list[dict[str, Any]]],
+) -> list[CanonicalJob]:
+    attached: list[CanonicalJob] = []
+    for idx, row in enumerate(rows):
+        payload = row.to_dict()
+        if idx < len(source_bundles_by_idx):
+            source_bundle = source_bundles_by_idx[idx]
+            payload["sourceBundle"] = _source_bundle_working_sample(source_bundle)
+            payload["sourceBundleCount"] = max(
+                int(row.sourceBundleCount or 0),
+                source_bundle_counts_by_idx[idx],
+                len(source_bundle),
+            )
+        if idx < len(location_entries_by_idx):
+            _apply_location_state(
+                merged=payload,
+                location_entries=location_entries_by_idx[idx],
+                placeholder_location_entries=placeholder_location_entries_by_idx[idx],
+            )
+        attached.append(CanonicalJob.from_mapping(payload))
+    return attached
 
 
 def _merge_reason_counts(merge_reason: str) -> tuple[int, int, int, int, int]:
@@ -1288,6 +1471,12 @@ def deduplicate_jobs(
     by_sparse_identity: dict[str, int] = {}
     by_social: dict[str, int] = {}
     by_smartrecruiters_title_location_alias: dict[str, int] = {}
+    source_bundles_by_idx: list[list[dict[str, Any]]] = []
+    source_bundle_keys_by_idx: list[set[str]] = []
+    source_bundle_counts_by_idx: list[int] = []
+    location_entries_by_idx: list[list[dict[str, Any]]] = []
+    placeholder_location_entries_by_idx: list[list[dict[str, Any]]] = []
+    location_keys_by_idx: list[set[str]] = []
     merges = 0
     merged_by_primary = 0
     merged_by_secondary = 0
@@ -1353,6 +1542,12 @@ def deduplicate_jobs(
                 by_sparse_identity=by_sparse_identity,
                 by_social=by_social,
                 by_smartrecruiters_title_location_alias=(by_smartrecruiters_title_location_alias),
+                source_bundles_by_idx=source_bundles_by_idx,
+                source_bundle_keys_by_idx=source_bundle_keys_by_idx,
+                source_bundle_counts_by_idx=source_bundle_counts_by_idx,
+                location_entries_by_idx=location_entries_by_idx,
+                placeholder_location_entries_by_idx=placeholder_location_entries_by_idx,
+                location_keys_by_idx=location_keys_by_idx,
             )
             continue
 
@@ -1403,6 +1598,12 @@ def deduplicate_jobs(
             by_sparse_identity=by_sparse_identity,
             by_social=by_social,
             by_smartrecruiters_title_location_alias=by_smartrecruiters_title_location_alias,
+            source_bundles_by_idx=source_bundles_by_idx,
+            source_bundle_keys_by_idx=source_bundle_keys_by_idx,
+            source_bundle_counts_by_idx=source_bundle_counts_by_idx,
+            location_entries_by_idx=location_entries_by_idx,
+            placeholder_location_entries_by_idx=placeholder_location_entries_by_idx,
+            location_keys_by_idx=location_keys_by_idx,
         )
         merged_key = clean_text(merged_rows[target_idx].dedupKey)
         if merged_key:
@@ -1410,6 +1611,13 @@ def deduplicate_jobs(
             if merge_reason == "known_mirror_pair":
                 current_run_known_mirror_pair_dedup_keys.add(merged_key)
 
+    merged_rows = _attach_source_bundle_state(
+        rows=merged_rows,
+        source_bundles_by_idx=source_bundles_by_idx,
+        source_bundle_counts_by_idx=source_bundle_counts_by_idx,
+        location_entries_by_idx=location_entries_by_idx,
+        placeholder_location_entries_by_idx=placeholder_location_entries_by_idx,
+    )
     merged_rows = _sort_enrich_and_number(merged_rows)
     return merged_rows, {
         "inputCount": len(rows),

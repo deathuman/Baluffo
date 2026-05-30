@@ -72,6 +72,9 @@ def test_looks_like_category_container_url_detects_category_paths(url: str) -> N
         ("en", "https://example.com/career"),
         ("All categories : new", "https://example.com/vacancies"),
         ("...", "https://example.com/vacancies/filter/page-is-6/apply"),
+        ("Skip to content", "https://example.com/careers"),
+        ("Careers!", "https://example.com/careers"),
+        ("Jobs", "https://example.com/jobs"),
         ("Finance & Legal", "https://example.com/careers/finance-legal"),
         ("Finance &amp; Legal", "https://example.com/careers/finance-legal"),
         ("Finance Legal", "https://example.com/careers/finance-legal"),
@@ -101,6 +104,28 @@ def test_static_container_artifact_evidence_marks_generic_container_rows(
         ("Game Programmer", "https://example.com/en/game-programmer"),
         ("Software Engineers", "https://example.com/job/tech"),
         ("Role A", "https://example.com/jobs/role-a"),
+        ("Support Specialist (German)", "https://example.com/jobs/support-specialist-german"),
+        ("Sales Representative", "https://example.com/careers/sales-representative"),
+        (
+            "Sales Development Agent (German-Speaking)",
+            "https://example.com/jobs/sales-development-agent",
+        ),
+        ("Revenue Accountant", "https://example.com/careers/revenue-accountant"),
+        ("Gameplay Animator", "https://example.com/careers/gameplay-animator"),
+        ("QA Testers", "https://example.com/careers/qa-testers"),
+        ("Creative Grouper", "https://example.com/jobs/creative-grouper?lang=es-mx"),
+        (
+            "Freelance Japanese-English Interpreter & Translator (m/f/d)",
+            "https://example.com/jobs/japanese-english-interpreter-translator",
+        ),
+        (
+            "Senior Client Success Advisor, Risk & Audit (English & French)",
+            "https://example.com/jobs/senior-client-success-advisor",
+        ),
+        (
+            "Subtitle Writer & AD/CC (English to Tamil) - Remote -Freelancer",
+            "https://example.com/jobs/subtitle-writer-tamil",
+        ),
     ],
 )
 def test_static_container_artifact_evidence_allows_real_role_titles(title: str, url: str) -> None:

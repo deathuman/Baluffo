@@ -56,6 +56,7 @@ from .static_runtime import StaticSourceContext
 
 _EXTERNAL_DETAIL_FANOUT_HOST_THRESHOLD = 2
 _EXTERNAL_DETAIL_FANOUT_LINK_CAP = 8
+_PLUGIN_STATIC_ARTIFACT_NESTED_DETAIL_LIMIT = 12
 
 # (adapter_name, html_substring) pairs for diagnostic warnings
 # when a static source's page HTML contains an ATS signature.
@@ -576,22 +577,129 @@ def _record_empty_plugin_result(ctx: StaticSourceContext) -> None:
         ctx.errors.append(f"static:{ctx.source_name}: {ctx.entry_report.get('error')}")
 
 
+def _plugin_static_artifact_detail_result(
+    ctx: StaticSourceContext, *, detail: str, title: str, source_budget_s: int
+) -> dict[str, Any]:
+    try:
+        result = process_detail_link(
+            detail=detail,
+            detail_title=title,
+            source_started=ctx.source_started,
+            static_source_time_budget_s=source_budget_s,
+            fetch_html_cached=ctx.html_fetcher.fetch_html_cached,
+            timeout_s=ctx.run_deps.timeout_s,
+            detail_retries=ctx.run_deps.retries,
+            company=ctx.company,
+            source_name=ctx.source_name,
+            source=ctx.source,
+            ignored_link_titles=ctx.ignored_link_titles,
+            default_path_tokens=ctx.runtime_config.default_path_tokens,
+            default_query_keys=ctx.runtime_config.default_query_keys,
+        )
+    except Exception as exc:  # noqa: BLE001
+        ctx.warnings.append(f"static:{ctx.source_name}:{detail}: artifact repair failed: {exc}")
+        return {}
+    ctx.stats["detail_pages_visited"] += 1
+    ctx.stats["detail_fetch_ms"] += int(result.get("fetchMs") or 0)
+    return result
+
+
+def _append_repaired_plugin_rows(
+    ctx: StaticSourceContext,
+    target: list[dict[str, Any]],
+    rows: list[Any],
+    seen_links: set[str],
+) -> int:
+    appended = 0
+    for raw_row in rows:
+        if not isinstance(raw_row, dict) or _is_provisional_static_artifact_row(raw_row):
+            continue
+        row = dict(raw_row)
+        link = normalize_url(row.get("jobLink"))
+        if link:
+            if link in seen_links:
+                continue
+            seen_links.add(link)
+        row["adapter"] = "static"
+        row["source"] = _source_label(ctx)
+        row["studio"] = _source_studio(ctx)
+        target.append(row)
+        appended += 1
+    return appended
+
+
+def _repair_plugin_static_artifact_rows(
+    ctx: StaticSourceContext, plugin_jobs: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    if not plugin_jobs:
+        return plugin_jobs
+    source_budget_s = int(
+        getattr(ctx.runtime_config, "static_source_time_budget_s", 0)
+        or max(5, int(ctx.run_deps.timeout_s or 5) * 2)
+    )
+    repaired: list[dict[str, Any]] = []
+    seen_repaired_links: set[str] = set()
+    for raw_row in plugin_jobs:
+        if not isinstance(raw_row, dict):
+            continue
+        row = dict(raw_row)
+        if not _is_provisional_static_artifact_row(row):
+            _append_repaired_plugin_rows(ctx, repaired, [row], seen_repaired_links)
+            continue
+        link = normalize_url(row.get("jobLink"))
+        title = clean_text(row.get("title"))
+        if not link:
+            continue
+        detail_result = _plugin_static_artifact_detail_result(
+            ctx, detail=link, title=title, source_budget_s=source_budget_s
+        )
+        if _append_repaired_plugin_rows(
+            ctx, repaired, detail_result.get("rows") or [], seen_repaired_links
+        ):
+            continue
+        for nested in list(detail_result.get("nestedDetailLinks") or [])[
+            :_PLUGIN_STATIC_ARTIFACT_NESTED_DETAIL_LIMIT
+        ]:
+            nested_link = normalize_url((nested or {}).get("url"))
+            if not nested_link or nested_link == link:
+                continue
+            nested_result = _plugin_static_artifact_detail_result(
+                ctx,
+                detail=nested_link,
+                title=clean_text((nested or {}).get("title")),
+                source_budget_s=source_budget_s,
+            )
+            _append_repaired_plugin_rows(
+                ctx, repaired, nested_result.get("rows") or [], seen_repaired_links
+            )
+    return repaired
+
+
 # mutation — finalizes plugin job results on ctx
 def _finalize_plugin_fast_path(
     ctx: StaticSourceContext,
     plugin_jobs: list[dict[str, Any]],
     plugin_meta: dict[str, Any] | None,
 ) -> None:
+    original_plugin_count = len(plugin_jobs)
+    plugin_jobs = _repair_plugin_static_artifact_rows(ctx, plugin_jobs)
     _apply_one_man_studio_cleanup(ctx, plugin_jobs)
     ctx.emit_heartbeat()
     ctx.jobs.extend(plugin_jobs)
     ctx.entry_report["fetchedCount"] = len(ctx.pages)
     ctx.entry_report["keptCount"] = len(plugin_jobs)
+    rejected_static_artifacts = max(0, original_plugin_count - len(plugin_jobs))
+    if rejected_static_artifacts:
+        ctx.entry_report["staticArtifactRowsRejected"] = rejected_static_artifacts
     if plugin_meta is None:
         ctx.entry_report["status"] = "ok"
         return
     _apply_static_plugin_meta(ctx, plugin_meta)
     if plugin_jobs:
+        ctx.entry_report["status"] = "ok"
+        ctx.entry_report["error"] = ""
+        return
+    if original_plugin_count and rejected_static_artifacts:
         ctx.entry_report["status"] = "ok"
         ctx.entry_report["error"] = ""
         return
@@ -1153,17 +1261,14 @@ def _append_detail_result_rows(ctx: StaticSourceContext, rows: list[dict[str, An
     return appended
 
 
-def _enqueue_nested_detail_links(
+def _nested_detail_candidates(
     ctx: StaticSourceContext,
-    plan: StaticDetailTraversalPlan,
     state: _StaticDetailTraversalState,
     *,
     parent_url: str,
     parent_depth: int,
     nested_links: list[dict[str, Any]],
-) -> int:
-    if parent_depth >= 1:
-        return 0
+) -> list[StaticDetailCandidate]:
     child_candidates: list[StaticDetailCandidate] = []
     for item in nested_links:
         if not isinstance(item, dict):
@@ -1179,8 +1284,17 @@ def _enqueue_nested_detail_links(
                 parent_url=parent_url,
             )
         )
+    return child_candidates
+
+
+def _cap_nested_detail_candidates(
+    ctx: StaticSourceContext,
+    *,
+    parent_url: str,
+    child_candidates: list[StaticDetailCandidate],
+) -> list[StaticDetailCandidate]:
     if not child_candidates:
-        return 0
+        return []
     nested_profile = domain_profile_for_url(parent_url)
     profile_external_cap = max(0, int(nested_profile.get("max_external_detail_links") or 0))
     child_candidates = _cap_external_detail_fanout(
@@ -1198,7 +1312,16 @@ def _enqueue_nested_detail_links(
             else profile_max_detail_links
         )
     if nested_limit and nested_limit < len(child_candidates):
-        child_candidates = child_candidates[:nested_limit]
+        return child_candidates[:nested_limit]
+    return child_candidates
+
+
+def _schedule_nested_detail_candidates(
+    ctx: StaticSourceContext,
+    plan: StaticDetailTraversalPlan,
+    state: _StaticDetailTraversalState,
+    child_candidates: list[StaticDetailCandidate],
+) -> int:
     added = 0
     for candidate in child_candidates:
         if candidate.url in ctx.seen_links or candidate.url in state.scheduled_urls:
@@ -1211,6 +1334,34 @@ def _enqueue_nested_detail_links(
             int(ctx.stats.get("candidate_links_found") or 0) + added
         )
     return added
+
+
+def _enqueue_nested_detail_links(
+    ctx: StaticSourceContext,
+    plan: StaticDetailTraversalPlan,
+    state: _StaticDetailTraversalState,
+    *,
+    parent_url: str,
+    parent_depth: int,
+    nested_links: list[dict[str, Any]],
+) -> int:
+    if parent_depth >= 1:
+        return 0
+    child_candidates = _nested_detail_candidates(
+        ctx,
+        state,
+        parent_url=parent_url,
+        parent_depth=parent_depth,
+        nested_links=nested_links,
+    )
+    if not child_candidates:
+        return 0
+    child_candidates = _cap_nested_detail_candidates(
+        ctx,
+        parent_url=parent_url,
+        child_candidates=child_candidates,
+    )
+    return _schedule_nested_detail_candidates(ctx, plan, state, child_candidates)
 
 
 # mutation — modifies in-place state

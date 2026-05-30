@@ -237,12 +237,17 @@ def _detail_rows(
 
 def _append_detail_rows(
     target: list[RawJob], detail_rows: list[dict[str, Any]], *, source_name: str, company: str
-) -> None:
+) -> int:
+    appended = 0
     for row in detail_rows:
+        if has_static_container_artifact_evidence(row.get("title"), row.get("jobLink")):
+            continue
         row["source"] = source_name
         row["studio"] = company
         row["adapter"] = "static"
         target.append(row)
+        appended += 1
+    return appended
 
 
 def _enrich_rendered_rows(
@@ -256,9 +261,12 @@ def _enrich_rendered_rows(
     timeout_s,
     retries,
     fetch_html_cached,
+    resolve_one_man_detail=True,
 ):
     enriched: list[RawJob] = []
-    one_man = "theonemanstudio" in source_id.lower() or "one man studio" in source_name.lower()
+    one_man = resolve_one_man_detail and (
+        "theonemanstudio" in source_id.lower() or "one man studio" in source_name.lower()
+    )
     for raw_row in rendered_rows:
         row = dict(raw_row)
         row["adapter"] = "static"
@@ -287,8 +295,11 @@ def _enrich_rendered_rows(
                 source_row,
             )
             if detail_rows:
-                _append_detail_rows(enriched, detail_rows, source_name=source_name, company=company)
-                continue
+                appended = _append_detail_rows(
+                    enriched, detail_rows, source_name=source_name, company=company
+                )
+                if appended or static_artifact:
+                    continue
             if static_artifact:
                 continue
             if detail_result.get("rejectedClassification"):
@@ -403,7 +414,18 @@ def run(
         rows, company=company, source_name=source_name, source_id=source_id, source_row=source_row
     )
     if cleaned:
-        return cleaned
+        return _enrich_rendered_rows(
+            cleaned,
+            source_name=source_name,
+            source_id=source_id,
+            source_row=source_row,
+            company=company,
+            fetch_text=fetch_text,
+            timeout_s=timeout_s,
+            retries=retries,
+            fetch_html_cached=fetch_html_cached,
+            resolve_one_man_detail=False,
+        )
     rendered_rows, html = _rendered_rows(
         html, page_url, company, source_id, timeout_s, try_playwright
     )

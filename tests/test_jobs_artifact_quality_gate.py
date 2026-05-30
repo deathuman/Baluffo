@@ -214,6 +214,56 @@ def test_jobs_artifact_quality_gate_blocks_static_container_artifact_titles(
     assert report["blocked"]["staticContainerTitleExamples"][0]["title"] == title
 
 
+def test_jobs_artifact_quality_gate_does_not_block_sheet_container_word_on_detail_url(
+    tmp_path: Path,
+) -> None:
+    csv_path = tmp_path / "jobs-unified.csv"
+    _write_csv(
+        csv_path,
+        [
+            {
+                "id": "1",
+                "title": "Creative",
+                "company": "Vidsy",
+                "city": "London",
+                "country": "United Kingdom",
+                "jobLink": "https://jobs.lever.co/vidsy/37b557aa-3225-4f05-b068-77440a9f60d7",
+                "source": "google_sheets",
+                "sourceJobId": "sheet-16452",
+            }
+        ],
+    )
+
+    report = analyze_jobs_artifact(str(csv_path))
+
+    assert report["status"] == "pass"
+    assert report["counts"]["staticContainerTitleLeaks"] == 0
+
+
+def test_jobs_artifact_quality_gate_blocks_sheet_container_word_with_container_url(
+    tmp_path: Path,
+) -> None:
+    csv_path = tmp_path / "jobs-unified.csv"
+    _write_csv(
+        csv_path,
+        [
+            {
+                "id": "1",
+                "title": "Jobs",
+                "company": "Example Games",
+                "jobLink": "https://example.com/jobs",
+                "source": "google_sheets",
+                "sourceJobId": "sheet-2",
+            }
+        ],
+    )
+
+    report = analyze_jobs_artifact(str(csv_path))
+
+    assert report["status"] == "blocked"
+    assert report["counts"]["staticContainerTitleLeaks"] == 1
+
+
 def test_jobs_artifact_quality_gate_blocks_container_artifact_from_static_bundle(
     tmp_path: Path,
 ) -> None:

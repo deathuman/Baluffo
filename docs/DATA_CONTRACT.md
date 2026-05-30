@@ -45,7 +45,7 @@ Represents a single job posting retrieved from the external sources.
 | `qualityScore` | `number` | The heuristic health of the job details [0-100]. |
 | `focusScore` | `number` | Deprecated/internal score [0-100]. |
 | `sourceBundleCount` | `number` | The number of exact duplicates collapsed into this canonical row. |
-| `sourceBundle` | `Array<Object>` | Raw ATS payload of the duplicate rows. |
+| `sourceBundle` | `Array<Object>` | Stable capped sample of raw ATS payload from duplicate rows. When `sourceBundleCount` exceeds the array length, the row has additional duplicate evidence omitted from the artifact for size safety. |
 | `adapter` | `string` | The Python adapter module used (e.g., `static`, `social`, `csv`). |
 | `studio` | `string` | The underlying pipeline configuration studio group. |
 

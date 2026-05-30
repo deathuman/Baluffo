@@ -129,26 +129,46 @@ def _is_google_sheets_excluded_title_header(header: str) -> bool:
     return bool(tokens & _GOOGLE_SHEETS_TITLE_EXCLUDED_TOKENS)
 
 
-def find_title_column(headers: Sequence[str]) -> int:
-    normalized = [norm_text(header) for header in headers]
+def _find_exact_title_header(normalized_headers: Sequence[str]) -> int:
     for name in _GOOGLE_SHEETS_TITLE_EXACT_HEADERS:
         needle = norm_text(name)
-        if needle in normalized:
-            return normalized.index(needle)
-    for idx, header in enumerate(normalized):
+        if needle in normalized_headers:
+            return normalized_headers.index(needle)
+    return -1
+
+
+def _find_title_phrase_header(normalized_headers: Sequence[str]) -> int:
+    for idx, header in enumerate(normalized_headers):
         if _is_google_sheets_excluded_title_header(header):
             continue
         if header.endswith(" title") or " title " in header:
             return idx
+    return -1
+
+
+def _find_role_word_header(normalized_headers: Sequence[str]) -> int:
     for exact_name in ("job", "role", "position"):
-        if exact_name in normalized:
-            return normalized.index(exact_name)
-    for idx, header in enumerate(normalized):
+        if exact_name in normalized_headers:
+            return normalized_headers.index(exact_name)
+    for idx, header in enumerate(normalized_headers):
         if _is_google_sheets_excluded_title_header(header):
             continue
         header_tokens = set(header.split())
         if header_tokens & {"job", "jobs", "role", "roles", "position", "positions"}:
             return idx
+    return -1
+
+
+def find_title_column(headers: Sequence[str]) -> int:
+    normalized = [norm_text(header) for header in headers]
+    for finder in (
+        _find_exact_title_header,
+        _find_title_phrase_header,
+        _find_role_word_header,
+    ):
+        index = finder(normalized)
+        if index >= 0:
+            return index
     return -1
 
 

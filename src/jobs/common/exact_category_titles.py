@@ -125,8 +125,13 @@ _EXACT_CATEGORY_LABEL_TERMS = frozenset(
 _EXACT_CATEGORY_VETO_TOKENS = frozenset(
     {
         "administrator",
+        "adviser",
+        "advisers",
+        "advisor",
+        "advisors",
         "analyst",
         "architect",
+        "architects",
         "artist",
         "assistant",
         "associate",
@@ -159,6 +164,73 @@ _EXACT_CATEGORY_VETO_TOKENS = frozenset(
         "supervisor",
         "technical",
         "writer",
+    }
+)
+_ROLE_TITLE_VETO_TOKENS = frozenset(
+    {
+        *_EXACT_CATEGORY_VETO_TOKENS,
+        "accountant",
+        "accountants",
+        "agent",
+        "agents",
+        "animator",
+        "animators",
+        "apprentice",
+        "bd",
+        "bdr",
+        "collector",
+        "controller",
+        "contract",
+        "creator",
+        "copywriter",
+        "editor",
+        "editors",
+        "expert",
+        "generalist",
+        "generalists",
+        "grouper",
+        "illustrator",
+        "illustrators",
+        "insights",
+        "integrator",
+        "interpreter",
+        "interns",
+        "leader",
+        "localizer",
+        "media",
+        "modeler",
+        "office",
+        "operator",
+        "outreacher",
+        "owner",
+        "partner",
+        "planner",
+        "pm",
+        "president",
+        "prototyper",
+        "qe",
+        "red",
+        "representative",
+        "representatives",
+        "retoucher",
+        "researcher",
+        "scout",
+        "sdet",
+        "sales",
+        "senior",
+        "solution",
+        "sourcer",
+        "staff",
+        "teacher",
+        "teamer",
+        "technician",
+        "tester",
+        "testers",
+        "testing",
+        "trainee",
+        "translator",
+        "translators",
+        "vp",
     }
 )
 _CATEGORY_PATH_FRAGMENTS = (
@@ -220,7 +292,10 @@ _STATIC_CONTAINER_LABEL_TERMS = frozenset(
         "Back Office",
         "Careers",
         "Creative",
+        "Job",
+        "Jobs",
         "Open positions",
+        "Skip to content",
         "Vacancies",
         "\u0410\u043d\u0430\u043b\u0438\u0442\u0438\u043a\u0430",
         "\u0410\u0440\u0442",
@@ -314,16 +389,24 @@ def category_label_keys(value: Any) -> set[str]:
     raw = clean_text(unescape(clean_text(value)))
     if not raw:
         return set()
+    stripped = clean_text(re.sub(r"^[^\w]+|[^\w]+$", "", raw))
     spaced = norm_text(raw.replace("-", " ").replace("_", " ").replace("&", " and "))
     compact_and = norm_text(raw.replace("-", " ").replace("_", " ").replace("&", " "))
+    stripped_spaced = norm_text(stripped.replace("-", " ").replace("_", " ").replace("&", " and "))
+    stripped_compact_and = norm_text(stripped.replace("-", " ").replace("_", " ").replace("&", " "))
     return {
         key
         for key in {
             norm_text(raw),
+            norm_text(stripped),
             spaced,
             compact_and,
+            stripped_spaced,
+            stripped_compact_and,
             spaced.replace(" ", "-"),
             compact_and.replace(" ", "-"),
+            stripped_spaced.replace(" ", "-"),
+            stripped_compact_and.replace(" ", "-"),
         }
         if key
     }
@@ -370,6 +453,8 @@ def _looks_like_language_switch_title(value: Any) -> bool:
     raw = clean_text(value)
     if not raw or "(" not in raw or ")" not in raw:
         return False
+    if category_tokens(raw) & _ROLE_TITLE_VETO_TOKENS:
+        return False
     lowered = norm_text(raw)
     if any(word in lowered for word in _LANGUAGE_SWITCH_WORDS):
         return True
@@ -415,7 +500,7 @@ def _looks_like_short_container_label(value: Any) -> bool:
     tokens = category_tokens(raw)
     if not tokens or len(tokens) > 3:
         return False
-    return not bool(tokens & _EXACT_CATEGORY_VETO_TOKENS)
+    return not bool(tokens & _ROLE_TITLE_VETO_TOKENS)
 
 
 def _looks_like_categoryish_slug_title(value: Any) -> bool:
@@ -482,6 +567,28 @@ def looks_like_static_container_url(value: Any) -> bool:
     )
 
 
+def _looks_like_explicit_static_container_url(value: Any) -> bool:
+    normalized = normalize_url(value) or clean_text(value)
+    if not normalized:
+        return False
+    if looks_like_category_container_url(normalized):
+        return True
+    parsed = urlparse(normalized)
+    path = (parsed.path or "").lower()
+    query = (parsed.query or "").lower()
+    combined = f"{path}?{query}" if query else path
+    if any(fragment in combined for fragment in _STATIC_CONTAINER_PATH_FRAGMENTS):
+        return True
+    if any(fragment in query for fragment in _STATIC_CONTAINER_QUERY_FRAGMENTS):
+        return True
+    segments = [segment for segment in re.split(r"[\\/]+", path) if segment]
+    if any(segment in _STATIC_CONTAINER_PATH_SEGMENTS for segment in segments):
+        return True
+    return any(
+        segment.startswith(("filter-", "function-", "page-is-", "project-")) for segment in segments
+    )
+
+
 def _title_matches_url_slug(title: Any, url: Any) -> bool:
     if not _looks_like_categoryish_slug_title(title):
         return False
@@ -499,10 +606,15 @@ def _title_matches_url_slug(title: Any, url: Any) -> bool:
 def has_static_container_artifact_evidence(title: Any, url: Any = "") -> bool:
     if is_exact_category_title(title):
         return True
-    if is_static_container_artifact_title(title) and _looks_like_language_switch_title(title):
+    title_is_static_artifact = is_static_container_artifact_title(title)
+    if title_is_static_artifact and _looks_like_language_switch_title(title):
+        return True
+    if title_is_static_artifact:
         return True
     if not _looks_like_short_container_label(title):
         return False
     if not url:
         return False
-    return looks_like_static_container_url(url) or _title_matches_url_slug(title, url)
+    if _looks_like_categoryish_slug_title(title):
+        return looks_like_static_container_url(url) or _title_matches_url_slug(title, url)
+    return _looks_like_explicit_static_container_url(url)
