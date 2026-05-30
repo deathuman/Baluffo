@@ -14,6 +14,7 @@ from typing import Any, cast
 
 from src.jobs.common.datetime_utils import to_iso
 from src.jobs.common.diagnostics import set_source_diagnostics
+from src.jobs.common.exact_category_titles import has_static_container_artifact_evidence
 from src.jobs.common.taxonomy import (
     ClassificationContext,
     classify_zero_kept,
@@ -168,6 +169,8 @@ def _normalize_job(raw: Any, source_row: dict[str, Any]) -> RawJob | None:
         job_link=job_link,
         source_name=source_name,
     ):
+        return None
+    if has_static_container_artifact_evidence(title, job_link):
         return None
     if not source_job_id:
         source_job_id = hashlib.sha1(f"{title}|{company}|{job_link}".encode()).hexdigest()[:12]

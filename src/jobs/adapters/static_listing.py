@@ -39,7 +39,7 @@ from src.jobs.adapters.static_runtime_support import (
     static_source_budget_exhausted,
     update_source_detail_taxonomy,
 )
-from src.jobs.common.exact_category_titles import is_exact_category_title
+from src.jobs.common.exact_category_titles import has_static_container_artifact_evidence
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.common.http import HttpStatusError
 from src.jobs.page_gating import classify_job_page, looks_like_job_title_candidate
@@ -173,8 +173,8 @@ class StaticDetailCandidate:
     parent_url: str = ""
 
 
-def _is_provisional_exact_category_row(row: dict[str, Any]) -> bool:
-    return is_exact_category_title(row.get("title"))
+def _is_provisional_static_artifact_row(row: dict[str, Any]) -> bool:
+    return has_static_container_artifact_evidence(row.get("title"), row.get("jobLink"))
 
 
 def _append_detail_candidate(
@@ -665,7 +665,7 @@ def _append_parsed_listing_rows(
     )
     for row in parsed:
         link = normalize_url(row.get("jobLink"))
-        if _is_provisional_exact_category_row(row):
+        if _is_provisional_static_artifact_row(row):
             provisional_count += 1
             if link:
                 _append_detail_candidate(
@@ -749,7 +749,7 @@ def _append_rendered_row(
     title = clean_text(row.get("title"))
     link = normalize_url(row.get("jobLink"))
     location_hint = clean_text(row.pop("_locationHint", ""))
-    if _is_provisional_exact_category_row(row):
+    if _is_provisional_static_artifact_row(row):
         if link:
             _append_detail_candidate(
                 detail_links,
@@ -1142,7 +1142,7 @@ def _record_detail_rejection(ctx: StaticSourceContext, detail_result: dict[str, 
 def _append_detail_result_rows(ctx: StaticSourceContext, rows: list[dict[str, Any]]) -> int:
     appended = 0
     for row in rows:
-        if not isinstance(row, dict) or _is_provisional_exact_category_row(row):
+        if not isinstance(row, dict) or _is_provisional_static_artifact_row(row):
             continue
         link = normalize_url(row.get("jobLink"))
         if not link or link in ctx.seen_links:

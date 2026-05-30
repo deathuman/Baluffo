@@ -173,6 +173,96 @@ def test_jobs_artifact_quality_gate_blocks_static_exact_category_title_with_cont
     assert report["counts"]["exactCategoryTitleLeaks"] == 1
 
 
+@pytest.mark.parametrize(
+    ("title", "job_link"),
+    [
+        ("Creative", "https://example.com/careers/creative"),
+        ("Analytics", "https://example.com/careers/analytics"),
+        ("3D", "https://example.com/careers/function-3d"),
+        ("9", "https://example.com/careers?page-is-9"),
+        ("한국어 ( Koreanisch )", "https://example.com/careers?lang=ko"),
+        ("English ( Inglese )", "https://example.com/careers"),
+        ("en", "https://example.com/career"),
+        ("All categories : new", "https://example.com/vacancies"),
+        ("...", "https://example.com/vacancies/filter/page-is-6/apply"),
+        ("Finance & Legal", "https://example.com/careers/finance-legal"),
+        ("Data Ai", "https://example.com/careers/data-ai"),
+    ],
+)
+def test_jobs_artifact_quality_gate_blocks_static_container_artifact_titles(
+    tmp_path: Path, title: str, job_link: str
+) -> None:
+    csv_path = tmp_path / "jobs-unified.csv"
+    _write_csv(
+        csv_path,
+        [
+            {
+                "id": "1",
+                "title": title,
+                "company": "Example Games",
+                "jobLink": job_link,
+                "source": "static_source::static:listing_url:https://example.com/careers",
+                "sourceJobId": "static:container",
+            }
+        ],
+    )
+
+    report = analyze_jobs_artifact(str(csv_path))
+
+    assert report["status"] == "blocked"
+    assert report["counts"]["staticContainerTitleLeaks"] == 1
+    assert report["blocked"]["staticContainerTitleExamples"][0]["title"] == title
+
+
+def test_jobs_artifact_quality_gate_blocks_container_artifact_from_static_bundle(
+    tmp_path: Path,
+) -> None:
+    csv_path = tmp_path / "jobs-unified.csv"
+    _write_csv(
+        csv_path,
+        [
+            {
+                "id": "1",
+                "title": "All categories : new",
+                "company": "Example Games",
+                "jobLink": "https://example.com/jobs",
+                "source": "provider_feed",
+                "sourceJobId": "provider:1",
+                "sourceBundle": '[{"source":"static_source::example","jobLink":"https://example.com/careers?function-all"}]',
+            }
+        ],
+    )
+
+    report = analyze_jobs_artifact(str(csv_path))
+
+    assert report["status"] == "blocked"
+    assert report["counts"]["staticContainerTitleLeaks"] == 1
+
+
+def test_jobs_artifact_quality_gate_does_not_block_real_container_word_role(
+    tmp_path: Path,
+) -> None:
+    csv_path = tmp_path / "jobs-unified.csv"
+    _write_csv(
+        csv_path,
+        [
+            {
+                "id": "1",
+                "title": "Creative Producer",
+                "company": "Example Games",
+                "jobLink": "https://example.com/careers/creative-producer",
+                "source": "static_source::static:listing_url:https://example.com/careers",
+                "sourceJobId": "static:creative-producer",
+            }
+        ],
+    )
+
+    report = analyze_jobs_artifact(str(csv_path))
+
+    assert report["status"] == "pass"
+    assert report["counts"]["staticContainerTitleLeaks"] == 0
+
+
 def test_jobs_artifact_quality_gate_does_not_block_exact_category_term_without_static_or_sheet_evidence(
     tmp_path: Path,
 ) -> None:

@@ -17,7 +17,7 @@ from src.jobs.adapters.static_detail_heuristics import (
     _is_one_man_studio_noise_city,
     process_detail_link,
 )
-from src.jobs.common.exact_category_titles import is_exact_category_title
+from src.jobs.common.exact_category_titles import has_static_container_artifact_evidence
 from src.jobs.models import RawJob
 from src.jobs.page_gating import classify_job_page, looks_like_job_title_candidate
 from src.jobs.text_utils import clean_text, sanitize_location_text
@@ -266,12 +266,12 @@ def _enrich_rendered_rows(
         row["source"] = source_name
         _sanitize_row_locations(row, source_name=source_id, source=source_row)
         title = clean_text(row.get("title"))
-        exact_category = is_exact_category_title(title)
         detail_link = clean_text(row.get("jobLink"))
+        static_artifact = has_static_container_artifact_evidence(title, detail_link)
         needs_detail = _needs_rendered_detail_resolution(row)
         if detail_link and (
             one_man
-            or exact_category
+            or static_artifact
             or (title and not looks_like_job_title_candidate(title))
             or needs_detail
         ):
@@ -289,7 +289,7 @@ def _enrich_rendered_rows(
             if detail_rows:
                 _append_detail_rows(enriched, detail_rows, source_name=source_name, company=company)
                 continue
-            if exact_category:
+            if static_artifact:
                 continue
             if detail_result.get("rejectedClassification"):
                 continue

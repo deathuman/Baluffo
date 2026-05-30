@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
 
 from src.jobs.common.config import UNKNOWN_COMPANY_LABEL
 from src.jobs.common.exact_category_titles import (
+    has_static_container_artifact_evidence,
     is_exact_category_title,
     looks_like_category_container_url,
 )
@@ -113,9 +114,41 @@ def _has_exact_category_evidence(row: dict[str, Any]) -> bool:
     return False
 
 
+def _source_has_static_or_sheet_evidence(value: Any) -> bool:
+    source = clean_text(value)
+    return (
+        source.startswith("google_sheets")
+        or source.startswith("static_source::")
+        or source == "scrapy_static_sources"
+    )
+
+
+def _has_static_container_artifact_evidence(row: dict[str, Any]) -> bool:
+    if is_exact_category_title(row.get("title")):
+        return False
+    source_evidence = _source_has_static_or_sheet_evidence(row.get("source"))
+    if source_evidence and has_static_container_artifact_evidence(
+        row.get("title"), row.get("jobLink")
+    ):
+        return True
+    for item in _parsed_bundle(row.get("sourceBundle")):
+        bundle_source = clean_text(item.get("source"))
+        bundle_adapter = clean_text(item.get("adapter"))
+        bundle_evidence = _source_has_static_or_sheet_evidence(bundle_source) or bundle_adapter in {
+            "static",
+            "scrapy_static",
+        }
+        if bundle_evidence and has_static_container_artifact_evidence(
+            row.get("title"), item.get("jobLink") or row.get("jobLink")
+        ):
+            return True
+    return False
+
+
 def analyze_jobs_artifact(value: str) -> dict[str, Any]:
     rows = _load_rows(value)
     exact_category_examples: list[dict[str, str]] = []
+    static_container_examples: list[dict[str, str]] = []
     gracklehq_known_company_by_url: dict[str, set[str]] = defaultdict(set)
 
     for row in rows:
@@ -127,6 +160,9 @@ def analyze_jobs_artifact(value: str) -> dict[str, Any]:
     exact_category_rows = [row for row in rows if _has_exact_category_evidence(row)]
     for row in exact_category_rows[:20]:
         exact_category_examples.append(_example(row, evidence="exact_source_category_title"))
+    static_container_rows = [row for row in rows if _has_static_container_artifact_evidence(row)]
+    for row in static_container_rows[:20]:
+        static_container_examples.append(_example(row, evidence="static_container_artifact_title"))
 
     strong_unknown_examples: list[dict[str, str]] = []
     weak_unknown_examples: list[dict[str, str]] = []
@@ -168,7 +204,7 @@ def analyze_jobs_artifact(value: str) -> dict[str, Any]:
         weak_unknown_examples.append(_example(row, evidence="no_strong_company_evidence"))
         weak_unknown_host_counts[_host(row.get("jobLink")) or ""] += 1
 
-    blocked = len(exact_category_rows) + len(strong_unknown_examples)
+    blocked = len(exact_category_rows) + len(static_container_rows) + len(strong_unknown_examples)
     status = "blocked" if blocked else ("warning" if weak_unknown_examples else "pass")
     return {
         "status": status,
@@ -177,11 +213,13 @@ def analyze_jobs_artifact(value: str) -> dict[str, Any]:
         "counts": {
             "rows": len(rows),
             "exactCategoryTitleLeaks": len(exact_category_rows),
+            "staticContainerTitleLeaks": len(static_container_rows),
             "unknownCompanyStrongEvidenceLeaks": len(strong_unknown_examples),
             "unknownCompanyWeakEvidenceWarnings": len(weak_unknown_examples),
         },
         "blocked": {
             "exactCategoryTitleExamples": exact_category_examples,
+            "staticContainerTitleExamples": static_container_examples,
             "unknownCompanyExamples": strong_unknown_examples[:20],
         },
         "warnings": {
@@ -206,11 +244,13 @@ def main(argv: list[str] | None = None) -> int:
         counts = report["counts"]
         print(
             "status={status} rows={rows} exactCategoryTitleLeaks={titles} "
+            "staticContainerTitleLeaks={containers} "
             "unknownCompanyStrongEvidenceLeaks={strong} "
             "unknownCompanyWeakEvidenceWarnings={weak}".format(
                 status=report["status"],
                 rows=counts["rows"],
                 titles=counts["exactCategoryTitleLeaks"],
+                containers=counts["staticContainerTitleLeaks"],
                 strong=counts["unknownCompanyStrongEvidenceLeaks"],
                 weak=counts["unknownCompanyWeakEvidenceWarnings"],
             )

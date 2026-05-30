@@ -129,6 +129,42 @@ def test_static_scrapy_normalization_keeps_normal_same_site_static_job_row() -> 
     assert row["jobLink"] == "https://example.com/jobs/senior-systems-designer"
 
 
+def test_static_scrapy_normalization_rejects_static_container_artifact_row() -> None:
+    assert (
+        _normalize_job(
+            {
+                "title": "Creative",
+                "company": "Example Studio",
+                "jobLink": "https://example.com/careers/creative",
+                "sourceJobId": "example-creative",
+            },
+            {
+                "name": "static_source::static:listing_url:https://example.com/careers",
+                "studio": "Example Studio",
+            },
+        )
+        is None
+    )
+
+
+def test_static_scrapy_normalization_keeps_real_role_with_container_word() -> None:
+    row = _normalize_job(
+        {
+            "title": "Creative Producer",
+            "company": "Example Studio",
+            "jobLink": "https://example.com/careers/creative-producer",
+            "sourceJobId": "example-creative-producer",
+        },
+        {
+            "name": "static_source::static:listing_url:https://example.com/careers",
+            "studio": "Example Studio",
+        },
+    )
+
+    assert row is not None
+    assert row["title"] == "Creative Producer"
+
+
 def test_static_detail_fallback_rejects_talentnetwork_parser_noise_title() -> None:
     result = process_detail_html(
         detail="https://koeitecmo.vn/en",

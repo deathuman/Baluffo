@@ -19,8 +19,10 @@ from src.jobs.adapters.plugins.static._rendered_cards import (
     extract_rendered_card_jobs as _extract_rendered_card_jobs,
 )
 from src.jobs.common.exact_category_titles import (
+    has_static_container_artifact_evidence,
     is_exact_category_title,
     looks_like_category_container_url,
+    looks_like_static_container_url,
 )
 from src.jobs.common.greenhouse_identity import greenhouse_job_identity_from_url
 from src.jobs.models import RawJob
@@ -710,7 +712,9 @@ def _detail_title_from_url(detail: str, detail_title: str, ignored_link_titles: 
 def _concrete_detail_rows(rows: list[RawJob]) -> list[RawJob]:
     concrete: list[RawJob] = []
     for row in rows:
-        if isinstance(row, dict) and not is_exact_category_title(row.get("title")):
+        if isinstance(row, dict) and not has_static_container_artifact_evidence(
+            row.get("title"), row.get("jobLink")
+        ):
             concrete.append(row)
     return concrete
 
@@ -732,7 +736,13 @@ def _rendered_detail_rows(
     )
     rows: list[RawJob] = []
     for raw_row in rendered_rows:
-        if not isinstance(raw_row, dict) or is_exact_category_title(raw_row.get("title")):
+        if not isinstance(raw_row, dict):
+            continue
+        if clean_text(raw_row.get("_renderedCardMode")) == "fallback":
+            continue
+        if has_static_container_artifact_evidence(raw_row.get("title"), raw_row.get("jobLink")):
+            continue
+        if looks_like_static_parser_noise_title(clean_text(raw_row.get("title"))):
             continue
         row = dict(raw_row)
         row["company"] = clean_text(row.get("company")) or company
@@ -844,7 +854,7 @@ def _fallback_detail_rows(
         title
         and not re.fullmatch(r"\d+", title)
         and looks_like_job_title_candidate(title)
-        and not is_exact_category_title(title)
+        and not has_static_container_artifact_evidence(title, apply_target_url or detail)
     )
     if not title_ok:
         return [], "dead_listing_page", f"{detail} | {title}" if title else detail
@@ -949,6 +959,17 @@ def process_detail_html(
     rejected_classification = ""
     rejected_example = ""
     nested_detail_links: list[dict[str, str]] = []
+    source_query_keys = source.get("detailQueryKeys") if isinstance(source, dict) else None
+    effective_query_keys = list(default_query_keys)
+    if isinstance(source_query_keys, list):
+        effective_query_keys.extend(clean_text(key) for key in source_query_keys)
+    detail_query = (urlparse(detail).query or "").lower()
+    has_detail_query_key = any(
+        f"{clean_text(key).lower()}=" in detail_query for key in effective_query_keys
+    )
+    static_container_detail_url = (
+        looks_like_static_container_url(detail) and not has_detail_query_key
+    )
     if concrete_rows:
         rows = []
         for row in concrete_rows:
@@ -971,6 +992,8 @@ def process_detail_html(
             page_title = clean_text(detail_title)
             category_repair_needed = (
                 is_exact_category_title(page_title)
+                or has_static_container_artifact_evidence(page_title, detail)
+                or static_container_detail_url
                 or looks_like_category_container_url(detail)
                 or bool(detail_jobs)
             )
@@ -989,6 +1012,7 @@ def process_detail_html(
             )
             listing_like = bool(
                 nested_detail_links
+                or static_container_detail_url
                 or looks_like_category_container_url(detail)
                 or gate_reason == "job_listing_anchors"
                 or (category_repair_needed and job_like)
@@ -998,6 +1022,7 @@ def process_detail_html(
                     "dead_listing_page"
                     if gate_reason == "dead_listing_page"
                     or category_repair_needed
+                    or static_container_detail_url
                     or looks_like_category_container_url(detail)
                     else "needs_review"
                 )

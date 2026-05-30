@@ -227,6 +227,161 @@ def test_run_static_studio_pages_source_exact_category_rows_bypass_listing_only_
     assert int(stats.get("detail_pages_visited") or 0) >= 1
 
 
+def test_run_static_studio_pages_source_repairs_generic_container_row_from_detail() -> None:
+    listing_url = "https://example.net/careers"
+    detail_url = "https://example.net/careers/creative"
+    detail_html = """
+        <html><body>
+          <script type="application/ld+json">
+          {"@context":"https://schema.org","@type":"JobPosting","title":"Creative Producer","url":"https://example.net/careers/creative","hiringOrganization":{"name":"Example Studio"}}
+          </script>
+        </body></html>
+        """
+
+    def fake_fetch(url: str, _: int) -> str:
+        if url == listing_url:
+            return "<html><body></body></html>"
+        if url == detail_url:
+            return detail_html
+        raise RuntimeError(f"Unexpected URL: {url}")
+
+    def fake_listing_parse(
+        html: str, *, base_url: str, fallback_company: str, fallback_source_id_prefix: str
+    ) -> list[dict[str, object]]:
+        del html, fallback_company, fallback_source_id_prefix
+        if base_url != listing_url:
+            return []
+        return [_static_row("Creative", detail_url)]
+
+    with mock.patch(
+        "src.jobs.adapters.static_listing.parse_jobpostings_from_html",
+        side_effect=fake_listing_parse,
+    ):
+        rows = jf.run_static_studio_pages_source(
+            fetch_text=fake_fetch,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+            sources=[_source("Generic Container Detail Studio", listing_url)],
+        )
+
+    assert [row["title"] for row in rows] == ["Creative Producer"]
+
+
+def test_run_static_studio_pages_source_follows_generic_container_nested_hop() -> None:
+    listing_url = "https://example.net/careers"
+    category_url = "https://example.net/careers/function-3d"
+    child_url = "https://example.net/jobs/3d-artist"
+    category_html = f'<html><body><a href="{child_url}">3D Artist</a></body></html>'
+    child_html = """
+        <html><body>
+          <script type="application/ld+json">
+          {"@context":"https://schema.org","@type":"JobPosting","title":"3D Artist","url":"https://example.net/jobs/3d-artist","hiringOrganization":{"name":"Example Studio"}}
+          </script>
+        </body></html>
+        """
+
+    def fake_fetch(url: str, _: int) -> str:
+        if url == listing_url:
+            return "<html><body></body></html>"
+        if url == category_url:
+            return category_html
+        if url == child_url:
+            return child_html
+        raise RuntimeError(f"Unexpected URL: {url}")
+
+    def fake_listing_parse(
+        html: str, *, base_url: str, fallback_company: str, fallback_source_id_prefix: str
+    ) -> list[dict[str, object]]:
+        del html, fallback_company, fallback_source_id_prefix
+        if base_url != listing_url:
+            return []
+        return [_static_row("3D", category_url)]
+
+    with mock.patch(
+        "src.jobs.adapters.static_listing.parse_jobpostings_from_html",
+        side_effect=fake_listing_parse,
+    ):
+        rows = jf.run_static_studio_pages_source(
+            fetch_text=fake_fetch,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+            sources=[_source("Generic Container Nested Studio", listing_url)],
+        )
+
+    assert [row["title"] for row in rows] == ["3D Artist"]
+
+
+def test_run_static_studio_pages_source_rejects_unresolved_generic_container_page() -> None:
+    listing_url = "https://example.net/careers"
+    category_url = "https://example.net/careers/analytics"
+
+    def fake_fetch(url: str, _: int) -> str:
+        if url == listing_url:
+            return "<html><body></body></html>"
+        if url == category_url:
+            return "<html><head><title>Analytics</title></head><body>Team overview</body></html>"
+        raise RuntimeError(f"Unexpected URL: {url}")
+
+    def fake_listing_parse(
+        html: str, *, base_url: str, fallback_company: str, fallback_source_id_prefix: str
+    ) -> list[dict[str, object]]:
+        del html, fallback_company, fallback_source_id_prefix
+        if base_url != listing_url:
+            return []
+        return [_static_row("Analytics", category_url)]
+
+    jf.SOURCE_DIAGNOSTICS.clear()
+    with mock.patch(
+        "src.jobs.adapters.static_listing.parse_jobpostings_from_html",
+        side_effect=fake_listing_parse,
+    ):
+        rows = jf.run_static_studio_pages_source(
+            fetch_text=fake_fetch,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+            sources=[_source("Generic Container Dead Page Studio", listing_url)],
+        )
+
+    detail = ((jf.SOURCE_DIAGNOSTICS.get("static_studio_pages") or {}).get("details") or [{}])[0]
+    assert rows == []
+    assert str(detail.get("classification") or "") == "dead_listing_page"
+
+
+def test_run_static_studio_pages_source_keeps_real_roles_with_container_words() -> None:
+    listing_url = "https://example.net/careers"
+    role_url = "https://example.net/careers/creative-producer"
+
+    def fake_fetch(url: str, _: int) -> str:
+        if url == listing_url:
+            return "<html><body></body></html>"
+        raise RuntimeError(f"Unexpected URL: {url}")
+
+    def fake_listing_parse(
+        html: str, *, base_url: str, fallback_company: str, fallback_source_id_prefix: str
+    ) -> list[dict[str, object]]:
+        del html, fallback_company, fallback_source_id_prefix
+        if base_url != listing_url:
+            return []
+        return [_static_row("Creative Producer", role_url)]
+
+    with mock.patch(
+        "src.jobs.adapters.static_listing.parse_jobpostings_from_html",
+        side_effect=fake_listing_parse,
+    ):
+        rows = jf.run_static_studio_pages_source(
+            fetch_text=fake_fetch,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+            sources=[_source("Real Creative Role Studio", listing_url)],
+        )
+
+    assert [row["title"] for row in rows] == ["Creative Producer"]
+
+
 def _source(name: str, listing_url: str) -> dict[str, object]:
     return {
         "name": name,
