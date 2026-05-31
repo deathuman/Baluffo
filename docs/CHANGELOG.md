@@ -10,6 +10,9 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+### Added
+- Admin Ops can now enable a bridge-owned recurring full Jobs pipeline schedule with a configurable whole-hour interval.
+
 ## [0.2.18] - 2026-05-25
 
 ### Added

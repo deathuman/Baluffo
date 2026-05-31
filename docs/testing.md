@@ -268,6 +268,7 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 - Before adding a new guard or smoke test, delete or merge any older test that already protects the same invariant.
 - Prefer seam-patched unit checks for selection, normalization, and routing logic. Keep only one intentionally slow smoke test when full execution is the behavior under test.
 - Task abort changes should at minimum run the lifecycle, abort service/route, pipeline, and frontend unit lanes: `python -m pytest tests/bridge/test_task_lifecycle_service.py tests/bridge/test_task_abort_service.py tests/bridge/test_routes_post.py tests/bridge/test_pipeline_service.py -q` and `npm run test:frontend:unit`.
+- Jobs pipeline schedule changes should at minimum run the scheduler, route, Ops health, and Admin Ops frontend lanes: `python -m pytest tests/bridge/test_pipeline_schedule_service.py tests/bridge/test_pipeline_schedule_routes.py tests/admin/test_pipeline_schedule_ops_health.py tests/admin/test_admin_bridge_ops_health.py -q` and `npm run test:frontend:unit -- tests/frontend/unit/admin-ops-summary-render.test.mjs tests/frontend/unit/admin-ops-pipeline-schedule.test.mjs`.
 
 ## Jobs First-Run Packaged Smoke Contract
 

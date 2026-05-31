@@ -87,6 +87,47 @@ import {
 /** @typedef {import("../../shared/types.js").DedupAuditGatePayload} DedupAuditGatePayload */
 /** @typedef {import("../../shared/types.js").FetcherMetricsPayload} FetcherMetricsPayload */
 
+function formatPipelineScheduleStatus(entry) {
+  const interval = Number(entry?.intervalHours || 0);
+  const next = formatDateTime(entry?.nextRunAt || "");
+  const error = String(entry?.lastTriggerError || "").trim();
+  if (!entry || Object.keys(entry).length === 0) return "unknown";
+  if (!entry.enabled) return "disabled";
+  if (error) return `needs attention: ${error}`;
+  if (entry.pending) return "pending; waiting for idle";
+  if (entry.due) return "due now";
+  if (interval > 0 && next) return `every ${interval}h, next ${next}`;
+  if (interval > 0) return `every ${interval}h`;
+  return "enabled";
+}
+
+function renderPipelineScheduleControls(pipeline) {
+  const interval = Number(pipeline?.intervalHours || 24);
+  const safeInterval = Number.isFinite(interval)
+    ? Math.max(1, Math.min(168, Math.trunc(interval)))
+    : 24;
+  const enabled = Boolean(pipeline?.enabled);
+  return `
+    <div class="admin-ops-schedule-item admin-ops-pipeline-schedule admin-ops-full-row">
+      <div class="admin-ops-pipeline-schedule-summary">
+        <strong>Pipeline</strong>: ${escapeHtml(formatPipelineScheduleStatus(pipeline || {}))}
+      </div>
+      <div class="admin-ops-pipeline-schedule-controls" data-ui="admin-pipeline-schedule-controls">
+        <label class="admin-ops-pipeline-schedule-toggle">
+          <input type="checkbox" data-ui="admin-pipeline-schedule-enabled" ${enabled ? "checked" : ""}>
+          <span>Enable</span>
+        </label>
+        <label class="admin-ops-pipeline-schedule-interval">
+          <span>Every</span>
+          <input type="number" min="1" max="168" step="1" value="${safeInterval}" data-ui="admin-pipeline-schedule-interval">
+          <span>h</span>
+        </label>
+        <button type="button" class="btn clear-filters-btn" data-action="save-pipeline-schedule">Save</button>
+      </div>
+    </div>
+  `;
+}
+
 // ── public exports ──────────────────────────────────────────────────
 
 export function renderAdminOpsAlerts(alertsEl, alerts, handlers = {}) {
@@ -240,9 +281,11 @@ export function renderAdminOpsSchedule(scheduleEl, schedule, latestOpsHealthCach
   });
   if (canPatchInPlace && scheduleEl.dataset.opsScheduleSig === signature) return;
   if (canPatchInPlace) scheduleEl.dataset.opsScheduleSig = signature;
+  const pipeline = schedule?.pipeline || {};
   const fetcher = schedule?.fetcher || {};
   const discovery = schedule?.discovery || {};
   scheduleEl.innerHTML = `
+    ${renderPipelineScheduleControls(pipeline)}
     <div class="admin-ops-schedule-item"><strong>Fetcher</strong>: ${formatScheduleCell(fetcher)}</div>
     <div class="admin-ops-schedule-item"><strong>Discovery</strong>: ${formatScheduleCell(discovery)}</div>
     <div class="admin-ops-schedule-item"><strong>Last Run</strong>: ${formatLastRunCell(latestOpsHealthCache?.kpis?.lastRunResult || {})}</div>

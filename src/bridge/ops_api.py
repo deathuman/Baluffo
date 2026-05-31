@@ -77,6 +77,9 @@ class OpsDeps:
         default_factory=lambda: lambda **_kwargs: []
     )
     load_runtime_evidence: Callable[[Any, Any], Any] | None = None
+    get_jobs_pipeline_schedule_ops_entry: Callable[[], dict[str, Any]] = field(
+        default_factory=lambda: lambda: {}
+    )
 
 
 @dataclass(frozen=True)
@@ -96,6 +99,9 @@ class OpsHealthDeps:
     parse_schedule_metadata_fn: Callable[[], dict[str, Any]]
     parse_iso: Callable[[Any], Any]
     now_utc: Callable[[], Any]
+    get_jobs_pipeline_schedule_ops_entry: Callable[[], dict[str, Any]] = field(
+        default_factory=lambda: lambda: {}
+    )
     get_source_policy_soak_report: Callable[[], dict[str, Any]] = field(
         default_factory=lambda: lambda: {}
     )
@@ -536,6 +542,7 @@ class OpsApi:
             parse_schedule_metadata_fn=self.parse_schedule_metadata,
             parse_iso=self._deps.parse_iso,
             now_utc=self._deps.now_utc,
+            get_jobs_pipeline_schedule_ops_entry=self._deps.get_jobs_pipeline_schedule_ops_entry,
             get_updater_status_payload=self._deps.get_updater_status_payload,
             app_version=str(self._deps.app_version or ""),
             startup_ready=True
@@ -567,6 +574,17 @@ class OpsApi:
             ).strip()
             if heartbeat_at:
                 heartbeats.append(heartbeat_at)
+        schedule = _ops_health.populate_schedule_next_run(
+            self.parse_schedule_metadata(),
+            recent_rows,
+            self._deps.parse_iso,
+        )
+        try:
+            pipeline_schedule = self._deps.get_jobs_pipeline_schedule_ops_entry()
+        except (RuntimeError, OSError, TypeError, ValueError):
+            pipeline_schedule = {}
+        if isinstance(pipeline_schedule, dict):
+            schedule["pipeline"] = dict(pipeline_schedule)
         return {
             "service": "baluffo-bridge",
             "status": "healthy",
@@ -590,6 +608,7 @@ class OpsApi:
                 "recentCount": len(recent_rows),
                 "latestHeartbeatAt": _latest_time_text(*heartbeats),
             },
+            "schedule": schedule,
             "pipeline": {
                 "active": bool(
                     pipeline_status.get("active") if isinstance(pipeline_status, dict) else False

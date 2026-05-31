@@ -582,6 +582,14 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
     schedule = populate_schedule_next_run(
         deps.parse_schedule_metadata_fn(), history, deps.parse_iso
     )
+    get_pipeline_schedule = getattr(deps, "get_jobs_pipeline_schedule_ops_entry", None)
+    if callable(get_pipeline_schedule):
+        try:
+            pipeline_schedule = get_pipeline_schedule()
+        except (RuntimeError, OSError, TypeError, ValueError):
+            pipeline_schedule = {}
+        if isinstance(pipeline_schedule, dict):
+            schedule["pipeline"] = dict(pipeline_schedule)
     alerts_meta = evaluate_alerts(
         history=history,
         latest_fetch_report=latest_fetch_report,

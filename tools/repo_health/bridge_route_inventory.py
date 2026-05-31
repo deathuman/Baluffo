@@ -362,6 +362,15 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         caller_files=PIPELINE_CALLERS,
     ),
     _route(
+        "GET",
+        "/tasks/jobs-pipeline-schedule",
+        EXACT,
+        GET_HANDLER,
+        "support",
+        caller_files=ADMIN_OPS_CALLERS,
+        verification="python -m pytest tests/bridge/test_pipeline_schedule_routes.py -q",
+    ),
+    _route(
         "POST",
         "/dedup/review-action",
         EXACT,
@@ -488,6 +497,15 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         POST_ADMIN_HANDLER,
         "public",
         caller_files=PIPELINE_CALLERS,
+    ),
+    _route(
+        "POST",
+        "/tasks/jobs-pipeline-schedule",
+        EXACT,
+        POST_ADMIN_HANDLER,
+        "support",
+        caller_files=ADMIN_OPS_CALLERS,
+        verification="python -m pytest tests/bridge/test_pipeline_schedule_routes.py -q",
     ),
     _route(
         "POST",

@@ -52,6 +52,8 @@ def build_bridge_api(
     save_json_atomic: Callable[[Path, Any], None],
     start_jobs_bootstrap_task: Callable[[dict[str, Any] | None], dict[str, Any]],
     start_fetcher_task: Callable[[dict[str, Any] | None], dict[str, Any]],
+    get_jobs_pipeline_schedule_payload: Callable[[], dict[str, Any]],
+    update_jobs_pipeline_schedule: Callable[[dict[str, Any] | None], dict[str, Any]],
     start_sync_task: Callable[..., dict[str, Any]],
     get_discovery_config_payload: Callable[[], dict[str, Any]],
     update_saved_discovery_settings: Callable[[dict[str, Any]], dict[str, Any]],
@@ -115,6 +117,8 @@ def build_bridge_api(
         save_json_atomic=save_json_atomic,
         start_jobs_bootstrap_task=start_jobs_bootstrap_task,
         start_fetcher_task=start_fetcher_task,
+        get_jobs_pipeline_schedule_payload=get_jobs_pipeline_schedule_payload,
+        update_jobs_pipeline_schedule=update_jobs_pipeline_schedule,
         abort_task=abort_task
         or (lambda _payload: (400, {"ok": False, "error": "task_abort_not_available"})),
         start_sync_task=start_sync_task,

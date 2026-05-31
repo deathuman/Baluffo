@@ -280,7 +280,49 @@ export function createOpsHealthController({
     selectOpsTab(state.adminOpsActiveTab || "overview");
   }
 
+  async function handlePipelineScheduleSave(button) {
+    const root = refs.adminOpsScheduleEl;
+    if (!root) return;
+    const enabledEl = root.querySelector?.('[data-ui="admin-pipeline-schedule-enabled"]');
+    const intervalEl = root.querySelector?.('[data-ui="admin-pipeline-schedule-interval"]');
+    const intervalHours = Number(intervalEl?.value || 0);
+    if (!Number.isInteger(intervalHours) || intervalHours < 1 || intervalHours > 168) {
+      showToast("Pipeline schedule interval must be between 1 and 168 hours.", "error");
+      return;
+    }
+    if (button) button.disabled = true;
+    try {
+      const result = await postBridge("/tasks/jobs-pipeline-schedule", {
+        enabled: Boolean(enabledEl?.checked),
+        intervalHours
+      });
+      if (result?.ok === false) {
+        throw new Error(String(result?.error || "schedule save failed"));
+      }
+      showToast("Pipeline schedule saved.", "success");
+      await loadOpsHealthData();
+    } catch (err) {
+      showToast(`Could not save pipeline schedule: ${getErrorMessage(err)}`, "error");
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  function setupPipelineScheduleControls() {
+    const root = refs.adminOpsScheduleEl;
+    if (!root || state.adminPipelineScheduleControlsInitialized) return;
+    if (typeof root.addEventListener !== "function") return;
+    state.adminPipelineScheduleControlsInitialized = true;
+    root.addEventListener("click", event => {
+      const button = event.target?.closest?.('[data-action="save-pipeline-schedule"]');
+      if (!button) return;
+      event.preventDefault?.();
+      handlePipelineScheduleSave(button).catch(() => {});
+    });
+  }
+
   setupOpsTabs();
+  setupPipelineScheduleControls();
 
   function setOpsPlaceholders(message = "Operations health unavailable.") {
     if (refs.adminSyncStatusEl) {

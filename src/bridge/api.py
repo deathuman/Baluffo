@@ -255,6 +255,26 @@ def _inactive_jobs_pipeline_payload() -> JsonObject:
     return {"active": False}
 
 
+def _default_jobs_pipeline_schedule_payload() -> JsonObject:
+    return {
+        "ok": True,
+        "savedConfig": {"schemaVersion": 1, "enabled": False, "intervalHours": 24},
+        "status": {
+            "enabled": False,
+            "pending": False,
+            "due": False,
+            "nextRunAt": "",
+            "lastPipelineFinishedAt": "",
+            "lastTriggerRunId": "",
+            "lastTriggerError": "",
+        },
+    }
+
+
+def _default_update_jobs_pipeline_schedule(_payload: JsonObject | None = None) -> JsonObject:
+    return _default_jobs_pipeline_schedule_payload()
+
+
 def _always_false() -> bool:
     return False
 
@@ -382,6 +402,12 @@ class BridgeApi:
 
     # Jobs pipeline status (GET route).
     get_jobs_pipeline_status_payload: Callable[[], JsonObject] = _inactive_jobs_pipeline_payload
+    get_jobs_pipeline_schedule_payload: Callable[[], JsonObject] = (
+        _default_jobs_pipeline_schedule_payload
+    )
+    update_jobs_pipeline_schedule: Callable[[JsonObject | None], JsonObject] = (
+        _default_update_jobs_pipeline_schedule
+    )
 
     def _field_is_default(self, field_name: str) -> bool:
         try:

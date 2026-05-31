@@ -445,6 +445,30 @@
   font-size: 0.85rem;
 }
 
+.admin-ops-pipeline-schedule {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.admin-ops-pipeline-schedule-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.admin-ops-pipeline-schedule-toggle,
+.admin-ops-pipeline-schedule-interval {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.admin-ops-pipeline-schedule-interval input {
+  width: 4.5rem;
+  min-height: 2rem;
+}
+
 .admin-ops-task-lane {
   grid-column: 1 / -1;
   display: grid;

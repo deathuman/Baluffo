@@ -63,6 +63,12 @@ def build_bridge_api(config: Any) -> BridgeApi:
         save_json_atomic=root_mod.save_json_atomic,
         start_jobs_bootstrap_task=admin_task_runtime_mod.start_jobs_bootstrap_task,
         start_fetcher_task=root_mod.start_fetcher_task,
+        get_jobs_pipeline_schedule_payload=lambda: (
+            admin_entrypoint_services_mod.get_pipeline_schedule_service().get_payload()
+        ),
+        update_jobs_pipeline_schedule=lambda payload: (
+            admin_entrypoint_services_mod.get_pipeline_schedule_service().update_config(payload)
+        ),
         abort_task=admin_entrypoint_services_mod.get_task_abort_service().abort_task,
         start_sync_task=root_mod.start_sync_task,
         get_discovery_config_payload=root_mod.get_discovery_config_payload,

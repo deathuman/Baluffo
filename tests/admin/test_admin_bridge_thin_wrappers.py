@@ -60,6 +60,14 @@ def test_on_bridge_started_runs_lifecycle_cleanup_before_startup_sync_without_le
         calls.append("startup_sync")
         return {"ok": True, "scheduled": True}
 
+    def startup_pipeline_schedule() -> dict[str, object]:
+        calls.append("pipeline_schedule")
+        return {"started": False, "enabled": False}
+
+    pipeline_schedule_service = mock.Mock(
+        start_background_polling=mock.Mock(side_effect=startup_pipeline_schedule)
+    )
+
     with (
         mock.patch.object(
             admin_bridge, "migrate_legacy_task_state_to_lifecycle", side_effect=reconcile
@@ -74,10 +82,21 @@ def test_on_bridge_started_runs_lifecycle_cleanup_before_startup_sync_without_le
         ),
         mock.patch.object(admin_bridge, "cleanup_stale_startup_tasks", side_effect=cleanup),
         mock.patch.object(admin_bridge, "schedule_startup_sync_pull", side_effect=startup_sync),
+        mock.patch.object(
+            admin_bridge.admin_entrypoint_services_mod,
+            "get_pipeline_schedule_service",
+            return_value=pipeline_schedule_service,
+        ),
     ):
         result = admin_bridge.on_bridge_started()
 
-    assert calls == ["runtime_cleanup", "registry_compact", "cleanup", "startup_sync"]
+    assert calls == [
+        "runtime_cleanup",
+        "registry_compact",
+        "cleanup",
+        "startup_sync",
+        "pipeline_schedule",
+    ]
     assert result == {
         "runtimeEvidenceJournals": {
             "ok": True,
@@ -94,6 +113,7 @@ def test_on_bridge_started_runs_lifecycle_cleanup_before_startup_sync_without_le
         },
         "cleanup": {"ok": True, "orphaned": 2},
         "startupSync": {"ok": True, "scheduled": True},
+        "pipelineSchedule": {"started": False, "enabled": False},
     }
 
 

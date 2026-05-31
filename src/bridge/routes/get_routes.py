@@ -1312,6 +1312,10 @@ def handle_get(
         handler.send_json(api.get_sync_status_payload())
         return True
 
+    if path == "/tasks/jobs-pipeline-schedule":
+        handler.send_json(api.get_jobs_pipeline_schedule_payload())
+        return True
+
     if path == "/tasks/run-jobs-pipeline-status":
         handler.send_json(api.get_jobs_pipeline_status_payload())
         return True

@@ -754,6 +754,20 @@ Sync `taskProgress.counts` may include additive sharded-push diagnostics while `
 - User abort intent for `fetch`, `discovery`, and `pipeline` is stored in the lifecycle row before termination. While abort is in progress the row remains active with `status: "running"`, `stage: "aborting"` or `stage: "abort_pending_sync"`, `summary.abortRequestedAt`, `summary.abortReason`, and `taskProgress.phaseKey: "aborting"`.
 - Terminal user-aborted rows use `status: "canceled"` / route `status: "canceled"`, `terminalReason: "user_abort_requested"`, inactive task progress, and canceled report evidence. Later success/failure/orphan closeout must not overwrite a canceled lifecycle row.
 
+### Jobs pipeline schedule contract
+
+`data/jobs-pipeline-schedule-config.json` is a bridge-owned runtime settings file for the recurring full Jobs pipeline schedule. It is not a lifecycle artifact and does not create a separate task type.
+
+Persisted shape:
+
+- `schemaVersion`: `1`.
+- `enabled`: boolean, default `false`.
+- `intervalHours`: whole number from `1` through `168`, default `24`.
+
+`GET /tasks/jobs-pipeline-schedule` returns `{ok, savedConfig, status}`. `status` includes `enabled`, `pending`, `due`, `nextRunAt`, `lastPipelineFinishedAt`, `lastTriggerRunId`, and `lastTriggerError`. `/ops/health.schedule.pipeline` mirrors the same status plus `intervalHours` and a display note. Existing `/ops/health.schedule.fetcher` and `/ops/health.schedule.discovery` fields remain present.
+
+Scheduled pipeline launches reuse the normal pipeline lifecycle with `taskType: "pipeline"` and a generated pipeline `runId`; there is no schedule-specific lifecycle row. Missed intervals collapse into one pending scheduled run, and disabling the schedule clears pending work without canceling an already active pipeline.
+
 ### Lifecycle cleanup
 
 - For a clean post-migration debug baseline, use:

@@ -31,6 +31,8 @@ def test_compute_ops_health_is_lightweight_liveness(admin_bridge_entrypoint_root
     assert health["appVersion"] == admin_bridge.get_app_version()
     assert health["lifecycle"]["currentCount"] == 1
     assert health["lifecycle"]["latestHeartbeatAt"] == "2026-05-07T10:02:00+00:00"
+    assert set(health["schedule"]) >= {"fetcher", "discovery", "pipeline"}
+    assert health["schedule"]["pipeline"]["enabled"] is False
     assert "alerts" not in health
     assert "kpis" not in health
 

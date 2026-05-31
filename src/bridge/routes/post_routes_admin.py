@@ -501,6 +501,19 @@ def handle_post(handler: BridgeResponseWriter, *, api: BridgeApi, path: str, pay
         handler.send_json(result, status=status_code)
         return True
 
+    if path == "/tasks/jobs-pipeline-schedule":
+        send_json_boundary(
+            handler,
+            lambda: api.update_jobs_pipeline_schedule(data),
+            error_status=400,
+            error_payload=lambda exc: {
+                "ok": False,
+                "error": str(exc),
+                "savedConfig": api.get_jobs_pipeline_schedule_payload().get("savedConfig", {}),
+            },
+        )
+        return True
+
     if path == "/tasks/abort":
         status_code, result = api.abort_task(data)
         handler.send_json(result, status=int(status_code or 500))

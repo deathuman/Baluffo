@@ -7,6 +7,7 @@ from typing import Any, Protocol, cast
 
 from src.bridge import run_history_api as _run_history_api
 from src.bridge.desktop_attention import notify_pipeline_completion_attention
+from src.bridge.pipeline_schedule_service import PipelineScheduleService
 from src.bridge.server import runtime_state as bridge_runtime_state
 from src.bridge.task_abort_service import TaskAbortDeps, TaskAbortPaths, TaskAbortService
 from src.source_registry_io import load_runtime_evidence
@@ -93,6 +94,21 @@ class _PipelineServiceLike(Protocol):
     def start_task(self, payload: JsonObject | None = None) -> JsonObject: ...
 
     def request_abort(self, run_id: str, **kwargs: Any) -> JsonObject: ...
+
+
+class _PipelineScheduleServiceLike(Protocol):
+    def get_payload(self) -> JsonObject: ...
+
+    def update_config(self, payload: JsonObject | None) -> JsonObject: ...
+
+    def get_ops_schedule_entry(self) -> JsonObject: ...
+
+    def start_background_polling(self) -> JsonObject: ...
+
+
+_PIPELINE_SCHEDULE_SERVICE: PipelineScheduleService | None = None
+_PIPELINE_SCHEDULE_SERVICE_PATH: Path | None = None
+_PIPELINE_SCHEDULE_SERVICE_LOCK = threading.RLock()
 
 
 class _DesktopUpdateServiceLike(Protocol):
@@ -555,6 +571,9 @@ def get_ops_api() -> _OpsApiLike:
                 get_active_sync_runs=root_mod.SyncState.get_active_sync_runs,
                 get_sync_status_payload=root_mod.get_sync_status_payload,
                 get_jobs_pipeline_status_payload=root_mod.get_jobs_pipeline_status_payload,
+                get_jobs_pipeline_schedule_ops_entry=lambda: (
+                    get_pipeline_schedule_service().get_ops_schedule_entry()
+                ),
                 normalize_fetch_report_contract=root_mod.normalize_fetch_report_contract,
                 normalize_discovery_report_contract=root_mod.normalize_discovery_report_contract,
                 desktop_mode=root_mod.RUNTIME_CONFIG.desktop_mode,
@@ -711,6 +730,34 @@ def get_pipeline_service() -> _PipelineServiceLike:
                 pipeline_completion_notifier=pipeline_completion_notifier,
             )
         return cast(_PipelineServiceLike, root_mod._PIPELINE_SERVICE)
+
+
+def get_pipeline_schedule_service() -> _PipelineScheduleServiceLike:
+    root_mod = _require_root()
+    current_path = Path(
+        getattr(
+            root_mod,
+            "JOBS_PIPELINE_SCHEDULE_CONFIG_PATH",
+            root_mod.ROOT / "data" / "jobs-pipeline-schedule-config.json",
+        )
+    )
+    global _PIPELINE_SCHEDULE_SERVICE, _PIPELINE_SCHEDULE_SERVICE_PATH
+    with _PIPELINE_SCHEDULE_SERVICE_LOCK:
+        if _PIPELINE_SCHEDULE_SERVICE is None or _PIPELINE_SCHEDULE_SERVICE_PATH != current_path:
+            _PIPELINE_SCHEDULE_SERVICE_PATH = current_path
+            _PIPELINE_SCHEDULE_SERVICE = PipelineScheduleService(
+                config_path=current_path,
+                load_json_object=root_mod.load_json_object,
+                save_json_atomic=root_mod.save_json_atomic,
+                now_iso=root_mod.now_iso,
+                parse_iso=root_mod.parse_iso,
+                bridge_log=root_mod.bridge_log,
+                get_lifecycle_current_runs=root_mod.get_lifecycle_current_runs,
+                get_lifecycle_recent_runs=root_mod.get_lifecycle_recent_runs,
+                get_jobs_pipeline_status_payload=root_mod.get_jobs_pipeline_status_payload,
+                start_jobs_pipeline_task=root_mod.start_jobs_pipeline_task,
+            )
+        return cast(_PipelineScheduleServiceLike, _PIPELINE_SCHEDULE_SERVICE)
 
 
 def get_task_abort_service() -> Any:

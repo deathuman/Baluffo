@@ -226,11 +226,15 @@ def on_bridge_started() -> JsonObject:
             compacted=len(registry_journals.get("compacted") or []),
             errors=len(registry_journals.get("errors") or []),
         )
+    cleanup = root_mod.cleanup_stale_startup_tasks()
+    startup_sync = root_mod.schedule_startup_sync_pull()
+    pipeline_schedule = root_mod.admin_entrypoint_services_mod.get_pipeline_schedule_service().start_background_polling()
     return {
         "runtimeEvidenceJournals": runtime_journals,
         "registryJournals": registry_journals,
-        "cleanup": root_mod.cleanup_stale_startup_tasks(),
-        "startupSync": root_mod.schedule_startup_sync_pull(),
+        "cleanup": cleanup,
+        "startupSync": startup_sync,
+        "pipelineSchedule": pipeline_schedule,
     }
 
 

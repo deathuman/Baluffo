@@ -20,12 +20,21 @@ test("admin render: schedule/trends/history render deterministic core text", () 
   renderAdminOpsSchedule(
     scheduleEl,
     {
+      pipeline: {
+        enabled: true,
+        intervalHours: 24,
+        pending: false,
+        due: false,
+        nextRunAt: "2026-03-09T10:00:00.000Z"
+      },
       fetcher: { intervalHours: 6, nextRunAt: "2026-03-08T10:00:00.000Z" },
       discovery: { note: "manual_task" }
     },
     { kpis: { lastRunResult: { type: "fetch", status: "ok", finishedAt: "2026-03-08T08:00:00.000Z" } } }
   );
   assert.match(scheduleEl.innerHTML, /every 6h/i);
+  assert.match(scheduleEl.innerHTML, /Pipeline/i);
+  assert.match(scheduleEl.innerHTML, /data-action="save-pipeline-schedule"/i);
   assert.match(scheduleEl.innerHTML, /manual task/i);
   assert.match(scheduleEl.innerHTML, /fetch ok/i);
 
@@ -92,6 +101,30 @@ test("admin render: schedule/trends/history render deterministic core text", () 
   assert.match(historyEl.innerHTML, /Review queue: 5/);
   assert.match(historyEl.innerHTML, /Sync pull/i);
   assert.doesNotMatch(historyEl.innerHTML, /<button/i);
+});
+
+test("admin render: pipeline schedule state text covers key states", () => {
+  const cases = [
+    [{ enabled: false, intervalHours: 24 }, /disabled/i],
+    [{ enabled: true, intervalHours: 24, pending: true, due: true }, /pending; waiting for idle/i],
+    [{ enabled: true, intervalHours: 24, pending: false, due: true }, /due now/i],
+    [
+      {
+        enabled: true,
+        intervalHours: 12,
+        pending: false,
+        due: false,
+        nextRunAt: "2026-03-09T10:00:00.000Z"
+      },
+      /every 12h, next/i
+    ]
+  ];
+
+  for (const [pipeline, expectedText] of cases) {
+    const scheduleEl = makeEl();
+    renderAdminOpsSchedule(scheduleEl, { pipeline }, {});
+    assert.match(scheduleEl.innerHTML, expectedText);
+  }
 });
 
 test("admin render: live discovery ops history keeps only the primary phase text", () => {
