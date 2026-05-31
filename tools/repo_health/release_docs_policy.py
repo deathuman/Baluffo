@@ -39,6 +39,7 @@ def test_release_docs_cover_the_current_public_release_line(repo_root: Path) -> 
     assert "v<app_version>" in release_text
     assert "single release-note source of truth" in release_text
     assert "npm run test:frontend:packaged:jobs-pipeline" in release_text
+    assert "npm run test:frontend:packaged:task-abort-schedule-rehearsal" in release_text
     assert "npm run test:frontend:packaged:sync-rehearsal" in release_text
     assert "npm run test:py:extended" in release_text
     assert "python scripts/extract_release_notes.py" in release_text
@@ -346,8 +347,14 @@ def test_package_json_build_aliases_use_leaf_builders(repo_root: Path) -> None:
     assert scripts["test:frontend:packaged:first-run"] == (
         "npm run check:python-version && python src/packaged_desktop_smoke.py --open-path desktop-probe.html --node-smoke-script tests/frontend/packaged-desktop-smoke.first-run-jobs.mjs --runtime-timeout 60 --playwright-timeout 240"
     )
+    assert scripts["test:frontend:packaged:active-task-close-rehearsal"] == (
+        "npm run check:python-version && python src/packaged_desktop_smoke.py --active-task-close-rehearsal --runtime-timeout 60"
+    )
+    assert scripts["test:frontend:packaged:task-abort-schedule-rehearsal"] == (
+        "npm run check:python-version && python src/packaged_desktop_smoke.py --open-path admin.html --node-smoke-script tests/frontend/packaged-desktop-smoke.task-abort-schedule.mjs --runtime-timeout 60 --playwright-timeout 240"
+    )
     assert scripts["release:preflight"] == (
-        "npm run lint:precommit && npm run test:py:extended && npm run test:frontend:unit && npm run build:portable-exe:prepare && npm run test:frontend:packaged && npm run test:frontend:packaged:admin-startup && npm run test:frontend:packaged:sync-rehearsal && npm run test:frontend:packaged:update-rehearsal && npm run test:frontend:packaged:orphan-reclaim-rehearsal && npm run test:frontend:packaged:browser-job-rehearsal && npm run test:frontend:packaged:first-run && npm run test:frontend:packaged:jobs-pipeline && npm run probe:desktop:startup:jobs:cold"
+        "npm run lint:precommit && npm run test:py:extended && npm run test:frontend:unit && npm run build:portable-exe:prepare && npm run test:frontend:packaged && npm run test:frontend:packaged:admin-startup && npm run test:frontend:packaged:sync-rehearsal && npm run test:frontend:packaged:update-rehearsal && npm run test:frontend:packaged:orphan-reclaim-rehearsal && npm run test:frontend:packaged:browser-job-rehearsal && npm run test:frontend:packaged:desktop-lifecycle-rehearsal && npm run test:frontend:packaged:active-task-close-rehearsal && npm run test:frontend:packaged:task-abort-schedule-rehearsal && npm run test:frontend:packaged:first-run && npm run test:frontend:packaged:jobs-pipeline && npm run probe:desktop:startup:jobs:cold"
     )
     assert (
         "_out/latest/build/portable/Baluffo.exe"
@@ -383,6 +390,8 @@ def test_testing_doc_owns_verification_matrix(repo_root: Path) -> None:
         "npm run test:frontend:packaged:sync-rehearsal",
         "npm run test:frontend:packaged:orphan-reclaim-rehearsal",
         "npm run test:frontend:packaged:browser-job-rehearsal",
+        "npm run test:frontend:packaged:active-task-close-rehearsal",
+        "npm run test:frontend:packaged:task-abort-schedule-rehearsal",
         "npm run test:frontend:packaged:first-run",
         "npm run probe:desktop:startup:cold",
         "npm run probe:desktop:startup:jobs:cold",
@@ -408,6 +417,8 @@ def test_release_guide_uses_canonical_release_preflight(repo_root: Path) -> None
     assert "npm run test:frontend:packaged:sync-rehearsal" in release_text
     assert "npm run test:frontend:packaged:orphan-reclaim-rehearsal" in release_text
     assert "npm run test:frontend:packaged:browser-job-rehearsal" in release_text
+    assert "npm run test:frontend:packaged:active-task-close-rehearsal" in release_text
+    assert "npm run test:frontend:packaged:task-abort-schedule-rehearsal" in release_text
     assert "npm run test:frontend:packaged:first-run" in release_text
     assert "npm run test:frontend:packaged:jobs-pipeline" in release_text
     assert "npm run probe:desktop:startup:jobs:cold" in release_text

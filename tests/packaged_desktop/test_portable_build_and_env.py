@@ -439,14 +439,25 @@ def test_collect_packaged_smoke_env_diagnostics_reports_rebuilt_default_dist() -
         assert diagnostics["portableBuildCacheStatus"] == "miss"
 
 
-def test_packaged_pipeline_smoke_mode_is_enabled_only_for_jobs_pipeline_script() -> None:
+def test_packaged_pipeline_smoke_mode_is_enabled_for_pipeline_rehearsal_scripts() -> None:
     assert (
         smoke.packaged_pipeline_smoke_mode(smoke.JOBS_PIPELINE_NODE_SMOKE_SCRIPT) == "stub-success"
+    )
+    assert (
+        smoke.packaged_pipeline_smoke_mode(smoke.TASK_ABORT_SCHEDULE_NODE_SMOKE_SCRIPT)
+        == "stub-success"
     )
     assert smoke.packaged_pipeline_smoke_mode(smoke.DEFAULT_NODE_SMOKE_SCRIPT) == ""
     assert smoke.packaged_runtime_env_overrides(smoke.JOBS_PIPELINE_NODE_SMOKE_SCRIPT) == {
         "BALUFFO_PACKAGED_SMOKE_FETCH_MODE": "source-runs",
         "BALUFFO_PACKAGED_SMOKE_PIPELINE_MODE": "stub-success",
+    }
+    assert smoke.packaged_runtime_env_overrides(smoke.TASK_ABORT_SCHEDULE_NODE_SMOKE_SCRIPT) == {
+        "BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_DELAY_MS": "12000",
+        "BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_HEARTBEAT_MS": "1000",
+        "BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_MODE": "controlled-heartbeat-success",
+        "BALUFFO_PACKAGED_SMOKE_PIPELINE_MODE": "stub-success",
+        "BALUFFO_PACKAGED_SMOKE_RUNTIME": "1",
     }
     assert smoke.packaged_runtime_env_overrides(smoke.DEFAULT_NODE_SMOKE_SCRIPT) == {}
 
@@ -454,6 +465,10 @@ def test_packaged_pipeline_smoke_mode_is_enabled_only_for_jobs_pipeline_script()
 def test_packaged_first_run_bootstrap_smoke_mode_is_script_scoped() -> None:
     assert (
         smoke.packaged_bootstrap_smoke_mode(smoke.FIRST_RUN_JOBS_NODE_SMOKE_SCRIPT)
+        == "controlled-heartbeat-success"
+    )
+    assert (
+        smoke.packaged_bootstrap_smoke_mode(smoke.TASK_ABORT_SCHEDULE_NODE_SMOKE_SCRIPT)
         == "controlled-heartbeat-success"
     )
     assert smoke.packaged_bootstrap_smoke_mode(smoke.DEFAULT_NODE_SMOKE_SCRIPT) == ""

@@ -98,19 +98,13 @@ DEFAULT_ARTIFACT_RETENTION_RUNS = 2
 DEFAULT_ARTIFACT_FILE_RETENTION_S = 24 * 60 * 60
 DEFAULT_RUNTIME_TIMEOUT_S = 35.0
 DEFAULT_SMOKE_RUNNER_TIMEOUT_S = 180.0
-DEFAULT_NODE_SMOKE_SCRIPT = ROOT / "tests" / "frontend" / "packaged-desktop-smoke.mjs"
-JOBS_PIPELINE_NODE_SMOKE_SCRIPT = (
-    ROOT / "tests" / "frontend" / "packaged-desktop-smoke.jobs-pipeline.mjs"
-)
-FIRST_RUN_JOBS_NODE_SMOKE_SCRIPT = (
-    ROOT / "tests" / "frontend" / "packaged-desktop-smoke.first-run-jobs.mjs"
-)
-FETCH_EVIDENCE_NODE_SMOKE_SCRIPT = (
-    ROOT / "tests" / "frontend" / "packaged-desktop-smoke.fetch-evidence.mjs"
-)
-ACTIVE_TASK_CLOSE_NODE_SMOKE_SCRIPT = (
-    ROOT / "tests" / "frontend" / "packaged-desktop-smoke.active-task-close.mjs"
-)
+SMOKE_DIR = ROOT / "tests" / "frontend"
+DEFAULT_NODE_SMOKE_SCRIPT = SMOKE_DIR / "packaged-desktop-smoke.mjs"
+JOBS_PIPELINE_NODE_SMOKE_SCRIPT = SMOKE_DIR / "packaged-desktop-smoke.jobs-pipeline.mjs"
+FIRST_RUN_JOBS_NODE_SMOKE_SCRIPT = SMOKE_DIR / "packaged-desktop-smoke.first-run-jobs.mjs"
+FETCH_EVIDENCE_NODE_SMOKE_SCRIPT = SMOKE_DIR / "packaged-desktop-smoke.fetch-evidence.mjs"
+ACTIVE_TASK_CLOSE_NODE_SMOKE_SCRIPT = SMOKE_DIR / "packaged-desktop-smoke.active-task-close.mjs"
+TASK_ABORT_SCHEDULE_NODE_SMOKE_SCRIPT = SMOKE_DIR / "packaged-desktop-smoke.task-abort-schedule.mjs"
 _PORTABLE_EXE_FRESHNESS_MARKERS = (
     ROOT / "scripts" / "build_portable_exe.py",
     ROOT / "scripts" / "build_ship_bundle.py",

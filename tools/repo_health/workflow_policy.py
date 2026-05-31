@@ -21,6 +21,9 @@ def test_release_workflow_uses_canonical_test_entrypoints() -> None:
         "npm run test:frontend:packaged:update-rehearsal",
         "npm run test:frontend:packaged:orphan-reclaim-rehearsal",
         "npm run test:frontend:packaged:browser-job-rehearsal",
+        "npm run test:frontend:packaged:desktop-lifecycle-rehearsal",
+        "npm run test:frontend:packaged:active-task-close-rehearsal",
+        "npm run test:frontend:packaged:task-abort-schedule-rehearsal",
         "npm run test:frontend:packaged:first-run",
         "npm run test:frontend:packaged:jobs-pipeline",
         "npm run probe:desktop:startup:jobs:cold",
@@ -276,6 +279,15 @@ def test_package_json_packaged_smoke_scripts_use_direct_dist_by_default(repo_roo
     )
     assert scripts["test:frontend:packaged:browser-job-rehearsal"] == (
         "npm run check:python-version && python src/packaged_desktop_smoke.py --browser-job-rehearsal --runtime-timeout 60"
+    )
+    assert scripts["test:frontend:packaged:desktop-lifecycle-rehearsal"] == (
+        "npm run check:python-version && python src/packaged_desktop_smoke.py --desktop-lifecycle-rehearsal --runtime-timeout 60"
+    )
+    assert scripts["test:frontend:packaged:active-task-close-rehearsal"] == (
+        "npm run check:python-version && python src/packaged_desktop_smoke.py --active-task-close-rehearsal --runtime-timeout 60"
+    )
+    assert scripts["test:frontend:packaged:task-abort-schedule-rehearsal"] == (
+        "npm run check:python-version && python src/packaged_desktop_smoke.py --open-path admin.html --node-smoke-script tests/frontend/packaged-desktop-smoke.task-abort-schedule.mjs --runtime-timeout 60 --playwright-timeout 240"
     )
     assert scripts["test:frontend:packaged:first-run"] == (
         "npm run check:python-version && python src/packaged_desktop_smoke.py --open-path desktop-probe.html --node-smoke-script tests/frontend/packaged-desktop-smoke.first-run-jobs.mjs --runtime-timeout 60 --playwright-timeout 240"

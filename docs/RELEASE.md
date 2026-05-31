@@ -308,6 +308,8 @@ Before any release:
    - `npm run test:frontend:packaged:orphan-reclaim-rehearsal`
    - `npm run test:frontend:packaged:browser-job-rehearsal`
    - `npm run test:frontend:packaged:desktop-lifecycle-rehearsal`
+   - `npm run test:frontend:packaged:active-task-close-rehearsal`
+   - `npm run test:frontend:packaged:task-abort-schedule-rehearsal`
    - `npm run test:frontend:packaged:first-run`
    - `npm run test:frontend:packaged:jobs-pipeline`
     - `npm run probe:desktop:startup:jobs:cold`
@@ -355,6 +357,8 @@ npm run test:frontend:packaged:sync-rehearsal
 npm run test:frontend:packaged:orphan-reclaim-rehearsal
 npm run test:frontend:packaged:browser-job-rehearsal
 npm run test:frontend:packaged:desktop-lifecycle-rehearsal
+npm run test:frontend:packaged:active-task-close-rehearsal
+npm run test:frontend:packaged:task-abort-schedule-rehearsal
 npm run test:frontend:packaged:first-run
 npm run test:frontend:packaged:jobs-pipeline
 npm run test:frontend:packaged:update-rehearsal
@@ -364,6 +368,7 @@ npm run probe:desktop:startup:jobs:cold
 These packaged smoke commands validate the direct `dist\baluffo-portable\Baluffo.exe` artifact. Normal release and perf lanes reuse the same content-addressed portable build when its fingerprint is current; cold startup coverage gets a fresh runtime data/profile state rather than a rebuilt executable. Local portable builds also mirror the successful output to `_out\latest\build\portable\Baluffo.exe` so the familiar latest path does not remain stale after `npm run build:portable-exe`.
 The first-run packaged smoke is deterministic: it opens Jobs from a cold isolated runtime, lets the real Jobs UI start the bootstrap route with `BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_MODE=controlled-heartbeat-success`, avoids live Google Sheets, keeps the backend active past a smoke-shortened UI timeout boundary with fresh task-live heartbeats, asserts the running report/task state, renders the promoted one-row feed, verifies no duplicate post-success bootstrap starts, and captures computed-style checked light/dark popup artifacts.
 The Jobs-page packaged smoke is now a terminal-success gate: it must launch the Jobs pipeline, observe visible running progress, and then reach a non-error terminal state. It uses a smoke-only stub-success pipeline mode so the lane stays deterministic and does not run the full real discovery/fetch/sync workload.
+The task-abort/scheduler packaged rehearsal drives the shipped bridge through `POST /tasks/run-jobs-bootstrap`, `POST /tasks/abort`, and `POST /tasks/jobs-pipeline-schedule`, then verifies canceled lifecycle evidence with `user_abort_requested` and one scheduled pipeline terminal success in smoke-only `stub-success` mode.
 The packaged sync rehearsal gate validates the shipped `github-app-sync-config.json` inside the artifact, fails if it is machine-derived, and then drives `/sync/test` against a local fake GitHub App endpoint so the release gate exercises packaged auth/read portability without hitting real GitHub.
 The updater rehearsal gate exercises the real packaged `N -> N+1` helper-driven install path, including portable ZIP download staging, relaunch verification, and preservation of the resolved local-data root.
 The orphan-reclaim rehearsal gate seeds stale packaged `site` / `bridge` children plus stale desktop session state, relaunches the packaged app on the same ports, and fails unless startup metrics prove the launcher reclaimed both stale children instead of retrying or silently degrading.

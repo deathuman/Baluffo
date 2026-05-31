@@ -12,9 +12,19 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ### Added
 - Admin Ops can now enable a bridge-owned recurring full Jobs pipeline schedule with a configurable whole-hour interval.
+- Jobs and Admin Ops now expose confirmed abort controls for active discovery, fetch/bootstrap, and full Jobs pipeline runs through runId-scoped task cancellation.
+- Release preflight now includes a packaged bridge/runtime rehearsal that proves task abort lifecycle evidence and one recurring Jobs pipeline scheduler trigger.
+- Source-discovery hardening now includes broader ATS HTML-signature detection, independent `/jobs` Playwright fallback checks, and a jobs artifact quality gate for title/location contamination.
+
+### Changed
+- Jobs no longer shows the recent views bar, keeping the page focused on current pipeline and feed state.
+- Static source inference now treats dead-listing retries, SPA shell signals, non-English career terms, and custom-domain ATS signatures as first-class discovery evidence.
 
 ### Fixed
 - Task abort lifecycle closeout now keeps user-canceled evidence sticky across late fetch/discovery reports, watcher cleanup, startup cleanup, and pipeline child terminal races.
+- Desktop close cleanup now keeps packaged shutdown tied to real lifecycle state and avoids lingering active-task close rehearsal failures.
+- Google Sheets and static-source cleanup now repairs category-style titles, redirect-derived company leaks, and container artifact titles before downstream job output.
+- Remote Python CI and packaged rehearsal data-root checks no longer fail on stale runtime assumptions.
 
 ## [0.2.18] - 2026-05-25
 

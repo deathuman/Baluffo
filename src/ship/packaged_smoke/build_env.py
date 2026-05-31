@@ -442,7 +442,10 @@ def build_packaged_smoke_env(
 def packaged_pipeline_smoke_mode(node_smoke_script: Path) -> str:
     deps = _root()
     resolved = Path(node_smoke_script).expanduser().resolve()
-    if resolved == deps.JOBS_PIPELINE_NODE_SMOKE_SCRIPT.resolve():
+    if resolved in {
+        deps.JOBS_PIPELINE_NODE_SMOKE_SCRIPT.resolve(),
+        deps.TASK_ABORT_SCHEDULE_NODE_SMOKE_SCRIPT.resolve(),
+    }:
         return "stub-success"
     return ""
 
@@ -470,6 +473,7 @@ def packaged_bootstrap_smoke_mode(node_smoke_script: Path) -> str:
     if resolved in {
         deps.FIRST_RUN_JOBS_NODE_SMOKE_SCRIPT.resolve(),
         deps.ACTIVE_TASK_CLOSE_NODE_SMOKE_SCRIPT.resolve(),
+        deps.TASK_ABORT_SCHEDULE_NODE_SMOKE_SCRIPT.resolve(),
     }:
         return "controlled-heartbeat-success"
     return ""

@@ -192,6 +192,8 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Packaged orphan reclaim rehearsal | `npm run test:frontend:packaged:orphan-reclaim-rehearsal` |
 | Packaged browser job rehearsal | `npm run test:frontend:packaged:browser-job-rehearsal` |
 | Packaged desktop lifecycle rehearsal | `npm run test:frontend:packaged:desktop-lifecycle-rehearsal` |
+| Packaged active-task close rehearsal | `npm run test:frontend:packaged:active-task-close-rehearsal` |
+| Packaged task abort and scheduler rehearsal | `npm run test:frontend:packaged:task-abort-schedule-rehearsal` |
 | Packaged deterministic Jobs first-run gate | `npm run test:frontend:packaged:first-run` |
 | Jobs-page no-Admin packaged smoke gate | `npm run test:frontend:packaged:jobs-pipeline` |
 | Admin startup packaged smoke gate | `npm run test:frontend:packaged:admin-startup` |
@@ -387,6 +389,17 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
   - no `desktop_browser_relaunch_requested` or `desktop_runtime_fatal` event appears.
 - This lane is required for active-task beforeunload behavior, confirmed desktop close intent, launcher active-work recovery, or shutdown cleanup changes.
 
+## Packaged Task Abort And Scheduler Rehearsal Contract
+
+- `npm run test:frontend:packaged:task-abort-schedule-rehearsal` is the packaged bridge/runtime smoke gate for task abortion and recurring Jobs pipeline scheduling.
+- It must prove all of the following:
+  - the packaged bridge can start a deterministic long-heartbeat Jobs bootstrap task,
+  - `POST /tasks/abort` accepts a runId-scoped fetch abort and the terminal lifecycle evidence reports `canceled` with `user_abort_requested`,
+  - enabling `POST /tasks/jobs-pipeline-schedule` with `{ enabled: true, intervalHours: 1 }` records a `lastTriggerRunId`,
+  - the scheduled Jobs pipeline reaches a terminal non-error state in smoke-only `stub-success` mode,
+  - disabling the schedule clears pending work.
+- This lane is required for packaged abort route, lifecycle terminal evidence, recurring Jobs pipeline scheduler, or scheduler Admin Ops contract changes. It is not a replacement for focused Python and frontend unit coverage.
+
 ## Release/build regression picks
 
 Use the narrowest check that matches the risky path:
@@ -398,6 +411,7 @@ Use the narrowest check that matches the risky path:
 - Packaged Chromium supervision or managed-browser shutdown propagation changes: `npm run test:frontend:packaged:browser-job-rehearsal`
 - Desktop-window liveness, owner idle timeout, lifecycle heartbeat, launcher shutdown, or orphan-process cleanup changes: `npm run test:frontend:packaged:desktop-lifecycle-rehearsal`
 - Active-task desktop close confirmation or active-work launcher recovery changes: `npm run test:frontend:packaged:active-task-close-rehearsal`
+- Packaged task abort route, lifecycle cancel evidence, or recurring Jobs pipeline scheduler changes: `npm run test:frontend:packaged:task-abort-schedule-rehearsal`
 - Packaged Jobs first-run, cold empty-state, bootstrap confirm/retry, or popup theme changes: `npm run test:frontend:packaged:first-run`
 - Packaged Admin startup, overview, or heavy ops-payload loading changes: `npm run test:frontend:packaged:admin-startup`
 - Packaged updater, desktop handoff, Windows packaged data-root migration, or release-manifest changes: `npm run test:frontend:packaged:update-rehearsal`
