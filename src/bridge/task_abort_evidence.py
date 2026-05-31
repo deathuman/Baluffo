@@ -117,13 +117,14 @@ def _repair_report(
     normalize_report: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
     phase_label: str,
     reason: str = "",
+    overwrite_finished: bool = False,
 ) -> dict[str, Any] | None:
     payload = load_json_object(path, {})
     if not isinstance(payload, dict):
         return None
     if clean_text(payload.get("runId")) != clean_text(run_id):
         return None
-    if clean_text(payload.get("finishedAt")):
+    if clean_text(payload.get("finishedAt")) and not overwrite_finished:
         return dict(payload)
     payload["finishedAt"] = finished_at
     payload["status"] = "canceled"
@@ -164,6 +165,7 @@ def repair_fetch_canceled_evidence(
     save_json_atomic: Callable[[Path, Any], None],
     normalize_report: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
     reason: str = "",
+    overwrite_finished: bool = False,
 ) -> dict[str, Any]:
     report = _repair_report(
         report_path,
@@ -174,10 +176,11 @@ def repair_fetch_canceled_evidence(
         normalize_report=normalize_report,
         phase_label="Job update canceled",
         reason=reason,
+        overwrite_finished=overwrite_finished,
     )
     tasks = load_json_object(tasks_path, {})
     if isinstance(tasks, dict) and clean_text(tasks.get("runId")) == clean_text(run_id):
-        if not clean_text(tasks.get("finishedAt")):
+        if overwrite_finished or not clean_text(tasks.get("finishedAt")):
             tasks["finishedAt"] = finished_at
             tasks["status"] = "canceled"
             tasks["heartbeatAt"] = finished_at
@@ -205,6 +208,7 @@ def repair_discovery_canceled_evidence(
     save_json_atomic: Callable[[Path, Any], None],
     normalize_report: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
     reason: str = "",
+    overwrite_finished: bool = False,
 ) -> dict[str, Any]:
     return (
         _repair_report(
@@ -216,6 +220,7 @@ def repair_discovery_canceled_evidence(
             normalize_report=normalize_report,
             phase_label="Discovery canceled",
             reason=reason,
+            overwrite_finished=overwrite_finished,
         )
         or {}
     )

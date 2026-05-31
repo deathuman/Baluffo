@@ -285,6 +285,75 @@ def test_cleanup_orphaned_startup_tasks_updates_sqlite_authoritative_task_runs(
         assert recent[0]["summary"]["error"] == "owner_inactive_without_terminal_report"
 
 
+def test_cleanup_orphaned_startup_tasks_overwrites_finished_abort_evidence(
+    tmp_path: Path,
+) -> None:
+    fixed_now = "2026-05-15T01:40:00+02:00"
+    _save_json(
+        tmp_path / "admin-task-lifecycle.json",
+        {
+            "schemaVersion": 1,
+            "updatedAt": "2026-05-15T01:32:33+02:00",
+            "rows": [
+                {
+                    "runId": "fetch_abort",
+                    "taskType": "fetch",
+                    "status": "running",
+                    "stage": "aborting",
+                    "ownerKind": "process",
+                    "ownerPid": 123,
+                    "startedAt": "2026-05-15T01:32:33+02:00",
+                    "summary": {
+                        "abortRequestedAt": "2026-05-15T01:35:00+02:00",
+                        "abortReason": "test_abort",
+                    },
+                    "progress": {"active": True, "phaseKey": "aborting"},
+                }
+            ],
+        },
+    )
+    _save_json(
+        tmp_path / "jobs-fetch-report.json",
+        {
+            "runId": "fetch_abort",
+            "startedAt": "2026-05-15T01:32:33+02:00",
+            "finishedAt": "2026-05-15T01:36:00+02:00",
+            "status": "ok",
+            "summary": {"status": "ok", "outputCount": 4},
+            "taskProgress": {"active": True, "phaseKey": "done"},
+        },
+    )
+    _save_json(
+        tmp_path / "jobs-fetch-tasks.json",
+        {
+            "runId": "fetch_abort",
+            "finishedAt": "2026-05-15T01:36:00+02:00",
+            "status": "ok",
+            "taskProgress": {"active": True, "phaseKey": "done"},
+        },
+    )
+
+    result = cleanup_orphaned_startup_tasks(
+        tmp_path,
+        pid_is_running=lambda _pid: False,
+        now_iso=lambda: fixed_now,
+    )
+
+    assert result["ok"] is True
+    lifecycle = json.loads((tmp_path / "admin-task-lifecycle.json").read_text(encoding="utf-8"))
+    row = lifecycle["rows"][0]
+    assert row["status"] == "canceled"
+    assert row["terminalReason"] == "user_abort_requested"
+    report = json.loads((tmp_path / "jobs-fetch-report.json").read_text(encoding="utf-8"))
+    assert report["status"] == "canceled"
+    assert report["terminalReason"] == "user_abort_requested"
+    assert report["summary"]["terminalReason"] == "user_abort_requested"
+    assert report["taskProgress"]["active"] is False
+    tasks = json.loads((tmp_path / "jobs-fetch-tasks.json").read_text(encoding="utf-8"))
+    assert tasks["status"] == "canceled"
+    assert tasks["taskProgress"]["active"] is False
+
+
 def test_cleanup_orphaned_startup_tasks_keeps_running_process_owned_task(
     tmp_path: Path,
 ) -> None:

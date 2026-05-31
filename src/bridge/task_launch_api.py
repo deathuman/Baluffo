@@ -1772,6 +1772,7 @@ class TaskLaunchApi:
                 save_json_atomic=save_json_atomic,
                 normalize_report=normalize_fetch_report_contract,
                 reason=str((lifecycle_row or {}).get("summary", {}).get("abortReason") or ""),
+                overwrite_finished=True,
             )
             cancel_fn = cancel_lifecycle_run or self._deps.cancel_lifecycle_run
             cancel_fn(
@@ -1946,6 +1947,7 @@ class TaskLaunchApi:
                 save_json_atomic=save_json_atomic,
                 normalize_report=normalize_fetch_report_contract,
                 reason=str((lifecycle_row or {}).get("summary", {}).get("abortReason") or ""),
+                overwrite_finished=True,
             )
             cancel_lifecycle_run(
                 run_id,

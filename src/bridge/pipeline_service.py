@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.bridge.ops_live_payload import build_pipeline_task_progress
-from src.bridge.task_abort_evidence import ABORT_TERMINAL_REASON
+from src.bridge.task_abort_evidence import ABORT_TERMINAL_REASON, row_abort_requested
 
 PIPELINE_COMPLETION_NOTIFICATION_MIN_SECONDS = 60.0
 
@@ -363,6 +363,27 @@ class PipelineService:
     def _child_task_is_active(self, task_type: str, run_id: str = "") -> bool:
         snapshot = self._get_child_task_snapshot(task_type, run_id)
         return bool(snapshot and getattr(snapshot, "active", False))
+
+    def _child_abort_requested(self, task_type: str, run_id: str = "") -> bool:
+        clean_task_type = str(task_type or "").strip().lower()
+        clean_run_id = str(run_id or "").strip()
+        if not clean_task_type or not clean_run_id or not callable(self._get_projected_run_history):
+            return False
+        try:
+            projection = self._get_projected_run_history()
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return False
+        rows = getattr(projection, "rows", [])
+        if not isinstance(rows, list):
+            return False
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            row_task_type = str(row.get("taskType") or row.get("type") or "").strip().lower()
+            row_run_id = str(row.get("runId") or row.get("id") or "").strip()
+            if row_task_type == clean_task_type and row_run_id == clean_run_id:
+                return row_abort_requested(row)
+        return False
 
     def _child_task_has_live_evidence(self, task_type: str, run_id: str = "") -> bool:
         checked_child_liveness = bool(
@@ -932,7 +953,6 @@ class PipelineService:
             )
             with self._lock:
                 pipeline_run_id = str(self._status.get("runId") or "").strip()
-            self._check_abort(pipeline_run_id)
             if child_live:
                 quiet_deadline = now + timedelta(seconds=quiet_window_s)
                 self._heartbeat_pipeline_wait()
@@ -942,10 +962,13 @@ class PipelineService:
                 report_started = self._parse_iso(normalized_report.get("startedAt"))
                 report_finished = self._parse_iso(normalized_report.get("finishedAt"))
                 if report_finished and report_started and report_finished >= report_started:
+                    if self._child_abort_requested(task_type, task_run_id):
+                        raise PipelineAbortRequested("pipeline child abort requested")
                     self._finish_child_lifecycle_from_report(
                         task_type, task_run_id, normalized_report
                     )
                     return normalized_report
+            self._check_abort(pipeline_run_id)
             if fail_on_stale and stale_guard(
                 "fetch" if "fetch" in report_name else "discovery",
                 report_path,

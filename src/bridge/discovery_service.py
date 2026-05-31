@@ -126,6 +126,7 @@ class DiscoveryService:
             save_json_atomic=self._deps.save_json_atomic,
             normalize_report=self._deps.normalize_discovery_report_contract,
             reason=reason,
+            overwrite_finished=True,
         )
         self._deps.cancel_lifecycle_run(
             run_id,

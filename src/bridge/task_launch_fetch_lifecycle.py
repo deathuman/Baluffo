@@ -154,6 +154,7 @@ def close_fetch_lifecycle_from_report(
             save_json_atomic=ctx.save_json_atomic,
             normalize_report=ctx.normalize_fetch_report_contract,
             reason=str((lifecycle_row or {}).get("summary", {}).get("abortReason") or ""),
+            overwrite_finished=True,
         )
         ctx.cancel_lifecycle_run(
             run_id,
@@ -243,6 +244,7 @@ def watch_fetch_lifecycle(
                 save_json_atomic=ctx.save_json_atomic,
                 normalize_report=ctx.normalize_fetch_report_contract,
                 reason=str((lifecycle_row or {}).get("summary", {}).get("abortReason") or ""),
+                overwrite_finished=True,
             )
             ctx.cancel_lifecycle_run(
                 run_id,

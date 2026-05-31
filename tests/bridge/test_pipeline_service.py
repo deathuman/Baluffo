@@ -86,6 +86,89 @@ def test_wait_for_report_completion_refreshes_pipeline_child_heartbeat(tmp_path:
     assert parent_heartbeats == [("pipeline_1", "pipeline", "discovery")]
 
 
+def test_wait_for_report_completion_finalizes_terminal_child_before_parent_abort() -> None:
+    runtime = PipelineRuntime(abort_requests={"pipeline_1": {"reason": "test_abort"}})
+    finished_children: list[dict[str, Any]] = []
+    report = {
+        "runId": "fetch_1",
+        "startedAt": "2026-05-06T18:00:00Z",
+        "finishedAt": "2026-05-06T18:05:00Z",
+        "summary": {"outputCount": 4},
+        "taskProgress": {"active": True, "phaseKey": "done"},
+    }
+    service = _make_pipeline_service(
+        pipeline_status={"active": True, "runId": "pipeline_1", "stage": "fetch"},
+        runtime=runtime,
+        load_json_object=lambda _path, _default: dict(report),
+        finish_lifecycle_run=lambda run_id, task_type, **kwargs: (
+            finished_children.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        ),
+    )
+
+    result = service.wait_for_report_completion(
+        report_path=Path("jobs-fetch-report.json"),
+        started_at="2026-05-06T18:00:00Z",
+        timeout_s=10.0,
+        report_name="fetch report",
+        load_json_object=lambda _path, _default: dict(report),
+        task_type="fetch",
+        task_run_id="fetch_1",
+    )
+
+    assert result["runId"] == "fetch_1"
+    assert finished_children[-1]["runId"] == "fetch_1"
+    assert finished_children[-1]["terminal_reason"] == "completed"
+
+
+def test_wait_for_report_completion_does_not_finalize_abort_requested_child() -> None:
+    finished_children: list[dict[str, Any]] = []
+    report = {
+        "runId": "fetch_1",
+        "startedAt": "2026-05-06T18:00:00Z",
+        "finishedAt": "2026-05-06T18:05:00Z",
+        "summary": {"outputCount": 4},
+        "taskProgress": {"active": True, "phaseKey": "done"},
+    }
+    service = _make_pipeline_service(
+        pipeline_status={"active": True, "runId": "pipeline_1", "stage": "fetch"},
+        load_json_object=lambda _path, _default: dict(report),
+        get_projected_run_history=lambda: LifecycleProjection(
+            rows=[
+                {
+                    "runId": "fetch_1",
+                    "taskType": "fetch",
+                    "status": "running",
+                    "stage": "aborting",
+                    "summary": {"abortRequestedAt": "2026-05-06T18:04:00Z"},
+                    "taskProgress": {"phaseKey": "aborting"},
+                }
+            ],
+            child_tasks={},
+            diagnostics=[],
+        ),
+        finish_lifecycle_run=lambda run_id, task_type, **kwargs: (
+            finished_children.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        ),
+    )
+
+    try:
+        service.wait_for_report_completion(
+            report_path=Path("jobs-fetch-report.json"),
+            started_at="2026-05-06T18:00:00Z",
+            timeout_s=10.0,
+            report_name="fetch report",
+            load_json_object=lambda _path, _default: dict(report),
+            task_type="fetch",
+            task_run_id="fetch_1",
+        )
+    except Exception as exc:
+        assert exc.__class__.__name__ == "PipelineAbortRequested"
+    else:
+        raise AssertionError("expected PipelineAbortRequested")
+
+    assert finished_children == []
+
+
 def test_pipeline_stage_heartbeat_uses_normalized_lifecycle_progress() -> None:
     parent_heartbeats: list[dict[str, Any]] = []
     status: dict[str, Any] = {

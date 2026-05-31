@@ -4,7 +4,7 @@
 > - **Use this when:** adding or refining abort support for discovery, fetch, first-run bootstrap fetches, or jobs pipeline tasks
 > - **Canonical for:** abort scope, lifecycle safety rules, public API shape, known loopholes, implementation sequencing, and verification gates
 > - **Not canonical for:** pause support or standalone sync abort
-> - **Last updated:** 2026-05-31 (implementation baseline added)
+> - **Last updated:** 2026-06-01 (abort report race clarification)
 
 ## Summary
 
@@ -25,6 +25,7 @@ The high-risk part is lifecycle authority, not the route. Delayed watchers, repo
 
 - Frontend confirmation: Jobs and Admin Ops must both confirm before posting an abort request.
 - Terminal-report race: if matching terminal report evidence already exists before abort intent is recorded, abort returns `409` and normal finalization owns closeout.
+- Pipeline child terminal race: when aborting a pipeline, child terminal evidence that already exists before child abort intent is recorded is finalized normally; only the pipeline parent cancellation continues.
 - Bridge-restart PID fallback: after a restart, terminate by PID only when command/run identity can be verified. If identity cannot be verified, keep abort intent active, warn, and let cleanup close it when the PID exits.
 
 ## Scope And Public Interface
@@ -221,7 +222,7 @@ Only after termination completes should the row become:
 | PID-only process kill can hit the wrong process after PID reuse | Prefer registered `Popen`; after restart, terminate by PID only after command/run identity verification |
 | POSIX child spawns descendants outside the killed PID | Launch abortable children in a new session/process group and terminate the group |
 | Bridge restarts during abort | Persist abort intent in lifecycle summary/progress and have startup cleanup replay cancel-or-terminate semantics |
-| Child report finishes at the same time as abort | Abort wins only if requested before matching terminal report evidence existed; otherwise return `409` |
+| Child report finishes at the same time as abort | Abort repair may overwrite finished evidence only after abort intent is authoritative. If terminal child evidence already exists before child abort intent, normal child finalization wins and the pipeline parent may still cancel. |
 | Report summary builders reclassify canceled as ok/error | Make lifecycle canceled authoritative in history/task projections and report display |
 | Pipeline waits too long after child abort | Make report waits abort-aware and inspect child canceled lifecycle state |
 | Direct child abort leaves parent pipeline active | Propagate pipeline-owned child cancellation to parent pipeline |

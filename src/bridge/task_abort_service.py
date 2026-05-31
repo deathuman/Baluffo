@@ -131,6 +131,7 @@ class TaskAbortService:
             save_json_atomic=self._deps.save_json_atomic,
             normalize_report=self._deps.normalize_fetch_report_contract,
             reason=reason,
+            overwrite_finished=True,
         )
         return self._deps.cancel_lifecycle_run(
             run_id,
@@ -151,6 +152,7 @@ class TaskAbortService:
             save_json_atomic=self._deps.save_json_atomic,
             normalize_report=self._deps.normalize_discovery_report_contract,
             reason=reason,
+            overwrite_finished=True,
         )
         return self._deps.cancel_lifecycle_run(
             run_id,
@@ -219,6 +221,11 @@ class TaskAbortService:
                 continue
             status = _clean_text(row.get("lifecycleStatus") or row.get("status")).lower()
             if status not in {"queued", "running"}:
+                continue
+            if self._terminal_evidence_exists(child_type, child_run_id):
+                warnings.append(
+                    f"child_terminal_report_already_finished:{child_type}:{child_run_id}"
+                )
                 continue
             self._deps.request_abort_run(
                 child_run_id,

@@ -106,11 +106,12 @@ def _terminalize_report(
     error: str,
     status: str = "error",
     terminal_reason: str = "",
+    overwrite_finished: bool = False,
 ) -> bool:
     payload = _load_json_object(path, {})
     if str(payload.get("runId") or "").strip() != str(run_id or "").strip():
         return False
-    if str(payload.get("finishedAt") or "").strip():
+    if str(payload.get("finishedAt") or "").strip() and not overwrite_finished:
         return False
     payload["finishedAt"] = finished_at
     payload["status"] = status
@@ -118,12 +119,17 @@ def _terminalize_report(
         payload["terminalReason"] = terminal_reason
     summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
     payload["summary"] = (
-        {**summary, "status": "canceled", "terminalReason": terminal_reason}
+        {
+            **summary,
+            "status": "canceled",
+            "terminalReason": terminal_reason,
+            "abortFinishedAt": finished_at,
+        }
         if status == "canceled"
         else {**summary, "error": error}
     )
     progress = payload.get("taskProgress") if isinstance(payload.get("taskProgress"), dict) else {}
-    if progress:
+    if progress or status == "canceled":
         payload["taskProgress"] = {
             **progress,
             "active": False,
@@ -132,10 +138,13 @@ def _terminalize_report(
         }
     runtime = payload.get("runtime") if isinstance(payload.get("runtime"), dict) else {}
     lifecycle = runtime.get("lifecycle") if isinstance(runtime.get("lifecycle"), dict) else {}
-    if runtime or lifecycle:
+    if runtime or lifecycle or status == "canceled":
+        lifecycle_payload = {**lifecycle, "heartbeatAt": finished_at}
+        if status == "canceled":
+            lifecycle_payload["terminalReason"] = terminal_reason
         payload["runtime"] = {
             **runtime,
-            "lifecycle": {**lifecycle, "heartbeatAt": finished_at},
+            "lifecycle": lifecycle_payload,
         }
     _write_json(path, payload)
     return True
@@ -149,11 +158,12 @@ def _terminalize_fetch_tasks(
     error: str,
     status: str = "error",
     terminal_reason: str = "",
+    overwrite_finished: bool = False,
 ) -> bool:
     payload = _load_json_object(path, {})
     if str(payload.get("runId") or "").strip() != str(run_id or "").strip():
         return False
-    if str(payload.get("finishedAt") or "").strip():
+    if str(payload.get("finishedAt") or "").strip() and not overwrite_finished:
         return False
     payload["finishedAt"] = finished_at
     payload["status"] = status
@@ -162,12 +172,17 @@ def _terminalize_fetch_tasks(
     payload["heartbeatAt"] = finished_at
     summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
     payload["summary"] = (
-        {**summary, "status": "canceled", "terminalReason": terminal_reason}
+        {
+            **summary,
+            "status": "canceled",
+            "terminalReason": terminal_reason,
+            "abortFinishedAt": finished_at,
+        }
         if status == "canceled"
         else {**summary, "error": error}
     )
     progress = payload.get("taskProgress") if isinstance(payload.get("taskProgress"), dict) else {}
-    if progress:
+    if progress or status == "canceled":
         payload["taskProgress"] = {
             **progress,
             "active": False,
@@ -432,6 +447,7 @@ def _terminalize_stale_reports(
                 error=error,
                 status=status,
                 terminal_reason=terminal_reason,
+                overwrite_finished=aborted,
             )
         elif task_type == "fetch":
             _terminalize_report(
@@ -441,6 +457,7 @@ def _terminalize_stale_reports(
                 error=error,
                 status=status,
                 terminal_reason=terminal_reason,
+                overwrite_finished=aborted,
             )
             _terminalize_fetch_tasks(
                 fetch_tasks_path,
@@ -449,6 +466,7 @@ def _terminalize_stale_reports(
                 error=error,
                 status=status,
                 terminal_reason=terminal_reason,
+                overwrite_finished=aborted,
             )
 
 
