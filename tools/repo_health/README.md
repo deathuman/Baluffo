@@ -33,6 +33,9 @@ python tools/repo_health/bin/analyze_refactorability.py
 # Run repository policy guardrails, including fixture references
 npm run lint:repo-guardrails
 
+# Generate an optional AI-coder orientation artifact
+python tools/repo_health/generate_system_map.py --output .tmp/system-map.json
+
 # With verification (slower, runs actual commands)
 python tools/repo_health/bin/analyze_repo.py --verify
 
@@ -45,3 +48,4 @@ python tools/repo_health/bin/analyze_repo.py -o maturity.json
 - **Readiness/Maturity**: How ready the repo is for AI work - testing, docs, build, security
 - **Refactorability**: How safely AI can modify the repo without causing issues - boundary isolation, hotspots, contracts
 - **Repo guardrails**: Checked-in repository policy checks for docs, workflow, compatibility surfaces, frontend structure, repo-root layout, test shape, fixture references, and test line budgets. Test-shape guardrails also block generated frontend unit aggregators now that Node discovers `tests/frontend/unit/*.test.mjs` directly.
+- **System map**: Optional generated JSON for broad AI orientation. It summarizes page surfaces, task flows, bridge routes from `bridge_route_inventory.py`, runtime evidence files, and high-risk areas. Treat it as advisory; canonical guidance stays in `AGENTS.md`, `docs/AI_ASSISTANT_GUIDE.md`, `docs/architecture-ai-map.md`, source, and tests.

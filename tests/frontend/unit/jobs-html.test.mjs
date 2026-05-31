@@ -217,3 +217,10 @@ test("admin html groups operations health into overview discovery source-policy 
   assert.ok(adminHtml.indexOf('id="admin-ops-history"') < adminHtml.indexOf('role="tablist" aria-label="Operations health sections"'));
   assert.match(adminHtml, /<details class="admin-ops-trends-details">\s*<summary>Run trends<\/summary>\s*<div id="admin-ops-trends"/);
 });
+
+test("admin html does not expose unfinished system map page in primary navigation", () => {
+  const adminHtml = fs.readFileSync(path.join(repoRoot, "admin.html"), "utf8");
+  assert.doesNotMatch(adminHtml, /system-map\.html/);
+  assert.doesNotMatch(adminHtml, /System Map/);
+  assert.doesNotMatch(adminHtml, /admin-system-map-link/);
+});

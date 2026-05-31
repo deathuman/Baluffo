@@ -1,14 +1,32 @@
 #!/usr/bin/env python3
-"""Generate a system map JSON data file from the route inventory and module structure."""
+"""Generate an advisory AI-coder system map from repo routing and module metadata."""
 
 from __future__ import annotations
 
+import argparse
 import json
+from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
+
+from tools.repo_health import bridge_route_inventory
 
 ROOT = Path(__file__).resolve().parents[2]
 
 OUTPUT_PATH = ROOT / "data" / "system-map.json"
+DEFAULT_AI_READ_DOCS = [
+    "AGENTS.md",
+    "docs/AI_ASSISTANT_GUIDE.md",
+    "docs/architecture-ai-map.md",
+    "docs/admin-bridge-api.md",
+    "docs/DATA_CONTRACT.md",
+    "docs/testing.md",
+]
+AI_CAVEATS = [
+    "This generated map is advisory orientation for broad repo discovery.",
+    "Repo docs, tests, source, and AGENTS.md remain canonical when they disagree with this artifact.",
+    "Load this only when a task needs broad system routing; do not use it as a default first read.",
+]
 
 FRONTEND_PAGES = [
     {
@@ -269,24 +287,89 @@ def _find_modules(path: str, pattern: str) -> list[str]:
     )
 
 
-def generate() -> None:
+def _route_inventory_rows() -> list[dict[str, object]]:
+    return [
+        {
+            "method": route.method,
+            "pattern": route.pattern,
+            "matchKind": route.match_kind,
+            "surface": route.surface,
+            "handlerFile": route.handler_file,
+            "callerFiles": list(route.caller_files),
+            "contractDoc": route.contract_doc,
+            "verification": route.verification,
+        }
+        for route in bridge_route_inventory.BRIDGE_ROUTES
+    ]
+
+
+def _ai_read_hints(*, module_count: int, bridge_route_count: int) -> dict[str, object]:
+    return {
+        "purpose": (
+            "Optional AI-coder orientation artifact for broad repo routing, bridge surfaces, "
+            "runtime evidence files, and high-risk areas."
+        ),
+        "readFirst": DEFAULT_AI_READ_DOCS,
+        "routeInventory": "tools/repo_health/bridge_route_inventory.py",
+        "moduleCount": module_count,
+        "bridgeRouteCount": bridge_route_count,
+        "caveats": AI_CAVEATS,
+    }
+
+
+def build_payload() -> dict[str, object]:
     frontend_modules = _find_modules("frontend", "*.js")
     src_modules = _find_modules("src", "*.py")
     all_modules = sorted(frontend_modules + src_modules)
+    bridge_routes = _route_inventory_rows()
 
-    payload = {
-        "generatedAt": __import__("datetime").datetime.now().isoformat(),
+    return {
+        "generatedAt": datetime.now(UTC).isoformat(),
         "frontendPages": FRONTEND_PAGES,
         "taskFlows": TASK_FLOWS,
         "riskMarkers": RISK_MARKERS,
         "evidenceFiles": EVIDENCE_FILES,
         "moduleCount": len(all_modules),
+        "bridgeRoutes": bridge_routes,
+        "aiReadHints": _ai_read_hints(
+            module_count=len(all_modules),
+            bridge_route_count=len(bridge_routes),
+        ),
     }
 
-    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT_PATH.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"System map generated: {OUTPUT_PATH}")
+
+def generate(output_path: str | Path = OUTPUT_PATH) -> dict[str, object]:
+    payload = build_payload()
+    resolved_output = Path(output_path).expanduser()
+    resolved_output.parent.mkdir(parents=True, exist_ok=True)
+    resolved_output.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return payload
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Generate an advisory Baluffo system map for AI-coder orientation. "
+            "The output is not canonical; repo docs/source/tests remain authoritative."
+        )
+    )
+    parser.add_argument(
+        "--output",
+        default=str(OUTPUT_PATH),
+        help="Output JSON path. Use .tmp/system-map.json for disposable AI exploration.",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = parse_args(argv)
+    generate(args.output)
+    print(f"System map generated: {Path(args.output).expanduser()}")
+    return 0
 
 
 if __name__ == "__main__":
-    generate()
+    raise SystemExit(main())

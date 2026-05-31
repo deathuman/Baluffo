@@ -94,6 +94,19 @@ Test-NetConnection 127.0.0.1 -Port 8877
 These are contributor-local helpers for AI-assisted repo work. They are not Baluffo runtime,
 packaging, release, Python, Node, CI, or pre-commit dependencies.
 
+Default to the narrowest deterministic tool:
+
+- Use Serena for symbol-aware code reads/edits inside the repo.
+- Use `rg` for text search and `fd` for file discovery before falling back to shell-native search.
+- Use `ast-grep` for structural code queries, `jq`/`yq` for JSON/YAML, and `bat` for targeted line previews.
+- Use `node_repl` for simple external UTF-8 file reads/edits, especially Codex skill files under `.codex/skills`.
+- Use PowerShell mainly for Windows shell tasks: Git, tests, validation commands, process management, and filesystem operations that need shell semantics.
+- If direct shell execution fails, use the approved PowerShell wrapper but still run the better tool inside it, such as `rg`, `fd`, `jq`, or `bat`.
+
+On Windows, persistent direct-command allowances live in `~/.codex/rules/default.rules`.
+Keep allow rules narrow: deterministic read/inspection tools and read-only Git prefixes are fine;
+do not add broad `python`, `node`, `npm`, `gh`, `pwsh`, `powershell`, or `cmd` rules just to bypass sandbox prompts.
+
 | Tool | Default use | Boundary |
 |------|-------------|----------|
 | Serena | Symbol-aware navigation, references, declarations, and refactor support | Required code-intelligence MCP; repo docs and source remain canonical |
@@ -102,7 +115,7 @@ packaging, release, Python, Node, CI, or pre-commit dependencies.
 | `ast-grep` | Syntax-aware structural search for Python, JS/TS, HTML, JSON, and YAML | Use when code shape matters more than exact text |
 | `jq` / `yq` | Focused JSON/YAML inspection | Prefer before reading full config or data files |
 | `bat` | Focused previews with line numbers and ranges | Use after the relevant file or region is known |
-| `fzf` | Human-guided fuzzy selection | Avoid in autonomous agent commands because it is interactive |
+| `node_repl` | Small JavaScript-backed host file or browser helper tasks | Prefer for external Codex skill file edits; do not use for repo code when `apply_patch` or Serena is clearer |
 | `git grep` | Git-tracked-file-only search | Use when ignored or untracked files must be excluded |
 
 Optional Windows toolbelt install, with package IDs verified through `winget search` on 2026-05-15:
@@ -114,7 +127,6 @@ winget install -e --id ast-grep.ast-grep
 winget install -e --id sharkdp.bat
 winget install -e --id jqlang.jq
 winget install -e --id MikeFarah.yq
-winget install -e --id junegunn.fzf
 ```
 
 Verify availability after install, restarting the shell first if a newly installed command is not found:
@@ -126,7 +138,6 @@ ast-grep --version
 bat --version
 jq --version
 yq --version
-fzf --version
 ```
 
 Baluffo-specific examples:
@@ -139,7 +150,10 @@ jq '.scripts | keys' package.json
 yq '.repos[].hooks[].id' .pre-commit-config.yaml
 bat --style=numbers --line-range 60:110 docs/AI_ASSISTANT_GUIDE.md
 git grep -n "desktop-local-data" -- frontend src tests
+python tools/repo_health/generate_system_map.py --output .tmp/system-map.json
 ```
+
+`tools/repo_health/generate_system_map.py` is an optional broad-orientation helper for AI coders. Use it only when you need a compact generated view of page surfaces, task flows, bridge routes, runtime evidence files, and high-risk areas. Its output is advisory; `AGENTS.md`, this guide, `architecture-ai-map.md`, contract docs, source, and tests remain canonical.
 
 ## Serena Session Preflight (for new client sessions)
 
