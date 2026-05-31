@@ -13,6 +13,9 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 ### Added
 - Admin Ops can now enable a bridge-owned recurring full Jobs pipeline schedule with a configurable whole-hour interval.
 
+### Fixed
+- Task abort lifecycle closeout now keeps user-canceled evidence sticky across late fetch/discovery reports, watcher cleanup, startup cleanup, and pipeline child terminal races.
+
 ## [0.2.18] - 2026-05-25
 
 ### Added

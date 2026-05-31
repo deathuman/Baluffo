@@ -753,6 +753,7 @@ Sync `taskProgress.counts` may include additive sharded-push diagnostics while `
 - Any new task-lifecycle artifact must preserve `runId` end to end instead of relying on timestamps.
 - User abort intent for `fetch`, `discovery`, and `pipeline` is stored in the lifecycle row before termination. While abort is in progress the row remains active with `status: "running"`, `stage: "aborting"` or `stage: "abort_pending_sync"`, `summary.abortRequestedAt`, `summary.abortReason`, and `taskProgress.phaseKey: "aborting"`.
 - Terminal user-aborted rows use `status: "canceled"` / route `status: "canceled"`, `terminalReason: "user_abort_requested"`, inactive task progress, and canceled report evidence. Later success/failure/orphan closeout must not overwrite a canceled lifecycle row.
+- Abort repair may overwrite finished fetch/discovery evidence only after abort intent is authoritative. If matching non-canceled terminal evidence existed before abort intent was recorded, normal terminal finalization owns that child/run; for pipeline aborts the parent may still become `canceled` while the already-terminal child remains in its original terminal state.
 
 ### Jobs pipeline schedule contract
 
@@ -764,7 +765,7 @@ Persisted shape:
 - `enabled`: boolean, default `false`.
 - `intervalHours`: whole number from `1` through `168`, default `24`.
 
-`GET /tasks/jobs-pipeline-schedule` returns `{ok, savedConfig, status}`. `status` includes `enabled`, `pending`, `due`, `nextRunAt`, `lastPipelineFinishedAt`, `lastTriggerRunId`, and `lastTriggerError`. `/ops/health.schedule.pipeline` mirrors the same status plus `intervalHours` and a display note. Existing `/ops/health.schedule.fetcher` and `/ops/health.schedule.discovery` fields remain present.
+`GET /tasks/jobs-pipeline-schedule` returns `{ok, savedConfig, status}`. `POST /tasks/jobs-pipeline-schedule` accepts `{enabled, intervalHours}`, persists the normalized config, rejects invalid intervals with `400`, and immediately re-evaluates due state. `status` includes `enabled`, `pending`, `due`, `nextRunAt`, `lastPipelineFinishedAt`, `lastTriggerRunId`, and `lastTriggerError`. `/ops/health.schedule.pipeline` mirrors the same status plus `intervalHours` and a display note. Existing `/ops/health.schedule.fetcher` and `/ops/health.schedule.discovery` fields remain present.
 
 Scheduled pipeline launches reuse the normal pipeline lifecycle with `taskType: "pipeline"` and a generated pipeline `runId`; there is no schedule-specific lifecycle row. Missed intervals collapse into one pending scheduled run, and disabling the schedule clears pending work without canceling an already active pipeline.
 

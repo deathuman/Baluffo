@@ -6,6 +6,10 @@
 > - **Not canonical for:** pause support or standalone sync abort
 > - **Last updated:** 2026-06-01 (abort report race clarification)
 
+## Implementation Closeout
+
+Abort support was implemented from Codex session `019e7edb-80ee-79b1-b25e-596de2aec3dc`, then hardened on 2026-06-01 for late report and pipeline child terminal races. This document remains the refinement-ready plan for future abort work; the current public contracts live in `docs/admin-bridge-api.md` and `docs/DATA_CONTRACT.md`.
+
 ## Summary
 
 Add user-requested task abort support only for these lifecycle-managed tasks:
