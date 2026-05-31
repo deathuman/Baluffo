@@ -177,6 +177,48 @@ def mark_desktop_session_activity(*, now_iso: Any) -> None:
     OWNER_STATE["lastActivityAt"] = activity_at
 
 
+def _desktop_session_pages() -> dict[str, Any]:
+    pages = DESKTOP_SESSION_STATE.get("pages")
+    return dict(pages) if isinstance(pages, dict) else {}
+
+
+def _clear_shutdown_request_for_page(page_id: str) -> None:
+    shutdown_page_id = str(DESKTOP_SESSION_STATE.get("shutdownPageId") or "").strip()
+    if shutdown_page_id and shutdown_page_id != page_id:
+        return
+    DESKTOP_SESSION_STATE["shutdownRequestedAt"] = ""
+    DESKTOP_SESSION_STATE["shutdownReason"] = ""
+    DESKTOP_SESSION_STATE["shutdownPageId"] = ""
+
+
+def _record_desktop_shutdown_request(
+    *,
+    page_id: str,
+    reason: str,
+    activity_at: str,
+) -> None:
+    shutdown_requested = str(DESKTOP_SESSION_STATE.get("shutdownRequestedAt") or "")
+    if not shutdown_requested:
+        DESKTOP_SESSION_STATE["shutdownRequestedAt"] = activity_at
+        DESKTOP_SESSION_STATE["shutdownReason"] = reason
+        DESKTOP_SESSION_STATE["shutdownPageId"] = page_id
+        return
+
+    shutdown_reason = str(DESKTOP_SESSION_STATE.get("shutdownReason") or "")
+    shutdown_page_id = str(DESKTOP_SESSION_STATE.get("shutdownPageId") or "").strip()
+    if (
+        reason == CONFIRMED_ACTIVE_WORK_CLOSE_REASON
+        and shutdown_reason == ACTIVE_WORK_CLOSE_ATTEMPT_REASON
+        and shutdown_page_id == page_id
+    ):
+        DESKTOP_SESSION_STATE["shutdownReason"] = reason
+        DESKTOP_SESSION_STATE["shutdownPageId"] = page_id
+        return
+    if reason and not shutdown_reason:
+        DESKTOP_SESSION_STATE["shutdownReason"] = reason
+        DESKTOP_SESSION_STATE["shutdownPageId"] = page_id
+
+
 def update_desktop_session_lifecycle(
     *,
     owner_token: str,
@@ -211,11 +253,7 @@ def update_desktop_session_lifecycle(
         activity_at = str(now_iso() or "")
         DESKTOP_SESSION_ACTIVITY_AT = activity_at
         OWNER_STATE["lastActivityAt"] = activity_at
-        pages = (
-            dict(DESKTOP_SESSION_STATE["pages"])
-            if isinstance(DESKTOP_SESSION_STATE.get("pages"), dict)
-            else {}
-        )
+        pages = _desktop_session_pages()
         page_state = pages.get(normalized_page_id)
         if not isinstance(page_state, dict):
             page_state = {}
@@ -228,29 +266,13 @@ def update_desktop_session_lifecycle(
         )
         if normalized_state == "alive":
             page_state["closingSince"] = ""
-            shutdown_page_id = str(DESKTOP_SESSION_STATE.get("shutdownPageId") or "").strip()
-            if not shutdown_page_id or shutdown_page_id == normalized_page_id:
-                DESKTOP_SESSION_STATE["shutdownRequestedAt"] = ""
-                DESKTOP_SESSION_STATE["shutdownReason"] = ""
-                DESKTOP_SESSION_STATE["shutdownPageId"] = ""
-        elif normalized_state == "closing":
-            shutdown_requested = str(DESKTOP_SESSION_STATE.get("shutdownRequestedAt") or "")
-            shutdown_reason = str(DESKTOP_SESSION_STATE.get("shutdownReason") or "")
-            shutdown_page_id = str(DESKTOP_SESSION_STATE.get("shutdownPageId") or "").strip()
-            if not shutdown_requested:
-                DESKTOP_SESSION_STATE["shutdownRequestedAt"] = activity_at
-                DESKTOP_SESSION_STATE["shutdownReason"] = normalized_reason
-                DESKTOP_SESSION_STATE["shutdownPageId"] = normalized_page_id
-            elif (
-                normalized_reason == CONFIRMED_ACTIVE_WORK_CLOSE_REASON
-                and shutdown_reason == ACTIVE_WORK_CLOSE_ATTEMPT_REASON
-                and shutdown_page_id == normalized_page_id
-            ):
-                DESKTOP_SESSION_STATE["shutdownReason"] = normalized_reason
-                DESKTOP_SESSION_STATE["shutdownPageId"] = normalized_page_id
-            elif normalized_reason and not shutdown_reason:
-                DESKTOP_SESSION_STATE["shutdownReason"] = normalized_reason
-                DESKTOP_SESSION_STATE["shutdownPageId"] = normalized_page_id
+            _clear_shutdown_request_for_page(normalized_page_id)
+        else:
+            _record_desktop_shutdown_request(
+                page_id=normalized_page_id,
+                reason=normalized_reason,
+                activity_at=activity_at,
+            )
         page_state["reason"] = normalized_reason
         pages[normalized_page_id] = page_state
         DESKTOP_SESSION_STATE["pages"] = pages

@@ -173,6 +173,61 @@ def _terminate_pid(pid: int, *, label: str, graceful_timeout_s: float = 5.0) -> 
         return
 
 
+def _close_packaged_smoke_handles(*handles: Any) -> None:
+    for handle in handles:
+        if handle is not None:
+            handle.close()
+
+
+def _require_launch_mode(*, actual: str, expected: str, context: str) -> None:
+    if actual == expected:
+        return
+    raise RuntimeError(
+        f"{context} required {expected} launch mode; desktop launch mode was "
+        f"'{actual or 'unknown'}'."
+    )
+
+
+def _require_live_desktop_pid(
+    deps: Any,
+    *,
+    pid: int,
+    context: str,
+    message: str = "",
+) -> None:
+    if int(pid or 0) > 0 and deps.desktop_app_mod.is_process_alive(int(pid)):
+        return
+    raise RuntimeError(message or f"{context} proof PID was not alive.")
+
+
+def _require_startup_metric_present(
+    deps: Any,
+    rows: list[dict[str, Any]],
+    event: str,
+    message: str,
+) -> None:
+    if deps.startup_metric_event_present(rows, event):
+        return
+    raise RuntimeError(message)
+
+
+def _require_startup_metric_absent(
+    deps: Any,
+    rows: list[dict[str, Any]],
+    event: str,
+    message: str,
+) -> None:
+    if not deps.startup_metric_event_present(rows, event):
+        return
+    raise RuntimeError(message)
+
+
+def _require_cleanup_within_target(*, label: str, elapsed_ms: int, target_ms: int) -> None:
+    if int(elapsed_ms) <= int(target_ms):
+        return
+    raise RuntimeError(f"{label} exceeded {target_ms} ms: {elapsed_ms} ms.")
+
+
 def _wait_for_desktop_ports_released(*ports: int, timeout_s: float) -> None:
     deps = _root()
     deadline = deps.time.monotonic() + max(5.0, float(timeout_s))
@@ -648,11 +703,11 @@ def run_packaged_desktop_lifecycle_rehearsal(
         false_metrics_rows = list(false_state.get("startupMetrics") or [])
         deps.write_json(false_metrics_path, {"rows": false_metrics_rows})
         false_launch_mode = deps.startup_metric_launch_mode(false_metrics_rows)
-        if false_launch_mode != "no-browser":
-            raise RuntimeError(
-                "Packaged desktop lifecycle rehearsal false-idle phase required "
-                f"no-browser launch mode; desktop launch mode was '{false_launch_mode or 'unknown'}'."
-            )
+        _require_launch_mode(
+            actual=false_launch_mode,
+            expected="no-browser",
+            context="Packaged desktop lifecycle rehearsal false-idle phase",
+        )
         node_probe = deps._run_desktop_lifecycle_node_probe(
             site_base_url=f"http://127.0.0.1:{false_actual_site_port}",
             bridge_base_url=f"http://127.0.0.1:{false_actual_bridge_port}",
@@ -727,17 +782,18 @@ def run_packaged_desktop_lifecycle_rehearsal(
         close_metrics_rows = list(close_state.get("startupMetrics") or [])
         deps.write_json(close_metrics_path, {"rows": close_metrics_rows})
         close_launch_mode = deps.startup_metric_launch_mode(close_metrics_rows)
-        if close_launch_mode != "chromium-app":
-            raise RuntimeError(
-                "Packaged desktop lifecycle rehearsal close-cleanup phase required "
-                f"chromium-app launch mode; desktop launch mode was '{close_launch_mode or 'unknown'}'."
-            )
+        _require_launch_mode(
+            actual=close_launch_mode,
+            expected="chromium-app",
+            context="Packaged desktop lifecycle rehearsal close-cleanup phase",
+        )
         close_proof = deps._select_browser_shutdown_proof(close_metrics_rows)
         close_proof_pid = int(close_proof.get("proofPid") or 0)
-        if close_proof_pid <= 0 or not deps.desktop_app_mod.is_process_alive(close_proof_pid):
-            raise RuntimeError(
-                "Packaged desktop lifecycle rehearsal close-cleanup proof PID was not alive."
-            )
+        _require_live_desktop_pid(
+            deps,
+            pid=close_proof_pid,
+            context="Packaged desktop lifecycle rehearsal close-cleanup",
+        )
         close_cleanup_started_mono = deps.time.monotonic()
         close_node_probe = deps._run_desktop_lifecycle_close_node_probe(
             site_base_url=f"http://127.0.0.1:{close_actual_site_port}",
@@ -801,16 +857,16 @@ def run_packaged_desktop_lifecycle_rehearsal(
                 "closeCleanupNodeStderr": str(close_node_probe.get("stderr") or ""),
             }
         )
-        if close_cleanup_launcher_exit_ms > close_cleanup_target_ms:
-            raise RuntimeError(
-                "Packaged desktop lifecycle regular close launcher cleanup exceeded "
-                f"{close_cleanup_target_ms} ms: {close_cleanup_launcher_exit_ms} ms."
-            )
-        if close_cleanup_ports_released_ms > close_cleanup_target_ms:
-            raise RuntimeError(
-                "Packaged desktop lifecycle regular close port release exceeded "
-                f"{close_cleanup_target_ms} ms: {close_cleanup_ports_released_ms} ms."
-            )
+        _require_cleanup_within_target(
+            label="Packaged desktop lifecycle regular close launcher cleanup",
+            elapsed_ms=close_cleanup_launcher_exit_ms,
+            target_ms=close_cleanup_target_ms,
+        )
+        _require_cleanup_within_target(
+            label="Packaged desktop lifecycle regular close port release",
+            elapsed_ms=close_cleanup_ports_released_ms,
+            target_ms=close_cleanup_target_ms,
+        )
         return {
             "name": "Packaged desktop lifecycle rehearsal",
             "slug": "packaged-desktop-lifecycle-rehearsal",
@@ -831,14 +887,12 @@ def run_packaged_desktop_lifecycle_rehearsal(
     finally:
         deps.terminate_process_tree(false_runtime_process)
         deps.terminate_process_tree(close_runtime_process)
-        if false_stdout_handle is not None:
-            false_stdout_handle.close()
-        if false_stderr_handle is not None:
-            false_stderr_handle.close()
-        if close_stdout_handle is not None:
-            close_stdout_handle.close()
-        if close_stderr_handle is not None:
-            close_stderr_handle.close()
+        _close_packaged_smoke_handles(
+            false_stdout_handle,
+            false_stderr_handle,
+            close_stdout_handle,
+            close_stderr_handle,
+        )
         deps.cleanup_orphaned_desktop_ports_nt(
             false_requested_site_port,
             false_requested_bridge_port,
@@ -927,22 +981,26 @@ def run_packaged_active_task_close_rehearsal(
         actual_bridge_port = int(runtime_state.get("actualBridgePort") or requested_bridge_port)
         metrics_rows = list(runtime_state.get("startupMetrics") or [])
         launch_mode = deps.startup_metric_launch_mode(metrics_rows)
-        if launch_mode != "chromium-app":
-            raise RuntimeError(
-                "Packaged active-task close rehearsal required chromium-app launch mode; "
-                f"desktop launch mode was '{launch_mode or 'unknown'}'."
-            )
-        if not deps.startup_metric_event_present(metrics_rows, "desktop_browser_job_attached"):
-            raise RuntimeError(
-                "Packaged active-task close rehearsal never emitted desktop_browser_job_attached."
-            )
+        _require_launch_mode(
+            actual=launch_mode,
+            expected="chromium-app",
+            context="Packaged active-task close rehearsal",
+        )
+        _require_startup_metric_present(
+            deps,
+            metrics_rows,
+            "desktop_browser_job_attached",
+            "Packaged active-task close rehearsal never emitted desktop_browser_job_attached.",
+        )
         proof = deps._select_browser_shutdown_proof(metrics_rows)
         proof_pid = int(proof.get("proofPid") or 0)
         proof_source = str(proof.get("proofSource") or "")
-        if proof_pid <= 0 or not deps.desktop_app_mod.is_process_alive(proof_pid):
-            raise RuntimeError(
-                "Packaged active-task close rehearsal proof PID was not alive before close."
-            )
+        _require_live_desktop_pid(
+            deps,
+            pid=proof_pid,
+            context="Packaged active-task close rehearsal",
+            message="Packaged active-task close rehearsal proof PID was not alive before close.",
+        )
         node_probe = deps._run_active_task_close_node_probe(
             site_base_url=f"http://127.0.0.1:{actual_site_port}",
             bridge_base_url=f"http://127.0.0.1:{actual_bridge_port}",
@@ -959,23 +1017,24 @@ def run_packaged_active_task_close_rehearsal(
         )
         final_metrics_rows = deps.desktop_app_mod.read_startup_metrics(runtime_data_dir, limit=1000)
         deps.write_json(metrics_path, {"rows": final_metrics_rows})
-        if not deps.startup_metric_event_present(
+        _require_startup_metric_present(
+            deps,
             final_metrics_rows,
             "desktop_confirmed_active_work_shutdown_requested",
-        ):
-            raise RuntimeError(
-                "Packaged active-task close rehearsal did not record confirmed shutdown intent."
-            )
-        if deps.startup_metric_event_present(
-            final_metrics_rows, "desktop_browser_relaunch_requested"
-        ):
-            raise RuntimeError(
-                "Packaged active-task close rehearsal attempted to reopen the browser."
-            )
-        if deps.startup_metric_event_present(final_metrics_rows, "desktop_runtime_fatal"):
-            raise RuntimeError(
-                "Packaged active-task close rehearsal entered the fatal active-work path."
-            )
+            "Packaged active-task close rehearsal did not record confirmed shutdown intent.",
+        )
+        _require_startup_metric_absent(
+            deps,
+            final_metrics_rows,
+            "desktop_browser_relaunch_requested",
+            "Packaged active-task close rehearsal attempted to reopen the browser.",
+        )
+        _require_startup_metric_absent(
+            deps,
+            final_metrics_rows,
+            "desktop_runtime_fatal",
+            "Packaged active-task close rehearsal entered the fatal active-work path.",
+        )
         details.update(
             {
                 "sessionRoot": str(deps.packaged_desktop_session_paths(runtime_env)["sessionRoot"]),
@@ -1032,10 +1091,7 @@ def run_packaged_active_task_close_rehearsal(
         }
     finally:
         deps.terminate_process_tree(runtime_process)
-        if runtime_stdout_handle is not None:
-            runtime_stdout_handle.close()
-        if runtime_stderr_handle is not None:
-            runtime_stderr_handle.close()
+        _close_packaged_smoke_handles(runtime_stdout_handle, runtime_stderr_handle)
         deps.cleanup_orphaned_desktop_ports_nt(
             requested_site_port,
             requested_bridge_port,
