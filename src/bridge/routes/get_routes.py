@@ -836,6 +836,61 @@ def _send_json_bytes(
     )
 
 
+def _handle_discovery_report_route(handler: BridgeResponseWriter, *, api: BridgeApi) -> bool:
+    # This route must never "silently" drop the connection; the admin UI
+    # treats network errors as bridge-availability failures.
+    def _send_discovery_report() -> None:
+        from src.source_registry_io import load_runtime_evidence
+
+        raw = load_runtime_evidence(getattr(api, "DISCOVERY_REPORT_PATH", None), {})
+
+        normalizer_fn = getattr(api, "normalize_discovery_report_contract", None)
+        report = normalizer_fn(raw) if callable(normalizer_fn) else raw
+
+        safe_bridge_log(
+            api,
+            "info",
+            "discovery_report_route_sending",
+            reportType=type(report).__name__,
+            summaryType=type((report or {}).get("summary", None)).__name__
+            if isinstance(report, dict)
+            else "",
+        )
+
+        payload = _as_dict(report) or {"summary": {}, "candidates": [], "failures": []}
+        # Prefer the bytes-writing helper to bypass any unexpected issues
+        # in JSON response serialization for edge-case payloads.
+        if hasattr(handler, "send_bytes"):
+            _send_json_bytes(handler, payload, status=200)
+        else:
+            handler.send_json(payload)
+
+    def _discovery_report_error(exc: Exception) -> dict[str, Any]:
+        safe_bridge_log(api, "error", "discovery_report_route_failed", error=str(exc))
+        return {"error": "failed_to_load_discovery_report", "detail": str(exc)}
+
+    if hasattr(handler, "send_bytes"):
+
+        def _send_error(exc: Exception) -> None:
+            _send_json_bytes(handler, _discovery_report_error(exc), status=500)
+
+        run_route_boundary(
+            handler,
+            _send_discovery_report,
+            error_status=500,
+            error_payload=_discovery_report_error,
+            error_sender=_send_error,
+        )
+    else:
+        run_route_boundary(
+            handler,
+            _send_discovery_report,
+            error_status=500,
+            error_payload=_discovery_report_error,
+        )
+    return True
+
+
 def handle_get(
     handler: BridgeResponseWriter, *, api: BridgeApi, path: str, query: dict[str, list[str]]
 ) -> bool:
@@ -845,58 +900,7 @@ def handle_get(
     """
 
     if path == "/discovery/report":
-        # This route must never "silently" drop the connection; the admin UI
-        # treats network errors as bridge-availability failures.
-        def _send_discovery_report() -> None:
-            from src.source_registry_io import load_runtime_evidence
-
-            raw = load_runtime_evidence(getattr(api, "DISCOVERY_REPORT_PATH", None), {})
-
-            normalizer_fn = getattr(api, "normalize_discovery_report_contract", None)
-            report = normalizer_fn(raw) if callable(normalizer_fn) else raw
-
-            safe_bridge_log(
-                api,
-                "info",
-                "discovery_report_route_sending",
-                reportType=type(report).__name__,
-                summaryType=type((report or {}).get("summary", None)).__name__
-                if isinstance(report, dict)
-                else "",
-            )
-
-            payload = _as_dict(report) or {"summary": {}, "candidates": [], "failures": []}
-            # Prefer the bytes-writing helper to bypass any unexpected issues
-            # in JSON response serialization for edge-case payloads.
-            if hasattr(handler, "send_bytes"):
-                _send_json_bytes(handler, payload, status=200)
-            else:
-                handler.send_json(payload)
-
-        def _discovery_report_error(exc: Exception) -> dict[str, Any]:
-            safe_bridge_log(api, "error", "discovery_report_route_failed", error=str(exc))
-            return {"error": "failed_to_load_discovery_report", "detail": str(exc)}
-
-        if hasattr(handler, "send_bytes"):
-
-            def _send_error(exc: Exception) -> None:
-                _send_json_bytes(handler, _discovery_report_error(exc), status=500)
-
-            run_route_boundary(
-                handler,
-                _send_discovery_report,
-                error_status=500,
-                error_payload=_discovery_report_error,
-                error_sender=_send_error,
-            )
-        else:
-            run_route_boundary(
-                handler,
-                _send_discovery_report,
-                error_status=500,
-                error_payload=_discovery_report_error,
-            )
-        return True
+        return _handle_discovery_report_route(handler, api=api)
 
     if path == "/discovery/candidates":
         candidates_path = getattr(api, "DISCOVERY_CANDIDATES_PATH", None)
