@@ -1456,7 +1456,8 @@
     4.5rem
     minmax(20rem, 1.9fr)
     4.75rem
-    minmax(9rem, max-content);
+    minmax(9rem, max-content)
+    minmax(5rem, max-content);
   column-gap: 0;
 }
 
@@ -1491,6 +1492,18 @@
 .admin-ops-history-header > div:nth-child(6),
 .admin-ops-history-row > .admin-cell:nth-child(6) {
   padding-left: 1.15rem;
+}
+
+.admin-ops-history-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-left: 0.6rem;
+}
+
+.admin-ops-run-abort-btn {
+  border-color: var(--admin-danger-border);
+  color: var(--admin-danger-text);
+  background: var(--admin-danger-bg);
 }
 
 .admin-ops-history-row > .admin-cell:nth-child(2) .admin-status-chip {

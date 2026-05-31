@@ -155,6 +155,13 @@ def read_tasks_config() -> JsonObject:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def background_process_flags(subprocess_mod: Any) -> JsonObject:
+    return {
+        "create_no_window": int(getattr(subprocess_mod, "CREATE_NO_WINDOW", 0)),
+        "create_new_process_group": int(getattr(subprocess_mod, "CREATE_NEW_PROCESS_GROUP", 0)),
+    }
+
+
 def set_sync_status(
     *,
     action: str = "",
@@ -418,6 +425,7 @@ def start_fetcher_task(payload: JsonObject | None = None) -> JsonObject:
         start_lifecycle_run=root_mod.start_lifecycle_run,
         finish_lifecycle_run=root_mod.finish_lifecycle_run,
         fail_lifecycle_run=root_mod.fail_lifecycle_run,
+        cancel_lifecycle_run=root_mod.cancel_lifecycle_run,
         heartbeat_lifecycle_run=root_mod.heartbeat_lifecycle_run,
         get_lifecycle_current_runs=root_mod.get_lifecycle_current_runs,
     )
@@ -434,6 +442,7 @@ def start_jobs_bootstrap_task(payload: JsonObject | None = None) -> JsonObject:
         start_lifecycle_run=root_mod.start_lifecycle_run,
         finish_lifecycle_run=root_mod.finish_lifecycle_run,
         fail_lifecycle_run=root_mod.fail_lifecycle_run,
+        cancel_lifecycle_run=root_mod.cancel_lifecycle_run,
         heartbeat_lifecycle_run=root_mod.heartbeat_lifecycle_run,
         get_lifecycle_current_runs=root_mod.get_lifecycle_current_runs,
         get_lifecycle_run_history_rows=root_mod.get_lifecycle_run_history_rows,

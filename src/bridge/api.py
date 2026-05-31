@@ -126,6 +126,10 @@ def _not_started_result(_payload: JsonObject | None = None) -> JsonObject:
     }
 
 
+def _abort_not_available(_payload: JsonObject | None = None) -> tuple[int, JsonObject]:
+    return 400, {"ok": False, "error": "task_abort_not_available"}
+
+
 def _empty_registry_state() -> RegistryState:
     return {"active": [], "pending": [], "rejected": []}
 
@@ -344,6 +348,7 @@ class BridgeApi:
     start_jobs_bootstrap_task: StartTaskFunc = _not_started_result
     start_fetcher_task: StartTaskFunc = _not_started_result
     start_jobs_pipeline_task: StartTaskFunc = _not_started_result
+    abort_task: Callable[[JsonObject | None], tuple[int, JsonObject]] = _abort_not_available
     start_sync_task: StartSyncTaskFunc = _not_started_result
 
     compute_ops_health: Callable[[], JsonObject] = _ok_payload

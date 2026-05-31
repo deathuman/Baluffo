@@ -308,6 +308,13 @@ class TaskRuntimeStore:
         record = _task_record_from_entry(entry, now_iso=self._now_iso)
         if not record["run_id"] or not record["task_type"]:
             raise ValueError("task run requires runId and taskType")
+        current = self._task_record(record["run_id"], record["task_type"])
+        if (
+            current is not None
+            and current["status"] == "canceled"
+            and record["status"] != "canceled"
+        ):
+            return _task_route_row(current, active=False)
         self._write_task_record(record)
         active = record["status"] in ACTIVE_STATUSES
         return _task_route_row(
@@ -371,6 +378,8 @@ class TaskRuntimeStore:
         error: str = "",
     ) -> dict[str, Any]:
         current = self._task_record(run_id, task_type) or {}
+        if current and current.get("status") == "canceled" and _task_status(status) != "canceled":
+            return _task_route_row(current, active=False)
         record = _task_record_from_entry(
             {
                 "runId": run_id,

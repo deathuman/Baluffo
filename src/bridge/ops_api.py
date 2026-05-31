@@ -665,8 +665,7 @@ class OpsApi:
                 continue
             parent_task_type = str(row.get("parentTaskType") or "").strip().lower()
             parent_run_id = str(row.get("parentRunId") or "").strip()
-            owner_kind = str(row.get("ownerKind") or "").strip().lower()
-            if parent_task_type == "pipeline" and owner_kind == "pipeline":
+            if parent_task_type == "pipeline":
                 parent_stage = parent_stage_by_run_id.get(parent_run_id, "")
                 if not parent_stage or parent_stage != task_type:
                     diagnostics.append(

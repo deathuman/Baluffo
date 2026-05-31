@@ -751,6 +751,8 @@ Sync `taskProgress.counts` may include additive sharded-push diagnostics while `
 - `data/jobs-fetch-tasks.json` now carries top-level `runId`, `startedAt`, `finishedAt`, and `heartbeatAt`.
 - Fetch report runtime may include `runtime.lifecycle.owner`, `runtime.lifecycle.ownerPid`, and `runtime.lifecycle.heartbeatAt`.
 - Any new task-lifecycle artifact must preserve `runId` end to end instead of relying on timestamps.
+- User abort intent for `fetch`, `discovery`, and `pipeline` is stored in the lifecycle row before termination. While abort is in progress the row remains active with `status: "running"`, `stage: "aborting"` or `stage: "abort_pending_sync"`, `summary.abortRequestedAt`, `summary.abortReason`, and `taskProgress.phaseKey: "aborting"`.
+- Terminal user-aborted rows use `status: "canceled"` / route `status: "canceled"`, `terminalReason: "user_abort_requested"`, inactive task progress, and canceled report evidence. Later success/failure/orphan closeout must not overwrite a canceled lifecycle row.
 
 ### Lifecycle cleanup
 

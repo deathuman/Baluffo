@@ -70,6 +70,7 @@ def build_bridge_api(
     check_registry_conflicts: Callable[[dict[str, Any] | None], dict[str, Any]] | None = None,
     load_registry_conflict_adjudication: Callable[[], dict[str, Any]] | None = None,
     get_current_task_state_summary_payload: Callable[[], dict[str, Any]] | None = None,
+    abort_task: Callable[[dict[str, Any] | None], tuple[int, dict[str, Any]]] | None = None,
 ) -> BridgeApi:
     return BridgeApi(
         runtime_config=config,
@@ -114,6 +115,8 @@ def build_bridge_api(
         save_json_atomic=save_json_atomic,
         start_jobs_bootstrap_task=start_jobs_bootstrap_task,
         start_fetcher_task=start_fetcher_task,
+        abort_task=abort_task
+        or (lambda _payload: (400, {"ok": False, "error": "task_abort_not_available"})),
         start_sync_task=start_sync_task,
         get_discovery_config_payload=get_discovery_config_payload,
         update_saved_discovery_settings=update_saved_discovery_settings,

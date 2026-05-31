@@ -8,6 +8,7 @@ from typing import Any, Protocol, cast
 from src.bridge import run_history_api as _run_history_api
 from src.bridge.desktop_attention import notify_pipeline_completion_attention
 from src.bridge.server import runtime_state as bridge_runtime_state
+from src.bridge.task_abort_service import TaskAbortDeps, TaskAbortPaths, TaskAbortService
 from src.source_registry_io import load_runtime_evidence
 
 root: Any | None = None
@@ -71,6 +72,10 @@ class _TaskLaunchApiLike(Protocol):
         devnull: Any,
         stdout_target: Any,
         create_no_window: int = 0,
+        create_new_process_group: int = 0,
+        run_id: str = "",
+        task_type: str = "",
+        metadata: dict[str, Any] | None = None,
     ) -> int: ...
 
     def build_fetcher_args_from_payload(self, payload: JsonObject) -> tuple[list[str], str]: ...
@@ -86,6 +91,8 @@ class _PipelineServiceLike(Protocol):
     def wait_for_report_completion(self, **kwargs: Any) -> JsonObject: ...
 
     def start_task(self, payload: JsonObject | None = None) -> JsonObject: ...
+
+    def request_abort(self, run_id: str, **kwargs: Any) -> JsonObject: ...
 
 
 class _DesktopUpdateServiceLike(Protocol):
@@ -445,7 +452,19 @@ def get_discovery_service() -> _DiscoveryServiceLike:
                     heartbeat_lifecycle_run=root_mod.heartbeat_lifecycle_run,
                     finish_lifecycle_run=root_mod.finish_lifecycle_run,
                     fail_lifecycle_run=root_mod.fail_lifecycle_run,
+                    cancel_lifecycle_run=root_mod.cancel_lifecycle_run,
                     get_lifecycle_current_runs=root_mod.get_lifecycle_current_runs,
+                    get_lifecycle_row=lambda run_id, task_type: next(
+                        (
+                            dict(row)
+                            for row in root_mod.get_lifecycle_rows()
+                            if str(row.get("runId") or row.get("id") or "").strip()
+                            == str(run_id or "").strip()
+                            and str(row.get("taskType") or row.get("type") or "").strip().lower()
+                            == str(task_type or "").strip().lower()
+                        ),
+                        None,
+                    ),
                 ),
             )
         return cast(_DiscoveryServiceLike, root_mod._DISCOVERY_SERVICE)
@@ -482,6 +501,19 @@ def get_task_launch_api() -> _TaskLaunchApiLike:
                 safe_int=root_mod._safe_int,
                 pid_is_running=root_mod.pid_is_running,
                 load_runtime_evidence=root_mod.load_runtime_evidence,
+                process_registry=bridge_runtime_state.TASK_PROCESS_REGISTRY,
+                cancel_lifecycle_run=root_mod.cancel_lifecycle_run,
+                get_lifecycle_row=lambda run_id, task_type: next(
+                    (
+                        dict(row)
+                        for row in root_mod.get_lifecycle_rows()
+                        if str(row.get("runId") or row.get("id") or "").strip()
+                        == str(run_id or "").strip()
+                        and str(row.get("taskType") or row.get("type") or "").strip().lower()
+                        == str(task_type or "").strip().lower()
+                    ),
+                    None,
+                ),
             ),
         ),
     )
@@ -673,11 +705,46 @@ def get_pipeline_service() -> _PipelineServiceLike:
                 heartbeat_lifecycle_run=root_mod.heartbeat_lifecycle_run,
                 finish_lifecycle_run=root_mod.finish_lifecycle_run,
                 fail_lifecycle_run=root_mod.fail_lifecycle_run,
+                cancel_lifecycle_run=root_mod.cancel_lifecycle_run,
                 attach_lifecycle_child=root_mod.attach_lifecycle_child,
                 clear_task_state=root_mod.clear_task_state,
                 pipeline_completion_notifier=pipeline_completion_notifier,
             )
         return cast(_PipelineServiceLike, root_mod._PIPELINE_SERVICE)
+
+
+def get_task_abort_service() -> Any:
+    root_mod = _require_root()
+    data_dir = Path(root_mod.RUNTIME_CONFIG.data_dir).resolve()
+    with bridge_runtime_state.TASK_ABORT_SERVICE_LOCK:
+        if (
+            bridge_runtime_state.TASK_ABORT_SERVICE is not None
+            and bridge_runtime_state.TASK_ABORT_SERVICE_DATA_DIR == data_dir
+        ):
+            return bridge_runtime_state.TASK_ABORT_SERVICE
+        bridge_runtime_state.TASK_ABORT_SERVICE_DATA_DIR = data_dir
+        bridge_runtime_state.TASK_ABORT_SERVICE = TaskAbortService(
+            paths=TaskAbortPaths(
+                jobs_fetch_report=root_mod.JOBS_FETCH_REPORT_PATH,
+                jobs_fetch_tasks=root_mod.JOBS_FETCH_TASKS_PATH,
+                discovery_report=root_mod.DISCOVERY_REPORT_PATH,
+            ),
+            deps=TaskAbortDeps(
+                now_iso=root_mod.now_iso,
+                bridge_log=root_mod.bridge_log,
+                load_json_object=root_mod.load_json_object,
+                save_json_atomic=root_mod.save_json_atomic,
+                normalize_fetch_report_contract=root_mod.normalize_fetch_report_contract,
+                normalize_discovery_report_contract=(root_mod.normalize_discovery_report_contract),
+                get_lifecycle_rows=root_mod.get_lifecycle_rows,
+                request_abort_run=root_mod._TASK_LIFECYCLE.request_abort_run,
+                cancel_lifecycle_run=root_mod.cancel_lifecycle_run,
+                pid_is_running=root_mod.pid_is_running,
+                process_registry=bridge_runtime_state.TASK_PROCESS_REGISTRY,
+                pipeline_service=root_mod._get_pipeline_service,
+            ),
+        )
+        return bridge_runtime_state.TASK_ABORT_SERVICE
 
 
 def get_desktop_update_service() -> _DesktopUpdateServiceLike:

@@ -501,6 +501,11 @@ def handle_post(handler: BridgeResponseWriter, *, api: BridgeApi, path: str, pay
         handler.send_json(result, status=status_code)
         return True
 
+    if path == "/tasks/abort":
+        status_code, result = api.abort_task(data)
+        handler.send_json(result, status=int(status_code or 500))
+        return True
+
     if path in {"/tasks/run-sync-pull", "/tasks/run-sync-push"}:
         sync_action = "pull" if path.endswith("-pull") else "push"
 

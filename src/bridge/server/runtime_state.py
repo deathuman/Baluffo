@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 
 from src.bridge.pipeline_service import PipelineRuntime
+from src.bridge.task_process_registry import TaskProcessRegistry
 from src.ship.startup_telemetry import build_startup_metric_row
 
 
@@ -28,6 +29,10 @@ NowUtc = Callable[[], datetime]
 
 PIPELINE_STATE_LOCK = threading.RLock()
 PIPELINE_RUNTIME = PipelineRuntime()
+TASK_PROCESS_REGISTRY = TaskProcessRegistry()
+TASK_ABORT_SERVICE: Any | None = None
+TASK_ABORT_SERVICE_DATA_DIR: Path | None = None
+TASK_ABORT_SERVICE_LOCK = threading.RLock()
 PIPELINE_STATUS: dict[str, Any] = {
     "active": False,
     "runId": "",
@@ -380,6 +385,10 @@ __all__ = [
     "PIPELINE_RUNTIME",
     "PIPELINE_STATE_LOCK",
     "PIPELINE_STATUS",
+    "TASK_ABORT_SERVICE",
+    "TASK_ABORT_SERVICE_DATA_DIR",
+    "TASK_ABORT_SERVICE_LOCK",
+    "TASK_PROCESS_REGISTRY",
     "DESKTOP_LOCAL_DATA_STORE",
     "DESKTOP_SESSION_CLOSING_GRACE_S",
     "DESKTOP_SESSION_LOCK",

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.bridge.ops_live_payload import build_pipeline_task_progress
+from src.bridge.task_abort_evidence import ABORT_TERMINAL_REASON
 
 PIPELINE_COMPLETION_NOTIFICATION_MIN_SECONDS = 60.0
 
@@ -17,6 +18,11 @@ PIPELINE_COMPLETION_NOTIFICATION_MIN_SECONDS = 60.0
 class PipelineRuntime:
     active_run_id: str = ""
     active_thread: threading.Thread | None = None
+    abort_requests: dict[str, dict[str, Any]] | None = None
+
+
+class PipelineAbortRequested(Exception):
+    """Raised for cooperative pipeline cancellation."""
 
 
 class PipelineService:
@@ -52,6 +58,7 @@ class PipelineService:
         heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None] | None = None,
         finish_lifecycle_run: Callable[..., dict[str, Any]] | None = None,
         fail_lifecycle_run: Callable[..., dict[str, Any]] | None = None,
+        cancel_lifecycle_run: Callable[..., dict[str, Any]] | None = None,
         attach_lifecycle_child: Callable[..., dict[str, Any] | None] | None = None,
         clear_task_state: Callable[[str], None] | None = None,
         pipeline_completion_notifier: Callable[[dict[str, Any]], Any] | None = None,
@@ -84,9 +91,12 @@ class PipelineService:
         self._heartbeat_lifecycle_run = heartbeat_lifecycle_run
         self._finish_lifecycle_run = finish_lifecycle_run
         self._fail_lifecycle_run = fail_lifecycle_run
+        self._cancel_lifecycle_run = cancel_lifecycle_run
         self._attach_lifecycle_child = attach_lifecycle_child
         self._pipeline_completion_notifier = pipeline_completion_notifier
         self._completion_notification_run_id = ""
+        if self._runtime.abort_requests is None:
+            self._runtime.abort_requests = {}
 
     @staticmethod
     def _pipeline_progress(current_step: int, total_steps: int, label: str) -> dict[str, Any]:
@@ -121,6 +131,78 @@ class PipelineService:
                 progress=progress,
                 summary={"stage": str(stage or "unknown")},
             )
+
+    def _abort_requested(self, run_id: str) -> bool:
+        if not str(run_id or "").strip():
+            return False
+        requests = self._runtime.abort_requests or {}
+        return str(run_id or "").strip() in requests
+
+    def _abort_metadata(self, run_id: str) -> dict[str, Any]:
+        requests = self._runtime.abort_requests or {}
+        return dict(requests.get(str(run_id or "").strip()) or {})
+
+    def _check_abort(self, run_id: str, *, defer_sync: bool = False) -> None:
+        clean_run_id = str(run_id or "").strip()
+        if not self._abort_requested(clean_run_id):
+            return
+        with self._lock:
+            stage = str(self._status.get("stage") or "").strip().lower()
+        if defer_sync and stage in {"sync_push", "abort_pending_sync"}:
+            return
+        raise PipelineAbortRequested("pipeline abort requested")
+
+    def request_abort(
+        self,
+        run_id: str,
+        *,
+        reason: str = "",
+        requested_at: str = "",
+    ) -> dict[str, Any]:
+        clean_run_id = str(run_id or "").strip()
+        if not clean_run_id:
+            return {"ok": False, "error": "missing_run_id", "state": "missing"}
+        requested = str(requested_at or self._now_iso() or "")
+        with self._lock:
+            active_run_id = str(self._status.get("runId") or "").strip()
+            if not bool(self._status.get("active")) or active_run_id != clean_run_id:
+                return {"ok": False, "error": "pipeline_not_active", "state": "missing"}
+            requests = (
+                self._runtime.abort_requests if self._runtime.abort_requests is not None else {}
+            )
+            requests[clean_run_id] = {
+                "requestedAt": requested,
+                "reason": str(reason or "").strip(),
+            }
+            self._runtime.abort_requests = requests
+            current_stage = str(self._status.get("stage") or "").strip().lower()
+            deferred = current_stage in {"sync_push", "abort_pending_sync"}
+            next_stage = "abort_pending_sync" if deferred else "aborting"
+            self._status["stage"] = next_stage
+            self._status["progress"] = self._pipeline_progress(
+                3 if deferred else 0,
+                3,
+                "Abort after sync..." if deferred else "Aborting...",
+            )
+            progress = self._pipeline_lifecycle_progress(dict(self._status))
+        if callable(self._heartbeat_lifecycle_run):
+            self._heartbeat_lifecycle_run(
+                clean_run_id,
+                "pipeline",
+                stage=next_stage,
+                progress=progress,
+                summary={
+                    "stage": next_stage,
+                    "abortRequestedAt": requested,
+                    "abortReason": str(reason or "").strip(),
+                },
+            )
+        return {
+            "ok": True,
+            "runId": clean_run_id,
+            "state": next_stage,
+            "deferred": deferred,
+        }
 
     def _completion_duration_seconds(self, started_at: str, finished_at: str) -> float:
         if not started_at or not finished_at:
@@ -167,12 +249,19 @@ class PipelineService:
             loaded = int(self._status.get("jobsPageLoadedCount") or 0)
             compare_base = max(baseline, loaded)
             updates_found = int(final_output_count or 0) > compare_base
+            canceled = status == "canceled"
             self._status.update(
                 {
                     "active": False,
-                    "stage": "completed" if status != "error" else "error",
+                    "stage": "canceled"
+                    if canceled
+                    else ("completed" if status != "error" else "error"),
                     "progress": self._pipeline_progress(
-                        3, 3, "Pipeline completed" if status != "error" else "Pipeline failed"
+                        3,
+                        3,
+                        "Pipeline canceled"
+                        if canceled
+                        else ("Pipeline completed" if status != "error" else "Pipeline failed"),
                     ),
                     "finishedAt": self._now_iso(),
                     "error": str(error or ""),
@@ -202,7 +291,23 @@ class PipelineService:
                 }
             progress = self._pipeline_lifecycle_progress(dict(self._status))
             if run_id:
-                if callable(self._fail_lifecycle_run) and status == "error":
+                if callable(self._cancel_lifecycle_run) and canceled:
+                    self._cancel_lifecycle_run(
+                        run_id,
+                        "pipeline",
+                        finished_at=finished_at,
+                        terminal_reason=ABORT_TERMINAL_REASON,
+                        summary={
+                            "terminalReason": ABORT_TERMINAL_REASON,
+                            "baselineOutputCount": baseline,
+                            "jobsPageLoadedCount": loaded,
+                            "finalOutputCount": int(final_output_count or 0),
+                            "updatesFound": bool(updates_found),
+                            **self._abort_metadata(run_id),
+                        },
+                        progress=progress,
+                    )
+                elif callable(self._fail_lifecycle_run) and status == "error":
                     self._fail_lifecycle_run(
                         run_id,
                         "pipeline",
@@ -232,7 +337,10 @@ class PipelineService:
                         progress=progress,
                     )
             self._runtime.active_run_id = ""
-        self._notify_pipeline_completion(completion_notification)
+            if self._runtime.abort_requests is not None:
+                self._runtime.abort_requests.pop(run_id, None)
+        if status != "canceled":
+            self._notify_pipeline_completion(completion_notification)
 
     def _get_child_task_snapshot(self, task_type: str, run_id: str = "") -> Any:
         if not callable(self._get_projected_run_history):
@@ -443,7 +551,7 @@ class PipelineService:
             pipeline_active = bool(self._status.get("active"))
             pipeline_stage = str(self._status.get("stage") or "").strip().lower()
         if not pipeline_active or pipeline_stage != "fetch":
-            if pipeline_stage == "sync_push":
+            if pipeline_stage in {"sync_push", "abort_pending_sync"}:
                 self._recover_inactive_worker_after_terminal_sync()
             return
         worker = self._runtime.active_thread
@@ -506,7 +614,12 @@ class PipelineService:
                 error=f"sync_push: {error}",
             )
             return
-        self._set_completed(status="ok", final_output_count=self._current_fetch_output_count())
+        if self._abort_requested(str(self._status.get("runId") or "")):
+            self._set_completed(
+                status="canceled", final_output_count=self._current_fetch_output_count()
+            )
+        else:
+            self._set_completed(status="ok", final_output_count=self._current_fetch_output_count())
 
     def _fail_child_lifecycle(
         self,
@@ -634,6 +747,9 @@ class PipelineService:
 
         started_wait = datetime.now(UTC)
         while True:
+            with self._lock:
+                pipeline_run_id = str(self._status.get("runId") or "").strip()
+            self._check_abort(pipeline_run_id)
             wait_label = (
                 "Finalizing discovery registry..."
                 if registry_finalization_running
@@ -735,6 +851,13 @@ class PipelineService:
                     "pipelineRunId": run_id,
                 }
             )
+            if self._abort_requested(run_id):
+                self._bridge_log(
+                    "warn",
+                    "jobs_pipeline_registry_adjudication_completed_after_abort",
+                    runId=run_id,
+                )
+                raise PipelineAbortRequested("pipeline abort requested")
             self._bridge_log(
                 "info",
                 "registry_conflict_adjudication_finished",
@@ -762,6 +885,8 @@ class PipelineService:
         sync_run_id = str(sync_result.get("runId") or "")
         self._attach_lifecycle_child_row(run_id=run_id, task_type="sync", child_run_id=sync_run_id)
         sync_row = self._wait_for_sync_push_row(sync_run_id)
+        if self._abort_requested(run_id):
+            raise PipelineAbortRequested("pipeline abort requested")
         sync_status = str(sync_row.get("status") or "").strip().lower()
         if sync_status == "error":
             sync_error = str((sync_row.get("summary") or {}).get("error") or "sync push failed")
@@ -805,6 +930,9 @@ class PipelineService:
                     and self._child_task_has_live_evidence(task_type, task_run_id)
                 )
             )
+            with self._lock:
+                pipeline_run_id = str(self._status.get("runId") or "").strip()
+            self._check_abort(pipeline_run_id)
             if child_live:
                 quiet_deadline = now + timedelta(seconds=quiet_window_s)
                 self._heartbeat_pipeline_wait()
@@ -846,12 +974,23 @@ class PipelineService:
 
     def _run_worker(self, run_id: str) -> None:
         try:
+            self._check_abort(run_id)
             self._run_discovery_stage(run_id)
+            self._check_abort(run_id)
             self._run_fetch_stage(run_id)
+            self._check_abort(run_id)
             self._run_registry_conflict_adjudication_stage(run_id)
+            self._check_abort(run_id)
             self._run_sync_push_stage(run_id)
+            self._check_abort(run_id)
             final_output_count = self._current_fetch_output_count()
             self._set_completed(status="ok", final_output_count=final_output_count)
+        except PipelineAbortRequested:
+            self._bridge_log("info", "jobs_pipeline_canceled", runId=run_id)
+            self._set_completed(
+                status="canceled",
+                final_output_count=self._current_fetch_output_count(),
+            )
         except Exception as exc:  # noqa: BLE001
             self._bridge_log("error", "jobs_pipeline_failed", runId=run_id, error=str(exc))
             self._set_completed(
@@ -900,6 +1039,8 @@ class PipelineService:
                     "jobsPageLoadedCount": int(max(0, jobs_page_loaded_count)),
                 }
             )
+            if self._runtime.abort_requests is not None:
+                self._runtime.abort_requests.pop(run_id, None)
             if callable(self._start_lifecycle_run):
                 self._start_lifecycle_run(
                     run_id=run_id,

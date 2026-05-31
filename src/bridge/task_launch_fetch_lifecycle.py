@@ -17,6 +17,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from src.bridge.task_abort_evidence import (
+    ABORT_TERMINAL_REASON,
+    repair_fetch_canceled_evidence,
+    row_abort_requested,
+)
 from src.bridge.task_admission import (
     build_duplicate_start_payload,
     get_active_lifecycle_task_metadata,
@@ -41,7 +46,9 @@ class FetchLifecycleContext:
     save_json_atomic: Callable[[Path, Any], None]
     finish_lifecycle_run: Callable[..., dict[str, Any]]
     fail_lifecycle_run: Callable[..., dict[str, Any]]
+    cancel_lifecycle_run: Callable[..., dict[str, Any]]
     heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None]
+    get_lifecycle_row: Callable[[str, str], dict[str, Any] | None]
     # Mirror helpers from task_launch_source_runs / task_launch_jobs_feed
     mirror_fetch_source_runs: Callable[[dict[str, Any]], bool]
     mirror_jobs_feed_rows: Callable[[dict[str, Any]], bool]
@@ -135,6 +142,28 @@ def close_fetch_lifecycle_from_report(
     finished = str(report.get("finishedAt") or "").strip()
     if str(report.get("runId") or "").strip() != run_id or not finished:
         return False
+    lifecycle_row = ctx.get_lifecycle_row(run_id, "fetch")
+    if row_abort_requested(lifecycle_row):
+        canceled_at = ctx.now_iso()
+        repaired = repair_fetch_canceled_evidence(
+            report_path=ctx.jobs_fetch_report,
+            tasks_path=ctx.jobs_fetch_tasks,
+            run_id=run_id,
+            finished_at=canceled_at,
+            load_json_object=ctx.load_json_object,
+            save_json_atomic=ctx.save_json_atomic,
+            normalize_report=ctx.normalize_fetch_report_contract,
+            reason=str((lifecycle_row or {}).get("summary", {}).get("abortReason") or ""),
+        )
+        ctx.cancel_lifecycle_run(
+            run_id,
+            "fetch",
+            finished_at=str(repaired.get("finishedAt") or canceled_at),
+            terminal_reason=ABORT_TERMINAL_REASON,
+            summary=dict(repaired.get("summary") or {}),
+            progress=dict(repaired.get("taskProgress") or {}),
+        )
+        return True
     ctx.mirror_fetch_source_runs(report)
     summary = dict(report.get("summary") or {})
     if fetch_summary_is_failed(summary):
@@ -196,12 +225,34 @@ def watch_fetch_lifecycle(
     pid: int,
 ) -> None:
     while True:
+        lifecycle_row = ctx.get_lifecycle_row(run_id, "fetch")
         if close_fetch_lifecycle_from_report(ctx, run_id=run_id):
             return
         if ctx.pid_is_running(int(pid)):
             heartbeat_fetch_lifecycle_from_tasks(ctx, run_id=run_id)
             time.sleep(2.0)
             continue
+        if row_abort_requested(lifecycle_row):
+            finished_at = ctx.now_iso()
+            repaired = repair_fetch_canceled_evidence(
+                report_path=ctx.jobs_fetch_report,
+                tasks_path=ctx.jobs_fetch_tasks,
+                run_id=run_id,
+                finished_at=finished_at,
+                load_json_object=ctx.load_json_object,
+                save_json_atomic=ctx.save_json_atomic,
+                normalize_report=ctx.normalize_fetch_report_contract,
+                reason=str((lifecycle_row or {}).get("summary", {}).get("abortReason") or ""),
+            )
+            ctx.cancel_lifecycle_run(
+                run_id,
+                "fetch",
+                finished_at=str(repaired.get("finishedAt") or finished_at),
+                terminal_reason=ABORT_TERMINAL_REASON,
+                summary=dict(repaired.get("summary") or {}),
+                progress=dict(repaired.get("taskProgress") or {}),
+            )
+            return
         break
     if close_fetch_lifecycle_from_report(ctx, run_id=run_id):
         return

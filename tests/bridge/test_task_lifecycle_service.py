@@ -99,7 +99,8 @@ def test_lifecycle_parent_child_attachment_persists_owner(tmp_path: Path) -> Non
     current_by_id = {row["runId"]: row for row in service.get_current_runs()}
     assert current_by_id["fetch_1"]["parentRunId"] == "pipeline_1"
     assert current_by_id["fetch_1"]["parentTaskType"] == "pipeline"
-    assert current_by_id["fetch_1"]["ownerKind"] == "pipeline"
+    assert current_by_id["fetch_1"]["ownerKind"] == "process"
+    assert current_by_id["fetch_1"]["ownerPid"] == 456
 
 
 def test_lifecycle_parent_child_attachment_creates_pipeline_owned_row(tmp_path: Path) -> None:
@@ -130,6 +131,50 @@ def test_lifecycle_orphan_has_distinct_terminal_reason(tmp_path: Path) -> None:
     assert recent[0]["status"] == "error"
     assert recent[0]["lifecycleStatus"] == "orphaned"
     assert recent[0]["terminalReason"] == "owner_inactive_without_terminal_report"
+
+
+def test_lifecycle_request_abort_keeps_running_with_abort_progress(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    service.start_run(run_id="fetch_1", task_type="fetch", stage="fetching")
+
+    result = service.request_abort_run(
+        "fetch_1",
+        "fetch",
+        requested_at="2026-05-06T18:02:00+00:00",
+        reason="test_abort",
+    )
+
+    assert result["abortAccepted"] is True
+    current = service.get_current_runs()[0]
+    assert current["lifecycleStatus"] == "running"
+    assert current["stage"] == "aborting"
+    assert current["summary"]["abortRequestedAt"] == "2026-05-06T18:02:00+00:00"
+    assert current["summary"]["abortReason"] == "test_abort"
+    assert current["taskProgress"]["active"] is True
+    assert current["taskProgress"]["phaseKey"] == "aborting"
+
+
+def test_lifecycle_canceled_is_sticky_against_late_success(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    service.start_run(run_id="fetch_1", task_type="fetch")
+    service.cancel_run(
+        "fetch_1",
+        "fetch",
+        finished_at="2026-05-06T18:03:00+00:00",
+        terminal_reason="user_abort_requested",
+    )
+
+    service.finish_run(
+        "fetch_1",
+        "fetch",
+        finished_at="2026-05-06T18:05:00+00:00",
+        terminal_reason="completed",
+    )
+
+    recent = service.get_recent_runs()
+    assert recent[0]["lifecycleStatus"] == "canceled"
+    assert recent[0]["terminalReason"] == "user_abort_requested"
+    assert recent[0]["finishedAt"] == "2026-05-06T18:03:00+00:00"
 
 
 def test_lifecycle_reconciles_runid_legacy_history_and_task_state(tmp_path: Path) -> None:

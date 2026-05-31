@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import contextlib
 import gzip
 import hashlib
 import json
 import os
+import time
+import uuid
 from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -60,9 +63,21 @@ def _load_json_object(path: Path, default: dict[str, Any]) -> dict[str, Any]:
 
 def _atomic_write_bytes(path: Path, payload: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp")
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
     tmp.write_bytes(payload)
-    os.replace(tmp, path)
+    try:
+        for attempt in range(6):
+            try:
+                os.replace(tmp, path)
+                return
+            except PermissionError:
+                if attempt >= 5:
+                    raise
+                time.sleep(0.03 * (attempt + 1))
+    finally:
+        if tmp.exists():
+            with contextlib.suppress(OSError):
+                tmp.unlink()
 
 
 def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:

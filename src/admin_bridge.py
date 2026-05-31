@@ -67,9 +67,7 @@ from src.bridge.lifecycle_cleanup import cleanup_orphaned_startup_tasks
 from src.bridge.pipeline_service import PipelineService
 from src.bridge.registry_service import RegistryPaths as _RegistryPaths
 from src.bridge.registry_service import RegistryService
-from src.bridge.registry_tombstones import (
-    is_tombstoned as _is_tombstoned,
-)
+from src.bridge.registry_tombstones import is_tombstoned as _is_tombstoned
 from src.bridge.server import runtime_state as _bridge_runtime_state
 from src.bridge.source_helpers import (
     find_existing_source_by_url as _find_existing_source_by_url,
@@ -170,7 +168,6 @@ REGISTRY_REASON_MANUAL_SOURCE_VARIANT = _REGISTRY_REASON_MANUAL_SOURCE_VARIANT
 now_iso = _now_iso
 load_tombstones = admin_registry_api_mod.load_tombstones
 save_tombstones = admin_registry_api_mod.save_tombstones
-
 
 OPS_HISTORY_PATH = ROOT / "data" / "admin-run-history.json"
 TASK_LIFECYCLE_PATH = ROOT / "data" / "admin-task-lifecycle.json"
@@ -404,6 +401,7 @@ def run_background_script(
     args: list[str] | None = None,
     *,
     extra_env: dict[str, str] | None = None,
+    **launch_kwargs: Any,
 ) -> int:
     return _get_task_launch_api().run_background_script(
         script_name,
@@ -414,7 +412,8 @@ def run_background_script(
         spawn_process=subprocess.Popen,
         devnull=subprocess.DEVNULL,
         stdout_target=subprocess.STDOUT,
-        create_no_window=int(getattr(subprocess, "CREATE_NO_WINDOW", 0)),
+        **admin_task_runtime_mod.background_process_flags(subprocess),
+        **launch_kwargs,
     )
 
 
@@ -549,6 +548,7 @@ def cleanup_stale_startup_tasks() -> dict[str, Any]:
         now_iso=now_iso,
         current_runs=_TASK_LIFECYCLE.get_current_runs,
         orphan_run=_TASK_LIFECYCLE.orphan_run,
+        cancel_run=_TASK_LIFECYCLE.cancel_run,
     )
 
 

@@ -434,6 +434,30 @@ export function createOpsHealthController({
     showToast(`Could not copy ${title} run diagnostics.`, "warn");
   }
 
+  async function handleAbortRun(row) {
+    const taskType = String(row?.taskType || "").trim().toLowerCase();
+    const runId = String(row?.runId || "").trim();
+    if (!taskType || !runId) return;
+    const confirmed = typeof globalThis.confirm === "function"
+      ? globalThis.confirm(`Abort ${taskType} task ${runId}?`)
+      : true;
+    if (!confirmed) return;
+    try {
+      const result = await postBridge("/tasks/abort", {
+        taskType,
+        runId,
+        reason: "admin_ops_abort",
+      });
+      if (!result?.ok && !result?.abortAccepted) {
+        throw new Error(String(result?.error || "abort failed"));
+      }
+      showToast("Task abort requested.", "success");
+      await loadOpsHealthData();
+    } catch (err) {
+      showToast(`Could not abort task: ${getErrorMessage(err)}`, "error");
+    }
+  }
+
   async function handleMigrationLinkAction(candidate, action) {
     if (!candidate || !action) return;
     try {
@@ -689,6 +713,7 @@ export function createOpsHealthController({
       });
       renderAdminOpsHistoryImpl(refs.adminOpsHistoryEl, runModel, {
         onCopyRunDiagnostics: handleCopyRunDiagnostics,
+        onAbortRun: handleAbortRun,
         waitingForTaskState: Boolean(state.waitingForTaskState),
         taskStateUnavailable: Boolean(state.taskStateUnavailable)
       });
@@ -901,6 +926,7 @@ export function createOpsHealthController({
         });
         renderAdminOpsHistoryImpl(refs.adminOpsHistoryEl, runModel, {
           onCopyRunDiagnostics: handleCopyRunDiagnostics,
+          onAbortRun: handleAbortRun,
           waitingForTaskState: Boolean(state.waitingForTaskState),
           taskStateUnavailable: Boolean(state.taskStateUnavailable)
         });

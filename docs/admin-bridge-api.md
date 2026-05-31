@@ -96,6 +96,7 @@ When `sourceRegistry=sqlite`, the registry GET routes and POST mutations read an
 | POST | `/tasks/run-jobs-bootstrap` | First-run/retry sheet-limited bootstrap fetch. Returns `{started, runId, task: "jobs_bootstrap", taskType: "fetch", preset: "bootstrap_sheets", coverageScope: "bootstrap_sheets"}` and no-ops/rejects after an existing runtime feed or full pipeline success |
 | POST | `/tasks/run-fetcher` | Run fetcher with presets (`{preset: "default"|"incremental"|"retry_failed"|"force_full"|"uncapped", ...}`) |
 | POST | `/tasks/run-jobs-pipeline` | Run jobs pipeline task |
+| POST | `/tasks/abort` | Abort active `fetch`, `discovery`, or `pipeline` run by `{taskType, runId, reason?}`. Standalone `sync` abort is rejected; pipeline sync-stage abort is deferred until sync completes |
 | GET | `/tasks/run-jobs-pipeline-status` | Pipeline task status |
 
 ## Source Policy / Review State
@@ -188,6 +189,7 @@ Known sensitive field names such as tokens, passwords, secrets, API keys, and au
 - `/ops/task-state` remains backward-compatible for full diagnostics. Admin startup and other hot paths must use `/ops/task-state?view=summary`; its top-level `tasks` array remains the current-run contract, but rows omit `workItems`, expose `workItemCount`, and bound `recentEvents`.
 - Pipeline rows in `/ops/history` and Admin Operations Activity are orchestration parent runs. Stage-level diagnostic detail is derived from child Discovery, Fetch, and Sync rows linked by `parentRunId`; the child rows remain visible as normal runs.
 - `/tasks/run-jobs-pipeline-status` keeps the Jobs UI flat progress payload (`currentStep`, `totalSteps`, `percent`, `label`). Ops-facing lifecycle rows use normalized `taskProgress` semantics with `phaseLabel`, `ratio`, and `counts` so Admin diagnostics can render pipeline progress consistently.
+- `/tasks/abort` is runId-owned and does not support abort-by-type. In-progress abort remains lifecycle `running` with `stage: "aborting"` or `stage: "abort_pending_sync"`, `summary.abortRequestedAt`, and active `taskProgress.phaseKey: "aborting"`. Terminal abort writes lifecycle `canceled` with `terminalReason: "user_abort_requested"`.
 - Saved-page bridge consumers should keep route calls inside slice-local `frontend/saved/services.js`; page behavior now fans out through `frontend/saved/app/runtime/*.js` and `frontend/saved/app/admin-bridge-state.js`, not through new root facades.
 - Long-running admin tasks are now **runId-owned**. `runId` is the only lifecycle identity for fetch, discovery, sync, and pipeline rows. Timestamp-only matching is not part of the runtime lifecycle model anymore.
 - Current Runs and `/ops/history` are projected from SQLite task runtime rows when their authority modes are SQLite, with JSON lifecycle exports retained for rollback/debug.

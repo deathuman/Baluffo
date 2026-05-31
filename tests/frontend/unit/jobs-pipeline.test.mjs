@@ -257,6 +257,44 @@ test("updateJobsPipelineUi updates button background progress", () => {
   assert.equal(button.children[1].textContent, "Fetching job listings... 7m 27s");
 });
 
+test("jobs pipeline abort reveal preserves progress label until hover or focus", () => {
+  const liveView = buildJobsPipelineButtonView(
+    {
+      active: true,
+      startedAt: "2026-03-12T12:00:00.000Z",
+      stage: "fetch"
+    },
+    {
+      running: true,
+      disabled: true,
+      buttonLabel: "Fetching job listings... 7m 27s",
+      abortable: true,
+      abortReveal: false,
+      nowMs: Date.parse("2026-03-12T12:07:27.000Z")
+    }
+  );
+  const abortView = buildJobsPipelineButtonView(
+    {
+      active: true,
+      startedAt: "2026-03-12T12:00:00.000Z",
+      stage: "fetch"
+    },
+    {
+      running: true,
+      disabled: true,
+      buttonLabel: "Fetching job listings... 7m 27s",
+      abortable: true,
+      abortReveal: true,
+      nowMs: Date.parse("2026-03-12T12:07:27.000Z")
+    }
+  );
+
+  assert.equal(liveView.label, "Fetching job listings... 7m 27s");
+  assert.equal(liveView.disabled, false);
+  assert.equal(abortView.label, JOBS_UPDATE_COPY.abortLabel);
+  assert.equal(abortView.disabled, false);
+});
+
 test("updateJobsPipelineUi clears progress state when idle or errored", () => {
   const button = createButtonMock();
   button.disabled = true;

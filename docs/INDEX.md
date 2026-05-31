@@ -5,7 +5,7 @@
 > - **Canonical for:** wiki routing, doc discovery, and the default AI read path
 > - **Not canonical for:** payload details, route contracts, or subsystem implementation behavior
 > - **Then inspect:** [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`architecture-ai-map.md`](architecture-ai-map.md), and one matching contract or workflow doc
-> - **Last updated:** 2026-05-31 (test reduction triage closeout baseline)
+> - **Last updated:** 2026-05-31 (task abort control plan added)
 
 Use this page as the wiki home. Start here, load the minimum active docs you need, and use git history for old cleanup/refactor details unless the task explicitly needs historical provenance.
 
@@ -62,6 +62,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md) | Documentation maintenance | You are deciding where docs belong, updating docs after code changes, or adding a new documentation page |
 | [`source-policy-runbook.md`](source-policy-runbook.md) | Operator runbook | You are running discovery/fetch/soak/Admin migration-link validation or checking provider/static source-policy release readiness |
 | [`environments.md`](environments.md) | Release / Environments | You are choosing source-sync writer auth, staging/prod separation, or the repository-side write policy |
+| [`plans/task-abort-control-plan.md`](plans/task-abort-control-plan.md) | Active Plan / Task Lifecycle | You are adding or refining abort support for discovery, fetch, first-run bootstrap fetches, or jobs pipeline tasks |
 | [`plans/umbrel-raw-lan-deployment-plan.md`](plans/umbrel-raw-lan-deployment-plan.md) | Active Plan / Deployment | You are preparing the future private Umbrel raw-LAN deployment, container runtime, GHCR image, or app-store manifest work |
 | [`plans/test-reduction-triage.md`](plans/test-reduction-triage.md) | Closeout Baseline / Test Reduction | You are checking the completed May 2026 test-reduction campaign, retained-test rationale, or prerequisites for a new coverage-backed sweep |
 | [`plans/saved-job-tracker-improvements-plan.md`](plans/saved-job-tracker-improvements-plan.md) | Parked Plan / Deferred Follow-Ups | You are deciding whether to restart Saved Job Tracker work, add v2 CRM-style tracking, or revisit deferred Saved-page list-management behavior |
@@ -129,6 +130,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | Change frontend behavior | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md), then the owning source files |
 | Change bridge/API behavior | [`architecture-ai-map.md`](architecture-ai-map.md) | [`admin-bridge-api.md`](admin-bridge-api.md) |
 | Change payload/schema shape | [`DATA_CONTRACT.md`](DATA_CONTRACT.md) | related tests and the owning runtime docs |
+| Add or refine task abort support | [`plans/task-abort-control-plan.md`](plans/task-abort-control-plan.md) | [`admin-bridge-api.md`](admin-bridge-api.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`storage-contract.md`](storage-contract.md), [`testing.md`](testing.md) |
 | Run the right tests | [`testing.md`](testing.md) | [`architecture-ai-map.md`](architecture-ai-map.md) only if you need source ownership |
 | Package or release | [`RELEASE.md`](RELEASE.md) | [`testing.md`](testing.md) |
 | Update docs | [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md) | [`INDEX.md`](INDEX.md), then the owning authoritative doc |

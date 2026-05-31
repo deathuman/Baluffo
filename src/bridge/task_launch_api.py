@@ -14,6 +14,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TypedDict
 
+from src.bridge.task_abort_evidence import (
+    ABORT_TERMINAL_REASON,
+    repair_fetch_canceled_evidence,
+    row_abort_requested,
+)
 from src.bridge.task_admission import (
     build_duplicate_start_payload,
     get_active_lifecycle_task_metadata,
@@ -141,6 +146,11 @@ class TaskLaunchDeps:
     source_runtime_store: Callable[[], Any] | None = None
     job_runtime_store: Callable[[], Any] | None = None
     record_storage_diagnostic: Callable[..., None] | None = None
+    process_registry: Any | None = None
+    get_lifecycle_row: Callable[[str, str], dict[str, Any] | None] = lambda _run_id, _task_type: (
+        None
+    )
+    cancel_lifecycle_run: Callable[..., dict[str, Any]] = lambda *_args, **_kwargs: {}
 
 
 class JobsBootstrapRequest(TypedDict, total=False):
@@ -225,6 +235,7 @@ class TaskLaunchApi:
         save_json_atomic: Callable[[Path, Any], None] | None = None,
         finish_lifecycle_run: Callable[..., dict[str, Any]] | None = None,
         fail_lifecycle_run: Callable[..., dict[str, Any]] | None = None,
+        cancel_lifecycle_run: Callable[..., dict[str, Any]] | None = None,
         heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None] | None = None,
     ) -> FetchLifecycleContext:
         return FetchLifecycleContext(
@@ -240,7 +251,11 @@ class TaskLaunchApi:
             save_json_atomic=save_json_atomic or self._deps.save_json_atomic,
             finish_lifecycle_run=finish_lifecycle_run or (lambda *_a, **_kw: {}),
             fail_lifecycle_run=fail_lifecycle_run or (lambda *_a, **_kw: {}),
+            cancel_lifecycle_run=cancel_lifecycle_run
+            or self._deps.cancel_lifecycle_run
+            or (lambda *_a, **_kw: {}),
             heartbeat_lifecycle_run=heartbeat_lifecycle_run or (lambda *_a, **_kw: None),
+            get_lifecycle_row=self._deps.get_lifecycle_row,
             mirror_fetch_source_runs=lambda report: _mirror_fetch_source_runs(
                 self._source_run_context, report
             ),
@@ -414,6 +429,10 @@ class TaskLaunchApi:
         devnull: Any,
         stdout_target: Any,
         create_no_window: int = 0,
+        create_new_process_group: int = 0,
+        run_id: str = "",
+        task_type: str = "",
+        metadata: dict[str, Any] | None = None,
     ) -> int:
         if is_frozen:
             command = [
@@ -439,9 +458,10 @@ class TaskLaunchApi:
                 command = [executable, "-u", str(self._runtime.root / "src" / script_name)]
                 command.extend(args or [])
         script = Path(script_name).name.lower()
-        task_type = (
+        inferred_task_type = (
             "discovery" if "discovery" in script else ("fetch" if "fetcher" in script else script)
         )
+        task_type = str(task_type or inferred_task_type).strip().lower()
         child_env = os.environ.copy()
         child_env["BALUFFO_DATA_DIR"] = str(self._runtime.data_dir)
         child_env["PYTHONUNBUFFERED"] = "1"
@@ -462,7 +482,11 @@ class TaskLaunchApi:
             "env": child_env,
         }
         if os.name == "nt":
-            popen_kwargs["creationflags"] = int(create_no_window or 0)
+            popen_kwargs["creationflags"] = int(create_no_window or 0) | int(
+                create_new_process_group or 0
+            )
+        else:
+            popen_kwargs["start_new_session"] = True
         log_handle = None
         try:
             if task_type in {"discovery", "fetch"}:
@@ -484,10 +508,55 @@ class TaskLaunchApi:
         finally:
             if log_handle is not None:
                 log_handle.close()
+        registry = self._deps.process_registry
+        if registry is not None and str(run_id or "").strip():
+            try:
+                registry.register(
+                    task_type=task_type,
+                    run_id=str(run_id or "").strip(),
+                    process=proc,
+                    command=command,
+                    metadata=dict(metadata or {}),
+                )
+            except (AttributeError, RuntimeError, OSError, TypeError, ValueError) as exc:
+                self._deps.bridge_log(
+                    "warn",
+                    "task_process_register_failed",
+                    task=task_type,
+                    runId=str(run_id or ""),
+                    pid=int(proc.pid),
+                    error=str(exc),
+                )
         self._deps.bridge_log(
             "info", "task_process_spawned", task=task_type, script=script_name, pid=int(proc.pid)
         )
         return int(proc.pid)
+
+    @staticmethod
+    def _call_run_background_script(
+        run_background_script: Callable[..., int],
+        script_name: str,
+        args: list[str],
+        *,
+        extra_env: dict[str, str],
+        run_id: str,
+        task_type: str,
+        metadata: dict[str, Any],
+    ) -> int:
+        try:
+            return run_background_script(
+                script_name,
+                args,
+                extra_env=extra_env,
+                run_id=run_id,
+                task_type=task_type,
+                metadata=metadata,
+            )
+        except TypeError as exc:
+            message = str(exc)
+            if "unexpected keyword argument" not in message or "run_id" not in message:
+                raise
+            return run_background_script(script_name, args, extra_env=extra_env)
 
     # ── Thin wrappers that delegate to leaf module ──
 
@@ -931,6 +1000,7 @@ class TaskLaunchApi:
         start_lifecycle_run: Callable[..., dict[str, Any]],
         finish_lifecycle_run: Callable[..., dict[str, Any]],
         fail_lifecycle_run: Callable[..., dict[str, Any]],
+        cancel_lifecycle_run: Callable[..., dict[str, Any]],
         heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None],
     ) -> dict[str, Any]:
         pid = os.getpid()
@@ -999,6 +1069,7 @@ class TaskLaunchApi:
             save_json_atomic=save_json_atomic,
             finish_lifecycle_run=finish_lifecycle_run,
             fail_lifecycle_run=fail_lifecycle_run,
+            cancel_lifecycle_run=cancel_lifecycle_run,
             heartbeat_lifecycle_run=heartbeat_lifecycle_run,
         )
         self._deps.bridge_log(
@@ -1173,6 +1244,7 @@ class TaskLaunchApi:
         load_json_object: Callable[[Path, Any], Any],
         finish_lifecycle_run: Callable[..., dict[str, Any]],
         fail_lifecycle_run: Callable[..., dict[str, Any]],
+        cancel_lifecycle_run: Callable[..., dict[str, Any]],
         heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None],
         load_runtime_evidence: Callable[[Path, Any], Any] | None = None,
     ) -> None:
@@ -1182,6 +1254,7 @@ class TaskLaunchApi:
             load_runtime_evidence=load_runtime_evidence,
             finish_lifecycle_run=finish_lifecycle_run,
             fail_lifecycle_run=fail_lifecycle_run,
+            cancel_lifecycle_run=cancel_lifecycle_run,
             heartbeat_lifecycle_run=heartbeat_lifecycle_run,
         )
         _start_fetch_lifecycle_watch_fn(ctx, run_id=run_id, pid=int(pid))
@@ -1685,7 +1758,32 @@ class TaskLaunchApi:
         save_json_atomic: Callable[[Path, Any], None],
         finish_lifecycle_run: Callable[..., dict[str, Any]],
         fail_lifecycle_run: Callable[..., dict[str, Any]],
+        cancel_lifecycle_run: Callable[..., dict[str, Any]] | None = None,
     ) -> bool:
+        lifecycle_row = self._deps.get_lifecycle_row(run_id, "fetch")
+        if row_abort_requested(lifecycle_row):
+            finished_at = self._deps.now_iso()
+            repaired = repair_fetch_canceled_evidence(
+                report_path=self._paths.jobs_fetch_report,
+                tasks_path=self._paths.jobs_fetch_tasks,
+                run_id=run_id,
+                finished_at=finished_at,
+                load_json_object=self._deps.load_json_object,
+                save_json_atomic=save_json_atomic,
+                normalize_report=normalize_fetch_report_contract,
+                reason=str((lifecycle_row or {}).get("summary", {}).get("abortReason") or ""),
+            )
+            cancel_fn = cancel_lifecycle_run or self._deps.cancel_lifecycle_run
+            cancel_fn(
+                run_id,
+                "fetch",
+                finished_at=str(repaired.get("finishedAt") or finished_at),
+                terminal_reason=ABORT_TERMINAL_REASON,
+                summary=dict(repaired.get("summary") or {}),
+                progress=dict(repaired.get("taskProgress") or {}),
+            )
+            shutil.rmtree(staging_dir, ignore_errors=True)
+            return True
         staged_report = normalize_fetch_report_contract(
             read_json(staging_dir / "jobs-fetch-report.json", {})
         )
@@ -1801,6 +1899,7 @@ class TaskLaunchApi:
         save_json_atomic: Callable[[Path, Any], None],
         finish_lifecycle_run: Callable[..., dict[str, Any]],
         fail_lifecycle_run: Callable[..., dict[str, Any]],
+        cancel_lifecycle_run: Callable[..., dict[str, Any]],
         heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None],
     ) -> None:
         while True:
@@ -1812,6 +1911,7 @@ class TaskLaunchApi:
                 save_json_atomic=save_json_atomic,
                 finish_lifecycle_run=finish_lifecycle_run,
                 fail_lifecycle_run=fail_lifecycle_run,
+                cancel_lifecycle_run=cancel_lifecycle_run,
             ):
                 return
             if self._deps.pid_is_running(int(pid)):
@@ -1831,7 +1931,31 @@ class TaskLaunchApi:
             save_json_atomic=save_json_atomic,
             finish_lifecycle_run=finish_lifecycle_run,
             fail_lifecycle_run=fail_lifecycle_run,
+            cancel_lifecycle_run=cancel_lifecycle_run,
         ):
+            return
+        lifecycle_row = self._deps.get_lifecycle_row(run_id, "fetch")
+        if row_abort_requested(lifecycle_row):
+            finished_at = self._deps.now_iso()
+            repaired = repair_fetch_canceled_evidence(
+                report_path=self._paths.jobs_fetch_report,
+                tasks_path=self._paths.jobs_fetch_tasks,
+                run_id=run_id,
+                finished_at=finished_at,
+                load_json_object=self._deps.load_json_object,
+                save_json_atomic=save_json_atomic,
+                normalize_report=normalize_fetch_report_contract,
+                reason=str((lifecycle_row or {}).get("summary", {}).get("abortReason") or ""),
+            )
+            cancel_lifecycle_run(
+                run_id,
+                "fetch",
+                finished_at=str(repaired.get("finishedAt") or finished_at),
+                terminal_reason=ABORT_TERMINAL_REASON,
+                summary=dict(repaired.get("summary") or {}),
+                progress=dict(repaired.get("taskProgress") or {}),
+            )
+            shutil.rmtree(staging_dir, ignore_errors=True)
             return
         self._write_bootstrap_failure(
             run_id=run_id,
@@ -1853,6 +1977,7 @@ class TaskLaunchApi:
         save_json_atomic: Callable[[Path, Any], None],
         finish_lifecycle_run: Callable[..., dict[str, Any]],
         fail_lifecycle_run: Callable[..., dict[str, Any]],
+        cancel_lifecycle_run: Callable[..., dict[str, Any]],
         heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None],
     ) -> None:
         threading.Thread(
@@ -1866,6 +1991,7 @@ class TaskLaunchApi:
                 "save_json_atomic": save_json_atomic,
                 "finish_lifecycle_run": finish_lifecycle_run,
                 "fail_lifecycle_run": fail_lifecycle_run,
+                "cancel_lifecycle_run": cancel_lifecycle_run,
                 "heartbeat_lifecycle_run": heartbeat_lifecycle_run,
             },
             name=f"jobs-bootstrap-watch-{run_id}",
@@ -1890,6 +2016,7 @@ class TaskLaunchApi:
         start_lifecycle_run: Callable[..., dict[str, Any]] = lambda **_kwargs: {},
         finish_lifecycle_run: Callable[..., dict[str, Any]] = lambda *_args, **_kwargs: {},
         fail_lifecycle_run: Callable[..., dict[str, Any]] = lambda *_args, **_kwargs: {},
+        cancel_lifecycle_run: Callable[..., dict[str, Any]] = lambda *_args, **_kwargs: {},
         heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None] = (
             lambda *_args, **_kwargs: None
         ),
@@ -1970,16 +2097,25 @@ class TaskLaunchApi:
                     start_lifecycle_run=start_lifecycle_run,
                     finish_lifecycle_run=finish_lifecycle_run,
                     fail_lifecycle_run=fail_lifecycle_run,
+                    cancel_lifecycle_run=cancel_lifecycle_run,
                     heartbeat_lifecycle_run=heartbeat_lifecycle_run,
                 )
             try:
-                pid = run_background_script(
+                pid = self._call_run_background_script(
+                    run_background_script,
                     "jobs_fetcher.py",
                     spawn_args,
                     extra_env={
                         "BALUFFO_FETCH_RUN_ID": run_id,
                         "BALUFFO_FETCH_STARTED_AT": started_at,
                         "BALUFFO_FETCH_SEED_EXISTING_OUTPUT": "0",
+                    },
+                    run_id=run_id,
+                    task_type="fetch",
+                    metadata={
+                        "task": "jobs_bootstrap",
+                        "coverageScope": BOOTSTRAP_COVERAGE_SCOPE,
+                        "bootstrapStagingDir": str(staging_dir),
                     },
                 )
             except (RuntimeError, OSError, TypeError, ValueError) as exc:
@@ -2057,6 +2193,7 @@ class TaskLaunchApi:
                 save_json_atomic=save_json_atomic,
                 finish_lifecycle_run=finish_lifecycle_run,
                 fail_lifecycle_run=fail_lifecycle_run,
+                cancel_lifecycle_run=cancel_lifecycle_run,
                 heartbeat_lifecycle_run=heartbeat_lifecycle_run,
             )
             self._deps.bridge_log(
@@ -2094,6 +2231,7 @@ class TaskLaunchApi:
         start_lifecycle_run: Callable[..., dict[str, Any]] = lambda **_kwargs: {},
         finish_lifecycle_run: Callable[..., dict[str, Any]] = lambda *_args, **_kwargs: {},
         fail_lifecycle_run: Callable[..., dict[str, Any]] = lambda *_args, **_kwargs: {},
+        cancel_lifecycle_run: Callable[..., dict[str, Any]] = lambda *_args, **_kwargs: {},
         heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None] = (
             lambda *_args, **_kwargs: None
         ),
@@ -2144,7 +2282,8 @@ class TaskLaunchApi:
                 normalize_fetch_report_contract(report_shell),
             )
             try:
-                pid = run_background_script(
+                pid = self._call_run_background_script(
+                    run_background_script,
                     "jobs_fetcher.py",
                     spawn_args,
                     extra_env={
@@ -2152,6 +2291,9 @@ class TaskLaunchApi:
                         "BALUFFO_FETCH_STARTED_AT": started_at,
                         **extra_env,
                     },
+                    run_id=run_id,
+                    task_type="fetch",
+                    metadata={"task": "jobs_fetcher", "preset": preset},
                 )
             except Exception as exc:  # noqa: BLE001
                 return self._write_fetch_launch_failure(
@@ -2196,6 +2338,7 @@ class TaskLaunchApi:
                 load_json_object=load_json_object,
                 finish_lifecycle_run=finish_lifecycle_run,
                 fail_lifecycle_run=fail_lifecycle_run,
+                cancel_lifecycle_run=cancel_lifecycle_run,
                 heartbeat_lifecycle_run=heartbeat_lifecycle_run,
                 load_runtime_evidence=self._deps.load_runtime_evidence,
             )

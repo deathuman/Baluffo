@@ -244,6 +244,9 @@ class AdminTaskLifecycle:
     def cancel_run(self, run_id: str, task_type: str, **kwargs: Any) -> dict[str, Any]:
         return self._get_service().cancel_run(run_id, task_type, **kwargs)
 
+    def request_abort_run(self, run_id: str, task_type: str, **kwargs: Any) -> dict[str, Any]:
+        return self._get_service().request_abort_run(run_id, task_type, **kwargs)
+
     def orphan_run(self, run_id: str, task_type: str, **kwargs: Any) -> dict[str, Any]:
         return self._get_service().orphan_run(run_id, task_type, **kwargs)
 

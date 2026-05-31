@@ -732,6 +732,7 @@ def test_launch_browser_for_url_can_opt_in_to_edge_app_mode() -> None:
 
 def test_launch_browser_for_url_uses_cold_probe_cache_policy_for_chrome() -> None:
     fake_process = mock.Mock(spec=subprocess.Popen)
+    env = {"BALUFFO_STARTUP_PROBE": "1", desktop_app.STARTUP_PROFILE_MODE_ENV: "cold"}
     with (
         mock.patch.object(
             desktop_app,
@@ -745,10 +746,7 @@ def test_launch_browser_for_url_uses_cold_probe_cache_policy_for_chrome() -> Non
     ):
         result = desktop_app.launch_browser_for_url(
             "http://127.0.0.1:8080/jobs.html",
-            env={
-                "BALUFFO_STARTUP_PROBE": "1",
-                desktop_app.STARTUP_PROFILE_MODE_ENV: "cold",
-            },
+            env=env,
         )
 
     assert result["mode"] == "chromium-app"
@@ -757,11 +755,13 @@ def test_launch_browser_for_url_uses_cold_probe_cache_policy_for_chrome() -> Non
         "C:/Chrome/chrome.exe",
         mock.ANY,
         clear_profile_caches=True,
+        env=env,
     )
 
 
 def test_launch_browser_for_url_clears_profile_caches_for_jobs_cold_start() -> None:
     fake_process = mock.Mock(spec=subprocess.Popen)
+    env = {desktop_app.JOBS_COLD_START_ENV: "1"}
     trace_events: list[tuple[str, dict[str, object]]] = []
     with (
         mock.patch.object(
@@ -776,7 +776,7 @@ def test_launch_browser_for_url_clears_profile_caches_for_jobs_cold_start() -> N
     ):
         result = desktop_app.launch_browser_for_url(
             "http://127.0.0.1:8080/jobs.html?jobsColdStart=1",
-            env={desktop_app.JOBS_COLD_START_ENV: "1"},
+            env=env,
             trace_hook=lambda event, _event_mono, fields: trace_events.append((event, fields)),
         )
 
@@ -786,6 +786,7 @@ def test_launch_browser_for_url_clears_profile_caches_for_jobs_cold_start() -> N
         "C:/Chrome/chrome.exe",
         mock.ANY,
         clear_profile_caches=True,
+        env=env,
     )
     assert trace_events[0][0] == "desktop_browser_process_spawn_started"
     assert trace_events[0][1]["clearProfileCaches"] is True
@@ -793,6 +794,7 @@ def test_launch_browser_for_url_clears_profile_caches_for_jobs_cold_start() -> N
 
 def test_launch_browser_for_url_uses_warm_probe_cache_policy_for_chrome() -> None:
     fake_process = mock.Mock(spec=subprocess.Popen)
+    env = {"BALUFFO_STARTUP_PROBE": "1", desktop_app.STARTUP_PROFILE_MODE_ENV: "warm"}
     with (
         mock.patch.object(
             desktop_app,
@@ -806,10 +808,7 @@ def test_launch_browser_for_url_uses_warm_probe_cache_policy_for_chrome() -> Non
     ):
         result = desktop_app.launch_browser_for_url(
             "http://127.0.0.1:8080/jobs.html",
-            env={
-                "BALUFFO_STARTUP_PROBE": "1",
-                desktop_app.STARTUP_PROFILE_MODE_ENV: "warm",
-            },
+            env=env,
         )
 
     assert result["mode"] == "chromium-app"
@@ -818,6 +817,7 @@ def test_launch_browser_for_url_uses_warm_probe_cache_policy_for_chrome() -> Non
         "C:/Chrome/chrome.exe",
         mock.ANY,
         clear_profile_caches=False,
+        env=env,
     )
 
 

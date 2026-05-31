@@ -4,6 +4,7 @@ import gzip
 import json
 
 from src.storage import BaluffoStore, EvidenceArchiveStore, SourceRuntimeStore
+from src.storage import evidence_archive as evidence_archive_mod
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -83,3 +84,32 @@ def test_evidence_archive_store_writes_manifest_and_enforces_budget() -> None:
         retained_path = data_dir / second["path"]
         with gzip.open(retained_path, "rt", encoding="utf-8") as handle:
             assert json.load(handle)["rows"][0]["name"] == "Studio B"
+
+
+def test_evidence_archive_atomic_write_retries_permission_error(monkeypatch) -> None:
+    with workspace_tmpdir("evidence-archive-retry") as data_dir:
+        archive = EvidenceArchiveStore(
+            data_dir,
+            now_iso=lambda: "2026-05-12T12:00:00+00:00",
+        )
+        real_replace = evidence_archive_mod.os.replace
+        calls = {"count": 0}
+
+        def flaky_replace(src, dst):  # noqa: ANN001
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise PermissionError("locked")
+            return real_replace(src, dst)
+
+        monkeypatch.setattr(evidence_archive_mod.os, "replace", flaky_replace)
+
+        entry = archive.write_archive(
+            run_id="fetch_1",
+            kind="source-details",
+            payload={"rows": [{"name": "Studio A"}]},
+        )
+
+        assert calls["count"] >= 2
+        assert (data_dir / entry["path"]).exists()
+        assert archive.manifest_path.exists()
+        assert list(data_dir.glob("*.tmp")) == []

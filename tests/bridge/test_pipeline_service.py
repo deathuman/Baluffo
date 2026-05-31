@@ -158,6 +158,119 @@ def test_pipeline_completion_uses_normalized_lifecycle_progress() -> None:
     assert progress["counts"]["finalOutputCount"] == 20
 
 
+def test_pipeline_abort_marks_canceled_lifecycle() -> None:
+    canceled_runs: list[dict[str, Any]] = []
+    status: dict[str, Any] = {
+        "active": True,
+        "runId": "pipeline_1",
+        "stage": "fetch",
+        "progress": {"currentStep": 2, "totalSteps": 3, "percent": 67, "label": "Running fetch..."},
+        "startedAt": "2026-05-06T18:00:00Z",
+        "finishedAt": "",
+        "error": "",
+        "baselineOutputCount": 0,
+        "jobsPageLoadedCount": 0,
+    }
+    runtime = PipelineRuntime(active_run_id="pipeline_1")
+    service = _make_pipeline_service(
+        pipeline_status=status,
+        runtime=runtime,
+        cancel_lifecycle_run=lambda run_id, task_type, **kwargs: (
+            canceled_runs.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        ),
+    )
+
+    result = service.request_abort(
+        "pipeline_1",
+        reason="test_abort",
+        requested_at="2026-05-06T18:10:00Z",
+    )
+    service._run_worker("pipeline_1")
+
+    assert result["state"] == "aborting"
+    assert status["active"] is False
+    assert status["stage"] == "canceled"
+    assert canceled_runs[-1]["runId"] == "pipeline_1"
+    assert canceled_runs[-1]["terminal_reason"] == "user_abort_requested"
+
+
+def test_pipeline_abort_during_sync_is_deferred_until_sync_finishes() -> None:
+    canceled_runs: list[dict[str, Any]] = []
+    status: dict[str, Any] = {
+        "active": True,
+        "runId": "pipeline_1",
+        "stage": "sync_push",
+        "progress": {
+            "currentStep": 3,
+            "totalSteps": 3,
+            "percent": 100,
+            "label": "Running sync push...",
+        },
+        "startedAt": "2026-05-06T18:00:00Z",
+        "finishedAt": "",
+        "error": "",
+        "baselineOutputCount": 0,
+        "jobsPageLoadedCount": 0,
+    }
+    service = _make_pipeline_service(
+        pipeline_status=status,
+        start_sync_task=lambda _action, **_kwargs: {"started": True, "runId": "sync_1"},
+        wait_for_sync_completion=lambda _run_id, _timeout_s: {"status": "ok", "summary": {}},
+        cancel_lifecycle_run=lambda run_id, task_type, **kwargs: (
+            canceled_runs.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        ),
+    )
+
+    result = service.request_abort(
+        "pipeline_1",
+        reason="test_abort",
+        requested_at="2026-05-06T18:10:00Z",
+    )
+    try:
+        service._run_sync_push_stage("pipeline_1")
+    except Exception as exc:
+        assert exc.__class__.__name__ == "PipelineAbortRequested"
+    service._set_completed(status="canceled")
+
+    assert result["deferred"] is True
+    assert status["stage"] == "canceled"
+    assert canceled_runs[-1]["terminal_reason"] == "user_abort_requested"
+
+
+def test_pipeline_abort_pending_sync_is_idempotent() -> None:
+    heartbeats: list[dict[str, Any]] = []
+    status: dict[str, Any] = {
+        "active": True,
+        "runId": "pipeline_1",
+        "stage": "abort_pending_sync",
+        "progress": {
+            "currentStep": 3,
+            "totalSteps": 3,
+            "percent": 100,
+            "label": "Abort after sync...",
+        },
+        "startedAt": "2026-05-06T18:00:00Z",
+    }
+    service = _make_pipeline_service(
+        pipeline_status=status,
+        heartbeat_lifecycle_run=lambda _run_id, _task_type, **kwargs: (
+            heartbeats.append(dict(kwargs)) or {}
+        ),
+    )
+
+    result = service.request_abort(
+        "pipeline_1",
+        reason="second_click",
+        requested_at="2026-05-06T18:11:00Z",
+    )
+    service._check_abort("pipeline_1", defer_sync=True)
+
+    assert result["deferred"] is True
+    assert result["state"] == "abort_pending_sync"
+    assert status["stage"] == "abort_pending_sync"
+    assert heartbeats[-1]["stage"] == "abort_pending_sync"
+
+
 def test_pipeline_waits_for_discovery_auto_approval_after_child_terminal_report() -> None:
     parent_heartbeats: list[tuple[str, str, str]] = []
     service = _make_pipeline_service(

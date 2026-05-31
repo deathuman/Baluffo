@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from src.bridge.task_abort_evidence import ABORT_TERMINAL_REASON, row_abort_requested
 from src.contracts import SCHEMA_VERSION
 
 
@@ -97,19 +98,38 @@ def _pid_dead(row: dict[str, Any], pid_is_running: Callable[[int], bool]) -> boo
     return bool(pid > 0 and not pid_is_running(pid))
 
 
-def _terminalize_report(path: Path, run_id: str, *, finished_at: str, error: str) -> bool:
+def _terminalize_report(
+    path: Path,
+    run_id: str,
+    *,
+    finished_at: str,
+    error: str,
+    status: str = "error",
+    terminal_reason: str = "",
+) -> bool:
     payload = _load_json_object(path, {})
     if str(payload.get("runId") or "").strip() != str(run_id or "").strip():
         return False
     if str(payload.get("finishedAt") or "").strip():
         return False
     payload["finishedAt"] = finished_at
-    payload["status"] = "error"
+    payload["status"] = status
+    if terminal_reason:
+        payload["terminalReason"] = terminal_reason
     summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
-    payload["summary"] = {**summary, "error": error}
+    payload["summary"] = (
+        {**summary, "status": "canceled", "terminalReason": terminal_reason}
+        if status == "canceled"
+        else {**summary, "error": error}
+    )
     progress = payload.get("taskProgress") if isinstance(payload.get("taskProgress"), dict) else {}
     if progress:
-        payload["taskProgress"] = {**progress, "active": False, "updatedAt": finished_at}
+        payload["taskProgress"] = {
+            **progress,
+            "active": False,
+            "phaseKey": "canceled" if status == "canceled" else progress.get("phaseKey", ""),
+            "updatedAt": finished_at,
+        }
     runtime = payload.get("runtime") if isinstance(payload.get("runtime"), dict) else {}
     lifecycle = runtime.get("lifecycle") if isinstance(runtime.get("lifecycle"), dict) else {}
     if runtime or lifecycle:
@@ -121,22 +141,315 @@ def _terminalize_report(path: Path, run_id: str, *, finished_at: str, error: str
     return True
 
 
-def _terminalize_fetch_tasks(path: Path, run_id: str, *, finished_at: str, error: str) -> bool:
+def _terminalize_fetch_tasks(
+    path: Path,
+    run_id: str,
+    *,
+    finished_at: str,
+    error: str,
+    status: str = "error",
+    terminal_reason: str = "",
+) -> bool:
     payload = _load_json_object(path, {})
     if str(payload.get("runId") or "").strip() != str(run_id or "").strip():
         return False
     if str(payload.get("finishedAt") or "").strip():
         return False
     payload["finishedAt"] = finished_at
-    payload["status"] = "error"
+    payload["status"] = status
+    if terminal_reason:
+        payload["terminalReason"] = terminal_reason
     payload["heartbeatAt"] = finished_at
     summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
-    payload["summary"] = {**summary, "error": error}
+    payload["summary"] = (
+        {**summary, "status": "canceled", "terminalReason": terminal_reason}
+        if status == "canceled"
+        else {**summary, "error": error}
+    )
     progress = payload.get("taskProgress") if isinstance(payload.get("taskProgress"), dict) else {}
     if progress:
-        payload["taskProgress"] = {**progress, "active": False, "updatedAt": finished_at}
+        payload["taskProgress"] = {
+            **progress,
+            "active": False,
+            "phaseKey": "canceled" if status == "canceled" else progress.get("phaseKey", ""),
+            "updatedAt": finished_at,
+        }
     _write_json(path, payload)
     return True
+
+
+def _row_is_stale_after_restart(row: dict[str, Any], pid_is_running: Callable[[int], bool]) -> bool:
+    owner_kind = str(row.get("ownerKind") or "").strip().lower()
+    return owner_kind in {"pipeline", "bridge_thread"} or _pid_dead(row, pid_is_running)
+
+
+def _record_stale_row(
+    row: dict[str, Any],
+    *,
+    stale_keys: set[tuple[str, str]],
+    aborted_keys: set[tuple[str, str]],
+    stale_rows_by_key: dict[tuple[str, str], dict[str, Any]],
+) -> tuple[str, str] | None:
+    task_type, run_id = _run_key(row)
+    if not task_type or not run_id:
+        return None
+    key = (task_type, run_id)
+    stale_keys.add(key)
+    stale_rows_by_key.setdefault(key, dict(row))
+    if row_abort_requested(row):
+        aborted_keys.add(key)
+    return key
+
+
+def _collect_stale_lifecycle_rows(
+    running_rows: list[dict[str, Any]],
+    *,
+    pid_is_running: Callable[[int], bool],
+) -> tuple[
+    set[tuple[str, str]],
+    set[tuple[str, str]],
+    dict[tuple[str, str], dict[str, Any]],
+]:
+    stale_keys: set[tuple[str, str]] = set()
+    aborted_keys: set[tuple[str, str]] = set()
+    stale_rows_by_key: dict[tuple[str, str], dict[str, Any]] = {}
+    stale_parent_run_ids: set[str] = set()
+
+    for row in running_rows:
+        if not _row_is_stale_after_restart(row, pid_is_running):
+            continue
+        key = _record_stale_row(
+            row,
+            stale_keys=stale_keys,
+            aborted_keys=aborted_keys,
+            stale_rows_by_key=stale_rows_by_key,
+        )
+        parent_run_id = str(row.get("parentRunId") or "").strip()
+        if key is not None and parent_run_id:
+            stale_parent_run_ids.add(parent_run_id)
+
+    for row in running_rows:
+        if str(row.get("runId") or row.get("id") or "").strip() not in stale_parent_run_ids:
+            continue
+        _record_stale_row(
+            row,
+            stale_keys=stale_keys,
+            aborted_keys=aborted_keys,
+            stale_rows_by_key=stale_rows_by_key,
+        )
+
+    return stale_keys, aborted_keys, stale_rows_by_key
+
+
+def _clear_stale_task_state(
+    task_state_path: Path,
+    task_state: dict[str, Any],
+    stale_keys: set[tuple[str, str]],
+) -> int:
+    next_task_state = {}
+    cleared_task_state = 0
+    for task_type, entry in task_state.items():
+        if not isinstance(entry, dict):
+            next_task_state[task_type] = entry
+            continue
+        key = (str(task_type).strip().lower(), str(entry.get("runId") or "").strip())
+        if key in stale_keys:
+            cleared_task_state += 1
+            continue
+        next_task_state[task_type] = entry
+    _write_json(task_state_path, next_task_state)
+    return cleared_task_state
+
+
+def _stale_terminal_kwargs(
+    row: dict[str, Any],
+    *,
+    aborted: bool,
+    finished_at: str,
+    error: str,
+) -> dict[str, Any]:
+    progress = _progress_dict(row.get("progress") or row.get("taskProgress"))
+    payload: dict[str, Any] = {
+        "finished_at": finished_at,
+        "terminal_reason": ABORT_TERMINAL_REASON if aborted else error,
+        "summary": (
+            {
+                **_summary_dict(row.get("summary")),
+                "status": "canceled",
+                "terminalReason": ABORT_TERMINAL_REASON,
+            }
+            if aborted
+            else {**_summary_dict(row.get("summary")), "error": error}
+        ),
+    }
+    if progress:
+        payload["progress"] = {**progress, "active": False, "updatedAt": finished_at}
+    return payload
+
+
+def _close_stale_lifecycle_callbacks(
+    *,
+    lifecycle_path: Path,
+    stale_keys: set[tuple[str, str]],
+    aborted_keys: set[tuple[str, str]],
+    stale_rows_by_key: dict[tuple[str, str], dict[str, Any]],
+    finished_at: str,
+    error: str,
+    orphan_run: Callable[..., dict[str, Any] | None] | None,
+    cancel_run: Callable[..., dict[str, Any] | None] | None,
+) -> dict[str, Any] | None:
+    if orphan_run is None and cancel_run is None:
+        return None
+    for task_type, run_id in sorted(stale_keys):
+        row = stale_rows_by_key.get((task_type, run_id), {})
+        aborted = (task_type, run_id) in aborted_keys
+        kwargs = _stale_terminal_kwargs(row, aborted=aborted, finished_at=finished_at, error=error)
+        if aborted and cancel_run is not None:
+            cancel_run(run_id, task_type, **kwargs)
+        elif orphan_run is not None:
+            orphan_run(run_id, task_type, **kwargs)
+    return _load_json_object(
+        lifecycle_path,
+        {"schemaVersion": _schema_version_int(), "updatedAt": "", "rows": []},
+    )
+
+
+def _updated_stale_lifecycle_row(
+    row: dict[str, Any],
+    *,
+    aborted: bool,
+    finished_at: str,
+    error: str,
+) -> dict[str, Any]:
+    return {
+        **row,
+        "status": "canceled" if aborted else "orphaned",
+        "finishedAt": finished_at,
+        "terminalReason": ABORT_TERMINAL_REASON if aborted else error,
+        "summary": (
+            {
+                **_summary_dict(row.get("summary")),
+                "status": "canceled",
+                "terminalReason": ABORT_TERMINAL_REASON,
+            }
+            if aborted
+            else {**_summary_dict(row.get("summary")), "error": error}
+        ),
+    }
+
+
+def _write_stale_lifecycle_rows(
+    lifecycle_path: Path,
+    lifecycle_payload: dict[str, Any],
+    *,
+    stale_keys: set[tuple[str, str]],
+    aborted_keys: set[tuple[str, str]],
+    finished_at: str,
+    error: str,
+) -> None:
+    rows = lifecycle_payload.get("rows") if isinstance(lifecycle_payload, dict) else []
+    next_rows: list[dict[str, Any]] = []
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict):
+            continue
+        key = _run_key(row)
+        status = str(row.get("status") or "").strip().lower()
+        if key in stale_keys and status in {"queued", "running"}:
+            next_rows.append(
+                _updated_stale_lifecycle_row(
+                    row,
+                    aborted=key in aborted_keys,
+                    finished_at=finished_at,
+                    error=error,
+                )
+            )
+            continue
+        next_rows.append(dict(row))
+    _write_json(
+        lifecycle_path,
+        {
+            **lifecycle_payload,
+            "schemaVersion": _schema_version_int(),
+            "updatedAt": finished_at,
+            "rows": next_rows,
+        },
+    )
+
+
+def _write_stale_history_rows(
+    history_path: Path,
+    *,
+    stale_keys: set[tuple[str, str]],
+    aborted_keys: set[tuple[str, str]],
+    finished_at: str,
+    error: str,
+) -> None:
+    history_rows = _load_history(history_path)
+    history_changed = False
+    for row in history_rows:
+        key = (
+            str(row.get("type") or row.get("taskType") or "").strip().lower(),
+            str(row.get("runId") or row.get("id") or "").strip(),
+        )
+        if key not in stale_keys or str(row.get("finishedAt") or "").strip():
+            continue
+        aborted = key in aborted_keys
+        row["status"] = "canceled" if aborted else "error"
+        row["finishedAt"] = finished_at
+        row["summary"] = (
+            {
+                **_summary_dict(row.get("summary")),
+                "status": "canceled",
+                "terminalReason": ABORT_TERMINAL_REASON,
+            }
+            if aborted
+            else {**_summary_dict(row.get("summary")), "error": error}
+        )
+        history_changed = True
+    if history_changed:
+        _write_json(history_path, [_normalize_history_duration(row) for row in history_rows])
+
+
+def _terminalize_stale_reports(
+    *,
+    stale_keys: set[tuple[str, str]],
+    aborted_keys: set[tuple[str, str]],
+    finished_at: str,
+    error: str,
+    discovery_report_path: Path,
+    fetch_report_path: Path,
+    fetch_tasks_path: Path,
+) -> None:
+    for task_type, run_id in stale_keys:
+        aborted = (task_type, run_id) in aborted_keys
+        status = "canceled" if aborted else "error"
+        terminal_reason = ABORT_TERMINAL_REASON if aborted else error
+        if task_type == "discovery":
+            _terminalize_report(
+                discovery_report_path,
+                run_id,
+                finished_at=finished_at,
+                error=error,
+                status=status,
+                terminal_reason=terminal_reason,
+            )
+        elif task_type == "fetch":
+            _terminalize_report(
+                fetch_report_path,
+                run_id,
+                finished_at=finished_at,
+                error=error,
+                status=status,
+                terminal_reason=terminal_reason,
+            )
+            _terminalize_fetch_tasks(
+                fetch_tasks_path,
+                run_id,
+                finished_at=finished_at,
+                error=error,
+                status=status,
+                terminal_reason=terminal_reason,
+            )
 
 
 def cleanup_orphaned_startup_tasks(
@@ -146,6 +459,7 @@ def cleanup_orphaned_startup_tasks(
     now_iso: Callable[[], str],
     current_runs: Callable[[], list[dict[str, Any]]] | None = None,
     orphan_run: Callable[..., dict[str, Any] | None] | None = None,
+    cancel_run: Callable[..., dict[str, Any] | None] | None = None,
 ) -> dict[str, Any]:
     """Close stale task rows that cannot survive a desktop bridge restart."""
 
@@ -167,118 +481,50 @@ def cleanup_orphaned_startup_tasks(
     running_rows = _running_lifecycle_rows(lifecycle_payload)
     if current_runs is not None:
         running_rows.extend(_running_lifecycle_rows({"rows": current_runs()}))
-    stale_keys: set[tuple[str, str]] = set()
-    stale_rows_by_key: dict[tuple[str, str], dict[str, Any]] = {}
-    stale_parent_run_ids: set[str] = set()
-
-    # Stale row detection now uses lifecycle ledger ownership exclusively.
-    # Process-owned rows must have a live ownerPid; bridge_thread and pipeline
-    # owners are in-process workers and cannot survive a bridge restart.
-    for row in running_rows:
-        task_type, run_id = _run_key(row)
-        if not task_type or not run_id:
-            continue
-        owner_kind = str(row.get("ownerKind") or "").strip().lower()
-        if owner_kind in {"pipeline", "bridge_thread"} or _pid_dead(row, pid_is_running):
-            key = (task_type, run_id)
-            stale_keys.add(key)
-            stale_rows_by_key.setdefault(key, dict(row))
-            parent_run_id = str(row.get("parentRunId") or "").strip()
-            if parent_run_id:
-                stale_parent_run_ids.add(parent_run_id)
-
-    if stale_parent_run_ids:
-        for row in running_rows:
-            task_type, run_id = _run_key(row)
-            if run_id in stale_parent_run_ids:
-                key = (task_type, run_id)
-                stale_keys.add(key)
-                stale_rows_by_key.setdefault(key, dict(row))
+    stale_keys, aborted_keys, stale_rows_by_key = _collect_stale_lifecycle_rows(
+        running_rows,
+        pid_is_running=pid_is_running,
+    )
 
     if not stale_keys:
         return {"ok": True, "dataDir": str(root), "orphaned": 0, "clearedTaskState": 0}
 
-    next_task_state = {}
-    cleared_task_state = 0
-    for task_type, entry in task_state.items():
-        if not isinstance(entry, dict):
-            next_task_state[task_type] = entry
-            continue
-        key = (str(task_type).strip().lower(), str(entry.get("runId") or "").strip())
-        if key in stale_keys:
-            cleared_task_state += 1
-            continue
-        next_task_state[task_type] = entry
-    _write_json(task_state_path, next_task_state)
-
-    if orphan_run is not None:
-        for task_type, run_id in sorted(stale_keys):
-            row = stale_rows_by_key.get((task_type, run_id), {})
-            progress = _progress_dict(row.get("progress") or row.get("taskProgress"))
-            orphan_kwargs: dict[str, Any] = {
-                "finished_at": finished_at,
-                "terminal_reason": error,
-                "summary": {**_summary_dict(row.get("summary")), "error": error},
-            }
-            if progress:
-                orphan_kwargs["progress"] = {**progress, "active": False, "updatedAt": finished_at}
-            orphan_run(run_id, task_type, **orphan_kwargs)
-        lifecycle_payload = _load_json_object(
-            lifecycle_path,
-            {"schemaVersion": _schema_version_int(), "updatedAt": "", "rows": []},
-        )
-
-    rows = lifecycle_payload.get("rows") if isinstance(lifecycle_payload, dict) else []
-    next_rows: list[dict[str, Any]] = []
-    for row in rows if isinstance(rows, list) else []:
-        if not isinstance(row, dict):
-            continue
-        key = _run_key(row)
-        if key in stale_keys and str(row.get("status") or "").strip().lower() in {
-            "queued",
-            "running",
-        }:
-            updated = {
-                **row,
-                "status": "orphaned",
-                "finishedAt": finished_at,
-                "terminalReason": error,
-                "summary": {**_summary_dict(row.get("summary")), "error": error},
-            }
-            next_rows.append(updated)
-            continue
-        next_rows.append(dict(row))
-    _write_json(
-        lifecycle_path,
-        {
-            **lifecycle_payload,
-            "schemaVersion": _schema_version_int(),
-            "updatedAt": finished_at,
-            "rows": next_rows,
-        },
+    cleared_task_state = _clear_stale_task_state(task_state_path, task_state, stale_keys)
+    callback_payload = _close_stale_lifecycle_callbacks(
+        lifecycle_path=lifecycle_path,
+        stale_keys=stale_keys,
+        aborted_keys=aborted_keys,
+        stale_rows_by_key=stale_rows_by_key,
+        finished_at=finished_at,
+        error=error,
+        orphan_run=orphan_run,
+        cancel_run=cancel_run,
     )
-
-    history_rows = _load_history(history_path)
-    history_changed = False
-    for row in history_rows:
-        key = (
-            str(row.get("type") or row.get("taskType") or "").strip().lower(),
-            str(row.get("runId") or row.get("id") or "").strip(),
-        )
-        if key in stale_keys and not str(row.get("finishedAt") or "").strip():
-            row["status"] = "error"
-            row["finishedAt"] = finished_at
-            row["summary"] = {**_summary_dict(row.get("summary")), "error": error}
-            history_changed = True
-    if history_changed:
-        _write_json(history_path, [_normalize_history_duration(row) for row in history_rows])
-
-    for task_type, run_id in stale_keys:
-        if task_type == "discovery":
-            _terminalize_report(discovery_report_path, run_id, finished_at=finished_at, error=error)
-        elif task_type == "fetch":
-            _terminalize_report(fetch_report_path, run_id, finished_at=finished_at, error=error)
-            _terminalize_fetch_tasks(fetch_tasks_path, run_id, finished_at=finished_at, error=error)
+    lifecycle_payload = callback_payload or lifecycle_payload
+    _write_stale_lifecycle_rows(
+        lifecycle_path,
+        lifecycle_payload,
+        stale_keys=stale_keys,
+        aborted_keys=aborted_keys,
+        finished_at=finished_at,
+        error=error,
+    )
+    _write_stale_history_rows(
+        history_path,
+        stale_keys=stale_keys,
+        aborted_keys=aborted_keys,
+        finished_at=finished_at,
+        error=error,
+    )
+    _terminalize_stale_reports(
+        stale_keys=stale_keys,
+        aborted_keys=aborted_keys,
+        finished_at=finished_at,
+        error=error,
+        discovery_report_path=discovery_report_path,
+        fetch_report_path=fetch_report_path,
+        fetch_tasks_path=fetch_tasks_path,
+    )
 
     return {
         "ok": True,

@@ -491,6 +491,14 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
     ),
     _route(
         "POST",
+        "/tasks/abort",
+        EXACT,
+        POST_ADMIN_HANDLER,
+        "public",
+        caller_files=[*PIPELINE_CALLERS, *ADMIN_OPS_CALLERS],
+    ),
+    _route(
+        "POST",
         "/tasks/run-jobs-bootstrap",
         EXACT,
         POST_ADMIN_HANDLER,

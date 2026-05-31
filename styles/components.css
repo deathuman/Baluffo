@@ -1524,6 +1524,10 @@ h1 {
   align-self: end;
   justify-self: end;
   min-width: 260px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem;
 }
 
 .jobs-pipeline-btn {
@@ -1552,6 +1556,12 @@ h1 {
 
 .jobs-pipeline-btn.running {
   opacity: 0.98;
+}
+
+.jobs-pipeline-btn.abort-reveal {
+  border-color: var(--admin-danger-border);
+  color: var(--admin-danger-text);
+  background-color: var(--admin-danger-bg);
 }
 
 .jobs-pipeline-btn-label {
@@ -1722,6 +1732,26 @@ h1 {
   border-color: #5e48d1;
   color: #ffffff;
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.28), 0 8px 16px rgba(88, 66, 185, 0.24);
+}
+
+.jobs-pipeline-abort-btn {
+  display: none;
+  min-height: 2.25rem;
+  padding-inline: 0.7rem;
+  border: 1px solid var(--admin-danger-border);
+  border-radius: 8px;
+  color: var(--admin-danger-text);
+  background: var(--admin-danger-bg);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .jobs-pipeline-abort-btn.visible {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
 }
 
 .clear-filters-btn {

@@ -13,6 +13,11 @@ from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Any
 
+from src.bridge.task_abort_evidence import (
+    ABORT_TERMINAL_REASON,
+    repair_discovery_canceled_evidence,
+    row_abort_requested,
+)
 from src.bridge.task_admission import (
     build_duplicate_start_payload,
     get_active_lifecycle_task_metadata,
@@ -65,7 +70,11 @@ class DiscoveryDeps:
     heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None] = lambda *_args, **_kwargs: None
     finish_lifecycle_run: Callable[..., dict[str, Any]] = lambda *_args, **_kwargs: {}
     fail_lifecycle_run: Callable[..., dict[str, Any]] = lambda *_args, **_kwargs: {}
+    cancel_lifecycle_run: Callable[..., dict[str, Any]] = lambda *_args, **_kwargs: {}
     get_lifecycle_current_runs: Callable[[], list[dict[str, Any]]] = lambda: []
+    get_lifecycle_row: Callable[[str, str], dict[str, Any] | None] = lambda _run_id, _task_type: (
+        None
+    )
     load_runtime_evidence: Callable[[Any, Any], Any] | None = None
 
 
@@ -100,6 +109,33 @@ class DiscoveryService:
             summary=dict(summary or {}),
             terminal_reason="completed",
         )
+
+    def _cancel_discovery_run(
+        self,
+        *,
+        run_id: str,
+        finished_at: str = "",
+        reason: str = "",
+    ) -> dict[str, Any]:
+        canceled_at = str(finished_at or self._deps.now_iso() or "")
+        report = repair_discovery_canceled_evidence(
+            report_path=self._paths.report,
+            run_id=run_id,
+            finished_at=canceled_at,
+            load_json_object=self._deps.load_json_object,
+            save_json_atomic=self._deps.save_json_atomic,
+            normalize_report=self._deps.normalize_discovery_report_contract,
+            reason=reason,
+        )
+        self._deps.cancel_lifecycle_run(
+            run_id,
+            "discovery",
+            finished_at=str(report.get("finishedAt") or canceled_at),
+            terminal_reason=ABORT_TERMINAL_REASON,
+            summary=dict(report.get("summary") or {}),
+            progress=dict(report.get("taskProgress") or {}),
+        )
+        return report
 
     @staticmethod
     def _normalize_discovery_settings(payload: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -174,6 +210,32 @@ class DiscoveryService:
     def _reconcile_terminal_discovery_report_from_state(self) -> None:
         return
 
+    @staticmethod
+    def _run_background_script_with_identity(
+        run_background_script: Callable[..., int],
+        script_name: str,
+        args: list[str],
+        *,
+        extra_env: dict[str, str],
+        run_id: str,
+        task_type: str,
+        metadata: dict[str, Any],
+    ) -> int:
+        try:
+            return run_background_script(
+                script_name,
+                args,
+                extra_env=extra_env,
+                run_id=run_id,
+                task_type=task_type,
+                metadata=metadata,
+            )
+        except TypeError as exc:
+            message = str(exc)
+            if "unexpected keyword argument" not in message or "run_id" not in message:
+                raise
+            return run_background_script(script_name, args, extra_env=extra_env)
+
     def update_saved_discovery_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
         normalized = self._normalize_discovery_settings(payload)
         self._deps.save_json_atomic(self._paths.settings, normalized)
@@ -183,16 +245,36 @@ class DiscoveryService:
     def _pending_row_is_auto_approvable(cls, row: dict[str, Any]) -> bool:
         return registry_pending_row_is_auto_approvable(row)
 
-    def watch_discovery_run_for_auto_sync(self, run_id: str, pid: int, started_at: str) -> None:
-        started_dt = self._deps.parse_iso(started_at) or self._deps.now_utc()
-        report: dict[str, Any] = {}
+    def _discovery_report_finished_since(self, report: dict[str, Any], started_dt: Any) -> bool:
+        finished_at = str(report.get("finishedAt") or "")
+        finished_dt = self._deps.parse_iso(finished_at)
+        return bool(finished_dt and finished_dt >= started_dt)
+
+    @staticmethod
+    def _abort_reason_from_row(row: dict[str, Any] | None) -> str:
+        summary = (row or {}).get("summary")
+        return str((summary if isinstance(summary, dict) else {}).get("abortReason") or "")
+
+    def _wait_for_discovery_watch_report(
+        self,
+        *,
+        run_id: str,
+        pid: int,
+        started_at: str,
+        started_dt: Any,
+    ) -> dict[str, Any] | None:
         while True:
+            lifecycle_row = self._deps.get_lifecycle_row(run_id, "discovery")
             report = self._deps.normalize_discovery_report_contract(self._read_discovery_report())
-            finished_at = str(report.get("finishedAt") or "")
-            finished_dt = self._deps.parse_iso(finished_at)
-            if finished_dt and finished_dt >= started_dt:
-                break
+            if self._discovery_report_finished_since(report, started_dt):
+                return report
             if not self._deps.pid_is_running(pid):
+                if row_abort_requested(lifecycle_row):
+                    self._cancel_discovery_run(
+                        run_id=run_id,
+                        reason=self._abort_reason_from_row(lifecycle_row),
+                    )
+                    return None
                 self._deps.fail_lifecycle_run(
                     run_id,
                     "discovery",
@@ -207,10 +289,74 @@ class DiscoveryService:
                 started_at=started_at,
             )
             threading.Event().wait(0.8)
+
+    def _handle_discovery_completion_auto_sync(
+        self,
+        *,
+        run_id: str,
+        finished_at: str,
+        report: dict[str, Any],
+        summary: dict[str, Any],
+    ) -> None:
+        queued = int(summary.get("queuedCandidateCount") or summary.get("newCandidateCount") or 0)
+        saved_config = self.get_saved_discovery_config_payload()
+        auto_approve_enabled = bool(saved_config.get("autoApproveHealthyPendingOnComplete"))
+        state, auto_approved = apply_discovery_auto_approval(
+            self._deps.load_state(),
+            report,
+            auto_approve_enabled=auto_approve_enabled,
+            approval_state_path=self._paths.approval_state,
+            now_iso_fn=self._deps.now_iso,
+        )
+        if auto_approved > 0:
+            self._deps.persist_state_and_auto_sync(state, reason="discovery_auto_approve")
+        self._deps.save_json_atomic(self._paths.report, report)
+        self._deps.bridge_log(
+            "info",
+            "discovery_auto_approval_completed",
+            runId=run_id,
+            enabled=auto_approve_enabled,
+            approved=int(auto_approved),
+        )
+        if queued <= 0 and auto_approved <= 0:
+            self._deps.mark_discovery_sync_finished(finished_at)
+            return
+        runtime_state = self._deps.load_sync_runtime_state()
+        if str(runtime_state.get("lastDiscoverySyncFinishedAt") or "") == finished_at:
+            return
+        if self._deps.maybe_trigger_auto_sync_push("discovery_completed"):
+            self._deps.mark_discovery_sync_finished(finished_at)
+            self._deps.bridge_log(
+                "info",
+                "sync_auto_push_started",
+                runId=run_id,
+                reason="discovery_completed",
+                queued=queued,
+                autoApproved=int(auto_approved),
+            )
+
+    def watch_discovery_run_for_auto_sync(self, run_id: str, pid: int, started_at: str) -> None:
+        started_dt = self._deps.parse_iso(started_at) or self._deps.now_utc()
+        report = self._wait_for_discovery_watch_report(
+            run_id=run_id,
+            pid=pid,
+            started_at=started_at,
+            started_dt=started_dt,
+        )
+        if report is None:
+            return
         try:
             finished_at = str(report.get("finishedAt") or "")
             finished_dt = self._deps.parse_iso(finished_at)
             if not finished_dt or finished_dt < started_dt:
+                return
+            lifecycle_row = self._deps.get_lifecycle_row(run_id, "discovery")
+            if row_abort_requested(lifecycle_row):
+                self._cancel_discovery_run(
+                    run_id=run_id,
+                    finished_at=self._deps.now_iso(),
+                    reason=self._abort_reason_from_row(lifecycle_row),
+                )
                 return
             summary = as_json_object(report.get("summary"))
             self._finalize_discovery_run(
@@ -219,44 +365,12 @@ class DiscoveryService:
                 finished_at=finished_at,
                 summary=summary,
             )
-            queued = int(
-                summary.get("queuedCandidateCount") or summary.get("newCandidateCount") or 0
+            self._handle_discovery_completion_auto_sync(
+                run_id=run_id,
+                finished_at=finished_at,
+                report=report,
+                summary=summary,
             )
-            saved_config = self.get_saved_discovery_config_payload()
-            auto_approve_enabled = bool(saved_config.get("autoApproveHealthyPendingOnComplete"))
-            state, auto_approved = apply_discovery_auto_approval(
-                self._deps.load_state(),
-                report,
-                auto_approve_enabled=auto_approve_enabled,
-                approval_state_path=self._paths.approval_state,
-                now_iso_fn=self._deps.now_iso,
-            )
-            if auto_approved > 0:
-                self._deps.persist_state_and_auto_sync(state, reason="discovery_auto_approve")
-            self._deps.save_json_atomic(self._paths.report, report)
-            self._deps.bridge_log(
-                "info",
-                "discovery_auto_approval_completed",
-                runId=run_id,
-                enabled=auto_approve_enabled,
-                approved=int(auto_approved),
-            )
-            if queued <= 0 and auto_approved <= 0:
-                self._deps.mark_discovery_sync_finished(finished_at)
-                return
-            runtime_state = self._deps.load_sync_runtime_state()
-            if str(runtime_state.get("lastDiscoverySyncFinishedAt") or "") == finished_at:
-                return
-            if self._deps.maybe_trigger_auto_sync_push("discovery_completed"):
-                self._deps.mark_discovery_sync_finished(finished_at)
-                self._deps.bridge_log(
-                    "info",
-                    "sync_auto_push_started",
-                    runId=run_id,
-                    reason="discovery_completed",
-                    queued=queued,
-                    autoApproved=int(auto_approved),
-                )
         except Exception as exc:  # noqa: BLE001
             self._deps.bridge_log(
                 "warn",
@@ -388,13 +502,17 @@ class DiscoveryService:
                 preset = "default"
                 spawn_args.extend(["--preset", "default"])
             try:
-                pid = self._deps.run_background_script(
+                pid = self._run_background_script_with_identity(
+                    self._deps.run_background_script,
                     "source_discovery.py",
                     spawn_args,
                     extra_env={
                         "BALUFFO_DISCOVERY_RUN_ID": run_id,
                         "BALUFFO_DISCOVERY_STARTED_AT": started_at,
                     },
+                    run_id=run_id,
+                    task_type="discovery",
+                    metadata={"task": "source_discovery", "preset": preset},
                 )
             except Exception as exc:  # noqa: BLE001
                 failed_at = self._deps.now_iso()

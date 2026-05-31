@@ -161,7 +161,7 @@ def startup_banner(*, config: RuntimeConfig, bridge_log: Any) -> None:
         ops="GET /ops/health, GET /ops/dashboard-health, GET /ops/history, GET /ops/fetcher-metrics, POST /ops/alerts/ack",
         registry="GET /registry/*, POST /registry/*",
         sync="GET /sync/status, POST /sync/config, POST /sync/test, POST /sync/pull, POST /sync/push",
-        tasks="POST /tasks/run-jobs-bootstrap, POST /tasks/run-fetcher, POST /tasks/run-discovery, POST /tasks/run-sync-pull, POST /tasks/run-sync-push, POST /tasks/run-jobs-pipeline, GET /tasks/run-jobs-pipeline-status",
+        tasks="POST /tasks/run-jobs-bootstrap, POST /tasks/run-fetcher, POST /tasks/run-discovery, POST /tasks/run-sync-pull, POST /tasks/run-sync-push, POST /tasks/run-jobs-pipeline, POST /tasks/abort, GET /tasks/run-jobs-pipeline-status",
     )
 
 

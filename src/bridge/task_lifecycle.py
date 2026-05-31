@@ -8,6 +8,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from src.bridge.task_abort_evidence import (
+    ABORT_TERMINAL_REASON,
+    aborting_progress,
+    row_abort_requested,
+)
+
 SCHEMA_VERSION = 1
 
 ACTIVE_STATUSES = {"queued", "running"}
@@ -374,9 +380,25 @@ class TaskLifecycleService:
         normalized = self._normalize_row(entry)
         run_id = _clean_text(normalized.get("runId"))
         task_type = _clean_text(normalized.get("taskType")).lower()
+        loaded_rows = self._load_rows_locked()
+        existing = next(
+            (
+                row
+                for row in loaded_rows
+                if _clean_text(row.get("runId")) == run_id
+                and _clean_text(row.get("taskType")).lower() == task_type
+            ),
+            None,
+        )
+        if (
+            existing is not None
+            and _clean_text(existing.get("status")).lower() == "canceled"
+            and _clean_text(normalized.get("status")).lower() != "canceled"
+        ):
+            return self._normalize_row(existing)
         rows = [
             row
-            for row in self._load_rows_locked()
+            for row in loaded_rows
             if not (
                 _clean_text(row.get("runId")) == run_id
                 and _clean_text(row.get("taskType")).lower() == task_type
@@ -472,6 +494,11 @@ class TaskLifecycleService:
                     break
             if target is None:
                 target = {"runId": run_id, "taskType": task_type, "startedAt": ""}
+            elif (
+                _clean_text(target.get("status")).lower() == "canceled"
+                and _clean_text(status).lower() != "canceled"
+            ):
+                return self._normalize_row(target)
             target.update(
                 {
                     "status": status,
@@ -521,6 +548,69 @@ class TaskLifecycleService:
             **kwargs,
         )
 
+    def request_abort_run(
+        self,
+        run_id: str,
+        task_type: str,
+        *,
+        requested_at: str = "",
+        reason: str = "",
+        stage: str = "aborting",
+    ) -> dict[str, Any]:
+        with self._lock:
+            rows = self._load_rows_locked()
+            clean_run_id = _clean_text(run_id)
+            clean_task_type = _clean_text(task_type).lower()
+            for row in rows:
+                if _clean_text(row.get("runId")) != clean_run_id:
+                    continue
+                if _clean_text(row.get("taskType")).lower() != clean_task_type:
+                    continue
+                status = _clean_text(row.get("status")).lower()
+                route_row = self._to_route_row(row, active=status in ACTIVE_STATUSES)
+                if status == "canceled":
+                    return {
+                        "state": "already_canceled",
+                        "abortAccepted": True,
+                        "alreadyCanceled": True,
+                        "row": route_row,
+                    }
+                if status in TERMINAL_STATUSES:
+                    return {
+                        "state": "terminal",
+                        "abortAccepted": False,
+                        "terminalStatus": status,
+                        "row": route_row,
+                    }
+                now = _clean_text(requested_at) or self._now_iso()
+                summary = dict(row.get("summary") or {})
+                already_aborting = row_abort_requested(row)
+                summary.setdefault("abortRequestedAt", now)
+                summary["abortReason"] = _clean_text(reason)
+                summary["terminalReason"] = ABORT_TERMINAL_REASON
+                progress = aborting_progress(
+                    row.get("progress") if isinstance(row.get("progress"), dict) else {},
+                    updated_at=now,
+                )
+                row.update(
+                    {
+                        "status": "running",
+                        "stage": _clean_text(stage) or "aborting",
+                        "heartbeatAt": now,
+                        "summary": summary,
+                        "progress": progress,
+                    }
+                )
+                self._save_rows_locked(rows)
+                route_row = self._to_route_row(self._normalize_row(row), active=True)
+                return {
+                    "state": "already_aborting" if already_aborting else "aborting",
+                    "abortAccepted": True,
+                    "alreadyAborting": already_aborting,
+                    "row": route_row,
+                }
+        return {"state": "missing", "abortAccepted": False, "row": None}
+
     def attach_child(
         self,
         *,
@@ -539,7 +629,8 @@ class TaskLifecycleService:
                     continue
                 row["parentRunId"] = _clean_text(parent_run_id)
                 row["parentTaskType"] = _clean_text(parent_task_type).lower()
-                row["ownerKind"] = _clean_text(owner_kind)
+                if not _clean_text(row.get("ownerKind")):
+                    row["ownerKind"] = _clean_text(owner_kind)
                 row["heartbeatAt"] = self._now_iso()
                 self._save_rows_locked(rows)
                 return self._normalize_row(row)

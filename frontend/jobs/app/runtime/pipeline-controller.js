@@ -9,6 +9,7 @@ import {
 } from "../pipeline.js?v=9";
 
 const BLOCKING_TASK_TYPES = new Set(["pipeline", "fetch", "discovery", "sync"]);
+const ABORTABLE_TASK_TYPES = new Set(["pipeline", "fetch", "discovery"]);
 
 /**
  * @param {import("../../../shared/types.js").TaskStatePayload|null|undefined} payload
@@ -24,6 +25,22 @@ function getTaskStateRows(payload) {
  */
 function normalizeTaskType(task) {
   return String(task?.taskType || task?.type || "").trim().toLowerCase();
+}
+
+function taskRunId(task) {
+  return String(task?.runId || task?.id || "").trim();
+}
+
+function isAbortableTask(task) {
+  return Boolean(task?.active) && ABORTABLE_TASK_TYPES.has(normalizeTaskType(task)) && taskRunId(task);
+}
+
+function isAbortPendingPayload(payload) {
+  const stage = String(payload?.stage || "").trim().toLowerCase();
+  const progress = payload?.progress && typeof payload.progress === "object" ? payload.progress : {};
+  return stage === "aborting"
+    || stage === "abort_pending_sync"
+    || String(progress.phaseKey || "").trim().toLowerCase() === "aborting";
 }
 
 /**
@@ -138,13 +155,16 @@ export function createJobsPipelineController({
     buttonLabel = "",
     progressLabel = "",
     firstRunBootstrapActive = false,
-    isError = false
+    isError = false,
+    abortTask = null
   } = {}) {
+    const abortable = isAbortableTask(abortTask) && !jobsPipelineUiState.abortRequested;
+    const aborting = Boolean(jobsPipelineUiState.abortRequested || isAbortPendingPayload(pipelinePayload));
     updateJobsPipelineUiFromModule(refs, {
       pipelinePayload,
       running,
       disabled,
-      buttonLabel,
+      buttonLabel: aborting ? JOBS_UPDATE_COPY.abortingLabel : buttonLabel,
       progressLabel,
       buttonTooltip: getJobsUpdateTooltip({
         bridgeError: jobsPipelineUiState.updateTooltipBridgeError,
@@ -154,8 +174,107 @@ export function createJobsPipelineController({
         firstRun: jobsPipelineUiState.updateTooltipFirstRun,
         firstRunKnown: jobsPipelineUiState.updateTooltipFirstRunKnown
       }),
-      isError
+      isError,
+      abortable,
+      abortReveal: Boolean(jobsPipelineUiState.abortRevealActive),
+      aborting
     });
+    const labelEl = refs.jobsPipelineRunBtn?.querySelector?.('[data-ui="jobs-pipeline-label"]');
+    if (labelEl && !jobsPipelineUiState.abortRevealActive) {
+      refs.jobsPipelineRunBtn.dataset.abortDefaultLabel = labelEl.textContent || "";
+    }
+    jobsPipelineUiState.abortTask = abortable
+      ? {
+          taskType: normalizeTaskType(abortTask),
+          runId: taskRunId(abortTask)
+        }
+      : null;
+    syncJobsPipelineAbortButton();
+  }
+
+  function syncJobsPipelineAbortButton() {
+    const abortButton = refs.jobsPipelineRunBtn?.parentElement?.querySelector?.('[data-ui="jobs-pipeline-abort"]');
+    if (!abortButton) return;
+    abortButton.onclick = event => {
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
+      requestJobsPipelineAbort().catch(() => {});
+    };
+  }
+
+  function hasFineHoverPointer() {
+    try {
+      return Boolean(globalThis.matchMedia?.("(hover: hover) and (pointer: fine)")?.matches);
+    } catch {
+      return false;
+    }
+  }
+
+  function setAbortRevealActive(active) {
+    jobsPipelineUiState.abortRevealActive = Boolean(active);
+    const labelEl = refs.jobsPipelineRunBtn?.querySelector?.('[data-ui="jobs-pipeline-label"]');
+    const abortTask = jobsPipelineUiState.abortTask;
+    if (!labelEl || !abortTask || jobsPipelineUiState.abortRequested) return;
+    const storedLabel = String(refs.jobsPipelineRunBtn?.dataset?.abortDefaultLabel || "").trim();
+    if (!refs.jobsPipelineRunBtn.dataset.abortDefaultLabel && labelEl.textContent) {
+      refs.jobsPipelineRunBtn.dataset.abortDefaultLabel = labelEl.textContent;
+    }
+    labelEl.textContent = active
+      ? JOBS_UPDATE_COPY.abortLabel
+      : (storedLabel || labelEl.textContent || JOBS_UPDATE_COPY.updatingLabel);
+  }
+
+  function ensureAbortRevealHandlers() {
+    const button = refs.jobsPipelineRunBtn;
+    if (!button || button.dataset.abortRevealHandlers === "true") return;
+    button.dataset.abortRevealHandlers = "true";
+    button.addEventListener?.("pointerenter", () => {
+      if (hasFineHoverPointer()) setAbortRevealActive(true);
+    });
+    button.addEventListener?.("pointerleave", () => {
+      if (hasFineHoverPointer()) setAbortRevealActive(false);
+    });
+    button.addEventListener?.("focus", () => setAbortRevealActive(true));
+    button.addEventListener?.("blur", () => setAbortRevealActive(false));
+  }
+
+  async function requestJobsPipelineAbort() {
+    const task = jobsPipelineUiState.abortTask;
+    if (!task?.taskType || !task?.runId || jobsPipelineUiState.abortRequested) return;
+    const confirmed = typeof globalThis.confirm === "function"
+      ? globalThis.confirm("Abort the current job update?")
+      : true;
+    if (!confirmed) return;
+    jobsPipelineUiState.abortRequested = true;
+    jobsPipelineUiState.abortRevealActive = false;
+    updateJobsPipelineUi({
+      running: true,
+      disabled: true,
+      buttonLabel: JOBS_UPDATE_COPY.abortingLabel,
+      pipelinePayload: { active: true, stage: "aborting", startedAt: jobsPipelineUiState.startedAt },
+      abortTask: null
+    });
+    try {
+      const result = await callJobsBridge("/tasks/abort", {
+        method: "POST",
+        body: {
+          taskType: task.taskType,
+          runId: task.runId,
+          reason: "jobs_page_abort_update"
+        },
+        allowStatuses: [200, 400, 404, 409],
+        timeoutMs: 5000
+      });
+      if (!result?.ok && !result?.abortAccepted) {
+        throw new Error(String(result?.error || "abort failed"));
+      }
+      showToast("Job update abort requested.", "success");
+      scheduleJobsPipelineStatusPoll(250);
+    } catch (err) {
+      jobsPipelineUiState.abortRequested = false;
+      showToast(`Could not abort job update: ${String(err?.message || err)}`, "error");
+      scheduleJobsPipelineStatusPoll(idlePollDelayMs);
+    }
   }
 
   async function refreshJobsUpdateTooltipFromHealth() {
@@ -229,6 +348,11 @@ export function createJobsPipelineController({
       const trackedRunId = String(jobsPipelineUiState.runId || "");
       const blockingTask = getBlockingTask(taskStatePayload, trackedRunId);
       if (active) {
+        const abortTask = {
+          active: true,
+          taskType: "pipeline",
+          runId: runId || jobsPipelineUiState.runId
+        };
         jobsPipelineUiState.active = true;
         jobsPipelineUiState.pendingStart = false;
         jobsPipelineUiState.updateTooltipFirstRunBootstrapActive = false;
@@ -241,7 +365,8 @@ export function createJobsPipelineController({
             ...payload,
             startedAt: jobsPipelineUiState.startedAt
           }),
-          pipelinePayload: payload
+          pipelinePayload: payload,
+          abortTask
         });
         scheduleJobsPipelineStatusPoll(pollDelayMs);
         return;
@@ -253,7 +378,8 @@ export function createJobsPipelineController({
           running: true,
           disabled: true,
           buttonLabel: JOBS_UPDATE_COPY.updatingLabel,
-          pipelinePayload: payload
+          pipelinePayload: payload,
+          abortTask: null
         });
         scheduleJobsPipelineStatusPoll(pollDelayMs);
         return;
@@ -272,7 +398,8 @@ export function createJobsPipelineController({
           buttonLabel: getPipelineRunningLabel(blockingPayload),
           progressLabel: blockingProgressLabel || String(blockingTask?.taskProgress?.phaseLabel || "").trim(),
           firstRunBootstrapActive,
-          pipelinePayload: blockingPayload
+          pipelinePayload: blockingPayload,
+          abortTask: isAbortableTask(blockingTask) ? blockingTask : null
         });
         scheduleJobsPipelineStatusPoll(pollDelayMs);
         return;
@@ -300,6 +427,8 @@ export function createJobsPipelineController({
       jobsPipelineUiState.updateTooltipFirstRun = false;
       jobsPipelineUiState.updateTooltipFirstRunKnown = false;
       jobsPipelineUiState.active = false;
+      jobsPipelineUiState.abortRequested = false;
+      jobsPipelineUiState.abortTask = null;
       jobsPipelineUiState.pendingStart = false;
       jobsPipelineUiState.runId = "";
       jobsPipelineUiState.startedAt = "";
@@ -325,7 +454,14 @@ export function createJobsPipelineController({
   }
 
   async function triggerJobsPipelineRun() {
-    if (!refs.jobsPipelineRunBtn || refs.jobsPipelineRunBtn.disabled || jobsPipelineUiState.active) return;
+    if (!refs.jobsPipelineRunBtn) return;
+    if (jobsPipelineUiState.active) {
+      if (jobsPipelineUiState.abortRevealActive) {
+        await requestJobsPipelineAbort();
+      }
+      return;
+    }
+    if (refs.jobsPipelineRunBtn.disabled) return;
 
     updateJobsPipelineUi({
       running: true,
@@ -394,6 +530,8 @@ export function createJobsPipelineController({
       scheduleJobsPipelineStatusPoll(idlePollDelayMs);
     }
   }
+
+  ensureAbortRevealHandlers();
 
   return {
     updateJobsPipelineUi,

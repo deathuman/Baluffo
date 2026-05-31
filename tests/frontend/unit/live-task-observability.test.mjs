@@ -195,7 +195,7 @@ test("long-running fetch progress stays aligned across admin detailed view, ops 
     await controller.pollJobsPipelineStatus();
 
     assert.equal(uiState.active, true);
-    assert.equal(button.disabled, true);
+    assert.equal(button.disabled, false);
     assert.equal(button["aria-busy"], "true");
     assert.match(String(button.textContent || ""), /^Fetching job listings\.\.\./);
   } finally {

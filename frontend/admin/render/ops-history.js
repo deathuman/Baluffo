@@ -157,6 +157,9 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
   const onSelectRun = typeof options?.onSelectRun === "function"
     ? options.onSelectRun
     : null;
+  const onAbortRun = typeof options?.onAbortRun === "function"
+    ? options.onAbortRun
+    : null;
   const model = Array.isArray(runsOrModel)
     ? {
       currentRows: [],
@@ -293,6 +296,8 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
     ].join("|");
     return {
       key,
+      runId: String(row?.runId || row?.id || ""),
+      taskType: type,
       rowArea,
       title: runView.title,
       primaryLabel: runView.primaryLabel,
@@ -303,6 +308,12 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
       statusClass,
       statusTitle,
       isRunning: statusToken === "running" || statusToken === "started",
+      abortable: Boolean(
+        onAbortRun
+        && inputIsLive
+        && ["fetch", "discovery", "pipeline"].includes(type)
+        && String(row?.runId || row?.id || "").trim()
+      ),
       durationText: runView.durationLabel || runView.elapsedLabel || formatDuration(Number(row?.elapsedMs ?? row?.durationMs ?? 0)),
       outputOrQueuedText: row?.type === "sync"
         ? syncCounts
@@ -361,7 +372,8 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
       row.durationText,
       row.outputOrQueuedText,
       row.failedText,
-      row.finishedText
+      row.finishedText,
+      row.abortable ? "abortable" : ""
     ]),
     completedRows: visibleCompletedViews.map(row => [
       row.key,
@@ -424,6 +436,18 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
         const key = String(button.getAttribute("data-ops-run-diagnostics-copy") || "");
         const payload = copyPayloads.get(key);
         if (payload) onCopyRunDiagnostics(payload);
+      };
+    });
+  };
+  const attachAbortHandlers = () => {
+    if (!onAbortRun || !historyEl || typeof historyEl.querySelectorAll !== "function") return;
+    historyEl.querySelectorAll("[data-ops-run-abort]").forEach(button => {
+      button.onclick = event => {
+        event?.preventDefault?.();
+        event?.stopPropagation?.();
+        const key = String(button.getAttribute("data-ops-run-abort") || "");
+        const view = viewByKey.get(key);
+        if (view) onAbortRun({ taskType: view.taskType, runId: view.runId, key: view.key });
       };
     });
   };
@@ -523,7 +547,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
     rows.forEach(rowEl => {
       const key = String(rowEl.dataset?.runKey || rowEl.getAttribute?.("data-run-key") || "");
       rowEl.onclick = event => {
-        if (event?.target?.closest?.("[data-ops-run-diagnostics-copy]")) return;
+        if (event?.target?.closest?.("[data-ops-run-diagnostics-copy],[data-ops-run-abort]")) return;
         if (historyEl.dataset) historyEl.dataset.opsSelectedRunKey = key;
         rows.forEach(item => item.classList?.toggle?.("admin-ops-history-row-selected", item === rowEl));
         const slot = typeof historyEl.querySelector === "function"
@@ -585,6 +609,9 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
 
   const renderCompactRows = views => views.map(view => {
     const outputOrQueuedTitle = view.isRunning ? "" : view.outputOrQueuedTitle;
+    const actionButton = view.abortable
+      ? `<button type="button" class="btn clear-filters-btn admin-ops-run-abort-btn" data-ops-run-abort="${escapeHtml(view.key)}" data-tooltip="Abort this task">Abort</button>`
+      : "";
     return `
       <div class="admin-user-row admin-source-row admin-ops-history-row${view.isRunning ? " admin-ops-history-row-running" : ""}${view.key === selectedView?.key ? " admin-ops-history-row-selected" : ""}${view.progressStale ? " admin-ops-progress-stale" : ""}${String(view.statusText || "").toLowerCase() === "approaching" ? " admin-ops-history-row-approaching" : ""}" data-row-area="${view.rowArea}" data-run-key="${escapeHtml(view.key)}" tabindex="0"${tooltipAttrs("Select this run for bounded analysis")}>
         <div class="admin-cell">${escapeHtml(view.typeText)}</div>
@@ -593,6 +620,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
         <div class="admin-cell"${tooltipAttrs(outputOrQueuedTitle)}>${escapeHtml(view.outputOrQueuedText)}</div>
         <div class="admin-cell"${tooltipAttrs(view.failedTitle)}>${escapeHtml(view.failedText)}</div>
         <div class="admin-cell">${escapeHtml(view.finishedText)}</div>
+        <div class="admin-cell admin-ops-history-actions">${actionButton}</div>
       </div>
     `;
   }).join("");
@@ -649,6 +677,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
           <div>Progress / Summary</div>
           <div>Failed</div>
           <div>Finished</div>
+          <div>Actions</div>
         </div>
       </div>
       <div class="jobs-table-body">
@@ -671,6 +700,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
           <div>Progress / Summary</div>
           <div>Failed</div>
           <div>Finished</div>
+          <div>Actions</div>
         </div>
       </div>
       <div class="jobs-table-body">
@@ -703,5 +733,6 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
     });
   }
   attachCopyHandlers();
+  attachAbortHandlers();
   attachSelectionHandlers();
 }

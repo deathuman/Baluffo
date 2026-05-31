@@ -205,7 +205,7 @@ test("pollJobsPipelineStatus uses first-run bootstrap tooltip while sheet bootst
 
     await controller.pollJobsPipelineStatus();
 
-    assert.equal(button.disabled, true);
+    assert.equal(button.disabled, false);
     assert.match(String(button.textContent || ""), /^Fetching job listings\.\.\./);
     assert.equal(button.dataset.tooltip, JOBS_UPDATE_COPY.tooltipFirstRunBootstrap);
     assert.equal(uiState.updateTooltipFirstRunBootstrapActive, true);

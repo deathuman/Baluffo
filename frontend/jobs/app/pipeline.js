@@ -13,7 +13,9 @@ export const JOBS_UPDATE_COPY = Object.freeze({
   tooltipBridgeTimedOut: "Update jobs is unavailable because the Admin bridge did not respond in time. Start or restart the desktop app, then try again.",
   completedWithUpdates: "Job update completed. Reload jobs to load updated listings.",
   startedToast: "Job update started.",
-  startFailed: "Could not start job update."
+  startFailed: "Could not start job update.",
+  abortLabel: "Abort update",
+  abortingLabel: "Aborting..."
 });
 
 export function getJobsUpdateUnavailableTooltip(error) {
@@ -122,6 +124,24 @@ function ensureJobsPipelineButtonChrome(button, idleLabel) {
   return { fillEl, labelEl };
 }
 
+function ensureJobsPipelineAbortButton(button) {
+  if (!button?.parentElement) return null;
+  const existing = button.parentElement.querySelector?.('[data-ui="jobs-pipeline-abort"]');
+  if (existing) return existing;
+  const ownerDocument = button.ownerDocument || (typeof document !== "undefined" ? document : null);
+  if (!ownerDocument?.createElement) return null;
+  const abortButton = ownerDocument.createElement("button");
+  abortButton.type = "button";
+  abortButton.className = "jobs-pipeline-abort-btn";
+  abortButton.dataset.ui = "jobs-pipeline-abort";
+  abortButton.textContent = "Abort";
+  abortButton.hidden = true;
+  abortButton.setAttribute?.("aria-label", JOBS_UPDATE_COPY.abortLabel);
+  abortButton.setAttribute?.("data-tooltip", JOBS_UPDATE_COPY.abortLabel);
+  button.insertAdjacentElement?.("afterend", abortButton);
+  return abortButton;
+}
+
 function buildPipelineFillState(payload, { running = false } = {}) {
   const active = Boolean(running || payload?.active);
   if (!active) return { mode: "", fill: 0 };
@@ -197,12 +217,15 @@ export function buildJobsPipelineButtonView(
     progressLabel = "",
     buttonTooltip = "",
     isError = false,
+    abortable = false,
+    abortReveal = false,
+    aborting = false,
     nowMs = Date.now()
   } = {}
 ) {
   const active = Boolean(running || payload?.active);
   const fillState = buildPipelineFillState(payload, { running });
-  const label = String(
+  const liveLabel = String(
     buttonLabel
     || (active
       ? getPipelineRunningLabel(
@@ -214,10 +237,15 @@ export function buildJobsPipelineButtonView(
       )
       : "")
   ).trim();
+  const label = aborting
+    ? JOBS_UPDATE_COPY.abortingLabel
+    : abortable && abortReveal
+      ? JOBS_UPDATE_COPY.abortLabel
+      : liveLabel;
 
   return {
     active,
-    disabled: Boolean(disabled),
+    disabled: Boolean(abortable && !aborting ? false : disabled),
     isError: Boolean(isError),
     label: label || (active ? JOBS_UPDATE_COPY.updatingLabel : JOBS_UPDATE_COPY.idleLabel),
     tooltip: String(buttonTooltip || JOBS_UPDATE_COPY.tooltipDefault).trim(),
@@ -236,7 +264,10 @@ export function updateJobsPipelineUi(
     buttonLabel = "",
     progressLabel = "",
     buttonTooltip = "",
-    isError = false
+    isError = false,
+    abortable = false,
+    abortReveal = false,
+    aborting = false
   } = {}
 ) {
   const { jobsPipelineRunBtn } = refs || {};
@@ -247,6 +278,7 @@ export function updateJobsPipelineUi(
   }
   const idleLabel = String(jobsPipelineRunBtn.dataset.idleLabel || JOBS_UPDATE_COPY.idleLabel);
   const chrome = ensureJobsPipelineButtonChrome(jobsPipelineRunBtn, idleLabel);
+  const abortButton = ensureJobsPipelineAbortButton(jobsPipelineRunBtn);
   const fillEl = chrome?.fillEl || null;
   const labelEl = chrome?.labelEl || null;
   const view = buildJobsPipelineButtonView(pipelinePayload, {
@@ -255,7 +287,10 @@ export function updateJobsPipelineUi(
     buttonLabel,
     progressLabel,
     buttonTooltip,
-    isError
+    isError,
+    abortable,
+    abortReveal,
+    aborting
   });
 
   const nextLabel = view.label || (view.active ? JOBS_UPDATE_COPY.updatingLabel : idleLabel);
@@ -273,6 +308,9 @@ export function updateJobsPipelineUi(
     if (jobsPipelineRunBtn.dataset) jobsPipelineRunBtn.dataset.tooltip = view.tooltip;
   }
   jobsPipelineRunBtn.classList.toggle("running", Boolean(view.active));
+  jobsPipelineRunBtn.classList.toggle("abortable", Boolean(abortable && !aborting));
+  jobsPipelineRunBtn.classList.toggle("abort-reveal", Boolean(abortable && abortReveal && !aborting));
+  jobsPipelineRunBtn.dataset.abortable = abortable && !aborting ? "true" : "false";
   jobsPipelineRunBtn.classList.toggle("determinate", view.progressMode === "determinate");
   jobsPipelineRunBtn.classList.toggle("indeterminate", view.progressMode === "indeterminate");
   jobsPipelineRunBtn.classList.toggle("log-error", Boolean(view.isError));
@@ -308,6 +346,11 @@ export function updateJobsPipelineUi(
       fillEl.style.opacity = "0";
       fillEl.style.removeProperty("animation");
     }
+  }
+  if (abortButton) {
+    abortButton.hidden = !Boolean(abortable && !aborting);
+    abortButton.disabled = !Boolean(abortable && !aborting);
+    abortButton.classList.toggle("visible", Boolean(abortable && !aborting));
   }
 }
 
