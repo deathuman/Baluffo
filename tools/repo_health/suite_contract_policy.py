@@ -322,6 +322,204 @@ def test_jobs_fetcher_compat_exports_use_leaf_common_modules_not_root_symbol_bar
     assert "from src.jobs.common import fetch as common_fetch_mod" in text
 
 
+def test_jobs_package_private_helper_boundaries_stay_in_repo_guardrails(
+    repo_root: Path,
+) -> None:
+    failures: list[str] = []
+    checks = (
+        (
+            "src/jobs/pipeline.py",
+            (
+                "from . import pipeline_run_setup as pipeline_run_setup_mod",
+                "from . import pipeline_execution_flow as pipeline_execution_flow_mod",
+            ),
+            ("from src.jobs import common as common",),
+            False,
+        ),
+        (
+            "src/jobs/state.py",
+            (),
+            ("def normalize_source_state_payload(", "def apply_job_lifecycle_state("),
+            True,
+        ),
+        (
+            "src/jobs/pipeline_stage_source_execution.py",
+            (),
+            ("def emit_progress_line(", "def mark_task_started(", "def execute_loader("),
+            False,
+        ),
+        (
+            "src/jobs/pipeline_runtime.py",
+            (),
+            ("def initialize_task_runtime(", "def build_active_pipeline_summary("),
+            True,
+        ),
+        (
+            "src/jobs/state_source_state.py",
+            (),
+            (
+                "def normalize_source_state_payload(",
+                "def apply_successful_source_state(",
+                "def apply_browser_escalation_state(",
+            ),
+            True,
+        ),
+        (
+            "src/jobs/common/contracts.py",
+            (),
+            ("import src.jobs_fetcher",),
+            True,
+        ),
+        (
+            "src/jobs/reporting.py",
+            (),
+            ("import src.jobs_fetcher",),
+            True,
+        ),
+        (
+            "src/jobs/adapters/static.py",
+            (),
+            ("from src.jobs_fetcher import",),
+            False,
+        ),
+    )
+
+    for rel_path, required_tokens, forbidden_tokens, optional in checks:
+        path = repo_root / rel_path
+        if optional and not path.exists():
+            continue
+        if not path.exists():
+            failures.append(f"{rel_path} is missing.")
+            continue
+        text = path.read_text(encoding="utf-8")
+        for token in required_tokens:
+            if token not in text:
+                failures.append(f"{rel_path} must contain `{token}`.")
+        for token in forbidden_tokens:
+            if token in text:
+                failures.append(f"{rel_path} must not contain `{token}`.")
+
+    assert not failures, "Jobs package private helper boundary drift:\n- " + "\n- ".join(failures)
+
+
+def test_jobs_common_broad_barrel_imports_stay_retired(repo_root: Path) -> None:
+    allowed_submodules = {
+        "config",
+        "contracts",
+        "datetime_utils",
+        "diagnostics",
+        "fetch",
+        "health",
+        "heuristics",
+        "numbers",
+        "registry",
+        "registry_defaults",
+        "social",
+        "sources",
+        "taxonomy",
+        "url",
+    }
+    offenders: list[str] = []
+    excluded_paths = {"tests/test_jobs_package.py"}
+    for root_name in ("src", "tests"):
+        for target in (repo_root / root_name).rglob("*.py"):
+            if target.relative_to(repo_root).as_posix() in excluded_paths:
+                continue
+            tree = _module_tree(target)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if alias.name == "src.jobs.common":
+                            offenders.append(str(target.relative_to(repo_root)))
+                if isinstance(node, ast.ImportFrom):
+                    if node.module == "src.jobs" and any(
+                        alias.name == "common" for alias in node.names
+                    ):
+                        offenders.append(str(target.relative_to(repo_root)))
+                    if node.module == "src.jobs.common":
+                        for alias in node.names:
+                            if alias.name not in allowed_submodules:
+                                offenders.append(str(target.relative_to(repo_root)))
+
+    assert not offenders, "Found retired broad src.jobs.common imports:\n- " + "\n- ".join(
+        sorted(set(offenders))
+    )
+
+
+def test_jobs_legacy_runners_module_stays_retired(repo_root: Path) -> None:
+    legacy_module = repo_root / "src" / "jobs" / "common" / "legacy_runners.py"
+    assert not legacy_module.exists(), "src/jobs/common/legacy_runners.py should not return."
+
+    offenders: list[str] = []
+    for root_name in ("src", "tests"):
+        for target in (repo_root / root_name).rglob("*.py"):
+            tree = _module_tree(target)
+            for node in ast.walk(tree):
+                if (
+                    isinstance(node, ast.ImportFrom)
+                    and node.module == "src.jobs.common.legacy_runners"
+                ):
+                    offenders.append(str(target.relative_to(repo_root)))
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if alias.name == "src.jobs.common.legacy_runners":
+                            offenders.append(str(target.relative_to(repo_root)))
+
+    assert not offenders, "Found retired src.jobs.common.legacy_runners imports:\n- " + "\n- ".join(
+        sorted(set(offenders))
+    )
+
+
+def test_jobs_fetcher_test_helper_barrel_stays_retired(repo_root: Path) -> None:
+    offenders: list[str] = []
+    for target in (repo_root / "tests").rglob("*.py"):
+        text = target.read_text(encoding="utf-8")
+        if "tests.jobs_fetcher_helpers" in text:
+            offenders.append(str(target.relative_to(repo_root)))
+
+    jobs_static_helper = repo_root / "tests" / "jobs_static" / "_helpers.py"
+    jobs_static_helper_text = jobs_static_helper.read_text(encoding="utf-8")
+    if "__all__ = [name for name in globals()" in jobs_static_helper_text:
+        offenders.append("tests/jobs_static/_helpers.py uses a dynamic __all__ helper barrel.")
+
+    assert not offenders, "Found retired jobs fetcher helper barrel patterns:\n- " + "\n- ".join(
+        sorted(set(offenders))
+    )
+
+
+def test_jobs_common_migrated_modules_keep_direct_owning_imports(repo_root: Path) -> None:
+    social_adapter = (repo_root / "src" / "jobs" / "adapters" / "social.py").read_text(
+        encoding="utf-8"
+    )
+    registry_module = (repo_root / "src" / "jobs" / "registry.py").read_text(encoding="utf-8")
+    static_sources = (repo_root / "src" / "jobs" / "adapters" / "static_sources.py").read_text(
+        encoding="utf-8"
+    )
+    static_scrapy_adapter = (
+        repo_root / "src" / "jobs" / "adapters" / "static_scrapy.py"
+    ).read_text(encoding="utf-8")
+
+    failures: list[str] = []
+    if (
+        "from src.jobs.common.diagnostics import SOURCE_DIAGNOSTICS, set_source_diagnostics"
+        not in social_adapter
+    ):
+        failures.append("src/jobs/adapters/social.py must import diagnostics directly.")
+    if not (
+        "DEFAULT_STUDIO_SOURCE_REGISTRY" in registry_module
+        and "REDUNDANT_STATIC_IF_PROVIDER" in registry_module
+    ):
+        failures.append("src/jobs/registry.py must own registry defaults.")
+    if "registry_entries as common_registry_entries" not in registry_module:
+        failures.append("src/jobs/registry.py must import common registry entries directly.")
+    if "from src.jobs.common.diagnostics import set_source_diagnostics" not in static_sources:
+        failures.append("src/jobs/adapters/static_sources.py must import diagnostics directly.")
+    if "from src.jobs.registry import registry_entries" not in static_scrapy_adapter:
+        failures.append("src/jobs/adapters/static_scrapy.py must import registry entries directly.")
+
+    assert not failures, "Jobs common migration import drift:\n- " + "\n- ".join(failures)
+
+
 def test_jobs_fetcher_facade_stays_lazy_and_small(repo_root: Path) -> None:
     from src import jobs_fetcher
 

@@ -529,14 +529,6 @@ def test_sheet_directory_static_probe_cap_scales_from_bounded_top_n() -> None:
     assert sd.sheet_directory_static_probe_cap(20) == 6
 
 
-def test_source_discovery_public_barrel_no_longer_uses_module_forwarding(repo_root: Path) -> None:
-    module_text = (repo_root / "src" / "source_discovery" / "__init__.py").read_text(
-        encoding="utf-8"
-    )
-    assert "_DiscoveryModule" not in module_text
-    assert "ModuleType" not in module_text
-
-
 def test_source_registry_paths_honor_baluffo_data_dir_override() -> None:
     previous = os.environ.get("BALUFFO_DATA_DIR")
     override_root = str((Path.cwd() / "_out" / "test-source-registry-override").resolve())

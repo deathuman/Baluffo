@@ -1,46 +1,79 @@
 from __future__ import annotations
 
+import pytest
+
 from src.source_discovery.directory_index_collection import collect_directory_index_entries
 
 
-def test_collect_directory_index_entries_keeps_scanning_after_fetch_failure() -> None:
-    payloads = {"https://directory.example/two": "two"}
-
+@pytest.mark.parametrize(
+    (
+        "fetch_payloads",
+        "parse_behavior",
+        "index_urls",
+        "expected_detail_entries",
+        "expected_failure",
+    ),
+    [
+        pytest.param(
+            {"https://directory.example/two": "two"},
+            "success",
+            ["https://directory.example/one", "https://directory.example/two"],
+            [{"detailUrl": "https://directory.example/detail/two"}],
+            {
+                "name": "https://directory.example/one",
+                "adapter": "example",
+                "error": "fetch failed",
+                "stage": "directory_index_fetch",
+            },
+            id="fetch-failure-keeps-scanning",
+        ),
+        pytest.param(
+            None,
+            "raise-first",
+            ["https://directory.example/one", "https://directory.example/two"],
+            [{"detailUrl": "https://directory.example/detail/two"}],
+            {
+                "name": "https://directory.example/one",
+                "adapter": "example",
+                "error": "parse failed",
+                "stage": "directory_index_parse",
+            },
+            id="parse-failure-keeps-scanning",
+        ),
+        pytest.param(
+            None,
+            "empty",
+            ["https://directory.example/one"],
+            [],
+            {
+                "name": "https://directory.example/one",
+                "adapter": "example",
+                "error": "no entries parsed from index",
+                "stage": "directory_index_parse",
+            },
+            id="empty-parse-reports-failure",
+        ),
+    ],
+)
+def test_collect_directory_index_entries_failure_paths(
+    fetch_payloads: dict[str, str] | None,
+    parse_behavior: str,
+    index_urls: list[str],
+    expected_detail_entries: list[dict[str, object]],
+    expected_failure: dict[str, object],
+) -> None:
     def fake_fetch(url: str, _: int) -> str:
-        if url not in payloads:
+        if fetch_payloads is None:
+            return url
+        if url not in fetch_payloads:
             raise RuntimeError("fetch failed")
-        return payloads[url]
-
-    def parse_index_entries(_html: str, _base_url: str) -> tuple[list[dict[str, object]], dict]:
-        return ([{"detailUrl": "https://directory.example/detail/two"}], {})
-
-    collected = collect_directory_index_entries(
-        timeout_s=5,
-        fetcher=fake_fetch,
-        parse_index_entries=parse_index_entries,
-        base_url="https://directory.example",
-        index_urls=["https://directory.example/one", "https://directory.example/two"],
-        adapter="example",
-    )
-
-    assert collected["detailEntries"] == [{"detailUrl": "https://directory.example/detail/two"}]
-    assert collected["failures"] == [
-        {
-            "name": "https://directory.example/one",
-            "adapter": "example",
-            "error": "fetch failed",
-            "stage": "directory_index_fetch",
-        }
-    ]
-
-
-def test_collect_directory_index_entries_keeps_scanning_after_parse_failure() -> None:
-    def fake_fetch(url: str, _: int) -> str:
-        return url
+        return fetch_payloads[url]
 
     def parse_index_entries(html: str, _base_url: str) -> tuple[list[dict[str, object]], dict]:
-        if html.endswith("/one"):
+        if parse_behavior == "raise-first" and html.endswith("/one"):
             raise ValueError("parse failed")
+        if parse_behavior == "empty":
+            return ([], {})
         return ([{"detailUrl": "https://directory.example/detail/two"}], {})
 
     collected = collect_directory_index_entries(
@@ -48,46 +81,12 @@ def test_collect_directory_index_entries_keeps_scanning_after_parse_failure() ->
         fetcher=fake_fetch,
         parse_index_entries=parse_index_entries,
         base_url="https://directory.example",
-        index_urls=["https://directory.example/one", "https://directory.example/two"],
+        index_urls=index_urls,
         adapter="example",
     )
 
-    assert collected["detailEntries"] == [{"detailUrl": "https://directory.example/detail/two"}]
-    assert collected["failures"] == [
-        {
-            "name": "https://directory.example/one",
-            "adapter": "example",
-            "error": "parse failed",
-            "stage": "directory_index_parse",
-        }
-    ]
-
-
-def test_collect_directory_index_entries_reports_empty_parse_failure() -> None:
-    def fake_fetch(url: str, _: int) -> str:
-        return url
-
-    def parse_index_entries(_html: str, _base_url: str) -> tuple[list[dict[str, object]], dict]:
-        return ([], {})
-
-    collected = collect_directory_index_entries(
-        timeout_s=5,
-        fetcher=fake_fetch,
-        parse_index_entries=parse_index_entries,
-        base_url="https://directory.example",
-        index_urls=["https://directory.example/one"],
-        adapter="example",
-    )
-
-    assert collected["detailEntries"] == []
-    assert collected["failures"] == [
-        {
-            "name": "https://directory.example/one",
-            "adapter": "example",
-            "error": "no entries parsed from index",
-            "stage": "directory_index_parse",
-        }
-    ]
+    assert collected["detailEntries"] == expected_detail_entries
+    assert collected["failures"] == [expected_failure]
 
 
 def test_collect_directory_index_entries_dedupes_and_caps_across_indexes() -> None:

@@ -1082,7 +1082,7 @@ def test_run_gracklehq_source_stops_on_repeated_next_page() -> None:
     ]
 
 
-def test_normalize_source_report_row_preserves_structured_details() -> None:
+def test_normalize_source_report_row_preserves_structured_details_and_site_changed_urls() -> None:
     row = jf.normalize_source_report_row(
         {
             "name": "lever_sources",
@@ -1126,11 +1126,7 @@ def test_normalize_source_report_row_preserves_structured_details() -> None:
     assert details[0]["browserEscalationEligible"] is False
     assert details[0]["browserEscalationEnabled"] is True
 
-
-def test_normalize_source_report_row_preserves_aggregate_provider_site_changed_url_surface() -> (
-    None
-):
-    row = jf.normalize_source_report_row(
+    site_changed = jf.normalize_source_report_row(
         {
             "name": "greenhouse_boards",
             "status": "ok",
@@ -1140,7 +1136,7 @@ def test_normalize_source_report_row_preserves_aggregate_provider_site_changed_u
         }
     )
     assert (
-        str(row.get("providerUrl") or "")
+        str(site_changed.get("providerUrl") or "")
         == "https://boards-api.greenhouse.io/v1/boards/guerrillagames/jobs?content=true"
     )
 
@@ -1204,16 +1200,6 @@ def test_run_teamtailor_source_with_fixture() -> None:
         )
         assert len(rows) >= 1
         assert any("career.paradoxplaza.com/jobs/" in row["jobLink"] for row in rows)
-
-
-def test_default_registry_no_longer_seeds_stale_ashby_personio_or_placeholder_greenhouse_rows() -> (
-    None
-):
-    names = {str(row.get("name") or "") for row in jf.STUDIO_SOURCE_REGISTRY}
-    # Verify placeholder was removed from registry
-    assert "Example Studio GmbH (Greenhouse)" not in names
-    # Verify valid studios still exist (any Bandai Namco entry)
-    assert any("Bandai Namco" in n for n in names)
 
 
 def test_hrmos_plugin_extracts_listing_rows_without_detail_fetch() -> None:
@@ -1334,75 +1320,11 @@ def test_lionbridge_plugin_splits_city_region_country_listing_rows() -> None:
     assert rows[0]["country"] == "Mexico"
 
 
-def test_choose_detail_traversal_mode_prefers_listing_only_for_verified_hosts() -> None:
+def test_choose_detail_traversal_mode_static_detail_policy_cases() -> None:
     from src.jobs.adapters.static_detail_heuristics import choose_detail_traversal_mode
     from src.jobs.adapters.static_runtime_support import build_static_source_runtime_config
 
-    runtime = build_static_source_runtime_config(4)
-    mode = choose_detail_traversal_mode(
-        "https://hrmos.co/pages/cygames/jobs",
-        runtime_config=runtime,
-        profile={"detail_fetch_required": False},
-        plugin_meta={"detailFetchRequired": False},
-        listing_jobs_found=10,
-        discovered_links=10,
-        source_key="static_source::cygames",
-        source_state_rows={},
-    )
-    assert mode == "listing_only"
-
-
-def test_choose_detail_traversal_mode_uncapped_deep_static_overrides_listing_only_with_probable_detail_links() -> (
-    None
-):
-    from src.jobs.adapters.static_detail_heuristics import choose_detail_traversal_mode
-    from src.jobs.adapters.static_runtime_support import build_static_source_runtime_config
-
-    with mock.patch.dict("os.environ", {"BALUFFO_UNCAPPED_DEEP_STATIC": "1"}, clear=False):
-        runtime = build_static_source_runtime_config(4)
-    mode = choose_detail_traversal_mode(
-        "https://hrmos.co/pages/cygames/jobs",
-        runtime_config=runtime,
-        profile={"detail_fetch_required": False},
-        plugin_meta={"detailFetchRequired": False},
-        listing_jobs_found=10,
-        discovered_links=10,
-        source_key="static_source::cygames",
-        source_state_rows={},
-        probable_detail_candidates=3,
-    )
-    assert mode == "full_detail"
-
-
-def test_choose_detail_traversal_mode_uncapped_deep_static_keeps_listing_only_without_probable_detail_links() -> (
-    None
-):
-    from src.jobs.adapters.static_detail_heuristics import choose_detail_traversal_mode
-    from src.jobs.adapters.static_runtime_support import build_static_source_runtime_config
-
-    with mock.patch.dict("os.environ", {"BALUFFO_UNCAPPED_DEEP_STATIC": "1"}, clear=False):
-        runtime = build_static_source_runtime_config(4)
-    mode = choose_detail_traversal_mode(
-        "https://hrmos.co/pages/cygames/jobs",
-        runtime_config=runtime,
-        profile={"detail_fetch_required": False},
-        plugin_meta={"detailFetchRequired": False},
-        listing_jobs_found=10,
-        discovered_links=10,
-        source_key="static_source::cygames",
-        source_state_rows={},
-        probable_detail_candidates=0,
-    )
-    assert mode == "listing_only"
-
-
-def test_choose_detail_traversal_mode_uncapped_zero_caps_promotes_capped_detail_to_full_detail() -> (
-    None
-):
-    from src.jobs.adapters.static_detail_heuristics import choose_detail_traversal_mode
-    from src.jobs.adapters.static_runtime_support import build_static_source_runtime_config
-
-    source_state_rows = {
+    climax_state_rows = {
         "static_source::climax": {
             "lastDetailPagesVisited": 42,
             "lastKeptCount": 1,
@@ -1410,39 +1332,109 @@ def test_choose_detail_traversal_mode_uncapped_zero_caps_promotes_capped_detail_
             "lastDetailYieldPct": 2,
         }
     }
-    regular_runtime = build_static_source_runtime_config(4)
-    regular_mode = choose_detail_traversal_mode(
-        "https://careers.climaxstudios.com/jobs",
-        runtime_config=regular_runtime,
-        profile={},
-        plugin_meta={},
-        listing_jobs_found=0,
-        discovered_links=28,
-        source_key="static_source::climax",
-        source_state_rows=source_state_rows,
-    )
-    with mock.patch.dict(
-        "os.environ",
-        {
-            "BALUFFO_UNCAPPED_DEEP_STATIC": "1",
-            "BALUFFO_STATIC_LOW_YIELD_DETAIL_CAP": "0",
-            "BALUFFO_STATIC_VERY_LOW_YIELD_DETAIL_CAP": "0",
-        },
-        clear=False,
-    ):
-        uncapped_runtime = build_static_source_runtime_config(4)
-    uncapped_mode = choose_detail_traversal_mode(
-        "https://careers.climaxstudios.com/jobs",
-        runtime_config=uncapped_runtime,
-        profile={},
-        plugin_meta={},
-        listing_jobs_found=0,
-        discovered_links=28,
-        source_key="static_source::climax",
-        source_state_rows=source_state_rows,
-    )
-    assert regular_mode == "capped_detail"
-    assert uncapped_mode == "full_detail"
+    cases = [
+        (
+            "verified-host-listing-only",
+            "https://hrmos.co/pages/cygames/jobs",
+            None,
+            {"detail_fetch_required": False},
+            {"detailFetchRequired": False},
+            10,
+            10,
+            "static_source::cygames",
+            {},
+            None,
+            "listing_only",
+        ),
+        (
+            "uncapped-probable-detail-links-full-detail",
+            "https://hrmos.co/pages/cygames/jobs",
+            {"BALUFFO_UNCAPPED_DEEP_STATIC": "1"},
+            {"detail_fetch_required": False},
+            {"detailFetchRequired": False},
+            10,
+            10,
+            "static_source::cygames",
+            {},
+            3,
+            "full_detail",
+        ),
+        (
+            "uncapped-without-probable-detail-links-listing-only",
+            "https://hrmos.co/pages/cygames/jobs",
+            {"BALUFFO_UNCAPPED_DEEP_STATIC": "1"},
+            {"detail_fetch_required": False},
+            {"detailFetchRequired": False},
+            10,
+            10,
+            "static_source::cygames",
+            {},
+            0,
+            "listing_only",
+        ),
+        (
+            "regular-runtime-keeps-capped-detail",
+            "https://careers.climaxstudios.com/jobs",
+            None,
+            {},
+            {},
+            0,
+            28,
+            "static_source::climax",
+            climax_state_rows,
+            None,
+            "capped_detail",
+        ),
+        (
+            "uncapped-zero-caps-promotes-full-detail",
+            "https://careers.climaxstudios.com/jobs",
+            {
+                "BALUFFO_UNCAPPED_DEEP_STATIC": "1",
+                "BALUFFO_STATIC_LOW_YIELD_DETAIL_CAP": "0",
+                "BALUFFO_STATIC_VERY_LOW_YIELD_DETAIL_CAP": "0",
+            },
+            {},
+            {},
+            0,
+            28,
+            "static_source::climax",
+            climax_state_rows,
+            None,
+            "full_detail",
+        ),
+    ]
+
+    for (
+        case_id,
+        url,
+        env,
+        profile,
+        plugin_meta,
+        listing_jobs_found,
+        discovered_links,
+        source_key,
+        source_state_rows,
+        probable_detail_candidates,
+        expected,
+    ) in cases:
+        if env:
+            with mock.patch.dict("os.environ", env, clear=False):
+                runtime = build_static_source_runtime_config(4)
+        else:
+            runtime = build_static_source_runtime_config(4)
+        kwargs = {
+            "runtime_config": runtime,
+            "profile": profile,
+            "plugin_meta": plugin_meta,
+            "listing_jobs_found": listing_jobs_found,
+            "discovered_links": discovered_links,
+            "source_key": source_key,
+            "source_state_rows": source_state_rows,
+        }
+        if probable_detail_candidates is not None:
+            kwargs["probable_detail_candidates"] = probable_detail_candidates
+
+        assert choose_detail_traversal_mode(url, **kwargs) == expected, case_id
 
 
 def test_personio_adapter_skips_recent_rate_limited_source_only() -> None:

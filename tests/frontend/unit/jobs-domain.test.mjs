@@ -30,19 +30,20 @@ test("jobs domain detects work type and contract", () => {
   assert.equal(detectContractType("fixed term"), "Temporary");
 });
 
-test("jobs domain hides placeholder country values from filter options", () => {
-  assert.equal(isValidCountry("Unknown"), false);
-  assert.equal(isValidCountry("N/A"), false);
-  assert.equal(isValidCountry("Remote"), true);
-  assert.equal(isValidCountry("Japan"), true);
-  assert.equal(isValidCountry("England"), true);
-  assert.equal(isValidCountry("EU & NA"), true);
-  assert.equal(isValidCountry("Onsite"), false);
-});
-
-test("jobs domain accepts the supported country vocabulary", () => {
+test("jobs domain validates country filters and supported vocabulary", () => {
+  for (const [caseId, value, expected] of [
+    ["unknown", "Unknown", false],
+    ["na", "N/A", false],
+    ["remote", "Remote", true],
+    ["japan", "Japan", true],
+    ["england", "England", true],
+    ["eu-na", "EU & NA", true],
+    ["onsite", "Onsite", false]
+  ]) {
+    assert.equal(isValidCountry(value), expected, caseId);
+  }
   for (const label of getSupportedCountryLabels()) {
-    assert.notEqual(sanitizeLocationField(label, "country"), "");
+    assert.notEqual(sanitizeLocationField(label, "country"), "", label);
   }
 });
 
@@ -74,9 +75,9 @@ test("jobs domain filters rows with empty normalized titles", () => {
   assert.deepEqual(normalizeJobs([{ title: " ", company: "Only Blank" }]), []);
 });
 
-test("jobs domain preserves multiple locations for filtering and display", () => {
-  const rows = normalizeJobs([
-    {
+test("jobs domain normalizes location fallbacks for display and filtering", () => {
+  const cases = [
+    ["multi-location-display", {
       title: "Systems & Tools Engineer",
       company: "Stellar Entertainment",
       city: "",
@@ -86,22 +87,8 @@ test("jobs domain preserves multiple locations for filtering and display", () =>
         { city: "Guildford", country: "UK" },
         { city: "Utrecht", country: "NL" }
       ]
-    }
-  ], {
-    professionLabels: {},
-    sanitizeUrl: value => value
-  });
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0].city, "Guildford");
-  assert.equal(rows[0].country, "UK");
-  assert.equal(rows[0].locationSummary, "Guildford, UK | Utrecht, NL");
-  assert.deepEqual(getJobLocationCities(rows[0]), ["Guildford", "Utrecht"]);
-  assert.deepEqual(getJobLocationCountries(rows[0]), ["UK", "NL"]);
-});
-
-test("jobs domain blanks label placeholder locations and keeps meaningful country fallbacks", () => {
-  const rows = normalizeJobs([
-    {
+    }, "Guildford", "UK", "Guildford, UK | Utrecht, NL", ["Guildford", "Utrecht"], ["UK", "NL"]],
+    ["label-placeholder-country-fallback", {
       title: "Associate QA Coordinator United States",
       company: "IllFonic",
       city: "%LABEL_POSITION_TYPE_REMOTE_ANY%",
@@ -110,22 +97,8 @@ test("jobs domain blanks label placeholder locations and keeps meaningful countr
         { city: "%LABEL_POSITION_TYPE_REMOTE_ANY%", country: "Unknown" },
         { city: "", country: "US" }
       ]
-    }
-  ], {
-    professionLabels: {},
-    sanitizeUrl: value => value
-  });
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0].city, "");
-  assert.equal(rows[0].country, "US");
-  assert.equal(rows[0].locationSummary, "US");
-  assert.deepEqual(getJobLocationCities(rows[0]), []);
-  assert.deepEqual(getJobLocationCountries(rows[0]), ["US"]);
-});
-
-test("jobs domain blanks role blob locations and keeps meaningful country fallbacks", () => {
-  const rows = normalizeJobs([
-    {
+    }, "", "US", "US", [], ["US"]],
+    ["role-blob-country-fallback", {
       title: "Lead Level Scripter Montréal CDI",
       company: "Don't Nod",
       city: "Administratif, Assistant, Gestion, RH...",
@@ -134,17 +107,18 @@ test("jobs domain blanks role blob locations and keeps meaningful country fallba
         { city: "Administratif, Assistant, Gestion, RH...", country: "Unknown" },
         { city: "Paris", country: "FR" }
       ]
-    }
-  ], {
-    professionLabels: {},
-    sanitizeUrl: value => value
-  });
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0].city, "");
-  assert.equal(rows[0].country, "FR");
-  assert.equal(rows[0].locationSummary, "Paris, FR");
-  assert.deepEqual(getJobLocationCities(rows[0]), ["Paris"]);
-  assert.deepEqual(getJobLocationCountries(rows[0]), ["FR"]);
+    }, "", "FR", "Paris, FR", ["Paris"], ["FR"]]
+  ];
+
+  for (const [caseId, input, city, country, summary, cities, countries] of cases) {
+    const rows = normalizeJobs([input], { professionLabels: {}, sanitizeUrl: value => value });
+    assert.equal(rows.length, 1, caseId);
+    assert.equal(rows[0].city, city, caseId);
+    assert.equal(rows[0].country, country, caseId);
+    assert.equal(rows[0].locationSummary, summary, caseId);
+    assert.deepEqual(getJobLocationCities(rows[0]), cities, caseId);
+    assert.deepEqual(getJobLocationCountries(rows[0]), countries, caseId);
+  }
 });
 
 test("jobs domain normalizes sector from positive game evidence", () => {
@@ -225,43 +199,41 @@ test("jobs domain generates fallback key", () => {
   assert.match(key, /^job_/);
 });
 
-test("jobs domain maps freshness ages to expected score bands", () => {
-  assert.ok(mapFreshnessAgeToScore(0) >= 0 && mapFreshnessAgeToScore(0) <= 15);
-  assert.ok(mapFreshnessAgeToScore(5) >= 16 && mapFreshnessAgeToScore(5) <= 40);
-  assert.ok(mapFreshnessAgeToScore(12) >= 41 && mapFreshnessAgeToScore(12) <= 70);
-  assert.ok(mapFreshnessAgeToScore(45) >= 71 && mapFreshnessAgeToScore(45) <= 100);
-});
+test("jobs domain derives freshness scores, sources, and invalid timestamp fallbacks", () => {
+  for (const [caseId, ageDays, minScore, maxScore] of [
+    ["fresh", 0, 0, 15],
+    ["recent", 5, 16, 40],
+    ["stale", 12, 41, 70],
+    ["old", 45, 71, 100]
+  ]) {
+    const score = mapFreshnessAgeToScore(ageDays);
+    assert.ok(score >= minScore && score <= maxScore, caseId);
+  }
 
-test("jobs domain derives freshness from postedAt first, then fetchedAt fallback", () => {
   const nowMs = Date.parse("2026-03-08T00:00:00.000Z");
-  const posted = deriveFreshness({ postedAt: "2026-03-06T00:00:00.000Z" }, { nowMs });
-  assert.equal(posted.freshnessSource, "postedAt");
-  assert.equal(posted.freshnessAgeDays, 2);
-  assert.ok(posted.freshnessScore >= 16 && posted.freshnessScore <= 40);
+  for (const [caseId, input, expectedSource, expectedAge] of [
+    ["posted-at", { postedAt: "2026-03-06T00:00:00.000Z" }, "postedAt", 2],
+    ["fetched-at", { postedAt: "", fetchedAt: "2026-03-01T00:00:00.000Z" }, "fetchedAt", 7]
+  ]) {
+    const freshness = deriveFreshness(input, { nowMs });
+    assert.equal(freshness.freshnessSource, expectedSource, caseId);
+    assert.equal(freshness.freshnessAgeDays, expectedAge, caseId);
+    assert.ok(freshness.freshnessScore >= 16 && freshness.freshnessScore <= 40, caseId);
+  }
 
-  const fetched = deriveFreshness({
-    postedAt: "",
-    fetchedAt: "2026-03-01T00:00:00.000Z"
-  }, { nowMs });
-  assert.equal(fetched.freshnessSource, "fetchedAt");
-  assert.equal(fetched.freshnessAgeDays, 7);
-  assert.ok(fetched.freshnessScore >= 16 && fetched.freshnessScore <= 40);
-});
-
-test("jobs domain returns null freshness when timestamps are missing/invalid", () => {
-  const freshness = deriveFreshness({ postedAt: "bad", fetchedAt: "" });
-  assert.equal(freshness.freshnessScore, null);
-  assert.equal(freshness.freshnessAgeDays, null);
-  assert.equal(freshness.freshnessSource, "");
+  const invalid = deriveFreshness({ postedAt: "bad", fetchedAt: "" });
+  assert.equal(invalid.freshnessScore, null, "invalid-direct-score");
+  assert.equal(invalid.freshnessAgeDays, null, "invalid-direct-age");
+  assert.equal(invalid.freshnessSource, "", "invalid-direct-source");
 
   const rows = normalizeJobs([{ title: "Artist", company: "Studio", postedAt: "bad" }], {
     professionLabels: {},
     sanitizeUrl: value => value,
-    nowMs: Date.parse("2026-03-08T00:00:00.000Z")
+    nowMs
   });
-  assert.equal(rows[0].freshnessScore, null);
-  assert.equal(rows[0].freshnessAgeDays, null);
-  assert.equal(rows[0].freshnessSource, "");
+  assert.equal(rows[0].freshnessScore, null, "invalid-normalized-score");
+  assert.equal(rows[0].freshnessAgeDays, null, "invalid-normalized-age");
+  assert.equal(rows[0].freshnessSource, "", "invalid-normalized-source");
 });
 
 test("jobs domain normalizes lifecycle status and timestamps", () => {
@@ -329,54 +301,40 @@ test("jobs domain keeps snapshot-derived locations and summary sanitized", () =>
   assert.equal(snapshot.locationSummary, "Tokyo, Japan | Guildford, England");
 });
 
-test("jobs domain blanks semantic location noise but preserves valid locations", () => {
-  assert.equal(
-    sanitizeLocationField(
-      "Remote, United States; San Francisco Area, United States Remote; New York City; Los Angeles",
-      "city"
-    ),
-    ""
-  );
-  assert.equal(
-    sanitizeLocationField(
-      "キャリア登録 「キャリア登録」とは？ 当社に興味・関心を持たれた方にご自身のキャリア（職務経歴）を簡易登録いただくことで、適したポジションがある場合、人事担当者から個別にご案内させていただく仕組みです。",
-      "city"
-    ),
-    ""
-  );
-  assert.equal(sanitizeLocationField("6,559 followers", "city"), "");
-  assert.equal(sanitizeLocationField("1,012 open jobs", "city"), "");
-  assert.equal(
-    sanitizeLocationField(
-      '--grid-gutter: calc(var(--sqs-mobile-site-gutter, 6vw) - 0.0px);',
-      "city"
-    ),
-    ""
-  );
-  assert.equal(
-    sanitizeLocationField("#1 city in the country for women ,", "city"),
-    ""
-  );
-  assert.equal(sanitizeLocationField("2D Artist, Bombergrounds", "city"), "");
-  assert.equal(sanitizeLocationField("2D Games Animator - Freelancing - Fully Remote", "city"), "");
-  assert.equal(sanitizeLocationField("A Fast, Fun Quiz Game", "city"), "");
-  assert.equal(sanitizeLocationField("Berlin / Hamburg", "city"), "");
-  assert.equal(sanitizeLocationField("Cambridge / Hybrid", "city"), "");
-  assert.equal(sanitizeLocationField("%LABEL_POSITION_TYPE_REMOTE_ANY%", "city"), "");
-  assert.equal(sanitizeLocationField(".career-btn-primary {", "city"), "");
-  assert.equal(sanitizeLocationField("document.addEventListener(\"DOMContentLoaded\", function () {", "city"), "");
-  assert.equal(sanitizeLocationField("Learn how talent, purpose, and progress combine to create careers that change the world at our new Careers home .", "city"), "");
-  assert.equal(sanitizeLocationField("31-621 Kraków, Poland", "city"), "");
-  assert.equal(
-    sanitizeLocationField("1401 21st ST # 5799, Sacramento, CA 95811 United States", "city"),
-    ""
-  );
+test("jobs domain applies city-noise, structural-noise, and country-promotion contracts", () => {
+  const blankCityValues = [
+    "Remote, United States; San Francisco Area, United States Remote; New York City; Los Angeles",
+    "キャリア登録 「キャリア登録」とは？ 当社に興味・関心を持たれた方にご自身のキャリア（職務経歴）を簡易登録いただくことで、適したポジションがある場合、人事担当者から個別にご案内させていただく仕組みです。",
+    "6,559 followers",
+    "1,012 open jobs",
+    "--grid-gutter: calc(var(--sqs-mobile-site-gutter, 6vw) - 0.0px);",
+    "#1 city in the country for women ,",
+    "2D Artist, Bombergrounds",
+    "2D Games Animator - Freelancing - Fully Remote",
+    "A Fast, Fun Quiz Game",
+    "Berlin / Hamburg",
+    "Cambridge / Hybrid",
+    "%LABEL_POSITION_TYPE_REMOTE_ANY%",
+    ".career-btn-primary {",
+    "document.addEventListener(\"DOMContentLoaded\", function () {",
+    "Learn how talent, purpose, and progress combine to create careers that change the world at our new Careers home .",
+    "31-621 Kraków, Poland",
+    "1401 21st ST # 5799, Sacramento, CA 95811 United States"
+  ];
+  for (const value of blankCityValues) {
+    assert.equal(sanitizeLocationField(value, "city"), "", value);
+  }
+
   assert.equal(sanitizeLocationField("Tokyo", "city"), "Tokyo");
-  assert.equal(sanitizeLocationField("Japan", "country"), "Japan");
-  assert.equal(sanitizeLocationField("United States of America", "country"), "US");
-  assert.equal(sanitizeLocationField("Türkiye", "country"), "TR");
-  assert.equal(sanitizeLocationField("Côte d'Ivoire", "country"), "CI");
-  assert.equal(sanitizeLocationField("Hybrid", "country"), "");
+  for (const [caseId, value, expected] of [
+    ["japan", "Japan", "Japan"],
+    ["usa", "United States of America", "US"],
+    ["turkiye", "Türkiye", "TR"],
+    ["cote-divoire", "Côte d'Ivoire", "CI"],
+    ["hybrid", "Hybrid", ""]
+  ]) {
+    assert.equal(sanitizeLocationField(value, "country"), expected, caseId);
+  }
   assert.equal(isSemanticallyValidLocationValue("Montréal", "city"), true);
   assert.equal(isSemanticallyValidLocationValue("6,559 followers", "city"), false);
 
@@ -385,24 +343,19 @@ test("jobs domain blanks semantic location noise but preserves valid locations",
     company: "Sleeper",
     city: "Remote, United States; San Francisco Area, United States Remote; New York City; Los Angeles",
     country: "United States",
-  }], {
-    professionLabels: {},
-    sanitizeUrl: value => value
-  });
+  }], { professionLabels: {}, sanitizeUrl: value => value });
   assert.equal(rows[0].city, "");
   assert.equal(rows[0].country, "US");
-});
 
-test("jobs domain rejects shared city-noise contract fragments", () => {
   assert.equal(CITY_NOISE_CONTRACT.proseFragments.includes("bachelor's degree"), true);
   assert.equal(CITY_NOISE_CONTRACT.sentencePrefixes.includes("learn"), true);
   assert.equal(CITY_NOISE_CONTRACT.placeholderFragments.includes("%label_"), true);
   assert.equal(CITY_NOISE_CONTRACT.knownJunkTokens.includes("????"), true);
   for (const token of ["any", "eu & na", "uk", "spontaneous application", "work & innovation"]) {
-    assert.equal(CITY_NOISE_CONTRACT.knownJunkTokens.includes(token), true);
+    assert.equal(CITY_NOISE_CONTRACT.knownJunkTokens.includes(token), true, token);
   }
 
-  const cases = [
+  for (const value of [
     "A bachelor's degree in digital communications",
     "If you are looking for Tokyo",
     "%LABEL_POSITION_TYPE_REMOTE_ANY%",
@@ -411,37 +364,26 @@ test("jobs domain rejects shared city-noise contract fragments", () => {
     "3 to UTC+1",
     "9mo",
     "All",
-    "Inc."
-  ];
-  for (const value of cases) {
-    assert.equal(sanitizeLocationField(value, "city"), "");
-    assert.equal(isSemanticallyValidLocationValue(value, "city"), false);
+    "Inc.",
+    "2026",
+    "3"
+  ]) {
+    assert.equal(sanitizeLocationField(value, "city"), "", value);
+    assert.equal(isSemanticallyValidLocationValue(value, "city"), false, value);
   }
-});
 
-test("jobs domain promotes country labels out of city fields", () => {
   for (const [value, expectedCountry] of [["EU & NA", "EU & NA"], ["UK", "UK"]]) {
-    assert.equal(sanitizeLocationField(value, "city"), "");
-    assert.equal(sanitizeLocationField(value, "country"), expectedCountry);
+    assert.equal(sanitizeLocationField(value, "city"), "", value);
+    assert.equal(sanitizeLocationField(value, "country"), expectedCountry, value);
   }
 
-  const rows = normalizeJobs([{
+  const countryRows = normalizeJobs([{
     title: "Artist",
     company: "Studio",
     city: "UK",
     country: "Unknown",
-  }], {
-    professionLabels: {},
-    sanitizeUrl: value => value
-  });
-  assert.equal(rows[0].city, "");
-  assert.equal(rows[0].country, "UK");
-  assert.equal(rows[0].locationSummary, "UK");
-});
-
-test("jobs domain rejects structural city noise values", () => {
-  for (const value of ["2026", "3"]) {
-    assert.equal(sanitizeLocationField(value, "city"), "");
-    assert.equal(isSemanticallyValidLocationValue(value, "city"), false);
-  }
+  }], { professionLabels: {}, sanitizeUrl: value => value });
+  assert.equal(countryRows[0].city, "");
+  assert.equal(countryRows[0].country, "UK");
+  assert.equal(countryRows[0].locationSummary, "UK");
 });

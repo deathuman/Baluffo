@@ -9,16 +9,6 @@ This module tests:
 
 from __future__ import annotations
 
-
-# Module-level test to satisfy test discovery contract
-def test_pipeline_execution_module_loads() -> None:
-    """Verify pipeline execution module loads correctly."""
-    from src.bridge.pipeline_service import PipelineRuntime, PipelineService
-
-    assert PipelineRuntime is not None
-    assert PipelineService is not None
-
-
 import datetime as datetime_module
 import threading
 from datetime import datetime

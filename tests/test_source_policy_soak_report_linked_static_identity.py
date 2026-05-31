@@ -64,31 +64,45 @@ def _write_runtime(data_dir: Path, *, include_static_registry: bool) -> str:
     return static_id
 
 
-def test_provider_migration_identity_does_not_satisfy_linked_static_lookup(
+def test_linked_static_lookup_uses_static_registry_row_not_provider_metadata(
     tmp_path: Path,
 ) -> None:
-    data_dir = tmp_path / "data"
-    _write_runtime(data_dir, include_static_registry=False)
+    cases = [
+        {
+            "case_id": "missing-static-registry-row",
+            "include_static_registry": False,
+            "expected_fields": {
+                "selectionReason": "linked_static_missing_from_registry",
+                "linkedStaticFoundInRegistry": False,
+                "linkedStaticAdapter": "",
+                "registryId": "",
+            },
+        },
+        {
+            "case_id": "static-registry-row-wins",
+            "include_static_registry": True,
+            "expected_fields": {
+                "selectionReason": "linked_static_not_in_default_loader_set",
+                "registryId": "<static_id>",
+                "linkedStaticAdapter": "static",
+                "loaderNameMatchStatus": "exact_match",
+            },
+        },
+    ]
 
-    report = soak.build_soak_report(data_dir)
-    row = report["sections"]["suppressionEligibility"]["missingLinkedStaticRows"][0]
+    for case in cases:
+        case_id = str(case["case_id"])
+        data_dir = tmp_path / case_id
+        static_id = _write_runtime(
+            data_dir,
+            include_static_registry=bool(case["include_static_registry"]),
+        )
 
-    assert row["selectionReason"] == "linked_static_missing_from_registry"
-    assert row["linkedStaticFoundInRegistry"] is False
-    assert row["linkedStaticAdapter"] == ""
-    assert row["registryId"] == ""
+        report = soak.build_soak_report(data_dir)
+        row = report["sections"]["suppressionEligibility"]["missingLinkedStaticRows"][0]
 
-
-def test_static_compatible_row_wins_over_provider_migration_identity_reference(
-    tmp_path: Path,
-) -> None:
-    data_dir = tmp_path / "data"
-    static_id = _write_runtime(data_dir, include_static_registry=True)
-
-    report = soak.build_soak_report(data_dir)
-    row = report["sections"]["suppressionEligibility"]["missingLinkedStaticRows"][0]
-
-    assert row["selectionReason"] == "linked_static_not_in_default_loader_set"
-    assert row["registryId"] == static_id
-    assert row["linkedStaticAdapter"] == "static"
-    assert row["loaderNameMatchStatus"] == "exact_match"
+        expected_fields = dict(case["expected_fields"])
+        if expected_fields.get("registryId") == "<static_id>":
+            expected_fields["registryId"] = static_id
+        for key, expected in expected_fields.items():
+            assert row[key] == expected, f"{case_id}:{key}"

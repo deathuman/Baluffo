@@ -447,236 +447,247 @@ def test_provider_coverage_next_action_fetches_unfetched_pending_candidates(
     )
 
 
-def test_provider_coverage_next_action_debugs_fetched_unvalidated_candidates(
+def test_provider_coverage_next_action_debugs_unvalidated_provider_cases(
     tmp_path: Path,
 ) -> None:
-    data_dir = tmp_path / "data"
-    _write_json(
-        data_dir / "jobs-fetch-report.json",
+    cases = [
         {
-            "sources": [
+            "case_id": "fetched-provider-missing-detail-evidence",
+            "fetch_report": {
+                "sources": [
+                    {
+                        "id": "provider:fetched",
+                        "sourceIdentity": "provider:fetched",
+                        "name": "Fetched Provider",
+                        "adapter": "greenhouse",
+                        "status": "ok",
+                        "keptCount": 2,
+                        "migrationSourceIdentity": "static:fetched",
+                    }
+                ]
+            },
+            "pending_rows": [
                 {
                     "id": "provider:fetched",
-                    "sourceIdentity": "provider:fetched",
                     "name": "Fetched Provider",
                     "adapter": "greenhouse",
-                    "status": "ok",
-                    "keptCount": 2,
+                    "pendingReason": "provider_migration_candidate",
                     "migrationSourceIdentity": "static:fetched",
                 }
-            ]
+            ],
+            "diagnostics_section": "next_action",
+            "expected_priority": 3,
+            "expected_blocked_by": "provider_fetch_not_validated",
+            "expected_command": (
+                "python src/jobs_fetcher.py --only-sources greenhouse_boards "
+                "--include-pending-provider-migration --force-refresh-all"
+            ),
+            "absent_command": "python src/jobs_fetcher.py --force-refresh-all",
         },
-    )
-    _write_json(data_dir / "source-registry-active.json", [])
-    _write_json(
-        data_dir / "source-registry-pending.json",
-        [
-            {
-                "id": "provider:fetched",
-                "name": "Fetched Provider",
-                "adapter": "greenhouse",
-                "pendingReason": "provider_migration_candidate",
-                "migrationSourceIdentity": "static:fetched",
-            }
-        ],
-    )
-
-    report = soak.build_soak_report(data_dir)
-    next_action = report["sections"]["providerCoverageNextAction"]
-
-    assert next_action["action"] == "debug_provider_validation"
-    assert next_action["priority"] == 3
-    assert "provider_fetch_not_validated" in next_action["blockedBy"]
-    diagnostics = next_action["evidenceCounts"]["providerValidationDiagnostics"]
-    assert diagnostics["causeCounts"]["missingDetailEvidence"] == 1
-    assert next_action["evidenceCounts"]["providerValidationMissingDetailEvidenceCount"] == 1
-    assert (
-        "python src/jobs_fetcher.py --only-sources greenhouse_boards --include-pending-provider-migration --force-refresh-all"
-        in next_action["safeLocalCommands"]
-    )
-    assert "python src/jobs_fetcher.py --force-refresh-all" not in next_action["safeLocalCommands"]
-
-
-def test_provider_coverage_next_action_advances_past_exhausted_zero_kept_validation(
-    tmp_path: Path,
-) -> None:
-    data_dir = tmp_path / "data"
-    _write_json(
-        data_dir / "jobs-fetch-report.json",
         {
-            "sources": [
+            "case_id": "aggregate-error-missing-detail-evidence",
+            "fetch_report": {
+                "sources": [
+                    {
+                        "name": "bamboohr_sources",
+                        "adapter": "bamboohr",
+                        "status": "error",
+                        "error": "HTTP 401 for https://studio.bamboohr.com/careers",
+                    }
+                ]
+            },
+            "pending_rows": [
                 {
-                    "name": "bamboohr_sources",
+                    "id": "bamboohr:listing_url:https://studio.bamboohr.com/careers",
+                    "name": "Studio (BambooHR)",
                     "adapter": "bamboohr",
-                    "status": "error",
-                    "details": [
-                        {
-                            "id": "bamboohr:zero",
-                            "sourceIdentity": "bamboohr:zero",
-                            "name": "Zero Provider",
-                            "adapter": "bamboohr",
-                            "status": "ok",
-                            "keptCount": 0,
-                            "migrationSourceIdentity": "static:zero",
-                        },
-                        {
-                            "id": "bamboohr:error",
-                            "sourceIdentity": "bamboohr:error",
-                            "name": "Error Provider",
-                            "adapter": "bamboohr",
-                            "status": "error",
-                            "error": "HTTP 401",
-                            "keptCount": 0,
-                            "migrationSourceIdentity": "static:error",
-                        },
-                    ],
+                    "listing_url": "https://studio.bamboohr.com/careers",
+                    "pendingReason": "provider_migration_candidate",
+                    "migrationSourceIdentity": "static:studio",
                 }
-            ]
+            ],
+            "diagnostics_section": "activation",
+            "expected_command": (
+                "python src/jobs_fetcher.py --only-sources bamboohr_sources "
+                "--include-pending-provider-migration --force-refresh-all"
+            ),
+            "expected_example": {
+                "aggregateFetchStatus": "error",
+                "aggregateFetchErrorContains": "HTTP 401",
+            },
         },
-    )
-    _write_json(data_dir / "source-registry-active.json", [])
-    _write_json(
-        data_dir / "source-registry-pending.json",
-        [
-            {
-                "id": "bamboohr:zero",
-                "name": "Zero Provider",
-                "adapter": "bamboohr",
-                "pendingReason": "provider_migration_candidate",
-                "migrationSourceIdentity": "static:zero",
-            },
-            {
-                "id": "bamboohr:error",
-                "name": "Error Provider",
-                "adapter": "bamboohr",
-                "pendingReason": "provider_migration_candidate",
-                "migrationSourceIdentity": "static:error",
-            },
-        ],
-    )
-    _write_json(
-        data_dir / "source-discovery-candidates.json",
-        [
-            {
-                "id": "static:icims",
-                "name": "iCIMS Static",
-                "adapter": "static",
-                "listing_url": "https://careers-example.icims.com/jobs/search",
-                "jobsFound": 1,
-            }
-        ],
-    )
+    ]
 
-    report = soak.build_soak_report(data_dir)
-    next_action = report["sections"]["providerCoverageNextAction"]
-    diagnostics = next_action["evidenceCounts"]["providerValidationDiagnostics"]
+    for case in cases:
+        case_id = str(case["case_id"])
+        data_dir = tmp_path / case_id
+        _write_json(data_dir / "jobs-fetch-report.json", case["fetch_report"])
+        _write_json(data_dir / "source-registry-active.json", [])
+        _write_json(data_dir / "source-registry-pending.json", case["pending_rows"])
 
-    assert diagnostics["causeCounts"]["zeroKeptFetched"] == 1
-    assert diagnostics["causeCounts"]["fetchError"] == 1
-    assert next_action["action"] == "plan_unsupported_provider_family"
-    assert next_action["evidenceCounts"]["unsupportedProviderDetectedCount"] == 1
-    assert "provider_fetch_not_validated" not in next_action["blockedBy"]
+        report = soak.build_soak_report(data_dir)
+        activation = report["sections"]["providerMigrationActivation"]
+        next_action = report["sections"]["providerCoverageNextAction"]
+        diagnostics = (
+            activation["providerValidationDiagnostics"]
+            if case["diagnostics_section"] == "activation"
+            else next_action["evidenceCounts"]["providerValidationDiagnostics"]
+        )
+
+        assert diagnostics["causeCounts"]["missingDetailEvidence"] == 1, case_id
+        assert next_action["action"] == "debug_provider_validation", case_id
+        if "expected_priority" in case:
+            assert next_action["priority"] == case["expected_priority"], case_id
+        if "expected_blocked_by" in case:
+            assert case["expected_blocked_by"] in next_action["blockedBy"], case_id
+        assert next_action["evidenceCounts"]["providerValidationMissingDetailEvidenceCount"] == 1, (
+            case_id
+        )
+        assert case["expected_command"] in next_action["safeLocalCommands"], case_id
+        if "absent_command" in case:
+            assert case["absent_command"] not in next_action["safeLocalCommands"], case_id
+        if "expected_example" in case:
+            example = diagnostics["examples"]["missingDetailEvidence"][0]
+            expected_example = dict(case["expected_example"])
+            assert example["aggregateFetchStatus"] == expected_example["aggregateFetchStatus"], (
+                case_id
+            )
+            assert (
+                expected_example["aggregateFetchErrorContains"] in example["aggregateFetchError"]
+            ), case_id
 
 
-def test_provider_coverage_next_action_does_not_loop_on_auth_gated_oracle_hcm(
+def test_provider_coverage_next_action_stops_debugging_exhausted_validation_cases(
     tmp_path: Path,
 ) -> None:
-    data_dir = tmp_path / "data"
-    _write_json(
-        data_dir / "jobs-fetch-report.json",
+    cases = [
         {
-            "sources": [
+            "case_id": "zero-kept-and-fetch-error-advance-to-unsupported-provider",
+            "fetch_report": {
+                "sources": [
+                    {
+                        "name": "bamboohr_sources",
+                        "adapter": "bamboohr",
+                        "status": "error",
+                        "details": [
+                            {
+                                "id": "bamboohr:zero",
+                                "sourceIdentity": "bamboohr:zero",
+                                "name": "Zero Provider",
+                                "adapter": "bamboohr",
+                                "status": "ok",
+                                "keptCount": 0,
+                                "migrationSourceIdentity": "static:zero",
+                            },
+                            {
+                                "id": "bamboohr:error",
+                                "sourceIdentity": "bamboohr:error",
+                                "name": "Error Provider",
+                                "adapter": "bamboohr",
+                                "status": "error",
+                                "error": "HTTP 401",
+                                "keptCount": 0,
+                                "migrationSourceIdentity": "static:error",
+                            },
+                        ],
+                    }
+                ]
+            },
+            "pending_rows": [
                 {
-                    "name": "oracle_hcm_sources",
+                    "id": "bamboohr:zero",
+                    "name": "Zero Provider",
+                    "adapter": "bamboohr",
+                    "pendingReason": "provider_migration_candidate",
+                    "migrationSourceIdentity": "static:zero",
+                },
+                {
+                    "id": "bamboohr:error",
+                    "name": "Error Provider",
+                    "adapter": "bamboohr",
+                    "pendingReason": "provider_migration_candidate",
+                    "migrationSourceIdentity": "static:error",
+                },
+            ],
+            "discovery_candidates": [
+                {
+                    "id": "static:icims",
+                    "name": "iCIMS Static",
+                    "adapter": "static",
+                    "listing_url": "https://careers-example.icims.com/jobs/search",
+                    "jobsFound": 1,
+                }
+            ],
+            "expected_cause_counts": {"zeroKeptFetched": 1, "fetchError": 1},
+            "expected_action": "plan_unsupported_provider_family",
+            "expected_unsupported_provider_count": 1,
+        },
+        {
+            "case_id": "auth-gated-oracle-hcm-does-not-loop",
+            "fetch_report": {
+                "sources": [
+                    {
+                        "name": "oracle_hcm_sources",
+                        "adapter": "oracle_hcm",
+                        "status": "error",
+                        "details": [
+                            {
+                                "id": "oracle_hcm:site_path:/hcmUI/CandidateExperience/en/sites/CX_1/jobs",
+                                "sourceIdentity": "oracle_hcm:site_path:/hcmUI/CandidateExperience/en/sites/CX_1/jobs",
+                                "name": "Corsair (Oracle HCM)",
+                                "adapter": "oracle_hcm",
+                                "status": "error",
+                                "classification": "anti_bot_or_challenge",
+                                "error": "auth_gated_oracle_hcm: HTTP 401 Unauthorized",
+                                "keptCount": 0,
+                                "migrationSourceIdentity": "static:corsair",
+                            }
+                        ],
+                    }
+                ]
+            },
+            "pending_rows": [
+                {
+                    "id": "oracle_hcm:site_path:/hcmUI/CandidateExperience/en/sites/CX_1/jobs",
+                    "name": "Corsair (Oracle HCM)",
                     "adapter": "oracle_hcm",
-                    "status": "error",
-                    "details": [
-                        {
-                            "id": "oracle_hcm:site_path:/hcmUI/CandidateExperience/en/sites/CX_1/jobs",
-                            "sourceIdentity": "oracle_hcm:site_path:/hcmUI/CandidateExperience/en/sites/CX_1/jobs",
-                            "name": "Corsair (Oracle HCM)",
-                            "adapter": "oracle_hcm",
-                            "status": "error",
-                            "classification": "anti_bot_or_challenge",
-                            "error": "auth_gated_oracle_hcm: HTTP 401 Unauthorized",
-                            "keptCount": 0,
-                            "migrationSourceIdentity": "static:corsair",
-                        }
-                    ],
+                    "listing_url": "https://edix.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs",
+                    "base_url": "https://edix.fa.us2.oraclecloud.com",
+                    "site_path": "/hcmUI/CandidateExperience/en/sites/CX_1/jobs",
+                    "pendingReason": "provider_migration_candidate",
+                    "migrationSourceIdentity": "static:corsair",
                 }
-            ]
+            ],
+            "expected_cause_counts": {"fetchError": 1},
+            "unexpected_action": "debug_provider_validation",
         },
-    )
-    _write_json(data_dir / "source-registry-active.json", [])
-    _write_json(
-        data_dir / "source-registry-pending.json",
-        [
-            {
-                "id": "oracle_hcm:site_path:/hcmUI/CandidateExperience/en/sites/CX_1/jobs",
-                "name": "Corsair (Oracle HCM)",
-                "adapter": "oracle_hcm",
-                "listing_url": "https://edix.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs",
-                "base_url": "https://edix.fa.us2.oraclecloud.com",
-                "site_path": "/hcmUI/CandidateExperience/en/sites/CX_1/jobs",
-                "pendingReason": "provider_migration_candidate",
-                "migrationSourceIdentity": "static:corsair",
-            }
-        ],
-    )
+    ]
 
-    report = soak.build_soak_report(data_dir)
-    next_action = report["sections"]["providerCoverageNextAction"]
-    diagnostics = next_action["evidenceCounts"]["providerValidationDiagnostics"]
+    for case in cases:
+        case_id = str(case["case_id"])
+        data_dir = tmp_path / case_id
+        _write_json(data_dir / "jobs-fetch-report.json", case["fetch_report"])
+        _write_json(data_dir / "source-registry-active.json", [])
+        _write_json(data_dir / "source-registry-pending.json", case["pending_rows"])
+        if "discovery_candidates" in case:
+            _write_json(
+                data_dir / "source-discovery-candidates.json",
+                case["discovery_candidates"],
+            )
 
-    assert diagnostics["causeCounts"]["fetchError"] == 1
-    assert next_action["action"] != "debug_provider_validation"
-    assert "provider_fetch_not_validated" not in next_action["blockedBy"]
+        report = soak.build_soak_report(data_dir)
+        next_action = report["sections"]["providerCoverageNextAction"]
+        diagnostics = next_action["evidenceCounts"]["providerValidationDiagnostics"]
 
-
-def test_provider_validation_diagnostics_classifies_aggregate_error_without_details(
-    tmp_path: Path,
-) -> None:
-    data_dir = tmp_path / "data"
-    _write_json(
-        data_dir / "jobs-fetch-report.json",
-        {
-            "sources": [
-                {
-                    "name": "bamboohr_sources",
-                    "adapter": "bamboohr",
-                    "status": "error",
-                    "error": "HTTP 401 for https://studio.bamboohr.com/careers",
-                }
-            ]
-        },
-    )
-    _write_json(data_dir / "source-registry-active.json", [])
-    _write_json(
-        data_dir / "source-registry-pending.json",
-        [
-            {
-                "id": "bamboohr:listing_url:https://studio.bamboohr.com/careers",
-                "name": "Studio (BambooHR)",
-                "adapter": "bamboohr",
-                "listing_url": "https://studio.bamboohr.com/careers",
-                "pendingReason": "provider_migration_candidate",
-                "migrationSourceIdentity": "static:studio",
-            }
-        ],
-    )
-
-    report = soak.build_soak_report(data_dir)
-    activation = report["sections"]["providerMigrationActivation"]
-    next_action = report["sections"]["providerCoverageNextAction"]
-    diagnostics = activation["providerValidationDiagnostics"]
-
-    assert diagnostics["causeCounts"]["missingDetailEvidence"] == 1
-    example = diagnostics["examples"]["missingDetailEvidence"][0]
-    assert example["aggregateFetchStatus"] == "error"
-    assert "HTTP 401" in example["aggregateFetchError"]
-    assert next_action["action"] == "debug_provider_validation"
-    assert next_action["evidenceCounts"]["providerValidationMissingDetailEvidenceCount"] == 1
-    assert (
-        "python src/jobs_fetcher.py --only-sources bamboohr_sources --include-pending-provider-migration --force-refresh-all"
-        in next_action["safeLocalCommands"]
-    )
+        for key, expected in dict(case["expected_cause_counts"]).items():
+            assert diagnostics["causeCounts"][key] == expected, f"{case_id}:{key}"
+        if "expected_action" in case:
+            assert next_action["action"] == case["expected_action"], case_id
+        if "unexpected_action" in case:
+            assert next_action["action"] != case["unexpected_action"], case_id
+        if "expected_unsupported_provider_count" in case:
+            assert (
+                next_action["evidenceCounts"]["unsupportedProviderDetectedCount"]
+                == case["expected_unsupported_provider_count"]
+            ), case_id
+        assert "provider_fetch_not_validated" not in next_action["blockedBy"], case_id

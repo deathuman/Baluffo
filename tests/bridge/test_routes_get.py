@@ -175,60 +175,65 @@ def test_registry_endpoints(tmp_path: Path, path: str, expected_key: str) -> Non
     assert expected_key in handler.sent[-1]["payload"]
 
 
-def test_discovery_log_with_content(tmp_path: Path) -> None:
-    """Test /discovery/log endpoint with log content."""
-    store = FakeDesktopLocalDataStore()
-    api = make_stub_bridge_api(tmp_path, store)
-    content = "log line 1\nlog line 2\n"
+def test_log_routes_return_expected_payloads(tmp_path: Path) -> None:
+    cases = [
+        (
+            "discovery-content",
+            "DISCOVERY_LOG_PATH",
+            "/discovery/log",
+            "log line 1\nlog line 2\n",
+            {},
+            "log line 1\nlog line 2\n",
+            0,
+            len("log line 1\nlog line 2\n"),
+        ),
+        ("discovery-empty", "DISCOVERY_LOG_PATH", "/discovery/log", None, {}, "", 0, 0),
+        (
+            "discovery-offset",
+            "DISCOVERY_LOG_PATH",
+            "/discovery/log",
+            "line1\nline2\nline3\n",
+            {"offset": ["5"]},
+            "line1\nline2\nline3\n"[5:],
+            5,
+            len("line1\nline2\nline3\n"),
+        ),
+        (
+            "discovery-invalid-offset",
+            "DISCOVERY_LOG_PATH",
+            "/discovery/log",
+            "content",
+            {"offset": ["abc"]},
+            "content",
+            0,
+            len("content"),
+        ),
+        (
+            "fetcher-content",
+            "FETCHER_LOG_PATH",
+            "/fetcher/log",
+            "fetcher log content",
+            {},
+            "fetcher log content",
+            0,
+            len("fetcher log content"),
+        ),
+        ("fetcher-missing", "FETCHER_LOG_PATH", "/fetcher/log", None, {}, "", 0, 0),
+    ]
 
-    api.DISCOVERY_LOG_PATH.write_text(content, encoding="utf-8", newline="\n")
+    for case_id, path_attr, route_path, content, query, expected_text, offset, next_offset in cases:
+        store = FakeDesktopLocalDataStore()
+        api = make_stub_bridge_api(tmp_path / case_id, store)
+        if content is not None:
+            log_path = getattr(api, path_attr)
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_path.write_text(content, encoding="utf-8", newline="\n")
 
-    handler = FakeHandler()
-    result = handle_get(handler, api=api, path="/discovery/log", query={})
+        handler = FakeHandler()
+        result = handle_get(handler, api=api, path=route_path, query=query)
 
-    assert result is True
-    _assert_log_response(handler, text=content, offset=0, next_offset=len(content))
-
-
-def test_discovery_log_empty(tmp_path: Path) -> None:
-    """Test /discovery/log endpoint with empty log."""
-    store = FakeDesktopLocalDataStore()
-    api = make_stub_bridge_api(tmp_path, store)
-
-    handler = FakeHandler()
-    result = handle_get(handler, api=api, path="/discovery/log", query={})
-
-    assert result is True
-    _assert_log_response(handler, text="", offset=0, next_offset=0)
-
-
-def test_discovery_log_with_offset(tmp_path: Path) -> None:
-    """Test /discovery/log endpoint with offset query param."""
-    store = FakeDesktopLocalDataStore()
-    api = make_stub_bridge_api(tmp_path, store)
-    content = "line1\nline2\nline3\n"
-
-    api.DISCOVERY_LOG_PATH.write_text(content, encoding="utf-8", newline="\n")
-
-    handler = FakeHandler()
-    result = handle_get(handler, api=api, path="/discovery/log", query={"offset": ["5"]})
-
-    assert result is True
-    _assert_log_response(handler, text=content[5:], offset=5, next_offset=len(content))
-
-
-def test_discovery_log_invalid_offset(tmp_path: Path) -> None:
-    """Test /discovery/log with invalid offset."""
-    store = FakeDesktopLocalDataStore()
-    api = make_stub_bridge_api(tmp_path, store)
-
-    api.DISCOVERY_LOG_PATH.write_text("content", encoding="utf-8", newline="\n")
-
-    handler = FakeHandler()
-    result = handle_get(handler, api=api, path="/discovery/log", query={"offset": ["abc"]})
-
-    assert result is True
-    _assert_log_response(handler, text="content", offset=0, next_offset=len("content"))
+        assert result is True, case_id
+        _assert_log_response(handler, text=expected_text, offset=offset, next_offset=next_offset)
 
 
 def test_discovery_config_returns_saved_payload(tmp_path: Path) -> None:
@@ -244,67 +249,44 @@ def test_discovery_config_returns_saved_payload(tmp_path: Path) -> None:
     assert handler.sent[-1]["payload"]["savedConfig"]["autoApproveHealthyPendingOnComplete"] is True
 
 
-def test_fetcher_log_with_content(tmp_path: Path) -> None:
-    """Test /fetcher/log endpoint."""
-    store = FakeDesktopLocalDataStore()
-    api = make_stub_bridge_api(tmp_path, store)
-    content = "fetcher log content"
-
-    api.FETCHER_LOG_PATH.write_text(content, encoding="utf-8", newline="\n")
-
-    handler = FakeHandler()
-    result = handle_get(handler, api=api, path="/fetcher/log", query={})
-
-    assert result is True
-    _assert_log_response(handler, text=content, offset=0, next_offset=len(content))
-
-
-def test_fetcher_log_missing_file_returns_empty_payload(tmp_path: Path) -> None:
-    store = FakeDesktopLocalDataStore()
-    api = make_stub_bridge_api(tmp_path, store)
-
-    handler = FakeHandler()
-    result = handle_get(handler, api=api, path="/fetcher/log", query={})
-
-    assert result is True
-    _assert_log_response(handler, text="", offset=0, next_offset=0)
-
-
-@pytest.mark.parametrize(
-    ("path_attr", "path"),
-    [
-        pytest.param("DISCOVERY_LOG_PATH", "/discovery/log", id="discovery"),
-        pytest.param("FETCHER_LOG_PATH", "/fetcher/log", id="fetcher"),
-    ],
-)
-def test_log_routes_defer_trailing_partial_utf8_bytes(
-    tmp_path: Path,
-    path_attr: str,
-    path: str,
-) -> None:
-    store = FakeDesktopLocalDataStore()
-    api = make_stub_bridge_api(tmp_path, store)
+def test_log_routes_handle_utf8_boundaries_and_replacement(tmp_path: Path) -> None:
     prefix = "prefix "
-    getattr(api, path_attr).write_bytes(prefix.encode("utf-8") + b"\xe2\x82")
+    cases = [
+        (
+            "discovery-trailing-partial-utf8",
+            "DISCOVERY_LOG_PATH",
+            "/discovery/log",
+            prefix.encode("utf-8") + b"\xe2\x82",
+            prefix,
+        ),
+        (
+            "fetcher-trailing-partial-utf8",
+            "FETCHER_LOG_PATH",
+            "/fetcher/log",
+            prefix.encode("utf-8") + b"\xe2\x82",
+            prefix,
+        ),
+        (
+            "fetcher-malformed-middle-byte",
+            "FETCHER_LOG_PATH",
+            "/fetcher/log",
+            b"good\xfftail",
+            "good\ufffdtail",
+        ),
+    ]
 
-    handler = FakeHandler()
-    result = handle_get(handler, api=api, path=path, query={})
+    for case_id, path_attr, route_path, raw_bytes, expected_text in cases:
+        store = FakeDesktopLocalDataStore()
+        api = make_stub_bridge_api(tmp_path / case_id, store)
+        log_path = getattr(api, path_attr)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_bytes(raw_bytes)
 
-    assert result is True
-    _assert_log_response(handler, text=prefix, offset=0, next_offset=len(prefix))
+        handler = FakeHandler()
+        result = handle_get(handler, api=api, path=route_path, query={})
 
-
-def test_fetcher_log_replaces_malformed_utf8_bytes_in_middle(tmp_path: Path) -> None:
-    store = FakeDesktopLocalDataStore()
-    api = make_stub_bridge_api(tmp_path, store)
-    api.FETCHER_LOG_PATH.write_bytes(b"good\xfftail")
-    expected = "good\ufffdtail"
-
-    handler = FakeHandler()
-    result = handle_get(handler, api=api, path="/fetcher/log", query={})
-
-    assert result is True
-    _assert_log_response(handler, text=expected, offset=0, next_offset=len(expected))
+        assert result is True, case_id
+        _assert_log_response(handler, text=expected_text, offset=0, next_offset=len(expected_text))
 
 
 def test_ops_health(tmp_path: Path) -> None:

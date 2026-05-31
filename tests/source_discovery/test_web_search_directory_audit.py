@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 import src.source_discovery.web_search_candidates as web_candidates
 from src.source_discovery import directory_audit
 from src.url_hosts import url_host_matches_domain
@@ -356,70 +358,80 @@ def test_web_search_directory_audit_records_browser_recovery_candidates() -> Non
         }
 
 
-def test_web_search_directory_audit_default_seed_recovery_finds_static_candidate() -> None:
-    with workspace_tmpdir("web-search-audit-seed-http-recovery-default") as root:
-        audit_path = root / "web-audit.json"
-
-        def fetcher(url: str, _timeout_s: int) -> str:
-            if url == "https://seed-recover.example/":
-                return "<html><body>Seed Recover Studio</body></html>"
-            if url == "https://seed-recover.example/careers":
-                return '<a href="/jobs/designer">Designer</a><a href="/jobs/engineer">Engineer</a>'
-            if url == "https://seed-recover.example/jobs":
-                return "<html><body>No roles</body></html>"
-            raise RuntimeError(f"unexpected URL: {url}")
-
-        config = _audit_config(str(audit_path))
-        artifact, cache_hit = web_candidates.run_web_search_directory_audit(
-            5,
-            studio_seeds=[
+@pytest.mark.parametrize(
+    (
+        "mode",
+        "workspace_name",
+        "studio_seeds",
+        "include_seed_careers",
+        "include_web_search",
+        "expected_summary_key",
+        "expected_listing_url",
+        "expected_discovery_method",
+        "expected_timing_key",
+        "assert_fresh_cache_reuse",
+    ),
+    [
+        pytest.param(
+            "seed",
+            "web-search-audit-seed-http-recovery-default",
+            [
                 {
                     "studio": "Seed Recover Studio",
                     "careersUrl": "https://seed-recover.example/",
                     "nlPriority": True,
                 }
             ],
-            include_seed_careers=True,
-            include_web_search=False,
-            config=config,
-            fetcher=fetcher,
-        )
-        second_artifact, second_cache_hit = web_candidates.run_web_search_directory_audit(
-            5,
-            studio_seeds=[
-                {
-                    "studio": "Seed Recover Studio",
-                    "careersUrl": "https://seed-recover.example/",
-                    "nlPriority": True,
-                }
-            ],
-            include_seed_careers=True,
-            include_web_search=False,
-            config=config,
-            fetcher=lambda *_args: (_ for _ in ()).throw(
-                AssertionError("fresh default recovery web artifact should bypass fetch")
-            ),
-        )
-
-        assert cache_hit is False
-        assert second_cache_hit is True
-        assert second_artifact == artifact
-        assert artifact["summary"]["recoveryFetchAttempts"] == 2
-        assert artifact["summary"]["recoveredStaticCandidates"] == 1
-        assert artifact["summary"]["seedStaticCandidates"] == 1
-        assert artifact["summary"]["failures"] == 0
-        assert artifact["staticCandidates"][0]["listing_url"] == (
-            "https://seed-recover.example/careers"
-        )
-        assert artifact["staticCandidates"][0]["discoveryMethod"] == "seed_careers_page"
-        assert artifact["timings"]["totalsMs"]["seedRecoveryFetchMs"] >= 0
-
-
-def test_web_search_directory_audit_default_web_recovery_finds_static_candidate() -> None:
-    with workspace_tmpdir("web-search-audit-web-http-recovery-default") as root:
+            True,
+            False,
+            "seedStaticCandidates",
+            "https://seed-recover.example/careers",
+            "seed_careers_page",
+            "seedRecoveryFetchMs",
+            True,
+            id="seed-careers-default-recovery",
+        ),
+        pytest.param(
+            "web",
+            "web-search-audit-web-http-recovery-default",
+            [{"studio": "Web Recover Studio"}],
+            False,
+            True,
+            "webStaticCandidates",
+            "https://web-recover.example/jobs",
+            "web_search",
+            "webRecoveryFetchMs",
+            False,
+            id="web-search-default-recovery",
+        ),
+    ],
+)
+def test_web_search_directory_audit_default_recovery_finds_static_candidate(
+    mode: str,
+    workspace_name: str,
+    studio_seeds: list[dict[str, object]],
+    include_seed_careers: bool,
+    include_web_search: bool,
+    expected_summary_key: str,
+    expected_listing_url: str,
+    expected_discovery_method: str,
+    expected_timing_key: str,
+    assert_fresh_cache_reuse: bool,
+) -> None:
+    with workspace_tmpdir(workspace_name) as root:
         audit_path = root / "web-audit.json"
 
         def fetcher(url: str, _timeout_s: int) -> str:
+            if mode == "seed":
+                if url == "https://seed-recover.example/":
+                    return "<html><body>Seed Recover Studio</body></html>"
+                if url == "https://seed-recover.example/careers":
+                    return (
+                        '<a href="/jobs/designer">Designer</a><a href="/jobs/engineer">Engineer</a>'
+                    )
+                if url == "https://seed-recover.example/jobs":
+                    return "<html><body>No roles</body></html>"
+                raise RuntimeError(f"unexpected URL: {url}")
             if url_host_matches_domain(url, "duckduckgo.com"):
                 return '<a href="https://web-recover.example/careers">Careers</a>'
             if url == "https://web-recover.example/careers":
@@ -428,51 +440,136 @@ def test_web_search_directory_audit_default_web_recovery_finds_static_candidate(
                 return '<a href="/jobs/designer">Designer</a><a href="/jobs/engineer">Engineer</a>'
             raise RuntimeError(f"unexpected URL: {url}")
 
-        artifact, _cache_hit = web_candidates.run_web_search_directory_audit(
-            5,
-            studio_seeds=[{"studio": "Web Recover Studio"}],
-            include_seed_careers=False,
-            include_web_search=True,
-            config=_audit_config(str(audit_path)),
-            fetcher=fetcher,
-            max_queries=1,
-        )
+        config = _audit_config(str(audit_path))
+        run_kwargs = {
+            "studio_seeds": studio_seeds,
+            "include_seed_careers": include_seed_careers,
+            "include_web_search": include_web_search,
+            "config": config,
+            "fetcher": fetcher,
+        }
+        if include_web_search:
+            run_kwargs["max_queries"] = 1
+        artifact, cache_hit = web_candidates.run_web_search_directory_audit(5, **run_kwargs)
 
+        assert cache_hit is False
+        if assert_fresh_cache_reuse:
+            second_artifact, second_cache_hit = web_candidates.run_web_search_directory_audit(
+                5,
+                studio_seeds=studio_seeds,
+                include_seed_careers=include_seed_careers,
+                include_web_search=include_web_search,
+                config=config,
+                fetcher=lambda *_args: (_ for _ in ()).throw(
+                    AssertionError("fresh default recovery web artifact should bypass fetch")
+                ),
+            )
+            assert second_cache_hit is True
+            assert second_artifact == artifact
         assert artifact["summary"]["recoveryFetchAttempts"] == 2
         assert artifact["summary"]["recoveredStaticCandidates"] == 1
-        assert artifact["summary"]["webStaticCandidates"] == 1
-        assert artifact["staticCandidates"][0]["listing_url"] == "https://web-recover.example/jobs"
-        assert artifact["staticCandidates"][0]["discoveryMethod"] == "web_search"
-        assert artifact["timings"]["totalsMs"]["webRecoveryFetchMs"] >= 0
+        assert artifact["summary"][expected_summary_key] == 1
+        assert artifact["summary"]["failures"] == 0
+        assert artifact["staticCandidates"][0]["listing_url"] == expected_listing_url
+        assert artifact["staticCandidates"][0]["discoveryMethod"] == expected_discovery_method
+        assert artifact["timings"]["totalsMs"][expected_timing_key] >= 0
 
 
-def test_web_search_directory_audit_explicit_recovery_false_preserves_no_recovery_output() -> None:
-    with workspace_tmpdir("web-search-audit-http-recovery-explicit-false") as root:
-        audit_path = root / "web-audit.json"
-
-        def fetcher(url: str, _timeout_s: int) -> str:
-            if url == "https://no-recovery.example/":
-                return "<html><body>No roles</body></html>"
-            raise RuntimeError(f"unexpected recovery fetch: {url}")
-
-        artifact, _cache_hit = web_candidates.run_web_search_directory_audit(
-            5,
-            studio_seeds=[
+@pytest.mark.parametrize(
+    (
+        "scenario",
+        "workspace_name",
+        "studio_seeds",
+        "include_seed_careers",
+        "include_web_search",
+        "recovery_enabled",
+        "expected_summary",
+        "expected_failure_counts",
+    ),
+    [
+        pytest.param(
+            "disabled",
+            "web-search-audit-http-recovery-explicit-false",
+            [
                 {
                     "studio": "No Recovery Studio",
                     "careersUrl": "https://no-recovery.example/",
                 }
             ],
-            include_seed_careers=True,
-            include_web_search=False,
-            config=_audit_config(str(audit_path), recovery_enabled=False),
-            fetcher=fetcher,
-        )
+            True,
+            False,
+            False,
+            {"providerCandidates": 0, "staticCandidates": 0, "failures": 0},
+            None,
+            id="explicit-recovery-disabled",
+        ),
+        pytest.param(
+            "diagnostic-candidates",
+            "web-search-audit-http-recovery-skip-diagnostics",
+            [
+                {
+                    "studio": "Seed Shell Studio",
+                    "careersUrl": "https://seed-shell.example/careers",
+                },
+                {"studio": "Web Fetch Fail Studio"},
+            ],
+            True,
+            True,
+            True,
+            {
+                "browserRecoveryCandidates": 2,
+                "browserRecoveryJsShellCandidates": 1,
+                "browserRecoveryFetchFailureCandidates": 1,
+                "failures": 1,
+            },
+            {"page_fetch": 1},
+            id="diagnostics-skip-http-recovery",
+        ),
+    ],
+)
+def test_web_search_directory_audit_preserves_no_http_recovery_output(
+    scenario: str,
+    workspace_name: str,
+    studio_seeds: list[dict[str, object]],
+    include_seed_careers: bool,
+    include_web_search: bool,
+    recovery_enabled: bool,
+    expected_summary: dict[str, int],
+    expected_failure_counts: dict[str, int] | None,
+) -> None:
+    with workspace_tmpdir(workspace_name) as root:
+        audit_path = root / "web-audit.json"
+        shell = '<html><div id="root"></div><script src="/app.js"></script></html>'
+
+        def fetcher(url: str, _timeout_s: int) -> str:
+            if scenario == "disabled":
+                if url == "https://no-recovery.example/":
+                    return "<html><body>No roles</body></html>"
+                raise RuntimeError(f"unexpected recovery fetch: {url}")
+            if url == "https://seed-shell.example/careers":
+                return shell
+            if url_host_matches_domain(url, "duckduckgo.com"):
+                return '<a href="https://web-fail.example/careers">Careers</a>'
+            if url == "https://web-fail.example/careers":
+                raise RuntimeError("429 web page")
+            raise RuntimeError(f"unexpected URL: {url}")
+
+        run_kwargs = {
+            "studio_seeds": studio_seeds,
+            "include_seed_careers": include_seed_careers,
+            "include_web_search": include_web_search,
+            "config": _audit_config(str(audit_path), recovery_enabled=recovery_enabled),
+            "fetcher": fetcher,
+        }
+        if include_web_search:
+            run_kwargs["max_queries"] = 1
+        artifact, _cache_hit = web_candidates.run_web_search_directory_audit(5, **run_kwargs)
 
         assert "recoveryFetchAttempts" not in artifact["summary"]
-        assert artifact["summary"]["providerCandidates"] == 0
-        assert artifact["summary"]["staticCandidates"] == 0
-        assert artifact["summary"]["failures"] == 0
+        for key, value in expected_summary.items():
+            assert artifact["summary"][key] == value
+        if expected_failure_counts is not None:
+            assert artifact["failureCounts"] == expected_failure_counts
 
 
 def test_web_search_directory_audit_opt_in_recovery_miss_and_failure_are_diagnostic_only() -> None:
@@ -514,44 +611,6 @@ def test_web_search_directory_audit_opt_in_recovery_miss_and_failure_are_diagnos
         assert artifact["summary"]["failures"] == 0
         assert artifact["providerCandidates"] == []
         assert artifact["staticCandidates"] == []
-
-
-def test_web_search_directory_audit_opt_in_recovery_skips_fetch_failures_and_js_shells() -> None:
-    with workspace_tmpdir("web-search-audit-http-recovery-skip-diagnostics") as root:
-        audit_path = root / "web-audit.json"
-        shell = '<html><div id="root"></div><script src="/app.js"></script></html>'
-
-        def fetcher(url: str, _timeout_s: int) -> str:
-            if url == "https://seed-shell.example/careers":
-                return shell
-            if url_host_matches_domain(url, "duckduckgo.com"):
-                return '<a href="https://web-fail.example/careers">Careers</a>'
-            if url == "https://web-fail.example/careers":
-                raise RuntimeError("429 web page")
-            raise RuntimeError(f"unexpected URL: {url}")
-
-        artifact, _cache_hit = web_candidates.run_web_search_directory_audit(
-            5,
-            studio_seeds=[
-                {
-                    "studio": "Seed Shell Studio",
-                    "careersUrl": "https://seed-shell.example/careers",
-                },
-                {"studio": "Web Fetch Fail Studio"},
-            ],
-            include_seed_careers=True,
-            include_web_search=True,
-            config=_audit_config(str(audit_path), recovery_enabled=True),
-            fetcher=fetcher,
-            max_queries=1,
-        )
-
-        assert "recoveryFetchAttempts" not in artifact["summary"]
-        assert artifact["summary"]["browserRecoveryCandidates"] == 2
-        assert artifact["summary"]["browserRecoveryJsShellCandidates"] == 1
-        assert artifact["summary"]["browserRecoveryFetchFailureCandidates"] == 1
-        assert artifact["summary"]["failures"] == 1
-        assert artifact["failureCounts"] == {"page_fetch": 1}
 
 
 def test_web_search_directory_audit_recovery_toggle_changes_signature() -> None:

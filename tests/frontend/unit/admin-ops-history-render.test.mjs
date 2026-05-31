@@ -426,65 +426,50 @@ test("admin ops history: pipeline rows keep progress text visible and cap overfl
   assert.match(historyEl.innerHTML, /admin-ops-expand-capped/);
 });
 
-test("admin ops history: live pipeline without progress evidence shows neutral fallback", () => {
-  const historyEl = makeEl();
-  renderAdminOpsHistory(historyEl, {
-    currentRows: [
-      {
-        type: "pipeline",
-        active: true,
-        startedAt: new Date(Date.now() - 60_000).toISOString(),
-        heartbeatAt: new Date().toISOString(),
-        summary: {},
-        taskProgress: {
+test("admin ops history: pipeline no-progress scenarios show neutral fallback", () => {
+  const cases = [
+    {
+      caseId: "live-without-progress-evidence",
+      model: {
+        currentRows: [{
+          type: "pipeline",
           active: true,
-          phaseKey: "",
-          phaseLabel: "",
-          counts: {}
-        }
-      }
-    ],
-    visibleCompletedRows: [],
-    olderCompletedRows: []
-  });
+          startedAt: new Date(Date.now() - 60_000).toISOString(),
+          heartbeatAt: new Date().toISOString(),
+          summary: {},
+          taskProgress: { active: true, phaseKey: "", phaseLabel: "", counts: {} }
+        }],
+        visibleCompletedRows: [],
+        olderCompletedRows: []
+      },
+      matches: [/Pipeline running/],
+      nonMatches: [/step 0/i, /output 0 \(baseline 0\)/i]
+    },
+    {
+      caseId: "completed-zero-progress",
+      model: {
+        currentRows: [],
+        visibleCompletedRows: [{
+          type: "pipeline",
+          status: "ok",
+          startedAt: "2026-03-08T10:00:00.000Z",
+          finishedAt: "2026-03-08T10:02:00.000Z",
+          taskProgress: { active: false, counts: { currentStep: 0, baselineOutputCount: 0, finalOutputCount: 0 } },
+          summary: { currentStep: 0, baselineOutputCount: 0, finalOutputCount: 0 }
+        }],
+        olderCompletedRows: []
+      },
+      matches: [/Pipeline completed/, /No stage diagnostics are available for this pipeline run/],
+      nonMatches: [/step 0/i, /output 0 \(baseline 0\)/i]
+    }
+  ];
 
-  assert.match(historyEl.innerHTML, /Pipeline running/);
-  assert.doesNotMatch(historyEl.innerHTML, /step 0/i);
-  assert.doesNotMatch(historyEl.innerHTML, /output 0 \(baseline 0\)/i);
-});
-
-test("admin ops history: completed pipeline zero progress shows neutral fallback", () => {
-  const historyEl = makeEl();
-  renderAdminOpsHistory(historyEl, {
-    currentRows: [],
-    visibleCompletedRows: [
-      {
-        type: "pipeline",
-        status: "ok",
-        startedAt: "2026-03-08T10:00:00.000Z",
-        finishedAt: "2026-03-08T10:02:00.000Z",
-        taskProgress: {
-          active: false,
-          counts: {
-            currentStep: 0,
-            baselineOutputCount: 0,
-            finalOutputCount: 0
-          }
-        },
-        summary: {
-          currentStep: 0,
-          baselineOutputCount: 0,
-          finalOutputCount: 0
-        }
-      }
-    ],
-    olderCompletedRows: []
-  });
-
-  assert.match(historyEl.innerHTML, /Pipeline completed/);
-  assert.match(historyEl.innerHTML, /No stage diagnostics are available for this pipeline run/);
-  assert.doesNotMatch(historyEl.innerHTML, /step 0/i);
-  assert.doesNotMatch(historyEl.innerHTML, /output 0 \(baseline 0\)/i);
+  for (const { caseId, model, matches, nonMatches } of cases) {
+    const historyEl = makeEl();
+    renderAdminOpsHistory(historyEl, model);
+    for (const pattern of matches) assert.match(historyEl.innerHTML, pattern, caseId);
+    for (const pattern of nonMatches) assert.doesNotMatch(historyEl.innerHTML, pattern, caseId);
+  }
 });
 
 test("admin ops history: completed pipeline drawer shows parent and child diagnostics", () => {

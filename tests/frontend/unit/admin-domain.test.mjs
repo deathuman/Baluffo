@@ -593,163 +593,143 @@ test("admin domain drops stale fetch task state when history already has the com
   assert.equal(model.visibleCompletedRows[0].type, "fetch");
 });
 
-test("admin domain derives determinate fetcher progress when total sources are known", () => {
-  const view = deriveFetcherProgressModel({
-    summary: {
-      successfulSources: 8,
-      failedSources: 1,
-      excludedSources: 2,
-      outputCount: 45,
-      sourceCount: 20
-    },
-    runtime: {
-      selectedSourceCount: 20
-    }
-  }, { running: true });
-
-  assert.equal(view.active, true);
-  assert.equal(view.determinate, true);
-  assert.equal(view.ratio, 11 / 20);
-  assert.match(view.label, /11\/20 sources resolved/i);
-});
-
-test("admin domain prefers shared fetch task progress contract over raw mixed-unit counters", () => {
-  const view = deriveFetcherProgressModel({
-    summary: {
-      successfulSources: 13,
-      failedSources: 0,
-      excludedSources: 511,
-      outputCount: 34828,
-      sourceCount: 524
-    },
-    runtime: {
-      selectedSourceCount: 13
-    },
-    taskProgress: {
-      active: true,
-      phaseKey: "executing_sources",
-      phaseLabel: "Executing sources",
-      mode: "determinate",
-      ratio: 0.5,
-      counts: {
-        resolvedSources: 6,
-        sourceCount: 12,
-        outputCount: 34828,
-        failedSources: 0,
-        excludedSources: 3
+test("admin domain derives fetcher progress model scenarios", () => {
+  const cases = [
+    ["determinate-total-sources", {
+      summary: { successfulSources: 8, failedSources: 1, excludedSources: 2, outputCount: 45, sourceCount: 20 },
+      runtime: { selectedSourceCount: 20 }
+    }, { running: true }, (view, caseId) => {
+      assert.equal(view.active, true, caseId);
+      assert.equal(view.determinate, true, caseId);
+      assert.equal(view.ratio, 11 / 20, caseId);
+      assert.match(view.label, /11\/20 sources resolved/i, caseId);
+    }],
+    ["shared-task-progress-precedence", {
+      summary: { successfulSources: 13, failedSources: 0, excludedSources: 511, outputCount: 34828, sourceCount: 524 },
+      runtime: { selectedSourceCount: 13 },
+      taskProgress: {
+        active: true,
+        phaseKey: "executing_sources",
+        phaseLabel: "Executing sources",
+        mode: "determinate",
+        ratio: 0.5,
+        counts: { resolvedSources: 6, sourceCount: 12, outputCount: 34828, failedSources: 0, excludedSources: 3 }
       }
-    }
-  }, { running: true });
-
-  assert.equal(view.active, true);
-  assert.equal(view.determinate, true);
-  assert.equal(view.ratio, 0.5);
-  assert.match(view.label, /Executing sources/i);
-  assert.match(view.label, /6\/12 sources resolved/i);
-  assert.doesNotMatch(view.label, /524\/13/i);
-});
-
-test("admin domain keeps fetcher progress indeterminate while only reported source rows are growing", () => {
-  const view = deriveFetcherProgressModel({
-    summary: {
-      successfulSources: 1,
-      failedSources: 0,
-      excludedSources: 510,
-      outputCount: 34828,
-      sourceCount: 511
-    },
-    runtime: {
-      selectedSourceCount: 0
-    }
-  }, { running: true });
-
-  assert.equal(view.active, true);
-  assert.equal(view.determinate, false);
-  assert.equal(view.ratio, 0);
-  assert.match(view.label, /511 sources resolved/i);
-  assert.doesNotMatch(view.label, /511\/511/i);
-});
-
-test("admin domain ignores stale active fetch task progress when report is finished", () => {
-  const view = deriveFetcherProgressModel({
-    finishedAt: "2026-03-23T16:18:10.053424+00:00",
-    summary: {
-      successfulSources: 38,
-      failedSources: 23,
-      excludedSources: 0,
-      outputCount: 3683,
-      sourceCount: 61
-    },
-    taskProgress: {
-      active: true,
-      phaseKey: "executing_sources",
-      phaseLabel: "Executing sources",
-      mode: "determinate",
-      ratio: 0.18,
-      counts: {
-        resolvedSources: 61,
-        sourceCount: 520,
-        outputCount: 3683,
-        failedSources: 23,
-        excludedSources: 0
+    }, { running: true }, (view, caseId) => {
+      assert.equal(view.active, true, caseId);
+      assert.equal(view.determinate, true, caseId);
+      assert.equal(view.ratio, 0.5, caseId);
+      assert.match(view.label, /Executing sources/i, caseId);
+      assert.match(view.label, /6\/12 sources resolved/i, caseId);
+      assert.doesNotMatch(view.label, /524\/13/i, caseId);
+    }],
+    ["reported-source-rows-growing-indeterminate", {
+      summary: { successfulSources: 1, failedSources: 0, excludedSources: 510, outputCount: 34828, sourceCount: 511 },
+      runtime: { selectedSourceCount: 0 }
+    }, { running: true }, (view, caseId) => {
+      assert.equal(view.active, true, caseId);
+      assert.equal(view.determinate, false, caseId);
+      assert.equal(view.ratio, 0, caseId);
+      assert.match(view.label, /511 sources resolved/i, caseId);
+      assert.doesNotMatch(view.label, /511\/511/i, caseId);
+    }],
+    ["finished-report-ignores-stale-active-progress", {
+      finishedAt: "2026-03-23T16:18:10.053424+00:00",
+      summary: { successfulSources: 38, failedSources: 23, excludedSources: 0, outputCount: 3683, sourceCount: 61 },
+      taskProgress: {
+        active: true,
+        phaseKey: "executing_sources",
+        phaseLabel: "Executing sources",
+        mode: "determinate",
+        ratio: 0.18,
+        counts: { resolvedSources: 61, sourceCount: 520, outputCount: 3683, failedSources: 23, excludedSources: 0 }
       }
-    }
-  }, { running: false });
+    }, { running: false }, (view, caseId) => {
+      assert.equal(view.active, false, caseId);
+      assert.equal(view.determinate, false, caseId);
+      assert.equal(view.ratio, 0, caseId);
+      assert.equal(view.label, "", caseId);
+    }],
+    ["mixed-units-indeterminate", {
+      summary: { successfulSources: 13, failedSources: 0, excludedSources: 511, outputCount: 34828, sourceCount: 524 },
+      runtime: { selectedSourceCount: 13 }
+    }, { running: true }, (view, caseId) => {
+      assert.equal(view.active, true, caseId);
+      assert.equal(view.determinate, false, caseId);
+      assert.equal(view.ratio, 0, caseId);
+      assert.match(view.label, /524 sources resolved/i, caseId);
+      assert.doesNotMatch(view.label, /524\/13/i, caseId);
+    }]
+  ];
 
-  assert.equal(view.active, false);
-  assert.equal(view.determinate, false);
-  assert.equal(view.ratio, 0);
-  assert.equal(view.label, "");
+  for (const [caseId, report, options, assertView] of cases) {
+    assertView(deriveFetcherProgressModel(report, options), caseId);
+  }
 });
 
-test("admin domain keeps fetcher progress indeterminate when runtime loader count and resolved source rows use different units", () => {
-  const view = deriveFetcherProgressModel({
-    summary: {
-      successfulSources: 13,
-      failedSources: 0,
-      excludedSources: 511,
-      outputCount: 34828,
-      sourceCount: 524
-    },
-    runtime: {
-      selectedSourceCount: 13
-    }
-  }, { running: true });
+test("admin domain derives discovery progress model scenarios", () => {
+  const cases = [
+    ["scan-fallback-from-summary", caseId => {
+      const view = deriveDiscoveryProgressModel({ summary: { queuedCandidateCount: 3, discoverableButDeferredCount: 2, failedProbeCount: 1 } }, { running: true });
+      assert.equal(view.active, true, caseId);
+      assert.equal(view.determinate, true, caseId);
+      assert.equal(view.ratio, 0.5, caseId);
+      assert.match(view.label, /initializing scan/i, caseId);
+      assert.match(view.label, /queued 3/i, caseId);
+      assert.match(view.label, /deferred 2/i, caseId);
+    }],
+    ["phase-hint-before-report-progress", caseId => {
+      const view = deriveDiscoveryProgressModel(null, { running: true, phaseHint: "Scanning known careers pages" });
+      assert.equal(view.active, true, caseId);
+      assert.equal(view.determinate, true, caseId);
+      assert.equal(view.ratio, 0.5, caseId);
+      assert.match(view.label, /Scanning known careers pages/i, caseId);
+    }],
+    ["probe-total-progress", caseId => {
+      const view = deriveDiscoveryProgressModel({
+        summary: {
+          phaseLabel: "Probing 124 candidate(s)",
+          foundEndpointCount: 785,
+          probedCandidateCount: 0,
+          queuedCandidateCount: 0,
+          failedProbeCount: 0,
+          lossAccounting: { generated: 785, dedupSkipped: 661, validationSkipped: 2, lowEvidenceSkipped: 2 }
+        }
+      }, { running: true });
+      assert.equal(view.active, true, caseId);
+      assert.equal(view.determinate, true, caseId);
+      assert.equal(view.ratio, 0.6, caseId);
+      assert.match(view.label, /probed 0\/120/i, caseId);
+    }],
+    ["phase-hint-overrides-stale-starting-shell", caseId => {
+      const view = deriveDiscoveryProgressModel({
+        summary: { phaseLabel: "Initializing scan", foundEndpointCount: 0, probedCandidateCount: 0, queuedCandidateCount: 0 },
+        taskProgress: {
+          active: true,
+          phaseKey: "starting",
+          phaseLabel: "Initializing scan",
+          mode: "indeterminate",
+          ratio: 0,
+          counts: { foundEndpoints: 0, probedCandidates: 0, probeTotal: 0, queuedCandidates: 0, deferredCandidates: 0, failedProbes: 0 }
+        }
+      }, { running: true, phaseHint: "Running web-search discovery queries" });
+      assert.equal(view.active, true, caseId);
+      assert.equal(view.determinate, true, caseId);
+      assert.equal(view.ratio, 0.28, caseId);
+      assert.match(view.label, /Running web-search discovery queries/i, caseId);
+      assert.doesNotMatch(view.label, /Initializing scan/i, caseId);
+    }],
+    ["finalizing-and-completed-fill", caseId => {
+      const finalizing = deriveDiscoveryProgressModel({ taskProgress: { active: true, phaseKey: "finalizing", phaseLabel: "Finalizing discovery report", mode: "indeterminate", ratio: 0, counts: {} } }, { running: true });
+      const completed = deriveDiscoveryProgressModel({ finishedAt: "2026-03-08T10:02:00.000Z", taskProgress: { active: false, phaseKey: "completed", phaseLabel: "Discovery completed", mode: "determinate", ratio: 1, counts: {} } }, { running: false });
+      assert.equal(finalizing.determinate, true, caseId);
+      assert.equal(finalizing.ratio, 0.96, caseId);
+      assert.match(finalizing.label, /Finalizing discovery report/i, caseId);
+      assert.equal(completed.active, false, caseId);
+    }]
+  ];
 
-  assert.equal(view.active, true);
-  assert.equal(view.determinate, false);
-  assert.equal(view.ratio, 0);
-  assert.match(view.label, /524 sources resolved/i);
-  assert.doesNotMatch(view.label, /524\/13/i);
-});
-
-test("admin domain falls back to indeterminate discovery progress when only scanning is known", () => {
-  const view = deriveDiscoveryProgressModel({
-    summary: {
-      queuedCandidateCount: 3,
-      discoverableButDeferredCount: 2,
-      failedProbeCount: 1
-    }
-  }, { running: true });
-
-  assert.equal(view.active, true);
-  assert.equal(view.determinate, true);
-  assert.equal(view.ratio, 0.5);
-  assert.match(view.label, /initializing scan/i);
-  assert.match(view.label, /queued 3/i);
-  assert.match(view.label, /deferred 2/i);
-});
-
-test("admin domain uses phase hints through the shared discovery progress mapper before report progress arrives", () => {
-  const view = deriveDiscoveryProgressModel(null, {
-    running: true,
-    phaseHint: "Scanning known careers pages"
-  });
-
-  assert.equal(view.active, true);
-  assert.equal(view.determinate, true);
-  assert.equal(view.ratio, 0.5);
-  assert.match(view.label, /Scanning known careers pages/i);
+  for (const [caseId, run] of cases) run(caseId);
 });
 
 test("admin domain derives queued discovery count from candidate rows when summary is stale", () => {
@@ -783,88 +763,4 @@ test("admin domain exposes additive lifecycle counts from discovery summary", ()
     live: 2,
     quarantined: 1
   });
-});
-
-test("admin domain uses probe totals instead of found endpoints for discovery progress", () => {
-  const view = deriveDiscoveryProgressModel({
-    summary: {
-      phaseLabel: "Probing 124 candidate(s)",
-      foundEndpointCount: 785,
-      probedCandidateCount: 0,
-      queuedCandidateCount: 0,
-      failedProbeCount: 0,
-      lossAccounting: {
-        generated: 785,
-        dedupSkipped: 661,
-        validationSkipped: 2,
-        lowEvidenceSkipped: 2
-      }
-    }
-  }, { running: true });
-
-  assert.equal(view.active, true);
-  assert.equal(view.determinate, true);
-  assert.equal(view.ratio, 0.6);
-  assert.match(view.label, /probed 0\/120/i);
-});
-
-test("admin domain lets live discovery phase hints override a stale starting task progress shell", () => {
-  const view = deriveDiscoveryProgressModel({
-    summary: {
-      phaseLabel: "Initializing scan",
-      foundEndpointCount: 0,
-      probedCandidateCount: 0,
-      queuedCandidateCount: 0
-    },
-    taskProgress: {
-      active: true,
-      phaseKey: "starting",
-      phaseLabel: "Initializing scan",
-      mode: "indeterminate",
-      ratio: 0,
-      counts: {
-        foundEndpoints: 0,
-        probedCandidates: 0,
-        probeTotal: 0,
-        queuedCandidates: 0,
-        deferredCandidates: 0,
-        failedProbes: 0
-      }
-    }
-  }, { running: true, phaseHint: "Running web-search discovery queries" });
-
-  assert.equal(view.active, true);
-  assert.equal(view.determinate, true);
-  assert.equal(view.ratio, 0.28);
-  assert.match(view.label, /Running web-search discovery queries/i);
-  assert.doesNotMatch(view.label, /Initializing scan/i);
-});
-
-test("admin domain maps discovery finalizing and completed phases to near-complete and complete fill", () => {
-  const finalizing = deriveDiscoveryProgressModel({
-    taskProgress: {
-      active: true,
-      phaseKey: "finalizing",
-      phaseLabel: "Finalizing discovery report",
-      mode: "indeterminate",
-      ratio: 0,
-      counts: {}
-    }
-  }, { running: true });
-  const completed = deriveDiscoveryProgressModel({
-    finishedAt: "2026-03-08T10:02:00.000Z",
-    taskProgress: {
-      active: false,
-      phaseKey: "completed",
-      phaseLabel: "Discovery completed",
-      mode: "determinate",
-      ratio: 1,
-      counts: {}
-    }
-  }, { running: false });
-
-  assert.equal(finalizing.determinate, true);
-  assert.equal(finalizing.ratio, 0.96);
-  assert.match(finalizing.label, /Finalizing discovery report/i);
-  assert.equal(completed.active, false);
 });
