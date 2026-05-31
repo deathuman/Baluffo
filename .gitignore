@@ -49,6 +49,7 @@ data/updater/
 
 # Phantom/temp files
 nul
+/_tmp_*.log
 
 # Temp test directories
 tmp-manual-check/
