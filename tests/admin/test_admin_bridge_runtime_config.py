@@ -485,6 +485,235 @@ def test_owner_session_should_not_exit_while_active_critical_tasks_exist(
         assert admin_bridge.owner_session_should_exit() is False
 
 
+def test_owner_session_exits_for_confirmed_active_work_close(
+    admin_bridge_entrypoint_root,
+):
+    cfg = admin_bridge.RuntimeConfig(
+        root=admin_bridge_entrypoint_root,
+        data_dir=admin_bridge_entrypoint_root,
+        host="127.0.0.1",
+        port=8877,
+        log_format="human",
+        log_level="info",
+        quiet_requests=False,
+        desktop_mode=True,
+        owner_mode="desktop-window",
+        owner_token="owner-1",
+        desktop_session_id="session-1",
+        started_by="test",
+        owner_idle_timeout_s=15.0,
+    )
+    admin_bridge.configure_runtime_paths(cfg)
+    status_code, payload = admin_bridge.update_desktop_session_lifecycle(
+        owner_token="owner-1",
+        session_id="session-1",
+        page_id="page-1",
+        state="closing",
+        reason="confirmed_active_work_close",
+    )
+    assert status_code == 200
+    assert payload["reason"] == "confirmed_active_work_close"
+
+    with (
+        mock.patch.object(
+            admin_bridge,
+            "now_utc",
+            return_value=admin_bridge.parse_iso("2026-03-01T00:00:01+00:00"),
+        ),
+        mock.patch.object(
+            admin_bridge,
+            "_get_ops_api",
+            return_value=mock.Mock(
+                get_current_task_state_payload=mock.Mock(
+                    return_value={
+                        "tasks": [
+                            {"taskType": "fetch", "runId": "fetch_live_1", "active": True},
+                        ]
+                    }
+                )
+            ),
+        ),
+    ):
+        assert admin_bridge.owner_session_should_exit() is True
+
+
+def test_owner_session_exits_immediately_for_regular_desktop_close_when_idle(
+    admin_bridge_entrypoint_root,
+):
+    cfg = admin_bridge.RuntimeConfig(
+        root=admin_bridge_entrypoint_root,
+        data_dir=admin_bridge_entrypoint_root,
+        host="127.0.0.1",
+        port=8877,
+        log_format="human",
+        log_level="info",
+        quiet_requests=False,
+        desktop_mode=True,
+        owner_mode="desktop-window",
+        owner_token="owner-1",
+        desktop_session_id="session-1",
+        started_by="test",
+        owner_idle_timeout_s=15.0,
+    )
+    admin_bridge.configure_runtime_paths(cfg)
+    status_code, payload = admin_bridge.update_desktop_session_lifecycle(
+        owner_token="owner-1",
+        session_id="session-1",
+        page_id="page-1",
+        state="closing",
+        reason="beforeunload",
+    )
+    assert status_code == 200
+    assert payload["reason"] == "beforeunload"
+
+    with (
+        mock.patch.object(
+            admin_bridge,
+            "_get_ops_api",
+            return_value=mock.Mock(
+                get_current_task_state_payload=mock.Mock(return_value={"tasks": []})
+            ),
+        ),
+        mock.patch.object(
+            admin_bridge,
+            "_get_desktop_update_service",
+            return_value=mock.Mock(
+                get_status_payload=mock.Mock(
+                    return_value={"downloadState": "idle", "installState": "idle"}
+                )
+            ),
+        ),
+    ):
+        assert admin_bridge.owner_session_should_exit() is True
+
+
+def test_regular_desktop_close_stays_alive_for_active_task_or_update_handoff(
+    admin_bridge_entrypoint_root,
+):
+    cfg = admin_bridge.RuntimeConfig(
+        root=admin_bridge_entrypoint_root,
+        data_dir=admin_bridge_entrypoint_root,
+        host="127.0.0.1",
+        port=8877,
+        log_format="human",
+        log_level="info",
+        quiet_requests=False,
+        desktop_mode=True,
+        owner_mode="desktop-window",
+        owner_token="owner-1",
+        desktop_session_id="session-1",
+        started_by="test",
+        owner_idle_timeout_s=15.0,
+    )
+    admin_bridge.configure_runtime_paths(cfg)
+    admin_bridge.update_desktop_session_lifecycle(
+        owner_token="owner-1",
+        session_id="session-1",
+        page_id="page-1",
+        state="closing",
+        reason="beforeunload",
+    )
+
+    with (
+        mock.patch.object(
+            admin_bridge,
+            "_get_ops_api",
+            return_value=mock.Mock(
+                get_current_task_state_payload=mock.Mock(
+                    return_value={
+                        "tasks": [
+                            {"taskType": "fetch", "runId": "fetch_live_1", "active": True},
+                        ]
+                    }
+                )
+            ),
+        ),
+        mock.patch.object(
+            admin_bridge,
+            "_get_desktop_update_service",
+            return_value=mock.Mock(
+                get_status_payload=mock.Mock(
+                    return_value={"downloadState": "idle", "installState": "idle"}
+                )
+            ),
+        ),
+    ):
+        assert admin_bridge.owner_session_should_exit() is False
+
+    with (
+        mock.patch.object(
+            admin_bridge,
+            "_get_ops_api",
+            return_value=mock.Mock(
+                get_current_task_state_payload=mock.Mock(return_value={"tasks": []})
+            ),
+        ),
+        mock.patch.object(
+            admin_bridge,
+            "_get_desktop_update_service",
+            return_value=mock.Mock(
+                get_status_payload=mock.Mock(
+                    return_value={
+                        "downloadState": "idle",
+                        "installState": "handoff_requested",
+                    }
+                )
+            ),
+        ),
+    ):
+        assert admin_bridge.owner_session_should_exit() is False
+
+
+def test_active_work_close_attempt_is_only_cleared_by_same_page(
+    admin_bridge_entrypoint_root,
+):
+    cfg = admin_bridge.RuntimeConfig(
+        root=admin_bridge_entrypoint_root,
+        data_dir=admin_bridge_entrypoint_root,
+        host="127.0.0.1",
+        port=8877,
+        log_format="human",
+        log_level="info",
+        quiet_requests=False,
+        desktop_mode=True,
+        owner_mode="desktop-window",
+        owner_token="owner-1",
+        desktop_session_id="session-1",
+        started_by="test",
+        owner_idle_timeout_s=15.0,
+    )
+    admin_bridge.configure_runtime_paths(cfg)
+    status_code, payload = admin_bridge.update_desktop_session_lifecycle(
+        owner_token="owner-1",
+        session_id="session-1",
+        page_id="page-1",
+        state="closing",
+        reason="active_work_close_attempt",
+    )
+    assert status_code == 200
+    assert payload["reason"] == "active_work_close_attempt"
+
+    status_code, _ = admin_bridge.update_desktop_session_lifecycle(
+        owner_token="owner-1",
+        session_id="session-1",
+        page_id="page-2",
+        state="alive",
+    )
+    assert status_code == 200
+    session_payload = admin_bridge.get_desktop_session_payload()
+    assert session_payload["shutdownReason"] == "active_work_close_attempt"
+    assert session_payload["shutdownPageId"] == "page-1"
+
+    status_code, _ = admin_bridge.update_desktop_session_lifecycle(
+        owner_token="owner-1",
+        session_id="session-1",
+        page_id="page-1",
+        state="alive",
+    )
+    assert status_code == 200
+    assert admin_bridge.get_desktop_session_payload()["shutdownReason"] == ""
+
+
 def test_infer_studio_name_from_host_skips_www_and_splits_studio_token(
     admin_bridge_entrypoint_root,
 ):

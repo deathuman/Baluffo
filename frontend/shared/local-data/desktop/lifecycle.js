@@ -38,6 +38,9 @@ function hasActiveDesktopWork() {
   );
 }
 
+const CONFIRMED_ACTIVE_WORK_CLOSE_REASON = "confirmed_active_work_close";
+const ACTIVE_WORK_CLOSE_ATTEMPT_REASON = "active_work_close_attempt";
+
 function isActiveUpdatePayload(payload) {
   const status = payload && typeof payload === "object" ? payload : {};
   const downloadState = String(status.downloadState || "").toLowerCase();
@@ -93,7 +96,7 @@ export function stopDesktopLifecycle() {
   }
 }
 
-async function postDesktopLifecycle(state, { keepalive = false } = {}) {
+async function postDesktopLifecycle(state, { keepalive = false, reason = "" } = {}) {
   if (!desktopState.desktopSession || !desktopState.desktopPageId) {
     return null;
   }
@@ -108,7 +111,8 @@ async function postDesktopLifecycle(state, { keepalive = false } = {}) {
       ownerToken: desktopState.desktopSession.ownerToken,
       sessionId: desktopState.desktopSession.sessionId,
       pageId: desktopState.desktopPageId,
-      state
+      state,
+      reason: String(reason || "")
     })
   });
 }
@@ -129,9 +133,7 @@ function sendDesktopClosingSignal(reason) {
   try {
     if (globalThis.navigator?.sendBeacon) {
       const blob = new Blob([body], { type: "application/json" });
-      if (globalThis.navigator.sendBeacon(DESKTOP_SESSION_LIFECYCLE_URL, blob)) {
-        return true;
-      }
+      globalThis.navigator.sendBeacon(DESKTOP_SESSION_LIFECYCLE_URL, blob);
     }
   } catch {
     // Ignore beacon errors and fall back to fetch keepalive.
@@ -154,8 +156,17 @@ function bindDesktopLifecycleEvents(clearDesktopNavigationBypass) {
   }
   window.__baluffoDesktopLifecycleBound = true;
   window.addEventListener?.("beforeunload", event => {
+    const bypassDesktopNavigation = consumeDesktopNavigationBypass();
     desktopState.desktopCloseAttemptPending = true;
-    if (hasActiveDesktopWork() && !consumeDesktopNavigationBypass()) {
+    if (bypassDesktopNavigation) {
+      desktopState.desktopCloseAttemptPending = false;
+      return undefined;
+    }
+    if (hasActiveDesktopWork()) {
+      postDesktopLifecycle("closing", {
+        keepalive: true,
+        reason: ACTIVE_WORK_CLOSE_ATTEMPT_REASON
+      }).catch(() => {});
       event.preventDefault();
       event.returnValue = "";
       return "";
@@ -164,14 +175,22 @@ function bindDesktopLifecycleEvents(clearDesktopNavigationBypass) {
     return undefined;
   });
   window.addEventListener?.("pagehide", () => {
+    const hadCloseAttemptPending = Boolean(desktopState.desktopCloseAttemptPending);
     if (!desktopState.desktopCloseAttemptPending && !desktopState.desktopClosingSignaled) {
       desktopState.desktopCloseAttemptPending = true;
     }
-    sendDesktopClosingSignal("pagehide");
+    sendDesktopClosingSignal(
+      hadCloseAttemptPending && hasActiveDesktopWork()
+        ? CONFIRMED_ACTIVE_WORK_CLOSE_REASON
+        : "pagehide"
+    );
   });
   window.addEventListener?.("focus", () => {
     desktopState.desktopCloseAttemptPending = false;
     clearDesktopNavigationBypass();
+    if (!desktopState.desktopClosingSignaled && desktopState.desktopSession) {
+      postDesktopLifecycle("alive", { keepalive: true }).catch(() => {});
+    }
     if (
       !desktopState.desktopClosingSignaled
       && desktopState.desktopSession

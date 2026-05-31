@@ -183,6 +183,26 @@ def _run_rehearsal_mode_if_requested(
             failure_step="packaged-desktop-lifecycle-rehearsal",
             failure_message="Packaged desktop lifecycle rehearsal failed.",
         )
+    if bool(getattr(args, "active_task_close_rehearsal", False)):
+        rehearsal = deps.run_packaged_active_task_close_rehearsal(
+            exe_path=exe_path,
+            artifacts_dir=artifacts_dir,
+            runtime_timeout_s=runtime_timeout_s,
+        )
+        return _apply_rehearsal_result(
+            report,
+            rehearsal,
+            artifact_mappings=(
+                ("runtimeStdout", "activeTaskCloseRuntimeStdout"),
+                ("runtimeStderr", "activeTaskCloseRuntimeStderr"),
+                ("startupMetrics", "activeTaskCloseStartupMetrics"),
+                ("nodeReport", "activeTaskCloseNodeReport"),
+                ("nodeStdout", "activeTaskCloseNodeStdout"),
+                ("nodeStderr", "activeTaskCloseNodeStderr"),
+            ),
+            failure_step="packaged-active-task-close-rehearsal",
+            failure_message="Packaged active-task close rehearsal failed.",
+        )
     return None
 
 

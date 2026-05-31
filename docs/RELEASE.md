@@ -369,6 +369,7 @@ The updater rehearsal gate exercises the real packaged `N -> N+1` helper-driven 
 The orphan-reclaim rehearsal gate seeds stale packaged `site` / `bridge` children plus stale desktop session state, relaunches the packaged app on the same ports, and fails unless startup metrics prove the launcher reclaimed both stale children instead of retrying or silently degrading.
 The browser-job rehearsal gate forces managed Chromium app-mode launch, requires early browser job-attachment telemetry, and then kills only `Baluffo.exe` to prove the attached/live browser PID exits before any smoke cleanup backstop runs.
 The desktop lifecycle rehearsal gate blocks desktop lifecycle POST/beacon traffic from a controlled page while non-health page traffic continues, proves the owner session does not false-idle-close past a short smoke-only timeout, then proves real page/window shutdown releases the launcher, browser proof PID, and desktop ports.
+The active-task close rehearsal gate starts a deterministic active bootstrap task, accepts the real desktop close confirmation through smoke-only CDP, and fails if the launcher reopens the browser or enters the fatal active-work path instead of exiting and releasing child processes.
 
 Optional additional cache-backed smoke validation:
 

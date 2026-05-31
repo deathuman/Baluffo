@@ -246,6 +246,114 @@ def _run_desktop_lifecycle_node_probe(
     }
 
 
+def _run_active_task_close_node_probe(
+    *,
+    site_base_url: str,
+    bridge_base_url: str,
+    cdp_port: int,
+    artifacts_dir: Path,
+    runtime_timeout_s: float,
+) -> dict[str, Any]:
+    deps = _root()
+    node_artifacts_dir = artifacts_dir / "active-task-close-node"
+    node_script = deps.ACTIVE_TASK_CLOSE_NODE_SMOKE_SCRIPT
+    stdout_path = artifacts_dir / "active-task-close-node.stdout.log"
+    stderr_path = artifacts_dir / "active-task-close-node.stderr.log"
+    command = [*deps.resolve_node_command(), str(node_script)]
+    env = deps.build_packaged_smoke_env(
+        site_base_url=site_base_url,
+        bridge_base_url=bridge_base_url,
+        artifacts_dir=node_artifacts_dir,
+        headed=False,
+        pause_on_failure=False,
+    )
+    env.update(deps.packaged_runtime_env_overrides(node_script))
+    env["BALUFFO_PACKAGED_SMOKE_CDP_PORT"] = str(int(cdp_port))
+    completed = deps.subprocess.run(
+        command,
+        cwd=deps.ROOT,
+        env=env,
+        timeout=max(45.0, float(runtime_timeout_s) + 30.0),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    deps.write_text(stdout_path, str(completed.stdout or ""))
+    deps.write_text(stderr_path, str(completed.stderr or ""))
+    report_path = Path(env["PACKAGED_SMOKE_REPORT_PATH"])
+    report_payload = deps.read_packaged_node_smoke_payload(report_path)
+    if int(completed.returncode) != 0 or not bool(report_payload.get("ok")):
+        errors = report_payload.get("errors")
+        if isinstance(errors, list) and errors:
+            raise RuntimeError(str(errors[0]))
+        raise RuntimeError(
+            str(completed.stderr or completed.stdout or "Active-task close node probe failed.")
+        )
+    return {
+        "reportPath": str(report_path),
+        "stdout": str(stdout_path),
+        "stderr": str(stderr_path),
+        "scenarios": list(report_payload.get("scenarios") or []),
+    }
+
+
+def _run_desktop_lifecycle_close_node_probe(
+    *,
+    site_base_url: str,
+    bridge_base_url: str,
+    cdp_port: int,
+    browser_pid: int,
+    artifacts_dir: Path,
+    runtime_timeout_s: float,
+) -> dict[str, Any]:
+    deps = _root()
+    node_artifacts_dir = artifacts_dir / "desktop-lifecycle-close-node"
+    node_script = (
+        deps.ROOT / "tests" / "frontend" / ("packaged-desktop-smoke.desktop-lifecycle-close.mjs")
+    )
+    stdout_path = artifacts_dir / "desktop-lifecycle-close-node.stdout.log"
+    stderr_path = artifacts_dir / "desktop-lifecycle-close-node.stderr.log"
+    command = [*deps.resolve_node_command(), str(node_script)]
+    env = deps.build_packaged_smoke_env(
+        site_base_url=site_base_url,
+        bridge_base_url=bridge_base_url,
+        artifacts_dir=node_artifacts_dir,
+        headed=False,
+        pause_on_failure=False,
+    )
+    env.update(deps.packaged_runtime_env_overrides(node_script))
+    env["BALUFFO_PACKAGED_SMOKE_CDP_PORT"] = str(int(cdp_port))
+    env["BALUFFO_PACKAGED_SMOKE_BROWSER_PID"] = str(int(browser_pid))
+    completed = deps.subprocess.run(
+        command,
+        cwd=deps.ROOT,
+        env=env,
+        timeout=max(45.0, float(runtime_timeout_s) + 30.0),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    deps.write_text(stdout_path, str(completed.stdout or ""))
+    deps.write_text(stderr_path, str(completed.stderr or ""))
+    report_path = Path(env["PACKAGED_SMOKE_REPORT_PATH"])
+    report_payload = deps.read_packaged_node_smoke_payload(report_path)
+    if int(completed.returncode) != 0 or not bool(report_payload.get("ok")):
+        errors = report_payload.get("errors")
+        if isinstance(errors, list) and errors:
+            raise RuntimeError(str(errors[0]))
+        raise RuntimeError(
+            str(
+                completed.stderr or completed.stdout or "Desktop lifecycle close node probe failed."
+            )
+        )
+    return {
+        "reportPath": str(report_path),
+        "stdout": str(stdout_path),
+        "stderr": str(stderr_path),
+        "scenarios": list(report_payload.get("scenarios") or []),
+    }
+
+
 def run_packaged_browser_job_rehearsal(
     *,
     exe_path: Path,
@@ -482,6 +590,7 @@ def run_packaged_desktop_lifecycle_rehearsal(
     false_requested_bridge_port = deps.choose_free_port()
     close_requested_site_port = deps.choose_free_port()
     close_requested_bridge_port = deps.choose_free_port()
+    close_cdp_port = deps.choose_free_port()
     false_actual_site_port = false_requested_site_port
     false_actual_bridge_port = false_requested_bridge_port
     close_actual_site_port = close_requested_site_port
@@ -510,6 +619,7 @@ def run_packaged_desktop_lifecycle_rehearsal(
     )
     try:
         false_env["BALUFFO_DESKTOP_NO_BROWSER"] = "1"
+        false_env["BALUFFO_SYNC_DISABLE"] = "1"
         false_runtime_process, false_stdout_handle, false_stderr_handle = deps.launch_packaged_exe(
             exe_path,
             site_port=false_requested_site_port,
@@ -587,6 +697,9 @@ def run_packaged_desktop_lifecycle_rehearsal(
             close_env
         )
         close_env.update(close_browser_env)
+        close_env["BALUFFO_PACKAGED_SMOKE_RUNTIME"] = "1"
+        close_env["BALUFFO_PACKAGED_SMOKE_CDP_PORT"] = str(int(close_cdp_port))
+        close_env["BALUFFO_SYNC_DISABLE"] = "1"
         close_runtime_process, close_stdout_handle, close_stderr_handle = deps.launch_packaged_exe(
             exe_path,
             site_port=close_requested_site_port,
@@ -594,7 +707,7 @@ def run_packaged_desktop_lifecycle_rehearsal(
             data_dir=close_runtime_data_dir,
             stdout_path=close_stdout_path,
             stderr_path=close_stderr_path,
-            open_path="desktop-probe.html",
+            open_path="saved.html",
             startup_probe=False,
             env=close_env,
         )
@@ -604,7 +717,7 @@ def run_packaged_desktop_lifecycle_rehearsal(
             requested_bridge_port=close_requested_bridge_port,
             expected_data_dir=close_runtime_data_dir,
             timeout_s=runtime_timeout_s,
-            open_path="desktop-probe.html",
+            open_path="saved.html",
             env=close_env,
         )
         close_actual_site_port = int(close_state.get("actualSitePort") or close_requested_site_port)
@@ -625,17 +738,38 @@ def run_packaged_desktop_lifecycle_rehearsal(
             raise RuntimeError(
                 "Packaged desktop lifecycle rehearsal close-cleanup proof PID was not alive."
             )
-        deps._terminate_pid(close_proof_pid, label="managed browser")
+        close_cleanup_started_mono = deps.time.monotonic()
+        close_node_probe = deps._run_desktop_lifecycle_close_node_probe(
+            site_base_url=f"http://127.0.0.1:{close_actual_site_port}",
+            bridge_base_url=f"http://127.0.0.1:{close_actual_bridge_port}",
+            cdp_port=close_cdp_port,
+            browser_pid=close_proof_pid,
+            artifacts_dir=artifacts_dir,
+            runtime_timeout_s=runtime_timeout_s,
+        )
+        close_cleanup_browser_exit_ms = int(
+            (deps.time.monotonic() - close_cleanup_started_mono) * 1000
+        )
         deps._wait_for_launcher_exit(
             close_runtime_process,
             timeout_s=max(30.0, float(runtime_timeout_s)),
         )
+        close_cleanup_launcher_exit_ms = int(
+            (deps.time.monotonic() - close_cleanup_started_mono) * 1000
+        )
         deps._wait_for_pid_exit(close_proof_pid, timeout_s=max(15.0, float(runtime_timeout_s)))
+        close_cleanup_browser_proof_exit_ms = int(
+            (deps.time.monotonic() - close_cleanup_started_mono) * 1000
+        )
         deps._wait_for_desktop_ports_released(
             close_actual_site_port,
             close_actual_bridge_port,
             timeout_s=max(15.0, float(runtime_timeout_s) / 2.0),
         )
+        close_cleanup_ports_released_ms = int(
+            (deps.time.monotonic() - close_cleanup_started_mono) * 1000
+        )
+        close_cleanup_target_ms = 5000
         details.update(
             {
                 "closeCleanupSessionRoot": str(
@@ -645,6 +779,7 @@ def run_packaged_desktop_lifecycle_rehearsal(
                 "closeCleanupRequestedBridgePort": close_requested_bridge_port,
                 "closeCleanupActualSitePort": close_actual_site_port,
                 "closeCleanupActualBridgePort": close_actual_bridge_port,
+                "closeCleanupCdpPort": close_cdp_port,
                 "closeCleanupSelectedBrowserName": str(
                     close_selected_browser.get("browserName") or ""
                 ),
@@ -656,8 +791,26 @@ def run_packaged_desktop_lifecycle_rehearsal(
                 "closeCleanupLauncherExited": True,
                 "closeCleanupBrowserExited": True,
                 "closeCleanupDesktopPortsReleased": True,
+                "closeCleanupBrowserExitMs": close_cleanup_browser_exit_ms,
+                "closeCleanupLauncherExitMs": close_cleanup_launcher_exit_ms,
+                "closeCleanupBrowserProofExitMs": close_cleanup_browser_proof_exit_ms,
+                "closeCleanupDesktopPortsReleasedMs": close_cleanup_ports_released_ms,
+                "closeCleanupTargetMs": close_cleanup_target_ms,
+                "closeCleanupNodeReport": str(close_node_probe.get("reportPath") or ""),
+                "closeCleanupNodeStdout": str(close_node_probe.get("stdout") or ""),
+                "closeCleanupNodeStderr": str(close_node_probe.get("stderr") or ""),
             }
         )
+        if close_cleanup_launcher_exit_ms > close_cleanup_target_ms:
+            raise RuntimeError(
+                "Packaged desktop lifecycle regular close launcher cleanup exceeded "
+                f"{close_cleanup_target_ms} ms: {close_cleanup_launcher_exit_ms} ms."
+            )
+        if close_cleanup_ports_released_ms > close_cleanup_target_ms:
+            raise RuntimeError(
+                "Packaged desktop lifecycle regular close port release exceeded "
+                f"{close_cleanup_target_ms} ms: {close_cleanup_ports_released_ms} ms."
+            )
         return {
             "name": "Packaged desktop lifecycle rehearsal",
             "slug": "packaged-desktop-lifecycle-rehearsal",
@@ -693,11 +846,204 @@ def run_packaged_desktop_lifecycle_rehearsal(
             false_actual_bridge_port,
             close_requested_site_port,
             close_requested_bridge_port,
+            close_cdp_port,
             close_actual_site_port,
             close_actual_bridge_port,
         )
         deps.clear_packaged_desktop_session_state(false_env)
         deps.clear_packaged_desktop_session_state(close_env)
+
+
+def run_packaged_active_task_close_rehearsal(
+    *,
+    exe_path: Path,
+    artifacts_dir: Path,
+    runtime_timeout_s: float,
+) -> dict[str, Any]:
+    deps = _root()
+    started = time.perf_counter()
+    details: dict[str, Any] = {}
+    if deps.sys.platform != "win32":
+        return {
+            "name": "Packaged active-task close rehearsal",
+            "slug": "packaged-active-task-close-rehearsal",
+            "status": "failed",
+            "durationMs": int((time.perf_counter() - started) * 1000),
+            "error": "Packaged active-task close rehearsal requires Windows.",
+            "details": details,
+        }
+
+    runtime_env = deps.os.environ.copy()
+    runtime_env.update(
+        deps.packaged_runtime_env_overrides(
+            deps.ACTIVE_TASK_CLOSE_NODE_SMOKE_SCRIPT,
+            artifacts_dir=artifacts_dir,
+            session_scope="active-task-close-rehearsal",
+        )
+    )
+    runtime_env["BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_DELAY_MS"] = "45000"
+    runtime_env["BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_HEARTBEAT_MS"] = "1000"
+    runtime_env["BALUFFO_SYNC_DISABLE"] = "1"
+    deps.clear_packaged_desktop_session_state(runtime_env)
+
+    requested_site_port = deps.choose_free_port()
+    requested_bridge_port = deps.choose_free_port()
+    cdp_port = deps.choose_free_port()
+    runtime_env["BALUFFO_PACKAGED_SMOKE_CDP_PORT"] = str(int(cdp_port))
+    actual_site_port = requested_site_port
+    actual_bridge_port = requested_bridge_port
+    proof_pid = 0
+    proof_source = ""
+    runtime_data_dir = artifacts_dir / "active-task-close-runtime-data"
+    runtime_data_dir.mkdir(parents=True, exist_ok=True)
+    runtime_process = None
+    runtime_stdout_handle = None
+    runtime_stderr_handle = None
+    runtime_stdout_path = artifacts_dir / "active-task-close-runtime.stdout.log"
+    runtime_stderr_path = artifacts_dir / "active-task-close-runtime.stderr.log"
+    metrics_path = artifacts_dir / "active-task-close.startup-metrics.json"
+    try:
+        runtime_process, runtime_stdout_handle, runtime_stderr_handle = deps.launch_packaged_exe(
+            exe_path,
+            site_port=requested_site_port,
+            bridge_port=requested_bridge_port,
+            data_dir=runtime_data_dir,
+            stdout_path=runtime_stdout_path,
+            stderr_path=runtime_stderr_path,
+            open_path="jobs.html",
+            startup_probe=False,
+            env=runtime_env,
+        )
+        runtime_state = deps.wait_for_packaged_runtime_with_port_pivot(
+            runtime_process,
+            requested_site_port=requested_site_port,
+            requested_bridge_port=requested_bridge_port,
+            expected_data_dir=runtime_data_dir,
+            timeout_s=runtime_timeout_s,
+            open_path="jobs.html",
+            env=runtime_env,
+        )
+        actual_site_port = int(runtime_state.get("actualSitePort") or requested_site_port)
+        actual_bridge_port = int(runtime_state.get("actualBridgePort") or requested_bridge_port)
+        metrics_rows = list(runtime_state.get("startupMetrics") or [])
+        launch_mode = deps.startup_metric_launch_mode(metrics_rows)
+        if launch_mode != "chromium-app":
+            raise RuntimeError(
+                "Packaged active-task close rehearsal required chromium-app launch mode; "
+                f"desktop launch mode was '{launch_mode or 'unknown'}'."
+            )
+        if not deps.startup_metric_event_present(metrics_rows, "desktop_browser_job_attached"):
+            raise RuntimeError(
+                "Packaged active-task close rehearsal never emitted desktop_browser_job_attached."
+            )
+        proof = deps._select_browser_shutdown_proof(metrics_rows)
+        proof_pid = int(proof.get("proofPid") or 0)
+        proof_source = str(proof.get("proofSource") or "")
+        if proof_pid <= 0 or not deps.desktop_app_mod.is_process_alive(proof_pid):
+            raise RuntimeError(
+                "Packaged active-task close rehearsal proof PID was not alive before close."
+            )
+        node_probe = deps._run_active_task_close_node_probe(
+            site_base_url=f"http://127.0.0.1:{actual_site_port}",
+            bridge_base_url=f"http://127.0.0.1:{actual_bridge_port}",
+            cdp_port=cdp_port,
+            artifacts_dir=artifacts_dir,
+            runtime_timeout_s=runtime_timeout_s,
+        )
+        deps._wait_for_launcher_exit(runtime_process, timeout_s=max(45.0, float(runtime_timeout_s)))
+        deps._wait_for_pid_exit(proof_pid, timeout_s=max(15.0, float(runtime_timeout_s)))
+        deps._wait_for_desktop_ports_released(
+            actual_site_port,
+            actual_bridge_port,
+            timeout_s=max(15.0, float(runtime_timeout_s) / 2.0),
+        )
+        final_metrics_rows = deps.desktop_app_mod.read_startup_metrics(runtime_data_dir, limit=1000)
+        deps.write_json(metrics_path, {"rows": final_metrics_rows})
+        if not deps.startup_metric_event_present(
+            final_metrics_rows,
+            "desktop_confirmed_active_work_shutdown_requested",
+        ):
+            raise RuntimeError(
+                "Packaged active-task close rehearsal did not record confirmed shutdown intent."
+            )
+        if deps.startup_metric_event_present(
+            final_metrics_rows, "desktop_browser_relaunch_requested"
+        ):
+            raise RuntimeError(
+                "Packaged active-task close rehearsal attempted to reopen the browser."
+            )
+        if deps.startup_metric_event_present(final_metrics_rows, "desktop_runtime_fatal"):
+            raise RuntimeError(
+                "Packaged active-task close rehearsal entered the fatal active-work path."
+            )
+        details.update(
+            {
+                "sessionRoot": str(deps.packaged_desktop_session_paths(runtime_env)["sessionRoot"]),
+                "requestedSitePort": requested_site_port,
+                "requestedBridgePort": requested_bridge_port,
+                "actualSitePort": actual_site_port,
+                "actualBridgePort": actual_bridge_port,
+                "cdpPort": cdp_port,
+                "proofPid": proof_pid,
+                "proofSource": proof_source,
+                "runtimeStdout": str(runtime_stdout_path),
+                "runtimeStderr": str(runtime_stderr_path),
+                "startupMetrics": str(metrics_path),
+                "nodeReport": str(node_probe.get("reportPath") or ""),
+                "nodeStdout": str(node_probe.get("stdout") or ""),
+                "nodeStderr": str(node_probe.get("stderr") or ""),
+                "launcherExited": True,
+                "browserExited": True,
+                "desktopPortsReleased": True,
+                "browserRelaunchAttempted": False,
+                "fatalPathEntered": False,
+            }
+        )
+        return {
+            "name": "Packaged active-task close rehearsal",
+            "slug": "packaged-active-task-close-rehearsal",
+            "status": "passed",
+            "durationMs": int((time.perf_counter() - started) * 1000),
+            "error": "",
+            "details": details,
+        }
+    except Exception as exc:
+        details.update(
+            {
+                "requestedSitePort": requested_site_port,
+                "requestedBridgePort": requested_bridge_port,
+                "actualSitePort": actual_site_port,
+                "actualBridgePort": actual_bridge_port,
+                "cdpPort": cdp_port,
+                "proofPid": proof_pid,
+                "proofSource": proof_source,
+                "runtimeStdout": str(runtime_stdout_path),
+                "runtimeStderr": str(runtime_stderr_path),
+                "startupMetrics": str(metrics_path),
+            }
+        )
+        return {
+            "name": "Packaged active-task close rehearsal",
+            "slug": "packaged-active-task-close-rehearsal",
+            "status": "failed",
+            "durationMs": int((time.perf_counter() - started) * 1000),
+            "error": str(exc),
+            "details": details,
+        }
+    finally:
+        deps.terminate_process_tree(runtime_process)
+        if runtime_stdout_handle is not None:
+            runtime_stdout_handle.close()
+        if runtime_stderr_handle is not None:
+            runtime_stderr_handle.close()
+        deps.cleanup_orphaned_desktop_ports_nt(
+            requested_site_port,
+            requested_bridge_port,
+            actual_site_port,
+            actual_bridge_port,
+            cdp_port,
+        )
+        deps.clear_packaged_desktop_session_state(runtime_env)
 
 
 def run_packaged_orphan_reclaim_rehearsal(

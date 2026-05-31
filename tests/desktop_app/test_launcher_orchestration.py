@@ -1,4 +1,5 @@
 import subprocess
+from contextlib import ExitStack
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -1207,6 +1208,133 @@ def test_launch_desktop_app_attempts_one_browser_relaunch_when_active_work_loses
     assert watch_mock.call_count == 2
     recover_mock.assert_called_once()
     show_message_mock.assert_not_called()
+
+
+@pytest.mark.windows
+def test_launch_desktop_app_skips_active_work_relaunch_after_confirmed_close() -> None:
+    data_dir = Path("C:/tmp/baluffo-ship/data")
+    config = desktop_runtime_config(
+        data_dir=data_dir,
+    )
+    fake_browser_process = mock.Mock(spec=subprocess.Popen)
+    fake_browser_process.pid = 303
+
+    with ExitStack() as stack:
+        stack.enter_context(
+            mock.patch.object(
+                launcher_flow.uuid,
+                "uuid4",
+                side_effect=[
+                    SimpleNamespace(hex="launchertoken1"),
+                    SimpleNamespace(hex="desktopsession1"),
+                    SimpleNamespace(hex="ownertoken1"),
+                ],
+            )
+        )
+        stack.enter_context(
+            mock.patch.object(desktop_app, "get_valid_session_state", return_value={})
+        )
+        stack.enter_context(
+            mock.patch.object(
+                desktop_app,
+                "acquire_instance_lock",
+                return_value=desktop_app.InstanceLock(Path("C:/tmp/desktop.lock"), 1),
+            )
+        )
+        stack.enter_context(mock.patch.object(desktop_app, "release_instance_lock"))
+        stack.enter_context(
+            mock.patch.object(desktop_app, "resolve_runtime_ports", return_value=config)
+        )
+        stack.enter_context(mock.patch.object(desktop_app, "ensure_runtime_ports"))
+        stack.enter_context(
+            mock.patch.object(
+                desktop_app,
+                "start_child_process",
+                side_effect=[SimpleNamespace(pid=101), SimpleNamespace(pid=202)],
+            )
+        )
+        stack.enter_context(mock.patch.object(desktop_app, "wait_for_url"))
+        stack.enter_context(
+            mock.patch.object(
+                desktop_app,
+                "wait_for_desktop_startup_ready",
+                return_value={"appVersion": APP_VERSION},
+            )
+        )
+        stack.enter_context(
+            mock.patch.object(
+                desktop_app,
+                "launch_browser_for_url",
+                return_value={
+                    "mode": "chromium-app",
+                    "browserName": "msedge",
+                    "browserPath": "C:/Edge/msedge.exe",
+                    "process": fake_browser_process,
+                },
+            )
+        )
+        stack.enter_context(mock.patch.object(desktop_app, "_windows_try_assign_pid_to_job"))
+        stack.enter_context(mock.patch.object(desktop_app, "save_session_state"))
+        stack.enter_context(
+            mock.patch.object(
+                desktop_app,
+                "watch_browser_session",
+                return_value="heartbeat_timeout",
+            )
+        )
+        stack.enter_context(
+            mock.patch.object(
+                desktop_app,
+                "get_baluffo_bridge_health",
+                return_value={
+                    "service": "baluffo-bridge",
+                    "desktopMode": True,
+                    "owner": {"token": "ownertoken1"},
+                },
+            )
+        )
+        stack.enter_context(
+            mock.patch.object(
+                desktop_app, "_bridge_health_matches_owner_session", return_value=True
+            )
+        )
+        stack.enter_context(
+            mock.patch.object(
+                desktop_app,
+                "_load_active_critical_desktop_tasks",
+                return_value=[{"taskType": "fetch", "runId": "fetch_live_1", "status": "running"}],
+            )
+        )
+        stack.enter_context(
+            mock.patch.object(
+                desktop_app,
+                "read_startup_metrics",
+                return_value=[
+                    {
+                        "event": "desktop_confirmed_active_work_shutdown_requested",
+                        "payload": {"sessionId": "desktopsession1"},
+                    }
+                ],
+            )
+        )
+        recover_mock = stack.enter_context(
+            mock.patch.object(desktop_app, "_attempt_active_work_browser_relaunch")
+        )
+        stack.enter_context(mock.patch.object(desktop_app, "write_success_marker"))
+        stack.enter_context(mock.patch.object(desktop_app, "clear_session_state"))
+        stack.enter_context(mock.patch.object(desktop_app, "terminate_process"))
+        trace_mock = stack.enter_context(mock.patch.object(desktop_app, "_append_startup_trace"))
+        show_message_mock = stack.enter_context(
+            mock.patch.object(desktop_app, "show_native_message")
+        )
+        desktop_app.launch_desktop_app(config)
+
+    recover_mock.assert_not_called()
+    show_message_mock.assert_not_called()
+    assert any(
+        call.args[1] == "desktop_confirmed_active_work_shutdown_cleanup"
+        for call in trace_mock.call_args_list
+    )
 
 
 @pytest.mark.windows

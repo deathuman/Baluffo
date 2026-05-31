@@ -222,6 +222,7 @@ def handle_post(
             session_id=str(payload_dict.get("sessionId") or ""),
             page_id=str(payload_dict.get("pageId") or ""),
             state=str(payload_dict.get("state") or ""),
+            reason=str(payload_dict.get("reason") or ""),
         )
         handler.send_json(result, status=status_code)
         return True

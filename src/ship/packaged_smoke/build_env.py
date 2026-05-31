@@ -467,7 +467,10 @@ def packaged_fetch_evidence_smoke_mode(
 def packaged_bootstrap_smoke_mode(node_smoke_script: Path) -> str:
     deps = _root()
     resolved = Path(node_smoke_script).expanduser().resolve()
-    if resolved == deps.FIRST_RUN_JOBS_NODE_SMOKE_SCRIPT.resolve():
+    if resolved in {
+        deps.FIRST_RUN_JOBS_NODE_SMOKE_SCRIPT.resolve(),
+        deps.ACTIVE_TASK_CLOSE_NODE_SMOKE_SCRIPT.resolve(),
+    }:
         return "controlled-heartbeat-success"
     return ""
 

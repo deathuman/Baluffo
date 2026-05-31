@@ -370,8 +370,20 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
   - the launcher and bridge stay alive past the owner idle timeout while that non-health page traffic continues,
   - owner activity advances from non-health page traffic; `/ops/health` polling alone remains excluded,
   - after the controlled page traffic stops, the launcher exits and releases the site/bridge ports,
-  - terminating the managed Chromium app-mode browser/window exits the launcher, browser proof PID, and site/bridge ports without generic cleanup hiding leftovers.
+  - smoke-only CDP attaches to the managed Chromium app-mode page, dispatches the regular page lifecycle close signal, and then sends a Windows main-window close instead of `taskkill`,
+  - the launcher, browser proof PID, and site/bridge ports release within the 5s regular-close cleanup target.
 - This lane is required for desktop-window liveness, owner idle timeout, lifecycle heartbeat, launcher shutdown, or orphan-process cleanup changes.
+
+## Packaged Active-Task Close Rehearsal Contract
+
+- `npm run test:frontend:packaged:active-task-close-rehearsal` is the packaged confirmed-close gate for active critical task shutdown.
+- It must prove all of the following:
+  - the packaged runtime launches in managed Chromium app mode with smoke-only CDP enabled,
+  - the Jobs UI sees a deterministic active bootstrap task before close,
+  - accepting the active-work close confirmation records `desktop_confirmed_active_work_shutdown_requested`,
+  - the launcher exits and releases the browser proof PID and site/bridge ports,
+  - no `desktop_browser_relaunch_requested` or `desktop_runtime_fatal` event appears.
+- This lane is required for active-task beforeunload behavior, confirmed desktop close intent, launcher active-work recovery, or shutdown cleanup changes.
 
 ## Release/build regression picks
 
@@ -383,6 +395,7 @@ Use the narrowest check that matches the risky path:
 - Packaged desktop supervision, stale-runtime recovery, or launcher self-heal changes: `npm run test:frontend:packaged:orphan-reclaim-rehearsal`
 - Packaged Chromium supervision or managed-browser shutdown propagation changes: `npm run test:frontend:packaged:browser-job-rehearsal`
 - Desktop-window liveness, owner idle timeout, lifecycle heartbeat, launcher shutdown, or orphan-process cleanup changes: `npm run test:frontend:packaged:desktop-lifecycle-rehearsal`
+- Active-task desktop close confirmation or active-work launcher recovery changes: `npm run test:frontend:packaged:active-task-close-rehearsal`
 - Packaged Jobs first-run, cold empty-state, bootstrap confirm/retry, or popup theme changes: `npm run test:frontend:packaged:first-run`
 - Packaged Admin startup, overview, or heavy ops-payload loading changes: `npm run test:frontend:packaged:admin-startup`
 - Packaged updater, desktop handoff, Windows packaged data-root migration, or release-manifest changes: `npm run test:frontend:packaged:update-rehearsal`

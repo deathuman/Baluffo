@@ -65,7 +65,12 @@ DESKTOP_SESSION_STATE: dict[str, Any] = {
     "ownerToken": "",
     "pages": {},
     "shutdownRequestedAt": "",
+    "shutdownReason": "",
+    "shutdownPageId": "",
 }
+CONFIRMED_ACTIVE_WORK_CLOSE_REASON = "confirmed_active_work_close"
+ACTIVE_WORK_CLOSE_ATTEMPT_REASON = "active_work_close_attempt"
+REGULAR_DESKTOP_CLOSE_REASONS = frozenset({"beforeunload", "pagehide"})
 
 
 def configure_runtime_paths(
@@ -103,6 +108,8 @@ def configure_runtime_paths(
                 "ownerToken": str(owner_token or "").strip(),
                 "pages": {},
                 "shutdownRequestedAt": "",
+                "shutdownReason": "",
+                "shutdownPageId": "",
             }
         )
 
@@ -154,6 +161,9 @@ def get_desktop_session_payload() -> dict[str, Any]:
             "sessionId": str(DESKTOP_SESSION_STATE.get("sessionId") or ""),
             "ownerToken": str(DESKTOP_SESSION_STATE.get("ownerToken") or ""),
             "lastActivityAt": str(DESKTOP_SESSION_ACTIVITY_AT or ""),
+            "shutdownRequestedAt": str(DESKTOP_SESSION_STATE.get("shutdownRequestedAt") or ""),
+            "shutdownReason": str(DESKTOP_SESSION_STATE.get("shutdownReason") or ""),
+            "shutdownPageId": str(DESKTOP_SESSION_STATE.get("shutdownPageId") or ""),
         }
 
 
@@ -174,6 +184,7 @@ def update_desktop_session_lifecycle(
     page_id: str,
     state: str,
     now_iso: Any,
+    reason: str = "",
 ) -> tuple[int, dict[str, Any]]:
     global DESKTOP_SESSION_ACTIVITY_AT
 
@@ -181,6 +192,7 @@ def update_desktop_session_lifecycle(
     normalized_page_id = str(page_id or "").strip()
     normalized_owner_token = str(owner_token or "").strip()
     normalized_session_id = str(session_id or "").strip()
+    normalized_reason = str(reason or "").strip().lower()
     if normalized_state not in {"alive", "closing"}:
         return 400, {"ok": False, "error": "Invalid desktop lifecycle state."}
     if not normalized_owner_token or not normalized_session_id or not normalized_page_id:
@@ -216,9 +228,30 @@ def update_desktop_session_lifecycle(
         )
         if normalized_state == "alive":
             page_state["closingSince"] = ""
-            DESKTOP_SESSION_STATE["shutdownRequestedAt"] = ""
-        elif not str(DESKTOP_SESSION_STATE.get("shutdownRequestedAt") or ""):
-            DESKTOP_SESSION_STATE["shutdownRequestedAt"] = activity_at
+            shutdown_page_id = str(DESKTOP_SESSION_STATE.get("shutdownPageId") or "").strip()
+            if not shutdown_page_id or shutdown_page_id == normalized_page_id:
+                DESKTOP_SESSION_STATE["shutdownRequestedAt"] = ""
+                DESKTOP_SESSION_STATE["shutdownReason"] = ""
+                DESKTOP_SESSION_STATE["shutdownPageId"] = ""
+        elif normalized_state == "closing":
+            shutdown_requested = str(DESKTOP_SESSION_STATE.get("shutdownRequestedAt") or "")
+            shutdown_reason = str(DESKTOP_SESSION_STATE.get("shutdownReason") or "")
+            shutdown_page_id = str(DESKTOP_SESSION_STATE.get("shutdownPageId") or "").strip()
+            if not shutdown_requested:
+                DESKTOP_SESSION_STATE["shutdownRequestedAt"] = activity_at
+                DESKTOP_SESSION_STATE["shutdownReason"] = normalized_reason
+                DESKTOP_SESSION_STATE["shutdownPageId"] = normalized_page_id
+            elif (
+                normalized_reason == CONFIRMED_ACTIVE_WORK_CLOSE_REASON
+                and shutdown_reason == ACTIVE_WORK_CLOSE_ATTEMPT_REASON
+                and shutdown_page_id == normalized_page_id
+            ):
+                DESKTOP_SESSION_STATE["shutdownReason"] = normalized_reason
+                DESKTOP_SESSION_STATE["shutdownPageId"] = normalized_page_id
+            elif normalized_reason and not shutdown_reason:
+                DESKTOP_SESSION_STATE["shutdownReason"] = normalized_reason
+                DESKTOP_SESSION_STATE["shutdownPageId"] = normalized_page_id
+        page_state["reason"] = normalized_reason
         pages[normalized_page_id] = page_state
         DESKTOP_SESSION_STATE["pages"] = pages
         return 200, {
@@ -226,6 +259,7 @@ def update_desktop_session_lifecycle(
             "sessionId": current_session_id,
             "pageId": normalized_page_id,
             "state": normalized_state,
+            "reason": normalized_reason,
             "lastActivityAt": activity_at,
         }
 
@@ -282,6 +316,14 @@ def owner_session_should_exit(*, parse_iso: ParseIso, now_utc: NowUtc) -> bool:
     owner_mode = str(OWNER_STATE.get("ownerMode") or "").strip()
     if not owner_mode:
         return False
+    with DESKTOP_SESSION_LOCK:
+        shutdown_requested = bool(str(DESKTOP_SESSION_STATE.get("shutdownRequestedAt") or ""))
+        shutdown_reason = str(DESKTOP_SESSION_STATE.get("shutdownReason") or "").strip().lower()
+    if shutdown_requested and shutdown_reason in {
+        CONFIRMED_ACTIVE_WORK_CLOSE_REASON,
+        *REGULAR_DESKTOP_CLOSE_REASONS,
+    }:
+        return True
     timeout_seconds = max(0.0, float(OWNER_STATE.get("idleTimeoutSeconds") or 0.0))
     if timeout_seconds <= 0.0:
         return False
@@ -320,6 +362,9 @@ __all__ = [
     "DESKTOP_SESSION_CLOSING_GRACE_S",
     "DESKTOP_SESSION_LOCK",
     "DESKTOP_SESSION_STATE",
+    "CONFIRMED_ACTIVE_WORK_CLOSE_REASON",
+    "ACTIVE_WORK_CLOSE_ATTEMPT_REASON",
+    "REGULAR_DESKTOP_CLOSE_REASONS",
     "DESKTOP_SESSION_ACTIVITY_AT",
     "OWNER_STATE",
     "STARTUP_METRICS_LOCK",

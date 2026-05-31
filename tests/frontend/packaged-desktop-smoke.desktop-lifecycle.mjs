@@ -77,12 +77,26 @@ async function waitForControlledDesktopPageReady(page) {
   await page.locator("#saved-source-status").waitFor({ state: "visible", timeout: 20_000 });
 }
 
-async function fetchHealth(apiRequest) {
-  const response = await apiRequest.get(`${BRIDGE_BASE}/ops/health?desktopLifecycleSmoke=${Date.now()}`);
-  assert.equal(response.ok(), true, "ops health should remain reachable");
-  const payload = await response.json();
-  assert.equal(Boolean(payload?.desktopMode), true, "bridge should remain in desktop mode");
-  return payload && typeof payload === "object" ? payload : {};
+async function fetchHealth(apiRequest, options = {}) {
+  const attempts = Math.max(1, Number(options.attempts || 8) || 8);
+  const delayMs = Math.max(50, Number(options.delayMs || 250) || 250);
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const response = await apiRequest.get(`${BRIDGE_BASE}/ops/health?desktopLifecycleSmoke=${Date.now()}`);
+      assert.equal(response.ok(), true, "ops health should remain reachable");
+      const payload = await response.json();
+      assert.equal(Boolean(payload?.desktopMode), true, "bridge should remain in desktop mode");
+      return payload && typeof payload === "object" ? payload : {};
+    } catch (error) {
+      lastError = error;
+      if (attempt >= attempts) {
+        throw error;
+      }
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+  throw lastError;
 }
 
 function ownerLastActivityAt(healthPayload) {

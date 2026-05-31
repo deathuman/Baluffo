@@ -108,6 +108,9 @@ FIRST_RUN_JOBS_NODE_SMOKE_SCRIPT = (
 FETCH_EVIDENCE_NODE_SMOKE_SCRIPT = (
     ROOT / "tests" / "frontend" / "packaged-desktop-smoke.fetch-evidence.mjs"
 )
+ACTIVE_TASK_CLOSE_NODE_SMOKE_SCRIPT = (
+    ROOT / "tests" / "frontend" / "packaged-desktop-smoke.active-task-close.mjs"
+)
 _PORTABLE_EXE_FRESHNESS_MARKERS = (
     ROOT / "scripts" / "build_portable_exe.py",
     ROOT / "scripts" / "build_ship_bundle.py",
@@ -293,6 +296,10 @@ _select_packaged_browser_job_browser = (
     packaged_smoke_rehearsals_mod._select_packaged_browser_job_browser
 )
 _select_browser_shutdown_proof = packaged_smoke_rehearsals_mod._select_browser_shutdown_proof
+_run_active_task_close_node_probe = packaged_smoke_rehearsals_mod._run_active_task_close_node_probe
+_run_desktop_lifecycle_close_node_probe = (
+    packaged_smoke_rehearsals_mod._run_desktop_lifecycle_close_node_probe
+)
 _assert_desktop_update_helper_succeeded = (
     packaged_smoke_rehearsals_mod._assert_desktop_update_helper_succeeded
 )
@@ -303,6 +310,9 @@ run_packaged_browser_job_rehearsal = (
 )
 run_packaged_desktop_lifecycle_rehearsal = (
     packaged_smoke_rehearsals_mod.run_packaged_desktop_lifecycle_rehearsal
+)
+run_packaged_active_task_close_rehearsal = (
+    packaged_smoke_rehearsals_mod.run_packaged_active_task_close_rehearsal
 )
 run_packaged_orphan_reclaim_rehearsal = (
     packaged_smoke_rehearsals_mod.run_packaged_orphan_reclaim_rehearsal
@@ -334,6 +344,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--orphan-reclaim-rehearsal", action="store_true")
     parser.add_argument("--browser-job-rehearsal", action="store_true")
     parser.add_argument("--desktop-lifecycle-rehearsal", action="store_true")
+    parser.add_argument("--active-task-close-rehearsal", action="store_true")
     parser.add_argument("--profile-only", action="store_true")
     parser.add_argument("--profile-mode", choices=("cold", "warm"), default="cold")
     parser.add_argument("--profile-record-only", action="store_true")

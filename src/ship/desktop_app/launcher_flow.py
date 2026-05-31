@@ -77,6 +77,32 @@ def _browser_watch_diagnostics(launch_result: dict[str, object]) -> dict[str, st
     return diagnostics
 
 
+_ACTIVE_WORK_SHUTDOWN_REQUEST_EVENTS = {
+    "desktop_confirmed_active_work_shutdown_requested",
+    "desktop_active_work_close_attempt_requested",
+}
+_ACTIVE_WORK_CLOSE_ATTEMPT_CLEARED_EVENT = "desktop_active_work_close_attempt_cleared"
+
+
+def _confirmed_active_work_shutdown_requested(data_dir: Path, desktop_session_id: str) -> bool:
+    api = desktop_api()
+    expected_session_id = str(desktop_session_id or "").strip()
+    if not expected_session_id:
+        return False
+    for row in reversed(api.read_startup_metrics(data_dir, limit=1000)):
+        event_name = str(row.get("event") or "")
+        if event_name not in _ACTIVE_WORK_SHUTDOWN_REQUEST_EVENTS | {
+            _ACTIVE_WORK_CLOSE_ATTEMPT_CLEARED_EVENT
+        }:
+            continue
+        payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+        fields = row.get("fields") if isinstance(row.get("fields"), dict) else {}
+        details = payload or fields
+        if str(details.get("sessionId") or "").strip() == expected_session_id:
+            return event_name != _ACTIVE_WORK_CLOSE_ATTEMPT_CLEARED_EVENT
+    return False
+
+
 def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
     api = desktop_api()
     launcher_token = uuid.uuid4().hex
@@ -280,13 +306,14 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 else:
                     try:
                         browser_job_handle = None if config.startup_probe else desktop_job
+                        browser_env = {**api.os.environ, **child_env}
                         launch_result = api.launch_browser_for_url(
                             open_url,
                             preferred_browser_path=str(
                                 api.os.environ.get(api.PREFERRED_BROWSER_PATH_ENV) or ""
                             ).strip(),
                             job_handle=browser_job_handle,
-                            env=child_env,
+                            env=browser_env,
                             data_dir=config.data_dir,
                             started_mono=started_mono,
                             trace_hook=_record_browser_launch_trace,
@@ -525,6 +552,23 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 allow_disk_fallback=not bridge_healthy,
             )
             if not active_tasks:
+                break
+            if _confirmed_active_work_shutdown_requested(config.data_dir, desktop_session_id):
+                api._append_startup_trace(
+                    config.data_dir,
+                    "desktop_confirmed_active_work_shutdown_requested",
+                    elapsedMs=int((api.time.perf_counter() - started_mono) * 1000),
+                    desktopSessionId=desktop_session_id,
+                    source="launcher_browser_loss",
+                )
+                api._append_startup_trace(
+                    config.data_dir,
+                    "desktop_confirmed_active_work_shutdown_cleanup",
+                    elapsedMs=int((api.time.perf_counter() - started_mono) * 1000),
+                    reason=str(stop_reason or ""),
+                    desktopSessionId=desktop_session_id,
+                    activeTasks=active_tasks,
+                )
                 break
             if recovery_attempted:
                 recovered_launch_result = None

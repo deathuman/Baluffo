@@ -156,16 +156,86 @@ def get_desktop_session_payload() -> dict[str, Any]:
 
 
 def update_desktop_session_lifecycle(
-    *, owner_token: str, session_id: str, page_id: str, state: str
+    *, owner_token: str, session_id: str, page_id: str, state: str, reason: str = ""
 ) -> tuple[int, dict[str, Any]]:
     root_mod = _require_root()
-    return bridge_runtime_state.update_desktop_session_lifecycle(
+    previous_session = bridge_runtime_state.get_desktop_session_payload()
+    previous_shutdown_reason = str(previous_session.get("shutdownReason") or "").strip().lower()
+    previous_shutdown_page_id = str(previous_session.get("shutdownPageId") or "").strip()
+    status_code, result = bridge_runtime_state.update_desktop_session_lifecycle(
         owner_token=owner_token,
         session_id=session_id,
         page_id=page_id,
         state=state,
+        reason=reason,
         now_iso=root_mod.now_iso,
     )
+    normalized_reason = str(reason or "").strip().lower()
+    if (
+        status_code == 200
+        and str(state or "").strip().lower() == "alive"
+        and previous_shutdown_reason == bridge_runtime_state.ACTIVE_WORK_CLOSE_ATTEMPT_REASON
+        and (
+            not previous_shutdown_page_id or previous_shutdown_page_id == str(page_id or "").strip()
+        )
+    ):
+        owner_state = bridge_runtime_state.get_owner_state()
+        append_startup_metric(
+            "desktop_active_work_close_attempt_cleared",
+            {
+                "sessionId": str(owner_state.get("sessionId") or session_id or ""),
+                "pageId": str(page_id or ""),
+                "reason": bridge_runtime_state.ACTIVE_WORK_CLOSE_ATTEMPT_REASON,
+            },
+        )
+    if (
+        status_code == 200
+        and str(state or "").strip().lower() == "closing"
+        and normalized_reason
+        in {
+            bridge_runtime_state.CONFIRMED_ACTIVE_WORK_CLOSE_REASON,
+            bridge_runtime_state.ACTIVE_WORK_CLOSE_ATTEMPT_REASON,
+            *bridge_runtime_state.REGULAR_DESKTOP_CLOSE_REASONS,
+        }
+    ):
+        owner_state = bridge_runtime_state.get_owner_state()
+        payload = {
+            "sessionId": str(owner_state.get("sessionId") or session_id or ""),
+            "pageId": str(page_id or ""),
+            "reason": normalized_reason,
+        }
+        if normalized_reason == bridge_runtime_state.CONFIRMED_ACTIVE_WORK_CLOSE_REASON:
+            event_name = "desktop_confirmed_active_work_shutdown_requested"
+            log_event_name = "admin_bridge_confirmed_active_work_shutdown_requested"
+        elif normalized_reason == bridge_runtime_state.ACTIVE_WORK_CLOSE_ATTEMPT_REASON:
+            event_name = "desktop_active_work_close_attempt_requested"
+            log_event_name = "admin_bridge_desktop_active_work_close_attempt_requested"
+        else:
+            event_name = "desktop_regular_close_shutdown_requested"
+            log_event_name = "admin_bridge_desktop_regular_close_shutdown_requested"
+        root_mod.bridge_log(
+            "info",
+            log_event_name,
+            session_id=payload["sessionId"],
+            page_id=payload["pageId"],
+            reason=payload["reason"],
+        )
+        append_startup_metric(event_name, payload)
+    return status_code, result
+
+
+def _desktop_update_handoff_active(root_mod: Any) -> bool:
+    try:
+        status = root_mod._get_desktop_update_service().get_status_payload()
+    except Exception:
+        return False
+    if not isinstance(status, dict):
+        return False
+    download_state = str(status.get("downloadState") or "").strip().lower()
+    install_state = str(status.get("installState") or "").strip().lower()
+    if download_state == "downloading":
+        return True
+    return install_state in {"handoff_requested", "waiting_for_exit", "installing", "verifying"}
 
 
 def owner_session_should_exit() -> bool:
@@ -194,7 +264,26 @@ def owner_session_should_exit() -> bool:
             ]
         except Exception:
             active_tasks = []
-        if active_tasks:
+        shutdown_reason = (
+            str(bridge_runtime_state.get_desktop_session_payload().get("shutdownReason") or "")
+            .strip()
+            .lower()
+        )
+        if _desktop_update_handoff_active(root_mod):
+            owner_state = bridge_runtime_state.get_owner_state()
+            root_mod.bridge_log(
+                "info",
+                "admin_bridge_owner_session_exit_suppressed_for_update_handoff",
+                owner_mode=str(owner_state.get("ownerMode") or ""),
+                owner_token=str(owner_state.get("ownerToken") or ""),
+                session_id=str(owner_state.get("sessionId") or ""),
+                shutdown_reason=shutdown_reason,
+            )
+            return False
+        if (
+            active_tasks
+            and shutdown_reason != bridge_runtime_state.CONFIRMED_ACTIVE_WORK_CLOSE_REASON
+        ):
             owner_state = bridge_runtime_state.get_owner_state()
             root_mod.bridge_log(
                 "info",

@@ -197,6 +197,22 @@ test("desktop beforeunload prompts when admin bridge work is active", async () =
   assert.equal(event.defaultPrevented, true);
   assert.equal(event.returnValue, "");
   assert.equal(beaconCalls.length, 0);
+  const closeAttemptCalls = fetchCalls.filter(call => {
+    if (!call.url.includes("/app/desktop-session-lifecycle")) return false;
+    const body = JSON.parse(String(call.options?.body || "{}"));
+    return body.state === "closing";
+  });
+  assert.equal(closeAttemptCalls.length, 1);
+  const closeAttemptPayload = JSON.parse(String(closeAttemptCalls[0].options?.body || "{}"));
+  assert.equal(closeAttemptPayload.reason, "active_work_close_attempt");
+
+  const pagehide = eventListeners.get("pagehide");
+  pagehide();
+  pagehide();
+
+  assert.equal(beaconCalls.length, 1);
+  const payload = JSON.parse(String(beaconCalls[0].blob.parts[0] || "{}"));
+  assert.equal(payload.reason, "confirmed_active_work_close");
 });
 
 test("desktop lifecycle binds beforeunload, pagehide, and focus but not unload", async () => {
@@ -255,7 +271,7 @@ test("desktop beforeunload prompts when update handoff or install is active", as
   assert.equal(beaconCalls.length, 0);
 });
 
-test("approved desktop page navigation bypasses the unload prompt and still signals closing", async () => {
+test("approved desktop page navigation bypasses the unload prompt without signaling closing", async () => {
   const { eventListeners, beaconCalls, locationState } = setupDesktopGlobals({
     taskPayload: {
       tasks: [{ taskType: "sync", active: true }],
@@ -281,7 +297,7 @@ test("approved desktop page navigation bypasses the unload prompt and still sign
   assert.equal(result, undefined);
   assert.equal(event.defaultPrevented, false);
   assert.equal(event.returnValue, undefined);
-  assert.equal(beaconCalls.length, 1);
+  assert.equal(beaconCalls.length, 0);
 });
 
 test("approved desktop page navigation preserves desktop runtime query params", async () => {

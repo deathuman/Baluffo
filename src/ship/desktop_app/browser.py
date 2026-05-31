@@ -194,6 +194,14 @@ def build_browser_launch_command(
     ]
     if not bool(api._truthy_env(env_map.get(DISABLE_LEAN_BROWSER_FLAGS_ENV))):
         command[1:1] = list(LEAN_CHROMIUM_APP_FLAGS)
+    cdp_port = str(env_map.get("BALUFFO_PACKAGED_SMOKE_CDP_PORT") or "").strip()
+    if (
+        str(env_map.get("BALUFFO_PACKAGED_SMOKE_RUNTIME") or "").strip() == "1"
+        and cdp_port.isdigit()
+        and 0 < int(cdp_port) < 65536
+    ):
+        command.append(f"--remote-debugging-port={int(cdp_port)}")
+        command.append("--remote-debugging-address=127.0.0.1")
     return command
 
 
@@ -253,11 +261,12 @@ def launch_chromium_app(
     profile_dir: Path,
     *,
     clear_profile_caches: bool = False,
+    env: Mapping[str, str] | None = None,
 ) -> subprocess.Popen[str]:
     profile_dir.mkdir(parents=True, exist_ok=True)
     if clear_profile_caches:
         clear_browser_profile_caches(profile_dir)
-    command = build_browser_launch_command(browser_path, url, profile_dir)
+    command = build_browser_launch_command(browser_path, url, profile_dir, env=env)
     if os.name == "nt":
         return subprocess.Popen(
             command,
@@ -324,6 +333,7 @@ def launch_browser_for_url(
                 browser_path,
                 profile_dir,
                 clear_profile_caches=clear_profile_caches,
+                env=env,
             )
         except OSError:
             continue

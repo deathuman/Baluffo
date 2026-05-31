@@ -161,6 +161,44 @@ def _run_desktop_lifecycle_node_probe(
     )
 
 
+def _run_active_task_close_node_probe(
+    *,
+    site_base_url: str,
+    bridge_base_url: str,
+    cdp_port: int,
+    artifacts_dir: Path,
+    runtime_timeout_s: float,
+) -> dict[str, Any]:
+    _root()
+    return rehearsal_browser_mod._run_active_task_close_node_probe(
+        site_base_url=site_base_url,
+        bridge_base_url=bridge_base_url,
+        cdp_port=cdp_port,
+        artifacts_dir=artifacts_dir,
+        runtime_timeout_s=runtime_timeout_s,
+    )
+
+
+def _run_desktop_lifecycle_close_node_probe(
+    *,
+    site_base_url: str,
+    bridge_base_url: str,
+    cdp_port: int,
+    browser_pid: int,
+    artifacts_dir: Path,
+    runtime_timeout_s: float,
+) -> dict[str, Any]:
+    _root()
+    return rehearsal_browser_mod._run_desktop_lifecycle_close_node_probe(
+        site_base_url=site_base_url,
+        bridge_base_url=bridge_base_url,
+        cdp_port=cdp_port,
+        browser_pid=browser_pid,
+        artifacts_dir=artifacts_dir,
+        runtime_timeout_s=runtime_timeout_s,
+    )
+
+
 def _wait_for_relaunched_runtime(
     *,
     expected_data_dir: Path,
@@ -261,6 +299,20 @@ def run_packaged_desktop_lifecycle_rehearsal(
 ) -> dict[str, Any]:
     _root()
     return rehearsal_browser_mod.run_packaged_desktop_lifecycle_rehearsal(
+        exe_path=exe_path,
+        artifacts_dir=artifacts_dir,
+        runtime_timeout_s=runtime_timeout_s,
+    )
+
+
+def run_packaged_active_task_close_rehearsal(
+    *,
+    exe_path: Path,
+    artifacts_dir: Path,
+    runtime_timeout_s: float,
+) -> dict[str, Any]:
+    _root()
+    return rehearsal_browser_mod.run_packaged_active_task_close_rehearsal(
         exe_path=exe_path,
         artifacts_dir=artifacts_dir,
         runtime_timeout_s=runtime_timeout_s,
