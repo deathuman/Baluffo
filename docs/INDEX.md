@@ -5,7 +5,7 @@
 > - **Canonical for:** wiki routing, doc discovery, and the default AI read path
 > - **Not canonical for:** payload details, route contracts, or subsystem implementation behavior
 > - **Then inspect:** [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`architecture-ai-map.md`](architecture-ai-map.md), and one matching contract or workflow doc
-> - **Last updated:** 2026-05-29 (archived plans consolidated; operational docs streamlined)
+> - **Last updated:** 2026-05-31 (Umbrel raw-LAN deployment plan added)
 
 Use this page as the wiki home. Start here, load the minimum active docs you need, and use git history for old cleanup/refactor details unless the task explicitly needs historical provenance.
 
@@ -62,6 +62,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md) | Documentation maintenance | You are deciding where docs belong, updating docs after code changes, or adding a new documentation page |
 | [`source-policy-runbook.md`](source-policy-runbook.md) | Operator runbook | You are running discovery/fetch/soak/Admin migration-link validation or checking provider/static source-policy release readiness |
 | [`environments.md`](environments.md) | Release / Environments | You are choosing source-sync writer auth, staging/prod separation, or the repository-side write policy |
+| [`plans/umbrel-raw-lan-deployment-plan.md`](plans/umbrel-raw-lan-deployment-plan.md) | Active Plan / Deployment | You are preparing the future private Umbrel raw-LAN deployment, container runtime, GHCR image, or app-store manifest work |
 | [`plans/saved-job-tracker-improvements-plan.md`](plans/saved-job-tracker-improvements-plan.md) | Parked Plan / Deferred Follow-Ups | You are deciding whether to restart Saved Job Tracker work, add v2 CRM-style tracking, or revisit deferred Saved-page list-management behavior |
 | [`plans/initial_findings.md`](plans/initial_findings.md) | Plans / Refactoring Inventory | You are doing jobs/fetcher refactoring, consolidation, dead-code triage, or validating analyzer findings from the 2026-05-17 initial refactoring analysis |
 | [`plans/dedup-pressure-reduction-plan.md`](plans/dedup-pressure-reduction-plan.md) | Plans / Follow-Ups | You are reducing registry/dedup conflict volume after the sheet role-bucket guard and actionable Dedup badge split |
@@ -133,6 +134,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | Revisit Saved Job Tracker deferred work | [`plans/saved-job-tracker-improvements-plan.md`](plans/saved-job-tracker-improvements-plan.md) | [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`frontend/local-data`](../frontend/local-data/), [`testing.md`](testing.md) |
 | Triage refactoring or dead-code candidates | [`plans/initial_findings.md`](plans/initial_findings.md) | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`architecture-ai-map.md`](architecture-ai-map.md), [`testing.md`](testing.md) |
 | Validate provider/static source-policy workflow | [`source-policy-runbook.md`](source-policy-runbook.md) | [`scraping-pipeline.md`](scraping-pipeline.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md) |
+| Prepare Umbrel raw-LAN deployment | [`plans/umbrel-raw-lan-deployment-plan.md`](plans/umbrel-raw-lan-deployment-plan.md) | [`LOCAL_SETUP.md`](LOCAL_SETUP.md), [`admin-bridge-api.md`](admin-bridge-api.md), [`architecture-ai-map.md`](architecture-ai-map.md), [`testing.md`](testing.md), [`RELEASE.md`](RELEASE.md) |
 | Fix Google Sheets category title or redirect company leaks | [`plans/art-title-repair-quality-gate-plan.md`](plans/art-title-repair-quality-gate-plan.md) | [`scraping-pipeline.md`](scraping-pipeline.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`testing.md`](testing.md) |
 | Improve provider discovery coverage | [`plans/provider-discovery-coverage-gap-plan.md`](plans/provider-discovery-coverage-gap-plan.md) | [`scraping-pipeline.md`](scraping-pipeline.md), [`source-policy-runbook.md`](source-policy-runbook.md), [`adapter-plugin-inventory.md`](adapter-plugin-inventory.md) |
 | Revisit desktop RAM reduction | [`plans/post-0.2.0-desktop-runtime-ram-reduction-plan.md`](plans/post-0.2.0-desktop-runtime-ram-reduction-plan.md) | [`startup-probe-architecture.md`](startup-probe-architecture.md), [`architecture-ai-map.md`](architecture-ai-map.md), [`testing.md`](testing.md) |
