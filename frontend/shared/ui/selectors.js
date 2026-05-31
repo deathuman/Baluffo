@@ -67,7 +67,6 @@ export const UI_TOKENS = Object.freeze({
     quickFiltersResetBtn: "quick-filters-reset-btn",
     dataSourcesList: "data-sources-list",
     dataSourcesCaption: "data-sources-caption",
-    recentViewsBar: "recent-views-bar",
     savedViewsBar: "saved-views-bar",
     savedViewsDropdown: "saved-views-dropdown",
     savedViewsDeleteBtn: "saved-views-delete-btn",

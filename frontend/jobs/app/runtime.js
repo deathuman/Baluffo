@@ -71,7 +71,7 @@ import {
   renderDataSources as renderDataSourcesFromSources
 } from "./sources.js";
 import { composeJobsRuntime } from "./runtime/composition.js?v=10";
-import { createJobsBoot } from "./runtime/boot.js?v=3";
+import { createJobsBoot } from "./runtime/boot.js?v=4";
 import { createJobsPageFlow } from "./runtime/page-flow.js?v=6";
 
 const defaultFilters = jobsStateModule.DEFAULT_FILTERS || {

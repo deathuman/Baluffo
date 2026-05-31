@@ -51,6 +51,19 @@ test("desktop html meaningful operational buttons expose polished tooltips", () 
   assert.doesNotMatch(`${jobsHtml}\n${savedHtml}\n${adminHtml}`, /id="(?:country-picker-clear-btn|customize-quick-filters-btn|quick-filters-reset-btn|refresh-jobs-btn|add-custom-job-btn|export-backup-btn|import-backup-btn|activity-refresh-btn|admin-refresh-btn|admin-refresh-ops-btn|admin-run-discovery-btn|admin-load-discovery-btn|admin-add-manual-source-btn|admin-approve-sources-btn|admin-reject-sources-btn|admin-restore-rejected-btn|admin-delete-sources-btn)"[^>]+\stitle=/);
 });
 
+test("jobs page removes recent views while keeping saved filter presets", () => {
+  const jobsHtml = fs.readFileSync(path.join(repoRoot, "jobs.html"), "utf8");
+  const jobsCss = fs.readFileSync(path.join(repoRoot, "styles", "jobs.css"), "utf8");
+  const selectors = fs.readFileSync(path.join(repoRoot, "frontend", "shared", "ui", "selectors.js"), "utf8");
+
+  assert.doesNotMatch(jobsHtml, /recent-views-bar/);
+  assert.doesNotMatch(jobsHtml, />Recent:/);
+  assert.doesNotMatch(jobsCss, /recent-view/);
+  assert.doesNotMatch(selectors, /recentViewsBar/);
+  assert.match(jobsHtml, /id="saved-views-bar" data-ui="saved-views-bar"/);
+  assert.match(jobsCss, /\.saved-views-bar\s*\{/);
+});
+
 test("saved activity toggle keeps text hidden behind the icon affordance", () => {
   const savedCss = fs.readFileSync(path.join(repoRoot, "styles", "saved.css"), "utf8");
   assert.match(savedCss, /\.activity-toggle-label,\s*\.activity-recent-badge\s*\{\s*display: none;/);
@@ -168,7 +181,8 @@ test("jobs html exposes first-slice read-only lifecycle filters", () => {
   assert.match(html, /value="likely_removed">Recently removed<\/option>/);
   assert.match(html, /value="reappeared">Reappeared<\/option>/);
   assert.match(html, /value="preserved_source_failed">Preserved because source failed<\/option>/);
-  assert.match(html, /frontend\/jobs\/index\.js\?v=12/);
+  assert.match(html, /styles\/jobs\.css\?v=9/);
+  assert.match(html, /frontend\/jobs\/index\.js\?v=13/);
   assert.doesNotMatch(html, /preserved_source_skipped/);
 });
 

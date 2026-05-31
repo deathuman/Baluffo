@@ -1,7 +1,5 @@
 const PRESETS_KEY = "baluffo_jobs_filter_presets";
-const RECENT_VIEWS_KEY = "baluffo_jobs_recent_views";
 const MAX_PRESETS = 10;
-const MAX_RECENT = 10;
 
 function readJson(key, fallback) {
   try {
@@ -109,31 +107,6 @@ export function applyFilterPreset(name, currentState) {
   const filters = loadFilterPreset(name);
   if (!filters) return null;
   return applyPresetFilters(filters, currentState);
-}
-
-export function recordRecentView(url, label, context = "jobs") {
-  const views = readJson(RECENT_VIEWS_KEY, []);
-  if (!Array.isArray(views)) return;
-  const entry = {
-    url: String(url || ""),
-    label: String(label || url || "").slice(0, 80),
-    context: String(context || "jobs"),
-    visitedAt: Date.now()
-  };
-  const filtered = views.filter(v => v && v.url !== entry.url);
-  filtered.unshift(entry);
-  if (filtered.length > MAX_RECENT) filtered.length = MAX_RECENT;
-  writeJson(RECENT_VIEWS_KEY, filtered);
-}
-
-export function getRecentViews(limit = 5) {
-  const views = readJson(RECENT_VIEWS_KEY, []);
-  if (!Array.isArray(views)) return [];
-  return views.slice(0, Math.max(1, Number(limit) || 5));
-}
-
-export function clearRecentViews() {
-  writeJson(RECENT_VIEWS_KEY, []);
 }
 
 export { applyPresetFilters, stripDefaultFilters };

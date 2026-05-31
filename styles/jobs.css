@@ -680,40 +680,6 @@
   border-color: var(--critical, #f85149);
 }
 
-/* ── Recent views bar ── */
-.recent-views-bar {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  align-items: center;
-  padding: 0.3rem 0 0.5rem;
-  font-size: 0.8rem;
-  border-bottom: 1px solid var(--border-default);
-  margin-bottom: 0.5rem;
-}
-
-.recent-views-label {
-  font-weight: 600;
-  color: var(--text-subtle);
-}
-
-.recent-view-link {
-  color: var(--accent);
-  text-decoration: none;
-  white-space: nowrap;
-  font-size: 0.82rem;
-}
-
-.recent-view-link:hover {
-  text-decoration: underline;
-}
-
-.recent-view-context {
-  color: var(--text-subtle);
-  font-size: 0.72rem;
-  opacity: 0.8;
-}
-
 /* ── Explain-this-state overlay ── */
 .explain-state-overlay {
   position: fixed;

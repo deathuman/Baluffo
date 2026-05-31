@@ -7,7 +7,7 @@ import { cacheJobsDom } from "../dom.js";
 import { createJobsDesktopUpdateController } from "../desktop-update.js";
 import { initJobsFeed } from "../feed.js?v=10";
 import { scheduleNonCriticalStartup } from "../startup.js";
-import { recordRecentView, getRecentViews, listFilterPresets, applyFilterPreset, saveFilterPreset, deleteFilterPreset } from "../saved-views.js";
+import { listFilterPresets, applyFilterPreset, saveFilterPreset, deleteFilterPreset } from "../saved-views.js";
 
 export function createJobsBoot(deps) {
   function cacheDom() {
@@ -150,30 +150,9 @@ export function createJobsBoot(deps) {
 
   function initSavedViews() {
     const w = deps.windowObject;
-    const recentBar = w.document.getElementById("recent-views-bar");
     const savedBar = w.document.getElementById("saved-views-bar");
     const dropdown = w.document.getElementById("saved-views-dropdown");
     const deleteBtn = w.document.getElementById("saved-views-delete-btn");
-    const url = `${w.location.pathname}${w.location.search}`;
-    recordRecentView(url, w.document.title || url, "jobs");
-
-    if (recentBar) {
-      const views = getRecentViews(5);
-      if (views.length > 0) {
-        recentBar.classList.remove("hidden");
-        const label = w.document.createElement("span");
-        label.className = "recent-views-label";
-        label.textContent = "Recent:";
-        recentBar.appendChild(label);
-        for (const v of views) {
-          const link = w.document.createElement("a");
-          link.className = "recent-view-link";
-          link.href = v.url;
-          link.textContent = v.label;
-          recentBar.appendChild(link);
-        }
-      }
-    }
 
     function renderPresets() {
       if (!savedBar || !dropdown) return;
