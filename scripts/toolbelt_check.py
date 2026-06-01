@@ -70,6 +70,8 @@ TOOLS = (
 
 
 def _npm_global_bin() -> str | None:
+    if shutil.which("npm") is None:
+        return None
     completed = subprocess.run(
         ["npm", "config", "get", "prefix"],
         capture_output=True,
@@ -114,6 +116,8 @@ def _which(tool: Tool) -> str | None:
 
 
 def _check_sudo_nopasswd() -> bool:
+    if shutil.which("sudo") is None:
+        return False
     completed = subprocess.run(
         ["sudo", "-n", "true"],
         capture_output=True,
@@ -180,7 +184,7 @@ def _install_apt(
             for cmd in tool.apt_post_install:
                 print(f"  {cmd}")
         print()
-        return apt_tools, other_tools
+        return [], missing
 
     installed: list[Tool] = []
     still_missing: list[Tool] = []
@@ -235,7 +239,7 @@ def _install_npm(missing: list[Tool]) -> tuple[list[Tool], list[Tool]]:
             )
             still_missing.append(tool)
 
-    return installed, other_tools
+    return installed, [*other_tools, *still_missing]
 
 
 def _install_difftastic() -> bool:
