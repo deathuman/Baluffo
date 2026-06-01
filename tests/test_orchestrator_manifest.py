@@ -45,6 +45,46 @@ def test_build_manifest_marks_test_lanes_not_run() -> None:
         assert artifacts["node_tests_ok"] is False
 
 
+def test_build_forwards_force_to_portable_builder() -> None:
+    with workspace_tmpdir("orchestrator-force-portable-build") as tmp:
+        tmp_root = Path(tmp)
+        _patch_orchestrator_paths(tmp_root)
+        args = argparse.Namespace(force=True)
+
+        with (
+            mock.patch.object(orchestrator, "get_src_hash", return_value="abc123"),
+            mock.patch.object(orchestrator, "run_proc", return_value=(True, "ok")) as run_proc_mock,
+            mock.patch.object(orchestrator, "sync_latest"),
+            mock.patch.object(orchestrator, "rotate_history"),
+        ):
+            ok, _run_dir = orchestrator.build(args)
+
+    assert ok is True
+    portable_command = run_proc_mock.call_args_list[1].args[0]
+    assert portable_command[:2] == [orchestrator.sys.executable, "scripts/build_portable_exe.py"]
+    assert "--force" in portable_command
+
+
+def test_build_omits_portable_force_without_force_flag() -> None:
+    with workspace_tmpdir("orchestrator-default-portable-build") as tmp:
+        tmp_root = Path(tmp)
+        _patch_orchestrator_paths(tmp_root)
+        args = argparse.Namespace(force=False)
+
+        with (
+            mock.patch.object(orchestrator, "get_src_hash", return_value="abc123"),
+            mock.patch.object(orchestrator, "run_proc", return_value=(True, "ok")) as run_proc_mock,
+            mock.patch.object(orchestrator, "sync_latest"),
+            mock.patch.object(orchestrator, "rotate_history"),
+        ):
+            ok, _run_dir = orchestrator.build(args)
+
+    assert ok is True
+    portable_command = run_proc_mock.call_args_list[1].args[0]
+    assert portable_command[:2] == [orchestrator.sys.executable, "scripts/build_portable_exe.py"]
+    assert "--force" not in portable_command
+
+
 def test_verify_manifest_marks_passed_test_lanes() -> None:
     with workspace_tmpdir("orchestrator-manifest-verify-pass") as tmp:
         tmp_root = Path(tmp)

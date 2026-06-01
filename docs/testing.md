@@ -236,7 +236,7 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
   - `npm run build:portable-exe`
   - `npm run build:portable-exe:prepare`
   - `python scripts/build_portable_exe.py`
-- Portable EXE builds are content-addressed under `_out/portable-build-cache`. Use `python scripts/build_portable_exe.py --force` or `npm run build:portable-exe -- --force` only when you intentionally want to bypass the cache.
+- Portable EXE builds are content-addressed under `_out/portable-build-cache`. Use `python scripts/build_portable_exe.py --force`, `npm run build:portable-exe -- --force`, or `npm run build -- --force` only when you intentionally want to bypass the cache.
 - Portable builds must stay self-contained but browser-minimal: `_internal/playwright/driver/package/.local-browsers/` may contain only the `chromium_headless_shell-*` directory required by packaged Playwright `browsers.json`.
 - `npm run test:frontend:packaged*`
 - `npm run test:frontend:packaged:sync-rehearsal`

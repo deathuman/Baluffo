@@ -216,16 +216,16 @@ def build(
 
     # 2. Build Portable EXE
     exe_out = build_dir / "portable"
-    ok, log = run_proc(
-        [
-            sys.executable,
-            "scripts/build_portable_exe.py",
-            "--output-dir",
-            str(exe_out),
-            "--skip-zip",
-        ],
-        "PortableEXE",
-    )
+    portable_command = [
+        sys.executable,
+        "scripts/build_portable_exe.py",
+        "--output-dir",
+        str(exe_out),
+        "--skip-zip",
+    ]
+    if args.force:
+        portable_command.append("--force")
+    ok, log = run_proc(portable_command, "PortableEXE")
     if not ok:
         update_manifest("failure", f"Portable EXE build failed: {log[:200]}", run_id=run_dir.name)
         return False, run_dir
