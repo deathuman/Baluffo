@@ -26,6 +26,7 @@ def test_release_docs_cover_the_current_public_release_line(repo_root: Path) -> 
     release_text = (docs_dir / "RELEASE.md").read_text(encoding="utf-8")
     app_version = get_app_version()
     top_release = _section(changelog_text, f"## [{app_version}]")
+    release_0_2_18 = _section(changelog_text, "## [0.2.18]")
     release_0_2_17 = _section(changelog_text, "## [0.2.17]")
     release_0_2_16 = _section(changelog_text, "## [0.2.16]")
     release_0_2_15 = _section(changelog_text, "## [0.2.15]")
@@ -49,12 +50,20 @@ def test_release_docs_cover_the_current_public_release_line(repo_root: Path) -> 
         heading in top_release for heading in ("### Added", "### Changed", "### Fixed", "### Notes")
     )
     assert "\n- " in top_release
-    assert "Linux packaged desktop support" in top_release
-    assert "Release automation now publishes a Linux AppImage" in top_release
-    assert "%APPDATA%\\Baluffo" in top_release
-    assert "external data root" in top_release
-    assert "Windows-specific facade calls through Linux stubs" in top_release
-    assert "Ruff baseline metadata" in top_release
+    assert "recurring full Jobs pipeline schedule" in top_release
+    assert "confirmed abort controls" in top_release
+    assert "task abort lifecycle evidence" in top_release
+    assert "broader ATS HTML-signature detection" in top_release
+    assert "recent views bar" in top_release
+    assert "Task abort lifecycle closeout" in top_release
+    assert "Packaged desktop Jobs-to-Admin navigation" in top_release
+    assert "Google Sheets and static-source cleanup" in top_release
+    assert "Linux packaged desktop support" in release_0_2_18
+    assert "Release automation now publishes a Linux AppImage" in release_0_2_18
+    assert "%APPDATA%\\Baluffo" in release_0_2_18
+    assert "external data root" in release_0_2_18
+    assert "Windows-specific facade calls through Linux stubs" in release_0_2_18
+    assert "Ruff baseline metadata" in release_0_2_18
     assert "First-run Google Sheets bootstrap" in release_0_2_17
     assert "Jobs first-run Retry" in release_0_2_17
     assert "Packaged first-run smoke" in release_0_2_17

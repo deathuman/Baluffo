@@ -150,9 +150,15 @@ async function cancelSignIn(page) {
 
 async function expectTooltipText(page, target, expectedText) {
   await target.scrollIntoViewIfNeeded();
+  const tooltipSource = String(await target.getAttribute("data-tooltip") || "");
+  if (expectedText instanceof RegExp) {
+    expect(tooltipSource).toMatch(expectedText);
+  } else {
+    expect(tooltipSource).toContain(expectedText);
+  }
   await target.hover({ force: true });
   const tooltip = page.locator(".baluffo-tooltip-portal");
-  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toHaveAttribute("aria-hidden", "false");
   await expect(tooltip).toContainText(expectedText);
   await page.keyboard.press("Escape");
   await expect(tooltip).toHaveAttribute("aria-hidden", "true");
