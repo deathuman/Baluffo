@@ -45,6 +45,7 @@ The Umbrel app uses the standard `app_proxy` service with `PROXY_AUTH_ADD: "fals
   - `/app/desktop-session-lifecycle`
 - Runtime profiles, saved jobs, attachments, reports, logs, source registries, and SQLite `baluffo-runtime.db` resolve under `/data`.
 - First-run seeding copies defaults and creates required runtime JSON skeletons only when missing; existing user data is never overwritten.
+- Container startup prepares the Umbrel `/data` bind mount as root, then drops to the non-root `baluffo` runtime user before starting the server.
 - Container port comes from CLI/env/Compose (`8080` inside, `8877` outside through Umbrel), not desktop `baluffo.config.json` ports.
 - Umbrel Compose publishes host port `8877` to container port `8080` while keeping `app_proxy` with `PROXY_AUTH_ADD: "false"` for standard Umbrel app integration.
 - Docker packaging uses Python 3.13, `requirements-lock.txt`, baked Playwright Chromium, a non-root user, `VOLUME /data`, and a healthcheck against `/ops/health`.

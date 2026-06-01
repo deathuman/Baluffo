@@ -10,6 +10,14 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.27] - 2026-06-01
+
+### Fixed
+- Umbrel container startup now prepares the `/data` bind mount before dropping to the non-root runtime user, fixing first-run seeding on root-owned Umbrel app data directories.
+
+### Notes
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.26] - 2026-06-01
 
 ### Added

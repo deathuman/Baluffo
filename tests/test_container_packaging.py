@@ -50,6 +50,15 @@ def test_ghcr_workflow_builds_multi_arch_image_without_pr_push() -> None:
     assert "type=raw,value=latest,enable={{is_default_branch}}" in content
 
 
+def test_dockerfile_prepares_bind_mount_before_non_root_runtime() -> None:
+    content = _read("Dockerfile")
+
+    assert "useradd --uid 1000 --gid baluffo" in content
+    assert "src.container_entrypoint" in content
+    assert "USER baluffo" not in content
+    assert "src.container_server" not in content.split("CMD", 1)[-1]
+
+
 def test_umbrel_metadata_uses_app_proxy_raw_lan_contract() -> None:
     store = _read("umbrel-app-store.yml")
     manifest = _read("deathuman-baluffo/umbrel-app.yml")
