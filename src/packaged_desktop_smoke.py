@@ -298,6 +298,9 @@ _run_desktop_lifecycle_close_node_probe = (
 _assert_desktop_update_helper_succeeded = (
     packaged_smoke_rehearsals_mod._assert_desktop_update_helper_succeeded
 )
+_wait_for_desktop_update_helper_completion = (
+    packaged_smoke_rehearsals_mod._wait_for_desktop_update_helper_completion
+)
 run_packaged_sync_rehearsal = packaged_smoke_rehearsals_mod.run_packaged_sync_rehearsal
 run_desktop_update_rehearsal = packaged_smoke_rehearsals_mod.run_desktop_update_rehearsal
 run_packaged_browser_job_rehearsal = (

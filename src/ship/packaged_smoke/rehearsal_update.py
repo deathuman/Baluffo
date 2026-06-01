@@ -403,34 +403,101 @@ def _verify_rehearsal_local_data(data_dir: Path, expected: dict[str, Any]) -> No
         raise RuntimeError("Desktop update rehearsal did not preserve job attachments.")
 
 
+def _read_helper_stdout_payload(paths: Any) -> dict[str, Any]:
+    if not paths.helper_stdout_log_path.is_file():
+        return {}
+    try:
+        payload = json.loads(paths.helper_stdout_log_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return dict(payload) if isinstance(payload, dict) else {}
+
+
+def _helper_diagnostic_rows(paths: Any) -> list[dict[str, Any]]:
+    if not paths.helper_diagnostics_log_path.is_file():
+        return []
+    rows: list[dict[str, Any]] = []
+    for raw_line in paths.helper_diagnostics_log_path.read_text(encoding="utf-8").splitlines():
+        line = str(raw_line or "").strip()
+        if not line:
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            rows.append(dict(payload))
+    return rows
+
+
+def _helper_failure_message(payload: dict[str, Any]) -> str:
+    fields = payload.get("fields") if isinstance(payload.get("fields"), dict) else {}
+    return str(fields.get("error") or payload.get("error") or payload).strip()
+
+
+def _load_update_install_state(paths: Any) -> dict[str, Any]:
+    if not paths.install_state_path.is_file():
+        return {}
+    try:
+        payload = json.loads(paths.install_state_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return dict(payload) if isinstance(payload, dict) else {}
+
+
+def _wait_for_desktop_update_helper_completion(*, paths: Any, timeout_s: float) -> None:
+    deps = _root()
+    deadline = deps.time.monotonic() + max(5.0, float(timeout_s))
+    last_status: dict[str, Any] = {}
+    last_event = ""
+    while deps.time.monotonic() < deadline:
+        stdout_payload = _read_helper_stdout_payload(paths)
+        if stdout_payload:
+            if not bool(stdout_payload.get("ok")):
+                raise RuntimeError(
+                    f"Update helper reported failure: {stdout_payload.get('error') or stdout_payload}"
+                )
+            return
+
+        for payload in _helper_diagnostic_rows(paths):
+            event = str(payload.get("event") or "").strip()
+            if event:
+                last_event = event
+            if event == "helper_main_failed":
+                raise RuntimeError(
+                    "Update helper diagnostics reported failure: "
+                    f"{_helper_failure_message(payload)}"
+                )
+            if event == "helper_main_succeeded":
+                return
+
+        last_status = _load_update_install_state(paths)
+        install_state = str(last_status.get("installState") or "").strip().lower()
+        install_stage = str(last_status.get("installStage") or "").strip().lower()
+        if install_state == "failed" or install_stage == "failed":
+            raise RuntimeError(f"Update helper left failed updater state: {last_status}")
+        deps.time.sleep(0.25)
+
+    raise TimeoutError(
+        "Update helper did not finish before rehearsal completion: "
+        f"{last_status or {'lastHelperEvent': last_event}}"
+    )
+
+
 def _assert_desktop_update_helper_succeeded(
     *,
     paths: Any,
     relaunch_bridge_port: int,
 ) -> None:
     deps = _root()
-    if paths.helper_stdout_log_path.is_file():
-        try:
-            payload = json.loads(paths.helper_stdout_log_path.read_text(encoding="utf-8"))
-        except Exception:
-            payload = {}
-        if isinstance(payload, dict) and payload and not bool(payload.get("ok")):
-            raise RuntimeError(f"Update helper reported failure: {payload.get('error') or payload}")
-    if paths.helper_diagnostics_log_path.is_file():
-        for raw_line in paths.helper_diagnostics_log_path.read_text(encoding="utf-8").splitlines():
-            line = str(raw_line or "").strip()
-            if not line:
-                continue
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(payload, dict):
-                continue
-            if str(payload.get("event") or "").strip() == "helper_main_failed":
-                raise RuntimeError(
-                    f"Update helper diagnostics reported failure: {payload.get('error') or payload}"
-                )
+    payload = _read_helper_stdout_payload(paths)
+    if payload and not bool(payload.get("ok")):
+        raise RuntimeError(f"Update helper reported failure: {payload.get('error') or payload}")
+    for row in _helper_diagnostic_rows(paths):
+        if str(row.get("event") or "").strip() == "helper_main_failed":
+            raise RuntimeError(
+                f"Update helper diagnostics reported failure: {_helper_failure_message(row)}"
+            )
     if relaunch_bridge_port <= 0:
         return
     status_code, status_payload = deps.request_json(
@@ -510,6 +577,7 @@ def run_desktop_update_rehearsal(
     relaunch_bridge_port = 0
     initial_site_port = 0
     initial_bridge_port = 0
+    helper_verify_timeout_s = max(30.0, float(runtime_timeout_s))
     try:
         base_url, server, server_thread = deps._start_desktop_update_release_server(
             manifest=manifest,
@@ -531,7 +599,7 @@ def run_desktop_update_rehearsal(
                 "BALUFFO_DESKTOP_UPDATE_GITHUB_API_BASE": base_url,
                 "BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_JSON": json.dumps({key_id: public_key_b64}),
                 "BALUFFO_DESKTOP_UPDATER_NO_DIALOG": "1",
-                "BALUFFO_DESKTOP_UPDATER_VERIFY_TIMEOUT_S": "10",
+                "BALUFFO_DESKTOP_UPDATER_VERIFY_TIMEOUT_S": f"{helper_verify_timeout_s:g}",
             }
         )
         runtime_env.update(
@@ -645,13 +713,17 @@ def run_desktop_update_rehearsal(
             timeout_s=max(45.0, runtime_timeout_s),
             env=runtime_env,
         )
-        deps._verify_rehearsal_local_data(data_dir, seeded)
         relaunch_session = (
             relaunched.get("session") if isinstance(relaunched.get("session"), dict) else {}
         )
         relaunch_launcher_pid = int(relaunch_session.get("launcherPid") or 0)
         relaunch_bridge_port = int(relaunch_session.get("bridgePort") or 0)
         relaunch_site_port = int(relaunch_session.get("sitePort") or 0)
+        deps._wait_for_desktop_update_helper_completion(
+            paths=paths,
+            timeout_s=max(helper_verify_timeout_s + 10.0, runtime_timeout_s),
+        )
+        deps._verify_rehearsal_local_data(data_dir, seeded)
         deps._assert_desktop_update_helper_succeeded(
             paths=paths,
             relaunch_bridge_port=relaunch_bridge_port,

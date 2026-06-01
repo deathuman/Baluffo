@@ -1468,6 +1468,7 @@ def test_run_desktop_update_rehearsal_clears_session_state_only_after_runtime_ex
                 "_wait_for_relaunched_runtime",
                 side_effect=fake_wait_for_relaunched_runtime,
             ),
+            mock.patch.object(smoke, "_wait_for_desktop_update_helper_completion") as wait_helper,
             mock.patch.object(smoke, "_verify_rehearsal_local_data"),
             mock.patch.object(smoke, "_assert_desktop_update_helper_succeeded"),
             mock.patch.object(smoke, "terminate_process_tree"),
@@ -1480,10 +1481,13 @@ def test_run_desktop_update_rehearsal_clears_session_state_only_after_runtime_ex
             )
 
         assert result["status"] == "passed"
+        wait_helper.assert_called_once()
+        assert wait_helper.call_args.kwargs["paths"].install_state_path == paths.install_state_path
+        assert wait_helper.call_args.kwargs["timeout_s"] >= 30.0
         assert captured_env["APPDATA"] == str(root / "desktop-appdata")
         assert captured_env["LOCALAPPDATA"] == str(root / "desktop-localappdata")
         assert captured_env["BALUFFO_DESKTOP_UPDATER_NO_DIALOG"] == "1"
-        assert captured_env["BALUFFO_DESKTOP_UPDATER_VERIFY_TIMEOUT_S"] == "10"
+        assert captured_env["BALUFFO_DESKTOP_UPDATER_VERIFY_TIMEOUT_S"] == "30"
 
 
 def test_assert_desktop_update_helper_succeeded_rejects_failed_helper_stdout() -> None:
@@ -1501,6 +1505,61 @@ def test_assert_desktop_update_helper_succeeded_rejects_failed_helper_stdout() -
                 paths=paths,
                 relaunch_bridge_port=0,
             )
+
+
+def test_wait_for_desktop_update_helper_completion_accepts_success_diagnostics() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+        paths = smoke.desktop_update_mod.DesktopUpdatePaths.from_data_dir(data_dir)
+        paths.helper_diagnostics_log_path.parent.mkdir(parents=True, exist_ok=True)
+        paths.helper_diagnostics_log_path.write_text(
+            json.dumps({"event": "helper_main_succeeded", "fields": {"installedVersion": "1.4.0"}}),
+            encoding="utf-8",
+        )
+
+        smoke._wait_for_desktop_update_helper_completion(paths=paths, timeout_s=1.0)
+
+
+def test_wait_for_desktop_update_helper_completion_rejects_failed_diagnostics() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+        paths = smoke.desktop_update_mod.DesktopUpdatePaths.from_data_dir(data_dir)
+        paths.helper_diagnostics_log_path.parent.mkdir(parents=True, exist_ok=True)
+        paths.helper_diagnostics_log_path.write_text(
+            json.dumps(
+                {
+                    "event": "helper_main_failed",
+                    "fields": {"error": "Updated desktop app did not report startup readiness"},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(
+            RuntimeError,
+            match="Updated desktop app did not report startup readiness",
+        ):
+            smoke._wait_for_desktop_update_helper_completion(paths=paths, timeout_s=1.0)
+
+
+def test_wait_for_desktop_update_helper_completion_rejects_failed_install_state() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+        paths = smoke.desktop_update_mod.DesktopUpdatePaths.from_data_dir(data_dir)
+        paths.install_state_path.parent.mkdir(parents=True, exist_ok=True)
+        paths.install_state_path.write_text(
+            json.dumps(
+                {
+                    "installState": "failed",
+                    "installStage": "failed",
+                    "lastError": "desktop_update_relaunch_verification_failed",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(RuntimeError, match="failed updater state"):
+            smoke._wait_for_desktop_update_helper_completion(paths=paths, timeout_s=1.0)
 
 
 def test_assert_desktop_update_helper_succeeded_ignores_malformed_diagnostics_lines() -> None:

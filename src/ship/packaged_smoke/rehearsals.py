@@ -249,6 +249,14 @@ def _assert_desktop_update_helper_succeeded(
     )
 
 
+def _wait_for_desktop_update_helper_completion(*, paths: Any, timeout_s: float) -> None:
+    _root()
+    rehearsal_update_mod._wait_for_desktop_update_helper_completion(
+        paths=paths,
+        timeout_s=timeout_s,
+    )
+
+
 def run_packaged_sync_rehearsal(
     *,
     exe_path: Path,

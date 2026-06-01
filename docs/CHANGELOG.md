@@ -26,6 +26,7 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 - Task abort lifecycle closeout now keeps user-canceled evidence sticky across late fetch/discovery reports, watcher cleanup, startup cleanup, and pipeline child terminal races.
 - Packaged desktop Jobs-to-Admin navigation no longer sends a regular desktop-close lifecycle signal, and the packaged lifecycle rehearsal now covers the navigation path.
 - Desktop close cleanup now keeps packaged shutdown tied to real lifecycle state and avoids lingering active-task close rehearsal failures.
+- Packaged desktop updater rehearsal now waits for the updater helper to finish and fails on helper terminal errors instead of reporting a false pass.
 - Google Sheets and static-source cleanup now repairs category-style titles, redirect-derived company leaks, and container artifact titles before downstream job output.
 - Remote Python CI and packaged rehearsal data-root checks no longer fail on stale runtime assumptions.
 
