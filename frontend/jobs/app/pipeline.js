@@ -218,7 +218,6 @@ export function buildJobsPipelineButtonView(
     buttonTooltip = "",
     isError = false,
     abortable = false,
-    abortReveal = false,
     aborting = false,
     nowMs = Date.now()
   } = {}
@@ -239,9 +238,7 @@ export function buildJobsPipelineButtonView(
   ).trim();
   const label = aborting
     ? JOBS_UPDATE_COPY.abortingLabel
-    : abortable && abortReveal
-      ? JOBS_UPDATE_COPY.abortLabel
-      : liveLabel;
+    : liveLabel;
 
   return {
     active,
@@ -266,7 +263,6 @@ export function updateJobsPipelineUi(
     buttonTooltip = "",
     isError = false,
     abortable = false,
-    abortReveal = false,
     aborting = false
   } = {}
 ) {
@@ -289,7 +285,6 @@ export function updateJobsPipelineUi(
     buttonTooltip,
     isError,
     abortable,
-    abortReveal,
     aborting
   });
 
@@ -308,9 +303,17 @@ export function updateJobsPipelineUi(
     if (jobsPipelineRunBtn.dataset) jobsPipelineRunBtn.dataset.tooltip = view.tooltip;
   }
   jobsPipelineRunBtn.classList.toggle("running", Boolean(view.active));
-  jobsPipelineRunBtn.classList.toggle("abortable", Boolean(abortable && !aborting));
-  jobsPipelineRunBtn.classList.toggle("abort-reveal", Boolean(abortable && abortReveal && !aborting));
-  jobsPipelineRunBtn.dataset.abortable = abortable && !aborting ? "true" : "false";
+  const canAbort = Boolean(abortable && !aborting);
+  jobsPipelineRunBtn.classList.toggle("abortable", canAbort);
+  jobsPipelineRunBtn.classList.toggle("abort-reveal", false);
+  jobsPipelineRunBtn.dataset.abortable = canAbort ? "true" : "false";
+  if (canAbort) {
+    jobsPipelineRunBtn.dataset.abortLabel = JOBS_UPDATE_COPY.abortLabel;
+    jobsPipelineRunBtn.setAttribute?.("data-abort-label", JOBS_UPDATE_COPY.abortLabel);
+  } else {
+    delete jobsPipelineRunBtn.dataset.abortLabel;
+    jobsPipelineRunBtn.removeAttribute?.("data-abort-label");
+  }
   jobsPipelineRunBtn.classList.toggle("determinate", view.progressMode === "determinate");
   jobsPipelineRunBtn.classList.toggle("indeterminate", view.progressMode === "indeterminate");
   jobsPipelineRunBtn.classList.toggle("log-error", Boolean(view.isError));

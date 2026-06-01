@@ -1,5 +1,5 @@
 import { hasActiveTaskStateRows } from "../../live-task.js";
-import { consumeDesktopNavigationBypass } from "./navigation.js";
+import { consumeDesktopNavigationBypass, hasDesktopNavigationBypass } from "./navigation.js";
 import {
   DESKTOP_BOOTSTRAP_RETRY_INTERVAL_MS,
   DESKTOP_BOOTSTRAP_RETRY_WINDOW_MS,
@@ -156,7 +156,7 @@ function bindDesktopLifecycleEvents(clearDesktopNavigationBypass) {
   }
   window.__baluffoDesktopLifecycleBound = true;
   window.addEventListener?.("beforeunload", event => {
-    const bypassDesktopNavigation = consumeDesktopNavigationBypass();
+    const bypassDesktopNavigation = hasDesktopNavigationBypass();
     desktopState.desktopCloseAttemptPending = true;
     if (bypassDesktopNavigation) {
       desktopState.desktopCloseAttemptPending = false;
@@ -175,6 +175,10 @@ function bindDesktopLifecycleEvents(clearDesktopNavigationBypass) {
     return undefined;
   });
   window.addEventListener?.("pagehide", () => {
+    if (consumeDesktopNavigationBypass()) {
+      desktopState.desktopCloseAttemptPending = false;
+      return;
+    }
     const hadCloseAttemptPending = Boolean(desktopState.desktopCloseAttemptPending);
     if (!desktopState.desktopCloseAttemptPending && !desktopState.desktopClosingSignaled) {
       desktopState.desktopCloseAttemptPending = true;

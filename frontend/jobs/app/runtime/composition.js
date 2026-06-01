@@ -12,10 +12,10 @@ import { createJobsEventsController } from "./events.js";
 import { createJobsFeedController } from "./feed-controller.js";
 import { createJobsFiltersController } from "./filters-ui.js?v=7";
 import { setupJobsListDelegation as setupJobsListDelegationFromEvents } from "./jobs-list-events.js";
-import { createJobsPipelineController } from "./pipeline-controller.js?v=8";
+import { createJobsPipelineController } from "./pipeline-controller.js?v=11";
 import { createJobsStartupPreviewController } from "./startup-preview.js";
 import { createJobsStartupMetrics } from "./effects.js";
-import { createJobsRuntimeState } from "./state.js";
+import { createJobsRuntimeState } from "./state.js?v=2";
 import { createJobsUrlPersistence } from "./url-persistence.js?v=5";
 import { sortJobs as sortJobsFromQuery } from "./query.js?v=4";
 

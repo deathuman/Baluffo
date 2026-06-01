@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { chromium, request as playwrightRequest } from "@playwright/test";
-
+import {
+  dismissJobsFirstRunNotice,
+  runJobsMainButtonAbortScenario,
+  waitForBridgeTasksIdleWithBootstrapCleanup
+} from "./packaged-desktop-smoke.jobs-pipeline-abort-helpers.mjs";
 const BASE_URL = process.env.PACKAGED_DESKTOP_BASE_URL || "http://127.0.0.1:8080";
 const BRIDGE_BASE = process.env.PACKAGED_DESKTOP_BRIDGE_BASE || "http://127.0.0.1:8877";
 const bridgeUrl = new URL(BRIDGE_BASE);
@@ -23,7 +27,6 @@ async function writeReport(report) {
   await fs.mkdir(path.dirname(REPORT_PATH), { recursive: true });
   await fs.writeFile(REPORT_PATH, `${JSON.stringify(report, null, 2)}\n`, "utf8");
 }
-
 async function gotoDesktop(page, relativePath) {
   const separator = relativePath.includes("?") ? "&" : "?";
   await page.goto(
@@ -34,7 +37,6 @@ async function gotoDesktop(page, relativePath) {
 async function waitForDesktopAdapter(page) {
   await page.waitForFunction(() => Boolean(window.JobAppLocalData), null, { timeout: 30_000 });
 }
-
 async function waitForJobsPageReady(page) {
   await page.waitForFunction(() => {
     const state = document.body?.getAttribute("data-jobs-startup-state") || "loading";
@@ -53,13 +55,11 @@ async function waitForJobsPageReady(page) {
     "jobs list should contain rendered content"
   );
 }
-
 function isRetryableBridgeRequestError(error) {
   return /ECONNREFUSED|ECONNRESET|ECONNABORTED|ETIMEDOUT|socket hang up/i.test(
     String(error?.message || error || "")
   );
 }
-
 async function bridgeRequestWithRetry(apiRequest, method, url, options = {}) {
   const deadline = Date.now() + BRIDGE_REQUEST_RETRY_TIMEOUT_MS;
   let lastError = null;
@@ -76,7 +76,6 @@ async function bridgeRequestWithRetry(apiRequest, method, url, options = {}) {
   }
   throw lastError || new Error(`Bridge ${method.toUpperCase()} request timed out: ${url}`);
 }
-
 async function fetchPipelineStatus(apiRequest) {
   const response = await bridgeRequestWithRetry(
     apiRequest,
@@ -86,13 +85,11 @@ async function fetchPipelineStatus(apiRequest) {
   assert.equal(response.ok(), true, "jobs pipeline status request should succeed");
   return response.json();
 }
-
 async function fetchBridgeJson(apiRequest, relativePath, label) {
   const response = await bridgeRequestWithRetry(apiRequest, "get", `${BRIDGE_BASE}${relativePath}`);
   assert.equal(response.ok(), true, `${label} request should succeed`);
   return response.json();
 }
-
 async function postBridgeJson(apiRequest, relativePath, data, label) {
   const response = await bridgeRequestWithRetry(
     apiRequest,
@@ -103,35 +100,6 @@ async function postBridgeJson(apiRequest, relativePath, data, label) {
   assert.equal(response.ok(), true, `${label} request should succeed`);
   return response.json();
 }
-
-function isActiveTaskRow(row) {
-  const finishedAt = String(row?.finishedAt || "").trim();
-  const status = String(row?.status || row?.lifecycleStatus || "").trim().toLowerCase();
-  return Boolean(row?.active) || (!finishedAt && ["running", "starting"].includes(status));
-}
-
-function summarizeTaskRow(row) {
-  return [row?.taskType || row?.type || "task", row?.runId || row?.id, row?.status || row?.lifecycleStatus, row?.stage]
-    .map(value => String(value || "").trim()).filter(Boolean).join(":");
-}
-
-async function waitForBridgeTasksIdle(apiRequest, timeoutMs = 120_000) {
-  const deadline = Date.now() + timeoutMs;
-  let lastActiveTasks = [];
-  while (Date.now() < deadline) {
-    const payload = await fetchBridgeJson(apiRequest, "/ops/task-state?view=summary", "task state summary");
-    lastActiveTasks = Array.isArray(payload?.tasks)
-      ? payload.tasks.filter(row => isActiveTaskRow(row))
-      : [];
-    if (lastActiveTasks.length === 0) {
-      return payload;
-    }
-    await new Promise(resolve => setTimeout(resolve, 1000));
-  }
-  const summary = lastActiveTasks.map(summarizeTaskRow).join(", ") || "unknown task";
-  throw new Error(`Bridge tasks did not become idle before pipeline launch: ${summary}`);
-}
-
 async function waitForPipelineRunStart(apiRequest, timeoutMs = 120_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -187,6 +155,7 @@ async function waitForPipelineButtonBusyState(pipelineButton, timeoutMs = 30_000
 }
 
 async function assertPackagedSourceRunsParity(apiRequest) {
+  await waitForBridgeTasksIdleWithBootstrapCleanup(apiRequest);
   const startPayload = await postBridgeJson(
     apiRequest,
     "/tasks/run-fetcher",
@@ -266,6 +235,13 @@ async function main() {
     context = await browser.newContext({ baseURL: BASE_URL, acceptDownloads: true });
     page = await context.newPage();
     page.on("pageerror", error => pageErrors.push(String(error?.message || error)));
+    page.on("dialog", dialog => {
+      const message = String(dialog.message?.() || "");
+      const action = /Abort the current job update\?/i.test(message)
+        ? dialog.accept()
+        : dialog.dismiss();
+      action.catch(() => {});
+    });
     apiRequest = await playwrightRequest.newContext({ baseURL: BRIDGE_BASE });
     await fs.mkdir(OUTPUT_DIR, { recursive: true });
 
@@ -279,6 +255,13 @@ async function main() {
     const pipelineRun = {
       name: "Jobs pipeline button fills while running",
       slug: "jobs-pipeline-button-fills-while-running",
+      status: "passed",
+      durationMs: 0,
+      error: ""
+    };
+    const jobsButtonAbort = {
+      name: "Jobs main pipeline button aborts active update",
+      slug: "jobs-main-pipeline-button-abort-active-update",
       status: "passed",
       durationMs: 0,
       error: ""
@@ -305,10 +288,36 @@ async function main() {
       scenarios.push(jobsStartup);
     }
 
+    const sourceRunsStartedAt = Date.now();
+    try {
+      await assertPackagedSourceRunsParity(apiRequest);
+    } catch (error) {
+      sourceRunsParity.status = "failed";
+      sourceRunsParity.error = error instanceof Error ? error.message : String(error);
+      throw error;
+    } finally {
+      sourceRunsParity.durationMs = Date.now() - sourceRunsStartedAt;
+      scenarios.push(sourceRunsParity);
+    }
+
+    const jobsAbortStartedAt = Date.now();
+    try {
+      Object.assign(jobsButtonAbort, await runJobsMainButtonAbortScenario(apiRequest, page));
+      assert.equal(pageErrors.length, 0, `unexpected jobs page errors: ${pageErrors.join("; ")}`);
+    } catch (error) {
+      jobsButtonAbort.status = "failed";
+      jobsButtonAbort.error = error instanceof Error ? error.message : String(error);
+      throw error;
+    } finally {
+      jobsButtonAbort.durationMs = Date.now() - jobsAbortStartedAt;
+      scenarios.push(jobsButtonAbort);
+    }
+
     const pipelineStartedAt = Date.now();
     try {
       const pipelineButton = page.locator("#jobs-pipeline-run-btn");
-      await waitForBridgeTasksIdle(apiRequest);
+      await waitForBridgeTasksIdleWithBootstrapCleanup(apiRequest);
+      await dismissJobsFirstRunNotice(page);
       await page.waitForFunction(
         () => {
           const button = document.querySelector("#jobs-pipeline-run-btn");
@@ -357,18 +366,6 @@ async function main() {
     } finally {
       pipelineRun.durationMs = Date.now() - pipelineStartedAt;
       scenarios.push(pipelineRun);
-    }
-
-    const sourceRunsStartedAt = Date.now();
-    try {
-      await assertPackagedSourceRunsParity(apiRequest);
-    } catch (error) {
-      sourceRunsParity.status = "failed";
-      sourceRunsParity.error = error instanceof Error ? error.message : String(error);
-      throw error;
-    } finally {
-      sourceRunsParity.durationMs = Date.now() - sourceRunsStartedAt;
-      scenarios.push(sourceRunsParity);
     }
   } catch (error) {
     errors.push(error instanceof Error ? error.message : String(error));

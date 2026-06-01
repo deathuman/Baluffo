@@ -30,6 +30,13 @@ export function clearDesktopNavigationBypass() {
   desktopState.desktopNavigationBypassExpiresAt = 0;
 }
 
+export function hasDesktopNavigationBypass() {
+  return (
+    desktopState.desktopNavigationBypassExpiresAt > 0
+    && Date.now() <= desktopState.desktopNavigationBypassExpiresAt
+  );
+}
+
 function armDesktopNavigationBypass(targetUrl) {
   if (!isApprovedDesktopPageNavigation(targetUrl)) {
     clearDesktopNavigationBypass();
@@ -40,10 +47,7 @@ function armDesktopNavigationBypass(targetUrl) {
 }
 
 export function consumeDesktopNavigationBypass() {
-  const hasBypass = (
-    desktopState.desktopNavigationBypassExpiresAt > 0
-    && Date.now() <= desktopState.desktopNavigationBypassExpiresAt
-  );
+  const hasBypass = hasDesktopNavigationBypass();
   clearDesktopNavigationBypass();
   return hasBypass;
 }

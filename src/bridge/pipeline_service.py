@@ -406,6 +406,8 @@ class PipelineService:
     def _wait_for_child_report(self, *, phase: str, **kwargs: Any) -> dict[str, Any]:
         try:
             return self.wait_for_report_completion(**kwargs)
+        except PipelineAbortRequested:
+            raise
         except Exception as exc:  # noqa: BLE001
             raise RuntimeError(f"{phase}: {exc}") from exc
 

@@ -252,6 +252,7 @@ read_packaged_node_smoke_payload = packaged_smoke_runtime_mod.read_packaged_node
 run_packaged_node_smoke = packaged_smoke_runtime_mod.run_packaged_node_smoke
 build_failure_payload = packaged_smoke_runtime_mod.build_failure_payload
 run_warmup_launch = packaged_smoke_runtime_mod.run_warmup_launch
+_seed_jobs_pipeline_smoke_feed = packaged_smoke_orchestrator_mod._seed_jobs_pipeline_smoke_feed
 
 _archive_portable_dir = packaged_smoke_rehearsals_mod._archive_portable_dir
 _inject_desktop_update_public_keys = (

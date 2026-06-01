@@ -656,6 +656,10 @@ def run_packaged_desktop_lifecycle_rehearsal(
     close_runtime_data_dir = artifacts_dir / "close-cleanup-runtime-data"
     false_runtime_data_dir.mkdir(parents=True, exist_ok=True)
     close_runtime_data_dir.mkdir(parents=True, exist_ok=True)
+    deps._seed_jobs_pipeline_smoke_feed(
+        false_runtime_data_dir,
+        finished_at=deps.datetime.now(deps.UTC).isoformat(),
+    )
     false_stdout_path = artifacts_dir / "desktop-lifecycle-false-idle-runtime.stdout.log"
     false_stderr_path = artifacts_dir / "desktop-lifecycle-false-idle-runtime.stderr.log"
     false_metrics_path = artifacts_dir / "desktop-lifecycle-false-idle.startup-metrics.json"

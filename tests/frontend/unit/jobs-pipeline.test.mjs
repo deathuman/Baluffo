@@ -257,7 +257,7 @@ test("updateJobsPipelineUi updates button background progress", () => {
   assert.equal(button.children[1].textContent, "Fetching job listings... 7m 27s");
 });
 
-test("jobs pipeline abort reveal preserves progress label until hover or focus", () => {
+test("jobs pipeline abort affordance keeps the live progress label in button text", () => {
   const liveView = buildJobsPipelineButtonView(
     {
       active: true,
@@ -291,8 +291,47 @@ test("jobs pipeline abort reveal preserves progress label until hover or focus",
 
   assert.equal(liveView.label, "Fetching job listings... 7m 27s");
   assert.equal(liveView.disabled, false);
-  assert.equal(abortView.label, JOBS_UPDATE_COPY.abortLabel);
+  assert.equal(abortView.label, "Fetching job listings... 7m 27s");
   assert.equal(abortView.disabled, false);
+});
+
+test("updateJobsPipelineUi exposes abort label data only while abortable", () => {
+  const button = createButtonMock();
+
+  updateJobsPipelineUi(
+    { jobsPipelineRunBtn: button },
+    {
+      running: true,
+      disabled: true,
+      buttonLabel: "Checking sources... 26s",
+      pipelinePayload: { active: true, stage: "discovery" },
+      abortable: true
+    }
+  );
+
+  assert.equal(button.textContent, "Checking sources... 26s");
+  assert.equal(button.disabled, false);
+  assert.equal(button.dataset.abortable, "true");
+  assert.equal(button.dataset.abortLabel, JOBS_UPDATE_COPY.abortLabel);
+  assert.equal(button["data-abort-label"], JOBS_UPDATE_COPY.abortLabel);
+  assert.equal(button.classList.contains("abortable"), true);
+  assert.equal(button.classList.contains("abort-reveal"), false);
+
+  updateJobsPipelineUi(
+    { jobsPipelineRunBtn: button },
+    {
+      running: false,
+      disabled: false,
+      buttonLabel: "",
+      pipelinePayload: null,
+      abortable: false
+    }
+  );
+
+  assert.equal(button.dataset.abortable, "false");
+  assert.equal(button.dataset.abortLabel, undefined);
+  assert.equal(button["data-abort-label"], undefined);
+  assert.equal(button.classList.contains("abortable"), false);
 });
 
 test("updateJobsPipelineUi clears progress state when idle or errored", () => {

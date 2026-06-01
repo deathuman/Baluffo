@@ -4,14 +4,12 @@ import {
   createStorageMock,
   importFresh
 } from "./helpers/browser-test-helpers.mjs";
-
 function createJsonResponse(payload) {
   return {
     ok: true,
     json: async () => payload
   };
 }
-
 function createBeforeUnloadEvent() {
   let prevented = false;
   return {
@@ -24,14 +22,12 @@ function createBeforeUnloadEvent() {
     returnValue: undefined
   };
 }
-
 async function flushMicrotasks(count = 5) {
   for (let index = 0; index < count; index += 1) {
     await Promise.resolve();
   }
   await new Promise(resolve => setTimeout(resolve, 0));
 }
-
 function installImmediateTimeoutClock() {
   const originalSetTimeout = globalThis.setTimeout;
   const originalClearTimeout = globalThis.clearTimeout;
@@ -50,7 +46,6 @@ function installImmediateTimeoutClock() {
     Date.now = originalDateNow;
   };
 }
-
 function setupDesktopGlobals({
   locationHref = "http://127.0.0.1:4173/jobs.html?desktop=1",
   taskPayload = { tasks: [], count: 0 },
@@ -168,7 +163,6 @@ function setupDesktopGlobals({
     locationState
   };
 }
-
 test("desktop beforeunload prompts when admin bridge work is active", async () => {
   const { eventListeners, beaconCalls, fetchCalls } = setupDesktopGlobals({
     taskPayload: {
@@ -186,7 +180,6 @@ test("desktop beforeunload prompts when admin bridge work is active", async () =
   const taskStateCalls = fetchCalls.filter(call => call.url.includes("/ops/task-state"));
   assert.ok(taskStateCalls.length >= 1);
   assert.ok(taskStateCalls.every(call => call.url.includes("/ops/task-state?view=summary")));
-
   const beforeUnload = eventListeners.get("beforeunload");
   assert.equal(typeof beforeUnload, "function");
 
@@ -205,11 +198,9 @@ test("desktop beforeunload prompts when admin bridge work is active", async () =
   assert.equal(closeAttemptCalls.length, 1);
   const closeAttemptPayload = JSON.parse(String(closeAttemptCalls[0].options?.body || "{}"));
   assert.equal(closeAttemptPayload.reason, "active_work_close_attempt");
-
   const pagehide = eventListeners.get("pagehide");
   pagehide();
   pagehide();
-
   assert.equal(beaconCalls.length, 1);
   const payload = JSON.parse(String(beaconCalls[0].blob.parts[0] || "{}"));
   assert.equal(payload.reason, "confirmed_active_work_close");
@@ -223,7 +214,6 @@ test("desktop lifecycle binds beforeunload, pagehide, and focus but not unload",
   );
   initDesktopLocalDataClient();
   await flushMicrotasks();
-
   assert.equal(typeof eventListeners.get("beforeunload"), "function");
   assert.equal(typeof eventListeners.get("pagehide"), "function");
   assert.equal(typeof eventListeners.get("focus"), "function");
@@ -272,7 +262,7 @@ test("desktop beforeunload prompts when update handoff or install is active", as
 });
 
 test("approved desktop page navigation bypasses the unload prompt without signaling closing", async () => {
-  const { eventListeners, beaconCalls, locationState } = setupDesktopGlobals({
+  const { eventListeners, beaconCalls, fetchCalls, locationState } = setupDesktopGlobals({
     taskPayload: {
       tasks: [{ taskType: "sync", active: true }],
       count: 1
@@ -298,6 +288,15 @@ test("approved desktop page navigation bypasses the unload prompt without signal
   assert.equal(event.defaultPrevented, false);
   assert.equal(event.returnValue, undefined);
   assert.equal(beaconCalls.length, 0);
+  const lifecycleCallCount = fetchCalls.filter(call => (
+    call.url.includes("/app/desktop-session-lifecycle")
+  )).length;
+  eventListeners.get("pagehide")();
+  assert.equal(beaconCalls.length, 0);
+  assert.equal(
+    fetchCalls.filter(call => call.url.includes("/app/desktop-session-lifecycle")).length,
+    lifecycleCallCount
+  );
 });
 
 test("approved desktop page navigation preserves desktop runtime query params", async () => {

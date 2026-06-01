@@ -25,7 +25,13 @@ export function createJobsPipelineUiState() {
     updateTooltipBridgeError: "",
     updateTooltipFirstRunBootstrapActive: false,
     updateTooltipFirstRun: false,
-    updateTooltipFirstRunKnown: false
+    updateTooltipFirstRunKnown: false,
+    abortTask: null,
+    abortRequestedTask: null,
+    abortRequested: false,
+    abortRevealActive: false,
+    abortRequestError: "",
+    abortRequestErrorAt: 0
   };
 }
 

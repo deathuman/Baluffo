@@ -209,6 +209,45 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: opacity 0.12s ease;
+}
+
+.jobs-page .jobs-pipeline-btn.abortable::after {
+  content: attr(data-abort-label);
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-inline: 0.75rem;
+  box-sizing: border-box;
+  color: var(--admin-danger-text);
+  font-weight: 700;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.jobs-page .jobs-pipeline-btn.abortable:hover:not(:disabled):not([aria-disabled="true"]),
+.jobs-page .jobs-pipeline-btn.abortable:focus-visible:not(:disabled):not([aria-disabled="true"]) {
+  border-color: var(--admin-danger-border);
+  color: var(--admin-danger-text);
+  background: var(--admin-danger-bg);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--admin-danger-text) 22%, transparent),
+    0 5px 14px color-mix(in srgb, var(--admin-danger-text) 12%, transparent);
+}
+
+.jobs-page .jobs-pipeline-btn.abortable:hover:not(:disabled):not([aria-disabled="true"]) .jobs-pipeline-btn-label,
+.jobs-page .jobs-pipeline-btn.abortable:focus-visible:not(:disabled):not([aria-disabled="true"]) .jobs-pipeline-btn-label {
+  opacity: 0;
+}
+
+.jobs-page .jobs-pipeline-btn.abortable:hover:not(:disabled):not([aria-disabled="true"])::after,
+.jobs-page .jobs-pipeline-btn.abortable:focus-visible:not(:disabled):not([aria-disabled="true"])::after {
+  opacity: 1;
 }
 
 .jobs-page .jobs-pipeline-group {

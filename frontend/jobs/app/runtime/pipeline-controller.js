@@ -6,10 +6,13 @@ import {
   JOBS_UPDATE_COPY,
   scheduleJobsPipelineStatusPoll as scheduleJobsPipelineStatusPollFromModule,
   updateJobsPipelineUi as updateJobsPipelineUiFromModule
-} from "../pipeline.js?v=9";
+} from "../pipeline.js?v=10";
 
 const BLOCKING_TASK_TYPES = new Set(["pipeline", "fetch", "discovery", "sync"]);
 const ABORTABLE_TASK_TYPES = new Set(["pipeline", "fetch", "discovery"]);
+const ABORT_TERMINAL_REASON = "user_abort_requested";
+const ABORT_REQUEST_TIMEOUT_MS = 20000;
+const ABORT_REQUEST_VERIFY_GRACE_MS = 5000;
 
 /**
  * @param {import("../../../shared/types.js").TaskStatePayload|null|undefined} payload
@@ -31,12 +34,48 @@ function taskRunId(task) {
   return String(task?.runId || task?.id || "").trim();
 }
 
+function normalizeAbortTarget(task) {
+  const taskType = normalizeTaskType(task);
+  const runId = taskRunId(task);
+  return taskType && runId ? { taskType, runId } : null;
+}
+
 function isAbortableTask(task) {
   return Boolean(task?.active) && ABORTABLE_TASK_TYPES.has(normalizeTaskType(task)) && taskRunId(task);
 }
 
+function taskMatchesAbortTarget(task, target) {
+  return Boolean(
+    target?.taskType
+    && target?.runId
+    && normalizeTaskType(task) === target.taskType
+    && taskRunId(task) === target.runId
+  );
+}
+
+function payloadStage(payload) {
+  return String(payload?.stage || "").trim().toLowerCase();
+}
+
+function payloadTerminalReason(payload) {
+  const summary = payload?.summary && typeof payload.summary === "object" ? payload.summary : {};
+  return String(payload?.terminalReason || summary.terminalReason || "").trim();
+}
+
+function isAbortRequestedError(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized.includes("pipeline abort requested")
+    || normalized.includes("pipeline child abort requested");
+}
+
+function isUserAbortCompletionPayload(payload) {
+  return payloadStage(payload) === "canceled"
+    || payloadTerminalReason(payload) === ABORT_TERMINAL_REASON
+    || isAbortRequestedError(payload?.error);
+}
+
 function isAbortPendingPayload(payload) {
-  const stage = String(payload?.stage || "").trim().toLowerCase();
+  const stage = payloadStage(payload);
   const progress = payload?.progress && typeof payload.progress === "object" ? payload.progress : {};
   return stage === "aborting"
     || stage === "abort_pending_sync"
@@ -160,6 +199,9 @@ export function createJobsPipelineController({
   } = {}) {
     const abortable = isAbortableTask(abortTask) && !jobsPipelineUiState.abortRequested;
     const aborting = Boolean(jobsPipelineUiState.abortRequested || isAbortPendingPayload(pipelinePayload));
+    if (!abortable || aborting) {
+      jobsPipelineUiState.abortRevealActive = false;
+    }
     updateJobsPipelineUiFromModule(refs, {
       pipelinePayload,
       running,
@@ -176,20 +218,18 @@ export function createJobsPipelineController({
       }),
       isError,
       abortable,
-      abortReveal: Boolean(jobsPipelineUiState.abortRevealActive),
       aborting
     });
-    const labelEl = refs.jobsPipelineRunBtn?.querySelector?.('[data-ui="jobs-pipeline-label"]');
-    if (labelEl && !jobsPipelineUiState.abortRevealActive) {
-      refs.jobsPipelineRunBtn.dataset.abortDefaultLabel = labelEl.textContent || "";
-    }
-    jobsPipelineUiState.abortTask = abortable
-      ? {
-          taskType: normalizeTaskType(abortTask),
-          runId: taskRunId(abortTask)
-        }
-      : null;
+    jobsPipelineUiState.abortTask = abortable ? normalizeAbortTarget(abortTask) : null;
     syncJobsPipelineAbortButton();
+  }
+
+  function resetJobsPipelineAbortState() {
+    jobsPipelineUiState.abortRequested = false;
+    jobsPipelineUiState.abortRequestedTask = null;
+    jobsPipelineUiState.abortRevealActive = false;
+    jobsPipelineUiState.abortRequestError = "";
+    jobsPipelineUiState.abortRequestErrorAt = 0;
   }
 
   function syncJobsPipelineAbortButton() {
@@ -202,40 +242,60 @@ export function createJobsPipelineController({
     };
   }
 
-  function hasFineHoverPointer() {
-    try {
-      return Boolean(globalThis.matchMedia?.("(hover: hover) and (pointer: fine)")?.matches);
-    } catch {
-      return false;
-    }
+  function hasAbortTask() {
+    const task = jobsPipelineUiState.abortTask;
+    return Boolean(task?.taskType && task?.runId);
   }
 
-  function setAbortRevealActive(active) {
-    jobsPipelineUiState.abortRevealActive = Boolean(active);
-    const labelEl = refs.jobsPipelineRunBtn?.querySelector?.('[data-ui="jobs-pipeline-label"]');
-    const abortTask = jobsPipelineUiState.abortTask;
-    if (!labelEl || !abortTask || jobsPipelineUiState.abortRequested) return;
-    const storedLabel = String(refs.jobsPipelineRunBtn?.dataset?.abortDefaultLabel || "").trim();
-    if (!refs.jobsPipelineRunBtn.dataset.abortDefaultLabel && labelEl.textContent) {
-      refs.jobsPipelineRunBtn.dataset.abortDefaultLabel = labelEl.textContent;
+  function abortTargetStillActive({ pipelinePayload, taskStatePayload, taskStateKnown, target }) {
+    if (!target?.taskType || !target?.runId) return false;
+    const pipelineRunId = String(pipelinePayload?.runId || "").trim();
+    if (
+      target.taskType === "pipeline"
+      && Boolean(pipelinePayload?.active)
+      && pipelineRunId === target.runId
+    ) {
+      return true;
     }
-    labelEl.textContent = active
-      ? JOBS_UPDATE_COPY.abortLabel
-      : (storedLabel || labelEl.textContent || JOBS_UPDATE_COPY.updatingLabel);
+    if (!taskStateKnown) return false;
+    return getTaskStateRows(taskStatePayload).some(task => (
+      Boolean(task?.active) && taskMatchesAbortTarget(task, target)
+    ));
   }
 
-  function ensureAbortRevealHandlers() {
-    const button = refs.jobsPipelineRunBtn;
-    if (!button || button.dataset.abortRevealHandlers === "true") return;
-    button.dataset.abortRevealHandlers = "true";
-    button.addEventListener?.("pointerenter", () => {
-      if (hasFineHoverPointer()) setAbortRevealActive(true);
+  function reconcileAbortRequest({ pipelinePayload, taskStatePayload, taskStateKnown }) {
+    if (!jobsPipelineUiState.abortRequested) return;
+    const target = jobsPipelineUiState.abortRequestedTask;
+    if (!target?.taskType || !target?.runId) {
+      resetJobsPipelineAbortState();
+      return;
+    }
+    const pipelineRunId = String(pipelinePayload?.runId || "").trim();
+    const targetIsPipelinePayload = target.taskType === "pipeline"
+      && (!pipelineRunId || pipelineRunId === target.runId);
+    if (targetIsPipelinePayload && isUserAbortCompletionPayload(pipelinePayload)) {
+      resetJobsPipelineAbortState();
+      return;
+    }
+    const targetStillActive = abortTargetStillActive({
+      pipelinePayload,
+      taskStatePayload,
+      taskStateKnown,
+      target
     });
-    button.addEventListener?.("pointerleave", () => {
-      if (hasFineHoverPointer()) setAbortRevealActive(false);
-    });
-    button.addEventListener?.("focus", () => setAbortRevealActive(true));
-    button.addEventListener?.("blur", () => setAbortRevealActive(false));
+    if (!targetStillActive && (target.taskType === "pipeline" || taskStateKnown)) {
+      resetJobsPipelineAbortState();
+      return;
+    }
+    if (
+      targetStillActive
+      && jobsPipelineUiState.abortRequestError
+      && Date.now() - Number(jobsPipelineUiState.abortRequestErrorAt || 0) >= ABORT_REQUEST_VERIFY_GRACE_MS
+    ) {
+      const message = jobsPipelineUiState.abortRequestError;
+      resetJobsPipelineAbortState();
+      showToast(`Could not abort job update: ${message}`, "error");
+    }
   }
 
   async function requestJobsPipelineAbort() {
@@ -246,7 +306,10 @@ export function createJobsPipelineController({
       : true;
     if (!confirmed) return;
     jobsPipelineUiState.abortRequested = true;
+    jobsPipelineUiState.abortRequestedTask = normalizeAbortTarget(task);
     jobsPipelineUiState.abortRevealActive = false;
+    jobsPipelineUiState.abortRequestError = "";
+    jobsPipelineUiState.abortRequestErrorAt = 0;
     updateJobsPipelineUi({
       running: true,
       disabled: true,
@@ -263,7 +326,7 @@ export function createJobsPipelineController({
           reason: "jobs_page_abort_update"
         },
         allowStatuses: [200, 400, 404, 409],
-        timeoutMs: 5000
+        timeoutMs: ABORT_REQUEST_TIMEOUT_MS
       });
       if (!result?.ok && !result?.abortAccepted) {
         throw new Error(String(result?.error || "abort failed"));
@@ -271,9 +334,9 @@ export function createJobsPipelineController({
       showToast("Job update abort requested.", "success");
       scheduleJobsPipelineStatusPoll(250);
     } catch (err) {
-      jobsPipelineUiState.abortRequested = false;
-      showToast(`Could not abort job update: ${String(err?.message || err)}`, "error");
-      scheduleJobsPipelineStatusPoll(idlePollDelayMs);
+      jobsPipelineUiState.abortRequestError = String(err?.message || err);
+      jobsPipelineUiState.abortRequestErrorAt = Date.now();
+      scheduleJobsPipelineStatusPoll(250);
     }
   }
 
@@ -306,7 +369,11 @@ export function createJobsPipelineController({
 
   function handlePipelineCompletionStatus(payload) {
     const updatesFound = Boolean(payload?.updatesFound || payload?.refreshRecommended);
-    const hasError = Boolean(isErrorStage(payload));
+    const userAbortCompletion = isUserAbortCompletionPayload(payload);
+    if (userAbortCompletion) {
+      resetJobsPipelineAbortState();
+    }
+    const hasError = !userAbortCompletion && Boolean(isErrorStage(payload));
     setRefreshJobsNeedsAttention(updatesFound);
     jobsPipelineUiState.active = false;
     jobsPipelineUiState.pendingStart = false;
@@ -319,6 +386,9 @@ export function createJobsPipelineController({
       pipelinePayload: payload,
       isError: hasError
     });
+    if (userAbortCompletion) {
+      return;
+    }
     if (updatesFound) {
       showToast(JOBS_UPDATE_COPY.completedWithUpdates, "success");
     } else if (payload?.error) {
@@ -336,9 +406,8 @@ export function createJobsPipelineController({
         throw pipelineStatusResult.reason;
       }
       const payload = pipelineStatusResult.value;
-      const taskStatePayload = taskStateResult.status === "fulfilled"
-        ? taskStateResult.value
-        : { tasks: [] };
+      const taskStateKnown = taskStateResult.status === "fulfilled";
+      const taskStatePayload = taskStateKnown ? taskStateResult.value : { tasks: [] };
       jobsPipelineUiState.bridgeOnline = true;
       jobsPipelineUiState.updateTooltipBridgeError = "";
       resetPipelineStatusPollFailures(jobsPipelineUiState);
@@ -347,6 +416,7 @@ export function createJobsPipelineController({
       const runId = String(payload?.runId || "");
       const trackedRunId = String(jobsPipelineUiState.runId || "");
       const blockingTask = getBlockingTask(taskStatePayload, trackedRunId);
+      reconcileAbortRequest({ pipelinePayload: payload, taskStatePayload, taskStateKnown });
       if (active) {
         const abortTask = {
           active: true,
@@ -455,8 +525,9 @@ export function createJobsPipelineController({
 
   async function triggerJobsPipelineRun() {
     if (!refs.jobsPipelineRunBtn) return;
-    if (jobsPipelineUiState.active) {
-      if (jobsPipelineUiState.abortRevealActive) {
+    if (jobsPipelineUiState.abortRequested) return;
+    if (jobsPipelineUiState.active || hasAbortTask()) {
+      if (hasAbortTask()) {
         await requestJobsPipelineAbort();
       }
       return;
@@ -530,8 +601,6 @@ export function createJobsPipelineController({
       scheduleJobsPipelineStatusPoll(idlePollDelayMs);
     }
   }
-
-  ensureAbortRevealHandlers();
 
   return {
     updateJobsPipelineUi,

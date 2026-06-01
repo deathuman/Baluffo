@@ -77,6 +77,35 @@ async function waitForControlledDesktopPageReady(page) {
   await page.locator("#saved-source-status").waitFor({ state: "visible", timeout: 20_000 });
 }
 
+async function waitForJobsDesktopPageReady(page) {
+  await page.waitForFunction(
+    () => Boolean(window.JobAppLocalData),
+    null,
+    { timeout: 30_000 }
+  );
+  await page.locator("#admin-page-btn").waitFor({ state: "visible", timeout: 30_000 });
+}
+
+async function waitForAdminDesktopPageReady(page) {
+  await page.waitForFunction(
+    () => Boolean(window.JobAppLocalData),
+    null,
+    { timeout: 30_000 }
+  );
+  await page.locator("#admin-content").waitFor({ state: "visible", timeout: 30_000 });
+}
+
+async function dismissJobsFirstRunNotice(page) {
+  const notice = page.locator("[data-jobs-first-run-notice='true']");
+  const dismissButton = page.locator(".jobs-first-run-notice .local-auth-dialog-submit");
+  if (await notice.count() <= 0) {
+    return false;
+  }
+  await dismissButton.click({ timeout: 10_000 });
+  await notice.waitFor({ state: "detached", timeout: 10_000 });
+  return true;
+}
+
 async function fetchHealth(apiRequest, options = {}) {
   const attempts = Math.max(1, Number(options.attempts || 8) || 8);
   const delayMs = Math.max(50, Number(options.delayMs || 250) || 250);
@@ -101,6 +130,17 @@ async function fetchHealth(apiRequest, options = {}) {
 
 function ownerLastActivityAt(healthPayload) {
   return String(healthPayload?.owner?.lastActivityAt || healthPayload?.ownerLastActivityAt || "").trim();
+}
+
+async function fetchStartupMetricRows(apiRequest, limit = 1000) {
+  const response = await apiRequest.get(`${BRIDGE_BASE}/desktop-local-data/startup-metrics?limit=${Number(limit) || 1000}`);
+  assert.equal(response.ok(), true, "startup metrics request should succeed");
+  const payload = await response.json();
+  return Array.isArray(payload?.rows) ? payload.rows : [];
+}
+
+function countStartupEvent(rows, eventName) {
+  return rows.filter(row => String(row?.event || "") === eventName).length;
 }
 
 async function installLifecycleBlocker(context) {
@@ -214,6 +254,70 @@ async function main() {
         beforeActivity,
         afterActivity,
         ...counters
+      };
+    }, scenarios);
+
+    await runScenario("Approved desktop Jobs to Admin navigation keeps runtime alive", async () => {
+      await page.evaluate(() => {
+        globalThis.__baluffoBlockDesktopLifecycle = false;
+        if (globalThis.__baluffoTaskStateTimer) {
+          clearInterval(globalThis.__baluffoTaskStateTimer);
+          globalThis.__baluffoTaskStateTimer = null;
+        }
+      });
+      await page.locator("#jobs-page-btn").click();
+      await page.waitForURL(
+        url => {
+          try {
+            return new URL(String(url)).pathname === "/jobs.html";
+          } catch {
+            return false;
+          }
+        },
+        { timeout: 30_000 }
+      );
+      await waitForJobsDesktopPageReady(page);
+      const firstRunNoticeDismissed = await dismissJobsFirstRunNotice(page);
+      const beforeRows = await fetchStartupMetricRows(apiRequest);
+      const beforeRegularCloseCount = countStartupEvent(beforeRows, "desktop_regular_close_shutdown_requested");
+      const beforeOwnerExitCount = countStartupEvent(beforeRows, "admin_bridge_owner_session_exit_requested");
+
+      await page.locator("#admin-page-btn").click();
+      await page.waitForURL(
+        url => {
+          try {
+            return new URL(String(url)).pathname === "/admin.html";
+          } catch {
+            return false;
+          }
+        },
+        { timeout: 30_000 }
+      );
+      await waitForAdminDesktopPageReady(page);
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      const health = await fetchHealth(apiRequest, { attempts: 12, delayMs: 250 });
+      const afterRows = await fetchStartupMetricRows(apiRequest);
+      const afterRegularCloseCount = countStartupEvent(afterRows, "desktop_regular_close_shutdown_requested");
+      const afterOwnerExitCount = countStartupEvent(afterRows, "admin_bridge_owner_session_exit_requested");
+      assert.equal(
+        afterRegularCloseCount,
+        beforeRegularCloseCount,
+        "approved in-app navigation should not request a regular desktop close"
+      );
+      assert.equal(
+        afterOwnerExitCount,
+        beforeOwnerExitCount,
+        "approved in-app navigation should not request owner-session exit"
+      );
+      return {
+        currentPath: new URL(page.url()).pathname,
+        desktopMode: Boolean(health?.desktopMode),
+        beforeRegularCloseCount,
+        afterRegularCloseCount,
+        beforeOwnerExitCount,
+        afterOwnerExitCount,
+        firstRunNoticeDismissed
       };
     }, scenarios);
   } catch (error) {
