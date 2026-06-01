@@ -64,4 +64,5 @@ def test_umbrel_metadata_uses_app_proxy_raw_lan_contract() -> None:
     assert "app_proxy:" in compose
     assert "APP_PORT: 8080" in compose
     assert 'PROXY_AUTH_ADD: "false"' in compose
+    assert 'ports:\n      - "8877:8080"' in compose
     assert "${APP_DATA_DIR}/data:/data" in compose

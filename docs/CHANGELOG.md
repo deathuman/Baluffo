@@ -16,6 +16,7 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 - Baluffo can now run as a same-origin Linux container for private Umbrel raw-LAN installs, with GHCR multi-arch image publishing and private community app-store metadata.
 
 ### Fixed
+- Umbrel app metadata now publishes host port `8877` to the Baluffo container service so the raw-LAN URL works outside the Umbrel proxy.
 - Container mode no longer emits wildcard browser CORS allow headers, while desktop localhost bridge compatibility keeps its existing split-origin behavior.
 
 ## [0.2.25] - 2026-06-01
