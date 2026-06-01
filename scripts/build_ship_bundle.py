@@ -26,9 +26,12 @@ from scripts.build_frontend_runtime_config import (
 from src.app_version import APP_VERSION
 from src.baluffo_config import get_sync_defaults
 from src.python_version_guard import ensure_required_python
+from src.runtime_seed import (
+    APP_VERSION_CONTRACT_FILES,
+    seed_runtime_data,
+)
 from src.shared.json_io import (
     copy_json_file_to_storage,
-    existing_json_candidate,
     gzip_backed_json_storage_path,
     write_json_text,
 )
@@ -123,16 +126,6 @@ APP_RUNTIME_ASSET_DIRS = ("probes", "styles")
 PACKAGING_FILES = (
     "README.md",
     "github-app-sync-config.template.json",
-)
-APP_VERSION_CONTRACT_FILES = (
-    "contracts/country_acceptance.json",
-    "contracts/city_noise_contract.json",
-)
-APP_RUNTIME_DATA_FILES = APP_VERSION_CONTRACT_FILES + (
-    "defaults/source-registry-active.seed.json",
-    "defaults/source-registry-pending.seed.json",
-    "jobs-fetch-report.json",
-    "source-discovery-config.json",
 )
 APP_VERSION_IMPORT_CHECK_MODULES = (
     "src.admin_bridge",
@@ -317,56 +310,7 @@ def _manifest_payload(version: str, sha256: str) -> dict:
 
 
 def _seed_runtime_data(data_dir: Path) -> None:
-    data_dir.mkdir(parents=True, exist_ok=True)
-    for name in APP_RUNTIME_DATA_FILES:
-        src = existing_json_candidate(ROOT / "data" / name) or ROOT / "data" / name
-        if src.exists():
-            _copy_json_file(src, data_dir / name)
-    fetch_report_path = data_dir / "jobs-fetch-report.json"
-    payloads = {
-        "source-registry-rejected.json": [],
-        "source-discovery-candidates.json": [],
-        "source-discovery-report.json": {"summary": {}, "candidates": [], "failures": []},
-        "source-discovery-config.json": __import__(
-            "src.source_discovery", fromlist=["DEFAULT_DISCOVERY_CONFIG"]
-        ).DEFAULT_DISCOVERY_CONFIG,
-        "jobs-fetch-tasks.json": {"summary": {}, "tasks": [], "outputs": {}},
-        "jobs-source-state.json": {"schemaVersion": 1, "updatedAt": "", "sources": {}},
-        "jobs-success-cache.json": {"updatedAt": "", "successfulSources": []},
-        "admin-task-state.json": {},
-        "admin-alert-state.json": {"schemaVersion": 1, "acked": {}, "updatedAt": ""},
-        "admin-run-history.json": [],
-    }
-    for name, payload in payloads.items():
-        target = data_dir / name
-        if gzip_backed_json_storage_path(target).exists() or target.exists():
-            continue
-        _write_text(target, json.dumps(payload, indent=2, ensure_ascii=False))
-    _write_text(
-        fetch_report_path,
-        json.dumps(
-            {
-                "schemaVersion": 1,
-                "runId": "",
-                "startedAt": "",
-                "finishedAt": "",
-                "runtime": {"lifecycle": {"owner": "fetch_report", "heartbeatAt": ""}},
-                "summary": {"outputCount": 0, "failedSources": 0, "sourceCount": 0},
-                "taskProgress": {
-                    "active": False,
-                    "phaseKey": "",
-                    "phaseLabel": "",
-                    "mode": "indeterminate",
-                    "ratio": 0.0,
-                    "counts": {},
-                },
-                "sources": [],
-                "outputs": {"report": str(fetch_report_path)},
-            },
-            indent=2,
-            ensure_ascii=False,
-        ),
-    )
+    seed_runtime_data(data_dir, source_root=ROOT, overwrite=True)
 
 
 def _seed_version_contract_data(data_dir: Path) -> None:

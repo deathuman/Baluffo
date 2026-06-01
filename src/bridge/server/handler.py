@@ -4,12 +4,17 @@ import json
 import traceback
 from contextlib import suppress
 from http.server import BaseHTTPRequestHandler
-from typing import Any
+from typing import Any, Protocol
 from urllib.parse import parse_qs, urlparse
 
 from src.bridge.api import BridgeApi
+from src.bridge.container_mode import is_container_runtime
 from src.bridge.request_utils import read_json_from_request
 from src.shared.timing_counters import normalize_counter_category, time_block
+
+
+class StaticGetService(Protocol):
+    def handle_get(self, handler: Any, *, path: str) -> bool: ...
 
 
 def _is_expected_client_disconnect(exc: BaseException) -> bool:
@@ -27,65 +32,238 @@ def _is_expected_client_disconnect(exc: BaseException) -> bool:
     return False
 
 
-def make_handler(*, api: BridgeApi) -> type[BaseHTTPRequestHandler]:
+def _request_timing_category(handler: BaseHTTPRequestHandler, method: str, path: str = "") -> str:
+    route_path = path or ""
+    if not route_path:
+        with suppress(Exception):
+            route_path = _route_path(handler)
+    route_token = normalize_counter_category(route_path)
+    return f"bridge_request_{str(method or '').strip().lower() or 'unknown'}_{route_token}"
+
+
+def _handle_response_write_exception(
+    handler: BaseHTTPRequestHandler,
+    api: BridgeApi,
+    exc: BaseException,
+    *,
+    status: int,
+) -> bool:
+    if _is_expected_client_disconnect(exc):
+        handler.close_connection = True
+        return True
+    route_path = ""
+    with suppress(Exception):
+        route_path = _route_path(handler)
+    with suppress(Exception):
+        api.bridge_log(
+            "error",
+            "http_response_write_failed",
+            method=getattr(handler, "command", ""),
+            path=route_path or getattr(handler, "path", ""),
+            status=int(status),
+            error=str(exc),
+        )
+    return False
+
+
+def _route_path(handler: BaseHTTPRequestHandler) -> str:
+    # Defensive normalization: some clients/environments can introduce
+    # whitespace/control characters that otherwise cause routes to miss.
+    return str(urlparse(handler.path).path or "").strip()
+
+
+def _route_query(handler: BaseHTTPRequestHandler) -> dict[str, list[str]]:
+    return parse_qs(urlparse(handler.path).query)
+
+
+def _send_cors_headers(handler: BaseHTTPRequestHandler, api: BridgeApi) -> None:
+    if is_container_runtime(api):
+        return
+    handler.send_header("Access-Control-Allow-Origin", "*")
+    handler.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+    handler.send_header("Access-Control-Allow-Headers", "Content-Type")
+
+
+def _send_json_response(
+    handler: BaseHTTPRequestHandler,
+    api: BridgeApi,
+    payload: Any,
+    *,
+    status: int = 200,
+) -> None:
+    # Some payloads may contain lone surrogates or other encoding edge cases;
+    # retry with `ensure_ascii=True` so we can always respond.
+    try:
+        body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+    except UnicodeEncodeError:
+        body = json.dumps(payload, ensure_ascii=True, default=str).encode("utf-8")
+    try:
+        handler.send_response(status)
+        handler.send_header("Content-Type", "application/json; charset=utf-8")
+        handler.send_header("Cache-Control", "no-store")
+        _send_cors_headers(handler, api)
+        handler.send_header("Content-Length", str(len(body)))
+        handler.end_headers()
+        handler.wfile.write(body)
+    except Exception as exc:  # noqa: BLE001
+        if _handle_response_write_exception(handler, api, exc, status=status):
+            return
+        raise
+
+
+def _send_bytes_response(
+    handler: BaseHTTPRequestHandler,
+    api: BridgeApi,
+    body: bytes,
+    *,
+    content_type: str,
+    filename: str = "",
+    disposition: str = "inline",
+    status: int = 200,
+    cache_control: str = "no-store",
+    content_encoding: str = "",
+) -> None:
+    try:
+        handler.send_response(status)
+        handler.send_header("Content-Type", content_type)
+        handler.send_header("Cache-Control", str(cache_control or "no-store"))
+        if not is_container_runtime(api):
+            handler.send_header("Access-Control-Allow-Origin", "*")
+        if content_encoding:
+            handler.send_header("Content-Encoding", str(content_encoding))
+        handler.send_header("Content-Length", str(len(body)))
+        if filename:
+            safe_filename = str(filename).replace('"', "")
+            safe_disposition = (
+                "attachment" if str(disposition).lower() == "attachment" else "inline"
+            )
+            handler.send_header(
+                "Content-Disposition", f'{safe_disposition}; filename="{safe_filename}"'
+            )
+        handler.end_headers()
+        handler.wfile.write(body)
+    except Exception as exc:  # noqa: BLE001
+        if _handle_response_write_exception(handler, api, exc, status=status):
+            return
+        raise
+
+
+def _log_request_message(
+    handler: BaseHTTPRequestHandler, api: BridgeApi, format: str, args: tuple[Any, ...]
+) -> None:
+    runtime_config = getattr(api, "runtime_config", None)
+    if runtime_config is not None and bool(getattr(runtime_config, "quiet_requests", False)):
+        return
+    try:
+        message = format % args
+    except (TypeError, ValueError):
+        message = format
+    api.bridge_log(
+        "debug",
+        "http_request",
+        method=getattr(handler, "command", ""),
+        path=handler.path,
+        detail=message,
+    )
+
+
+def _handle_get_request(
+    handler: BaseHTTPRequestHandler,
+    api: BridgeApi,
+    static_service: StaticGetService | None,
+) -> None:
+    path = ""
+    with time_block(_request_timing_category(handler, "get")):
+        try:
+            path = _route_path(handler)
+            with suppress(Exception):
+                api.mark_desktop_session_activity(path)
+            query = _route_query(handler)
+            with suppress(Exception):
+                api.bridge_log(
+                    "info",
+                    "http_get_route",
+                    rawPath=getattr(handler, "path", ""),
+                    routePath=path,
+                )
+
+            from src.bridge.routes.get_routes import handle_get
+
+            if handle_get(handler, api=api, path=path, query=query):
+                return
+            if static_service is not None and static_service.handle_get(handler, path=path):
+                return
+            handler.send_json({"error": "Not found"}, status=404)
+        except Exception as exc:  # noqa: BLE001
+            with suppress(Exception):
+                api.bridge_log("error", "http_get_handler_failed", path=path, error=str(exc))
+            handler.send_json(
+                {
+                    "error": "Internal server error",
+                    "detail": str(exc),
+                    "traceback": traceback.format_exc(),
+                },
+                status=500,
+            )
+
+
+def _handle_post_request(handler: BaseHTTPRequestHandler, api: BridgeApi) -> None:
+    path = ""
+    with time_block(_request_timing_category(handler, "post")):
+        path = _route_path(handler)
+        with suppress(Exception):
+            api.mark_desktop_session_activity(path)
+        payload = read_json_from_request(handler)
+        from src.bridge.routes.post_routes import handle_post
+
+        try:
+            if handle_post(handler, api=api, path=path, payload=payload):
+                return
+            handler.send_json({"error": "Not found"}, status=404)
+        except BaseException as exc:  # noqa: BLE001
+            with suppress(Exception):
+                api.bridge_log(
+                    "error",
+                    "http_post_handler_failed",
+                    path=path,
+                    error=str(exc),
+                    detail=traceback.format_exc(),
+                )
+            handler.send_json(
+                {
+                    "error": "Internal server error",
+                    "detail": str(exc),
+                    "traceback": traceback.format_exc(),
+                },
+                status=500,
+            )
+
+
+def make_handler(
+    *,
+    api: BridgeApi,
+    static_service: StaticGetService | None = None,
+) -> type[BaseHTTPRequestHandler]:
     """Create a request handler bound to the active BridgeApi instance."""
 
     class Handler(BaseHTTPRequestHandler):
         def _request_timing_category(self, method: str, path: str = "") -> str:
-            route_path = path or ""
-            if not route_path:
-                with suppress(Exception):
-                    route_path = self._route_path()
-            route_token = normalize_counter_category(route_path)
-            return f"bridge_request_{str(method or '').strip().lower() or 'unknown'}_{route_token}"
+            return _request_timing_category(self, method, path)
 
         def _handle_response_write_exception(self, exc: BaseException, *, status: int) -> bool:
-            if _is_expected_client_disconnect(exc):
-                self.close_connection = True
-                return True
-            route_path = ""
-            with suppress(Exception):
-                route_path = self._route_path()
-            with suppress(Exception):
-                api.bridge_log(
-                    "error",
-                    "http_response_write_failed",
-                    method=getattr(self, "command", ""),
-                    path=route_path or getattr(self, "path", ""),
-                    status=int(status),
-                    error=str(exc),
-                )
-            return False
+            return _handle_response_write_exception(self, api, exc, status=status)
 
         def _route_path(self) -> str:
-            # Defensive normalization: some clients/environments can introduce
-            # whitespace/control characters that otherwise cause routes to miss.
-            return str(urlparse(self.path).path or "").strip()
+            return _route_path(self)
 
         def _route_query(self) -> dict[str, list[str]]:
-            return parse_qs(urlparse(self.path).query)
+            return _route_query(self)
+
+        def _send_cors_headers(self) -> None:
+            _send_cors_headers(self, api)
 
         def send_json(self, payload: Any, status: int = 200) -> None:
-            # Some payloads may contain lone surrogates or other encoding edge
-            # cases; retry with `ensure_ascii=True` so we can always respond.
-            try:
-                body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
-            except UnicodeEncodeError:
-                body = json.dumps(payload, ensure_ascii=True, default=str).encode("utf-8")
-            try:
-                self.send_response(status)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Cache-Control", "no-store")
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
-            except Exception as exc:  # noqa: BLE001
-                if self._handle_response_write_exception(exc, status=status):
-                    return
-                raise
+            _send_json_response(self, api, payload, status=status)
 
         def _send_json(self, payload: Any, status: int = 200) -> None:
             self.send_json(payload, status=status)
@@ -98,27 +276,20 @@ def make_handler(*, api: BridgeApi) -> type[BaseHTTPRequestHandler]:
             filename: str = "",
             disposition: str = "inline",
             status: int = 200,
+            cache_control: str = "no-store",
+            content_encoding: str = "",
         ) -> None:
-            try:
-                self.send_response(status)
-                self.send_header("Content-Type", content_type)
-                self.send_header("Cache-Control", "no-store")
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.send_header("Content-Length", str(len(body)))
-                if filename:
-                    safe_filename = str(filename).replace('"', "")
-                    safe_disposition = (
-                        "attachment" if str(disposition).lower() == "attachment" else "inline"
-                    )
-                    self.send_header(
-                        "Content-Disposition", f'{safe_disposition}; filename="{safe_filename}"'
-                    )
-                self.end_headers()
-                self.wfile.write(body)
-            except Exception as exc:  # noqa: BLE001
-                if self._handle_response_write_exception(exc, status=status):
-                    return
-                raise
+            _send_bytes_response(
+                self,
+                api,
+                body,
+                content_type=content_type,
+                filename=filename,
+                disposition=disposition,
+                status=status,
+                cache_control=cache_control,
+                content_encoding=content_encoding,
+            )
 
         def _send_bytes(
             self,
@@ -128,6 +299,8 @@ def make_handler(*, api: BridgeApi) -> type[BaseHTTPRequestHandler]:
             filename: str = "",
             disposition: str = "inline",
             status: int = 200,
+            cache_control: str = "no-store",
+            content_encoding: str = "",
         ) -> None:
             self.send_bytes(
                 body,
@@ -135,95 +308,20 @@ def make_handler(*, api: BridgeApi) -> type[BaseHTTPRequestHandler]:
                 filename=filename,
                 disposition=disposition,
                 status=status,
+                cache_control=cache_control,
+                content_encoding=content_encoding,
             )
 
         def log_message(self, format: str, *args: Any) -> None:
-            runtime_config = getattr(api, "runtime_config", None)
-            if runtime_config is not None and bool(
-                getattr(runtime_config, "quiet_requests", False)
-            ):
-                return
-            try:
-                message = format % args
-            except (TypeError, ValueError):
-                message = format
-            api.bridge_log(
-                "debug",
-                "http_request",
-                method=getattr(self, "command", ""),
-                path=self.path,
-                detail=message,
-            )
+            _log_request_message(self, api, format, args)
 
         def do_OPTIONS(self) -> None:
             self.send_json({"ok": True})
 
         def do_GET(self) -> None:
-            path = ""
-            with time_block(self._request_timing_category("get")):
-                try:
-                    path = self._route_path()
-                    with suppress(Exception):
-                        api.mark_desktop_session_activity(path)
-                    query = self._route_query()
-                    with suppress(Exception):
-                        api.bridge_log(
-                            "info",
-                            "http_get_route",
-                            rawPath=getattr(self, "path", ""),
-                            routePath=path,
-                        )
-
-                    from src.bridge.routes.get_routes import handle_get
-
-                    if handle_get(self, api=api, path=path, query=query):
-                        return
-                    self.send_json({"error": "Not found"}, status=404)
-                except Exception as exc:  # noqa: BLE001
-                    # Logging must never prevent the error response from being sent.
-                    with suppress(Exception):
-                        api.bridge_log(
-                            "error", "http_get_handler_failed", path=path, error=str(exc)
-                        )
-                    self.send_json(
-                        {
-                            "error": "Internal server error",
-                            "detail": str(exc),
-                            "traceback": traceback.format_exc(),
-                        },
-                        status=500,
-                    )
+            _handle_get_request(self, api, static_service)
 
         def do_POST(self) -> None:
-            path = ""
-            with time_block(self._request_timing_category("post")):
-                path = self._route_path()
-                with suppress(Exception):
-                    api.mark_desktop_session_activity(path)
-                payload = read_json_from_request(self)
-                from src.bridge.routes.post_routes import handle_post
-
-                try:
-                    if handle_post(self, api=api, path=path, payload=payload):
-                        return
-                    self.send_json({"error": "Not found"}, status=404)
-                except BaseException as exc:  # noqa: BLE001
-                    # Logging must never prevent the error response from being sent.
-                    with suppress(Exception):
-                        api.bridge_log(
-                            "error",
-                            "http_post_handler_failed",
-                            path=path,
-                            error=str(exc),
-                            detail=traceback.format_exc(),
-                        )
-                    self.send_json(
-                        {
-                            "error": "Internal server error",
-                            "detail": str(exc),
-                            "traceback": traceback.format_exc(),
-                        },
-                        status=500,
-                    )
+            _handle_post_request(self, api)
 
     return Handler

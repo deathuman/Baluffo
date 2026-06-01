@@ -5,7 +5,7 @@
 > - **Canonical for:** system boundaries, task routing, compatibility-surface detail, and the expanded verification matrix
 > - **Not canonical for:** endpoint payloads or data schema details
 > - **Then inspect:** the minimal source files listed in the task table, plus the matching contract doc if shape changes are involved
-> - **Last updated:** 2026-05-25
+> - **Last updated:** 2026-06-01
 >
 > Start with [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) first. Retired boundary-charter detail now lives in git history; this map is the current routing source.
 > For any file described below as a stable thin surface, compatibility surface, or monkeypatch surface, preserve the root-level exported names that tests or leaf modules patch through that root unless the matching contract tests and docs are updated in the same change.
@@ -31,6 +31,11 @@ src/dev_admin_supervisor.py (Baluffo launcher)
 src/admin_bridge.py (stable thin entrypoint / wiring-only composition root)
   -> src/bridge/ (services: sync, registry, discovery, pipeline, routes)
   -> src/bridge/admin_entrypoint_{runtime,services,registry_api,task_runtime}.py
+
+src/container_server.py (container same-origin UI/API entrypoint)
+  -> src/bridge/server/handler.py + src/bridge/server/static_files.py
+  -> src/runtime_seed.py
+  -> same BridgeApi route surface with container-only desktop route suppression
 
 src/jobs_fetcher.py (stable thin CLI facade)
   -> src/jobs/ (pipeline, adapters, dedup)
@@ -70,6 +75,7 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 | `src/source_discovery.py` | Discover candidate sources (delegates to package) |
 | `src/dev_admin_supervisor.py` | Baluffo launcher (site + bridge + browser) |
 | `src/admin_bridge.py` | Bridge-only entry (expert/manual mode, wiring only) |
+| `src/container_server.py` | Container same-origin UI/API service entrypoint |
 | `src/jobs/pipeline.py` | Stable pipeline entry flow over `pipeline_{run_setup,execution_flow,finalize}.py` |
 | `src/source_discovery/` | Discovery package modules |
 | `src/packaged_desktop_smoke.py` | Packaged smoke CLI and rehearsal entry flow |
@@ -94,6 +100,7 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 | Admin ops | `frontend/admin/app/ops/{format,task-state,health,bridge-status}.js`, `frontend/admin/app/{auth,fetcher,discovery,sync}.js` | `frontend/admin/app/ops.js` only for stable controller/export changes |
 | Bridge API | `src/bridge/*.py` | `src/bridge/routes/{get_routes,post_routes,post_routes_admin,post_routes_local_data,post_routes_update}.py` |
 | Admin bridge entrypoint/runtime wiring | `src/bridge/admin_entrypoint_{runtime,services,api,registry_api,task_runtime}.py` | `src/admin_bridge.py` only for root-surface compatibility work |
+| Container / Umbrel runtime | `src/container_server.py`, `src/bridge/server/{handler,static_files}.py`, `src/bridge/container_mode.py`, `src/runtime_seed.py`, `Dockerfile`, `deathuman-baluffo/*` | `src/admin_bridge.py` only for shared BridgeApi assembly compatibility work |
 | Discovery behavior | `src/source_discovery/orchestrator.py`, `orchestrator_{runtime,generation,probe,finalize}.py`, `runtime_metrics.py`, `stage_control.py`, `reporting_{progress,candidates,backlog}.py`, `gamesmap_{cache,parsing,candidates}.py`, `web_search_{fetch,extract,candidates}.py` | `src/source_discovery.py` only for CLI compatibility, and `gamesmap.py`, `reporting.py`, or `web_search.py` only for stable import-surface compatibility work |
 | Bridge sync | `src/bridge/sync_service.py`, `src/source_sync_{config,runtime,snapshot,crypto}.py` | `src/source_sync.py` only for root-surface compatibility work, plus `src/bridge/sync_state.py` |
 | Bridge registry | `src/bridge/registry_service.py`, `src/source_registry_{identity,io,state,canonicalize,policy,auto_approval}.py` | `src/source_registry.py` only for compatibility-surface changes, plus `src/bridge/registry_tombstones.py` |
@@ -101,7 +108,7 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 | Jobs domain helpers | `frontend/jobs/domain/{query,feed,view}.js` | `frontend/jobs/domain.js` only for stable export-surface changes |
 | Static adapter behavior | `src/jobs/adapters/static_{runtime,listing,detail,sources}.py`, `src/jobs/adapters/static_{runtime_support,detail_heuristics}.py` | `src/jobs/adapters/static.py` for the current adapter entrypoint. The old `static_helpers.py` facade was deleted; use direct leaf imports. |
 | Local-data backend store | `src/local_data_store_{shared,profiles,saved_jobs,attachments,backup}.py` | `src/local_data_store.py` only for root-surface compatibility work |
-| Desktop local-data runtime | `frontend/shared/local-data/desktop/{api,lifecycle,navigation,state}.js` | `frontend/shared/local-data/desktop-client.js` only for root bootstrap or `window.JobAppLocalData` wiring |
+| Desktop/container bridge local-data runtime | `frontend/shared/local-data/{runtime-context,app-client,desktop-client}.js`, `frontend/shared/local-data/desktop/{api,lifecycle,navigation,state}.js`, `frontend/shared/config/admin-config.js`, `frontend/shared/api-client.js` | `frontend/shared/local-data/desktop-client.js` only for root bootstrap or `window.JobAppLocalData` wiring |
 | Local-data page wiring | `frontend/<page>/services.js` | `frontend/local-data/services.js` only when the shared local-data API changes |
 | Desktop runtime | `src/ship/desktop_app/{launcher_flow,launcher_diagnostics,launcher_recovery,startup_ready,startup_watchdog}.py` | `src/ship/desktop_app/{launcher,startup,browser,session,_windows,config}.py`, `src/ship/runtime_launcher.py` |
 | Desktop updater helper executable | `src/ship/desktop_updater_{ui,release,install}.py` | `src/ship/desktop_updater.py` only for helper CLI/root patch-surface compatibility work |
@@ -121,7 +128,7 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
   -> render exports stay stable through `frontend/admin/render.js` -> `frontend/admin/render/ops.js`
   -> ops renderer ownership lives in `frontend/admin/render/{ops-summary,ops-history,ops-shared}.js`
 
-**Shared:** `frontend/shared/state-hub.js` (cross-module state), `frontend/shared/api-client.js` (bridge HTTP), `frontend/shared/config/admin-config.js` (frontend-safe runtime config), `frontend/shared/local-data/desktop-client.js` (stable desktop-local runtime root over `desktop/{api,lifecycle,navigation,state}.js`), `frontend/shared/local-data/browser-client.js` (browser-local runtime)
+**Shared:** `frontend/shared/state-hub.js` (cross-module state), `frontend/shared/api-client.js` (bridge HTTP), `frontend/shared/config/admin-config.js` (frontend-safe runtime config), `frontend/shared/local-data/runtime-context.js` (browser/desktop/container mode resolution), `frontend/shared/local-data/desktop-client.js` (stable bridge-local runtime root over `desktop/{api,lifecycle,navigation,state}.js`), `frontend/shared/local-data/browser-client.js` (browser-local runtime)
 
 **Styles:** `styles/base.css` owns tokens and page foundations, `styles/components.css` owns shared UI primitives, and `styles/{jobs,saved,admin}.css` own page-specific polish. Change shared styling in the shared layer first; only touch page CSS when the selector is clearly page-owned.
 
@@ -137,6 +144,8 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 - `pipeline_service.py` - jobs pipeline task
 - `routes/get_routes.py`, `routes/post_routes.py` - GET handlers plus the thin POST registration root
 - `routes/post_routes_{admin,local_data,update}.py` - POST route-family ownership behind the thin registration root
+- `container_mode.py` - container-only desktop route suppression helpers
+- `server/handler.py`, `server/static_files.py` - shared HTTP handler and container static/runtime-data serving
 - `ops_api.py` - stable OpsApi surface over `ops_history_projection.py`, `ops_task_live.py`, `ops_task_{fetch_live,discovery_live,projection}.py`, and `ops_live_payload.py`
 - `source_check_api.py` - source probe/check helpers
 
@@ -224,6 +233,7 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 
 - **Desktop single-instance:** If healthy session exists, raise error - do not open another window
 - **Desktop startup:** start site + bridge -> wait for page URL readiness -> wait for `/ops/health` before steady state
+- **Container startup:** seed `/data` only when missing -> start one same-origin UI/API server -> keep desktop lifecycle/updater routes disabled
 - **Session/watchdog:** store metadata in `desktop-session.json`, track browser heartbeat, close on idle timeout
 
 ---
@@ -235,6 +245,7 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 | Frontend syntax | `node --check frontend/jobs/app.js` |
 | Frontend unit | `npm run test:frontend:unit` |
 | Bridge behavior | `python -m pytest tests/admin/ -q` |
+| Container / Umbrel runtime | `python -m pytest tests/bridge/test_container_runtime.py -q` plus targeted container frontend unit tests |
 | Pipeline/fetcher | `python -m pytest tests/test_jobs_fetcher_*.py -q` |
 | Desktop launcher | `python -m pytest tests/desktop_app/ -q` |
 | Packaged desktop smoke | `python -m pytest tests/packaged_desktop/ -q` |

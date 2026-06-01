@@ -8,7 +8,11 @@ import {
   initDesktopLocalDataClient
 } from "./desktop-client.js";
 import { hydrateDesktopVersionLabels } from "../app-version.js";
-import { resolveDesktopRuntimeMode } from "./runtime-context.js";
+import {
+  resolveBridgeLocalDataMode,
+  resolveDesktopRuntimeMode,
+  resolveRuntimeMode
+} from "./runtime-context.js";
 import {
   bindStartupProbeErrorHandlers,
   emitStartupProbeMetric,
@@ -17,30 +21,35 @@ import {
 
 try {
   bindStartupProbeErrorHandlers();
+  window.__baluffoRuntimeMode = resolveRuntimeMode();
   window.__baluffoDesktopMode = resolveDesktopRuntimeMode();
+  window.__baluffoBridgeLocalDataMode = resolveBridgeLocalDataMode();
 } catch (err) {
   console.error("[baluffo] Error in frontend/shared/local-data/app-client.js:", err);
 }
 
-if (window.__baluffoDesktopMode) {
+if (window.__baluffoBridgeLocalDataMode) {
   const page = resolveStartupProbePage();
   emitStartupProbeMetric(`${page}_page_boot_start`);
   emitStartupProbeMetric(`${page}_local_data_init_start`);
+  const enableDesktopLifecycle = Boolean(window.__baluffoDesktopMode);
   try {
-    initDesktopLocalDataClient();
+    initDesktopLocalDataClient({ enableLifecycle: enableDesktopLifecycle });
     emitStartupProbeMetric(`${page}_local_data_api_ready`);
     const desktopBootstrapWaitStartedAt =
       typeof performance !== "undefined" && typeof performance.now === "function"
         ? performance.now()
         : Date.now();
     window.__baluffoLocalDataLoaded = false;
-    awaitDesktopBootstrap().then(ready => {
+    awaitDesktopBootstrap({ enableLifecycle: enableDesktopLifecycle }).then(ready => {
       if (!ready) {
         return;
       }
       window.__baluffoLocalDataLoaded = true;
-      console.log("[baluffo] Desktop local data initialized successfully");
-      hydrateDesktopVersionLabels().catch(() => {});
+      console.log("[baluffo] Bridge local data initialized successfully");
+      if (enableDesktopLifecycle) {
+        hydrateDesktopVersionLabels().catch(() => {});
+      }
       const desktopBootstrapReadyAt =
         typeof performance !== "undefined" && typeof performance.now === "function"
           ? performance.now()
@@ -63,11 +72,11 @@ if (window.__baluffoDesktopMode) {
           desktopBootstrapStats?.firstSuccessfulAttemptMs ?? null
       });
     }).catch(err => {
-      console.error("[baluffo] Desktop local data init failed:", err);
+      console.error("[baluffo] Bridge local data init failed:", err);
       window.__baluffoInitErrors.push(err);
     });
   } catch (err) {
-    console.error("[baluffo] Desktop local data init failed:", err);
+    console.error("[baluffo] Bridge local data init failed:", err);
     window.__baluffoInitErrors.push(err);
   }
 } else {

@@ -31,6 +31,7 @@ class RuntimeConfig:
     desktop_session_id: str = ""
     started_by: str = ""
     owner_idle_timeout_s: float = 0.0
+    container_mode: bool = False
 
 
 def _normalize_log_level(value: Any, default: str = "info") -> str:
@@ -136,6 +137,7 @@ def resolve_runtime_config(
         desktop_session_id=desktop_session_id,
         started_by=started_by,
         owner_idle_timeout_s=max(0.0, owner_idle_timeout_s),
+        container_mode=False,
     )
 
 

@@ -5,7 +5,7 @@
 > - **Canonical for:** test commands, targeted test routing, and fixture references
 > - **Not canonical for:** runtime architecture or data contracts
 > - **Then inspect:** the nearest `tests/` module for the subsystem you changed
-> - **Last updated:** 2026-05-25
+> - **Last updated:** 2026-06-01
 
 This document owns the verification matrix for Baluffo. Keep build, test, and fixture guidance here instead of repeating command tables in routing docs.
 
@@ -178,6 +178,7 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Build ship bundle | `npm run build:ship-bundle` |
 | Build portable EXE | `npm run build:portable-exe` |
 | Build Linux AppImage | `npm run build:linux` |
+| Build container image | `docker build -t ghcr.io/deathuman/baluffo:local .` |
 | Prepare shared portable EXE | `npm run build:portable-exe:prepare` |
 | Ship bundle leaf builder | `python scripts/build_ship_bundle.py --bundle-version <version>` |
 | Portable EXE leaf builder | `python scripts/build_portable_exe.py --bundle-version <version>` |
@@ -206,6 +207,15 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Admin bridge | `python -m pytest tests/admin/ -q` |
 | GameDevMap discovery lane | `python -m pytest -q tests/source_discovery -k gamedevmap`, then `python -m pytest -q tests/source_discovery`, then `npm run lint:precommit` |
 | Match developer lane directly | `python -m pytest tests -q -m "not slow and not packaging and not release" --color=no --basetemp=.tmp/pytest/basetemp` |
+
+**Container / Umbrel targeted checks:**
+
+| Goal | Command |
+|------|---------|
+| Container bridge/static/runtime seeding and CORS policy | `python -m pytest tests/bridge/test_container_runtime.py -q` |
+| Container frontend mode and same-origin bridge | `node --test --test-reporter=dot tests/frontend/unit/admin-config.test.mjs tests/frontend/unit/api-client.test.mjs tests/frontend/unit/container-local-data.test.mjs tests/frontend/unit/desktop-local-data-navigation.test.mjs tests/frontend/unit/local-data-runtime-contract.test.mjs` |
+| Container image build | `docker build -t ghcr.io/deathuman/baluffo:local .` |
+| Container smoke | `docker run --rm -p 8877:8080 -v baluffo-data:/data ghcr.io/deathuman/baluffo:local`, then poll `http://127.0.0.1:8877/ops/health` and load `http://127.0.0.1:8877/jobs.html` |
 
 Use `npm run release:preflight` when you are about to push a release commit, move a release tag, or publish release artifacts. It runs the pre-commit gate, the full Python lane, frontend unit tests, prepares the shared portable EXE once, and then runs the packaged desktop release lanes in canonical order.
 
@@ -405,6 +415,7 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 Use the narrowest check that matches the risky path:
 
 - Packaging or portable EXE changes: `python scripts/build_portable_exe.py`
+- Container or Umbrel deployment changes: `python -m pytest tests/bridge/test_container_runtime.py -q`, targeted frontend unit checks for container mode, and a Docker smoke build/run when Docker is available
 - Linux packaging or AppImage changes: `npm run build:linux` then `bash scripts/smoke_test_appimage.sh`
 - Packaged sync config, auth portability, or sync release-gate changes: `npm run test:frontend:packaged:sync-rehearsal`
 - Packaged desktop supervision, stale-runtime recovery, or launcher self-heal changes: `npm run test:frontend:packaged:orphan-reclaim-rehearsal`
@@ -428,6 +439,7 @@ Use the narrowest check that matches the risky path:
 | Source discovery | `tests/source_discovery/` |
 | Admin bridge (registry, runtime, static fallback, sync) | `tests/admin/test_admin_bridge_ops_*.py` |
 | Desktop app / launcher | `tests/desktop_app/` |
+| Container / Umbrel runtime | `tests/bridge/test_container_runtime.py`, `tests/frontend/unit/api-client.test.mjs`, `tests/frontend/unit/container-local-data.test.mjs`, `tests/frontend/unit/desktop-local-data-navigation.test.mjs`, `tests/frontend/unit/local-data-runtime-contract.test.mjs` |
 | Packaged desktop smoke / rehearsal | `tests/packaged_desktop/` |
 | Source sync | `tests/test_source_sync.py` |
 | Local data store, backup, config, etc. | `tests/test_local_data_store.py`, `tests/desktop_app/`, and the nearest focused `tests/test_*.py` module for the subsystem |

@@ -22,6 +22,7 @@ export const desktopState = {
   desktopBoundWindow: null,
   desktopBootstrapPromise: null,
   desktopBootstrapStatus: "idle",
+  desktopLifecycleEnabled: true,
   desktopSession: null,
   desktopPageId: "",
   desktopLifecycleHeartbeatTimer: 0,

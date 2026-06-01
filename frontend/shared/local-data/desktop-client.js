@@ -2,24 +2,26 @@ import { createDesktopLocalDataApi, commitAuthState, refreshCurrentUser, toError
 import {
   bootstrapDesktopApi,
   getDesktopBootstrapStats,
+  stopDesktopLifecycle,
   waitForDesktopBootstrap
 } from "./desktop/lifecycle.js";
 import { clearDesktopNavigationBypass, navigateDesktopPage } from "./desktop/navigation.js";
 import { desktopState } from "./desktop/state.js";
-
 const desktopApi = createDesktopLocalDataApi();
-
 export { navigateDesktopPage };
 export { getDesktopBootstrapStats };
-
-export async function awaitDesktopBootstrap() {
+export async function awaitDesktopBootstrap({ enableLifecycle = true } = {}) {
   if (!desktopState.desktopApiInitialized || desktopState.desktopBoundWindow !== window) {
-    initDesktopLocalDataClient();
+    initDesktopLocalDataClient({ enableLifecycle });
+  } else {
+    desktopState.desktopLifecycleEnabled = Boolean(enableLifecycle);
+    if (!desktopState.desktopLifecycleEnabled) {
+      stopDesktopLifecycle();
+    }
   }
   return waitForDesktopBootstrap();
 }
-
-export function initDesktopLocalDataClient() {
+export function initDesktopLocalDataClient({ enableLifecycle = true } = {}) {
   const windowChanged = desktopState.desktopBoundWindow && desktopState.desktopBoundWindow !== window;
   if (windowChanged) {
     desktopState.desktopBootstrapPromise = null;
@@ -32,6 +34,10 @@ export function initDesktopLocalDataClient() {
     desktopState.desktopPageId = "";
     desktopState.desktopActiveWorkSnapshot.hasActiveTask = false;
     desktopState.desktopActiveWorkSnapshot.hasActiveUpdate = false;
+  }
+  desktopState.desktopLifecycleEnabled = Boolean(enableLifecycle);
+  if (!desktopState.desktopLifecycleEnabled) {
+    stopDesktopLifecycle();
   }
   const needsBootstrap = !desktopState.desktopApiInitialized || windowChanged;
   desktopState.desktopApiInitialized = true;
@@ -46,7 +52,8 @@ export function initDesktopLocalDataClient() {
     refreshCurrentUser,
     commitAuthState,
     clearDesktopNavigationBypass,
-    toErrorMessage
+    toErrorMessage,
+    enableLifecycle
   });
   return desktopApi;
 }

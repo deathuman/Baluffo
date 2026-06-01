@@ -5,17 +5,18 @@
 > - **Canonical for:** task routing, minimal read order, common repo misconceptions, and AI editing rules
 > - **Not canonical for:** data contracts, endpoint payloads, or deep subsystem ownership detail
 > - **Then inspect:** [`architecture-ai-map.md`](architecture-ai-map.md) for task-to-files routing, plus one matching contract or workflow doc
-> - **Last updated:** 2026-05-25
+> - **Last updated:** 2026-06-01
 
 Read this first. Then load only the smallest additional docs needed.
 
 ## What this repo is
 
-Baluffo is a local-first game jobs aggregator with three layers:
+Baluffo is a local-first game jobs aggregator with four main surfaces:
 
 1. Frontend: plain HTML/CSS/JS ES modules (`jobs.html`, `saved.html`, `admin.html`)
 2. Backend: Python for fetching, discovery, sync, and the local HTTP bridge
 3. Desktop: Windows packaging/runtime that launches the site and bridge locally
+4. Container: one same-origin UI/API service for Umbrel/private LAN deployments
 
 This is not a React/Vite app and not a cloud backend.
 
@@ -51,6 +52,7 @@ If Serena memory and repo docs ever diverge, the repo docs stay canonical.
 | `src/source_discovery.py` owns discovery implementation | It is a thin CLI surface over `src/source_discovery/*` |
 | `src/jobs_fetcher.py` is where new pipeline logic belongs | Treat it as a thin CLI facade; new pipeline logic belongs in `src/jobs/*` |
 | Desktop local data uses browser `localStorage` directly | Desktop mode uses the bridge-backed file store under `data/local-user-data/` |
+| Container mode is the same as desktop mode | Container mode uses bridge-backed local data but disables desktop lifecycle, updater, host-browser open behavior, and `?desktop=1` navigation params |
 | Bridge changes only need backend tests | Verify both Python backend and frontend/runtime callers as needed |
 | UI selectors can be guessed | Use `frontend/shared/ui/selectors.js` |
 | Endpoint payloads can be assumed | Check [`admin-bridge-api.md`](admin-bridge-api.md) first |
@@ -62,6 +64,7 @@ If Serena memory and repo docs ever diverge, the repo docs stay canonical.
 |-------------|----------------|
 | Frontend syntax/wiring | `node --check frontend/jobs/app.js` |
 | Bridge changes | `python -m pytest tests/admin/ -q` |
+| Container / Umbrel changes | `python -m pytest tests/bridge/test_container_runtime.py -q` plus targeted frontend unit checks from [`testing.md`](testing.md) |
 | Pipeline/fetcher | `python -m pytest tests/test_jobs_fetcher_*.py -q` |
 | Jobs helper consolidation | For `_as_list`, `_as_dict`, and `_as_dict_rows`, first verify the jobs copies still share identical list/dict/drop-non-dicts semantics; bridge `_as_dict` helpers are not identical |
 | Linux Python tests | `npm run test:py:linux` |

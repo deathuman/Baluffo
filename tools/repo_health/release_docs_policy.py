@@ -26,6 +26,7 @@ def test_release_docs_cover_the_current_public_release_line(repo_root: Path) -> 
     release_text = (docs_dir / "RELEASE.md").read_text(encoding="utf-8")
     app_version = get_app_version()
     top_release = _section(changelog_text, f"## [{app_version}]")
+    release_0_2_25 = _section(changelog_text, "## [0.2.25]")
     release_0_2_18 = _section(changelog_text, "## [0.2.18]")
     release_0_2_17 = _section(changelog_text, "## [0.2.17]")
     release_0_2_16 = _section(changelog_text, "## [0.2.16]")
@@ -50,14 +51,20 @@ def test_release_docs_cover_the_current_public_release_line(repo_root: Path) -> 
         heading in top_release for heading in ("### Added", "### Changed", "### Fixed", "### Notes")
     )
     assert "\n- " in top_release
-    assert "recurring full Jobs pipeline schedule" in top_release
-    assert "confirmed abort controls" in top_release
-    assert "task abort lifecycle evidence" in top_release
-    assert "broader ATS HTML-signature detection" in top_release
-    assert "recent views bar" in top_release
-    assert "Task abort lifecycle closeout" in top_release
-    assert "Packaged desktop Jobs-to-Admin navigation" in top_release
-    assert "Google Sheets and static-source cleanup" in top_release
+    assert "same-origin Linux container" in top_release
+    assert "Umbrel raw-LAN installs" in top_release
+    assert "GHCR multi-arch image publishing" in top_release
+    assert "private community app-store metadata" in top_release
+    assert "wildcard browser CORS allow headers" in top_release
+    assert "desktop localhost bridge compatibility" in top_release
+    assert "recurring full Jobs pipeline schedule" in release_0_2_25
+    assert "confirmed abort controls" in release_0_2_25
+    assert "task abort lifecycle evidence" in release_0_2_25
+    assert "broader ATS HTML-signature detection" in release_0_2_25
+    assert "recent views bar" in release_0_2_25
+    assert "Task abort lifecycle closeout" in release_0_2_25
+    assert "Packaged desktop Jobs-to-Admin navigation" in release_0_2_25
+    assert "Google Sheets and static-source cleanup" in release_0_2_25
     assert "Linux packaged desktop support" in release_0_2_18
     assert "Release automation now publishes a Linux AppImage" in release_0_2_18
     assert "%APPDATA%\\Baluffo" in release_0_2_18

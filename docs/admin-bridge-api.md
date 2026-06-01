@@ -5,13 +5,13 @@
 > - **Canonical for:** endpoint surface, route naming, and high-level request intent
 > - **Not canonical for:** backend business logic internals or service ownership
 > - **Then inspect:** `src/bridge/routes/{get_routes,post_routes,post_routes_admin,post_routes_local_data,post_routes_update}.py`, `src/bridge/*.py`, `frontend/*/services.js`
-> - **Last updated:** 2026-05-17
+> - **Last updated:** 2026-06-01
 > - **Ownership note:** ops/task-state internals now compose through `src/bridge/ops_api.py`, `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, `src/bridge/ops_task_{fetch_live,discovery_live,projection}.py`, and `src/bridge/ops_live_payload.py`
 > - **Local-data ownership note:** desktop local-data storage now routes through `src/local_data_store.py` as a thin facade over `src/local_data_store_{shared,profiles,saved_jobs,attachments,backup}.py`, while the shared desktop runtime stays rooted at `frontend/shared/local-data/desktop-client.js` over `frontend/shared/local-data/desktop/{api,lifecycle,navigation,state}.js`
 > - **Desktop update ownership note:** the helper executable stays rooted at `src/ship/desktop_updater.py` over `src/ship/desktop_updater_{ui,release,install}.py`, while the Jobs desktop update UI stays rooted at `frontend/jobs/app/desktop-update.js` over `frontend/jobs/app/desktop-update-{model,dom,controller}.js`
 > - **POST-route ownership note:** `src/bridge/routes/post_routes.py` is now the thin registration surface over `src/bridge/routes/post_routes_{admin,local_data,update}.py`
 
-Compact reference for AI coders. Endpoints are local-only (localhost).
+Compact reference for AI coders. Desktop endpoints are local-only on localhost; container deployments serve the same API paths same-origin behind the combined UI/API HTTP service.
 
 ## Desktop Local Data
 
@@ -40,6 +40,10 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
 | POST | `/desktop-local-data/admin/wipe` | Wipe account |
 | POST | `/desktop-local-data/open-url` | Open a job/application URL in the default browser |
 
+In container mode, `/desktop-local-data/open-url` is disabled because there is no host desktop browser to control. It returns HTTP 409 with `{ "ok": false, "error": "not available in container mode" }`. Other local-data routes remain available and store profiles, saved jobs, attachments, backup data, and activity under the configured data directory, `/data` for the container runtime.
+
+Container mode serves UI and API from the same origin and does not emit browser CORS allow headers. Desktop/non-container bridge serving keeps its existing localhost split-origin CORS behavior.
+
 ## App / Desktop Runtime
 
 | Method | Path | Purpose |
@@ -49,6 +53,8 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
 | POST | `/app/download-update` | Start desktop update download |
 | POST | `/app/install-update` | Start install-and-restart handoff |
 | POST | `/app/desktop-session-lifecycle` | Desktop session heartbeat / closing lifecycle |
+
+These `/app/*` routes are desktop-runtime routes. In container mode, `/app/update-status`, `/app/check-for-update`, `/app/download-update`, `/app/install-update`, and `/app/desktop-session-lifecycle` return HTTP 409 with `{ "ok": false, "error": "not available in container mode" }`.
 
 ## Source Registry
 

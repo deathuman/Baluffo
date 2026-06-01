@@ -35,6 +35,7 @@ class RuntimeConfigLike(Protocol):
     owner_idle_timeout_s: float
     root: Any
     data_dir: Any
+    container_mode: bool
 
 
 JsonObject = dict[str, Any]

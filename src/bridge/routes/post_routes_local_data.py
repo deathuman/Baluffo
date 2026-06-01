@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 from pydantic import ValidationError as PydanticValidationError
 
 from src.bridge.api import BridgeApi
+from src.bridge.container_mode import is_container_runtime, send_container_unavailable
 from src.bridge.routes.error_boundary import run_route_boundary, send_json_boundary
 from src.bridge.routes.response_writer import BridgeResponseWriter
 from src.core.schemas import SavedJobSchema
@@ -217,6 +218,9 @@ def handle_post(
         return True
 
     if path == "/app/desktop-session-lifecycle":
+        if is_container_runtime(api):
+            send_container_unavailable(handler)
+            return True
         status_code, result = api.update_desktop_session_lifecycle(
             owner_token=str(payload_dict.get("ownerToken") or ""),
             session_id=str(payload_dict.get("sessionId") or ""),
@@ -239,6 +243,9 @@ def handle_post(
         return True
 
     if path == "/desktop-local-data/open-url":
+        if is_container_runtime(api):
+            send_container_unavailable(handler)
+            return True
 
         def _send_open_url() -> None:
             url = str(payload_dict.get("url") or "").strip()

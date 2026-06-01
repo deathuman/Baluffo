@@ -61,6 +61,35 @@ test("AdminConfig uses desktop-served runtime config when URL lacks bridge param
   delete globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG;
 });
 
+test("AdminConfig uses relative bridge base for explicit same-origin runtime config", async () => {
+  globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG = Object.freeze({
+    bridge: {
+      sameOrigin: true
+    },
+    runtime: {
+      mode: "container",
+      localDataMode: "bridge"
+    }
+  });
+  const sessionStorage = buildSessionStorage();
+  sessionStorage.setItem("baluffo_runtime_bridge_base", "http://127.0.0.1:8877");
+  global.window = {
+    location: {
+      href: "http://192.168.50.61:8877/jobs.html?bridgePort=8877&bridgeHost=127.0.0.1"
+    },
+    sessionStorage
+  };
+
+  const { AdminConfig } = await importFresh(
+    "../../../frontend/shared/config/admin-config.js",
+    { relativeTo: import.meta.url }
+  );
+
+  assert.equal(AdminConfig.ADMIN_BRIDGE_BASE, "");
+  assert.equal(sessionStorage.getItem("baluffo_runtime_bridge_base"), "");
+  delete globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG;
+});
+
 test("AdminConfig treats runtime jobsColdStart as a desktop cold-start signal", async () => {
   globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG = Object.freeze({
     bridge: {

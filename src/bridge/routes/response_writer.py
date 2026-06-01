@@ -14,4 +14,6 @@ class BridgeResponseWriter(Protocol):
         filename: str = "",
         disposition: str = "inline",
         status: int = 200,
+        cache_control: str = "no-store",
+        content_encoding: str = "",
     ) -> None: ...

@@ -39,13 +39,7 @@ class FakeHandler:
         self.sent.append({"status": status, "payload": payload})
 
     def send_bytes(
-        self,
-        body: bytes,
-        *,
-        content_type: str,
-        filename: str = "",
-        disposition: str = "inline",
-        status: int = 200,
+        self, body: bytes, *, content_type: str, status: int = 200, **_headers: Any
     ) -> None:
         self.bytes_sent.append({"status": status, "body": body, "content_type": content_type})
 

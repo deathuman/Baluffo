@@ -35,6 +35,9 @@ function safeSetRuntimeBridgeBase(value) {
 }
 
 function runtimeBridgeBaseFromConfig() {
+  if (BALUFFO_RUNTIME_CONFIG?.bridge?.sameOrigin) {
+    return "";
+  }
   if (!BALUFFO_RUNTIME_CONFIG?.runtime?.desktop) {
     return "";
   }
@@ -57,6 +60,11 @@ function resolveRuntimeBridgeBase() {
     DEFAULT_CONFIG.bridge.port;
   const defaultBase = `http://${defaultHost}:${defaultPort}`;
   try {
+    const configBase = runtimeBridgeBaseFromConfig();
+    if (BALUFFO_RUNTIME_CONFIG?.bridge?.sameOrigin) {
+      safeSetRuntimeBridgeBase(configBase);
+      return configBase;
+    }
     const url = new URL(window.location.href);
     const bridgePort = String(url.searchParams.get("bridgePort") || "").trim();
     const bridgeHost = String(url.searchParams.get("bridgeHost") || "").trim() || defaultHost;
@@ -65,7 +73,6 @@ function resolveRuntimeBridgeBase() {
       safeSetRuntimeBridgeBase(runtimeBase);
       return runtimeBase;
     }
-    const configBase = runtimeBridgeBaseFromConfig();
     if (configBase) {
       safeSetRuntimeBridgeBase(configBase);
       return configBase;

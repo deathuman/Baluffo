@@ -4,16 +4,19 @@ This is the authoritative release document for Baluffo.
 
 ## Distribution Channels
 
-Baluffo ships through two distribution channels:
+Baluffo ships through three distribution channels:
 
 - Ship bundle: the canonical zip-first release channel built around a versioned `app\versions\<version>` layout, PowerShell launchers, and the updater/recovery flow.
 - Portable EXE: a Windows desktop wrapper built with `PyInstaller` and the desktop launcher runtime that embeds the ship bundle under `ship\` and uses the ship bundle as its runtime payload.
+- Container / Umbrel: a Linux container published to `ghcr.io/deathuman/baluffo` for private Umbrel community app-store installs and other same-origin HTTP service deployments.
 
 Important rules:
 
 - The ship bundle is the canonical update channel.
 - The portable EXE is a packaged distribution built on top of the ship bundle, not a separate updater model.
+- The container channel is service-style deployment. It does not use the desktop updater, desktop session lifecycle, host-browser open behavior, or packaged desktop data migration.
 - Persistent runtime data must remain outside versioned app folders. Windows packaged desktop defaults to `%APPDATA%\Baluffo\`; `ship\data\` is only the legacy packaged migration source.
+  Container runtime data defaults to `/data`.
 
 ## Versioning Policy
 
@@ -217,6 +220,40 @@ Portable desktop in-app update flow:
 - Desktop update status may include cached stable GitHub release-note history as `releaseNotesHistory`; the scalar latest-release `releaseNotes*` fields remain the compatibility contract.
 - Releases that require the fixed source-side handoff checker must set `min_desktop_updater_version` to `2.0.1` or newer; do not move or replace an already published release tag to recover affected installs.
 
+### Container / Umbrel
+
+Prerequisites:
+
+```bash
+docker buildx version
+```
+
+Local build command:
+
+```bash
+docker build -t ghcr.io/deathuman/baluffo:local .
+```
+
+Local run command:
+
+```bash
+docker run --rm -p 8877:8080 -v baluffo-data:/data ghcr.io/deathuman/baluffo:local
+```
+
+Runtime notes:
+
+- The container starts `python -m src.container_server --host 0.0.0.0 --port 8080 --data-dir /data`.
+- The container exposes one same-origin UI/API service on port `8080`.
+- `frontend-runtime-config.js` is generated dynamically with `bridge.sameOrigin: true`, `runtime.mode: "container"`, and `runtime.localDataMode: "bridge"`.
+- Persistent runtime state belongs under `/data`, including `baluffo-runtime.db`.
+- Desktop-only routes, updater behavior, owner-session lifecycle, and host-browser open behavior are disabled in container mode.
+- Playwright Chromium is baked into the image for deterministic first run.
+- The `.dockerignore` file must keep local secrets, sync config, local profiles, DBs, logs, `_out`, and fetched artifacts out of the image context.
+
+The GitHub workflow `.github/workflows/build-container.yml` publishes the public multi-arch image `ghcr.io/deathuman/baluffo` for `linux/amd64` and `linux/arm64`.
+
+Umbrel private app-store metadata lives at `umbrel-app-store.yml` and `deathuman-baluffo/`. The Compose file uses `app_proxy` with `APP_PORT: 8080`, `PROXY_AUTH_ADD: "false"`, and `${APP_DATA_DIR}/data:/data`.
+
 ### Linux AppImage
 
 Prerequisites:
@@ -388,6 +425,43 @@ For the canonical startup measurement architecture and the preferred `perf:start
 4. Confirm desktop startup, bridge readiness, the full packaged smoke, and the Jobs-page no-Admin pipeline smoke all pass in the smoke output.
    - The Jobs-page smoke should not be considered passed if the backend pipeline enters `stage=error` or reports a non-empty `error` after startup.
 5. If sync credentials are packaged, confirm the packaged runtime still resolves the expected sync config and smoke remains green.
+
+### Container / Umbrel Verification
+
+Container builds use the checked-in `Dockerfile` and run:
+
+```powershell
+python -m src.container_server --host 0.0.0.0 --port 8080 --data-dir /data
+```
+
+Runtime contract:
+
+- The container exposes one HTTP service on port `8080` inside the container.
+- UI, static assets, runtime data, and bridge API routes are served same-origin.
+- Static `/data` serving is allowlisted to public runtime reports, registry/discovery exports, contracts, and defaults; user profile and attachment data stays behind bridge routes.
+- `frontend-runtime-config.js` is generated dynamically with `bridge.sameOrigin: true`, `runtime.mode: "container"`, and `runtime.localDataMode: "bridge"`.
+- `/data` is the only persistent runtime volume and owns profiles, saved jobs, attachments, reports, logs, source registries, and `baluffo-runtime.db`.
+- Desktop-only routes return HTTP 409 with `not available in container mode`.
+- Playwright Chromium is baked into the image for deterministic first run.
+
+The public image target is:
+
+```text
+ghcr.io/deathuman/baluffo
+```
+
+The GHCR workflow builds `linux/amd64` and `linux/arm64` using Docker buildx and QEMU. Pull request builds validate the image without pushing; default-branch and tag builds publish to GHCR.
+
+Umbrel private app-store metadata lives at:
+
+- `umbrel-app-store.yml`
+- `deathuman-baluffo/umbrel-app.yml`
+- `deathuman-baluffo/docker-compose.yml`
+- `deathuman-baluffo/exports.sh`
+
+Umbrel Compose uses `app_proxy` with `APP_PORT: 8080` and `PROXY_AUTH_ADD: "false"`, and mounts `${APP_DATA_DIR}/data:/data`. The intended raw LAN URL is `http://192.168.50.61:8877/`.
+
+Raw LAN exposure is intentional for this channel. Anyone who can reach the host port can access Baluffo UI, Admin, and local-data routes, so do not expose the port to the Internet, public Wi-Fi, or broad VPN peers. The container service is still browser same-origin and must not emit wildcard CORS allow headers for arbitrary external origins.
 
 ### Post-Release / Incident Checks
 

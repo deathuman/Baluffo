@@ -21,6 +21,7 @@ from typing import Any
 from pydantic import ValidationError as PydanticValidationError
 
 from src.bridge.api import BridgeApi
+from src.bridge.container_mode import is_container_runtime, send_container_unavailable
 from src.bridge.fetch_report_review_state import load_fetch_report_with_dedup_review_state
 from src.bridge.registry_conflict_adjudication import overlay_adjudication
 from src.bridge.registry_conflicts import (
@@ -1079,6 +1080,9 @@ def handle_get(
         return True
 
     if path == "/app/update-status":
+        if is_container_runtime(api):
+            send_container_unavailable(handler)
+            return True
         send_json_boundary(
             handler,
             api.get_update_status_payload,

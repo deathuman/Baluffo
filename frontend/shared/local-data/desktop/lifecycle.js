@@ -73,6 +73,9 @@ export function getDesktopBootstrapStats() {
 }
 
 async function refreshDesktopActiveWorkSnapshot() {
+  if (!desktopState.desktopLifecycleEnabled) {
+    return;
+  }
   const [taskState, updateState] = await Promise.allSettled([
     fetchJsonWithOk(TASKS_URL),
     fetchJsonWithOk(UPDATE_STATUS_URL)
@@ -97,6 +100,9 @@ export function stopDesktopLifecycle() {
 }
 
 async function postDesktopLifecycle(state, { keepalive = false, reason = "" } = {}) {
+  if (!desktopState.desktopLifecycleEnabled) {
+    return null;
+  }
   if (!desktopState.desktopSession || !desktopState.desktopPageId) {
     return null;
   }
@@ -118,6 +124,9 @@ async function postDesktopLifecycle(state, { keepalive = false, reason = "" } = 
 }
 
 function sendDesktopClosingSignal(reason) {
+  if (!desktopState.desktopLifecycleEnabled) {
+    return false;
+  }
   if (desktopState.desktopClosingSignaled || !desktopState.desktopSession || !desktopState.desktopPageId) {
     return false;
   }
@@ -151,6 +160,9 @@ function sendDesktopClosingSignal(reason) {
 }
 
 function bindDesktopLifecycleEvents(clearDesktopNavigationBypass) {
+  if (!desktopState.desktopLifecycleEnabled) {
+    return;
+  }
   if (window.__baluffoDesktopLifecycleBound) {
     return;
   }
@@ -206,6 +218,9 @@ function bindDesktopLifecycleEvents(clearDesktopNavigationBypass) {
 }
 
 function startDesktopLifecycle(clearDesktopNavigationBypass) {
+  if (!desktopState.desktopLifecycleEnabled) {
+    return;
+  }
   if (!desktopState.desktopSession) {
     return;
   }
@@ -249,8 +264,10 @@ export async function bootstrapDesktopApi({
   nowFn = Date.now,
   waitFn = waitForDelay,
   retryWindowMs = DESKTOP_BOOTSTRAP_RETRY_WINDOW_MS,
-  retryIntervalMs = DESKTOP_BOOTSTRAP_RETRY_INTERVAL_MS
+  retryIntervalMs = DESKTOP_BOOTSTRAP_RETRY_INTERVAL_MS,
+  enableLifecycle = true
 }) {
+  desktopState.desktopLifecycleEnabled = Boolean(enableLifecycle);
   if (desktopState.desktopBootstrapPromise) {
     return desktopState.desktopBootstrapPromise;
   }
@@ -286,7 +303,9 @@ export async function bootstrapDesktopApi({
         desktopState.desktopCloseAttemptPending = false;
         desktopState.desktopBootstrapStatus = "ready";
         clearDesktopNavigationBypass();
-        startDesktopLifecycle(clearDesktopNavigationBypass);
+        if (desktopState.desktopLifecycleEnabled) {
+          startDesktopLifecycle(clearDesktopNavigationBypass);
+        }
         return true;
       } catch (error) {
         desktopBootstrapStats.failureCount += 1;

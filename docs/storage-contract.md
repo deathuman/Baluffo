@@ -5,13 +5,14 @@
 > - **Canonical for:** target storage authority boundaries, SQLite connection and transaction discipline, migration safety, export and rollback behavior, and hot-path size budgets
 > - **Not canonical for:** current endpoint payload fields, current JSON artifact schemas, source-sync v2 schema details, or Jobs frontend row fields
 > - **Then inspect:** [`sync-contract.md`](sync-contract.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`admin-bridge-api.md`](admin-bridge-api.md), [`fetcher-runtime-contracts.md`](fetcher-runtime-contracts.md), [`LOCAL_SETUP.md`](LOCAL_SETUP.md), and archived rollout history in [`archive/runtime-storage-and-sync-architecture-plan.md`](archive/runtime-storage-and-sync-architecture-plan.md) only when historical provenance is needed
-> - **Last updated:** 2026-05-12
+> - **Last updated:** 2026-06-01
 
 This document defines the current runtime storage contract. The archived rollout plan records sequencing and closeout evidence; this active contract owns the invariants future code must preserve.
 
 ## Scope
 
 Runtime storage covers bridge-owned hot state, terminal compatibility exports, registry/source-sync payloads, and filesystem-backed evidence archives.
+Desktop packaging resolves this under the desktop data root; container deployments resolve it under `/data`.
 
 The target shape is:
 
@@ -47,7 +48,7 @@ The database lives under the configured data directory on the same volume as run
 data/baluffo-runtime.db
 ```
 
-It must not live under `_out/`.
+In the container runtime, this is `/data/baluffo-runtime.db`. It must not live under `_out/`, versioned app folders, or Docker image layers.
 
 SQLite uses Python stdlib `sqlite3`. No new Python or Node dependency is allowed for the runtime store. Packaged builds must keep `sqlite3` in the main PyInstaller hidden imports.
 

@@ -33,9 +33,26 @@ function getFrontendRuntimeConfig() {
   return globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG || {};
 }
 
+function normalizeRuntimeMode(value) {
+  const mode = String(value || "").trim().toLowerCase();
+  return new Set(["browser", "container", "desktop"]).has(mode) ? mode : "";
+}
+
+function resolveConfiguredRuntimeMode() {
+  const runtimeConfig = getFrontendRuntimeConfig();
+  const explicitMode = normalizeRuntimeMode(runtimeConfig?.runtime?.mode);
+  if (explicitMode) {
+    return explicitMode;
+  }
+  if (runtimeConfig?.runtime?.desktop) {
+    return "desktop";
+  }
+  return "";
+}
+
 function resolveActiveDesktopRuntimeBridgeParams() {
   const runtimeConfig = getFrontendRuntimeConfig();
-  if (!runtimeConfig?.runtime?.desktop) {
+  if (resolveConfiguredRuntimeMode() !== "desktop") {
     return {};
   }
   const explicitBridgePort = Number(runtimeConfig?.bridge?.port || 0);
@@ -56,15 +73,52 @@ export function resolveDesktopRuntimeMode(
   href = window.location?.href || "",
   { sessionStorageObject = window.sessionStorage, persist = true } = {}
 ) {
+  return resolveRuntimeMode(href, { sessionStorageObject, persist }) === "desktop";
+}
+
+export function resolveContainerRuntimeMode() {
+  return resolveConfiguredRuntimeMode() === "container";
+}
+
+export function resolveBridgeLocalDataMode(
+  href = window.location?.href || "",
+  { sessionStorageObject = window.sessionStorage, persist = true } = {}
+) {
+  const runtimeConfig = getFrontendRuntimeConfig();
+  const localDataMode = String(runtimeConfig?.runtime?.localDataMode || "").trim().toLowerCase();
+  return (
+    localDataMode === "bridge"
+    || resolveRuntimeMode(href, { sessionStorageObject, persist }) === "desktop"
+    || resolveConfiguredRuntimeMode() === "container"
+  );
+}
+
+export function resolveRuntimeMode(
+  href = window.location?.href || "",
+  { sessionStorageObject = window.sessionStorage, persist = true } = {}
+) {
+  const configuredMode = resolveConfiguredRuntimeMode();
+  if (configuredMode === "container") {
+    if (persist) {
+      safeSetItem(sessionStorageObject, RUNTIME_MODE_KEY, "container");
+    }
+    return "container";
+  }
+  if (configuredMode === "desktop") {
+    if (persist) {
+      safeSetItem(sessionStorageObject, RUNTIME_MODE_KEY, "desktop");
+    }
+    return "desktop";
+  }
   const url = resolveUrl(href);
   const explicitDesktop = String(url?.searchParams?.get("desktop") || "").trim();
   if (explicitDesktop === "1") {
     if (persist) {
       safeSetItem(sessionStorageObject, RUNTIME_MODE_KEY, "desktop");
     }
-    return true;
+    return "desktop";
   }
-  return safeGetItem(sessionStorageObject, RUNTIME_MODE_KEY) === "desktop";
+  return safeGetItem(sessionStorageObject, RUNTIME_MODE_KEY) === "desktop" ? "desktop" : "browser";
 }
 
 function resolveDesktopRuntimeBridgeParams(

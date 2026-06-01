@@ -145,3 +145,38 @@ test("desktop local-data client conforms to shared runtime contract", async () =
   assert.equal(global.window.JobAppLocalData, api);
   assert.ok(fetchCalls.some(url => url.includes("/ops/task-state?view=summary")));
 });
+
+test("container runtime resolves bridge-backed local data without desktop mode", async () => {
+  const sessionStorage = createStorageMock();
+  globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG = Object.freeze({
+    bridge: {
+      sameOrigin: true
+    },
+    runtime: {
+      mode: "container",
+      localDataMode: "bridge"
+    }
+  });
+  global.window = {
+    location: { href: "http://192.168.50.61:8877/jobs.html" },
+    sessionStorage
+  };
+
+  const {
+    appendDesktopRuntimeQueryParams,
+    resolveBridgeLocalDataMode,
+    resolveDesktopRuntimeMode,
+    resolveRuntimeMode
+  } = await importFresh("../../../frontend/shared/local-data/runtime-context.js", {
+    relativeTo: import.meta.url
+  });
+
+  assert.equal(resolveRuntimeMode(), "container");
+  assert.equal(resolveDesktopRuntimeMode(), false);
+  assert.equal(resolveBridgeLocalDataMode(), true);
+  const nextUrl = appendDesktopRuntimeQueryParams("saved.html");
+  assert.equal(nextUrl.pathname, "/saved.html");
+  assert.equal(nextUrl.searchParams.has("desktop"), false);
+  assert.equal(sessionStorage.getItem("baluffo_runtime_mode"), "container");
+  delete globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG;
+});

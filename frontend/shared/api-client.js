@@ -15,7 +15,10 @@ const DEFAULT_TIMEOUT_MS = 18000;
  * @returns {string} baseUrl normalized (no trailing slash)
  */
 function normalizeBaseUrl(baseUrl) {
-  const s = String(baseUrl || "").trim();
+  if (baseUrl === "") {
+    return "";
+  }
+  const s = String(baseUrl ?? "").trim();
   return s.endsWith("/") ? s.slice(0, -1) : s || "http://127.0.0.1:8877";
 }
 
