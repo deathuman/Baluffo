@@ -19,6 +19,7 @@ Historical archive detail is intentionally trimmed for this personal project. [`
 |----------|------|-------------|
 | [`README.md`](../README.md) | Overview | You need the product summary, top-level structure, and developer-facing quick start |
 | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | **AI entrypoint** | You are an AI coder and need read order, guardrails, common misconceptions, and edit-routing guidance |
+| [`AI_CODER_SETUP.md`](AI_CODER_SETUP.md) | AI environment setup | You are preparing or checking Windows, WSL, or Linux tooling for AI-assisted work |
 | [`architecture-ai-map.md`](architecture-ai-map.md) | **Architecture map** | You need system boundaries, task-to-file routing, runtime guardrails, and compatibility-surface detail |
 | [`../AGENTS.md`](../AGENTS.md) | Workflow guardrails | You need repo-specific editing discipline, validation habits, and the canonical docs read path |
 

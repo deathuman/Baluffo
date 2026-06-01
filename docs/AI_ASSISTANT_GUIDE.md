@@ -94,10 +94,16 @@ Test-NetConnection 127.0.0.1 -Port 8877
 These are contributor-local helpers for AI-assisted repo work. They are not Baluffo runtime,
 packaging, release, Python, Node, CI, or pre-commit dependencies.
 
-Check current toolbelt status at session start:
+Check current toolbelt status when the environment is new, stale, or suspicious:
 
 ```bash
 python scripts/toolbelt_check.py
+```
+
+Run a broader environment readiness check when setup, drift, or IDE behavior is suspect:
+
+```bash
+python scripts/ai_env_check.py --smoke
 ```
 
 Install missing tools:
@@ -110,15 +116,13 @@ Default to the narrowest deterministic tool:
 
 - Use Serena for symbol-aware code reads/edits inside the repo.
 - Use `rg` for text search and `fd` for file discovery before falling back to shell-native search.
-- Use `ast-grep` for structural code queries, `jq`/`yq` for JSON/YAML, `gron` for JSON exploration, and `bat` for targeted line previews.
+- Use `ast-grep` for structural code queries, `jq`/`yq` for structured data, and `bat` for targeted line previews.
 - Use `tokei` for a one-command codebase composition overview.
-- Use `eza -T` for directory tree visualization.
-- Use `mlr` for unified CSV/JSONL/TSV processing.
-- Use `difft` for syntax-aware structural git diffs.
+- Avoid broad repo packers, context generators, and token telemetry tools by default; they can increase token waste and drift when a targeted search would answer the question.
 
 | Tool | Default use | Boundary |
 |------|-------------|----------|
-| Serena | Symbol-aware navigation, references, declarations, and refactor support | Required code-intelligence MCP; repo docs and source remain canonical |
+| Serena | Symbol-aware navigation, references, declarations, diagnostics, and refactor support | Required code-intelligence MCP; keep contributor-local install current; repo docs and source remain canonical |
 | `rg` | Fast deterministic text search | Default text-search primitive for agents |
 | `fd` | Fast file discovery | Prefer over `find` for agent and human repo navigation |
 | `bat` | Focused previews with line numbers and ranges | Use after the relevant file or region is known |
@@ -126,25 +130,24 @@ Default to the narrowest deterministic tool:
 | `yq` | Focused YAML/TOML/XML inspection (jq syntax) | Prefer before reading full config or data files |
 | `ast-grep` | Syntax-aware structural search for Python, JS/TS, HTML, JSON, and YAML | Use when code shape matters more than exact text |
 | `tokei` | Codebase line-count and composition stats | One-command overview of language/code distribution |
-| `gron` | Flatten JSON for grep-based exploration | Use alongside `rg` for exploring unfamiliar JSON structure |
-| `eza` | Directory tree visualization | `eza -T --level=2` for compact project layout |
-| `mlr` | Unified CSV, JSONL, TSV processing | Filter, cut, sort, and join tabular data |
-| `difft` | Syntax-aware structural git diff | Use when understanding the meaning of diffs matters |
 | `git grep` | Git-tracked-file-only search | Use when ignored or untracked files must be excluded |
+
+Optional task-specific helper:
+
+| Tool | Use it when | Boundary |
+|------|-------------|----------|
+| `mlr` | You need focused CSV/TSV/JSONL filtering, sorting, or column inspection | Install only for tabular-data tasks; do not make it a session-start requirement |
+
+Do not use broad repo packers or context generators such as `repomix`, `gitingest`, or `code2prompt` by default. Do not use token/cost telemetry tools such as `ccusage` or `scc` as a substitute for targeted repo inspection. Use them only when the task explicitly needs a bounded context bundle or usage audit.
 
 Linux (apt-based) toolbelt install:
 
 ```bash
-sudo apt install -y ripgrep fd-find bat jq yq tokei gron eza miller
+sudo apt install -y ripgrep fd-find bat jq yq tokei
 mkdir -p ~/.local/bin
 ln -sf $(which fdfind) ~/.local/bin/fd
 ln -sf $(which batcat) ~/.local/bin/bat
 npm install -g @ast-grep/cli
-# difft (not in apt): download binary from GitHub releases
-curl -fsSL -o /tmp/difft.tar.gz \
-  https://github.com/Wilfred/difftastic/releases/latest/download/difft-x86_64-unknown-linux-gnu.tar.gz
-tar xzf /tmp/difft.tar.gz -C /tmp/
-mv /tmp/difft ~/.local/bin/difft && chmod +x ~/.local/bin/difft && rm /tmp/difft.tar.gz
 ```
 
 Ensure `~/.local/bin` is in your PATH.
@@ -152,32 +155,27 @@ Ensure `~/.local/bin` is in your PATH.
 macOS (Homebrew) toolbelt install:
 
 ```bash
-brew install ripgrep fd bat jq yq tokei gron eza miller
-npm install -g @ast-grep/cli
-# difft (not in Homebrew core): download binary from GitHub releases
-curl -fsSL -o /tmp/difft.tar.gz \
-  https://github.com/Wilfred/difftastic/releases/latest/download/difft-x86_64-apple-darwin.tar.gz
-tar xzf /tmp/difft.tar.gz -C /tmp/
-mv /tmp/difft ~/.local/bin/difft && chmod +x ~/.local/bin/difft && rm /tmp/difft.tar.gz
+brew install ripgrep fd bat jq yq ast-grep tokei
 ```
 
-Optional Windows toolbelt install, with package IDs verified through `winget search` on 2026-05-15:
+Optional Windows toolbelt install, with package IDs checked through `winget search` on 2026-06-01:
 
 ```powershell
 winget install -e --id BurntSushi.ripgrep.MSVC
 winget install -e --id sharkdp.fd
-winget install -e --id ast-grep.ast-grep
 winget install -e --id sharkdp.bat
 winget install -e --id jqlang.jq
 winget install -e --id MikeFarah.yq
+winget install -e --id ast-grep.ast-grep
+winget install -e --id XAMPPRocky.Tokei
 ```
 
 Verify availability after install, restarting the shell first if a newly installed command is not found:
 
 ```bash
 rg --version && fd --version && bat --version && jq --version && yq --version
-ast-grep --version && tokei --version && gron --version && eza --version
-mlr --version && difft --version
+ast-grep --version && tokei --version
+python scripts/toolbelt_check.py --smoke
 ```
 
 Baluffo-specific examples:
@@ -191,11 +189,13 @@ yq '.repos[].hooks[].id' .pre-commit-config.yaml
 bat --style=numbers --line-range 60:110 docs/AI_ASSISTANT_GUIDE.md
 git grep -n "desktop-local-data" -- frontend src tests
 tokei src/ frontend/ --sort=code
-gron data/jobs-fetch-tasks.json | rg '"status"'
-eza -T --level=2 src/jobs/
-mlr --icsv head -n 5 tests/fixtures/gamedevmap_data.csv
-difft --color=always | bat
 python tools/repo_health/generate_system_map.py --output .tmp/system-map.json
+```
+
+Optional tabular-data example when `mlr` is installed:
+
+```bash
+mlr --icsv head -n 5 tests/fixtures/gamedevmap_data.csv
 ```
 
 `tools/repo_health/generate_system_map.py` is an optional broad-orientation helper for AI coders. Use it only when you need a compact generated view of page surfaces, task flows, bridge routes, runtime evidence files, and high-risk areas. Its output is advisory; `AGENTS.md`, this guide, `architecture-ai-map.md`, contract docs, source, and tests remain canonical.
@@ -209,6 +209,7 @@ When starting a new Codex/OpenCode assistant session against this repo:
 3. If it reports no active project, run `activate_project` for `Baluffo`.
 4. Re-run `get_current_config` and verify `typescript` + `python` appear in language list.
 5. Run a fast JS symbol overview check in one file to ensure tooling is healthy.
+6. If setup drift is suspected, run `python scripts/ai_env_check.py --smoke --check-updates`.
 
 This keeps language indexing from being a blocker before touching code.
 

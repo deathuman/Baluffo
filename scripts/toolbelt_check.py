@@ -8,10 +8,12 @@ They are not Baluffo runtime, packaging, release, or CI dependencies.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import platform as _platform
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -33,11 +35,16 @@ class Tool:
     apt_package: str | None = None
     apt_post_install: tuple[str, ...] = ()
     npm_package: str | None = None
-    custom_install: bool = False
+    winget_id: str | None = None
 
 
 TOOLS = (
-    Tool("rg", "Fast text search", apt_package="ripgrep"),
+    Tool(
+        "rg",
+        "Fast text search",
+        apt_package="ripgrep",
+        winget_id="BurntSushi.ripgrep.MSVC",
+    ),
     Tool(
         "fd",
         "Fast file discovery",
@@ -47,44 +54,117 @@ TOOLS = (
             f"mkdir -p {LOCAL_BIN}",
             f"ln -sf $(which fdfind) {LOCAL_BIN}/fd",
         ),
+        winget_id="sharkdp.fd",
     ),
     Tool(
         "bat",
-        "File previews with line ranges",
+        "Focused file previews",
         alt_binaries=("batcat",),
         apt_package="bat",
         apt_post_install=(
             f"mkdir -p {LOCAL_BIN}",
             f"ln -sf $(which batcat) {LOCAL_BIN}/bat",
         ),
+        winget_id="sharkdp.bat",
     ),
-    Tool("jq", "JSON querying", apt_package="jq"),
-    Tool("yq", "YAML/TOML/XML querying (jq syntax)", apt_package="yq"),
-    Tool("ast-grep", "Syntax-aware code search", npm_package="@ast-grep/cli"),
-    Tool("tokei", "Codebase line-count stats", apt_package="tokei"),
-    Tool("gron", "Flatten JSON for grep exploration", apt_package="gron"),
-    Tool("eza", "Directory tree visualization", apt_package="eza"),
-    Tool("mlr", "Unified CSV/JSONL/TSV processing", apt_package="miller"),
-    Tool("difft", "Syntax-aware structural git diff", custom_install=True),
+    Tool("jq", "JSON querying", apt_package="jq", winget_id="jqlang.jq"),
+    Tool("yq", "YAML/TOML/XML querying", apt_package="yq", winget_id="MikeFarah.yq"),
+    Tool(
+        "ast-grep",
+        "Syntax-aware code search",
+        npm_package="@ast-grep/cli",
+        winget_id="ast-grep.ast-grep",
+    ),
+    Tool(
+        "tokei",
+        "Codebase composition overview",
+        apt_package="tokei",
+        winget_id="XAMPPRocky.Tokei",
+    ),
 )
 
 
+def _system() -> str:
+    return _platform.system()
+
+
+def _can_encode(text: str) -> bool:
+    encoding = sys.stdout.encoding or "utf-8"
+    try:
+        text.encode(encoding)
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
+def _color_enabled() -> bool:
+    return sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
+
+
+def _style(text: str, color: str) -> str:
+    if not _color_enabled():
+        return text
+    return f"{color}{text}{_COLOR_RESET}"
+
+
+def _ok(text: str) -> str:
+    return _style(text, _COLOR_OK)
+
+
+def _warn(text: str) -> str:
+    return _style(text, _COLOR_WARN)
+
+
+def _bad(text: str) -> str:
+    return _style(text, _COLOR_BAD)
+
+
+def _glyphs() -> tuple[str, str, str]:
+    if _can_encode("✓✗─"):
+        return "✓", "✗", "─"
+    return "OK", "MISS", "-"
+
+
+def _command_path(*names: str) -> str | None:
+    for name in names:
+        found = shutil.which(name)
+        if found:
+            return found
+    return None
+
+
+def _npm_command() -> str | None:
+    if _system() == "Windows":
+        return _command_path("npm.cmd", "npm")
+    return _command_path("npm")
+
+
+def _winget_command() -> str | None:
+    if _system() == "Windows":
+        return _command_path("winget.exe", "winget")
+    return None
+
+
 def _npm_global_bin() -> str | None:
-    if shutil.which("npm") is None:
+    npm = _npm_command()
+    if npm is None:
         return None
-    completed = subprocess.run(
-        ["npm", "config", "get", "prefix"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        completed = subprocess.run(
+            [npm, "config", "get", "prefix"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
     if completed.returncode != 0:
         return None
     prefix = completed.stdout.strip()
     if not prefix:
         return None
-    bin_dir = os.path.join(prefix, "bin")
-    return bin_dir if os.path.isdir(bin_dir) else None
+    bin_dir = Path(prefix) if _system() == "Windows" else Path(prefix) / "bin"
+    return str(bin_dir) if bin_dir.is_dir() else None
 
 
 def _extra_path_dirs() -> list[str]:
@@ -95,74 +175,222 @@ def _extra_path_dirs() -> list[str]:
     return dirs
 
 
+def _winget_tool_dirs(tool: Tool) -> list[str]:
+    if _system() != "Windows" or not tool.winget_id:
+        return []
+    local_appdata = os.environ.get("LOCALAPPDATA")
+    if not local_appdata:
+        return []
+    base = Path(local_appdata) / "Microsoft" / "WinGet" / "Packages"
+    if not base.is_dir():
+        return []
+
+    dirs: list[str] = []
+    for package_dir in base.glob(f"{tool.winget_id}_*"):
+        if not package_dir.is_dir():
+            continue
+        dirs.append(str(package_dir))
+        try:
+            dirs.extend(str(child) for child in package_dir.iterdir() if child.is_dir())
+        except OSError:
+            continue
+    return dirs
+
+
 def _which(tool: Tool) -> str | None:
-    """Return the available binary path for a tool, searching PATH and known extra dirs."""
-    found = shutil.which(tool.binary)
-    if found:
-        return found
-    for extra in _extra_path_dirs():
-        candidate = os.path.join(extra, tool.binary)
-        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
-            return candidate
-    for alt in tool.alt_binaries:
-        found = shutil.which(alt)
+    """Return the available binary path, searching PATH and known extra dirs."""
+    names = (tool.binary, *tool.alt_binaries)
+    for name in names:
+        found = shutil.which(name)
         if found:
             return found
-        for extra in _extra_path_dirs():
-            candidate = os.path.join(extra, alt)
-            if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
-                return candidate
+    for extra in [*_extra_path_dirs(), *_winget_tool_dirs(tool)]:
+        for name in names:
+            found = shutil.which(name, path=extra)
+            if found:
+                return found
     return None
 
 
 def _check_sudo_nopasswd() -> bool:
-    if shutil.which("sudo") is None:
+    sudo = _command_path("sudo")
+    if sudo is None:
         return False
-    completed = subprocess.run(
-        ["sudo", "-n", "true"],
-        capture_output=True,
-        check=False,
-    )
+    try:
+        completed = subprocess.run(
+            [sudo, "-n", "true"],
+            capture_output=True,
+            check=False,
+        )
+    except OSError:
+        return False
     return completed.returncode == 0
 
 
-def _run(*args: str, **kwargs: object) -> bool:
+def _run(*args: str) -> bool:
     print(f"  $ {' '.join(args)}")
-    completed = subprocess.run(args, check=False)
+    try:
+        completed = subprocess.run(args, check=False)
+    except OSError as exc:
+        print(f"  {_bad('failed to start')}: {exc}")
+        return False
     return completed.returncode == 0
+
+
+def _capture(
+    *args: str, cwd: Path = ROOT, timeout: int = 10
+) -> subprocess.CompletedProcess[str] | None:
+    try:
+        return subprocess.run(
+            args,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def _format_available_note(tool: Tool, path: str | None) -> str:
+    if not path:
+        return ""
+    executable = Path(path).name
+    if Path(executable).stem.lower() != tool.binary.lower():
+        return f" (via {executable})"
+    return ""
 
 
 def _print_check_results(available: list[Tool], missing: list[Tool]) -> None:
-    print(f"\n{_COLOR_BOLD}AI Toolbelt Status{_COLOR_RESET}")
-    print("─" * 56)
+    ok_marker, missing_marker, line_char = _glyphs()
+
+    print(f"\n{_style('AI Toolbelt Status', _COLOR_BOLD)}")
+    print(line_char * 56)
     for tool in TOOLS:
         if tool in available:
-            path = _which(tool)
-            label = tool.binary
-            note = ""
-            if path and os.path.basename(path) != tool.binary:
-                note = f" (via {os.path.basename(path)})"
-            print(f"  {_COLOR_OK}\u2713{_COLOR_RESET} {label:<12} {tool.desc}{note}")
+            note = _format_available_note(tool, _which(tool))
+            print(f"  {_ok(ok_marker):<7} {tool.binary:<12} {tool.desc}{note}")
         else:
-            print(f"  {_COLOR_BAD}\u2717{_COLOR_RESET} {tool.binary:<12} {tool.desc}")
-    print("─" * 56)
+            print(f"  {_bad(missing_marker):<7} {tool.binary:<12} {tool.desc}")
+    print(line_char * 56)
+
     total = len(TOOLS)
-    ok = len(available)
-    if ok == total:
-        print(f"{_COLOR_OK}All {total} tools available.{_COLOR_RESET}")
-    else:
-        print(
-            f"Available: {ok}/{total}  Missing: {total - ok}\n"
-            f"{_COLOR_WARN}Run with --install to install missing tools.{_COLOR_RESET}"
+    ok_count = len(available)
+    if ok_count == total:
+        print(_ok(f"All {total} default tools available."))
+        return
+
+    missing_names = ", ".join(tool.binary for tool in missing)
+    print(f"Available: {ok_count}/{total}  Missing: {total - ok_count}")
+    print(_warn(f"Missing: {missing_names}"))
+    print(_warn("Run with --install to install missing default tools."))
+
+
+def _tool_command(tool: Tool) -> list[str] | None:
+    path = _which(tool)
+    if path is None:
+        return None
+    return [path]
+
+
+def _smoke_command(tool: Tool) -> list[str] | None:
+    base = _tool_command(tool)
+    if base is None:
+        return None
+
+    if tool.binary == "rg":
+        return [*base, "-n", "Repo Guardrails", "AGENTS.md"]
+    if tool.binary == "fd":
+        return [*base, "AI_ASSISTANT_GUIDE.md", "docs"]
+    if tool.binary == "bat":
+        return [*base, "--style=plain", "--line-range", "92:98", "docs/AI_ASSISTANT_GUIDE.md"]
+    if tool.binary == "jq":
+        return [*base, "-r", ".scripts.verify", "package.json"]
+    if tool.binary == "yq":
+        return [*base, "-r", ".repos[0].repo", ".pre-commit-config.yaml"]
+    if tool.binary == "ast-grep":
+        return [
+            *base,
+            "run",
+            "--lang",
+            "py",
+            "--pattern",
+            "shutil.which($ARG)",
+            "scripts/toolbelt_check.py",
+        ]
+    if tool.binary == "tokei":
+        return [*base, "scripts/toolbelt_check.py"]
+    return None
+
+
+def _smoke_results() -> list[dict[str, object]]:
+    results: list[dict[str, object]] = []
+    for tool in TOOLS:
+        path = _which(tool)
+        direct_path = shutil.which(tool.binary)
+        command = _smoke_command(tool)
+        if path is None or command is None:
+            results.append(
+                {
+                    "tool": tool.binary,
+                    "status": "missing",
+                    "path": path,
+                    "direct_path": direct_path,
+                    "works_in_current_shell": False,
+                }
+            )
+            continue
+
+        completed = _capture(*command)
+        ok = completed is not None and completed.returncode == 0
+        results.append(
+            {
+                "tool": tool.binary,
+                "status": "ok" if ok else "failed",
+                "path": path,
+                "direct_path": direct_path,
+                "works_in_current_shell": direct_path is not None,
+                "smoke_returncode": completed.returncode if completed else None,
+            }
         )
+    return results
+
+
+def _print_smoke_results(results: list[dict[str, object]]) -> None:
+    ok_marker, missing_marker, line_char = _glyphs()
+    print(f"\n{_style('AI Toolbelt Smoke', _COLOR_BOLD)}")
+    print(line_char * 72)
+    for result in results:
+        status = str(result["status"])
+        marker = ok_marker if status == "ok" else missing_marker
+        tool = str(result["tool"])
+        shell = "direct" if result["works_in_current_shell"] else "fallback"
+        path = str(result.get("path") or "")
+        print(
+            f"  {(_ok(marker) if status == 'ok' else _bad(marker)):<7} {tool:<12} {status:<7} {shell:<8} {path}"
+        )
+    print(line_char * 72)
+    failed = [str(r["tool"]) for r in results if r["status"] != "ok"]
+    if failed:
+        print(_warn(f"Smoke failures: {', '.join(failed)}"))
+    else:
+        print(_ok("All default tools passed smoke checks."))
 
 
 def _ensure_local_bin_in_path() -> None:
     if str(LOCAL_BIN) not in os.environ.get("PATH", ""):
-        print(f"{_COLOR_WARN}Note: {LOCAL_BIN} is not in your PATH.{_COLOR_RESET}")
+        print(_warn(f"Note: {LOCAL_BIN} is not in your PATH."))
         print(f'  Add it with:  export PATH="{LOCAL_BIN}:$PATH"')
         print("  Or add it to your shell profile (~/.bashrc or ~/.zshrc).")
         print()
+
+
+def _print_apt_manual_commands(apt_tools: list[Tool]) -> None:
+    for tool in apt_tools:
+        print(f"  sudo apt install -y {tool.apt_package}")
+        for cmd in tool.apt_post_install:
+            print(f"  {cmd}")
 
 
 def _install_apt(
@@ -176,13 +404,12 @@ def _install_apt(
     if not apt_tools:
         return [], other_tools
 
-    if not has_sudo:
-        print(f"\n{_COLOR_WARN}sudo requires a password. Skipping apt installs.{_COLOR_RESET}")
+    sudo = _command_path("sudo")
+    apt = _command_path("apt")
+    if not has_sudo or sudo is None or apt is None:
+        print(_warn("\nsudo/apt is unavailable for non-interactive installs."))
         print("Run the following commands manually and re-run this script after:\n")
-        for tool in apt_tools:
-            print(f"  sudo apt install -y {tool.apt_package}")
-            for cmd in tool.apt_post_install:
-                print(f"  {cmd}")
+        _print_apt_manual_commands(apt_tools)
         print()
         return [], missing
 
@@ -191,22 +418,23 @@ def _install_apt(
 
     for tool in apt_tools:
         print(f"\n  Installing {tool.binary}...")
-        ok = _run("sudo", "-n", "apt", "install", "-y", tool.apt_package)  # type: ignore[arg-type]
+        ok = _run(sudo, "-n", apt, "install", "-y", str(tool.apt_package))
         if not ok:
-            print(f"  {_COLOR_BAD}  apt install failed{_COLOR_RESET}")
+            print(f"  {_bad('apt install failed')}")
             still_missing.append(tool)
             continue
 
         for cmd in tool.apt_post_install:
-            subprocess.run(cmd, shell=True, check=False)
+            try:
+                subprocess.run(cmd, shell=True, check=False)
+            except OSError as exc:
+                print(f"  {_warn(f'post-install command failed to start: {exc}')}")
 
         if _which(tool):
-            print(f"  {_COLOR_OK}  installed{_COLOR_RESET}")
+            print(f"  {_ok('installed')}")
             installed.append(tool)
         else:
-            print(
-                f"  {_COLOR_WARN}  apt succeeded but {tool.binary} not found in PATH{_COLOR_RESET}"
-            )
+            print(_warn(f"  apt succeeded but {tool.binary} was not found in PATH"))
             still_missing.append(tool)
 
     return installed, [*other_tools, *still_missing]
@@ -219,152 +447,128 @@ def _install_npm(missing: list[Tool]) -> tuple[list[Tool], list[Tool]]:
     if not npm_tools:
         return [], other_tools
 
+    npm = _npm_command()
+    if npm is None:
+        print(_warn("\nnpm is unavailable. Run these commands manually after installing npm:\n"))
+        for tool in npm_tools:
+            print(f"  npm install -g {tool.npm_package}")
+        print()
+        return [], missing
+
     installed: list[Tool] = []
     still_missing: list[Tool] = []
 
     for tool in npm_tools:
         print(f"\n  Installing {tool.binary}...")
-        ok = _run("npm", "install", "-g", tool.npm_package)  # type: ignore[arg-type]
+        ok = _run(npm, "install", "-g", str(tool.npm_package))
         if not ok:
-            print(f"  {_COLOR_BAD}  npm install failed{_COLOR_RESET}")
+            print(f"  {_bad('npm install failed')}")
             still_missing.append(tool)
             continue
 
         if _which(tool):
-            print(f"  {_COLOR_OK}  installed{_COLOR_RESET}")
+            print(f"  {_ok('installed')}")
             installed.append(tool)
         else:
-            print(
-                f"  {_COLOR_WARN}  npm succeeded but {tool.binary} not found in PATH{_COLOR_RESET}"
-            )
+            print(_warn(f"  npm succeeded but {tool.binary} was not found in PATH"))
             still_missing.append(tool)
 
     return installed, [*other_tools, *still_missing]
 
 
-def _install_difftastic() -> bool:
-    arch = _platform.machine()
-    if arch == "x86_64":
-        asset = "difft-x86_64-unknown-linux-gnu"
-    elif arch == "aarch64":
-        asset = "difft-aarch64-unknown-linux-gnu"
-    else:
-        print(
-            f"  {_COLOR_WARN}Unknown architecture '{arch}' for difftastic, skipping.{_COLOR_RESET}"
+def _install_winget(missing: list[Tool]) -> tuple[list[Tool], list[Tool]]:
+    winget_tools = [t for t in missing if t.winget_id is not None]
+    other_tools = [t for t in missing if t.winget_id is None]
+
+    if not winget_tools:
+        return [], other_tools
+
+    winget = _winget_command()
+    if winget is None:
+        print(_warn("\nwinget is unavailable. Run these commands manually if available:\n"))
+        for tool in winget_tools:
+            print(f"  winget install -e --id {tool.winget_id}")
+        print()
+        return [], missing
+
+    installed: list[Tool] = []
+    still_missing: list[Tool] = []
+
+    for tool in winget_tools:
+        print(f"\n  Installing {tool.binary}...")
+        ok = _run(
+            winget,
+            "install",
+            "-e",
+            "--id",
+            str(tool.winget_id),
+            "--source",
+            "winget",
+            "--silent",
+            "--accept-package-agreements",
+            "--accept-source-agreements",
+            "--disable-interactivity",
         )
-        return False
-
-    url = f"https://github.com/Wilfred/difftastic/releases/latest/download/{asset}.tar.gz"
-    tmp_archive = Path("/tmp/difftastic.tar.gz")
-    tmp_dir = Path("/tmp/difftastic_extract")
-
-    try:
-        print("  Downloading difftastic...")
-        subprocess.run(
-            ["curl", "-fsSL", "-o", str(tmp_archive), url],
-            check=True,
-        )
-
-        tmp_dir.mkdir(exist_ok=True)
-        subprocess.run(
-            ["tar", "xzf", str(tmp_archive), "-C", str(tmp_dir)],
-            check=True,
-        )
-
-        binary_path = tmp_dir / "difft"
-        if not binary_path.exists():
-            print(f"  {_COLOR_BAD}  difft binary not found in extracted archive{_COLOR_RESET}")
-            return False
-
-        LOCAL_BIN.mkdir(parents=True, exist_ok=True)
-        _run("cp", str(binary_path), str(LOCAL_BIN / "difft"))
-        _run("chmod", "+x", str(LOCAL_BIN / "difft"))
-
-        tmp_archive.unlink(missing_ok=True)
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-
-        return True
-    except subprocess.CalledProcessError as exc:
-        print(f"  {_COLOR_BAD}  Failed: {exc}{_COLOR_RESET}")
-        tmp_archive.unlink(missing_ok=True)
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        return False
-
-
-def _install_custom(missing: list[Tool]) -> list[Tool]:
-    custom_tools = [t for t in missing if t.custom_install]
-    if not custom_tools:
-        return missing
-
-    LOCAL_BIN.mkdir(parents=True, exist_ok=True)
-    remaining: list[Tool] = []
-
-    for tool in custom_tools:
-        print(f"\n  Installing {tool.binary} ({tool.desc})...")
-        if tool.binary == "difft":
-            ok = _install_difftastic()
-        else:
-            print(f"  {_COLOR_WARN}  no custom installer for {tool.binary}{_COLOR_RESET}")
-            remaining.append(tool)
+        if not ok:
+            print(f"  {_bad('winget install failed')}")
+            still_missing.append(tool)
             continue
 
-        if ok and _which(tool):
-            print(f"  {_COLOR_OK}  installed{_COLOR_RESET}")
+        if _which(tool):
+            print(f"  {_ok('installed')}")
+            installed.append(tool)
         else:
-            print(f"  {_COLOR_BAD}  install failed{_COLOR_RESET}")
-            remaining.append(tool)
+            print(_warn(f"  winget succeeded but {tool.binary} was not found in this shell"))
+            still_missing.append(tool)
 
-    return [t for t in missing if not t.custom_install] + remaining
+    return installed, [*other_tools, *still_missing]
+
+
+def _print_installed(installed: list[Tool]) -> None:
+    if installed:
+        print(f"\n  {_ok('Installed')}: {', '.join(t.binary for t in installed)}")
 
 
 def _install_linux(missing: list[Tool]) -> list[Tool]:
     has_sudo = _check_sudo_nopasswd()
 
     if has_sudo:
-        print(
-            f"\n{_COLOR_OK}Installing missing tools via apt + npm + binary download...{_COLOR_RESET}"
-        )
+        print(f"\n{_ok('Installing missing tools via apt + npm...')}")
     else:
-        print(
-            f"\n{_COLOR_WARN}sudo requires a password — apt installs will be skipped.{_COLOR_RESET}\n"
-            f"Install the apt packages manually and re-run this script.\n"
-        )
+        print(_warn("\nsudo is unavailable or requires a password; apt installs will be skipped."))
+        print("Install apt packages manually and re-run this script.\n")
 
     _ensure_local_bin_in_path()
 
     remaining: list[Tool] = list(missing)
-
     apt_installed, remaining = _install_apt(remaining, has_sudo=has_sudo)
-
     npm_installed, remaining = _install_npm(remaining)
+    _print_installed([*apt_installed, *npm_installed])
+    return remaining
 
-    remaining = _install_custom(remaining)
 
-    all_installed = apt_installed + npm_installed
-
-    if all_installed:
-        print(
-            f"\n  {_COLOR_OK}Installed: {', '.join(t.binary for t in all_installed)}{_COLOR_RESET}"
-        )
-
+def _install_windows(missing: list[Tool]) -> list[Tool]:
+    print(f"\n{_ok('Installing missing tools via winget...')}")
+    installed, remaining = _install_winget(missing)
+    _print_installed(installed)
+    if remaining:
+        print(_warn("Restart the shell if winget installed a tool that is not yet on PATH."))
     return remaining
 
 
 def _install(missing: list[Tool]) -> list[Tool]:
-    system = _platform.system()
+    system = _system()
     if system == "Linux":
         return _install_linux(missing)
-    elif system == "Darwin":
-        print(f"\n{_COLOR_WARN}macOS: install via Homebrew.{_COLOR_RESET}")
-        print("See docs/AI_ASSISTANT_GUIDE.md for per-tool commands.\n")
+    if system == "Windows":
+        return _install_windows(missing)
+    if system == "Darwin":
+        print(f"\n{_warn('macOS: install missing tools via Homebrew.')}")
+        print("See docs/AI_ASSISTANT_GUIDE.md for commands.\n")
         return missing
-    elif system == "Windows":
-        print(f"\n{_COLOR_WARN}Windows: install via winget.{_COLOR_RESET}")
-        print("See docs/AI_ASSISTANT_GUIDE.md for per-tool commands.\n")
-        return missing
-    else:
-        print(f"\n{_COLOR_WARN}Unknown platform '{system}'. Cannot auto-install.{_COLOR_RESET}")
-        return missing
+
+    print(f"\n{_warn(f'Unknown platform {system!r}. Cannot auto-install.')}")
+    return missing
 
 
 def main() -> int:
@@ -374,7 +578,17 @@ def main() -> int:
     parser.add_argument(
         "--install",
         action="store_true",
-        help="Install missing tools (requires sudo for apt packages).",
+        help="Install missing default tools when supported by this platform.",
+    )
+    parser.add_argument(
+        "--smoke",
+        action="store_true",
+        help="Run tiny repo-local smoke checks for each available default tool.",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print machine-readable status for checks and smoke results.",
     )
     args = parser.parse_args()
 
@@ -387,17 +601,33 @@ def main() -> int:
         else:
             missing.append(tool)
 
-    _print_check_results(available, missing)
+    smoke_results = _smoke_results() if args.smoke else []
+
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "available": [tool.binary for tool in available],
+                    "missing": [tool.binary for tool in missing],
+                    "smoke": smoke_results,
+                },
+                indent=2,
+            )
+        )
+    else:
+        _print_check_results(available, missing)
+        if args.smoke:
+            _print_smoke_results(smoke_results)
 
     if missing and args.install:
         remaining = _install(missing)
         if remaining:
             print(
-                f"\n{_COLOR_WARN}{len(remaining)} tool(s) still missing. "
-                f"See docs/AI_ASSISTANT_GUIDE.md for manual install.{_COLOR_RESET}"
+                f"\n{_warn(f'{len(remaining)} tool(s) still missing. ')}"
+                f"{_warn('See docs/AI_ASSISTANT_GUIDE.md for manual install.')}"
             )
         else:
-            print(f"\n{_COLOR_OK}All tools now available.{_COLOR_RESET}")
+            print(f"\n{_ok('All default tools now available.')}")
 
     return 0
 

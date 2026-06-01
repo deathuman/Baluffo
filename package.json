@@ -15,6 +15,7 @@
     "prepush:full": "python scripts/run_pre_push_hook.py --full-ci",
     "test": "npm run test:unit && npm run test:smoke",
     "verify": "npm run check:python-version && python scripts/orchestrator.py verify",
+    "check:ai-env": "python scripts/ai_env_check.py --smoke",
     "check:python-version": "python scripts/check_python_version.py",
     "lint:precommit": "npm run lint:precommit:ci",
     "lint:precommit:changed": "python scripts/precommit_gate.py --mode changed",

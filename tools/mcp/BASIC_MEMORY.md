@@ -34,10 +34,9 @@ For direct CLI use on Windows, the `uv`-managed executable is typically availabl
 
 This setup was validated on Windows with:
 
-- `basic-memory` 0.20.3
+- `basic-memory` 0.21.5+
 - Python 3.13
-- `sqlite-vec` 0.1.9
-- `fastembed` 0.8.0
+- Semantic search enabled and vector reindex validated
 
 For deterministic MCP sessions, keep Basic Memory auto-update disabled in
 `$env:USERPROFILE\.basic-memory\config.json` and update manually with a health check.
@@ -308,38 +307,31 @@ If `basic-memory doctor --local` reports inconsistencies, run the search-only re
 
 ### Semantic Search Status
 
-Text search is the supported reliability baseline for this repo. Semantic/vector search is
-locally restored in this Codex IDE by a patch to the installed Basic Memory `0.20.3`
-uv tool environment.
+Text search remains the reliability baseline for this repo, but semantic/vector search is validated
+on Windows with upstream Basic Memory `0.21.5+`. Do not apply the old local `0.20.3` `vec0` patch.
 
-The repaired failure was not vault corruption and not a missing `sqlite-vec` package. Basic Memory's
-embedding reindex path touched the SQLite `search_vector_embeddings` virtual table before loading
-`sqlite_vec` on that connection, and before vector tables were guaranteed initialized in the stale
-cleanup path.
+The old failure was not vault corruption and not a missing `sqlite-vec` package. Basic Memory
+`0.21.5` includes the upstream SQLite vector reindex fix: it loads `sqlite-vec` before dropping
+`vec0` virtual tables during full vector reindex.
 
-Prepared patch artifact: [`basic-memory-sqlite-vec0-reindex.patch`](basic-memory-sqlite-vec0-reindex.patch).
-The patch moves stale `vec0` embedding cleanup behind a SQLite repository helper that first ensures
-vector tables, then loads `sqlite_vec` on the same session before deleting from
-`search_vector_embeddings`.
-
-This is a local tool patch, not an upstream release. Reinstalling or upgrading Basic Memory will
-replace the patched files. Before reapplying, confirm `basic-memory --version` is still `0.20.3`
-and the installed source still contains `_purge_stale_search_rows()` and
-`_ensure_sqlite_vec_loaded()`. If the source shape changed, re-check the fix instead of forcing the
-patch.
-
-Recovery helper:
+Windows validation run on 2026-06-01:
 
 ```powershell
-# Check whether the local Basic Memory 0.20.3 install still has the vec0 patch.
-.\tools\mcp\apply-basic-memory-vec0-patch.ps1
-
-# Reapply after reinstall/upgrade only when the helper reports the patch is missing.
-.\tools\mcp\apply-basic-memory-vec0-patch.ps1 -Apply
+basic-memory --version  # 0.21.5
+basic-memory status --project baluffo-memory
+basic-memory doctor
+basic-memory reindex --project baluffo-memory --search
+basic-memory reindex --project baluffo-memory --embeddings
+basic-memory tool search-notes "Baluffo vector sqlite vec0" --project baluffo-memory --hybrid --page-size 5
 ```
 
-The helper is intentionally check-only by default. `-Apply` backs up the two installed Basic Memory
-source files under `C:\tmp\basic-memory-vec0-backup-<timestamp>` before modifying them.
+`basic-memory migrate-relations --check-only` was not available in the validated `0.21.5` CLI. If a
+future release exposes it, run it before broad relation/index migrations.
+
+If Codex MCP calls report `Transport closed` after stopping or upgrading a running Basic Memory MCP
+process, restart the Codex thread/app or re-add the MCP registration so Codex opens a fresh stdio
+transport. The CLI validation commands above still verify the local Basic Memory install and search
+index.
 
 ## Required Use
 

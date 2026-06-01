@@ -29,6 +29,24 @@ If `serena` is not found after install, restart your shell so the `uv` tool path
 For direct CLI use on Windows, the `uv`-managed executable is typically available at
 `$env:USERPROFILE\.local\bin\serena.exe`.
 
+Update Serena explicitly; normal repo checks should report stale installs, not auto-upgrade them:
+
+```powershell
+uv tool upgrade serena-agent --prerelease=allow
+serena --version
+```
+
+If Windows reports `serena.exe` is locked, stop only running Serena MCP processes, rerun the upgrade,
+then restart or reconnect Codex/OpenCode so they open a fresh MCP stdio transport.
+
+### Certified Local Baseline
+
+This setup was validated on Windows with:
+
+- `serena-agent` 1.5.3+
+- Python 3.13
+- Language-server backend with `python` and `typescript`
+
 Upstream references:
 - Serena upstream: <https://github.com/oraios/serena>
 - OpenAI Docs MCP / Codex MCP setup: <https://developers.openai.com/learn/docs-mcp>
@@ -41,22 +59,28 @@ Upstream references:
 Codex is a first-class client for this repo. Prefer Codex's MCP command flow instead of hand-editing config files:
 
 ```powershell
-codex mcp add serena -- uvx -p 3.13 --from git+https://github.com/oraios/serena serena start-mcp-server --context ide --project-from-cwd
+serena setup codex
 codex mcp list
 codex mcp get serena
 ```
 
+Manual fallback if `serena setup codex` cannot update the client config:
+
+```powershell
+codex mcp add serena -- serena start-mcp-server --context=codex --project-from-cwd
+```
+
 `codex mcp add` writes the user-global Codex MCP config for you. Keep that config user-local rather than committing a repo-managed Codex config file.
-Codex resolves and stores the Serena executable path for you. A working `codex mcp get serena`
+Codex should launch the stable `uv tool` installation rather than a GitHub `main` snapshot. A working `codex mcp get serena`
 registration should report:
 
 - `enabled: true`
 - `transport: stdio`
-- `command: uvx` or another user-local Serena executable path
-- `args: -p 3.13 --from git+https://github.com/oraios/serena serena start-mcp-server --context ide --project-from-cwd`
+- `command: serena` or another user-local Serena executable path
+- `args: start-mcp-server --context=codex --project-from-cwd`
 
-That means Codex starts Serena through the pinned `uvx` launch path and activates the current
-workspace instead of relying on a stale registered project.
+That means Codex starts the same installed Serena version as OpenCode and activates the current
+workspace instead of relying on a stale registered project or an unpinned Git checkout.
 
 ### OpenCode
 
@@ -128,7 +152,7 @@ Expected working results in this repo:
 - The health check started both configured language servers:
   - Python via Pyright
   - TypeScript via `typescript-language-server`
-- Serena reported version `1.2.0` from the active MCP session (or a newer compatible minor release).
+- Serena reported version `1.5.3` from the active MCP session (or a newer compatible release).
 - The repo-local Serena health-check log was written under `.serena/logs/health-checks/`.
 
 ### Verified Repo-Local Project State
