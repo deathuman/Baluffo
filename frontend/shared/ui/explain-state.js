@@ -54,43 +54,49 @@ function showExplain(title, body, actions) {
 
   const content = panel.querySelector(".explain-state-content");
   if (!content) return;
+  const doc = content.ownerDocument || resolveDoc();
+  if (!doc) return;
 
-  let html = `<div class="explain-state-title">${escapeHtml(String(title || ""))}</div>`;
-  html += `<div class="explain-state-body">${escapeHtml(String(body || ""))}</div>`;
+  content.replaceChildren();
 
-  if (actions && Array.isArray(actions) && actions.length > 0) {
-    html += `<div class="explain-state-actions">`;
-    for (const action of actions) {
-      html += `<button class="btn clear-filters-btn explain-state-action-btn" data-explain-action="${escapeHtml(String(action?.id || ""))}">${escapeHtml(String(action?.label || ""))}</button>`;
+  const titleEl = doc.createElement("div");
+  titleEl.className = "explain-state-title";
+  titleEl.textContent = String(title || "");
+  content.appendChild(titleEl);
+
+  const bodyEl = doc.createElement("div");
+  bodyEl.className = "explain-state-body";
+  bodyEl.textContent = String(body || "");
+  content.appendChild(bodyEl);
+
+  const normalizedActions = Array.isArray(actions) ? actions : [];
+  if (normalizedActions.length > 0) {
+    const actionsEl = doc.createElement("div");
+    actionsEl.className = "explain-state-actions";
+    for (const action of normalizedActions) {
+      const btn = doc.createElement("button");
+      btn.className = "btn clear-filters-btn explain-state-action-btn";
+      btn.dataset.explainAction = String(action?.id || "");
+      btn.textContent = String(action?.label || "");
+      btn.addEventListener("click", function (event) {
+        event.stopPropagation();
+        if (typeof action?.onAction === "function") {
+          action.onAction();
+          hideExplain();
+        }
+      });
+      actionsEl.appendChild(btn);
     }
-    html += `</div>`;
+    content.appendChild(actionsEl);
   }
-
-  content.innerHTML = html;
 
   overlay.classList.remove("hidden");
   overlay.classList.add("explain-state-overlay-visible");
-
-  content.querySelectorAll("[data-explain-action]").forEach(btn => {
-    btn.addEventListener("click", function (event) {
-      event.stopPropagation();
-      const id = btn.dataset.explainAction;
-      const match = (actions || []).find(a => String(a?.id || "") === id);
-      if (match && typeof match.onAction === "function") {
-        match.onAction();
-        hideExplain();
-      }
-    });
-  });
 }
 
-function escapeHtml(text) {
-  const div = typeof document !== "undefined" ? document.createElement("div") : null;
-  if (div) {
-    div.textContent = String(text || "");
-    return div.innerHTML;
-  }
-  return String(text || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function findExplainTarget(id) {
+  return Array.from(document.querySelectorAll("[data-explain-target]"))
+    .find(btn => String(btn?.dataset?.explainTarget || "") === id) || null;
 }
 
 export function installExplainStateHandler() {
@@ -113,7 +119,7 @@ export function installExplainStateHandler() {
           id,
           label: id.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()),
           onAction: () => {
-            const btn = document.querySelector(`[data-explain-target="${id}"]`);
+            const btn = findExplainTarget(id);
             if (btn) btn.click();
           }
         });
