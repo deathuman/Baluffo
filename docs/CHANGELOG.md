@@ -10,6 +10,14 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.28] - 2026-06-02
+
+### Fixed
+- Umbrel app metadata now lets `app_proxy` own raw-LAN port `8877` and removes the duplicate `web` container host-port mapping that caused Docker install failures with `port is already allocated`.
+
+### Notes
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.27] - 2026-06-01
 
 ### Fixed
@@ -24,7 +32,7 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 - Baluffo can now run as a same-origin Linux container for private Umbrel raw-LAN installs, with GHCR multi-arch image publishing and private community app-store metadata.
 
 ### Fixed
-- Umbrel app metadata now publishes host port `8877` to the Baluffo container service so the raw-LAN URL works outside the Umbrel proxy.
+- Umbrel app metadata initially added a direct host-port mapping for `8877`; this was corrected in `0.2.28` to avoid conflicting with Umbrel's `app_proxy` port ownership.
 - Container mode no longer emits wildcard browser CORS allow headers, while desktop localhost bridge compatibility keeps its existing split-origin behavior.
 
 ## [0.2.25] - 2026-06-01

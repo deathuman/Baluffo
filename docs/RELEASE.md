@@ -242,7 +242,7 @@ docker run --rm -p 8877:8080 -v baluffo-data:/data ghcr.io/deathuman/baluffo:loc
 
 Runtime notes:
 
-- The container starts `python -m src.container_server --host 0.0.0.0 --port 8080 --data-dir /data`.
+- The container starts `python -m src.container_entrypoint --host 0.0.0.0 --port 8080 --data-dir /data`.
 - The container exposes one same-origin UI/API service on port `8080`.
 - `frontend-runtime-config.js` is generated dynamically with `bridge.sameOrigin: true`, `runtime.mode: "container"`, and `runtime.localDataMode: "bridge"`.
 - Persistent runtime state belongs under `/data`, including `baluffo-runtime.db`.
@@ -252,7 +252,7 @@ Runtime notes:
 
 The GitHub workflow `.github/workflows/build-container.yml` publishes the public multi-arch image `ghcr.io/deathuman/baluffo` for `linux/amd64` and `linux/arm64`.
 
-Umbrel private app-store metadata lives at `umbrel-app-store.yml` and `deathuman-baluffo/`. The Compose file uses `app_proxy` with `APP_PORT: 8080`, `PROXY_AUTH_ADD: "false"`, and `${APP_DATA_DIR}/data:/data`.
+Umbrel private app-store metadata lives at `umbrel-app-store.yml` and `deathuman-baluffo/`. The Compose file uses `app_proxy` with `APP_PORT: 8080`, `PROXY_AUTH_ADD: "false"`, and `${APP_DATA_DIR}/data:/data`. Do not add a `web` service `ports: "8877:8080"` mapping; Umbrel binds the manifest `port: 8877` through `app_proxy`.
 
 ### Linux AppImage
 
@@ -431,7 +431,7 @@ For the canonical startup measurement architecture and the preferred `perf:start
 Container builds use the checked-in `Dockerfile` and run:
 
 ```powershell
-python -m src.container_server --host 0.0.0.0 --port 8080 --data-dir /data
+python -m src.container_entrypoint --host 0.0.0.0 --port 8080 --data-dir /data
 ```
 
 Runtime contract:
@@ -459,7 +459,7 @@ Umbrel private app-store metadata lives at:
 - `deathuman-baluffo/docker-compose.yml`
 - `deathuman-baluffo/exports.sh`
 
-Umbrel Compose uses `app_proxy` with `APP_PORT: 8080` and `PROXY_AUTH_ADD: "false"`, and mounts `${APP_DATA_DIR}/data:/data`. The intended raw LAN URL is `http://192.168.50.61:8877/`.
+Umbrel Compose uses `app_proxy` with `APP_PORT: 8080` and `PROXY_AUTH_ADD: "false"`, and mounts `${APP_DATA_DIR}/data:/data`. The intended raw LAN URL is `http://192.168.50.61:8877/`; Umbrel binds that host port from `umbrel-app.yml`, so the `web` service must not publish the same port.
 
 Raw LAN exposure is intentional for this channel. Anyone who can reach the host port can access Baluffo UI, Admin, and local-data routes, so do not expose the port to the Internet, public Wi-Fi, or broad VPN peers. The container service is still browser same-origin and must not emit wildcard CORS allow headers for arbitrary external origins.
 

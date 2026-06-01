@@ -25,7 +25,7 @@ The Umbrel app uses the standard `app_proxy` service with `PROXY_AUTH_ADD: "fals
 
 ## Implemented Changes
 
-- Container entrypoint: `python -m src.container_server --host 0.0.0.0 --port 8080 --data-dir /data`.
+- Container entrypoint: `python -m src.container_entrypoint --host 0.0.0.0 --port 8080 --data-dir /data`.
 - Combined server routing: API prefixes dispatch first, then static UI assets, `favicon.ico`, images, CSS, JS, runtime data, and unknown page routes are served from the UI root.
 - Cache policy: API, runtime config, runtime data, and HTML responses stay `no-store`; static CSS/JS/images use `Cache-Control: public, max-age=3600`.
 - CORS policy: container mode is same-origin only and does not emit browser CORS allow headers. Desktop/non-container bridge serving keeps its localhost split-origin CORS behavior.
@@ -46,8 +46,8 @@ The Umbrel app uses the standard `app_proxy` service with `PROXY_AUTH_ADD: "fals
 - Runtime profiles, saved jobs, attachments, reports, logs, source registries, and SQLite `baluffo-runtime.db` resolve under `/data`.
 - First-run seeding copies defaults and creates required runtime JSON skeletons only when missing; existing user data is never overwritten.
 - Container startup prepares the Umbrel `/data` bind mount as root, then drops to the non-root `baluffo` runtime user before starting the server.
-- Container port comes from CLI/env/Compose (`8080` inside, `8877` outside through Umbrel), not desktop `baluffo.config.json` ports.
-- Umbrel Compose publishes host port `8877` to container port `8080` while keeping `app_proxy` with `PROXY_AUTH_ADD: "false"` for standard Umbrel app integration.
+- Container port comes from CLI/env/Compose (`8080` inside, `8877` outside through Umbrel `app_proxy`), not desktop `baluffo.config.json` ports.
+- Umbrel `app_proxy` owns host port `8877` from `umbrel-app.yml` and forwards to container port `8080` with `PROXY_AUTH_ADD: "false"`; the `web` service must not also publish `8877:8080`.
 - Docker packaging uses Python 3.13, `requirements-lock.txt`, baked Playwright Chromium, a non-root user, `VOLUME /data`, and a healthcheck against `/ops/health`.
 - Image hygiene is protected by `.dockerignore` rules excluding local secrets, sync config, local profiles, DBs, logs, `_out`, and fetched artifacts.
 - GHCR workflow builds `linux/amd64` and `linux/arm64` with Docker buildx and QEMU, publishing `ghcr.io/deathuman/baluffo`.

@@ -8,12 +8,10 @@ services:
       PROXY_AUTH_ADD: "false"
 
   web:
-    image: ghcr.io/deathuman/baluffo:0.2.27
+    image: ghcr.io/deathuman/baluffo:0.2.28
     restart: on-failure
     init: true
     stop_grace_period: 1m
-    ports:
-      - "8877:8080"
     environment:
       BALUFFO_CONTAINER_HOST: 0.0.0.0
       BALUFFO_CONTAINER_PORT: 8080
