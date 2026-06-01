@@ -94,29 +94,72 @@ Test-NetConnection 127.0.0.1 -Port 8877
 These are contributor-local helpers for AI-assisted repo work. They are not Baluffo runtime,
 packaging, release, Python, Node, CI, or pre-commit dependencies.
 
+Check current toolbelt status at session start:
+
+```bash
+python scripts/toolbelt_check.py
+```
+
+Install missing tools:
+
+```bash
+python scripts/toolbelt_check.py --install
+```
+
 Default to the narrowest deterministic tool:
 
 - Use Serena for symbol-aware code reads/edits inside the repo.
 - Use `rg` for text search and `fd` for file discovery before falling back to shell-native search.
-- Use `ast-grep` for structural code queries, `jq`/`yq` for JSON/YAML, and `bat` for targeted line previews.
-- Use `node_repl` for simple external UTF-8 file reads/edits, especially Codex skill files under `.codex/skills`.
-- Use PowerShell mainly for Windows shell tasks: Git, tests, validation commands, process management, and filesystem operations that need shell semantics.
-- If direct shell execution fails, use the approved PowerShell wrapper but still run the better tool inside it, such as `rg`, `fd`, `jq`, or `bat`.
-
-On Windows, persistent direct-command allowances live in `~/.codex/rules/default.rules`.
-Keep allow rules narrow: deterministic read/inspection tools and read-only Git prefixes are fine;
-do not add broad `python`, `node`, `npm`, `gh`, `pwsh`, `powershell`, or `cmd` rules just to bypass sandbox prompts.
+- Use `ast-grep` for structural code queries, `jq`/`yq` for JSON/YAML, `gron` for JSON exploration, and `bat` for targeted line previews.
+- Use `tokei` for a one-command codebase composition overview.
+- Use `eza -T` for directory tree visualization.
+- Use `mlr` for unified CSV/JSONL/TSV processing.
+- Use `difft` for syntax-aware structural git diffs.
 
 | Tool | Default use | Boundary |
 |------|-------------|----------|
 | Serena | Symbol-aware navigation, references, declarations, and refactor support | Required code-intelligence MCP; repo docs and source remain canonical |
 | `rg` | Fast deterministic text search | Default text-search primitive for agents |
 | `fd` | Fast file discovery | Prefer over `find` for agent and human repo navigation |
-| `ast-grep` | Syntax-aware structural search for Python, JS/TS, HTML, JSON, and YAML | Use when code shape matters more than exact text |
-| `jq` / `yq` | Focused JSON/YAML inspection | Prefer before reading full config or data files |
 | `bat` | Focused previews with line numbers and ranges | Use after the relevant file or region is known |
-| `node_repl` | Small JavaScript-backed host file or browser helper tasks | Prefer for external Codex skill file edits; do not use for repo code when `apply_patch` or Serena is clearer |
+| `jq` | Focused JSON inspection | Prefer before reading full config or data files |
+| `yq` | Focused YAML/TOML/XML inspection (jq syntax) | Prefer before reading full config or data files |
+| `ast-grep` | Syntax-aware structural search for Python, JS/TS, HTML, JSON, and YAML | Use when code shape matters more than exact text |
+| `tokei` | Codebase line-count and composition stats | One-command overview of language/code distribution |
+| `gron` | Flatten JSON for grep-based exploration | Use alongside `rg` for exploring unfamiliar JSON structure |
+| `eza` | Directory tree visualization | `eza -T --level=2` for compact project layout |
+| `mlr` | Unified CSV, JSONL, TSV processing | Filter, cut, sort, and join tabular data |
+| `difft` | Syntax-aware structural git diff | Use when understanding the meaning of diffs matters |
 | `git grep` | Git-tracked-file-only search | Use when ignored or untracked files must be excluded |
+
+Linux (apt-based) toolbelt install:
+
+```bash
+sudo apt install -y ripgrep fd-find bat jq yq tokei gron eza miller
+mkdir -p ~/.local/bin
+ln -sf $(which fdfind) ~/.local/bin/fd
+ln -sf $(which batcat) ~/.local/bin/bat
+npm install -g @ast-grep/cli
+# difft (not in apt): download binary from GitHub releases
+curl -fsSL -o /tmp/difft.tar.gz \
+  https://github.com/Wilfred/difftastic/releases/latest/download/difft-x86_64-unknown-linux-gnu.tar.gz
+tar xzf /tmp/difft.tar.gz -C /tmp/
+mv /tmp/difft ~/.local/bin/difft && chmod +x ~/.local/bin/difft && rm /tmp/difft.tar.gz
+```
+
+Ensure `~/.local/bin` is in your PATH.
+
+macOS (Homebrew) toolbelt install:
+
+```bash
+brew install ripgrep fd bat jq yq tokei gron eza miller
+npm install -g @ast-grep/cli
+# difft (not in Homebrew core): download binary from GitHub releases
+curl -fsSL -o /tmp/difft.tar.gz \
+  https://github.com/Wilfred/difftastic/releases/latest/download/difft-x86_64-apple-darwin.tar.gz
+tar xzf /tmp/difft.tar.gz -C /tmp/
+mv /tmp/difft ~/.local/bin/difft && chmod +x ~/.local/bin/difft && rm /tmp/difft.tar.gz
+```
 
 Optional Windows toolbelt install, with package IDs verified through `winget search` on 2026-05-15:
 
@@ -131,18 +174,15 @@ winget install -e --id MikeFarah.yq
 
 Verify availability after install, restarting the shell first if a newly installed command is not found:
 
-```powershell
-rg --version
-fd --version
-ast-grep --version
-bat --version
-jq --version
-yq --version
+```bash
+rg --version && fd --version && bat --version && jq --version && yq --version
+ast-grep --version && tokei --version && gron --version && eza --version
+mlr --version && difft --version
 ```
 
 Baluffo-specific examples:
 
-```powershell
+```bash
 rg -n "desktop-local-data" frontend src tests
 fd -e py tests src
 ast-grep --lang py --pattern '$OBJ.$METHOD($$$ARGS)' src tests
@@ -150,6 +190,11 @@ jq '.scripts | keys' package.json
 yq '.repos[].hooks[].id' .pre-commit-config.yaml
 bat --style=numbers --line-range 60:110 docs/AI_ASSISTANT_GUIDE.md
 git grep -n "desktop-local-data" -- frontend src tests
+tokei src/ frontend/ --sort=code
+gron data/jobs-fetch-tasks.json | rg '"status"'
+eza -T --level=2 src/jobs/
+mlr --icsv head -n 5 tests/fixtures/gamedevmap_data.csv
+difft --color=always | bat
 python tools/repo_health/generate_system_map.py --output .tmp/system-map.json
 ```
 

@@ -66,3 +66,11 @@ Serena's own project memory is covered in Docs Routing above.
   compromised and rotate all affected credentials.
 - Do not add memory MCPs as Baluffo runtime, Python, Node, packaging, release,
   or CI dependencies.
+
+## Toolbelt Awareness
+
+- At session start, run `python scripts/toolbelt_check.py` to check local CLI toolbelt availability.
+- If any toolbelt tools are missing, inform the user that installing them will reduce token usage and improve navigation efficiency.
+- Offer to install missing tools. If the user agrees, run `python scripts/toolbelt_check.py --install`.
+- If sudo is required and passwordless sudo is unavailable, the script prints the manual commands — present them to the user.
+- Do not block or delay work on missing toolbelt tools — they are AI-coder conveniences, not build or CI requirements.
