@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,33 @@ def positive_int(value: Any, default: int, *, minimum: int = 0) -> int:
         return max(minimum, int(default))
 
 
+def _container_runtime_enabled() -> bool:
+    return str(os.environ.get("BALUFFO_RUNTIME_MODE") or "").strip().lower() == "container"
+
+
+def _container_data_dir() -> Path | None:
+    raw = str(os.environ.get("BALUFFO_DATA_DIR") or "").strip()
+    if not raw:
+        return None
+    return Path(raw).expanduser()
+
+
+def _strip_leading_data_segment(path: Path) -> Path:
+    parts = path.parts
+    if len(parts) > 1 and str(parts[0]).lower() == "data":
+        return Path(*parts[1:])
+    return path
+
+
+def _container_audit_path(path: Path) -> Path:
+    if path.is_absolute() or not _container_runtime_enabled():
+        return path
+    data_dir = _container_data_dir()
+    if data_dir is None:
+        return path
+    return data_dir / _strip_leading_data_segment(path)
+
+
 def audit_artifact_path(
     config: dict[str, Any] | None,
     section_name: str | None = None,
@@ -49,7 +77,11 @@ def audit_artifact_path(
     )
     raw = str(cfg.get("activeAuditPath") or "").strip()
     if raw:
-        return Path(raw)
+        return _container_audit_path(Path(raw))
+    default_path = Path("data") / default_filename
+    container_path = _container_audit_path(default_path)
+    if container_path != default_path:
+        return container_path
     return Path(__file__).resolve().parents[2] / "data" / default_filename
 
 

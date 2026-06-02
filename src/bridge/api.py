@@ -59,6 +59,7 @@ TriggerDiscoveryTaskFunc = Callable[..., tuple[int, JsonObject]]
 StartTaskFunc = Callable[[JsonObject | None], JsonObject]
 StartSyncTaskFunc = Callable[..., JsonObject]
 NormalizeReportContractFunc = Callable[[JsonObject], JsonObject]
+ReconcileDiscoveryReportFunc = Callable[[], JsonObject | None]
 
 
 def _identity_report_contract(payload: JsonObject) -> JsonObject:
@@ -398,6 +399,7 @@ class BridgeApi:
     set_sync_status: Callable[..., None] = _noop
     get_discovery_config_payload: Callable[[], JsonObject] = _default_discovery_config_payload
     update_saved_discovery_settings: Callable[[JsonObject], JsonObject] = _identity_payload
+    reconcile_terminal_discovery_report_from_state: ReconcileDiscoveryReportFunc = _noop
     load_alert_state: Callable[[], JsonObject] = _default_alert_state
     save_alert_state: Callable[[JsonObject], None] = _save_alert_state
 
@@ -478,6 +480,10 @@ class BridgeApi:
             if self._field_is_default("update_saved_discovery_settings"):
                 self.update_saved_discovery_settings = (
                     self.discovery.update_saved_discovery_settings
+                )
+            if self._field_is_default("reconcile_terminal_discovery_report_from_state"):
+                self.reconcile_terminal_discovery_report_from_state = (
+                    self.discovery.reconcile_terminal_discovery_report_from_state
                 )
 
     def mark_desktop_session_activity(self, path: str) -> None:

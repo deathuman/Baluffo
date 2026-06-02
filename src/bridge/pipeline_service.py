@@ -747,6 +747,11 @@ class PipelineService:
             task_type="discovery",
             task_run_id=discovery_run_id,
         )
+        report_status = str(report.get("status") or "").strip().lower()
+        if report_status in {"error", "failed", "failure"}:
+            summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
+            error = str(summary.get("error") or "discovery failed").strip()
+            raise RuntimeError(f"discovery_wait: {error}")
         self._wait_for_discovery_auto_approval(report)
 
     def _wait_for_discovery_auto_approval(self, report: dict[str, Any]) -> None:

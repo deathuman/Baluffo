@@ -32,6 +32,30 @@ def test_pid_is_running_rejects_non_positive_and_missing_pids() -> None:
         assert admin_bridge.pid_is_running(pid) is False
 
 
+def test_pid_is_running_rejects_posix_zombie_pid(
+    admin_bridge_entrypoint_root, tmp_path, monkeypatch
+):
+    proc_dir = tmp_path / "proc" / "4242"
+    proc_dir.mkdir(parents=True)
+    (proc_dir / "stat").write_text("4242 (python) Z 1 1 1\n", encoding="utf-8")
+    monkeypatch.setattr(admin_bridge.admin_entrypoint_runtime_mod.sys, "platform", "linux")
+    monkeypatch.setattr(admin_bridge.admin_entrypoint_runtime_mod, "_PROC_ROOT", tmp_path / "proc")
+    monkeypatch.setattr(admin_bridge.os, "kill", lambda _pid, _signal: None)
+
+    assert admin_bridge.pid_is_running(4242) is False
+
+
+def test_pid_is_running_accepts_posix_live_pid(admin_bridge_entrypoint_root, tmp_path, monkeypatch):
+    proc_dir = tmp_path / "proc" / "4242"
+    proc_dir.mkdir(parents=True)
+    (proc_dir / "stat").write_text("4242 (python) S 1 1 1\n", encoding="utf-8")
+    monkeypatch.setattr(admin_bridge.admin_entrypoint_runtime_mod.sys, "platform", "linux")
+    monkeypatch.setattr(admin_bridge.admin_entrypoint_runtime_mod, "_PROC_ROOT", tmp_path / "proc")
+    monkeypatch.setattr(admin_bridge.os, "kill", lambda _pid, _signal: None)
+
+    assert admin_bridge.pid_is_running(4242) is True
+
+
 def test_log_enabled_with_default_config(admin_bridge_entrypoint_root) -> None:
     assert isinstance(admin_bridge._log_enabled("info"), bool)
 

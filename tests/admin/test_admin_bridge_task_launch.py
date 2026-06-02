@@ -182,7 +182,7 @@ def test_build_fetcher_args_matrix(case: _FetcherArgsCase) -> None:
 
 
 def _configure_background_script_runtime(
-    admin_bridge_entrypoint_root, *, desktop_mode: bool
+    admin_bridge_entrypoint_root, *, desktop_mode: bool, container_mode: bool = False
 ) -> None:
     cfg = admin_bridge.RuntimeConfig(
         root=admin_bridge_entrypoint_root,
@@ -193,6 +193,7 @@ def _configure_background_script_runtime(
         log_level="info",
         quiet_requests=True,
         desktop_mode=desktop_mode,
+        container_mode=container_mode,
     )
     admin_bridge.configure_runtime_paths(cfg)
 
@@ -292,6 +293,25 @@ def test_run_background_script_does_not_write_legacy_task_state(admin_bridge_ent
             },
         )
     assert admin_bridge.load_json_object(admin_bridge.TASK_STATE_PATH, {}) == {}
+
+
+def test_run_background_script_sets_container_runtime_mode_env(admin_bridge_entrypoint_root):
+    _configure_background_script_runtime(
+        admin_bridge_entrypoint_root,
+        desktop_mode=False,
+        container_mode=True,
+    )
+    fake_proc = type("FakeProc", (), {"pid": 24680})()
+    with (
+        mock.patch.object(admin_bridge.sys, "frozen", False, create=True),
+        mock.patch.object(admin_bridge.sys, "executable", "C:/Python313/python.exe"),
+        mock.patch.object(admin_bridge.subprocess, "Popen", return_value=fake_proc) as popen_mock,
+    ):
+        admin_bridge.run_background_script("source_discovery.py", ["--mode", "dynamic"])
+
+    env = popen_mock.call_args.kwargs["env"]
+    assert env["BALUFFO_RUNTIME_MODE"] == "container"
+    assert env["BALUFFO_DATA_DIR"] == str(admin_bridge_entrypoint_root)
 
 
 def test_start_fetcher_task_writes_report_shell_with_run_id():

@@ -11,6 +11,7 @@ from src.local_data_store import LocalDataPaths, LocalDataStore
 from src.shared.utils import parse_iso as parse_iso_from_utils
 
 root: Any | None = None
+_PROC_ROOT = Path("/proc")
 
 
 def _require_root() -> Any:
@@ -313,6 +314,30 @@ def parse_iso(value: Any) -> datetime | None:
     return parse_iso_from_utils(value)
 
 
+def _posix_pid_is_zombie(pid: int) -> bool:
+    stat_path = _PROC_ROOT / str(int(pid)) / "stat"
+    try:
+        stat_text = stat_path.read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        stat_text = ""
+    if stat_text:
+        try:
+            state = stat_text.rsplit(") ", 1)[1].split(maxsplit=1)[0]
+        except (IndexError, ValueError):
+            state = ""
+        if state.upper() == "Z":
+            return True
+
+    status_path = _PROC_ROOT / str(int(pid)) / "status"
+    try:
+        for line in status_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.startswith("State:"):
+                return line.split(":", 1)[1].strip().upper().startswith("Z")
+    except OSError:
+        return False
+    return False
+
+
 def pid_is_running(pid: int) -> bool:
     root_mod = _require_root()
     if int(pid or 0) <= 0:
@@ -344,7 +369,7 @@ def pid_is_running(pid: int) -> bool:
         root_mod.os.kill(int(pid), 0)
     except OSError:
         return False
-    return True
+    return not _posix_pid_is_zombie(int(pid))
 
 
 def desktop_local_data_store() -> LocalDataStore:

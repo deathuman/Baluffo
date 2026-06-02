@@ -208,8 +208,148 @@ class DiscoveryService:
             summary=summary or None,
         )
 
-    def _reconcile_terminal_discovery_report_from_state(self) -> None:
-        return
+    @staticmethod
+    def _lifecycle_status_token(row: dict[str, Any]) -> str:
+        return str(row.get("lifecycleStatus") or row.get("status") or "").strip().lower()
+
+    @classmethod
+    def _lifecycle_row_is_terminal(cls, row: dict[str, Any] | None) -> bool:
+        if not isinstance(row, dict):
+            return False
+        if str(row.get("finishedAt") or "").strip():
+            return True
+        return cls._lifecycle_status_token(row) in {
+            "succeeded",
+            "failed",
+            "canceled",
+            "cancelled",
+            "orphaned",
+            "ok",
+            "error",
+            "completed",
+        }
+
+    @classmethod
+    def _report_status_from_lifecycle_row(cls, row: dict[str, Any]) -> str:
+        status = cls._lifecycle_status_token(row)
+        if status in {"canceled", "cancelled"}:
+            return "canceled"
+        if status in {"succeeded", "ok", "completed"}:
+            return "ok"
+        return "error"
+
+    @staticmethod
+    def _terminal_phase_label(status: str) -> str:
+        if status == "canceled":
+            return "Discovery canceled"
+        if status == "ok":
+            return "Discovery completed"
+        return "Discovery failed"
+
+    @staticmethod
+    def _terminal_phase_key(status: str) -> str:
+        if status == "canceled":
+            return "canceled"
+        if status == "ok":
+            return "completed"
+        return "failed"
+
+    def _repair_terminal_discovery_report_from_row(
+        self,
+        row: dict[str, Any],
+        report: dict[str, Any],
+        *,
+        finished_at: str = "",
+    ) -> dict[str, Any] | None:
+        if not isinstance(report, dict):
+            return None
+        run_id = str(report.get("runId") or row.get("runId") or row.get("id") or "").strip()
+        if not run_id:
+            return None
+        row_run_id = str(row.get("runId") or row.get("id") or "").strip()
+        if row_run_id and row_run_id != run_id:
+            return None
+        if str(report.get("finishedAt") or "").strip():
+            return dict(report)
+
+        terminal_at = str(finished_at or row.get("finishedAt") or self._deps.now_iso() or "")
+        terminal_reason = str(row.get("terminalReason") or "").strip()
+        status = self._report_status_from_lifecycle_row(row)
+        phase_key = self._terminal_phase_key(status)
+        phase_label = self._terminal_phase_label(status)
+
+        row_summary = as_json_object(row.get("summary"))
+        summary = {**as_json_object(report.get("summary")), **row_summary}
+        if terminal_reason:
+            summary["terminalReason"] = terminal_reason
+        summary["status"] = status
+        if status != "ok" and not str(summary.get("error") or "").strip():
+            summary["error"] = terminal_reason or "discovery_task_terminal_without_report"
+
+        row_progress = as_json_object(row.get("taskProgress") or row.get("progress"))
+        report_progress = as_json_object(report.get("taskProgress"))
+        progress = {**row_progress, **report_progress}
+        row_counts = as_json_object(row_progress.get("counts"))
+        report_counts = as_json_object(report_progress.get("counts"))
+        counts = {**row_counts, **report_counts}
+        progress.update(
+            {
+                "active": False,
+                "phaseKey": phase_key,
+                "phaseLabel": phase_label,
+                "mode": progress.get("mode") or "indeterminate",
+                "updatedAt": terminal_at,
+            }
+        )
+        if counts:
+            progress["counts"] = counts
+
+        runtime = as_json_object(report.get("runtime"))
+        lifecycle = as_json_object(runtime.get("lifecycle"))
+        runtime["lifecycle"] = {
+            **lifecycle,
+            "owner": lifecycle.get("owner") or "discovery_report",
+            "heartbeatAt": terminal_at,
+            "terminalReason": terminal_reason,
+        }
+
+        repaired = {
+            **dict(report),
+            "runId": run_id,
+            "finishedAt": terminal_at,
+            "status": status,
+            "terminalReason": terminal_reason,
+            "summary": summary,
+            "taskProgress": progress,
+            "runtime": runtime,
+        }
+        normalized = self._deps.normalize_discovery_report_contract(repaired)
+        self._deps.save_json_atomic(self._paths.report, normalized)
+        self._deps.bridge_log(
+            "warn",
+            "discovery_report_repaired_from_terminal_lifecycle",
+            runId=run_id,
+            status=status,
+            terminalReason=terminal_reason,
+            finishedAt=terminal_at,
+        )
+        return dict(normalized)
+
+    def _reconcile_terminal_discovery_report_from_state(self) -> dict[str, Any] | None:
+        raw = self._read_discovery_report()
+        if not isinstance(raw, dict):
+            return None
+        report = self._deps.normalize_discovery_report_contract(raw)
+        run_id = str(report.get("runId") or "").strip()
+        if not run_id or str(report.get("finishedAt") or "").strip():
+            return None
+        row = self._deps.get_lifecycle_row(run_id, "discovery")
+        if not self._lifecycle_row_is_terminal(row):
+            return None
+        return self._repair_terminal_discovery_report_from_row(row or {}, report)
+
+    def reconcile_terminal_discovery_report_from_state(self) -> dict[str, Any] | None:
+        return self._reconcile_terminal_discovery_report_from_state()
 
     @staticmethod
     def _run_background_script_with_identity(
@@ -276,12 +416,25 @@ class DiscoveryService:
                         reason=self._abort_reason_from_row(lifecycle_row),
                     )
                     return None
+                failed_at = self._deps.now_iso()
                 self._deps.fail_lifecycle_run(
                     run_id,
                     "discovery",
-                    finished_at=self._deps.now_iso(),
+                    finished_at=failed_at,
                     terminal_reason="owner_inactive_without_terminal_report",
                     summary={"error": "owner_inactive_without_terminal_report"},
+                )
+                self._repair_terminal_discovery_report_from_row(
+                    {
+                        "runId": run_id,
+                        "taskType": "discovery",
+                        "status": "failed",
+                        "finishedAt": failed_at,
+                        "terminalReason": "owner_inactive_without_terminal_report",
+                        "summary": {"error": "owner_inactive_without_terminal_report"},
+                    },
+                    report,
+                    finished_at=failed_at,
                 )
                 return
             self._refresh_discovery_task_heartbeat(

@@ -118,6 +118,7 @@ BOOTSTRAP_TRANSACTION_ARTIFACTS = BOOTSTRAP_PROMOTED_ARTIFACTS + (
 class TaskLaunchRuntime:
     root: Path
     data_dir: Path
+    container_mode: bool = False
 
 
 @dataclass(frozen=True)
@@ -417,6 +418,23 @@ class TaskLaunchApi:
             source_rows=source_rows,
         )
 
+    def _build_child_env(self, task_type: str, extra_env: dict[str, str] | None) -> dict[str, str]:
+        child_env = os.environ.copy()
+        child_env["BALUFFO_DATA_DIR"] = str(self._runtime.data_dir)
+        child_env["PYTHONUNBUFFERED"] = "1"
+        if bool(getattr(self._runtime, "container_mode", False)):
+            child_env["BALUFFO_RUNTIME_MODE"] = "container"
+        if isinstance(extra_env, dict):
+            for key, value in extra_env.items():
+                if key:
+                    child_env[str(key)] = str(value)
+        if task_type == "discovery":
+            child_env["BALUFFO_DISCOVERY_LOG_PATH"] = str(self._paths.discovery_log)
+            child_env["BALUFFO_DISCOVERY_REPORT_PATH"] = str(self._paths.discovery_report)
+        elif task_type == "fetch":
+            child_env["BALUFFO_FETCHER_LOG_PATH"] = str(self._paths.fetcher_log)
+        return child_env
+
     def run_background_script(
         self,
         script_name: str,
@@ -462,18 +480,7 @@ class TaskLaunchApi:
             "discovery" if "discovery" in script else ("fetch" if "fetcher" in script else script)
         )
         task_type = str(task_type or inferred_task_type).strip().lower()
-        child_env = os.environ.copy()
-        child_env["BALUFFO_DATA_DIR"] = str(self._runtime.data_dir)
-        child_env["PYTHONUNBUFFERED"] = "1"
-        if isinstance(extra_env, dict):
-            for key, value in extra_env.items():
-                if key:
-                    child_env[str(key)] = str(value)
-        if task_type == "discovery":
-            child_env["BALUFFO_DISCOVERY_LOG_PATH"] = str(self._paths.discovery_log)
-            child_env["BALUFFO_DISCOVERY_REPORT_PATH"] = str(self._paths.discovery_report)
-        elif task_type == "fetch":
-            child_env["BALUFFO_FETCHER_LOG_PATH"] = str(self._paths.fetcher_log)
+        child_env = self._build_child_env(task_type, extra_env)
         popen_kwargs: dict[str, Any] = {
             "cwd": str(self._runtime.root),
             "stdin": devnull,

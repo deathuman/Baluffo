@@ -10,6 +10,17 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.30] - 2026-06-02
+
+### Fixed
+- Umbrel discovery tasks now write sheet-directory and web-search audit artifacts under the `/data` volume in container mode instead of the unwritable app directory.
+- Discovery task reports now self-repair from terminal lifecycle state after child crashes, avoiding stale active `/discovery/report` payloads and long pipeline safety-cap waits.
+- POSIX bridge PID checks now reject zombie child processes so container task lifecycle liveness is not falsely extended.
+
+### Notes
+- Fetcher parsing, provider quality rules, source policy, and desktop/non-container discovery audit path behavior are unchanged.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.29] - 2026-06-02
 
 ### Fixed

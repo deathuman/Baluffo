@@ -494,6 +494,7 @@ def get_task_launch_api() -> _TaskLaunchApiLike:
             runtime=root_mod._task_launch_api.TaskLaunchRuntime(
                 root=Path(root_mod.RUNTIME_CONFIG.root),
                 data_dir=Path(root_mod.RUNTIME_CONFIG.data_dir),
+                container_mode=bool(getattr(root_mod.RUNTIME_CONFIG, "container_mode", False)),
             ),
             paths=root_mod._task_launch_api.TaskLaunchPaths(
                 discovery_log=root_mod.DISCOVERY_LOG_PATH,

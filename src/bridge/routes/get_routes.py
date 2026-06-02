@@ -843,6 +843,10 @@ def _handle_discovery_report_route(handler: BridgeResponseWriter, *, api: Bridge
     def _send_discovery_report() -> None:
         from src.source_registry_io import load_runtime_evidence
 
+        reconciler = getattr(api, "reconcile_terminal_discovery_report_from_state", None)
+        if callable(reconciler):
+            reconciler()
+
         raw = load_runtime_evidence(getattr(api, "DISCOVERY_REPORT_PATH", None), {})
 
         normalizer_fn = getattr(api, "normalize_discovery_report_contract", None)
