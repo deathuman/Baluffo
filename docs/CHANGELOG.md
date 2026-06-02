@@ -10,6 +10,14 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.29] - 2026-06-02
+
+### Fixed
+- Umbrel container Admin now preserves the explicit same-origin bridge base, fixing Admin panels that incorrectly called the visitor browser's `127.0.0.1:8877` instead of the LAN app origin.
+
+### Notes
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.28] - 2026-06-02
 
 ### Fixed

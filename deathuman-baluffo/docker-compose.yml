@@ -8,7 +8,7 @@ services:
       PROXY_AUTH_ADD: "false"
 
   web:
-    image: ghcr.io/deathuman/baluffo:0.2.28
+    image: ghcr.io/deathuman/baluffo:0.2.29
     restart: on-failure
     init: true
     stop_grace_period: 1m

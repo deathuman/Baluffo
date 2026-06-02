@@ -213,7 +213,7 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Goal | Command |
 |------|---------|
 | Container bridge/static/runtime seeding and CORS policy | `python -m pytest tests/bridge/test_container_runtime.py -q` |
-| Container frontend mode and same-origin bridge | `node --test --test-reporter=dot tests/frontend/unit/admin-config.test.mjs tests/frontend/unit/api-client.test.mjs tests/frontend/unit/container-local-data.test.mjs tests/frontend/unit/desktop-local-data-navigation.test.mjs tests/frontend/unit/local-data-runtime-contract.test.mjs` |
+| Container frontend mode and same-origin bridge | `node --test --test-reporter=dot tests/frontend/unit/admin-config.test.mjs tests/frontend/unit/api-client.test.mjs tests/frontend/unit/admin-runtime-bridge-base.test.mjs tests/frontend/unit/container-local-data.test.mjs tests/frontend/unit/desktop-local-data-navigation.test.mjs tests/frontend/unit/local-data-runtime-contract.test.mjs` |
 | Container image build | `docker build -t ghcr.io/deathuman/baluffo:local .` |
 | Container smoke | `docker run --rm -p 8877:8080 -v baluffo-data:/data ghcr.io/deathuman/baluffo:local`, then poll `http://127.0.0.1:8877/ops/health` and load `http://127.0.0.1:8877/jobs.html` |
 

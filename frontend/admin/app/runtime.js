@@ -55,6 +55,7 @@ import { createAdminRuntimeState } from "./runtime/state.js";
 import { composeAdminControllers } from "./runtime/composition.js?v=14";
 import { createAdminStartupMetrics } from "./runtime/effects.js";
 import { createBridgeCaller } from "./runtime/actions.js";
+import { resolveAdminBridgeBase } from "./runtime/bridge-base.js";
 import { setStatusText, toLocalTime } from "./runtime/view.js";
 import { bindAdminRuntimeEvents } from "./runtime/events.js?v=13";
 import { applyAdminAdvancedBulkLayout } from "./bulk-actions.js";
@@ -64,7 +65,7 @@ const JOBS_FETCHER_COMMAND = adminConfig.JOBS_FETCHER_COMMAND || "python -m src.
 const JOBS_FETCHER_TASK_LABEL = adminConfig.JOBS_FETCHER_TASK_LABEL || "Run jobs fetcher";
 const JOBS_FETCH_REPORT_URL = adminConfig.JOBS_FETCH_REPORT_URL || "data/jobs-fetch-report.json";
 const JOBS_AUTO_REFRESH_SIGNAL_KEY = adminConfig.JOBS_AUTO_REFRESH_SIGNAL_KEY || "baluffo_jobs_auto_refresh_signal";
-const ADMIN_BRIDGE_BASE = adminConfig.ADMIN_BRIDGE_BASE || "http://127.0.0.1:8877";
+const ADMIN_BRIDGE_BASE = resolveAdminBridgeBase(adminConfig);
 const BRIDGE_STATUS_POLL_INTERVAL_MS = Number(adminConfig.BRIDGE_STATUS_POLL_INTERVAL_MS || 10000);
 const OPS_POLL_IDLE_INTERVAL_MS = 10000;
 const OPS_POLL_LIVE_INTERVAL_MS = 2000;
