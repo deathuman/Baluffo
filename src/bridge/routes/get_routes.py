@@ -22,6 +22,7 @@ from pydantic import ValidationError as PydanticValidationError
 
 from src.bridge.api import BridgeApi
 from src.bridge.container_mode import is_container_runtime, send_container_unavailable
+from src.bridge.discovery_audit_artifacts import get_discovery_audit_artifacts_payload
 from src.bridge.fetch_report_review_state import load_fetch_report_with_dedup_review_state
 from src.bridge.registry_conflict_adjudication import overlay_adjudication
 from src.bridge.registry_conflicts import (
@@ -1216,6 +1217,10 @@ def handle_get(
 
     if path == "/ops/storage-health":
         handler.send_json(api.get_storage_health_payload())
+        return True
+
+    if path == "/ops/discovery-audit-artifacts":
+        handler.send_json(get_discovery_audit_artifacts_payload(api))
         return True
 
     if path == "/ops/fetch-report/sources":

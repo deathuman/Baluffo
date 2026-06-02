@@ -10,6 +10,19 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.31] - 2026-06-02
+
+### Added
+- Admin Ops now exposes bounded discovery audit artifact diagnostics for known audit files under the active data directory.
+- Windows Docker smoke builds can use a clean committed `git archive` context when live workspace reparse points block `docker build .`.
+
+### Fixed
+- Jobs pipeline starts now verify live pipeline status before showing a start failure, avoiding a false error toast when the start POST times out after the bridge has accepted the run.
+- Published container images now generate the portable encrypted GitHub App source-sync config from BuildKit secrets, matching desktop packaged sync behavior for Umbrel installs.
+
+### Notes
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.30] - 2026-06-02
 
 ### Fixed

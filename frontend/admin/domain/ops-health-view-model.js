@@ -33,6 +33,11 @@ const OPS_FETCHER_METRIC_SECTION_DEFINITIONS = [
     key: "diagnostics",
     title: "Diagnostics",
     description: "Supporting evidence that does not own an operator action queue."
+  },
+  {
+    key: "auditArtifacts",
+    title: "Audit Artifacts",
+    description: "Bounded discovery audit artifact evidence from the active data directory."
   }
 ];
 
@@ -194,6 +199,35 @@ function compactDedupExample(row) {
   };
 }
 
+function compactSummaryObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, item]) => item === null || ["string", "number", "boolean"].includes(typeof item))
+      .slice(0, 16)
+      .map(([key, item]) => [String(key), typeof item === "string" ? truncateString(item, 120) : item])
+  );
+}
+
+function compactAuditArtifact(row) {
+  return {
+    name: truncateString(row?.name || ""),
+    exists: Boolean(row?.exists),
+    relativePath: truncateString(row?.relativePath || ""),
+    pathDisplay: truncateString(row?.pathDisplay || ""),
+    sizeBytes: toNumber(row?.sizeBytes),
+    modifiedAt: truncateString(row?.modifiedAt || ""),
+    sha256: truncateString(row?.sha256 || "", 80),
+    topLevelKeys: (Array.isArray(row?.topLevelKeys) ? row.topLevelKeys : [])
+      .slice(0, 12)
+      .map(value => truncateString(value, 80)),
+    warnings: (Array.isArray(row?.warnings) ? row.warnings : [])
+      .slice(0, 8)
+      .map(value => truncateString(value, 80)),
+    summary: compactSummaryObject(row?.summary)
+  };
+}
+
 function baseDiagnostics(key, title, generatedAt) {
   return {
     key,
@@ -208,6 +242,7 @@ export function buildOpsFetcherDiagnosticsSections({
   history,
   failureSummary,
   taskLaneRows,
+  auditArtifacts,
   generatedAt = new Date().toISOString()
 } = {}) {
   const latestRun = latest && typeof latest === "object" ? latest : {};
@@ -222,6 +257,9 @@ export function buildOpsFetcherDiagnosticsSections({
   const dedup = latestRun?.dedupEvidence && typeof latestRun.dedupEvidence === "object" ? latestRun.dedupEvidence : {};
   const gate = dedup?.dedupAuditGate && typeof dedup.dedupAuditGate === "object" ? dedup.dedupAuditGate : {};
   const reviewState = latestRun?.dedupReviewStateSummary && typeof latestRun.dedupReviewStateSummary === "object" ? latestRun.dedupReviewStateSummary : {};
+  const auditArtifactsPayload = auditArtifacts && typeof auditArtifacts === "object" && !Array.isArray(auditArtifacts)
+    ? auditArtifacts
+    : {};
 
   return {
     taskStatus: {
@@ -302,6 +340,10 @@ export function buildOpsFetcherDiagnosticsSections({
         || conservativeStaticCleanupProposals?.blockedExamples,
         row => (row?.staticSourceId || row?.providerSourceId ? compactPairRow(row) : compactSourceRow(row))
       )
+    },
+    auditArtifacts: {
+      ...baseDiagnostics("auditArtifacts", "Audit Artifacts", generatedAt),
+      artifacts: boundedList(auditArtifactsPayload?.artifacts, compactAuditArtifact, 8)
     }
   };
 }

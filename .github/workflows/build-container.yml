@@ -46,6 +46,23 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Prepare sync private key BuildKit secret
+        shell: bash
+        env:
+          BALUFFO_SYNC_BUILD_PRIVATE_KEY_PEM: ${{ secrets.BALUFFO_SYNC_BUILD_PRIVATE_KEY_PEM }}
+        run: |
+          set -euo pipefail
+          key_file="${RUNNER_TEMP}/baluffo-sync-private-key.pem"
+          : > "${key_file}"
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            if [[ -z "${BALUFFO_SYNC_BUILD_PRIVATE_KEY_PEM}" ]]; then
+              echo "Missing BALUFFO_SYNC_BUILD_PRIVATE_KEY_PEM secret for container publish." >&2
+              exit 1
+            fi
+            printf '%s' "${BALUFFO_SYNC_BUILD_PRIVATE_KEY_PEM}" > "${key_file}"
+          fi
+          echo "BALUFFO_CONTAINER_SYNC_PRIVATE_KEY_FILE=${key_file}" >> "${GITHUB_ENV}"
+
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v6
@@ -66,5 +83,23 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            BALUFFO_CONTAINER_REQUIRE_SYNC_CONFIG=${{ github.event_name != 'pull_request' }}
+          secrets: |
+            BALUFFO_SYNC_BUILD_APP_ID=${{ secrets.BALUFFO_SYNC_BUILD_APP_ID }}
+            BALUFFO_SYNC_BUILD_INSTALLATION_ID=${{ secrets.BALUFFO_SYNC_BUILD_INSTALLATION_ID }}
+            BALUFFO_SYNC_BUILD_REPO=${{ secrets.BALUFFO_SYNC_BUILD_REPO }}
+            BALUFFO_SYNC_BUILD_BRANCH=${{ secrets.BALUFFO_SYNC_BUILD_BRANCH }}
+            BALUFFO_SYNC_BUILD_PATH=${{ secrets.BALUFFO_SYNC_BUILD_PATH }}
+            BALUFFO_SYNC_BUILD_ALLOWED_REPO=${{ secrets.BALUFFO_SYNC_BUILD_ALLOWED_REPO }}
+            BALUFFO_SYNC_BUILD_ALLOWED_BRANCH=${{ secrets.BALUFFO_SYNC_BUILD_ALLOWED_BRANCH }}
+            BALUFFO_SYNC_BUILD_ALLOWED_PATH_PREFIX=${{ secrets.BALUFFO_SYNC_BUILD_ALLOWED_PATH_PREFIX }}
+            BALUFFO_SYNC_BUILD_KEY_DERIVATION=${{ secrets.BALUFFO_SYNC_BUILD_KEY_DERIVATION }}
+            BALUFFO_SYNC_BUILD_PASSPHRASE_ENV=${{ secrets.BALUFFO_SYNC_BUILD_PASSPHRASE_ENV }}
+            BALUFFO_SYNC_BUILD_EMBEDDED_KEY_HINT=${{ secrets.BALUFFO_SYNC_BUILD_EMBEDDED_KEY_HINT }}
+            BALUFFO_SYNC_BUILD_EMBEDDED_KEY_VERSION=${{ secrets.BALUFFO_SYNC_BUILD_EMBEDDED_KEY_VERSION }}
+            BALUFFO_SYNC_BUILD_KEY_SALT=${{ secrets.BALUFFO_SYNC_BUILD_KEY_SALT }}
+          secret-files: |
+            BALUFFO_SYNC_BUILD_PRIVATE_KEY_PEM=${{ env.BALUFFO_CONTAINER_SYNC_PRIVATE_KEY_FILE }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

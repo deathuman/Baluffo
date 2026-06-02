@@ -234,6 +234,14 @@ Local build command:
 docker build -t ghcr.io/deathuman/baluffo:local .
 ```
 
+Prefer the normal live-workspace build above. On Windows workspaces where Docker context transfer fails on `.venv` reparse points or other live-tree artifacts, build committed `HEAD` from a clean `git archive` context instead:
+
+```bash
+python scripts/docker_build_clean_context.py --tag ghcr.io/deathuman/baluffo:local
+```
+
+The helper is a fallback for release-parity smoke builds. It does not include uncommitted changes; commit first or use the normal `docker build .` path when testing local edits.
+
 Local run command:
 
 ```bash
@@ -248,9 +256,13 @@ Runtime notes:
 - Persistent runtime state belongs under `/data`, including `baluffo-runtime.db`.
 - Desktop-only routes, updater behavior, owner-session lifecycle, and host-browser open behavior are disabled in container mode.
 - Playwright Chromium is baked into the image for deterministic first run.
+- Official GHCR publishes generate `packaging/github-app-sync-config.json` inside the image from GitHub Actions BuildKit secrets, using the same portable encrypted `embedded` sync config model as desktop packages.
+- Pull request and local container builds without sync build secrets still build, but `/sync/status` remains misconfigured until a publish build embeds the packaged GitHub App config.
 - The `.dockerignore` file must keep local secrets, sync config, local profiles, DBs, logs, `_out`, and fetched artifacts out of the image context.
 
 The GitHub workflow `.github/workflows/build-container.yml` publishes the public multi-arch image `ghcr.io/deathuman/baluffo` for `linux/amd64` and `linux/arm64`.
+
+Raw-LAN Umbrel installs are unauthenticated for anyone who can reach the app port. The embedded source-sync config follows the existing desktop packaging deterrence model and should use the same least-privilege GitHub App allowlist.
 
 Umbrel private app-store metadata lives at `umbrel-app-store.yml` and `deathuman-baluffo/`. The Compose file uses `app_proxy` with `APP_PORT: 8080`, `PROXY_AUTH_ADD: "false"`, and `${APP_DATA_DIR}/data:/data`. Do not add a `web` service `ports: "8877:8080"` mapping; Umbrel binds the manifest `port: 8877` through `app_proxy`.
 

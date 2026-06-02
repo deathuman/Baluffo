@@ -80,6 +80,64 @@ test("admin render: frontend perf counters appear in ops diagnostics", () => {
   assert.match(metricsEl.innerHTML, /count 3/i);
 });
 
+test("admin render: discovery audit artifact diagnostics are bounded and actionable", () => {
+  const copyButton = makeAttrButton({ "data-ops-diagnostics-copy": "auditArtifacts" });
+  const refreshButton = makeAttrButton({});
+  const metricsEl = makeEl({
+    "[data-ops-diagnostics-copy]": [copyButton],
+    '[data-action="refresh-discovery-audit-artifacts"]': [refreshButton]
+  });
+  const copied = [];
+  let refreshed = 0;
+
+  renderAdminOpsFetcherMetrics(metricsEl, {
+    latestRun: {},
+    history: {},
+    discoveryAuditArtifacts: {
+      ok: true,
+      artifacts: [
+        {
+          name: "sheet-directory",
+          exists: true,
+          pathDisplay: "/data/sheet-directory-discovery-audit.json",
+          sizeBytes: 1234,
+          modifiedAt: "2026-06-02T20:00:00Z",
+          sha256: "abc123",
+          topLevelKeys: ["status", "summary"],
+          summary: { status: "ok", candidatesCount: 1 },
+          warnings: []
+        },
+        {
+          name: "web-search",
+          exists: false,
+          pathDisplay: "/data/web-search-discovery-audit.json",
+          sizeBytes: 0,
+          warnings: ["missing"]
+        }
+      ]
+    }
+  }, null, {
+    onCopySectionDiagnostics: section => copied.push(section),
+    onRefreshAuditArtifacts: () => { refreshed += 1; }
+  });
+
+  assert.match(metricsEl.innerHTML, /Audit Artifacts/i);
+  assert.match(metricsEl.innerHTML, /Discovery audit artifacts/i);
+  assert.match(metricsEl.innerHTML, /1\/2 present/i);
+  assert.match(metricsEl.innerHTML, /sheet-directory-discovery-audit\.json/i);
+  assert.match(metricsEl.innerHTML, /Refresh artifacts/i);
+  assert.doesNotMatch(metricsEl.innerHTML, /do-not-expose|rawSourceRows/i);
+
+  copyButton.click();
+  refreshButton.click();
+
+  assert.equal(copied.length, 1);
+  assert.equal(copied[0].key, "auditArtifacts");
+  assert.equal(copied[0].artifacts.length, 2);
+  assert.equal(copied[0].artifacts[0].summary.candidatesCount, 1);
+  assert.equal(refreshed, 1);
+});
+
 test("admin render: dedup review action wiring survives disclosure", () => {
   const reviewButton = makeAttrButton({
     "data-dedup-review-action": "reviewed_safe",

@@ -20,6 +20,7 @@ import { setTooltip } from "../../../shared/ui/index.js?v=6";
 const OPS_TASK_STATE_SUMMARY_PATH = "/ops/task-state?view=summary";
 const OPS_HISTORY_DETAIL_PATH = "/ops/history?limit=80";
 const OPS_FETCHER_METRICS_DETAIL_PATH = "/ops/fetcher-metrics?windowRuns=80";
+const OPS_DISCOVERY_AUDIT_ARTIFACTS_PATH = "/ops/discovery-audit-artifacts";
 const SOURCE_POLICY_DETAIL_PATH = "/source-policy/recommendations";
 const REGISTRY_CONFLICTS_SUMMARY_PATH = "/registry/conflicts?view=summary";
 const REGISTRY_CONFLICTS_DETAIL_PATH = "/registry/conflicts";
@@ -476,6 +477,16 @@ export function createOpsHealthController({
     showToast(`Could not copy ${title} run diagnostics.`, "warn");
   }
 
+  async function handleRefreshAuditArtifacts() {
+    state.latestDiscoveryAuditArtifactsPayload = { ok: true, artifacts: [] };
+    try {
+      await loadOpsOverviewDetailData(opsRenderToken);
+      showToast("Discovery audit artifacts refreshed.", "success");
+    } catch (err) {
+      showToast(`Could not refresh discovery audit artifacts: ${getErrorMessage(err)}`, "warn");
+    }
+  }
+
   async function handleAbortRun(row) {
     const taskType = String(row?.taskType || "").trim().toLowerCase();
     const runId = String(row?.runId || "").trim();
@@ -683,10 +694,19 @@ export function createOpsHealthController({
       : { summary: { conflictCount: 0 }, conflicts: [] };
   }
 
+  function getCachedDiscoveryAuditArtifactsPayload() {
+    return state.latestDiscoveryAuditArtifactsPayload
+      && typeof state.latestDiscoveryAuditArtifactsPayload === "object"
+      && !Array.isArray(state.latestDiscoveryAuditArtifactsPayload)
+      ? state.latestDiscoveryAuditArtifactsPayload
+      : { ok: true, artifacts: [] };
+  }
+
   function buildFetcherMetricsPayload(fetcherMetrics = state.latestOpsFetcherMetricsPayload || {}, health = state.latestOpsHealthCache || {}) {
     const frontendPerfCounters = getFrontendPerfCounters();
     return {
       ...(fetcherMetrics && typeof fetcherMetrics === "object" ? fetcherMetrics : {}),
+      discoveryAuditArtifacts: getCachedDiscoveryAuditArtifactsPayload(),
       frontendPerfCounters: (
         frontendPerfCounters
         && typeof frontendPerfCounters === "object"
@@ -747,6 +767,7 @@ export function createOpsHealthController({
         {
           onDedupReviewAction: handleDedupReviewAction,
           onCopySectionDiagnostics: handleCopySectionDiagnostics,
+          onRefreshAuditArtifacts: handleRefreshAuditArtifacts,
           runModel
         }
       );
@@ -765,9 +786,10 @@ export function createOpsHealthController({
 
   function loadOpsOverviewDetailData(renderToken = opsRenderToken) {
     const detailLoad = (async () => {
-      const [historyResult, fetcherMetricsResult] = await Promise.allSettled([
+      const [historyResult, fetcherMetricsResult, auditArtifactsResult] = await Promise.allSettled([
         getBridge(OPS_HISTORY_DETAIL_PATH),
-        getBridge(OPS_FETCHER_METRICS_DETAIL_PATH)
+        getBridge(OPS_FETCHER_METRICS_DETAIL_PATH),
+        getBridge(OPS_DISCOVERY_AUDIT_ARTIFACTS_PATH)
       ]);
       let changed = false;
       if (
@@ -786,6 +808,15 @@ export function createOpsHealthController({
         && !Array.isArray(fetcherMetricsResult.value)
       ) {
         state.latestOpsFetcherMetricsPayload = fetcherMetricsResult.value;
+        changed = true;
+      }
+      if (
+        auditArtifactsResult.status === "fulfilled"
+        && auditArtifactsResult.value
+        && typeof auditArtifactsResult.value === "object"
+        && !Array.isArray(auditArtifactsResult.value)
+      ) {
+        state.latestDiscoveryAuditArtifactsPayload = auditArtifactsResult.value;
         changed = true;
       }
       if (changed) renderDeferredOverviewDetails(renderToken);
@@ -960,6 +991,7 @@ export function createOpsHealthController({
           {
             onDedupReviewAction: handleDedupReviewAction,
             onCopySectionDiagnostics: handleCopySectionDiagnostics,
+            onRefreshAuditArtifacts: handleRefreshAuditArtifacts,
             runModel
           }
         );

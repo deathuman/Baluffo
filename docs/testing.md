@@ -179,6 +179,7 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Build portable EXE | `npm run build:portable-exe` |
 | Build Linux AppImage | `npm run build:linux` |
 | Build container image | `docker build -t ghcr.io/deathuman/baluffo:local .` |
+| Build clean archived container context | `python scripts/docker_build_clean_context.py --tag ghcr.io/deathuman/baluffo:local` |
 | Prepare shared portable EXE | `npm run build:portable-exe:prepare` |
 | Ship bundle leaf builder | `python scripts/build_ship_bundle.py --bundle-version <version>` |
 | Portable EXE leaf builder | `python scripts/build_portable_exe.py --bundle-version <version>` |
@@ -215,7 +216,13 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Container bridge/static/runtime seeding and CORS policy | `python -m pytest tests/bridge/test_container_runtime.py -q` |
 | Container frontend mode and same-origin bridge | `node --test --test-reporter=dot tests/frontend/unit/admin-config.test.mjs tests/frontend/unit/api-client.test.mjs tests/frontend/unit/admin-runtime-bridge-base.test.mjs tests/frontend/unit/container-local-data.test.mjs tests/frontend/unit/desktop-local-data-navigation.test.mjs tests/frontend/unit/local-data-runtime-contract.test.mjs` |
 | Container image build | `docker build -t ghcr.io/deathuman/baluffo:local .` |
+| Windows/reparse-safe image build fallback | `python scripts/docker_build_clean_context.py --tag ghcr.io/deathuman/baluffo:local` |
+| Container sync config packaging | `python -m pytest tests/test_container_packaging.py tests/test_build_container_sync_config.py tests/test_build_sync_app_config.py tests/test_source_sync.py -q` |
 | Container smoke | `docker run --rm -p 8877:8080 -v baluffo-data:/data ghcr.io/deathuman/baluffo:local`, then poll `http://127.0.0.1:8877/ops/health` and load `http://127.0.0.1:8877/jobs.html` |
+
+Prefer the normal `docker build .` command. The clean-context helper builds committed `HEAD` from a temporary `git archive` under `.tmp` and cleans it afterward, so it is only a fallback when live Windows workspace context transfer is blocked by reparse points or similar local artifacts.
+
+Official GHCR publishes embed the portable encrypted GitHub App sync config from GitHub Actions BuildKit secrets. Pull request and local builds without those secrets remain valid container smoke targets, but `/sync/status` will report a missing packaged config in those images.
 
 Use `npm run release:preflight` when you are about to push a release commit, move a release tag, or publish release artifacts. It runs the pre-commit gate, the full Python lane, frontend unit tests, prepares the shared portable EXE once, and then runs the packaged desktop release lanes in canonical order.
 

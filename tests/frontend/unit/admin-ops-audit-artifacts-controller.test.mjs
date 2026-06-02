@@ -1,0 +1,97 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { createAdminOpsController } from "../../../frontend/admin/app/ops.js";
+import {
+  createDeferredRenderScheduler,
+  createElement,
+} from "./helpers/admin-controller-test-helpers.mjs";
+
+async function flushAdminOpsBackground() {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+test("admin ops controller lazy-loads discovery audit artifacts into metrics", async () => {
+  const state = {
+    latestOpsHealthCache: null,
+    adminBusyState: {
+      opsLoad: false,
+      liveFetchRunning: false,
+      liveDiscoveryRunning: false,
+      liveSyncRunning: false,
+      livePipelineRunning: false
+    }
+  };
+  const refs = {
+    adminSyncStatusEl: createElement(),
+    adminSyncConfigHintEl: createElement(),
+    adminOpsAlertsEl: createElement(),
+    adminOpsKpisEl: createElement(),
+    adminOpsScheduleEl: createElement(),
+    adminOpsFetcherMetricsEl: createElement(),
+    adminOpsHistoryEl: createElement(),
+    adminOpsTrendsEl: createElement(),
+    adminRegistryConflictsReviewEl: createElement()
+  };
+  const calls = [];
+  const renderedMetrics = [];
+  const auditPayload = {
+    ok: true,
+    artifacts: [{ name: "sheet-directory", exists: true, relativePath: "sheet-directory-discovery-audit.json" }]
+  };
+  const renderScheduler = createDeferredRenderScheduler();
+  const controller = createAdminOpsController({
+    state,
+    refs,
+    getBridge: async path => {
+      calls.push(path);
+      if (path === "/ops/dashboard-health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
+      if (path === "/ops/task-state?view=summary") return { tasks: [], count: 0, summary: true };
+      if (path === "/registry/conflicts?view=summary") return { summary: { conflictCount: 0 }, conflicts: [] };
+      if (path === "/ops/history?limit=80") return { runs: [] };
+      if (path === "/ops/fetcher-metrics?windowRuns=80") return { latestRun: {} };
+      if (path === "/ops/discovery-audit-artifacts") return auditPayload;
+      throw new Error(`unexpected path ${path}`);
+    },
+    postBridge: async () => ({}),
+    deriveAdminRunsModel: () => ({
+      currentRows: [],
+      visibleCompletedRows: [],
+      olderCompletedRows: [],
+      hasLiveRuns: false,
+      liveTypes: []
+    }),
+    getOpsPollIntervalMs: () => 5000,
+    renderAdminOpsAlerts() {},
+    renderAdminOpsKpis() {},
+    renderAdminOpsSchedule() {},
+    renderAdminOpsFetcherMetrics(_el, metrics) {
+      renderedMetrics.push(metrics);
+    },
+    renderAdminOpsTrends() {},
+    renderAdminOpsHistory() {},
+    renderAdminRegistryConflicts() {},
+    setBusyFlag(key, value) {
+      state.adminBusyState[key] = value;
+    },
+    showToast() {},
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    adminDispatch: { dispatch() {} },
+    adminActions: { OPS_REFRESHED: "ops/refreshed" },
+    escapeHtml: value => String(value || ""),
+    onBridgeStatusChange() {},
+    bridgeStatusPollIntervalMs: 1000,
+    idlePollIntervalMs: 1000,
+    renderScheduler: renderScheduler.schedule
+  });
+
+  await controller.loadOpsHealthData();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  await flushAdminOpsBackground();
+  renderScheduler.flush();
+  controller.stopOpsHealthPolling();
+
+  assert.equal(refs.adminOpsAlertsEl.classList.contains("missing"), false);
+  assert.equal(calls.includes("/ops/discovery-audit-artifacts"), true);
+  assert.equal(renderedMetrics.at(-1)?.discoveryAuditArtifacts, auditPayload);
+});

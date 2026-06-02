@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.7
+
 FROM python:3.13-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -9,6 +11,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+ARG BALUFFO_CONTAINER_REQUIRE_SYNC_CONFIG=false
+
 COPY requirements-lock.txt ./
 RUN python -m pip install --no-cache-dir --upgrade pip \
     && python -m pip install --no-cache-dir -r requirements-lock.txt \
@@ -16,6 +20,26 @@ RUN python -m pip install --no-cache-dir --upgrade pip \
     && chmod -R a+rX /ms-playwright
 
 COPY . .
+
+RUN --mount=type=secret,id=BALUFFO_SYNC_BUILD_APP_ID,required=false \
+    --mount=type=secret,id=BALUFFO_SYNC_BUILD_INSTALLATION_ID,required=false \
+    --mount=type=secret,id=BALUFFO_SYNC_BUILD_REPO,required=false \
+    --mount=type=secret,id=BALUFFO_SYNC_BUILD_PRIVATE_KEY_PEM,required=false \
+    --mount=type=secret,id=BALUFFO_SYNC_BUILD_BRANCH,required=false \
+    --mount=type=secret,id=BALUFFO_SYNC_BUILD_PATH,required=false \
+    --mount=type=secret,id=BALUFFO_SYNC_BUILD_ALLOWED_REPO,required=false \
+    --mount=type=secret,id=BALUFFO_SYNC_BUILD_ALLOWED_BRANCH,required=false \
+    --mount=type=secret,id=BALUFFO_SYNC_BUILD_ALLOWED_PATH_PREFIX,required=false \
+    --mount=type=secret,id=BALUFFO_SYNC_BUILD_KEY_DERIVATION,required=false \
+    --mount=type=secret,id=BALUFFO_SYNC_BUILD_PASSPHRASE_ENV,required=false \
+    --mount=type=secret,id=BALUFFO_SYNC_BUILD_EMBEDDED_KEY_HINT,required=false \
+    --mount=type=secret,id=BALUFFO_SYNC_BUILD_EMBEDDED_KEY_VERSION,required=false \
+    --mount=type=secret,id=BALUFFO_SYNC_BUILD_KEY_SALT,required=false \
+    if [ "$BALUFFO_CONTAINER_REQUIRE_SYNC_CONFIG" = "true" ]; then \
+      python scripts/build_container_sync_config.py --require; \
+    else \
+      python scripts/build_container_sync_config.py; \
+    fi
 
 RUN groupadd --gid 1000 baluffo \
     && useradd --uid 1000 --gid baluffo --create-home --shell /usr/sbin/nologin baluffo \

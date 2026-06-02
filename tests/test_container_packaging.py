@@ -48,15 +48,47 @@ def test_ghcr_workflow_builds_multi_arch_image_without_pr_push() -> None:
     assert "platforms: linux/amd64,linux/arm64" in content
     assert "push: ${{ github.event_name != 'pull_request' }}" in content
     assert "type=raw,value=latest,enable={{is_default_branch}}" in content
+    assert (
+        "BALUFFO_CONTAINER_REQUIRE_SYNC_CONFIG=${{ github.event_name != 'pull_request' }}"
+        in content
+    )
+    assert "Missing BALUFFO_SYNC_BUILD_PRIVATE_KEY_PEM secret for container publish." in content
+    assert "secret-files:" in content
+    assert (
+        "BALUFFO_SYNC_BUILD_PRIVATE_KEY_PEM=${{ env.BALUFFO_CONTAINER_SYNC_PRIVATE_KEY_FILE }}"
+        in content
+    )
+    for secret_name in (
+        "BALUFFO_SYNC_BUILD_APP_ID",
+        "BALUFFO_SYNC_BUILD_INSTALLATION_ID",
+        "BALUFFO_SYNC_BUILD_REPO",
+    ):
+        assert f"{secret_name}=${{{{ secrets.{secret_name} }}}}" in content
 
 
 def test_dockerfile_prepares_bind_mount_before_non_root_runtime() -> None:
     content = _read("Dockerfile")
 
+    assert "# syntax=docker/dockerfile:" in content
     assert "useradd --uid 1000 --gid baluffo" in content
     assert "src.container_entrypoint" in content
     assert "USER baluffo" not in content
     assert "src.container_server" not in content.split("CMD", 1)[-1]
+
+
+def test_dockerfile_generates_container_sync_config_from_buildkit_secrets() -> None:
+    content = _read("Dockerfile")
+
+    assert "ARG BALUFFO_CONTAINER_REQUIRE_SYNC_CONFIG=false" in content
+    assert "scripts/build_container_sync_config.py --require" in content
+    assert "COPY packaging/github-app-sync-config.json" not in content
+    for secret_name in (
+        "BALUFFO_SYNC_BUILD_APP_ID",
+        "BALUFFO_SYNC_BUILD_INSTALLATION_ID",
+        "BALUFFO_SYNC_BUILD_REPO",
+        "BALUFFO_SYNC_BUILD_PRIVATE_KEY_PEM",
+    ):
+        assert f"--mount=type=secret,id={secret_name},required=false" in content
 
 
 def test_umbrel_metadata_uses_app_proxy_raw_lan_contract() -> None:

@@ -338,6 +338,71 @@ function formatOpsFetcherMetricSection(section) {
   `;
 }
 
+function formatArtifactSummary(summary) {
+  const entries = summary && typeof summary === "object" && !Array.isArray(summary)
+    ? Object.entries(summary)
+    : [];
+  if (!entries.length) return "no summary";
+  return entries
+    .slice(0, 8)
+    .map(([key, value]) => {
+      if (value === null || ["string", "number", "boolean"].includes(typeof value)) {
+        return `${key} ${String(value)}`;
+      }
+      if (Array.isArray(value)) {
+        return `${key} [${value.length.toLocaleString()}]`;
+      }
+      if (value && typeof value === "object") {
+        return `${key} {${Object.keys(value).slice(0, 4).join(", ")}}`;
+      }
+      return `${key} ${String(value)}`;
+    })
+    .join(", ");
+}
+
+function formatDiscoveryAuditArtifacts(payload = {}) {
+  const artifacts = Array.isArray(payload?.artifacts) ? payload.artifacts : [];
+  if (!artifacts.length) {
+    return `
+      <div class="admin-ops-schedule-item admin-ops-full-row">
+        <strong>Discovery audit artifacts</strong>: no artifact diagnostics loaded.
+        <button type="button" class="btn clear-filters-btn" data-action="refresh-discovery-audit-artifacts">Refresh artifacts</button>
+      </div>
+    `;
+  }
+  const found = artifacts.filter(row => row?.exists).length;
+  const warningCount = artifacts.reduce((total, row) => total + (Array.isArray(row?.warnings) ? row.warnings.length : 0), 0);
+  const rowsHtml = artifacts.map(row => {
+    const warnings = Array.isArray(row?.warnings) && row.warnings.length
+      ? ` warnings: ${row.warnings.map(value => escapeHtml(value)).join(", ")}`
+      : "";
+    return `
+      <tr>
+        <td>${escapeHtml(row?.name || "artifact")}</td>
+        <td>${row?.exists ? "present" : "missing"}</td>
+        <td>${escapeHtml(row?.pathDisplay || row?.relativePath || "")}</td>
+        <td>${Number(row?.sizeBytes || 0).toLocaleString()} B</td>
+        <td>${escapeHtml(row?.modifiedAt || "")}</td>
+        <td>${escapeHtml(formatArtifactSummary(row?.summary || {}))}${warnings}</td>
+      </tr>
+    `;
+  }).join("");
+  return `
+    <div class="admin-ops-schedule-item admin-ops-full-row">
+      <strong>Discovery audit artifacts</strong>: ${found.toLocaleString()}/${artifacts.length.toLocaleString()} present, ${warningCount.toLocaleString()} warnings.
+      <button type="button" class="btn clear-filters-btn" data-action="refresh-discovery-audit-artifacts">Refresh artifacts</button>
+    </div>
+    <div class="admin-table-shell admin-ops-full-row">
+      <table class="admin-table admin-ops-audit-artifacts-table">
+        <thead>
+          <tr><th>Name</th><th>Status</th><th>Path</th><th>Size</th><th>Modified</th><th>Summary</th></tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>
+  `;
+}
+
 function formatOpsTaskLane(rows, diagnostics = null) {
   const laneRows = Array.isArray(rows) ? rows : [];
   const body = laneRows.map(row => {
@@ -413,6 +478,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     conservativeStaticCleanupProposals: latest?.conservativeStaticCleanupProposals || {},
     sourcePolicyRecommendationExport: latest?.sourcePolicyRecommendationExport || {},
     frontendPerfCounters: metrics?.frontendPerfCounters || {},
+    discoveryAuditArtifacts: metrics?.discoveryAuditArtifacts || {},
     runModel: options?.runModel || {},
     failureSummary: summary
   });
@@ -780,13 +846,15 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const frontendPerfSectionHtml = `
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Frontend fetch/render counters</strong>: ${frontendPerfSummary}</div>
   `;
+  const auditArtifactsSectionHtml = formatDiscoveryAuditArtifacts(metrics?.discoveryAuditArtifacts || {});
 
   const taskLaneRows = buildOpsTaskLaneRows(options?.runModel || {});
   const diagnosticsByKey = buildOpsFetcherDiagnosticsSections({
     latest,
     history,
     failureSummary: summary,
-    taskLaneRows
+    taskLaneRows,
+    auditArtifacts: metrics?.discoveryAuditArtifacts || {}
   });
   const taskLaneHtml = formatOpsTaskLane(taskLaneRows, diagnosticsByKey.taskStatus);
   const sectionHtmlByKey = {
@@ -794,7 +862,8 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     failures: failuresSectionHtml,
     frontendPerf: frontendPerfSectionHtml,
     sourceHealth: sourceHealthSectionHtml,
-    sourcePolicy: sourcePolicySectionHtml
+    sourcePolicy: sourcePolicySectionHtml,
+    auditArtifacts: auditArtifactsSectionHtml
   };
   if (options?.includeDedupSection === true) {
     sectionHtmlByKey.dedup = dedupSectionHtml;
@@ -835,6 +904,13 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
         const section = diagnosticsByKey[key];
         if (!section) return;
         options.onCopySectionDiagnostics(section);
+      });
+    });
+  }
+  if (typeof options?.onRefreshAuditArtifacts === "function") {
+    metricsEl.querySelectorAll('[data-action="refresh-discovery-audit-artifacts"]').forEach(button => {
+      button.addEventListener("click", () => {
+        options.onRefreshAuditArtifacts();
       });
     });
   }
