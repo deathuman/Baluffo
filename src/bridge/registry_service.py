@@ -556,16 +556,20 @@ class RegistryService:
                         )
                         return {
                             **json_summary,
+                            "authorityMode": mode,
                             "generation": str(summary.get("generation") or ""),
                             "publishedAt": str(summary.get("publishedAt") or ""),
                             "updatedAt": str(summary.get("updatedAt") or ""),
                             "sqliteStateHash": str(summary.get("stateHash") or ""),
                             "sqliteTombstoneHash": str(summary.get("tombstoneHash") or ""),
                         }
-                    return summary
+                    return {**summary, "authorityMode": mode}
             except _STORAGE_OPERATION_ERRORS:
                 pass
-        return self._cheap_json_summary_payload(reason=f"{mode}_summary")
+        return {
+            **self._cheap_json_summary_payload(reason=f"{mode}_summary"),
+            "authorityMode": mode,
+        }
 
     def persist_state(
         self, state: dict[str, list[dict[str, Any]]]

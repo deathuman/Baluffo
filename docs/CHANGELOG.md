@@ -10,6 +10,18 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.32] - 2026-06-03
+
+### Added
+- Admin Bridge now exposes a lightweight `/registry/summary` response and a combined `/registry/sources` source-table response so Admin can refresh registry views without three separate full registry loads.
+
+### Fixed
+- Discovery completion watching now waits for registry finalization and auto-approval terminal status before refreshing source tables, avoiding misleading post-discovery registry timeout warnings on Umbrel.
+- Admin background source-table refreshes now use a longer bounded timeout, preserve existing rows on delayed refreshes, and log delayed refreshes separately from discovery worker failures.
+
+### Notes
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.31] - 2026-06-02
 
 ### Added

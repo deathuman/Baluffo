@@ -789,9 +789,17 @@ def _include_hidden_registry_rows(query: dict[str, list[str]]) -> bool:
 
 def _pending_registry_payload(api: BridgeApi, query: dict[str, list[str]]) -> dict[str, Any]:
     state = api.load_state()
+    return _pending_registry_payload_from_state(api, query, state)
+
+
+def _pending_registry_payload_from_state(
+    api: BridgeApi,
+    query: dict[str, list[str]],
+    state: dict[str, list[dict[str, Any]]],
+) -> dict[str, Any]:
     pending_rows = _normalize_pending_discovery_job_counts(
         _overlay_discovery_candidate_fields(
-            state["pending"],
+            state.get("pending") or [],
             _read_discovery_candidate_rows(api),
         )
     )
@@ -801,6 +809,91 @@ def _pending_registry_payload(api: BridgeApi, query: dict[str, list[str]]) -> di
     summary = api.summarize_state(state)
     summary["hiddenPendingCount"] = hidden_pending_count
     return {"sources": pending_rows, "summary": summary}
+
+
+def _include_hidden_pending_registry_rows(query: dict[str, list[str]]) -> bool:
+    return str((query.get("includeHiddenPending") or [""])[0] or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+
+
+def _requested_registry_source_buckets(query: dict[str, list[str]]) -> tuple[list[str], str]:
+    raw = str((query.get("buckets") or ["pending,active,rejected"])[0] or "").strip()
+    buckets = [item.strip().lower() for item in raw.split(",") if item.strip()]
+    if not buckets:
+        buckets = ["pending", "active", "rejected"]
+    allowed = {"pending", "active", "rejected"}
+    invalid = [bucket for bucket in buckets if bucket not in allowed]
+    if invalid:
+        return [], ", ".join(sorted(set(invalid)))
+    deduped: list[str] = []
+    for bucket in buckets:
+        if bucket not in deduped:
+            deduped.append(bucket)
+    return deduped, ""
+
+
+def _registry_authority_mode_from_summary(summary: dict[str, Any]) -> str:
+    explicit = str(summary.get("authorityMode") or "").strip().lower()
+    if explicit:
+        return explicit
+    reason = str(summary.get("reason") or "").strip().lower()
+    if reason.startswith("sqlite"):
+        return "sqlite"
+    if reason.startswith("shadow"):
+        return "shadow"
+    if reason.startswith("json"):
+        return "json"
+    return ""
+
+
+def _registry_summary_route_payload(api: BridgeApi) -> dict[str, Any]:
+    summary = _as_dict(api.get_registry_summary_payload())
+    generated_at = str(
+        summary.get("updatedAt") or summary.get("publishedAt") or datetime.now(UTC).isoformat()
+    )
+    return {
+        "ok": True,
+        "summary": summary,
+        "authorityMode": _registry_authority_mode_from_summary(summary),
+        "generatedAt": generated_at,
+    }
+
+
+def _registry_sources_payload(
+    api: BridgeApi, query: dict[str, list[str]]
+) -> tuple[int, dict[str, Any]]:
+    buckets, invalid = _requested_registry_source_buckets(query)
+    if invalid:
+        return 400, {
+            "ok": False,
+            "error": "invalid registry bucket",
+            "invalidBuckets": invalid,
+        }
+    state = api.load_state()
+    summary = api.summarize_state(state)
+    sources: dict[str, list[dict[str, Any]]] = {}
+    if "pending" in buckets:
+        pending_query = dict(query)
+        pending_query["includeHidden"] = [
+            "1" if _include_hidden_pending_registry_rows(query) else "0"
+        ]
+        pending_payload = _pending_registry_payload_from_state(api, pending_query, state)
+        sources["pending"] = [
+            dict(row) for row in _as_list(pending_payload.get("sources")) if isinstance(row, dict)
+        ]
+        summary = {**summary, **_as_dict(pending_payload.get("summary"))}
+    if "active" in buckets:
+        sources["active"] = [
+            dict(row) for row in state.get("active") or [] if isinstance(row, dict)
+        ]
+    if "rejected" in buckets:
+        sources["rejected"] = [
+            dict(row) for row in state.get("rejected") or [] if isinstance(row, dict)
+        ]
+    return 200, {"ok": True, "sources": sources, "summary": summary}
 
 
 def _read_utf8_log_text(path: Path) -> str:
@@ -1110,6 +1203,11 @@ def handle_get(
         handler.send_json({"sources": state["rejected"], "summary": api.summarize_state(state)})
         return True
 
+    if path == "/registry/sources":
+        status, payload = _registry_sources_payload(api, query)
+        handler.send_json(payload, status=status)
+        return True
+
     if path == "/discovery/log":
         offset_raw = (query.get("offset") or ["0"])[0]
         try:
@@ -1139,13 +1237,7 @@ def handle_get(
         return True
 
     if path == "/registry/summary":
-        state = api.load_state()
-        handler.send_json(
-            {
-                "summary": api.summarize_state(state),
-                "autoHeal": api.get_registry_auto_heal_report(),
-            }
-        )
+        handler.send_json(_registry_summary_route_payload(api))
         return True
 
     if path == "/ops/health":

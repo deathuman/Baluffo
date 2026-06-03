@@ -20,6 +20,41 @@ import { deriveDiscoveryQueuedCount } from "../../domain/progress.js";
 
 const DISCOVERY_LIVE_POLL_TIMEOUT_MS = 3500;
 const DISCOVERY_LIVE_POLL_BACKOFF_MAX_MS = 5000;
+const TERMINAL_FINALIZATION_STATUSES = new Set([
+  "completed",
+  "failed",
+  "error",
+  "canceled",
+  "cancelled",
+  "disabled",
+  "skipped"
+]);
+
+function finalizationStatus(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isTerminalFinalizationStatus(value) {
+  const status = finalizationStatus(value);
+  return !status || TERMINAL_FINALIZATION_STATUSES.has(status);
+}
+
+function isDiscoveryRegistryFinalizationReady(report) {
+  const runtime = report?.runtime && typeof report.runtime === "object" ? report.runtime : {};
+  const registryFinalization = runtime.registryFinalization && typeof runtime.registryFinalization === "object"
+    ? runtime.registryFinalization
+    : null;
+  const autoApproval = runtime.autoApproval && typeof runtime.autoApproval === "object"
+    ? runtime.autoApproval
+    : null;
+  const registryReady = registryFinalization
+    ? isTerminalFinalizationStatus(registryFinalization.status)
+    : true;
+  const autoApprovalReady = autoApproval && autoApproval.enabled === true
+    ? isTerminalFinalizationStatus(autoApproval.status)
+    : true;
+  return registryReady && autoApprovalReady;
+}
 
 export function createAdminDiscoveryWatchController({
   state,
@@ -236,6 +271,24 @@ export function createAdminDiscoveryWatchController({
 
     const finishedMs = parseReportTimestampMs(report?.finishedAt);
     if (finishedMs > 0 && shouldApplyDiscoveryFinishedGate(report)) {
+      if (!isDiscoveryRegistryFinalizationReady(report)) {
+        const runtime = report?.runtime && typeof report.runtime === "object" ? report.runtime : {};
+        const registryStatus = finalizationStatus(runtime?.registryFinalization?.status) || "running";
+        const autoApprovalStatus = finalizationStatus(runtime?.autoApproval?.status) || "running";
+        const waitSignature = [
+          String(report?.runId || state.discoveryOptimisticRun?.runId || ""),
+          String(report?.finishedAt || ""),
+          registryStatus,
+          autoApprovalStatus
+        ].join("|");
+        updateDiscoveryProgressFromReport(report, { running: true });
+        if (state.discoveryFinalizationWaitSignature !== waitSignature) {
+          state.discoveryFinalizationWaitSignature = waitSignature;
+          appendDiscoveryLog("Discovery finalizing source registries before refreshing source tables.", "info");
+        }
+        scheduleDiscoveryCompletionPoll(nextPollDelayMs);
+        return;
+      }
       const summary = report?.summary || {};
       const queuedCount = deriveDiscoveryQueuedCount(report);
       const deferredCount = Number(summary.discoverableButDeferredCount ?? 0);

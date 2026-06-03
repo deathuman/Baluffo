@@ -535,6 +535,105 @@ test("admin discovery controller syncs source tables once after completion", asy
   }
 });
 
+test("admin discovery controller waits for registry finalization before source table sync", async () => {
+  const timerStub = stubScheduledTimers();
+  const syncCalls = [];
+  try {
+    const fixture = createDiscoveryControllerFixture({
+      state: {
+        discoveryLaunchAtMs: Date.parse("2026-03-08T10:00:00.000Z"),
+        discoveryOptimisticRun: {
+          runId: "discovery_finalizing_1",
+          startedAt: "2026-03-08T10:00:00.000Z"
+        }
+      },
+      options: {
+        getBridge: async path => {
+          fixture.calls.push(path);
+          if (path === "/ops/task-live/discovery") return null;
+          if (path === "/discovery/report") {
+            return {
+              runId: "discovery_finalizing_1",
+              startedAt: "2026-03-08T10:00:00.000Z",
+              finishedAt: "2026-03-08T10:03:00.000Z",
+              runtime: {
+                registryFinalization: { status: "running" },
+                autoApproval: { enabled: true, status: "completed" }
+              },
+              summary: { foundEndpointCount: 1, probedCandidateCount: 1, failedProbeCount: 0 }
+            };
+          }
+          if (String(path).startsWith("/discovery/log?offset=")) return { text: "", nextOffset: 0 };
+          throw new Error(`unexpected path ${path}`);
+        },
+        syncSourceTablesAfterTaskCompletion: async payload => {
+          syncCalls.push(payload);
+        }
+      }
+    });
+    const controller = createAdminDiscoveryController(fixture.options);
+
+    controller.startDiscoveryCompletionWatch();
+    await timerStub.scheduled[timerStub.scheduled.length - 1]();
+
+    assert.equal(syncCalls.length, 0);
+    assert.equal(fixture.state.adminBusyState.discoveryWatch, true);
+    assert.ok(fixture.logs.some(line => /finalizing source registries/i.test(line)));
+    assert.ok(timerStub.scheduled.length >= 2);
+  } finally {
+    timerStub.restore();
+  }
+});
+
+test("admin discovery controller completes when finalization is terminal and auto approval failed", async () => {
+  const timerStub = stubScheduledTimers();
+  const syncCalls = [];
+  try {
+    const fixture = createDiscoveryControllerFixture({
+      state: {
+        discoveryLaunchAtMs: Date.parse("2026-03-08T10:00:00.000Z"),
+        discoveryOptimisticRun: {
+          runId: "discovery_done_failed_auto_approval",
+          startedAt: "2026-03-08T10:00:00.000Z"
+        }
+      },
+      options: {
+        getBridge: async path => {
+          fixture.calls.push(path);
+          if (path === "/ops/task-live/discovery") return null;
+          if (path === "/discovery/report") {
+            return {
+              runId: "discovery_done_failed_auto_approval",
+              startedAt: "2026-03-08T10:00:00.000Z",
+              finishedAt: "2026-03-08T10:03:00.000Z",
+              runtime: {
+                registryFinalization: { status: "completed" },
+                autoApproval: { enabled: true, status: "failed" }
+              },
+              summary: { foundEndpointCount: 1, probedCandidateCount: 1, failedProbeCount: 0 }
+            };
+          }
+          if (String(path).startsWith("/discovery/log?offset=")) return { text: "", nextOffset: 0 };
+          throw new Error(`unexpected path ${path}`);
+        },
+        syncSourceTablesAfterTaskCompletion: async payload => {
+          syncCalls.push(payload);
+        }
+      }
+    });
+    const controller = createAdminDiscoveryController(fixture.options);
+
+    controller.startDiscoveryCompletionWatch();
+    await timerStub.scheduled[timerStub.scheduled.length - 1]();
+
+    assert.equal(syncCalls.length, 1);
+    assert.equal(syncCalls[0].taskType, "discovery");
+    assert.equal(fixture.state.adminBusyState.discoveryWatch, false);
+  } finally {
+    timerStub.restore();
+  }
+});
+
 test("admin discovery controller forwards uncapped preset payload", async () => {
   const calls = [];
   const state = {

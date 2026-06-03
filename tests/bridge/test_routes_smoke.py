@@ -87,6 +87,12 @@ def _make_api(tmp_path: Path) -> BridgeApi:
     }
     api.load_state = load_state  # type: ignore[assignment]
     api.summarize_state = summarize_state  # type: ignore[assignment]
+    api.get_registry_summary_payload = lambda: {  # type: ignore[assignment]
+        **summarize_state(load_state()),
+        "hiddenPendingCount": 0,
+        "authorityMode": "json",
+        "updatedAt": "2026-06-03T00:00:00+00:00",
+    }
     api.compute_ops_health = lambda: {"ok": True, "detail": "unit-test"}  # type: ignore[assignment]
     return api
 

@@ -184,9 +184,19 @@ export function createRegistryControllerFixture({
     getBridge: async path => {
       bridgeCalls.push(path);
       if (path === "/discovery/report") return { summary: {} };
-      if (path === "/registry/pending") return { sources: [], summary: { pendingCount: 0 } };
-      if (path === "/registry/active") return { sources: [], summary: { activeCount: 0 } };
-      if (path === "/registry/rejected") return { sources: [], summary: { rejectedCount: 0 } };
+      if (path === "/registry/summary") {
+        return {
+          ok: true,
+          summary: { activeCount: 0, pendingCount: 0, rejectedCount: 0, hiddenPendingCount: 0 }
+        };
+      }
+      if (String(path).startsWith("/registry/sources")) {
+        return {
+          ok: true,
+          sources: { pending: [], active: [], rejected: [] },
+          summary: { activeCount: 0, pendingCount: 0, rejectedCount: 0, hiddenPendingCount: 0 }
+        };
+      }
       return {};
     },
     postBridge: async (path, payload) => {

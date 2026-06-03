@@ -25,6 +25,25 @@ async function flushMicrotasks(count = 5) {
   }
 }
 
+function registrySourcesPayload({
+  pending = [],
+  active = [],
+  rejected = [],
+  summary = {}
+} = {}) {
+  return {
+    ok: true,
+    sources: { pending, active, rejected },
+    summary: {
+      activeCount: active.length,
+      pendingCount: pending.length,
+      rejectedCount: rejected.length,
+      hiddenPendingCount: 0,
+      ...summary
+    }
+  };
+}
+
 test("admin registry controller loads filtered discovery state and dispatches refresh", async () => {
   const state = {
     activeSourceFilter: "all",
@@ -72,26 +91,16 @@ test("admin registry controller loads filtered discovery state and dispatches re
           ]
         };
       }
-      if (path === "/registry/pending") {
-        return {
-          summary: { pendingCount: 2 },
-          sources: [
+      if (String(path).startsWith("/registry/sources")) {
+        return registrySourcesPayload({
+          pending: [
             { id: "p1", name: "One", jobsFound: 2, status: "healthy" },
             { id: "p2", name: "Zero", jobsFound: 0, status: "healthy" }
-          ]
-        };
-      }
-      if (path === "/registry/active") {
-        return {
-          summary: { activeCount: 1 },
-          sources: [{ id: "a1", name: "Active", jobsFound: 3, status: "healthy" }]
-        };
-      }
-      if (path === "/registry/rejected") {
-        return {
-          summary: { rejectedCount: 1 },
-          sources: [{ id: "r1", name: "Rejected", jobsFound: 1, status: "error" }]
-        };
+          ],
+          active: [{ id: "a1", name: "Active", jobsFound: 3, status: "healthy" }],
+          rejected: [{ id: "r1", name: "Rejected", jobsFound: 1, status: "error" }],
+          summary: { pendingCount: 2, activeCount: 1, rejectedCount: 1 }
+        });
       }
       throw new Error(`unexpected path ${path}`);
     },
@@ -236,13 +245,12 @@ test("admin registry controller allows completion refresh while discovery watch 
   const controller = createAdminRegistryController({
     state,
     refs,
-    getBridge: async path => {
-      calls.push(path);
+    getBridge: async (path, requestOptions = {}) => {
+      calls.push({ path, requestOptions });
       if (path === "/discovery/report") return { summary: {}, finishedAt: "2026-03-08T10:05:00Z" };
+      if (path === "/registry/summary") return { ok: true, summary: {} };
       if (path === "/discovery/candidates") return { candidates: [] };
-      if (path === "/registry/pending") return { summary: {}, sources: [] };
-      if (path === "/registry/active") return { summary: {}, sources: [] };
-      if (path === "/registry/rejected") return { summary: {}, sources: [] };
+      if (String(path).startsWith("/registry/sources")) return registrySourcesPayload();
       throw new Error(`unexpected path ${path}`);
     },
     postBridge: async () => ({}),
@@ -271,13 +279,15 @@ test("admin registry controller allows completion refresh while discovery watch 
   const result = await controller.loadDiscoveryData({ background: true, completionRefresh: true });
 
   assert.equal(result?.skipped, undefined);
-  assert.ok(calls.includes("/discovery/report"));
-  assert.ok(calls.includes("/registry/pending"));
-  assert.ok(calls.includes("/registry/active"));
-  assert.ok(calls.includes("/registry/rejected"));
+  assert.ok(calls.some(call => call.path === "/discovery/report"));
+  const summaryIndex = calls.findIndex(call => call.path === "/registry/summary");
+  const sourcesIndex = calls.findIndex(call => String(call.path).startsWith("/registry/sources"));
+  assert.ok(summaryIndex >= 0);
+  assert.ok(sourcesIndex > summaryIndex);
+  assert.equal(calls[sourcesIndex].requestOptions.timeoutMs, 60000);
 });
 
-test("admin registry controller treats one registry timeout as partial load", async () => {
+test("admin registry controller treats background registry source timeout as delayed partial load", async () => {
   const fixture = createRegistryControllerFixture({
     options: {
       getBridge: async path => {
@@ -290,10 +300,9 @@ test("admin registry controller treats one registry timeout as partial load", as
             }
           };
         }
+        if (path === "/registry/summary") return { ok: true, summary: { activeCount: 1 } };
         if (path === "/discovery/candidates") return { candidates: [] };
-        if (String(path).startsWith("/registry/pending")) throw new Error("Bridge request timed out");
-        if (path === "/registry/active") return { summary: { activeCount: 1 }, sources: [] };
-        if (path === "/registry/rejected") return { summary: { rejectedCount: 0 }, sources: [] };
+        if (String(path).startsWith("/registry/sources")) throw new Error("Bridge request timed out");
         throw new Error(`unexpected path ${path}`);
       },
       fetchJobsFetchReportJson: async () => ({ sources: [] })
@@ -312,7 +321,11 @@ test("admin registry controller treats one registry timeout as partial load", as
   assert.equal(result.partialLoadFailed, true);
   assert.match(
     logs.join("\n"),
-    /Could not load pending registry: Bridge request timed out/
+    /Source table refresh delayed; retrying/
+  );
+  assert.doesNotMatch(
+    logs.join("\n"),
+    /Could not load pending registry/
   );
   assert.doesNotMatch(
     fixture.refs.adminDiscoverySummaryEl.textContent,
@@ -327,17 +340,15 @@ test("admin registry controller explains hidden zero-job pending rows", async ()
       getBridge: async path => {
         if (path === "/discovery/report") return { summary: { queuedCandidateCount: 0 } };
         if (path === "/discovery/candidates") return { candidates: [] };
-        if (path === "/registry/pending") {
-          return {
-            summary: { pendingCount: 2 },
-            sources: [
+        if (String(path).startsWith("/registry/sources")) {
+          return registrySourcesPayload({
+            pending: [
               { id: "p1", name: "Zero One", jobsFound: 0 },
               { id: "p2", name: "Zero Two", sampleCount: 0 }
-            ]
-          };
+            ],
+            summary: { pendingCount: 2, hiddenPendingCount: 2 }
+          });
         }
-        if (path === "/registry/active") return { summary: { activeCount: 0 }, sources: [] };
-        if (path === "/registry/rejected") return { summary: { rejectedCount: 0 }, sources: [] };
         throw new Error(`unexpected path ${path}`);
       },
       readShowZeroJobs: () => false,
@@ -355,20 +366,16 @@ test("admin registry controller explains hidden zero-job pending rows", async ()
   );
 });
 
-test("admin registry controller progressively renders registry buckets as they resolve", async () => {
+test("admin registry controller renders registry buckets when the combined source payload resolves", async () => {
   const report = createDeferred();
   const candidates = createDeferred();
-  const pending = createDeferred();
-  const active = createDeferred();
-  const rejected = createDeferred();
+  const sources = createDeferred();
   const fixture = createRegistryControllerFixture({
     options: {
       getBridge: path => {
         if (path === "/discovery/report") return report.promise;
         if (path === "/discovery/candidates") return candidates.promise;
-        if (String(path).startsWith("/registry/pending")) return pending.promise;
-        if (path === "/registry/active") return active.promise;
-        if (path === "/registry/rejected") return rejected.promise;
+        if (String(path).startsWith("/registry/sources")) return sources.promise;
         throw new Error(`unexpected path ${path}`);
       },
       getSourceJobsFoundCount: row => Number(row?.jobsFound || 0),
@@ -385,16 +392,15 @@ test("admin registry controller progressively renders registry buckets as they r
 
   report.resolve({ summary: {} });
   candidates.resolve({ candidates: [] });
-  pending.resolve({ summary: { pendingCount: 1 }, sources: [{ id: "pending_ready", name: "Pending Ready", jobsFound: 1 }] });
-  await flushMicrotasks();
+  sources.resolve(registrySourcesPayload({
+    pending: [{ id: "pending_ready", name: "Pending Ready", jobsFound: 1 }],
+    active: [{ id: "active_ready", name: "Active Ready", jobsFound: 1 }],
+    rejected: [{ id: "rejected_ready", name: "Rejected Ready", jobsFound: 1 }]
+  }));
+  await flushMicrotasks(8);
   fixture.renderScheduler.flush();
 
   assert.equal(fixture.refs.adminPendingSourcesEl.innerHTML, "Pending Ready");
-  assert.match(fixture.refs.adminActiveSourcesEl.innerHTML, /Loading active sources/);
-  assert.match(fixture.refs.adminRejectedSourcesEl.innerHTML, /Loading rejected sources/);
-
-  active.resolve({ summary: { activeCount: 1 }, sources: [{ id: "active_ready", name: "Active Ready", jobsFound: 1 }] });
-  rejected.resolve({ summary: { rejectedCount: 1 }, sources: [{ id: "rejected_ready", name: "Rejected Ready", jobsFound: 1 }] });
   await loadPromise;
   fixture.renderScheduler.flush();
 
@@ -426,14 +432,11 @@ test("admin registry controller only logs discovery refreshes when the registry 
     refs,
     getBridge: async path => {
       if (path === "/discovery/report") return { summary: {} };
-      if (path === "/registry/pending") {
-        return {
-          summary: { pendingCount: 1 },
-          sources: [{ id: "p1", name: "Pending", jobsFound: 1, status: "pending" }]
-        };
+      if (String(path).startsWith("/registry/sources")) {
+        return registrySourcesPayload({
+          pending: [{ id: "p1", name: "Pending", jobsFound: 1, status: "pending" }]
+        });
       }
-      if (path === "/registry/active") return { summary: { activeCount: 0 }, sources: [] };
-      if (path === "/registry/rejected") return { summary: { rejectedCount: 0 }, sources: [] };
       throw new Error(`unexpected path ${path}`);
     },
     postBridge: async () => ({}),
@@ -484,13 +487,11 @@ test("admin registry controller keeps registry signature stable across source ro
       getBridge: async path => {
         if (path === "/discovery/report") return { summary: {} };
         if (path === "/discovery/candidates") return { candidates: [] };
-        if (String(path).startsWith("/registry/pending")) {
+        if (String(path).startsWith("/registry/sources")) {
           const rows = pendingRowsByCall[Math.min(pendingCallIndex, pendingRowsByCall.length - 1)];
           pendingCallIndex += 1;
-          return { sources: rows, summary: { pendingCount: rows.length } };
+          return registrySourcesPayload({ pending: rows, summary: { pendingCount: rows.length } });
         }
-        if (path === "/registry/active") return { sources: [], summary: { activeCount: 0 } };
-        if (path === "/registry/rejected") return { sources: [], summary: { rejectedCount: 0 } };
         throw new Error(`unexpected path ${path}`);
       },
       getSourceJobsFoundCount: row => Number(row?.jobsFound || 0),
@@ -519,13 +520,11 @@ test("admin registry controller changes registry signature when a tracked source
       getBridge: async path => {
         if (path === "/discovery/report") return { summary: {} };
         if (path === "/discovery/candidates") return { candidates: [] };
-        if (String(path).startsWith("/registry/pending")) {
+        if (String(path).startsWith("/registry/sources")) {
           const rows = pendingRowsByCall[Math.min(pendingCallIndex, pendingRowsByCall.length - 1)];
           pendingCallIndex += 1;
-          return { sources: rows, summary: { pendingCount: rows.length } };
+          return registrySourcesPayload({ pending: rows, summary: { pendingCount: rows.length } });
         }
-        if (path === "/registry/active") return { sources: [], summary: { activeCount: 0 } };
-        if (path === "/registry/rejected") return { sources: [], summary: { rejectedCount: 0 } };
         throw new Error(`unexpected path ${path}`);
       },
       getSourceJobsFoundCount: row => Number(row?.jobsFound || 0)
@@ -547,9 +546,9 @@ test("admin registry controller keeps registry signature stable for empty and ma
       getBridge: async path => {
         if (path === "/discovery/report") return { summary: {} };
         if (path === "/discovery/candidates") return { candidates: [] };
-        if (String(path).startsWith("/registry/pending")) return { sources: null, summary: { pendingCount: 0 } };
-        if (path === "/registry/active") return { sources: { bad: true }, summary: { activeCount: 0 } };
-        if (path === "/registry/rejected") return { summary: { rejectedCount: 0 } };
+        if (String(path).startsWith("/registry/sources")) {
+          return { sources: { pending: null, active: { bad: true } }, summary: { pendingCount: 0, activeCount: 0, rejectedCount: 0 } };
+        }
         throw new Error(`unexpected path ${path}`);
       }
     }
@@ -577,13 +576,11 @@ test("admin registry controller skips stale deferred source table renders after 
       getBridge: async path => {
         if (path === "/discovery/report") return { summary: {} };
         if (path === "/discovery/candidates") return { candidates: [] };
-        if (String(path).startsWith("/registry/pending")) {
+        if (String(path).startsWith("/registry/sources")) {
           const rows = pendingRowsByCall[Math.min(pendingCallIndex, pendingRowsByCall.length - 1)];
           pendingCallIndex += 1;
-          return { sources: rows, summary: { pendingCount: rows.length } };
+          return registrySourcesPayload({ pending: rows, summary: { pendingCount: rows.length } });
         }
-        if (path === "/registry/active") return { sources: [], summary: { activeCount: 0 } };
-        if (path === "/registry/rejected") return { sources: [], summary: { rejectedCount: 0 } };
         throw new Error(`unexpected path ${path}`);
       },
       getSourceJobsFoundCount: row => Number(row?.jobsFound || 0),
@@ -615,9 +612,14 @@ test("admin registry controller syncs source tables once per completed task sign
         }
       };
     }
-    if (String(path).startsWith("/registry/pending")) return { sources: [{ id: "pending_1", name: "Pending" }], summary: { pendingCount: 1 } };
-    if (path === "/registry/active") return { sources: [{ id: "active_1", name: "Active" }], summary: { activeCount: 1 } };
-    if (path === "/registry/rejected") return { sources: [], summary: { rejectedCount: 0 } };
+    if (path === "/registry/summary") return { ok: true, summary: { pendingCount: 1, activeCount: 1 } };
+    if (String(path).startsWith("/registry/sources")) {
+      return registrySourcesPayload({
+        pending: [{ id: "pending_1", name: "Pending" }],
+        active: [{ id: "active_1", name: "Active" }],
+        summary: { pendingCount: 1, activeCount: 1 }
+      });
+    }
     throw new Error(`unexpected path ${path}`);
   };
   fixture.options.fetchJobsFetchReportJson = async () => {
@@ -676,8 +678,8 @@ test("admin registry controller adds a manual source and runs the follow-up chec
       if (path === "/discovery/report") {
         return { summary: {} };
       }
-      if (path === "/registry/pending" || path === "/registry/active" || path === "/registry/rejected") {
-        return { summary: {}, sources: [] };
+      if (String(path).startsWith("/registry/sources")) {
+        return registrySourcesPayload();
       }
       return {};
     },

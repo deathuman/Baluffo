@@ -3,6 +3,8 @@ import { renderDiscoveryCandidateReviewHtml } from "../../render.js?v=16";
 
 const ADMIN_SHOW_ZERO_JOBS_KEY = "baluffo_admin_show_zero_jobs_sources";
 const CAP_DEFER_REASONS = new Set(["adapter_cap", "domain_cap", "top_n_cap"]);
+const FULL_REGISTRY_LOAD_TIMEOUT_MS = 60000;
+const REGISTRY_REFRESH_RETRY_DELAY_MS = 5000;
 
 function getDiscoveryCandidatesRows(payload) {
   return Array.isArray(payload?.candidates) ? payload.candidates : [];
@@ -121,15 +123,40 @@ export function createRegistryLoadController({
     scheduleRender(callback);
   }
 
-  async function loadDiscoveryEndpoint(label, promise, fallback) {
+  async function loadDiscoveryEndpoint(label, promise, fallback, options = {}) {
     try {
       return await promise;
     } catch (err) {
-      appendDiscoveryLog(`Could not load ${label}: ${getErrorMessage(err)}`, "error");
+      const message = getErrorMessage(err);
+      if (options?.registryRefresh && options?.background && /timed out/i.test(message)) {
+        appendDiscoveryLog("Source table refresh delayed; retrying.", "warn");
+      } else {
+        appendDiscoveryLog(`Could not load ${label}: ${message}`, "error");
+      }
       return {
         ...(fallback && typeof fallback === "object" && !Array.isArray(fallback) ? fallback : {}),
         __loadFailed: true
       };
+    }
+  }
+
+  function scheduleRegistryRefreshRetry(options = {}) {
+    if (state.discoveryRegistryRefreshRetryTimer || typeof globalThis.setTimeout !== "function") {
+      return;
+    }
+    state.discoveryRegistryRefreshRetryTimer = globalThis.setTimeout(() => {
+      state.discoveryRegistryRefreshRetryTimer = null;
+      loadDiscoveryData({
+        background: true,
+        completionRefresh: true,
+        suppressPlaceholders: true,
+        logChanges: false,
+        fetchReport: options?.fetchReport || null,
+        forceFetchReport: Boolean(options?.fetchReport)
+      }).catch(() => {});
+    }, REGISTRY_REFRESH_RETRY_DELAY_MS);
+    if (typeof state.discoveryRegistryRefreshRetryTimer?.unref === "function") {
+      state.discoveryRegistryRefreshRetryTimer.unref();
     }
   }
 
@@ -179,7 +206,6 @@ export function createRegistryLoadController({
     state.discoveryLoadPromise = (async () => {
       try {
         const filterState = toAdminFilterState();
-        const pendingPath = filterState.showZeroJobs ? "/registry/pending?includeHidden=1" : "/registry/pending";
         if (showPlaceholders) {
           setSourceTablePlaceholder(refs.adminPendingSourcesEl, "pending");
           setSourceTablePlaceholder(refs.adminActiveSourcesEl, "active");
@@ -190,6 +216,14 @@ export function createRegistryLoadController({
           getBridge("/discovery/report"),
           state.latestDiscoveryReportCache || { summary: {}, candidates: [], failures: [] }
         );
+        const registrySummaryPromise = options?.completionRefresh
+          ? loadDiscoveryEndpoint(
+            "Admin registry summary",
+            getBridge("/registry/summary"),
+            { ok: true, summary: {} },
+            { background }
+          )
+          : Promise.resolve({ ok: true, summary: {} });
         const discoveryCandidatesPromise = loadDiscoveryEndpoint(
           "source discovery candidates",
           getBridge("/discovery/candidates"),
@@ -200,24 +234,28 @@ export function createRegistryLoadController({
           resolveLatestFetchReport(options),
           state.latestFetcherReportCache || {}
         );
-        const pendingPromise = loadDiscoveryEndpoint(
-          "pending registry",
-          getBridge(pendingPath),
-          { sources: [], summary: {} }
-        );
-        const activePromise = loadDiscoveryEndpoint(
-          "active registry",
-          getBridge("/registry/active"),
-          { sources: [], summary: {} }
-        );
-        const rejectedPromise = loadDiscoveryEndpoint(
-          "rejected registry",
-          getBridge("/registry/rejected"),
-          { sources: [], summary: {} }
-        );
+        const registrySourcesPath = `/registry/sources?buckets=pending,active,rejected&includeHiddenPending=${filterState.showZeroJobs ? "1" : "0"}`;
+        const registrySourcesPromise = Promise.all([reportPromise, registrySummaryPromise])
+          .then(([_report, registrySummary]) => loadDiscoveryEndpoint(
+            "Admin registry source tables",
+            getBridge(registrySourcesPath, { timeoutMs: FULL_REGISTRY_LOAD_TIMEOUT_MS }),
+            {
+              ok: false,
+              sources: { pending: [], active: [], rejected: [] },
+              summary: registrySummary?.summary || {}
+            },
+            { registryRefresh: true, background }
+          ));
 
-        const pendingRowsPromise = Promise.all([pendingPromise, discoveryCandidatesPromise, latestFetchReportPromise])
-          .then(([pending, discoveryCandidates, latestFetchReport]) => {
+        const pendingRowsPromise = Promise.all([registrySourcesPromise, discoveryCandidatesPromise, latestFetchReportPromise])
+          .then(([registrySources, discoveryCandidates, latestFetchReport]) => {
+            const pending = {
+              sources: Array.isArray(registrySources?.sources?.pending)
+                ? registrySources.sources.pending
+                : [],
+              summary: registrySources?.summary || {},
+              __loadFailed: Boolean(registrySources?.__loadFailed)
+            };
             const loadFailed = Boolean(pending?.__loadFailed);
             const rows = mergeSourceStatusFromReport(
               mergeSourceDiscoveryCandidates(Array.isArray(pending?.sources) ? pending.sources : [], discoveryCandidates),
@@ -245,8 +283,15 @@ export function createRegistryLoadController({
             });
             return { payload: pending, rows, hiddenZeroJobsCount, visibleRows, loadFailed };
           });
-        const activeRowsPromise = Promise.all([activePromise, discoveryCandidatesPromise, latestFetchReportPromise])
-          .then(([active, discoveryCandidates, latestFetchReport]) => {
+        const activeRowsPromise = Promise.all([registrySourcesPromise, discoveryCandidatesPromise, latestFetchReportPromise])
+          .then(([registrySources, discoveryCandidates, latestFetchReport]) => {
+            const active = {
+              sources: Array.isArray(registrySources?.sources?.active)
+                ? registrySources.sources.active
+                : [],
+              summary: registrySources?.summary || {},
+              __loadFailed: Boolean(registrySources?.__loadFailed)
+            };
             const loadFailed = Boolean(active?.__loadFailed);
             const rows = mergeSourceStatusFromReport(
               mergeSourceDiscoveryCandidates(Array.isArray(active?.sources) ? active.sources : [], discoveryCandidates),
@@ -260,8 +305,15 @@ export function createRegistryLoadController({
             });
             return { payload: active, rows, visibleRows, loadFailed };
           });
-        const rejectedRowsPromise = Promise.all([rejectedPromise, discoveryCandidatesPromise, latestFetchReportPromise])
-          .then(([rejected, discoveryCandidates, latestFetchReport]) => {
+        const rejectedRowsPromise = Promise.all([registrySourcesPromise, discoveryCandidatesPromise, latestFetchReportPromise])
+          .then(([registrySources, discoveryCandidates, latestFetchReport]) => {
+            const rejected = {
+              sources: Array.isArray(registrySources?.sources?.rejected)
+                ? registrySources.sources.rejected
+                : [],
+              summary: registrySources?.summary || {},
+              __loadFailed: Boolean(registrySources?.__loadFailed)
+            };
             const loadFailed = Boolean(rejected?.__loadFailed);
             const rows = mergeSourceStatusFromReport(
               mergeSourceDiscoveryCandidates(Array.isArray(rejected?.sources) ? rejected.sources : [], discoveryCandidates),
@@ -442,7 +494,12 @@ export function createRegistryLoadController({
       suppressPlaceholders: true
     });
     if (result) {
-      state[signatureKey] = signature;
+      if (result.partialLoadFailed) {
+        state[signatureKey] = "";
+        scheduleRegistryRefreshRetry({ fetchReport });
+      } else {
+        state[signatureKey] = signature;
+      }
     }
     return result;
   }

@@ -31,10 +31,13 @@ test("admin registry controller renders discovery review outside the source summ
           };
         }
         if (path === "/discovery/candidates") return { candidates: [] };
-        if (path === "/registry/pending?includeHidden=1") return { summary: { pendingCount: 0 }, sources: [] };
-        if (path === "/registry/pending") return { summary: { pendingCount: 0 }, sources: [] };
-        if (path === "/registry/active") return { summary: { activeCount: 0 }, sources: [] };
-        if (path === "/registry/rejected") return { summary: { rejectedCount: 0 }, sources: [] };
+        if (String(path).startsWith("/registry/sources")) {
+          return {
+            ok: true,
+            sources: { pending: [], active: [], rejected: [] },
+            summary: { pendingCount: 0, activeCount: 0, rejectedCount: 0, hiddenPendingCount: 0 }
+          };
+        }
         throw new Error(`unexpected path ${path}`);
       }
     }

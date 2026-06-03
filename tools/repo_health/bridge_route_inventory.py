@@ -243,6 +243,14 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         caller_files=ADMIN_REGISTRY_CALLERS,
     ),
     _route(
+        "GET",
+        "/registry/sources",
+        EXACT,
+        GET_HANDLER,
+        "public",
+        caller_files=ADMIN_REGISTRY_CALLERS,
+    ),
+    _route(
         "GET", "/discovery/log", EXACT, GET_HANDLER, "support", caller_files=ADMIN_DISCOVERY_CALLERS
     ),
     _route(

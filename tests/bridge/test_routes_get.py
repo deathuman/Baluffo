@@ -175,6 +175,124 @@ def test_registry_endpoints(tmp_path: Path, path: str, expected_key: str) -> Non
     assert expected_key in handler.sent[-1]["payload"]
 
 
+def test_registry_summary_uses_lightweight_payload_without_sources(tmp_path: Path) -> None:
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
+    api.load_state = lambda: (_ for _ in ()).throw(AssertionError("load_state not expected"))  # type: ignore[assignment]
+    api.get_registry_summary_payload = lambda: {  # type: ignore[assignment]
+        "activeCount": 3,
+        "pendingCount": 2,
+        "rejectedCount": 1,
+        "hiddenPendingCount": 1,
+        "authorityMode": "json",
+        "updatedAt": "2026-06-03T00:00:00+00:00",
+    }
+
+    handler = FakeHandler()
+    result = handle_get(handler, api=api, path="/registry/summary", query={})
+
+    assert result is True
+    payload = handler.sent[-1]["payload"]
+    assert handler.sent[-1]["status"] == 200
+    assert payload["ok"] is True
+    assert payload["authorityMode"] == "json"
+    assert payload["generatedAt"] == "2026-06-03T00:00:00+00:00"
+    assert payload["summary"]["activeCount"] == 3
+    assert "sources" not in payload
+
+
+def test_registry_sources_returns_requested_buckets_from_one_state_load(tmp_path: Path) -> None:
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
+    calls = {"load_state": 0}
+
+    def load_state():
+        calls["load_state"] += 1
+        return {
+            "active": [{"id": "active_1", "name": "Active"}],
+            "pending": [
+                {"id": "pending_visible", "name": "Visible", "jobsFound": 1},
+                {
+                    "id": "pending_hidden",
+                    "name": "Hidden",
+                    "jobsFound": 0,
+                    "hiddenFromDefault": True,
+                },
+            ],
+            "rejected": [{"id": "rejected_1", "name": "Rejected"}],
+        }
+
+    api.load_state = load_state  # type: ignore[assignment]
+    api.DISCOVERY_CANDIDATES_PATH = tmp_path / "source-discovery-candidates.json"  # type: ignore[assignment]
+    api.DISCOVERY_CANDIDATES_PATH.write_text("[]", encoding="utf-8")
+
+    handler = FakeHandler()
+    result = handle_get(
+        handler,
+        api=api,
+        path="/registry/sources",
+        query={"buckets": ["pending,active"], "includeHiddenPending": ["0"]},
+    )
+
+    assert result is True
+    payload = handler.sent[-1]["payload"]
+    assert handler.sent[-1]["status"] == 200
+    assert calls["load_state"] == 1
+    assert payload["ok"] is True
+    assert set(payload["sources"]) == {"pending", "active"}
+    assert [row["id"] for row in payload["sources"]["pending"]] == ["pending_visible"]
+    assert [row["id"] for row in payload["sources"]["active"]] == ["active_1"]
+    assert payload["summary"]["pendingCount"] == 2
+    assert payload["summary"]["hiddenPendingCount"] == 1
+
+
+def test_registry_sources_can_include_hidden_pending_rows(tmp_path: Path) -> None:
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
+    api.load_state = lambda: {  # type: ignore[assignment]
+        "active": [],
+        "pending": [
+            {"id": "visible", "name": "Visible", "jobsFound": 1},
+            {"id": "hidden", "name": "Hidden", "jobsFound": 0, "hiddenFromDefault": True},
+        ],
+        "rejected": [],
+    }
+    api.DISCOVERY_CANDIDATES_PATH = tmp_path / "source-discovery-candidates.json"  # type: ignore[assignment]
+    api.DISCOVERY_CANDIDATES_PATH.write_text("[]", encoding="utf-8")
+
+    handler = FakeHandler()
+    result = handle_get(
+        handler,
+        api=api,
+        path="/registry/sources",
+        query={"buckets": ["pending"], "includeHiddenPending": ["1"]},
+    )
+
+    assert result is True
+    payload = handler.sent[-1]["payload"]
+    assert [row["id"] for row in payload["sources"]["pending"]] == ["visible", "hidden"]
+    assert payload["summary"]["hiddenPendingCount"] == 1
+
+
+def test_registry_sources_rejects_unknown_bucket(tmp_path: Path) -> None:
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
+    api.load_state = lambda: (_ for _ in ()).throw(AssertionError("load_state not expected"))  # type: ignore[assignment]
+
+    handler = FakeHandler()
+    result = handle_get(
+        handler,
+        api=api,
+        path="/registry/sources",
+        query={"buckets": ["pending,unknown"]},
+    )
+
+    assert result is True
+    assert handler.sent[-1]["status"] == 400
+    assert handler.sent[-1]["payload"]["ok"] is False
+    assert handler.sent[-1]["payload"]["invalidBuckets"] == "unknown"
+
+
 def test_log_routes_return_expected_payloads(tmp_path: Path) -> None:
     cases = [
         (
