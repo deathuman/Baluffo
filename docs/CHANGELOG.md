@@ -10,6 +10,16 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.35] - 2026-06-03
+
+### Fixed
+- Terminal discovery registry reconciliation now also replays report-declared `discovery_auto_approve` promotions that were already stamped into the completed discovery report, repairing stale active/pending counts when eligibility replay alone cannot reconstruct the worker's final registry state.
+
+### Notes
+- This is a corrective container patch for the 0.2.34 Umbrel verification failure where `/discovery/report` still declared `active=2301/pending=811` while registry routes remained at `active=2289/pending=823` after update.
+- Fetcher parsing, provider quality rules, source policy, sync contracts, raw-LAN same-origin behavior, and desktop packaging behavior are unchanged.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.34] - 2026-06-03
 
 ### Fixed

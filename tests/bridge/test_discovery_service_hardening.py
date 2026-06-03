@@ -296,6 +296,102 @@ def test_reconcile_terminal_discovery_registry_uses_report_auto_approval_when_co
     assert approval_state["approvedSinceLastRun"] == 12
 
 
+def test_reconcile_terminal_discovery_registry_replays_report_declared_promotions(
+    tmp_path: Path,
+) -> None:
+    report_path = tmp_path / "source-discovery-report.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "runId": "discovery_done_report_promoted",
+                "startedAt": "2026-03-20T12:00:00Z",
+                "finishedAt": "2026-03-20T12:05:00Z",
+                "summary": {
+                    "queuedCandidateCount": 1,
+                    "approvedCandidateCount": 1,
+                    "liveCandidateCount": 1,
+                },
+                "runtime": {
+                    "autoApproval": {
+                        "enabled": True,
+                        "approvedCount": 1,
+                        "status": "completed",
+                    },
+                    "registryFinalization": {
+                        "status": "completed",
+                        "activeCount": 2,
+                        "pendingCount": 0,
+                        "rejectedCount": 0,
+                    },
+                },
+                "candidates": [
+                    {
+                        "id": "static:listing_url:https://example.com/careers",
+                        "sourceIdentity": "static:listing_url:https://example.com/careers",
+                        "adapter": "static",
+                        "name": "Report Promoted",
+                        "jobsFound": 0,
+                        "candidateState": "validated",
+                        "registryState": "active",
+                        "stateChangedAt": "2026-03-20T12:05:30Z",
+                        "stateChangedBy": "discovery_auto_approve",
+                        "approvedBy": "registry_migration_v2",
+                        "promotionReason": "manual_review_only",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    state = {
+        "active": [{"id": "active-1", "adapter": "static", "name": "Existing"}],
+        "pending": [
+            {
+                "id": "static:listing_url:https://example.com/careers",
+                "adapter": "static",
+                "name": "Report Promoted",
+                "jobsFound": 0,
+                "candidateState": "validated",
+            }
+        ],
+        "rejected": [],
+    }
+    persisted_states: list[dict[str, list[dict[str, Any]]]] = []
+    events: list[str] = []
+
+    def persist_state_and_auto_sync(
+        next_state: dict[str, list[dict[str, Any]]], **_kwargs: Any
+    ) -> dict[str, list[dict[str, Any]]]:
+        persisted = json.loads(json.dumps(next_state))
+        persisted_states.append(persisted)
+        state["active"] = persisted["active"]
+        state["pending"] = persisted["pending"]
+        state["rejected"] = persisted["rejected"]
+        return persisted
+
+    service = _make_service(
+        tmp_path,
+        report_path=report_path,
+        bridge_log=lambda _level, message, **_fields: events.append(str(message)),
+        load_state=lambda: json.loads(json.dumps(state)),
+        persist_state_and_auto_sync=persist_state_and_auto_sync,
+    )
+
+    service.reconcile_terminal_discovery_report_from_state()
+
+    assert len(persisted_states) == 1
+    assert [row["id"] for row in state["active"]] == [
+        "active-1",
+        "static:listing_url:https://example.com/careers",
+    ]
+    assert state["pending"] == []
+    promoted = state["active"][-1]
+    assert promoted["registryState"] == "active"
+    assert promoted["stateChangedBy"] == "discovery_auto_approve"
+    assert promoted["stateChangedAt"] == "2026-03-20T12:05:30Z"
+    assert "discovery_registry_reconciled_from_terminal_report" in events
+
+
 def test_reconcile_terminal_discovery_registry_skips_unsafe_finalization_mismatch(
     tmp_path: Path,
 ) -> None:
