@@ -141,3 +141,67 @@ def test_watch_discovery_run_repairs_report_when_child_pid_dead(tmp_path: Path) 
     assert saved_report["status"] == "error"
     assert saved_report["taskProgress"]["active"] is False
     assert saved_report["taskProgress"]["counts"]["queuedCandidates"] == 3
+
+
+def test_watch_discovery_run_waits_for_finalization_before_auto_sync(tmp_path: Path) -> None:
+    report_path = tmp_path / "source-discovery-report.json"
+    settings_path = tmp_path / "source-discovery-config.json"
+    finished_at = "2026-03-20T12:05:00Z"
+    settings_path.write_text(
+        json.dumps({"autoApproveHealthyPendingOnComplete": True}),
+        encoding="utf-8",
+    )
+    report_path.write_text(
+        json.dumps(
+            {
+                "runId": "discovery_1",
+                "startedAt": "2026-03-20T12:00:00Z",
+                "finishedAt": finished_at,
+                "summary": {
+                    "queuedCandidateCount": 0,
+                    "failedProbeCount": 0,
+                    "probeMissCount": 0,
+                },
+                "runtime": {
+                    "autoApproval": {
+                        "enabled": True,
+                        "approvedCount": 2,
+                        "status": "running",
+                    },
+                    "registryFinalization": {"status": "running"},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    pid_checks = 0
+    marked: list[str] = []
+
+    def pid_is_running(_pid: int) -> bool:
+        nonlocal pid_checks
+        pid_checks += 1
+        if pid_checks == 1:
+            payload = json.loads(report_path.read_text(encoding="utf-8"))
+            payload["runtime"]["autoApproval"]["status"] = "completed"
+            payload["runtime"]["registryFinalization"]["status"] = "completed"
+            report_path.write_text(json.dumps(payload), encoding="utf-8")
+        return True
+
+    service = _make_service(
+        tmp_path,
+        report_path=report_path,
+        now_iso="2026-03-20T12:06:00Z",
+        pid_is_running=pid_is_running,
+        mark_discovery_sync_finished=lambda value: marked.append(value),
+    )
+
+    service.watch_discovery_run_for_auto_sync("discovery_1", 123, "2026-03-20T12:00:00Z")
+
+    saved_report = json.loads(report_path.read_text(encoding="utf-8"))
+    runtime = saved_report.get("runtime") or {}
+    assert ((runtime.get("autoApproval") or {}).get("status")) == "completed"
+    assert ((runtime.get("autoApproval") or {}).get("approvedCount")) == 2
+    assert ((runtime.get("registryFinalization") or {}).get("status")) == "completed"
+    assert pid_checks >= 1
+    assert marked == [finished_at]

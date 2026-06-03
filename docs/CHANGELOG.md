@@ -10,6 +10,14 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.33] - 2026-06-03
+
+### Fixed
+- Discovery auto-sync watching now waits for terminal registry finalization and auto-approval status before processing completed reports, preventing the bridge watcher from overwriting the final discovery report with an intermediate `running` finalization payload.
+
+### Notes
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.32] - 2026-06-03
 
 ### Added

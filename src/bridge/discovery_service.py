@@ -392,6 +392,19 @@ class DiscoveryService:
         return bool(finished_dt and finished_dt >= started_dt)
 
     @staticmethod
+    def _discovery_report_finalization_settled(report: dict[str, Any]) -> bool:
+        runtime = as_json_object(report.get("runtime"))
+        registry_finalization = as_json_object(runtime.get("registryFinalization"))
+        registry_status = str(registry_finalization.get("status") or "").strip().lower()
+        if registry_status == "running":
+            return False
+        auto_approval = as_json_object(runtime.get("autoApproval"))
+        auto_status = str(auto_approval.get("status") or "").strip().lower()
+        if bool(auto_approval.get("enabled")) and auto_status == "running":
+            return False
+        return True
+
+    @staticmethod
     def _abort_reason_from_row(row: dict[str, Any] | None) -> str:
         summary = (row or {}).get("summary")
         return str((summary if isinstance(summary, dict) else {}).get("abortReason") or "")
@@ -407,7 +420,9 @@ class DiscoveryService:
         while True:
             lifecycle_row = self._deps.get_lifecycle_row(run_id, "discovery")
             report = self._deps.normalize_discovery_report_contract(self._read_discovery_report())
-            if self._discovery_report_finished_since(report, started_dt):
+            if self._discovery_report_finished_since(
+                report, started_dt
+            ) and self._discovery_report_finalization_settled(report):
                 return report
             if not self._deps.pid_is_running(pid):
                 if row_abort_requested(lifecycle_row):
