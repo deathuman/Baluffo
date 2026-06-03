@@ -408,12 +408,30 @@ class RegistryService:
         source_state_path = Path(self._paths.active).with_name("jobs-source-state.json")
         return load_json_object(source_state_path, {})
 
+    @staticmethod
+    def _load_time_safe_demotion_protected_ids(
+        state: dict[str, list[dict[str, Any]]],
+    ) -> set[str]:
+        protected: set[str] = set()
+        for row in list(state.get("active") or []):
+            if not isinstance(row, dict):
+                continue
+            state_changed_by = str(row.get("stateChangedBy") or "").strip()
+            approved_by = str(row.get("approvedBy") or "").strip()
+            if "discovery_auto_approve" not in {state_changed_by, approved_by}:
+                continue
+            identity = source_identity(row)
+            if identity:
+                protected.add(identity)
+        return protected
+
     def _apply_safe_conflict_demotions(
         self, state: dict[str, list[dict[str, Any]]]
     ) -> dict[str, list[dict[str, Any]]]:
         result = apply_registry_conflict_safe_demotions(
             state,
             self._load_source_state_payload(),
+            protected_ids=self._load_time_safe_demotion_protected_ids(state),
         )
         safe_automation_report = {
             "autoDemoted": bool(result.get("demoted")),

@@ -10,6 +10,18 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.36] - 2026-06-03
+
+### Fixed
+- Load-time registry safe-demotion now preserves active rows that were approved by discovery auto-approval, so terminal discovery report reconciliation is not immediately undone by routine registry normalization or auto-sync reads.
+- Terminal discovery registry reconciliation now stays durable across the normal registry service load path when completed reports declare auto-approved duplicate candidates as active.
+
+### Notes
+- This is a corrective container patch for the 0.2.35 Umbrel verification failure where the registry briefly repaired to the completed report counts and then reverted after load-time safe demotion.
+- Manual Admin conflict safe-demotion remains available; this change only protects discovery auto-approved active rows from automatic load-time cleanup.
+- Fetcher parsing, provider quality rules, source policy, sync contracts, raw-LAN same-origin behavior, and desktop packaging behavior are unchanged.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.35] - 2026-06-03
 
 ### Fixed

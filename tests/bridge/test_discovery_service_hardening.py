@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from src.bridge.discovery_service import DiscoveryDeps, DiscoveryPaths, DiscoveryService
+from src.bridge.registry_service import RegistryPaths, RegistryService
 
 
 def _parse_iso_utc(value: str | None) -> datetime | None:
@@ -389,6 +390,133 @@ def test_reconcile_terminal_discovery_registry_replays_report_declared_promotion
     assert promoted["registryState"] == "active"
     assert promoted["stateChangedBy"] == "discovery_auto_approve"
     assert promoted["stateChangedAt"] == "2026-03-20T12:05:30Z"
+    assert "discovery_registry_reconciled_from_terminal_report" in events
+
+
+def test_reconciled_discovery_auto_approval_survives_registry_load_safe_demotions(
+    tmp_path: Path,
+) -> None:
+    report_path = tmp_path / "source-discovery-report.json"
+    active_path = tmp_path / "source-registry-active.json"
+    pending_path = tmp_path / "source-registry-pending.json"
+    rejected_path = tmp_path / "source-registry-rejected.json"
+    winner_id = "static:listing_url:https://studio.example/careers"
+    promoted_id = "static:listing_url:https://www.studio.example/careers"
+    active_path.write_text(
+        json.dumps(
+            [
+                {
+                    "id": winner_id,
+                    "name": "Static Studio",
+                    "studio": "Static Studio",
+                    "adapter": "static",
+                    "registryState": "active",
+                    "jobsFound": 3,
+                    "rankScore": 40,
+                    "score": 20,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    pending_path.write_text(
+        json.dumps(
+            [
+                {
+                    "id": promoted_id,
+                    "adapter": "static",
+                    "name": "Static Studio",
+                    "studio": "Static Studio",
+                    "jobsFound": 3,
+                    "rankScore": 20,
+                    "score": 10,
+                    "candidateState": "validated",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    rejected_path.write_text("[]", encoding="utf-8")
+    report_path.write_text(
+        json.dumps(
+            {
+                "runId": "discovery_done_report_promoted_survives_load",
+                "startedAt": "2026-03-20T12:00:00Z",
+                "finishedAt": "2026-03-20T12:05:00Z",
+                "summary": {
+                    "queuedCandidateCount": 1,
+                    "approvedCandidateCount": 1,
+                    "liveCandidateCount": 1,
+                },
+                "runtime": {
+                    "autoApproval": {
+                        "enabled": True,
+                        "approvedCount": 1,
+                        "status": "completed",
+                    },
+                    "registryFinalization": {
+                        "status": "completed",
+                        "activeCount": 2,
+                        "pendingCount": 0,
+                        "rejectedCount": 0,
+                    },
+                },
+                "candidates": [
+                    {
+                        "id": promoted_id,
+                        "sourceIdentity": promoted_id,
+                        "adapter": "static",
+                        "name": "Static Studio",
+                        "studio": "Static Studio",
+                        "jobsFound": 3,
+                        "candidateState": "live",
+                        "registryState": "active",
+                        "stateChangedAt": "2026-03-20T12:05:30Z",
+                        "stateChangedBy": "discovery_auto_approve",
+                        "approvedBy": "registry_migration_v2",
+                        "promotionReason": "manual_review_only",
+                        "promotionRecommendation": "duplicate_candidate",
+                        "duplicateOfActiveSource": True,
+                        "staticSourceState": "active_duplicate",
+                        "rankScore": 20,
+                        "score": 10,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    registry_service = RegistryService(
+        paths=RegistryPaths(
+            active=active_path,
+            pending=pending_path,
+            rejected=rejected_path,
+        ),
+        default_active=[],
+        normalize_manual_static=lambda row: row,
+    )
+    events: list[str] = []
+    service = _make_service(
+        tmp_path,
+        report_path=report_path,
+        bridge_log=lambda _level, message, **_fields: events.append(str(message)),
+        load_state=registry_service.load_state,
+        persist_state_and_auto_sync=lambda state, **_kwargs: registry_service.persist_state(state),
+    )
+
+    service.reconcile_terminal_discovery_report_from_state()
+    loaded = registry_service.load_state()
+    auto_heal = registry_service.get_auto_heal_report()
+
+    assert [row["id"] for row in loaded["active"]] == [winner_id, promoted_id]
+    assert loaded["pending"] == []
+    assert auto_heal["safeAutomation"]["demoted"] == 0
+    assert auto_heal["safeAutomation"]["skippedRows"] == [
+        {
+            "id": promoted_id,
+            "reason": "protected_from_load_time_safe_auto_demote",
+        }
+    ]
     assert "discovery_registry_reconciled_from_terminal_report" in events
 
 

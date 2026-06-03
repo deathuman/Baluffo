@@ -133,6 +133,7 @@ def apply_registry_conflict_safe_demotions(
     ids: list[str] | None = None,
     now: str = "",
     actor: str = SAFE_AUTO_DEMOTE_REASON,
+    protected_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     state = _safe_demotion_state(registry_state)
     action_filter = _clean_text(action)
@@ -146,7 +147,8 @@ def apply_registry_conflict_safe_demotions(
     requested_ids = {_clean_text(item) for item in (ids or []) if _clean_text(item)}
     conflict_payload = derive_registry_conflict_queue(state, source_state_payload)
     eligible_by_id = _eligible_safe_demotion_cards(conflict_payload, action_filter)
-    selected_ids = requested_ids or set(eligible_by_id)
+    protected = {_clean_text(item) for item in (protected_ids or set()) if _clean_text(item)}
+    selected_ids = (requested_ids or set(eligible_by_id)) - protected
     target_ids = selected_ids & set(eligible_by_id)
     provider_promotion_ids = {
         row_id
@@ -177,10 +179,17 @@ def apply_registry_conflict_safe_demotions(
     skipped_rows = [
         {
             "id": row_id,
+            "reason": "protected_from_load_time_safe_auto_demote",
+        }
+        for row_id in sorted((requested_ids or set(eligible_by_id)) & protected)
+    ]
+    skipped_rows.extend(
+        {
+            "id": row_id,
             "reason": "not_currently_safe_auto_demote_eligible",
         }
         for row_id in sorted(selected_ids - target_ids)
-    ]
+    )
     promoted_active, promoted_pending, promoted_applied = (
         _apply_pending_provider_replacement_targets(
             state,

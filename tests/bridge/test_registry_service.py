@@ -140,6 +140,68 @@ def test_registry_service_auto_demotes_safe_static_url_alias_on_load(tmp_path: P
     ]
 
 
+def test_registry_service_load_does_not_auto_demote_discovery_auto_approved_row(
+    tmp_path: Path,
+) -> None:
+    active_path = tmp_path / "source-registry-active.json"
+    pending_path = tmp_path / "source-registry-pending.json"
+    rejected_path = tmp_path / "source-registry-rejected.json"
+    winner_id = "static:listing_url:https://studio.example/careers"
+    loser_id = "static:listing_url:https://www.studio.example/careers"
+    _write_json(
+        active_path,
+        [
+            {
+                "id": winner_id,
+                "name": "Static Studio",
+                "studio": "Static Studio",
+                "adapter": "static",
+                "registryState": "active",
+                "jobsFound": 3,
+                "rankScore": 40,
+                "score": 20,
+            },
+            {
+                "id": loser_id,
+                "name": "Static Studio",
+                "studio": "Static Studio",
+                "adapter": "static",
+                "registryState": "active",
+                "stateChangedBy": "discovery_auto_approve",
+                "approvedBy": "registry_migration_v2",
+                "jobsFound": 3,
+                "rankScore": 20,
+                "score": 10,
+            },
+        ],
+    )
+    _write_json(pending_path, [])
+    _write_json(rejected_path, [])
+    service = RegistryService(
+        paths=RegistryPaths(
+            active=active_path,
+            pending=pending_path,
+            rejected=rejected_path,
+        ),
+        default_active=[],
+        normalize_manual_static=lambda row: row,
+    )
+
+    state = service.load_state()
+    report = service.get_auto_heal_report()
+
+    assert [row["id"] for row in state["active"]] == [winner_id, loser_id]
+    assert state["pending"] == []
+    assert report["safeAutomation"]["autoDemoted"] is False
+    assert report["safeAutomation"]["demoted"] == 0
+    assert report["safeAutomation"]["skippedRows"] == [
+        {
+            "id": loser_id,
+            "reason": "protected_from_load_time_safe_auto_demote",
+        }
+    ]
+
+
 def test_registry_service_auto_demotes_safe_static_listing_variant_on_load(
     tmp_path: Path,
 ) -> None:
