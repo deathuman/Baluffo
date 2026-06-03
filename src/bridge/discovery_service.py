@@ -28,6 +28,7 @@ from src.source_registry import (
 )
 from src.source_registry import (
     apply_discovery_auto_approval,
+    source_identity,
 )
 
 BridgeLogFunc = Callable[..., None]
@@ -341,12 +342,28 @@ class DiscoveryService:
             return None
         report = self._deps.normalize_discovery_report_contract(raw)
         run_id = str(report.get("runId") or "").strip()
-        if not run_id or str(report.get("finishedAt") or "").strip():
+        if not run_id:
+            return None
+        finished_at = str(report.get("finishedAt") or "").strip()
+        if finished_at:
+            self._reconcile_terminal_discovery_registry_state(
+                run_id=run_id,
+                finished_at=finished_at,
+                report=report,
+            )
             return None
         row = self._deps.get_lifecycle_row(run_id, "discovery")
         if not self._lifecycle_row_is_terminal(row):
             return None
-        return self._repair_terminal_discovery_report_from_row(row or {}, report)
+        repaired = self._repair_terminal_discovery_report_from_row(row or {}, report)
+        repaired_finished_at = str(repaired.get("finishedAt") or "").strip()
+        if repaired_finished_at:
+            self._reconcile_terminal_discovery_registry_state(
+                run_id=run_id,
+                finished_at=repaired_finished_at,
+                report=repaired,
+            )
+        return repaired
 
     def reconcile_terminal_discovery_report_from_state(self) -> dict[str, Any] | None:
         return self._reconcile_terminal_discovery_report_from_state()
@@ -403,6 +420,168 @@ class DiscoveryService:
         if bool(auto_approval.get("enabled")) and auto_status == "running":
             return False
         return True
+
+    @staticmethod
+    def _state_bucket_counts(state: dict[str, list[dict[str, Any]]]) -> dict[str, int]:
+        return {
+            bucket: len([row for row in list(state.get(bucket) or []) if isinstance(row, dict)])
+            for bucket in ("active", "pending", "rejected")
+        }
+
+    @staticmethod
+    def _state_bucket_identity_signature(
+        state: dict[str, list[dict[str, Any]]],
+    ) -> tuple[tuple[str, tuple[str, ...]], ...]:
+        signature: list[tuple[str, tuple[str, ...]]] = []
+        for bucket in ("active", "pending", "rejected"):
+            identities: list[str] = []
+            for index, row in enumerate(list(state.get(bucket) or [])):
+                if not isinstance(row, dict):
+                    continue
+                try:
+                    identity = str(source_identity(row) or "").strip()
+                except (TypeError, ValueError):
+                    identity = ""
+                if not identity:
+                    identity = str(row.get("id") or row.get("sourceId") or index).strip()
+                identities.append(identity)
+            signature.append((bucket, tuple(sorted(identities))))
+        return tuple(signature)
+
+    @staticmethod
+    def _registry_finalization_counts(report: dict[str, Any]) -> dict[str, int] | None:
+        runtime = as_json_object(report.get("runtime"))
+        finalization = as_json_object(runtime.get("registryFinalization"))
+        status = str(finalization.get("status") or "").strip().lower()
+        if status and status not in {"completed", "ok", "success"}:
+            return None
+        keys = {
+            "active": "activeCount",
+            "pending": "pendingCount",
+            "rejected": "rejectedCount",
+        }
+        counts: dict[str, int] = {}
+        for bucket, key in keys.items():
+            if key not in finalization:
+                return None
+            try:
+                counts[bucket] = int(finalization.get(key) or 0)
+            except (TypeError, ValueError):
+                return None
+        return counts
+
+    @classmethod
+    def _state_matches_registry_finalization(
+        cls,
+        state: dict[str, list[dict[str, Any]]],
+        finalization_counts: dict[str, int] | None,
+    ) -> bool:
+        if not finalization_counts:
+            return True
+        counts = cls._state_bucket_counts(state)
+        return all(counts.get(bucket) == finalization_counts.get(bucket) for bucket in counts)
+
+    @staticmethod
+    def _report_declares_auto_approval(report: dict[str, Any]) -> bool:
+        runtime = as_json_object(report.get("runtime"))
+        auto_approval = as_json_object(runtime.get("autoApproval"))
+        return any(key in auto_approval for key in ("enabled", "status", "approvedCount"))
+
+    def _terminal_report_auto_approval_enabled(
+        self,
+        report: dict[str, Any],
+        *,
+        saved_config_enabled: bool,
+    ) -> bool:
+        runtime = as_json_object(report.get("runtime"))
+        auto_approval = as_json_object(runtime.get("autoApproval"))
+        if "enabled" in auto_approval:
+            return bool(auto_approval.get("enabled"))
+        return bool(saved_config_enabled)
+
+    def _reconcile_terminal_discovery_registry_state(
+        self,
+        *,
+        run_id: str,
+        finished_at: str,
+        report: dict[str, Any],
+        saved_config_enabled: bool | None = None,
+    ) -> tuple[dict[str, Any], int, bool]:
+        if not str(finished_at or "").strip() or not self._discovery_report_finalization_settled(
+            report
+        ):
+            return report, 0, False
+
+        if saved_config_enabled is None:
+            saved_config = self.get_saved_discovery_config_payload()
+            saved_config_enabled = bool(saved_config.get("autoApproveHealthyPendingOnComplete"))
+
+        auto_approve_enabled = self._terminal_report_auto_approval_enabled(
+            report,
+            saved_config_enabled=bool(saved_config_enabled),
+        )
+        current_state = self._deps.load_state()
+        before_signature = self._state_bucket_identity_signature(current_state)
+        finalization_counts = self._registry_finalization_counts(report)
+        if finalization_counts is not None and self._state_matches_registry_finalization(
+            current_state, finalization_counts
+        ):
+            return report, 0, False
+
+        report_declares_auto_approval = self._report_declares_auto_approval(report)
+        next_state, auto_approved = apply_discovery_auto_approval(
+            current_state,
+            report,
+            auto_approve_enabled=auto_approve_enabled,
+            approval_state_path=self._paths.approval_state,
+            record_approval_state=not report_declares_auto_approval,
+            now_iso_fn=self._deps.now_iso,
+        )
+        after_signature = self._state_bucket_identity_signature(next_state)
+        state_changed = before_signature != after_signature
+        if not state_changed:
+            if finalization_counts is not None:
+                self._deps.bridge_log(
+                    "warn",
+                    "discovery_registry_reconciliation_unresolved",
+                    runId=run_id,
+                    finishedAt=finished_at,
+                    autoApprovalEnabled=auto_approve_enabled,
+                    approved=int(auto_approved),
+                    expectedCounts=finalization_counts,
+                    actualCounts=self._state_bucket_counts(current_state),
+                )
+            return report, 0, False
+
+        if finalization_counts and not self._state_matches_registry_finalization(
+            next_state, finalization_counts
+        ):
+            self._deps.bridge_log(
+                "warn",
+                "discovery_registry_reconciliation_skipped",
+                runId=run_id,
+                finishedAt=finished_at,
+                approved=int(auto_approved),
+                expectedCounts=finalization_counts,
+                reconciledCounts=self._state_bucket_counts(next_state),
+            )
+            return report, 0, False
+
+        persisted_state = self._deps.persist_state_and_auto_sync(
+            next_state,
+            reason="discovery_auto_approve",
+        )
+        self._deps.save_json_atomic(self._paths.report, report)
+        self._deps.bridge_log(
+            "info",
+            "discovery_registry_reconciled_from_terminal_report",
+            runId=run_id,
+            finishedAt=finished_at,
+            approved=int(auto_approved),
+            expectedCounts=finalization_counts or {},
+            persistedCounts=self._state_bucket_counts(persisted_state),
+        )
+        return report, int(auto_approved), True
 
     @staticmethod
     def _abort_reason_from_row(row: dict[str, Any] | None) -> str:
@@ -469,23 +648,25 @@ class DiscoveryService:
     ) -> None:
         queued = int(summary.get("queuedCandidateCount") or summary.get("newCandidateCount") or 0)
         saved_config = self.get_saved_discovery_config_payload()
-        auto_approve_enabled = bool(saved_config.get("autoApproveHealthyPendingOnComplete"))
-        state, auto_approved = apply_discovery_auto_approval(
-            self._deps.load_state(),
-            report,
-            auto_approve_enabled=auto_approve_enabled,
-            approval_state_path=self._paths.approval_state,
-            now_iso_fn=self._deps.now_iso,
+        report, auto_approved, _persisted = self._reconcile_terminal_discovery_registry_state(
+            run_id=run_id,
+            finished_at=finished_at,
+            report=report,
+            saved_config_enabled=bool(saved_config.get("autoApproveHealthyPendingOnComplete")),
         )
-        if auto_approved > 0:
-            self._deps.persist_state_and_auto_sync(state, reason="discovery_auto_approve")
         self._deps.save_json_atomic(self._paths.report, report)
+        runtime = as_json_object(report.get("runtime"))
+        runtime_auto = as_json_object(runtime.get("autoApproval"))
+        auto_approve_enabled = self._terminal_report_auto_approval_enabled(
+            report,
+            saved_config_enabled=bool(saved_config.get("autoApproveHealthyPendingOnComplete")),
+        )
         self._deps.bridge_log(
             "info",
             "discovery_auto_approval_completed",
             runId=run_id,
             enabled=auto_approve_enabled,
-            approved=int(auto_approved),
+            approved=int(auto_approved or runtime_auto.get("approvedCount") or 0),
         )
         if queued <= 0 and auto_approved <= 0:
             self._deps.mark_discovery_sync_finished(finished_at)

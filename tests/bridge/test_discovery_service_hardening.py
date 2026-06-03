@@ -205,3 +205,146 @@ def test_watch_discovery_run_waits_for_finalization_before_auto_sync(tmp_path: P
     assert ((runtime.get("registryFinalization") or {}).get("status")) == "completed"
     assert pid_checks >= 1
     assert marked == [finished_at]
+
+
+def test_reconcile_terminal_discovery_registry_uses_report_auto_approval_when_config_stale(
+    tmp_path: Path,
+) -> None:
+    report_path = tmp_path / "source-discovery-report.json"
+    approval_state_path = tmp_path / "source-approval-state.json"
+    approval_state_path.write_text(json.dumps({"approvedSinceLastRun": 12}), encoding="utf-8")
+    report_path.write_text(
+        json.dumps(
+            {
+                "runId": "discovery_done_1",
+                "startedAt": "2026-03-20T12:00:00Z",
+                "finishedAt": "2026-03-20T12:05:00Z",
+                "summary": {
+                    "queuedCandidateCount": 1,
+                    "approvedCandidateCount": 1,
+                    "liveCandidateCount": 1,
+                },
+                "runtime": {
+                    "autoApproval": {
+                        "enabled": True,
+                        "approvedCount": 1,
+                        "status": "completed",
+                    },
+                    "registryFinalization": {
+                        "status": "completed",
+                        "activeCount": 2,
+                        "pendingCount": 0,
+                        "rejectedCount": 0,
+                    },
+                },
+                "candidates": [
+                    {
+                        "id": "pending-ok",
+                        "adapter": "static",
+                        "name": "Healthy Pending",
+                        "jobsFound": 3,
+                        "candidateState": "live",
+                        "registryState": "active",
+                        "approvedBy": "discovery_auto_approve",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    state = {
+        "active": [{"id": "active-1", "adapter": "static", "name": "Existing"}],
+        "pending": [
+            {
+                "id": "pending-ok",
+                "adapter": "static",
+                "name": "Healthy Pending",
+                "jobsFound": 3,
+            }
+        ],
+        "rejected": [],
+    }
+    persisted_states: list[dict[str, list[dict[str, Any]]]] = []
+    events: list[str] = []
+
+    def persist_state_and_auto_sync(
+        next_state: dict[str, list[dict[str, Any]]], **_kwargs: Any
+    ) -> dict[str, list[dict[str, Any]]]:
+        persisted = json.loads(json.dumps(next_state))
+        persisted_states.append(persisted)
+        state["active"] = persisted["active"]
+        state["pending"] = persisted["pending"]
+        state["rejected"] = persisted["rejected"]
+        return persisted
+
+    service = _make_service(
+        tmp_path,
+        report_path=report_path,
+        now_iso="2026-03-20T12:06:00Z",
+        bridge_log=lambda _level, message, **_fields: events.append(str(message)),
+        load_state=lambda: json.loads(json.dumps(state)),
+        persist_state_and_auto_sync=persist_state_and_auto_sync,
+    )
+
+    service.reconcile_terminal_discovery_report_from_state()
+
+    assert len(persisted_states) == 1
+    assert [row["id"] for row in state["active"]] == ["active-1", "pending-ok"]
+    assert state["pending"] == []
+    assert "discovery_registry_reconciled_from_terminal_report" in events
+    approval_state = json.loads(approval_state_path.read_text(encoding="utf-8"))
+    assert approval_state["approvedSinceLastRun"] == 12
+
+
+def test_reconcile_terminal_discovery_registry_skips_unsafe_finalization_mismatch(
+    tmp_path: Path,
+) -> None:
+    report_path = tmp_path / "source-discovery-report.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "runId": "discovery_done_2",
+                "startedAt": "2026-03-20T12:00:00Z",
+                "finishedAt": "2026-03-20T12:05:00Z",
+                "summary": {"queuedCandidateCount": 1, "approvedCandidateCount": 1},
+                "runtime": {
+                    "autoApproval": {
+                        "enabled": True,
+                        "approvedCount": 1,
+                        "status": "completed",
+                    },
+                    "registryFinalization": {
+                        "status": "completed",
+                        "activeCount": 99,
+                        "pendingCount": 0,
+                        "rejectedCount": 0,
+                    },
+                },
+                "candidates": [{"id": "pending-ok", "adapter": "static", "jobsFound": 3}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    state = {
+        "active": [{"id": "active-1", "adapter": "static"}],
+        "pending": [{"id": "pending-ok", "adapter": "static", "jobsFound": 3}],
+        "rejected": [],
+    }
+    persisted_states: list[dict[str, list[dict[str, Any]]]] = []
+    events: list[str] = []
+    service = _make_service(
+        tmp_path,
+        report_path=report_path,
+        bridge_log=lambda _level, message, **_fields: events.append(str(message)),
+        load_state=lambda: json.loads(json.dumps(state)),
+        persist_state_and_auto_sync=lambda next_state, **_kwargs: (
+            persisted_states.append(json.loads(json.dumps(next_state))) or next_state
+        ),
+    )
+
+    service.reconcile_terminal_discovery_report_from_state()
+
+    assert persisted_states == []
+    assert [row["id"] for row in state["active"]] == ["active-1"]
+    assert [row["id"] for row in state["pending"]] == ["pending-ok"]
+    assert "discovery_registry_reconciliation_skipped" in events

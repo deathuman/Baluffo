@@ -358,6 +358,7 @@ def apply_discovery_auto_approval(
     *,
     auto_approve_enabled: bool,
     approval_state_path: Path,
+    record_approval_state: bool = True,
     now_iso_fn: Callable[[], str] | None = now_iso,
 ) -> tuple[dict[str, list[dict[str, Any]]], int]:
     normalized_state = {
@@ -450,7 +451,7 @@ def apply_discovery_auto_approval(
             next_candidates.append(updated_row)
         report["candidates"] = next_candidates
 
-    if auto_approve_enabled and moved:
+    if auto_approve_enabled and moved and record_approval_state:
         approval_state = load_json_object(approval_state_path, {"approvedSinceLastRun": 0})
         approval_state["approvedSinceLastRun"] = int(
             approval_state.get("approvedSinceLastRun") or 0

@@ -399,6 +399,67 @@ class PipelineService:
             return False
         return self._child_task_is_active(task_type, run_id)
 
+    def _child_terminal_snapshot(self, task_type: str, run_id: str = "") -> Any:
+        snapshot = self._get_child_task_snapshot(task_type, run_id)
+        if snapshot is None or bool(getattr(snapshot, "active", False)):
+            return None
+        finished_at = str(getattr(snapshot, "finished_at", "") or "").strip()
+        terminal_status = str(getattr(snapshot, "terminal_status", "") or "").strip().lower()
+        if finished_at or terminal_status or bool(getattr(snapshot, "explicit_dead", False)):
+            return snapshot
+        return None
+
+    @staticmethod
+    def _child_terminal_error(snapshot: Any, report_name: str) -> tuple[str, str]:
+        terminal_status = str(getattr(snapshot, "terminal_status", "") or "").strip().lower()
+        summary = getattr(snapshot, "summary", {})
+        if not isinstance(summary, dict):
+            summary = {}
+        terminal_reason = str(
+            summary.get("terminalReason")
+            or summary.get("terminal_reason")
+            or getattr(snapshot, "terminal_reason", "")
+            or terminal_status
+            or "child_terminal_without_terminal_report"
+        ).strip()
+        error = str(summary.get("error") or "").strip()
+        if not error:
+            error = f"{report_name} child ended before terminal report"
+        return terminal_reason, error
+
+    def _raise_for_terminal_child_without_report(
+        self,
+        *,
+        report_name: str,
+        task_type: str,
+        task_run_id: str,
+        snapshot: Any,
+        report: dict[str, Any],
+    ) -> None:
+        terminal_reason, error = self._child_terminal_error(snapshot, report_name)
+        child_run_id = str(getattr(snapshot, "run_id", "") or task_run_id or "").strip()
+        terminal_status = str(getattr(snapshot, "terminal_status", "") or "").strip().lower()
+        self._bridge_log(
+            "warn",
+            "jobs_pipeline_child_terminal_without_terminal_report",
+            taskType=str(task_type or "").strip(),
+            childRunId=child_run_id,
+            terminalStatus=terminal_status,
+            terminalReason=terminal_reason,
+            reportName=report_name,
+            reportRunId=str((report or {}).get("runId") or ""),
+            reportFinishedAt=str((report or {}).get("finishedAt") or ""),
+        )
+        if terminal_status in {"canceled", "cancelled"} or terminal_reason == ABORT_TERMINAL_REASON:
+            raise PipelineAbortRequested("pipeline child abort requested")
+        self._fail_child_lifecycle(
+            task_type,
+            task_run_id,
+            terminal_reason=terminal_reason or "child_terminal_without_terminal_report",
+            error=error,
+        )
+        raise TimeoutError(error)
+
     @staticmethod
     def _is_duplicate_task_response(result: dict[str, Any] | None) -> bool:
         return bool(isinstance(result, dict) and result.get("alreadyRunning"))
@@ -545,6 +606,32 @@ class PipelineService:
             summary=terminal_summary,
             progress=terminal_progress,
         )
+
+    def _finish_matching_terminal_child_report(
+        self,
+        report: dict[str, Any],
+        *,
+        started_dt: Any,
+        started_at: str,
+        task_type: str,
+        task_run_id: str,
+    ) -> dict[str, Any] | None:
+        if not self._report_matches_started_run(
+            report,
+            started_dt=started_dt,
+            task_run_id=task_run_id,
+        ):
+            return None
+        report_started = self._parse_iso(report.get("startedAt"))
+        report_finished = self._parse_iso(report.get("finishedAt"))
+        if not (report_finished and report_started and report_finished >= report_started):
+            return None
+        if self._child_abort_requested(task_type, task_run_id):
+            raise PipelineAbortRequested("pipeline child abort requested")
+        if self._refresh_child_lifecycle_evidence(task_type, task_run_id, started_at):
+            self._heartbeat_pipeline_wait()
+        self._finish_child_lifecycle_from_report(task_type, task_run_id, report)
+        return report
 
     def _terminal_report_matches_child(
         self,
@@ -947,6 +1034,26 @@ class PipelineService:
             now = datetime.now(UTC)
             report = load_json_object(report_path, {})
             normalized_report = report if isinstance(report, dict) else {}
+            with self._lock:
+                pipeline_run_id = str(self._status.get("runId") or "").strip()
+            completed_report = self._finish_matching_terminal_child_report(
+                normalized_report,
+                started_dt=started_dt,
+                started_at=started_at,
+                task_type=task_type,
+                task_run_id=task_run_id,
+            )
+            if completed_report is not None:
+                return completed_report
+            terminal_snapshot = self._child_terminal_snapshot(task_type, task_run_id)
+            if terminal_snapshot is not None:
+                self._raise_for_terminal_child_without_report(
+                    report_name=report_name,
+                    task_type=task_type,
+                    task_run_id=task_run_id,
+                    snapshot=terminal_snapshot,
+                    report=normalized_report,
+                )
             refreshed_child_heartbeat = self._refresh_child_lifecycle_evidence(
                 task_type, task_run_id, started_at
             )
@@ -958,23 +1065,9 @@ class PipelineService:
                     and self._child_task_has_live_evidence(task_type, task_run_id)
                 )
             )
-            with self._lock:
-                pipeline_run_id = str(self._status.get("runId") or "").strip()
             if child_live:
                 quiet_deadline = now + timedelta(seconds=quiet_window_s)
                 self._heartbeat_pipeline_wait()
-            if self._report_matches_started_run(
-                normalized_report, started_dt=started_dt, task_run_id=task_run_id
-            ):
-                report_started = self._parse_iso(normalized_report.get("startedAt"))
-                report_finished = self._parse_iso(normalized_report.get("finishedAt"))
-                if report_finished and report_started and report_finished >= report_started:
-                    if self._child_abort_requested(task_type, task_run_id):
-                        raise PipelineAbortRequested("pipeline child abort requested")
-                    self._finish_child_lifecycle_from_report(
-                        task_type, task_run_id, normalized_report
-                    )
-                    return normalized_report
             self._check_abort(pipeline_run_id)
             if fail_on_stale and stale_guard(
                 "fetch" if "fetch" in report_name else "discovery",

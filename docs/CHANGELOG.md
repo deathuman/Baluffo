@@ -10,6 +10,16 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.34] - 2026-06-03
+
+### Fixed
+- Terminal discovery reports now reconcile report-declared auto-approval through the bridge registry authority, repairing stale registry bucket counts before `/discovery/report` is served or a new discovery starts.
+- Jobs pipeline child waits now stop promptly when discovery or fetch child lifecycle rows terminalize without a matching terminal report, avoiding long absolute safety-cap waits.
+
+### Notes
+- Fetcher parsing, provider quality rules, source policy, sync contracts, raw-LAN same-origin behavior, and desktop packaging behavior are unchanged.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.33] - 2026-06-03
 
 ### Fixed

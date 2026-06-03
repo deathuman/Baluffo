@@ -152,6 +152,7 @@ def apply_discovery_auto_approval(
     *,
     auto_approve_enabled: bool,
     approval_state_path: Path | None = None,
+    record_approval_state: bool = True,
     now_iso_fn: Callable[[], str] | None = now_iso,
 ) -> tuple[dict[str, list[dict[str, Any]]], int]:
     return _auto.apply_discovery_auto_approval(
@@ -159,6 +160,7 @@ def apply_discovery_auto_approval(
         report,
         auto_approve_enabled=auto_approve_enabled,
         approval_state_path=Path(approval_state_path or APPROVAL_STATE_PATH),
+        record_approval_state=record_approval_state,
         now_iso_fn=now_iso_fn,
     )
 
