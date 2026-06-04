@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 
-APP_VERSION = "0.2.40"
+APP_VERSION = "0.2.41"
 APP_VERSION_OVERRIDE_ENV = "BALUFFO_APP_VERSION_OVERRIDE"
 
 

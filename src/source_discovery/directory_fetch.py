@@ -98,6 +98,8 @@ def fetch_directory_pages(
                 "adapter": str(job.get("adapter") or ""),
                 "error": error,
                 "stage": str(job.get("failureStage") or ""),
+                "recoveryUrlSource": str(job.get("recoveryUrlSource") or ""),
+                "recoveryUrlPath": str(job.get("recoveryUrlPath") or ""),
             }
         normalized_results.append(row)
     return normalized_results

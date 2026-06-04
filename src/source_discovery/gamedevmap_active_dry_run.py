@@ -7,6 +7,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from src import source_registry as source_registry_module
 from src.shared.utils import now_iso
@@ -784,6 +785,16 @@ def _no_careers_reason_detail(page_url: str, html: str) -> str:
     )
 
 
+def _recovery_job_label(studio: str, recovery_url: str) -> str:
+    try:
+        parsed = urlparse(str(recovery_url or ""))
+    except ValueError:
+        path = ""
+    else:
+        path = parsed.path or "/"
+    return f"{studio} recovery {path or 'unknown'}"
+
+
 def _provider_candidates_from_html_text(
     *,
     row: dict[str, Any],
@@ -997,7 +1008,7 @@ def _queue_no_careers_recovery(
             "recoverySource": "same_party_recovery_url",
             "recoveryWave": int(wave),
         },
-        name_factory=lambda recovery_url, _wave: f"{studio} recovery {recovery_url}",
+        name_factory=lambda recovery_url, _wave: _recovery_job_label(studio, recovery_url),
         adapter="gamedevmap",
         failure_stage="gamedevmap_recovery_fetch",
         blocked_hosts=SOCIAL_PROFILE_HOSTS | THIRD_PARTY_PROFILE_HOSTS,

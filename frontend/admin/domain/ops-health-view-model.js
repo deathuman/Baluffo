@@ -261,6 +261,7 @@ function compactTaskFailureAttempts(payload) {
       runId: truncateString(discovery?.runId || ""),
       failureRecordCount: toNumber(discovery?.failureRecordCount),
       expectedSkipCount: toNumber(discovery?.expectedSkipCount),
+      expectedNegativeCount: toNumber(discovery?.expectedNegativeCount),
       actionableDiagnosticCount: toNumber(discovery?.actionableDiagnosticCount),
       highPriorityBuckets: boundedList(discovery?.highPriorityBuckets, compactFailureBucket, 8)
     },

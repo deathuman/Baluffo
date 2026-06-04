@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """Shared HTTP-only careers recovery for directory-audit homepage misses."""
 
+import re
 import time
 from collections import defaultdict
 from collections.abc import Callable
@@ -25,12 +26,14 @@ from .page_outcomes import (
     PageOutcome,
     classify_recovery_page_with_strategy,
 )
-from .recovery_url_planner import recovery_urls, same_party_jobish_urls
+from .recovery_url_planner import common_recovery_urls, recovery_urls, same_party_jobish_urls
 
 RECOVERY_LOGIC_VERSION = 1
 PRIMARY_RECOVERY_PATHS = ("/careers", "/jobs")
 SECONDARY_RECOVERY_PATHS = ("/join-us", "/work-with-us", "/company/careers", "/about/careers")
 DEFAULT_RECOVERY_URL_LIMIT = 6
+GENERATED_RECOVERY_URL_SOURCE = "generated_common_path"
+HTML_JOBISH_RECOVERY_URL_SOURCE = "html_jobish_link"
 PROFILE_HOSTS = frozenset(
     {
         "about.me",
@@ -319,6 +322,60 @@ def plan_recovery_urls(
     )
 
 
+def _recovery_path(url: str) -> str:
+    try:
+        parsed = urlparse(str(url or ""))
+    except ValueError:
+        return ""
+    return parsed.path or "/"
+
+
+def _recovery_url_entries(
+    page_url: str,
+    html: str,
+    *,
+    paths: tuple[str, ...],
+    limit: int,
+    include_jobish_links: bool = True,
+    blocked_hosts: set[str] | None = None,
+    html_url_candidate_fn: Any | None = None,
+) -> list[tuple[str, str]]:
+    parsed = urlparse(str(page_url or ""))
+    page_host = parsed.netloc.lower().lstrip(".")
+    if blocked_hosts and any(
+        page_host == blocked_host or page_host.endswith(f".{blocked_host}")
+        for blocked_host in blocked_hosts
+    ):
+        return []
+    out: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    jobish_urls = (
+        same_party_jobish_urls(
+            page_url,
+            html,
+            html_url_candidate_fn=html_url_candidate_fn,
+        )
+        if include_jobish_links
+        else []
+    )
+    candidates = [
+        *((url, HTML_JOBISH_RECOVERY_URL_SOURCE) for url in jobish_urls),
+        *(
+            (url, GENERATED_RECOVERY_URL_SOURCE)
+            for url in common_recovery_urls(page_url, paths, blocked_hosts=blocked_hosts)
+        ),
+    ]
+    for raw_url, source in candidates:
+        normalized = str(raw_url or "").split("#", 1)[0].strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        out.append((normalized, source))
+        if len(out) >= limit:
+            break
+    return out
+
+
 def build_recovery_fetch_job(
     *,
     recovery_url: str,
@@ -326,14 +383,21 @@ def build_recovery_fetch_job(
     name: str,
     adapter: str,
     failure_stage: str,
+    recovery_url_source: str = "",
+    recovery_url_path: str = "",
 ) -> dict[str, Any]:
-    return {
+    job = {
         "url": recovery_url,
         "payload": payload,
         "name": name,
         "adapter": adapter,
         "failureStage": failure_stage,
     }
+    if recovery_url_source:
+        job["recoveryUrlSource"] = recovery_url_source
+    if recovery_url_path:
+        job["recoveryUrlPath"] = recovery_url_path
+    return job
 
 
 def plan_recovery_fetch_job_waves(
@@ -358,7 +422,7 @@ def plan_recovery_fetch_job_waves(
         include_jobish_links: bool,
         wave: int,
     ) -> list[dict[str, Any]]:
-        urls = recovery_urls(
+        entries = _recovery_url_entries(
             page_url,
             html,
             paths=paths,
@@ -367,16 +431,26 @@ def plan_recovery_fetch_job_waves(
             include_jobish_links=include_jobish_links,
             html_url_candidate_fn=html_url_candidate_fn,
         )
-        return [
-            build_recovery_fetch_job(
-                recovery_url=url,
-                payload=payload_factory(url, wave),
-                name=name_factory(url, wave),
-                adapter=adapter,
-                failure_stage=failure_stage,
+        jobs: list[dict[str, Any]] = []
+        for url, source in entries:
+            path = _recovery_path(url)
+            payload = payload_factory(url, wave)
+            if isinstance(payload, dict):
+                payload = dict(payload)
+                payload.setdefault("recoveryUrlSource", source)
+                payload.setdefault("recoveryUrlPath", path)
+            jobs.append(
+                build_recovery_fetch_job(
+                    recovery_url=url,
+                    payload=payload,
+                    name=name_factory(url, wave),
+                    adapter=adapter,
+                    failure_stage=failure_stage,
+                    recovery_url_source=source,
+                    recovery_url_path=path,
+                )
             )
-            for url in urls
-        ]
+        return jobs
 
     return (
         jobs_for_wave(
@@ -437,6 +511,70 @@ def recovery_fetch_error_text(result: dict[str, Any]) -> str:
     return ""
 
 
+def _result_http_status(result: dict[str, Any]) -> int:
+    error = recovery_fetch_error_text(result)
+    for pattern in (
+        r"(?:http error|status/)\s*(\d{3})",
+        r"(?:client|server|redirect) error '\s*(\d{3})",
+        r"\b(\d{3})\s+(?:not found|gone)",
+    ):
+        match = re.search(pattern, error, re.IGNORECASE)
+        if match:
+            try:
+                return int(match.group(1))
+            except ValueError:
+                return 0
+    return 0
+
+
+def _recovery_request_homepage(payload: dict[str, Any]) -> str:
+    return str(payload.get("homepageUrl") or payload.get("pageUrl") or "").strip()
+
+
+def _recovery_request_source(payload: dict[str, Any]) -> str:
+    return str(payload.get("recoveryUrlSource") or "").strip()
+
+
+def generated_common_path_not_found_homepages(
+    recovery_fetch_results: list[dict[str, Any]],
+) -> set[str]:
+    states: dict[str, dict[str, int | bool]] = defaultdict(
+        lambda: {"generated": 0, "notFound": 0, "otherSignal": False}
+    )
+    for result in recovery_fetch_results:
+        requests = recovery_requests_from_result(result)
+        is_not_found = _result_http_status(result) in {404, 410}
+        is_ok = bool(result.get("ok"))
+        for payload in requests:
+            homepage = _recovery_request_homepage(payload)
+            if not homepage:
+                continue
+            state = states[homepage]
+            if _recovery_request_source(payload) != GENERATED_RECOVERY_URL_SOURCE:
+                state["otherSignal"] = True
+                continue
+            state["generated"] = int(state["generated"]) + 1
+            if is_not_found and not is_ok:
+                state["notFound"] = int(state["notFound"]) + 1
+            else:
+                state["otherSignal"] = True
+    return {
+        homepage
+        for homepage, state in states.items()
+        if int(state["generated"]) > 0
+        and int(state["generated"]) == int(state["notFound"])
+        and not bool(state["otherSignal"])
+    }
+
+
+def recovery_job_is_generated_common_path(job: dict[str, Any]) -> bool:
+    source = str(job.get("recoveryUrlSource") or "").strip()
+    if source:
+        return source == GENERATED_RECOVERY_URL_SOURCE
+    payload = as_json_object(job.get("payload"))
+    return str(payload.get("recoveryUrlSource") or "").strip() == GENERATED_RECOVERY_URL_SOURCE
+
+
 def recovery_cache_result(
     cached: dict[str, Any],
     job: dict[str, Any],
@@ -457,6 +595,8 @@ def recovery_cache_result(
             "adapter": str(job.get("adapter") or ""),
             "error": str(result["error"] or ""),
             "stage": str(job.get("failureStage") or ""),
+            "recoveryUrlSource": str(job.get("recoveryUrlSource") or ""),
+            "recoveryUrlPath": str(job.get("recoveryUrlPath") or ""),
         }
     return result
 

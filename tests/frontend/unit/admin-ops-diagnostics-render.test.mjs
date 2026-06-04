@@ -174,10 +174,11 @@ test("admin render: task failure-attempt diagnostics are bounded and copyable", 
         runId: "discovery_latest",
         failureRecordCount: 729,
         expectedSkipCount: 415,
-        actionableDiagnosticCount: 314,
+        expectedNegativeCount: 222,
+        actionableDiagnosticCount: 92,
         highPriorityBuckets: [
           { key: "dedupe_skipped", count: 405, classification: "expected_skip" },
-          { key: "gamedevmap_recovery_fetch", count: 158, classification: "actionable_diagnostic" }
+          { key: "gamedevmap_recovery_not_found", count: 158, classification: "expected_negative" }
         ]
       },
       warnings: []
@@ -191,8 +192,9 @@ test("admin render: task failure-attempt diagnostics are bounded and copyable", 
   assert.match(metricsEl.innerHTML, /fetch hard 0/i);
   assert.match(metricsEl.innerHTML, /partial 1/i);
   assert.match(metricsEl.innerHTML, /expected cache exclusions 2[,.]127/i);
-  assert.match(metricsEl.innerHTML, /gamedevmap_recovery_fetch/i);
-  assert.match(metricsEl.innerHTML, /actionable diagnostic/i);
+  assert.match(metricsEl.innerHTML, /expected negatives 222/i);
+  assert.match(metricsEl.innerHTML, /gamedevmap_recovery_not_found/i);
+  assert.match(metricsEl.innerHTML, /expected negative/i);
   assert.doesNotMatch(metricsEl.innerHTML, /hidden\.invalid|raw should not render/i);
 
   copyButton.click();
@@ -201,6 +203,7 @@ test("admin render: task failure-attempt diagnostics are bounded and copyable", 
   assert.equal(copied.length, 1);
   assert.equal(copied[0].key, "taskFailures");
   assert.equal(copied[0].fetch.partialWarningCount, 1);
+  assert.equal(copied[0].discovery.expectedNegativeCount, 222);
   assert.equal(copied[0].discovery.highPriorityBuckets.length, 2);
   assert.equal(refreshed, 1);
 });

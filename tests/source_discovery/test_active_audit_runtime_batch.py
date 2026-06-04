@@ -110,6 +110,7 @@ def test_active_audit_batch_sequences_recovery_probe_and_progress() -> None:
     ]
     assert result.recovered_homepages == {"h1", "h2"}
     assert result.timing["recoverySkippedByWave1"] == 1
+    assert result.timing["recoverySkippedByGeneratedNotFound"] == 0
     assert result.timing["primaryRecoveryJobs"] == 1
     assert result.timing["secondaryRecoveryJobs"] == 1
     assert summary_updates == [
@@ -132,6 +133,115 @@ def test_active_audit_batch_sequences_recovery_probe_and_progress() -> None:
         {"reason": "recovery_miss"},
         {"reason": "bad_provider"},
     ]
+
+
+def test_active_audit_batch_prunes_secondary_generated_paths_after_primary_not_found() -> None:
+    artifact: dict[str, object] = {"progress": {"batchesCompleted": 0}, "timings": {}}
+    completed: set[str] = set()
+    recovery_fetches: list[list[str]] = []
+
+    def fetch_recovery(jobs, _label):
+        recovery_fetches.append([str(job.get("url") or "") for job in jobs])
+        if len(recovery_fetches) == 1:
+            return ActiveAuditRecoveryFetchResult(
+                results=[
+                    {
+                        "url": job["url"],
+                        "payload": job.get("payload", {}),
+                        "ok": False,
+                        "error": "Client error '404 Not Found'",
+                    }
+                    for job in jobs
+                ],
+                unique_jobs=len(jobs),
+                network_jobs=len(jobs),
+            )
+        return ActiveAuditRecoveryFetchResult(
+            results=[
+                {
+                    "url": job["url"],
+                    "payload": job.get("payload", {}),
+                    "ok": True,
+                    "text": "<html></html>",
+                }
+                for job in jobs
+            ],
+            unique_jobs=len(jobs),
+            network_jobs=len(jobs),
+        )
+
+    result = run_active_audit_batch(
+        artifact=artifact,
+        batch_rows=[{"url": "https://one.example"}],
+        cursor=1,
+        batch_number=1,
+        strategy=ActiveAuditBatchStrategy(
+            prepare_rows=lambda rows: ActiveAuditPreparedRows(homepage_rows=rows),
+            fetch_homepages=lambda rows: [
+                {"ok": True, "url": row["url"], "payload": row, "text": "<html></html>"}
+                for row in rows
+            ],
+            analyze_homepages=lambda _results: ActiveHomepageBatchResult(
+                primary_recovery_jobs=[
+                    {
+                        "url": "https://one.example/careers",
+                        "payload": {
+                            "homepageUrl": "https://one.example",
+                            "recoveryUrlSource": "generated_common_path",
+                        },
+                        "recoveryUrlSource": "generated_common_path",
+                    }
+                ],
+                secondary_recovery_jobs=[
+                    {
+                        "url": "https://one.example/join-us",
+                        "payload": {
+                            "homepageUrl": "https://one.example",
+                            "recoveryUrlSource": "generated_common_path",
+                        },
+                        "recoveryUrlSource": "generated_common_path",
+                    },
+                    {
+                        "url": "https://one.example/jobs",
+                        "payload": {
+                            "homepageUrl": "https://one.example",
+                            "recoveryUrlSource": "html_jobish_link",
+                        },
+                        "recoveryUrlSource": "html_jobish_link",
+                    },
+                ],
+            ),
+            fetch_recovery=fetch_recovery,
+            apply_recovery=lambda results, grouped, finalize: ActiveAuditRecoveryApplicationResult(
+                pages_fetched=sum(1 for result in results if result.get("ok")),
+                failures=[
+                    {"stage": "gamedevmap_recovery_fetch"}
+                    for result in results
+                    if not result.get("ok")
+                ],
+                grouped_state=grouped or {},
+                recovered_homepages=set(),
+            ),
+            recovery_homepage_key=lambda job: str(job.get("payload", {}).get("homepageUrl") or ""),
+            merge_candidates=lambda direct, provider, static, recovery_provider, recovery_static: (
+                ActiveAuditCandidateMergeResult(candidates=[])
+            ),
+            merge_artifact_updates=lambda *_args: None,
+            update_summary=lambda _summary: None,
+            probe_candidates=lambda candidates: [],
+            apply_probe_results=lambda _results: None,
+            row_identity=lambda row: str(row.get("url") or ""),
+            append_timing=lambda _timing: None,
+        ),
+        completed_identities=completed,
+    )
+
+    assert recovery_fetches == [
+        ["https://one.example/careers"],
+        ["https://one.example/jobs"],
+    ]
+    assert result.timing["recoverySkippedByGeneratedNotFound"] == 1
+    assert result.timing["secondaryRecoveryJobs"] == 1
 
 
 def test_active_audit_loop_writes_complete_when_no_rows_remain() -> None:

@@ -353,11 +353,16 @@ def test_gamedevmap_no_careers_recovery_uses_shared_wave_planning() -> None:
         "homepageReasonDetail": "js_shell",
         "recoverySource": "same_party_recovery_url",
         "recoveryWave": 1,
+        "recoveryUrlSource": "html_jobish_link",
+        "recoveryUrlPath": "/jobs",
     }
-    assert primary_jobs[0]["name"] == "Shell Studio recovery https://shell.example.com/jobs"
+    assert primary_jobs[0]["name"] == "Shell Studio recovery /jobs"
     assert primary_jobs[0]["adapter"] == "gamedevmap"
     assert primary_jobs[0]["failureStage"] == "gamedevmap_recovery_fetch"
+    assert primary_jobs[1]["payload"]["recoveryUrlSource"] == "generated_common_path"
+    assert primary_jobs[1]["name"] == "Shell Studio recovery /careers"
     assert secondary_jobs[0]["payload"]["recoveryWave"] == 2
+    assert secondary_jobs[0]["payload"]["recoveryUrlSource"] == "generated_common_path"
     assert browser_rows == [
         {
             "adapter": "gamedevmap",

@@ -10,6 +10,7 @@ from src.source_discovery.directory_page_recovery import (
     dedupe_recovery_fetch_jobs,
     default_recovery_summary,
     fetch_recovery_jobs,
+    generated_common_path_not_found_homepages,
     http_recovery_request_from_context,
     looks_like_js_shell,
     merge_scan_result_payloads,
@@ -176,11 +177,17 @@ def test_plan_recovery_fetch_job_waves_preserves_payloads_and_custom_url_extract
         "reasonDetail": "no_jobish_links",
         "recoverySource": "same_party_recovery_url",
         "recoveryWave": 1,
+        "recoveryUrlSource": "html_jobish_link",
+        "recoveryUrlPath": "/jobs",
     }
     assert primary_jobs[0]["name"] == "Studio wave 1 https://studio.example/jobs"
     assert primary_jobs[0]["adapter"] == "gamedevmap"
     assert primary_jobs[0]["failureStage"] == "gamedevmap_recovery_fetch"
+    assert primary_jobs[0]["recoveryUrlSource"] == "html_jobish_link"
+    assert primary_jobs[2]["recoveryUrlSource"] == "generated_common_path"
+    assert primary_jobs[2]["recoveryUrlPath"] == "/careers"
     assert secondary_jobs[0]["payload"]["recoveryWave"] == 2
+    assert secondary_jobs[0]["payload"]["recoveryUrlSource"] == "generated_common_path"
 
 
 def test_dedupe_recovery_fetch_jobs_fans_out_payloads() -> None:
@@ -241,8 +248,49 @@ def test_recovery_cache_result_reconstructs_success_and_failure_shape() -> None:
             "adapter": "gamedevmap",
             "error": "timeout",
             "stage": "gamedevmap_recovery_fetch",
+            "recoveryUrlSource": "",
+            "recoveryUrlPath": "",
         },
     }
+
+
+def test_generated_common_path_not_found_homepages_requires_only_generated_404s() -> None:
+    results = [
+        {
+            "ok": False,
+            "error": "Client error '404 Not Found'",
+            "payload": {
+                "homepageUrl": "https://one.example",
+                "recoveryUrlSource": "generated_common_path",
+            },
+        },
+        {
+            "ok": False,
+            "error": "HTTP error 410",
+            "payload": {
+                "homepageUrl": "https://one.example",
+                "recoveryUrlSource": "generated_common_path",
+            },
+        },
+        {
+            "ok": False,
+            "error": "Client error '403 Forbidden'",
+            "payload": {
+                "homepageUrl": "https://two.example",
+                "recoveryUrlSource": "generated_common_path",
+            },
+        },
+        {
+            "ok": False,
+            "error": "Client error '404 Not Found'",
+            "payload": {
+                "homepageUrl": "https://three.example",
+                "recoveryUrlSource": "html_jobish_link",
+            },
+        },
+    ]
+
+    assert generated_common_path_not_found_homepages(results) == {"https://one.example"}
 
 
 def test_fetch_recovery_jobs_uses_cache_and_updates_uncached_results() -> None:

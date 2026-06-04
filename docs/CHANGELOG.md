@@ -10,6 +10,16 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.41] - 2026-06-04
+
+### Fixed
+- Discovery failure-attempt diagnostics now separate expected negative GameDevMap recovery and static probe misses from actionable discovery diagnostics, so generated `/careers` or `/jobs` 404s and stale inferred `careers.*` DNS misses no longer inflate the high-priority failure count.
+- GameDevMap recovery planning now carries bounded URL-source metadata, uses path-only recovery labels, and skips secondary generated recovery paths when primary generated paths only returned 404/410 for that studio homepage.
+
+### Notes
+- Fetcher parsing, provider scoring, source policy, source sync, public job data contracts, same-origin raw-LAN behavior, and desktop packaging behavior are unchanged.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.40] - 2026-06-04
 
 ### Fixed

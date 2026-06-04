@@ -437,6 +437,7 @@ function formatTaskFailureAttempts(payload = {}) {
       partial ${Number(fetch?.partialWarningCount || 0).toLocaleString()},
       expected cache exclusions ${Number(fetch?.expectedExclusionCount || 0).toLocaleString()};
       discovery diagnostics ${Number(discovery?.actionableDiagnosticCount || 0).toLocaleString()},
+      expected negatives ${Number(discovery?.expectedNegativeCount || 0).toLocaleString()},
       expected skips ${Number(discovery?.expectedSkipCount || 0).toLocaleString()}.${warningText}
       <button type="button" class="btn clear-filters-btn" data-action="refresh-task-failure-attempts">Refresh attempts</button>
     </div>

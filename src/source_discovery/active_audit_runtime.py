@@ -1035,10 +1035,17 @@ def run_active_audit_batch(
     )
     batch_timing["recoveryWave1AnalysisMs"] = _duration_ms(recovery_wave1_analysis_started)
 
+    generated_not_found_homepages = (
+        directory_recovery_helpers.generated_common_path_not_found_homepages(wave1_fetch.results)
+    )
     secondary_jobs_to_fetch = [
         job
         for job in homepage_result.secondary_recovery_jobs
         if strategy.recovery_homepage_key(job) not in wave1_apply.recovered_homepages
+        and not (
+            strategy.recovery_homepage_key(job) in generated_not_found_homepages
+            and directory_recovery_helpers.recovery_job_is_generated_common_path(job)
+        )
     ]
 
     recovery_wave2_fetch_started = time.perf_counter()
@@ -1108,6 +1115,12 @@ def run_active_audit_batch(
     batch_timing["recoveryNetworkJobs"] = wave1_fetch.network_jobs + wave2_fetch.network_jobs
     batch_timing["recoverySkippedByWave1"] = len(homepage_result.secondary_recovery_jobs) - len(
         secondary_jobs_to_fetch
+    )
+    batch_timing["recoverySkippedByGeneratedNotFound"] = sum(
+        1
+        for job in homepage_result.secondary_recovery_jobs
+        if strategy.recovery_homepage_key(job) in generated_not_found_homepages
+        and directory_recovery_helpers.recovery_job_is_generated_common_path(job)
     )
     batch_timing["recoveryRecoveredHomepages"] = len(recovered_homepages)
 

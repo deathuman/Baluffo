@@ -137,9 +137,31 @@ def test_task_failure_attempts_route_classifies_discovery_expected_and_actionabl
             "domain": "gamedevmap.example",
             "stage": "recovery_fetch",
             "dropReason": "recovery_fetch_failed",
-            "error": "failed to fetch https://hidden.invalid/careers",
+            "error": "Client error '404 Not Found' for url 'https://hidden.invalid/careers'",
         }
-        for index in range(60)
+        for index in range(55)
+    )
+    failures.extend(
+        {
+            "name": f"GameDevMap TLS {index}",
+            "adapter": "gamedevmap",
+            "domain": "gamedevmap.example",
+            "stage": "recovery_fetch",
+            "dropReason": "recovery_fetch_failed",
+            "error": "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed",
+        }
+        for index in range(4)
+    )
+    failures.append(
+        {
+            "name": "GameDevMap HTML jobs link",
+            "adapter": "gamedevmap",
+            "domain": "gamedevmap.example",
+            "stage": "recovery_fetch",
+            "dropReason": "recovery_fetch_failed",
+            "recoveryUrlSource": "html_jobish_link",
+            "error": "Client error '404 Not Found' for url 'https://hidden.invalid/jobs'",
+        }
     )
     failures.extend(
         {
@@ -148,8 +170,20 @@ def test_task_failure_attempts_route_classifies_discovery_expected_and_actionabl
             "domain": "probe.example",
             "stage": "probe",
             "dropReason": "probe",
+            "error": "https://probe.example: [Errno -2] Name or service not known",
         }
-        for index in range(10)
+        for index in range(8)
+    )
+    failures.extend(
+        {
+            "name": f"Probe TLS {index}",
+            "adapter": "static",
+            "domain": "probe.example",
+            "stage": "probe",
+            "dropReason": "probe",
+            "error": "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed",
+        }
+        for index in range(2)
     )
     failures.append(
         {
@@ -183,10 +217,15 @@ def test_task_failure_attempts_route_classifies_discovery_expected_and_actionabl
     assert discovery["runId"] == "discovery_latest"
     assert discovery["failureRecordCount"] == 126
     assert discovery["expectedSkipCount"] == 55
-    assert discovery["actionableDiagnosticCount"] == 71
+    assert discovery["expectedNegativeCount"] == 63
+    assert discovery["actionableDiagnosticCount"] == 8
     assert discovery["expectedSkipCounts"] == {"dedupe_skipped": 55}
+    assert discovery["expectedNegativeCounts"] == {
+        "gamedevmap_recovery_not_found": 55,
+        "probe_dns_miss": 8,
+    }
     assert high["dedupe_skipped"]["classification"] == "expected_skip"
-    assert high["gamedevmap_recovery_fetch"]["classification"] == "actionable_diagnostic"
+    assert high["gamedevmap_recovery_not_found"]["classification"] == "expected_negative"
     assert discovery["summaryCore"]["foundEndpointCount"] == 125
     assert discovery["summaryCore"]["queuedCandidateCount"] == 3
     serialized = json.dumps(payload)
@@ -194,4 +233,110 @@ def test_task_failure_attempts_route_classifies_discovery_expected_and_actionabl
     assert "hidden-name.invalid" not in serialized
     assert "secret.invalid" not in serialized
     assert "GameDevMap 0 [url]" in serialized
-    assert "failed to fetch" not in serialized
+    assert "certificate verify failed" not in serialized
+
+
+def test_task_failure_attempts_route_classifies_live_umbrel_discovery_pressure(
+    tmp_path: Path,
+) -> None:
+    failures: list[dict[str, str]] = []
+    failures.extend(
+        {"name": f"Duplicate {index}", "adapter": "static", "stage": "dedupe_skipped"}
+        for index in range(417)
+    )
+    failures.extend(
+        {
+            "name": f"GameDevMap {index} recovery https://studio.example/careers",
+            "adapter": "gamedevmap",
+            "stage": "gamedevmap_recovery_fetch",
+            "error": "Client error '404 Not Found' for url 'https://studio.example/careers'",
+        }
+        for index in range(157)
+    )
+    failures.append(
+        {
+            "name": "GameDevMap blocked",
+            "adapter": "gamedevmap",
+            "stage": "gamedevmap_recovery_fetch",
+            "error": "Client error '403 Forbidden' for url 'https://studio.example/careers'",
+        }
+    )
+    failures.extend(
+        {
+            "name": f"Probe DNS {index}",
+            "adapter": "static",
+            "stage": "probe",
+            "error": "https://careers.example: [Errno -2] Name or service not known",
+        }
+        for index in range(65)
+    )
+    failures.extend(
+        {
+            "name": f"Probe TLS {index}",
+            "adapter": "static",
+            "stage": "probe",
+            "error": "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed",
+        }
+        for index in range(16)
+    )
+    failures.extend(
+        {
+            "name": f"Probe server {index}",
+            "adapter": "static",
+            "stage": "probe",
+            "error": "Server error '500 Internal Server Error'",
+        }
+        for index in range(7)
+    )
+    failures.extend(
+        {"name": f"Probe miss {index}", "adapter": "static", "stage": "probe_miss"}
+        for index in range(10)
+    )
+    failures.extend(
+        {"name": f"Queue {index}", "adapter": "static", "stage": "queue_filtered"}
+        for index in range(9)
+    )
+    failures.extend(
+        {"name": f"Suppressed {index}", "adapter": "static", "stage": "suppressed_static"}
+        for index in range(2)
+    )
+    failures.extend(
+        {"name": f"Homepage {index}", "adapter": "gamedevmap", "stage": "homepage_fetch"}
+        for index in range(42)
+    )
+    failures.extend(
+        {"name": f"Website {index}", "adapter": "gameprog", "stage": "website_fetch"}
+        for index in range(12)
+    )
+    failures.extend(
+        {"name": f"Page fetch {index}", "adapter": "seed_careers_page", "stage": "page_fetch"}
+        for index in range(2)
+    )
+    failures.extend(
+        [
+            {"name": "Parse", "adapter": "gameprog", "stage": "directory_parse"},
+            {"name": "Validation", "adapter": "static", "stage": "validation"},
+        ]
+    )
+    assert len(failures) == 742
+    _write_json(
+        tmp_path / "discovery-report.json",
+        {
+            "runId": "discovery_live",
+            "taskProgress": {"active": False},
+            "failures": failures,
+        },
+    )
+
+    payload = _call_route(tmp_path)
+    discovery = payload["discovery"]
+    high = {row["key"]: row for row in discovery["highPriorityBuckets"]}
+
+    assert discovery["failureRecordCount"] == 742
+    assert discovery["expectedSkipCount"] == 428
+    assert discovery["expectedNegativeCount"] == 232
+    assert discovery["actionableDiagnosticCount"] == 82
+    assert discovery["actionableDiagnosticCount"] <= 120
+    assert high["gamedevmap_recovery_not_found"]["classification"] == "expected_negative"
+    assert high["probe_dns_miss"]["classification"] == "expected_negative"
+    assert "studio.example" not in json.dumps(payload)

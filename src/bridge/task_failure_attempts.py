@@ -21,6 +21,11 @@ EXPECTED_DISCOVERY_STAGES = {
     "queue_filtered",
     "suppressed_static",
 }
+EXPECTED_DISCOVERY_NEGATIVE_BUCKETS = {
+    "gamedevmap_recovery_not_found",
+    "probe_dns_miss",
+    "probe_not_found",
+}
 EXPECTED_FETCH_EXCLUSION_REASONS = {
     "cache_within_freshness_window",
 }
@@ -101,6 +106,37 @@ def _load_report(api: Any, path: Path, warnings: list[str], warning_key: str) ->
 
 def _counter_rows(counter: Counter[str], *, limit: int = MAX_COUNTER_ROWS) -> list[dict[str, Any]]:
     return [{"key": key, "count": int(count)} for key, count in counter.most_common(limit) if key]
+
+
+def _http_status(error: Any) -> int:
+    text = str(error or "")
+    for pattern in (
+        r"(?:http error|status/)\s*(\d{3})",
+        r"(?:client|server|redirect) error '\s*(\d{3})",
+        r"\b(\d{3})\s+(?:not found|gone|forbidden|unauthorized|bad request|not acceptable|internal server error|bad gateway|service)",
+    ):
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            return _safe_int(match.group(1))
+    return 0
+
+
+def _is_http_not_found_or_gone(error: Any) -> bool:
+    return _http_status(error) in {404, 410}
+
+
+def _is_dns_miss(error: Any) -> bool:
+    text = str(error or "").lower()
+    return any(
+        token in text
+        for token in (
+            "name or service not known",
+            "no address associated with hostname",
+            "temporary failure in name resolution",
+            "nodename nor servname provided",
+            "getaddrinfo failed",
+        )
+    )
 
 
 def _bounded_source_example(row: dict[str, Any]) -> dict[str, Any]:
@@ -205,18 +241,35 @@ def _discovery_adapter(row: dict[str, Any]) -> str:
     return _clean_token(row.get("adapter"))
 
 
+def _discovery_recovery_url_source(row: dict[str, Any]) -> str:
+    return _clean_token(row.get("recoveryUrlSource"), "")
+
+
 def _discovery_bucket(row: dict[str, Any]) -> str:
     adapter = _discovery_adapter(row)
     stage = _discovery_stage(row)
     reason = _discovery_reason(row)
     error = _clean_token(row.get("error"), "")
+    raw_error = row.get("error")
     if stage in EXPECTED_DISCOVERY_STAGES:
         return stage
+    if stage == "probe_miss" or (
+        adapter == "static" and stage == "probe" and _is_http_not_found_or_gone(raw_error)
+    ):
+        return "probe_not_found"
+    if adapter == "static" and stage == "probe" and _is_dns_miss(raw_error):
+        return "probe_dns_miss"
     if adapter == "gamedevmap" and (
         "recovery_fetch" in stage
         or "recovery_fetch" in reason
         or ("recovery" in error and "fetch" in error)
     ):
+        recovery_source = _discovery_recovery_url_source(row)
+        if _is_http_not_found_or_gone(raw_error) and recovery_source in {
+            "",
+            "generated_common_path",
+        }:
+            return "gamedevmap_recovery_not_found"
         return "gamedevmap_recovery_fetch"
     if adapter == "gamedevmap" and ("homepage_fetch" in stage or "homepage_fetch" in reason):
         return "gamedevmap_homepage_fetch"
@@ -248,6 +301,7 @@ def _build_discovery_attempts(report: dict[str, Any]) -> dict[str, Any]:
     reason_counts: Counter[str] = Counter()
     bucket_counts: Counter[str] = Counter()
     expected_skip_counts: Counter[str] = Counter()
+    expected_negative_counts: Counter[str] = Counter()
     examples: dict[str, list[dict[str, Any]]] = defaultdict(list)
 
     for row in rows:
@@ -261,12 +315,15 @@ def _build_discovery_attempts(report: dict[str, Any]) -> dict[str, Any]:
         bucket_counts[bucket] += 1
         if bucket in EXPECTED_DISCOVERY_STAGES:
             expected_skip_counts[bucket] += 1
+        if bucket in EXPECTED_DISCOVERY_NEGATIVE_BUCKETS:
+            expected_negative_counts[bucket] += 1
         if len(examples[bucket]) < MAX_EXAMPLE_ROWS:
             examples[bucket].append(_discovery_example(row))
 
     failure_count = len(rows)
     expected_skip_count = sum(expected_skip_counts.values())
-    actionable_count = max(0, failure_count - expected_skip_count)
+    expected_negative_count = sum(expected_negative_counts.values())
+    actionable_count = max(0, failure_count - expected_skip_count - expected_negative_count)
     high_priority_buckets: list[dict[str, Any]] = []
     for key, count in bucket_counts.most_common(MAX_COUNTER_ROWS):
         denominator = failure_count or 1
@@ -276,9 +333,13 @@ def _build_discovery_attempts(report: dict[str, Any]) -> dict[str, Any]:
             {
                 "key": key,
                 "count": int(count),
-                "classification": "expected_skip"
-                if key in EXPECTED_DISCOVERY_STAGES
-                else "actionable_diagnostic",
+                "classification": (
+                    "expected_skip"
+                    if key in EXPECTED_DISCOVERY_STAGES
+                    else "expected_negative"
+                    if key in EXPECTED_DISCOVERY_NEGATIVE_BUCKETS
+                    else "actionable_diagnostic"
+                ),
                 "examples": examples.get(key, [])[:3],
             }
         )
@@ -291,8 +352,10 @@ def _build_discovery_attempts(report: dict[str, Any]) -> dict[str, Any]:
         "active": bool(_as_dict(report.get("taskProgress")).get("active")),
         "failureRecordCount": failure_count,
         "expectedSkipCount": expected_skip_count,
+        "expectedNegativeCount": expected_negative_count,
         "actionableDiagnosticCount": actionable_count,
         "expectedSkipCounts": dict(sorted(expected_skip_counts.items())),
+        "expectedNegativeCounts": dict(sorted(expected_negative_counts.items())),
         "stageCounts": _counter_rows(stage_counts),
         "adapterCounts": _counter_rows(adapter_counts),
         "reasonCounts": _counter_rows(reason_counts),
