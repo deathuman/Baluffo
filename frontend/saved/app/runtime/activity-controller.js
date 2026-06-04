@@ -102,7 +102,16 @@ export function createSavedActivityController({
   }
 
   function renderWorkspaceStats(jobs = null) {
+    if (Array.isArray(jobs)) {
+      viewState.savedWorkspaceStatsReady = true;
+    }
     const rows = Array.isArray(jobs) ? jobs : Array.from(viewState.lastSavedJobsByKey.values());
+    const showStats = Boolean(viewState.currentUser && viewState.savedWorkspaceStatsReady);
+    if (dom.savedWorkspaceStripEl) {
+      dom.savedWorkspaceStripEl.hidden = !showStats;
+      dom.savedWorkspaceStripEl.classList?.toggle?.("hidden", !showStats);
+      dom.savedWorkspaceStripEl.setAttribute?.("aria-hidden", showStats ? "false" : "true");
+    }
     if (dom.savedMetricTotalEl) dom.savedMetricTotalEl.textContent = String(rows.length);
     if (dom.savedMetricRemindersEl) {
       const dueSoon = rows.filter(job => getReminderMeta(job?.reminderAt).isSoon).length;

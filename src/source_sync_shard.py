@@ -1008,7 +1008,7 @@ def _list_content_tree(
         item_path = str(item.get("path") or "").replace("\\", "/").strip()
         if item_type == "dir" and item_path:
             files.extend(_list_content_tree(module, config, item_path, opener=opener))
-        elif item_type in {"file", ""}:
+        elif item_type in {"file", ""} and item_path:
             files.append(dict(item))
     return files
 

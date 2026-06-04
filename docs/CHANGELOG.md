@@ -10,6 +10,23 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.43] - 2026-06-04
+
+### Added
+- Desktop release rollup from the last public desktop build, bringing the shared task lifecycle hardening, pipeline start-race handling, packaged source-sync config parity, discovery/report diagnostics, and job company repair work into the packaged desktop channel.
+
+### Changed
+- Admin now keeps restore, demote, and delete source bulk actions collapsed as advanced actions before runtime JavaScript finishes loading.
+- Saved Jobs now hides workspace metrics while guest, restoring, or waiting for profile rows, avoiding prominent zero-value metrics before the local profile has loaded.
+
+### Fixed
+- Source-sync shard garbage collection now ignores malformed remote content entries that do not include a path, removing the blank `skipped invalid source-sync shard GC path:` warning while preserving warnings for real invalid shard paths.
+
+### Notes
+- This is the next desktop-facing release identity after `v0.2.25`; `0.2.26` through `0.2.42` were primarily Umbrel/container patch identities but included shared fixes that desktop packaging now receives.
+- Live Umbrel evidence for `duplicatePendingCount` remains operator registry state, not a deterministic release-blocking code repair. No live registry files were edited.
+- This rollup preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.42] - 2026-06-04
 
 ### Fixed

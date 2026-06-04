@@ -110,6 +110,7 @@ export const UI_TOKENS = Object.freeze({
     groupBtn: "group-btn",
     reminderCounter: "saved-reminder-counter",
     historyPanelToggleBtn: "history-panel-toggle-btn",
+    workspaceStrip: "saved-workspace-strip",
     workspaceLayout: "saved-workspace-layout",
     metricTotal: "saved-metric-total",
     metricReminders: "saved-metric-reminders",

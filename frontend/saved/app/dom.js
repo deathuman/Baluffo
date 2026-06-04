@@ -42,6 +42,7 @@ export function cacheSavedDom(doc = document) {
     savedGroupBtnEls: Array.from(doc.querySelectorAll(ui(t.groupBtn))),
     savedReminderCounterEl: doc.querySelector(ui(t.reminderCounter)),
     historyPanelToggleBtnEl: doc.querySelector(ui(t.historyPanelToggleBtn)),
+    savedWorkspaceStripEl: doc.querySelector(ui(t.workspaceStrip)),
     savedWorkspaceLayoutEl: doc.querySelector(ui(t.workspaceLayout)),
     savedMetricTotalEl: doc.querySelector(ui(t.metricTotal)),
     savedMetricRemindersEl: doc.querySelector(ui(t.metricReminders)),

@@ -58,6 +58,65 @@ test("saved activity controller falls back selected scope when no job is selecte
   assert.equal(selectedScopeBtn.disabled, true);
 });
 
+test("saved activity controller hides workspace stats until profile rows load", () => {
+  const savedWorkspaceStripEl = createElement({ hidden: true });
+  const dom = {
+    activityScopeBtnEls: [],
+    activityPanelEl: createElement(),
+    historyPanelToggleBtnEl: createButton(),
+    activitySelectedJobEl: createElement(),
+    savedWorkspaceStripEl,
+    savedMetricTotalEl: createElement(),
+    savedMetricRemindersEl: createElement(),
+    savedMetricActivityEl: createElement(),
+    activityPanelStatusEl: createElement(),
+    activityPanelBodyEl: createElement()
+  };
+  const viewState = {
+    activityPanelOpen: false,
+    timelineScope: "all",
+    selectedJobKey: "",
+    currentUser: null,
+    savedWorkspaceStatsReady: false,
+    lastSavedJobsByKey: new Map(),
+    cachedActivityEntries: [],
+    lastActivityPulse: null
+  };
+  const controller = createSavedActivityController({
+    dom,
+    viewState,
+    savedPageService: {
+      isAvailable: () => true,
+      listActivityForUser: async () => ({ ok: true, data: [] })
+    },
+    setActivityStatus: () => {},
+    timelinePrefPrefix: "test_saved_timeline",
+    timelineScopeAll: "all",
+    activityHighlightMs: 20,
+    renderActivityEntryHtml: () => "<div></div>",
+    getReminderMeta: () => ({ isSoon: false }),
+    loadSavedTimelinePreferences: () => ({ visible: false, scope: "all" }),
+    persistSavedTimelinePreferences: () => {},
+    activityTypeLabel: () => "activity",
+    formatActivityDetail: () => "detail",
+    formatPhaseTimestamp: () => ""
+  });
+
+  controller.renderWorkspaceStats();
+
+  assert.equal(savedWorkspaceStripEl.hidden, true);
+  assert.equal(savedWorkspaceStripEl.classList.contains("hidden"), true);
+  assert.equal(savedWorkspaceStripEl.attributes["aria-hidden"], "true");
+
+  viewState.currentUser = { uid: "u1" };
+  controller.renderWorkspaceStats([]);
+
+  assert.equal(savedWorkspaceStripEl.hidden, false);
+  assert.equal(savedWorkspaceStripEl.classList.contains("hidden"), false);
+  assert.equal(savedWorkspaceStripEl.attributes["aria-hidden"], "false");
+  assert.equal(dom.savedMetricTotalEl.textContent, "0");
+});
+
 test("saved activity controller opens to selected scope when a job is selected", () => {
   const allScopeBtn = createButton({ dataset: { timelineScope: "all" } });
   const selectedScopeBtn = createButton({ dataset: { timelineScope: "selected" } });

@@ -37,6 +37,7 @@ function createSavedDomState() {
     savedGroupBtnEls: [],
     savedReminderCounterEl: null,
     historyPanelToggleBtnEl: null,
+    savedWorkspaceStripEl: null,
     savedWorkspaceLayoutEl: null,
     savedMetricTotalEl: null,
     savedMetricRemindersEl: null,
@@ -64,6 +65,7 @@ function createSavedViewState({
 } = {}) {
   return {
     currentUser: null,
+    savedWorkspaceStatsReady: false,
     unsubscribeSavedJobs: () => {},
     expandedJobKey: null,
     activityPanelOpen: false,

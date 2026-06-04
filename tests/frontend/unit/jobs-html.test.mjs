@@ -55,6 +55,7 @@ test("saved html exposes compact grouping controls and group header styling", ()
   const savedHtml = fs.readFileSync(path.join(repoRoot, "saved.html"), "utf8");
   const savedCss = fs.readFileSync(path.join(repoRoot, "styles", "saved.css"), "utf8");
 
+  assert.match(savedHtml, /id="saved-workspace-strip" data-ui="saved-workspace-strip" class="saved-workspace-strip hidden"[^>]+hidden/);
   assert.match(savedHtml, /id="saved-group-bar" data-ui="saved-group-bar"/);
   assert.match(savedHtml, /class="saved-group-label">Group<\/span>/);
   assert.match(savedHtml, /data-ui="group-btn" data-saved-group="none">None<\/button>/);
@@ -93,9 +94,16 @@ test("desktop page titles keep the Baluffo window identity token", () => {
   assert.match(savedHtml, /<title>Baluffo Saved Jobs<\/title>/);
 });
 
-test("admin html leaves advanced bulk actions to the default runtime layout", () => {
+test("admin html collapses advanced bulk actions before runtime layout", () => {
   const adminHtml = fs.readFileSync(path.join(repoRoot, "admin.html"), "utf8");
-  assert.doesNotMatch(adminHtml, /admin-advanced-bulk-actions/);
+  assert.match(adminHtml, /data-ui="admin-bulk-busy-message"[^>]+hidden/);
+  assert.match(adminHtml, /<details data-ui="admin-advanced-bulk-actions" class="admin-advanced-bulk-details">/);
+  assert.match(adminHtml, /<summary class="admin-advanced-bulk-summary">Advanced bulk actions<\/summary>/);
+  assert.ok(adminHtml.indexOf('id="admin-approve-sources-btn"') < adminHtml.indexOf('data-ui="admin-advanced-bulk-actions"'));
+  assert.ok(adminHtml.indexOf('id="admin-reject-sources-btn"') < adminHtml.indexOf('data-ui="admin-advanced-bulk-actions"'));
+  assert.ok(adminHtml.indexOf('id="admin-restore-rejected-btn"') > adminHtml.indexOf('data-ui="admin-advanced-bulk-actions"'));
+  assert.ok(adminHtml.indexOf('id="admin-demote-active-btn"') > adminHtml.indexOf('data-ui="admin-advanced-bulk-actions"'));
+  assert.ok(adminHtml.indexOf('id="admin-delete-sources-btn"') > adminHtml.indexOf('data-ui="admin-advanced-bulk-actions"'));
   assert.match(adminHtml, /id="admin-approve-sources-btn"[\s\S]*Approve Selected<\/button>/);
   assert.match(adminHtml, /id="admin-reject-sources-btn"[\s\S]*Reject Selected<\/button>/);
   assert.match(adminHtml, /id="admin-restore-rejected-btn"[\s\S]*Restore Selected<\/button>/);

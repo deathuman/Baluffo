@@ -246,6 +246,39 @@ def test_push_sharded_snapshot_prunes_unreferenced_shards_after_manifest() -> No
     assert delete_call["payload"]["branch"] == "main"
 
 
+def test_push_sharded_snapshot_ignores_remote_gc_entries_without_paths() -> None:
+    bundle = build_sharded_snapshot_bundle(_snapshot(), max_shard_size=10_000)
+    shard = bundle["changedShards"][0]
+    module = _FakeSyncModule(
+        [
+            (200, {"content": {"sha": "shard-sha"}}),
+            (200, {"content": _encoded_bytes(shard.payload_bytes)}),
+            (200, {"content": {"sha": "manifest-sha"}}),
+            (
+                200,
+                [
+                    {"type": "file", "path": "", "sha": "missing-path-sha"},
+                    {"type": "file", "sha": "missing-path-key-sha"},
+                    {"type": "file", "path": shard.path, "sha": "current-remote-sha"},
+                ],
+            ),
+        ]
+    )
+
+    result = push_sharded_snapshot(
+        module,
+        _config(),
+        _snapshot(),
+        max_shard_size=10_000,
+        opener=object(),
+    )
+
+    assert result["pushed"] is True
+    assert result["gc"]["deletedCount"] == 0
+    assert result["warnings"] == []
+    assert [call["method"] for call in module.calls] == ["PUT", "GET", "PUT", "GET"]
+
+
 def test_push_sharded_snapshot_reports_gc_failure_without_rollback() -> None:
     bundle = build_sharded_snapshot_bundle(_snapshot(), max_shard_size=10_000)
     shard = bundle["changedShards"][0]

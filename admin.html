@@ -206,12 +206,17 @@
               <div class="admin-fetcher-actions">
                 <button id="admin-approve-sources-btn" data-ui="admin-approve-sources-btn" class="btn clear-filters-btn" data-tooltip="Move selected pending sources to active.">Approve Selected</button>
                 <button id="admin-reject-sources-btn" data-ui="admin-reject-sources-btn" class="btn clear-filters-btn" data-tooltip="Move selected pending sources to rejected.">Reject Selected</button>
-                <button id="admin-restore-rejected-btn" data-ui="admin-restore-rejected-btn" class="btn clear-filters-btn" type="button" data-tooltip="Restore selected rejected sources to pending.">Restore Selected</button>
               </div>
-              <div class="admin-fetcher-actions">
-                <button id="admin-demote-active-btn" data-ui="admin-demote-active-btn" class="btn clear-filters-btn" type="button" data-tooltip="Demote all active sources with zero jobs found to pending">Demote zero-jobs to Pending</button>
-                <button id="admin-delete-sources-btn" data-ui="admin-delete-sources-btn" class="btn clear-filters-btn admin-delete-sources-btn" data-tooltip="Delete selected reviewed sources from the local registry.">Delete Selected</button>
-              </div>
+              <p data-ui="admin-bulk-busy-message" class="admin-bulk-busy-message hidden" role="status" aria-live="polite"></p>
+              <details data-ui="admin-advanced-bulk-actions" class="admin-advanced-bulk-details">
+                <summary class="admin-advanced-bulk-summary">Advanced bulk actions</summary>
+                <p class="admin-advanced-bulk-note">These actions change source registry state and may affect future job imports.</p>
+                <div class="admin-fetcher-actions admin-advanced-bulk-action-row">
+                  <button id="admin-restore-rejected-btn" data-ui="admin-restore-rejected-btn" class="btn clear-filters-btn" type="button" data-tooltip="Restore selected rejected sources to pending.">Restore Selected</button>
+                  <button id="admin-demote-active-btn" data-ui="admin-demote-active-btn" class="btn clear-filters-btn" type="button" data-tooltip="Demote all active sources with zero jobs found to pending">Demote zero-jobs to Pending</button>
+                  <button id="admin-delete-sources-btn" data-ui="admin-delete-sources-btn" class="btn clear-filters-btn admin-delete-sources-btn" data-tooltip="Delete selected reviewed sources from the local registry.">Delete Selected</button>
+                </div>
+              </details>
             </div>
 
             <div class="admin-discovery-card admin-discovery-filter-card">
