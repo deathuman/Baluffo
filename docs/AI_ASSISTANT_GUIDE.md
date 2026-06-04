@@ -5,7 +5,7 @@
 > - **Canonical for:** task routing, minimal read order, common repo misconceptions, and AI editing rules
 > - **Not canonical for:** data contracts, endpoint payloads, or deep subsystem ownership detail
 > - **Then inspect:** [`architecture-ai-map.md`](architecture-ai-map.md) for task-to-files routing, plus one matching contract or workflow doc
-> - **Last updated:** 2026-06-01
+> - **Last updated:** 2026-06-04
 
 Read this first. Then load only the smallest additional docs needed.
 
@@ -42,6 +42,8 @@ Baluffo is docs-first, not docs-only. Start with the smallest authoritative doc 
 Canonical docs are authoritative only for the surface they declare. Use routing docs for edit location, contract docs for stable payload or API shape, workflow docs for maintenance process, and the codebase for implementation detail outside those declared surfaces.
 
 If Serena memory and repo docs ever diverge, the repo docs stay canonical.
+
+After a long live-hotfix or release patch cycle, pause before continuing direct improvements. Check whether repo docs, Basic Memory, and local skills now encode the new workflow lessons; if the latest public desktop release is behind container/Umbrel-proven `main`, decide whether a desktop rollup release should be planned before more feature work.
 
 ## Common Wrong Assumptions
 

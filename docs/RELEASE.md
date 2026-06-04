@@ -18,6 +18,18 @@ Important rules:
 - Persistent runtime data must remain outside versioned app folders. Windows packaged desktop defaults to `%APPDATA%\Baluffo\`; `ship\data\` is only the legacy packaged migration source.
   Container runtime data defaults to `/data`.
 
+## Cross-Channel Release Checkpoint
+
+Before publishing a desktop release after a run of container/Umbrel-only patches, compare the latest public desktop tag with current `main`. If shared fixes accumulated since that tag, write a desktop-facing rollup changelog entry and use a new release identity rather than tagging a narrow container patch whose notes understate the desktop-visible change set.
+
+For example, when the latest public desktop release is behind `main`, the release owner should explicitly decide whether the next release is:
+
+- a desktop rollup release with full packaged preflight, tag, signed manifest, and GitHub release assets;
+- a container-only patch with no desktop tag; or
+- a deferred desktop release, with the gap recorded in Basic Memory or the release handoff.
+
+Do not move or recreate an existing desktop tag to fix release-note scope. Bump forward and keep the old tag as historical evidence.
+
 ## Versioning Policy
 
 This policy applies to both distribution channels.
