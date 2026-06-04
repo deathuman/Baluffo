@@ -40,6 +40,7 @@ from src.bridge.routes.error_boundary import (
 from src.bridge.routes.response_writer import BridgeResponseWriter
 from src.bridge.source_policy_migration_links import ADMIN_MIGRATION_LINK_ACTOR
 from src.bridge.storage_health import get_storage_store, record_storage_diagnostic
+from src.bridge.task_failure_attempts import get_task_failure_attempts_payload
 from src.core.schemas import LocalSavedJobRowSchema
 from src.jobs.common.contracts_source_policy_recommendations import (
     merge_source_policy_review_state_into_recommendations,
@@ -1313,6 +1314,10 @@ def handle_get(
 
     if path == "/ops/discovery-audit-artifacts":
         handler.send_json(get_discovery_audit_artifacts_payload(api))
+        return True
+
+    if path == "/ops/task-failure-attempts":
+        handler.send_json(get_task_failure_attempts_payload(api))
         return True
 
     if path == "/ops/fetch-report/sources":

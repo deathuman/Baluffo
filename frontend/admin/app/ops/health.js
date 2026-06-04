@@ -7,7 +7,7 @@ import {
   renderAdminOpsKpis,
   renderAdminOpsSchedule,
   renderAdminOpsTrends
-} from "../../render.js?v=16";
+} from "../../render.js?v=17";
 import {
   filterSourcePolicyReviewPairs,
   getMigrationLinkLinkedActions,
@@ -21,6 +21,7 @@ const OPS_TASK_STATE_SUMMARY_PATH = "/ops/task-state?view=summary";
 const OPS_HISTORY_DETAIL_PATH = "/ops/history?limit=80";
 const OPS_FETCHER_METRICS_DETAIL_PATH = "/ops/fetcher-metrics?windowRuns=80";
 const OPS_DISCOVERY_AUDIT_ARTIFACTS_PATH = "/ops/discovery-audit-artifacts";
+const OPS_TASK_FAILURE_ATTEMPTS_PATH = "/ops/task-failure-attempts";
 const SOURCE_POLICY_DETAIL_PATH = "/source-policy/recommendations";
 const REGISTRY_CONFLICTS_SUMMARY_PATH = "/registry/conflicts?view=summary";
 const REGISTRY_CONFLICTS_DETAIL_PATH = "/registry/conflicts";
@@ -487,6 +488,16 @@ export function createOpsHealthController({
     }
   }
 
+  async function handleRefreshTaskFailureAttempts() {
+    state.latestTaskFailureAttemptsPayload = { ok: true, fetch: {}, discovery: {}, warnings: [] };
+    try {
+      await loadOpsOverviewDetailData(opsRenderToken);
+      showToast("Task failure-attempt diagnostics refreshed.", "success");
+    } catch (err) {
+      showToast(`Could not refresh task failure-attempt diagnostics: ${getErrorMessage(err)}`, "warn");
+    }
+  }
+
   async function handleAbortRun(row) {
     const taskType = String(row?.taskType || "").trim().toLowerCase();
     const runId = String(row?.runId || "").trim();
@@ -702,11 +713,20 @@ export function createOpsHealthController({
       : { ok: true, artifacts: [] };
   }
 
+  function getCachedTaskFailureAttemptsPayload() {
+    return state.latestTaskFailureAttemptsPayload
+      && typeof state.latestTaskFailureAttemptsPayload === "object"
+      && !Array.isArray(state.latestTaskFailureAttemptsPayload)
+      ? state.latestTaskFailureAttemptsPayload
+      : { ok: true, fetch: {}, discovery: {}, warnings: [] };
+  }
+
   function buildFetcherMetricsPayload(fetcherMetrics = state.latestOpsFetcherMetricsPayload || {}, health = state.latestOpsHealthCache || {}) {
     const frontendPerfCounters = getFrontendPerfCounters();
     return {
       ...(fetcherMetrics && typeof fetcherMetrics === "object" ? fetcherMetrics : {}),
       discoveryAuditArtifacts: getCachedDiscoveryAuditArtifactsPayload(),
+      taskFailureAttempts: getCachedTaskFailureAttemptsPayload(),
       frontendPerfCounters: (
         frontendPerfCounters
         && typeof frontendPerfCounters === "object"
@@ -768,6 +788,7 @@ export function createOpsHealthController({
           onDedupReviewAction: handleDedupReviewAction,
           onCopySectionDiagnostics: handleCopySectionDiagnostics,
           onRefreshAuditArtifacts: handleRefreshAuditArtifacts,
+          onRefreshTaskFailureAttempts: handleRefreshTaskFailureAttempts,
           runModel
         }
       );
@@ -786,10 +807,16 @@ export function createOpsHealthController({
 
   function loadOpsOverviewDetailData(renderToken = opsRenderToken) {
     const detailLoad = (async () => {
-      const [historyResult, fetcherMetricsResult, auditArtifactsResult] = await Promise.allSettled([
+      const [
+        historyResult,
+        fetcherMetricsResult,
+        auditArtifactsResult,
+        taskFailureAttemptsResult
+      ] = await Promise.allSettled([
         getBridge(OPS_HISTORY_DETAIL_PATH),
         getBridge(OPS_FETCHER_METRICS_DETAIL_PATH),
-        getBridge(OPS_DISCOVERY_AUDIT_ARTIFACTS_PATH)
+        getBridge(OPS_DISCOVERY_AUDIT_ARTIFACTS_PATH),
+        getBridge(OPS_TASK_FAILURE_ATTEMPTS_PATH)
       ]);
       let changed = false;
       if (
@@ -817,6 +844,15 @@ export function createOpsHealthController({
         && !Array.isArray(auditArtifactsResult.value)
       ) {
         state.latestDiscoveryAuditArtifactsPayload = auditArtifactsResult.value;
+        changed = true;
+      }
+      if (
+        taskFailureAttemptsResult.status === "fulfilled"
+        && taskFailureAttemptsResult.value
+        && typeof taskFailureAttemptsResult.value === "object"
+        && !Array.isArray(taskFailureAttemptsResult.value)
+      ) {
+        state.latestTaskFailureAttemptsPayload = taskFailureAttemptsResult.value;
         changed = true;
       }
       if (changed) renderDeferredOverviewDetails(renderToken);
@@ -992,6 +1028,7 @@ export function createOpsHealthController({
             onDedupReviewAction: handleDedupReviewAction,
             onCopySectionDiagnostics: handleCopySectionDiagnostics,
             onRefreshAuditArtifacts: handleRefreshAuditArtifacts,
+            onRefreshTaskFailureAttempts: handleRefreshTaskFailureAttempts,
             runModel
           }
         );

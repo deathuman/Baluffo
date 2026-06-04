@@ -15,7 +15,7 @@ import {
   buildOpsFetcherDiagnosticsSections,
   buildOpsFetcherMetricSections,
   buildOpsTaskLaneRows
-} from "../domain/ops-health-view-model.js";
+} from "../domain/ops-health-view-model.js?v=1";
 import {
   FETCHER_FAILURE_BUCKET_LABELS,
   formatDuration,
@@ -403,6 +403,57 @@ function formatDiscoveryAuditArtifacts(payload = {}) {
   `;
 }
 
+function formatTaskFailureAttempts(payload = {}) {
+  const fetch = payload?.fetch && typeof payload.fetch === "object" ? payload.fetch : {};
+  const discovery = payload?.discovery && typeof payload.discovery === "object" ? payload.discovery : {};
+  const warnings = Array.isArray(payload?.warnings) ? payload.warnings : [];
+  const fetchBuckets = Array.isArray(fetch?.failureBuckets) ? fetch.failureBuckets : [];
+  const discoveryBuckets = Array.isArray(discovery?.highPriorityBuckets) ? discovery.highPriorityBuckets : [];
+  const warningText = warnings.length
+    ? ` warnings: ${warnings.slice(0, 4).map(value => escapeHtml(value)).join(", ")}`
+    : "";
+  const fetchBucketText = fetchBuckets.length
+    ? fetchBuckets
+      .slice(0, 4)
+      .map(row => `${escapeHtml(row?.key || "unknown")} ${Number(row?.count || 0).toLocaleString()}`)
+      .join(", ")
+    : "none";
+  const discoveryBucketRowsHtml = discoveryBuckets.length
+    ? discoveryBuckets.map(row => `
+      <tr>
+        <td>${escapeHtml(row?.key || "unknown")}</td>
+        <td>${Number(row?.count || 0).toLocaleString()}</td>
+        <td>${escapeHtml(String(row?.classification || "diagnostic").replaceAll("_", " "))}</td>
+      </tr>
+    `).join("")
+    : `
+      <tr>
+        <td colspan="3">No high-priority discovery buckets.</td>
+      </tr>
+    `;
+  return `
+    <div class="admin-ops-schedule-item admin-ops-full-row">
+      <strong>Task failure attempts</strong>: fetch hard ${Number(fetch?.hardFailureCount || 0).toLocaleString()},
+      partial ${Number(fetch?.partialWarningCount || 0).toLocaleString()},
+      expected cache exclusions ${Number(fetch?.expectedExclusionCount || 0).toLocaleString()};
+      discovery diagnostics ${Number(discovery?.actionableDiagnosticCount || 0).toLocaleString()},
+      expected skips ${Number(discovery?.expectedSkipCount || 0).toLocaleString()}.${warningText}
+      <button type="button" class="btn clear-filters-btn" data-action="refresh-task-failure-attempts">Refresh attempts</button>
+    </div>
+    <div class="admin-ops-schedule-item admin-ops-full-row">
+      <strong>Fetch buckets</strong>: ${fetchBucketText}
+    </div>
+    <div class="admin-table-shell admin-ops-full-row">
+      <table class="admin-table admin-ops-task-failure-attempts-table">
+        <thead>
+          <tr><th>Discovery Bucket</th><th>Count</th><th>Classification</th></tr>
+        </thead>
+        <tbody>${discoveryBucketRowsHtml}</tbody>
+      </table>
+    </div>
+  `;
+}
+
 function formatOpsTaskLane(rows, diagnostics = null) {
   const laneRows = Array.isArray(rows) ? rows : [];
   const body = laneRows.map(row => {
@@ -479,6 +530,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     sourcePolicyRecommendationExport: latest?.sourcePolicyRecommendationExport || {},
     frontendPerfCounters: metrics?.frontendPerfCounters || {},
     discoveryAuditArtifacts: metrics?.discoveryAuditArtifacts || {},
+    taskFailureAttempts: metrics?.taskFailureAttempts || {},
     runModel: options?.runModel || {},
     failureSummary: summary
   });
@@ -847,6 +899,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Frontend fetch/render counters</strong>: ${frontendPerfSummary}</div>
   `;
   const auditArtifactsSectionHtml = formatDiscoveryAuditArtifacts(metrics?.discoveryAuditArtifacts || {});
+  const taskFailureAttemptsSectionHtml = formatTaskFailureAttempts(metrics?.taskFailureAttempts || {});
 
   const taskLaneRows = buildOpsTaskLaneRows(options?.runModel || {});
   const diagnosticsByKey = buildOpsFetcherDiagnosticsSections({
@@ -854,12 +907,14 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     history,
     failureSummary: summary,
     taskLaneRows,
-    auditArtifacts: metrics?.discoveryAuditArtifacts || {}
+    auditArtifacts: metrics?.discoveryAuditArtifacts || {},
+    taskFailureAttempts: metrics?.taskFailureAttempts || {}
   });
   const taskLaneHtml = formatOpsTaskLane(taskLaneRows, diagnosticsByKey.taskStatus);
   const sectionHtmlByKey = {
     runtime: runtimeSectionHtml,
     failures: failuresSectionHtml,
+    taskFailures: taskFailureAttemptsSectionHtml,
     frontendPerf: frontendPerfSectionHtml,
     sourceHealth: sourceHealthSectionHtml,
     sourcePolicy: sourcePolicySectionHtml,
@@ -911,6 +966,13 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     metricsEl.querySelectorAll('[data-action="refresh-discovery-audit-artifacts"]').forEach(button => {
       button.addEventListener("click", () => {
         options.onRefreshAuditArtifacts();
+      });
+    });
+  }
+  if (typeof options?.onRefreshTaskFailureAttempts === "function") {
+    metricsEl.querySelectorAll('[data-action="refresh-task-failure-attempts"]').forEach(button => {
+      button.addEventListener("click", () => {
+        options.onRefreshTaskFailureAttempts();
       });
     });
   }

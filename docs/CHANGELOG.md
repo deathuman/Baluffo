@@ -10,6 +10,17 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.39] - 2026-06-04
+
+### Added
+- Admin Ops now exposes bounded task failure-attempt diagnostics through `/ops/task-failure-attempts`, separating expected fetch cache skips and discovery dedupe/queue/static skips from hard fetch failures and actionable discovery diagnostics.
+- The Admin Fetcher diagnostics panel now lazy-loads and renders the failure-attempt summary with copy/refresh support, including high-priority discovery buckets without exposing raw artifact bodies or URLs.
+
+### Notes
+- This is a diagnostics-only Umbrel/container patch. Fetcher parsing, discovery queue policy, provider scoring, source sync, public job data contracts, same-origin raw-LAN behavior, and desktop packaging behavior are unchanged.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+- Live `0.2.38` evidence showed no hard fetch failures, one partial static-source warning, and elevated discovery diagnostics in dedupe skips, GameDevMap recovery fetches, and probes; this patch makes those buckets visible before any behavior-changing follow-up.
+
 ## [0.2.38] - 2026-06-04
 
 ### Fixed

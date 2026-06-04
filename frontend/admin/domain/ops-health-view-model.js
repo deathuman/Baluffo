@@ -10,6 +10,11 @@ const OPS_FETCHER_METRIC_SECTION_DEFINITIONS = [
     description: "Fetcher failure counts, buckets, and source examples."
   },
   {
+    key: "taskFailures",
+    title: "Task Failure Attempts",
+    description: "Bounded fetch and discovery failure-attempt classification."
+  },
+  {
     key: "frontendPerf",
     title: "Frontend Performance",
     description: "Browser-side fetch and render counters from this Admin session."
@@ -228,6 +233,43 @@ function compactAuditArtifact(row) {
   };
 }
 
+function compactFailureBucket(row) {
+  return {
+    key: truncateString(row?.key || "unknown"),
+    count: toNumber(row?.count),
+    classification: truncateString(row?.classification || "")
+  };
+}
+
+function compactTaskFailureAttempts(payload) {
+  const fetch = payload?.fetch && typeof payload.fetch === "object" ? payload.fetch : {};
+  const discovery = payload?.discovery && typeof payload.discovery === "object" ? payload.discovery : {};
+  return {
+    generatedAt: truncateString(payload?.generatedAt || ""),
+    fetch: {
+      runId: truncateString(fetch?.runId || ""),
+      hardFailureCount: toNumber(fetch?.hardFailureCount),
+      partialWarningCount: toNumber(fetch?.partialWarningCount),
+      expectedExclusionCount: toNumber(fetch?.expectedExclusionCount),
+      failedSources: toNumber(fetch?.failedSources),
+      excludedSources: toNumber(fetch?.excludedSources),
+      failureBuckets: boundedList(fetch?.failureBuckets, compactFailureBucket, 8),
+      partialWarnings: boundedList(fetch?.partialWarnings, compactSourceRow, 5),
+      hardFailures: boundedList(fetch?.hardFailures, compactSourceRow, 5)
+    },
+    discovery: {
+      runId: truncateString(discovery?.runId || ""),
+      failureRecordCount: toNumber(discovery?.failureRecordCount),
+      expectedSkipCount: toNumber(discovery?.expectedSkipCount),
+      actionableDiagnosticCount: toNumber(discovery?.actionableDiagnosticCount),
+      highPriorityBuckets: boundedList(discovery?.highPriorityBuckets, compactFailureBucket, 8)
+    },
+    warnings: (Array.isArray(payload?.warnings) ? payload.warnings : [])
+      .slice(0, 8)
+      .map(value => truncateString(value, 100))
+  };
+}
+
 function baseDiagnostics(key, title, generatedAt) {
   return {
     key,
@@ -243,6 +285,7 @@ export function buildOpsFetcherDiagnosticsSections({
   failureSummary,
   taskLaneRows,
   auditArtifacts,
+  taskFailureAttempts,
   generatedAt = new Date().toISOString()
 } = {}) {
   const latestRun = latest && typeof latest === "object" ? latest : {};
@@ -259,6 +302,9 @@ export function buildOpsFetcherDiagnosticsSections({
   const reviewState = latestRun?.dedupReviewStateSummary && typeof latestRun.dedupReviewStateSummary === "object" ? latestRun.dedupReviewStateSummary : {};
   const auditArtifactsPayload = auditArtifacts && typeof auditArtifacts === "object" && !Array.isArray(auditArtifacts)
     ? auditArtifacts
+    : {};
+  const taskFailureAttemptsPayload = taskFailureAttempts && typeof taskFailureAttempts === "object" && !Array.isArray(taskFailureAttempts)
+    ? taskFailureAttempts
     : {};
 
   return {
@@ -291,6 +337,10 @@ export function buildOpsFetcherDiagnosticsSections({
         count: toNumber(row?.count),
         examples: (Array.isArray(row?.examples) ? row.examples : []).slice(0, 5).map(value => truncateString(value))
       }))
+    },
+    taskFailures: {
+      ...baseDiagnostics("taskFailures", "Task Failure Attempts", generatedAt),
+      ...compactTaskFailureAttempts(taskFailureAttemptsPayload)
     },
     dedup: {
       ...baseDiagnostics("dedup", "Dedup Review", generatedAt),

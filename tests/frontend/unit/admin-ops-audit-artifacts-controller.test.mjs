@@ -39,6 +39,11 @@ test("admin ops controller lazy-loads discovery audit artifacts into metrics", a
     ok: true,
     artifacts: [{ name: "sheet-directory", exists: true, relativePath: "sheet-directory-discovery-audit.json" }]
   };
+  const taskFailureAttemptsPayload = {
+    ok: true,
+    fetch: { hardFailureCount: 0, partialWarningCount: 1 },
+    discovery: { failureRecordCount: 12, actionableDiagnosticCount: 4 }
+  };
   const renderScheduler = createDeferredRenderScheduler();
   const controller = createAdminOpsController({
     state,
@@ -51,6 +56,7 @@ test("admin ops controller lazy-loads discovery audit artifacts into metrics", a
       if (path === "/ops/history?limit=80") return { runs: [] };
       if (path === "/ops/fetcher-metrics?windowRuns=80") return { latestRun: {} };
       if (path === "/ops/discovery-audit-artifacts") return auditPayload;
+      if (path === "/ops/task-failure-attempts") return taskFailureAttemptsPayload;
       throw new Error(`unexpected path ${path}`);
     },
     postBridge: async () => ({}),
@@ -93,5 +99,7 @@ test("admin ops controller lazy-loads discovery audit artifacts into metrics", a
 
   assert.equal(refs.adminOpsAlertsEl.classList.contains("missing"), false);
   assert.equal(calls.includes("/ops/discovery-audit-artifacts"), true);
+  assert.equal(calls.includes("/ops/task-failure-attempts"), true);
   assert.equal(renderedMetrics.at(-1)?.discoveryAuditArtifacts, auditPayload);
+  assert.equal(renderedMetrics.at(-1)?.taskFailureAttempts, taskFailureAttemptsPayload);
 });
