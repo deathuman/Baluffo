@@ -5,7 +5,7 @@
 > - **Canonical for:** common issue triage steps, quick diagnostics, and known recovery paths
 > - **Not canonical for:** subsystem ownership, API contracts, or release policy
 > - **Then inspect:** [`architecture-ai-map.md`](architecture-ai-map.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`testing.md`](testing.md), and the owning runtime docs for the affected subsystem
-> - **Last updated:** 2026-05-17
+> - **Last updated:** 2026-06-04
 
 ---
 
@@ -158,6 +158,18 @@ Use the retained event file when console logs are unavailable or too noisy. The 
 | First desktop run | This is expected until the first successful fetch; use `Run Jobs Fetcher` from Jobs or Admin |
 | Alert cannot be dismissed | `fetch_never_run` is intentionally non-dismissible until a successful fetch clears it |
 
+### Jobs pipeline fails with a fetch/discovery wait safety cap
+
+| Check | Action |
+|-------|--------|
+| Parent status | Check `/tasks/run-jobs-pipeline-status` for `stage`, `error`, `runId`, `baselineOutputCount`, and `finalOutputCount` |
+| Active tasks | Check `/ops/task-state?view=summary`; healthy terminal state has `count: 0` |
+| Child report | Inspect `jobs-fetch-report.json` or `source-discovery-report.json` under the active data root; a live child should show fresh progress or heartbeat evidence |
+| Lifecycle evidence | Inspect retained bridge lifecycle events before concluding the child is dead; stale report artifacts alone are not proof of liveness |
+| Umbrel smoke | On the raw-LAN app, also confirm `/ops/health.appVersion`, `/sync/status`, `jobs.html`, and the jobs data feed after the pipeline settles |
+
+If the child is still making progress but the parent failed with an absolute safety-cap error, treat it as parent wait accounting rather than a fetcher parsing failure. If the child lifecycle row is terminal and the matching report is missing or unfinished, the parent should fail or cancel promptly instead of waiting for the absolute cap.
+
 ### Specific source fails
 
 ```powershell
@@ -187,6 +199,18 @@ type data\jobs-fetch-report.json | findstr /C:"error"
 ---
 
 ## 4. Discovery Issues
+
+### Discovery report and registry counts disagree
+
+| Check | Action |
+|-------|--------|
+| Latest report | Compare `/discovery/report.runtime.registryFinalization` counts with `/registry/summary` |
+| Full registry load | Compare `/registry/sources?buckets=active,pending,rejected&includeHiddenPending=1` counts with the same report |
+| Auto-approval | Check `/discovery/report.runtime.autoApproval.enabled`, `status`, and `approvedCount`; completed report-declared approvals are authoritative for repair |
+| Safe demotion | Check sync or registry diagnostics for `registryAutoHeal.safeAutomation`; load-time safe demotion should not immediately undo discovery-auto-approved active rows |
+| Healthy state | A repaired terminal report has `taskProgress.active == false`, registry summary/source counts matching report finalization, and no active discovery task in `/ops/task-state?view=summary` |
+
+On Umbrel, a mismatch can appear after a completed discovery if auto-approval persistence or load-time registry normalization diverges from the terminal report. Do not manually edit registry files first; use the bridge routes to gather evidence so JSON/gzip/journal and registry authority stay consistent.
 
 ### Discovery finds no candidates
 

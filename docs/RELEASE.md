@@ -266,6 +266,19 @@ Raw-LAN Umbrel installs are unauthenticated for anyone who can reach the app por
 
 Umbrel private app-store metadata lives at `umbrel-app-store.yml` and `deathuman-baluffo/`. The Compose file uses `app_proxy` with `APP_PORT: 8080`, `PROXY_AUTH_ADD: "false"`, and `${APP_DATA_DIR}/data:/data`. Do not add a `web` service `ports: "8877:8080"` mapping; Umbrel binds the manifest `port: 8877` through `app_proxy`.
 
+Container / Umbrel ship checklist:
+
+1. Bump `src/app_version.py`, `deathuman-baluffo/umbrel-app.yml`, and `deathuman-baluffo/docker-compose.yml` to the same patch version, and add the matching changelog entry.
+2. Run the focused tests for the changed runtime surface, then the broader frontend/refactor/lint gates requested by the release plan.
+3. Build locally with `docker build -t ghcr.io/deathuman/baluffo:local .`; on Windows context-transfer failures, commit first and use `python scripts/docker_build_clean_context.py --tag ghcr.io/deathuman/baluffo:local`.
+4. Smoke the local image with a fresh `/data` mount: `/ops/health`, UI load, same-origin runtime config, no wildcard CORS, disabled desktop-only routes, profile/job persistence, and source-sync status expectations for the build type.
+5. Push `main`, then verify normal main checks and `Build Container` are green.
+6. Confirm `ghcr.io/deathuman/baluffo:<version>` exists with `linux/amd64` and `linux/arm64` manifests, and record the multi-arch digest.
+7. Smoke the published image far enough to prove `/sync/status.config.ready == true`, `credentialsPackaged == true`, and `missing == []` for official publishes.
+8. Update or reinstall the Umbrel app, then verify the live raw-LAN app before declaring shipped.
+
+If live Umbrel smoke exposes a blocker after an image has published, ship a new patch version instead of reusing the failed image identity. Do not move or recreate desktop release tags for container-only recovery.
+
 ### Linux AppImage
 
 Prerequisites:
@@ -474,6 +487,17 @@ Umbrel private app-store metadata lives at:
 Umbrel Compose uses `app_proxy` with `APP_PORT: 8080` and `PROXY_AUTH_ADD: "false"`, and mounts `${APP_DATA_DIR}/data:/data`. The intended raw LAN URL is `http://192.168.50.61:8877/`; Umbrel binds that host port from `umbrel-app.yml`, so the `web` service must not publish the same port.
 
 Raw LAN exposure is intentional for this channel. Anyone who can reach the host port can access Baluffo UI, Admin, and local-data routes, so do not expose the port to the Internet, public Wi-Fi, or broad VPN peers. The container service is still browser same-origin and must not emit wildcard CORS allow headers for arbitrary external origins.
+
+Umbrel live smoke is required for Umbrel release closeout. Verify:
+
+1. `/ops/health.appVersion` matches the shipped version, `startupReady == true`, and the pipeline is idle unless the smoke is intentionally running.
+2. `admin.html` and `jobs.html` return HTTP 200 with fresh cache-busted frontend modules.
+3. `/registry/summary` and `/registry/sources?buckets=active,pending,rejected&includeHiddenPending=1` match the latest terminal discovery report's `runtime.registryFinalization` counts.
+4. `/sync/status.config.ready == true`, `credentialsPackaged == true`, and `missing == []`.
+5. The jobs data feed loads and its count matches the completed pipeline `finalOutputCount` after a pipeline smoke.
+6. A manual or scheduled Jobs pipeline terminalizes cleanly, leaves `/ops/task-state?view=summary.count == 0`, writes fetch/discovery evidence under `/data`, and does not fail through an absolute safety-cap timeout.
+
+Record the final commit SHA, workflow run ids, GHCR digest/platforms, Umbrel installed version, registry/sync/jobs/pipeline smoke results, and residual risk in Basic Memory.
 
 ### Post-Release / Incident Checks
 

@@ -1,17 +1,17 @@
 # Umbrel Raw-LAN Deployment Plan
 
-> - **Status:** Implemented in repo; image publication and Umbrel smoke pending
+> - **Status:** Implemented, published, and live-smoked on the private Umbrel raw-LAN install
 > - **Use this when:** preparing, validating, or operating Baluffo as a private Umbrel community app-store install with raw LAN access
 > - **Canonical for:** container runtime scope, same-origin UI/API behavior, Umbrel raw-LAN exposure, GHCR image target, and validation checklist
 > - **Not canonical for:** official Umbrel store submission, public Internet exposure, or desktop packaged updater behavior
 > - **Then inspect:** [`../admin-bridge-api.md`](../admin-bridge-api.md), [`../RELEASE.md`](../RELEASE.md), [`../testing.md`](../testing.md), [`../storage-contract.md`](../storage-contract.md), and [`../architecture-ai-map.md`](../architecture-ai-map.md)
-> - **Last updated:** 2026-06-01
+> - **Last updated:** 2026-06-04
 
 ## Implementation Status
 
 The original planning gate is closed. A separate explicit implementation request was given on 2026-06-01, and the repository now contains the container runtime, Docker packaging, GHCR workflow, and private Umbrel community app-store metadata.
 
-This does not mean a release tag, GHCR image, or Umbrel deployment has already been published. Publication still requires the GitHub workflow or an operator build/push, followed by an Umbrel smoke test on `192.168.50.61`.
+The container channel has since been published through GHCR and exercised on the private Umbrel at `192.168.50.61`. Future container patches still require the full publish and live-smoke checklist in [`../RELEASE.md`](../RELEASE.md) before closeout.
 
 ## Summary
 
@@ -74,6 +74,17 @@ Fresh Umbrel installs start with a new `/data` volume. There is no automatic des
 - Docker smoke: build, run with temp `/data`, poll health, load UI, create profile, save job, restart, verify persistence, and verify no desktop data paths are used.
 - Image hygiene: assert local secrets, sync config, profiles, SQLite DBs, logs, `_out`, and fetched artifacts are excluded.
 - Umbrel smoke on `192.168.50.61`: add the private app store, install Baluffo, open `http://192.168.50.61:8877/`, run bootstrap/fetch, save a job, restart app, and verify persistence.
+
+## Operational Validation
+
+For future Umbrel/container patches, use [`../RELEASE.md`](../RELEASE.md) as the canonical ship checklist. At minimum, live closeout should record:
+
+- `/ops/health.appVersion`, health, startup readiness, and pipeline idle/running state.
+- `admin.html` and `jobs.html` HTTP 200 checks.
+- `/registry/summary` and combined `/registry/sources` counts matching the latest terminal discovery report finalization.
+- `/sync/status.config.ready == true`, `credentialsPackaged == true`, and `missing == []` for official publishes.
+- Jobs data feed count, plus manual or scheduled pipeline terminal status and `/ops/task-state?view=summary.count == 0`.
+- GHCR tag, multi-arch digest/platforms, GitHub workflow run ids, and residual risk.
 
 ## Assumptions
 
