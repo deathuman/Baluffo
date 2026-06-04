@@ -10,6 +10,18 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.38] - 2026-06-04
+
+### Fixed
+- Google Sheets company repair now recognizes structured LinkedIn detail URLs with numeric job ids and a small set of first-party game-studio career hosts, repairing currently observed `Unknown company` rows for Scopely, Activision, Techland, Wargaming, Rockstar Games, Santa Monica Studio, Believer, and Rovio when the job link itself carries strong company evidence.
+- The shipped-artifact quality gate now checks direct structured job-link company evidence before requiring Grackle bundle evidence, so stale feeds with repairable `Unknown company` rows are classified as blockers instead of weak warnings.
+
+### Notes
+- Live Umbrel `0.2.37` audit evidence found 135 `Unknown company` rows; 118 are repairable by this patch and 17 remain weak-evidence rows, mostly generic LinkedIn search/expired redirect URLs plus one Jobvite and one Dayforce URL without safe company evidence.
+- Fetch attempt audit found no real fetch failures: 22 sources ran successfully and 2,127 were expected `cache_within_freshness_window` exclusions.
+- Discovery failure-attempt audit found high diagnostic buckets in dedupe skips, GameDevMap recovery fetches, and static probes, but no queue-policy or provider-scoring change is justified by this patch.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.37] - 2026-06-04
 
 ### Fixed

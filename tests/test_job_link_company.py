@@ -90,6 +90,43 @@ def test_company_from_job_link_extracts_supported_ats_hosts() -> None:
             "Guerrilla Games",
         ),
         ("all-caps", "https://jobs.smartrecruiters.com/CDPR/74400012345", "CDPR"),
+        (
+            "linkedin-detail-company",
+            "https://es.linkedin.com/jobs/view/senior-render-artist-at-scopely-4371673234",
+            "Scopely",
+        ),
+        (
+            "linkedin-hyphenated-company",
+            "https://www.linkedin.com/jobs/view/senior-engineer-at-epic-games-4385809932",
+            "Epic Games",
+        ),
+        (
+            "activision-first-party",
+            "https://careers.activision.com/job/R026491",
+            "Activision",
+        ),
+        (
+            "techland-first-party",
+            "https://techland.net/job-offers/technical-artist-41",
+            "Techland",
+        ),
+        (
+            "wargaming-first-party",
+            "https://wargaming.com/en/careers/vacancy_3389163_warsaw",
+            "Wargaming",
+        ),
+        (
+            "rockstar-first-party",
+            "https://www.rockstargames.com/careers/openings/position/7488511003",
+            "Rockstar Games",
+        ),
+        ("rovio-first-party", "https://www.rovio.com/open-positions", "Rovio"),
+        ("believer-first-party", "https://believer.gg/jobs/7f038142", "Believer"),
+        (
+            "santa-monica-studio-first-party",
+            "https://sms.playstation.com/careers/programming/sr-devops-engineer",
+            "Santa Monica Studio",
+        ),
     ]
 
     for case_id, url, expected in cases:
@@ -110,6 +147,11 @@ def test_company_from_job_link_rejects_empty_malformed_and_unknown_hosts() -> No
             "https://jobs.smartrecruiters.com/8615ea53-9992-489f-b2cd-38ede3434679/12345",
         ),
         ("non-ats-linkedin", "https://www.linkedin.com/jobs/view/senior-engineer-at-epic-games"),
+        (
+            "linkedin-search-redirect",
+            "https://www.linkedin.com/jobs/chief-product-officer-jobs?trk=expired_jd_redirect",
+        ),
+        ("known-first-party-no-job-path", "https://techland.net/about"),
         ("unknown-bamboohr-style", "https://corp.example.com/careers/jobs/123"),
         ("shine-without-jobs-path", "https://www.shine.com/companies/listing"),
         ("short-shine-url", "https://www.shine.com/jobs/single-segment"),

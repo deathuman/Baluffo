@@ -190,9 +190,6 @@ def analyze_jobs_artifact(value: str) -> dict[str, Any]:
         company = clean_text(row.get("company"))
         if norm_text(company) not in {norm_text(UNKNOWN_COMPANY_LABEL), "unknown"}:
             continue
-        bundle_urls = _gracklehq_bundle_urls(row)
-        if not bundle_urls:
-            continue
         inferred_company = clean_text(company_from_job_link(row.get("jobLink") or ""))
         if inferred_company:
             strong_unknown_examples.append(
@@ -202,6 +199,9 @@ def analyze_jobs_artifact(value: str) -> dict[str, Any]:
                     resolved_company=inferred_company,
                 )
             )
+            continue
+        bundle_urls = _gracklehq_bundle_urls(row)
+        if not bundle_urls:
             continue
         known_companies = sorted(
             {

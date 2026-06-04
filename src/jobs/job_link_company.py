@@ -25,6 +25,12 @@ def _raw_company_from_job_link(job_link: str) -> str:
     company = _personio_company(host)
     if company:
         return company
+    company = _linkedin_company(host, parts)
+    if company:
+        return company
+    company = _known_first_party_company(host, parts)
+    if company:
+        return company
     return _host_path_company(host, parts)
 
 
@@ -61,6 +67,57 @@ def _personio_company(host: str) -> str:
         token = prefix.rstrip(".").rsplit(".", maxsplit=1)[-1]
         if token and token != "www":
             return token
+    return ""
+
+
+_LINKEDIN_DETAIL_COMPANY_RE = re.compile(
+    r"-at-([a-z0-9][a-z0-9-]*?)-[0-9]{6,}$",
+    re.IGNORECASE,
+)
+
+
+def _linkedin_company(host: str, parts: list[str]) -> str:
+    if host != "linkedin.com" and not host.endswith(".linkedin.com"):
+        return ""
+    if len(parts) < 3 or parts[0].lower() != "jobs" or parts[1].lower() != "view":
+        return ""
+    slug = parts[2].strip().lower()
+    match = _LINKEDIN_DETAIL_COMPANY_RE.search(slug)
+    return match.group(1) if match else ""
+
+
+_FIRST_PARTY_JOB_HOSTS = {
+    "believer.gg": "Believer",
+    "careers.activision.com": "Activision",
+    "rockstargames.com": "Rockstar Games",
+    "rovio.com": "Rovio",
+    "sms.playstation.com": "Santa Monica Studio",
+    "techland.net": "Techland",
+    "wargaming.com": "Wargaming",
+}
+
+_FIRST_PARTY_JOB_PATH_MARKERS = (
+    "career",
+    "careers",
+    "job",
+    "jobs",
+    "job-offers",
+    "open-positions",
+    "vacancy",
+)
+
+
+def _known_first_party_company(host: str, parts: list[str]) -> str:
+    company = _FIRST_PARTY_JOB_HOSTS.get(host)
+    if not company or not parts:
+        return ""
+    normalized_parts = [part.strip().lower() for part in parts[:4]]
+    if any(
+        part == marker or marker in part
+        for part in normalized_parts
+        for marker in _FIRST_PARTY_JOB_PATH_MARKERS
+    ):
+        return company
     return ""
 
 

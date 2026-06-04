@@ -75,6 +75,56 @@ def test_jobs_artifact_quality_gate_blocks_unknown_company_with_structured_link_
     assert report["blocked"]["unknownCompanyExamples"][0]["resolvedCompany"] == "Ubisoft2"
 
 
+def test_jobs_artifact_quality_gate_blocks_unknown_company_with_linkedin_detail_evidence(
+    tmp_path: Path,
+) -> None:
+    csv_path = tmp_path / "jobs-unified.csv"
+    _write_csv(
+        csv_path,
+        [
+            {
+                "id": "1",
+                "title": "Senior Render Artist",
+                "company": "Unknown company",
+                "jobLink": "https://es.linkedin.com/jobs/view/senior-render-artist-at-scopely-4371673234",
+                "source": "google_sheets",
+                "sourceJobId": "sheet-1",
+            }
+        ],
+    )
+
+    report = analyze_jobs_artifact(str(csv_path))
+
+    assert report["status"] == "blocked"
+    assert report["counts"]["unknownCompanyStrongEvidenceLeaks"] == 1
+    assert report["blocked"]["unknownCompanyExamples"][0]["resolvedCompany"] == "Scopely"
+
+
+def test_jobs_artifact_quality_gate_blocks_unknown_company_with_first_party_host_evidence(
+    tmp_path: Path,
+) -> None:
+    csv_path = tmp_path / "jobs-unified.csv"
+    _write_csv(
+        csv_path,
+        [
+            {
+                "id": "1",
+                "title": "Technical Artist",
+                "company": "Unknown company",
+                "jobLink": "https://techland.net/job-offers/technical-artist-41",
+                "source": "google_sheets",
+                "sourceJobId": "sheet-1",
+            }
+        ],
+    )
+
+    report = analyze_jobs_artifact(str(csv_path))
+
+    assert report["status"] == "blocked"
+    assert report["counts"]["unknownCompanyStrongEvidenceLeaks"] == 1
+    assert report["blocked"]["unknownCompanyExamples"][0]["resolvedCompany"] == "Techland"
+
+
 def test_jobs_artifact_quality_gate_warns_on_unknown_company_without_strong_evidence(
     tmp_path: Path,
 ) -> None:
