@@ -472,6 +472,18 @@ class PipelineService:
         except Exception as exc:  # noqa: BLE001
             raise RuntimeError(f"{phase}: {exc}") from exc
 
+    @staticmethod
+    def _report_wait_now() -> Any:
+        from datetime import UTC, datetime
+
+        return datetime.now(UTC)
+
+    @staticmethod
+    def _report_wait_sleep(seconds: float) -> None:
+        from threading import Event
+
+        Event().wait(seconds)
+
     def _wait_for_sync_push_row(self, run_id: str) -> dict[str, Any]:
         try:
             return self._wait_for_sync_completion(run_id, 900.0)
@@ -1020,18 +1032,17 @@ class PipelineService:
         task_type: str = "",
         task_run_id: str = "",
     ) -> dict[str, Any]:
-        from datetime import UTC, datetime, timedelta
-        from threading import Event
+        from datetime import timedelta
 
         stale_guard = report_is_stale_in_progress or (lambda *_args, **_kwargs: False)
         quiet_window_s = max(10.0, float(timeout_s))
-        quiet_deadline = datetime.now(UTC) + timedelta(seconds=quiet_window_s)
-        absolute_deadline = datetime.now(UTC) + timedelta(
-            seconds=max(quiet_window_s * 4.0, quiet_window_s + 3600.0)
-        )
+        absolute_window_s = max(quiet_window_s * 4.0, quiet_window_s + 3600.0)
+        now = self._report_wait_now()
+        quiet_deadline = now + timedelta(seconds=quiet_window_s)
+        absolute_deadline = now + timedelta(seconds=absolute_window_s)
         started_dt = self._parse_iso(started_at)
         while True:
-            now = datetime.now(UTC)
+            now = self._report_wait_now()
             report = load_json_object(report_path, {})
             normalized_report = report if isinstance(report, dict) else {}
             with self._lock:
@@ -1067,6 +1078,7 @@ class PipelineService:
             )
             if child_live:
                 quiet_deadline = now + timedelta(seconds=quiet_window_s)
+                absolute_deadline = now + timedelta(seconds=absolute_window_s)
                 self._heartbeat_pipeline_wait()
             self._check_abort(pipeline_run_id)
             if fail_on_stale and stale_guard(
@@ -1093,7 +1105,7 @@ class PipelineService:
                     error=error,
                 )
                 raise TimeoutError(error)
-            Event().wait(1.0)
+            self._report_wait_sleep(1.0)
 
     def _run_worker(self, run_id: str) -> None:
         try:

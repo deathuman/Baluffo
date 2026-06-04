@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -112,4 +113,66 @@ def test_wait_for_report_completion_cancels_when_discovery_child_canceled_withou
             task_run_id="discovery_1",
         )
 
+    assert failures == []
+
+
+def test_live_child_evidence_extends_absolute_fetch_wait_cap(tmp_path: Path) -> None:
+    failures: list[dict[str, Any]] = []
+    heartbeats: list[tuple[str, str, str]] = []
+    current = {"now": datetime(2026, 5, 6, 18, 0, tzinfo=UTC), "calls": 0}
+
+    def load_report(_path: Path, _default: dict[str, Any]) -> dict[str, Any]:
+        current["calls"] = int(current["calls"]) + 1
+        if int(current["calls"]) <= 5:
+            return {
+                "runId": "fetch_1",
+                "startedAt": "2026-05-06T18:00:00Z",
+                "finishedAt": "",
+                "taskProgress": {
+                    "active": True,
+                    "phaseKey": "merging_results",
+                    "counts": {
+                        "sourceCount": 555,
+                        "completedTasks": 555,
+                        "runningTasks": 0,
+                    },
+                },
+            }
+        return {
+            "runId": "fetch_1",
+            "startedAt": "2026-05-06T18:00:00Z",
+            "finishedAt": "2026-05-06T19:30:00Z",
+            "summary": {"outputCount": 78329},
+            "taskProgress": {"active": False, "phaseKey": "completed"},
+        }
+
+    service = _make_pipeline_service(
+        pipeline_status={"runId": "pipeline_1", "stage": "fetch"},
+        load_json_object=load_report,
+        refresh_child_task_heartbeat=lambda task_type, run_id, started_at: (
+            heartbeats.append((task_type, run_id, started_at)) or True
+        ),
+        fail_lifecycle_run=lambda run_id, task_type, **kwargs: (
+            failures.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        ),
+    )
+    service._report_wait_now = lambda: current["now"]  # type: ignore[method-assign]
+    service._report_wait_sleep = lambda _seconds: current.update(  # type: ignore[method-assign]
+        {"now": current["now"] + timedelta(seconds=1000)}
+    )
+
+    report = service.wait_for_report_completion(
+        report_path=tmp_path / "jobs-fetch-report.json",
+        started_at="2026-05-06T18:00:00Z",
+        timeout_s=10.0,
+        report_name="fetch report",
+        load_json_object=service._load_json_object,
+        task_type="fetch",
+        task_run_id="fetch_1",
+    )
+
+    assert report["finishedAt"] == "2026-05-06T19:30:00Z"
+    assert int(current["calls"]) == 6
+    assert len(heartbeats) >= 5
+    assert current["now"] >= datetime(2026, 5, 6, 19, 6, tzinfo=UTC)
     assert failures == []

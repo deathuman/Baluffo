@@ -10,6 +10,17 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.37] - 2026-06-04
+
+### Fixed
+- Jobs pipeline child waits now extend the absolute report wait cap while the discovery/fetch child has live heartbeat or lifecycle evidence, preventing long but healthy Umbrel fetch merges from failing the parent pipeline before the terminal report is written.
+
+### Notes
+- This is a corrective container patch for the 0.2.36 Umbrel manual pipeline smoke failure where fetch completed all 555 source tasks and entered merge, but the parent pipeline failed with `fetch_wait: fetch report exceeded absolute safety cap`.
+- Terminal child lifecycle rows still fail or cancel the parent promptly when the expected report is missing or unfinished; stale children without live evidence still hit the quiet timeout path.
+- Fetcher parsing, provider quality rules, source policy, sync contracts, raw-LAN same-origin behavior, and desktop packaging behavior are unchanged.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.36] - 2026-06-03
 
 ### Fixed
