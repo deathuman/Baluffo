@@ -20,6 +20,9 @@ def test_dockerignore_excludes_local_runtime_and_secret_artifacts() -> None:
         ".tmp",
         "_out",
         "dist",
+        "docs/**",
+        "tests/**",
+        "tools/mcp/**",
         "node_modules",
         ".venv/",
         ".venv/**",
@@ -40,6 +43,25 @@ def test_dockerignore_excludes_local_runtime_and_secret_artifacts() -> None:
 def test_ghcr_workflow_builds_multi_arch_image_without_pr_push() -> None:
     content = _read(".github/workflows/build-container.yml")
 
+    assert "push:" in content
+    assert "branches: [main]" in content
+    assert 'tags: ["v*"]' in content
+    assert "workflow_dispatch:" in content
+    assert content.count("paths-ignore:") == 2
+    assert (
+        "# Branch path filters do not apply to tag pushes. Version tags still publish." in content
+    )
+    for ignored_path in (
+        "docs/**",
+        "tests/**",
+        "tools/mcp/**",
+        "README.md",
+        "CONTRIBUTING.md",
+        "SECURITY.md",
+        "AGENTS.md",
+        "LICENSE",
+    ):
+        assert f'- "{ignored_path}"' in content
     assert "IMAGE_NAME: ghcr.io/deathuman/baluffo" in content
     assert "docker/setup-qemu-action@v4" in content
     assert "docker/setup-buildx-action@v4" in content

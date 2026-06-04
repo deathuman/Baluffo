@@ -4,8 +4,27 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+    # Branch path filters do not apply to tag pushes. Version tags still publish.
+    paths-ignore:
+      - "docs/**"
+      - "tests/**"
+      - "tools/mcp/**"
+      - "README.md"
+      - "CONTRIBUTING.md"
+      - "SECURITY.md"
+      - "AGENTS.md"
+      - "LICENSE"
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "tests/**"
+      - "tools/mcp/**"
+      - "README.md"
+      - "CONTRIBUTING.md"
+      - "SECURITY.md"
+      - "AGENTS.md"
+      - "LICENSE"
   workflow_dispatch:
 
 env:

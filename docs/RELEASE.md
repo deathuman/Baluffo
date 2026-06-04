@@ -270,9 +270,10 @@ Runtime notes:
 - Playwright Chromium is baked into the image for deterministic first run.
 - Official GHCR publishes generate `packaging/github-app-sync-config.json` inside the image from GitHub Actions BuildKit secrets, using the same portable encrypted `embedded` sync config model as desktop packages.
 - Pull request and local container builds without sync build secrets still build, but `/sync/status` remains misconfigured until a publish build embeds the packaged GitHub App config.
-- The `.dockerignore` file must keep local secrets, sync config, local profiles, DBs, logs, `_out`, and fetched artifacts out of the image context.
+- The `.dockerignore` file must keep local secrets, sync config, local profiles, DBs, logs, `_out`, fetched artifacts, docs, and tests out of the image context.
 
 The GitHub workflow `.github/workflows/build-container.yml` publishes the public multi-arch image `ghcr.io/deathuman/baluffo` for `linux/amd64` and `linux/arm64`.
+Docs, tests, and repo-process-only branch/PR changes are path-filtered out of the container workflow, so they should not republish the current app-version or `latest` GHCR tags. Tag pushes and manual `workflow_dispatch` runs still publish normally.
 
 Raw-LAN Umbrel installs are unauthenticated for anyone who can reach the app port. The embedded source-sync config follows the existing desktop packaging deterrence model and should use the same least-privilege GitHub App allowlist.
 
@@ -284,7 +285,7 @@ Container / Umbrel ship checklist:
 2. Run the focused tests for the changed runtime surface, then the broader frontend/refactor/lint gates requested by the release plan.
 3. Build locally with `docker build -t ghcr.io/deathuman/baluffo:local .`; on Windows context-transfer failures, commit first and use `python scripts/docker_build_clean_context.py --tag ghcr.io/deathuman/baluffo:local`.
 4. Smoke the local image with a fresh `/data` mount: `/ops/health`, UI load, same-origin runtime config, no wildcard CORS, disabled desktop-only routes, profile/job persistence, and source-sync status expectations for the build type.
-5. Push `main`, then verify normal main checks and `Build Container` are green.
+5. Push `main`, then verify normal main checks and `Build Container` are green when the change touches image-relevant paths. For docs/test/process-only changes, the container workflow may be intentionally skipped.
 6. Confirm `ghcr.io/deathuman/baluffo:<version>` exists with `linux/amd64` and `linux/arm64` manifests, and record the multi-arch digest.
 7. Smoke the published image far enough to prove `/sync/status.config.ready == true`, `credentialsPackaged == true`, and `missing == []` for official publishes.
 8. Update or reinstall the Umbrel app, then verify the live raw-LAN app before declaring shipped.
@@ -487,7 +488,7 @@ The public image target is:
 ghcr.io/deathuman/baluffo
 ```
 
-The GHCR workflow builds `linux/amd64` and `linux/arm64` using Docker buildx and QEMU. Pull request builds validate the image without pushing; default-branch and tag builds publish to GHCR.
+The GHCR workflow builds `linux/amd64` and `linux/arm64` using Docker buildx and QEMU. Pull request builds validate the image without pushing; default-branch and tag builds publish to GHCR when the workflow runs. Docs, tests, and repo-process-only branch/PR changes are path-filtered out so they do not republish the current app-version or `latest` tags. Tag pushes and manual `workflow_dispatch` publishes are not skipped by those path filters.
 
 Umbrel private app-store metadata lives at:
 

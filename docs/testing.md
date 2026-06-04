@@ -224,6 +224,8 @@ Prefer the normal `docker build .` command. The clean-context helper builds comm
 
 Official GHCR publishes embed the portable encrypted GitHub App sync config from GitHub Actions BuildKit secrets. Pull request and local builds without those secrets remain valid container smoke targets, but `/sync/status` will report a missing packaged config in those images.
 
+`Build Container` is path-filtered for branch and pull request changes that only touch docs, tests, or repo-process files. A skipped container workflow is expected for those ignored paths; require container publish evidence for runtime-relevant container changes, version/tag publishes, Umbrel metadata changes, or manual `workflow_dispatch` publishes.
+
 Use `npm run release:preflight` when you are about to push a release commit, move a release tag, or publish release artifacts. It runs the pre-commit gate, the full Python lane, frontend unit tests, prepares the shared portable EXE once, and then runs the packaged desktop release lanes in canonical order.
 
 **Shared fixtures (where they are defined):**

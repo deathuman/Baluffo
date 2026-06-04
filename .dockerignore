@@ -7,6 +7,12 @@ _out
 dist
 build
 out
+docs
+docs/**
+tests
+tests/**
+tools/mcp
+tools/mcp/**
 node_modules
 .venv
 .venv/
