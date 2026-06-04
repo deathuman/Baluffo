@@ -130,7 +130,9 @@ def test_task_failure_attempts_route_classifies_discovery_expected_and_actionabl
     ]
     failures.extend(
         {
-            "name": f"GameDevMap {index}",
+            "name": f"GameDevMap {index} https://hidden-name.invalid/careers"
+            if index == 0
+            else f"GameDevMap {index}",
             "adapter": "gamedevmap",
             "domain": "gamedevmap.example",
             "stage": "recovery_fetch",
@@ -151,7 +153,7 @@ def test_task_failure_attempts_route_classifies_discovery_expected_and_actionabl
     )
     failures.append(
         {
-            "name": "URL Reason",
+            "name": "URL Reason https://secret.invalid/careers",
             "adapter": "static",
             "domain": "reason.example",
             "stage": "",
@@ -189,5 +191,7 @@ def test_task_failure_attempts_route_classifies_discovery_expected_and_actionabl
     assert discovery["summaryCore"]["queuedCandidateCount"] == 3
     serialized = json.dumps(payload)
     assert "https://hidden.invalid" not in serialized
+    assert "hidden-name.invalid" not in serialized
     assert "secret.invalid" not in serialized
+    assert "GameDevMap 0 [url]" in serialized
     assert "failed to fetch" not in serialized

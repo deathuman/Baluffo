@@ -61,6 +61,14 @@ def _clean_token(value: Any, default: str = "unknown") -> str:
     return token or default
 
 
+def _clean_label(value: Any, default: str = "unknown", *, max_length: int = 160) -> str:
+    text = URLISH_RE.sub("[url]", _clean_text(value, default))
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) > max_length:
+        return f"{text[: max_length - 1].rstrip()}..."
+    return text or default
+
+
 def _safe_int(value: Any, default: int = 0) -> int:
     try:
         return max(0, int(value or default))
@@ -97,7 +105,7 @@ def _counter_rows(counter: Counter[str], *, limit: int = MAX_COUNTER_ROWS) -> li
 
 def _bounded_source_example(row: dict[str, Any]) -> dict[str, Any]:
     return {
-        "name": _clean_text(row.get("name") or row.get("id") or row.get("sourceName"), "unknown"),
+        "name": _clean_label(row.get("name") or row.get("id") or row.get("sourceName")),
         "status": _clean_token(row.get("status")),
         "adapter": _clean_text(row.get("adapter")),
         "classification": _clean_text(row.get("classification")),
@@ -220,7 +228,7 @@ def _discovery_example(row: dict[str, Any]) -> dict[str, Any]:
     if "://" in domain or "/" in domain:
         domain = ""
     return {
-        "name": _clean_text(row.get("name"), "unknown"),
+        "name": _clean_label(row.get("name")),
         "adapter": _discovery_adapter(row),
         "stage": _discovery_stage(row),
         "reason": _discovery_reason(row),

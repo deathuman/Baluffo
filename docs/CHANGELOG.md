@@ -10,6 +10,15 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.40] - 2026-06-04
+
+### Fixed
+- Task failure-attempt diagnostics now redact URL-like substrings from bounded example labels, closing the live `0.2.39` smoke blocker where GameDevMap recovery example names could expose raw URLs.
+
+### Notes
+- This is a corrective Umbrel/container patch for the `0.2.39` diagnostics route. Fetcher parsing, discovery queue policy, provider scoring, source sync, public job data contracts, same-origin raw-LAN behavior, and desktop packaging behavior are unchanged.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.39] - 2026-06-04
 
 ### Added
