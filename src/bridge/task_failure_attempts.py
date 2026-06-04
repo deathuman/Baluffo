@@ -22,9 +22,13 @@ EXPECTED_DISCOVERY_STAGES = {
     "suppressed_static",
 }
 EXPECTED_DISCOVERY_NEGATIVE_BUCKETS = {
+    "gamedevmap_homepage_dns_miss",
+    "gamedevmap_homepage_not_found",
     "gamedevmap_recovery_not_found",
     "probe_dns_miss",
     "probe_not_found",
+    "website_dns_miss",
+    "website_not_found",
 }
 EXPECTED_FETCH_EXCLUSION_REASONS = {
     "cache_within_freshness_window",
@@ -245,6 +249,32 @@ def _discovery_recovery_url_source(row: dict[str, Any]) -> str:
     return _clean_token(row.get("recoveryUrlSource"), "")
 
 
+def _gamedevmap_recovery_bucket(row: dict[str, Any], raw_error: Any) -> str:
+    recovery_source = _discovery_recovery_url_source(row)
+    if _is_http_not_found_or_gone(raw_error) and recovery_source in {
+        "",
+        "generated_common_path",
+    }:
+        return "gamedevmap_recovery_not_found"
+    return "gamedevmap_recovery_fetch"
+
+
+def _gamedevmap_homepage_bucket(raw_error: Any) -> str:
+    if _is_http_not_found_or_gone(raw_error):
+        return "gamedevmap_homepage_not_found"
+    if _is_dns_miss(raw_error):
+        return "gamedevmap_homepage_dns_miss"
+    return "gamedevmap_homepage_fetch"
+
+
+def _website_fetch_bucket(raw_error: Any) -> str:
+    if _is_http_not_found_or_gone(raw_error):
+        return "website_not_found"
+    if _is_dns_miss(raw_error):
+        return "website_dns_miss"
+    return "website_fetch"
+
+
 def _discovery_bucket(row: dict[str, Any]) -> str:
     adapter = _discovery_adapter(row)
     stage = _discovery_stage(row)
@@ -264,15 +294,11 @@ def _discovery_bucket(row: dict[str, Any]) -> str:
         or "recovery_fetch" in reason
         or ("recovery" in error and "fetch" in error)
     ):
-        recovery_source = _discovery_recovery_url_source(row)
-        if _is_http_not_found_or_gone(raw_error) and recovery_source in {
-            "",
-            "generated_common_path",
-        }:
-            return "gamedevmap_recovery_not_found"
-        return "gamedevmap_recovery_fetch"
+        return _gamedevmap_recovery_bucket(row, raw_error)
     if adapter == "gamedevmap" and ("homepage_fetch" in stage or "homepage_fetch" in reason):
-        return "gamedevmap_homepage_fetch"
+        return _gamedevmap_homepage_bucket(raw_error)
+    if "website_fetch" in stage or "website_fetch" in reason:
+        return _website_fetch_bucket(raw_error)
     return stage or reason or adapter or "unknown"
 
 

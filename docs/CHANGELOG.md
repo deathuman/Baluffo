@@ -10,6 +10,15 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.42] - 2026-06-04
+
+### Fixed
+- Discovery failure-attempt diagnostics now classify permanent GameDevMap homepage and directory website DNS/404/410 misses as expected negatives, reducing live Umbrel actionable discovery diagnostics without hiding transient, TLS, 403/5xx, parser, or provider-validation failures.
+
+### Notes
+- This is a diagnostics-only Umbrel/container patch. Fetcher parsing, provider scoring, source policy, source sync, public job data contracts, same-origin raw-LAN behavior, and desktop packaging behavior are unchanged.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.41] - 2026-06-04
 
 ### Fixed
