@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 import { createAdminOpsController } from "../../../frontend/admin/app/ops.js";
 import {
   createDeferredRenderScheduler,
-  createElement
+  createElement,
+  stubScheduledTimers
 } from "./helpers/admin-controller-test-helpers.mjs";
 
 function createTabButton(key) {
@@ -70,6 +71,17 @@ test("admin ops controller updates tab badges from loaded review payloads", asyn
     adminOpsDedupListsEl: createElement()
   };
   const renderScheduler = createDeferredRenderScheduler();
+  const detailTimers = [];
+  const timers = stubScheduledTimers({
+    setTimeoutImpl(callback, ms) {
+      if (ms === 250) {
+        detailTimers.push(callback);
+      } else if (ms === 150) {
+        callback();
+      }
+      return { unref() {} };
+    }
+  });
   const controller = createAdminOpsController({
     state,
     refs,
@@ -188,11 +200,18 @@ test("admin ops controller updates tab badges from loaded review payloads", asyn
     renderScheduler: renderScheduler.schedule
   });
 
-  await controller.loadOpsHealthData();
-  await controller.selectOpsTab("source-policy");
-  await new Promise(resolve => setTimeout(resolve, 0));
-  renderScheduler.flush();
-  controller.stopOpsHealthPolling();
+  try {
+    await controller.loadOpsHealthData();
+    await controller.selectOpsTab("source-policy");
+    detailTimers.forEach(callback => callback());
+    for (let index = 0; index < 12; index += 1) {
+      await Promise.resolve();
+    }
+    renderScheduler.flush();
+  } finally {
+    controller.stopOpsHealthPolling();
+    timers.restore();
+  }
 
   assert.equal(overviewBadge.textContent, "1");
   assert.equal(overviewBadge.attributes["data-badge-tone"], "critical");

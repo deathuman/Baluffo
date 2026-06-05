@@ -18,13 +18,19 @@ from src import fetcher_metrics as fetcher_metrics_module
 from src.bridge import ops_health as _ops_health
 from src.bridge import ops_history_projection as _ops_history_projection
 from src.bridge import ops_live_payload as _ops_live_payload
+from src.bridge import ops_read_model_cache as _ops_read_model_cache
 from src.bridge import ops_task_live as _ops_task_live
 from src.bridge import report_normalizer
 from src.bridge import run_history_api as _run_history_api
 from src.bridge.fetch_report_review_state import load_fetch_report_with_dedup_review_state
 from src.bridge.performance_profile import time_operation
 from src.shared.json_shapes import as_json_object
-from src.shared.live_task import LiveTaskPayload, TaskStatePayload, TaskStateRow
+from src.shared.live_task import (
+    LiveTaskPayload,
+    TaskStatePayload,
+    TaskStateRow,
+    normalize_live_task_payload,
+)
 from src.source_registry_io import load_runtime_evidence
 from src.storage_metrics import duration_ms, record_storage_read
 
@@ -152,6 +158,42 @@ def _latest_time_text(*values: Any) -> str:
             best_dt = parsed
             best_text = text
     return best_text
+
+
+def _row_signature(rows: list[dict[str, Any]]) -> tuple[tuple[Any, ...], ...]:
+    signature_rows: list[tuple[Any, ...]] = []
+    for row in rows:
+        summary = as_json_object(row.get("summary"))
+        task_progress = as_json_object(row.get("taskProgress") or row.get("progress"))
+        signature_rows.append(
+            (
+                _task_type(row),
+                _run_id(row),
+                str(row.get("lifecycleStatus") or row.get("status") or "").strip(),
+                str(row.get("stage") or summary.get("stage") or "").strip(),
+                str(row.get("startedAt") or "").strip(),
+                str(row.get("finishedAt") or "").strip(),
+                str(row.get("heartbeatAt") or "").strip(),
+                str(row.get("parentTaskType") or "").strip(),
+                str(row.get("parentRunId") or "").strip(),
+                str(task_progress.get("phaseKey") or "").strip(),
+                str(task_progress.get("phaseLabel") or "").strip(),
+            )
+        )
+    return tuple(signature_rows)
+
+
+def _pipeline_status_signature(status: dict[str, Any]) -> tuple[Any, ...]:
+    payload = as_json_object(status)
+    runtime = as_json_object(payload.get("runtime"))
+    return (
+        bool(payload.get("active")),
+        str(payload.get("runId") or "").strip(),
+        str(payload.get("stage") or "").strip(),
+        str(payload.get("startedAt") or "").strip(),
+        str(payload.get("finishedAt") or "").strip(),
+        str(payload.get("heartbeatAt") or runtime.get("heartbeatAt") or "").strip(),
+    )
 
 
 def _row_order(row: dict[str, Any]) -> tuple[int, datetime, str]:
@@ -395,6 +437,12 @@ _TASK_STATE_SUMMARY_KEYS = {
 }
 
 _LIFECYCLE_ROW_CACHE_TTL_SECONDS = 0.5
+_CURRENT_LIFECYCLE_ROW_CACHE_TTL_SECONDS = 0.25
+_RECENT_LIFECYCLE_ROW_CACHE_TTL_SECONDS = 2.0
+_IDLE_TASK_STATE_SUMMARY_TTL_SECONDS = 1.0
+_ACTIVE_TASK_STATE_SUMMARY_TTL_SECONDS = 0.25
+_DASHBOARD_PROJECTION_TTL_SECONDS = 2.0
+_DASHBOARD_PROJECTION_HARD_TTL_SECONDS = 30.0
 
 
 def _compact_task_state_row(row: dict[str, Any]) -> TaskStateRow:
@@ -411,18 +459,6 @@ def _compact_task_state_row(row: dict[str, Any]) -> TaskStateRow:
     return cast(TaskStateRow, compact)
 
 
-def _compact_task_state_payload(payload: dict[str, Any]) -> TaskStatePayload:
-    tasks = [
-        _compact_task_state_row(row) for row in payload.get("tasks", []) if isinstance(row, dict)
-    ]
-    return {
-        **{key: value for key, value in payload.items() if key not in {"tasks", "count"}},
-        "tasks": tasks,
-        "count": len(tasks),
-        "summary": True,
-    }
-
-
 class OpsApi:
     def __init__(self, *, paths: OpsPaths, deps: OpsDeps) -> None:
         self._paths = paths
@@ -430,6 +466,7 @@ class OpsApi:
         self._lifecycle_row_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
         self._lifecycle_row_cache_lock = threading.RLock()
         self._pipeline_schedule_cache: tuple[float, dict[str, Any]] | None = None
+        self._read_model_cache = _ops_read_model_cache.OpsReadModelCache()
 
     def _record_storage_read(
         self,
@@ -457,6 +494,7 @@ class OpsApi:
         cache_key: str,
         surface: str,
         loader: Callable[[], list[dict[str, Any]]],
+        ttl_s: float = _LIFECYCLE_ROW_CACHE_TTL_SECONDS,
     ) -> list[dict[str, Any]]:
         now = time.monotonic()
         with self._lifecycle_row_cache_lock:
@@ -482,7 +520,7 @@ class OpsApi:
                 row_count=len(rows),
                 failed=failed,
             )
-        expires_at = time.monotonic() + _LIFECYCLE_ROW_CACHE_TTL_SECONDS
+        expires_at = time.monotonic() + max(0.0, float(ttl_s))
         with self._lifecycle_row_cache_lock:
             self._lifecycle_row_cache[cache_key] = (expires_at, [dict(row) for row in rows])
         return [dict(row) for row in rows]
@@ -492,6 +530,7 @@ class OpsApi:
             cache_key="current",
             surface="taskRuns.current",
             loader=lambda: list(self._deps.get_lifecycle_current_runs()),
+            ttl_s=_CURRENT_LIFECYCLE_ROW_CACHE_TTL_SECONDS,
         )
 
     def _recent_lifecycle_rows(self) -> list[dict[str, Any]]:
@@ -499,6 +538,7 @@ class OpsApi:
             cache_key="recent",
             surface="taskRuns.recent",
             loader=lambda: list(self._deps.get_lifecycle_recent_runs()),
+            ttl_s=_RECENT_LIFECYCLE_ROW_CACHE_TTL_SECONDS,
         )
 
     def _pipeline_schedule_ops_entry_cached(self) -> dict[str, Any]:
@@ -598,6 +638,9 @@ class OpsApi:
     def _task_live_context(self) -> _ops_task_live.OpsTaskLiveContext:
         return _ops_task_live.OpsTaskLiveContext(paths=self._paths, deps=self._deps)
 
+    def _cache_files_signature(self, *paths: Path) -> tuple[tuple[str, bool, int, int], ...]:
+        return _ops_read_model_cache.files_signature([Path(path) for path in paths])
+
     def _load_fetch_report_with_dedup_review_state(self) -> dict[str, Any]:
         payload, warning = load_fetch_report_with_dedup_review_state(
             normalize_fetch_report_contract=self._deps.normalize_fetch_report_contract,
@@ -622,10 +665,58 @@ class OpsApi:
         }
         return payload
 
+    def _fetch_dashboard_report_cached(self) -> dict[str, Any]:
+        signature = self._cache_files_signature(
+            self._paths.jobs_fetch_report,
+            self._paths.dedup_review_state,
+        )
+        return self._read_model_cache.get_or_build(
+            "dashboard.fetch_report",
+            signature=signature,
+            builder=self._load_fetch_report_with_dedup_review_state,
+            ttl_s=_DASHBOARD_PROJECTION_TTL_SECONDS,
+            hard_ttl_s=_DASHBOARD_PROJECTION_HARD_TTL_SECONDS,
+            stale_while_refresh=True,
+            operation_label="ops.cache.fetch_report",
+        )
+
+    def _registry_summary_cached(self) -> dict[str, Any]:
+        return self._read_model_cache.get_or_build(
+            "dashboard.registry_summary",
+            signature=("registry_summary",),
+            builder=self._deps.get_registry_summary_payload,
+            ttl_s=_DASHBOARD_PROJECTION_TTL_SECONDS,
+            hard_ttl_s=_DASHBOARD_PROJECTION_HARD_TTL_SECONDS,
+            stale_while_refresh=True,
+            operation_label="ops.cache.registry_summary",
+        )
+
+    def _tombstones_cached(self) -> dict[str, Any]:
+        return self._read_model_cache.get_or_build(
+            "dashboard.tombstones",
+            signature=("tombstones",),
+            builder=self._deps.load_tombstones,
+            ttl_s=_DASHBOARD_PROJECTION_TTL_SECONDS,
+            hard_ttl_s=_DASHBOARD_PROJECTION_HARD_TTL_SECONDS,
+            stale_while_refresh=True,
+            operation_label="ops.cache.tombstones",
+        )
+
+    def _sync_status_cached(self) -> dict[str, Any]:
+        return self._read_model_cache.get_or_build(
+            "dashboard.sync_status",
+            signature=("sync_status",),
+            builder=self._deps.get_sync_status_payload,
+            ttl_s=_DASHBOARD_PROJECTION_TTL_SECONDS,
+            hard_ttl_s=_DASHBOARD_PROJECTION_HARD_TTL_SECONDS,
+            stale_while_refresh=True,
+            operation_label="ops.cache.sync_status",
+        )
+
     def build_ops_health_deps(self) -> OpsHealthDeps:
         return OpsHealthDeps(
             get_history=lambda: self.get_projected_run_history().rows,
-            get_fetch_report=self._load_fetch_report_with_dedup_review_state,
+            get_fetch_report=self._fetch_dashboard_report_cached,
             get_source_policy_soak_report=lambda: self._deps.load_json_object(
                 self._paths.jobs_fetch_report.parent.parent
                 / "_out"
@@ -633,9 +724,9 @@ class OpsApi:
                 {},
             ),
             get_state=self._deps.load_state,
-            get_registry_summary_payload=self._deps.get_registry_summary_payload,
-            get_tombstones=self._deps.load_tombstones,
-            get_sync_status_payload=self._deps.get_sync_status_payload,
+            get_registry_summary_payload=self._registry_summary_cached,
+            get_tombstones=self._tombstones_cached,
+            get_sync_status_payload=self._sync_status_cached,
             now_iso=self._deps.now_iso,
             desktop_mode=bool(self._deps.desktop_mode),
             desktop_last_activity_at=str(self._deps.get_desktop_last_activity_at() or ""),
@@ -844,16 +935,181 @@ class OpsApi:
             "diagnostics": diagnostics,
         }
 
+    def _summary_artifact_signature_for_active_rows(
+        self,
+        lifecycle_current: list[dict[str, Any]],
+    ) -> tuple[tuple[str, bool, int, int], ...]:
+        paths: list[Path] = []
+        active_types = {_task_type(row) for row in lifecycle_current if _row_active(row)}
+        if "fetch" in active_types:
+            paths.append(self._paths.jobs_fetch_tasks)
+        if "discovery" in active_types:
+            paths.append(self._paths.discovery_report)
+        if "sync" in active_types:
+            paths.append(self._paths.sync_live_task)
+        return self._cache_files_signature(*paths) if paths else ()
+
+    def _compact_live_artifact_for_summary(self, task_type: str, run_id: str) -> dict[str, Any]:
+        normalized_type = str(task_type or "").strip().lower()
+        path_by_type = {
+            "fetch": self._paths.jobs_fetch_tasks,
+            "discovery": self._paths.discovery_report,
+            "sync": self._paths.sync_live_task,
+        }
+        path = path_by_type.get(normalized_type)
+        if path is None:
+            return {}
+        payload = normalize_live_task_payload(
+            as_json_object(load_runtime_evidence(path, {})),
+            task_type=normalized_type,
+            run_id=run_id,
+        )
+        payload_run_id = _run_id(payload)
+        if run_id and payload_run_id and payload_run_id != run_id:
+            return {}
+        return {
+            key: payload.get(key)
+            for key in (
+                "taskProgress",
+                "progress",
+                "summary",
+                "outputs",
+                "heartbeatAt",
+                "status",
+                "recentEvents",
+                "workItems",
+            )
+            if key in payload
+        }
+
+    def _build_current_task_state_summary_payload(
+        self,
+        *,
+        lifecycle_current: list[dict[str, Any]],
+        pipeline_status: dict[str, Any],
+    ) -> TaskStatePayload:
+        pipeline_row = (
+            _pipeline_status_to_task_row(pipeline_status)
+            if isinstance(pipeline_status, dict) and bool(pipeline_status.get("active"))
+            else {}
+        )
+        pipeline_run_id = _run_id(pipeline_row)
+        pipeline_stage = str(pipeline_row.get("stage") or "").strip().lower()
+        parent_stage_by_run_id = {
+            _run_id(row): str(
+                row.get("stage") or as_json_object(row.get("summary")).get("stage") or ""
+            )
+            .strip()
+            .lower()
+            for row in lifecycle_current
+            if _task_type(row) == "pipeline" and _run_id(row)
+        }
+        if pipeline_run_id and pipeline_stage:
+            parent_stage_by_run_id[pipeline_run_id] = pipeline_stage
+
+        task_by_key: dict[tuple[str, str], dict[str, Any]] = {}
+        diagnostics: list[dict[str, Any]] = []
+        for row in lifecycle_current:
+            task_type = _task_type(row)
+            run_id = _run_id(row)
+            if not task_type or not run_id:
+                continue
+            parent_task_type = str(row.get("parentTaskType") or "").strip().lower()
+            parent_run_id = str(row.get("parentRunId") or "").strip()
+            if parent_task_type == "pipeline":
+                parent_stage = parent_stage_by_run_id.get(parent_run_id, "")
+                if not parent_stage or parent_stage != task_type:
+                    diagnostics.append(
+                        {
+                            "code": "pipeline_child_stage_mismatch",
+                            "taskType": task_type,
+                            "runId": run_id,
+                            "parentRunId": parent_run_id,
+                            "parentStage": parent_stage,
+                        }
+                    )
+                    continue
+            live_artifact = self._compact_live_artifact_for_summary(task_type, run_id)
+            route_row = {**row, **live_artifact, "active": True, "finishedAt": ""}
+            route_row.setdefault("taskType", task_type)
+            route_row.setdefault("type", task_type)
+            route_row.setdefault("runId", run_id)
+            task_by_key[(task_type, run_id)] = route_row
+
+        if pipeline_row and pipeline_run_id:
+            key = ("pipeline", pipeline_run_id)
+            existing = task_by_key.get(key)
+            if existing is None:
+                task_by_key[key] = pipeline_row
+            else:
+                task_by_key[key] = {**existing, **pipeline_row, "active": True, "finishedAt": ""}
+                task_by_key[key]["stage"] = pipeline_stage or str(existing.get("stage") or "")
+        _enrich_pipeline_rows_with_children(task_by_key)
+        tasks = sorted(
+            [_compact_task_state_row(row) for row in task_by_key.values()],
+            key=lambda row: str(row.get("startedAt") or ""),
+            reverse=True,
+        )
+        return {
+            "tasks": tasks,
+            "count": len(tasks),
+            "diagnostics": diagnostics,
+            "summary": True,
+        }
+
     def get_current_task_state_summary_payload(self) -> TaskStatePayload:
-        return _compact_task_state_payload(self.get_current_task_state_payload())
+        lifecycle_current = self._current_lifecycle_rows()
+        pipeline_status = self._deps.get_jobs_pipeline_status_payload()
+        active = bool(lifecycle_current) or (
+            isinstance(pipeline_status, dict) and bool(pipeline_status.get("active"))
+        )
+        signature = (
+            _row_signature(lifecycle_current),
+            _pipeline_status_signature(
+                pipeline_status if isinstance(pipeline_status, dict) else {}
+            ),
+            self._summary_artifact_signature_for_active_rows(lifecycle_current),
+        )
+        return self._read_model_cache.get_or_build(
+            "ops.task_state.summary_payload",
+            signature=signature,
+            builder=lambda: self._build_current_task_state_summary_payload(
+                lifecycle_current=[dict(row) for row in lifecycle_current],
+                pipeline_status=dict(pipeline_status or {})
+                if isinstance(pipeline_status, dict)
+                else {},
+            ),
+            ttl_s=(
+                _ACTIVE_TASK_STATE_SUMMARY_TTL_SECONDS
+                if active
+                else _IDLE_TASK_STATE_SUMMARY_TTL_SECONDS
+            ),
+            operation_label="ops.cache.task_state_summary",
+        )
 
     def compute_fetcher_metrics(self, *, window_runs: int = 20) -> dict[str, Any]:
-        latest_fetch_report = self._load_fetch_report_with_dedup_review_state()
+        window = max(1, int(window_runs or 1))
         history = self.get_projected_run_history().rows
-        return fetcher_metrics_module.build_metrics(
-            latest_fetch_report,
-            history,
-            window=max(1, int(window_runs or 1)),
+        signature = (
+            window,
+            _row_signature(history),
+            self._cache_files_signature(
+                self._paths.jobs_fetch_report,
+                self._paths.dedup_review_state,
+            ),
+        )
+        return self._read_model_cache.get_or_build(
+            f"ops.fetcher_metrics.{window}",
+            signature=signature,
+            builder=lambda: fetcher_metrics_module.build_metrics(
+                self._fetch_dashboard_report_cached(),
+                [dict(row) for row in history],
+                window=window,
+            ),
+            ttl_s=_DASHBOARD_PROJECTION_TTL_SECONDS,
+            hard_ttl_s=_DASHBOARD_PROJECTION_HARD_TTL_SECONDS,
+            stale_while_refresh=True,
+            operation_label="ops.cache.fetcher_metrics",
         )
 
 

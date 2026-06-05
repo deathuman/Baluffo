@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import copy
 import json
 import re
+import threading
 from collections import Counter, defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -47,6 +49,9 @@ SUMMARY_CORE_KEYS = (
     "suppressedStaticCount",
     "skippedDuplicateCount",
 )
+
+_CACHE_LOCK = threading.RLock()
+_CACHE: tuple[tuple[tuple[str, bool, int, int], ...], dict[str, Any]] | None = None
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -106,6 +111,14 @@ def _load_report(api: Any, path: Path, warnings: list[str], warning_key: str) ->
     if not payload:
         warnings.append(f"{warning_key}_missing")
     return payload
+
+
+def _file_signature(path: Path) -> tuple[str, bool, int, int]:
+    try:
+        stat = path.stat()
+    except OSError:
+        return (str(path), False, 0, 0)
+    return (str(path), True, int(stat.st_size), int(stat.st_mtime_ns))
 
 
 def _counter_rows(counter: Counter[str], *, limit: int = MAX_COUNTER_ROWS) -> list[dict[str, Any]]:
@@ -392,26 +405,38 @@ def _build_discovery_attempts(report: dict[str, Any]) -> dict[str, Any]:
 
 
 def get_task_failure_attempts_payload(api: Any) -> dict[str, Any]:
+    global _CACHE
     warnings: list[str] = []
+    fetch_path = Path(getattr(api, "JOBS_FETCH_REPORT_PATH", "data/jobs-fetch-report.json"))
+    discovery_path = Path(
+        getattr(api, "DISCOVERY_REPORT_PATH", "data/source-discovery-report.json")
+    )
+    signature = (_file_signature(fetch_path), _file_signature(discovery_path))
+    with _CACHE_LOCK:
+        if _CACHE is not None and _CACHE[0] == signature:
+            return copy.deepcopy(_CACHE[1])
     fetch_report = _load_report(
         api,
-        Path(getattr(api, "JOBS_FETCH_REPORT_PATH", "data/jobs-fetch-report.json")),
+        fetch_path,
         warnings,
         "fetch_report",
     )
     discovery_report = _load_report(
         api,
-        Path(getattr(api, "DISCOVERY_REPORT_PATH", "data/source-discovery-report.json")),
+        discovery_path,
         warnings,
         "discovery_report",
     )
-    return {
+    payload = {
         "ok": True,
         "generatedAt": _now_iso(),
         "fetch": _build_fetch_attempts(fetch_report),
         "discovery": _build_discovery_attempts(discovery_report),
         "warnings": warnings,
     }
+    with _CACHE_LOCK:
+        _CACHE = (signature, copy.deepcopy(payload))
+    return payload
 
 
 __all__ = ["get_task_failure_attempts_payload"]

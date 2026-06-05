@@ -1,3 +1,4 @@
+import json
 import time
 from datetime import UTC, datetime
 from unittest import mock
@@ -127,7 +128,8 @@ def test_ops_api_lifecycle_cache_returns_copied_rows(tmp_path) -> None:
 
 
 def test_ops_api_lifecycle_cache_expires_quickly(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(ops_api_module, "_LIFECYCLE_ROW_CACHE_TTL_SECONDS", 0.001)
+    monkeypatch.setattr(ops_api_module, "_CURRENT_LIFECYCLE_ROW_CACHE_TTL_SECONDS", 0.001)
+    monkeypatch.setattr(ops_api_module, "_RECENT_LIFECYCLE_ROW_CACHE_TTL_SECONDS", 0.001)
     current_rows: list[dict[str, object]] = [{"type": "fetch", "runId": "fetch_active_old"}]
     api, calls = _make_ops_api(tmp_path, current_rows=current_rows, recent_rows=[])
 
@@ -137,3 +139,78 @@ def test_ops_api_lifecycle_cache_expires_quickly(tmp_path, monkeypatch) -> None:
 
     assert [row["runId"] for row in api.get_projected_run_history().rows] == ["fetch_active_new"]
     assert calls == {"current": 2, "recent": 2, "schedule": 0}
+
+
+def test_ops_api_summary_task_state_does_not_read_terminal_reports_while_idle(
+    tmp_path,
+) -> None:
+    (tmp_path / "jobs-fetch-report.json").write_text("{not-json", encoding="utf-8")
+    (tmp_path / "source-discovery-report.json").write_text("{not-json", encoding="utf-8")
+    api, calls = _make_ops_api(tmp_path, current_rows=[], recent_rows=[])
+
+    payload = api.get_current_task_state_summary_payload()
+
+    assert payload == {"tasks": [], "count": 0, "diagnostics": [], "summary": True}
+    assert calls == {"current": 1, "recent": 0, "schedule": 0}
+
+
+def test_ops_api_summary_task_state_uses_compact_active_fetch_artifact(tmp_path) -> None:
+    work_items = [
+        {"source": f"source-{index}", "status": "pending", "details": "x" * 200}
+        for index in range(12)
+    ]
+    recent_events = [
+        {"event": "source_progress", "message": f"event-{index}", "index": index}
+        for index in range(8)
+    ]
+    (tmp_path / "jobs-fetch-tasks.json").write_text(
+        json.dumps(
+            {
+                "taskType": "fetch",
+                "runId": "fetch_active_summary",
+                "active": True,
+                "taskProgress": {
+                    "phaseKey": "execute_sources",
+                    "phaseLabel": "Executing sources",
+                },
+                "workItems": work_items,
+                "recentEvents": recent_events,
+                "summary": {"sourceCount": 12},
+            }
+        ),
+        encoding="utf-8",
+    )
+    api, calls = _make_ops_api(
+        tmp_path,
+        current_rows=[
+            {
+                "type": "fetch",
+                "runId": "fetch_active_summary",
+                "lifecycleStatus": "running",
+                "startedAt": "2026-06-05T09:59:00+00:00",
+                "heartbeatAt": "2026-06-05T09:59:30+00:00",
+            }
+        ],
+        recent_rows=[],
+    )
+
+    payload = api.get_current_task_state_summary_payload()
+    row = payload["tasks"][0]
+
+    assert payload["summary"] is True
+    assert payload["count"] == 1
+    assert row["runId"] == "fetch_active_summary"
+    assert row["active"] is True
+    assert row["taskProgress"]["phaseKey"] == "execute_sources"
+    assert row["summary"] == {"sourceCount": 12}
+    assert row["workItemCount"] == 12
+    assert "workItems" not in row
+    assert row["recentEventCount"] == 8
+    assert [event["message"] for event in row["recentEvents"]] == [
+        "event-3",
+        "event-4",
+        "event-5",
+        "event-6",
+        "event-7",
+    ]
+    assert calls == {"current": 1, "recent": 0, "schedule": 0}

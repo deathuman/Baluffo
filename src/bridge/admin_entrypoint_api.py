@@ -73,13 +73,13 @@ def build_bridge_api(config: Any) -> BridgeApi:
         start_sync_task=root_mod.start_sync_task,
         get_discovery_config_payload=root_mod.get_discovery_config_payload,
         update_saved_discovery_settings=root_mod.update_saved_discovery_settings,
-        compute_ops_health=root_mod.compute_ops_health,
-        compute_ops_dashboard_health=root_mod.compute_ops_dashboard_health,
+        compute_ops_health=ops_api.compute_ops_health,
+        compute_ops_dashboard_health=ops_api.compute_ops_dashboard_health,
         get_storage_health_payload=lambda: storage_health_mod.get_storage_health_payload(
             Path(config.data_dir).resolve()
         ),
-        compute_fetcher_metrics=root_mod.compute_fetcher_metrics,
-        sync_history_from_reports=root_mod.sync_history_from_reports,
+        compute_fetcher_metrics=ops_api.compute_fetcher_metrics,
+        sync_history_from_reports=ops_api.sync_history_from_reports,
         get_projected_run_history=ops_api.get_projected_run_history,
         get_lifecycle_run_history_rows=ops_api.get_lifecycle_run_history_rows,
         get_task_live_payload=ops_api.get_task_live_payload,
