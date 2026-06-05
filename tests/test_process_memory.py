@@ -39,6 +39,10 @@ def test_summarize_memory_samples_reports_peak_process_attribution() -> None:
     assert summary["skippedProcessCount"] == 1
     assert summary["peakSample"]["memoryBytes"] == 500
     assert summary["peakSample"]["processes"][0]["name"] == "chrome.exe"
+    assert summary["firstSample"]["memoryBytes"] == 300
+    assert summary["lastSample"]["memoryBytes"] == 500
+    assert summary["lastSample"]["categoryTotals"]["browser"] == 300
+    assert summary["lastSample"]["topProcesses"][0]["name"] == "chrome.exe"
     assert summary["topProcesses"][0]["peakBytes"] == 300
     assert summary["categoryPeaks"]["browser"] == 300
     assert summary["categoryPeaks"]["python"] == 150
@@ -52,5 +56,7 @@ def test_summarize_memory_samples_attribution_fallback_is_empty_when_unsupported
 
     assert summary["sampleCount"] == 0
     assert summary["peakSample"] == {}
+    assert summary["firstSample"] == {}
+    assert summary["lastSample"] == {}
     assert summary["topProcesses"] == []
     assert summary["categoryPeaks"] == {}

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from src.bridge.routes.get_routes import handle_get
 from src.shared.timing_counters import clear_counters, record_duration
-from src.storage_metrics import record_json_write, reset_storage_metrics
+from src.storage_metrics import record_json_write, record_storage_read, reset_storage_metrics
 from tests.helpers.bridge_api import (
     FakeDesktopLocalDataStore,
     FakeHandler,
@@ -28,6 +28,14 @@ def test_ops_storage_metrics_route_returns_snapshot(tmp_path: Path) -> None:
         replaced=True,
         data_dir=tmp_path,
     )
+    record_storage_read(
+        surface="registry.summary",
+        artifact="source-registry",
+        storage_kind="sqlite",
+        duration_ms=3,
+        row_count=7,
+        data_dir=tmp_path,
+    )
     record_duration("bridge_request_get_ops_task_state", 7)
 
     try:
@@ -39,6 +47,8 @@ def test_ops_storage_metrics_route_returns_snapshot(tmp_path: Path) -> None:
         payload = handler.sent[-1]["payload"]
         assert payload["ok"] is True
         assert payload["storageMetrics"]["writes"]["writeCount"] == 1
+        assert payload["storageMetrics"]["reads"]["readCount"] == 1
+        assert payload["storageMetrics"]["reads"]["surfaces"][0]["surface"] == "registry.summary"
         assert payload["routeCounters"]["bridge_request_get_ops_task_state"]["count"] == 1
     finally:
         clear_counters()

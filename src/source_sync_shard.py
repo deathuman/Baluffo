@@ -66,14 +66,20 @@ def _remote_timing_row(
     }
 
 
-def _remote_timing_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+def _remote_timing_summary(
+    rows: list[dict[str, Any]],
+    *,
+    wall_duration_ms: int = 0,
+    stage_wall_ms: dict[str, int] | None = None,
+) -> dict[str, Any]:
     operation_totals: dict[str, int] = {}
     method_counts: dict[str, int] = {}
+    total_duration_ms = 0
     for row in rows:
+        duration_ms = int(row.get("durationMs") or 0)
+        total_duration_ms += duration_ms
         operation = str(row.get("operation") or "unknown")
-        operation_totals[operation] = operation_totals.get(operation, 0) + int(
-            row.get("durationMs") or 0
-        )
+        operation_totals[operation] = operation_totals.get(operation, 0) + duration_ms
         method = str(row.get("method") or "").upper()
         if method:
             method_counts[method] = method_counts.get(method, 0) + 1
@@ -93,6 +99,11 @@ def _remote_timing_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "requestCount": len(rows),
         "methodCounts": method_counts,
+        "totalRequestDurationMs": total_duration_ms,
+        "wallDurationMs": max(0, int(wall_duration_ms or 0)),
+        "stageWallMs": {
+            str(key): max(0, int(value or 0)) for key, value in dict(stage_wall_ms or {}).items()
+        },
         "operationTotalsMs": operation_totals,
         "operationTop": operation_top[:12],
         "slowestRequests": slowest[:20],
@@ -698,6 +709,8 @@ def push_changed_shards(
     completed_count = 0
     verified_count = 0
     pushed_bytes = 0
+    parallel_started_at = time.perf_counter()
+    parallel_finished_at = parallel_started_at
     if changed_count:
         first_shard = changed[0]
         _emit_push_progress(
@@ -719,6 +732,7 @@ def push_changed_shards(
     worker_count = max(1, min(DEFAULT_SHARD_WRITE_WORKERS, changed_count or 1))
     shard_outputs: list[dict[str, Any] | None] = [None] * changed_count
     if changed:
+        parallel_started_at = time.perf_counter()
         with ThreadPoolExecutor(max_workers=worker_count) as executor:
             future_to_index = {
                 executor.submit(
@@ -764,6 +778,7 @@ def push_changed_shards(
                         else ""
                     ),
                 )
+        parallel_finished_at = time.perf_counter()
     for output in shard_outputs:
         if output is None:
             continue
@@ -774,6 +789,8 @@ def push_changed_shards(
         "shardCount": len(shards),
         "changedShardCount": len(changed),
         "shardsPushedBytes": sum(shard.size_bytes for shard in changed),
+        "workerCount": worker_count if changed else 0,
+        "parallelWallMs": _duration_ms(parallel_started_at, parallel_finished_at) if changed else 0,
         "changedShards": [shard.manifest_entry() for shard in changed],
         "pushResults": results,
         "verifiedShards": verifications,
@@ -877,6 +894,7 @@ def push_sharded_snapshot(
             "manifest": bundle["manifest"],
             "metrics": metrics,
         }
+    remote_wall_started_at = time.perf_counter()
     shard_result = push_changed_shards(
         module,
         config,
@@ -903,6 +921,7 @@ def push_sharded_snapshot(
         message="Committing sync manifest.",
     )
     remote_requests = list(shard_result.get("remoteRequests") or [])
+    push_changed_wall_ms = int(shard_result.get("parallelWallMs") or 0)
     manifest_path_text = manifest_path(config.path)
     manifest_started_at = time.perf_counter()
     try:
@@ -938,6 +957,7 @@ def push_sharded_snapshot(
             row_count=int(bundle["manifest"].get("totalRowCount") or 0),
         )
     )
+    manifest_wall_ms = _duration_ms(manifest_started_at, time.perf_counter())
     gc_result: dict[str, Any] = {}
     gc_warnings: list[str] = []
     gc_counts = {
@@ -984,6 +1004,7 @@ def push_sharded_snapshot(
             error="; ".join(gc_warnings),
         )
     )
+    gc_wall_ms = _duration_ms(gc_started_at, time.perf_counter())
     _emit_push_progress(
         progress_callback,
         phase_label="Pruned old sync shards",
@@ -1015,7 +1036,15 @@ def push_sharded_snapshot(
         "shardResult": shard_result,
         "gc": gc_result,
         "warnings": gc_warnings,
-        "remoteTiming": _remote_timing_summary(remote_requests),
+        "remoteTiming": _remote_timing_summary(
+            remote_requests,
+            wall_duration_ms=_duration_ms(remote_wall_started_at, time.perf_counter()),
+            stage_wall_ms={
+                "pushChangedShards": push_changed_wall_ms,
+                "pushManifest": manifest_wall_ms,
+                "pruneShards": gc_wall_ms,
+            },
+        ),
     }
 
 

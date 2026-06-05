@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 from collections.abc import Iterable
@@ -20,6 +21,8 @@ REGISTRY_JOURNAL_NAMES = (
     "source-registry-rejected.jsonl",
     "source-registry-tombstones.jsonl",
 )
+MAX_READ_LABEL_LENGTH = 96
+_SAFE_READ_LABEL_RE = re.compile(r"[^a-zA-Z0-9_.:-]+")
 
 _LOCK = threading.RLock()
 _EVENTS: list[dict[str, Any]] = []
@@ -219,6 +222,63 @@ def _int_value(value: Any) -> int:
         return 0
 
 
+def _signed_int_value(value: Any) -> int:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _safe_read_label(value: Any, *, fallback: str) -> str:
+    if isinstance(value, Path):
+        text = value.name
+    else:
+        text = str(value or "").strip()
+        if "\\" in text or "/" in text:
+            text = Path(text).name
+    text = _SAFE_READ_LABEL_RE.sub("_", text).strip("_.:-")
+    if not text:
+        text = fallback
+    if len(text) > MAX_READ_LABEL_LENGTH:
+        text = f"{text[: MAX_READ_LABEL_LENGTH - 1].rstrip('_.:-')}~"
+    return text or fallback
+
+
+def record_storage_read(
+    *,
+    surface: str,
+    artifact: str | Path = "",
+    storage_kind: str = "unknown",
+    duration_ms: int = 0,
+    bytes_read: int = 0,
+    row_count: int = 0,
+    failed: bool = False,
+    memory_delta_bytes: int = 0,
+    data_dir: Path | str | None = None,
+) -> None:
+    """Record bounded aggregate evidence for runtime storage reads.
+
+    Read metrics intentionally keep only stable labels and counters; callers must not
+    pass payload bodies, query strings, arbitrary paths, or dynamic IDs.
+    """
+
+    _append_event(
+        {
+            "type": "storageRead",
+            "surface": _safe_read_label(surface, fallback="unknown"),
+            "artifact": _safe_read_label(artifact, fallback="unknown"),
+            "storageKind": _safe_read_label(storage_kind, fallback="unknown"),
+            "durationMs": max(0, int(duration_ms or 0)),
+            "bytesRead": max(0, int(bytes_read or 0)),
+            "rowCount": max(0, int(row_count or 0)),
+            "failed": bool(failed),
+            "memoryDeltaBytes": _signed_int_value(memory_delta_bytes),
+            "readCount": 1,
+        },
+        data_dir=data_dir,
+    )
+
+
 def _median(values: list[int]) -> int:
     ordered = sorted(values)
     if not ordered:
@@ -232,6 +292,17 @@ def _median(values: list[int]) -> int:
 def _stats(values: Iterable[Any]) -> dict[str, int]:
     parsed = [_int_value(value) for value in values]
     parsed = [value for value in parsed if value >= 0]
+    return {
+        "count": len(parsed),
+        "min": min(parsed) if parsed else 0,
+        "median": _median(parsed),
+        "max": max(parsed) if parsed else 0,
+        "total": sum(parsed),
+    }
+
+
+def _signed_stats(values: Iterable[Any]) -> dict[str, int]:
+    parsed = [_signed_int_value(value) for value in values]
     return {
         "count": len(parsed),
         "min": min(parsed) if parsed else 0,
@@ -302,6 +373,55 @@ def _summarize_write_events(events: list[dict[str, Any]]) -> dict[str, Any]:
                 for row in events
                 if row.get("type") in {"jsonWrite", "jsonlWrite"}
             ),
+        },
+    }
+
+
+def _summarize_read_events(events: list[dict[str, Any]]) -> dict[str, Any]:
+    rows = [row for row in events if row.get("type") == "storageRead"]
+    grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for row in rows:
+        surface = _safe_read_label(row.get("surface"), fallback="unknown")
+        artifact = _safe_read_label(row.get("artifact"), fallback="unknown")
+        storage_kind = _safe_read_label(row.get("storageKind"), fallback="unknown")
+        grouped.setdefault((surface, artifact, storage_kind), []).append(row)
+
+    surfaces: list[dict[str, Any]] = []
+    for (surface, artifact, storage_kind), group_rows in sorted(grouped.items()):
+        surfaces.append(
+            {
+                "surface": surface,
+                "artifact": artifact,
+                "storageKind": storage_kind,
+                "readCount": sum(_int_value(row.get("readCount")) or 1 for row in group_rows),
+                "failedReadCount": sum(1 for row in group_rows if bool(row.get("failed"))),
+                "durationMs": _stats(row.get("durationMs") for row in group_rows),
+                "bytesRead": _stats(row.get("bytesRead") for row in group_rows),
+                "rowCount": _stats(row.get("rowCount") for row in group_rows),
+                "memoryDeltaBytes": _signed_stats(
+                    row.get("memoryDeltaBytes") for row in group_rows
+                ),
+            }
+        )
+
+    surfaces.sort(
+        key=lambda row: (
+            int(row["durationMs"].get("max") or 0),
+            int(row["bytesRead"].get("max") or 0),
+            int(row.get("readCount") or 0),
+        ),
+        reverse=True,
+    )
+    return {
+        "surfaceCount": len(surfaces),
+        "readCount": sum(_int_value(row.get("readCount")) or 1 for row in rows),
+        "failedReadCount": sum(1 for row in rows if bool(row.get("failed"))),
+        "surfaces": surfaces,
+        "totals": {
+            "durationMs": _stats(row.get("durationMs") for row in rows),
+            "bytesRead": _stats(row.get("bytesRead") for row in rows),
+            "rowCount": _stats(row.get("rowCount") for row in rows),
+            "memoryDeltaBytes": _signed_stats(row.get("memoryDeltaBytes") for row in rows),
         },
     }
 
@@ -378,6 +498,7 @@ def snapshot_storage_metrics(data_dir: Path | str | None = None) -> dict[str, An
         "dataDir": str(root),
         "eventCount": len(events),
         "writes": _summarize_write_events(events),
+        "reads": _summarize_read_events(events),
         "registryJournals": registry_journal_telemetry(root),
         "sourceSyncSnapshots": _summarize_source_sync(events),
     }

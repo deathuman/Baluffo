@@ -300,7 +300,11 @@ def test_capture_performance_profile_snapshot_is_non_fatal() -> None:
         saved = json.loads(
             Path(snapshots["performanceProfileSnapshot"]).read_text(encoding="utf-8")
         )
+        storage_saved = json.loads(
+            Path(snapshots["storageMetricsSnapshot"]).read_text(encoding="utf-8")
+        )
         assert saved == {"ok": False, "error": "older bridge"}
+        assert storage_saved == {"ok": False, "error": "older bridge"}
 
 
 @pytest.mark.windows
@@ -445,7 +449,8 @@ def test_run_packaged_smoke_profile_only_waits_for_jobs_startup_events() -> None
                 return_value={
                     "performanceProfileSnapshot": str(
                         artifacts_dir / "performance-profile.startup.json"
-                    )
+                    ),
+                    "storageMetricsSnapshot": str(artifacts_dir / "storage-metrics.startup.json"),
                 },
             ) as profile_mock,
             mock.patch.object(
@@ -485,6 +490,7 @@ def test_run_packaged_smoke_profile_only_waits_for_jobs_startup_events() -> None
             filename="performance-profile.startup.json",
         )
         assert "performanceProfileSnapshot" in payload["artifacts"]
+        assert "storageMetricsSnapshot" in payload["artifacts"]
         runtime_mock.assert_called_once()
         assert runtime_mock.call_args.kwargs["require_managed_window"] is True
         assert runtime_mock.call_args.kwargs["require_page_ready"] is False

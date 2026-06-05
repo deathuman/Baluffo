@@ -274,6 +274,9 @@ def test_run_packaged_smoke_can_run_sync_rehearsal_mode() -> None:
                         "performanceProfileSnapshot": str(
                             artifacts_dir / "performance-profile.post-sync.json"
                         ),
+                        "storageMetricsSnapshot": str(
+                            artifacts_dir / "storage-metrics.post-sync.json"
+                        ),
                     },
                 },
             ) as rehearsal_mock,
@@ -285,6 +288,9 @@ def test_run_packaged_smoke_can_run_sync_rehearsal_mode() -> None:
         assert payload["artifacts"]["syncRehearsalStderr"] == str(artifacts_dir / "sync.stderr.log")
         assert payload["artifacts"]["performanceProfileSnapshot"] == str(
             artifacts_dir / "performance-profile.post-sync.json"
+        )
+        assert payload["artifacts"]["storageMetricsSnapshot"] == str(
+            artifacts_dir / "storage-metrics.post-sync.json"
         )
         rehearsal_mock.assert_called_once()
         saved = json.loads(report_path.read_text(encoding="utf-8"))
@@ -366,7 +372,8 @@ def test_run_packaged_sync_rehearsal_captures_performance_profile() -> None:
                 return_value={
                     "performanceProfileSnapshot": str(
                         artifacts_dir / "performance-profile.post-sync.json"
-                    )
+                    ),
+                    "storageMetricsSnapshot": str(artifacts_dir / "storage-metrics.post-sync.json"),
                 },
             ) as profile_mock,
             mock.patch.object(smoke, "terminate_process_tree"),
@@ -381,6 +388,9 @@ def test_run_packaged_sync_rehearsal_captures_performance_profile() -> None:
         assert result["status"] == "passed"
         assert result["details"]["performanceProfileSnapshot"] == str(
             artifacts_dir / "performance-profile.post-sync.json"
+        )
+        assert result["details"]["storageMetricsSnapshot"] == str(
+            artifacts_dir / "storage-metrics.post-sync.json"
         )
         profile_mock.assert_called_once_with(
             "http://127.0.0.1:51002",

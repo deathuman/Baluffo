@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import time
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 from src.baluffo_config import get_security_defaults
+from src.bridge.performance_profile import record_operation_duration
 from src.shared.json_io import PIPELINE_GZIP_JSON_NAMES
+from src.storage_metrics import duration_ms, record_storage_read
 
 API_PREFIXES = (
     "/desktop-local-data",
@@ -63,6 +66,12 @@ _PAGE_ALIASES = {
 _STATIC_DIRECTORIES = frozenset({"frontend", "probes", "styles"})
 _PACKAGING_STATIC_FILES = frozenset({"packaging/baluffo.png"})
 _STATIC_DATA_DIRECTORIES = frozenset({"contracts", "defaults"})
+_ROOT_DATA_READ_SURFACES = {
+    "jobs-unified-light.json": "jobsFeed.staticLight",
+    "jobs-unified-startup.json": "jobsFeed.staticStartup",
+    "jobs-unified.json": "jobsFeed.staticFull",
+    "jobs-fetch-report.json": "fetchReport.static",
+}
 
 
 def is_api_path(path: str) -> bool:
@@ -220,7 +229,31 @@ class StaticFileService:
             handler.send_json({"error": "Not found"}, status=404)
             return True
 
-        body = candidate.read_bytes()
+        started_at = time.perf_counter()
+        failed = False
+        body = b""
+        try:
+            body = candidate.read_bytes()
+        except OSError:
+            failed = True
+            raise
+        finally:
+            if data_path is not None:
+                artifact = normalized.removeprefix("data/")
+                artifact = artifact.removesuffix(".gz")
+                surface = _ROOT_DATA_READ_SURFACES.get(artifact, "runtimeData.static")
+                elapsed_ms = duration_ms(started_at)
+                record_storage_read(
+                    surface=surface,
+                    artifact=artifact,
+                    storage_kind="file.gz" if gzip_json else "file",
+                    duration_ms=elapsed_ms,
+                    bytes_read=len(body),
+                    row_count=0,
+                    failed=failed,
+                    data_dir=self.data_dir,
+                )
+                record_operation_duration(f"storage.read.{surface}", elapsed_ms, error=failed)
         handler.send_bytes(
             body,
             content_type=_content_type_for_path(candidate, gzip_json=gzip_json),

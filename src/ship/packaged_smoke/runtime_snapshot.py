@@ -54,11 +54,24 @@ def capture_performance_profile_snapshot(
     filename: str = "performance-profile.json",
 ) -> dict[str, str]:
     snapshot_path = artifacts_dir / filename
+    storage_filename = (
+        filename.replace("performance-profile", "storage-metrics", 1)
+        if "performance-profile" in filename
+        else f"storage-metrics.{filename}"
+    )
+    storage_snapshot_path = artifacts_dir / storage_filename
     deps.write_json(
         snapshot_path,
         _snapshot_json(deps, f"{bridge_base_url}/ops/performance-profile"),
     )
-    return {"performanceProfileSnapshot": str(snapshot_path)}
+    deps.write_json(
+        storage_snapshot_path,
+        _snapshot_json(deps, f"{bridge_base_url}/ops/storage-metrics"),
+    )
+    return {
+        "performanceProfileSnapshot": str(snapshot_path),
+        "storageMetricsSnapshot": str(storage_snapshot_path),
+    }
 
 
 def run_embedded_runtime_probe(

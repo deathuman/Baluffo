@@ -249,7 +249,7 @@ def test_slowest_provider_boards_extracts_detail_timings() -> None:
             "fetchMs": 280,
             "parseMs": 20,
             "keptCount": 5,
-            "providerUrl": "https://example.com/slow",
+            **{"providerUrl": "https://example.com/slow", "providerHost": "example.com"},
             "error": "",
         }
     ]

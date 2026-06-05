@@ -523,6 +523,7 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
                     ("runtimeStdout", "syncRehearsalStdout"),
                     ("runtimeStderr", "syncRehearsalStderr"),
                     ("performanceProfileSnapshot", "performanceProfileSnapshot"),
+                    ("storageMetricsSnapshot", "storageMetricsSnapshot"),
                 ),
                 failure_step="packaged-sync-rehearsal",
                 failure_message="Packaged sync rehearsal failed.",

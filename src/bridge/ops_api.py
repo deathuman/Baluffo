@@ -6,6 +6,8 @@ startup metrics, and operational status endpoints.
 
 from __future__ import annotations
 
+import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -24,6 +26,7 @@ from src.bridge.performance_profile import time_operation
 from src.shared.json_shapes import as_json_object
 from src.shared.live_task import LiveTaskPayload, TaskStatePayload, TaskStateRow
 from src.source_registry_io import load_runtime_evidence
+from src.storage_metrics import duration_ms, record_storage_read
 
 
 @dataclass(frozen=True)
@@ -391,6 +394,8 @@ _TASK_STATE_SUMMARY_KEYS = {
     "label",
 }
 
+_LIFECYCLE_ROW_CACHE_TTL_SECONDS = 0.5
+
 
 def _compact_task_state_row(row: dict[str, Any]) -> TaskStateRow:
     compact = {key: row.get(key) for key in _TASK_STATE_SUMMARY_KEYS if key in row}
@@ -422,6 +427,95 @@ class OpsApi:
     def __init__(self, *, paths: OpsPaths, deps: OpsDeps) -> None:
         self._paths = paths
         self._deps = deps
+        self._lifecycle_row_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+        self._lifecycle_row_cache_lock = threading.RLock()
+        self._pipeline_schedule_cache: tuple[float, dict[str, Any]] | None = None
+
+    def _record_storage_read(
+        self,
+        *,
+        surface: str,
+        artifact: str,
+        started_at: float,
+        row_count: int = 0,
+        storage_kind: str = "sqlite",
+        failed: bool = False,
+    ) -> None:
+        record_storage_read(
+            surface=surface,
+            artifact=artifact,
+            storage_kind=storage_kind,
+            duration_ms=duration_ms(started_at),
+            row_count=max(0, int(row_count or 0)),
+            failed=failed,
+            data_dir=self._paths.jobs_fetch_report.parent,
+        )
+
+    def _read_lifecycle_rows_cached(
+        self,
+        *,
+        cache_key: str,
+        surface: str,
+        loader: Callable[[], list[dict[str, Any]]],
+    ) -> list[dict[str, Any]]:
+        now = time.monotonic()
+        with self._lifecycle_row_cache_lock:
+            cached = self._lifecycle_row_cache.get(cache_key)
+            if cached is not None:
+                expires_at, cached_rows = cached
+                if expires_at > now:
+                    return [dict(row) for row in cached_rows]
+
+        started_at = time.perf_counter()
+        rows: list[dict[str, Any]] = []
+        failed = False
+        try:
+            rows = [dict(row) for row in loader()]
+        except Exception:
+            failed = True
+            raise
+        finally:
+            self._record_storage_read(
+                surface=surface,
+                artifact="task-runs",
+                started_at=started_at,
+                row_count=len(rows),
+                failed=failed,
+            )
+        expires_at = time.monotonic() + _LIFECYCLE_ROW_CACHE_TTL_SECONDS
+        with self._lifecycle_row_cache_lock:
+            self._lifecycle_row_cache[cache_key] = (expires_at, [dict(row) for row in rows])
+        return [dict(row) for row in rows]
+
+    def _current_lifecycle_rows(self) -> list[dict[str, Any]]:
+        return self._read_lifecycle_rows_cached(
+            cache_key="current",
+            surface="taskRuns.current",
+            loader=lambda: list(self._deps.get_lifecycle_current_runs()),
+        )
+
+    def _recent_lifecycle_rows(self) -> list[dict[str, Any]]:
+        return self._read_lifecycle_rows_cached(
+            cache_key="recent",
+            surface="taskRuns.recent",
+            loader=lambda: list(self._deps.get_lifecycle_recent_runs()),
+        )
+
+    def _pipeline_schedule_ops_entry_cached(self) -> dict[str, Any]:
+        now = time.monotonic()
+        with self._lifecycle_row_cache_lock:
+            cached = self._pipeline_schedule_cache
+            if cached is not None:
+                expires_at, payload = cached
+                if expires_at > now:
+                    return dict(payload)
+        payload = dict(self._deps.get_jobs_pipeline_schedule_ops_entry() or {})
+        with self._lifecycle_row_cache_lock:
+            self._pipeline_schedule_cache = (
+                time.monotonic() + _LIFECYCLE_ROW_CACHE_TTL_SECONDS,
+                dict(payload),
+            )
+        return payload
 
     def failed_source_names_from_latest_report(
         self,
@@ -477,10 +571,18 @@ class OpsApi:
         )
 
     def get_projected_run_history(self) -> _run_history_api.LifecycleProjection:
+        started_at = time.perf_counter()
         rows = [
-            *[dict(row) for row in self._deps.get_lifecycle_current_runs()],
-            *[dict(row) for row in self._deps.get_lifecycle_recent_runs()],
+            *self._current_lifecycle_rows(),
+            *self._recent_lifecycle_rows(),
         ]
+        self._record_storage_read(
+            surface="taskRuns.projected",
+            artifact="task-runs",
+            started_at=started_at,
+            row_count=len(rows),
+            storage_kind="sqlite-cache",
+        )
         rows.sort(key=_row_order)
         return _run_history_api.LifecycleProjection(
             rows=rows,
@@ -489,7 +591,7 @@ class OpsApi:
         )
 
     def get_lifecycle_run_history_rows(self) -> list[dict[str, Any]]:
-        lifecycle_recent = [dict(row) for row in self._deps.get_lifecycle_recent_runs()]
+        lifecycle_recent = self._recent_lifecycle_rows()
         lifecycle_recent.sort(key=_row_order)
         return lifecycle_recent
 
@@ -543,7 +645,7 @@ class OpsApi:
             parse_schedule_metadata_fn=self.parse_schedule_metadata,
             parse_iso=self._deps.parse_iso,
             now_utc=self._deps.now_utc,
-            get_jobs_pipeline_schedule_ops_entry=self._deps.get_jobs_pipeline_schedule_ops_entry,
+            get_jobs_pipeline_schedule_ops_entry=self._pipeline_schedule_ops_entry_cached,
             get_updater_status_payload=self._deps.get_updater_status_payload,
             app_version=str(self._deps.app_version or ""),
             startup_ready=True
@@ -557,12 +659,13 @@ class OpsApi:
 
     def compute_ops_health(self) -> dict[str, Any]:
         with time_operation("ops.health.current_runs"):
-            current_rows = [dict(row) for row in self._deps.get_lifecycle_current_runs()]
+            current_rows = self._current_lifecycle_rows()
         with time_operation("ops.health.recent_runs"):
-            recent_rows = [dict(row) for row in self._deps.get_lifecycle_recent_runs()]
+            recent_rows = self._recent_lifecycle_rows()
         with time_operation("ops.health.pipeline_status"):
             pipeline_status = self._deps.get_jobs_pipeline_status_payload()
-        owner_state = dict(self._deps.get_owner_state() or {})
+        with time_operation("ops.health.owner_state"):
+            owner_state = dict(self._deps.get_owner_state() or {})
         startup_ready = (
             True if not bool(self._deps.desktop_mode) else bool(owner_state.get("startedAt"))
         )
@@ -579,15 +682,17 @@ class OpsApi:
             ).strip()
             if heartbeat_at:
                 heartbeats.append(heartbeat_at)
-        schedule = _ops_health.populate_schedule_next_run(
-            self.parse_schedule_metadata(),
-            recent_rows,
-            self._deps.parse_iso,
-        )
-        try:
-            pipeline_schedule = self._deps.get_jobs_pipeline_schedule_ops_entry()
-        except (RuntimeError, OSError, TypeError, ValueError):
-            pipeline_schedule = {}
+        with time_operation("ops.health.schedule"):
+            schedule = _ops_health.populate_schedule_next_run(
+                self.parse_schedule_metadata(),
+                recent_rows,
+                self._deps.parse_iso,
+            )
+        with time_operation("ops.health.pipeline_schedule"):
+            try:
+                pipeline_schedule = self._pipeline_schedule_ops_entry_cached()
+            except (RuntimeError, OSError, TypeError, ValueError):
+                pipeline_schedule = {}
         if isinstance(pipeline_schedule, dict):
             schedule["pipeline"] = dict(pipeline_schedule)
         return {
@@ -639,7 +744,7 @@ class OpsApi:
         )
 
     def get_current_task_state_payload(self) -> TaskStatePayload:
-        lifecycle_current = [dict(row) for row in self._deps.get_lifecycle_current_runs()]
+        lifecycle_current = self._current_lifecycle_rows()
         projection = self.get_projected_run_history()
         fetch_live_payload = _ops_task_live.get_task_live_payload(
             self._task_live_context(),

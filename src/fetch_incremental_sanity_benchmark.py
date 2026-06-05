@@ -213,6 +213,7 @@ def _slowest_provider_boards(
                 duration_ms = 0
             if duration_ms <= 0:
                 continue
+            provider_url = str(detail.get("providerUrl") or "")
             rows.append(
                 {
                     "source": source_name,
@@ -226,7 +227,8 @@ def _slowest_provider_boards(
                     "fetchMs": int(detail.get("fetchMs") or 0),
                     "parseMs": int(detail.get("parseMs") or 0),
                     "keptCount": int(detail.get("keptCount") or 0),
-                    "providerUrl": str(detail.get("providerUrl") or ""),
+                    "providerUrl": provider_url,
+                    "providerHost": urlparse(provider_url).netloc.lower(),
                     "error": str(detail.get("error") or ""),
                 }
             )

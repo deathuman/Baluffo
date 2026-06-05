@@ -14,6 +14,9 @@ def test_sync_detail_summary_extracts_nested_push_stages() -> None:
             },
             "remoteTiming": {
                 "requestCount": 3,
+                "totalRequestDurationMs": 70,
+                "wallDurationMs": 45,
+                "stageWallMs": {"pushChangedShards": 35, "pushManifest": 7},
                 "operationTotalsMs": {"pushShard": 40, "pushManifest": 30},
                 "slowestRequests": [
                     {
@@ -34,5 +37,20 @@ def test_sync_detail_summary_extracts_nested_push_stages() -> None:
     assert detail["stageTotalsMs"]["readRemoteSnapshot"] == 20
     assert detail["remoteTimingAvailable"] is True
     assert detail["remoteRequestCount"] == 3
+    assert detail["remoteTotalRequestDurationMs"] == 70
+    assert detail["remoteWallDurationMs"] == 45
+    assert detail["remoteStageWallTop"][0] == {"stage": "pushChangedShards", "wallMs": 35}
     assert detail["remoteOperationTop"][0] == {"operation": "pushShard", "durationMs": 40}
     assert detail["remoteSlowestRequests"][0]["method"] == "PUT"
+
+    targets = perf_complete.build_optimization_targets({"syncDetail": detail})
+
+    assert {
+        "kind": "sync-remote-wall",
+        "source": "sync.push",
+        "label": "pushChangedShards",
+        "durationMs": 35,
+        "rankValue": 35,
+        "rankUnit": "ms",
+        "evidence": "sync-report.json",
+    } in targets

@@ -424,6 +424,9 @@ def _packaged_sync_success_result(
             "performanceProfileSnapshot": str(
                 performance_profile_snapshot.get("performanceProfileSnapshot") or ""
             ),
+            "storageMetricsSnapshot": str(
+                performance_profile_snapshot.get("storageMetricsSnapshot") or ""
+            ),
         },
     }
 

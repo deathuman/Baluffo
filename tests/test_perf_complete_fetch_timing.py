@@ -28,6 +28,8 @@ def test_fetch_payload_benchmark_extracts_source_timing(tmp_path: Path, monkeypa
                                 "durationMs": 700,
                                 "fetchMs": 600,
                                 "parseMs": 80,
+                                "providerHost": "jobs.lever.co",
+                                "providerUrl": "https://jobs.lever.co/slow-board",
                             }
                         ],
                     },
@@ -60,7 +62,18 @@ def test_fetch_payload_benchmark_extracts_source_timing(tmp_path: Path, monkeypa
     assert summary["sourceTiming"]["providerSourceBreakdown"][0]["source"] == "lever_sources"
     assert summary["sourceTiming"]["providerSourceBreakdown"][0]["totalFetchMs"] == 600
     assert summary["sourceTiming"]["providerSourceBreakdown"][0]["statuses"] == {"ok": 1}
+    assert summary["sourceTiming"]["providerHostBreakdown"][0]["providerHost"] == "jobs.lever.co"
+    assert summary["sourceTiming"]["providerHostBreakdown"][0]["totalDurationMs"] == 700
     assert summary["sourceTiming"]["cacheDecisionBreakdown"]["miss"] == 1
     assert summary["sourceTiming"]["nextOptimizationTargets"][0]["action"] == (
         "source_policy_review"
+    )
+
+    targets = perf_complete.build_optimization_targets({"fetch": summary})
+
+    assert any(
+        row["kind"] == "fetch-provider-host"
+        and row["label"] == "jobs.lever.co"
+        and row["durationMs"] == 700
+        for row in targets
     )

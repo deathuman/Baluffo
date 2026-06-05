@@ -7,6 +7,7 @@ from src import source_registry_io as registry_io
 from src.storage_metrics import (
     record_json_write,
     record_source_sync_snapshot,
+    record_storage_read,
     registry_journal_telemetry,
     reset_storage_metrics,
     snapshot_storage_metrics,
@@ -47,6 +48,41 @@ def test_storage_metrics_records_json_write_stats(tmp_path: Path) -> None:
     assert writes["totals"]["compressedSizeBytes"]["max"] == 300
     assert writes["artifacts"][0]["artifact"] == "jobs-fetch-report.json"
     assert (tmp_path / "storage-metrics.jsonl").exists()
+
+
+def test_storage_metrics_records_bounded_read_stats(tmp_path: Path) -> None:
+    reset_storage_metrics(data_dir=tmp_path, remove_file=True)
+
+    record_storage_read(
+        surface="registry.summary",
+        artifact=tmp_path / "source-registry-active.json",
+        storage_kind="sqlite",
+        duration_ms=5,
+        bytes_read=100,
+        row_count=3,
+        data_dir=tmp_path,
+    )
+    record_storage_read(
+        surface="../unsafe/registry.summary",
+        artifact=r"C:\secret\registry.json",
+        storage_kind="json",
+        duration_ms=7,
+        failed=True,
+        memory_delta_bytes=-50,
+        data_dir=tmp_path,
+    )
+
+    metrics = snapshot_storage_metrics(tmp_path)
+    reads = metrics["reads"]
+
+    assert reads["readCount"] == 2
+    assert reads["failedReadCount"] == 1
+    assert reads["totals"]["durationMs"]["max"] == 7
+    assert reads["totals"]["bytesRead"]["total"] == 100
+    assert reads["totals"]["memoryDeltaBytes"]["min"] == -50
+    labels = {(row["surface"], row["artifact"]) for row in reads["surfaces"]}
+    assert ("registry.summary", "source-registry-active.json") in labels
+    assert all("secret" not in artifact.lower() for _surface, artifact in labels)
 
 
 def test_registry_journal_telemetry_counts_rows_and_bytes(tmp_path: Path) -> None:

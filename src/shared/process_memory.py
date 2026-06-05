@@ -440,6 +440,30 @@ def summarize_memory_samples(samples: list[dict[str, Any]]) -> dict[str, Any]:
         key=lambda row: int(row.get("peakBytes") or 0),
         reverse=True,
     )[:10]
+
+    def _sample_summary(sample: dict[str, Any]) -> dict[str, Any]:
+        if not sample:
+            return {}
+        processes = _sorted_processes(list(sample.get("processes") or []))
+        category_totals: dict[str, int] = {}
+        for process in processes:
+            category = str(process.get("category") or "other")
+            category_totals[category] = category_totals.get(category, 0) + _process_memory_bytes(
+                process
+            )
+        return {
+            "rootPid": int(sample.get("rootPid") or 0),
+            "platform": str(sample.get("platform") or ""),
+            "processCount": int(sample.get("processCount") or 0),
+            "workingSetBytes": int(sample.get("workingSetBytes") or 0),
+            "rssBytes": int(sample.get("rssBytes") or 0),
+            "memoryBytes": _sample_memory_bytes(sample),
+            "categoryTotals": category_totals,
+            "topProcesses": processes[:5],
+        }
+
+    first_sample = usable[0] if usable else {}
+    last_sample = usable[-1] if usable else {}
     return {
         "sampleCount": len(usable),
         "peakWorkingSetBytes": max(
@@ -462,6 +486,8 @@ def summarize_memory_samples(samples: list[dict[str, Any]]) -> dict[str, Any]:
         }
         if usable
         else {},
+        "firstSample": _sample_summary(first_sample),
+        "lastSample": _sample_summary(last_sample),
         "topProcesses": top_processes,
         "categoryPeaks": category_peaks if usable else {},
     }

@@ -54,7 +54,7 @@ from src.shared.timing_counters import snapshot_counters
 from src.source_registry import is_hidden_from_default
 from src.source_registry_io import load_runtime_evidence_array
 from src.storage import SourceRuntimeStore
-from src.storage_metrics import snapshot_storage_metrics
+from src.storage_metrics import duration_ms, record_storage_read, snapshot_storage_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +92,29 @@ def _storage_metrics_data_dir(api: BridgeApi) -> Path:
     if data_dir:
         return Path(data_dir).expanduser().resolve()
     return Path(api.JOBS_FETCH_REPORT_PATH).expanduser().resolve().parent
+
+
+def _record_storage_read_metric(
+    api: BridgeApi,
+    *,
+    surface: str,
+    artifact: str,
+    storage_kind: str,
+    started_at: float,
+    row_count: int = 0,
+    bytes_read: int = 0,
+    failed: bool = False,
+) -> None:
+    record_storage_read(
+        surface=surface,
+        artifact=artifact,
+        storage_kind=storage_kind,
+        duration_ms=duration_ms(started_at),
+        bytes_read=max(0, int(bytes_read or 0)),
+        row_count=max(0, int(row_count or 0)),
+        failed=failed,
+        data_dir=_storage_metrics_data_dir(api),
+    )
 
 
 def _performance_profile_runtime(api: BridgeApi) -> dict[str, Any]:
@@ -253,52 +276,68 @@ def _fetch_report_sources_payload(
     api: BridgeApi,
     query: dict[str, list[str]],
 ) -> dict[str, Any]:
-    report, warning = load_fetch_report_with_dedup_review_state(
-        normalize_fetch_report_contract=api.normalize_fetch_report_contract,
-        jobs_fetch_report_path=api.JOBS_FETCH_REPORT_PATH,
-        dedup_review_state_path=api.DEDUP_REVIEW_STATE_PATH,
-    )
-    run_id = _clean_text((query.get("runId") or [""])[0]) or _clean_text(report.get("runId"))
-    status = _clean_text((query.get("status") or [""])[0]).lower()
-    limit = max(1, min(500, _safe_int((query.get("limit") or ["100"])[0], 100)))
-    offset = max(0, _safe_int((query.get("offset") or ["0"])[0], 0))
+    started_at = time.perf_counter()
     source = "json"
     rows: list[dict[str, Any]] = []
-    runtime_store = _source_runtime_store(api, row_limit=limit)
-    if run_id and runtime_store is not None and _source_runs_mode(runtime_store) == "sqlite":
-        rows = runtime_store.source_runs(
-            run_id=run_id,
-            status=status,
-            limit=limit,
-            offset=offset,
+    failed = False
+    try:
+        report, warning = load_fetch_report_with_dedup_review_state(
+            normalize_fetch_report_contract=api.normalize_fetch_report_contract,
+            jobs_fetch_report_path=api.JOBS_FETCH_REPORT_PATH,
+            dedup_review_state_path=api.DEDUP_REVIEW_STATE_PATH,
         )
-        if rows:
-            source = "sqlite"
-        else:
-            _rollback_source_runs_to_json(
-                api,
-                runtime_store,
-                code="source_runs_read_empty",
-                message="SQLite source_runs did not contain requested fetch source rows",
-                details={"runId": run_id},
+        run_id = _clean_text((query.get("runId") or [""])[0]) or _clean_text(report.get("runId"))
+        status = _clean_text((query.get("status") or [""])[0]).lower()
+        limit = max(1, min(500, _safe_int((query.get("limit") or ["100"])[0], 100)))
+        offset = max(0, _safe_int((query.get("offset") or ["0"])[0], 0))
+        runtime_store = _source_runtime_store(api, row_limit=limit)
+        if run_id and runtime_store is not None and _source_runs_mode(runtime_store) == "sqlite":
+            rows = runtime_store.source_runs(
+                run_id=run_id,
+                status=status,
+                limit=limit,
+                offset=offset,
             )
-    if not rows:
-        json_rows = [row for row in _as_list(report.get("sources")) if isinstance(row, dict)]
-        if status:
-            json_rows = [
-                row for row in json_rows if _clean_text(row.get("status")).lower() == status
-            ]
-        rows = json_rows[offset : offset + limit]
-    return {
-        "ok": True,
-        "runId": run_id,
-        "sources": rows,
-        "count": len(rows),
-        "limit": limit,
-        "offset": offset,
-        "source": source,
-        "warning": warning,
-    }
+            if rows:
+                source = "sqlite"
+            else:
+                _rollback_source_runs_to_json(
+                    api,
+                    runtime_store,
+                    code="source_runs_read_empty",
+                    message="SQLite source_runs did not contain requested fetch source rows",
+                    details={"runId": run_id},
+                )
+        if not rows:
+            json_rows = [row for row in _as_list(report.get("sources")) if isinstance(row, dict)]
+            if status:
+                json_rows = [
+                    row for row in json_rows if _clean_text(row.get("status")).lower() == status
+                ]
+            rows = json_rows[offset : offset + limit]
+        return {
+            "ok": True,
+            "runId": run_id,
+            "sources": rows,
+            "count": len(rows),
+            "limit": limit,
+            "offset": offset,
+            "source": source,
+            "warning": warning,
+        }
+    except Exception:
+        failed = True
+        raise
+    finally:
+        _record_storage_read_metric(
+            api,
+            surface="sourceRuns.reportSources",
+            artifact="jobs-fetch-report.json",
+            storage_kind=source,
+            started_at=started_at,
+            row_count=len(rows),
+            failed=failed,
+        )
 
 
 def _load_provider_coverage_link_backfill(api: BridgeApi) -> tuple[dict[str, Any], str]:
@@ -878,10 +917,25 @@ def _registry_summary_route_payload(
             "invalidView": view,
             "allowedViews": ["storage", "exact"],
         }
-    if view == "exact":
-        summary = _as_dict(api.get_registry_exact_summary_payload())
-    else:
-        summary = _as_dict(api.get_registry_summary_payload())
+    started_at = time.perf_counter()
+    failed = False
+    try:
+        if view == "exact":
+            summary = _as_dict(api.get_registry_exact_summary_payload())
+        else:
+            summary = _as_dict(api.get_registry_summary_payload())
+    except Exception:
+        failed = True
+        raise
+    finally:
+        _record_storage_read_metric(
+            api,
+            surface="registry.summaryExact" if view == "exact" else "registry.summary",
+            artifact="source-registry",
+            storage_kind="normalized" if view == "exact" else "storage",
+            started_at=started_at,
+            failed=failed,
+        )
     generated_at = str(
         summary.get("updatedAt") or summary.get("publishedAt") or datetime.now(UTC).isoformat()
     )
@@ -903,32 +957,54 @@ def _registry_sources_payload(
             "error": "invalid registry bucket",
             "invalidBuckets": invalid,
         }
-    state = api.load_state()
-    summary = {
-        **api.summarize_state(state),
-        "summaryExact": True,
-        "countBasis": "normalized",
-    }
-    sources: dict[str, list[dict[str, Any]]] = {}
-    if "pending" in buckets:
-        pending_query = dict(query)
-        pending_query["includeHidden"] = [
-            "1" if _include_hidden_pending_registry_rows(query) else "0"
-        ]
-        pending_payload = _pending_registry_payload_from_state(api, pending_query, state)
-        sources["pending"] = [
-            dict(row) for row in _as_list(pending_payload.get("sources")) if isinstance(row, dict)
-        ]
-        summary = {**summary, **_as_dict(pending_payload.get("summary"))}
-    if "active" in buckets:
-        sources["active"] = [
-            dict(row) for row in state.get("active") or [] if isinstance(row, dict)
-        ]
-    if "rejected" in buckets:
-        sources["rejected"] = [
-            dict(row) for row in state.get("rejected") or [] if isinstance(row, dict)
-        ]
-    return 200, {"ok": True, "sources": sources, "summary": summary}
+    started_at = time.perf_counter()
+    failed = False
+    row_count = 0
+    storage_kind = "normalized"
+    try:
+        state = api.load_state()
+        summary = {
+            **api.summarize_state(state),
+            "summaryExact": True,
+            "countBasis": "normalized",
+        }
+        sources: dict[str, list[dict[str, Any]]] = {}
+        if "pending" in buckets:
+            pending_query = dict(query)
+            pending_query["includeHidden"] = [
+                "1" if _include_hidden_pending_registry_rows(query) else "0"
+            ]
+            pending_payload = _pending_registry_payload_from_state(api, pending_query, state)
+            sources["pending"] = [
+                dict(row)
+                for row in _as_list(pending_payload.get("sources"))
+                if isinstance(row, dict)
+            ]
+            summary = {**summary, **_as_dict(pending_payload.get("summary"))}
+        if "active" in buckets:
+            sources["active"] = [
+                dict(row) for row in state.get("active") or [] if isinstance(row, dict)
+            ]
+        if "rejected" in buckets:
+            sources["rejected"] = [
+                dict(row) for row in state.get("rejected") or [] if isinstance(row, dict)
+            ]
+        row_count = sum(len(rows) for rows in sources.values())
+        storage_kind = str(summary.get("authorityMode") or "normalized")
+        return 200, {"ok": True, "sources": sources, "summary": summary}
+    except Exception:
+        failed = True
+        raise
+    finally:
+        _record_storage_read_metric(
+            api,
+            surface="registry.sources",
+            artifact="source-registry",
+            storage_kind=storage_kind,
+            started_at=started_at,
+            row_count=row_count,
+            failed=failed,
+        )
 
 
 def _read_utf8_log_text(path: Path) -> str:
@@ -1225,21 +1301,50 @@ def handle_get(
         return True
 
     if path == "/registry/active":
+        started_at = time.perf_counter()
         state = api.load_state()
+        _record_storage_read_metric(
+            api,
+            surface="registry.active",
+            artifact="source-registry",
+            storage_kind="normalized",
+            started_at=started_at,
+            row_count=len(state.get("active") or []),
+        )
         handler.send_json({"sources": state["active"], "summary": api.summarize_state(state)})
         return True
 
     if path == "/registry/pending":
-        handler.send_json(_pending_registry_payload(api, query))
+        started_at = time.perf_counter()
+        payload = _pending_registry_payload(api, query)
+        _record_storage_read_metric(
+            api,
+            surface="registry.pending",
+            artifact="source-registry",
+            storage_kind="normalized",
+            started_at=started_at,
+            row_count=len(_as_list(payload.get("sources"))),
+        )
+        handler.send_json(payload)
         return True
 
     if path == "/registry/rejected":
+        started_at = time.perf_counter()
         state = api.load_state()
+        _record_storage_read_metric(
+            api,
+            surface="registry.rejected",
+            artifact="source-registry",
+            storage_kind="normalized",
+            started_at=started_at,
+            row_count=len(state.get("rejected") or []),
+        )
         handler.send_json({"sources": state["rejected"], "summary": api.summarize_state(state)})
         return True
 
     if path == "/registry/sources":
-        status, payload = _registry_sources_payload(api, query)
+        with time_operation("registry.sources"):
+            status, payload = _registry_sources_payload(api, query)
         handler.send_json(payload, status=status)
         return True
 
@@ -1375,18 +1480,39 @@ def handle_get(
 
     if path == "/ops/fetch-report":
         view = str((query.get("view") or [""])[0] or "").strip().lower()
-        payload, dedup_review_state_warning = load_fetch_report_with_dedup_review_state(
-            normalize_fetch_report_contract=api.normalize_fetch_report_contract,
-            jobs_fetch_report_path=api.JOBS_FETCH_REPORT_PATH,
-            dedup_review_state_path=api.DEDUP_REVIEW_STATE_PATH,
-        )
-        if dedup_review_state_warning:
-            payload["dedupReviewStateReadWarning"] = dedup_review_state_warning
-        if view != "live" and isinstance(payload, dict):
-            payload = _hydrate_fetch_report_sources_from_sqlite(api, payload)
-        if view == "live" and isinstance(payload, dict):
-            payload = _compact_live_fetch_report_payload(payload)
-        handler.send_json(payload)
+        started_at = time.perf_counter()
+        source = "json"
+        source_count = 0
+        failed = False
+        try:
+            payload, dedup_review_state_warning = load_fetch_report_with_dedup_review_state(
+                normalize_fetch_report_contract=api.normalize_fetch_report_contract,
+                jobs_fetch_report_path=api.JOBS_FETCH_REPORT_PATH,
+                dedup_review_state_path=api.DEDUP_REVIEW_STATE_PATH,
+            )
+            if dedup_review_state_warning:
+                payload["dedupReviewStateReadWarning"] = dedup_review_state_warning
+            if view != "live" and isinstance(payload, dict):
+                payload = _hydrate_fetch_report_sources_from_sqlite(api, payload)
+                source = "sqlite" if _as_list(payload.get("sources")) else "json"
+            if view == "live" and isinstance(payload, dict):
+                payload = _compact_live_fetch_report_payload(payload)
+            if isinstance(payload, dict):
+                source_count = len(_as_list(payload.get("sources")))
+            handler.send_json(payload)
+        except Exception:
+            failed = True
+            raise
+        finally:
+            _record_storage_read_metric(
+                api,
+                surface="sourceRuns.report",
+                artifact="jobs-fetch-report.json",
+                storage_kind=source,
+                started_at=started_at,
+                row_count=source_count,
+                failed=failed,
+            )
         return True
 
     if path == "/source-policy/recommendations":

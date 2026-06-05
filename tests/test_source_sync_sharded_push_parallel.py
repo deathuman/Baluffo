@@ -96,10 +96,21 @@ def test_push_sharded_snapshot_pushes_changed_shards_with_bounded_parallelism() 
     assert changed_count > 4
     assert module.max_in_flight == 4
     assert duration_s < sequential_floor_s * 0.75
+    assert result["shardResult"]["workerCount"] == 4
+    assert result["shardResult"]["parallelWallMs"] > 0
     assert result["remoteTiming"]["methodCounts"] == {
         "PUT": changed_count + 1,
         "GET": changed_count + 1,
     }
+    assert (
+        result["remoteTiming"]["totalRequestDurationMs"] > result["remoteTiming"]["wallDurationMs"]
+    )
+    assert (
+        result["remoteTiming"]["stageWallMs"]["pushChangedShards"]
+        == result["shardResult"]["parallelWallMs"]
+    )
+    assert result["remoteTiming"]["stageWallMs"]["pushManifest"] > 0
+    assert result["remoteTiming"]["stageWallMs"]["pruneShards"] > 0
 
 
 def test_push_sharded_snapshot_commits_manifest_after_parallel_verification() -> None:
