@@ -8,6 +8,7 @@ from pydantic import ValidationError as PydanticValidationError
 
 from src.bridge.api import BridgeApi
 from src.bridge.container_mode import is_container_runtime, send_container_unavailable
+from src.bridge.performance_profile import time_operation
 from src.bridge.routes.error_boundary import run_route_boundary, send_json_boundary
 from src.bridge.routes.response_writer import BridgeResponseWriter
 from src.core.schemas import SavedJobSchema
@@ -19,6 +20,13 @@ def _as_dict(value: Any) -> dict[str, Any]:
 
 def _json_error(exc: Exception) -> dict[str, Any]:
     return {"ok": False, "error": str(exc)}
+
+
+def _admin_overview_detail(value: Any) -> str:
+    detail = str(value or "full").strip().lower()
+    if detail not in {"summary", "full"}:
+        raise ValueError("Invalid admin overview detail. Expected 'summary' or 'full'.")
+    return detail
 
 
 def _handle_saved_job_tracking_post(
@@ -195,12 +203,16 @@ def handle_post(
         return True
 
     if path == "/desktop-local-data/admin/overview":
+
+        def _payload() -> dict[str, Any]:
+            detail = _admin_overview_detail(payload_dict.get("detail"))
+            with time_operation(f"localData.adminOverview.{detail}"):
+                overview = api.desktop_local_data_store().get_admin_overview(detail=detail)
+            return {"ok": True, "overview": overview}
+
         send_json_boundary(
             handler,
-            lambda: {
-                "ok": True,
-                "overview": api.desktop_local_data_store().get_admin_overview(),
-            },
+            _payload,
             error_status=400,
             error_payload=_json_error,
         )

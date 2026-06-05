@@ -125,8 +125,8 @@ class LocalDataStore:
     def import_profile_data(self, uid: str, payload: dict[str, Any]) -> dict[str, Any]:
         return local_data_store_backup_mod.import_profile_data(self.paths, uid, payload)
 
-    def get_admin_overview(self) -> dict[str, Any]:
-        return local_data_store_backup_mod.get_admin_overview(self.paths)
+    def get_admin_overview(self, detail: str = "full") -> dict[str, Any]:
+        return local_data_store_backup_mod.get_admin_overview(self.paths, detail=detail)
 
     def wipe_account_admin(self, uid: str) -> None:
         local_data_store_backup_mod.wipe_account_admin(self.paths, uid)

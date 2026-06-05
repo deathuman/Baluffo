@@ -10,15 +10,22 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.44] - 2026-06-05
+
 ### Added
 - `/registry/summary?view=exact` now exposes normalized registry summary counts without source rows for diagnostics, while the default `/registry/summary` remains a lightweight storage snapshot.
 
 ### Changed
 - Admin registry diagnostics now label storage snapshot counts versus normalized counts so duplicate/pending evidence is not overstated.
+- Admin now loads local profile overview summary data first, defers exact attachment-size filesystem work to a background full refresh, and exposes bounded overview performance labels for container/Admin profiling.
 
 ### Fixed
 - Admin Ops now renders a neutral readiness shell during the first dashboard-health request instead of leaving `Loading operations health...` visible while slower Umbrel containers finish the health snapshot.
 - Jobs, Saved Jobs, and Admin now avoid passive first-load placeholder copy such as `Loading jobs...`, `Loading saved jobs...`, `Admin Checking...`, and empty discovery/activity text while background startup data is still settling.
+
+### Notes
+- This is a container/Umbrel patch. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
 
 ## [0.2.43] - 2026-06-04
 

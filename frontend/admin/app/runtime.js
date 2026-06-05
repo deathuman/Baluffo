@@ -1,6 +1,6 @@
 import { AdminConfig as adminConfig } from "../../shared/config/admin-config.js";
 import { awaitDesktopBootstrap } from "../../shared/local-data/desktop-client.js";
-import { resolveDesktopRuntimeMode } from "../../shared/local-data/runtime-context.js";
+import { resolveBridgeLocalDataMode, resolveDesktopRuntimeMode } from "../../shared/local-data/runtime-context.js";
 import {
   showToast,
   setText
@@ -52,7 +52,7 @@ import {
   FETCHER_PRESET_META
 } from "./fetcher.js?v=13";
 import { createAdminRuntimeState } from "./runtime/state.js";
-import { composeAdminControllers } from "./runtime/composition.js?v=19";
+import { composeAdminControllers } from "./runtime/composition.js?v=20";
 import { createAdminStartupMetrics } from "./runtime/effects.js";
 import { createBridgeCaller } from "./runtime/actions.js";
 import { resolveAdminBridgeBase } from "./runtime/bridge-base.js";
@@ -133,10 +133,14 @@ function postBridge(path, payload, options = {}) {
 }
 
 async function waitForAdminBridgeReady() {
-  if (!resolveDesktopRuntimeMode()) {
+  const bridgeLocalDataMode = typeof window.__baluffoBridgeLocalDataMode === "boolean"
+    ? window.__baluffoBridgeLocalDataMode
+    : resolveBridgeLocalDataMode();
+  if (!bridgeLocalDataMode && !resolveDesktopRuntimeMode()) {
     return true;
   }
-  return awaitDesktopBootstrap();
+  const enableLifecycle = Boolean(window.__baluffoDesktopMode || resolveDesktopRuntimeMode());
+  return awaitDesktopBootstrap({ enableLifecycle });
 }
 
 async function fetchJobsFetchReportJson(options = {}) {

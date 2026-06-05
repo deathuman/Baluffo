@@ -62,6 +62,9 @@ def test_attachment_round_trip_and_admin_overview() -> None:
         assert filename == "resume.txt"
         assert overview["totals"]["usersCount"] == 1
         assert overview["totals"]["attachmentsCount"] == 1
+        assert overview["totals"]["attachmentsBytes"] == 5
+        assert overview["detailLevel"] == "full"
+        assert overview["attachmentSizeBasis"] == "filesystem"
 
 
 def test_list_profiles_returns_sorted_profiles_with_current_flag() -> None:

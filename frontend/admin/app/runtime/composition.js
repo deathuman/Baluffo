@@ -17,7 +17,7 @@ import {
   renderUsersTableHtml
 } from "../../render.js?v=18";
 import { adminService } from "../../services.js";
-import { createAdminAuthController } from "../auth.js?v=1";
+import { createAdminAuthController } from "../auth.js?v=3";
 import { createAdminDiscoveryController } from "../discovery.js?v=1";
 import {
   createAdminFetcherController
@@ -26,7 +26,7 @@ import { createRestoreActiveRunWatches } from "../live-task.js";
 import { createAdminOpsController, formatBytes } from "../ops.js?v=19";
 import { createAdminRegistryController } from "../registry.js?v=16";
 import { createAdminSyncController } from "../sync.js?v=13";
-import { createAdminOverviewController } from "./overview.js?v=13";
+import { createAdminOverviewController } from "./overview.js?v=14";
 import { createActionCenterController } from "../action-center.js";
 import { createAdminInspectorController } from "../inspector.js";
 
@@ -63,7 +63,8 @@ export function composeAdminControllers({
   jobsAutoRefreshSignalKey,
   jobsFetcherCommand,
   jobsFetcherTaskLabel,
-  requestConfirmationDialog
+  requestConfirmationDialog,
+  awaitBridgeReady = async () => true
 }) {
   const adminDispatch = createAdminDispatcher();
   let authController;
@@ -258,6 +259,7 @@ export function composeAdminControllers({
     loadDiscoveryConfig: (...args) => discoveryController.loadDiscoveryConfig(...args),
     loadOpsHealthData: (...args) => opsController.loadOpsHealthData(...args),
     loadSyncStatus: (...args) => syncController.loadSyncStatus(...args),
+    awaitLocalDataReady: awaitBridgeReady,
     logAdminError,
     showToast
   });

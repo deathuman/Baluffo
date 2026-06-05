@@ -3,6 +3,7 @@ import { UI_TOKENS, ui } from "../../../shared/ui/selectors.js";
 
 const ADMIN_WIPE_BUTTON_SELECTOR = ui(UI_TOKENS.admin.wipeBtn);
 const DEFAULT_ADMIN_OVERVIEW_TIMEOUT_MS = 5000;
+const ADMIN_OVERVIEW_FULL_REFRESH_DELAY_MS = 150;
 
 function withTimeout(promise, timeoutMs, message) {
   const waitMs = Math.max(0, Number(timeoutMs) || 0);
@@ -36,6 +37,29 @@ export function createAdminOverviewController({
   renderUsersEmptyHtml,
   overviewTimeoutMs = DEFAULT_ADMIN_OVERVIEW_TIMEOUT_MS
 }) {
+  let scheduledFullRefreshId = null;
+
+  function normalizeOverviewDetail(detail) {
+    const value = String(detail || "full").trim().toLowerCase();
+    return ["summary", "full"].includes(value) ? value : "full";
+  }
+
+  function clearScheduledFullRefresh() {
+    if (scheduledFullRefreshId !== null) {
+      globalThis.clearTimeout(scheduledFullRefreshId);
+      scheduledFullRefreshId = null;
+    }
+  }
+
+  function scheduleFullRefresh() {
+    clearScheduledFullRefresh();
+    scheduledFullRefreshId = globalThis.setTimeout(() => {
+      scheduledFullRefreshId = null;
+      refreshOverview({ detail: "full", background: true });
+    }, ADMIN_OVERVIEW_FULL_REFRESH_DELAY_MS);
+    scheduledFullRefreshId?.unref?.();
+  }
+
   function renderTotals(totals) {
     if (refs.adminTotalsEl) refs.adminTotalsEl.innerHTML = renderTotalsHtml(totals, formatBytes);
   }
@@ -78,10 +102,13 @@ export function createAdminOverviewController({
   }
 
   async function refreshOverview(options = {}) {
+    const detail = normalizeOverviewDetail(options?.detail);
+    const background = Boolean(options?.background);
     try {
+      if (detail === "full") clearScheduledFullRefresh();
       const timeoutMs = Math.max(0, Number(options?.timeoutMs ?? overviewTimeoutMs) || 0);
       const overviewResult = await withTimeout(
-        adminService.getAdminOverview({ timeoutMs }),
+        adminService.getAdminOverview({ timeoutMs, detail }),
         timeoutMs,
         "Admin overview request timed out."
       );
@@ -96,10 +123,19 @@ export function createAdminOverviewController({
       }
       setSourceStatus(`Loaded ${users.length} user account(s).`);
       adminDispatch.dispatch({ type: adminActions.OVERVIEW_REFRESHED, payload: { at: new Date().toISOString() } });
+      if (options?.scheduleFullRefresh && detail === "summary") {
+        scheduleFullRefresh();
+      }
+      return overview;
     } catch (err) {
+      if (background) {
+        setSourceStatus(`Admin overview exact refresh delayed: ${getErrorMessage(err)}`);
+        return null;
+      }
       renderUsersEmpty("Could not load admin overview.");
       setSourceStatus(`Admin overview unavailable: ${getErrorMessage(err)}`);
       showToast(`Could not load overview: ${getErrorMessage(err)}`, "error");
+      return null;
     }
   }
 

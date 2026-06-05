@@ -15,7 +15,16 @@ export function createAdminDomain(deps) {
     notifySavedJobsChanged
   } = deps;
 
-  async function getAdminOverview() {
+  function normalizeOverviewDetail(options = {}) {
+    const detail = String(options?.detail || "full").trim().toLowerCase();
+    if (!["summary", "full"].includes(detail)) {
+      throw new Error("Invalid admin overview detail. Expected 'summary' or 'full'.");
+    }
+    return detail;
+  }
+
+  async function getAdminOverview(options = {}) {
+    const detail = normalizeOverviewDetail(options);
     const profiles = readProfiles();
     const allSavedJobs = await listAllSavedJobs();
     const allAttachments = await listAllAttachments();
@@ -72,7 +81,12 @@ export function createAdminDomain(deps) {
       totalBytes: 0
     });
 
-    return { users, totals };
+    return {
+      users,
+      totals,
+      detailLevel: detail,
+      attachmentSizeBasis: "metadata"
+    };
   }
 
   async function deleteSavedJobsForProfile(uid) {

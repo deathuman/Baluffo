@@ -54,9 +54,65 @@ test("admin overview forwards timeout to local-data requests", async () => {
 
   await fixture.controller.refreshOverview();
 
-  assert.deepEqual(receivedOptions, [{ timeoutMs: 1234 }]);
+  assert.deepEqual(receivedOptions, [{ timeoutMs: 1234, detail: "full" }]);
   assert.equal(fixture.refs.adminUsersListEl.innerHTML, "local-user");
   assert.equal(fixture.statuses.at(-1), "Loaded 1 user account(s).");
+});
+
+test("admin overview summary schedules a full background refresh", async () => {
+  const receivedOptions = [];
+  const fixture = createOverviewControllerFixture({
+    overviewTimeoutMs: 1234,
+    getAdminOverview: async options => {
+      receivedOptions.push(options);
+      const detail = options?.detail || "full";
+      return {
+        ok: true,
+        data: { users: [{ uid: `${detail}-user` }], totals: {}, detailLevel: detail }
+      };
+    }
+  });
+
+  await fixture.controller.refreshOverview({ detail: "summary", scheduleFullRefresh: true });
+
+  assert.deepEqual(receivedOptions, [{ timeoutMs: 1234, detail: "summary" }]);
+  assert.equal(fixture.refs.adminUsersListEl.innerHTML, "summary-user");
+
+  await new Promise(resolve => setTimeout(resolve, 180));
+
+  assert.deepEqual(receivedOptions, [
+    { timeoutMs: 1234, detail: "summary" },
+    { timeoutMs: 1234, detail: "full" }
+  ]);
+  assert.equal(fixture.refs.adminUsersListEl.innerHTML, "full-user");
+});
+
+test("admin overview background full failure preserves summary UI", async () => {
+  const receivedOptions = [];
+  const fixture = createOverviewControllerFixture({
+    overviewTimeoutMs: 1234,
+    getAdminOverview: async options => {
+      receivedOptions.push(options);
+      if (options?.detail === "full") {
+        return { ok: false, error: "full overview down", data: null };
+      }
+      return {
+        ok: true,
+        data: { users: [{ uid: "summary-user" }], totals: {}, detailLevel: "summary" }
+      };
+    }
+  });
+
+  await fixture.controller.refreshOverview({ detail: "summary", scheduleFullRefresh: true });
+  await new Promise(resolve => setTimeout(resolve, 180));
+
+  assert.deepEqual(receivedOptions, [
+    { timeoutMs: 1234, detail: "summary" },
+    { timeoutMs: 1234, detail: "full" }
+  ]);
+  assert.equal(fixture.refs.adminUsersListEl.innerHTML, "summary-user");
+  assert.match(fixture.statuses.at(-1), /Admin overview exact refresh delayed: full overview down/);
+  assert.deepEqual(fixture.toasts, []);
 });
 
 test("admin overview timeout produces scoped unavailable state", async () => {

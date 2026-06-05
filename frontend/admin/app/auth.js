@@ -25,6 +25,7 @@ export function createAdminAuthController({
   loadDiscoveryConfig,
   loadOpsHealthData,
   loadSyncStatus,
+  awaitLocalDataReady = async () => true,
   markAdminStep,
   measureAdminStep,
   logAdminError,
@@ -88,6 +89,26 @@ export function createAdminAuthController({
     });
   }
 
+  function startInitialOverviewLoad() {
+    Promise.resolve()
+      .then(() => awaitLocalDataReady())
+      .then(ready => {
+        if (ready === false) {
+          throw new Error("Local data API unavailable.");
+        }
+        runInitialTask({
+          start: "admin_overview_fetch_start",
+          end: "admin_overview_fetch_done",
+          measure: "admin_overview_fetch",
+          errorContext: "Failed to refresh admin overview",
+          task: () => refreshOverview({ detail: "summary", scheduleFullRefresh: true })
+        });
+      })
+      .catch(err => {
+        logAdminError("Failed to prepare admin overview", err);
+      });
+  }
+
   function initAdminPage() {
     markStep("admin_auth_init_start");
     syncAdminBusyUi();
@@ -110,13 +131,7 @@ export function createAdminAuthController({
     setOpsReadinessShell();
     if (refs.adminSyncStatusEl) refs.adminSyncStatusEl.textContent = "";
     startBridgeStatusWatch();
-    runInitialTask({
-      start: "admin_overview_fetch_start",
-      end: "admin_overview_fetch_done",
-      measure: "admin_overview_fetch",
-      errorContext: "Failed to refresh admin overview",
-      task: () => refreshOverview()
-    });
+    startInitialOverviewLoad();
     runInitialTask({
       start: "admin_discovery_config_fetch_start",
       end: "admin_discovery_config_fetch_done",

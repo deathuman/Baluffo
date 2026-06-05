@@ -93,8 +93,8 @@ test("admin auth controller initializes the composed admin view immediately", as
     stopOpsHealthPolling() {
       calls.push("stopOpsHealthPolling");
     },
-    refreshOverview: async () => {
-      calls.push("refreshOverview");
+    refreshOverview: async options => {
+      calls.push(`refreshOverview:${String(options?.detail || "")}:${String(Boolean(options?.scheduleFullRefresh))}`);
     },
     loadLatestFetcherReport: async options => {
       calls.push(`loadLatestFetcherReport:${String(Boolean(options?.silent))}`);
@@ -110,6 +110,10 @@ test("admin auth controller initializes the composed admin view immediately", as
     },
     loadDiscoveryConfig: async options => {
       calls.push(`loadDiscoveryConfig:${String(Boolean(options?.silent))}:${String(Boolean(options?.forceForm))}`);
+    },
+    awaitLocalDataReady: async () => {
+      calls.push("awaitLocalDataReady");
+      return true;
     },
     getErrorMessage: err => String(err?.message || err || "unknown"),
     logAdminError() {},
@@ -127,7 +131,8 @@ test("admin auth controller initializes the composed admin view immediately", as
   assert.deepEqual(dispatched.map(item => item.type), []);
   assert.ok(calls.includes("resetBusyFlags"));
   assert.ok(calls.includes("startBridgeStatusWatch"));
-  assert.ok(calls.includes("refreshOverview"));
+  assert.ok(calls.includes("awaitLocalDataReady"));
+  assert.ok(calls.includes("refreshOverview:summary:true"));
   assert.ok(calls.includes("loadDiscoveryData:true:true"));
   assert.ok(calls.includes("loadOpsHealthData"));
   assert.equal(calls.filter(item => item === "opsReadinessShell").length, 2);
@@ -140,33 +145,92 @@ test("admin auth controller initializes the composed admin view immediately", as
   assert.ok(calls.includes("discoveryPlaceholder:"));
   assert.equal(calls.some(item => /Loading latest jobs fetch report|Loading source discovery data/.test(item)), false);
   assert.equal(toasts.length, 0);
-  assert.deepEqual(
-    perfCalls.map(item => `${item.type}:${item.name}`),
-    [
-      "mark:admin_auth_init_start",
-      "mark:admin_overview_fetch_start",
-      "mark:admin_discovery_config_fetch_start",
-      "mark:admin_ops_health_fetch_start",
-      "mark:admin_sync_fetch_start",
-      "mark:admin_auth_init_end",
-      "measure:admin_auth_init",
-      "mark:admin_overview_fetch_done",
-      "measure:admin_overview_fetch",
-      "mark:admin_discovery_config_fetch_done",
-      "measure:admin_discovery_config_fetch",
-      "mark:admin_ops_health_fetch_done",
-      "measure:admin_ops_health_fetch",
-      "mark:admin_sync_fetch_done",
-      "measure:admin_sync_fetch",
-      "mark:admin_discovery_fetch_start",
-      "mark:admin_discovery_fetch_done",
-      "measure:admin_discovery_fetch"
-    ]
+  const perfNames = perfCalls.map(item => `${item.type}:${item.name}`);
+  for (const expected of [
+    "mark:admin_auth_init_start",
+    "mark:admin_discovery_config_fetch_start",
+    "mark:admin_ops_health_fetch_start",
+    "mark:admin_sync_fetch_start",
+    "mark:admin_auth_init_end",
+    "measure:admin_auth_init",
+    "mark:admin_overview_fetch_start",
+    "mark:admin_overview_fetch_done",
+    "measure:admin_overview_fetch",
+    "mark:admin_discovery_fetch_start",
+    "mark:admin_discovery_fetch_done",
+    "measure:admin_discovery_fetch"
+  ]) {
+    assert.ok(perfNames.includes(expected), expected);
+  }
+  assert.ok(
+    perfNames.indexOf("measure:admin_auth_init") < perfNames.indexOf("mark:admin_overview_fetch_start"),
+    "overview fetch should wait until the initial Admin shell is measured"
   );
   assert.deepEqual(
     perfCalls.find(item => item.name === "admin_overview_fetch")?.payload,
     { ok: true }
   );
+});
+
+test("admin overview waits for local data readiness without blocking the shell", async () => {
+  let resolveReady;
+  const readyPromise = new Promise(resolve => {
+    resolveReady = resolve;
+  });
+  const calls = [];
+  let firstInteractiveCount = 0;
+  const refs = {
+    adminContentEl: createElement({ classList: createClassList(["hidden"]) }),
+    adminBridgeStatusBadgeEl: createElement({ classList: createClassList(["hidden"]) }),
+    adminSyncStatusEl: createElement()
+  };
+
+  const controller = createAdminAuthController({
+    refs,
+    emitAdminStartupMetric() {},
+    markAdminFirstInteractive() {
+      firstInteractiveCount += 1;
+    },
+    markAdminStep() {},
+    measureAdminStep() {},
+    syncAdminBusyUi() {},
+    syncDiscoveryLogDisclosure() {},
+    resetBusyFlags() {},
+    setSourceFilter() {},
+    setSourceStatus() {},
+    setFetcherLogPlaceholder() {},
+    setDiscoveryLogPlaceholder() {},
+    clearOptimisticFetchRun() {},
+    clearOptimisticDiscoveryRun() {},
+    setManualSourceFeedback() {},
+    setOpsPlaceholders() {},
+    setOpsReadinessShell() {},
+    setBridgeStatusBadge() {},
+    startBridgeStatusWatch() {},
+    refreshOverview: async options => {
+      calls.push(`refreshOverview:${String(options?.detail || "")}:${String(Boolean(options?.scheduleFullRefresh))}`);
+    },
+    loadDiscoveryData: async () => {},
+    loadOpsHealthData: async () => {},
+    loadSyncStatus: async () => {},
+    loadDiscoveryConfig: async () => {},
+    awaitLocalDataReady: () => readyPromise,
+    logAdminError() {},
+    showToast() {}
+  });
+
+  assert.equal(controller.initAdminPage(), true);
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.equal(firstInteractiveCount, 1);
+  assert.equal(refs.adminContentEl.classList.contains("hidden"), false);
+  assert.equal(calls.includes("refreshOverview:summary:true"), false);
+
+  resolveReady(true);
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  assert.ok(calls.includes("refreshOverview:summary:true"));
 });
 
 

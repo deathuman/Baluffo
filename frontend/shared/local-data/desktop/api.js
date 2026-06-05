@@ -422,9 +422,11 @@ export function createDesktopLocalDataApi() {
       return response.result || {};
     },
     async getAdminOverview(options = {}) {
+      const body = {};
+      if (options?.detail) body.detail = options.detail;
       const payload = await requestJson("/admin/overview", {
         method: "POST",
-        body: JSON.stringify({}),
+        body: JSON.stringify(body),
         timeoutMs: options?.timeoutMs
       });
       return payload.overview || { users: [], totals: {} };

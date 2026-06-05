@@ -44,6 +44,21 @@ test("adminService overview forwards without a PIN argument", async () => {
   assert.equal(result.data.users.length, 1);
 });
 
+test("adminService overview forwards detail options", async () => {
+  const calls = [];
+  setMockApi({
+    getAdminOverview: async (...args) => {
+      calls.push(args);
+      return { users: [{ uid: "u1" }], totals: { users: 1 }, detailLevel: "summary" };
+    }
+  });
+  const { adminService } = await import("../../../frontend/local-data/services.js");
+  const result = await adminService.getAdminOverview({ detail: "summary", timeoutMs: 250 });
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls, [[{ detail: "summary", timeoutMs: 250 }]]);
+  assert.equal(result.data.detailLevel, "summary");
+});
+
 test("historyService returns error contract on failure", async () => {
   setMockApi({
     listActivityForUser: async () => {

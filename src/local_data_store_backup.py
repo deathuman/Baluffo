@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import time
 import uuid
 from typing import Any
 
@@ -48,6 +49,9 @@ from .local_data_store_shared import (
 
 SOURCE_POLICY_RECOMMENDATIONS_FILENAME = "source-policy-recommendations.json"
 SOURCE_POLICY_REVIEW_STATE_FILENAME = "source-policy-review-state.json"
+ADMIN_OVERVIEW_CACHE_TTL_S = 0.5
+ADMIN_OVERVIEW_DETAILS = {"summary", "full"}
+_ADMIN_OVERVIEW_CACHE: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
 
 
 def _as_int(value: Any) -> int:
@@ -55,6 +59,54 @@ def _as_int(value: Any) -> int:
         return int(value or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def _admin_overview_detail(value: Any) -> str:
+    detail = str(value or "full").strip().lower()
+    if detail not in ADMIN_OVERVIEW_DETAILS:
+        raise ValueError("Invalid admin overview detail. Expected 'summary' or 'full'.")
+    return detail
+
+
+def _admin_overview_cache_key(paths: LocalDataPaths, detail: str) -> tuple[str, str]:
+    return (str(paths.root), detail)
+
+
+def _copy_admin_overview(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "users": [dict(row) for row in payload.get("users") or []],
+        "totals": dict(payload.get("totals") or {}),
+        "detailLevel": str(payload.get("detailLevel") or ""),
+        "attachmentSizeBasis": str(payload.get("attachmentSizeBasis") or ""),
+    }
+
+
+def _get_admin_overview_cache(paths: LocalDataPaths, detail: str) -> dict[str, Any] | None:
+    cached = _ADMIN_OVERVIEW_CACHE.get(_admin_overview_cache_key(paths, detail))
+    if not cached:
+        return None
+    cached_at, payload = cached
+    if time.monotonic() - cached_at > ADMIN_OVERVIEW_CACHE_TTL_S:
+        _ADMIN_OVERVIEW_CACHE.pop(_admin_overview_cache_key(paths, detail), None)
+        return None
+    return _copy_admin_overview(payload)
+
+
+def _set_admin_overview_cache(paths: LocalDataPaths, detail: str, payload: dict[str, Any]) -> None:
+    _ADMIN_OVERVIEW_CACHE[_admin_overview_cache_key(paths, detail)] = (
+        time.monotonic(),
+        _copy_admin_overview(payload),
+    )
+
+
+def _clear_admin_overview_cache(paths: LocalDataPaths | None = None) -> None:
+    if paths is None:
+        _ADMIN_OVERVIEW_CACHE.clear()
+        return
+    prefix = str(paths.root)
+    for key in list(_ADMIN_OVERVIEW_CACHE):
+        if key[0] == prefix:
+            _ADMIN_OVERVIEW_CACHE.pop(key, None)
 
 
 def _source_policy_artifact_paths(paths: LocalDataPaths) -> dict[str, Any]:
@@ -360,6 +412,7 @@ def import_profile_data(paths: LocalDataPaths, uid: str, payload: dict[str, Any]
     require_current_user(paths, uid)
     warnings: list[str] = []
     with LOCK:
+        _clear_admin_overview_cache(paths)
         ensure_user_dirs(paths, uid)
         created, updated, skipped_invalid = _import_saved_jobs(
             paths, uid, payload, warnings=warnings
@@ -387,8 +440,35 @@ def import_profile_data(paths: LocalDataPaths, uid: str, payload: dict[str, Any]
     }
 
 
-def get_admin_overview(paths: LocalDataPaths) -> dict[str, Any]:
+def _attachment_size_for_admin_overview(
+    paths: LocalDataPaths,
+    uid: str,
+    row: dict[str, Any],
+    *,
+    use_filesystem_size: bool,
+) -> int:
+    metadata_size = max(0, _as_int(row.get("size")))
+    if not use_filesystem_size:
+        return metadata_size
+    stored_path = str(row.get("path") or "")
+    if not stored_path:
+        return metadata_size
+    file_path = paths.attachment_dir(uid) / stored_path
+    try:
+        if file_path.exists():
+            return max(0, int(file_path.stat().st_size))
+    except OSError:
+        return metadata_size
+    return metadata_size
+
+
+def get_admin_overview(paths: LocalDataPaths, detail: str = "full") -> dict[str, Any]:
+    detail = _admin_overview_detail(detail)
     with LOCK:
+        cached = _get_admin_overview_cache(paths, detail)
+        if cached is not None:
+            return cached
+        use_filesystem_size = detail == "full"
         users = []
         for user_dir in sorted(paths.users.iterdir()) if paths.users.exists() else []:
             if not user_dir.is_dir():
@@ -402,9 +482,12 @@ def get_admin_overview(paths: LocalDataPaths) -> dict[str, Any]:
             )
             attachments_bytes = 0
             for row in attachments:
-                file_path = paths.attachment_dir(uid) / str(row.get("path") or "")
-                if file_path.exists():
-                    attachments_bytes += file_path.stat().st_size
+                attachments_bytes += _attachment_size_for_admin_overview(
+                    paths,
+                    uid,
+                    row,
+                    use_filesystem_size=use_filesystem_size,
+                )
             users.append(
                 {
                     "uid": uid,
@@ -426,7 +509,14 @@ def get_admin_overview(paths: LocalDataPaths) -> dict[str, Any]:
             "attachmentsBytes": sum(_as_int(row["attachmentsBytes"]) for row in users),
             "totalBytes": sum(_as_int(row["totalBytes"]) for row in users),
         }
-        return {"users": users, "totals": totals}
+        overview = {
+            "users": users,
+            "totals": totals,
+            "detailLevel": detail,
+            "attachmentSizeBasis": "filesystem" if use_filesystem_size else "metadata",
+        }
+        _set_admin_overview_cache(paths, detail, overview)
+        return _copy_admin_overview(overview)
 
 
 def wipe_account_admin(paths: LocalDataPaths, uid: str) -> None:
@@ -434,6 +524,7 @@ def wipe_account_admin(paths: LocalDataPaths, uid: str) -> None:
     if not target_uid:
         raise ValueError("Missing account id.")
     with LOCK:
+        _clear_admin_overview_cache(paths)
         save_profiles(
             paths,
             [row for row in load_profiles(paths) if str(row.get("id") or "") != target_uid],
