@@ -88,9 +88,24 @@ export function createJobsDesktopUpdateController({
 
   function render() {
     const desktopMode = Boolean(isDesktopRuntimeMode?.());
+    const staleCheckedError = (
+      desktopMode
+      && !state.hasFreshStatus
+      && state.status.availability === "error"
+      && Boolean(state.status.lastCheckedAt)
+      && state.status.downloadState === "idle"
+      && state.status.installState === "idle"
+    );
+    const staleManualCheckStatus = (
+      desktopMode
+      && !state.hasFreshStatus
+      && (["unknown", "up_to_date"].includes(state.status.availability) || staleCheckedError)
+      && state.status.downloadState === "idle"
+      && state.status.installState === "idle"
+    );
     const shouldExposeStatus = shouldExposeJobsDesktopUpdateStatus(state.status, {
       hasFreshStatus: state.hasFreshStatus
-    });
+    }) || staleManualCheckStatus;
     toggleHidden(refs.desktopUpdateToggleBtn, !desktopMode || !shouldExposeStatus);
     if (!desktopMode || !shouldExposeStatus) {
       toggleHidden(refs.desktopUpdatePanel, true);
@@ -98,6 +113,7 @@ export function createJobsDesktopUpdateController({
     }
     const view = deriveDesktopUpdateView(state.status, { panelOpen: state.panelOpen });
     if (refs.desktopUpdateToggleBtn) {
+      refs.desktopUpdateToggleBtn.classList?.remove?.("hidden");
       refs.desktopUpdateToggleBtn.dataset.updateState = view.stateToken;
       refs.desktopUpdateToggleBtn.textContent = view.buttonLabel;
       refs.desktopUpdateToggleBtn.setAttribute("aria-expanded", view.panelVisible ? "true" : "false");
@@ -128,6 +144,14 @@ export function createJobsDesktopUpdateController({
       refs.desktopUpdateSecondaryBtn.textContent = view.secondaryLabel;
       setDisabled(refs.desktopUpdateSecondaryBtn, false);
       toggleHidden(refs.desktopUpdateSecondaryBtn, !view.secondaryVisible);
+    }
+  }
+
+  function observeDesktopBootstrap() {
+    try {
+      void awaitDesktopBootstrap({ enableLifecycle: false }).catch(() => {});
+    } catch {
+      // Desktop update routes are bridge-level routes; owner-session bootstrap is advisory here.
     }
   }
 
@@ -188,9 +212,7 @@ export function createJobsDesktopUpdateController({
     autoOpenImportant = false,
     isFresh = true
   } = {}) {
-    if (!await awaitDesktopBootstrap()) {
-      return null;
-    }
+    observeDesktopBootstrap();
     try {
       const payload = await fetchJson(baseUrl, "/app/update-status");
       applyStatus(payload, { openPanel, autoOpenImportant, isFresh });
@@ -209,9 +231,7 @@ export function createJobsDesktopUpdateController({
     openPanel = true,
     autoOpenImportant = false
   } = {}) {
-    if (!await awaitDesktopBootstrap()) {
-      return null;
-    }
+    observeDesktopBootstrap();
     applyStatus({ ...state.status, availability: "checking", lastError: "" }, { openPanel });
     try {
       const payload = await postJson(baseUrl, "/app/check-for-update", { force: Boolean(force) });

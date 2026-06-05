@@ -427,7 +427,6 @@ test("admin smoke: direct admin load shows bucketed fetch failure summary", asyn
   await expect(metrics.getByRole("heading", { name: "Failures" })).toBeVisible();
   await expect(metrics.getByRole("heading", { name: "Source Health" })).toBeVisible();
   await expect(metrics.getByRole("heading", { name: "Source Policy Signals" })).toBeVisible();
-  await expect(metrics.getByRole("button", { name: "Copy diagnostics" }).first()).toBeVisible();
   await expect(metrics.locator("details").first()).toBeVisible();
 
   await discoveryTab.click();

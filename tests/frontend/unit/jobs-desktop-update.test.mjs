@@ -260,7 +260,8 @@ test("desktop update controller mounts, auto-checks, and starts a download from 
 
   await controller.mount();
   assert.deepEqual(fetchCalls, ["/app/update-status"]);
-  assert.equal(refs.desktopUpdateToggleBtn.classList.contains("hidden"), true);
+  assert.equal(refs.desktopUpdateToggleBtn.classList.contains("hidden"), false);
+  assert.equal(refs.desktopUpdateToggleBtn.textContent, "Check updates");
 
   await controller.startAutoCheck();
   assert.deepEqual(postCalls, ["/app/check-for-update"]);
@@ -289,10 +290,10 @@ test("desktop update controller mounts, auto-checks, and starts a download from 
   );
 });
 
-test("desktop update controller waits for desktop bootstrap before the first status fetch", async () => {
+test("desktop update controller does not block status fetch on owner bootstrap", async () => {
   const refs = buildRefs();
   const fetchCalls = [];
-  let resolveBootstrap;
+  const bootstrapCalls = [];
 
   const controller = createJobsDesktopUpdateController({
     refs,
@@ -313,25 +314,22 @@ test("desktop update controller waits for desktop bootstrap before the first sta
     showToast: () => {},
     requestConfirmationDialog: async () => true,
     isDesktopRuntimeMode: () => true,
-    awaitDesktopBootstrap: () => new Promise(resolve => {
-      resolveBootstrap = resolve;
-    }),
+    awaitDesktopBootstrap: options => {
+      bootstrapCalls.push(options);
+      return new Promise(() => {});
+    },
     setTimeoutFn: handler => ({ unref() {}, handler }),
     clearTimeoutFn() {}
   });
 
-  const mountPromise = controller.mount();
+  await controller.mount();
   await Promise.resolve();
 
-  assert.deepEqual(fetchCalls, []);
-
-  resolveBootstrap(true);
-  await mountPromise;
-
   assert.deepEqual(fetchCalls, ["/app/update-status"]);
+  assert.deepEqual(bootstrapCalls, [{ enableLifecycle: false }]);
 });
 
-test("desktop update controller stays quiet when desktop bootstrap never succeeds", async () => {
+test("desktop update controller exposes fresh bridge-level check failures", async () => {
   const refs = buildRefs();
   const fetchCalls = [];
   const postCalls = [];
@@ -345,7 +343,7 @@ test("desktop update controller stays quiet when desktop bootstrap never succeed
     },
     postJson: async (_baseUrl, path) => {
       postCalls.push(path);
-      return {};
+      throw new Error("not configured");
     },
     bindAsyncClick: () => {},
     showToast: () => {},
@@ -359,9 +357,10 @@ test("desktop update controller stays quiet when desktop bootstrap never succeed
   await controller.mount();
   await controller.startAutoCheck();
 
-  assert.deepEqual(fetchCalls, []);
-  assert.deepEqual(postCalls, []);
-  assert.equal(refs.desktopUpdateToggleBtn.classList.contains("hidden"), true);
+  assert.deepEqual(fetchCalls, ["/app/update-status"]);
+  assert.deepEqual(postCalls, ["/app/check-for-update"]);
+  assert.equal(refs.desktopUpdateToggleBtn.classList.contains("hidden"), false);
+  assert.equal(refs.desktopUpdateToggleBtn.textContent, "Update error");
 });
 
 test("desktop update controller keeps cached update errors hidden until a fresh check finishes", async () => {

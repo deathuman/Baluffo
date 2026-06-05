@@ -117,3 +117,42 @@ test("desktop update startup check stays quiet outside desktop runtime", async (
   assert.deepEqual(fetchCalls, []);
   assert.deepEqual(postCalls, []);
 });
+
+test("desktop update startup keeps timestamped cached check errors recoverable", async () => {
+  const refs = buildRefs();
+  const controller = createController({
+    refs,
+    fetchJson: async () => ({
+      currentVersion: "0.0.15",
+      availability: "error",
+      downloadState: "idle",
+      installState: "idle",
+      lastCheckedAt: "2026-04-16T10:00:00Z",
+      lastError: "GitHub timeout",
+    })
+  });
+
+  await controller.mount();
+
+  assert.equal(refs.desktopUpdateToggleBtn.classList.contains("hidden"), false);
+  assert.equal(refs.desktopUpdateToggleBtn.textContent, "Update error");
+});
+
+test("desktop update startup keeps stale up-to-date status usable for manual checks", async () => {
+  const refs = buildRefs();
+  const controller = createController({
+    refs,
+    fetchJson: async () => ({
+      currentVersion: "0.0.15",
+      availability: "up_to_date",
+      downloadState: "idle",
+      installState: "idle",
+      lastCheckedAt: "2026-04-16T10:00:00Z",
+    })
+  });
+
+  await controller.mount();
+
+  assert.equal(refs.desktopUpdateToggleBtn.classList.contains("hidden"), false);
+  assert.equal(refs.desktopUpdateToggleBtn.textContent, "Up to date");
+});

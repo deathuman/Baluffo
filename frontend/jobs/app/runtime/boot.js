@@ -4,7 +4,7 @@ import { awaitDesktopBootstrap, navigateDesktopPage } from "../../../shared/loca
 import { createAdminBridgeButtonWatcher } from "../../../shared/admin-bridge-button.js?v=2";
 import { openReleaseNotesDialog } from "../../../shared/ui/release-notes-dialog.js";
 import { cacheJobsDom } from "../dom.js";
-import { createJobsDesktopUpdateController } from "../desktop-update.js";
+import { createJobsDesktopUpdateController } from "../desktop-update.js?v=2";
 import { initJobsFeed } from "../feed.js?v=10";
 import { scheduleNonCriticalStartup } from "../startup.js";
 import { listFilterPresets, applyFilterPreset, saveFilterPreset, deleteFilterPreset } from "../saved-views.js";

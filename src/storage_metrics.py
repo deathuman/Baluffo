@@ -235,7 +235,7 @@ def _safe_read_label(value: Any, *, fallback: str) -> str:
     else:
         text = str(value or "").strip()
         if "\\" in text or "/" in text:
-            text = Path(text).name
+            text = text.replace("\\", "/").rsplit("/", 1)[-1]
     text = _SAFE_READ_LABEL_RE.sub("_", text).strip("_.:-")
     if not text:
         text = fallback
