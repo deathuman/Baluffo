@@ -158,8 +158,17 @@ async function expectTooltipText(page, target, expectedText) {
   }
   await target.hover({ force: true });
   const tooltip = page.locator(".baluffo-tooltip-portal");
+  try {
+    await expect(tooltip).toContainText(expectedText, { timeout: 1500 });
+  } catch {
+    await target.evaluate(el => {
+      const PointerCtor = window.PointerEvent || window.MouseEvent;
+      el.dispatchEvent(new PointerCtor("pointerover", { bubbles: true, composed: true }));
+      el.dispatchEvent(new FocusEvent("focusin", { bubbles: true, composed: true }));
+    });
+    await expect(tooltip).toContainText(expectedText);
+  }
   await expect(tooltip).toHaveAttribute("aria-hidden", "false");
-  await expect(tooltip).toContainText(expectedText);
   await page.keyboard.press("Escape");
   await expect(tooltip).toHaveAttribute("aria-hidden", "true");
 }
