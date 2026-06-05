@@ -440,19 +440,19 @@ test("admin smoke: direct admin load shows bucketed fetch failure summary", asyn
 
   await discoveryTab.click();
   await expect(discoveryTab).toHaveAttribute("aria-selected", "true");
-  await expect(page.locator("#admin-discovery-review")).toBeVisible();
+  await expect(page.locator("#admin-ops-tab-discovery")).toBeVisible();
 
   await sourcePolicyTab.click();
   await expect(sourcePolicyTab).toHaveAttribute("aria-selected", "true");
-  await expect(page.locator("#admin-source-policy-review")).toBeVisible();
+  await expect(page.locator("#admin-ops-tab-source-policy")).toBeVisible();
 
   await registryConflictsTab.click();
   await expect(registryConflictsTab).toHaveAttribute("aria-selected", "true");
-  await expect(page.locator("#admin-registry-conflicts-review")).toBeVisible();
+  await expect(page.locator("#admin-ops-tab-registry-conflicts")).toBeVisible();
 
   await dedupTab.click();
   await expect(dedupTab).toHaveAttribute("aria-selected", "true");
-  await expect(page.locator("#admin-ops-dedup-lists")).toBeVisible();
+  await expect(page.locator("#admin-ops-tab-dedup")).toBeVisible();
   await expect(page.locator("#admin-ops-dedup-lists").getByRole("heading", { name: "Dedup Lists" })).toBeVisible();
 });
 
