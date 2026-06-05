@@ -10,6 +10,15 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.45] - 2026-06-05
+
+### Fixed
+- Umbrel Ops routes now use bounded shared read models for task-state summaries, dashboard-health support projections, registry summary counts, discovery audit diagnostics, and task failure-attempt diagnostics, reducing repeated `/data` reads and multi-second Admin route variance.
+
+### Notes
+- This is a container/Umbrel patch. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.44] - 2026-06-05
 
 ### Added
