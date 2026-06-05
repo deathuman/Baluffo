@@ -54,9 +54,9 @@ test("admin ops controller lazy-loads discovery audit artifacts into metrics", a
   const detailTimers = [];
   const timers = stubScheduledTimers({
     setTimeoutImpl(callback, ms) {
-      if (ms === 250) {
+      if (ms === 1250) {
         detailTimers.push(callback);
-      } else if (ms === 150) {
+      } else if (ms === 300) {
         callback();
       }
       return { unref() {} };
@@ -111,6 +111,8 @@ test("admin ops controller lazy-loads discovery audit artifacts into metrics", a
 
   try {
     await controller.loadOpsHealthData();
+    assert.equal(calls.includes("/ops/discovery-audit-artifacts"), false);
+    assert.equal(detailTimers.length, 1);
     detailTimers.forEach(callback => callback());
     for (let index = 0; index < 12; index += 1) {
       await Promise.resolve();

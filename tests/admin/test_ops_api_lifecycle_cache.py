@@ -1,5 +1,7 @@
 import json
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from unittest import mock
 
@@ -11,15 +13,21 @@ def _make_ops_api(
     *,
     current_rows: list[dict[str, object]],
     recent_rows: list[dict[str, object]],
+    current_delay_s: float = 0.0,
+    recent_delay_s: float = 0.0,
 ) -> tuple[ops_api_module.OpsApi, dict[str, int]]:
     calls = {"current": 0, "recent": 0, "schedule": 0}
 
     def current() -> list[dict[str, object]]:
         calls["current"] += 1
+        if current_delay_s > 0:
+            time.sleep(current_delay_s)
         return [dict(row) for row in current_rows]
 
     def recent() -> list[dict[str, object]]:
         calls["recent"] += 1
+        if recent_delay_s > 0:
+            time.sleep(recent_delay_s)
         return [dict(row) for row in recent_rows]
 
     def pipeline_schedule() -> dict[str, object]:
@@ -141,6 +149,27 @@ def test_ops_api_lifecycle_cache_expires_quickly(tmp_path, monkeypatch) -> None:
     assert calls == {"current": 2, "recent": 2, "schedule": 0}
 
 
+def test_ops_api_lifecycle_cache_coalesces_concurrent_misses(tmp_path) -> None:
+    api, calls = _make_ops_api(
+        tmp_path,
+        current_rows=[{"type": "fetch", "runId": "fetch_active_slow"}],
+        recent_rows=[],
+        current_delay_s=0.05,
+    )
+    gate = threading.Barrier(4)
+
+    def read_summary() -> dict[str, object]:
+        gate.wait(timeout=2)
+        return api.get_current_task_state_summary_payload()
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        results = list(executor.map(lambda _index: read_summary(), range(4)))
+
+    assert calls == {"current": 1, "recent": 0, "schedule": 0}
+    assert {result["count"] for result in results} == {1}
+    assert {result["tasks"][0]["runId"] for result in results} == {"fetch_active_slow"}
+
+
 def test_ops_api_summary_task_state_does_not_read_terminal_reports_while_idle(
     tmp_path,
 ) -> None:
@@ -152,6 +181,43 @@ def test_ops_api_summary_task_state_does_not_read_terminal_reports_while_idle(
 
     assert payload == {"tasks": [], "count": 0, "diagnostics": [], "summary": True}
     assert calls == {"current": 1, "recent": 0, "schedule": 0}
+
+
+def test_ops_api_dashboard_health_uses_compact_fetch_projection(tmp_path) -> None:
+    (tmp_path / "jobs-fetch-report.json").write_text(
+        json.dumps(
+            {
+                "summary": {"outputCount": 10, "failedSources": 0, "sourceCount": 1},
+                "sources": [
+                    {
+                        "name": "Studio Social",
+                        "status": "ok",
+                        "durationMs": 1200,
+                        "keptCount": 2,
+                        "rawHtml": "x" * 10000,
+                    }
+                ],
+                "sourceHealth": {"ok": True},
+                "providerCoverage": {"lever": 1},
+                "socialSummary": {"keptCount": 2, "channels": {}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    api, _calls = _make_ops_api(tmp_path, current_rows=[], recent_rows=[])
+
+    projection = api._fetch_dashboard_projection_cached()
+    full_report = api._fetch_dashboard_report_cached()
+    health = api.compute_ops_dashboard_health()
+
+    assert projection["sources"] == [
+        {"name": "Studio Social", "status": "ok", "durationMs": 1200, "keptCount": 2}
+    ]
+    assert "rawHtml" not in projection["sources"][0]
+    assert full_report["sources"][0]["rawHtml"] == "x" * 10000
+    assert health["kpis"]["sourceHealth"] == {"ok": True}
+    assert health["kpis"]["providerCoverage"] == {"lever": 1}
+    assert health["kpis"]["failedSourceRatioLatest"] == 0.0
 
 
 def test_ops_api_summary_task_state_uses_compact_active_fetch_artifact(tmp_path) -> None:

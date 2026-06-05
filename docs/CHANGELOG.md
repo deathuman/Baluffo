@@ -10,6 +10,22 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.46] - 2026-06-06
+
+### Added
+- Live bridge profiling now has an optional read-only burst sampler to capture concurrent Ops route p50/p95/max evidence for Umbrel and desktop bridges.
+
+### Changed
+- Admin defers low-priority Ops diagnostics longer during first load so dashboard-health and task-state summary requests are not competing with background detail panels.
+
+### Fixed
+- Umbrel Ops route read models now coalesce concurrent cache misses for shared projections and lifecycle rows, reducing duplicated work during Admin polling bursts.
+- `/ops/dashboard-health` now uses a compact dashboard fetch projection while preserving the full fetch report cache for fetcher metrics and diagnostics.
+
+### Notes
+- This is a container/Umbrel patch. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.45] - 2026-06-05
 
 ### Fixed

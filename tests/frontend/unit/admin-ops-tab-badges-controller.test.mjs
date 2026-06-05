@@ -74,9 +74,9 @@ test("admin ops controller updates tab badges from loaded review payloads", asyn
   const detailTimers = [];
   const timers = stubScheduledTimers({
     setTimeoutImpl(callback, ms) {
-      if (ms === 250) {
+      if (ms === 1250) {
         detailTimers.push(callback);
-      } else if (ms === 150) {
+      } else if (ms === 300) {
         callback();
       }
       return { unref() {} };

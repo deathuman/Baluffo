@@ -27,7 +27,8 @@ const SOURCE_POLICY_DETAIL_PATH = "/source-policy/recommendations";
 const REGISTRY_CONFLICTS_SUMMARY_PATH = "/registry/conflicts?view=summary";
 const REGISTRY_CONFLICTS_DETAIL_PATH = "/registry/conflicts";
 const OPS_DEFERRED_DIAGNOSTICS_CONCURRENCY = 2;
-const OPS_DEFERRED_DIAGNOSTICS_STAGGER_MS = 150;
+const OPS_DEFERRED_DIAGNOSTICS_STAGGER_MS = 300;
+const OPS_DEFERRED_DIAGNOSTICS_INITIAL_DELAY_MS = 1250;
 
 function maybeUnrefTimer(timer) {
   timer?.unref?.();
@@ -957,7 +958,7 @@ export function createOpsHealthController({
   function scheduleOpsOverviewDetailData(renderToken = opsRenderToken) {
     maybeUnrefTimer(setTimeout(() => {
       loadOpsOverviewDetailData(renderToken, { foreground: false }).catch(() => {});
-    }, 250));
+    }, OPS_DEFERRED_DIAGNOSTICS_INITIAL_DELAY_MS));
   }
 
   async function loadSourcePolicyDetail({ force = false } = {}) {

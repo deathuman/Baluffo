@@ -23,8 +23,8 @@ from src.bridge import ops_task_live as _ops_task_live
 from src.bridge import report_normalizer
 from src.bridge import run_history_api as _run_history_api
 from src.bridge.fetch_report_review_state import load_fetch_report_with_dedup_review_state
-from src.bridge.performance_profile import time_operation
-from src.shared.json_shapes import as_json_object
+from src.bridge.performance_profile import record_operation_duration, time_operation
+from src.shared.json_shapes import as_json_object, json_object_rows
 from src.shared.live_task import (
     LiveTaskPayload,
     TaskStatePayload,
@@ -120,6 +120,13 @@ class OpsHealthDeps:
     )
     app_version: str = ""
     startup_ready: bool = False
+
+
+@dataclass
+class _LifecycleRowsInflight:
+    event: threading.Event
+    rows: list[dict[str, Any]] | None = None
+    error: BaseException | None = None
 
 
 def _task_type(row: dict[str, Any]) -> str:
@@ -464,6 +471,7 @@ class OpsApi:
         self._paths = paths
         self._deps = deps
         self._lifecycle_row_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+        self._lifecycle_row_inflight: dict[str, _LifecycleRowsInflight] = {}
         self._lifecycle_row_cache_lock = threading.RLock()
         self._pipeline_schedule_cache: tuple[float, dict[str, Any]] | None = None
         self._read_model_cache = _ops_read_model_cache.OpsReadModelCache()
@@ -497,20 +505,44 @@ class OpsApi:
         ttl_s: float = _LIFECYCLE_ROW_CACHE_TTL_SECONDS,
     ) -> list[dict[str, Any]]:
         now = time.monotonic()
+        label = f"ops.cache.lifecycle.{cache_key}"
         with self._lifecycle_row_cache_lock:
             cached = self._lifecycle_row_cache.get(cache_key)
             if cached is not None:
                 expires_at, cached_rows = cached
                 if expires_at > now:
+                    record_operation_duration(f"{label}.cache_hit", 0)
                     return [dict(row) for row in cached_rows]
+            inflight = self._lifecycle_row_inflight.get(cache_key)
+            if inflight is None:
+                inflight = _LifecycleRowsInflight(event=threading.Event())
+                self._lifecycle_row_inflight[cache_key] = inflight
+                owner = True
+            else:
+                owner = False
 
+        if not owner:
+            started_wait = time.perf_counter()
+            inflight.event.wait()
+            wait_ms = max(0, int(round((time.perf_counter() - started_wait) * 1000)))
+            record_operation_duration(f"{label}.cache_wait", wait_ms)
+            if inflight.error is not None:
+                raise inflight.error
+            return [dict(row) for row in inflight.rows or []]
+
+        record_operation_duration(f"{label}.cache_miss", 0)
         started_at = time.perf_counter()
         rows: list[dict[str, Any]] = []
         failed = False
         try:
             rows = [dict(row) for row in loader()]
-        except Exception:
+        except BaseException as exc:
             failed = True
+            with self._lifecycle_row_cache_lock:
+                current = self._lifecycle_row_inflight.pop(cache_key, None)
+                if current is inflight:
+                    inflight.error = exc
+                    inflight.event.set()
             raise
         finally:
             self._record_storage_read(
@@ -523,6 +555,11 @@ class OpsApi:
         expires_at = time.monotonic() + max(0.0, float(ttl_s))
         with self._lifecycle_row_cache_lock:
             self._lifecycle_row_cache[cache_key] = (expires_at, [dict(row) for row in rows])
+            current = self._lifecycle_row_inflight.pop(cache_key, None)
+            if current is inflight:
+                inflight.rows = [dict(row) for row in rows]
+                inflight.event.set()
+        record_operation_duration(f"{label}.rebuild", duration_ms(started_at))
         return [dict(row) for row in rows]
 
     def _current_lifecycle_rows(self) -> list[dict[str, Any]]:
@@ -665,6 +702,45 @@ class OpsApi:
         }
         return payload
 
+    def _load_fetch_dashboard_projection(self) -> dict[str, Any]:
+        payload = self._load_fetch_report_with_dedup_review_state()
+        compact_sources: list[dict[str, Any]] = []
+        for row in json_object_rows(payload.get("sources")):
+            compact = {
+                key: row.get(key)
+                for key in (
+                    "name",
+                    "status",
+                    "durationMs",
+                    "keptCount",
+                    "fetchedCount",
+                    "lowConfidenceDropped",
+                )
+                if key in row
+            }
+            if compact:
+                compact_sources.append(compact)
+        projection = {
+            key: payload.get(key)
+            for key in (
+                "summary",
+                "runtime",
+                "coverageScope",
+                "sourceHealth",
+                "providerCoverage",
+                "providerStaticOverlap",
+                "staticSuppressionPolicy",
+                "redundantStaticProposals",
+                "sourcePolicyRecommendationExport",
+                "socialSummary",
+                "dedupReviewStateSummary",
+                "dedupReviewStateReadWarning",
+            )
+            if key in payload
+        }
+        projection["sources"] = compact_sources
+        return projection
+
     def _fetch_dashboard_report_cached(self) -> dict[str, Any]:
         signature = self._cache_files_signature(
             self._paths.jobs_fetch_report,
@@ -678,6 +754,21 @@ class OpsApi:
             hard_ttl_s=_DASHBOARD_PROJECTION_HARD_TTL_SECONDS,
             stale_while_refresh=True,
             operation_label="ops.cache.fetch_report",
+        )
+
+    def _fetch_dashboard_projection_cached(self) -> dict[str, Any]:
+        signature = self._cache_files_signature(
+            self._paths.jobs_fetch_report,
+            self._paths.dedup_review_state,
+        )
+        return self._read_model_cache.get_or_build(
+            "dashboard.fetch_projection",
+            signature=signature,
+            builder=self._load_fetch_dashboard_projection,
+            ttl_s=_DASHBOARD_PROJECTION_TTL_SECONDS,
+            hard_ttl_s=_DASHBOARD_PROJECTION_HARD_TTL_SECONDS,
+            stale_while_refresh=True,
+            operation_label="ops.cache.fetch_dashboard_projection",
         )
 
     def _registry_summary_cached(self) -> dict[str, Any]:
@@ -716,7 +807,7 @@ class OpsApi:
     def build_ops_health_deps(self) -> OpsHealthDeps:
         return OpsHealthDeps(
             get_history=lambda: self.get_projected_run_history().rows,
-            get_fetch_report=self._fetch_dashboard_report_cached,
+            get_fetch_report=self._fetch_dashboard_projection_cached,
             get_source_policy_soak_report=lambda: self._deps.load_json_object(
                 self._paths.jobs_fetch_report.parent.parent
                 / "_out"

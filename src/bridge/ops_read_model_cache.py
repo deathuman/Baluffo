@@ -22,12 +22,20 @@ class _CacheEntry:
     refreshing: bool = False
 
 
+@dataclass
+class _InflightBuild:
+    event: threading.Event
+    value: Any = None
+    error: BaseException | None = None
+
+
 class OpsReadModelCache:
     """Thread-safe cache for bounded derived Ops read models."""
 
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._entries: dict[str, _CacheEntry] = {}
+        self._inflight: dict[tuple[str, Hashable], _InflightBuild] = {}
 
     def clear(self, prefix: str = "") -> None:
         with self._lock:
@@ -50,35 +58,147 @@ class OpsReadModelCache:
     ) -> T:
         now = time.monotonic()
         label = str(operation_label or key).strip()
+        inflight_key = (key, signature)
+        cached, value = self._try_cached_value(
+            key=key,
+            signature=signature,
+            builder=builder,
+            ttl_s=ttl_s,
+            hard_ttl_s=hard_ttl_s,
+            stale_while_refresh=stale_while_refresh,
+            label=label,
+            now=now,
+        )
+        if cached:
+            return value
+
+        inflight, owner = self._claim_inflight_build(inflight_key)
+        if not owner:
+            return self._wait_for_inflight(inflight, label)
+
+        self._record_cache_event(label, "cache_miss")
+        started_at = time.perf_counter()
+        try:
+            value = builder()
+            elapsed_ms = max(0, int(round((time.perf_counter() - started_at) * 1000)))
+            self._record_cache_event(label, "rebuild", elapsed_ms)
+            self._store(key, signature, value, ttl_s, hard_ttl_s)
+            result = copy.deepcopy(value)
+        except BaseException as exc:
+            self._publish_inflight_error(inflight_key, inflight, exc)
+            raise
+        self._publish_inflight_value(inflight_key, inflight, result)
+        return result
+
+    def _try_cached_value(
+        self,
+        *,
+        key: str,
+        signature: Hashable,
+        builder: Callable[[], T],
+        ttl_s: float,
+        hard_ttl_s: float | None,
+        stale_while_refresh: bool,
+        label: str,
+        now: float,
+    ) -> tuple[bool, Any]:
         with self._lock:
             entry = self._entries.get(key)
-            if entry is not None and entry.signature == signature:
-                if entry.expires_at > now:
-                    if label:
-                        record_operation_duration(f"{label}.cache_hit", 0)
-                    return copy.deepcopy(entry.value)
-                if stale_while_refresh and entry.hard_expires_at > now:
-                    if not entry.refreshing:
-                        entry.refreshing = True
-                        thread = threading.Thread(
-                            target=self._refresh_entry,
-                            args=(key, signature, builder, ttl_s, hard_ttl_s, label),
-                            daemon=True,
-                        )
-                        thread.start()
-                    if label:
-                        record_operation_duration(f"{label}.cache_stale", 0)
-                    return copy.deepcopy(entry.value)
+            if entry is None or entry.signature != signature:
+                return False, None
+            if entry.expires_at > now:
+                self._record_cache_event(label, "cache_hit")
+                return True, copy.deepcopy(entry.value)
+            if not stale_while_refresh or entry.hard_expires_at <= now:
+                return False, None
+            self._start_background_refresh(
+                key=key,
+                signature=signature,
+                entry=entry,
+                builder=builder,
+                ttl_s=ttl_s,
+                hard_ttl_s=hard_ttl_s,
+                label=label,
+            )
+            self._record_cache_event(label, "cache_stale")
+            return True, copy.deepcopy(entry.value)
 
+    def _start_background_refresh(
+        self,
+        *,
+        key: str,
+        signature: Hashable,
+        entry: _CacheEntry,
+        builder: Callable[[], T],
+        ttl_s: float,
+        hard_ttl_s: float | None,
+        label: str,
+    ) -> None:
+        if entry.refreshing:
+            return
+        entry.refreshing = True
+        thread = threading.Thread(
+            target=self._refresh_entry,
+            args=(key, signature, builder, ttl_s, hard_ttl_s, label),
+            daemon=True,
+        )
+        thread.start()
+
+    def _claim_inflight_build(
+        self,
+        inflight_key: tuple[str, Hashable],
+    ) -> tuple[_InflightBuild, bool]:
+        with self._lock:
+            inflight = self._inflight.get(inflight_key)
+            if inflight is not None:
+                return inflight, False
+            inflight = _InflightBuild(event=threading.Event())
+            self._inflight[inflight_key] = inflight
+            return inflight, True
+
+    def _wait_for_inflight(self, inflight: _InflightBuild, label: str) -> T:
+        started_wait = time.perf_counter()
+        inflight.event.wait()
+        wait_ms = max(0, int(round((time.perf_counter() - started_wait) * 1000)))
+        self._record_cache_event(label, "cache_wait", wait_ms)
+        if inflight.error is not None:
+            raise inflight.error
+        return copy.deepcopy(inflight.value)
+
+    def _publish_inflight_value(
+        self,
+        inflight_key: tuple[str, Hashable],
+        inflight: _InflightBuild,
+        result: T,
+    ) -> None:
+        with self._lock:
+            current = self._inflight.pop(inflight_key, None)
+            if current is inflight:
+                inflight.value = copy.deepcopy(result)
+                inflight.event.set()
+
+    def _publish_inflight_error(
+        self,
+        inflight_key: tuple[str, Hashable],
+        inflight: _InflightBuild,
+        exc: BaseException,
+    ) -> None:
+        with self._lock:
+            current = self._inflight.pop(inflight_key, None)
+            if current is inflight:
+                inflight.error = exc
+                inflight.event.set()
+
+    @staticmethod
+    def _record_cache_event(
+        label: str,
+        event: str,
+        duration_ms: int = 0,
+        *,
+        error: bool = False,
+    ) -> None:
         if label:
-            record_operation_duration(f"{label}.cache_miss", 0)
-        started_at = time.perf_counter()
-        value = builder()
-        elapsed_ms = max(0, int(round((time.perf_counter() - started_at) * 1000)))
-        if label:
-            record_operation_duration(f"{label}.rebuild", elapsed_ms)
-        self._store(key, signature, value, ttl_s, hard_ttl_s)
-        return copy.deepcopy(value)
+            record_operation_duration(f"{label}.{event}", duration_ms, error=error)
 
     def _refresh_entry(
         self,

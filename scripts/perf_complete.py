@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import contextlib
 import http.client
 import json
@@ -61,6 +62,12 @@ LIVE_BRIDGE_ENDPOINTS = (
     "/jobs.html",
     "/admin.html",
 )
+LIVE_BRIDGE_BURST_ENDPOINTS = (
+    "/ops/health",
+    "/ops/task-state?view=summary",
+    "/registry/summary",
+    "/ops/dashboard-health",
+)
 
 
 def parse_timeout_sequence(
@@ -105,6 +112,14 @@ def _median(values: list[int]) -> int:
     if not numbers:
         return 0
     return numbers[len(numbers) // 2]
+
+
+def _p95(values: list[int]) -> int:
+    numbers = sorted(int(value) for value in values if int(value) >= 0)
+    if not numbers:
+        return 0
+    index = min(len(numbers) - 1, int(round((len(numbers) - 1) * 0.95)))
+    return numbers[index]
 
 
 def _duration_ms(started_at: float, finished_at: float) -> int:
@@ -908,12 +923,107 @@ def _fetch_live_bridge_request(
             connection.close()
 
 
+def parse_endpoint_sequence(value: str | None) -> list[str]:
+    text = str(value or "").strip()
+    if not text:
+        return list(LIVE_BRIDGE_BURST_ENDPOINTS)
+    endpoints: list[str] = []
+    for part in text.split(","):
+        token = part.strip()
+        if not token:
+            continue
+        endpoints.append(token if token.startswith("/") else f"/{token}")
+    return endpoints or list(LIVE_BRIDGE_BURST_ENDPOINTS)
+
+
+def _summarize_live_burst_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_endpoint: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        endpoint = str(row.get("endpoint") or "")
+        by_endpoint.setdefault(endpoint, []).append(row)
+    summary: list[dict[str, Any]] = []
+    for endpoint, endpoint_rows in sorted(by_endpoint.items()):
+        durations = [int(row.get("durationMs") or 0) for row in endpoint_rows]
+        ok_rows = [row for row in endpoint_rows if bool(row.get("ok"))]
+        summary.append(
+            {
+                "endpoint": endpoint,
+                "count": len(endpoint_rows),
+                "okCount": len(ok_rows),
+                "errorCount": max(0, len(endpoint_rows) - len(ok_rows)),
+                "p50Ms": _median(durations),
+                "p95Ms": _p95(durations),
+                "maxMs": max(durations) if durations else 0,
+            }
+        )
+    return summary
+
+
+def capture_live_bridge_burst(
+    *,
+    bridge_base_url: str,
+    timeout_s: float,
+    rounds: int,
+    concurrency: int,
+    endpoints: list[str] | None = None,
+) -> dict[str, Any]:
+    resolved_rounds = max(0, int(rounds or 0))
+    if resolved_rounds <= 0:
+        return {"enabled": False, "rounds": 0, "requests": [], "summary": []}
+    resolved_concurrency = max(1, min(16, int(concurrency or 1)))
+    resolved_endpoints = list(endpoints or LIVE_BRIDGE_BURST_ENDPOINTS)
+    requests: list[dict[str, Any]] = []
+
+    def run_one(round_index: int, endpoint: str) -> dict[str, Any]:
+        row, _parsed = _fetch_live_bridge_request(
+            base_url=bridge_base_url,
+            endpoint=endpoint,
+            timeout_s=timeout_s,
+        )
+        row["round"] = int(round_index)
+        row["burst"] = True
+        return row
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=resolved_concurrency) as executor:
+        futures = [
+            executor.submit(run_one, round_index, endpoint)
+            for round_index in range(1, resolved_rounds + 1)
+            for endpoint in resolved_endpoints
+        ]
+        for future in concurrent.futures.as_completed(futures):
+            requests.append(future.result())
+
+    requests.sort(
+        key=lambda row: (
+            int(row.get("round") or 0),
+            str(row.get("endpoint") or ""),
+            int(row.get("durationMs") or 0),
+        )
+    )
+    return {
+        "enabled": True,
+        "rounds": resolved_rounds,
+        "concurrency": resolved_concurrency,
+        "endpoints": resolved_endpoints,
+        "requests": requests,
+        "summary": _summarize_live_burst_rows(requests),
+        "slowestRequests": sorted(
+            requests,
+            key=lambda row: int(row.get("durationMs") or 0),
+            reverse=True,
+        )[:8],
+    }
+
+
 def capture_live_bridge_profile(
     *,
     bridge_base_url: str,
     output_dir: Path,
     timeout_s: float = 3.0,
     timeout_sequence: list[float] | None = None,
+    burst_rounds: int = 0,
+    burst_concurrency: int = 4,
+    burst_endpoints: list[str] | None = None,
 ) -> dict[str, Any]:
     profile_dir = output_dir / "bridge-profile" / "live"
     profile_dir.mkdir(parents=True, exist_ok=True)
@@ -942,6 +1052,13 @@ def capture_live_bridge_profile(
             requests.append(row)
             if endpoint == "/ops/performance-profile" and performance_profile is None:
                 performance_profile = parsed if isinstance(parsed, dict) else None
+    burst = capture_live_bridge_burst(
+        bridge_base_url=base,
+        timeout_s=float(timeouts[0] if timeouts else timeout_s),
+        rounds=int(burst_rounds or 0),
+        concurrency=int(burst_concurrency or 1),
+        endpoints=burst_endpoints,
+    )
     if performance_profile is None:
         performance_profile = {"ok": False, "error": "performance profile unavailable"}
     profile_path.write_text(
@@ -955,6 +1072,7 @@ def capture_live_bridge_profile(
         "profilePath": str(profile_path),
         "timeoutsS": timeouts,
         "requests": requests,
+        "burst": burst,
         "slowestRequests": sorted(
             requests,
             key=lambda row: int(row.get("durationMs") or 0),
@@ -2290,6 +2408,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="3",
         help="Comma-separated timeout seconds for optional live bridge sampling.",
     )
+    parser.add_argument(
+        "--bridge-burst-rounds",
+        type=int,
+        default=0,
+        help="Optional concurrent read-only live bridge burst rounds. Default disables burst sampling.",
+    )
+    parser.add_argument(
+        "--bridge-burst-concurrency",
+        type=int,
+        default=4,
+        help="Concurrent workers for optional live bridge burst sampling.",
+    )
+    parser.add_argument(
+        "--bridge-burst-endpoints",
+        default="",
+        help="Comma-separated endpoints for optional live bridge burst sampling.",
+    )
     parser.add_argument("--record-trend", action="store_true")
     parser.add_argument("--record-baseline", action="store_true")
     return parser.parse_args(argv)
@@ -2369,6 +2504,9 @@ def main(argv: list[str] | None = None) -> int:
             bridge_base_url=str(args.bridge_base_url or ""),
             output_dir=run_dir,
             timeout_sequence=parse_timeout_sequence(str(args.bridge_timeouts or "3")),
+            burst_rounds=int(args.bridge_burst_rounds or 0),
+            burst_concurrency=int(args.bridge_burst_concurrency or 1),
+            burst_endpoints=parse_endpoint_sequence(str(args.bridge_burst_endpoints or "")),
         )
         if str(args.bridge_base_url or "").strip()
         else {}
