@@ -23,6 +23,7 @@ DEFAULT_PREFIX_LENGTH = 1
 PREFIX_LENGTH_STEP = 1
 MAX_PREFIX_LENGTH = 64
 DEFAULT_SHARD_READ_WORKERS = 8
+DEFAULT_SHARD_WRITE_WORKERS = 4
 DEFAULT_BASE_PATH = "baluffo/source-sync/shards"
 DEFAULT_MANIFEST_FILE_NAME = "manifest.json"
 DEFAULT_GC_DELETE_LIMIT = 32
@@ -595,6 +596,90 @@ def _emit_push_progress(
         )
 
 
+def _push_and_verify_changed_shard(
+    module: Any,
+    config: Any,
+    shard: Shard,
+    *,
+    opener: Callable[..., Any],
+) -> dict[str, Any]:
+    remote_requests: list[dict[str, Any]] = []
+    put_started_at = time.perf_counter()
+    try:
+        result = push_shard(
+            module,
+            config,
+            shard,
+            message=f"Update Baluffo source sync shard {shard.bucket}/{shard.key}",
+            opener=opener,
+        )
+    except Exception as exc:
+        remote_requests.append(
+            _remote_timing_row(
+                operation="pushShard",
+                method="PUT",
+                path=shard.path,
+                started_at=put_started_at,
+                ok=False,
+                size_bytes=shard.size_bytes,
+                row_count=shard.row_count,
+                error=str(exc),
+            )
+        )
+        return {"ok": False, "exception": exc, "remoteRequests": remote_requests}
+    remote_requests.append(
+        _remote_timing_row(
+            operation="pushShard",
+            method="PUT",
+            path=shard.path,
+            started_at=put_started_at,
+            ok=bool(result.get("ok")),
+            size_bytes=shard.size_bytes,
+            row_count=shard.row_count,
+            already_existed=bool(result.get("alreadyExisted")),
+        )
+    )
+    verify_started_at = time.perf_counter()
+    try:
+        verified = read_shard(module, config, shard.manifest_entry(), opener=opener)
+    except Exception as exc:
+        remote_requests.append(
+            _remote_timing_row(
+                operation="verifyShard",
+                method="GET",
+                path=shard.path,
+                started_at=verify_started_at,
+                ok=False,
+                size_bytes=shard.size_bytes,
+                row_count=shard.row_count,
+                error=str(exc),
+            )
+        )
+        return {"ok": False, "exception": exc, "remoteRequests": remote_requests}
+    verified_row_count = len(verified.get("rows") or [])
+    remote_requests.append(
+        _remote_timing_row(
+            operation="verifyShard",
+            method="GET",
+            path=shard.path,
+            started_at=verify_started_at,
+            ok=True,
+            size_bytes=shard.size_bytes,
+            row_count=verified_row_count,
+        )
+    )
+    return {
+        "ok": True,
+        "pushResult": result,
+        "verification": {
+            "path": shard.path,
+            "sha256": shard.sha256,
+            "rowCount": verified_row_count,
+        },
+        "remoteRequests": remote_requests,
+    }
+
+
 def push_changed_shards(
     module: Any,
     config: Any,
@@ -613,121 +698,78 @@ def push_changed_shards(
     completed_count = 0
     verified_count = 0
     pushed_bytes = 0
-    for index, shard in enumerate(changed, start=1):
-        shard_label = f"{shard.bucket}/{shard.key}"
+    if changed_count:
+        first_shard = changed[0]
         _emit_push_progress(
             progress_callback,
-            phase_label=f"Uploading shard {index} of {changed_count}",
-            ratio=(completed_count / changed_count) if changed_count else 0.0,
+            phase_label=f"Uploading shard 1 of {changed_count}",
+            ratio=0.0,
             counts=_shard_progress_counts(
                 shard_count=len(shards),
                 changed_shard_count=changed_count,
-                completed_shard_count=completed_count,
-                verified_shard_count=verified_count,
-                current_shard_index=index,
-                current_shard_label=shard_label,
-                shards_pushed_bytes=pushed_bytes,
+                completed_shard_count=0,
+                verified_shard_count=0,
+                current_shard_index=1,
+                current_shard_label=f"{first_shard.bucket}/{first_shard.key}",
+                shards_pushed_bytes=0,
                 total_shard_bytes=total_bytes,
             ),
-            message=(
-                f"Uploading source-sync shard {index} of {changed_count}." if index == 1 else ""
-            ),
+            message=f"Uploading {changed_count} source-sync shard(s).",
         )
-        put_started_at = time.perf_counter()
-        try:
-            result = push_shard(
-                module,
-                config,
-                shard,
-                message=f"Update Baluffo source sync shard {shard.bucket}/{shard.key}",
-                opener=opener,
-            )
-        except Exception as exc:
-            remote_requests.append(
-                _remote_timing_row(
-                    operation="pushShard",
-                    method="PUT",
-                    path=shard.path,
-                    started_at=put_started_at,
-                    ok=False,
-                    size_bytes=shard.size_bytes,
-                    row_count=shard.row_count,
-                    error=str(exc),
-                )
-            )
-            raise
-        remote_requests.append(
-            _remote_timing_row(
-                operation="pushShard",
-                method="PUT",
-                path=shard.path,
-                started_at=put_started_at,
-                ok=bool(result.get("ok")),
-                size_bytes=shard.size_bytes,
-                row_count=shard.row_count,
-                already_existed=bool(result.get("alreadyExisted")),
-            )
-        )
-        verify_started_at = time.perf_counter()
-        try:
-            verified = read_shard(module, config, shard.manifest_entry(), opener=opener)
-        except Exception as exc:
-            remote_requests.append(
-                _remote_timing_row(
-                    operation="verifyShard",
-                    method="GET",
-                    path=shard.path,
-                    started_at=verify_started_at,
-                    ok=False,
-                    size_bytes=shard.size_bytes,
-                    row_count=shard.row_count,
-                    error=str(exc),
-                )
-            )
-            raise
-        verified_row_count = len(verified.get("rows") or [])
-        remote_requests.append(
-            _remote_timing_row(
-                operation="verifyShard",
-                method="GET",
-                path=shard.path,
-                started_at=verify_started_at,
-                ok=True,
-                size_bytes=shard.size_bytes,
-                row_count=verified_row_count,
-            )
-        )
-        completed_count += 1
-        verified_count += 1
-        pushed_bytes += shard.size_bytes
-        _emit_push_progress(
-            progress_callback,
-            phase_label=f"Verified shard {index} of {changed_count}",
-            ratio=(completed_count / changed_count) if changed_count else 1.0,
-            counts=_shard_progress_counts(
-                shard_count=len(shards),
-                changed_shard_count=changed_count,
-                completed_shard_count=completed_count,
-                verified_shard_count=verified_count,
-                current_shard_index=index,
-                current_shard_label=shard_label,
-                shards_pushed_bytes=pushed_bytes,
-                total_shard_bytes=total_bytes,
-            ),
-            message=(
-                f"Verified {verified_count} of {changed_count} source-sync shards."
-                if verified_count % 25 == 0 or verified_count == changed_count
-                else ""
-            ),
-        )
-        results.append(result)
-        verifications.append(
-            {
-                "path": shard.path,
-                "sha256": shard.sha256,
-                "rowCount": verified_row_count,
+    worker_count = max(1, min(DEFAULT_SHARD_WRITE_WORKERS, changed_count or 1))
+    shard_outputs: list[dict[str, Any] | None] = [None] * changed_count
+    if changed:
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            future_to_index = {
+                executor.submit(
+                    _push_and_verify_changed_shard,
+                    module,
+                    config,
+                    shard,
+                    opener=opener,
+                ): index
+                for index, shard in enumerate(changed)
             }
-        )
+            for future in as_completed(future_to_index):
+                index = future_to_index[future]
+                shard = changed[index]
+                output = future.result()
+                shard_outputs[index] = output
+                if not output.get("ok"):
+                    for pending in future_to_index:
+                        if pending is not future:
+                            pending.cancel()
+                    raise output["exception"]
+                completed_count += 1
+                verified_count += 1
+                pushed_bytes += shard.size_bytes
+                shard_label = f"{shard.bucket}/{shard.key}"
+                _emit_push_progress(
+                    progress_callback,
+                    phase_label=f"Verified shard {completed_count} of {changed_count}",
+                    ratio=(completed_count / changed_count) if changed_count else 1.0,
+                    counts=_shard_progress_counts(
+                        shard_count=len(shards),
+                        changed_shard_count=changed_count,
+                        completed_shard_count=completed_count,
+                        verified_shard_count=verified_count,
+                        current_shard_index=index + 1,
+                        current_shard_label=shard_label,
+                        shards_pushed_bytes=pushed_bytes,
+                        total_shard_bytes=total_bytes,
+                    ),
+                    message=(
+                        f"Verified {verified_count} of {changed_count} source-sync shards."
+                        if verified_count % 25 == 0 or verified_count == changed_count
+                        else ""
+                    ),
+                )
+    for output in shard_outputs:
+        if output is None:
+            continue
+        results.append(dict(output.get("pushResult") or {}))
+        verifications.append(dict(output.get("verification") or {}))
+        remote_requests.extend(list(output.get("remoteRequests") or []))
     return {
         "shardCount": len(shards),
         "changedShardCount": len(changed),
