@@ -1007,6 +1007,182 @@ def _registry_sources_payload(
         )
 
 
+def _handle_registry_routes(
+    handler: BridgeResponseWriter,
+    *,
+    api: BridgeApi,
+    path: str,
+    query: dict[str, list[str]],
+) -> bool:
+    if path == "/registry/active":
+        started_at = time.perf_counter()
+        state = api.load_state()
+        _record_storage_read_metric(
+            api,
+            surface="registry.active",
+            artifact="source-registry",
+            storage_kind="normalized",
+            started_at=started_at,
+            row_count=len(state.get("active") or []),
+        )
+        handler.send_json({"sources": state["active"], "summary": api.summarize_state(state)})
+        return True
+
+    if path == "/registry/pending":
+        started_at = time.perf_counter()
+        payload = _pending_registry_payload(api, query)
+        _record_storage_read_metric(
+            api,
+            surface="registry.pending",
+            artifact="source-registry",
+            storage_kind="normalized",
+            started_at=started_at,
+            row_count=len(_as_list(payload.get("sources"))),
+        )
+        handler.send_json(payload)
+        return True
+
+    if path == "/registry/rejected":
+        started_at = time.perf_counter()
+        state = api.load_state()
+        _record_storage_read_metric(
+            api,
+            surface="registry.rejected",
+            artifact="source-registry",
+            storage_kind="normalized",
+            started_at=started_at,
+            row_count=len(state.get("rejected") or []),
+        )
+        handler.send_json({"sources": state["rejected"], "summary": api.summarize_state(state)})
+        return True
+
+    if path == "/registry/sources":
+        with time_operation("registry.sources"):
+            status, payload = _registry_sources_payload(api, query)
+        handler.send_json(payload, status=status)
+        return True
+
+    if path == "/registry/summary":
+        view = str((query.get("view") or [""])[0] or "").strip().lower()
+        operation_name = "registry.summary.exact" if view == "exact" else "registry.summary.storage"
+        with time_operation(operation_name):
+            status, payload = _registry_summary_route_payload(api, query)
+        handler.send_json(payload, status=status)
+        return True
+
+    return False
+
+
+def _handle_ops_status_routes(
+    handler: BridgeResponseWriter,
+    *,
+    api: BridgeApi,
+    path: str,
+    query: dict[str, list[str]],
+) -> bool:
+    if path == "/ops/health":
+        with time_operation("ops.health.route_payload"):
+            payload = api.compute_ops_health()
+        handler.send_json(payload)
+        return True
+
+    if path == "/ops/dashboard-health":
+        dashboard_health_fn = getattr(api, "compute_ops_dashboard_health", None)
+        with time_operation("ops.dashboard_health.route_payload"):
+            payload = (
+                dashboard_health_fn() if callable(dashboard_health_fn) else api.compute_ops_health()
+            )
+        handler.send_json(payload)
+        return True
+
+    if path == "/ops/history":
+        limit_raw = (query.get("limit") or ["30"])[0]
+        try:
+            limit = max(1, min(200, int(limit_raw)))
+        except ValueError:
+            limit = 30
+        rows = list(api.get_lifecycle_run_history_rows() or [])
+        handler.send_json({"runs": rows[-limit:], "count": len(rows)})
+        return True
+
+    if path == "/ops/task-state":
+        view = str((query.get("view") or [""])[0] or "").strip().lower()
+        if view == "summary":
+            with time_operation("ops.task_state.summary"):
+                payload = api.get_current_task_state_summary_payload()
+        else:
+            with time_operation("ops.task_state.full"):
+                payload = api.get_current_task_state_payload()
+        handler.send_json(payload)
+        return True
+
+    if path.startswith("/ops/task-live/"):
+        task_type = path.removeprefix("/ops/task-live/").strip().lower()
+        if task_type not in {"fetch", "discovery", "sync"}:
+            handler.send_json(
+                {"ok": False, "error": f"unsupported task type: {task_type or 'unknown'}"},
+                status=404,
+            )
+            return True
+        handler.send_json(api.get_task_live_payload(task_type))
+        return True
+
+    return False
+
+
+def _handle_ops_diagnostic_routes(
+    handler: BridgeResponseWriter,
+    *,
+    api: BridgeApi,
+    path: str,
+    query: dict[str, list[str]],
+) -> bool:
+    if path == "/ops/fetcher-metrics":
+        window_raw = (query.get("windowRuns") or ["20"])[0]
+        try:
+            window_runs = max(1, min(200, int(window_raw)))
+        except ValueError:
+            window_runs = 20
+        handler.send_json(api.compute_fetcher_metrics(window_runs=window_runs))
+        return True
+
+    if path == "/ops/perf-counters":
+        handler.send_json({"ok": True, "counters": snapshot_counters()})
+        return True
+
+    if path == "/ops/performance-profile":
+        handler.send_json(snapshot_performance_profile(runtime=_performance_profile_runtime(api)))
+        return True
+
+    if path == "/ops/storage-metrics":
+        handler.send_json(
+            {
+                "ok": True,
+                "storageMetrics": snapshot_storage_metrics(_storage_metrics_data_dir(api)),
+                "routeCounters": snapshot_counters(),
+            }
+        )
+        return True
+
+    if path == "/ops/storage-health":
+        handler.send_json(api.get_storage_health_payload())
+        return True
+
+    if path == "/ops/discovery-audit-artifacts":
+        handler.send_json(get_discovery_audit_artifacts_payload(api))
+        return True
+
+    if path == "/ops/task-failure-attempts":
+        handler.send_json(get_task_failure_attempts_payload(api))
+        return True
+
+    if path == "/ops/fetch-report/sources":
+        handler.send_json(_fetch_report_sources_payload(api, query))
+        return True
+
+    return False
+
+
 def _read_utf8_log_text(path: Path) -> str:
     try:
         raw = path.read_bytes()
@@ -1300,52 +1476,7 @@ def handle_get(
         )
         return True
 
-    if path == "/registry/active":
-        started_at = time.perf_counter()
-        state = api.load_state()
-        _record_storage_read_metric(
-            api,
-            surface="registry.active",
-            artifact="source-registry",
-            storage_kind="normalized",
-            started_at=started_at,
-            row_count=len(state.get("active") or []),
-        )
-        handler.send_json({"sources": state["active"], "summary": api.summarize_state(state)})
-        return True
-
-    if path == "/registry/pending":
-        started_at = time.perf_counter()
-        payload = _pending_registry_payload(api, query)
-        _record_storage_read_metric(
-            api,
-            surface="registry.pending",
-            artifact="source-registry",
-            storage_kind="normalized",
-            started_at=started_at,
-            row_count=len(_as_list(payload.get("sources"))),
-        )
-        handler.send_json(payload)
-        return True
-
-    if path == "/registry/rejected":
-        started_at = time.perf_counter()
-        state = api.load_state()
-        _record_storage_read_metric(
-            api,
-            surface="registry.rejected",
-            artifact="source-registry",
-            storage_kind="normalized",
-            started_at=started_at,
-            row_count=len(state.get("rejected") or []),
-        )
-        handler.send_json({"sources": state["rejected"], "summary": api.summarize_state(state)})
-        return True
-
-    if path == "/registry/sources":
-        with time_operation("registry.sources"):
-            status, payload = _registry_sources_payload(api, query)
-        handler.send_json(payload, status=status)
+    if _handle_registry_routes(handler, api=api, path=path, query=query):
         return True
 
     if path == "/discovery/log":
@@ -1376,106 +1507,14 @@ def handle_get(
         )
         return True
 
-    if path == "/registry/summary":
-        view = str((query.get("view") or [""])[0] or "").strip().lower()
-        operation_name = "registry.summary.exact" if view == "exact" else "registry.summary.storage"
-        with time_operation(operation_name):
-            status, payload = _registry_summary_route_payload(api, query)
-        handler.send_json(payload, status=status)
-        return True
-
-    if path == "/ops/health":
-        with time_operation("ops.health.route_payload"):
-            payload = api.compute_ops_health()
-        handler.send_json(payload)
-        return True
-
-    if path == "/ops/dashboard-health":
-        dashboard_health_fn = getattr(api, "compute_ops_dashboard_health", None)
-        with time_operation("ops.dashboard_health.route_payload"):
-            payload = (
-                dashboard_health_fn() if callable(dashboard_health_fn) else api.compute_ops_health()
-            )
-        handler.send_json(payload)
-        return True
-
-    if path == "/ops/history":
-        limit_raw = (query.get("limit") or ["30"])[0]
-        try:
-            limit = max(1, min(200, int(limit_raw)))
-        except ValueError:
-            limit = 30
-        rows = list(api.get_lifecycle_run_history_rows() or [])
-        handler.send_json({"runs": rows[-limit:], "count": len(rows)})
+    if _handle_ops_status_routes(handler, api=api, path=path, query=query):
         return True
 
     if path == "/discovery/config":
         handler.send_json(api.get_discovery_config_payload())
         return True
 
-    if path == "/ops/task-state":
-        view = str((query.get("view") or [""])[0] or "").strip().lower()
-        if view == "summary":
-            with time_operation("ops.task_state.summary"):
-                payload = api.get_current_task_state_summary_payload()
-        else:
-            with time_operation("ops.task_state.full"):
-                payload = api.get_current_task_state_payload()
-        handler.send_json(payload)
-        return True
-
-    if path.startswith("/ops/task-live/"):
-        task_type = path.removeprefix("/ops/task-live/").strip().lower()
-        if task_type not in {"fetch", "discovery", "sync"}:
-            handler.send_json(
-                {"ok": False, "error": f"unsupported task type: {task_type or 'unknown'}"},
-                status=404,
-            )
-            return True
-        handler.send_json(api.get_task_live_payload(task_type))
-        return True
-
-    if path == "/ops/fetcher-metrics":
-        window_raw = (query.get("windowRuns") or ["20"])[0]
-        try:
-            window_runs = max(1, min(200, int(window_raw)))
-        except ValueError:
-            window_runs = 20
-        handler.send_json(api.compute_fetcher_metrics(window_runs=window_runs))
-        return True
-
-    if path == "/ops/perf-counters":
-        handler.send_json({"ok": True, "counters": snapshot_counters()})
-        return True
-
-    if path == "/ops/performance-profile":
-        handler.send_json(snapshot_performance_profile(runtime=_performance_profile_runtime(api)))
-        return True
-
-    if path == "/ops/storage-metrics":
-        handler.send_json(
-            {
-                "ok": True,
-                "storageMetrics": snapshot_storage_metrics(_storage_metrics_data_dir(api)),
-                "routeCounters": snapshot_counters(),
-            }
-        )
-        return True
-
-    if path == "/ops/storage-health":
-        handler.send_json(api.get_storage_health_payload())
-        return True
-
-    if path == "/ops/discovery-audit-artifacts":
-        handler.send_json(get_discovery_audit_artifacts_payload(api))
-        return True
-
-    if path == "/ops/task-failure-attempts":
-        handler.send_json(get_task_failure_attempts_payload(api))
-        return True
-
-    if path == "/ops/fetch-report/sources":
-        handler.send_json(_fetch_report_sources_payload(api, query))
+    if _handle_ops_diagnostic_routes(handler, api=api, path=path, query=query):
         return True
 
     if path == "/ops/fetch-report":
