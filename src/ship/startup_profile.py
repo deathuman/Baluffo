@@ -156,7 +156,9 @@ def _pre_window_stage_defs(
     events: dict[str, int],
 ) -> list[tuple[str, str, str | Sequence[str] | None, str | Sequence[str] | None]]:
     if "desktop_bridge_ready_before_window" in events:
-        return [
+        stage_defs: list[
+            tuple[str, str, str | Sequence[str] | None, str | Sequence[str] | None]
+        ] = [
             (
                 "site_ready_to_bridge_ready",
                 "Site Ready -> Bridge Ready",
@@ -170,6 +172,45 @@ def _pre_window_stage_defs(
                 "desktop_window_created",
             ),
         ]
+        optional_defs = [
+            (
+                "site_ready_to_bridge_spawn_started",
+                "Site Ready -> Bridge Spawn Started",
+                "desktop_site_ready",
+                "desktop_bridge_spawn_started",
+            ),
+            (
+                "bridge_spawn_started_to_process_started",
+                "Bridge Spawn Started -> Process Started",
+                "desktop_bridge_spawn_started",
+                "desktop_bridge_process_started",
+            ),
+            (
+                "bridge_process_started_to_startup_ready_wait",
+                "Bridge Process Started -> Startup Ready Wait",
+                "desktop_bridge_process_started",
+                "desktop_bridge_startup_ready_wait_started",
+            ),
+            (
+                "bridge_startup_ready_wait",
+                "Bridge Startup Ready Wait",
+                "desktop_bridge_startup_ready_wait_started",
+                "desktop_bridge_startup_ready_wait_finished",
+            ),
+            (
+                "bridge_startup_ready_to_window_created",
+                "Bridge Startup Ready -> Window Created",
+                "desktop_bridge_startup_ready_wait_finished",
+                "desktop_window_created",
+            ),
+        ]
+        known_events = set(events)
+        for stage_def in optional_defs:
+            _key, _label, start_ref, end_ref = stage_def
+            refs = [start_ref, end_ref]
+            if all(isinstance(ref, str) and ref in known_events for ref in refs):
+                stage_defs.append(stage_def)
+        return stage_defs
     return [
         (
             "site_ready_to_window_created",
@@ -323,6 +364,11 @@ def summarize_startup_metrics(
             classification_map={
                 "launch_to_site_ready": "bridge/site bootstrap delayed",
                 "site_ready_to_bridge_ready": "desktop bridge startup delayed",
+                "site_ready_to_bridge_spawn_started": "desktop bridge spawn delayed",
+                "bridge_spawn_started_to_process_started": "desktop bridge process spawn delayed",
+                "bridge_process_started_to_startup_ready_wait": "desktop bridge readiness wait delayed",
+                "bridge_startup_ready_wait": "desktop bridge readiness delayed",
+                "bridge_startup_ready_to_window_created": "browser launch / app-window creation delayed",
                 "bridge_ready_to_window_created": "browser launch / app-window creation delayed",
                 "site_ready_to_window_created": "browser launch / app-window creation delayed",
                 "window_created_to_window_shown": "native reveal delayed",
@@ -451,6 +497,11 @@ def summarize_startup_metrics(
             classification_map={
                 "launch_to_site_ready": "bridge/site bootstrap delayed",
                 "site_ready_to_bridge_ready": "desktop bridge startup delayed",
+                "site_ready_to_bridge_spawn_started": "desktop bridge spawn delayed",
+                "bridge_spawn_started_to_process_started": "desktop bridge process spawn delayed",
+                "bridge_process_started_to_startup_ready_wait": "desktop bridge readiness wait delayed",
+                "bridge_startup_ready_wait": "desktop bridge readiness delayed",
+                "bridge_startup_ready_to_window_created": "browser launch / app-window creation delayed",
                 "bridge_ready_to_window_created": "browser launch / app-window creation delayed",
                 "site_ready_to_window_created": "browser launch / app-window creation delayed",
                 "window_created_to_window_shown": "native reveal delayed",
@@ -605,6 +656,11 @@ def summarize_startup_metrics(
         classification_map={
             "launch_to_site_ready": "bridge/site bootstrap delayed",
             "site_ready_to_bridge_ready": "desktop bridge startup delayed",
+            "site_ready_to_bridge_spawn_started": "desktop bridge spawn delayed",
+            "bridge_spawn_started_to_process_started": "desktop bridge process spawn delayed",
+            "bridge_process_started_to_startup_ready_wait": "desktop bridge readiness wait delayed",
+            "bridge_startup_ready_wait": "desktop bridge readiness delayed",
+            "bridge_startup_ready_to_window_created": "browser launch / app-window creation delayed",
             "bridge_ready_to_window_created": "browser launch / app-window creation delayed",
             "site_ready_to_window_created": "browser launch / app-window creation delayed",
             "window_created_to_window_shown": "native reveal delayed",

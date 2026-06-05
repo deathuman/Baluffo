@@ -4,6 +4,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
+from src.bridge.performance_profile import clear_performance_profile, snapshot_performance_profile
 from src.bridge.server.handler import make_handler
 from src.shared.timing_counters import clear_counters, snapshot_counters
 from tests.helpers.bridge_api import FakeDesktopLocalDataStore, make_stub_bridge_api
@@ -21,15 +22,18 @@ class HandlerHarness:
         self.handler.send_json = self.send_json
 
     def send_json(self, payload: Any, status: int = 200) -> None:
+        self.handler._baluffo_last_response_status = int(status)
         self.responses.append({"payload": payload, "status": status})
 
 
 def setup_function() -> None:
     clear_counters()
+    clear_performance_profile()
 
 
 def teardown_function() -> None:
     clear_counters()
+    clear_performance_profile()
 
 
 def test_handler_records_get_request_timing(tmp_path: Path) -> None:
@@ -40,8 +44,10 @@ def test_handler_records_get_request_timing(tmp_path: Path) -> None:
     harness.handler.do_GET()
 
     counters = snapshot_counters()
+    profile = snapshot_performance_profile()
     assert harness.responses[-1]["status"] == 200
     assert counters["bridge_request_get_ops_health"]["count"] == 1
+    assert profile["routeTimings"]["routes"][0]["label"] == "GET /ops/health"
 
 
 def test_handler_records_post_request_timing_for_not_found(tmp_path: Path) -> None:
@@ -52,5 +58,25 @@ def test_handler_records_post_request_timing_for_not_found(tmp_path: Path) -> No
     harness.handler.do_POST()
 
     counters = snapshot_counters()
+    profile = snapshot_performance_profile()
     assert harness.responses[-1]["status"] == 404
     assert counters["bridge_request_post_unknown_route"]["count"] == 1
+    assert profile["routeTimings"]["routes"][0]["label"] == "POST /unknown/route"
+    assert profile["routeTimings"]["routes"][0]["errorCount"] == 1
+
+
+def test_handler_performance_profile_redacts_query_params(tmp_path: Path) -> None:
+    api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    handler_cls = make_handler(api=api)
+    harness = HandlerHarness(
+        handler_cls,
+        method="GET",
+        path="/ops/task-state?view=summary&token=hidden",
+    )
+
+    harness.handler.do_GET()
+
+    profile = snapshot_performance_profile()
+    labels = [row["label"] for row in profile["routeTimings"]["routes"]]
+    assert "GET /ops/task-state" in labels
+    assert all("hidden" not in label and "token" not in label for label in labels)

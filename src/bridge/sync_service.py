@@ -656,6 +656,8 @@ class SyncService:
         size_warning = bool(result.get("sizeWarning"))
         shard_fields = _sync_shard_fields(result)
         warnings = [str(item) for item in list(result.get("warnings") or []) if str(item or "")]
+        detail_timing = as_json_object(result.get("detailTiming"))
+        remote_timing = as_json_object(result.get("remoteTiming"))
         if size_warning:
             self._bridge_log(
                 "warn",
@@ -693,6 +695,8 @@ class SyncService:
                 "sizeWarning": size_warning,
                 **shard_fields,
                 "warnings": warnings,
+                "detailTiming": detail_timing,
+                "remoteTiming": remote_timing,
             }
         )
         append_sync_timing_record(self._sync_timing_history_path, timing_record)
@@ -724,6 +728,7 @@ class SyncService:
             "counters": counters,
             "counts": counts,
             "timing": timing_record,
+            "remoteTiming": remote_timing,
         }
 
     def startup_sync_pull(self) -> None:

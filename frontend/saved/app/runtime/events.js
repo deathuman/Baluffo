@@ -118,7 +118,7 @@ export function bindSavedPageEvents({
   bindUi(activityCloseBtnEl, "click", () => {
     setActivityPanelOpen(false);
   });
-  bindAsyncClick(activityRefreshBtnEl, refreshActivityLog);
+  bindAsyncClick(activityRefreshBtnEl, () => refreshActivityLog({ manual: true }));
   bindAsyncClick(signInBtnEl, signInUser);
   bindAsyncClick(signOutBtnEl, signOutUser);
   bindAsyncClick(exportBackupBtnEl, exportBackup);

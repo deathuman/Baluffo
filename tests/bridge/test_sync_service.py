@@ -285,6 +285,10 @@ def test_sync_service_push_returns_and_persists_timing() -> None:
             "manifestSizeBytes": 900,
             "shardCapBytes": 10 * 1024 * 1024,
             "shardHashes": {"baluffo/source-sync/shards/active/a/hash.json.gz": "hash"},
+            "detailTiming": {
+                "stageTotalsMs": {"readRemoteSnapshot": 10, "writeShardedSnapshot": 20},
+                "stageTop": [{"stage": "writeShardedSnapshot", "durationMs": 20}],
+            },
         }
         history = _RunHistory()
         lifecycle = _TaskLifecycle()
@@ -344,6 +348,7 @@ def test_sync_service_push_returns_and_persists_timing() -> None:
         assert timing["stageTotalsMs"]["pushRemote"] >= 0
         assert timing["stageTotalsMs"]["summarizeSnapshot"] >= 0
         assert any(row["stage"] == "pushRemote" for row in timing["stageTop"])
+        assert timing["detailTiming"]["stageTotalsMs"]["writeShardedSnapshot"] == 20
         assert result["sizeBytes"] == 6_000_000
         assert result["maxSnapshotSizeBytes"] == 100_000_000
         assert result["sizeWarning"] is True
@@ -362,6 +367,9 @@ def test_sync_service_push_returns_and_persists_timing() -> None:
         assert status["timingHistory"][-1]["action"] == "push"
         assert status["timingHistory"][-1]["maxSnapshotSizeBytes"] == 100_000_000
         assert status["timingHistory"][-1]["snapshotFormat"] == "sharded-v3"
+        assert status["timingHistory"][-1]["detailTiming"]["stageTop"][0]["stage"] == (
+            "writeShardedSnapshot"
+        )
 
 
 def test_sync_service_push_noop_returns_size_fields() -> None:

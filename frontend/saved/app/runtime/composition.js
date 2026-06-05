@@ -231,7 +231,7 @@ export function composeSavedRuntime(deps) {
     clearExpiredPulse: () => savedActivityController.clearExpiredPulse(),
     renderSelectedJobHint: () => savedActivityController.renderSelectedJobHint(),
     renderWorkspaceStats: (jobs = null) => savedActivityController.renderWorkspaceStats(jobs),
-    refreshActivityLog: () => savedActivityController.refreshActivityLog(),
+    refreshActivityLog: (...args) => savedActivityController.refreshActivityLog(...args),
     renderTimeline: () => savedActivityController.renderTimeline()
   };
 }

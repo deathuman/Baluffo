@@ -23,13 +23,16 @@ test("admin render: ops KPI panel renders registry sync confidence", () => {
       pulledCount: 1,
       pushedCount: 0,
       conflictCount: 0,
-      invalidRowsCount: 0
+      invalidRowsCount: 0,
+      summaryExact: false,
+      countBasis: "storage"
     }
   }, "healthy");
 
   assert.match(el.innerHTML, /admin-ops-registry-sync-details/i);
   assert.doesNotMatch(el.innerHTML, /<details[^>]*admin-ops-registry-sync-details[^>]*open/i);
   assert.match(el.innerHTML, /Registry &amp; Sync/i);
+  assert.match(el.innerHTML, /storage snapshot counts/i);
   assert.match(el.innerHTML, /Active Sources/i);
   assert.match(el.innerHTML, /Pending Review/i);
   assert.match(el.innerHTML, /rejected local-only 3/i);

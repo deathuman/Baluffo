@@ -70,8 +70,8 @@ import {
   fetchJsonFromCandidates as fetchJsonFromCandidatesFromSources,
   renderDataSources as renderDataSourcesFromSources
 } from "./sources.js";
-import { composeJobsRuntime } from "./runtime/composition.js?v=13";
-import { createJobsBoot } from "./runtime/boot.js?v=4";
+import { composeJobsRuntime } from "./runtime/composition.js?v=14";
+import { createJobsBoot } from "./runtime/boot.js?v=5";
 import { createJobsPageFlow } from "./runtime/page-flow.js?v=6";
 
 const defaultFilters = jobsStateModule.DEFAULT_FILTERS || {

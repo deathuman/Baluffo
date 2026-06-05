@@ -99,7 +99,7 @@ test("admin registry controller loads filtered discovery state and dispatches re
           ],
           active: [{ id: "a1", name: "Active", jobsFound: 3, status: "healthy" }],
           rejected: [{ id: "r1", name: "Rejected", jobsFound: 1, status: "error" }],
-          summary: { pendingCount: 2, activeCount: 1, rejectedCount: 1 }
+          summary: { pendingCount: 2, activeCount: 1, rejectedCount: 1, summaryExact: true, countBasis: "normalized" }
         });
       }
       throw new Error(`unexpected path ${path}`);
@@ -147,7 +147,7 @@ test("admin registry controller loads filtered discovery state and dispatches re
   assert.match(refs.adminDiscoverySummaryEl.textContent, /Deferred by caps 2/);
   assert.match(refs.adminDiscoverySummaryEl.textContent, /Job-positive deferred 1/);
   assert.match(refs.adminDiscoverySummaryEl.textContent, /Auto-approved this run 0/);
-  assert.match(refs.adminDiscoverySummaryEl.textContent, /Active registry 1/);
+  assert.match(refs.adminDiscoverySummaryEl.textContent, /Active registry 1 \(normalized counts\)/);
   assert.match(refs.adminDiscoverySummaryEl.textContent, /Validated 3/);
   assert.match(refs.adminDiscoverySummaryEl.textContent, /Hidden zero-jobs 0/);
   assert.equal(refs.adminPendingSourcesEl.innerHTML, "One|Zero");

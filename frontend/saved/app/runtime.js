@@ -52,13 +52,13 @@ import {
   normalizeSavedGroup,
   REMINDER_SOON_HOURS
 } from "./view-state.js";
-import { createSavedBoot } from "./runtime/boot.js";
+import { createSavedBoot } from "./runtime/boot.js?v=1";
 import { createSavedChrome } from "./runtime/chrome.js";
-import { composeSavedRuntime } from "./runtime/composition.js";
+import { composeSavedRuntime } from "./runtime/composition.js?v=1";
 import { createSavedMutations } from "./runtime/mutations.js";
 import { createSavedRuntimeNotes } from "./runtime/notes.js";
 import { createSavedPhaseTime } from "./runtime/phase-time.js";
-import { applySavedAdminBridgeState as applySavedAdminBridgeStateFromModule } from "./admin-bridge-state.js";
+import { applySavedAdminBridgeState as applySavedAdminBridgeStateFromModule } from "./admin-bridge-state.js?v=1";
 
 const JOBS_LAST_URL_KEY = "baluffo_jobs_last_url";
 const TIMELINE_PREF_PREFIX = "baluffo_saved_timeline_prefs";

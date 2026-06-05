@@ -24,6 +24,7 @@ def capture_runtime_snapshot(
         "startupMetricsSnapshot": artifacts_dir / "startup-metrics.json",
         "storageMetricsSnapshot": artifacts_dir / "storage-metrics.json",
         "storageHealthSnapshot": artifacts_dir / "storage-health.json",
+        "performanceProfileSnapshot": artifacts_dir / "performance-profile.json",
     }
     deps.write_json(
         snapshots["opsHealthSnapshot"], _snapshot_json(deps, f"{bridge_base_url}/ops/health")
@@ -40,7 +41,24 @@ def capture_runtime_snapshot(
     deps.write_json(snapshots["storageMetricsSnapshot"], storage_metrics_payload)
     storage_health_payload = _snapshot_json(deps, f"{bridge_base_url}/ops/storage-health")
     deps.write_json(snapshots["storageHealthSnapshot"], storage_health_payload)
+    performance_profile_payload = _snapshot_json(deps, f"{bridge_base_url}/ops/performance-profile")
+    deps.write_json(snapshots["performanceProfileSnapshot"], performance_profile_payload)
     return {key: str(path) for key, path in snapshots.items()}
+
+
+def capture_performance_profile_snapshot(
+    deps: Any,
+    bridge_base_url: str,
+    artifacts_dir: Path,
+    *,
+    filename: str = "performance-profile.json",
+) -> dict[str, str]:
+    snapshot_path = artifacts_dir / filename
+    deps.write_json(
+        snapshot_path,
+        _snapshot_json(deps, f"{bridge_base_url}/ops/performance-profile"),
+    )
+    return {"performanceProfileSnapshot": str(snapshot_path)}
 
 
 def run_embedded_runtime_probe(

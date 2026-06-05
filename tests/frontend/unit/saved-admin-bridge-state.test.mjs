@@ -17,6 +17,7 @@ test("saved admin bridge state reflects checking, offline, and online states", (
   });
   assert.equal(viewState.adminBridgeButtonState, "checking");
   assert.equal(buttonEl.classList.contains("checking"), true);
+  assert.equal(buttonEl.textContent, "Admin");
   assert.equal(buttonEl.disabled, true);
   assert.equal(buttonEl.attributes["aria-disabled"], "true");
 

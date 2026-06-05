@@ -271,6 +271,9 @@ def test_run_packaged_smoke_can_run_sync_rehearsal_mode() -> None:
                     "details": {
                         "runtimeStdout": str(artifacts_dir / "sync.stdout.log"),
                         "runtimeStderr": str(artifacts_dir / "sync.stderr.log"),
+                        "performanceProfileSnapshot": str(
+                            artifacts_dir / "performance-profile.post-sync.json"
+                        ),
                     },
                 },
             ) as rehearsal_mock,
@@ -280,9 +283,110 @@ def test_run_packaged_smoke_can_run_sync_rehearsal_mode() -> None:
         assert payload["scenarios"][0]["slug"] == "packaged-sync-rehearsal"
         assert payload["artifacts"]["syncRehearsalStdout"] == str(artifacts_dir / "sync.stdout.log")
         assert payload["artifacts"]["syncRehearsalStderr"] == str(artifacts_dir / "sync.stderr.log")
+        assert payload["artifacts"]["performanceProfileSnapshot"] == str(
+            artifacts_dir / "performance-profile.post-sync.json"
+        )
         rehearsal_mock.assert_called_once()
         saved = json.loads(report_path.read_text(encoding="utf-8"))
         assert saved["ok"] is True
+
+
+def test_run_packaged_sync_rehearsal_captures_performance_profile() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp)
+        artifacts_dir = root / "artifacts"
+        artifacts_dir.mkdir()
+        exe_path = root / "Baluffo.exe"
+        exe_path.write_text("exe", encoding="utf-8")
+        config_path = root / "github-app-sync-config.json"
+        config_path.write_text("{}", encoding="utf-8")
+        process = mock.Mock()
+        process.pid = 1001
+        stdout_handle = mock.Mock()
+        stderr_handle = mock.Mock()
+        memory_sampler = mock.Mock()
+        memory_sampler.stop.return_value = {"sampleCount": 1, "peakWorkingSetBytes": 123}
+
+        with (
+            mock.patch.object(
+                smoke,
+                "_load_portable_packaged_sync_rehearsal_config",
+                return_value=(config_path, {"keyDerivation": "embedded"}, mock.Mock()),
+            ),
+            mock.patch.object(
+                smoke,
+                "_start_packaged_sync_rehearsal_server",
+                return_value=(
+                    "http://127.0.0.1:12345",
+                    {
+                        "tokenRequests": 1,
+                        "contentRequests": 1,
+                        "putRequests": 1,
+                        "deleteRequests": 0,
+                        "bytesWritten": 64,
+                    },
+                    None,
+                    None,
+                ),
+            ),
+            mock.patch.object(smoke, "choose_free_port", side_effect=[51001, 51002]),
+            mock.patch.object(
+                smoke,
+                "launch_packaged_exe",
+                return_value=(process, stdout_handle, stderr_handle),
+            ),
+            mock.patch.object(smoke, "ProcessMemorySampler", return_value=memory_sampler),
+            mock.patch.object(smoke, "wait_for_packaged_runtime"),
+            mock.patch.object(
+                smoke,
+                "request_json",
+                return_value=(
+                    200,
+                    {
+                        "config": {
+                            "ready": True,
+                            "credentialsPackaged": True,
+                            "keyDerivation": "embedded",
+                        }
+                    },
+                ),
+            ),
+            mock.patch.object(
+                smoke,
+                "post_json",
+                side_effect=[
+                    (200, {"ok": True, "remoteFound": True, "timing": {}}),
+                    (200, {"ok": True, "timing": {"totalDurationMs": 11}}),
+                    (200, {"ok": True, "timing": {"totalDurationMs": 22}}),
+                ],
+            ),
+            mock.patch.object(
+                smoke,
+                "capture_performance_profile_snapshot",
+                return_value={
+                    "performanceProfileSnapshot": str(
+                        artifacts_dir / "performance-profile.post-sync.json"
+                    )
+                },
+            ) as profile_mock,
+            mock.patch.object(smoke, "terminate_process_tree"),
+            mock.patch.object(smoke, "cleanup_orphaned_desktop_ports_nt"),
+        ):
+            result = smoke.run_packaged_sync_rehearsal(
+                exe_path=exe_path,
+                artifacts_dir=artifacts_dir,
+                runtime_timeout_s=5.0,
+            )
+
+        assert result["status"] == "passed"
+        assert result["details"]["performanceProfileSnapshot"] == str(
+            artifacts_dir / "performance-profile.post-sync.json"
+        )
+        profile_mock.assert_called_once_with(
+            "http://127.0.0.1:51002",
+            artifacts_dir,
+            filename="performance-profile.post-sync.json",
+        )
 
 
 def test_select_packaged_browser_job_browser_enables_edge_when_needed() -> None:

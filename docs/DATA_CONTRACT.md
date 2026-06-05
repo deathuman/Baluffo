@@ -576,6 +576,8 @@ Remote sync snapshots now use schema version `2` and are built from canonical pe
 | `hiddenPendingCount` | `number` | Pending rows hidden from default review views. |
 | `deferredPendingCount` | `number` | Pending rows with deferred/backlog markers. |
 | `duplicatePendingCount` | `number` | Pending rows marked as duplicate variants. |
+| `summaryExact` | `boolean` | `true` when counts came from normalized registry rows; `false` when they are lightweight storage snapshot counts. |
+| `countBasis` | `string` | Count source, usually `normalized` for exact/full state loads or `storage` for cheap snapshot routes. |
 | `lastSyncAt` | `string` | Latest known pull/push/sync-run timestamp, or empty when unavailable. |
 | `lastSyncStatus` | `string` | Latest sync result such as `ok`, `error`, `remote_conflict`, `rate_limited`, or `never`. |
 | `remoteActiveCount` | `number` | Active count from the latest sync summary when available. |

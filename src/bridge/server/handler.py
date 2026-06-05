@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 import traceback
 from contextlib import suppress
 from http.server import BaseHTTPRequestHandler
@@ -9,6 +10,7 @@ from urllib.parse import parse_qs, urlparse
 
 from src.bridge.api import BridgeApi
 from src.bridge.container_mode import is_container_runtime
+from src.bridge.performance_profile import record_route_duration
 from src.bridge.request_utils import read_json_from_request
 from src.shared.timing_counters import normalize_counter_category, time_block
 
@@ -98,6 +100,8 @@ def _send_json_response(
     except UnicodeEncodeError:
         body = json.dumps(payload, ensure_ascii=True, default=str).encode("utf-8")
     try:
+        with suppress(Exception):
+            handler._baluffo_last_response_status = int(status)
         handler.send_response(status)
         handler.send_header("Content-Type", "application/json; charset=utf-8")
         handler.send_header("Cache-Control", "no-store")
@@ -124,6 +128,8 @@ def _send_bytes_response(
     content_encoding: str = "",
 ) -> None:
     try:
+        with suppress(Exception):
+            handler._baluffo_last_response_status = int(status)
         handler.send_response(status)
         handler.send_header("Content-Type", content_type)
         handler.send_header("Cache-Control", str(cache_control or "no-store"))
@@ -173,6 +179,8 @@ def _handle_get_request(
     static_service: StaticGetService | None,
 ) -> None:
     path = ""
+    started_at = time.perf_counter()
+    failed = False
     with time_block(_request_timing_category(handler, "get")):
         try:
             path = _route_path(handler)
@@ -195,6 +203,7 @@ def _handle_get_request(
                 return
             handler.send_json({"error": "Not found"}, status=404)
         except Exception as exc:  # noqa: BLE001
+            failed = True
             with suppress(Exception):
                 api.bridge_log("error", "http_get_handler_failed", path=path, error=str(exc))
             handler.send_json(
@@ -205,22 +214,34 @@ def _handle_get_request(
                 },
                 status=500,
             )
+        finally:
+            status = getattr(handler, "_baluffo_last_response_status", 0)
+            record_route_duration(
+                "GET",
+                path or getattr(handler, "path", ""),
+                (time.perf_counter() - started_at) * 1000,
+                status=status,
+                error=failed,
+            )
 
 
 def _handle_post_request(handler: BaseHTTPRequestHandler, api: BridgeApi) -> None:
     path = ""
+    started_at = time.perf_counter()
+    failed = False
     with time_block(_request_timing_category(handler, "post")):
-        path = _route_path(handler)
-        with suppress(Exception):
-            api.mark_desktop_session_activity(path)
-        payload = read_json_from_request(handler)
-        from src.bridge.routes.post_routes import handle_post
-
         try:
+            path = _route_path(handler)
+            with suppress(Exception):
+                api.mark_desktop_session_activity(path)
+            payload = read_json_from_request(handler)
+            from src.bridge.routes.post_routes import handle_post
+
             if handle_post(handler, api=api, path=path, payload=payload):
                 return
             handler.send_json({"error": "Not found"}, status=404)
         except BaseException as exc:  # noqa: BLE001
+            failed = True
             with suppress(Exception):
                 api.bridge_log(
                     "error",
@@ -236,6 +257,37 @@ def _handle_post_request(handler: BaseHTTPRequestHandler, api: BridgeApi) -> Non
                     "traceback": traceback.format_exc(),
                 },
                 status=500,
+            )
+        finally:
+            status = getattr(handler, "_baluffo_last_response_status", 0)
+            record_route_duration(
+                "POST",
+                path or getattr(handler, "path", ""),
+                (time.perf_counter() - started_at) * 1000,
+                status=status,
+                error=failed,
+            )
+
+
+def _handle_options_request(handler: BaseHTTPRequestHandler, api: BridgeApi) -> None:
+    path = ""
+    started_at = time.perf_counter()
+    failed = False
+    with time_block(_request_timing_category(handler, "options")):
+        try:
+            path = _route_path(handler)
+            handler.send_json({"ok": True})
+        except BaseException:
+            failed = True
+            raise
+        finally:
+            status = getattr(handler, "_baluffo_last_response_status", 0)
+            record_route_duration(
+                "OPTIONS",
+                path or getattr(handler, "path", ""),
+                (time.perf_counter() - started_at) * 1000,
+                status=status,
+                error=failed,
             )
 
 
@@ -316,7 +368,7 @@ def make_handler(
             _log_request_message(self, api, format, args)
 
         def do_OPTIONS(self) -> None:
-            self.send_json({"ok": True})
+            _handle_options_request(self, api)
 
         def do_GET(self) -> None:
             _handle_get_request(self, api, static_service)

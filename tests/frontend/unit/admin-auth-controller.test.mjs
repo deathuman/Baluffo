@@ -72,6 +72,9 @@ test("admin auth controller initializes the composed admin view immediately", as
     setOpsPlaceholders(message = "") {
       calls.push(`opsPlaceholder:${message}`);
     },
+    setOpsReadinessShell() {
+      calls.push("opsReadinessShell");
+    },
     setBridgeStatusBadge(stateValue, label) {
       calls.push(`bridge:${stateValue}:${label}`);
     },
@@ -96,8 +99,8 @@ test("admin auth controller initializes the composed admin view immediately", as
     loadLatestFetcherReport: async options => {
       calls.push(`loadLatestFetcherReport:${String(Boolean(options?.silent))}`);
     },
-    loadDiscoveryData: async () => {
-      calls.push("loadDiscoveryData");
+    loadDiscoveryData: async options => {
+      calls.push(`loadDiscoveryData:${String(Boolean(options?.background))}:${String(Boolean(options?.suppressPlaceholders))}`);
     },
     loadOpsHealthData: async () => {
       calls.push("loadOpsHealthData");
@@ -125,12 +128,17 @@ test("admin auth controller initializes the composed admin view immediately", as
   assert.ok(calls.includes("resetBusyFlags"));
   assert.ok(calls.includes("startBridgeStatusWatch"));
   assert.ok(calls.includes("refreshOverview"));
-  assert.ok(calls.includes("loadDiscoveryData"));
+  assert.ok(calls.includes("loadDiscoveryData:true:true"));
   assert.ok(calls.includes("loadOpsHealthData"));
+  assert.equal(calls.filter(item => item === "opsReadinessShell").length, 2);
+  assert.equal(calls.includes("opsPlaceholder:Loading operations health..."), false);
   assert.ok(calls.includes("loadDiscoveryConfig:true:true"));
   assert.ok(calls.includes("loadSyncStatus:true:true"));
   assert.equal(calls.includes("scheduleOpsHealthPolling:900"), false);
-  assert.equal(refs.adminSyncStatusEl.textContent, "Loading sync status...");
+  assert.equal(refs.adminSyncStatusEl.textContent, "");
+  assert.ok(calls.includes("fetcherPlaceholder:"));
+  assert.ok(calls.includes("discoveryPlaceholder:"));
+  assert.equal(calls.some(item => /Loading latest jobs fetch report|Loading source discovery data/.test(item)), false);
   assert.equal(toasts.length, 0);
   assert.deepEqual(
     perfCalls.map(item => `${item.type}:${item.name}`),

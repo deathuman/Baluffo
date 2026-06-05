@@ -64,6 +64,7 @@ These `/app/*` routes are desktop-runtime routes. In container mode, `/app/updat
 | GET | `/registry/pending` | List pending sources |
 | GET | `/registry/rejected` | List rejected sources |
 | GET | `/registry/summary` | Lightweight registry summary counts without source rows |
+| GET | `/registry/summary?view=exact` | Normalized registry summary counts without source rows; slower than the default summary and intended for diagnostics |
 | GET | `/registry/sources?buckets=pending,active,rejected&includeHiddenPending=0` | Combined registry source-table payload for selected buckets from one backend state load |
 | GET | `/registry/conflicts` | Full duplicate-family conflict report with triage buckets, ranked review queues, advisory winners, row diffs, evidence cards, and lifecycle actions |
 | GET | `/registry/conflicts?view=summary` | Cheap Admin startup conflict summary. It must not build the full conflict queue; it returns cached exact counts when available, otherwise `summaryStatus: "pending"` with registry counts and `detailRoute` |
@@ -77,6 +78,8 @@ These `/app/*` routes are desktop-runtime routes. In container mode, `/app/updat
 | POST | `/registry/restore-deleted` | Restore locally deleted sources from tombstones (`{ids: [], urls: []}`) |
 | POST | `/registry/delete` | Local-only delete; writes tombstones and removes sources from the registry (`{ids: [], urls: []}`) |
 | POST | `/sources/manual` | Add manual source (`{url: ""}`) |
+
+The default `/registry/summary` response is a cheap storage snapshot and returns `summaryExact: false`, `countBasis: "storage"`. Use `/registry/summary?view=exact` only when diagnostics need normalized counts from the same path as the full registry state. The combined `/registry/sources` response also marks its summary as `summaryExact: true`, `countBasis: "normalized"` because it already performed one full state load.
 
 When `sourceRegistry=sqlite`, the registry GET routes and POST mutations read and publish through the SQLite source-registry generation before regenerating active/pending/rejected/tombstone compatibility exports. Payload shapes stay unchanged. Storage, busy-timeout, missing-generation, parity, export, or direct-JSON-drift failures persist `sourceRegistry=json` and return the JSON artifact path while leaving SQLite rows available for diagnostics.
 
@@ -144,6 +147,7 @@ When `sourceRegistry=sqlite`, the registry GET routes and POST mutations read an
 | GET | `/ops/fetch-report` | Last fetch summary |
 | GET | `/ops/fetch-report/sources?runId=&limit=&offset=&status=` | Bounded terminal fetch source rows |
 | GET | `/ops/fetcher-metrics?windowRuns=` | Fetcher metrics |
+| GET | `/ops/performance-profile` | Bounded in-memory bridge route and backend operation timing aggregates; route labels redact query strings and dynamic path segments, and no raw samples or payload bodies are returned |
 | GET | `/ops/storage-metrics` | Runtime storage write, registry journal, source-sync size, and route timing diagnostics |
 | GET | `/ops/storage-health` | SQLite runtime storage health, migration version, authority modes, WAL mode, busy counters, and quick_check status |
 | GET | `/ops/discovery-audit-artifacts` | Bounded diagnostics for known discovery audit artifacts under the active data dir; returns existence, size, hash, top-level keys, compact summary, and warnings without exposing full JSON bodies |

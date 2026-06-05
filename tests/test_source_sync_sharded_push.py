@@ -100,6 +100,15 @@ def test_push_sharded_snapshot_pushes_shards_before_manifest() -> None:
     assert module.calls[1]["method"] == "GET"
     assert module.calls[2]["url"].endswith("baluffo/source-sync/manifest.json")
     assert module.calls[3]["method"] == "GET"
+    assert result["remoteTiming"]["requestCount"] == 4
+    assert result["remoteTiming"]["methodCounts"] == {"PUT": 2, "GET": 2}
+    assert result["remoteTiming"]["operationTotalsMs"].keys() >= {
+        "pushShard",
+        "verifyShard",
+        "pushManifest",
+        "pruneShards",
+    }
+    assert result["remoteTiming"]["slowestRequests"][0]["path"]
 
 
 def test_push_sharded_snapshot_emits_remote_write_progress() -> None:

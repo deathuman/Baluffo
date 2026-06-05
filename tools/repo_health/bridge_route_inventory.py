@@ -323,6 +323,14 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         rationale="Internal diagnostics snapshot for route timing and perf-counter tests.",
     ),
     _route(
+        "GET",
+        "/ops/performance-profile",
+        EXACT,
+        GET_HANDLER,
+        "support",
+        caller_files=ADMIN_OPS_CALLERS,
+    ),
+    _route(
         "GET", "/ops/storage-metrics", EXACT, GET_HANDLER, "support", caller_files=ADMIN_OPS_CALLERS
     ),
     _route(

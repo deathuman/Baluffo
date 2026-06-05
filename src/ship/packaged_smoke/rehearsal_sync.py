@@ -396,6 +396,7 @@ def _packaged_sync_success_result(
     memory_metrics: dict[str, Any],
     stdout_path: Path,
     stderr_path: Path,
+    performance_profile_snapshot: dict[str, str],
 ) -> dict[str, Any]:
     return {
         "name": "Packaged sync rehearsal",
@@ -420,6 +421,9 @@ def _packaged_sync_success_result(
             "pullTiming": dict(sync_pull.get("timing") or {}),
             "runtimeStdout": str(stdout_path),
             "runtimeStderr": str(stderr_path),
+            "performanceProfileSnapshot": str(
+                performance_profile_snapshot.get("performanceProfileSnapshot") or ""
+            ),
         },
     }
 
@@ -544,6 +548,11 @@ def run_packaged_sync_rehearsal(
             failure_message="Packaged sync rehearsal pull failed",
         )
         _check_packaged_sync_rehearsal_stats(server_stats)
+        performance_profile_snapshot = deps.capture_performance_profile_snapshot(
+            f"http://127.0.0.1:{bridge_port}",
+            artifacts_dir,
+            filename="performance-profile.post-sync.json",
+        )
         memory_metrics = _stop_process_memory_sampler(memory_sampler)
         memory_sampler = None
         return _packaged_sync_success_result(
@@ -558,6 +567,7 @@ def run_packaged_sync_rehearsal(
             memory_metrics=memory_metrics,
             stdout_path=stdout_path,
             stderr_path=stderr_path,
+            performance_profile_snapshot=performance_profile_snapshot,
         )
     except Exception as exc:
         memory_metrics = _stop_process_memory_sampler(memory_sampler)

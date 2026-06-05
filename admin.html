@@ -21,20 +21,13 @@
       </div>
     </div>
 
-    <p id="admin-source-status" data-ui="admin-source-status" class="source-status">Loading admin overview...</p>
+    <p id="admin-source-status" data-ui="admin-source-status" class="source-status"></p>
 
     <section id="admin-action-center" data-ui="admin-action-center" class="action-center-panel">
       <div class="action-center-header">
         <h2 class="action-center-title">Action Center</h2>
       </div>
-      <div id="admin-action-center-items" data-ui="admin-action-center-items" class="action-center-items">
-        <div class="action-center-item action-center-item-ok">
-          <div class="action-center-item-body">
-            <span class="action-center-item-icon">&#x25CB;</span>
-            <span class="action-center-item-summary">Loading operational signals&#x2026;</span>
-          </div>
-        </div>
-      </div>
+      <div id="admin-action-center-items" data-ui="admin-action-center-items" class="action-center-items"></div>
       <div class="action-center-footer">
         <button id="admin-action-center-copy-btn" data-ui="admin-action-center-copy-btn" class="btn action-center-copy-btn" data-tooltip="Copy all health, sync, and storage diagnostics to clipboard">Copy all diagnostics</button>
       </div>
@@ -87,9 +80,7 @@
         </div>
         <div id="admin-ops-tab-discovery" data-ui="admin-ops-tab-discovery" class="admin-ops-tab-panel hidden" role="tabpanel" aria-labelledby="admin-ops-tab-discovery-btn" hidden>
           <h4 class="admin-section-title">Discovery Review</h4>
-          <div id="admin-discovery-review" data-ui="admin-discovery-review" class="admin-discovery-review">
-            <div class="no-results">No discovery report loaded yet.</div>
-          </div>
+          <div id="admin-discovery-review" data-ui="admin-discovery-review" class="admin-discovery-review"></div>
         </div>
         <div id="admin-ops-tab-source-policy" data-ui="admin-ops-tab-source-policy" class="admin-ops-tab-panel hidden" role="tabpanel" aria-labelledby="admin-ops-tab-source-policy-btn" hidden>
           <h4 class="admin-section-title">Source Policy Review</h4>
@@ -161,7 +152,7 @@
                 </div>
                 <div id="admin-discovery-progress-label" data-ui="admin-discovery-progress-label" class="admin-task-progress-label"></div>
               </div>
-              <div id="admin-discovery-summary" data-ui="admin-discovery-summary" class="results-summary">No discovery report loaded yet.</div>
+              <div id="admin-discovery-summary" data-ui="admin-discovery-summary" class="results-summary"></div>
             </div>
 
             <div class="admin-discovery-card admin-discovery-manual-card">
@@ -309,6 +300,6 @@
 
   <script src="frontend-runtime-config.js?v=1"></script>
   <script src="theme.js" defer></script>
-  <script type="module" src="frontend/admin/index.js?v=19"></script>
+  <script type="module" src="frontend/admin/index.js?v=22"></script>
 </body>
 </html>

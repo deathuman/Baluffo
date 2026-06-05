@@ -60,6 +60,7 @@ export function createJobsRuntimeState(defaultFilters = {}, { lastHandledAutoRef
       desktopPendingRememberJobsUrl: false,
       desktopPendingJobsUrl: "",
       nonCriticalStartupScheduled: false,
+      desktopUpdateAutoCheckScheduled: false,
       coreEventsBound: false,
       secondaryEventsBound: false,
       adminBridgeButtonState: "checking",

@@ -502,6 +502,26 @@ def test_startup_profile_summary_splits_bridge_ready_before_window_launch() -> N
             "fields": {"elapsedMs": 500},
         },
         {
+            "ts": "2026-03-10T12:00:00.510000+00:00",
+            "event": "desktop_bridge_spawn_started",
+            "fields": {"elapsedMs": 510},
+        },
+        {
+            "ts": "2026-03-10T12:00:00.550000+00:00",
+            "event": "desktop_bridge_process_started",
+            "fields": {"elapsedMs": 550},
+        },
+        {
+            "ts": "2026-03-10T12:00:00.560000+00:00",
+            "event": "desktop_bridge_startup_ready_wait_started",
+            "fields": {"elapsedMs": 560},
+        },
+        {
+            "ts": "2026-03-10T12:00:01.590000+00:00",
+            "event": "desktop_bridge_startup_ready_wait_finished",
+            "fields": {"elapsedMs": 1590},
+        },
+        {
             "ts": "2026-03-10T12:00:01.600000+00:00",
             "event": "desktop_bridge_ready_before_window",
             "fields": {"elapsedMs": 1600},
@@ -549,6 +569,10 @@ def test_startup_profile_summary_splits_bridge_ready_before_window_launch() -> N
     assert "site_ready_to_window_created" not in stages
     assert stages["site_ready_to_bridge_ready"]["durationMs"] == 1100
     assert stages["site_ready_to_bridge_ready"]["status"] == "passed"
+    assert stages["site_ready_to_bridge_spawn_started"]["durationMs"] == 10
+    assert stages["bridge_spawn_started_to_process_started"]["durationMs"] == 40
+    assert stages["bridge_startup_ready_wait"]["durationMs"] == 1030
+    assert stages["bridge_startup_ready_to_window_created"]["durationMs"] == 460
     assert stages["bridge_ready_to_window_created"]["durationMs"] == 450
     assert stages["bridge_ready_to_window_created"]["status"] == "passed"
     assert summary["classification"] == "desktop bridge startup delayed"

@@ -46,7 +46,7 @@ test("jobs admin bridge state keeps checking, offline, and online states visible
   assert.equal(runtimeState.adminBridgeButtonState, "checking");
   assert.equal(buttonEl.classList.contains("hidden"), false);
   assert.equal(buttonEl.classList.contains("checking"), true);
-  assert.equal(buttonEl.textContent, "Admin Checking...");
+  assert.equal(buttonEl.textContent, "Admin");
   assert.equal(buttonEl.disabled, true);
   assert.equal(buttonEl.attributes["aria-disabled"], "true");
 

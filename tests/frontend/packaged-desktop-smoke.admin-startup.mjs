@@ -95,6 +95,17 @@ function isFullStartupOpsRequest(url) {
   return isFullTaskState || isFullRegistryConflicts;
 }
 
+async function waitForCapturedBridgeRequest(capturedBridgeRequests, predicate, label, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const parsedRequests = capturedBridgeRequests.map(rawUrl => new URL(rawUrl));
+    if (parsedRequests.some(predicate)) return parsedRequests;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  assert.equal(false, true, label);
+  return [];
+}
+
 async function main() {
   const scenarios = [];
   const errors = [];
@@ -126,7 +137,7 @@ async function main() {
         { timeout: 2_500 }
       );
       await page.waitForFunction(
-        () => !/Loading admin overview/i.test(document.querySelector("#admin-source-status")?.textContent || ""),
+        () => /Loaded \d+ user account|failed|could not|error/i.test(document.querySelector("#admin-source-status")?.textContent || ""),
         null,
         { timeout: 30_000 }
       );
@@ -143,15 +154,14 @@ async function main() {
       const opsTrendsText = await page.locator("#admin-ops-trends").textContent();
       assert.doesNotMatch(String(opsTrendsText || ""), /Loading operations health/i);
 
-      const parsedRequests = capturedBridgeRequests.map(rawUrl => new URL(rawUrl));
-      assert.equal(
-        parsedRequests.some(url => isSummaryRequest(url, "/ops/task-state")),
-        true,
+      await waitForCapturedBridgeRequest(
+        capturedBridgeRequests,
+        url => isSummaryRequest(url, "/ops/task-state"),
         "Admin startup should request summary task state"
       );
-      assert.equal(
-        parsedRequests.some(url => isSummaryRequest(url, "/registry/conflicts")),
-        true,
+      const parsedRequests = await waitForCapturedBridgeRequest(
+        capturedBridgeRequests,
+        url => isSummaryRequest(url, "/registry/conflicts"),
         "Admin startup should request summary registry conflicts"
       );
       const fullStartupRequests = parsedRequests.filter(isFullStartupOpsRequest);

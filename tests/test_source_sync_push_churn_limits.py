@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 from datetime import UTC, datetime
 from urllib.error import HTTPError
@@ -7,8 +8,31 @@ from urllib.error import HTTPError
 import pytest
 
 from src import source_sync as sync
+from src.source_sync_shard import build_sharded_snapshot_bundle
 from tests.source_sync_helpers import source_sync_test_root  # noqa: F401
 from tests.test_source_sync_push_churn import _FakeResponse, _Recorder
+
+
+def _unchanged_sharded_remote_opener(local: dict) -> _Recorder:
+    remote_snapshot = sync.build_snapshot(local, source_label="admin_bridge")
+    bundle = build_sharded_snapshot_bundle(remote_snapshot, max_shard_size=10_000)
+    shard = bundle["shards"][0]
+    encoded_manifest = base64.b64encode(json.dumps(bundle["manifest"]).encode("utf-8")).decode(
+        "ascii"
+    )
+    return _Recorder(
+        [
+            _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
+            _FakeResponse(200, {"sha": "manifest-sha", "content": encoded_manifest}),
+            _FakeResponse(
+                200,
+                {
+                    "sha": "shard-sha",
+                    "content": base64.b64encode(shard.payload_bytes).decode("ascii"),
+                },
+            ),
+        ]
+    )
 
 
 def test_dry_run_returns_diff_without_side_effects(source_sync_test_root):
@@ -49,6 +73,59 @@ def test_dry_run_returns_diff_without_side_effects(source_sync_test_root):
     assert result["wouldChange"] is True
     assert result["remoteSha"] == ""
     assert result["skipReason"] == "dryRun"
+    assert len(opener.calls) == 3
+
+
+def test_dry_run_unchanged_sharded_remote_preserves_dry_run_contract(
+    source_sync_test_root, monkeypatch
+):
+    source_sync_test_root.write_packaged_config()
+    local = {
+        "active": [{"adapter": "static", "listing_url": "https://dryrun-noop.example/jobs"}],
+        "pending": [],
+        "rejected": [],
+    }
+    monkeypatch.setattr(sync, "now_iso", lambda: "2026-04-09T20:55:07.978053+00:00")
+    opener = _unchanged_sharded_remote_opener(local)
+    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
+    original_build_jwt = sync.build_app_jwt
+    try:
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        result = sync.push_sources_snapshot(cfg, local, dry_run=True, opener=opener)
+    finally:
+        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+
+    assert result["pushed"] is False
+    assert result["dryRun"] is True
+    assert result["wouldChange"] is False
+    assert result["skipReason"] == "dryRun"
+    assert result["counters"]["totalPushes"] == 0
+    assert result["counters"]["noOpSkips"] == 0
+    assert len(opener.calls) == 3
+
+
+def test_push_unchanged_sharded_remote_skips_writes(source_sync_test_root, monkeypatch):
+    source_sync_test_root.write_packaged_config()
+    local = {
+        "active": [{"adapter": "static", "listing_url": "https://push-noop.example/jobs"}],
+        "pending": [],
+        "rejected": [],
+    }
+    monkeypatch.setattr(sync, "now_iso", lambda: "2026-04-09T20:55:07.978053+00:00")
+    opener = _unchanged_sharded_remote_opener(local)
+    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
+    original_build_jwt = sync.build_app_jwt
+    try:
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        result = sync.push_sources_snapshot(cfg, local, opener=opener)
+    finally:
+        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+
+    assert result["pushed"] is False
+    assert result["skipped"] is True
+    assert result["skipReason"] == "no_meaningful_change"
+    assert result["counters"]["totalPushes"] == 1
+    assert result["counters"]["noOpSkips"] == 1
     assert len(opener.calls) == 3
 
 

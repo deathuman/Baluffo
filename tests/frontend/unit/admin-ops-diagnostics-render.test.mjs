@@ -80,6 +80,69 @@ test("admin render: frontend perf counters appear in ops diagnostics", () => {
   assert.match(metricsEl.innerHTML, /count 3/i);
 });
 
+test("admin render: backend performance diagnostics are bounded and refreshable", () => {
+  const copyButton = makeAttrButton({ "data-ops-diagnostics-copy": "performance" });
+  const refreshButton = makeAttrButton({});
+  const metricsEl = makeEl({
+    "[data-ops-diagnostics-copy]": [copyButton],
+    '[data-action="refresh-performance-profile"]': [refreshButton]
+  });
+  const copied = [];
+  let refreshed = 0;
+
+  renderAdminOpsFetcherMetrics(metricsEl, {
+    latestRun: {},
+    history: {},
+    performanceProfile: {
+      ok: true,
+      generatedAt: "2026-06-05T00:00:00+00:00",
+      runtime: { runtimeMode: "container", appVersion: "0.2.43" },
+      routeTimings: {
+        routes: [
+          {
+            label: "GET /ops/dashboard-health",
+            count: 3,
+            p50Ms: 850,
+            p95Ms: 3100,
+            maxMs: 3100,
+            errorCount: 0
+          }
+        ]
+      },
+      operationTimings: {
+        operations: [
+          {
+            label: "ops.dashboard.history",
+            count: 3,
+            p50Ms: 20,
+            p95Ms: 80,
+            maxMs: 80,
+            errorCount: 0
+          }
+        ]
+      }
+    }
+  }, null, {
+    onCopySectionDiagnostics: section => copied.push(section),
+    onRefreshPerformanceProfile: () => { refreshed += 1; }
+  });
+
+  assert.match(metricsEl.innerHTML, /Backend Performance/i);
+  assert.match(metricsEl.innerHTML, /GET \/ops\/dashboard-health/i);
+  assert.match(metricsEl.innerHTML, /ops\.dashboard\.history/i);
+  assert.match(metricsEl.innerHTML, /Refresh performance/i);
+  assert.doesNotMatch(metricsEl.innerHTML, /token=|secret|rawSamples/i);
+
+  copyButton.click();
+  refreshButton.click();
+
+  assert.equal(copied.length, 1);
+  assert.equal(copied[0].key, "performance");
+  assert.equal(copied[0].routes[0].label, "GET /ops/dashboard-health");
+  assert.equal(copied[0].operations[0].label, "ops.dashboard.history");
+  assert.equal(refreshed, 1);
+});
+
 test("admin render: discovery audit artifact diagnostics are bounded and actionable", () => {
   const copyButton = makeAttrButton({ "data-ops-diagnostics-copy": "auditArtifacts" });
   const refreshButton = makeAttrButton({});

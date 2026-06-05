@@ -74,6 +74,11 @@ Use the repo-native perf entrypoints before adding new benchmark tooling:
 | Goal | Command | Output location |
 |------|---------|-----------------|
 | Complete benchmark report | `npm run perf:complete` | `_out/perf-complete/summary.json` plus the timestamped run directory |
+| Complete benchmark with live bridge sample | `python scripts/perf_complete.py --bridge-base-url http://192.168.50.61:8877` | `_out/perf-complete/summary.json` plus a bounded live bridge sample |
+| Complete benchmark with multi-timeout live sample | `python scripts/perf_complete.py --bridge-base-url http://192.168.50.61:8877 --bridge-timeouts 3,10,30` | Same as complete benchmark, with live request rows for each timeout |
+| Live bridge profile sample only | `python scripts/perf_bridge_profile_snapshot.py --bridge-base-url http://192.168.50.61:8877` | `_out/perf-complete/live/<timestamp>/bridge-profile/live/` |
+| Live bridge profile sample with timeout comparison | `python scripts/perf_bridge_profile_snapshot.py --bridge-base-url http://192.168.50.61:8877 --timeouts 3,10,30` | Same live output, with TCP, first-byte, and full-response timing per timeout |
+| Startup bridge A/B experiment | `python scripts/perf_startup_bridge_ab.py --pairs 5 --pages jobs,admin` | `_out/perf-complete/startup-bridge-ab/<timestamp>/startup-bridge-ab-summary.json` |
 | Slowest Python tests | `npm run perf:py:timing` | Console output only |
 | Isolated discovery sanity benchmark | `npm run perf:discovery:benchmark` | `_out/perf-sanity-discovery/` |
 | Packaged Jobs cold/warm startup probe | `npm run perf:startup:cold` / `npm run perf:startup:warm` | `.tmp/packaged-desktop-smoke/` and `data/packaged-desktop-smoke-report.json` |
@@ -81,7 +86,11 @@ Use the repo-native perf entrypoints before adding new benchmark tooling:
 
 Notes:
 - Prefer repo-local artifact roots such as `.tmp/` and `_out/` for new perf workflows; avoid `%LOCALAPPDATA%\\Temp` for benchmark or runtime-state outputs in this Windows-first repo.
-- Use `npm run perf:complete` when asked for the most complete benchmark. It aggregates discovery/fetch medians, frontend boot traces, Jobs and Admin cold/warm packaged startup, packaged sync push/pull timings, artifact sizes, best-effort process-tree RAM, and top process-level RAM contributors.
+- Use `npm run perf:complete` when asked for the most complete benchmark. It aggregates discovery/fetch medians, fetch source/provider-board timing and status/cache buckets, frontend boot traces, Jobs and Admin cold/warm packaged startup, packaged sync push/pull timings, sync push detail stages, sync remote-write timing, bridge route/operation profile snapshots, optimization targets, artifact sizes, best-effort process-tree RAM, and top process-level RAM contributors.
+- Use `python scripts/perf_complete.py --bridge-base-url <url>` when route-level timing from a running desktop or Umbrel bridge needs to be correlated with local benchmark evidence. This is read-only and failure is recorded as evidence, not as a benchmark failure. Default `npm run perf:complete` stays local and reproducible.
+- Use `python scripts/perf_bridge_profile_snapshot.py --bridge-base-url <url>` for a quick live-only read-only sample without running the packaged startup, frontend, discovery, fetch, and sync benchmarks. Add `--timeouts 3,10,30` when debugging LAN reachability so the output separates TCP connect, first-byte, and full-response timing for each endpoint.
+- Use `python scripts/perf_startup_bridge_ab.py --pairs 5 --pages jobs,admin` only when evaluating whether `BALUFFO_STARTUP_PARALLEL_BRIDGE=1` should become the desktop default. Promotion requires complete default and parallel samples for both Jobs and Admin, material cold/warm median improvements, no cold-start regression, and no packaged lifecycle smoke regressions.
+- Use `/ops/performance-profile` directly for ad hoc route-level timing checks. It is in-memory and bounded; it reports aggregate route and backend operation timings only, with query strings and dynamic path segments redacted.
 - Current safe RAM tuning is scoped to Chromium app-mode startup flags. The packaged sync section remains a full-runtime no-browser rehearsal so its RAM numbers stay comparable with earlier complete benchmark reports.
 - `npm run perf:discovery:benchmark` is the default discovery perf entrypoint because it keeps artifacts under `_out/`; use `python scripts/benchmark_discovery_probe.py` separately when tuning discovery probe concurrency.
 - Do not add `pytest-benchmark` or `py-spy` by default here. If dependency approval happens later, benchmark deterministic Python leaf logic first and keep desktop startup analysis on the existing startup-trace pipeline.

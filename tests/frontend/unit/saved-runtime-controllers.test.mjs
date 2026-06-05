@@ -200,8 +200,8 @@ test("saved auth controller delays the initial guest render while desktop auth r
 
     assert.equal(pendingTimer, null);
     assert.match(String(refs.savedAuthStatusEl.textContent || ""), /Packaged Smoke User/);
-    assert.equal(sourceStatus, "Loading your saved jobs...");
-    assert.equal(activityStatus, "Loading activity...");
+    assert.equal(sourceStatus, "");
+    assert.equal(activityStatus, "");
     assert.equal(subscribedUid, "local_packaged_smoke_user");
   } finally {
     globalThis.window = originalWindow;

@@ -458,7 +458,9 @@ export function resetLiveTaskPlaceholder({
   logEl.innerHTML = "";
   clearOffset?.();
   setProgress?.({ active: false });
-  appendLog?.(message, level);
+  if (String(message || "").trim()) {
+    appendLog?.(message, level);
+  }
 }
 
 export function createRestoreActiveRunWatches({

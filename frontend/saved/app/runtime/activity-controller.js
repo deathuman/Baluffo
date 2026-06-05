@@ -157,7 +157,7 @@ export function createSavedActivityController({
     });
   }
 
-  async function refreshActivityLog() {
+  async function refreshActivityLog(options = {}) {
     if (!dom.activityPanelBodyEl) return;
     if (!viewState.currentUser || !savedPageService.isAvailable()) {
       setActivityStatus("Sign in to view history.");
@@ -166,7 +166,7 @@ export function createSavedActivityController({
       return;
     }
 
-    setActivityStatus("Loading activity...");
+    setActivityStatus(options?.manual ? "Loading activity..." : "");
     try {
       const entriesResult = await savedPageService.listActivityForUser(viewState.currentUser.uid, 400);
       if (!entriesResult.ok) throw new Error(entriesResult.error || "Could not load history.");

@@ -15,7 +15,7 @@ import {
   buildOpsFetcherDiagnosticsSections,
   buildOpsFetcherMetricSections,
   buildOpsTaskLaneRows
-} from "../domain/ops-health-view-model.js?v=1";
+} from "../domain/ops-health-view-model.js?v=2";
 import {
   FETCHER_FAILURE_BUCKET_LABELS,
   formatDuration,
@@ -99,6 +99,17 @@ function formatPipelineScheduleStatus(entry) {
   if (interval > 0 && next) return `every ${interval}h, next ${next}`;
   if (interval > 0) return `every ${interval}h`;
   return "enabled";
+}
+
+function formatRegistryCountBasis(summary) {
+  const basis = String(summary?.countBasis || "").toLowerCase();
+  if (summary?.summaryExact === true || basis === "normalized") {
+    return "normalized counts";
+  }
+  if (summary?.summaryExact === false || basis === "storage") {
+    return "storage snapshot counts";
+  }
+  return "registry counts";
 }
 
 function renderPipelineScheduleControls(pipeline) {
@@ -216,6 +227,7 @@ export function renderAdminOpsKpis(kpisEl, kpis, status) {
         </div>
         <div class="admin-ops-schedule-item admin-ops-full-row">
           <strong>Registry &amp; Sync</strong>:
+          ${escapeHtml(formatRegistryCountBasis(registrySync))},
           hidden ${Number(registrySync?.hiddenPendingCount || 0).toLocaleString()},
           deferred ${Number(registrySync?.deferredPendingCount || 0).toLocaleString()},
           rejected local-only ${Number(registrySync?.ignoredRejectedCount || 0).toLocaleString()},
@@ -455,6 +467,62 @@ function formatTaskFailureAttempts(payload = {}) {
   `;
 }
 
+function formatPerformanceTimingRows(rows = []) {
+  const timingRows = Array.isArray(rows) ? rows : [];
+  if (!timingRows.length) {
+    return `<tr><td colspan="6">No timing samples yet.</td></tr>`;
+  }
+  return timingRows.slice(0, 8).map(row => `
+    <tr>
+      <td>${escapeHtml(row?.label || "unknown")}</td>
+      <td>${Number(row?.count || 0).toLocaleString()}</td>
+      <td>${formatDuration(Number(row?.p50Ms || 0))}</td>
+      <td>${formatDuration(Number(row?.p95Ms || 0))}</td>
+      <td>${formatDuration(Number(row?.maxMs || 0))}</td>
+      <td>${Number(row?.errorCount || 0).toLocaleString()}</td>
+    </tr>
+  `).join("");
+}
+
+function formatPerformanceProfile(payload = {}) {
+  const routes = Array.isArray(payload?.routeTimings?.routes) ? payload.routeTimings.routes : [];
+  const operations = Array.isArray(payload?.operationTimings?.operations)
+    ? payload.operationTimings.operations
+    : [];
+  const generatedAt = String(payload?.generatedAt || "").trim();
+  const runtime = payload?.runtime && typeof payload.runtime === "object" ? payload.runtime : {};
+  const runtimeLabel = [runtime?.runtimeMode, runtime?.appVersion]
+    .map(value => String(value || "").trim())
+    .filter(Boolean)
+    .join(" ");
+  return `
+    <div class="admin-ops-schedule-item admin-ops-full-row">
+      <strong>Backend performance</strong>:
+      ${routes.length.toLocaleString()} route groups,
+      ${operations.length.toLocaleString()} operation groups
+      ${runtimeLabel ? `for ${escapeHtml(runtimeLabel)}` : ""}.
+      ${generatedAt ? `Snapshot ${escapeHtml(formatDateTime(generatedAt))}.` : ""}
+      <button type="button" class="btn clear-filters-btn" data-action="refresh-performance-profile">Refresh performance</button>
+    </div>
+    <div class="admin-table-shell admin-ops-full-row">
+      <table class="admin-table admin-ops-performance-table">
+        <thead>
+          <tr><th>Route</th><th>Count</th><th>P50</th><th>P95</th><th>Max</th><th>Errors</th></tr>
+        </thead>
+        <tbody>${formatPerformanceTimingRows(routes)}</tbody>
+      </table>
+    </div>
+    <div class="admin-table-shell admin-ops-full-row">
+      <table class="admin-table admin-ops-performance-table">
+        <thead>
+          <tr><th>Operation</th><th>Count</th><th>P50</th><th>P95</th><th>Max</th><th>Errors</th></tr>
+        </thead>
+        <tbody>${formatPerformanceTimingRows(operations)}</tbody>
+      </table>
+    </div>
+  `;
+}
+
 function formatOpsTaskLane(rows, diagnostics = null) {
   const laneRows = Array.isArray(rows) ? rows : [];
   const body = laneRows.map(row => {
@@ -532,6 +600,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     frontendPerfCounters: metrics?.frontendPerfCounters || {},
     discoveryAuditArtifacts: metrics?.discoveryAuditArtifacts || {},
     taskFailureAttempts: metrics?.taskFailureAttempts || {},
+    performanceProfile: metrics?.performanceProfile || {},
     runModel: options?.runModel || {},
     failureSummary: summary
   });
@@ -560,6 +629,9 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const sourcePolicyRecommendationExport = latest?.sourcePolicyRecommendationExport && typeof latest.sourcePolicyRecommendationExport === "object" ? latest.sourcePolicyRecommendationExport : {};
   const frontendPerfCounters = metrics?.frontendPerfCounters && typeof metrics.frontendPerfCounters === "object"
     ? metrics.frontendPerfCounters
+    : {};
+  const performanceProfile = metrics?.performanceProfile && typeof metrics.performanceProfile === "object"
+    ? metrics.performanceProfile
     : {};
   const frontendPerfCounterRows = Object.entries(frontendPerfCounters)
     .filter(([, value]) => value && typeof value === "object")
@@ -899,6 +971,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const frontendPerfSectionHtml = `
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Frontend fetch/render counters</strong>: ${frontendPerfSummary}</div>
   `;
+  const performanceProfileSectionHtml = formatPerformanceProfile(performanceProfile);
   const auditArtifactsSectionHtml = formatDiscoveryAuditArtifacts(metrics?.discoveryAuditArtifacts || {});
   const taskFailureAttemptsSectionHtml = formatTaskFailureAttempts(metrics?.taskFailureAttempts || {});
 
@@ -909,7 +982,8 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     failureSummary: summary,
     taskLaneRows,
     auditArtifacts: metrics?.discoveryAuditArtifacts || {},
-    taskFailureAttempts: metrics?.taskFailureAttempts || {}
+    taskFailureAttempts: metrics?.taskFailureAttempts || {},
+    performanceProfile
   });
   const taskLaneHtml = formatOpsTaskLane(taskLaneRows, diagnosticsByKey.taskStatus);
   const sectionHtmlByKey = {
@@ -917,6 +991,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     failures: failuresSectionHtml,
     taskFailures: taskFailureAttemptsSectionHtml,
     frontendPerf: frontendPerfSectionHtml,
+    performance: performanceProfileSectionHtml,
     sourceHealth: sourceHealthSectionHtml,
     sourcePolicy: sourcePolicySectionHtml,
     auditArtifacts: auditArtifactsSectionHtml
@@ -974,6 +1049,13 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     metricsEl.querySelectorAll('[data-action="refresh-task-failure-attempts"]').forEach(button => {
       button.addEventListener("click", () => {
         options.onRefreshTaskFailureAttempts();
+      });
+    });
+  }
+  if (typeof options?.onRefreshPerformanceProfile === "function") {
+    metricsEl.querySelectorAll('[data-action="refresh-performance-profile"]').forEach(button => {
+      button.addEventListener("click", () => {
+        options.onRefreshPerformanceProfile();
       });
     });
   }

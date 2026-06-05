@@ -522,6 +522,7 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
                 artifact_mappings=(
                     ("runtimeStdout", "syncRehearsalStdout"),
                     ("runtimeStderr", "syncRehearsalStderr"),
+                    ("performanceProfileSnapshot", "performanceProfileSnapshot"),
                 ),
                 failure_step="packaged-sync-rehearsal",
                 failure_message="Packaged sync rehearsal failed.",
@@ -626,6 +627,13 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
                 _apply_startup_threshold_gate(report, startup_profile=startup_profile)
 
         if bool(args.profile_only):
+            report["artifacts"].update(
+                deps.capture_performance_profile_snapshot(
+                    bridge_base_url,
+                    artifacts_dir,
+                    filename="performance-profile.startup.json",
+                )
+            )
             record_only = bool(getattr(args, "profile_record_only", False))
             report["ok"] = (
                 True

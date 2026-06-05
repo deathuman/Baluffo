@@ -82,8 +82,25 @@ test("jobs html exposes first-slice read-only lifecycle filters", () => {
   assert.match(html, /value="reappeared">Reappeared<\/option>/);
   assert.match(html, /value="preserved_source_failed">Preserved because source failed<\/option>/);
   assert.match(html, /styles\/jobs\.css\?v=10/);
-  assert.match(html, /frontend\/jobs\/index\.js\?v=16/);
+  assert.match(html, /frontend\/jobs\/index\.js\?v=17/);
   assert.doesNotMatch(html, /preserved_source_skipped/);
+});
+
+test("desktop page startup shells avoid passive loading placeholders", () => {
+  const jobsHtml = fs.readFileSync(path.join(repoRoot, "jobs.html"), "utf8");
+  const savedHtml = fs.readFileSync(path.join(repoRoot, "saved.html"), "utf8");
+  const adminHtml = fs.readFileSync(path.join(repoRoot, "admin.html"), "utf8");
+
+  assert.doesNotMatch(jobsHtml, /Loading jobs|Loading configured sources/);
+  assert.match(jobsHtml, /class="jobs-table-header"/);
+  assert.match(jobsHtml, /id="data-sources-list"[^>]*><\/ul>/);
+
+  assert.doesNotMatch(savedHtml, /Loading saved jobs|No activity yet|Admin Checking/);
+  assert.match(savedHtml, /id="saved-jobs-list"[^>]*><\/div>/);
+  assert.match(savedHtml, /id="activity-panel-body"[^>]*><\/div>/);
+
+  assert.doesNotMatch(adminHtml, /Loading admin overview|Loading operational signals|No discovery report loaded yet/);
+  assert.match(adminHtml, /id="admin-action-center-items"[^>]*><\/div>/);
 });
 
 test("desktop page titles keep the Baluffo window identity token", () => {

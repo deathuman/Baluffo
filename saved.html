@@ -171,9 +171,7 @@
           </form>
         </section>
 
-        <div id="saved-jobs-list" data-ui="saved-jobs-list" class="jobs-list">
-          <div class="loading">Loading saved jobs...</div>
-        </div>
+        <div id="saved-jobs-list" data-ui="saved-jobs-list" class="jobs-list"></div>
 
         <section class="saved-actions saved-actions-bottom">
           <details id="saved-utilities" class="saved-utilities">
@@ -213,9 +211,7 @@
         </div>
         <p id="activity-selected-job" data-ui="activity-selected-job" class="activity-selected-job">Showing all saved-job activity.</p>
         <p id="activity-panel-status" data-ui="activity-panel-status" class="source-status">Sign in to view history.</p>
-        <div id="activity-panel-body" data-ui="activity-panel-body" class="activity-panel-body">
-          <div class="muted">No activity yet. Changes to phases, notes, and files will appear here.</div>
-        </div>
+        <div id="activity-panel-body" data-ui="activity-panel-body" class="activity-panel-body"></div>
       </aside>
     </div>
 
@@ -232,13 +228,13 @@
           type="button"
           disabled
           aria-disabled="true"
-        >Admin Checking...</button>
+        >Admin</button>
       </div>
     </div>
   </div>
 
   <script src="frontend-runtime-config.js?v=1"></script>
   <script src="theme.js" defer></script>
-  <script type="module" src="frontend/saved/index.js"></script>
+  <script type="module" src="frontend/saved/index.js?v=1"></script>
 </body>
 </html>

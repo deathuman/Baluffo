@@ -20,6 +20,11 @@ const OPS_FETCHER_METRIC_SECTION_DEFINITIONS = [
     description: "Browser-side fetch and render counters from this Admin session."
   },
   {
+    key: "performance",
+    title: "Backend Performance",
+    description: "Bridge route and operation timing aggregates from this runtime session."
+  },
+  {
     key: "dedup",
     title: "Dedup Review",
     description: "Read-only gate, review-state, and blocker evidence before lifecycle UX."
@@ -271,6 +276,19 @@ function compactTaskFailureAttempts(payload) {
   };
 }
 
+function compactPerformanceTimingRow(row) {
+  return {
+    label: truncateString(row?.label || "unknown"),
+    count: toNumber(row?.count),
+    avgMs: toNumber(row?.avgMs),
+    p50Ms: toNumber(row?.p50Ms),
+    p95Ms: toNumber(row?.p95Ms),
+    maxMs: toNumber(row?.maxMs),
+    lastMs: toNumber(row?.lastMs),
+    errorCount: toNumber(row?.errorCount)
+  };
+}
+
 function baseDiagnostics(key, title, generatedAt) {
   return {
     key,
@@ -287,6 +305,7 @@ export function buildOpsFetcherDiagnosticsSections({
   taskLaneRows,
   auditArtifacts,
   taskFailureAttempts,
+  performanceProfile,
   generatedAt = new Date().toISOString()
 } = {}) {
   const latestRun = latest && typeof latest === "object" ? latest : {};
@@ -306,6 +325,9 @@ export function buildOpsFetcherDiagnosticsSections({
     : {};
   const taskFailureAttemptsPayload = taskFailureAttempts && typeof taskFailureAttempts === "object" && !Array.isArray(taskFailureAttempts)
     ? taskFailureAttempts
+    : {};
+  const performanceProfilePayload = performanceProfile && typeof performanceProfile === "object" && !Array.isArray(performanceProfile)
+    ? performanceProfile
     : {};
 
   return {
@@ -342,6 +364,20 @@ export function buildOpsFetcherDiagnosticsSections({
     taskFailures: {
       ...baseDiagnostics("taskFailures", "Task Failure Attempts", generatedAt),
       ...compactTaskFailureAttempts(taskFailureAttemptsPayload)
+    },
+    performance: {
+      ...baseDiagnostics("performance", "Backend Performance", generatedAt),
+      runtime: compactSummaryObject(performanceProfilePayload?.runtime),
+      routes: boundedList(
+        performanceProfilePayload?.routeTimings?.routes,
+        compactPerformanceTimingRow,
+        10
+      ),
+      operations: boundedList(
+        performanceProfilePayload?.operationTimings?.operations,
+        compactPerformanceTimingRow,
+        10
+      )
     },
     dedup: {
       ...baseDiagnostics("dedup", "Dedup Review", generatedAt),

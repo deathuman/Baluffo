@@ -257,6 +257,11 @@ def test_capture_runtime_snapshot_preserves_versioned_startup_metrics() -> None:
                         },
                     },
                 },
+                {
+                    "ok": True,
+                    "routeTimings": {"routes": [{"label": "GET /ops/health", "p95Ms": 12}]},
+                    "operationTimings": {"operations": []},
+                },
             ],
         ):
             snapshots = smoke.capture_runtime_snapshot("http://127.0.0.1:8877", artifacts_dir)
@@ -268,6 +273,9 @@ def test_capture_runtime_snapshot_preserves_versioned_startup_metrics() -> None:
         storage_health = json.loads(
             Path(snapshots["storageHealthSnapshot"]).read_text(encoding="utf-8")
         )
+        performance_profile = json.loads(
+            Path(snapshots["performanceProfileSnapshot"]).read_text(encoding="utf-8")
+        )
         assert saved == metrics_payload
         assert saved["rows"][0]["schemaVersion"] == 1
         assert saved["rows"][0]["category"] == "handoff"
@@ -276,6 +284,23 @@ def test_capture_runtime_snapshot_preserves_versioned_startup_metrics() -> None:
         assert storage_health["storage"]["migrationVersion"] == "008"
         assert storage_health["storage"]["authorityModes"]["taskRuns"] == "sqlite"
         assert storage_health["storage"]["authorityModes"]["sourceRuns"] == "sqlite"
+        assert performance_profile["routeTimings"]["routes"][0]["label"] == "GET /ops/health"
+
+
+def test_capture_performance_profile_snapshot_is_non_fatal() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        artifacts_dir = Path(tmp) / "artifacts"
+        with mock.patch.object(smoke, "fetch_json", side_effect=RuntimeError("older bridge")):
+            snapshots = smoke.capture_performance_profile_snapshot(
+                "http://127.0.0.1:8877",
+                artifacts_dir,
+                filename="performance-profile.startup.json",
+            )
+
+        saved = json.loads(
+            Path(snapshots["performanceProfileSnapshot"]).read_text(encoding="utf-8")
+        )
+        assert saved == {"ok": False, "error": "older bridge"}
 
 
 @pytest.mark.windows
@@ -416,6 +441,15 @@ def test_run_packaged_smoke_profile_only_waits_for_jobs_startup_events() -> None
             mock.patch.object(smoke, "capture_runtime_snapshot", return_value={}) as snapshot_mock,
             mock.patch.object(
                 smoke,
+                "capture_performance_profile_snapshot",
+                return_value={
+                    "performanceProfileSnapshot": str(
+                        artifacts_dir / "performance-profile.startup.json"
+                    )
+                },
+            ) as profile_mock,
+            mock.patch.object(
+                smoke,
                 "collect_packaged_smoke_env_diagnostics",
                 return_value={"tmp": "C:/tmp", "temp": "C:/tmp", "isElevated": False},
             ),
@@ -445,6 +479,12 @@ def test_run_packaged_smoke_profile_only_waits_for_jobs_startup_events() -> None
         assert payload["probeBrowser"]["preferredBrowserName"] == "chrome"
         assert payload["probeBrowser"]["preferredBrowserPath"] == "C:/Chrome/chrome.exe"
         snapshot_mock.assert_not_called()
+        profile_mock.assert_called_once_with(
+            payload["bridgeBaseUrl"],
+            artifacts_dir,
+            filename="performance-profile.startup.json",
+        )
+        assert "performanceProfileSnapshot" in payload["artifacts"]
         runtime_mock.assert_called_once()
         assert runtime_mock.call_args.kwargs["require_managed_window"] is True
         assert runtime_mock.call_args.kwargs["require_page_ready"] is False

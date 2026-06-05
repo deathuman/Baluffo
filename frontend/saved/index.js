@@ -3,7 +3,7 @@ console.log("[baluffo-saved] index.js: module started");
 
 import "../shared/local-data/app-client.js";
 import "./zip-utils.js";
-import { boot as bootSavedPage } from "./app.js";
+import { boot as bootSavedPage } from "./app.js?v=1";
 import { installGlobalTooltipController } from "../shared/ui/tooltip-controller.js";
 import { observeLongTasks } from "../../probes/long-task-observer.js";
 import { emitStartupProbeMetric, resolveStartupProbeEnabled } from "../../probes/startup-probe.js";

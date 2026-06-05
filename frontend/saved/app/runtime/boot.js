@@ -1,6 +1,6 @@
 import { emitStartupMetric, markFirstInteractive } from "../../../shared/app-boot.js";
 import { fetchJson } from "../../../shared/api-client.js";
-import { createAdminBridgeButtonWatcher } from "../../../shared/admin-bridge-button.js";
+import { createAdminBridgeButtonWatcher } from "../../../shared/admin-bridge-button.js?v=2";
 import { awaitDesktopBootstrap, navigateDesktopPage } from "../../../shared/local-data/desktop-client.js";
 import { createPerfMarks } from "../../../shared/perf-marks.js";
 import { set as stateHubSet } from "../../../shared/state-hub.js";

@@ -13,5 +13,5 @@ export {
   renderAdminOpsKpis,
   renderAdminOpsSchedule,
   renderAdminOpsTrends
-} from "./render/ops.js?v=17";
+} from "./render/ops.js?v=18";
 export { renderAdminRegistryConflicts } from "./render/registry-conflicts.js?v=6";

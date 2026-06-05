@@ -245,6 +245,9 @@ wait_for_packaged_runtime_with_port_pivot = (
 )
 wait_for_packaged_child_runtime = packaged_smoke_runtime_mod.wait_for_packaged_child_runtime
 capture_runtime_snapshot = packaged_smoke_runtime_mod.capture_runtime_snapshot
+capture_performance_profile_snapshot = (
+    packaged_smoke_runtime_mod.capture_performance_profile_snapshot
+)
 wait_for_runtime_events = packaged_smoke_runtime_mod.wait_for_runtime_events
 run_embedded_runtime_probe = packaged_smoke_runtime_mod.run_embedded_runtime_probe
 parse_packaged_node_smoke_report = packaged_smoke_runtime_mod.parse_packaged_node_smoke_report

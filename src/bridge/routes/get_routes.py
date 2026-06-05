@@ -24,6 +24,7 @@ from src.bridge.api import BridgeApi
 from src.bridge.container_mode import is_container_runtime, send_container_unavailable
 from src.bridge.discovery_audit_artifacts import get_discovery_audit_artifacts_payload
 from src.bridge.fetch_report_review_state import load_fetch_report_with_dedup_review_state
+from src.bridge.performance_profile import snapshot_performance_profile, time_operation
 from src.bridge.registry_conflict_adjudication import overlay_adjudication
 from src.bridge.registry_conflicts import (
     build_registry_conflicts_summary_cache_key,
@@ -91,6 +92,22 @@ def _storage_metrics_data_dir(api: BridgeApi) -> Path:
     if data_dir:
         return Path(data_dir).expanduser().resolve()
     return Path(api.JOBS_FETCH_REPORT_PATH).expanduser().resolve().parent
+
+
+def _performance_profile_runtime(api: BridgeApi) -> dict[str, Any]:
+    runtime_config = getattr(api, "runtime_config", None)
+    owner_mode = str(getattr(runtime_config, "owner_mode", "") or "")
+    if is_container_runtime(api):
+        runtime_mode = "container"
+    elif bool(getattr(runtime_config, "desktop_mode", False)):
+        runtime_mode = "desktop"
+    else:
+        runtime_mode = "bridge"
+    return {
+        "appVersion": str(getattr(api, "app_version", "") or ""),
+        "runtimeMode": runtime_mode,
+        "ownerMode": owner_mode,
+    }
 
 
 def _safe_int(value: Any, default: int = 0) -> int:
@@ -850,12 +867,25 @@ def _registry_authority_mode_from_summary(summary: dict[str, Any]) -> str:
     return ""
 
 
-def _registry_summary_route_payload(api: BridgeApi) -> dict[str, Any]:
-    summary = _as_dict(api.get_registry_summary_payload())
+def _registry_summary_route_payload(
+    api: BridgeApi, query: dict[str, list[str]]
+) -> tuple[int, dict[str, Any]]:
+    view = str((query.get("view") or [""])[0] or "").strip().lower()
+    if view not in ("", "cheap", "storage", "exact"):
+        return 400, {
+            "ok": False,
+            "error": "invalid registry summary view",
+            "invalidView": view,
+            "allowedViews": ["storage", "exact"],
+        }
+    if view == "exact":
+        summary = _as_dict(api.get_registry_exact_summary_payload())
+    else:
+        summary = _as_dict(api.get_registry_summary_payload())
     generated_at = str(
         summary.get("updatedAt") or summary.get("publishedAt") or datetime.now(UTC).isoformat()
     )
-    return {
+    return 200, {
         "ok": True,
         "summary": summary,
         "authorityMode": _registry_authority_mode_from_summary(summary),
@@ -874,7 +904,11 @@ def _registry_sources_payload(
             "invalidBuckets": invalid,
         }
     state = api.load_state()
-    summary = api.summarize_state(state)
+    summary = {
+        **api.summarize_state(state),
+        "summaryExact": True,
+        "countBasis": "normalized",
+    }
     sources: dict[str, list[dict[str, Any]]] = {}
     if "pending" in buckets:
         pending_query = dict(query)
@@ -1238,18 +1272,26 @@ def handle_get(
         return True
 
     if path == "/registry/summary":
-        handler.send_json(_registry_summary_route_payload(api))
+        view = str((query.get("view") or [""])[0] or "").strip().lower()
+        operation_name = "registry.summary.exact" if view == "exact" else "registry.summary.storage"
+        with time_operation(operation_name):
+            status, payload = _registry_summary_route_payload(api, query)
+        handler.send_json(payload, status=status)
         return True
 
     if path == "/ops/health":
-        handler.send_json(api.compute_ops_health())
+        with time_operation("ops.health.route_payload"):
+            payload = api.compute_ops_health()
+        handler.send_json(payload)
         return True
 
     if path == "/ops/dashboard-health":
         dashboard_health_fn = getattr(api, "compute_ops_dashboard_health", None)
-        handler.send_json(
-            dashboard_health_fn() if callable(dashboard_health_fn) else api.compute_ops_health()
-        )
+        with time_operation("ops.dashboard_health.route_payload"):
+            payload = (
+                dashboard_health_fn() if callable(dashboard_health_fn) else api.compute_ops_health()
+            )
+        handler.send_json(payload)
         return True
 
     if path == "/ops/history":
@@ -1269,9 +1311,12 @@ def handle_get(
     if path == "/ops/task-state":
         view = str((query.get("view") or [""])[0] or "").strip().lower()
         if view == "summary":
-            handler.send_json(api.get_current_task_state_summary_payload())
+            with time_operation("ops.task_state.summary"):
+                payload = api.get_current_task_state_summary_payload()
         else:
-            handler.send_json(api.get_current_task_state_payload())
+            with time_operation("ops.task_state.full"):
+                payload = api.get_current_task_state_payload()
+        handler.send_json(payload)
         return True
 
     if path.startswith("/ops/task-live/"):
@@ -1296,6 +1341,10 @@ def handle_get(
 
     if path == "/ops/perf-counters":
         handler.send_json({"ok": True, "counters": snapshot_counters()})
+        return True
+
+    if path == "/ops/performance-profile":
+        handler.send_json(snapshot_performance_profile(runtime=_performance_profile_runtime(api)))
         return True
 
     if path == "/ops/storage-metrics":
@@ -1423,7 +1472,9 @@ def handle_get(
         return True
 
     if path == "/sync/status":
-        handler.send_json(api.get_sync_status_payload())
+        with time_operation("sync.status"):
+            payload = api.get_sync_status_payload()
+        handler.send_json(payload)
         return True
 
     if path == "/tasks/jobs-pipeline-schedule":

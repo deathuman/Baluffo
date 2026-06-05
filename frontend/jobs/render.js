@@ -269,24 +269,31 @@ export async function renderDataSourcesPanel(options) {
 
   if (!dataSourcesListEl) return;
 
-  const [activeRegistry, fetchReport] = await Promise.all([
-    fetchJsonFromCandidates(sourceRegistryActiveUrls),
-    fetchJsonFromCandidates(jobsFetchReportUrls)
-  ]);
+  try {
+    const [activeRegistry, fetchReport] = await Promise.all([
+      fetchJsonFromCandidates(sourceRegistryActiveUrls),
+      fetchJsonFromCandidates(jobsFetchReportUrls)
+    ]);
 
-  const normalized = normalizeSourceRows(activeRegistry, fetchReport, sheetsFallbackSource, sheetsFallbackSources);
-  renderSourceListRows(dataSourcesListEl, normalized.rows, normalized.reportByName);
+    const normalized = normalizeSourceRows(activeRegistry, fetchReport, sheetsFallbackSource, sheetsFallbackSources);
+    renderSourceListRows(dataSourcesListEl, normalized.rows, normalized.reportByName);
 
-  if (dataSourcesCaptionEl) {
-    const finishedAt = String(fetchReport?.finishedAt || "").trim();
-    if (!finishedAt) {
-      dataSourcesCaptionEl.textContent = "Source list reflects your current local fetch configuration.";
-    } else {
-      const dt = new Date(finishedAt);
-      const stamp = Number.isNaN(dt.getTime())
-        ? finishedAt
-        : dt.toLocaleString([], { year: "numeric", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" });
-      dataSourcesCaptionEl.textContent = `Source list reflects your current local fetch configuration and latest fetch report (${stamp}).`;
+    if (dataSourcesCaptionEl) {
+      const finishedAt = String(fetchReport?.finishedAt || "").trim();
+      if (!finishedAt) {
+        dataSourcesCaptionEl.textContent = "Source list reflects your current local fetch configuration.";
+      } else {
+        const dt = new Date(finishedAt);
+        const stamp = Number.isNaN(dt.getTime())
+          ? finishedAt
+          : dt.toLocaleString([], { year: "numeric", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+        dataSourcesCaptionEl.textContent = `Source list reflects your current local fetch configuration and latest fetch report (${stamp}).`;
+      }
+    }
+  } catch {
+    dataSourcesListEl.innerHTML = "<li>Source metadata unavailable.</li>";
+    if (dataSourcesCaptionEl) {
+      dataSourcesCaptionEl.textContent = "Source metadata unavailable.";
     }
   }
 }

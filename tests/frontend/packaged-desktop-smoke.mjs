@@ -240,7 +240,7 @@ async function assertNoImmediateAdminError(page, { buttonLocator, actionName = "
 
 async function assertAdminStartupSettled(page) {
   await page.waitForFunction(
-    () => !/Loading admin overview/i.test(document.querySelector("#admin-source-status")?.textContent || ""),
+    () => /Loaded \d+ user account|failed|could not|error/i.test(document.querySelector("#admin-source-status")?.textContent || ""),
     null,
     { timeout: 30_000 }
   );

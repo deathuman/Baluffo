@@ -1,7 +1,7 @@
 import { bindAsyncClick, showToast } from "../../../shared/ui/index.js";
 import { fetchJson, postJson } from "../../../shared/api-client.js";
 import { awaitDesktopBootstrap, navigateDesktopPage } from "../../../shared/local-data/desktop-client.js";
-import { createAdminBridgeButtonWatcher } from "../../../shared/admin-bridge-button.js";
+import { createAdminBridgeButtonWatcher } from "../../../shared/admin-bridge-button.js?v=2";
 import { openReleaseNotesDialog } from "../../../shared/ui/release-notes-dialog.js";
 import { cacheJobsDom } from "../dom.js";
 import { createJobsDesktopUpdateController } from "../desktop-update.js";
@@ -37,6 +37,18 @@ export function createJobsBoot(deps) {
     });
   }
 
+  function scheduleDesktopUpdateAutoCheck() {
+    if (deps.runtimeState.desktopUpdateAutoCheckScheduled) return;
+    deps.runtimeState.desktopUpdateAutoCheckScheduled = true;
+    scheduleNonCriticalStartup(deps.windowObject, () => {
+      deps.windowObject.setTimeout(() => {
+        deps.runtimeState.desktopUpdateController?.startAutoCheck().catch(err => {
+          deps.logJobsError("Failed to auto-check desktop updates", err);
+        });
+      }, 2500);
+    });
+  }
+
   async function init() {
     return initJobsFeed({
       hasJobsList: Boolean(deps.dom.jobsList),
@@ -56,7 +68,10 @@ export function createJobsBoot(deps) {
       applyStateToFilters: () => deps.filtersController.applyStateToFilters(),
       applyFiltersAndRender: (...args) => deps.applyFiltersAndRender(...args),
       markStartupRendered: deps.markStartupRendered,
-      markJobsFirstInteractive: deps.markJobsFirstInteractive,
+      markJobsFirstInteractive: () => {
+        deps.markJobsFirstInteractive();
+        scheduleDesktopUpdateAutoCheck();
+      },
       isJobsCacheStale: deps.isJobsCacheStale,
       cacheTtlMs: deps.jobsCacheTtlMs,
       setSourceStatus: text => deps.feedController.setSourceStatus(text),
@@ -125,11 +140,6 @@ export function createJobsBoot(deps) {
       } catch (err) {
         deps.logJobsError("Failed to initialize desktop update UI", err);
         return;
-      }
-      try {
-        await deps.runtimeState.desktopUpdateController.startAutoCheck();
-      } catch (err) {
-        deps.logJobsError("Failed to auto-check desktop updates", err);
       }
     })();
     deps.eventsController.setupJobsListDelegation();

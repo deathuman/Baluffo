@@ -18,7 +18,7 @@ export function applyJobsAdminBridgeState({
 
   if (normalized === "checking") {
     buttonEl.classList.add("checking");
-    buttonEl.textContent = label || "Admin Checking...";
+    buttonEl.textContent = "Admin";
     setTooltip(buttonEl, "");
     setTooltip(tooltipTarget, title || "Checking admin bridge status");
     buttonEl.disabled = true;

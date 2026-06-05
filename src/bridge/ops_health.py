@@ -7,6 +7,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from src.bridge.performance_profile import time_operation
 from src.bridge.registry_sync_summary import derive_registry_sync_summary
 from src.shared.json_shapes import as_json_object, json_object_rows
 
@@ -565,56 +566,66 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
     now_iso, desktop_mode, desktop_last_activity_at, load_alert_state_fn, save_alert_state_fn,
     parse_schedule_metadata_fn, normalize_fetch_report_contract, parse_iso, now_utc.
     """
-    history: list[dict[str, Any]] = deps.get_history()
-    latest_fetch_report: dict[str, Any] = deps.get_fetch_report()
+    with time_operation("ops.dashboard.history"):
+        history: list[dict[str, Any]] = deps.get_history()
+    with time_operation("ops.dashboard.fetch_report"):
+        latest_fetch_report: dict[str, Any] = deps.get_fetch_report()
     registry_summary: dict[str, Any] = {}
     get_registry_summary_payload = getattr(deps, "get_registry_summary_payload", None)
     if callable(get_registry_summary_payload):
-        try:
-            registry_summary = as_json_object(get_registry_summary_payload())
-        except Exception:  # noqa: BLE001
-            registry_summary = {}
+        with time_operation("ops.dashboard.registry_summary"):
+            try:
+                registry_summary = as_json_object(get_registry_summary_payload())
+            except Exception:  # noqa: BLE001
+                registry_summary = {}
     if not _has_registry_summary_counts(registry_summary):
         registry_summary = {}
     state: dict[str, Any] = {}
     if not registry_summary:
-        state = deps.get_state()
-    schedule = populate_schedule_next_run(
-        deps.parse_schedule_metadata_fn(), history, deps.parse_iso
-    )
+        with time_operation("ops.dashboard.registry_state_fallback"):
+            state = deps.get_state()
+    with time_operation("ops.dashboard.schedule"):
+        schedule = populate_schedule_next_run(
+            deps.parse_schedule_metadata_fn(), history, deps.parse_iso
+        )
     get_pipeline_schedule = getattr(deps, "get_jobs_pipeline_schedule_ops_entry", None)
     if callable(get_pipeline_schedule):
-        try:
-            pipeline_schedule = get_pipeline_schedule()
-        except (RuntimeError, OSError, TypeError, ValueError):
-            pipeline_schedule = {}
+        with time_operation("ops.dashboard.pipeline_schedule"):
+            try:
+                pipeline_schedule = get_pipeline_schedule()
+            except (RuntimeError, OSError, TypeError, ValueError):
+                pipeline_schedule = {}
         if isinstance(pipeline_schedule, dict):
             schedule["pipeline"] = dict(pipeline_schedule)
-    alerts_meta = evaluate_alerts(
-        history=history,
-        latest_fetch_report=latest_fetch_report,
-        pending_count=(
-            _safe_int(registry_summary.get("pendingCount"))
-            if registry_summary
-            else len(state.get("pending") or [])
-        ),
-        load_alert_state_fn=deps.load_alert_state_fn,
-        save_alert_state_fn=deps.save_alert_state_fn,
-        parse_iso=deps.parse_iso,
-        now_iso=deps.now_iso,
-        now_utc=deps.now_utc,
-    )
+    with time_operation("ops.dashboard.alerts"):
+        alerts_meta = evaluate_alerts(
+            history=history,
+            latest_fetch_report=latest_fetch_report,
+            pending_count=(
+                _safe_int(registry_summary.get("pendingCount"))
+                if registry_summary
+                else len(state.get("pending") or [])
+            ),
+            load_alert_state_fn=deps.load_alert_state_fn,
+            save_alert_state_fn=deps.save_alert_state_fn,
+            parse_iso=deps.parse_iso,
+            now_iso=deps.now_iso,
+            now_utc=deps.now_utc,
+        )
 
-    metrics = collect_fetch_history_metrics(history, deps.parse_iso, deps.now_utc)
+    with time_operation("ops.dashboard.fetch_history_metrics"):
+        metrics = collect_fetch_history_metrics(history, deps.parse_iso, deps.now_utc)
     last_success = metrics["lastSuccessFetch"]
-    latest_fetch_summary = summarize_fetch_report(latest_fetch_report)
+    with time_operation("ops.dashboard.fetch_report_summary"):
+        latest_fetch_summary = summarize_fetch_report(latest_fetch_report)
     failed_ratio_latest = latest_fetch_summary["failedRatio"]
     source_health = as_json_object(latest_fetch_report.get("sourceHealth"))
     provider_coverage = as_json_object(latest_fetch_report.get("providerCoverage"))
     provider_static_overlap = as_json_object(latest_fetch_report.get("providerStaticOverlap"))
     static_suppression_policy = as_json_object(latest_fetch_report.get("staticSuppressionPolicy"))
     redundant_static_proposals = as_json_object(latest_fetch_report.get("redundantStaticProposals"))
-    source_policy_soak_report = as_json_object(deps.get_source_policy_soak_report())
+    with time_operation("ops.dashboard.source_policy_soak"):
+        source_policy_soak_report = as_json_object(deps.get_source_policy_soak_report())
     conservative_static_cleanup_proposals = as_json_object(
         as_json_object(source_policy_soak_report.get("sections")).get(
             "conservativeStaticCleanupProposals"
@@ -623,22 +634,26 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
     source_policy_recommendation_export = as_json_object(
         latest_fetch_report.get("sourcePolicyRecommendationExport")
     )
-    dedup_review_state = summarize_dedup_review_state(latest_fetch_report)
-    try:
-        tombstones = deps.get_tombstones()
-    except Exception:  # noqa: BLE001
-        tombstones = {}
-    try:
-        sync_status = deps.get_sync_status_payload()
-    except Exception:  # noqa: BLE001
-        sync_status = {}
-    registry_sync = derive_registry_sync_summary(
-        state=state,
-        summary=registry_summary,
-        tombstones=tombstones,
-        sync_status=sync_status,
-        history=history,
-    )
+    with time_operation("ops.dashboard.dedup_review_state"):
+        dedup_review_state = summarize_dedup_review_state(latest_fetch_report)
+    with time_operation("ops.dashboard.tombstones"):
+        try:
+            tombstones = deps.get_tombstones()
+        except Exception:  # noqa: BLE001
+            tombstones = {}
+    with time_operation("ops.dashboard.sync_status"):
+        try:
+            sync_status = deps.get_sync_status_payload()
+        except Exception:  # noqa: BLE001
+            sync_status = {}
+    with time_operation("ops.dashboard.registry_sync_summary"):
+        registry_sync = derive_registry_sync_summary(
+            state=state,
+            summary=registry_summary,
+            tombstones=tombstones,
+            sync_status=sync_status,
+            history=history,
+        )
 
     latest_run = history[-1] if history else {}
     severity = derive_ops_severity(alerts_meta["alerts"])

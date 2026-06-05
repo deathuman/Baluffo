@@ -20,6 +20,7 @@ from src.bridge import ops_task_live as _ops_task_live
 from src.bridge import report_normalizer
 from src.bridge import run_history_api as _run_history_api
 from src.bridge.fetch_report_review_state import load_fetch_report_with_dedup_review_state
+from src.bridge.performance_profile import time_operation
 from src.shared.json_shapes import as_json_object
 from src.shared.live_task import LiveTaskPayload, TaskStatePayload, TaskStateRow
 from src.source_registry_io import load_runtime_evidence
@@ -551,12 +552,16 @@ class OpsApi:
         )
 
     def compute_ops_dashboard_health(self) -> dict[str, Any]:
-        return _ops_health.compute_ops_health(self.build_ops_health_deps())
+        with time_operation("ops.dashboard_health.total"):
+            return _ops_health.compute_ops_health(self.build_ops_health_deps())
 
     def compute_ops_health(self) -> dict[str, Any]:
-        current_rows = [dict(row) for row in self._deps.get_lifecycle_current_runs()]
-        recent_rows = [dict(row) for row in self._deps.get_lifecycle_recent_runs()]
-        pipeline_status = self._deps.get_jobs_pipeline_status_payload()
+        with time_operation("ops.health.current_runs"):
+            current_rows = [dict(row) for row in self._deps.get_lifecycle_current_runs()]
+        with time_operation("ops.health.recent_runs"):
+            recent_rows = [dict(row) for row in self._deps.get_lifecycle_recent_runs()]
+        with time_operation("ops.health.pipeline_status"):
+            pipeline_status = self._deps.get_jobs_pipeline_status_payload()
         owner_state = dict(self._deps.get_owner_state() or {})
         startup_ready = (
             True if not bool(self._deps.desktop_mode) else bool(owner_state.get("startedAt"))

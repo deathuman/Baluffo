@@ -7,6 +7,7 @@ import logging
 import ssl
 import time
 from collections.abc import Callable, Mapping
+from contextlib import contextmanager
 from typing import Any
 from urllib.error import URLError
 
@@ -20,6 +21,7 @@ from src.source_registry import (
 )
 from src.source_sync_runtime import parse_iso
 from src.source_sync_shard import (
+    SHARD_SCHEMA_VERSION,
     SourceSyncShardError,
     build_sharded_snapshot_bundle,
     push_sharded_snapshot,
@@ -41,6 +43,58 @@ _REMOTE_SNAPSHOT_TOP_LEVEL_KEYS = {
 
 def _as_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _duration_ms(started_at: float, finished_at: float) -> int:
+    return max(0, int(round((finished_at - started_at) * 1000)))
+
+
+class _SyncDetailTiming:
+    def __init__(self) -> None:
+        self._stage_totals_ms: dict[str, int] = {}
+
+    @contextmanager
+    def record(self, stage: str):
+        stage_key = str(stage or "").strip() or "unknown"
+        started_at = time.perf_counter()
+        try:
+            yield
+        finally:
+            duration_ms = _duration_ms(started_at, time.perf_counter())
+            self._stage_totals_ms[stage_key] = self._stage_totals_ms.get(stage_key, 0) + duration_ms
+
+    def snapshot(self) -> dict[str, Any]:
+        stage_totals_ms = dict(self._stage_totals_ms)
+        return {
+            "stageTotalsMs": stage_totals_ms,
+            "stageTop": [
+                {"stage": stage, "durationMs": duration_ms}
+                for stage, duration_ms in sorted(
+                    stage_totals_ms.items(),
+                    key=lambda item: item[1],
+                    reverse=True,
+                )
+            ],
+        }
+
+
+@contextmanager
+def _record_detail_stage(timing: _SyncDetailTiming | None, stage: str):
+    if timing is None:
+        yield
+        return
+    with timing.record(stage):
+        yield
+
+
+def _with_detail_timing(
+    payload: dict[str, Any], timing: _SyncDetailTiming | None
+) -> dict[str, Any]:
+    if timing is None:
+        return payload
+    data = dict(payload)
+    data["detailTiming"] = timing.snapshot()
+    return data
 
 
 def _snapshot_transition_text(*values: Any) -> str:
@@ -172,9 +226,12 @@ def _choose_more_recent_row(
 
 def _snapshot_content_view(module: Any, snapshot: dict[str, Any]) -> dict[str, Any]:
     normalized = normalize_snapshot(module, snapshot)
+    schema_version = int(normalized.get("schemaVersion") or module.SYNC_SCHEMA_VERSION)
+    if schema_version == SHARD_SCHEMA_VERSION:
+        schema_version = int(module.SYNC_SCHEMA_VERSION)
     # Fingerprint only the semantic rows that should trigger a remote write.
     return {
-        "schemaVersion": int(normalized.get("schemaVersion") or module.SYNC_SCHEMA_VERSION),
+        "schemaVersion": schema_version,
         "active": list(normalized.get("active") or []),
         "pending": list(normalized.get("pending") or []),
     }
@@ -214,11 +271,39 @@ def _sharded_snapshot_bundle(
 
 def _shard_push_metadata(result: Mapping[str, Any]) -> dict[str, Any]:
     metrics = _as_dict(result.get("metrics"))
-    return _shard_metrics_payload(metrics)
+    payload = _shard_metrics_payload(metrics)
+    remote_timing = result.get("remoteTiming")
+    if isinstance(remote_timing, Mapping):
+        payload["remoteTiming"] = dict(remote_timing)
+    return payload
 
 
 def _shard_bundle_metadata(bundle: Mapping[str, Any]) -> dict[str, Any]:
     return _shard_metrics_payload(_as_dict(bundle.get("metrics")))
+
+
+def _manifest_noop_shard_metadata(module: Any, manifest: Mapping[str, Any]) -> dict[str, Any]:
+    rows = list(manifest.get("shards") or [])
+    shard_hashes: dict[str, str] = {}
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        path = str(row.get("path") or "").strip()
+        sha256 = str(row.get("sha256") or "").strip()
+        if path and sha256:
+            shard_hashes[path] = sha256
+    manifest_size_bytes = len(
+        json.dumps(dict(manifest), sort_keys=True, separators=(",", ":")).encode("utf-8")
+    )
+    return {
+        "snapshotFormat": "sharded-v3",
+        "shardCount": int(manifest.get("shardCount") or len(shard_hashes)),
+        "changedShardCount": 0,
+        "shardsPushedBytes": 0,
+        "manifestSizeBytes": manifest_size_bytes,
+        "shardCapBytes": int(manifest.get("shardCapBytes") or _shard_size_bytes(module)),
+        "shardHashes": shard_hashes,
+    }
 
 
 def _shard_metrics_payload(metrics: Mapping[str, Any]) -> dict[str, Any]:
@@ -289,45 +374,55 @@ def _push_sources_snapshot_after_conflict(
     opener: Callable[..., Any],
     progress_callback: Callable[..., None] | None,
     exc: Exception,
+    detail_timing: _SyncDetailTiming | None = None,
 ) -> dict[str, Any]:
     base_shard_fields = dict(shard_fields or {"snapshotFormat": "sharded-v3"})
     module.record_sync_counters(conflictsDetected=1)
     module._clear_runtime_state(module.RUNTIME_STATE_REMOTE_CONFLICT)
-    refreshed_remote = read_remote_snapshot(module, config, opener=opener, prefer_sharded=True)
+    with _record_detail_stage(detail_timing, "conflictRefreshRemote"):
+        refreshed_remote = read_remote_snapshot(module, config, opener=opener, prefer_sharded=True)
     refreshed_snapshot = _as_dict(refreshed_remote.get("snapshot"))
     refreshed_sha = str(refreshed_remote.get("sha") or "")
-    refreshed_fingerprint = _snapshot_content_fingerprint(module, refreshed_snapshot)
+    with _record_detail_stage(detail_timing, "conflictFingerprintRemote"):
+        refreshed_fingerprint = _snapshot_content_fingerprint(module, refreshed_snapshot)
     if refreshed_fingerprint == snapshot_fingerprint:
         counters = module.record_sync_counters(conflictsResolved=1)
-        return {
-            "pushed": True,
-            "remotePreviouslyExisted": bool(remote.get("exists")),
-            "remoteSha": refreshed_sha,
-            "snapshot": snapshot,
-            "skipped": False,
-            "sizeBytes": snapshot_size_bytes,
-            "sizeWarning": size_warning,
-            "maxSnapshotSizeBytes": max_snapshot_size_bytes,
-            **base_shard_fields,
-            "counters": counters,
-        }
-    retry_state = merge_registry_state(module, local_state, refreshed_snapshot)
-    retry_snapshot = build_snapshot(module, retry_state)
-    retry_snapshot_size_bytes = _snapshot_size_bytes(retry_snapshot)
+        return _with_detail_timing(
+            {
+                "pushed": True,
+                "remotePreviouslyExisted": bool(remote.get("exists")),
+                "remoteSha": refreshed_sha,
+                "snapshot": snapshot,
+                "skipped": False,
+                "sizeBytes": snapshot_size_bytes,
+                "sizeWarning": size_warning,
+                "maxSnapshotSizeBytes": max_snapshot_size_bytes,
+                **base_shard_fields,
+                "counters": counters,
+            },
+            detail_timing,
+        )
+    with _record_detail_stage(detail_timing, "conflictMergeRegistryState"):
+        retry_state = merge_registry_state(module, local_state, refreshed_snapshot)
+    with _record_detail_stage(detail_timing, "conflictBuildSnapshot"):
+        retry_snapshot = build_snapshot(module, retry_state)
+    with _record_detail_stage(detail_timing, "conflictMeasureSnapshotSize"):
+        retry_snapshot_size_bytes = _snapshot_size_bytes(retry_snapshot)
     retry_max_snapshot_size_bytes = int(
         getattr(config, "max_snapshot_size_bytes", module.DEFAULT_MAX_SNAPSHOT_SIZE_BYTES)
         or module.DEFAULT_MAX_SNAPSHOT_SIZE_BYTES
     )
     retry_size_warning = retry_snapshot_size_bytes > module.SNAPSHOT_SIZE_WARN_BYTES
     try:
-        write_result = _push_sharded_snapshot_result(
-            module,
-            config,
-            retry_snapshot,
-            refreshed_remote,
-            progress_callback=progress_callback,
-            opener=opener,
-        )
+        with _record_detail_stage(detail_timing, "conflictWriteShardedSnapshot"):
+            write_result = _push_sharded_snapshot_result(
+                module,
+                config,
+                retry_snapshot,
+                refreshed_remote,
+                progress_callback=progress_callback,
+                opener=opener,
+            )
     except SourceSyncShardError as shard_exc:
         raise _snapshot_too_large_error(
             module,
@@ -338,19 +433,22 @@ def _push_sources_snapshot_after_conflict(
         ) from exc
     counters = module.record_sync_counters(conflictsResolved=1)
     warnings = list(write_result.get("warnings") or [])
-    return {
-        "pushed": True,
-        "remotePreviouslyExisted": bool(remote.get("exists")),
-        "remoteSha": str(write_result.get("remoteSha") or refreshed_sha),
-        "snapshot": retry_snapshot,
-        "skipped": False,
-        "sizeBytes": retry_snapshot_size_bytes,
-        "sizeWarning": retry_size_warning,
-        "maxSnapshotSizeBytes": retry_max_snapshot_size_bytes,
-        **_shard_push_metadata(write_result),
-        "warnings": warnings,
-        "counters": counters,
-    }
+    return _with_detail_timing(
+        {
+            "pushed": True,
+            "remotePreviouslyExisted": bool(remote.get("exists")),
+            "remoteSha": str(write_result.get("remoteSha") or refreshed_sha),
+            "snapshot": retry_snapshot,
+            "skipped": False,
+            "sizeBytes": retry_snapshot_size_bytes,
+            "sizeWarning": retry_size_warning,
+            "maxSnapshotSizeBytes": retry_max_snapshot_size_bytes,
+            **_shard_push_metadata(write_result),
+            "warnings": warnings,
+            "counters": counters,
+        },
+        detail_timing,
+    )
 
 
 def _push_sources_snapshot_after_transient(
@@ -368,68 +466,82 @@ def _push_sources_snapshot_after_transient(
     opener: Callable[..., Any],
     progress_callback: Callable[..., None] | None,
     exc: Exception,
+    detail_timing: _SyncDetailTiming | None = None,
 ) -> dict[str, Any]:
     base_shard_fields = dict(shard_fields or {"snapshotFormat": "sharded-v3"})
-    refreshed_remote = read_remote_snapshot(module, config, opener=opener, prefer_sharded=True)
+    with _record_detail_stage(detail_timing, "transientRefreshRemote"):
+        refreshed_remote = read_remote_snapshot(module, config, opener=opener, prefer_sharded=True)
     refreshed_snapshot = _as_dict(refreshed_remote.get("snapshot"))
     refreshed_sha = str(refreshed_remote.get("sha") or "")
-    refreshed_fingerprint = _snapshot_content_fingerprint(module, refreshed_snapshot)
+    with _record_detail_stage(detail_timing, "transientFingerprintRemote"):
+        refreshed_fingerprint = _snapshot_content_fingerprint(module, refreshed_snapshot)
     if (
         refreshed_sha == remote_sha
         and str(refreshed_remote.get("snapshotFormat") or "") == "sharded-v3"
     ):
-        write_result = _push_sharded_snapshot_result(
-            module,
-            config,
-            snapshot,
-            refreshed_remote,
-            progress_callback=progress_callback,
-            opener=opener,
-        )
+        with _record_detail_stage(detail_timing, "transientWriteShardedSnapshot"):
+            write_result = _push_sharded_snapshot_result(
+                module,
+                config,
+                snapshot,
+                refreshed_remote,
+                progress_callback=progress_callback,
+                opener=opener,
+            )
         warnings = list(write_result.get("warnings") or [])
-        return {
-            "pushed": True,
-            "remotePreviouslyExisted": bool(remote.get("exists")),
-            "remoteSha": str(write_result.get("remoteSha") or refreshed_sha),
-            "snapshot": snapshot,
-            "skipped": False,
-            "sizeBytes": snapshot_size_bytes,
-            "sizeWarning": size_warning,
-            "maxSnapshotSizeBytes": max_snapshot_size_bytes,
-            **_shard_push_metadata(write_result),
-            "warnings": warnings,
-            "counters": module.sync_counters_payload(),
-        }
+        return _with_detail_timing(
+            {
+                "pushed": True,
+                "remotePreviouslyExisted": bool(remote.get("exists")),
+                "remoteSha": str(write_result.get("remoteSha") or refreshed_sha),
+                "snapshot": snapshot,
+                "skipped": False,
+                "sizeBytes": snapshot_size_bytes,
+                "sizeWarning": size_warning,
+                "maxSnapshotSizeBytes": max_snapshot_size_bytes,
+                **_shard_push_metadata(write_result),
+                "warnings": warnings,
+                "counters": module.sync_counters_payload(),
+            },
+            detail_timing,
+        )
     if refreshed_fingerprint == snapshot_fingerprint:
-        return {
-            "pushed": True,
-            "remotePreviouslyExisted": bool(remote.get("exists")),
-            "remoteSha": refreshed_sha,
-            "snapshot": snapshot,
-            "skipped": False,
-            "sizeBytes": snapshot_size_bytes,
-            "sizeWarning": size_warning,
-            "maxSnapshotSizeBytes": max_snapshot_size_bytes,
-            **base_shard_fields,
-            "counters": module.sync_counters_payload(),
-        }
-    retry_state = merge_registry_state(module, local_state, refreshed_snapshot)
-    retry_snapshot = build_snapshot(module, retry_state)
-    retry_snapshot_size_bytes = _snapshot_size_bytes(retry_snapshot)
+        return _with_detail_timing(
+            {
+                "pushed": True,
+                "remotePreviouslyExisted": bool(remote.get("exists")),
+                "remoteSha": refreshed_sha,
+                "snapshot": snapshot,
+                "skipped": False,
+                "sizeBytes": snapshot_size_bytes,
+                "sizeWarning": size_warning,
+                "maxSnapshotSizeBytes": max_snapshot_size_bytes,
+                **base_shard_fields,
+                "counters": module.sync_counters_payload(),
+            },
+            detail_timing,
+        )
+    with _record_detail_stage(detail_timing, "transientMergeRegistryState"):
+        retry_state = merge_registry_state(module, local_state, refreshed_snapshot)
+    with _record_detail_stage(detail_timing, "transientBuildSnapshot"):
+        retry_snapshot = build_snapshot(module, retry_state)
+    with _record_detail_stage(detail_timing, "transientMeasureSnapshotSize"):
+        retry_snapshot_size_bytes = _snapshot_size_bytes(retry_snapshot)
     retry_max_snapshot_size_bytes = int(
         getattr(config, "max_snapshot_size_bytes", module.DEFAULT_MAX_SNAPSHOT_SIZE_BYTES)
         or module.DEFAULT_MAX_SNAPSHOT_SIZE_BYTES
     )
     retry_size_warning = retry_snapshot_size_bytes > module.SNAPSHOT_SIZE_WARN_BYTES
     try:
-        write_result = _push_sharded_snapshot_result(
-            module,
-            config,
-            retry_snapshot,
-            refreshed_remote,
-            progress_callback=progress_callback,
-            opener=opener,
-        )
+        with _record_detail_stage(detail_timing, "transientWriteShardedSnapshot"):
+            write_result = _push_sharded_snapshot_result(
+                module,
+                config,
+                retry_snapshot,
+                refreshed_remote,
+                progress_callback=progress_callback,
+                opener=opener,
+            )
     except SourceSyncShardError as shard_exc:
         raise _snapshot_too_large_error(
             module,
@@ -439,19 +551,22 @@ def _push_sources_snapshot_after_transient(
             size_warning=retry_size_warning,
         ) from exc
     warnings = list(write_result.get("warnings") or [])
-    return {
-        "pushed": True,
-        "remotePreviouslyExisted": bool(remote.get("exists")),
-        "remoteSha": str(write_result.get("remoteSha") or refreshed_sha),
-        "snapshot": retry_snapshot,
-        "skipped": False,
-        "sizeBytes": retry_snapshot_size_bytes,
-        "sizeWarning": retry_size_warning,
-        "maxSnapshotSizeBytes": retry_max_snapshot_size_bytes,
-        **_shard_push_metadata(write_result),
-        "warnings": warnings,
-        "counters": module.sync_counters_payload(),
-    }
+    return _with_detail_timing(
+        {
+            "pushed": True,
+            "remotePreviouslyExisted": bool(remote.get("exists")),
+            "remoteSha": str(write_result.get("remoteSha") or refreshed_sha),
+            "snapshot": retry_snapshot,
+            "skipped": False,
+            "sizeBytes": retry_snapshot_size_bytes,
+            "sizeWarning": retry_size_warning,
+            "maxSnapshotSizeBytes": retry_max_snapshot_size_bytes,
+            **_shard_push_metadata(write_result),
+            "warnings": warnings,
+            "counters": module.sync_counters_payload(),
+        },
+        detail_timing,
+    )
 
 
 def _is_transient_request_error(exc: BaseException) -> bool:
@@ -994,27 +1109,36 @@ def push_sources_snapshot(
     progress_callback: Callable[..., None] | None = None,
     opener: Callable[..., Any],
 ) -> dict[str, Any]:
-    remote = read_remote_snapshot(module, config, opener=opener, prefer_sharded=True)
+    detail_timing = _SyncDetailTiming()
+    with detail_timing.record("readRemoteSnapshot"):
+        remote = read_remote_snapshot(module, config, opener=opener, prefer_sharded=True)
     remote_snapshot = _as_dict(remote.get("snapshot"))
     remote_sha = str(remote.get("sha") or "")
     remote_format = str(remote.get("snapshotFormat") or "")
-    _assert_unique_snapshot_identity(
-        module,
-        list(_as_dict(local_state).get("active") or [])
-        + list(_as_dict(local_state).get("pending") or []),
-        scope="local active/pending snapshot",
-    )
-    _assert_unique_snapshot_identity(
-        module,
-        list(remote_snapshot.get("active") or []) + list(remote_snapshot.get("pending") or []),
-        scope="remote active/pending snapshot",
-    )
-    merged_state = merge_registry_state(module, local_state, remote_snapshot)
-    snapshot = build_snapshot(module, merged_state)
-    snapshot_fingerprint = _snapshot_content_fingerprint(module, snapshot)
-    remote_fingerprint = _snapshot_content_fingerprint(module, remote_snapshot)
+    with detail_timing.record("validateLocalIdentity"):
+        _assert_unique_snapshot_identity(
+            module,
+            list(_as_dict(local_state).get("active") or [])
+            + list(_as_dict(local_state).get("pending") or []),
+            scope="local active/pending snapshot",
+        )
+    with detail_timing.record("validateRemoteIdentity"):
+        _assert_unique_snapshot_identity(
+            module,
+            list(remote_snapshot.get("active") or []) + list(remote_snapshot.get("pending") or []),
+            scope="remote active/pending snapshot",
+        )
+    with detail_timing.record("mergeRegistryState"):
+        merged_state = merge_registry_state(module, local_state, remote_snapshot)
+    with detail_timing.record("buildSnapshot"):
+        snapshot = build_snapshot(module, merged_state)
+    with detail_timing.record("fingerprintLocal"):
+        snapshot_fingerprint = _snapshot_content_fingerprint(module, snapshot)
+    with detail_timing.record("fingerprintRemote"):
+        remote_fingerprint = _snapshot_content_fingerprint(module, remote_snapshot)
     remote_exists = bool(remote.get("exists"))
-    snapshot_size_bytes = _snapshot_size_bytes(snapshot)
+    with detail_timing.record("measureSnapshotSize"):
+        snapshot_size_bytes = _snapshot_size_bytes(snapshot)
     max_snapshot_size_bytes = int(
         getattr(config, "max_snapshot_size_bytes", module.DEFAULT_MAX_SNAPSHOT_SIZE_BYTES)
         or module.DEFAULT_MAX_SNAPSHOT_SIZE_BYTES
@@ -1025,8 +1149,51 @@ def push_sources_snapshot(
         or snapshot_fingerprint != remote_fingerprint
         or remote_format != "sharded-v3"
     )
+    committed_manifest = _remote_committed_manifest(remote)
+    if (
+        not dry_run
+        and remote_exists
+        and remote_format == "sharded-v3"
+        and snapshot_fingerprint == remote_fingerprint
+        and committed_manifest is not None
+    ):
+        with detail_timing.record("deriveNoopShardMetadata"):
+            shard_fields = _manifest_noop_shard_metadata(module, committed_manifest)
+        with detail_timing.record("recordStorageMetrics"):
+            record_source_sync_snapshot(
+                size_bytes=snapshot_size_bytes,
+                max_snapshot_size_bytes=max_snapshot_size_bytes,
+                size_warning=size_warning,
+                would_change=False,
+                snapshot_format=str(shard_fields.get("snapshotFormat") or ""),
+                shard_count=int(shard_fields.get("shardCount") or 0),
+                changed_shard_count=0,
+                shards_pushed_bytes=0,
+                manifest_size_bytes=int(shard_fields.get("manifestSizeBytes") or 0),
+                shard_cap_bytes=int(shard_fields.get("shardCapBytes") or 0),
+                shard_hashes=dict(shard_fields.get("shardHashes") or {}),
+            )
+        module.record_sync_counters(totalPushes=1)
+        counters = module.record_sync_counters(noOpSkips=1)
+        return _with_detail_timing(
+            {
+                "pushed": False,
+                "remotePreviouslyExisted": True,
+                "remoteSha": remote_sha,
+                "snapshot": snapshot,
+                "skipped": True,
+                "skipReason": "no_meaningful_change",
+                "sizeBytes": snapshot_size_bytes,
+                "sizeWarning": size_warning,
+                "maxSnapshotSizeBytes": max_snapshot_size_bytes,
+                **shard_fields,
+                "counters": counters,
+            },
+            detail_timing,
+        )
     try:
-        shard_bundle = _sharded_snapshot_bundle(module, snapshot, remote)
+        with detail_timing.record("buildShardBundle"):
+            shard_bundle = _sharded_snapshot_bundle(module, snapshot, remote)
     except SourceSyncShardError as exc:
         raise _snapshot_too_large_error(
             module,
@@ -1036,35 +1203,39 @@ def push_sources_snapshot(
             size_warning=size_warning,
         ) from exc
     shard_fields = _shard_bundle_metadata(shard_bundle)
-    record_source_sync_snapshot(
-        size_bytes=snapshot_size_bytes,
-        max_snapshot_size_bytes=max_snapshot_size_bytes,
-        size_warning=size_warning,
-        would_change=would_change,
-        snapshot_format=str(shard_fields.get("snapshotFormat") or ""),
-        shard_count=int(shard_fields.get("shardCount") or 0),
-        changed_shard_count=int(shard_fields.get("changedShardCount") or 0),
-        shards_pushed_bytes=int(shard_fields.get("shardsPushedBytes") or 0),
-        manifest_size_bytes=int(shard_fields.get("manifestSizeBytes") or 0),
-        shard_cap_bytes=int(shard_fields.get("shardCapBytes") or 0),
-        shard_hashes=dict(shard_fields.get("shardHashes") or {}),
-    )
+    with detail_timing.record("recordStorageMetrics"):
+        record_source_sync_snapshot(
+            size_bytes=snapshot_size_bytes,
+            max_snapshot_size_bytes=max_snapshot_size_bytes,
+            size_warning=size_warning,
+            would_change=would_change,
+            snapshot_format=str(shard_fields.get("snapshotFormat") or ""),
+            shard_count=int(shard_fields.get("shardCount") or 0),
+            changed_shard_count=int(shard_fields.get("changedShardCount") or 0),
+            shards_pushed_bytes=int(shard_fields.get("shardsPushedBytes") or 0),
+            manifest_size_bytes=int(shard_fields.get("manifestSizeBytes") or 0),
+            shard_cap_bytes=int(shard_fields.get("shardCapBytes") or 0),
+            shard_hashes=dict(shard_fields.get("shardHashes") or {}),
+        )
     if dry_run:
-        return {
-            "pushed": False,
-            "remotePreviouslyExisted": remote_exists,
-            "remoteSha": remote_sha,
-            "snapshot": snapshot,
-            "skipped": True,
-            "skipReason": "dryRun",
-            "dryRun": True,
-            "wouldChange": would_change,
-            "sizeBytes": snapshot_size_bytes,
-            "sizeWarning": size_warning,
-            "maxSnapshotSizeBytes": max_snapshot_size_bytes,
-            **shard_fields,
-            "counters": module.sync_counters_payload(),
-        }
+        return _with_detail_timing(
+            {
+                "pushed": False,
+                "remotePreviouslyExisted": remote_exists,
+                "remoteSha": remote_sha,
+                "snapshot": snapshot,
+                "skipped": True,
+                "skipReason": "dryRun",
+                "dryRun": True,
+                "wouldChange": would_change,
+                "sizeBytes": snapshot_size_bytes,
+                "sizeWarning": size_warning,
+                "maxSnapshotSizeBytes": max_snapshot_size_bytes,
+                **shard_fields,
+                "counters": module.sync_counters_payload(),
+            },
+            detail_timing,
+        )
     module.record_sync_counters(totalPushes=1)
     if (
         remote_exists
@@ -1072,29 +1243,33 @@ def push_sources_snapshot(
         and snapshot_fingerprint == remote_fingerprint
     ):
         counters = module.record_sync_counters(noOpSkips=1)
-        return {
-            "pushed": False,
-            "remotePreviouslyExisted": True,
-            "remoteSha": remote_sha,
-            "snapshot": snapshot,
-            "skipped": True,
-            "skipReason": "no_meaningful_change",
-            "sizeBytes": snapshot_size_bytes,
-            "sizeWarning": size_warning,
-            "maxSnapshotSizeBytes": max_snapshot_size_bytes,
-            **shard_fields,
-            "counters": counters,
-        }
-    try:
-        write_result = _push_sharded_snapshot_result(
-            module,
-            config,
-            snapshot,
-            remote,
-            bundle=shard_bundle,
-            progress_callback=progress_callback,
-            opener=opener,
+        return _with_detail_timing(
+            {
+                "pushed": False,
+                "remotePreviouslyExisted": True,
+                "remoteSha": remote_sha,
+                "snapshot": snapshot,
+                "skipped": True,
+                "skipReason": "no_meaningful_change",
+                "sizeBytes": snapshot_size_bytes,
+                "sizeWarning": size_warning,
+                "maxSnapshotSizeBytes": max_snapshot_size_bytes,
+                **shard_fields,
+                "counters": counters,
+            },
+            detail_timing,
         )
+    try:
+        with detail_timing.record("writeShardedSnapshot"):
+            write_result = _push_sharded_snapshot_result(
+                module,
+                config,
+                snapshot,
+                remote,
+                bundle=shard_bundle,
+                progress_callback=progress_callback,
+                opener=opener,
+            )
     except SourceSyncShardError as exc:
         raise _snapshot_too_large_error(
             module,
@@ -1120,6 +1295,7 @@ def push_sources_snapshot(
             opener,
             progress_callback,
             exc,
+            detail_timing,
         )
     except RuntimeError as exc:
         if not _is_transient_request_error(exc):
@@ -1139,19 +1315,23 @@ def push_sources_snapshot(
             opener,
             progress_callback,
             exc,
+            detail_timing,
         )
     warnings = list(write_result.get("warnings") or [])
-    return {
-        "pushed": bool(write_result.get("pushed", True)),
-        "remotePreviouslyExisted": bool(remote.get("exists")),
-        "remoteSha": str(write_result.get("remoteSha") or remote_sha),
-        "snapshot": snapshot,
-        "skipped": bool(write_result.get("skipped", False)),
-        "skipReason": str(write_result.get("skipReason") or ""),
-        "sizeBytes": snapshot_size_bytes,
-        "sizeWarning": size_warning,
-        "maxSnapshotSizeBytes": max_snapshot_size_bytes,
-        **_shard_push_metadata(write_result),
-        "warnings": warnings,
-        "counters": module.sync_counters_payload(),
-    }
+    return _with_detail_timing(
+        {
+            "pushed": bool(write_result.get("pushed", True)),
+            "remotePreviouslyExisted": bool(remote.get("exists")),
+            "remoteSha": str(write_result.get("remoteSha") or remote_sha),
+            "snapshot": snapshot,
+            "skipped": bool(write_result.get("skipped", False)),
+            "skipReason": str(write_result.get("skipReason") or ""),
+            "sizeBytes": snapshot_size_bytes,
+            "sizeWarning": size_warning,
+            "maxSnapshotSizeBytes": max_snapshot_size_bytes,
+            **_shard_push_metadata(write_result),
+            "warnings": warnings,
+            "counters": module.sync_counters_payload(),
+        },
+        detail_timing,
+    )

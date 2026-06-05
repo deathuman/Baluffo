@@ -152,6 +152,9 @@ def derive_registry_sync_summary(
 
     return {
         "summaryExact": (bool(summary_payload.get("summaryExact", True)) if use_summary else True),
+        "countBasis": (
+            _text(summary_payload.get("countBasis") or "") if use_summary else "normalized"
+        ),
         "summaryStatus": (
             _text(summary_payload.get("summaryStatus") or "ready") if use_summary else "ready"
         ),

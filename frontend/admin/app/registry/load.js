@@ -18,6 +18,16 @@ function countJobPositiveDeferredCandidates(rows) {
   return rows.filter(row => row?.deferred && Number(row?.jobsFound ?? row?.sampleCount ?? 0) > 0).length;
 }
 
+function formatRegistryCountBasis(summary) {
+  if (summary?.summaryExact === true || String(summary?.countBasis || "").toLowerCase() === "normalized") {
+    return "normalized counts";
+  }
+  if (summary?.summaryExact === false || String(summary?.countBasis || "").toLowerCase() === "storage") {
+    return "storage snapshot counts";
+  }
+  return "loaded counts";
+}
+
 function fnv1a32(value, seed = 0x811c9dc5) {
   let hash = seed >>> 0;
   const text = String(value ?? "");
@@ -356,6 +366,9 @@ export function createRegistryLoadController({
           : {};
         const autoApprovedCount = Number(summary.approvedCandidateCount ?? runtimeAutoApproval.approvedCount ?? 0);
         const activeRegistryCount = Number(active?.summary?.activeCount || 0);
+        const registryCountBasisLabel = formatRegistryCountBasis(
+          active?.summary || pending?.summary || rejected?.summary || {}
+        );
         const pendingRows = pendingResult.rows;
         const activeRows = activeResult.rows;
         const rejectedRows = rejectedResult.rows;
@@ -373,7 +386,7 @@ export function createRegistryLoadController({
         const hiddenZeroJobsCount = pendingResult.hiddenZeroJobsCount;
 
         if (refs.adminDiscoverySummaryEl) {
-          const summaryText = `Found ${foundCount} | Probed ${probedCount} | Review queue ${queuedCount} | Deferred review ${deferredCount} | Deferred by caps ${capDeferredCount} | Job-positive deferred ${jobPositiveDeferredCount} | Validated ${lifecycleCounts.validated} | Auto-approved this run ${autoApprovedCount} | Active registry ${activeRegistryCount} | Failed ${failedCount} | Skipped dupes ${skippedCount} | Pending ${Number(pending?.summary?.pendingCount || 0)} | Rejected ${Number(rejected?.summary?.rejectedCount || 0)} | Hidden zero-jobs ${hiddenZeroJobsCount}`;
+          const summaryText = `Found ${foundCount} | Probed ${probedCount} | Review queue ${queuedCount} | Deferred review ${deferredCount} | Deferred by caps ${capDeferredCount} | Job-positive deferred ${jobPositiveDeferredCount} | Validated ${lifecycleCounts.validated} | Auto-approved this run ${autoApprovedCount} | Active registry ${activeRegistryCount} (${registryCountBasisLabel}) | Failed ${failedCount} | Skipped dupes ${skippedCount} | Pending ${Number(pending?.summary?.pendingCount || 0)} | Rejected ${Number(rejected?.summary?.rejectedCount || 0)} | Hidden zero-jobs ${hiddenZeroJobsCount}`;
           refs.adminDiscoverySummaryEl.textContent = summaryText;
           refs.adminDiscoverySummaryEl.innerHTML = `<div>${summaryText}</div>`;
         }

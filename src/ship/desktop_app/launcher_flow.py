@@ -14,6 +14,7 @@ from .config import (
     JOBS_COLD_START_ENV,
     PACKAGED_BRIDGE_OWNER_IDLE_TIMEOUT_S,
     READY_TIMEOUT_S,
+    STARTUP_PARALLEL_BRIDGE_ENV,
     STARTUP_PROBE_BRIDGE_OWNER_IDLE_TIMEOUT_S,
     STARTUP_PROBE_URL_READY_INTERVAL_S,
     STARTUP_PROFILE_MODE_ENV,
@@ -180,6 +181,77 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                     pid=int(site_process.pid) if site_process else 0,
                 )
                 open_url = api.build_open_url(config)
+
+                def _bridge_owner_idle_timeout_s(*, current_config=config) -> float:
+                    owner_idle_timeout_s = float(current_config.owner_idle_timeout_s or 0.0)
+                    if owner_idle_timeout_s > 0.0:
+                        return owner_idle_timeout_s
+                    return (
+                        STARTUP_PROBE_BRIDGE_OWNER_IDLE_TIMEOUT_S
+                        if current_config.startup_probe
+                        else PACKAGED_BRIDGE_OWNER_IDLE_TIMEOUT_S
+                    )
+
+                def _start_bridge_process(
+                    *,
+                    mode: str,
+                    current_config=config,
+                    current_child_env=child_env,
+                    current_desktop_job=desktop_job,
+                ):
+                    api._append_startup_trace(
+                        current_config.data_dir,
+                        "desktop_bridge_spawn_started",
+                        elapsedMs=int((api.time.perf_counter() - started_mono) * 1000),
+                        mode=str(mode or "deferred"),
+                    )
+                    process = api.start_child_process(
+                        api.build_child_command(
+                            "bridge",
+                            root=current_config.ship_root,
+                            port=current_config.bridge_port,
+                            bridge_host=current_config.bridge_host,
+                            data_dir=current_config.data_dir,
+                            desktop_runtime=True,
+                            owner_mode="desktop-window",
+                            owner_token=owner_token,
+                            desktop_session_id=desktop_session_id,
+                            started_by=str(api.os.getpid()),
+                            owner_idle_timeout_s=_bridge_owner_idle_timeout_s(),
+                        ),
+                        extra_env=current_child_env,
+                        job_handle=current_desktop_job,
+                    )
+                    elapsed_ms = int((api.time.perf_counter() - started_mono) * 1000)
+                    api._append_startup_trace(
+                        current_config.data_dir,
+                        "desktop_bridge_process_started",
+                        elapsedMs=elapsed_ms,
+                        pid=int(process.pid) if process else 0,
+                        mode=str(mode or "deferred"),
+                    )
+                    api._append_startup_trace(
+                        current_config.data_dir,
+                        "desktop_bridge_spawned",
+                        elapsedMs=elapsed_ms,
+                        pid=int(process.pid) if process else 0,
+                        mode=str(mode or "deferred"),
+                    )
+                    return process
+
+                parallel_bridge_startup = bool(
+                    config.startup_probe
+                    and str(api.os.environ.get(STARTUP_PARALLEL_BRIDGE_ENV) or "").strip().lower()
+                    in {"1", "true", "yes", "on"}
+                )
+                if parallel_bridge_startup:
+                    api._append_startup_trace(
+                        config.data_dir,
+                        "desktop_bridge_spawn_parallel_with_site",
+                        elapsedMs=int((api.time.perf_counter() - started_mono) * 1000),
+                        url=str(open_url),
+                    )
+                    bridge_process = _start_bridge_process(mode="parallel")
                 api.wait_for_url(
                     open_url,
                     timeout_s=READY_TIMEOUT_S,
@@ -193,41 +265,19 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                     elapsedMs=site_ready_elapsed_ms,
                     url=str(open_url),
                 )
-                api._append_startup_trace(
-                    config.data_dir,
-                    "desktop_bridge_spawn_deferred_until_site_ready",
-                    elapsedMs=site_ready_elapsed_ms,
-                    url=str(open_url),
-                )
-                owner_idle_timeout_s = float(config.owner_idle_timeout_s or 0.0)
-                if owner_idle_timeout_s <= 0.0:
-                    owner_idle_timeout_s = (
-                        STARTUP_PROBE_BRIDGE_OWNER_IDLE_TIMEOUT_S
-                        if config.startup_probe
-                        else PACKAGED_BRIDGE_OWNER_IDLE_TIMEOUT_S
+                if bridge_process is None:
+                    api._append_startup_trace(
+                        config.data_dir,
+                        "desktop_bridge_spawn_deferred_until_site_ready",
+                        elapsedMs=site_ready_elapsed_ms,
+                        url=str(open_url),
                     )
-                bridge_process = api.start_child_process(
-                    api.build_child_command(
-                        "bridge",
-                        root=config.ship_root,
-                        port=config.bridge_port,
-                        bridge_host=config.bridge_host,
-                        data_dir=config.data_dir,
-                        desktop_runtime=True,
-                        owner_mode="desktop-window",
-                        owner_token=owner_token,
-                        desktop_session_id=desktop_session_id,
-                        started_by=str(api.os.getpid()),
-                        owner_idle_timeout_s=owner_idle_timeout_s,
-                    ),
-                    extra_env=child_env,
-                    job_handle=desktop_job,
-                )
+                    bridge_process = _start_bridge_process(mode="deferred")
                 api._append_startup_trace(
                     config.data_dir,
-                    "desktop_bridge_spawned",
+                    "desktop_bridge_startup_ready_wait_started",
                     elapsedMs=int((api.time.perf_counter() - started_mono) * 1000),
-                    pid=int(bridge_process.pid) if bridge_process else 0,
+                    bridgePort=int(config.bridge_port),
                 )
                 try:
                     api.wait_for_desktop_startup_ready(
@@ -254,6 +304,12 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                         ),
                     )
                     raise
+                api._append_startup_trace(
+                    config.data_dir,
+                    "desktop_bridge_startup_ready_wait_finished",
+                    elapsedMs=int((api.time.perf_counter() - started_mono) * 1000),
+                    bridgePort=int(config.bridge_port),
+                )
                 api._append_startup_trace(
                     config.data_dir,
                     "desktop_bridge_ready_before_window",

@@ -14,6 +14,7 @@ export function createAdminAuthController({
   clearOptimisticDiscoveryRun,
   setManualSourceFeedback,
   setOpsPlaceholders,
+  setOpsReadinessShell = setOpsPlaceholders,
   setBridgeStatusBadge,
   _renderUsersEmpty,
   startBridgeStatusWatch,
@@ -79,8 +80,10 @@ export function createAdminAuthController({
       measure: "admin_discovery_fetch",
       errorContext: "Failed to load discovery data",
       task: () => loadDiscoveryData({
+        background: true,
         forceRender: true,
-        skipIfFreshMs: 5000
+        skipIfFreshMs: 5000,
+        suppressPlaceholders: true
       })
     });
   }
@@ -90,10 +93,10 @@ export function createAdminAuthController({
     syncAdminBusyUi();
     syncDiscoveryLogDisclosure();
     setSourceFilter("all");
-    setFetcherLogPlaceholder("Loading latest jobs fetch report...");
-    setDiscoveryLogPlaceholder("Loading source discovery data...");
+    setFetcherLogPlaceholder("");
+    setDiscoveryLogPlaceholder("");
     setManualSourceFeedback("", "muted");
-    setOpsPlaceholders();
+    setOpsReadinessShell();
     setBridgeStatusBadge("checking", "Bridge Checking");
     emitAdminStartupMetric("admin_init_ready");
     emitAdminStartupMetric("admin_ready");
@@ -103,9 +106,9 @@ export function createAdminAuthController({
     resetBusyFlags();
     if (refs.adminBridgeStatusBadgeEl) refs.adminBridgeStatusBadgeEl.classList.remove("hidden");
     if (refs.adminContentEl) refs.adminContentEl.classList.remove("hidden");
-    setSourceStatus("Loading admin overview...");
-    setOpsPlaceholders("Loading operations health...");
-    if (refs.adminSyncStatusEl) refs.adminSyncStatusEl.textContent = "Loading sync status...";
+    setSourceStatus("");
+    setOpsReadinessShell();
+    if (refs.adminSyncStatusEl) refs.adminSyncStatusEl.textContent = "";
     startBridgeStatusWatch();
     runInitialTask({
       start: "admin_overview_fetch_start",

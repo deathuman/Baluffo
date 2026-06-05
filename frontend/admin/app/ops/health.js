@@ -7,7 +7,7 @@ import {
   renderAdminOpsKpis,
   renderAdminOpsSchedule,
   renderAdminOpsTrends
-} from "../../render.js?v=17";
+} from "../../render.js?v=18";
 import {
   filterSourcePolicyReviewPairs,
   getMigrationLinkLinkedActions,
@@ -22,6 +22,7 @@ const OPS_HISTORY_DETAIL_PATH = "/ops/history?limit=80";
 const OPS_FETCHER_METRICS_DETAIL_PATH = "/ops/fetcher-metrics?windowRuns=80";
 const OPS_DISCOVERY_AUDIT_ARTIFACTS_PATH = "/ops/discovery-audit-artifacts";
 const OPS_TASK_FAILURE_ATTEMPTS_PATH = "/ops/task-failure-attempts";
+const OPS_PERFORMANCE_PROFILE_PATH = "/ops/performance-profile";
 const SOURCE_POLICY_DETAIL_PATH = "/source-policy/recommendations";
 const REGISTRY_CONFLICTS_SUMMARY_PATH = "/registry/conflicts?view=summary";
 const REGISTRY_CONFLICTS_DETAIL_PATH = "/registry/conflicts";
@@ -498,6 +499,16 @@ export function createOpsHealthController({
     }
   }
 
+  async function handleRefreshPerformanceProfile() {
+    state.latestOpsPerformanceProfilePayload = { ok: true, routeTimings: { routes: [] }, operationTimings: { operations: [] } };
+    try {
+      await loadOpsOverviewDetailData(opsRenderToken);
+      showToast("Performance diagnostics refreshed.", "success");
+    } catch (err) {
+      showToast(`Could not refresh performance diagnostics: ${getErrorMessage(err)}`, "warn");
+    }
+  }
+
   async function handleAbortRun(row) {
     const taskType = String(row?.taskType || "").trim().toLowerCase();
     const runId = String(row?.runId || "").trim();
@@ -672,6 +683,26 @@ export function createOpsHealthController({
     });
   }
 
+  function setOpsReadinessShell() {
+    if (refs.adminOpsAlertsEl) refs.adminOpsAlertsEl.innerHTML = "";
+    if (refs.adminOpsKpisEl) refs.adminOpsKpisEl.innerHTML = "";
+    if (refs.adminOpsScheduleEl) refs.adminOpsScheduleEl.innerHTML = "";
+    if (refs.adminSourcePolicyReviewEl) refs.adminSourcePolicyReviewEl.innerHTML = "";
+    if (refs.adminOpsFetcherMetricsEl) refs.adminOpsFetcherMetricsEl.innerHTML = "";
+    if (refs.adminOpsDedupListsEl) refs.adminOpsDedupListsEl.innerHTML = "";
+    if (refs.adminOpsTrendsEl) {
+      refs.adminOpsTrendsEl.textContent = "No run trend data yet.";
+    }
+    if (refs.adminOpsHistoryEl) refs.adminOpsHistoryEl.innerHTML = "";
+    renderOpsTabBadges(refs, {
+      health: { alerts: [] },
+      discoveryReport: state.latestDiscoveryReportCache || {},
+      sourcePolicyRecommendations: getCachedSourcePolicyPayload(),
+      registryConflictsPayload: getCachedRegistryConflictsPayload(),
+      fetcherMetricsPayload: buildFetcherMetricsPayload()
+    });
+  }
+
   function getRenderScheduler() {
     return typeof renderScheduler === "function"
       ? renderScheduler
@@ -721,12 +752,21 @@ export function createOpsHealthController({
       : { ok: true, fetch: {}, discovery: {}, warnings: [] };
   }
 
+  function getCachedPerformanceProfilePayload() {
+    return state.latestOpsPerformanceProfilePayload
+      && typeof state.latestOpsPerformanceProfilePayload === "object"
+      && !Array.isArray(state.latestOpsPerformanceProfilePayload)
+      ? state.latestOpsPerformanceProfilePayload
+      : { ok: true, routeTimings: { routes: [] }, operationTimings: { operations: [] } };
+  }
+
   function buildFetcherMetricsPayload(fetcherMetrics = state.latestOpsFetcherMetricsPayload || {}, health = state.latestOpsHealthCache || {}) {
     const frontendPerfCounters = getFrontendPerfCounters();
     return {
       ...(fetcherMetrics && typeof fetcherMetrics === "object" ? fetcherMetrics : {}),
       discoveryAuditArtifacts: getCachedDiscoveryAuditArtifactsPayload(),
       taskFailureAttempts: getCachedTaskFailureAttemptsPayload(),
+      performanceProfile: getCachedPerformanceProfilePayload(),
       frontendPerfCounters: (
         frontendPerfCounters
         && typeof frontendPerfCounters === "object"
@@ -789,6 +829,7 @@ export function createOpsHealthController({
           onCopySectionDiagnostics: handleCopySectionDiagnostics,
           onRefreshAuditArtifacts: handleRefreshAuditArtifacts,
           onRefreshTaskFailureAttempts: handleRefreshTaskFailureAttempts,
+          onRefreshPerformanceProfile: handleRefreshPerformanceProfile,
           runModel
         }
       );
@@ -811,12 +852,14 @@ export function createOpsHealthController({
         historyResult,
         fetcherMetricsResult,
         auditArtifactsResult,
-        taskFailureAttemptsResult
+        taskFailureAttemptsResult,
+        performanceProfileResult
       ] = await Promise.allSettled([
         getBridge(OPS_HISTORY_DETAIL_PATH),
         getBridge(OPS_FETCHER_METRICS_DETAIL_PATH),
         getBridge(OPS_DISCOVERY_AUDIT_ARTIFACTS_PATH),
-        getBridge(OPS_TASK_FAILURE_ATTEMPTS_PATH)
+        getBridge(OPS_TASK_FAILURE_ATTEMPTS_PATH),
+        getBridge(OPS_PERFORMANCE_PROFILE_PATH)
       ]);
       let changed = false;
       if (
@@ -853,6 +896,15 @@ export function createOpsHealthController({
         && !Array.isArray(taskFailureAttemptsResult.value)
       ) {
         state.latestTaskFailureAttemptsPayload = taskFailureAttemptsResult.value;
+        changed = true;
+      }
+      if (
+        performanceProfileResult.status === "fulfilled"
+        && performanceProfileResult.value
+        && typeof performanceProfileResult.value === "object"
+        && !Array.isArray(performanceProfileResult.value)
+      ) {
+        state.latestOpsPerformanceProfilePayload = performanceProfileResult.value;
         changed = true;
       }
       if (changed) renderDeferredOverviewDetails(renderToken);
@@ -1029,6 +1081,7 @@ export function createOpsHealthController({
             onCopySectionDiagnostics: handleCopySectionDiagnostics,
             onRefreshAuditArtifacts: handleRefreshAuditArtifacts,
             onRefreshTaskFailureAttempts: handleRefreshTaskFailureAttempts,
+            onRefreshPerformanceProfile: handleRefreshPerformanceProfile,
             runModel
           }
         );
@@ -1149,7 +1202,7 @@ export function createOpsHealthController({
     }
     setBusyFlag("opsLoad", true);
     const showLoadingState = !options?.fromPoll && !state.latestOpsHealthCache;
-    if (showLoadingState && refs.adminOpsTrendsEl) refs.adminOpsTrendsEl.textContent = "Loading operations health...";
+    if (showLoadingState) setOpsReadinessShell();
     const measureFirstRender = !options?.fromPoll;
     if (measureFirstRender) markStep("admin_ops_health_first_render_start");
     try {
@@ -1211,6 +1264,7 @@ export function createOpsHealthController({
 
   return {
     setOpsPlaceholders,
+    setOpsReadinessShell,
     stopOpsHealthPolling,
     scheduleOpsHealthPolling,
     loadOpsHealthData,

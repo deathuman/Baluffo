@@ -499,6 +499,72 @@ def test_registry_service_json_authority_summary_avoids_full_normalization(
         assert summary["activeCount"] == 1
         assert summary["pendingCount"] == 2
         assert summary["rejectedCount"] == 1
+        assert summary["countBasis"] == "storage"
         assert summary["stateFingerprint"]
+    finally:
+        close_storage_stores()
+
+
+def test_registry_service_exact_summary_uses_normalized_rows_without_saving(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    active_path = tmp_path / "source-registry-active.json"
+    pending_path = tmp_path / "source-registry-pending.json"
+    rejected_path = tmp_path / "source-registry-rejected.json"
+    sr.save_json_atomic(
+        active_path,
+        [{"id": "active-1", "name": "Active", "adapter": "static"}],
+    )
+    sr.save_json_atomic(
+        pending_path,
+        [
+            {
+                "id": "pending-hidden",
+                "name": "Hidden",
+                "adapter": "greenhouse",
+                "hiddenFromDefault": True,
+                "deferReason": "cap",
+            },
+            {
+                "id": "pending-duplicate",
+                "name": "Duplicate",
+                "adapter": "lever",
+                "pendingReason": "duplicate source",
+            },
+        ],
+    )
+    sr.save_json_atomic(rejected_path, [{"id": "rejected-1", "name": "Rejected"}])
+
+    def fail_save(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("exact summary must not persist registry state")
+
+    monkeypatch.setattr(registry_service_module, "save_json_atomic", fail_save)
+    try:
+        store = get_storage_store(tmp_path)
+        store.set_authority_mode("sourceRegistry", "json", reason="test-json-authority")
+        service = RegistryService(
+            paths=RegistryPaths(
+                active=active_path,
+                pending=pending_path,
+                rejected=rejected_path,
+            ),
+            default_active=[],
+            normalize_manual_static=lambda row: row,
+        )
+
+        summary = service.get_exact_summary_payload()
+
+        assert summary["summaryExact"] is True
+        assert summary["countBasis"] == "normalized"
+        assert summary["activeCount"] == 1
+        assert summary["pendingCount"] == 2
+        assert summary["rejectedCount"] == 1
+        assert summary["hiddenPendingCount"] == 1
+        assert summary["deferredPendingCount"] == 1
+        assert summary["duplicatePendingCount"] == 1
+        assert summary["invalidRowsCount"] == 0
+        assert summary["stateHash"]
+        assert summary["stateFingerprint"] == summary["stateHash"]
+        assert "storage" not in summary
     finally:
         close_storage_stores()

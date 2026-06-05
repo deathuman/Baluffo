@@ -99,3 +99,22 @@ test("jobs source metadata panel renders excluded source note and fetch report c
   assert.match(listEl.innerHTML, /fetched 0, kept 0/);
   assert.match(captionEl.textContent, /latest fetch report/i);
 });
+
+test("jobs source metadata panel shows unavailable copy only after fetch failure", async () => {
+  const listEl = { innerHTML: "" };
+  const captionEl = { textContent: "" };
+
+  await renderDataSourcesPanel({
+    dataSourcesListEl: listEl,
+    dataSourcesCaptionEl: captionEl,
+    sourceRegistryActiveUrls: ["active-a"],
+    jobsFetchReportUrls: ["report-a"],
+    sheetsFallbackSource: { sheetId: "sheet123", gid: "77" },
+    fetchJsonFromCandidates: async () => {
+      throw new Error("bridge unavailable");
+    }
+  });
+
+  assert.match(listEl.innerHTML, /Source metadata unavailable/);
+  assert.equal(captionEl.textContent, "Source metadata unavailable.");
+});

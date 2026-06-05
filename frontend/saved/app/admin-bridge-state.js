@@ -16,7 +16,9 @@ export function applySavedAdminBridgeState({
   buttonEl.dataset.bridgeState = normalized;
   buttonEl.classList.remove("online", "offline", "checking");
   buttonEl.classList.add(normalized);
-  buttonEl.textContent = label || "Admin Checking...";
+  buttonEl.textContent = normalized === "checking"
+    ? "Admin"
+    : label || (normalized === "online" ? "Admin Online" : "Admin Offline");
   setTooltip(buttonEl, "");
   setTooltip(tooltipTarget, title || label || "Checking admin bridge status");
   const enabled = normalized === "online";

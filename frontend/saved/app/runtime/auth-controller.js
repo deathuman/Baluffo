@@ -127,8 +127,8 @@ export function createSavedAuthController({
 
   function handleSignedIn(user) {
     setAuthStatus(`Signed in as ${user.displayName || user.email || "user"}`);
-    setSourceStatus("Loading your saved jobs...");
-    setActivityStatus("Loading activity...");
+    setSourceStatus("");
+    setActivityStatus("");
     toggleAuthButtons(true);
     setBackupButtonsEnabled(true);
     setCustomJobAvailability(true);

@@ -212,7 +212,16 @@
     </div>
 
     <div id="jobs-list" data-ui="jobs-list" class="jobs-list">
-      <div class="loading">Loading jobs...</div>
+      <div class="jobs-table-header" aria-hidden="true">
+        <div class="job-row-header">
+          <div class="col-title">Position</div>
+          <div class="col-company">Company</div>
+          <div class="col-location">Location</div>
+          <div class="col-contract">Contract</div>
+          <div class="col-type">Type</div>
+          <div class="col-save">Save</div>
+        </div>
+      </div>
     </div>
 
     <div id="pagination" data-ui="pagination" class="pagination"></div>
@@ -220,9 +229,7 @@
     <details class="jobs-sources">
       <summary>Data sources</summary>
       <p id="data-sources-caption" data-ui="data-sources-caption">Source list reflects your current local fetch configuration and latest fetch report.</p>
-      <ul id="data-sources-list" data-ui="data-sources-list" class="sources-list">
-        <li>Loading configured sources...</li>
-      </ul>
+      <ul id="data-sources-list" data-ui="data-sources-list" class="sources-list"></ul>
     </details>
 
     <div class="jobs-footer">
@@ -243,6 +250,6 @@
 
   <script src="frontend-runtime-config.js?v=4"></script>
   <script src="theme.js" defer></script>
-  <script type="module" src="frontend/jobs/index.js?v=16"></script>
+  <script type="module" src="frontend/jobs/index.js?v=17"></script>
 </body>
 </html>

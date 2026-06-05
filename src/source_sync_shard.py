@@ -7,6 +7,7 @@ import gzip
 import hashlib
 import json
 import re
+import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import suppress
@@ -31,6 +32,73 @@ _TRUSTED_MANIFEST_PHASES = {"", "committed"}
 
 class SourceSyncShardError(ValueError):
     """Raised when rows cannot be represented as bounded source-sync shards."""
+
+
+def _duration_ms(started_at: float, finished_at: float) -> int:
+    return max(0, int(round((finished_at - started_at) * 1000)))
+
+
+def _remote_timing_row(
+    *,
+    operation: str,
+    method: str,
+    path: str,
+    started_at: float,
+    ok: bool,
+    status: int = 0,
+    size_bytes: int = 0,
+    row_count: int = 0,
+    already_existed: bool = False,
+    error: str = "",
+) -> dict[str, Any]:
+    return {
+        "operation": str(operation or "unknown"),
+        "method": str(method or "").upper(),
+        "path": str(path or ""),
+        "durationMs": _duration_ms(started_at, time.perf_counter()),
+        "ok": bool(ok),
+        "status": int(status or 0),
+        "sizeBytes": max(0, int(size_bytes or 0)),
+        "rowCount": max(0, int(row_count or 0)),
+        "alreadyExisted": bool(already_existed),
+        "error": str(error or "")[:240],
+    }
+
+
+def _remote_timing_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    operation_totals: dict[str, int] = {}
+    method_counts: dict[str, int] = {}
+    for row in rows:
+        operation = str(row.get("operation") or "unknown")
+        operation_totals[operation] = operation_totals.get(operation, 0) + int(
+            row.get("durationMs") or 0
+        )
+        method = str(row.get("method") or "").upper()
+        if method:
+            method_counts[method] = method_counts.get(method, 0) + 1
+    operation_top = [
+        {"operation": operation, "durationMs": duration_ms}
+        for operation, duration_ms in sorted(
+            operation_totals.items(),
+            key=lambda item: item[1],
+            reverse=True,
+        )
+    ]
+    slowest = sorted(
+        rows,
+        key=lambda row: int(row.get("durationMs") or 0),
+        reverse=True,
+    )
+    return {
+        "requestCount": len(rows),
+        "methodCounts": method_counts,
+        "operationTotalsMs": operation_totals,
+        "operationTop": operation_top[:12],
+        "slowestRequests": slowest[:20],
+        "errorRequests": [
+            row for row in slowest if not bool(row.get("ok")) or int(row.get("status") or 0) >= 400
+        ][:20],
+    }
 
 
 @dataclass(frozen=True)
@@ -539,6 +607,7 @@ def push_changed_shards(
     changed = changed_shards(shards, committed_manifest)
     results: list[dict[str, Any]] = []
     verifications: list[dict[str, Any]] = []
+    remote_requests: list[dict[str, Any]] = []
     changed_count = len(changed)
     total_bytes = sum(shard.size_bytes for shard in changed)
     completed_count = 0
@@ -564,14 +633,70 @@ def push_changed_shards(
                 f"Uploading source-sync shard {index} of {changed_count}." if index == 1 else ""
             ),
         )
-        result = push_shard(
-            module,
-            config,
-            shard,
-            message=f"Update Baluffo source sync shard {shard.bucket}/{shard.key}",
-            opener=opener,
+        put_started_at = time.perf_counter()
+        try:
+            result = push_shard(
+                module,
+                config,
+                shard,
+                message=f"Update Baluffo source sync shard {shard.bucket}/{shard.key}",
+                opener=opener,
+            )
+        except Exception as exc:
+            remote_requests.append(
+                _remote_timing_row(
+                    operation="pushShard",
+                    method="PUT",
+                    path=shard.path,
+                    started_at=put_started_at,
+                    ok=False,
+                    size_bytes=shard.size_bytes,
+                    row_count=shard.row_count,
+                    error=str(exc),
+                )
+            )
+            raise
+        remote_requests.append(
+            _remote_timing_row(
+                operation="pushShard",
+                method="PUT",
+                path=shard.path,
+                started_at=put_started_at,
+                ok=bool(result.get("ok")),
+                size_bytes=shard.size_bytes,
+                row_count=shard.row_count,
+                already_existed=bool(result.get("alreadyExisted")),
+            )
         )
-        verified = read_shard(module, config, shard.manifest_entry(), opener=opener)
+        verify_started_at = time.perf_counter()
+        try:
+            verified = read_shard(module, config, shard.manifest_entry(), opener=opener)
+        except Exception as exc:
+            remote_requests.append(
+                _remote_timing_row(
+                    operation="verifyShard",
+                    method="GET",
+                    path=shard.path,
+                    started_at=verify_started_at,
+                    ok=False,
+                    size_bytes=shard.size_bytes,
+                    row_count=shard.row_count,
+                    error=str(exc),
+                )
+            )
+            raise
+        verified_row_count = len(verified.get("rows") or [])
+        remote_requests.append(
+            _remote_timing_row(
+                operation="verifyShard",
+                method="GET",
+                path=shard.path,
+                started_at=verify_started_at,
+                ok=True,
+                size_bytes=shard.size_bytes,
+                row_count=verified_row_count,
+            )
+        )
         completed_count += 1
         verified_count += 1
         pushed_bytes += shard.size_bytes
@@ -600,7 +725,7 @@ def push_changed_shards(
             {
                 "path": shard.path,
                 "sha256": shard.sha256,
-                "rowCount": len(verified.get("rows") or []),
+                "rowCount": verified_row_count,
             }
         )
     return {
@@ -610,6 +735,7 @@ def push_changed_shards(
         "changedShards": [shard.manifest_entry() for shard in changed],
         "pushResults": results,
         "verifiedShards": verifications,
+        "remoteRequests": remote_requests,
     }
 
 
@@ -734,12 +860,41 @@ def push_sharded_snapshot(
         counts=manifest_counts,
         message="Committing sync manifest.",
     )
-    manifest_result = push_manifest(
-        module,
-        config,
-        bundle["manifest"],
-        sha=committed_manifest_sha,
-        opener=opener,
+    remote_requests = list(shard_result.get("remoteRequests") or [])
+    manifest_path_text = manifest_path(config.path)
+    manifest_started_at = time.perf_counter()
+    try:
+        manifest_result = push_manifest(
+            module,
+            config,
+            bundle["manifest"],
+            sha=committed_manifest_sha,
+            opener=opener,
+        )
+    except Exception as exc:
+        remote_requests.append(
+            _remote_timing_row(
+                operation="pushManifest",
+                method="PUT",
+                path=manifest_path_text,
+                started_at=manifest_started_at,
+                ok=False,
+                size_bytes=int(metrics.get("manifestSizeBytes") or 0),
+                row_count=int(bundle["manifest"].get("totalRowCount") or 0),
+                error=str(exc),
+            )
+        )
+        raise
+    remote_requests.append(
+        _remote_timing_row(
+            operation="pushManifest",
+            method="PUT",
+            path=manifest_path_text,
+            started_at=manifest_started_at,
+            ok=bool(manifest_result.get("ok")),
+            size_bytes=int(metrics.get("manifestSizeBytes") or 0),
+            row_count=int(bundle["manifest"].get("totalRowCount") or 0),
+        )
     )
     gc_result: dict[str, Any] = {}
     gc_warnings: list[str] = []
@@ -754,6 +909,7 @@ def push_sharded_snapshot(
         counts=gc_counts,
         message="Pruning old sync shards.",
     )
+    gc_started_at = time.perf_counter()
     try:
         gc_result = prune_unreferenced_shards(
             module,
@@ -774,6 +930,18 @@ def push_sharded_snapshot(
             "deletedPaths": [],
             "warnings": gc_warnings,
         }
+    remote_requests.append(
+        _remote_timing_row(
+            operation="pruneShards",
+            method="GET",
+            path=DEFAULT_BASE_PATH,
+            started_at=gc_started_at,
+            ok=not gc_warnings,
+            size_bytes=0,
+            row_count=int(gc_result.get("deleteAttemptCount") or 0),
+            error="; ".join(gc_warnings),
+        )
+    )
     _emit_push_progress(
         progress_callback,
         phase_label="Pruned old sync shards",
@@ -805,6 +973,7 @@ def push_sharded_snapshot(
         "shardResult": shard_result,
         "gc": gc_result,
         "warnings": gc_warnings,
+        "remoteTiming": _remote_timing_summary(remote_requests),
     }
 
 

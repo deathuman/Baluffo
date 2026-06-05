@@ -44,6 +44,11 @@ test("admin ops controller lazy-loads discovery audit artifacts into metrics", a
     fetch: { hardFailureCount: 0, partialWarningCount: 1 },
     discovery: { failureRecordCount: 12, actionableDiagnosticCount: 4 }
   };
+  const performanceProfilePayload = {
+    ok: true,
+    routeTimings: { routes: [{ label: "GET /ops/dashboard-health", count: 1, p95Ms: 10 }] },
+    operationTimings: { operations: [{ label: "ops.dashboard.history", count: 1, p95Ms: 4 }] }
+  };
   const renderScheduler = createDeferredRenderScheduler();
   const controller = createAdminOpsController({
     state,
@@ -57,6 +62,7 @@ test("admin ops controller lazy-loads discovery audit artifacts into metrics", a
       if (path === "/ops/fetcher-metrics?windowRuns=80") return { latestRun: {} };
       if (path === "/ops/discovery-audit-artifacts") return auditPayload;
       if (path === "/ops/task-failure-attempts") return taskFailureAttemptsPayload;
+      if (path === "/ops/performance-profile") return performanceProfilePayload;
       throw new Error(`unexpected path ${path}`);
     },
     postBridge: async () => ({}),
@@ -100,6 +106,8 @@ test("admin ops controller lazy-loads discovery audit artifacts into metrics", a
   assert.equal(refs.adminOpsAlertsEl.classList.contains("missing"), false);
   assert.equal(calls.includes("/ops/discovery-audit-artifacts"), true);
   assert.equal(calls.includes("/ops/task-failure-attempts"), true);
+  assert.equal(calls.includes("/ops/performance-profile"), true);
   assert.equal(renderedMetrics.at(-1)?.discoveryAuditArtifacts, auditPayload);
   assert.equal(renderedMetrics.at(-1)?.taskFailureAttempts, taskFailureAttemptsPayload);
+  assert.equal(renderedMetrics.at(-1)?.performanceProfile, performanceProfilePayload);
 });

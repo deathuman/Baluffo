@@ -520,6 +520,117 @@ class RegistryService:
             "rejectedCount": len(state["rejected"]),
         }
 
+    @staticmethod
+    def _summary_text(value: Any) -> str:
+        return str(value or "").strip()
+
+    @classmethod
+    def _summary_lower(cls, value: Any) -> str:
+        return cls._summary_text(value).lower()
+
+    @staticmethod
+    def _summary_int(value: Any) -> int:
+        try:
+            return max(0, int(value))
+        except (TypeError, ValueError):
+            return 0
+
+    @classmethod
+    def _pending_is_hidden_for_summary(cls, row: dict[str, Any]) -> bool:
+        return (
+            bool(row.get("hiddenFromDefault"))
+            or cls._summary_lower(row.get("candidateState")) == "hidden"
+        )
+
+    @classmethod
+    def _pending_is_deferred_for_summary(cls, row: dict[str, Any]) -> bool:
+        return (
+            bool(row.get("deferred"))
+            or bool(cls._summary_text(row.get("deferReason")))
+            or bool(cls._summary_text(row.get("firstDeferredAt")))
+            or bool(cls._summary_text(row.get("lastDeferredAt")))
+            or cls._summary_int(row.get("deferCount")) > 0
+        )
+
+    @classmethod
+    def _pending_is_duplicate_for_summary(cls, row: dict[str, Any]) -> bool:
+        return bool(cls._summary_text(row.get("duplicateOfSourceId"))) or (
+            "duplicate" in cls._summary_lower(row.get("pendingReason"))
+        )
+
+    def _load_json_state_for_summary_exact(self) -> dict[str, list[dict[str, Any]]]:
+        active = load_json_array(self._paths.active, [])
+        if active:
+            active = filter_tombstoned_rows(active, self._load_tombstones_json())
+        else:
+            active = [
+                canonicalize_registry_row(dict(row), bucket="active")
+                for row in self._default_active
+            ]
+        state = {
+            "active": active,
+            "pending": load_json_array(self._paths.pending, []),
+            "rejected": load_json_array(self._paths.rejected, []),
+        }
+        normalized = self.normalize_state(state)
+        return self._apply_safe_conflict_demotions(normalized)
+
+    def _load_state_for_summary_exact(
+        self, mode: str
+    ) -> tuple[dict[str, list[dict[str, Any]]], str]:
+        if mode == "sqlite":
+            try:
+                runtime_store = self._runtime_store()
+                if runtime_store.current_generation():
+                    state = runtime_store.current_state()
+                    normalized = self.normalize_state(state)
+                    normalized = self._apply_safe_conflict_demotions(normalized)
+                    if self._has_registry_json_exports():
+                        json_state = self._load_json_state_for_summary_exact()
+                        if source_registry_state_hash(normalized) != source_registry_state_hash(
+                            json_state
+                        ):
+                            return json_state, "json"
+                    return normalized, mode
+            except _STORAGE_OPERATION_ERRORS as exc:
+                self._record_registry_diagnostic(
+                    "source_registry_exact_summary_sqlite_read_failed",
+                    ok=False,
+                    message=str(exc),
+                )
+        return self._load_json_state_for_summary_exact(), "json" if mode == "sqlite" else mode
+
+    def get_exact_summary_payload(self) -> dict[str, Any]:
+        mode = self._authority_mode()
+        state, authority_mode = self._load_state_for_summary_exact(mode)
+        pending_rows = [row for row in state.get("pending", []) if isinstance(row, dict)]
+        tombstones = self.load_tombstones()
+        return {
+            **self.summarize_state(state),
+            "tombstoneCount": len(tombstones),
+            "hiddenPendingCount": sum(
+                1 for row in pending_rows if self._pending_is_hidden_for_summary(row)
+            ),
+            "deferredPendingCount": sum(
+                1 for row in pending_rows if self._pending_is_deferred_for_summary(row)
+            ),
+            "duplicatePendingCount": sum(
+                1 for row in pending_rows if self._pending_is_duplicate_for_summary(row)
+            ),
+            "invalidRowsCount": 0,
+            "stateHash": source_registry_state_hash(state),
+            "tombstoneHash": source_registry_tombstone_hash(tombstones),
+            "stateFingerprint": source_registry_state_hash(state),
+            "generation": "",
+            "reason": "exact_summary",
+            "publishedAt": "",
+            "updatedAt": "",
+            "summaryStatus": "ready",
+            "summaryExact": True,
+            "countBasis": "normalized",
+            "authorityMode": authority_mode,
+        }
+
     def _cheap_json_summary_payload(self, *, reason: str) -> dict[str, Any]:
         active_summary = summarize_json_array_storage(self._paths.active, self._default_active)
         pending_summary = summarize_json_array_storage(self._paths.pending, [])
@@ -555,6 +666,7 @@ class RegistryService:
             "updatedAt": "",
             "summaryStatus": "ready",
             "summaryExact": False,
+            "countBasis": "storage",
             "storage": {
                 "active": active_summary,
                 "pending": pending_summary,
@@ -581,7 +693,12 @@ class RegistryService:
                             "sqliteStateHash": str(summary.get("stateHash") or ""),
                             "sqliteTombstoneHash": str(summary.get("tombstoneHash") or ""),
                         }
-                    return {**summary, "authorityMode": mode}
+                    return {
+                        **summary,
+                        "authorityMode": mode,
+                        "summaryExact": False,
+                        "countBasis": "storage",
+                    }
             except _STORAGE_OPERATION_ERRORS:
                 pass
         return {

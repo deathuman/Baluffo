@@ -191,6 +191,20 @@ def capture_runtime_snapshot(bridge_base_url: str, artifacts_dir: Path) -> dict[
     return runtime_snapshot.capture_runtime_snapshot(_root(), bridge_base_url, artifacts_dir)
 
 
+def capture_performance_profile_snapshot(
+    bridge_base_url: str,
+    artifacts_dir: Path,
+    *,
+    filename: str = "performance-profile.json",
+) -> dict[str, str]:
+    return runtime_snapshot.capture_performance_profile_snapshot(
+        _root(),
+        bridge_base_url,
+        artifacts_dir,
+        filename=filename,
+    )
+
+
 def wait_for_runtime_events(
     bridge_base_url: str, required_events: list[str] | tuple[str, ...], timeout_s: float
 ) -> list[dict[str, Any]]:

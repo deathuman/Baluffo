@@ -27,6 +27,55 @@ export function createAdminBridgeButtonWatcher({
   let pollTimer = null;
   let initialBridgeReadyResolved = false;
 
+  function getRuntimeBridgeBaseFromLocation() {
+    try {
+      const url = new URL(window.location.href);
+      const bridgePort = String(url.searchParams.get("bridgePort") || "").trim();
+      const bridgeHost = String(url.searchParams.get("bridgeHost") || "").trim() || "127.0.0.1";
+      if (/^\d+$/.test(bridgePort)) {
+        return `http://${bridgeHost}:${bridgePort}`;
+      }
+    } catch {
+      // Ignore URL parsing failures and use the configured bridge base.
+    }
+    return "";
+  }
+
+  function getRuntimeBridgeBaseFromSession() {
+    try {
+      return String(window.sessionStorage.getItem("baluffo_runtime_bridge_base") || "").trim();
+    } catch {
+      return "";
+    }
+  }
+
+  function getBridgeBaseCandidates() {
+    const seen = new Set();
+    return [
+      baseUrl,
+      getRuntimeBridgeBaseFromLocation(),
+      getRuntimeBridgeBaseFromSession()
+    ]
+      .map(value => String(value ?? "").trim())
+      .filter(value => {
+        if (seen.has(value)) return false;
+        seen.add(value);
+        return true;
+      });
+  }
+
+  async function fetchHealth() {
+    let lastError = null;
+    for (const candidateBase of getBridgeBaseCandidates()) {
+      try {
+        return await fetchJson(candidateBase, "/ops/health");
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError || new Error("Admin bridge is offline");
+  }
+
   /**
    * Sets the admin bridge button state.
    * @param {string} stateValue - "online", "offline", or "checking"
@@ -54,10 +103,10 @@ export function createAdminBridgeButtonWatcher({
       }
     }
     if (currentState !== "online") {
-      setAdminPageButtonState("checking", "Admin Checking...", "Checking admin bridge status");
+      setAdminPageButtonState("checking", "Admin", "Checking admin bridge status");
     }
     try {
-      const payload = await fetchJson(baseUrl, "/ops/health");
+      const payload = await fetchHealth();
       const summary = payload?.summary || {};
       const activeAlertCount = Number(summary?.activeAlertCount || 0);
       const label = activeAlertCount > 0
@@ -74,7 +123,7 @@ export function createAdminBridgeButtonWatcher({
    */
   function startAdminBridgeButtonWatch() {
     if (!buttonEl || pollTimer) return;
-    setAdminPageButtonState("checking", "Admin Checking...", "Checking admin bridge status");
+    setAdminPageButtonState("checking", "Admin", "Checking admin bridge status");
     pollAdminBridgeButtonState().catch(() => { });
     pollTimer = window.setInterval(() => {
       pollAdminBridgeButtonState().catch(() => { });

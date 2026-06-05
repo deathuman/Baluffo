@@ -118,6 +118,7 @@ def test_ops_health_exposes_registry_sync_confidence(admin_bridge_entrypoint_roo
     assert registry_sync["rejectedCount"] == 1
     assert registry_sync["tombstoneCount"] == 1
     assert registry_sync["summaryExact"] is False
+    assert registry_sync["countBasis"] == "storage"
     assert registry_sync["hiddenPendingCount"] == 0
     assert registry_sync["ignoredRejectedCount"] == 1
     assert registry_sync["ignoredTombstonedCount"] == 1
