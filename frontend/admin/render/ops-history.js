@@ -172,13 +172,16 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
   const olderCompletedRows = Array.isArray(model.olderCompletedRows) ? model.olderCompletedRows : [];
   const waitingForTaskState = Boolean(options?.waitingForTaskState);
   const taskStateUnavailable = Boolean(options?.taskStateUnavailable);
+  const historyPending = Boolean(options?.historyPending);
+  const historyLoaded = options?.historyLoaded !== false;
+  const historyFullLoaded = Boolean(options?.historyFullLoaded);
   const canPatchInPlace = Boolean(
     historyEl
     && typeof historyEl.querySelector === "function"
     && typeof historyEl.querySelectorAll === "function"
     && historyEl.dataset
   );
-  if (!currentRows.length && !visibleCompletedRows.length && !olderCompletedRows.length) {
+  if (!currentRows.length && !visibleCompletedRows.length && !olderCompletedRows.length && historyLoaded && !historyPending) {
     historyEl.innerHTML = waitingForTaskState
       ? '<div class="admin-ops-loading">Waiting for task state...</div>'
       : taskStateUnavailable
@@ -366,6 +369,9 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
   const structureSignature = JSON.stringify({
     selectedRunKey: selectedView?.key || "",
     waitingForTaskState,
+    historyPending,
+    historyLoaded,
+    historyFullLoaded,
     currentRows: currentViews.map(row => [
       row.key,
       row.statusText,
@@ -706,14 +712,25 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
       <div class="jobs-table-body">
         ${visibleCompletedViews.length
           ? renderCappedRows(visibleCompletedViews, 5, { renderRows: renderCompletedRows })
-          : '<div class="no-results">No completed runs yet.</div>'}
+          : historyPending
+            ? '<div class="admin-ops-loading admin-section-loading">Loading recent run history...</div>'
+            : historyLoaded
+              ? '<div class="no-results">No completed runs yet.</div>'
+              : '<div class="admin-ops-loading admin-section-loading">Recent run history has not loaded yet.</div>'}
       </div>
     </details>
     ${olderCompletedViews.length ? `
-      <details class="admin-ops-history-older admin-ops-completed-runs">
+      <details class="admin-ops-history-older admin-ops-completed-runs" data-ops-load-older-history>
         <summary>Older runs (${olderCompletedViews.length})</summary>
         <div class="jobs-table-body">
           ${renderCompletedRows(olderCompletedViews)}
+        </div>
+      </details>
+    ` : (historyLoaded && !historyFullLoaded) ? `
+      <details class="admin-ops-history-older admin-ops-completed-runs" data-ops-load-older-history>
+        <summary>Older runs</summary>
+        <div class="jobs-table-body">
+          <div class="admin-ops-loading admin-section-loading">Open to load older run history.</div>
         </div>
       </details>
     ` : ""}

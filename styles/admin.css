@@ -1494,6 +1494,31 @@
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
 }
 
+.admin-section-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  color: var(--text-muted);
+}
+
+.admin-section-loading::before {
+  content: "";
+  width: 0.65rem;
+  height: 0.65rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.72;
+  animation: adminSectionLoadingPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes adminSectionLoadingPulse {
+  0% { opacity: 0.38; transform: scale(0.86); }
+  50% { opacity: 0.9; transform: scale(1); }
+  100% { opacity: 0.38; transform: scale(0.86); }
+}
+
 .admin-ops-history-header,
 .admin-ops-history-row {
   grid-template-columns:

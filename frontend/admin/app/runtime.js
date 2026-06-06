@@ -58,7 +58,7 @@ import { createAdminStartupMetrics } from "./runtime/effects.js";
 import { createBridgeCaller } from "./runtime/actions.js";
 import { resolveAdminBridgeBase } from "./runtime/bridge-base.js";
 import { setStatusText, toLocalTime } from "./runtime/view.js";
-import { bindAdminRuntimeEvents } from "./runtime/events.js?v=13";
+import { bindAdminRuntimeEvents } from "./runtime/events.js?v=14";
 import { applyAdminAdvancedBulkLayout } from "./bulk-actions.js";
 
 const JOBS_LAST_URL_KEY = adminConfig.JOBS_LAST_URL_KEY || "baluffo_jobs_last_url";

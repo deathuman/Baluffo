@@ -18,7 +18,7 @@ import { renderAdminRegistryConflicts } from "../../render/registry-conflicts.js
 import { setTooltip } from "../../../shared/ui/index.js?v=6";
 
 const OPS_TASK_STATE_SUMMARY_PATH = "/ops/task-state?view=summary";
-const OPS_HISTORY_STARTUP_PATH = "/ops/history?limit=20";
+const OPS_HISTORY_STARTUP_PATH = "/ops/history?limit=2";
 const OPS_HISTORY_DETAIL_PATH = "/ops/history?limit=80";
 const OPS_FETCHER_METRICS_DETAIL_PATH = "/ops/fetcher-metrics?windowRuns=80";
 const OPS_DISCOVERY_AUDIT_ARTIFACTS_PATH = "/ops/discovery-audit-artifacts";
@@ -204,6 +204,7 @@ export function createOpsHealthController({
   let opsRenderToken = 0;
   let opsOverviewDetailLoad = null;
   let opsHistoryLoad = null;
+  let opsHistoryLoadLimit = 0;
   let sourcePolicyDetailLoad = null;
   let registryConflictsDetailLoad = null;
 
@@ -842,7 +843,10 @@ export function createOpsHealthController({
         onCopyRunDiagnostics: handleCopyRunDiagnostics,
         onAbortRun: handleAbortRun,
         waitingForTaskState: Boolean(state.waitingForTaskState),
-        taskStateUnavailable: Boolean(state.taskStateUnavailable)
+        taskStateUnavailable: Boolean(state.taskStateUnavailable),
+        historyPending: Boolean(state.opsHistoryLoadPending),
+        historyLoaded: Boolean(state.opsHistoryLoaded),
+        historyFullLoaded: Boolean(state.opsHistoryFullLoaded)
       });
       renderAdminOpsTrendsImpl(refs.adminOpsTrendsEl, historyRuns);
     });
@@ -866,19 +870,28 @@ export function createOpsHealthController({
         onCopyRunDiagnostics: handleCopyRunDiagnostics,
         onAbortRun: handleAbortRun,
         waitingForTaskState: Boolean(state.waitingForTaskState),
-        taskStateUnavailable: Boolean(state.taskStateUnavailable)
+        taskStateUnavailable: Boolean(state.taskStateUnavailable),
+        historyPending: Boolean(state.opsHistoryLoadPending),
+        historyLoaded: Boolean(state.opsHistoryLoaded),
+        historyFullLoaded: Boolean(state.opsHistoryFullLoaded)
       });
       renderAdminOpsTrendsImpl(refs.adminOpsTrendsEl, historyRuns);
     });
   }
 
   function loadOpsHistoryData(options = {}) {
-    if (opsHistoryLoad) return opsHistoryLoad;
     const renderToken = Number(options?.renderToken) || opsRenderToken;
-    const requestedLimit = Math.max(1, Math.min(80, Number(options?.limit) || 20));
-    const path = requestedLimit === 20
+    const requestedLimit = Math.max(1, Math.min(80, Number(options?.limit) || 2));
+    if (opsHistoryLoad) {
+      if (requestedLimit <= opsHistoryLoadLimit) return opsHistoryLoad;
+      return opsHistoryLoad.catch(() => null).then(() => loadOpsHistoryData(options));
+    }
+    const path = requestedLimit === 2
       ? OPS_HISTORY_STARTUP_PATH
       : `/ops/history?limit=${encodeURIComponent(String(requestedLimit))}`;
+    opsHistoryLoadLimit = requestedLimit;
+    state.opsHistoryLoadPending = true;
+    renderDeferredHistoryDetails(renderToken);
     opsHistoryLoad = measuredGetBridge(
       path,
       "admin_ops_history_fetch",
@@ -887,12 +900,17 @@ export function createOpsHealthController({
       .then(payload => {
         if (payload && typeof payload === "object" && !Array.isArray(payload)) {
           state.latestOpsHistoryPayload = payload;
+          state.opsHistoryLoaded = true;
+          if (requestedLimit >= 80) state.opsHistoryFullLoaded = true;
           renderDeferredHistoryDetails(renderToken);
         }
         return payload || null;
       })
       .finally(() => {
+        state.opsHistoryLoadPending = false;
         opsHistoryLoad = null;
+        opsHistoryLoadLimit = 0;
+        renderDeferredHistoryDetails(renderToken);
       });
     return opsHistoryLoad;
   }
@@ -920,6 +938,8 @@ export function createOpsHealthController({
         && !Array.isArray(historyResult.value)
       ) {
         state.latestOpsHistoryPayload = historyResult.value;
+        state.opsHistoryLoaded = true;
+        state.opsHistoryFullLoaded = true;
         changed = true;
       }
       if (
@@ -1143,7 +1163,10 @@ export function createOpsHealthController({
           onCopyRunDiagnostics: handleCopyRunDiagnostics,
           onAbortRun: handleAbortRun,
           waitingForTaskState: Boolean(state.waitingForTaskState),
-          taskStateUnavailable: Boolean(state.taskStateUnavailable)
+          taskStateUnavailable: Boolean(state.taskStateUnavailable),
+          historyPending: Boolean(state.opsHistoryLoadPending),
+          historyLoaded: Boolean(state.opsHistoryLoaded),
+          historyFullLoaded: Boolean(state.opsHistoryFullLoaded)
         });
       });
     }

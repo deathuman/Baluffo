@@ -10,6 +10,21 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.53] - 2026-06-07
+
+### Changed
+- Container Admin now loads deferred panels on view: Ops recent history, Fetcher output, Discovery/source tables, and Sync diagnostics load when their section is focused or near the viewport instead of relying on delayed full diagnostics.
+- Ops history now requests only the two most recent completed runs for the initial Admin view; older run history loads only when the older-runs disclosure is opened while current running tasks remain visible from the task summary.
+- Deferred Fetcher, Discovery, Sources, and Sync panels now show truthful animated loading states instead of blank static areas or false empty copy.
+
+### Fixed
+- Admin run history no longer shows `No run history yet` before the recent-history request has completed.
+
+### Notes
+- This is a container/Umbrel Admin load-on-view recovery patch. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- Chrome DevTools traces remain the primary acceptance signal for Umbrel page-load performance; backend route profiles remain supporting diagnostics.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.52] - 2026-06-06
 
 ### Changed

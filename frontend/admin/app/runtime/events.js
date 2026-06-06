@@ -1,5 +1,6 @@
 import { bindAsyncClick, bindUi } from "../../../shared/ui/index.js?v=6";
 import { navigateDesktopPage } from "../../../shared/local-data/desktop-client.js";
+import { createAdminSectionLoadCoordinator } from "./section-loader.js";
 
 function bindWindowResize(handler) {
   window.addEventListener("resize", handler);
@@ -136,4 +137,14 @@ export function bindAdminRuntimeEvents({
       registryController.loadDiscoveryData().catch(() => {});
     });
   });
+
+  createAdminSectionLoadCoordinator({
+    state,
+    refs,
+    opsController,
+    fetcherController,
+    discoveryController,
+    registryController,
+    syncController
+  }).start();
 }
