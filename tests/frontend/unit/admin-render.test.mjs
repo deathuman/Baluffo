@@ -275,3 +275,39 @@ test("admin render: active approval uses canonical stateChangedBy actor", () => 
   assert.match(html, /Live: discovery_auto_approve/);
   assert.doesNotMatch(html, /Live: registry_migration_v2/);
 });
+
+test("admin render: source table virtual window caps rendered rows and adds spacers", () => {
+  const rows = Array.from({ length: 120 }, (_, index) => ({
+    id: `source-${index}`,
+    name: `Source ${index}`,
+    adapter: "static",
+    studio: `Studio ${index}`,
+    jobsFound: index,
+    status: "ok"
+  }));
+  const html = renderSourcesTableHtml(
+    rows,
+    "active",
+    row => Number(row.jobsFound || 0).toLocaleString(),
+    row => row.status,
+    () => ({ label: "Live", tone: "healthy" }),
+    {
+      virtual: true,
+      startIndex: 40,
+      endIndex: 71,
+      rowHeightPx: 52,
+      selectedSourceIds: new Set(["source-42"])
+    }
+  );
+
+  const renderedRows = html.match(/admin-user-row admin-source-row/g) || [];
+  assert.equal(renderedRows.length, 31);
+  assert.match(html, /data-virtualized="true"/);
+  assert.match(html, /data-window-start="40"/);
+  assert.match(html, /height: 2080px/);
+  assert.match(html, /Source 40/);
+  assert.match(html, /Source 70/);
+  assert.doesNotMatch(html, /Source 39/);
+  assert.doesNotMatch(html, /Source 71/);
+  assert.match(html, /data-source-id="source-42"[^>]* checked/);
+});

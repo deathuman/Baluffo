@@ -136,7 +136,8 @@ export function renderSourcesTableHtml(
   mode,
   formatSourceJobsFound,
   resolveSourceStatus,
-  resolveSourceApprovalStatus
+  resolveSourceApprovalStatus,
+  options = {}
 ) {
   if (!Array.isArray(rows) || rows.length === 0) {
     const emptyText = mode === "pending"
@@ -150,6 +151,27 @@ export function renderSourcesTableHtml(
   const isRejected = mode === "rejected";
   const isActive = mode === "active";
   const leadHeader = "Select";
+  const rowHeightPx = Math.max(1, Number(options?.rowHeightPx || 52));
+  const virtual = Boolean(options?.virtual);
+  const totalRows = rows.length;
+  const startIndex = virtual
+    ? Math.min(Math.max(0, Number(options?.startIndex || 0)), Math.max(0, totalRows - 1))
+    : 0;
+  const requestedEndIndex = virtual
+    ? Number(options?.endIndex || totalRows)
+    : totalRows;
+  const endIndex = virtual
+    ? Math.min(totalRows, Math.max(startIndex + 1, requestedEndIndex))
+    : totalRows;
+  const visibleRows = virtual ? rows.slice(startIndex, endIndex) : rows;
+  const topSpacerHeight = virtual ? startIndex * rowHeightPx : 0;
+  const bottomSpacerHeight = virtual ? Math.max(0, totalRows - endIndex) * rowHeightPx : 0;
+  const selectedSourceKeys = options?.selectedSourceKeys instanceof Set
+    ? options.selectedSourceKeys
+    : new Set(Array.isArray(options?.selectedSourceKeys) ? options.selectedSourceKeys : []);
+  const selectedSourceIds = options?.selectedSourceIds instanceof Set
+    ? options.selectedSourceIds
+    : new Set(Array.isArray(options?.selectedSourceIds) ? options.selectedSourceIds : []);
 
   function buildSourceStatusTitle(row, normalizedStatus, statusErrorDetail) {
     if (normalizedStatus === "error" && statusErrorDetail) {
@@ -205,10 +227,20 @@ export function renderSourcesTableHtml(
         <div>Approval</div>
       </div>
     </div>
-    <div class="jobs-table-body">
-      ${rows.map(row => {
+    <div class="jobs-table-body admin-source-table-body" data-source-mode="${escapeHtml(mode)}" data-total-rows="${totalRows}"${virtual ? ` data-virtualized="true" data-window-start="${startIndex}" data-window-end="${endIndex}"` : ""}>
+      ${virtual && topSpacerHeight > 0 ? `<div class="admin-source-virtual-spacer" style="height: ${topSpacerHeight}px;"></div>` : ""}
+      ${visibleRows.map((row, visibleIndex) => {
+        const rowIndex = startIndex + visibleIndex;
         const sourceIdRaw = String(row.id || "").trim();
         const sourceId = escapeHtml(sourceIdRaw);
+        const sourceUrlRaw = String(
+          row.listing_url
+          || row.api_url
+          || row.feed_url
+          || row.board_url
+          || (Array.isArray(row.pages) ? (row.pages[0] || "") : "")
+          || ""
+        );
         const name = escapeHtml(String(row.name || ""));
         const adapter = escapeHtml(String(row.adapter || ""));
         const studio = escapeHtml(String(row.studio || ""));
@@ -242,26 +274,23 @@ export function renderSourcesTableHtml(
             : "warning";
         const approvalTitleRaw = String(approvalStatus?.title || approvalStatus?.label || "").trim();
         const approvalTitle = tooltipAttrs(approvalTitleRaw);
-        const sourceUrl = escapeHtml(String(
-          row.listing_url
-          || row.api_url
-          || row.feed_url
-          || row.board_url
-          || (Array.isArray(row.pages) ? (row.pages[0] || "") : "")
-          || ""
-        ));
+        const sourceUrl = escapeHtml(sourceUrlRaw);
+        const selectedKey = sourceIdRaw || `|${sourceUrlRaw}`;
+        const checkedAttr = selectedSourceKeys.has(selectedKey) || (sourceIdRaw && selectedSourceIds.has(sourceIdRaw))
+          ? " checked"
+          : "";
         const sourceIdTitle = sourceIdRaw || "missing source id";
         const sourceIdAria = escapeHtml(`Source ID: ${sourceIdRaw || "missing source id"}`);
         const idIconHtml = `<span class="admin-source-id-inline"${tooltipAttrs(sourceIdTitle)} aria-label="${sourceIdAria}">i</span>`;
         const leadCell = isPending
-          ? `<span class="admin-select-cell-inner"><input type="checkbox" class="pending-source-checkbox" data-ui="source-checkbox" data-source-id="${sourceId}" data-source-url="${sourceUrl}">${idIconHtml}</span>`
+          ? `<span class="admin-select-cell-inner"><input type="checkbox" class="pending-source-checkbox" data-ui="source-checkbox" data-source-id="${sourceId}" data-source-url="${sourceUrl}" data-source-row-index="${rowIndex}"${checkedAttr}>${idIconHtml}</span>`
           : isRejected
-            ? `<span class="admin-select-cell-inner"><input type="checkbox" class="rejected-source-checkbox" data-ui="source-checkbox" data-source-id="${sourceId}" data-source-url="${sourceUrl}">${idIconHtml}</span>`
+            ? `<span class="admin-select-cell-inner"><input type="checkbox" class="rejected-source-checkbox" data-ui="source-checkbox" data-source-id="${sourceId}" data-source-url="${sourceUrl}" data-source-row-index="${rowIndex}"${checkedAttr}>${idIconHtml}</span>`
             : isActive
-              ? `<span class="admin-select-cell-inner"><input type="checkbox" class="active-source-checkbox" data-ui="source-checkbox" data-source-id="${sourceId}" data-source-url="${sourceUrl}">${idIconHtml}</span>`
+              ? `<span class="admin-select-cell-inner"><input type="checkbox" class="active-source-checkbox" data-ui="source-checkbox" data-source-id="${sourceId}" data-source-url="${sourceUrl}" data-source-row-index="${rowIndex}"${checkedAttr}>${idIconHtml}</span>`
               : `<span class="muted">N/A</span>`;
         return `
-          <div class="admin-user-row admin-source-row">
+          <div class="admin-user-row admin-source-row" data-source-row-index="${rowIndex}">
             <div class="admin-cell" data-label="${leadHeader}">${leadCell}</div>
             <div class="admin-cell" data-label="Name">${name}</div>
             <div class="admin-cell" data-label="Adapter">${adapter}</div>
@@ -272,6 +301,7 @@ export function renderSourcesTableHtml(
           </div>
         `;
       }).join("")}
+      ${virtual && bottomSpacerHeight > 0 ? `<div class="admin-source-virtual-spacer" style="height: ${bottomSpacerHeight}px;"></div>` : ""}
     </div>
   `;
 }
