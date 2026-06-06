@@ -70,6 +70,115 @@ def _handle_saved_job_tracking_post(
     return True
 
 
+def _send_admin_overview_post(
+    handler: BridgeResponseWriter,
+    *,
+    api: BridgeApi,
+    payload_dict: dict[str, Any],
+) -> bool:
+    def _payload() -> dict[str, Any]:
+        detail = _admin_overview_detail(payload_dict.get("detail"))
+        with time_operation(f"localData.adminOverview.{detail}"):
+            overview = api.desktop_local_data_store().get_admin_overview(detail=detail)
+        return {"ok": True, "overview": overview}
+
+    send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
+    return True
+
+
+def _send_desktop_session_lifecycle_post(
+    handler: BridgeResponseWriter,
+    *,
+    api: BridgeApi,
+    payload_dict: dict[str, Any],
+) -> bool:
+    if is_container_runtime(api):
+        send_container_unavailable(handler)
+        return True
+    status_code, result = api.update_desktop_session_lifecycle(
+        owner_token=str(payload_dict.get("ownerToken") or ""),
+        session_id=str(payload_dict.get("sessionId") or ""),
+        page_id=str(payload_dict.get("pageId") or ""),
+        state=str(payload_dict.get("state") or ""),
+        reason=str(payload_dict.get("reason") or ""),
+    )
+    handler.send_json(result, status=status_code)
+    return True
+
+
+def _send_startup_metric_post(
+    handler: BridgeResponseWriter,
+    *,
+    api: BridgeApi,
+    payload_dict: dict[str, Any],
+) -> bool:
+    def _payload() -> dict[str, Any]:
+        event = str(payload_dict.get("event") or "").strip() or "unknown"
+        metric_payload = _as_dict(payload_dict.get("payload"))
+        api.append_startup_metric(event, metric_payload)
+        return {"ok": True}
+
+    send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
+    return True
+
+
+def _send_startup_metrics_batch_post(
+    handler: BridgeResponseWriter,
+    *,
+    api: BridgeApi,
+    payload_dict: dict[str, Any],
+) -> bool:
+    def _payload() -> dict[str, Any]:
+        rows = payload_dict.get("metrics")
+        if not isinstance(rows, list):
+            rows = payload_dict.get("events")
+        if not isinstance(rows, list):
+            raise ValueError("metrics must be an array")
+        accepted = 0
+        for row in rows[:200]:
+            if not isinstance(row, dict):
+                continue
+            event = str(row.get("event") or "").strip()
+            if not event:
+                continue
+            metric_payload = _as_dict(row.get("payload"))
+            api.append_startup_metric(event, metric_payload)
+            accepted += 1
+        return {"ok": True, "accepted": accepted}
+
+    send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
+    return True
+
+
+def _send_open_url_post(
+    handler: BridgeResponseWriter,
+    *,
+    api: BridgeApi,
+    payload_dict: dict[str, Any],
+    open_url: Callable[[str], bool],
+) -> bool:
+    if is_container_runtime(api):
+        send_container_unavailable(handler)
+        return True
+
+    def _send_open_url() -> None:
+        url = str(payload_dict.get("url") or "").strip()
+        parsed = urlsplit(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            handler.send_json({"ok": False, "error": "Invalid URL"}, status=400)
+            return
+        if open_url(url):
+            handler.send_json({"ok": True})
+            return
+        handler.send_json(
+            {"ok": False, "error": "Unable to open the default browser"},
+            status=500,
+        )
+
+    run_route_boundary(handler, _send_open_url, error_status=400, error_payload=_json_error)
+    return True
+
+
 def handle_post(
     handler: BridgeResponseWriter,
     *,
@@ -203,20 +312,7 @@ def handle_post(
         return True
 
     if path == "/desktop-local-data/admin/overview":
-
-        def _payload() -> dict[str, Any]:
-            detail = _admin_overview_detail(payload_dict.get("detail"))
-            with time_operation(f"localData.adminOverview.{detail}"):
-                overview = api.desktop_local_data_store().get_admin_overview(detail=detail)
-            return {"ok": True, "overview": overview}
-
-        send_json_boundary(
-            handler,
-            _payload,
-            error_status=400,
-            error_payload=_json_error,
-        )
-        return True
+        return _send_admin_overview_post(handler, api=api, payload_dict=payload_dict)
 
     if path == "/desktop-local-data/admin/wipe":
 
@@ -230,73 +326,20 @@ def handle_post(
         return True
 
     if path == "/app/desktop-session-lifecycle":
-        if is_container_runtime(api):
-            send_container_unavailable(handler)
-            return True
-        status_code, result = api.update_desktop_session_lifecycle(
-            owner_token=str(payload_dict.get("ownerToken") or ""),
-            session_id=str(payload_dict.get("sessionId") or ""),
-            page_id=str(payload_dict.get("pageId") or ""),
-            state=str(payload_dict.get("state") or ""),
-            reason=str(payload_dict.get("reason") or ""),
-        )
-        handler.send_json(result, status=status_code)
-        return True
+        return _send_desktop_session_lifecycle_post(handler, api=api, payload_dict=payload_dict)
 
     if path == "/desktop-local-data/startup-metric":
-
-        def _payload() -> dict[str, Any]:
-            event = str(payload_dict.get("event") or "").strip() or "unknown"
-            metric_payload = _as_dict(payload_dict.get("payload"))
-            api.append_startup_metric(event, metric_payload)
-            return {"ok": True}
-
-        send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
-        return True
+        return _send_startup_metric_post(handler, api=api, payload_dict=payload_dict)
 
     if path == "/desktop-local-data/startup-metrics/batch":
-
-        def _payload() -> dict[str, Any]:
-            rows = payload_dict.get("metrics")
-            if not isinstance(rows, list):
-                rows = payload_dict.get("events")
-            if not isinstance(rows, list):
-                raise ValueError("metrics must be an array")
-            accepted = 0
-            for row in rows[:200]:
-                if not isinstance(row, dict):
-                    continue
-                event = str(row.get("event") or "").strip()
-                if not event:
-                    continue
-                metric_payload = _as_dict(row.get("payload"))
-                api.append_startup_metric(event, metric_payload)
-                accepted += 1
-            return {"ok": True, "accepted": accepted}
-
-        send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
-        return True
+        return _send_startup_metrics_batch_post(handler, api=api, payload_dict=payload_dict)
 
     if path == "/desktop-local-data/open-url":
-        if is_container_runtime(api):
-            send_container_unavailable(handler)
-            return True
-
-        def _send_open_url() -> None:
-            url = str(payload_dict.get("url") or "").strip()
-            parsed = urlsplit(url)
-            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-                handler.send_json({"ok": False, "error": "Invalid URL"}, status=400)
-                return
-            if open_url(url):
-                handler.send_json({"ok": True})
-                return
-            handler.send_json(
-                {"ok": False, "error": "Unable to open the default browser"},
-                status=500,
-            )
-
-        run_route_boundary(handler, _send_open_url, error_status=400, error_payload=_json_error)
-        return True
+        return _send_open_url_post(
+            handler,
+            api=api,
+            payload_dict=payload_dict,
+            open_url=open_url,
+        )
 
     return False
