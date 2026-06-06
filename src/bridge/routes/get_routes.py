@@ -79,6 +79,117 @@ def _clean_text(value: Any) -> str:
     return str(value or "").strip()
 
 
+def _skip_json_string(text: str, index: int) -> int:
+    index += 1
+    size = len(text)
+    while index < size:
+        char = text[index]
+        if char == "\\":
+            index += 2
+            continue
+        if char == '"':
+            return index + 1
+        index += 1
+    return size
+
+
+def _skip_json_value(text: str, index: int) -> int:
+    size = len(text)
+    while index < size and text[index].isspace():
+        index += 1
+    if index >= size:
+        return size
+    if text[index] == '"':
+        return _skip_json_string(text, index)
+    if text[index] in "[{":
+        open_char = text[index]
+        close_char = "]" if open_char == "[" else "}"
+        depth = 1
+        index += 1
+        while index < size and depth > 0:
+            char = text[index]
+            if char == '"':
+                index = _skip_json_string(text, index)
+                continue
+            if char == open_char:
+                depth += 1
+            elif char == close_char:
+                depth -= 1
+            index += 1
+        return index
+    while index < size and text[index] not in ",}]":
+        index += 1
+    return index
+
+
+def _top_level_json_field_spans(text: str) -> dict[str, tuple[int, int]]:
+    decoder = json.JSONDecoder()
+    size = len(text)
+    index = 0
+    while index < size and text[index].isspace():
+        index += 1
+    if index >= size or text[index] != "{":
+        return {}
+    index += 1
+    spans: dict[str, tuple[int, int]] = {}
+    while index < size:
+        while index < size and text[index].isspace():
+            index += 1
+        if index >= size or text[index] == "}":
+            break
+        if text[index] != '"':
+            break
+        try:
+            key, next_index = decoder.raw_decode(text, index)
+        except ValueError:
+            break
+        index = next_index
+        while index < size and text[index].isspace():
+            index += 1
+        if index >= size or text[index] != ":":
+            break
+        index += 1
+        value_start = index
+        value_end = _skip_json_value(text, index)
+        if isinstance(key, str):
+            spans[key] = (value_start, value_end)
+        index = value_end
+        while index < size and text[index].isspace():
+            index += 1
+        if index < size and text[index] == ",":
+            index += 1
+    return spans
+
+
+def _decode_json_span(
+    text: str,
+    spans: dict[str, tuple[int, int]],
+    key: str,
+    default: Any,
+    *,
+    max_bytes: int = 256 * 1024,
+) -> Any:
+    span = spans.get(key)
+    if not span:
+        return default
+    start, end = span
+    if end < start or (end - start) > max_bytes:
+        return default
+    try:
+        return json.loads(text[start:end])
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return default
+
+
+def _read_json_prefix(path: Path, *, max_bytes: int = 1024 * 1024) -> str:
+    try:
+        with path.open("rb") as handle:
+            data = handle.read(max(1, int(max_bytes)))
+    except OSError:
+        return ""
+    return data.decode("utf-8", errors="ignore")
+
+
 def _sync_status_summary_payload(payload: dict[str, Any]) -> dict[str, Any]:
     config = _as_dict(payload.get("config"))
     runtime = _as_dict(payload.get("runtime"))
@@ -155,10 +266,17 @@ def _discovery_report_summary_payload(report: dict[str, Any]) -> dict[str, Any]:
             key: summary.get(key)
             for key in (
                 "endpointCount",
+                "foundEndpointCount",
                 "probedCount",
+                "probedCandidateCount",
+                "queuedCount",
                 "queuedCandidateCount",
+                "candidateCount",
                 "deferredCount",
+                "discoverableButDeferredCount",
                 "failedCount",
+                "failedProbeCount",
+                "failureCount",
                 "pendingCount",
                 "activeCount",
                 "rejectedCount",
@@ -184,6 +302,52 @@ def _discovery_report_summary_payload(report: dict[str, Any]) -> dict[str, Any]:
         },
         "recentLog": _last_items(log_rows, 20),
     }
+
+
+def _discovery_report_summary_payload_from_file(path: Any) -> dict[str, Any]:
+    report_path = Path(path) if path else None
+    if not report_path or not report_path.exists():
+        return _discovery_report_summary_payload({})
+    text = _read_json_prefix(report_path)
+    if not text:
+        return _discovery_report_summary_payload({})
+    spans = _top_level_json_field_spans(text)
+    summary = _as_dict(_decode_json_span(text, spans, "summary", {}))
+    runtime = _as_dict(_decode_json_span(text, spans, "runtime", {}))
+    task_progress = _as_dict(_decode_json_span(text, spans, "taskProgress", {}))
+    registry_finalization = _as_dict(runtime.get("registryFinalization"))
+    auto_approval = _as_dict(runtime.get("autoApproval"))
+    log_rows = (
+        _as_list(_decode_json_span(text, spans, "log", [], max_bytes=128 * 1024))
+        or _as_list(_decode_json_span(text, spans, "logs", [], max_bytes=128 * 1024))
+        or _as_list(runtime.get("log"))
+    )
+    payload = _discovery_report_summary_payload(
+        {
+            "runId": _decode_json_span(text, spans, "runId", ""),
+            "status": _decode_json_span(text, spans, "status", ""),
+            "startedAt": _decode_json_span(text, spans, "startedAt", ""),
+            "finishedAt": _decode_json_span(text, spans, "finishedAt", ""),
+            "summary": summary,
+            "runtime": {
+                "registryFinalization": registry_finalization,
+                "autoApproval": auto_approval,
+            },
+            "taskProgress": task_progress,
+            "log": log_rows,
+        }
+    )
+    payload["counts"] = {
+        "candidateCount": summary.get("candidateCount")
+        or summary.get("queuedCandidateCount")
+        or summary.get("newCandidateCount")
+        or 0,
+        "failureCount": summary.get("failureCount")
+        or summary.get("failedCount")
+        or summary.get("failedProbeCount")
+        or 0,
+    }
+    return payload
 
 
 def _compact_live_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1398,26 +1562,33 @@ def _handle_discovery_report_route(
         if callable(reconciler):
             reconciler()
 
-        raw = load_runtime_evidence(getattr(api, "DISCOVERY_REPORT_PATH", None), {})
+        if view == "summary":
+            payload = _discovery_report_summary_payload_from_file(
+                getattr(api, "DISCOVERY_REPORT_PATH", None)
+            )
+            safe_bridge_log(
+                api,
+                "info",
+                "discovery_report_summary_route_sending",
+                summaryType=type(payload.get("summary")).__name__,
+            )
+        else:
+            raw = load_runtime_evidence(getattr(api, "DISCOVERY_REPORT_PATH", None), {})
 
-        normalizer_fn = getattr(api, "normalize_discovery_report_contract", None)
-        report = normalizer_fn(raw) if callable(normalizer_fn) else raw
+            normalizer_fn = getattr(api, "normalize_discovery_report_contract", None)
+            report = normalizer_fn(raw) if callable(normalizer_fn) else raw
 
-        safe_bridge_log(
-            api,
-            "info",
-            "discovery_report_route_sending",
-            reportType=type(report).__name__,
-            summaryType=type((report or {}).get("summary", None)).__name__
-            if isinstance(report, dict)
-            else "",
-        )
+            safe_bridge_log(
+                api,
+                "info",
+                "discovery_report_route_sending",
+                reportType=type(report).__name__,
+                summaryType=type((report or {}).get("summary", None)).__name__
+                if isinstance(report, dict)
+                else "",
+            )
 
-        payload = (
-            _discovery_report_summary_payload(_as_dict(report))
-            if view == "summary"
-            else (_as_dict(report) or {"summary": {}, "candidates": [], "failures": []})
-        )
+            payload = _as_dict(report) or {"summary": {}, "candidates": [], "failures": []}
         # Prefer the bytes-writing helper to bypass any unexpected issues
         # in JSON response serialization for edge-case payloads.
         if hasattr(handler, "send_bytes"):

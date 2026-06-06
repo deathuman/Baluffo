@@ -19,7 +19,9 @@ def test_discovery_report_summary_returns_bounded_payload(tmp_path: Path) -> Non
             "endpointCount": 20,
             "probedCount": 10,
             "queuedCandidateCount": 4,
+            "candidateCount": 7,
             "failedCount": 1,
+            "failureCount": 5,
             "activeCount": 12,
             "pendingCount": 8,
         },
@@ -33,11 +35,15 @@ def test_discovery_report_summary_returns_bounded_payload(tmp_path: Path) -> Non
             },
             "autoApproval": {"enabled": True, "status": "completed", "approvedCount": 2},
         },
-        "candidates": [{"id": str(index), "body": "not returned"} for index in range(7)],
-        "failures": [{"id": str(index), "body": "not returned"} for index in range(5)],
+        "largePadding": "x" * (1024 * 1024 + 16),
+        "candidates": [{"id": str(index), "body": "not returned"} for index in range(4000)],
+        "failures": [{"id": str(index), "body": "not returned"} for index in range(3000)],
         "log": [f"row {index}" for index in range(30)],
     }
     api.DISCOVERY_REPORT_PATH.write_text(json.dumps(report), encoding="utf-8")
+    api.normalize_discovery_report_contract = lambda _payload: (_ for _ in ()).throw(
+        AssertionError("summary view must not normalize the full discovery report")
+    )
 
     handler = FakeHandler()
     result = handle_get(handler, api=api, path="/discovery/report", query={"view": ["summary"]})
@@ -48,9 +54,11 @@ def test_discovery_report_summary_returns_bounded_payload(tmp_path: Path) -> Non
     assert payload["summaryView"] is True
     assert payload["detailLevel"] == "summary"
     assert payload["counts"] == {"candidateCount": 7, "failureCount": 5}
+    assert payload["summary"]["candidateCount"] == 7
+    assert payload["summary"]["failureCount"] == 5
     assert payload["runtime"]["registryFinalization"]["activeCount"] == 12
     assert payload["runtime"]["autoApproval"]["approvedCount"] == 2
-    assert payload["recentLog"] == [f"row {index}" for index in range(10, 30)]
+    assert payload["recentLog"] == []
     assert "candidates" not in payload
     assert "failures" not in payload
 
