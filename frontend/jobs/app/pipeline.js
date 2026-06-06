@@ -12,6 +12,7 @@ export const JOBS_UPDATE_COPY = Object.freeze({
   tooltipBridgeUnavailable: "Update jobs is unavailable because the Admin bridge is not reachable. Start or restart the desktop app, then try again.",
   tooltipBridgeTimedOut: "Update jobs is unavailable because the Admin bridge did not respond in time. Start or restart the desktop app, then try again.",
   completedWithUpdates: "Job update completed. Reload jobs to load updated listings.",
+  completedWithSyncWarning: "Job update completed. Source sync needs attention.",
   startedToast: "Job update started.",
   startFailed: "Could not start job update.",
   abortLabel: "Abort update",

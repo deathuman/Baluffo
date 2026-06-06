@@ -20,7 +20,7 @@ test("active discovery task exposes Abort update hover label data and aborts on 
       jobsPipelineUiState: uiState,
       callJobsBridge: async (path, options = {}) => {
         if (path === "/tasks/run-jobs-pipeline-status") return { active: false, stage: "idle" };
-        if (path === "/ops/task-state") {
+        if (path === "/ops/task-state?view=summary") {
           return {
             tasks: [
               {
@@ -83,7 +83,7 @@ test("active discovery task aborts from the main button even when hover reveal d
       jobsPipelineUiState: uiState,
       callJobsBridge: async (path, options = {}) => {
         if (path === "/tasks/run-jobs-pipeline-status") return { active: false, stage: "idle" };
-        if (path === "/ops/task-state") {
+        if (path === "/ops/task-state?view=summary") {
           return {
             tasks: [
               {
@@ -164,7 +164,7 @@ test("pipeline abort completion clears Aborting state and suppresses failure toa
         if (path === "/tasks/run-jobs-pipeline-status") {
           return statuses[Math.min(statusIndex++, statuses.length - 1)];
         }
-        if (path === "/ops/task-state") {
+        if (path === "/ops/task-state?view=summary") {
           return taskStates[Math.min(taskStateIndex++, taskStates.length - 1)];
         }
         if (path === "/tasks/abort") {
@@ -238,7 +238,7 @@ test("wrapped pipeline abort error is treated as a canceled user abort", async (
         if (path === "/tasks/run-jobs-pipeline-status") {
           return statuses[Math.min(statusIndex++, statuses.length - 1)];
         }
-        if (path === "/ops/task-state") {
+        if (path === "/ops/task-state?view=summary") {
           taskStateIndex += 1;
           return taskStateIndex === 1
             ? { tasks: [{ taskType: "pipeline", runId: "pipeline_1", active: true }] }
@@ -309,7 +309,7 @@ test("failed abort request only shows an error after the target remains active",
       jobsPipelineUiState: uiState,
       callJobsBridge: async (path) => {
         if (path === "/tasks/run-jobs-pipeline-status") return { active: false, stage: "idle" };
-        if (path === "/ops/task-state") {
+        if (path === "/ops/task-state?view=summary") {
           return {
             tasks: [
               {

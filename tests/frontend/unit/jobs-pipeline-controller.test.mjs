@@ -124,7 +124,7 @@ test("pollJobsPipelineStatus keeps the Jobs button busy while fetch is still act
             error: "fetch report failed"
           };
         }
-        if (path === "/ops/task-state") {
+        if (path === "/ops/task-state?view=summary") {
           return {
             tasks: [
               {
@@ -175,7 +175,7 @@ test("pollJobsPipelineStatus uses first-run bootstrap tooltip while sheet bootst
         if (path === "/tasks/run-jobs-pipeline-status") {
           return { active: false, stage: "idle" };
         }
-        if (path === "/ops/task-state") {
+        if (path === "/ops/task-state?view=summary") {
           return {
             tasks: [
               {
@@ -241,7 +241,7 @@ test("pollJobsPipelineStatus announces completion only after blocking tasks clea
         if (path === "/ops/task-state") {
           return { tasks: [] };
         }
-        if (path === "/ops/dashboard-health") {
+        if (path === "/ops/dashboard-health?view=summary") {
           return { alerts: [] };
         }
         throw new Error(`Unexpected bridge path: ${path}`);
@@ -290,7 +290,7 @@ test("pollJobsPipelineStatus uses fetch_never_run alert for first-update tooltip
         if (path === "/ops/task-state") {
           return { tasks: [] };
         }
-        if (path === "/ops/dashboard-health") {
+        if (path === "/ops/dashboard-health?view=summary") {
           return {
             alerts: [
               { id: "fetch_never_run", severity: "warning" }

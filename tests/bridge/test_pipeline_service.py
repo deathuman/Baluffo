@@ -499,7 +499,7 @@ def test_status_payload_recovers_inactive_pipeline_worker_after_terminal_fetch_r
     assert cleared == []
 
 
-def test_status_payload_recovers_inactive_pipeline_worker_after_terminal_sync_failure() -> None:
+def test_status_payload_warns_after_inactive_pipeline_worker_terminal_sync_failure() -> None:
     status: dict[str, Any] = {
         "active": True,
         "runId": "pipeline_1",
@@ -517,7 +517,7 @@ def test_status_payload_recovers_inactive_pipeline_worker_after_terminal_sync_fa
         "finalOutputCount": 0,
         "jobsPageLoadedCount": 0,
     }
-    failed_runs: list[dict[str, Any]] = []
+    finished_runs: list[dict[str, Any]] = []
 
     service = _make_pipeline_service(
         pipeline_status=status,
@@ -541,19 +541,22 @@ def test_status_payload_recovers_inactive_pipeline_worker_after_terminal_sync_fa
             },
             diagnostics=[],
         ),
-        fail_lifecycle_run=lambda run_id, task_type, **kwargs: (
-            failed_runs.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        finish_lifecycle_run=lambda run_id, task_type, **kwargs: (
+            finished_runs.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
         ),
     )
 
     payload = service.get_status_payload()
 
     assert payload["active"] is False
-    assert payload["stage"] == "error"
-    assert payload["error"] == "sync_push: Snapshot size exceeded"
+    assert payload["stage"] == "completed_with_warnings"
+    assert payload["error"] == ""
+    assert payload["syncStatus"] == "warning"
+    assert payload["syncWarning"]["kind"] == "sync_push_failed"
+    assert payload["syncWarning"]["message"] == "Snapshot size exceeded"
     assert payload["finalOutputCount"] == 42
-    assert failed_runs[-1]["runId"] == "pipeline_1"
-    assert failed_runs[-1]["summary"]["error"] == "sync_push: Snapshot size exceeded"
+    assert finished_runs[-1]["runId"] == "pipeline_1"
+    assert finished_runs[-1]["terminal_reason"] == "completed_with_warnings"
 
 
 def _project_discovery_history(

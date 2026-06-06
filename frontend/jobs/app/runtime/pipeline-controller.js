@@ -363,7 +363,7 @@ export function createJobsPipelineController({
 
   async function refreshJobsUpdateTooltipFromHealth() {
     try {
-      const payload = await callJobsBridge("/ops/dashboard-health");
+      const payload = await callJobsBridge("/ops/dashboard-health?view=summary");
       const alerts = Array.isArray(payload?.alerts) ? payload.alerts : [];
       jobsPipelineUiState.updateTooltipFirstRun = alerts.some(alert => (
         ["fetch_never_run", "pipeline_never_run"].includes(String(alert?.id || "").trim())
@@ -454,7 +454,15 @@ export function createJobsPipelineController({
     if (userAbortCompletion) {
       return;
     }
-    if (updatesFound) {
+    const syncWarning = Boolean(payload?.completedWithWarnings || payload?.syncWarning);
+    if (syncWarning) {
+      showToast(
+        updatesFound
+          ? `${JOBS_UPDATE_COPY.completedWithUpdates} Source sync needs attention.`
+          : JOBS_UPDATE_COPY.completedWithSyncWarning,
+        "warn"
+      );
+    } else if (updatesFound) {
       showToast(JOBS_UPDATE_COPY.completedWithUpdates, "success");
     } else if (payload?.error) {
       showToast(`Job update failed: ${String(payload.error)}`, "error");
@@ -465,7 +473,7 @@ export function createJobsPipelineController({
     try {
       const [pipelineStatusResult, taskStateResult] = await Promise.allSettled([
         callJobsBridge("/tasks/run-jobs-pipeline-status"),
-        callJobsBridge("/ops/task-state")
+        callJobsBridge("/ops/task-state?view=summary")
       ]);
       if (pipelineStatusResult.status !== "fulfilled") {
         throw pipelineStatusResult.reason;

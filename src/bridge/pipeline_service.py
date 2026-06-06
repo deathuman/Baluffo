@@ -12,6 +12,8 @@ from src.bridge.ops_live_payload import build_pipeline_task_progress
 from src.bridge.task_abort_evidence import ABORT_TERMINAL_REASON, row_abort_requested
 
 PIPELINE_COMPLETION_NOTIFICATION_MIN_SECONDS = 60.0
+SYNC_REMOTE_CONFLICT_KIND = "recoverable_remote_conflict"
+SYNC_PUSH_WARNING_KIND = "sync_push_failed"
 
 
 @dataclass
@@ -241,7 +243,15 @@ class PipelineService:
                 error=str(exc),
             )
 
-    def _set_completed(self, *, status: str, final_output_count: int = 0, error: str = "") -> None:
+    def _set_completed(
+        self,
+        *,
+        status: str,
+        final_output_count: int = 0,
+        error: str = "",
+        warnings: list[dict[str, Any]] | None = None,
+        sync_warning: dict[str, Any] | None = None,
+    ) -> None:
         completion_notification: dict[str, Any] | None = None
         with self._lock:
             run_id = str(self._status.get("runId") or "")
@@ -250,21 +260,42 @@ class PipelineService:
             compare_base = max(baseline, loaded)
             updates_found = int(final_output_count or 0) > compare_base
             canceled = status == "canceled"
+            completed_with_warnings = status == "warning"
+            clean_warnings = [dict(item) for item in (warnings or []) if isinstance(item, dict)]
+            clean_sync_warning = dict(sync_warning or {}) if isinstance(sync_warning, dict) else {}
             self._status.update(
                 {
                     "active": False,
                     "stage": "canceled"
                     if canceled
-                    else ("completed" if status != "error" else "error"),
+                    else (
+                        "completed_with_warnings"
+                        if completed_with_warnings
+                        else ("completed" if status != "error" else "error")
+                    ),
                     "progress": self._pipeline_progress(
                         3,
                         3,
                         "Pipeline canceled"
                         if canceled
-                        else ("Pipeline completed" if status != "error" else "Pipeline failed"),
+                        else (
+                            "Pipeline completed with warnings"
+                            if completed_with_warnings
+                            else ("Pipeline completed" if status != "error" else "Pipeline failed")
+                        ),
                     ),
                     "finishedAt": self._now_iso(),
                     "error": str(error or ""),
+                    "warnings": clean_warnings,
+                    "syncWarning": clean_sync_warning,
+                    "syncStatus": "warning"
+                    if clean_sync_warning
+                    else (
+                        "failed"
+                        if status == "error" and str(error or "").startswith("sync_push:")
+                        else ""
+                    ),
+                    "completedWithWarnings": bool(completed_with_warnings),
                     "finalOutputCount": int(final_output_count or 0),
                     "updatesFound": bool(updates_found),
                     "refreshRecommended": bool(updates_found),
@@ -288,6 +319,9 @@ class PipelineService:
                     "status": stage,
                     "error": str(error or ""),
                     "updatesFound": bool(updates_found),
+                    "warnings": clean_warnings,
+                    "syncWarning": clean_sync_warning,
+                    "completedWithWarnings": bool(completed_with_warnings),
                 }
             progress = self._pipeline_lifecycle_progress(dict(self._status))
             if run_id:
@@ -327,12 +361,17 @@ class PipelineService:
                         run_id,
                         "pipeline",
                         finished_at=finished_at,
-                        terminal_reason="completed",
+                        terminal_reason=(
+                            "completed_with_warnings" if completed_with_warnings else "completed"
+                        ),
                         summary={
                             "baselineOutputCount": baseline,
                             "jobsPageLoadedCount": loaded,
                             "finalOutputCount": int(final_output_count or 0),
                             "updatesFound": bool(updates_found),
+                            "warnings": clean_warnings,
+                            "syncWarning": clean_sync_warning,
+                            "completedWithWarnings": bool(completed_with_warnings),
                         },
                         progress=progress,
                     )
@@ -510,6 +549,37 @@ class PipelineService:
             return self._start_sync_task("push", reason="jobs_pipeline", automatic=False)
         except Exception as exc:  # noqa: BLE001
             raise RuntimeError(f"sync_push: {exc}") from exc
+
+    @staticmethod
+    def _is_recoverable_sync_conflict(message: str) -> bool:
+        text = str(message or "").strip().lower()
+        if not text:
+            return False
+        return bool(
+            "remote_conflict" in text
+            or "sha does not match" in text
+            or ("is at " in text and " but expected " in text)
+            or "not a fast-forward" in text
+            or "remote write conflict" in text
+            or "manifest moved" in text
+        )
+
+    @staticmethod
+    def _sync_warning_payload(message: str) -> dict[str, Any]:
+        clean_message = str(message or "sync push failed").strip() or "sync push failed"
+        kind = (
+            SYNC_REMOTE_CONFLICT_KIND
+            if PipelineService._is_recoverable_sync_conflict(clean_message)
+            else SYNC_PUSH_WARNING_KIND
+        )
+        return {
+            "kind": kind,
+            "stage": "sync_push",
+            "message": clean_message,
+            "recommendedAction": "Review the Sync tab, pull the latest remote state, then retry sync.",
+            "blocking": False,
+            "clearedBy": "successful sync pull/push or a later pipeline sync stage",
+        }
 
     def get_status_payload(self) -> dict[str, Any]:
         self._recover_inactive_worker_after_terminal_child()
@@ -730,10 +800,12 @@ class PipelineService:
             terminalStatus=terminal_status,
         )
         if terminal_status in {"error", "failed", "failure"}:
+            warning = self._sync_warning_payload(error)
             self._set_completed(
-                status="error",
+                status="warning",
                 final_output_count=self._current_fetch_output_count(),
-                error=f"sync_push: {error}",
+                warnings=[warning],
+                sync_warning=warning,
             )
             return
         if self._abort_requested(str(self._status.get("runId") or "")):
@@ -1000,15 +1072,22 @@ class PipelineService:
                 error=str(exc),
             )
 
-    def _run_sync_push_stage(self, run_id: str) -> None:
+    def _run_sync_push_stage(self, run_id: str) -> dict[str, Any] | None:
         self._mark_stage(
             stage="sync_push", current_step=3, total_steps=3, label="Running sync push..."
         )
         sync_result = self._start_sync_push_child()
         if not bool(sync_result.get("started")):
-            raise RuntimeError(
-                f"sync_push: {sync_result.get('error') or 'sync push failed to start'}"
+            sync_error = str(sync_result.get("error") or "sync push failed to start")
+            warning = self._sync_warning_payload(sync_error)
+            self._bridge_log(
+                "warning",
+                "jobs_pipeline_sync_push_warning",
+                runId=run_id,
+                warningKind=warning["kind"],
+                error=sync_error,
             )
+            return warning
         sync_run_id = str(sync_result.get("runId") or "")
         self._attach_lifecycle_child_row(run_id=run_id, task_type="sync", child_run_id=sync_run_id)
         sync_row = self._wait_for_sync_push_row(sync_run_id)
@@ -1017,7 +1096,17 @@ class PipelineService:
         sync_status = str(sync_row.get("status") or "").strip().lower()
         if sync_status == "error":
             sync_error = str((sync_row.get("summary") or {}).get("error") or "sync push failed")
-            raise RuntimeError(f"sync_push: {sync_error}")
+            warning = self._sync_warning_payload(sync_error)
+            self._bridge_log(
+                "warning",
+                "jobs_pipeline_sync_push_warning",
+                runId=run_id,
+                childRunId=sync_run_id,
+                warningKind=warning["kind"],
+                error=sync_error,
+            )
+            return warning
+        return None
 
     def wait_for_report_completion(
         self,
@@ -1116,10 +1205,18 @@ class PipelineService:
             self._check_abort(run_id)
             self._run_registry_conflict_adjudication_stage(run_id)
             self._check_abort(run_id)
-            self._run_sync_push_stage(run_id)
+            sync_warning = self._run_sync_push_stage(run_id)
             self._check_abort(run_id)
             final_output_count = self._current_fetch_output_count()
-            self._set_completed(status="ok", final_output_count=final_output_count)
+            if sync_warning:
+                self._set_completed(
+                    status="warning",
+                    final_output_count=final_output_count,
+                    warnings=[sync_warning],
+                    sync_warning=sync_warning,
+                )
+            else:
+                self._set_completed(status="ok", final_output_count=final_output_count)
         except PipelineAbortRequested:
             self._bridge_log("info", "jobs_pipeline_canceled", runId=run_id)
             self._set_completed(
@@ -1164,6 +1261,10 @@ class PipelineService:
                     "startedAt": started_at,
                     "finishedAt": "",
                     "error": "",
+                    "warnings": [],
+                    "syncWarning": {},
+                    "syncStatus": "",
+                    "completedWithWarnings": False,
                     "updatesFound": False,
                     "refreshRecommended": False,
                     "runRegistryConflictAdjudication": bool(
