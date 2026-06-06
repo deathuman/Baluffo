@@ -83,6 +83,9 @@ def _sync_status_summary_payload(payload: dict[str, Any]) -> dict[str, Any]:
     config = _as_dict(payload.get("config"))
     runtime = _as_dict(payload.get("runtime"))
     saved_config = _as_dict(payload.get("savedConfig"))
+    saved_enabled = (
+        saved_config.get("enabled") if "enabled" in saved_config else config.get("enabled")
+    )
     last_push = _as_dict(runtime.get("lastPush")) or _as_dict(runtime.get("push"))
     last_pull = _as_dict(runtime.get("lastPull")) or _as_dict(runtime.get("pull"))
     return {
@@ -103,7 +106,7 @@ def _sync_status_summary_payload(payload: dict[str, Any]) -> dict[str, Any]:
             "message": _clean_text(config.get("message")),
             "credentialsPackaged": bool(config.get("credentialsPackaged")),
         },
-        "savedConfig": {"enabled": bool(saved_config.get("enabled"))},
+        "savedConfig": {"enabled": bool(saved_enabled)},
         "runtime": {
             "state": _clean_text(runtime.get("state") or runtime.get("code")),
             "message": _clean_text(runtime.get("message")),

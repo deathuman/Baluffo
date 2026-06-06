@@ -120,6 +120,8 @@ def test_sync_status_summary_uses_config_only(tmp_path: Path) -> None:
     payload = handler.sent[-1]["payload"]
     assert payload["summaryView"] is True
     assert payload["detailLevel"] == "summary"
+    assert payload["config"]["enabled"] is True
+    assert payload["savedConfig"]["enabled"] is True
     assert payload["config"]["ready"] is True
     assert payload["config"]["credentialsPackaged"] is True
 
