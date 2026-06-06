@@ -10,6 +10,23 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.49] - 2026-06-06
+
+### Changed
+- Admin first-load behavior now keeps the initial route set lightweight, with core panels restored and full diagnostics deferred until tab/manual paths.
+- Admin source tables now render large Active, Pending, and Rejected source buckets through virtualized rows so source lists remain usable without thousands of DOM nodes.
+- Jobs startup now uses a startup feed path and shared feed loading to reduce repeated large-feed work and avoid missing fallback probes.
+
+### Fixed
+- Source sync summary status now preserves the resolved enabled state during Admin boot so saving the form cannot accidentally disable sync from a lightweight summary payload.
+- Jobs pipeline starts are no longer blocked solely because source sync is degraded; sync failures remain visible while fetch/discovery pipeline work can proceed.
+- Bootstrap tests and release checks now account for the generated startup jobs artifact used by the container startup path.
+
+### Notes
+- This is a container/Umbrel page-load recovery patch. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- Chrome-visible Admin and Jobs behavior remains the primary acceptance signal for future Umbrel page-load performance work; backend route profiles are supporting diagnostics.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.48] - 2026-06-06
 
 ### Added
