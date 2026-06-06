@@ -10,6 +10,8 @@ def _make_ops_api(
     *,
     current_rows: list[dict[str, object]],
     recent_rows: list[dict[str, object]],
+    parse_iso=None,
+    orphan_lifecycle_run=None,
 ) -> tuple[ops_api_module.OpsApi, dict[str, int]]:
     calls = {"current": 0, "recent": 0, "schedule": 0}
 
@@ -42,7 +44,7 @@ def _make_ops_api(
         load_tombstones=lambda: {},
         now_iso=lambda: "2026-06-05T10:00:00+00:00",
         now_utc=lambda: datetime(2026, 6, 5, 10, 0, tzinfo=UTC),
-        parse_iso=lambda _value: None,
+        parse_iso=parse_iso or (lambda _value: None),
         read_tasks_config=lambda: {},
         ops_state_lock=mock.Mock(),
         load_run_history=lambda: [],
@@ -66,6 +68,7 @@ def _make_ops_api(
         app_version="0.0.0-test",
         get_lifecycle_current_runs=current,
         get_lifecycle_recent_runs=recent,
+        orphan_lifecycle_run=orphan_lifecycle_run or (lambda *_args, **_kwargs: None),
         get_jobs_pipeline_schedule_ops_entry=pipeline_schedule,
     )
     return ops_api_module.OpsApi(paths=paths, deps=deps), calls
@@ -137,3 +140,104 @@ def test_ops_api_lifecycle_cache_expires_quickly(tmp_path, monkeypatch) -> None:
 
     assert [row["runId"] for row in api.get_projected_run_history().rows] == ["fetch_active_new"]
     assert calls == {"current": 2, "recent": 2, "schedule": 0}
+
+
+def test_task_state_summary_does_not_hydrate_full_live_reports(tmp_path, monkeypatch) -> None:
+    api, _calls = _make_ops_api(
+        tmp_path,
+        current_rows=[
+            {
+                "type": "fetch",
+                "runId": "fetch_active_1",
+                "startedAt": "2026-06-05T09:59:00+00:00",
+                "heartbeatAt": "2026-06-05T09:59:30+00:00",
+                "taskProgress": {"active": True, "phaseKey": "fetching"},
+            }
+        ],
+        recent_rows=[],
+    )
+
+    monkeypatch.setattr(
+        ops_api_module._ops_task_live,
+        "get_task_live_payload",
+        mock.Mock(side_effect=AssertionError("summary path must not hydrate live reports")),
+    )
+
+    payload = api.get_current_task_state_summary_payload()
+
+    assert payload["summary"] is True
+    assert payload["tasks"][0]["runId"] == "fetch_active_1"
+
+
+def test_task_state_summary_repairs_stale_terminal_sync_row(tmp_path) -> None:
+    current_rows: list[dict[str, object]] = [
+        {
+            "type": "sync",
+            "taskType": "sync",
+            "runId": "sync_stale_1",
+            "status": "running",
+            "lifecycleStatus": "running",
+            "startedAt": "2026-06-05T09:55:00+00:00",
+            "heartbeatAt": "2026-06-05T09:56:00+00:00",
+            "taskProgress": {"active": False, "phaseKey": "error"},
+            "summary": {"error": "expected one revision but found another"},
+        }
+    ]
+    repaired: list[dict[str, object]] = []
+
+    def parse_iso(value: object):
+        text = str(value or "")
+        if not text:
+            return None
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+
+    def orphan_run(run_id: str, task_type: str, **kwargs: object) -> dict[str, object]:
+        repaired.append({"runId": run_id, "taskType": task_type, **kwargs})
+        current_rows.clear()
+        return {"runId": run_id, "taskType": task_type, "status": "orphaned", **kwargs}
+
+    api, _calls = _make_ops_api(
+        tmp_path,
+        current_rows=current_rows,
+        recent_rows=[],
+        parse_iso=parse_iso,
+        orphan_lifecycle_run=orphan_run,
+    )
+
+    payload = api.get_current_task_state_summary_payload()
+
+    assert payload["count"] == 0
+    assert repaired
+    assert repaired[0]["runId"] == "sync_stale_1"
+    assert repaired[0]["terminal_reason"] == "stale_terminal_progress"
+    assert repaired[0]["summary"] == {
+        "error": "expected one revision but found another",
+        "repairReason": "stale_terminal_progress",
+    }
+
+
+def test_ops_dashboard_health_summary_avoids_history_and_fetch_report(tmp_path) -> None:
+    api, _calls = _make_ops_api(tmp_path, current_rows=[], recent_rows=[])
+
+    api._deps = ops_api_module.OpsDeps(
+        **{
+            **api._deps.__dict__,
+            "load_run_history": mock.Mock(side_effect=AssertionError("history should not load")),
+            "normalize_fetch_report_contract": mock.Mock(
+                side_effect=AssertionError("fetch report should not load")
+            ),
+            "get_registry_summary_payload": lambda: {
+                "ok": True,
+                "pendingCount": 7,
+                "activeCount": 10,
+                "countBasis": "storage",
+            },
+            "get_sync_status_payload": lambda: {"ok": True, "config": {"ready": True}},
+        }
+    )
+
+    payload = api.compute_ops_dashboard_health_summary()
+
+    assert payload["summaryView"] is True
+    assert payload["detailLevel"] == "summary"
+    assert payload["kpis"]["pendingApprovalsCount"] == 7

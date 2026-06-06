@@ -141,7 +141,8 @@ When `sourceRegistry=sqlite`, the registry GET routes and POST mutations read an
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/ops/health` | Bridge health check |
-| GET | `/ops/dashboard-health` | Admin dashboard health summary with alerts, KPIs, schedule state, and source-policy/dedup review indicators. Startup uses lightweight registry counts and must not normalize the full registry state in either SQLite or JSON-rollback mode |
+| GET | `/ops/dashboard-health` | Full Admin dashboard health payload with alerts, KPIs, schedule state, and source-policy/dedup review indicators |
+| GET | `/ops/dashboard-health?view=summary` | Lightweight Admin first-paint dashboard summary. Avoids full fetch report, run history, discovery report, registry sources, fetcher metrics, storage-health detail, audit artifacts, and performance-profile hydration |
 | GET | `/ops/history?limit=` | Run history (sync/fetcher/discovery) |
 | GET | `/ops/task-live/<taskType>` | Detailed live task payload for `fetch`, `discovery`, or `sync` |
 | GET | `/ops/task-state` | Full current task projection for diagnostics, including task work-item/event detail when available |

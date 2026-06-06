@@ -1,6 +1,7 @@
 const STALE_FETCH_HOURS = 12;
 const DISMISS_TTL_HOURS = 4;
 const POLL_INTERVAL_MS = 30000;
+const INITIAL_FULL_POLL_DELAY_MS = 10000;
 const DISMISS_KEY_PREFIX = "baluffo_action_dismissed_";
 const MAX_ITEMS = 3;
 
@@ -218,6 +219,7 @@ export function createActionCenterController({
   logAdminError
 }) {
   let pollTimer = null;
+  let fullPollTimer = null;
   const pollCache = { health: null, sync: null, storage: null };
 
   function orderedSignals(signalsMap) {
@@ -389,12 +391,15 @@ export function createActionCenterController({
     }
   }
 
-  async function pollActionCenter() {
+  async function pollActionCenter(options = {}) {
     try {
+      const includeStorage = options?.includeStorage !== false;
       const [health, sync, storage] = await Promise.all([
         getBridge("/ops/health", { timeoutMs: 5000 }).catch(() => null),
         getBridge("/sync/status", { timeoutMs: 5000 }).catch(() => null),
-        getBridge("/ops/storage-health", { timeoutMs: 5000 }).catch(() => null)
+        includeStorage
+          ? getBridge("/ops/storage-health", { timeoutMs: 5000 }).catch(() => null)
+          : Promise.resolve(pollCache.storage || null)
       ]);
       pollCache.health = health;
       pollCache.sync = sync;
@@ -429,16 +434,24 @@ export function createActionCenterController({
 
   function startPolling() {
     stopPolling();
-    pollActionCenter().then(() => {
+    pollActionCenter({ includeStorage: false }).then(() => {
       const itemsEl = refs.actionCenterItemsEl;
       bindEvents(itemsEl);
     });
+    fullPollTimer = setTimeout(() => {
+      pollActionCenter({ includeStorage: true }).catch(() => {});
+      fullPollTimer = null;
+    }, INITIAL_FULL_POLL_DELAY_MS);
     pollTimer = setInterval(() => {
-      pollActionCenter().catch(() => {});
+      pollActionCenter({ includeStorage: true }).catch(() => {});
     }, POLL_INTERVAL_MS);
   }
 
   function stopPolling() {
+    if (fullPollTimer) {
+      clearTimeout(fullPollTimer);
+      fullPollTimer = null;
+    }
     if (pollTimer) {
       clearInterval(pollTimer);
       pollTimer = null;

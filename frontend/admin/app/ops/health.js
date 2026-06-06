@@ -1207,9 +1207,13 @@ export function createOpsHealthController({
     if (measureFirstRender) markStep("admin_ops_health_first_render_start");
     try {
       let health;
+      const useSummaryView = Boolean(options?.summary);
+      const dashboardHealthPath = useSummaryView
+        ? "/ops/dashboard-health?view=summary"
+        : "/ops/dashboard-health";
       try {
         health = await measuredGetBridge(
-          "/ops/dashboard-health",
+          dashboardHealthPath,
           "admin_dashboard_health_fetch",
           { enabled: !options?.fromPoll }
         );
@@ -1226,7 +1230,7 @@ export function createOpsHealthController({
         registryConflictsPayload: getCachedRegistryConflictsPayload(),
         syncTaskState: Boolean(state.latestOpsTaskStatePayload),
         dispatchRefresh: true,
-        scheduleDetails: true,
+        scheduleDetails: !useSummaryView,
         renderDeferredPanels: false
       });
       if (measureFirstRender) {

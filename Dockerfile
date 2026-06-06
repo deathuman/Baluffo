@@ -1,5 +1,18 @@
 # syntax=docker/dockerfile:1.7
 
+FROM node:25.8-slim AS container-frontend
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts
+
+COPY admin.html jobs.html saved.html ./
+COPY frontend ./frontend
+COPY probes ./probes
+COPY scripts/build_container_frontend.mjs ./scripts/build_container_frontend.mjs
+RUN npm run build:container-frontend -- --out-dir /container-frontend
+
 FROM python:3.13-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -20,6 +33,7 @@ RUN python -m pip install --no-cache-dir --upgrade pip \
     && chmod -R a+rX /ms-playwright
 
 COPY . .
+COPY --from=container-frontend /container-frontend ./.container-frontend
 
 RUN --mount=type=secret,id=BALUFFO_SYNC_BUILD_APP_ID,required=false \
     --mount=type=secret,id=BALUFFO_SYNC_BUILD_INSTALLATION_ID,required=false \

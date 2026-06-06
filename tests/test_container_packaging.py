@@ -18,6 +18,7 @@ def test_dockerignore_excludes_local_runtime_and_secret_artifacts() -> None:
         ".git",
         ".github",
         ".tmp",
+        ".container-frontend",
         "_out",
         "dist",
         "docs/**",
@@ -27,6 +28,8 @@ def test_dockerignore_excludes_local_runtime_and_secret_artifacts() -> None:
         ".venv/",
         ".venv/**",
         "**/.venv/**",
+        "**/.venv/lib64",
+        "**/.venv/lib64/**",
         "baluffo.config.local.json",
         "packaging/github-app-sync-config.json",
         "packaging/github-app-sync-config.localkey.json",
@@ -88,10 +91,28 @@ def test_ghcr_workflow_builds_multi_arch_image_without_pr_push() -> None:
         assert f"{secret_name}=${{{{ secrets.{secret_name} }}}}" in content
 
 
+def test_container_frontend_bundle_script_uses_esbuild_dev_dependency() -> None:
+    package_json = _read("package.json")
+    package_lock = _read("package-lock.json")
+    script = _read("scripts/build_container_frontend.mjs")
+
+    assert '"build:container-frontend": "node scripts/build_container_frontend.mjs"' in package_json
+    assert '"esbuild": "^0.28.0"' in package_json
+    assert '"node_modules/esbuild"' in package_lock
+    assert "strip-import-query" in script
+    assert "admin.html" in script
+    assert "jobs.html" in script
+    assert "saved.html" in script
+
+
 def test_dockerfile_prepares_bind_mount_before_non_root_runtime() -> None:
     content = _read("Dockerfile")
 
     assert "# syntax=docker/dockerfile:" in content
+    assert "FROM node:25.8-slim AS container-frontend" in content
+    assert "RUN npm ci --ignore-scripts" in content
+    assert "npm run build:container-frontend -- --out-dir /container-frontend" in content
+    assert "COPY --from=container-frontend /container-frontend ./.container-frontend" in content
     assert "useradd --uid 1000 --gid baluffo" in content
     assert "src.container_entrypoint" in content
     assert "USER baluffo" not in content

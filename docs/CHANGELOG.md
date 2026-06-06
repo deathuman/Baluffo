@@ -10,6 +10,25 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.48] - 2026-06-06
+
+### Added
+- Added a container-only frontend bundling path for Umbrel images. Docker now builds hashed, minified ESM assets for `admin.html`, `jobs.html`, and `saved.html`, serves gzip sidecars when accepted, and keeps checked-in desktop/local HTML behavior as the fallback.
+- Added `GET /ops/dashboard-health?view=summary` for Admin first paint. The default `/ops/dashboard-health` route remains the full compatibility payload.
+
+### Changed
+- Admin boot now uses the lightweight dashboard summary first, keeps heavy diagnostics deferred until manual/detail paths, and no longer restores full fetch/discovery reports unconditionally on page load.
+- `/ops/task-state?view=summary` now builds a true compact projection instead of compacting the full diagnostic task payload.
+
+### Fixed
+- Stale running lifecycle rows with terminal progress, stale heartbeat, and no live task evidence are repaired through the task lifecycle path so old sync rows no longer keep Admin in a fake active state.
+- Container static serving now prefers generated container frontend assets when present while preserving no-store behavior for HTML/runtime config and immutable caching for hashed bundles.
+
+### Notes
+- This is a container/Umbrel performance recovery patch. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- Chrome DevTools trace evidence is the release acceptance signal for Umbrel page-load performance; backend route profiles remain supporting diagnostics.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.47] - 2026-06-06
 
 ### Added

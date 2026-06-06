@@ -437,6 +437,7 @@ Use the narrowest check that matches the risky path:
 
 - Packaging or portable EXE changes: `python scripts/build_portable_exe.py`
 - Container or Umbrel deployment changes: `python -m pytest tests/bridge/test_container_runtime.py -q`, targeted frontend unit checks for container mode, and a Docker smoke build/run when Docker is available
+- Container frontend asset changes: `npm run build:container-frontend -- --out-dir .tmp/container-frontend-check`, then verify generated HTML references `/container-assets/assets/*.js`; desktop/local HTML must still work without `.container-frontend`
 - Linux packaging or AppImage changes: `npm run build:linux` then `bash scripts/smoke_test_appimage.sh`
 - Packaged sync config, auth portability, or sync release-gate changes: `npm run test:frontend:packaged:sync-rehearsal`
 - Packaged desktop supervision, stale-runtime recovery, or launcher self-heal changes: `npm run test:frontend:packaged:orphan-reclaim-rehearsal`

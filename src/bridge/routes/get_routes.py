@@ -1087,8 +1087,24 @@ def _handle_ops_status_routes(
         return True
 
     if path == "/ops/dashboard-health":
-        dashboard_health_fn = getattr(api, "compute_ops_dashboard_health", None)
-        with time_operation("ops.dashboard_health.route_payload"):
+        view = str((query.get("view") or ["full"])[0] or "full").strip().lower()
+        if view not in {"", "full", "summary"}:
+            handler.send_json(
+                {"ok": False, "error": f"unsupported dashboard-health view: {view}"},
+                status=400,
+            )
+            return True
+        dashboard_health_fn = (
+            getattr(api, "compute_ops_dashboard_health_summary", None)
+            if view == "summary"
+            else getattr(api, "compute_ops_dashboard_health", None)
+        )
+        op_label = (
+            "ops.dashboard_health.summary.route_payload"
+            if view == "summary"
+            else "ops.dashboard_health.route_payload"
+        )
+        with time_operation(op_label):
             payload = (
                 dashboard_health_fn() if callable(dashboard_health_fn) else api.compute_ops_health()
             )

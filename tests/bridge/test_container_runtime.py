@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import json
 import threading
 from contextlib import contextmanager
@@ -112,6 +113,40 @@ def test_container_handler_serves_static_data_and_runtime_config(tmp_path: Path)
         else:  # pragma: no cover
             raise AssertionError("expected local user data to stay off static serving")
     assert private_response.code == 404
+
+
+def test_container_handler_serves_generated_frontend_assets_with_immutable_cache(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "root"
+    data_dir = tmp_path / "data"
+    bundle_dir = root / ".container-frontend"
+    asset_dir = bundle_dir / "assets"
+    asset_dir.mkdir(parents=True)
+    data_dir.mkdir(parents=True)
+    (root / "admin.html").write_text("<html>repo admin</html>\n", encoding="utf-8")
+    (bundle_dir / "admin.html").write_text(
+        '<html><script type="module" src="/container-assets/assets/admin.abc123.js"></script></html>\n',
+        encoding="utf-8",
+    )
+    bundle = b"console.log('container admin');\n"
+    (asset_dir / "admin.abc123.js").write_bytes(bundle)
+    (asset_dir / "admin.abc123.js.gz").write_bytes(gzip.compress(bundle))
+
+    with _served(_make_container_handler(root, data_dir)) as base_url:
+        html_response, html_body = _read_url(base_url, "/admin.html")
+        asset_response, asset_body = _read_url(
+            base_url,
+            "/container-assets/assets/admin.abc123.js",
+            headers={"Accept-Encoding": "gzip, deflate"},
+        )
+
+    assert b"container-assets/assets/admin.abc123.js" in html_body
+    assert b"repo admin" not in html_body
+    assert html_response.headers["Cache-Control"].startswith("no-store")
+    assert asset_response.headers["Cache-Control"] == "public, max-age=31536000, immutable"
+    assert asset_response.headers["Content-Encoding"] == "gzip"
+    assert gzip.decompress(asset_body) == bundle
 
 
 def test_container_handler_omits_cors_headers_for_api_and_options(tmp_path: Path) -> None:

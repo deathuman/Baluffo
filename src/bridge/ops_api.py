@@ -80,6 +80,9 @@ class OpsDeps:
     get_lifecycle_task_events: Callable[..., list[dict[str, Any]]] = field(
         default_factory=lambda: lambda **_kwargs: []
     )
+    orphan_lifecycle_run: Callable[..., dict[str, Any] | None] = field(
+        default_factory=lambda: lambda *_args, **_kwargs: None
+    )
     load_runtime_evidence: Callable[[Any, Any], Any] | None = None
     get_jobs_pipeline_schedule_ops_entry: Callable[[], dict[str, Any]] = field(
         default_factory=lambda: lambda: {}
@@ -395,6 +398,19 @@ _TASK_STATE_SUMMARY_KEYS = {
 }
 
 _LIFECYCLE_ROW_CACHE_TTL_SECONDS = 0.5
+_STALE_TERMINAL_PROGRESS_GRACE_SECONDS = 60.0
+_TERMINAL_PROGRESS_PHASES = frozenset(
+    {
+        "complete",
+        "completed",
+        "done",
+        "error",
+        "failed",
+        "failure",
+        "canceled",
+        "cancelled",
+    }
+)
 
 
 def _compact_task_state_row(row: dict[str, Any]) -> TaskStateRow:
@@ -421,6 +437,23 @@ def _compact_task_state_payload(payload: dict[str, Any]) -> TaskStatePayload:
         "count": len(tasks),
         "summary": True,
     }
+
+
+def _row_terminal_progress(row: dict[str, Any]) -> tuple[bool, dict[str, Any], dict[str, Any]]:
+    progress = as_json_object(row.get("taskProgress") or row.get("progress"))
+    summary = as_json_object(row.get("summary"))
+    phase_key = str(progress.get("phaseKey") or summary.get("phaseKey") or "").strip().lower()
+    phase_label = str(progress.get("phaseLabel") or summary.get("phaseLabel") or "").strip().lower()
+    has_terminal_phase = (
+        phase_key in _TERMINAL_PROGRESS_PHASES or phase_label in _TERMINAL_PROGRESS_PHASES
+    )
+    has_terminal_error = bool(str(summary.get("error") or row.get("error") or "").strip())
+    inactive_progress = progress.get("active") is False
+    return (
+        bool(inactive_progress and (has_terminal_phase or has_terminal_error)),
+        progress,
+        summary,
+    )
 
 
 class OpsApi:
@@ -487,12 +520,116 @@ class OpsApi:
             self._lifecycle_row_cache[cache_key] = (expires_at, [dict(row) for row in rows])
         return [dict(row) for row in rows]
 
+    def _invalidate_lifecycle_row_cache(self) -> None:
+        with self._lifecycle_row_cache_lock:
+            self._lifecycle_row_cache.clear()
+
+    def _row_is_past_stale_grace(self, row: dict[str, Any]) -> bool:
+        heartbeat_at = _latest_time_text(row.get("heartbeatAt"), row.get("startedAt"))
+        heartbeat_dt = self._deps.parse_iso(heartbeat_at)
+        now_dt = self._deps.now_utc()
+        if heartbeat_dt is None or now_dt is None:
+            return False
+        if getattr(heartbeat_dt, "tzinfo", None) is None:
+            heartbeat_dt = heartbeat_dt.replace(tzinfo=UTC)
+        if getattr(now_dt, "tzinfo", None) is None:
+            now_dt = now_dt.replace(tzinfo=UTC)
+        age_seconds = max(
+            0.0, (now_dt.astimezone(UTC) - heartbeat_dt.astimezone(UTC)).total_seconds()
+        )
+        return age_seconds > _STALE_TERMINAL_PROGRESS_GRACE_SECONDS
+
+    def _has_live_task_evidence(
+        self,
+        *,
+        task_type: str,
+        run_id: str,
+        row: dict[str, Any],
+        pipeline_status: dict[str, Any],
+    ) -> bool:
+        if task_type == "sync" and run_id in set(self._deps.get_active_sync_runs() or set()):
+            return True
+        try:
+            if task_type in {"fetch", "discovery", "sync"} and self._deps.task_running_from_state(
+                task_type
+            ):
+                return True
+        except Exception:
+            return True
+        if task_type == "pipeline":
+            return (
+                bool(pipeline_status.get("active"))
+                and run_id == str(pipeline_status.get("runId") or "").strip()
+            )
+        parent_task_type = str(row.get("parentTaskType") or "").strip().lower()
+        parent_run_id = str(row.get("parentRunId") or "").strip()
+        if parent_task_type == "pipeline" and parent_run_id:
+            return (
+                bool(pipeline_status.get("active"))
+                and parent_run_id == str(pipeline_status.get("runId") or "").strip()
+            )
+        return False
+
+    def _repair_stale_terminal_lifecycle_rows(self, rows: list[dict[str, Any]]) -> bool:
+        pipeline_status = as_json_object(self._deps.get_jobs_pipeline_status_payload())
+        repaired = False
+        for row in rows:
+            task_type = _task_type(row)
+            run_id = _run_id(row)
+            if not task_type or not run_id or not _row_active(row):
+                continue
+            terminal, progress, summary = _row_terminal_progress(row)
+            if not terminal or not self._row_is_past_stale_grace(row):
+                continue
+            if self._has_live_task_evidence(
+                task_type=task_type,
+                run_id=run_id,
+                row=row,
+                pipeline_status=pipeline_status,
+            ):
+                continue
+            error = str(
+                summary.get("error") or row.get("error") or "stale terminal progress"
+            ).strip()
+            repair_summary = {
+                **summary,
+                "error": error,
+                "repairReason": "stale_terminal_progress",
+            }
+            repair_progress = {
+                **progress,
+                "active": False,
+            }
+            with time_operation("ops.task_state.lifecycle_repair"):
+                try:
+                    self._deps.orphan_lifecycle_run(
+                        run_id,
+                        task_type,
+                        finished_at=self._deps.now_iso(),
+                        terminal_reason="stale_terminal_progress",
+                        summary=repair_summary,
+                        progress=repair_progress,
+                    )
+                except Exception:  # noqa: BLE001
+                    continue
+                repaired = True
+        if repaired:
+            self._invalidate_lifecycle_row_cache()
+        return repaired
+
     def _current_lifecycle_rows(self) -> list[dict[str, Any]]:
-        return self._read_lifecycle_rows_cached(
+        rows = self._read_lifecycle_rows_cached(
             cache_key="current",
             surface="taskRuns.current",
             loader=lambda: list(self._deps.get_lifecycle_current_runs()),
         )
+        if self._repair_stale_terminal_lifecycle_rows(rows):
+            rows = self._read_lifecycle_rows_cached(
+                cache_key="current",
+                surface="taskRuns.current",
+                loader=lambda: list(self._deps.get_lifecycle_current_runs()),
+            )
+        return rows
 
     def _recent_lifecycle_rows(self) -> list[dict[str, Any]]:
         return self._read_lifecycle_rows_cached(
@@ -656,6 +793,97 @@ class OpsApi:
     def compute_ops_dashboard_health(self) -> dict[str, Any]:
         with time_operation("ops.dashboard_health.total"):
             return _ops_health.compute_ops_health(self.build_ops_health_deps())
+
+    def compute_ops_dashboard_health_summary(self) -> dict[str, Any]:
+        with time_operation("ops.dashboard_health.summary.total"):
+            with time_operation("ops.dashboard_health.summary.registry"):
+                try:
+                    registry_summary = as_json_object(self._deps.get_registry_summary_payload())
+                except Exception:
+                    registry_summary = {}
+            if not _ops_health._has_registry_summary_counts(registry_summary):
+                registry_summary = {}
+            with time_operation("ops.dashboard_health.summary.sync"):
+                try:
+                    sync_status = as_json_object(self._deps.get_sync_status_payload())
+                except Exception:
+                    sync_status = {}
+            with time_operation("ops.dashboard_health.summary.schedule"):
+                schedule = _ops_health.populate_schedule_next_run(
+                    self.parse_schedule_metadata(),
+                    [],
+                    self._deps.parse_iso,
+                )
+                try:
+                    pipeline_schedule = self._pipeline_schedule_ops_entry_cached()
+                except (RuntimeError, OSError, TypeError, ValueError):
+                    pipeline_schedule = {}
+                if isinstance(pipeline_schedule, dict):
+                    schedule["pipeline"] = dict(pipeline_schedule)
+            owner_state = dict(self._deps.get_owner_state() or {})
+            startup_ready = (
+                True if not bool(self._deps.desktop_mode) else bool(owner_state.get("startedAt"))
+            )
+            registry_sync = _ops_health.derive_registry_sync_summary(
+                state={},
+                summary=registry_summary,
+                tombstones={},
+                sync_status=sync_status,
+                history=[],
+            )
+            pending_count = int(registry_summary.get("pendingCount") or 0)
+            sync_ready = bool(as_json_object(sync_status.get("config")).get("ready", True))
+            return {
+                "service": "baluffo-bridge",
+                "desktopMode": bool(self._deps.desktop_mode),
+                "appVersion": str(self._deps.app_version or ""),
+                "startupReady": startup_ready,
+                "generatedAt": self._deps.now_iso(),
+                "desktopLastActivityAt": str(self._deps.get_desktop_last_activity_at() or ""),
+                "owner": {
+                    "mode": str(owner_state.get("ownerMode") or ""),
+                    "token": str(owner_state.get("ownerToken") or ""),
+                    "sessionId": str(owner_state.get("sessionId") or ""),
+                    "startedBy": str(owner_state.get("startedBy") or ""),
+                    "startedAt": str(owner_state.get("startedAt") or ""),
+                    "lastActivityAt": str(owner_state.get("lastActivityAt") or ""),
+                    "idleTimeoutSeconds": float(owner_state.get("idleTimeoutSeconds") or 0.0),
+                },
+                "status": "healthy" if sync_ready else "warning",
+                "summaryView": True,
+                "detailLevel": "summary",
+                "kpis": {
+                    "lastSuccessfulFetchAge": "",
+                    "sevenDayFetchSuccessRate": 0.0,
+                    "avgFetchDurationMs7d": 0,
+                    "failedSourceRatioLatest": 0.0,
+                    "pendingApprovalsCount": pending_count,
+                    "sourceHealth": {},
+                    "providerCoverage": {},
+                    "dedupReviewState": {},
+                    "providerStaticOverlap": {},
+                    "staticSuppressionPolicy": {},
+                    "redundantStaticProposals": {},
+                    "conservativeStaticCleanupProposals": {},
+                    "sourcePolicyRecommendationExport": {},
+                    "registrySync": registry_sync,
+                    "socialExperiment": {"channels": {}},
+                    "lastRunResult": {"type": "", "status": "unknown", "finishedAt": ""},
+                },
+                "schedule": schedule,
+                "alerts": [],
+                "suppressedAlertsCount": 0,
+                "historyCount": 0,
+                "updater": {
+                    "currentVersion": str(self._deps.app_version or ""),
+                    "latestVersion": "",
+                    "availability": "unknown",
+                    "downloadState": "idle",
+                    "installState": "idle",
+                    "lastCheckedAt": "",
+                    "lastError": "",
+                },
+            }
 
     def compute_ops_health(self) -> dict[str, Any]:
         with time_operation("ops.health.current_runs"):
@@ -845,7 +1073,72 @@ class OpsApi:
         }
 
     def get_current_task_state_summary_payload(self) -> TaskStatePayload:
-        return _compact_task_state_payload(self.get_current_task_state_payload())
+        lifecycle_current = self._current_lifecycle_rows()
+        pipeline_status = self._deps.get_jobs_pipeline_status_payload()
+        pipeline_row = (
+            _pipeline_status_to_task_row(pipeline_status)
+            if isinstance(pipeline_status, dict) and bool(pipeline_status.get("active"))
+            else {}
+        )
+        pipeline_run_id = _run_id(pipeline_row)
+        pipeline_stage = str(pipeline_row.get("stage") or "").strip().lower()
+        parent_stage_by_run_id = {
+            _run_id(row): str(
+                row.get("stage") or as_json_object(row.get("summary")).get("stage") or ""
+            )
+            .strip()
+            .lower()
+            for row in lifecycle_current
+            if _task_type(row) == "pipeline" and _run_id(row)
+        }
+        if pipeline_run_id and pipeline_stage:
+            parent_stage_by_run_id[pipeline_run_id] = pipeline_stage
+
+        task_by_key: dict[tuple[str, str], dict[str, Any]] = {}
+        diagnostics: list[dict[str, Any]] = []
+        for row in lifecycle_current:
+            task_type = _task_type(row)
+            run_id = _run_id(row)
+            if not task_type or not run_id:
+                continue
+            parent_task_type = str(row.get("parentTaskType") or "").strip().lower()
+            parent_run_id = str(row.get("parentRunId") or "").strip()
+            if parent_task_type == "pipeline":
+                parent_stage = parent_stage_by_run_id.get(parent_run_id, "")
+                if not parent_stage or parent_stage != task_type:
+                    diagnostics.append(
+                        {
+                            "code": "pipeline_child_stage_mismatch",
+                            "taskType": task_type,
+                            "runId": run_id,
+                            "parentRunId": parent_run_id,
+                            "parentStage": parent_stage,
+                        }
+                    )
+                    continue
+            route_row = {
+                **row,
+                "id": run_id,
+                "runId": run_id,
+                "type": task_type,
+                "taskType": task_type,
+                "active": True,
+                "finishedAt": "",
+            }
+            task_by_key[(task_type, run_id)] = _compact_task_state_row(route_row)
+        if pipeline_row and pipeline_run_id:
+            key = ("pipeline", pipeline_run_id)
+            existing = task_by_key.get(key)
+            task_by_key[key] = _compact_task_state_row(
+                {**(existing or {}), **pipeline_row, "active": True, "finishedAt": ""}
+            )
+        _enrich_pipeline_rows_with_children(task_by_key)
+        tasks = sorted(
+            list(task_by_key.values()),
+            key=lambda row: str(row.get("startedAt") or ""),
+            reverse=True,
+        )
+        return _compact_task_state_payload({"tasks": tasks, "diagnostics": diagnostics})
 
     def compute_fetcher_metrics(self, *, window_runs: int = 20) -> dict[str, Any]:
         latest_fetch_report = self._load_fetch_report_with_dedup_review_state()

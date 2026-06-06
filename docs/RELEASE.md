@@ -476,6 +476,7 @@ Runtime contract:
 
 - The container exposes one HTTP service on port `8080` inside the container.
 - UI, static assets, runtime data, and bridge API routes are served same-origin.
+- Official container images build generated frontend bundles with `npm run build:container-frontend`; hashed bundle assets are immutable/gzip-capable, while desktop/local HTML continues using checked-in unbundled modules when the generated container asset directory is absent.
 - Static `/data` serving is allowlisted to public runtime reports, registry/discovery exports, contracts, and defaults; user profile and attachment data stays behind bridge routes.
 - `frontend-runtime-config.js` is generated dynamically with `bridge.sameOrigin: true`, `runtime.mode: "container"`, and `runtime.localDataMode: "bridge"`.
 - `/data` is the only persistent runtime volume and owns profiles, saved jobs, attachments, reports, logs, source registries, and `baluffo-runtime.db`.

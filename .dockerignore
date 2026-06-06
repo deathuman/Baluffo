@@ -3,6 +3,7 @@
 .codex
 .serena
 .tmp
+.container-frontend
 _out
 dist
 build
@@ -21,6 +22,8 @@ node_modules
 .venv/lib64/**
 **/.venv
 **/.venv/**
+**/.venv/lib64
+**/.venv/lib64/**
 venv/
 venv/**
 env/

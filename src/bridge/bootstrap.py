@@ -71,6 +71,7 @@ def build_bridge_api(
     get_task_live_payload: Callable[[str], dict[str, Any]] = _empty_task_live_payload,
     check_registry_conflicts: Callable[[dict[str, Any] | None], dict[str, Any]] | None = None,
     load_registry_conflict_adjudication: Callable[[], dict[str, Any]] | None = None,
+    compute_ops_dashboard_health_summary: Callable[[], dict[str, Any]] | None = None,
     get_current_task_state_summary_payload: Callable[[], dict[str, Any]] | None = None,
     abort_task: Callable[[dict[str, Any] | None], tuple[int, dict[str, Any]]] | None = None,
 ) -> BridgeApi:
@@ -126,6 +127,9 @@ def build_bridge_api(
         update_saved_discovery_settings=update_saved_discovery_settings,
         compute_ops_health=compute_ops_health,
         compute_ops_dashboard_health=compute_ops_dashboard_health,
+        compute_ops_dashboard_health_summary=(
+            compute_ops_dashboard_health_summary or compute_ops_dashboard_health
+        ),
         get_storage_health_payload=get_storage_health_payload,
         compute_fetcher_metrics=compute_fetcher_metrics,
         sync_history_from_reports=sync_history_from_reports,

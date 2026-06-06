@@ -312,7 +312,6 @@ function bootAdminPage() {
   });
   authController.initAdminPage();
   actionCenterController.startPolling(); inspectorController.init();
-  Promise.resolve(restoreActiveRunWatches?.()).catch(() => {});
 }
 
 export { bootAdminPage as boot };

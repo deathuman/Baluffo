@@ -255,7 +255,7 @@ test("admin ops controller startup uses summary ops routes before deferred detai
     refs,
     getBridge: async path => {
       calls.push(path);
-      if (path === "/ops/dashboard-health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
+      if (path === "/ops/dashboard-health?view=summary") return { alerts: [], kpis: {}, schedule: {}, status: "healthy", summaryView: true };
       if (path === "/ops/task-state?view=summary") return { tasks: [], count: 0, summary: true };
       if (path === "/registry/conflicts?view=summary") return { summary: { conflictCount: 0 }, conflicts: [], summaryView: true };
       if (path === "/ops/history?limit=80") return new Promise(() => {});
@@ -294,13 +294,13 @@ test("admin ops controller startup uses summary ops routes before deferred detai
     renderScheduler: renderScheduler.schedule
   });
 
-  await controller.loadOpsHealthData();
+  await controller.loadOpsHealthData({ summary: true });
   await flushAdminOpsBackground();
   renderScheduler.flush();
   controller.stopOpsHealthPolling();
 
   assert.deepEqual(calls, [
-    "/ops/dashboard-health",
+    "/ops/dashboard-health?view=summary",
     "/ops/task-state?view=summary",
     "/registry/conflicts?view=summary"
   ]);

@@ -103,16 +103,7 @@ export function composeAdminControllers({
     adminDispatch,
     adminActions: ADMIN_ACTIONS,
     escapeHtml,
-    onBridgeStatusChange: status => {
-      if (status === "online") {
-        registryController?.loadDiscoveryData({
-          background: true,
-          logChanges: false,
-          skipIfFreshMs: 10000,
-          suppressPlaceholders: true
-        }).catch(() => {});
-      }
-    },
+    onBridgeStatusChange: () => {},
     loadDiscoveryData: (...args) => registryController.loadDiscoveryData(...args),
     attachToActiveFetchRun: (...args) => fetcherController?.attachToActiveFetchRun?.(...args),
     loadLatestFetcherReport: options => fetcherController?.loadLatestFetcherReport?.(options),

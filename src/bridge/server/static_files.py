@@ -46,6 +46,7 @@ ROOT_DATA_FILE_ALIASES = frozenset(
 )
 
 STATIC_CACHE_CONTROL = "public, max-age=3600"
+CONTAINER_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
 NO_STORE_CACHE_CONTROL = "no-store, no-cache, must-revalidate, max-age=0"
 
 _ROOT_STATIC_FILES = frozenset(
@@ -63,6 +64,8 @@ _PAGE_ALIASES = {
     "jobs": "jobs.html",
     "saved": "saved.html",
 }
+_CONTAINER_PAGE_FILES = frozenset({"admin.html", "jobs.html", "saved.html"})
+_CONTAINER_ASSET_PREFIX = "container-assets"
 _STATIC_DIRECTORIES = frozenset({"frontend", "probes", "styles"})
 _PACKAGING_STATIC_FILES = frozenset({"packaging/baluffo.png"})
 _STATIC_DATA_DIRECTORIES = frozenset({"contracts", "defaults"})
@@ -155,6 +158,15 @@ def _content_type_for_path(path: Path, *, gzip_json: bool = False) -> str:
     return content_type or "application/octet-stream"
 
 
+def _accepts_gzip(handler: Any) -> bool:
+    header = ""
+    try:
+        header = str(handler.headers.get("Accept-Encoding", ""))
+    except Exception:
+        header = ""
+    return any(part.strip().lower() == "gzip" for part in header.split(","))
+
+
 @dataclass(frozen=True)
 class StaticFileService:
     static_root: Path
@@ -209,6 +221,22 @@ class StaticFileService:
             return _existing_path_under(self.static_root, ["index.html"])
         return None
 
+    def _container_frontend_root(self) -> Path:
+        return self.static_root / ".container-frontend"
+
+    def _resolve_container_path(self, normalized: str) -> tuple[Path | None, bool]:
+        container_root = self._container_frontend_root()
+        if not container_root.is_dir():
+            return None, False
+        if normalized in _CONTAINER_PAGE_FILES:
+            return _existing_path_under(container_root, [normalized]), False
+        if not normalized.startswith(f"{_CONTAINER_ASSET_PREFIX}/"):
+            return None, False
+        safe_parts = _safe_posix_parts(normalized)
+        if len(safe_parts) < 2 or safe_parts[0] != _CONTAINER_ASSET_PREFIX:
+            return None, False
+        return _existing_path_under(container_root, safe_parts[1:]), True
+
     def handle_get(self, handler: Any, *, path: str) -> bool:
         if is_api_path(path):
             return False
@@ -220,6 +248,26 @@ class StaticFileService:
                 content_type="application/javascript; charset=utf-8",
                 status=200,
                 cache_control=NO_STORE_CACHE_CONTROL,
+            )
+            return True
+
+        container_path, is_container_asset = self._resolve_container_path(normalized)
+        if container_path is not None:
+            read_path = container_path
+            content_encoding = ""
+            if is_container_asset and _accepts_gzip(handler):
+                gzip_path = Path(f"{container_path}.gz")
+                if gzip_path.is_file():
+                    read_path = gzip_path
+                    content_encoding = "gzip"
+            handler.send_bytes(
+                read_path.read_bytes(),
+                content_type=_content_type_for_path(container_path),
+                status=200,
+                cache_control=CONTAINER_ASSET_CACHE_CONTROL
+                if is_container_asset
+                else NO_STORE_CACHE_CONTROL,
+                content_encoding=content_encoding,
             )
             return True
 

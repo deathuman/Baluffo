@@ -25,6 +25,7 @@
     "test:refactor:changed": "python scripts/refactor_changed_gate.py",
     "release:preflight": "npm run lint:precommit && npm run test:py:extended && npm run test:frontend:unit && npm run build:portable-exe:prepare && npm run test:frontend:packaged && npm run test:frontend:packaged:admin-startup && npm run test:frontend:packaged:sync-rehearsal && npm run test:frontend:packaged:update-rehearsal && npm run test:frontend:packaged:orphan-reclaim-rehearsal && npm run test:frontend:packaged:browser-job-rehearsal && npm run test:frontend:packaged:desktop-lifecycle-rehearsal && npm run test:frontend:packaged:active-task-close-rehearsal && npm run test:frontend:packaged:task-abort-schedule-rehearsal && npm run test:frontend:packaged:first-run && npm run test:frontend:packaged:jobs-pipeline && npm run probe:desktop:startup:jobs:cold",
     "build:frontend-runtime-config": "npm run check:python-version && python scripts/build_frontend_runtime_config.py",
+    "build:container-frontend": "node scripts/build_container_frontend.mjs",
     "build:ship-bundle": "npm run check:python-version && python scripts/build_ship_bundle.py",
     "build:portable-exe": "npm run check:python-version && python scripts/build_portable_exe.py",
     "build:portable-exe:prepare": "npm run check:python-version && python scripts/build_portable_exe.py --skip-zip",
@@ -105,6 +106,7 @@
   "devDependencies": {
     "@eslint/js": "9.39.4",
     "@playwright/test": "1.58.2",
+    "esbuild": "^0.28.0",
     "eslint": "9.39.4",
     "knip": "5.88.1"
   }

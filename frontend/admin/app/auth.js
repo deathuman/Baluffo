@@ -124,7 +124,7 @@ export function createAdminAuthController({
       end: "admin_ops_health_fetch_done",
       measure: "admin_ops_health_fetch",
       errorContext: "Failed to load ops health data",
-      task: () => loadOpsHealthData()
+      task: () => loadOpsHealthData({ summary: true })
     });
     runInitialTask({
       start: "admin_sync_fetch_start",
