@@ -222,6 +222,14 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "support",
         caller_files=STARTUP_METRIC_CALLERS,
     ),
+    _route(
+        "POST",
+        "/desktop-local-data/startup-metrics/batch",
+        EXACT,
+        POST_LOCAL_DATA_HANDLER,
+        "support",
+        caller_files=STARTUP_METRIC_CALLERS,
+    ),
     _route("GET", "/app/update-status", EXACT, GET_HANDLER, "public", caller_files=UPDATE_CALLERS),
     _route(
         "GET", "/registry/active", EXACT, GET_HANDLER, "public", caller_files=ADMIN_REGISTRY_CALLERS

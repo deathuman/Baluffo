@@ -377,6 +377,7 @@ class BridgeApi:
     start_sync_task: StartSyncTaskFunc = _not_started_result
 
     compute_ops_health: Callable[[], JsonObject] = _ok_payload
+    compute_ops_health_ready: Callable[[], JsonObject] = _ok_payload
     compute_ops_dashboard_health: Callable[[], JsonObject] = _ok_payload
     compute_ops_dashboard_health_summary: Callable[[], JsonObject] = _ok_payload
     get_storage_health_payload: Callable[[], JsonObject] = _ok_payload
@@ -462,6 +463,10 @@ class BridgeApi:
         # Prefer typed services when provided, but only override behaviors that
         # were left at the default stubs.
         self._wire_registry_defaults()
+        if self._field_is_default("compute_ops_health_ready") and not self._field_is_default(
+            "compute_ops_health"
+        ):
+            self.compute_ops_health_ready = self.compute_ops_health
         if self.sync is not None:
             if self._field_is_default("get_sync_status_payload"):
                 self.get_sync_status_payload = self.sync.get_sync_status_payload

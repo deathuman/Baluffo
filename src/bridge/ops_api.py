@@ -87,6 +87,7 @@ class OpsDeps:
     get_jobs_pipeline_schedule_ops_entry: Callable[[], dict[str, Any]] = field(
         default_factory=lambda: lambda: {}
     )
+    sync_config_status: Callable[[], dict[str, Any]] = field(default_factory=lambda: lambda: {})
 
 
 @dataclass(frozen=True)
@@ -805,7 +806,10 @@ class OpsApi:
                 registry_summary = {}
             with time_operation("ops.dashboard_health.summary.sync"):
                 try:
-                    sync_status = as_json_object(self._deps.get_sync_status_payload())
+                    sync_status = {
+                        "config": as_json_object(self._deps.sync_config_status()),
+                        "runtime": {},
+                    }
                 except Exception:
                     sync_status = {}
             with time_operation("ops.dashboard_health.summary.schedule"):
@@ -883,6 +887,58 @@ class OpsApi:
                     "lastCheckedAt": "",
                     "lastError": "",
                 },
+            }
+
+    def compute_ops_health_ready(self) -> dict[str, Any]:
+        with time_operation("ops.health.ready.total"):
+            with time_operation("ops.health.ready.current_runs"):
+                current_rows = self._current_lifecycle_rows()
+            owner_state = dict(self._deps.get_owner_state() or {})
+            startup_ready = (
+                True if not bool(self._deps.desktop_mode) else bool(owner_state.get("startedAt"))
+            )
+            schedule: dict[str, Any] = {}
+            with time_operation("ops.health.ready.schedule"):
+                try:
+                    schedule = _ops_health.populate_schedule_next_run(
+                        self.parse_schedule_metadata(),
+                        [],
+                        self._deps.parse_iso,
+                    )
+                except Exception:
+                    schedule = {}
+                try:
+                    pipeline_schedule = self._pipeline_schedule_ops_entry_cached()
+                except (RuntimeError, OSError, TypeError, ValueError):
+                    pipeline_schedule = {}
+                if isinstance(pipeline_schedule, dict):
+                    schedule["pipeline"] = dict(pipeline_schedule)
+            return {
+                "service": "baluffo-bridge",
+                "status": "healthy",
+                "ok": True,
+                "summaryView": True,
+                "detailLevel": "ready",
+                "timestamp": self._deps.now_iso(),
+                "desktopMode": bool(self._deps.desktop_mode),
+                "desktopLastActivityAt": str(self._deps.get_desktop_last_activity_at() or ""),
+                "startupReady": startup_ready,
+                "appVersion": str(self._deps.app_version or ""),
+                "owner": {
+                    "mode": str(owner_state.get("ownerMode") or ""),
+                    "token": str(owner_state.get("ownerToken") or ""),
+                    "sessionId": str(owner_state.get("sessionId") or ""),
+                    "startedBy": str(owner_state.get("startedBy") or ""),
+                    "startedAt": str(owner_state.get("startedAt") or ""),
+                    "lastActivityAt": str(owner_state.get("lastActivityAt") or ""),
+                    "idleTimeoutSeconds": float(owner_state.get("idleTimeoutSeconds") or 0.0),
+                },
+                "lifecycle": {
+                    "currentCount": len(current_rows),
+                    "recentCount": 0,
+                    "latestHeartbeatAt": "",
+                },
+                "schedule": schedule,
             }
 
     def compute_ops_health(self) -> dict[str, Any]:

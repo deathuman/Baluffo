@@ -74,6 +74,7 @@ def build_bridge_api(config: Any) -> BridgeApi:
         get_discovery_config_payload=root_mod.get_discovery_config_payload,
         update_saved_discovery_settings=root_mod.update_saved_discovery_settings,
         compute_ops_health=root_mod.compute_ops_health,
+        compute_ops_health_ready=ops_api.compute_ops_health_ready,
         compute_ops_dashboard_health=root_mod.compute_ops_dashboard_health,
         compute_ops_dashboard_health_summary=ops_api.compute_ops_dashboard_health_summary,
         get_storage_health_payload=lambda: storage_health_mod.get_storage_health_payload(

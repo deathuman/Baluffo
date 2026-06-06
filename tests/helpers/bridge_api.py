@@ -366,6 +366,7 @@ def build_admin_bridge_api(config: Any | None = None) -> BridgeApi:
         get_discovery_config_payload=admin_bridge.get_discovery_config_payload,
         update_saved_discovery_settings=admin_bridge.update_saved_discovery_settings,
         compute_ops_health=admin_bridge.compute_ops_health,
+        compute_ops_health_ready=admin_bridge._get_ops_api().compute_ops_health_ready,
         compute_ops_dashboard_health=admin_bridge.compute_ops_dashboard_health,
         get_storage_health_payload=lambda: get_storage_health_payload(
             Path(runtime_config.data_dir).resolve()

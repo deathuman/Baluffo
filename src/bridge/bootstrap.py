@@ -58,6 +58,7 @@ def build_bridge_api(
     get_discovery_config_payload: Callable[[], dict[str, Any]],
     update_saved_discovery_settings: Callable[[dict[str, Any]], dict[str, Any]],
     compute_ops_health: Callable[[], dict[str, Any]],
+    compute_ops_health_ready: Callable[[], dict[str, Any]] | None,
     compute_ops_dashboard_health: Callable[[], dict[str, Any]],
     get_storage_health_payload: Callable[[], dict[str, Any]],
     compute_fetcher_metrics: Callable[..., dict[str, Any]],
@@ -126,6 +127,7 @@ def build_bridge_api(
         get_discovery_config_payload=get_discovery_config_payload,
         update_saved_discovery_settings=update_saved_discovery_settings,
         compute_ops_health=compute_ops_health,
+        compute_ops_health_ready=compute_ops_health_ready or compute_ops_health,
         compute_ops_dashboard_health=compute_ops_dashboard_health,
         compute_ops_dashboard_health_summary=(
             compute_ops_dashboard_health_summary or compute_ops_dashboard_health

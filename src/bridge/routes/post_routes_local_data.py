@@ -254,6 +254,29 @@ def handle_post(
         send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
         return True
 
+    if path == "/desktop-local-data/startup-metrics/batch":
+
+        def _payload() -> dict[str, Any]:
+            rows = payload_dict.get("metrics")
+            if not isinstance(rows, list):
+                rows = payload_dict.get("events")
+            if not isinstance(rows, list):
+                raise ValueError("metrics must be an array")
+            accepted = 0
+            for row in rows[:200]:
+                if not isinstance(row, dict):
+                    continue
+                event = str(row.get("event") or "").strip()
+                if not event:
+                    continue
+                metric_payload = _as_dict(row.get("payload"))
+                api.append_startup_metric(event, metric_payload)
+                accepted += 1
+            return {"ok": True, "accepted": accepted}
+
+        send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
+        return True
+
     if path == "/desktop-local-data/open-url":
         if is_container_runtime(api):
             send_container_unavailable(handler)

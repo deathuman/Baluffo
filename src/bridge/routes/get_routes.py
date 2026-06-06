@@ -67,8 +67,120 @@ def _as_list(value: Any) -> list[Any]:
     return list(value) if isinstance(value, list) else []
 
 
+def _last_items(value: Any, limit: int) -> list[Any]:
+    rows = _as_list(value)
+    bounded_limit = max(0, min(50, int(limit or 0)))
+    if bounded_limit <= 0:
+        return []
+    return rows[-bounded_limit:]
+
+
 def _clean_text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _sync_status_summary_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    config = _as_dict(payload.get("config"))
+    runtime = _as_dict(payload.get("runtime"))
+    saved_config = _as_dict(payload.get("savedConfig"))
+    last_push = _as_dict(runtime.get("lastPush")) or _as_dict(runtime.get("push"))
+    last_pull = _as_dict(runtime.get("lastPull")) or _as_dict(runtime.get("pull"))
+    return {
+        "ok": bool(payload.get("ok", True)),
+        "appVersion": _clean_text(payload.get("appVersion")),
+        "summaryView": True,
+        "detailLevel": "summary",
+        "config": {
+            "enabled": bool(config.get("enabled")),
+            "state": _clean_text(config.get("state")),
+            "ready": bool(config.get("ready")),
+            "repo": _clean_text(config.get("repo")),
+            "branch": _clean_text(config.get("branch")),
+            "path": _clean_text(config.get("path")),
+            "missing": [
+                _clean_text(item) for item in _as_list(config.get("missing")) if _clean_text(item)
+            ][:20],
+            "message": _clean_text(config.get("message")),
+            "credentialsPackaged": bool(config.get("credentialsPackaged")),
+        },
+        "savedConfig": {"enabled": bool(saved_config.get("enabled"))},
+        "runtime": {
+            "state": _clean_text(runtime.get("state") or runtime.get("code")),
+            "message": _clean_text(runtime.get("message")),
+            "lastPullAt": _clean_text(runtime.get("lastPullAt")),
+            "lastPushAt": _clean_text(runtime.get("lastPushAt")),
+            "lastPull": {
+                "result": _clean_text(last_pull.get("result")),
+                "finishedAt": _clean_text(last_pull.get("finishedAt")),
+                "error": _clean_text(last_pull.get("error")),
+            },
+            "lastPush": {
+                "result": _clean_text(last_push.get("result")),
+                "finishedAt": _clean_text(last_push.get("finishedAt")),
+                "error": _clean_text(last_push.get("error")),
+            },
+        },
+    }
+
+
+def _discovery_report_summary_payload(report: dict[str, Any]) -> dict[str, Any]:
+    summary = _as_dict(report.get("summary"))
+    runtime = _as_dict(report.get("runtime"))
+    task_progress = _as_dict(report.get("taskProgress"))
+    registry_finalization = _as_dict(runtime.get("registryFinalization"))
+    auto_approval = _as_dict(runtime.get("autoApproval"))
+    failures = _as_list(report.get("failures"))
+    candidates = _as_list(report.get("candidates"))
+    log_rows = (
+        _as_list(report.get("log")) or _as_list(report.get("logs")) or _as_list(runtime.get("log"))
+    )
+    return {
+        "ok": True,
+        "summaryView": True,
+        "detailLevel": "summary",
+        "runId": _clean_text(report.get("runId")),
+        "status": _clean_text(report.get("status")),
+        "startedAt": _clean_text(report.get("startedAt")),
+        "finishedAt": _clean_text(report.get("finishedAt")),
+        "taskProgress": {
+            "active": bool(task_progress.get("active")),
+            "phase": _clean_text(task_progress.get("phase")),
+            "label": _clean_text(task_progress.get("label")),
+            "percent": task_progress.get("percent", 0),
+        },
+        "summary": {
+            key: summary.get(key)
+            for key in (
+                "endpointCount",
+                "probedCount",
+                "queuedCandidateCount",
+                "deferredCount",
+                "failedCount",
+                "pendingCount",
+                "activeCount",
+                "rejectedCount",
+            )
+            if key in summary
+        },
+        "counts": {
+            "candidateCount": len(candidates),
+            "failureCount": len(failures),
+        },
+        "runtime": {
+            "registryFinalization": {
+                "status": _clean_text(registry_finalization.get("status")),
+                "activeCount": registry_finalization.get("activeCount"),
+                "pendingCount": registry_finalization.get("pendingCount"),
+                "rejectedCount": registry_finalization.get("rejectedCount"),
+            },
+            "autoApproval": {
+                "enabled": bool(auto_approval.get("enabled")),
+                "status": _clean_text(auto_approval.get("status")),
+                "approvedCount": auto_approval.get("approvedCount"),
+            },
+        },
+        "recentLog": _last_items(log_rows, 20),
+    }
 
 
 def _compact_live_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1081,8 +1193,20 @@ def _handle_ops_status_routes(
     query: dict[str, list[str]],
 ) -> bool:
     if path == "/ops/health":
-        with time_operation("ops.health.route_payload"):
-            payload = api.compute_ops_health()
+        view = str((query.get("view") or ["full"])[0] or "full").strip().lower()
+        if view not in {"", "full", "ready"}:
+            handler.send_json(
+                {"ok": False, "error": f"unsupported ops health view: {view}"},
+                status=400,
+            )
+            return True
+        op_label = (
+            "ops.health.ready.route_payload" if view == "ready" else "ops.health.route_payload"
+        )
+        with time_operation(op_label):
+            payload = (
+                api.compute_ops_health_ready() if view == "ready" else api.compute_ops_health()
+            )
         handler.send_json(payload)
         return True
 
@@ -1234,9 +1358,22 @@ def _send_json_bytes(
     )
 
 
-def _handle_discovery_report_route(handler: BridgeResponseWriter, *, api: BridgeApi) -> bool:
+def _handle_discovery_report_route(
+    handler: BridgeResponseWriter,
+    *,
+    api: BridgeApi,
+    query: dict[str, list[str]] | None = None,
+) -> bool:
     # This route must never "silently" drop the connection; the admin UI
     # treats network errors as bridge-availability failures.
+    view = str(((query or {}).get("view") or ["full"])[0] or "full").strip().lower()
+    if view not in {"", "full", "summary"}:
+        handler.send_json(
+            {"ok": False, "error": f"unsupported discovery report view: {view}"},
+            status=400,
+        )
+        return True
+
     def _send_discovery_report() -> None:
         from src.source_registry_io import load_runtime_evidence
 
@@ -1259,7 +1396,11 @@ def _handle_discovery_report_route(handler: BridgeResponseWriter, *, api: Bridge
             else "",
         )
 
-        payload = _as_dict(report) or {"summary": {}, "candidates": [], "failures": []}
+        payload = (
+            _discovery_report_summary_payload(_as_dict(report))
+            if view == "summary"
+            else (_as_dict(report) or {"summary": {}, "candidates": [], "failures": []})
+        )
         # Prefer the bytes-writing helper to bypass any unexpected issues
         # in JSON response serialization for edge-case payloads.
         if hasattr(handler, "send_bytes"):
@@ -1302,7 +1443,7 @@ def handle_get(
     """
 
     if path == "/discovery/report":
-        return _handle_discovery_report_route(handler, api=api)
+        return _handle_discovery_report_route(handler, api=api, query=query)
 
     if path == "/discovery/candidates":
         candidates_path = getattr(api, "DISCOVERY_CANDIDATES_PATH", None)
@@ -1653,8 +1794,26 @@ def handle_get(
         return True
 
     if path == "/sync/status":
-        with time_operation("sync.status"):
-            payload = api.get_sync_status_payload()
+        view = str((query.get("view") or ["full"])[0] or "full").strip().lower()
+        if view not in {"", "full", "summary"}:
+            handler.send_json(
+                {"ok": False, "error": f"unsupported sync status view: {view}"},
+                status=400,
+            )
+            return True
+        with time_operation("sync.status.summary" if view == "summary" else "sync.status"):
+            payload = (
+                _sync_status_summary_payload(
+                    {
+                        "ok": True,
+                        "config": api.sync_config_status(),
+                        "savedConfig": {},
+                        "runtime": {},
+                    }
+                )
+                if view == "summary"
+                else api.get_sync_status_payload()
+            )
         handler.send_json(payload)
         return True
 
