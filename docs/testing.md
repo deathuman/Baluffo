@@ -78,6 +78,7 @@ Use the repo-native perf entrypoints before adding new benchmark tooling:
 | Complete benchmark with multi-timeout live sample | `python scripts/perf_complete.py --bridge-base-url http://192.168.50.61:8877 --bridge-timeouts 3,10,30` | Same as complete benchmark, with live request rows for each timeout |
 | Complete benchmark with a Chrome DevTools trace | `python scripts/perf_complete.py --chrome-trace C:\path\to\Trace.json.gz` | Same complete benchmark, with Chrome LCP, slow resource, user timing, and long-task evidence folded into optimization targets |
 | Chrome DevTools trace summary only | `python scripts/chrome_trace_summary.py C:\path\to\Trace.json.gz` | Console JSON summary of LCP candidates, slow resources, user timing spans, and long main-thread tasks |
+| Lightweight page-load audit | `npm run perf:page-load:audit -- --base-url http://192.168.50.61:8877 --pages admin.html,jobs.html` | Console JSON with DOMContentLoaded, LCP element, slow requests, request failures, and known page error text |
 | Live bridge profile sample only | `python scripts/perf_bridge_profile_snapshot.py --bridge-base-url http://192.168.50.61:8877` | `_out/perf-complete/live/<timestamp>/bridge-profile/live/` |
 | Live bridge profile sample with timeout comparison | `python scripts/perf_bridge_profile_snapshot.py --bridge-base-url http://192.168.50.61:8877 --timeouts 3,10,30` | Same live output, with TCP, first-byte, and full-response timing per timeout |
 | Startup bridge A/B experiment | `python scripts/perf_startup_bridge_ab.py --pairs 5 --pages jobs,admin` | `_out/perf-complete/startup-bridge-ab/<timestamp>/startup-bridge-ab-summary.json` |
@@ -90,6 +91,7 @@ Notes:
 - Prefer repo-local artifact roots such as `.tmp/` and `_out/` for new perf workflows; avoid `%LOCALAPPDATA%\\Temp` for benchmark or runtime-state outputs in this Windows-first repo.
 - Use `npm run perf:complete` when asked for the most complete benchmark. It aggregates discovery/fetch medians, fetch source/provider-board timing and status/cache buckets, frontend boot traces, Jobs and Admin cold/warm packaged startup, packaged sync push/pull timings, sync push detail stages, sync remote-write timing, bridge route/operation profile snapshots, optimization targets, artifact sizes, best-effort process-tree RAM, and top process-level RAM contributors.
 - When user-visible page load is the concern, include a Chrome DevTools Performance export with `--chrome-trace`. The backend route profile is useful supporting evidence, but Chrome LCP/resource/user-timing rows are the primary signal for page-perceived delays.
+- Use `npm run perf:page-load:audit -- --base-url <url>` as a quick browser smoke before or after a trace. It is not a substitute for a Chrome Performance export, but it catches obvious regressions such as slow first requests, Fetcher/Discovery text becoming the LCP element, `Could not load admin overview`, and missing packaged sync config copy.
 - Use `python scripts/perf_complete.py --bridge-base-url <url>` when route-level timing from a running desktop or Umbrel bridge needs to be correlated with local benchmark evidence. This is read-only and failure is recorded as evidence, not as a benchmark failure. Default `npm run perf:complete` stays local and reproducible.
 - Use `python scripts/perf_bridge_profile_snapshot.py --bridge-base-url <url>` for a quick live-only read-only sample without running the packaged startup, frontend, discovery, fetch, and sync benchmarks. Add `--timeouts 3,10,30` when debugging LAN reachability so the output separates TCP connect, first-byte, and full-response timing for each endpoint.
 - Use `python scripts/perf_startup_bridge_ab.py --pairs 5 --pages jobs,admin` only when evaluating whether `BALUFFO_STARTUP_PARALLEL_BRIDGE=1` should become the desktop default. Promotion requires complete default and parallel samples for both Jobs and Admin, material cold/warm median improvements, no cold-start regression, and no packaged lifecycle smoke regressions.
@@ -351,8 +353,9 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
   - the bridge badge reaches `Bridge Online`,
   - `#admin-ops-trends` does not remain stuck on `Loading operations health...`,
   - `#admin-source-status` does not remain stuck on `Loading admin overview...`,
-  - startup requests use `/ops/task-state?view=summary` and `/registry/conflicts?view=summary`, not the full multi-MiB diagnostic routes.
+  - startup requests use `/ops/health?view=ready`, `/ops/dashboard-health?view=summary`, `/ops/task-state?view=summary`, `/sync/status?view=summary`, and `/registry/conflicts?view=summary`, not the full multi-MiB diagnostic routes.
 - Use this lane for Admin startup, ops-summary payloads, desktop local-data overview, and packaged bridge availability changes.
+- For Umbrel page-load performance fixes, package/browser startup gates are supporting evidence only. Capture Chrome DevTools Performance traces for Admin cold/warm, Jobs cold/warm, and Jobs-to-Admin navigation before publishing; acceptance is based on Chrome-visible shell/useful-content timing, LCP element, request waterfall, long tasks, and absence of first-load full diagnostics.
 
 ## Desktop Updater Rehearsal Contract
 

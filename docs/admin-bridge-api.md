@@ -89,7 +89,8 @@ When `sourceRegistry=sqlite`, the registry GET routes and POST mutations read an
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/discovery/report` | Last discovery run report |
+| GET | `/discovery/report` | Full last discovery run report for manual diagnostics |
+| GET | `/discovery/report?view=summary` | Bounded discovery status/counter/log-tail summary for lightweight status surfaces. It does not return full candidate or failure arrays |
 | GET | `/discovery/candidates` | Persisted discovery review candidates, including queued and deferred rows |
 | GET | `/discovery/config` | Saved Source Discovery admin preferences |
 | GET | `/discovery/log` | Discovery log (supports `?offset=`) |
@@ -126,7 +127,8 @@ When `sourceRegistry=sqlite`, the registry GET routes and POST mutations read an
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/sync/status` | Sync status and config |
+| GET | `/sync/status` | Full sync status and config |
+| GET | `/sync/status?view=summary` | Lightweight sync config/runtime summary for Admin startup and Action Center. It avoids full sync history/timing hydration |
 | POST | `/sync/config` | Update sync settings |
 | POST | `/sync/test` | Test sync configuration |
 | POST | `/sync/pull` | Pull sources (sync) |
@@ -140,7 +142,8 @@ When `sourceRegistry=sqlite`, the registry GET routes and POST mutations read an
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/ops/health` | Bridge health check |
+| GET | `/ops/health` | Full bridge health check |
+| GET | `/ops/health?view=ready` | Lightweight bridge readiness check for startup/status badges. It avoids dashboard/support projections |
 | GET | `/ops/dashboard-health` | Full Admin dashboard health payload with alerts, KPIs, schedule state, and source-policy/dedup review indicators |
 | GET | `/ops/dashboard-health?view=summary` | Lightweight Admin first-paint dashboard summary. Avoids full fetch report, run history, discovery report, registry sources, fetcher metrics, storage-health detail, audit artifacts, and performance-profile hydration |
 | GET | `/ops/history?limit=` | Run history (sync/fetcher/discovery) |
@@ -158,6 +161,7 @@ When `sourceRegistry=sqlite`, the registry GET routes and POST mutations read an
 | POST | `/ops/alerts/ack` | Acknowledge alert (`{id: ""}`); active non-dismissible alerts return `{ok: true, ignored: true}` |
 | GET | `/desktop-local-data/startup-metrics?limit=` | Startup performance data |
 | POST | `/desktop-local-data/startup-metric` | Record startup event |
+| POST | `/desktop-local-data/startup-metrics/batch` | Record a bounded batch of startup metric events after first usable render |
 
 ## Diagnostic Artifacts
 
@@ -199,7 +203,7 @@ Known sensitive field names such as tokens, passwords, secrets, API keys, and au
   - `event`: stable event token, preferring an explicit `event`, then `phaseKey`, then `live_task_event`.
   - `timestamp`, `level`, `taskType`, `runId`, `workItemId`, `phaseKey`, and `message`: compatibility fields used by Admin Ops and support diagnostics.
 - `taskProgress`, `workItems`, and `recentEvents` are the support-ready live task contract for fetch/discovery/sync. They should be extended through the shared normalizers rather than by adding task-specific parallel event formats. Discovery uses these fields for wave-level progress, including current stage, stage index/total, generated/survived counts, probe counts, and bounded stage events.
-- `/desktop-local-data/startup-metrics?limit=` returns retained startup diagnostic rows from `data/desktop-startup-metrics.jsonl`. Rows use `schemaVersion: 1`, `ts`, `event`, `category`, and either `fields` for runtime traces or `payload` for browser/page metrics; `browserTsMs` is preserved when browser-created timing is available.
+- `/desktop-local-data/startup-metrics?limit=` returns retained startup diagnostic rows from `data/desktop-startup-metrics.jsonl`. Rows use `schemaVersion: 1`, `ts`, `event`, `category`, and either `fields` for runtime traces or `payload` for browser/page metrics; `browserTsMs` is preserved when browser-created timing is available. Browser startup code should batch/defer page metric writes through `/desktop-local-data/startup-metrics/batch` until after first usable render so metric writes do not compete with first paint.
 - `/ops/storage-metrics` is read-only diagnostics. It returns additive `storageMetrics` for JSON/gzip write counts, serialization and replace durations, compressed/uncompressed byte sizes, registry `.jsonl` journal bytes/rows, and source-sync snapshot size pressure, plus existing route timing counters under `routeCounters`.
 - `/ops/storage-health` is read-only diagnostics for the SQLite runtime store. It returns `{ok, storage}` with migration version, WAL mode, foreign-key state, quick_check status, busy counters, last write error, diagnostics, and current per-surface authority modes. After M6, new stores seed `taskRuns`, `taskEvents`, `syncRuns`, `sourceRuns`, `jobsFeed`, and `sourceRegistry` as SQLite-backed unless a persisted rollback returns the affected surface to JSON.
 - `/ops/discovery-audit-artifacts` is a fixed allowlist diagnostic route for the sheet-directory, web-search, GameDevMap, Gameprog, and Gamesmap discovery audit artifacts. It does not accept path query input, does not expose artifact bodies, and does not widen static `/data` serving.
@@ -207,8 +211,10 @@ Known sensitive field names such as tokens, passwords, secrets, API keys, and au
 - `/ops/fetch-report` keeps its report payload shape. With `sourceRuns=sqlite`, terminal source rows are hydrated from SQLite/archive while `?view=live` remains compact and omits bulky `details`.
 - `/ops/fetch-report/sources` is additive and bounded. It returns `{ok, runId, sources, count, limit, offset, source, warning}` and uses SQLite only while `sourceRuns=sqlite`; otherwise it falls back to the JSON report rows.
 - `/ops/task-state` remains backward-compatible for full diagnostics. Admin startup and other hot paths must use `/ops/task-state?view=summary`; its top-level `tasks` array remains the current-run contract, but rows omit `workItems`, expose `workItemCount`, and bound `recentEvents`.
+- Admin startup must use only first-use summary/ready surfaces before first usable render: `/desktop-local-data/session`, `/desktop-local-data/admin/overview` with `detail: "summary"`, `/ops/health?view=ready`, `/ops/dashboard-health?view=summary`, `/ops/task-state?view=summary`, `/sync/status?view=summary`, and `/registry/conflicts?view=summary`. Full diagnostics such as `/discovery/report`, `/registry/sources`, `/ops/history`, `/ops/fetcher-metrics`, `/ops/discovery-audit-artifacts`, `/ops/task-failure-attempts`, `/ops/performance-profile`, and `/ops/task-live/*` are tab-open, manual-refresh, or deferred post-interactive work only.
 - Pipeline rows in `/ops/history` and Admin Operations Activity are orchestration parent runs. Stage-level diagnostic detail is derived from child Discovery, Fetch, and Sync rows linked by `parentRunId`; the child rows remain visible as normal runs.
 - `/tasks/run-jobs-pipeline-status` keeps the Jobs UI flat progress payload (`currentStep`, `totalSteps`, `percent`, `label`). Ops-facing lifecycle rows use normalized `taskProgress` semantics with `phaseLabel`, `ratio`, and `counts` so Admin diagnostics can render pipeline progress consistently.
+- Source-sync failures during the Jobs pipeline are non-blocking. The pipeline status may finish with `stage: "completed_with_warnings"`, `completedWithWarnings: true`, `syncStatus: "warning"`, and a bounded `syncWarning` object while still preserving `updatesFound` / `refreshRecommended` for the completed discovery/fetch output.
 - `/tasks/jobs-pipeline-schedule` is bridge-runtime only. It persists `jobs-pipeline-schedule-config.json` under the active data dir, is disabled by default, supports only whole-hour intervals from `1` through `168`, computes cadence from terminal pipeline lifecycle rows, collapses missed intervals into one pending run, and never aborts an active pipeline when disabled. `/ops/health.schedule.pipeline` mirrors its current enabled/pending/due/next-run status while preserving the existing `fetcher` and `discovery` schedule keys.
 - `/tasks/abort` is runId-owned and does not support abort-by-type. In-progress abort remains lifecycle `running` with `stage: "aborting"` or `stage: "abort_pending_sync"`, `summary.abortRequestedAt`, and active `taskProgress.phaseKey: "aborting"`. Terminal abort writes lifecycle `canceled` with `terminalReason: "user_abort_requested"`. If non-canceled terminal evidence already exists before abort intent is recorded, the route rejects the request instead of converting that completed run; pipeline parent cancellation may still proceed while already-terminal children finalize normally.
 - Saved-page bridge consumers should keep route calls inside slice-local `frontend/saved/services.js`; page behavior now fans out through `frontend/saved/app/runtime/*.js` and `frontend/saved/app/admin-bridge-state.js`, not through new root facades.
