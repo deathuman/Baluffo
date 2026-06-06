@@ -471,16 +471,7 @@ export function createJobsPipelineController({
 
   async function pollJobsPipelineStatus() {
     try {
-      const [pipelineStatusResult, taskStateResult] = await Promise.allSettled([
-        callJobsBridge("/tasks/run-jobs-pipeline-status"),
-        callJobsBridge("/ops/task-state?view=summary")
-      ]);
-      if (pipelineStatusResult.status !== "fulfilled") {
-        throw pipelineStatusResult.reason;
-      }
-      const payload = pipelineStatusResult.value;
-      const taskStateKnown = taskStateResult.status === "fulfilled";
-      const taskStatePayload = taskStateKnown ? taskStateResult.value : { tasks: [] };
+      const payload = await callJobsBridge("/tasks/run-jobs-pipeline-status");
       jobsPipelineUiState.bridgeOnline = true;
       jobsPipelineUiState.updateTooltipBridgeError = "";
       resetPipelineStatusPollFailures(jobsPipelineUiState);
@@ -488,6 +479,28 @@ export function createJobsPipelineController({
       const active = Boolean(payload?.active);
       const runId = String(payload?.runId || "");
       const trackedRunId = String(jobsPipelineUiState.runId || "");
+      const shouldLoadTaskState = Boolean(
+        active
+        || jobsPipelineUiState.active
+        || jobsPipelineUiState.pendingStart
+        || trackedRunId
+        || jobsPipelineUiState.abortRequested
+        || !jobsPipelineUiState.taskStateSummaryChecked
+      );
+      let taskStateKnown = false;
+      let taskStatePayload = { tasks: [] };
+      if (shouldLoadTaskState) {
+        try {
+          taskStatePayload = await callJobsBridge("/ops/task-state?view=summary");
+          taskStateKnown = true;
+          jobsPipelineUiState.taskStateSummaryChecked = true;
+        } catch {
+          taskStateKnown = false;
+          if (!active && !jobsPipelineUiState.active && !jobsPipelineUiState.pendingStart) {
+            jobsPipelineUiState.taskStateSummaryChecked = true;
+          }
+        }
+      }
       const blockingTask = getBlockingTask(taskStatePayload, trackedRunId);
       reconcileAbortRequest({ pipelinePayload: payload, taskStatePayload, taskStateKnown });
       if (active) {
@@ -533,7 +546,9 @@ export function createJobsPipelineController({
         handlePipelineCompletionStatus(payload);
       } else {
         jobsPipelineUiState.updateTooltipFirstRunBootstrapActive = false;
-        await refreshJobsUpdateTooltipFromHealth();
+        if (!jobsPipelineUiState.updateTooltipFirstRunKnown) {
+          await refreshJobsUpdateTooltipFromHealth();
+        }
         updateJobsPipelineUi({
           running: false,
           disabled: false,

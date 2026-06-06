@@ -173,7 +173,7 @@
 .jobs-page .results-summary {
   font-size: 0.86rem;
   color: var(--text-secondary);
-  min-height: 1.2rem;
+  min-height: 1.35rem;
 }
 
 .jobs-page .jobs-last-updated {
@@ -553,6 +553,7 @@
 .jobs-page .jobs-footer {
   padding-top: 1.1rem;
   font-size: 0.85rem;
+  min-height: 2.35rem;
 }
 
 .jobs-entry-page :focus-visible,

@@ -238,7 +238,7 @@ test("pollJobsPipelineStatus announces completion only after blocking tasks clea
             refreshRecommended: true
           };
         }
-        if (path === "/ops/task-state") {
+        if (path === "/ops/task-state?view=summary") {
           return { tasks: [] };
         }
         if (path === "/ops/dashboard-health?view=summary") {
@@ -287,7 +287,7 @@ test("pollJobsPipelineStatus uses fetch_never_run alert for first-update tooltip
         if (path === "/tasks/run-jobs-pipeline-status") {
           return { active: false, stage: "idle" };
         }
-        if (path === "/ops/task-state") {
+        if (path === "/ops/task-state?view=summary") {
           return { tasks: [] };
         }
         if (path === "/ops/dashboard-health?view=summary") {
@@ -318,6 +318,45 @@ test("pollJobsPipelineStatus uses fetch_never_run alert for first-update tooltip
   }
 });
 
+test("pollJobsPipelineStatus avoids optional task and dashboard summaries on repeated idle polls", async () => {
+  const restoreTimers = installFakeTimers();
+  try {
+    const button = createButtonMock();
+    const uiState = createJobsPipelineUiState();
+    const paths = [];
+
+    const controller = createJobsPipelineController({
+      refs: { jobsPipelineRunBtn: button },
+      jobsPipelineUiState: uiState,
+      callJobsBridge: async path => {
+        paths.push(path);
+        if (path === "/tasks/run-jobs-pipeline-status") return { active: false, stage: "idle" };
+        if (path === "/ops/task-state?view=summary") return { tasks: [] };
+        if (path === "/ops/dashboard-health?view=summary") return { alerts: [] };
+        throw new Error(`Unexpected bridge path: ${path}`);
+      },
+      getAllJobs: () => [],
+      showToast: () => {},
+      setRefreshJobsNeedsAttention: () => {},
+      isErrorStage: payload => Boolean(payload?.error),
+      pollDelayMs: 25,
+      idlePollDelayMs: 50
+    });
+
+    await controller.pollJobsPipelineStatus();
+    await controller.pollJobsPipelineStatus();
+
+    assert.deepEqual(paths, [
+      "/tasks/run-jobs-pipeline-status",
+      "/ops/task-state?view=summary",
+      "/ops/dashboard-health?view=summary",
+      "/tasks/run-jobs-pipeline-status"
+    ]);
+  } finally {
+    restoreTimers();
+  }
+});
+
 test("pollJobsPipelineStatus disables Update jobs with bridge timeout tooltip", async () => {
   const restoreTimers = installFakeTimers();
   try {
@@ -331,7 +370,7 @@ test("pollJobsPipelineStatus disables Update jobs with bridge timeout tooltip", 
         if (path === "/tasks/run-jobs-pipeline-status") {
           throw new Error("Bridge request timed out");
         }
-        if (path === "/ops/task-state") {
+        if (path === "/ops/task-state?view=summary") {
           return { tasks: [] };
         }
         throw new Error(`Unexpected bridge path: ${path}`);
