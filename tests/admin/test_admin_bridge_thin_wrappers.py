@@ -1,6 +1,5 @@
 """Tests for small admin_bridge utility helpers."""
 
-from types import SimpleNamespace
 from unittest import mock
 
 import pytest
@@ -140,50 +139,6 @@ def test_on_bridge_started_runs_lifecycle_cleanup_before_startup_sync_without_le
         "startupSync": {"ok": True, "scheduled": True},
         "pipelineSchedule": {"started": False, "enabled": False},
     }
-
-
-def test_bridge_api_ops_routes_share_entrypoint_ops_api_instance(
-    admin_bridge_entrypoint_root, monkeypatch
-) -> None:
-    ops_api = SimpleNamespace(
-        compute_ops_health=lambda: {"source": "ops_api_health"},
-        compute_ops_dashboard_health=lambda: {"source": "ops_api_dashboard"},
-        compute_fetcher_metrics=lambda **_kw: {"source": "ops_api_fetcher_metrics"},
-        sync_history_from_reports=lambda: [{"source": "ops_api_sync_history"}],
-        get_projected_run_history=lambda: SimpleNamespace(rows=[]),
-        get_lifecycle_run_history_rows=lambda: [],
-        get_task_live_payload=lambda _task_type: {},
-        get_current_task_state_payload=lambda: {"tasks": []},
-        get_current_task_state_summary_payload=lambda: {"tasks": [], "summary": True},
-    )
-    monkeypatch.setattr(admin_bridge, "_get_ops_api", lambda: ops_api)
-    monkeypatch.setattr(
-        admin_bridge,
-        "compute_ops_health",
-        lambda: (_ for _ in ()).throw(AssertionError("used root health wrapper")),
-    )
-    monkeypatch.setattr(
-        admin_bridge,
-        "compute_ops_dashboard_health",
-        lambda: (_ for _ in ()).throw(AssertionError("used root dashboard wrapper")),
-    )
-    monkeypatch.setattr(
-        admin_bridge,
-        "compute_fetcher_metrics",
-        lambda **_kw: (_ for _ in ()).throw(AssertionError("used root fetcher metrics wrapper")),
-    )
-    monkeypatch.setattr(
-        admin_bridge,
-        "sync_history_from_reports",
-        lambda: (_ for _ in ()).throw(AssertionError("used root sync history wrapper")),
-    )
-
-    api = admin_bridge.build_bridge_api(admin_bridge.RUNTIME_CONFIG)
-
-    assert api.compute_ops_health() == {"source": "ops_api_health"}
-    assert api.compute_ops_dashboard_health() == {"source": "ops_api_dashboard"}
-    assert api.compute_fetcher_metrics(window_runs=1) == {"source": "ops_api_fetcher_metrics"}
-    assert api.sync_history_from_reports() == [{"source": "ops_api_sync_history"}]
 
 
 def test_sync_worker_writes_completed_row_with_summary(admin_bridge_entrypoint_root):

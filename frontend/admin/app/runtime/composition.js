@@ -17,7 +17,7 @@ import {
   renderUsersTableHtml
 } from "../../render.js?v=18";
 import { adminService } from "../../services.js";
-import { createAdminAuthController } from "../auth.js?v=3";
+import { createAdminAuthController } from "../auth.js?v=4";
 import { createAdminDiscoveryController } from "../discovery.js?v=1";
 import {
   createAdminFetcherController

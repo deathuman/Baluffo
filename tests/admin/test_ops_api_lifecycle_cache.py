@@ -1,7 +1,4 @@
-import json
-import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from unittest import mock
 
@@ -13,21 +10,15 @@ def _make_ops_api(
     *,
     current_rows: list[dict[str, object]],
     recent_rows: list[dict[str, object]],
-    current_delay_s: float = 0.0,
-    recent_delay_s: float = 0.0,
 ) -> tuple[ops_api_module.OpsApi, dict[str, int]]:
     calls = {"current": 0, "recent": 0, "schedule": 0}
 
     def current() -> list[dict[str, object]]:
         calls["current"] += 1
-        if current_delay_s > 0:
-            time.sleep(current_delay_s)
         return [dict(row) for row in current_rows]
 
     def recent() -> list[dict[str, object]]:
         calls["recent"] += 1
-        if recent_delay_s > 0:
-            time.sleep(recent_delay_s)
         return [dict(row) for row in recent_rows]
 
     def pipeline_schedule() -> dict[str, object]:
@@ -136,8 +127,7 @@ def test_ops_api_lifecycle_cache_returns_copied_rows(tmp_path) -> None:
 
 
 def test_ops_api_lifecycle_cache_expires_quickly(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(ops_api_module, "_CURRENT_LIFECYCLE_ROW_CACHE_TTL_SECONDS", 0.001)
-    monkeypatch.setattr(ops_api_module, "_RECENT_LIFECYCLE_ROW_CACHE_TTL_SECONDS", 0.001)
+    monkeypatch.setattr(ops_api_module, "_LIFECYCLE_ROW_CACHE_TTL_SECONDS", 0.001)
     current_rows: list[dict[str, object]] = [{"type": "fetch", "runId": "fetch_active_old"}]
     api, calls = _make_ops_api(tmp_path, current_rows=current_rows, recent_rows=[])
 
@@ -147,136 +137,3 @@ def test_ops_api_lifecycle_cache_expires_quickly(tmp_path, monkeypatch) -> None:
 
     assert [row["runId"] for row in api.get_projected_run_history().rows] == ["fetch_active_new"]
     assert calls == {"current": 2, "recent": 2, "schedule": 0}
-
-
-def test_ops_api_lifecycle_cache_coalesces_concurrent_misses(tmp_path) -> None:
-    api, calls = _make_ops_api(
-        tmp_path,
-        current_rows=[{"type": "fetch", "runId": "fetch_active_slow"}],
-        recent_rows=[],
-        current_delay_s=0.05,
-    )
-    gate = threading.Barrier(4)
-
-    def read_summary() -> dict[str, object]:
-        gate.wait(timeout=2)
-        return api.get_current_task_state_summary_payload()
-
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        results = list(executor.map(lambda _index: read_summary(), range(4)))
-
-    assert calls == {"current": 1, "recent": 0, "schedule": 0}
-    assert {result["count"] for result in results} == {1}
-    assert {result["tasks"][0]["runId"] for result in results} == {"fetch_active_slow"}
-
-
-def test_ops_api_summary_task_state_does_not_read_terminal_reports_while_idle(
-    tmp_path,
-) -> None:
-    (tmp_path / "jobs-fetch-report.json").write_text("{not-json", encoding="utf-8")
-    (tmp_path / "source-discovery-report.json").write_text("{not-json", encoding="utf-8")
-    api, calls = _make_ops_api(tmp_path, current_rows=[], recent_rows=[])
-
-    payload = api.get_current_task_state_summary_payload()
-
-    assert payload == {"tasks": [], "count": 0, "diagnostics": [], "summary": True}
-    assert calls == {"current": 1, "recent": 0, "schedule": 0}
-
-
-def test_ops_api_dashboard_health_uses_compact_fetch_projection(tmp_path) -> None:
-    (tmp_path / "jobs-fetch-report.json").write_text(
-        json.dumps(
-            {
-                "summary": {"outputCount": 10, "failedSources": 0, "sourceCount": 1},
-                "sources": [
-                    {
-                        "name": "Studio Social",
-                        "status": "ok",
-                        "durationMs": 1200,
-                        "keptCount": 2,
-                        "rawHtml": "x" * 10000,
-                    }
-                ],
-                "sourceHealth": {"ok": True},
-                "providerCoverage": {"lever": 1},
-                "socialSummary": {"keptCount": 2, "channels": {}},
-            }
-        ),
-        encoding="utf-8",
-    )
-    api, _calls = _make_ops_api(tmp_path, current_rows=[], recent_rows=[])
-
-    projection = api._fetch_dashboard_projection_cached()
-    full_report = api._fetch_dashboard_report_cached()
-    health = api.compute_ops_dashboard_health()
-
-    assert projection["sources"] == [
-        {"name": "Studio Social", "status": "ok", "durationMs": 1200, "keptCount": 2}
-    ]
-    assert "rawHtml" not in projection["sources"][0]
-    assert full_report["sources"][0]["rawHtml"] == "x" * 10000
-    assert health["kpis"]["sourceHealth"] == {"ok": True}
-    assert health["kpis"]["providerCoverage"] == {"lever": 1}
-    assert health["kpis"]["failedSourceRatioLatest"] == 0.0
-
-
-def test_ops_api_summary_task_state_uses_compact_active_fetch_artifact(tmp_path) -> None:
-    work_items = [
-        {"source": f"source-{index}", "status": "pending", "details": "x" * 200}
-        for index in range(12)
-    ]
-    recent_events = [
-        {"event": "source_progress", "message": f"event-{index}", "index": index}
-        for index in range(8)
-    ]
-    (tmp_path / "jobs-fetch-tasks.json").write_text(
-        json.dumps(
-            {
-                "taskType": "fetch",
-                "runId": "fetch_active_summary",
-                "active": True,
-                "taskProgress": {
-                    "phaseKey": "execute_sources",
-                    "phaseLabel": "Executing sources",
-                },
-                "workItems": work_items,
-                "recentEvents": recent_events,
-                "summary": {"sourceCount": 12},
-            }
-        ),
-        encoding="utf-8",
-    )
-    api, calls = _make_ops_api(
-        tmp_path,
-        current_rows=[
-            {
-                "type": "fetch",
-                "runId": "fetch_active_summary",
-                "lifecycleStatus": "running",
-                "startedAt": "2026-06-05T09:59:00+00:00",
-                "heartbeatAt": "2026-06-05T09:59:30+00:00",
-            }
-        ],
-        recent_rows=[],
-    )
-
-    payload = api.get_current_task_state_summary_payload()
-    row = payload["tasks"][0]
-
-    assert payload["summary"] is True
-    assert payload["count"] == 1
-    assert row["runId"] == "fetch_active_summary"
-    assert row["active"] is True
-    assert row["taskProgress"]["phaseKey"] == "execute_sources"
-    assert row["summary"] == {"sourceCount": 12}
-    assert row["workItemCount"] == 12
-    assert "workItems" not in row
-    assert row["recentEventCount"] == 8
-    assert [event["message"] for event in row["recentEvents"]] == [
-        "event-3",
-        "event-4",
-        "event-5",
-        "event-6",
-        "event-7",
-    ]
-    assert calls == {"current": 1, "recent": 0, "schedule": 0}

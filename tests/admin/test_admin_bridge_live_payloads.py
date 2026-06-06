@@ -6,7 +6,7 @@ from unittest import mock
 import pytest
 
 from src import admin_bridge
-from src.bridge.ops_api import _compact_task_state_row
+from src.bridge.ops_api import _compact_task_state_payload
 from tests.admin._runtime_helpers import (
     active_progress,
     completed_progress,
@@ -669,36 +669,41 @@ def test_get_current_task_state_payload_cases(case: _CurrentTaskStateCase) -> No
 
 def test_current_task_state_summary_payload_stays_bounded_for_large_work_items() -> None:
     payload = {
-        "taskType": "fetch",
-        "runId": "fetch_large_1",
-        "active": True,
-        "workItems": [
+        "tasks": [
             {
-                "source": f"source-{index}",
-                "status": "pending",
-                "details": "x" * 1000,
+                "taskType": "fetch",
+                "runId": "fetch_large_1",
+                "active": True,
+                "workItems": [
+                    {
+                        "source": f"source-{index}",
+                        "status": "pending",
+                        "details": "x" * 1000,
+                    }
+                    for index in range(5000)
+                ],
+                "recentEvents": [
+                    {
+                        "event": "source_progress",
+                        "message": "x" * 1000,
+                        "index": index,
+                    }
+                    for index in range(200)
+                ],
             }
-            for index in range(5000)
         ],
-        "recentEvents": [
-            {
-                "event": "source_progress",
-                "message": "x" * 1000,
-                "index": index,
-            }
-            for index in range(200)
-        ],
+        "count": 1,
     }
 
-    row = _compact_task_state_row(payload)
+    summary = _compact_task_state_payload(payload)
+    row = summary["tasks"][0]
 
+    assert summary["summary"] is True
     assert "workItems" not in row
     assert row["workItemCount"] == 5000
     assert row["recentEventCount"] == 200
     assert len(row["recentEvents"]) == 5
-    assert (
-        len(json.dumps({"tasks": [row], "count": 1, "summary": True}).encode("utf-8")) < 256 * 1024
-    )
+    assert len(json.dumps(summary).encode("utf-8")) < 256 * 1024
 
 
 def test_get_task_live_payload_fetch_preserves_shared_contract() -> None:

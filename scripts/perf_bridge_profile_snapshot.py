@@ -16,7 +16,6 @@ from scripts.perf_complete import (
     DEFAULT_OUTPUT_ROOT,
     capture_live_bridge_profile,
     generate_run_token,
-    parse_endpoint_sequence,
     parse_timeout_sequence,
 )
 
@@ -36,23 +35,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="",
         help="Comma-separated timeout seconds, for example 3,10,30. Overrides --timeout.",
     )
-    parser.add_argument(
-        "--burst-rounds",
-        type=int,
-        default=0,
-        help="Optional concurrent read-only burst rounds for Ops route contention sampling.",
-    )
-    parser.add_argument(
-        "--burst-concurrency",
-        type=int,
-        default=4,
-        help="Concurrent workers for optional burst sampling.",
-    )
-    parser.add_argument(
-        "--burst-endpoints",
-        default="",
-        help="Comma-separated endpoints for optional burst sampling.",
-    )
     return parser.parse_args(argv)
 
 
@@ -67,9 +49,6 @@ def main(argv: list[str] | None = None) -> int:
         timeout_sequence=parse_timeout_sequence(str(args.timeouts), fallback=float(args.timeout))
         if str(args.timeouts or "").strip()
         else None,
-        burst_rounds=int(args.burst_rounds or 0),
-        burst_concurrency=int(args.burst_concurrency or 1),
-        burst_endpoints=parse_endpoint_sequence(str(args.burst_endpoints or "")),
     )
     print(json.dumps(summary, indent=2, ensure_ascii=False), flush=True)
     return 0

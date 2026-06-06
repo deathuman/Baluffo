@@ -10,30 +10,20 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
-## [0.2.46] - 2026-06-06
+## [0.2.47] - 2026-06-06
 
 ### Added
-- Live bridge profiling now has an optional read-only burst sampler to capture concurrent Ops route p50/p95/max evidence for Umbrel and desktop bridges.
-
-### Changed
-- Admin defers low-priority Ops diagnostics longer during first load so dashboard-health and task-state summary requests are not competing with background detail panels.
+- Added a Chrome DevTools trace summary tool for `.json` and `.json.gz` Performance exports, and optional `perf:complete` ingestion so LCP elements, slow browser resources, user timing spans, and long main-thread tasks are visible beside backend profiling.
 
 ### Fixed
-- Umbrel Ops route read models now coalesce concurrent cache misses for shared projections and lifecycle rows, reducing duplicated work during Admin polling bursts.
-- `/ops/dashboard-health` now uses a compact dashboard fetch projection while preserving the full fetch report cache for fetcher metrics and diagnostics.
+- Rolled back the Umbrel container runtime to the `0.2.44` Admin readiness code path after live Chrome traces showed the later Ops route cache/coalescing stack could leave Admin waiting on slow discovery, registry, sync, and dashboard routes for many seconds.
+- Restored the earlier Admin behavior where profile overview and sync status render without being blocked by first-load diagnostics fan-out.
+- Stopped the Admin first-load path from automatically loading full discovery source/report data; operators can still load source tables manually or through task-completion refreshes.
 
 ### Notes
-- This is a container/Umbrel patch. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- This is a container/Umbrel recovery patch. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
 - This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
-
-## [0.2.45] - 2026-06-05
-
-### Fixed
-- Umbrel Ops routes now use bounded shared read models for task-state summaries, dashboard-health support projections, registry summary counts, discovery audit diagnostics, and task failure-attempt diagnostics, reducing repeated `/data` reads and multi-second Admin route variance.
-
-### Notes
-- This is a container/Umbrel patch. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
-- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+- `0.2.45` and `0.2.46` remain historical evidence, but should be treated as degraded for the private Umbrel install until the Admin boot path is redesigned around Chrome-trace acceptance criteria.
 
 ## [0.2.44] - 2026-06-05
 

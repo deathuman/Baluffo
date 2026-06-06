@@ -252,30 +252,6 @@ def test_live_bridge_sampler_can_compare_multiple_timeouts(tmp_path: Path, monke
     assert {row["timeoutS"] for row in summary["requests"]} == {3.0, 10.0}
 
 
-def test_live_bridge_sampler_records_optional_burst_summary(tmp_path: Path, monkeypatch) -> None:
-    _FakeHttpConnection.calls = []
-    monkeypatch.setattr(perf_complete.http.client, "HTTPConnection", _FakeHttpConnection)
-
-    summary = perf_complete.capture_live_bridge_profile(
-        bridge_base_url="http://192.168.50.61:8877",
-        output_dir=tmp_path,
-        burst_rounds=2,
-        burst_concurrency=3,
-        burst_endpoints=["/ops/health", "/ops/dashboard-health"],
-    )
-
-    burst = summary["burst"]
-    assert burst["enabled"] is True
-    assert burst["rounds"] == 2
-    assert burst["concurrency"] == 3
-    assert len(burst["requests"]) == 4
-    assert {row["endpoint"] for row in burst["summary"]} == {
-        "/ops/health",
-        "/ops/dashboard-health",
-    }
-    assert all(row["count"] == 2 for row in burst["summary"])
-
-
 def test_optimization_targets_include_bridge_profile_rows() -> None:
     benchmarks = {
         "discovery": {"medianDurationMs": 1000},

@@ -4,7 +4,6 @@ import { createAdminOpsController } from "../../../frontend/admin/app/ops.js";
 import {
   createDeferredRenderScheduler,
   createElement,
-  stubScheduledTimers,
 } from "./helpers/admin-controller-test-helpers.mjs";
 
 test("admin ops controller renders health metrics and dedup lists separately", async () => {
@@ -31,17 +30,6 @@ test("admin ops controller renders health metrics and dedup lists separately", a
   };
   const calls = [];
   const renderScheduler = createDeferredRenderScheduler();
-  const detailTimers = [];
-  const timers = stubScheduledTimers({
-    setTimeoutImpl(callback, ms) {
-      if (ms === 1250) {
-        detailTimers.push(callback);
-      } else if (ms === 300) {
-        callback();
-      }
-      return { unref() {} };
-    }
-  });
   const fetcherMetricsPayload = {
     latestRun: {
       dedupEvidence: {
@@ -98,17 +86,10 @@ test("admin ops controller renders health metrics and dedup lists separately", a
     renderScheduler: renderScheduler.schedule
   });
 
-  try {
-    await controller.loadOpsHealthData();
-    detailTimers.forEach(callback => callback());
-    for (let index = 0; index < 12; index += 1) {
-      await Promise.resolve();
-    }
-    renderScheduler.flush();
-  } finally {
-    controller.stopOpsHealthPolling();
-    timers.restore();
-  }
+  await controller.loadOpsHealthData();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  renderScheduler.flush();
+  controller.stopOpsHealthPolling();
 
   assert.ok(calls.filter(call => call.kind === "health").length >= 2);
   assert.ok(calls.filter(call => call.kind === "dedup").length >= 2);

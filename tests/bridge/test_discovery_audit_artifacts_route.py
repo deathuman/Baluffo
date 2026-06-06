@@ -68,26 +68,6 @@ def test_discovery_audit_artifacts_route_summarizes_bounded_json(tmp_path: Path)
     assert "https://example.invalid" not in json.dumps(row)
 
 
-def test_discovery_audit_artifacts_route_cache_returns_copies_and_refreshes(
-    tmp_path: Path,
-) -> None:
-    artifact = tmp_path / "sheet-directory-discovery-audit.json"
-    artifact.write_text(json.dumps({"status": "ok"}), encoding="utf-8")
-
-    first = _call_route(tmp_path)
-    first["artifacts"][0]["summary"]["status"] = "mutated"
-    second = _call_route(tmp_path)
-    artifact.write_text(
-        json.dumps({"status": "failed", "failures": [{"url": "https://hidden.invalid"}]}),
-        encoding="utf-8",
-    )
-    third = _call_route(tmp_path)
-
-    assert second["artifacts"][0]["summary"]["status"] == "ok"
-    assert third["artifacts"][0]["summary"]["status"] == "failed"
-    assert third["artifacts"][0]["summary"]["failuresCount"] == 1
-
-
 def test_discovery_audit_artifacts_route_marks_malformed_json(tmp_path: Path) -> None:
     (tmp_path / "web-search-discovery-audit.json").write_text("{not-json", encoding="utf-8")
 

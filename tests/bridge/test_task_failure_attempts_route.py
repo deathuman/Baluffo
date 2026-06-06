@@ -36,37 +36,6 @@ def test_task_failure_attempts_route_handles_missing_reports(tmp_path: Path) -> 
     assert "discovery_report_missing" in payload["warnings"]
 
 
-def test_task_failure_attempts_route_cache_returns_copies_and_refreshes(
-    tmp_path: Path,
-) -> None:
-    fetch_path = tmp_path / "jobs-fetch-report.json"
-    _write_json(
-        fetch_path,
-        {
-            "runId": "fetch-one",
-            "summary": {"outputCount": 1, "failedSources": 0},
-            "sources": [],
-        },
-    )
-
-    first = _call_route(tmp_path)
-    first["fetch"]["runId"] = "mutated"
-    second = _call_route(tmp_path)
-    _write_json(
-        fetch_path,
-        {
-            "runId": "fetch-two",
-            "summary": {"outputCount": 2, "failedSources": 1},
-            "sources": [{"name": "broken", "status": "failed", "errorType": "timeout"}],
-        },
-    )
-    third = _call_route(tmp_path)
-
-    assert second["fetch"]["runId"] == "fetch-one"
-    assert third["fetch"]["runId"] == "fetch-two"
-    assert third["fetch"]["hardFailureCount"] == 1
-
-
 def test_task_failure_attempts_route_classifies_fetch_expected_exclusions_and_warnings(
     tmp_path: Path,
 ) -> None:

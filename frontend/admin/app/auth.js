@@ -21,7 +21,6 @@ export function createAdminAuthController({
   _stopBridgeStatusWatch,
   _stopOpsHealthPolling,
   refreshOverview,
-  loadDiscoveryData,
   loadDiscoveryConfig,
   loadOpsHealthData,
   loadSyncStatus,
@@ -31,8 +30,6 @@ export function createAdminAuthController({
   logAdminError,
   _showToast
 }) {
-  let initialDiscoveryLoadStarted = false;
-
   function markStep(name, payload) {
     if (typeof markAdminStep === "function") {
       markAdminStep(name, payload);
@@ -70,23 +67,6 @@ export function createAdminAuthController({
           afterSettled();
         }
       });
-  }
-
-  function startInitialDiscoveryLoad() {
-    if (initialDiscoveryLoadStarted) return;
-    initialDiscoveryLoadStarted = true;
-    runInitialTask({
-      start: "admin_discovery_fetch_start",
-      end: "admin_discovery_fetch_done",
-      measure: "admin_discovery_fetch",
-      errorContext: "Failed to load discovery data",
-      task: () => loadDiscoveryData({
-        background: true,
-        forceRender: true,
-        skipIfFreshMs: 5000,
-        suppressPlaceholders: true
-      })
-    });
   }
 
   function startInitialOverviewLoad() {
@@ -144,8 +124,7 @@ export function createAdminAuthController({
       end: "admin_ops_health_fetch_done",
       measure: "admin_ops_health_fetch",
       errorContext: "Failed to load ops health data",
-      task: () => loadOpsHealthData(),
-      afterSettled: startInitialDiscoveryLoad
+      task: () => loadOpsHealthData()
     });
     runInitialTask({
       start: "admin_sync_fetch_start",

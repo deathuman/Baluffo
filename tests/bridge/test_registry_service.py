@@ -505,45 +505,6 @@ def test_registry_service_json_authority_summary_avoids_full_normalization(
         close_storage_stores()
 
 
-def test_registry_service_summary_cache_returns_copies_and_refreshes_on_file_change(
-    tmp_path: Path,
-) -> None:
-    active_path = tmp_path / "source-registry-active.json"
-    pending_path = tmp_path / "source-registry-pending.json"
-    rejected_path = tmp_path / "source-registry-rejected.json"
-    sr.save_json_atomic(active_path, [{"id": "active-1", "name": "Active"}])
-    sr.save_json_atomic(pending_path, [])
-    sr.save_json_atomic(rejected_path, [])
-    try:
-        store = get_storage_store(tmp_path)
-        store.set_authority_mode("sourceRegistry", "json", reason="test-json-authority")
-        service = RegistryService(
-            paths=RegistryPaths(
-                active=active_path,
-                pending=pending_path,
-                rejected=rejected_path,
-            ),
-            default_active=[],
-            normalize_manual_static=lambda row: row,
-        )
-
-        first = service.get_summary_payload()
-        first["activeCount"] = 999
-        second = service.get_summary_payload()
-        sr.save_json_atomic(
-            pending_path,
-            [{"id": "pending-1", "name": "Pending", "adapter": "greenhouse"}],
-        )
-        third = service.get_summary_payload()
-
-        assert second["activeCount"] == 1
-        assert second["pendingCount"] == 0
-        assert third["activeCount"] == 1
-        assert third["pendingCount"] == 1
-    finally:
-        close_storage_stores()
-
-
 def test_registry_service_exact_summary_uses_normalized_rows_without_saving(
     tmp_path: Path, monkeypatch: Any
 ) -> None:

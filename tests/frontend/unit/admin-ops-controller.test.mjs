@@ -898,7 +898,7 @@ test("admin ops controller skips stale deferred detail renders after a newer ref
 
   await controller.loadOpsHealthData();
   await controller.loadOpsHealthData();
-  await new Promise(resolve => setTimeout(resolve, 2600));
+  await new Promise(resolve => setTimeout(resolve, 0));
   renderScheduler.flush();
   controller.stopOpsHealthPolling();
 

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import sqlite3
-import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from hashlib import sha256
@@ -117,38 +116,6 @@ class RegistryService:
             "duplicates": [],
             "safeAutomation": self._empty_safe_automation_report(),
         }
-        self._summary_cache_lock = threading.RLock()
-        self._summary_cache: tuple[tuple[Any, ...], dict[str, Any]] | None = None
-
-    def _clear_summary_cache(self) -> None:
-        with self._summary_cache_lock:
-            self._summary_cache = None
-
-    def _file_signature(self, path: Path) -> tuple[str, bool, int, int]:
-        try:
-            stat = path.stat()
-        except OSError:
-            return (str(path), False, 0, 0)
-        return (str(path), True, int(stat.st_size), int(stat.st_mtime_ns))
-
-    def _registry_storage_signature(self, mode: str) -> tuple[Any, ...]:
-        paths: list[Path] = []
-        for raw_path in (self._paths.active, self._paths.pending, self._paths.rejected):
-            path = Path(raw_path)
-            paths.append(path)
-            if path.suffix != ".gz":
-                paths.append(path.with_name(path.name + ".gz"))
-            if path.name.endswith(".json"):
-                paths.append(path.with_name(f"{path.name[:-5]}.jsonl"))
-        tombstones = self._tombstones_path()
-        paths.extend(
-            [
-                tombstones,
-                tombstones.with_name(tombstones.name + ".gz"),
-                tombstones.with_name("source-registry-tombstones.jsonl"),
-            ]
-        )
-        return (str(mode or "json"), tuple(self._file_signature(path) for path in paths))
 
     def _runtime_store(self) -> SourceRegistryRuntimeStore:
         if self._runtime_store_factory is not None:
@@ -380,19 +347,14 @@ class RegistryService:
                     reason="source_registry_tombstones_sqlite",
                 )
                 self._save_state_json(state)
-                saved = self._save_tombstones_json(normalized)
-                self._clear_summary_cache()
-                return saved
+                return self._save_tombstones_json(normalized)
             except _STORAGE_OPERATION_ERRORS as exc:
                 self._rollback_to_json(
                     "source_registry_tombstone_write_failed",
                     str(exc),
                 )
-                saved = self._save_tombstones_json(normalized)
-                self._clear_summary_cache()
-                return saved
+                return self._save_tombstones_json(normalized)
         saved = self._save_tombstones_json(normalized)
-        self._clear_summary_cache()
         if mode == "shadow":
             self._mirror_state_to_sqlite(
                 self._load_json_state_normalized(save_on_change=False),
@@ -714,11 +676,6 @@ class RegistryService:
 
     def get_summary_payload(self) -> dict[str, Any]:
         mode = self._authority_mode()
-        signature = self._registry_storage_signature(mode)
-        with self._summary_cache_lock:
-            cached = self._summary_cache
-            if cached is not None and cached[0] == signature:
-                return dict(cached[1])
         if mode == "sqlite":
             try:
                 summary = self._runtime_store().current_summary()
@@ -727,7 +684,7 @@ class RegistryService:
                         json_summary = self._cheap_json_summary_payload(
                             reason="sqlite_export_summary"
                         )
-                        payload = {
+                        return {
                             **json_summary,
                             "authorityMode": mode,
                             "generation": str(summary.get("generation") or ""),
@@ -736,27 +693,18 @@ class RegistryService:
                             "sqliteStateHash": str(summary.get("stateHash") or ""),
                             "sqliteTombstoneHash": str(summary.get("tombstoneHash") or ""),
                         }
-                        with self._summary_cache_lock:
-                            self._summary_cache = (signature, dict(payload))
-                        return dict(payload)
-                    payload = {
+                    return {
                         **summary,
                         "authorityMode": mode,
                         "summaryExact": False,
                         "countBasis": "storage",
                     }
-                    with self._summary_cache_lock:
-                        self._summary_cache = (signature, dict(payload))
-                    return dict(payload)
             except _STORAGE_OPERATION_ERRORS:
                 pass
-        payload = {
+        return {
             **self._cheap_json_summary_payload(reason=f"{mode}_summary"),
             "authorityMode": mode,
         }
-        with self._summary_cache_lock:
-            self._summary_cache = (signature, dict(payload))
-        return dict(payload)
 
     def persist_state(
         self, state: dict[str, list[dict[str, Any]]]
@@ -777,12 +725,10 @@ class RegistryService:
                 )
                 self._save_state_json(state)
                 self._save_tombstones_json(tombstones)
-                self._clear_summary_cache()
                 return
             except _STORAGE_OPERATION_ERRORS as exc:
                 self._rollback_to_json("source_registry_sqlite_write_failed", str(exc))
         self._save_state_json(state)
-        self._clear_summary_cache()
         if mode == "shadow":
             self._mirror_state_to_sqlite(state, reason="source_registry_shadow_mirror")
 

@@ -26,40 +26,10 @@ const OPS_PERFORMANCE_PROFILE_PATH = "/ops/performance-profile";
 const SOURCE_POLICY_DETAIL_PATH = "/source-policy/recommendations";
 const REGISTRY_CONFLICTS_SUMMARY_PATH = "/registry/conflicts?view=summary";
 const REGISTRY_CONFLICTS_DETAIL_PATH = "/registry/conflicts";
-const OPS_DEFERRED_DIAGNOSTICS_CONCURRENCY = 2;
-const OPS_DEFERRED_DIAGNOSTICS_STAGGER_MS = 300;
-const OPS_DEFERRED_DIAGNOSTICS_INITIAL_DELAY_MS = 1250;
 
 function maybeUnrefTimer(timer) {
   timer?.unref?.();
   return timer;
-}
-
-function delay(ms) {
-  return new Promise(resolve => {
-    maybeUnrefTimer(setTimeout(resolve, Math.max(0, Number(ms) || 0)));
-  });
-}
-
-async function runLimitedSettled(items, worker, { concurrency = 2, staggerMs = 0 } = {}) {
-  const rows = Array.isArray(items) ? items : [];
-  const results = new Array(rows.length);
-  let nextIndex = 0;
-  async function runWorker() {
-    while (nextIndex < rows.length) {
-      const index = nextIndex;
-      nextIndex += 1;
-      if (staggerMs > 0 && index > 0) await delay(staggerMs);
-      try {
-        results[index] = { status: "fulfilled", value: await worker(rows[index], index) };
-      } catch (reason) {
-        results[index] = { status: "rejected", reason };
-      }
-    }
-  }
-  const workerCount = Math.max(1, Math.min(Math.max(1, Number(concurrency) || 1), rows.length || 1));
-  await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
-  return results;
 }
 
 const OPS_TAB_KEYS = new Set(["overview", "discovery", "source-policy", "registry-conflicts", "dedup"]);
@@ -512,7 +482,7 @@ export function createOpsHealthController({
   async function handleRefreshAuditArtifacts() {
     state.latestDiscoveryAuditArtifactsPayload = { ok: true, artifacts: [] };
     try {
-      await loadOpsOverviewDetailData(opsRenderToken, { foreground: true });
+      await loadOpsOverviewDetailData(opsRenderToken);
       showToast("Discovery audit artifacts refreshed.", "success");
     } catch (err) {
       showToast(`Could not refresh discovery audit artifacts: ${getErrorMessage(err)}`, "warn");
@@ -522,7 +492,7 @@ export function createOpsHealthController({
   async function handleRefreshTaskFailureAttempts() {
     state.latestTaskFailureAttemptsPayload = { ok: true, fetch: {}, discovery: {}, warnings: [] };
     try {
-      await loadOpsOverviewDetailData(opsRenderToken, { foreground: true });
+      await loadOpsOverviewDetailData(opsRenderToken);
       showToast("Task failure-attempt diagnostics refreshed.", "success");
     } catch (err) {
       showToast(`Could not refresh task failure-attempt diagnostics: ${getErrorMessage(err)}`, "warn");
@@ -532,7 +502,7 @@ export function createOpsHealthController({
   async function handleRefreshPerformanceProfile() {
     state.latestOpsPerformanceProfilePayload = { ok: true, routeTimings: { routes: [] }, operationTimings: { operations: [] } };
     try {
-      await loadOpsOverviewDetailData(opsRenderToken, { foreground: true });
+      await loadOpsOverviewDetailData(opsRenderToken);
       showToast("Performance diagnostics refreshed.", "success");
     } catch (err) {
       showToast(`Could not refresh performance diagnostics: ${getErrorMessage(err)}`, "warn");
@@ -876,7 +846,7 @@ export function createOpsHealthController({
     });
   }
 
-  function loadOpsOverviewDetailData(renderToken = opsRenderToken, options = {}) {
+  function loadOpsOverviewDetailData(renderToken = opsRenderToken) {
     const detailLoad = (async () => {
       const [
         historyResult,
@@ -884,21 +854,13 @@ export function createOpsHealthController({
         auditArtifactsResult,
         taskFailureAttemptsResult,
         performanceProfileResult
-      ] = await runLimitedSettled(
-        [
-          OPS_HISTORY_DETAIL_PATH,
-          OPS_FETCHER_METRICS_DETAIL_PATH,
-          OPS_DISCOVERY_AUDIT_ARTIFACTS_PATH,
-          OPS_TASK_FAILURE_ATTEMPTS_PATH,
-          OPS_PERFORMANCE_PROFILE_PATH
-        ],
-        route => getBridge(route),
-        {
-          concurrency: OPS_DEFERRED_DIAGNOSTICS_CONCURRENCY,
-          staggerMs: options?.foreground ? 0 : OPS_DEFERRED_DIAGNOSTICS_STAGGER_MS
-        }
-      );
-      if (renderToken !== opsRenderToken) return;
+      ] = await Promise.allSettled([
+        getBridge(OPS_HISTORY_DETAIL_PATH),
+        getBridge(OPS_FETCHER_METRICS_DETAIL_PATH),
+        getBridge(OPS_DISCOVERY_AUDIT_ARTIFACTS_PATH),
+        getBridge(OPS_TASK_FAILURE_ATTEMPTS_PATH),
+        getBridge(OPS_PERFORMANCE_PROFILE_PATH)
+      ]);
       let changed = false;
       if (
         historyResult.status === "fulfilled"
@@ -957,8 +919,8 @@ export function createOpsHealthController({
 
   function scheduleOpsOverviewDetailData(renderToken = opsRenderToken) {
     maybeUnrefTimer(setTimeout(() => {
-      loadOpsOverviewDetailData(renderToken, { foreground: false }).catch(() => {});
-    }, OPS_DEFERRED_DIAGNOSTICS_INITIAL_DELAY_MS));
+      loadOpsOverviewDetailData(renderToken).catch(() => {});
+    }, 0));
   }
 
   async function loadSourcePolicyDetail({ force = false } = {}) {

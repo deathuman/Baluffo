@@ -133,7 +133,7 @@ test("admin auth controller initializes the composed admin view immediately", as
   assert.ok(calls.includes("startBridgeStatusWatch"));
   assert.ok(calls.includes("awaitLocalDataReady"));
   assert.ok(calls.includes("refreshOverview:summary:true"));
-  assert.ok(calls.includes("loadDiscoveryData:true:true"));
+  assert.equal(calls.some(item => item.startsWith("loadDiscoveryData:")), false);
   assert.ok(calls.includes("loadOpsHealthData"));
   assert.equal(calls.filter(item => item === "opsReadinessShell").length, 2);
   assert.equal(calls.includes("opsPlaceholder:Loading operations health..."), false);
@@ -155,10 +155,7 @@ test("admin auth controller initializes the composed admin view immediately", as
     "measure:admin_auth_init",
     "mark:admin_overview_fetch_start",
     "mark:admin_overview_fetch_done",
-    "measure:admin_overview_fetch",
-    "mark:admin_discovery_fetch_start",
-    "mark:admin_discovery_fetch_done",
-    "measure:admin_discovery_fetch"
+    "measure:admin_overview_fetch"
   ]) {
     assert.ok(perfNames.includes(expected), expected);
   }

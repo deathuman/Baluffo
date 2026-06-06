@@ -4,7 +4,6 @@ import { createAdminOpsController } from "../../../frontend/admin/app/ops.js";
 import {
   createDeferredRenderScheduler,
   createElement,
-  stubScheduledTimers,
 } from "./helpers/admin-controller-test-helpers.mjs";
 
 async function flushAdminOpsBackground() {
@@ -51,17 +50,6 @@ test("admin ops controller lazy-loads discovery audit artifacts into metrics", a
     operationTimings: { operations: [{ label: "ops.dashboard.history", count: 1, p95Ms: 4 }] }
   };
   const renderScheduler = createDeferredRenderScheduler();
-  const detailTimers = [];
-  const timers = stubScheduledTimers({
-    setTimeoutImpl(callback, ms) {
-      if (ms === 1250) {
-        detailTimers.push(callback);
-      } else if (ms === 300) {
-        callback();
-      }
-      return { unref() {} };
-    }
-  });
   const controller = createAdminOpsController({
     state,
     refs,
@@ -109,20 +97,11 @@ test("admin ops controller lazy-loads discovery audit artifacts into metrics", a
     renderScheduler: renderScheduler.schedule
   });
 
-  try {
-    await controller.loadOpsHealthData();
-    assert.equal(calls.includes("/ops/discovery-audit-artifacts"), false);
-    assert.equal(detailTimers.length, 1);
-    detailTimers.forEach(callback => callback());
-    for (let index = 0; index < 12; index += 1) {
-      await Promise.resolve();
-    }
-    await flushAdminOpsBackground();
-    renderScheduler.flush();
-  } finally {
-    controller.stopOpsHealthPolling();
-    timers.restore();
-  }
+  await controller.loadOpsHealthData();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  await flushAdminOpsBackground();
+  renderScheduler.flush();
+  controller.stopOpsHealthPolling();
 
   assert.equal(refs.adminOpsAlertsEl.classList.contains("missing"), false);
   assert.equal(calls.includes("/ops/discovery-audit-artifacts"), true);

@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import copy
 import hashlib
 import json
-import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -58,9 +56,6 @@ DISCOVERY_AUDIT_ARTIFACTS: tuple[DiscoveryAuditArtifactSpec, ...] = (
     DiscoveryAuditArtifactSpec("gameprog", "gameprog-discovery-audit.json"),
     DiscoveryAuditArtifactSpec("gamesmap", "gamesmap-discovery-audit.json"),
 )
-
-_CACHE_LOCK = threading.RLock()
-_CACHE: tuple[tuple[tuple[str, bool, int, int], ...], dict[str, Any]] | None = None
 
 
 def _active_data_dir(api: Any) -> Path:
@@ -163,24 +158,8 @@ def _artifact_path(data_dir: Path, filename: str) -> Path:
     return candidate
 
 
-def _artifact_signature(path: Path) -> tuple[str, bool, int, int]:
-    try:
-        stat = path.stat()
-    except OSError:
-        return (str(path), False, 0, 0)
-    return (str(path), True, int(stat.st_size), int(stat.st_mtime_ns))
-
-
 def get_discovery_audit_artifacts_payload(api: Any) -> dict[str, Any]:
-    global _CACHE
     data_dir = _active_data_dir(api)
-    signature = tuple(
-        _artifact_signature(_artifact_path(data_dir, spec.filename))
-        for spec in DISCOVERY_AUDIT_ARTIFACTS
-    )
-    with _CACHE_LOCK:
-        if _CACHE is not None and _CACHE[0] == signature:
-            return copy.deepcopy(_CACHE[1])
     artifacts: list[dict[str, Any]] = []
     for spec in DISCOVERY_AUDIT_ARTIFACTS:
         warnings: list[str] = []
@@ -214,10 +193,7 @@ def get_discovery_audit_artifacts_payload(api: Any) -> dict[str, Any]:
         except (OSError, ValueError) as exc:
             warnings.append(f"stat_failed:{type(exc).__name__}")
         artifacts.append(row)
-    payload = {"ok": True, "artifacts": artifacts}
-    with _CACHE_LOCK:
-        _CACHE = (signature, copy.deepcopy(payload))
-    return payload
+    return {"ok": True, "artifacts": artifacts}
 
 
 __all__ = [
