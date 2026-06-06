@@ -11,7 +11,7 @@ from src.baluffo_config import get_security_defaults
 from src.bridge.performance_profile import record_operation_duration
 from src.jobs.common.config import LIGHTWEIGHT_OUTPUT_FIELDS
 from src.pipeline_io import serialize_rows_for_json, write_atomic_if_changed
-from src.shared.json_io import PIPELINE_GZIP_JSON_NAMES
+from src.shared.json_io import PIPELINE_GZIP_JSON_NAMES, read_json
 from src.storage_metrics import duration_ms, record_storage_read
 
 API_PREFIXES = (
@@ -181,11 +181,13 @@ def _rows_from_jobs_payload(payload: Any) -> list[dict[str, Any]]:
 
 
 def _load_jobs_rows(path: Path) -> list[dict[str, Any]]:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return []
+    payload = read_json(path, None)
     return _rows_from_jobs_payload(payload)
+
+
+def _startup_feed_bytes(rows: list[dict[str, Any]]) -> bytes:
+    startup_rows = rows[:STARTUP_FEED_BACKFILL_LIMIT]
+    return serialize_rows_for_json(startup_rows, LIGHTWEIGHT_OUTPUT_FIELDS).encode("utf-8")
 
 
 @dataclass(frozen=True)
@@ -227,33 +229,58 @@ class StaticFileService:
                 return backfilled, False
         return None, False
 
-    def _backfill_startup_feed(self) -> Path | None:
-        startup_path = self.data_dir / "jobs-unified-startup.json"
-        if startup_path.is_file():
-            return startup_path
-        light_candidates = (
+    def _startup_feed_path(self) -> Path:
+        return self.data_dir / "jobs-unified-startup.json"
+
+    def _startup_feed_light_candidates(self) -> tuple[Path, Path]:
+        return (
             self.data_dir / "jobs-unified-light.json",
             self.static_root / "data" / "jobs-unified-light.json",
         )
-        for light_path in light_candidates:
-            if not light_path.is_file():
-                continue
+
+    def _generate_startup_feed_bytes(self) -> bytes | None:
+        for light_path in self._startup_feed_light_candidates():
             rows = _load_jobs_rows(light_path)
-            if not rows:
-                continue
-            startup_rows = rows[:STARTUP_FEED_BACKFILL_LIMIT]
-            try:
-                startup_path.parent.mkdir(parents=True, exist_ok=True)
-                if startup_path.is_file():
-                    return startup_path
-                write_atomic_if_changed(
-                    startup_path,
-                    serialize_rows_for_json(startup_rows, LIGHTWEIGHT_OUTPUT_FIELDS),
-                )
-            except OSError:
-                return None
-            return startup_path if startup_path.is_file() else None
+            if rows:
+                return _startup_feed_bytes(rows)
         return None
+
+    def _persist_startup_feed_bytes(self, body: bytes) -> Path | None:
+        startup_path = self._startup_feed_path()
+        if startup_path.is_file():
+            return startup_path
+        try:
+            startup_path.parent.mkdir(parents=True, exist_ok=True)
+            if startup_path.is_file():
+                return startup_path
+            write_atomic_if_changed(startup_path, body.decode("utf-8"))
+        except OSError:
+            return None
+        return startup_path if startup_path.is_file() else None
+
+    def _backfill_startup_feed(self) -> Path | None:
+        startup_path = self._startup_feed_path()
+        if startup_path.is_file():
+            return startup_path
+        body = self._generate_startup_feed_bytes()
+        if body is None:
+            return None
+        return self._persist_startup_feed_bytes(body)
+
+    def _render_missing_data_bytes(self, normalized: str) -> tuple[bytes, str] | None:
+        if normalized not in {"jobs-unified-startup.json", "data/jobs-unified-startup.json"}:
+            return None
+        startup_path = self._backfill_startup_feed()
+        if startup_path is not None:
+            try:
+                return startup_path.read_bytes(), "jobs-unified-startup.json"
+            except OSError:
+                pass
+        body = self._generate_startup_feed_bytes()
+        if body is None:
+            return None
+        self._persist_startup_feed_bytes(body)
+        return body, "jobs-unified-startup.json"
 
     def _normalize_static_path(self, path: str) -> str:
         normalized = str(path or "").split("?", 1)[0].split("#", 1)[0].lstrip("/")
@@ -330,6 +357,31 @@ class StaticFileService:
         data_path, gzip_json = self._resolve_data_path(normalized)
         candidate = data_path or self._resolve_static_path(normalized)
         if candidate is None:
+            generated = self._render_missing_data_bytes(normalized)
+            if generated is not None:
+                body, artifact = generated
+                record_storage_read(
+                    surface=_ROOT_DATA_READ_SURFACES.get(artifact, "runtimeData.static"),
+                    artifact=artifact,
+                    storage_kind="generated",
+                    duration_ms=0.0,
+                    bytes_read=len(body),
+                    row_count=0,
+                    failed=False,
+                    data_dir=self.data_dir,
+                )
+                record_operation_duration(
+                    f"storage.read.{_ROOT_DATA_READ_SURFACES.get(artifact, 'runtimeData.static')}",
+                    0.0,
+                    error=False,
+                )
+                handler.send_bytes(
+                    body,
+                    content_type="application/json; charset=utf-8",
+                    status=200,
+                    cache_control=NO_STORE_CACHE_CONTROL,
+                )
+                return True
             handler.send_json({"error": "Not found"}, status=404)
             return True
 

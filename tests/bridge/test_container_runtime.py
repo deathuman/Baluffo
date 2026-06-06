@@ -148,6 +148,51 @@ def test_container_handler_backfills_missing_startup_feed_from_light_feed(
     )
 
 
+def test_container_handler_backfills_startup_feed_from_gzip_light_feed(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "root"
+    data_dir = tmp_path / "data"
+    root.mkdir(parents=True)
+    data_dir.mkdir(parents=True)
+    (root / "index.html").write_text("<html>index</html>\n", encoding="utf-8")
+    with gzip.open(data_dir / "jobs-unified-light.json.gz", mode="wt", encoding="utf-8") as handle:
+        json.dump([{"id": "job-1", "title": "Role 1"}], handle)
+
+    with _served(_make_container_handler(root, data_dir)) as base_url:
+        response, body = _read_url(base_url, "/data/jobs-unified-startup.json")
+
+    assert response.status == 200
+    assert json.loads(body.decode("utf-8"))[0]["id"] == "job-1"
+
+
+def test_container_handler_serves_startup_feed_when_backfill_persist_fails(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    root = tmp_path / "root"
+    data_dir = tmp_path / "data"
+    root.mkdir(parents=True)
+    data_dir.mkdir(parents=True)
+    (root / "index.html").write_text("<html>index</html>\n", encoding="utf-8")
+    (data_dir / "jobs-unified-light.json").write_text(
+        '[{"id":"job-1","title":"Role 1"}]',
+        encoding="utf-8",
+    )
+
+    def fail_persist(*_args, **_kwargs):
+        raise OSError("read-only data mount")
+
+    monkeypatch.setattr("src.bridge.server.static_files.write_atomic_if_changed", fail_persist)
+
+    with _served(_make_container_handler(root, data_dir)) as base_url:
+        response, body = _read_url(base_url, "/data/jobs-unified-startup.json")
+
+    assert response.status == 200
+    assert json.loads(body.decode("utf-8"))[0]["id"] == "job-1"
+    assert not (data_dir / "jobs-unified-startup.json").exists()
+
+
 def test_container_handler_preserves_existing_startup_feed(tmp_path: Path) -> None:
     root = tmp_path / "root"
     data_dir = tmp_path / "data"

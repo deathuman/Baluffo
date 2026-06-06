@@ -10,6 +10,17 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.51] - 2026-06-06
+
+### Fixed
+- Container static serving now handles upgraded Umbrel installs whose backing light jobs feed is gzip-backed, and still returns a bounded generated startup preview if persisting `data/jobs-unified-startup.json` fails.
+- This corrects the live `0.2.50` acceptance failure where `data/jobs-unified-startup.json` could remain `404` after update even though `jobs-unified-light.json` was available.
+
+### Notes
+- This is a container/Umbrel startup-feed recovery correction. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- Follow-up Chrome DevTools traces should be captured on live `0.2.51` for Admin cold/warm, Jobs cold/warm, Jobs-to-Admin, and Admin-to-Jobs before choosing the next page-load patch.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.50] - 2026-06-06
 
 ### Fixed
