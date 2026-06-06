@@ -9,6 +9,8 @@ from typing import Any
 
 from src.baluffo_config import get_security_defaults
 from src.bridge.performance_profile import record_operation_duration
+from src.jobs.common.config import LIGHTWEIGHT_OUTPUT_FIELDS
+from src.pipeline_io import serialize_rows_for_json, write_atomic_if_changed
 from src.shared.json_io import PIPELINE_GZIP_JSON_NAMES
 from src.storage_metrics import duration_ms, record_storage_read
 
@@ -75,6 +77,7 @@ _ROOT_DATA_READ_SURFACES = {
     "jobs-unified.json": "jobsFeed.staticFull",
     "jobs-fetch-report.json": "fetchReport.static",
 }
+STARTUP_FEED_BACKFILL_LIMIT = 10
 
 
 def is_api_path(path: str) -> bool:
@@ -167,6 +170,24 @@ def _accepts_gzip(handler: Any) -> bool:
     return any(part.strip().lower() == "gzip" for part in header.split(","))
 
 
+def _rows_from_jobs_payload(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        rows = payload
+    elif isinstance(payload, dict) and isinstance(payload.get("jobs"), list):
+        rows = payload["jobs"]
+    else:
+        return []
+    return [dict(row) for row in rows if isinstance(row, dict)]
+
+
+def _load_jobs_rows(path: Path) -> list[dict[str, Any]]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    return _rows_from_jobs_payload(payload)
+
+
 @dataclass(frozen=True)
 class StaticFileService:
     static_root: Path
@@ -197,7 +218,42 @@ class StaticFileService:
                 candidate = _existing_path_under(Path(base_dir), rel_parts)
                 if candidate is not None:
                     return candidate, candidate.suffix == ".gz"
+        return self._resolve_missing_data_path(safe_parts)
+
+    def _resolve_missing_data_path(self, safe_parts: list[str]) -> tuple[Path | None, bool]:
+        if safe_parts == ["jobs-unified-startup.json"]:
+            backfilled = self._backfill_startup_feed()
+            if backfilled is not None:
+                return backfilled, False
         return None, False
+
+    def _backfill_startup_feed(self) -> Path | None:
+        startup_path = self.data_dir / "jobs-unified-startup.json"
+        if startup_path.is_file():
+            return startup_path
+        light_candidates = (
+            self.data_dir / "jobs-unified-light.json",
+            self.static_root / "data" / "jobs-unified-light.json",
+        )
+        for light_path in light_candidates:
+            if not light_path.is_file():
+                continue
+            rows = _load_jobs_rows(light_path)
+            if not rows:
+                continue
+            startup_rows = rows[:STARTUP_FEED_BACKFILL_LIMIT]
+            try:
+                startup_path.parent.mkdir(parents=True, exist_ok=True)
+                if startup_path.is_file():
+                    return startup_path
+                write_atomic_if_changed(
+                    startup_path,
+                    serialize_rows_for_json(startup_rows, LIGHTWEIGHT_OUTPUT_FIELDS),
+                )
+            except OSError:
+                return None
+            return startup_path if startup_path.is_file() else None
+        return None
 
     def _normalize_static_path(self, path: str) -> str:
         normalized = str(path or "").split("?", 1)[0].split("#", 1)[0].lstrip("/")

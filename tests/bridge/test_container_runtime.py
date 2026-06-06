@@ -115,6 +115,84 @@ def test_container_handler_serves_static_data_and_runtime_config(tmp_path: Path)
     assert private_response.code == 404
 
 
+def test_container_handler_backfills_missing_startup_feed_from_light_feed(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "root"
+    data_dir = tmp_path / "data"
+    root.mkdir(parents=True)
+    data_dir.mkdir(parents=True)
+    (root / "index.html").write_text("<html>index</html>\n", encoding="utf-8")
+    rows = [
+        {
+            "id": f"job-{index}",
+            "title": f"Role {index}",
+            "company": "Studio",
+            "description": "not in light startup output",
+        }
+        for index in range(12)
+    ]
+    (data_dir / "jobs-unified-light.json").write_text(json.dumps(rows), encoding="utf-8")
+
+    with _served(_make_container_handler(root, data_dir)) as base_url:
+        response, body = _read_url(base_url, "/data/jobs-unified-startup.json")
+
+    startup_rows = json.loads(body.decode("utf-8"))
+    assert response.headers["Cache-Control"].startswith("no-store")
+    assert len(startup_rows) == 10
+    assert [row["id"] for row in startup_rows] == [f"job-{index}" for index in range(10)]
+    assert "description" not in startup_rows[0]
+    assert (
+        json.loads((data_dir / "jobs-unified-startup.json").read_text(encoding="utf-8"))
+        == startup_rows
+    )
+
+
+def test_container_handler_preserves_existing_startup_feed(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    data_dir = tmp_path / "data"
+    root.mkdir(parents=True)
+    data_dir.mkdir(parents=True)
+    (root / "index.html").write_text("<html>index</html>\n", encoding="utf-8")
+    (data_dir / "jobs-unified-startup.json").write_text(
+        '[{"id":"existing"}]\n',
+        encoding="utf-8",
+    )
+    (data_dir / "jobs-unified-light.json").write_text(
+        '[{"id":"light"}]\n',
+        encoding="utf-8",
+    )
+
+    with _served(_make_container_handler(root, data_dir)) as base_url:
+        _response, body = _read_url(base_url, "/data/jobs-unified-startup.json")
+
+    assert json.loads(body.decode("utf-8")) == [{"id": "existing"}]
+    assert (data_dir / "jobs-unified-startup.json").read_text(encoding="utf-8") == (
+        '[{"id":"existing"}]\n'
+    )
+
+
+def test_container_handler_keeps_missing_startup_feed_404_without_backing_feed(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "root"
+    data_dir = tmp_path / "data"
+    root.mkdir(parents=True)
+    data_dir.mkdir(parents=True)
+    (root / "index.html").write_text("<html>index</html>\n", encoding="utf-8")
+
+    with _served(_make_container_handler(root, data_dir)) as base_url:
+        try:
+            _read_url(base_url, "/data/jobs-unified-startup.json")
+        except HTTPError as exc:
+            response = exc
+        else:  # pragma: no cover
+            raise AssertionError("expected missing startup feed to stay 404")
+
+    assert response.code == 404
+    assert not (data_dir / "jobs-unified-startup.json").exists()
+
+
 def test_container_handler_serves_generated_frontend_assets_with_immutable_cache(
     tmp_path: Path,
 ) -> None:
