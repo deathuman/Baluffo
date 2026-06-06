@@ -36,7 +36,27 @@ export function emitAdminStartupMetricsBatch(adminBridgeBase, metrics = []) {
   });
 }
 
+const LIGHTWEIGHT_GET_DEDUPE_PATHS = new Set([
+  "/ops/health?view=ready",
+  "/ops/dashboard-health?view=summary",
+  "/ops/task-state?view=summary",
+  "/sync/status?view=summary",
+  "/registry/conflicts?view=summary",
+  "/discovery/report?view=summary"
+]);
+const lightweightGetRequests = new Map();
+
 export async function getBridge(adminBridgeBase, path, options = {}) {
+  if (LIGHTWEIGHT_GET_DEDUPE_PATHS.has(path)) {
+    const key = `${adminBridgeBase || ""}|${path}|${Number(options.timeoutMs) || 0}`;
+    if (lightweightGetRequests.has(key)) return lightweightGetRequests.get(key);
+    const request = fetchJson(adminBridgeBase, path, options)
+      .finally(() => {
+        lightweightGetRequests.delete(key);
+      });
+    lightweightGetRequests.set(key, request);
+    return request;
+  }
   return fetchJson(adminBridgeBase, path, options);
 }
 

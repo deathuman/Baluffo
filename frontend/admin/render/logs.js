@@ -8,7 +8,7 @@ function safeFormatLogTimestamp(value) {
 
 export function appendAdminLogRow(container, event, options = {}) {
   if (!container) return;
-  const maxRows = Number(options.maxRows || 220);
+  const maxRows = Number(options.maxRows || 80);
   const normalizeLogLevel = options.normalizeLogLevel || (value => value);
   const toLocalTime = options.toLocalTime || safeFormatLogTimestamp;
   const formatLogEventText = options.formatLogEventText || (row => String(row?.message || ""));
@@ -36,16 +36,14 @@ export function appendAdminLogRow(container, event, options = {}) {
 
   const normalizedLevel = normalizeLogLevel(event.level);
   if (normalizedLevel === "error" || normalizedLevel === "warn") {
-    const detail = document.createElement("div");
-    detail.className = "fetcher-log-detail";
-    detail.textContent = JSON.stringify({
+    const detailText = JSON.stringify({
       level: normalizedLevel,
       scope: event.scope,
       sourceId: event.sourceId,
       message: formatLogEventText(event),
       timestamp: event.timestamp
     }, null, 2);
-    row.appendChild(detail);
+    let detail = null;
 
     row.setAttribute("role", "button");
     row.setAttribute("tabindex", "0");
@@ -53,6 +51,12 @@ export function appendAdminLogRow(container, event, options = {}) {
     row.addEventListener("click", () => {
       const expanded = row.classList.toggle("expanded");
       row.setAttribute("aria-expanded", expanded ? "true" : "false");
+      if (expanded && !detail) {
+        detail = document.createElement("div");
+        detail.className = "fetcher-log-detail";
+        detail.textContent = detailText;
+        row.appendChild(detail);
+      }
     });
   }
   container.appendChild(row);

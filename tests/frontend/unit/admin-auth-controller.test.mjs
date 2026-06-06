@@ -229,7 +229,7 @@ test("admin overview waits for local data readiness without blocking the shell",
   assert.ok(calls.includes("refreshOverview:summary:true"));
 });
 
-test("admin auth schedules full diagnostics after first summary render", async () => {
+test("admin auth schedules bounded deferred diagnostics after first summary render", async () => {
   const originalSetTimeout = globalThis.setTimeout;
   const timers = [];
   globalThis.setTimeout = (callback, delayMs) => {
@@ -280,7 +280,7 @@ test("admin auth schedules full diagnostics after first summary render", async (
     await new Promise(resolve => originalSetTimeout(resolve, 0));
     assert.deepEqual(calls, ["ops:true"]);
     assert.equal(timers.length, 1);
-    assert.equal(timers[0].delayMs, 1800);
+    assert.equal(timers[0].delayMs, 5000);
 
     timers[0].callback();
     await Promise.resolve();

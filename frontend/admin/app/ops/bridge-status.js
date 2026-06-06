@@ -15,6 +15,7 @@ export function createOpsBridgeStatusController({
   let lastBridgeStatus = "checking";
   let bridgeStatusFailureCount = 0;
   let bridgeStatusInitialPollTimer = null;
+  let bridgeStatusPollInFlight = null;
 
   function getBridgeStatus() {
     return lastBridgeStatus;
@@ -30,13 +31,17 @@ export function createOpsBridgeStatusController({
     refs.adminBridgeStatusBadgeEl.textContent = label || "Bridge Checking";
     setTooltip(refs.adminBridgeStatusBadgeEl, label || "Local admin bridge status");
     refs.adminBridgeStatusBadgeEl.classList.remove("refresh-pulse");
-    void refs.adminBridgeStatusBadgeEl.offsetWidth;
-    refs.adminBridgeStatusBadgeEl.classList.add("refresh-pulse");
   }
 
   function startBridgeStatusWatch(options = {}) {
     stopBridgeStatusWatch();
     const deferInitial = Boolean(options?.deferInitial);
+    const startInterval = () => {
+      if (state.bridgeStatusPollTimer) return;
+      state.bridgeStatusPollTimer = maybeUnrefTimer(setInterval(() => {
+        pollBridgeStatus().catch(() => {});
+      }, bridgeStatusPollIntervalMs));
+    };
     if (deferInitial) {
       lastBridgeStatus = "checking";
       onBridgeStatusChange?.("checking");
@@ -44,14 +49,11 @@ export function createOpsBridgeStatusController({
       const initialDelayMs = Math.max(600, Number(options?.initialDelayMs) || bridgeStatusPollIntervalMs);
       bridgeStatusInitialPollTimer = maybeUnrefTimer(setTimeout(() => {
         bridgeStatusInitialPollTimer = null;
-        pollBridgeStatus().catch(() => {});
+        pollBridgeStatus().catch(() => {}).finally(startInterval);
       }, initialDelayMs));
     } else {
-      pollBridgeStatus({ forceChecking: true }).catch(() => {});
+      pollBridgeStatus({ forceChecking: true }).catch(() => {}).finally(startInterval);
     }
-    state.bridgeStatusPollTimer = maybeUnrefTimer(setInterval(() => {
-      pollBridgeStatus().catch(() => {});
-    }, bridgeStatusPollIntervalMs));
   }
 
   function stopBridgeStatusWatch() {
@@ -65,6 +67,10 @@ export function createOpsBridgeStatusController({
   }
 
   async function pollBridgeStatus(options = {}) {
+    if (bridgeStatusPollInFlight && !options.forceChecking) {
+      return bridgeStatusPollInFlight;
+    }
+    bridgeStatusPollInFlight = (async () => {
     if (options.forceChecking) {
       if (lastBridgeStatus !== "checking") {
         lastBridgeStatus = "checking";
@@ -95,6 +101,12 @@ export function createOpsBridgeStatusController({
         onBridgeStatusChange?.("offline");
       }
       setBridgeStatusBadge("offline", "Bridge Offline");
+    }
+    })();
+    try {
+      return await bridgeStatusPollInFlight;
+    } finally {
+      bridgeStatusPollInFlight = null;
     }
   }
 

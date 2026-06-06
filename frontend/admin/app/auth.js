@@ -102,7 +102,7 @@ export function createAdminAuthController({
           logAdminError("Failed to load deferred admin diagnostics", err);
         });
     };
-    const delayMs = 1800;
+    const delayMs = 5000;
     if (typeof globalThis.setTimeout === "function") {
       globalThis.setTimeout(run, delayMs);
       return;

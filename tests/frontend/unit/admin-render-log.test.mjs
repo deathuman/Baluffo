@@ -134,3 +134,70 @@ test("appendAdminLogRow falls back safely when timestamp is invalid", () => {
     global.document = previousDocument;
   }
 });
+
+test("appendAdminLogRow caps default rows and lazy-renders warning detail", () => {
+  const previousDocument = global.document;
+  global.document = {
+    createElement(tagName) {
+      return createElement({
+        tagName,
+        dataset: {},
+        children: [],
+        append(...items) {
+          this.children.push(...items);
+        },
+        appendChild(child) {
+          this.children.push(child);
+        },
+        addEventListener(type, callback) {
+          this[`on${type}`] = callback;
+        }
+      });
+    }
+  };
+  try {
+    const container = createElement({
+      children: [],
+      firstChild: null,
+      appendChild(child) {
+        this.children.push(child);
+        this.firstChild = this.children[0] || null;
+      },
+      removeChild(child) {
+        const index = this.children.indexOf(child);
+        if (index >= 0) this.children.splice(index, 1);
+        this.firstChild = this.children[0] || null;
+      },
+      scrollTop: 0,
+      scrollHeight: 0
+    });
+
+    for (let index = 0; index < 85; index += 1) {
+      appendAdminLogRow(
+        container,
+        {
+          timestamp: "2026-03-08T10:01:00.000Z",
+          level: index === 84 ? "warn" : "info",
+          scope: "fetcher",
+          sourceId: `source-${index}`,
+          message: `row ${index}`
+        },
+        {
+          normalizeLogLevel: value => value,
+          toLocalTime: () => "10:01:00",
+          formatLogEventText: row => String(row?.message || "")
+        }
+      );
+    }
+
+    assert.equal(container.children.length, 80);
+    const warningRow = container.children[container.children.length - 1];
+    assert.equal(warningRow.children.some(child => child.className === "fetcher-log-detail"), false);
+
+    warningRow.onclick();
+
+    assert.equal(warningRow.children.some(child => child.className === "fetcher-log-detail"), true);
+  } finally {
+    global.document = previousDocument;
+  }
+});

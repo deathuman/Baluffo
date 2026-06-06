@@ -221,51 +221,20 @@ export function composeAdminControllers({
   });
 
   async function loadPostInteractiveDiagnostics() {
-    async function loadDiscoverySummaryLog() {
+    async function refreshDiscoveryTabBadge() {
       const payload = await getBridge("/discovery/report?view=summary");
       const summary = payload?.summary || {};
-      const counts = payload?.counts || {};
-      const finalization = payload?.runtime?.registryFinalization || {};
       const autoApproval = payload?.runtime?.autoApproval || {};
-      const found = Number(summary.endpointCount ?? summary.foundEndpointCount ?? 0);
-      const probed = Number(summary.probedCount ?? summary.probedCandidateCount ?? 0);
       const queued = Number(summary.queuedCandidateCount ?? summary.queuedCount ?? 0);
-      const failed = Number(summary.failedCount ?? summary.failedProbeCount ?? counts.failureCount ?? 0);
-      const candidates = Number(counts.candidateCount ?? 0);
       const approved = Number(autoApproval.approvedCount ?? 0);
-      discoveryController.appendDiscoveryLog(
-        `Discovery summary: found ${found.toLocaleString()}, probed ${probed.toLocaleString()}, queued ${queued.toLocaleString()}, candidates ${candidates.toLocaleString()}, auto-approved ${approved.toLocaleString()}, failed ${failed.toLocaleString()}.`,
-        failed > 0 ? "warn" : "muted"
+      discoveryController.setDiscoveryLogPlaceholder(
+        queued || approved
+          ? `Discovery summary available: queued ${queued.toLocaleString()}, auto-approved ${approved.toLocaleString()}.`
+          : ""
       );
-      const activeCount = Number(finalization.activeCount ?? summary.activeCount ?? 0);
-      const pendingCount = Number(finalization.pendingCount ?? summary.pendingCount ?? 0);
-      if (activeCount || pendingCount) {
-        discoveryController.appendDiscoveryLog(
-          `Registry finalization: active ${activeCount.toLocaleString()}, pending ${pendingCount.toLocaleString()}.`,
-          "muted"
-        );
-      }
-      const recentLog = Array.isArray(payload?.recentLog) ? payload.recentLog : [];
-      recentLog.slice(-5).forEach(row => {
-        if (row && typeof row === "object" && !Array.isArray(row)) {
-          discoveryController.appendDiscoveryLogEvent(row, "muted");
-          return;
-        }
-        if (String(row || "").trim()) discoveryController.appendDiscoveryLog(String(row), "muted");
-      });
     }
     const tasks = [
-      () => opsController.loadOpsHistoryData({ limit: 20, silent: true }),
-      () => fetcherController.loadFetcherLogChunk({ reset: true, showEmptyState: true }),
-      loadDiscoverySummaryLog,
-      () => discoveryController.loadDiscoveryLogChunk({ reset: true, guarded: false }),
-      () => registryController.loadDiscoveryData({
-        background: true,
-        sourceTablesOnly: true,
-        logChanges: false,
-        suppressPlaceholders: true,
-        skipIfFreshMs: 5000
-      })
+      refreshDiscoveryTabBadge
     ];
     for (const task of tasks) {
       try {

@@ -17,8 +17,9 @@ test("admin startup deferred queue avoids full diagnostics fan-out", () => {
   const tasks = extractPostInteractiveTasks(compositionSource);
   assert.doesNotMatch(tasks, /loadOpsOverviewDetailData/);
   assert.doesNotMatch(tasks, /loadLatestFetcherReport/);
-  assert.match(tasks, /loadOpsHistoryData\(\{\s*limit:\s*20,\s*silent:\s*true\s*\}\)/);
-  assert.match(tasks, /loadFetcherLogChunk/);
-  assert.match(tasks, /loadDiscoveryLogChunk/);
-  assert.match(tasks, /sourceTablesOnly:\s*true/);
+  assert.doesNotMatch(tasks, /loadOpsHistoryData/);
+  assert.doesNotMatch(tasks, /loadFetcherLogChunk/);
+  assert.doesNotMatch(tasks, /loadDiscoveryLogChunk/);
+  assert.doesNotMatch(tasks, /sourceTablesOnly:\s*true/);
+  assert.match(tasks, /refreshDiscoveryTabBadge/);
 });
