@@ -10,6 +10,20 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.52] - 2026-06-06
+
+### Changed
+- Container Admin startup now avoids automatic full diagnostics fan-out after first render, keeps Fetcher and Discovery log DOM bounded and lazy, and deduplicates lightweight summary/ready bridge requests.
+- Jobs idle polling now avoids repeated task-state and dashboard-health summary calls after the initial idle check while preserving active pipeline, abort, bootstrap, and completion behavior.
+
+### Fixed
+- `/discovery/report?view=summary` now uses a bounded startup projection instead of loading and normalizing the full discovery report or materializing large candidate/failure arrays.
+
+### Notes
+- This is a container/Umbrel frontend-pressure recovery patch. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- Chrome DevTools traces remain the primary acceptance signal for Umbrel page-load performance; backend route profiles remain supporting diagnostics.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.51] - 2026-06-06
 
 ### Fixed
