@@ -25,6 +25,17 @@ export function emitAdminStartupMetric(adminBridgeBase, event, payload = {}) {
   postJson(adminBridgeBase, "/desktop-local-data/startup-metric", { event, payload: payload || {} }).catch(() => {});
 }
 
+export function emitAdminStartupMetricsBatch(adminBridgeBase, metrics = []) {
+  const rows = Array.isArray(metrics) ? metrics : [];
+  if (!rows.length) return;
+  postJson(adminBridgeBase, "/desktop-local-data/startup-metrics/batch", { metrics: rows }).catch(() => {
+    rows.forEach(row => {
+      if (!row || typeof row !== "object") return;
+      emitAdminStartupMetric(adminBridgeBase, row.event, row.payload || {});
+    });
+  });
+}
+
 export async function getBridge(adminBridgeBase, path, options = {}) {
   return fetchJson(adminBridgeBase, path, options);
 }

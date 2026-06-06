@@ -94,6 +94,8 @@ export function createAdminOpsController({
     stopOpsHealthPolling: healthController.stopOpsHealthPolling,
     scheduleOpsHealthPolling: healthController.scheduleOpsHealthPolling,
     loadOpsHealthData: healthController.loadOpsHealthData,
+    loadOpsHistoryData: healthController.loadOpsHistoryData,
+    loadOpsOverviewDetailData: healthController.loadOpsOverviewDetailData,
     setBridgeStatusBadge: bridgeStatusController.setBridgeStatusBadge,
     startBridgeStatusWatch: bridgeStatusController.startBridgeStatusWatch,
     stopBridgeStatusWatch: bridgeStatusController.stopBridgeStatusWatch,

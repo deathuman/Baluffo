@@ -68,7 +68,7 @@ export function createAdminBridgeButtonWatcher({
     let lastError = null;
     for (const candidateBase of getBridgeBaseCandidates()) {
       try {
-        return await fetchJson(candidateBase, "/ops/health");
+        return await fetchJson(candidateBase, "/ops/health?view=ready");
       } catch (error) {
         lastError = error;
       }

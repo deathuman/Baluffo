@@ -18,6 +18,7 @@ import { renderAdminRegistryConflicts } from "../../render/registry-conflicts.js
 import { setTooltip } from "../../../shared/ui/index.js?v=6";
 
 const OPS_TASK_STATE_SUMMARY_PATH = "/ops/task-state?view=summary";
+const OPS_HISTORY_STARTUP_PATH = "/ops/history?limit=20";
 const OPS_HISTORY_DETAIL_PATH = "/ops/history?limit=80";
 const OPS_FETCHER_METRICS_DETAIL_PATH = "/ops/fetcher-metrics?windowRuns=80";
 const OPS_DISCOVERY_AUDIT_ARTIFACTS_PATH = "/ops/discovery-audit-artifacts";
@@ -202,6 +203,7 @@ export function createOpsHealthController({
   let initialBridgeReadyResolved = false;
   let opsRenderToken = 0;
   let opsOverviewDetailLoad = null;
+  let opsHistoryLoad = null;
   let sourcePolicyDetailLoad = null;
   let registryConflictsDetailLoad = null;
 
@@ -366,7 +368,7 @@ export function createOpsHealthController({
     stopOpsHealthPolling();
     const waitMs = Math.max(600, Number(delayMs) || 10000);
     state.opsHealthPollTimer = maybeUnrefTimer(setTimeout(() => {
-      loadOpsHealthData({ fromPoll: true }).catch(() => {});
+      loadOpsHealthData({ fromPoll: true, summary: true }).catch(() => {});
     }, waitMs));
   }
 
@@ -846,6 +848,55 @@ export function createOpsHealthController({
     });
   }
 
+  function renderDeferredHistoryDetails(renderToken = opsRenderToken) {
+    if (renderToken !== opsRenderToken) return;
+    const historyPayload = getCachedHistoryPayload();
+    const historyRuns = Array.isArray(historyPayload?.runs) ? historyPayload.runs : [];
+    const taskStatePayload = state.latestOpsTaskStatePayload || { tasks: [] };
+    const runModel = deriveAdminRunsModel(
+      {
+        taskState: taskStatePayload || {},
+        historyRuns
+      },
+      Date.now()
+    );
+    getRenderScheduler()(() => {
+      if (renderToken !== opsRenderToken) return;
+      renderAdminOpsHistoryImpl(refs.adminOpsHistoryEl, runModel, {
+        onCopyRunDiagnostics: handleCopyRunDiagnostics,
+        onAbortRun: handleAbortRun,
+        waitingForTaskState: Boolean(state.waitingForTaskState),
+        taskStateUnavailable: Boolean(state.taskStateUnavailable)
+      });
+      renderAdminOpsTrendsImpl(refs.adminOpsTrendsEl, historyRuns);
+    });
+  }
+
+  function loadOpsHistoryData(options = {}) {
+    if (opsHistoryLoad) return opsHistoryLoad;
+    const renderToken = Number(options?.renderToken) || opsRenderToken;
+    const requestedLimit = Math.max(1, Math.min(80, Number(options?.limit) || 20));
+    const path = requestedLimit === 20
+      ? OPS_HISTORY_STARTUP_PATH
+      : `/ops/history?limit=${encodeURIComponent(String(requestedLimit))}`;
+    opsHistoryLoad = measuredGetBridge(
+      path,
+      "admin_ops_history_fetch",
+      { enabled: !options?.silent }
+    )
+      .then(payload => {
+        if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+          state.latestOpsHistoryPayload = payload;
+          renderDeferredHistoryDetails(renderToken);
+        }
+        return payload || null;
+      })
+      .finally(() => {
+        opsHistoryLoad = null;
+      });
+    return opsHistoryLoad;
+  }
+
   function loadOpsOverviewDetailData(renderToken = opsRenderToken) {
     const detailLoad = (async () => {
       const [
@@ -1272,6 +1323,8 @@ export function createOpsHealthController({
     stopOpsHealthPolling,
     scheduleOpsHealthPolling,
     loadOpsHealthData,
+    loadOpsHistoryData,
+    loadOpsOverviewDetailData,
     selectOpsTab
   };
 }

@@ -81,8 +81,8 @@ test("admin auth controller initializes the composed admin view immediately", as
     renderUsersEmpty(message) {
       calls.push(`renderEmpty:${message}`);
     },
-    startBridgeStatusWatch() {
-      calls.push("startBridgeStatusWatch");
+    startBridgeStatusWatch(options = {}) {
+      calls.push(`startBridgeStatusWatch:${String(Boolean(options?.deferInitial))}:${String(Number(options?.initialDelayMs || 0))}`);
     },
     stopBridgeStatusWatch() {
       calls.push("stopBridgeStatusWatch");
@@ -106,7 +106,7 @@ test("admin auth controller initializes the composed admin view immediately", as
       calls.push(`loadOpsHealthData:${String(Boolean(options?.summary))}`);
     },
     loadSyncStatus: async options => {
-      calls.push(`loadSyncStatus:${String(Boolean(options?.silent))}:${String(Boolean(options?.forceForm))}`);
+      calls.push(`loadSyncStatus:${String(Boolean(options?.silent))}:${String(Boolean(options?.forceForm))}:${String(options?.includeLive !== false)}:${String(Boolean(options?.summary))}`);
     },
     loadDiscoveryConfig: async options => {
       calls.push(`loadDiscoveryConfig:${String(Boolean(options?.silent))}:${String(Boolean(options?.forceForm))}`);
@@ -130,15 +130,15 @@ test("admin auth controller initializes the composed admin view immediately", as
   assert.equal(refs.adminBridgeStatusBadgeEl.classList.contains("hidden"), false);
   assert.deepEqual(dispatched.map(item => item.type), []);
   assert.ok(calls.includes("resetBusyFlags"));
-  assert.ok(calls.includes("startBridgeStatusWatch"));
+  assert.ok(calls.includes("startBridgeStatusWatch:true:1500"));
   assert.ok(calls.includes("awaitLocalDataReady"));
   assert.ok(calls.includes("refreshOverview:summary:true"));
   assert.equal(calls.some(item => item.startsWith("loadDiscoveryData:")), false);
   assert.ok(calls.includes("loadOpsHealthData:true"));
   assert.equal(calls.filter(item => item === "opsReadinessShell").length, 2);
   assert.equal(calls.includes("opsPlaceholder:Loading operations health..."), false);
-  assert.ok(calls.includes("loadDiscoveryConfig:true:true"));
-  assert.ok(calls.includes("loadSyncStatus:true:true"));
+  assert.equal(calls.some(item => item.startsWith("loadDiscoveryConfig:")), false);
+  assert.ok(calls.includes("loadSyncStatus:true:true:false:true"));
   assert.equal(calls.includes("scheduleOpsHealthPolling:900"), false);
   assert.equal(refs.adminSyncStatusEl.textContent, "");
   assert.ok(calls.includes("fetcherPlaceholder:"));
@@ -148,7 +148,6 @@ test("admin auth controller initializes the composed admin view immediately", as
   const perfNames = perfCalls.map(item => `${item.type}:${item.name}`);
   for (const expected of [
     "mark:admin_auth_init_start",
-    "mark:admin_discovery_config_fetch_start",
     "mark:admin_ops_health_fetch_start",
     "mark:admin_sync_fetch_start",
     "mark:admin_auth_init_end",
@@ -228,6 +227,68 @@ test("admin overview waits for local data readiness without blocking the shell",
   await new Promise(resolve => setTimeout(resolve, 0));
 
   assert.ok(calls.includes("refreshOverview:summary:true"));
+});
+
+test("admin auth schedules full diagnostics after first summary render", async () => {
+  const originalSetTimeout = globalThis.setTimeout;
+  const timers = [];
+  globalThis.setTimeout = (callback, delayMs) => {
+    timers.push({ callback, delayMs });
+    return timers.length;
+  };
+  try {
+    const calls = [];
+    const refs = {
+      adminContentEl: createElement({ classList: createClassList(["hidden"]) }),
+      adminBridgeStatusBadgeEl: createElement({ classList: createClassList(["hidden"]) }),
+      adminSyncStatusEl: createElement()
+    };
+    const controller = createAdminAuthController({
+      refs,
+      emitAdminStartupMetric() {},
+      markAdminFirstInteractive() {},
+      markAdminStep() {},
+      measureAdminStep() {},
+      syncAdminBusyUi() {},
+      syncDiscoveryLogDisclosure() {},
+      resetBusyFlags() {},
+      setSourceFilter() {},
+      setSourceStatus() {},
+      setFetcherLogPlaceholder() {},
+      setDiscoveryLogPlaceholder() {},
+      clearOptimisticFetchRun() {},
+      clearOptimisticDiscoveryRun() {},
+      setManualSourceFeedback() {},
+      setOpsPlaceholders() {},
+      setOpsReadinessShell() {},
+      setBridgeStatusBadge() {},
+      startBridgeStatusWatch() {},
+      refreshOverview: async () => {},
+      loadOpsHealthData: async options => {
+        calls.push(`ops:${String(Boolean(options?.summary))}`);
+      },
+      loadSyncStatus: async () => {},
+      awaitLocalDataReady: async () => true,
+      loadPostInteractiveDiagnostics: async () => {
+        calls.push("deferredDiagnostics");
+      },
+      logAdminError() {},
+      showToast() {}
+    });
+
+    assert.equal(controller.initAdminPage(), true);
+    await new Promise(resolve => originalSetTimeout(resolve, 0));
+    assert.deepEqual(calls, ["ops:true"]);
+    assert.equal(timers.length, 1);
+    assert.equal(timers[0].delayMs, 1800);
+
+    timers[0].callback();
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.deepEqual(calls, ["ops:true", "deferredDiagnostics"]);
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+  }
 });
 
 

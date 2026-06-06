@@ -221,10 +221,12 @@ export function createRegistryLoadController({
           setSourceTablePlaceholder(refs.adminActiveSourcesEl, "active");
           setSourceTablePlaceholder(refs.adminRejectedSourcesEl, "rejected");
         }
+        const sourceTablesOnly = Boolean(options?.sourceTablesOnly);
         const reportPromise = loadDiscoveryEndpoint(
-          "source discovery report",
-          getBridge("/discovery/report"),
-          state.latestDiscoveryReportCache || { summary: {}, candidates: [], failures: [] }
+          sourceTablesOnly ? "source discovery summary" : "source discovery report",
+          getBridge(sourceTablesOnly ? "/discovery/report?view=summary" : "/discovery/report"),
+          state.latestDiscoveryReportCache || { summary: {}, candidates: [], failures: [] },
+          { background }
         );
         const registrySummaryPromise = options?.completionRefresh
           ? loadDiscoveryEndpoint(
@@ -234,16 +236,20 @@ export function createRegistryLoadController({
             { background }
           )
           : Promise.resolve({ ok: true, summary: {} });
-        const discoveryCandidatesPromise = loadDiscoveryEndpoint(
-          "source discovery candidates",
-          getBridge("/discovery/candidates"),
-          { candidates: [] }
-        );
-        const latestFetchReportPromise = loadDiscoveryEndpoint(
-          "latest fetch report",
-          resolveLatestFetchReport(options),
-          state.latestFetcherReportCache || {}
-        );
+        const discoveryCandidatesPromise = sourceTablesOnly
+          ? Promise.resolve({ candidates: [] })
+          : loadDiscoveryEndpoint(
+            "source discovery candidates",
+            getBridge("/discovery/candidates"),
+            { candidates: [] }
+          );
+        const latestFetchReportPromise = sourceTablesOnly
+          ? Promise.resolve(state.latestFetcherReportCache || {})
+          : loadDiscoveryEndpoint(
+            "latest fetch report",
+            resolveLatestFetchReport(options),
+            state.latestFetcherReportCache || {}
+          );
         const registrySourcesPath = `/registry/sources?buckets=pending,active,rejected&includeHiddenPending=${filterState.showZeroJobs ? "1" : "0"}`;
         const registrySourcesPromise = Promise.all([reportPromise, registrySummaryPromise])
           .then(([_report, registrySummary]) => loadDiscoveryEndpoint(
@@ -399,7 +405,7 @@ export function createRegistryLoadController({
             refs.discoveryPendingBadgeEl.classList.add("hidden");
           }
         }
-        if (refs.adminDiscoveryReviewEl) {
+        if (!sourceTablesOnly && refs.adminDiscoveryReviewEl) {
           refs.adminDiscoveryReviewEl.innerHTML = renderDiscoveryCandidateReviewHtml(
             report?.candidateReview,
             { showEmpty: true }

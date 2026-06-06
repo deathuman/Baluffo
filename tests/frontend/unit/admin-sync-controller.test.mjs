@@ -106,3 +106,50 @@ test("admin sync controller hydrates status and runs save/test/pull/push flows",
     "syncRun:false"
   ]);
 });
+
+test("admin sync status can skip live sync hydration during first boot", async () => {
+  const paths = [];
+  const state = {
+    syncConfigDirty: false,
+    latestSyncStatusCache: null,
+    adminBusyState: {}
+  };
+  const refs = {
+    adminSyncEnabledEl: createElement({ checked: false }),
+    adminSyncStatusEl: createElement(),
+    adminSyncConfigHintEl: createElement()
+  };
+  const controller = createAdminSyncController({
+    state,
+    refs,
+    getBridge: async path => {
+      paths.push(path);
+      return {
+        savedConfig: { enabled: true },
+        config: {
+          enabled: true,
+          ready: true,
+          state: "ready",
+          repo: "org/repo",
+          branch: "main",
+          path: "baluffo/source-sync.json"
+        },
+        runtime: {}
+      };
+    },
+    postBridge: async () => ({}),
+    isSyncBusy: () => false,
+    setBusyFlag() {},
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    showToast() {},
+    toLocalTime: value => value.toISOString(),
+    loadOpsHealthData: async () => {},
+    scheduleOpsHealthPolling() {},
+    escapeHtml: value => String(value)
+  });
+
+  await controller.loadSyncStatus({ silent: true, forceForm: true, includeLive: false });
+
+  assert.deepEqual(paths, ["/sync/status"]);
+  assert.equal(Boolean(state.adminBusyState.liveSyncRunning), false);
+});

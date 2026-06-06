@@ -179,7 +179,7 @@ test("long-running fetch progress stays aligned across admin detailed view, ops 
             error: "fetch report failed"
           };
         }
-        if (path === "/ops/task-state") {
+        if (path === "/ops/task-state?view=summary") {
           return taskStatePayload;
         }
         throw new Error(`Unexpected bridge path: ${path}`);

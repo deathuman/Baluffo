@@ -24,6 +24,7 @@ export function createAdminAuthController({
   loadDiscoveryConfig,
   loadOpsHealthData,
   loadSyncStatus,
+  loadPostInteractiveDiagnostics,
   awaitLocalDataReady = async () => true,
   markAdminStep,
   measureAdminStep,
@@ -89,6 +90,26 @@ export function createAdminAuthController({
       });
   }
 
+  let postInteractiveDiagnosticsScheduled = false;
+
+  function schedulePostInteractiveDiagnostics() {
+    if (postInteractiveDiagnosticsScheduled || typeof loadPostInteractiveDiagnostics !== "function") return;
+    postInteractiveDiagnosticsScheduled = true;
+    const run = () => {
+      Promise.resolve()
+        .then(() => loadPostInteractiveDiagnostics())
+        .catch(err => {
+          logAdminError("Failed to load deferred admin diagnostics", err);
+        });
+    };
+    const delayMs = 1800;
+    if (typeof globalThis.setTimeout === "function") {
+      globalThis.setTimeout(run, delayMs);
+      return;
+    }
+    run();
+  }
+
   function initAdminPage() {
     markStep("admin_auth_init_start");
     syncAdminBusyUi();
@@ -110,28 +131,22 @@ export function createAdminAuthController({
     setSourceStatus("");
     setOpsReadinessShell();
     if (refs.adminSyncStatusEl) refs.adminSyncStatusEl.textContent = "";
-    startBridgeStatusWatch();
+    startBridgeStatusWatch({ deferInitial: true, initialDelayMs: 1500 });
     startInitialOverviewLoad();
-    runInitialTask({
-      start: "admin_discovery_config_fetch_start",
-      end: "admin_discovery_config_fetch_done",
-      measure: "admin_discovery_config_fetch",
-      errorContext: "Failed to load discovery config",
-      task: () => loadDiscoveryConfig({ silent: true, forceForm: true })
-    });
     runInitialTask({
       start: "admin_ops_health_fetch_start",
       end: "admin_ops_health_fetch_done",
       measure: "admin_ops_health_fetch",
       errorContext: "Failed to load ops health data",
-      task: () => loadOpsHealthData({ summary: true })
+      task: () => loadOpsHealthData({ summary: true }),
+      afterSettled: schedulePostInteractiveDiagnostics
     });
     runInitialTask({
       start: "admin_sync_fetch_start",
       end: "admin_sync_fetch_done",
       measure: "admin_sync_fetch",
       errorContext: "Failed to load sync status",
-      task: () => loadSyncStatus({ silent: true, forceForm: true })
+      task: () => loadSyncStatus({ silent: true, forceForm: true, includeLive: false, summary: true })
     });
     markStep("admin_auth_init_end");
     measureStep("admin_auth_init", "admin_auth_init_start", "admin_auth_init_end");

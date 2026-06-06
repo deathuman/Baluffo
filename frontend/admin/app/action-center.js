@@ -173,6 +173,14 @@ function evaluateSyncStatus(syncData) {
   }
 
   if (lastResult === "error" && lastError) {
+    if (String(config?.state || "").trim() === "remote_conflict" || /is at .* but expected|sha does not match|remote write conflict|not a fast-forward/i.test(lastError)) {
+      return {
+        id: "sync_status",
+        severity: "warning",
+        summary: "Sync conflict needs review; data refresh can continue",
+        actions: ["review", "retry_sync", "dismiss"]
+      };
+    }
     return {
       id: "sync_status",
       severity: "warning",
@@ -218,6 +226,7 @@ export function createActionCenterController({
   showToast,
   logAdminError
 }) {
+  let initialPollTimer = null;
   let pollTimer = null;
   let fullPollTimer = null;
   const pollCache = { health: null, sync: null, storage: null };
@@ -395,8 +404,8 @@ export function createActionCenterController({
     try {
       const includeStorage = options?.includeStorage !== false;
       const [health, sync, storage] = await Promise.all([
-        getBridge("/ops/health", { timeoutMs: 5000 }).catch(() => null),
-        getBridge("/sync/status", { timeoutMs: 5000 }).catch(() => null),
+        getBridge("/ops/health?view=ready", { timeoutMs: 5000 }).catch(() => null),
+        getBridge("/sync/status?view=summary", { timeoutMs: 5000 }).catch(() => null),
         includeStorage
           ? getBridge("/ops/storage-health", { timeoutMs: 5000 }).catch(() => null)
           : Promise.resolve(pollCache.storage || null)
@@ -432,22 +441,40 @@ export function createActionCenterController({
     }
   }
 
-  function startPolling() {
+  function startPolling(options = {}) {
     stopPolling();
-    pollActionCenter({ includeStorage: false }).then(() => {
-      const itemsEl = refs.actionCenterItemsEl;
-      bindEvents(itemsEl);
-    });
+    const initialDelayMs = Math.max(0, Number(options?.initialDelayMs) || 0);
+    const runInitialPoll = () => {
+      pollActionCenter({ includeStorage: false }).then(() => {
+        const itemsEl = refs.actionCenterItemsEl;
+        bindEvents(itemsEl);
+      });
+    };
+    if (initialDelayMs > 0) {
+      initialPollTimer = setTimeout(() => {
+        initialPollTimer = null;
+        runInitialPoll();
+      }, initialDelayMs);
+    } else {
+      runInitialPoll();
+    }
+    const fullPollDelayMs = initialDelayMs > 0
+      ? initialDelayMs + INITIAL_FULL_POLL_DELAY_MS
+      : INITIAL_FULL_POLL_DELAY_MS;
     fullPollTimer = setTimeout(() => {
       pollActionCenter({ includeStorage: true }).catch(() => {});
       fullPollTimer = null;
-    }, INITIAL_FULL_POLL_DELAY_MS);
+    }, fullPollDelayMs);
     pollTimer = setInterval(() => {
       pollActionCenter({ includeStorage: true }).catch(() => {});
     }, POLL_INTERVAL_MS);
   }
 
   function stopPolling() {
+    if (initialPollTimer) {
+      clearTimeout(initialPollTimer);
+      initialPollTimer = null;
+    }
     if (fullPollTimer) {
       clearTimeout(fullPollTimer);
       fullPollTimer = null;

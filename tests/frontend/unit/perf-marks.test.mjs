@@ -45,7 +45,7 @@ test("perf marks call performance.mark and emit startup metrics", () => {
   }]);
 });
 
-test("perf measures call performance.measure and emit duration payloads", () => {
+test("perf measures call performance.measure and emit duration payloads", async () => {
   const measures = [];
   const emitted = [];
   let nowMs = 100;
@@ -74,6 +74,9 @@ test("perf measures call performance.measure and emit duration payloads", () => 
       { ok: true }
     );
   });
+  nowMs = 130;
+  startupMetrics.markFirstInteractive("test");
+  await new Promise(resolve => setTimeout(resolve, 0));
 
   assert.deepEqual(measures, [{
     name: "admin_overview_fetch",

@@ -92,7 +92,7 @@ test("saved startup metrics emit first render once", () => {
   assert.equal(calls[0].payload.elapsedMs, 18);
 });
 
-test("admin startup metrics add elapsedMs to first interactive", () => {
+test("admin startup metrics add elapsedMs to first interactive", async () => {
   const calls = [];
   let nowMs = 200;
   const metrics = createAdminStartupMetrics({
@@ -102,10 +102,37 @@ test("admin startup metrics add elapsedMs to first interactive", () => {
 
   nowMs = 245;
   metrics.markFirstInteractive("unlock");
+  await new Promise(resolve => setTimeout(resolve, 0));
 
   assert.equal(calls[0].event, "admin_first_interactive");
   assert.equal(calls[0].payload.elapsedMs, 45);
   assert.equal(calls[0].payload.reason, "unlock");
+});
+
+test("admin startup metrics batch early boot events after first interactive", async () => {
+  const batches = [];
+  let nowMs = 1000;
+  const metrics = createAdminStartupMetrics({
+    emitStartupMetric: () => {
+      throw new Error("batch transport should be used when available");
+    },
+    emitStartupMetricsBatch: rows => batches.push(rows),
+    now: () => nowMs
+  });
+
+  nowMs = 1010;
+  metrics.emit("admin_init_ready", { phase: "init" });
+  nowMs = 1030;
+  metrics.markFirstInteractive("ready");
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  assert.equal(batches.length, 1);
+  assert.deepEqual(
+    batches[0].map(row => row.event),
+    ["admin_init_ready", "admin_first_interactive"]
+  );
+  assert.equal(batches[0][0].payload.elapsedMs, 10);
+  assert.equal(batches[0][1].payload.elapsedMs, 30);
 });
 
 test("startup probe metric transport retries queued posts after an early bridge failure", async () => {

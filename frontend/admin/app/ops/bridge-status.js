@@ -14,6 +14,7 @@ export function createOpsBridgeStatusController({
 }) {
   let lastBridgeStatus = "checking";
   let bridgeStatusFailureCount = 0;
+  let bridgeStatusInitialPollTimer = null;
 
   function getBridgeStatus() {
     return lastBridgeStatus;
@@ -33,15 +34,31 @@ export function createOpsBridgeStatusController({
     refs.adminBridgeStatusBadgeEl.classList.add("refresh-pulse");
   }
 
-  function startBridgeStatusWatch() {
+  function startBridgeStatusWatch(options = {}) {
     stopBridgeStatusWatch();
-    pollBridgeStatus({ forceChecking: true }).catch(() => {});
+    const deferInitial = Boolean(options?.deferInitial);
+    if (deferInitial) {
+      lastBridgeStatus = "checking";
+      onBridgeStatusChange?.("checking");
+      setBridgeStatusBadge("checking", "Bridge Checking");
+      const initialDelayMs = Math.max(600, Number(options?.initialDelayMs) || bridgeStatusPollIntervalMs);
+      bridgeStatusInitialPollTimer = maybeUnrefTimer(setTimeout(() => {
+        bridgeStatusInitialPollTimer = null;
+        pollBridgeStatus().catch(() => {});
+      }, initialDelayMs));
+    } else {
+      pollBridgeStatus({ forceChecking: true }).catch(() => {});
+    }
     state.bridgeStatusPollTimer = maybeUnrefTimer(setInterval(() => {
       pollBridgeStatus().catch(() => {});
     }, bridgeStatusPollIntervalMs));
   }
 
   function stopBridgeStatusWatch() {
+    if (bridgeStatusInitialPollTimer) {
+      clearTimeout(bridgeStatusInitialPollTimer);
+      bridgeStatusInitialPollTimer = null;
+    }
     if (!state.bridgeStatusPollTimer) return;
     clearInterval(state.bridgeStatusPollTimer);
     state.bridgeStatusPollTimer = null;
@@ -56,7 +73,7 @@ export function createOpsBridgeStatusController({
       setBridgeStatusBadge("checking", "Bridge Checking");
     }
     try {
-      const healthPayload = await getBridge("/ops/health", { timeoutMs: 5000 });
+      const healthPayload = await getBridge("/ops/health?view=ready", { timeoutMs: 5000 });
       const serviceName = String(healthPayload?.service || "").trim();
       if (serviceName && serviceName !== "baluffo-bridge") {
         throw new Error("Bridge health response mismatch");

@@ -11,6 +11,7 @@ test("admin bridge button watcher falls back to desktop bridge URL params", asyn
   const originalWindow = globalThis.window;
   const states = [];
   const bases = [];
+  const paths = [];
   globalThis.window = {
     location: {
       href: "http://127.0.0.1:64432/saved.html?desktop=1&bridgePort=64433&bridgeHost=127.0.0.1"
@@ -30,8 +31,9 @@ test("admin bridge button watcher falls back to desktop bridge URL params", asyn
     const watcher = createAdminBridgeButtonWatcher({
       buttonEl: createButton(),
       baseUrl: "http://127.0.0.1:8877",
-      fetchJson: async base => {
+      fetchJson: async (base, path) => {
         bases.push(base);
+        paths.push(path);
         if (String(base).endsWith(":64433")) {
           return { summary: { activeAlertCount: 0 } };
         }
@@ -47,6 +49,7 @@ test("admin bridge button watcher falls back to desktop bridge URL params", asyn
     watcher.stopAdminBridgeButtonWatch();
 
     assert.deepEqual(bases, ["http://127.0.0.1:8877", "http://127.0.0.1:64433"]);
+    assert.deepEqual(paths, ["/ops/health?view=ready", "/ops/health?view=ready"]);
     assert.equal(states.at(-1)?.state, "online");
     assert.equal(states.at(-1)?.label, "Admin Online");
   } finally {

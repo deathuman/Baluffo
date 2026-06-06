@@ -72,7 +72,7 @@ test("admin bridge status pill uses lightweight ops health instead of registry s
     refs,
     getBridge: async (path, options = {}) => {
       calls.push({ path, options });
-      if (path === "/ops/health") return { service: "baluffo-bridge", status: "healthy" };
+      if (path === "/ops/health?view=ready") return { service: "baluffo-bridge", status: "healthy" };
       throw new Error(`unexpected path ${path}`);
     },
     onBridgeStatusChange(status) {
@@ -82,7 +82,7 @@ test("admin bridge status pill uses lightweight ops health instead of registry s
 
   await controller.pollBridgeStatus();
 
-  assert.deepEqual(calls.map(call => call.path), ["/ops/health"]);
+  assert.deepEqual(calls.map(call => call.path), ["/ops/health?view=ready"]);
   assert.equal(calls[0].options.timeoutMs, 5000);
   assert.equal(refs.adminBridgeStatusBadgeEl.textContent, "Bridge Online");
   assert.equal(refs.adminBridgeStatusBadgeEl.classList.contains("online"), true);
@@ -98,7 +98,7 @@ test("admin bridge status pill treats one failed health poll as checking, not of
   const controller = createOpsControllerForBridgeStatus({
     refs,
     getBridge: async path => {
-      if (path !== "/ops/health") throw new Error(`unexpected path ${path}`);
+      if (path !== "/ops/health?view=ready") throw new Error(`unexpected path ${path}`);
       if (fail) throw new Error("Bridge request timed out");
       return { service: "baluffo-bridge", status: "healthy" };
     },

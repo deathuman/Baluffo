@@ -90,7 +90,7 @@ export function createAdminFetcherLogController({
   }
 
   async function loadFetcherLogChunk(options = {}) {
-    return loadLiveTaskLogChunk({
+    const payload = await loadLiveTaskLogChunk({
       getBridge,
       path: "/fetcher/log",
       state,
@@ -98,6 +98,13 @@ export function createAdminFetcherLogController({
       reset: Boolean(options?.reset),
       onText: appendFetcherServerLogText
     });
+    const text = String(payload?.text || "").trim();
+    const hasMore = Boolean(payload?.hasMore);
+    const hasVisibleLog = Boolean(String(refs.adminFetcherLogEl?.textContent || "").trim());
+    if (options?.showEmptyState && options?.reset && !text && !hasMore && !hasVisibleLog) {
+      appendFetcherLog("No fetch log entries yet.", "muted");
+    }
+    return payload;
   }
 
   function stopFetcherLogPolling() {

@@ -19,6 +19,7 @@ import {
 import {
   fetchJobsFetchReportJson as fetchJobsFetchReportJsonFromData,
   emitAdminStartupMetric as emitAdminStartupMetricFromData,
+  emitAdminStartupMetricsBatch as emitAdminStartupMetricsBatchFromData,
   getBridge as getBridgeFromData,
   postBridge as postBridgeFromData
 } from "../data-source.js";
@@ -80,7 +81,8 @@ let authController, syncController, opsController, fetcherController, discoveryC
 let registryController, overviewController, actionCenterController, inspectorController;
 let restoreActiveRunWatches;
 const startupMetrics = createAdminStartupMetrics({
-  emitStartupMetric: (event, payload) => emitAdminStartupMetricFromData(ADMIN_BRIDGE_BASE, event, payload)
+  emitStartupMetric: (event, payload) => emitAdminStartupMetricFromData(ADMIN_BRIDGE_BASE, event, payload),
+  emitStartupMetricsBatch: metrics => emitAdminStartupMetricsBatchFromData(ADMIN_BRIDGE_BASE, metrics)
 });
 const adminPerfMarks = createPerfMarks(startupMetrics);
 const callBridge = createBridgeCaller({
@@ -311,7 +313,7 @@ function bootAdminPage() {
     onSetSourceFilter: setSourceFilter
   });
   authController.initAdminPage();
-  actionCenterController.startPolling(); inspectorController.init();
+  actionCenterController.startPolling({ initialDelayMs: 5000 }); inspectorController.init();
 }
 
 export { bootAdminPage as boot };

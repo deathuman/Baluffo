@@ -126,10 +126,12 @@ export function createAdminSyncController({
   async function loadSyncStatus(options = {}) {
     const silent = Boolean(options?.silent);
     const forceForm = Boolean(options?.forceForm);
+    const includeLive = options?.includeLive !== false;
+    const summary = Boolean(options?.summary);
     try {
       const [payload, livePayload] = await Promise.all([
-        getBridge("/sync/status"),
-        getBridge("/ops/task-live/sync").catch(() => null)
+        getBridge(summary ? "/sync/status?view=summary" : "/sync/status"),
+        includeLive ? getBridge("/ops/task-live/sync").catch(() => null) : Promise.resolve(null)
       ]);
       state.latestSyncStatusCache = payload || null;
       setLiveSyncRunning(Boolean(livePayload?.active));
