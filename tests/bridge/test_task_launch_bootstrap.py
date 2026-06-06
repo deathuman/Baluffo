@@ -79,6 +79,7 @@ def _write_bootstrap_artifacts(staging_dir: Path) -> None:
     ]
     write_atomic_if_changed(staging_dir / "jobs-unified.json", json.dumps(rows))
     write_atomic_if_changed(staging_dir / "jobs-unified-light.json", json.dumps(rows))
+    write_atomic_if_changed(staging_dir / "jobs-unified-startup.json", json.dumps(rows))
     write_atomic_if_changed(staging_dir / "jobs-unified.csv", "id,title\njob-1,Tools Programmer\n")
     _save_json_atomic(staging_dir / "jobs-fetch-report.json", _successful_bootstrap_report())
 
