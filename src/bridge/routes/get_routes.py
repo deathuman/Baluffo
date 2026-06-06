@@ -122,42 +122,54 @@ def _skip_json_value(text: str, index: int) -> int:
     return index
 
 
-def _top_level_json_field_spans(text: str) -> dict[str, tuple[int, int]]:
-    decoder = json.JSONDecoder()
+def _skip_json_whitespace(text: str, index: int) -> int:
     size = len(text)
-    index = 0
     while index < size and text[index].isspace():
         index += 1
-    if index >= size or text[index] != "{":
+    return index
+
+
+def _decode_top_level_json_key(
+    text: str, index: int, decoder: json.JSONDecoder
+) -> tuple[str | None, int]:
+    index = _skip_json_whitespace(text, index)
+    if index >= len(text) or text[index] in "}":
+        return None, len(text)
+    if text[index] != '"':
+        return None, len(text)
+    try:
+        key, next_index = decoder.raw_decode(text, index)
+    except ValueError:
+        return None, len(text)
+    if not isinstance(key, str):
+        return None, len(text)
+    next_index = _skip_json_whitespace(text, next_index)
+    if next_index >= len(text) or text[next_index] != ":":
+        return None, len(text)
+    return key, next_index + 1
+
+
+def _next_top_level_json_field_index(text: str, index: int) -> int:
+    index = _skip_json_whitespace(text, index)
+    if index < len(text) and text[index] == ",":
+        return index + 1
+    return index
+
+
+def _top_level_json_field_spans(text: str) -> dict[str, tuple[int, int]]:
+    decoder = json.JSONDecoder()
+    index = _skip_json_whitespace(text, 0)
+    if index >= len(text) or text[index] != "{":
         return {}
     index += 1
     spans: dict[str, tuple[int, int]] = {}
-    while index < size:
-        while index < size and text[index].isspace():
-            index += 1
-        if index >= size or text[index] == "}":
+    while index < len(text):
+        key, value_start = _decode_top_level_json_key(text, index, decoder)
+        if key is None:
             break
-        if text[index] != '"':
-            break
-        try:
-            key, next_index = decoder.raw_decode(text, index)
-        except ValueError:
-            break
-        index = next_index
-        while index < size and text[index].isspace():
-            index += 1
-        if index >= size or text[index] != ":":
-            break
-        index += 1
-        value_start = index
-        value_end = _skip_json_value(text, index)
-        if isinstance(key, str):
-            spans[key] = (value_start, value_end)
-        index = value_end
-        while index < size and text[index].isspace():
-            index += 1
-        if index < size and text[index] == ",":
-            index += 1
+        value_end = _skip_json_value(text, value_start)
+        spans[key] = (value_start, value_end)
+        index = _next_top_level_json_field_index(text, value_end)
     return spans
 
 
