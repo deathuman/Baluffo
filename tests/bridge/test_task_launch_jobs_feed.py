@@ -173,10 +173,12 @@ def test_fetch_lifecycle_close_writes_exports_when_jobs_feed_is_authoritative() 
 
             full_rows = read_json(data_dir / "jobs-unified.json", [])
             light_rows = read_json(data_dir / "jobs-unified-light.json", [])
+            startup_rows = read_json(data_dir / "jobs-unified-startup.json", [])
             assert full_rows[0]["title"] == "Tools Programmer"
             assert full_rows[0]["sourceBundle"] == rows[0]["sourceBundle"]
             assert light_rows[0]["title"] == "Tools Programmer"
             assert "sourceBundle" not in light_rows[0]
+            assert startup_rows == light_rows
             assert (
                 (data_dir / "jobs-unified.csv")
                 .read_text(encoding="utf-8")

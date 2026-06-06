@@ -374,6 +374,11 @@ def _write_output_rows(
         paths.light_json_path,
         serialize_rows_for_json(deduped_payload_rows, LIGHTWEIGHT_OUTPUT_FIELDS),
     )
+    if hasattr(paths, "startup_json_path"):
+        write_atomic_if_changed(
+            paths.startup_json_path,
+            serialize_rows_for_json(deduped_payload_rows, LIGHTWEIGHT_OUTPUT_FIELDS),
+        )
     return wrote_json, wrote_csv, wrote_light_json
 
 

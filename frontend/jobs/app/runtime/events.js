@@ -109,6 +109,11 @@ export function createJobsEventsController({
       dom.sortFilter
     ].forEach(element => bindUi(element, "change", () => filtersController.onFilterChange()));
 
+    if (dom.cityFilter && typeof filtersController.materializeCityOptions === "function") {
+      bindUi(dom.cityFilter, "pointerdown", () => filtersController.materializeCityOptions());
+      bindUi(dom.cityFilter, "focus", () => filtersController.materializeCityOptions());
+    }
+
     if (dom.professionSearchFilter) {
       dom.professionSearchFilter.addEventListener("input", () => {
         filtersController.renderProfessionOptions(dom.professionSearchFilter.value);

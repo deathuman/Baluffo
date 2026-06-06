@@ -121,6 +121,10 @@ def _jobs_feed_light_path(jobs_fetch_report: Path) -> Path:
     return jobs_fetch_report.with_name("jobs-unified-light.json")
 
 
+def _jobs_feed_startup_path(jobs_fetch_report: Path) -> Path:
+    return jobs_fetch_report.with_name("jobs-unified-startup.json")
+
+
 def _jobs_feed_csv_path(jobs_fetch_report: Path) -> Path:
     return jobs_fetch_report.with_name("jobs-unified.csv")
 
@@ -177,6 +181,7 @@ def export_jobs_feed_from_sqlite(
         rows = runtime_store.current_rows()
         json_path = _jobs_feed_path(jobs_fetch_report)
         light_path = _jobs_feed_light_path(jobs_fetch_report)
+        startup_path = _jobs_feed_startup_path(jobs_fetch_report)
         csv_path = _jobs_feed_csv_path(jobs_fetch_report)
         write_atomic_if_changed(
             json_path,
@@ -184,6 +189,10 @@ def export_jobs_feed_from_sqlite(
         )
         write_atomic_if_changed(
             light_path,
+            serialize_rows_for_json(rows, jobs_common_config.LIGHTWEIGHT_OUTPUT_FIELDS),
+        )
+        write_atomic_if_changed(
+            startup_path,
             serialize_rows_for_json(rows, jobs_common_config.LIGHTWEIGHT_OUTPUT_FIELDS),
         )
         write_atomic_if_changed(
@@ -198,6 +207,7 @@ def export_jobs_feed_from_sqlite(
                 "rowCount": len(rows),
                 "json": str(json_path),
                 "lightJson": str(light_path),
+                "startupJson": str(startup_path),
                 "csv": str(csv_path),
             },
         )

@@ -99,12 +99,14 @@ BOOTSTRAP_COVERAGE_SCOPE = "bootstrap_sheets"
 BOOTSTRAP_REQUIRED_ARTIFACTS = (
     "jobs-unified.json",
     "jobs-unified-light.json",
+    "jobs-unified-startup.json",
     "jobs-unified.csv",
     "jobs-fetch-report.json",
 )
 BOOTSTRAP_PROMOTED_ARTIFACTS = (
     "jobs-unified.json",
     "jobs-unified-light.json",
+    "jobs-unified-startup.json",
     "jobs-unified.csv",
 )
 BOOTSTRAP_TRANSACTION_ARTIFACTS = BOOTSTRAP_PROMOTED_ARTIFACTS + (
@@ -900,6 +902,10 @@ class TaskLaunchApi:
         )
         write_atomic_if_changed(
             staging_dir / "jobs-unified-light.json",
+            serialize_rows_for_json(rows, jobs_common_config.LIGHTWEIGHT_OUTPUT_FIELDS),
+        )
+        write_atomic_if_changed(
+            staging_dir / "jobs-unified-startup.json",
             serialize_rows_for_json(rows, jobs_common_config.LIGHTWEIGHT_OUTPUT_FIELDS),
         )
         write_atomic_if_changed(

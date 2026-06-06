@@ -39,6 +39,8 @@ export function createJobsFiltersController({
   let availableProfessions = [];
   let availableCountries = [];
   let availableCountryFilterValues = [];
+  let availableCities = [];
+  let cityOptionsMaterialized = false;
   let visibleQuickFilterKeys = [];
 
   function updateCountrySelectionBadge() {
@@ -138,6 +140,39 @@ export function createJobsFiltersController({
     }
   }
 
+  function appendFilterOption(select, value, label = value) {
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = label;
+    select.appendChild(opt);
+  }
+
+  function renderCityOptions({ materialize = false } = {}) {
+    if (!refs.cityFilter) return;
+    if (materialize) cityOptionsMaterialized = true;
+    const current = String(state.filters.city || refs.cityFilter.value || "").trim();
+    const valuesToRender = cityOptionsMaterialized
+      ? availableCities
+      : availableCities.filter(city => city === current);
+
+    refs.cityFilter.innerHTML = "";
+    appendFilterOption(refs.cityFilter, "", "All Cities");
+    valuesToRender.forEach(city => {
+      appendFilterOption(refs.cityFilter, city, city);
+    });
+
+    if (current && optionExists(refs.cityFilter, current)) {
+      refs.cityFilter.value = current;
+      return;
+    }
+    refs.cityFilter.value = "";
+  }
+
+  function materializeCityOptions() {
+    if (cityOptionsMaterialized) return;
+    renderCityOptions({ materialize: true });
+  }
+
   function applyStateToFilters() {
     applyStateToStaticFilters();
     state.filters.countries = normalizeSelectedCountries(state.filters.countries, {
@@ -152,6 +187,10 @@ export function createJobsFiltersController({
       });
     }
     syncCountryPickerChecks();
+
+    if (refs.cityFilter && !cityOptionsMaterialized) {
+      renderCityOptions();
+    }
 
     if (refs.cityFilter && optionExists(refs.cityFilter, state.filters.city)) {
       refs.cityFilter.value = state.filters.city;
@@ -229,7 +268,7 @@ export function createJobsFiltersController({
       isSemanticallyValidLocationValue
     });
     const seenCityOptions = new Set();
-    const availableCities = (Array.isArray(rawAvailableCities) ? rawAvailableCities : [])
+    availableCities = (Array.isArray(rawAvailableCities) ? rawAvailableCities : [])
       .filter(city => {
         const text = String(city || "").trim();
         if (!text || seenCityOptions.has(text)) return false;
@@ -238,6 +277,7 @@ export function createJobsFiltersController({
         seenCityOptions.add(text);
         return true;
       });
+    cityOptionsMaterialized = false;
 
     availableCountries = nextAvailableCountries;
     availableCountryFilterValues = nextAvailableCountryFilterValues;
@@ -251,13 +291,7 @@ export function createJobsFiltersController({
     });
     renderCountryPickerOptions(refs.countryPickerSearch ? refs.countryPickerSearch.value : "");
 
-    refs.cityFilter.innerHTML = '<option value="">All Cities</option>';
-    availableCities.forEach(city => {
-      const opt = document.createElement("option");
-      opt.value = city;
-      opt.textContent = city;
-      refs.cityFilter.appendChild(opt);
-    });
+    renderCityOptions();
 
     refs.sectorFilter.innerHTML = '<option value="">All Sectors</option>';
     availableSectors.forEach(sector => {
@@ -407,6 +441,7 @@ export function createJobsFiltersController({
     updateCountryPickerTrigger,
     updateQuickChipStates,
     updateActiveFiltersSummary,
-    renderProfessionOptions
+    renderProfessionOptions,
+    materializeCityOptions
   };
 }

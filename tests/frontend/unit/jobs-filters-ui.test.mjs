@@ -37,6 +37,88 @@ function createFiltersControllerHarness() {
   return { controller, refs, writes };
 }
 
+function createOptionElement() {
+  return {
+    value: "",
+    textContent: "",
+    selected: false
+  };
+}
+
+function createSelectElement() {
+  const element = createElement({
+    options: [],
+    appendChild(option) {
+      this.options.push(option);
+    }
+  });
+  let html = "";
+  Object.defineProperty(element, "innerHTML", {
+    get() {
+      return html;
+    },
+    set(value) {
+      html = String(value || "");
+      element.options = [];
+    }
+  });
+  return element;
+}
+
+function withFakeDocument(callback) {
+  const previousDocument = globalThis.document;
+  globalThis.document = {
+    createElement: () => createOptionElement()
+  };
+  try {
+    return callback();
+  } finally {
+    if (previousDocument === undefined) {
+      delete globalThis.document;
+    } else {
+      globalThis.document = previousDocument;
+    }
+  }
+}
+
+function createFullFiltersControllerHarness({ selectedCity = "" } = {}) {
+  const refs = {
+    workTypeFilter: createSelectElement(),
+    countryFilter: createSelectElement(),
+    professionFilter: createSelectElement(),
+    cityFilter: createSelectElement(),
+    sectorFilter: createSelectElement(),
+    sortFilter: createSelectElement(),
+    searchFilter: createElement(),
+    countryPickerOptions: createElement(),
+    quickActionsEl: createElement(),
+    quickFiltersOptionsEl: createElement(),
+    quickFiltersResetBtn: createElement()
+  };
+  const state = { filters: { ...DEFAULT_FILTERS, countries: [], city: selectedCity } };
+  const controller = createJobsFiltersController({
+    refs,
+    state,
+    defaultFilters: DEFAULT_FILTERS,
+    quickFilters: QUICK_FILTERS,
+    professionLabels: {},
+    jobsDispatch: { dispatch: () => {} },
+    JOBS_ACTIONS: { FILTERS_CHANGED: "jobs/filtersChanged" },
+    applyFiltersAndRender: () => {},
+    buildFilterOptions: () => ({}),
+    getJobLocationCities: () => [],
+    getJobLocationCountries: () => [],
+    isValidCountry: () => true,
+    isSemanticallyValidLocationValue: () => true,
+    readQuickFilterPreferences: () => null,
+    writeQuickFilterPreferences: () => {},
+    QUICK_FILTER_PREFS_KEY: "quick-filter-prefs",
+    escapeHtml: value => String(value || ""),
+    normalizeLifecycleStatus: value => value || "active"
+  });
+  return { controller, refs, state };
+}
+
 test("jobs quick filter reset button reflects whether default presets are already shown", () => {
   const { controller, refs, writes } = createFiltersControllerHarness();
 
@@ -63,3 +145,49 @@ test("jobs quick filter reset button reflects whether default presets are alread
     value: ["remote", "new-only", "exclude-internship", "netherlands", "technical-artist", "clear"]
   });
 });
+
+test("jobs city filter defers thousands of options until the selector is used", () => withFakeDocument(() => {
+  const { controller, refs } = createFullFiltersControllerHarness();
+  const cities = ["Amsterdam", "Berlin", "Copenhagen", "Dublin", "Edinburgh"];
+
+  controller.updateFilterOptions([], {
+    precomputed: {
+      availableCountries: [],
+      availableCountryFilterValues: [],
+      availableProfessions: [],
+      availableCities: cities,
+      availableSectors: []
+    }
+  });
+
+  assert.deepEqual(refs.cityFilter.options.map(option => option.value), [""]);
+
+  controller.materializeCityOptions();
+
+  assert.deepEqual(refs.cityFilter.options.map(option => option.value), ["", ...cities]);
+}));
+
+test("jobs city filter preserves a selected city before materializing all options", () => withFakeDocument(() => {
+  const { controller, refs, state } = createFullFiltersControllerHarness({ selectedCity: "Berlin" });
+  const cities = ["Amsterdam", "Berlin", "Copenhagen"];
+
+  controller.updateFilterOptions([], {
+    precomputed: {
+      availableCountries: [],
+      availableCountryFilterValues: [],
+      availableProfessions: [],
+      availableCities: cities,
+      availableSectors: []
+    }
+  });
+  controller.applyStateToFilters();
+
+  assert.equal(state.filters.city, "Berlin");
+  assert.equal(refs.cityFilter.value, "Berlin");
+  assert.deepEqual(refs.cityFilter.options.map(option => option.value), ["", "Berlin"]);
+
+  controller.materializeCityOptions();
+
+  assert.equal(refs.cityFilter.value, "Berlin");
+  assert.deepEqual(refs.cityFilter.options.map(option => option.value), ["", ...cities]);
+}));

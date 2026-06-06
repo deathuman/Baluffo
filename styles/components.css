@@ -2228,7 +2228,7 @@ h1 {
   padding: 0.8rem;
   border-radius: 6px;
   border: 1px solid var(--surface-11);
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease;
   color: var(--text-secondary);
   font-size: 0.92rem;
   line-height: 1.45;

@@ -24,6 +24,7 @@
 .jobs-page .source-status {
   margin: 0 0 0.85rem;
   padding: 0.52rem 0.72rem;
+  min-height: 2.2rem;
   border-radius: 10px;
   border: 1px solid color-mix(in srgb, var(--surface-11) 82%, transparent);
   background: color-mix(in srgb, var(--surface-5) 72%, transparent);
@@ -172,10 +173,12 @@
 .jobs-page .results-summary {
   font-size: 0.86rem;
   color: var(--text-secondary);
+  min-height: 1.2rem;
 }
 
 .jobs-page .jobs-last-updated {
   font-size: 0.79rem;
+  min-height: 1rem;
 }
 
 .jobs-page .jobs-pipeline-btn {
@@ -258,6 +261,7 @@
   border-radius: 12px;
   border: 1px solid var(--surface-15);
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.16);
+  min-height: calc(2.95rem + (10 * 3.35rem));
 }
 
 .jobs-page .job-row-header {
@@ -485,11 +489,26 @@
 .jobs-page .pagination {
   margin-top: 1.25rem;
   margin-bottom: 1.25rem;
+  min-height: 2.75rem;
 }
 
 .jobs-page .page-btn {
   border-radius: 10px;
   border-color: var(--surface-20);
+}
+
+.jobs-page .page-nav-btn,
+.jobs-page .auth-actions .btn,
+.jobs-page .admin-page-btn,
+.jobs-page .quick-chip,
+.jobs-page .quick-clear,
+.jobs-page .quick-customize-btn,
+.jobs-page .page-btn,
+.jobs-page .jobs-pipeline-btn,
+.jobs-page .filter-group select,
+.jobs-page .filter-group input,
+.jobs-page .country-picker-btn {
+  transition-property: opacity, transform, background-color;
 }
 
 .jobs-page .jobs-sources {
@@ -609,17 +628,6 @@
   }
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .jobs-page .jobs-header {
-    animation: jobsIntro 0.42s ease-out both;
-  }
-
-  .jobs-page .filters {
-    animation: jobsIntro 0.55s ease-out both;
-    animation-delay: 0.05s;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .popup-overlay,
   .popup {
@@ -628,22 +636,6 @@
 
   .popup {
     transform: none;
-  }
-
-  .jobs-page .jobs-header,
-  .jobs-page .filters {
-    animation: none !important;
-  }
-}
-
-@keyframes jobsIntro {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
   }
 }
 

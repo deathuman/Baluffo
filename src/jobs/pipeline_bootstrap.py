@@ -10,6 +10,7 @@ class PipelinePaths:
     json_path: Path
     csv_path: Path
     light_json_path: Path
+    startup_json_path: Path
     report_path: Path
     success_cache_path: Path
     source_state_path: Path
@@ -32,6 +33,7 @@ def build_pipeline_paths(output_dir: Path) -> PipelinePaths:
         json_path=root / "jobs-unified.json",
         csv_path=root / "jobs-unified.csv",
         light_json_path=root / "jobs-unified-light.json",
+        startup_json_path=root / "jobs-unified-startup.json",
         report_path=root / "jobs-fetch-report.json",
         success_cache_path=root / "jobs-success-cache.json",
         source_state_path=root / "jobs-source-state.json",

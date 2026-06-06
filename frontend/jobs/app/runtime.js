@@ -64,8 +64,8 @@ import {
   getAvailableRegionOptions as getAvailableRegionOptionsForJobs
 } from "./countries.js";
 import {
-  STARTUP_PREVIEW_JSON_URLS,
   JOBS_FETCH_REPORT_URLS,
+  getStartupPreviewJsonUrlsForRuntime,
   fetchUnifiedJobs as fetchUnifiedJobsFromSources,
   fetchJsonFromCandidates as fetchJsonFromCandidatesFromSources,
   renderDataSources as renderDataSourcesFromSources
@@ -168,7 +168,7 @@ const jobsRuntime = composeJobsRuntime({
   goToPage: (...args) => jobsPageFlow.goToPage(...args),
   displayJobs: (...args) => jobsPageFlow.displayJobs(...args),
   jobsParsing,
-  startupPreviewJsonUrls: STARTUP_PREVIEW_JSON_URLS,
+  startupPreviewJsonUrls: getStartupPreviewJsonUrlsForRuntime(),
   jobsFetchReportUrls: JOBS_FETCH_REPORT_URLS,
   parseUnifiedJobsPayload,
   openJobsCacheDbFromModule,

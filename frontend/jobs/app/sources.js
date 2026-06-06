@@ -4,6 +4,7 @@ import {
   parseUnifiedJobsPayload,
   parseCSVLarge as parseCSVLargeFromData
 } from "../data-source.js?v=2";
+import { resolveContainerRuntimeMode } from "../../shared/local-data/runtime-context.js";
 import { renderDataSourcesPanel } from "../render.js";
 
 const UNIFIED_JSON_SOURCES = [
@@ -54,8 +55,20 @@ function isDesktopRuntimeMode() {
   }
 }
 
+function isContainerRuntimeMode() {
+  try {
+    return resolveContainerRuntimeMode();
+  } catch {
+    return false;
+  }
+}
+
+export function getStartupPreviewJsonUrlsForRuntime() {
+  return isContainerRuntimeMode() ? ["data/jobs-unified-startup.json"] : STARTUP_PREVIEW_JSON_URLS;
+}
+
 export function getSourceRegistryActiveUrlsForRuntime() {
-  return isDesktopRuntimeMode() ? [] : SOURCE_REGISTRY_ACTIVE_URLS;
+  return isDesktopRuntimeMode() || isContainerRuntimeMode() ? [] : SOURCE_REGISTRY_ACTIVE_URLS;
 }
 
 export async function fetchUnifiedJobs({
