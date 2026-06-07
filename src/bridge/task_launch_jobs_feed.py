@@ -23,6 +23,8 @@ from src.shared.json_io import existing_json_candidate, read_json
 from src.storage import JobRuntimeStore
 from src.storage.job_runtime import jobs_feed_rows_hash
 
+STARTUP_FEED_EXPORT_LIMIT = 10
+
 
 @dataclass(frozen=True)
 class JobsFeedContext:
@@ -193,7 +195,10 @@ def export_jobs_feed_from_sqlite(
         )
         write_atomic_if_changed(
             startup_path,
-            serialize_rows_for_json(rows, jobs_common_config.LIGHTWEIGHT_OUTPUT_FIELDS),
+            serialize_rows_for_json(
+                rows[:STARTUP_FEED_EXPORT_LIMIT],
+                jobs_common_config.LIGHTWEIGHT_OUTPUT_FIELDS,
+            ),
         )
         write_atomic_if_changed(
             csv_path,

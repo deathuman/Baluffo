@@ -78,6 +78,7 @@ _ROOT_DATA_READ_SURFACES = {
     "jobs-fetch-report.json": "fetchReport.static",
 }
 STARTUP_FEED_BACKFILL_LIMIT = 10
+STARTUP_FEED_MAX_BYTES = 512 * 1024
 
 
 def is_api_path(path: str) -> bool:
@@ -190,6 +191,27 @@ def _startup_feed_bytes(rows: list[dict[str, Any]]) -> bytes:
     return serialize_rows_for_json(startup_rows, LIGHTWEIGHT_OUTPUT_FIELDS).encode("utf-8")
 
 
+def _startup_feed_needs_repair(path: Path) -> bool:
+    try:
+        if path.stat().st_size > STARTUP_FEED_MAX_BYTES:
+            return True
+        payload = read_json(path, [])
+    except OSError:
+        return False
+    if not isinstance(payload, list):
+        return True
+    return len(payload) > STARTUP_FEED_BACKFILL_LIMIT
+
+
+def _data_path_candidates(safe_parts: list[str]) -> list[list[str]]:
+    requested_name = safe_parts[-1]
+    if requested_name.removesuffix(".gz") not in PIPELINE_GZIP_JSON_NAMES:
+        return [safe_parts]
+    if requested_name.endswith(".gz"):
+        return [safe_parts, [*safe_parts[:-1], requested_name.removesuffix(".gz")]]
+    return [[*safe_parts[:-1], f"{requested_name}.gz"], safe_parts]
+
+
 @dataclass(frozen=True)
 class StaticFileService:
     static_root: Path
@@ -204,17 +226,11 @@ class StaticFileService:
             return None, False
         if not safe_parts:
             return None, False
-        requested_name = safe_parts[-1]
-        if requested_name.removesuffix(".gz") in PIPELINE_GZIP_JSON_NAMES:
-            candidates = []
-            if requested_name.endswith(".gz"):
-                candidates.append(safe_parts)
-                candidates.append([*safe_parts[:-1], requested_name.removesuffix(".gz")])
-            else:
-                candidates.append([*safe_parts[:-1], f"{requested_name}.gz"])
-                candidates.append(safe_parts)
-        else:
-            candidates = [safe_parts]
+        if safe_parts == ["jobs-unified-startup.json"]:
+            startup_path = self._backfill_startup_feed()
+            if startup_path is not None:
+                return startup_path, False
+        candidates = _data_path_candidates(safe_parts)
         for base_dir in (self.data_dir, self.static_root / "data"):
             for rel_parts in candidates:
                 candidate = _existing_path_under(Path(base_dir), rel_parts)
@@ -245,13 +261,15 @@ class StaticFileService:
                 return _startup_feed_bytes(rows)
         return None
 
-    def _persist_startup_feed_bytes(self, body: bytes) -> Path | None:
+    def _persist_startup_feed_bytes(
+        self, body: bytes, *, replace_existing: bool = False
+    ) -> Path | None:
         startup_path = self._startup_feed_path()
-        if startup_path.is_file():
+        if startup_path.is_file() and not replace_existing:
             return startup_path
         try:
             startup_path.parent.mkdir(parents=True, exist_ok=True)
-            if startup_path.is_file():
+            if startup_path.is_file() and not replace_existing:
                 return startup_path
             write_atomic_if_changed(startup_path, body.decode("utf-8"))
         except OSError:
@@ -260,12 +278,13 @@ class StaticFileService:
 
     def _backfill_startup_feed(self) -> Path | None:
         startup_path = self._startup_feed_path()
-        if startup_path.is_file():
+        replace_existing = startup_path.is_file() and _startup_feed_needs_repair(startup_path)
+        if startup_path.is_file() and not replace_existing:
             return startup_path
         body = self._generate_startup_feed_bytes()
         if body is None:
-            return None
-        return self._persist_startup_feed_bytes(body)
+            return startup_path if startup_path.is_file() else None
+        return self._persist_startup_feed_bytes(body, replace_existing=replace_existing)
 
     def _render_missing_data_bytes(self, normalized: str) -> tuple[bytes, str] | None:
         if normalized not in {"jobs-unified-startup.json", "data/jobs-unified-startup.json"}:

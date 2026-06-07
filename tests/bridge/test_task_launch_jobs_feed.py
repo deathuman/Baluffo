@@ -147,7 +147,15 @@ def test_fetch_lifecycle_close_rolls_jobs_feed_back_on_shadow_failure() -> None:
 
 
 def test_fetch_lifecycle_close_writes_exports_when_jobs_feed_is_authoritative() -> None:
-    rows = [_job_row()]
+    rows = [
+        {
+            **_job_row(),
+            "id": index,
+            "title": f"Tools Programmer {index}",
+            "sourceJobId": f"job-{index}",
+        }
+        for index in range(12)
+    ]
     with workspace_tmpdir("task-launch-jobs-feed-sqlite") as data_dir:
         with BaluffoStore(data_dir) as store:
             store.set_authority_mode("jobsFeed", "sqlite", reason="test-cutover")
@@ -174,11 +182,13 @@ def test_fetch_lifecycle_close_writes_exports_when_jobs_feed_is_authoritative() 
             full_rows = read_json(data_dir / "jobs-unified.json", [])
             light_rows = read_json(data_dir / "jobs-unified-light.json", [])
             startup_rows = read_json(data_dir / "jobs-unified-startup.json", [])
-            assert full_rows[0]["title"] == "Tools Programmer"
+            assert full_rows[0]["title"] == "Tools Programmer 0"
             assert full_rows[0]["sourceBundle"] == rows[0]["sourceBundle"]
-            assert light_rows[0]["title"] == "Tools Programmer"
+            assert light_rows[0]["title"] == "Tools Programmer 0"
             assert "sourceBundle" not in light_rows[0]
-            assert startup_rows == light_rows
+            assert len(light_rows) == 12
+            assert len(startup_rows) == 10
+            assert startup_rows == light_rows[:10]
             assert (
                 (data_dir / "jobs-unified.csv")
                 .read_text(encoding="utf-8")

@@ -217,6 +217,45 @@ def test_container_handler_preserves_existing_startup_feed(tmp_path: Path) -> No
     )
 
 
+def test_container_handler_repairs_oversized_existing_startup_feed(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    data_dir = tmp_path / "data"
+    root.mkdir(parents=True)
+    data_dir.mkdir(parents=True)
+    (root / "index.html").write_text("<html>index</html>\n", encoding="utf-8")
+    oversized_rows = [{"id": f"old-{index}"} for index in range(12)]
+    backing_rows = [
+        {
+            "id": f"job-{index}",
+            "title": f"Role {index}",
+            "company": "Studio",
+            "description": "not in light startup output",
+        }
+        for index in range(12)
+    ]
+    (data_dir / "jobs-unified-startup.json").write_text(
+        json.dumps(oversized_rows),
+        encoding="utf-8",
+    )
+    (data_dir / "jobs-unified-light.json").write_text(
+        json.dumps(backing_rows),
+        encoding="utf-8",
+    )
+
+    with _served(_make_container_handler(root, data_dir)) as base_url:
+        response, body = _read_url(base_url, "/data/jobs-unified-startup.json")
+
+    startup_rows = json.loads(body.decode("utf-8"))
+    persisted_rows = json.loads(
+        (data_dir / "jobs-unified-startup.json").read_text(encoding="utf-8")
+    )
+    assert response.status == 200
+    assert len(startup_rows) == 10
+    assert [row["id"] for row in startup_rows] == [f"job-{index}" for index in range(10)]
+    assert "description" not in startup_rows[0]
+    assert persisted_rows == startup_rows
+
+
 def test_container_handler_keeps_missing_startup_feed_404_without_backing_feed(
     tmp_path: Path,
 ) -> None:

@@ -10,6 +10,16 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.56] - 2026-06-07
+
+### Fixed
+- Container Jobs startup feed export now writes only the bounded startup preview instead of duplicating the full light feed.
+- Container static serving repairs upgraded `/data/jobs-unified-startup.json` artifacts that are malformed or larger than the startup preview contract, so upgraded Umbrel installs recover without waiting for another pipeline.
+
+### Notes
+- This is a container/Umbrel startup-feed recovery patch. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.55] - 2026-06-07
 
 ### Changed
