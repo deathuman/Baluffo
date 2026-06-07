@@ -198,6 +198,64 @@ def _configure_background_script_runtime(
     admin_bridge.configure_runtime_paths(cfg)
 
 
+def test_container_fetcher_defaults_reduce_runtime_pressure(admin_bridge_entrypoint_root) -> None:
+    _configure_background_script_runtime(
+        admin_bridge_entrypoint_root,
+        desktop_mode=False,
+        container_mode=True,
+    )
+
+    args, preset = admin_bridge.build_fetcher_args_from_payload({"preset": "default"})
+
+    assert preset == "default"
+    assert args[args.index("--max-workers") + 1] == "4"
+    assert args[args.index("--max-per-domain") + 1] == "2"
+    assert args[args.index("--adapter-http-concurrency") + 1] == "16"
+    assert args[args.index("--static-detail-concurrency") + 1] == "4"
+
+
+def test_container_fetcher_defaults_keep_explicit_overrides(admin_bridge_entrypoint_root) -> None:
+    _configure_background_script_runtime(
+        admin_bridge_entrypoint_root,
+        desktop_mode=False,
+        container_mode=True,
+    )
+
+    args, preset = admin_bridge.build_fetcher_args_from_payload(
+        {
+            "preset": "default",
+            "maxWorkers": 7,
+            "maxPerDomain": 3,
+            "adapterHttpConcurrency": 24,
+            "staticDetailConcurrency": 8,
+        }
+    )
+
+    assert preset == "default"
+    assert args[args.index("--max-workers") + 1] == "7"
+    assert args[args.index("--max-per-domain") + 1] == "3"
+    assert args[args.index("--adapter-http-concurrency") + 1] == "24"
+    assert args[args.index("--static-detail-concurrency") + 1] == "8"
+
+
+def test_container_uncapped_fetcher_remains_intentionally_aggressive(
+    admin_bridge_entrypoint_root,
+) -> None:
+    _configure_background_script_runtime(
+        admin_bridge_entrypoint_root,
+        desktop_mode=False,
+        container_mode=True,
+    )
+
+    args, preset = admin_bridge.build_fetcher_args_from_payload({"preset": "uncapped"})
+
+    assert preset == "uncapped"
+    assert args[args.index("--max-workers") + 1] == "50"
+    assert args[args.index("--max-per-domain") + 1] == "5"
+    assert args[args.index("--adapter-http-concurrency") + 1] == "48"
+    assert args[args.index("--static-detail-concurrency") + 1] == "10"
+
+
 @dataclass(frozen=True)
 class _BackgroundScriptCommandCase:
     name: str

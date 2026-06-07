@@ -583,6 +583,7 @@ class TaskLaunchApi:
             safe_int=self._deps.safe_int,
             default_source_loaders=self._deps.default_source_loaders,
             failed_source_names_from_latest_report=self._deps.failed_source_names_from_latest_report,
+            container_mode=bool(getattr(self._runtime, "container_mode", False)),
         )
 
     def build_fetcher_extra_env_from_preset(self, preset: str) -> dict[str, str]:

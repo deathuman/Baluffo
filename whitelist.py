@@ -258,6 +258,7 @@ _runtime_reclaim_not_applicable  # unused function (src\ship\desktop_app\_linux.
 maxWorkers  # unused variable (src\bridge\task_launch_api.py)
 maxPerDomain  # unused variable (src\bridge\task_launch_api.py)
 adapterHttpConcurrency  # unused variable (src\bridge\task_launch_api.py)
+staticDetailConcurrency  # unused variable (src\bridge\task_launch_fetcher_args.py)
 sourceTtlMinutes  # unused variable (src\bridge\task_launch_api.py)
 hotSourceCadenceMinutes  # unused variable (src\bridge\task_launch_api.py)
 coldSourceCadenceMinutes  # unused variable (src\bridge\task_launch_api.py)

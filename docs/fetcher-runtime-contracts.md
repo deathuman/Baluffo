@@ -44,6 +44,12 @@ Bridge defaults:
   - `--max-workers 12`
   - `--max-per-domain 3`
   - `--adapter-http-concurrency 48`
+- Container/Umbrel bridge-started fetch runs use more conservative defaults to keep the raw-LAN UI responsive during active fetch work:
+  - `--max-workers 4`
+  - `--max-per-domain 2`
+  - `--adapter-http-concurrency 16`
+  - `--static-detail-concurrency 4`
+- The `uncapped` preset remains intentionally aggressive in container mode (`--max-workers 50`, `--max-per-domain 5`, `--adapter-http-concurrency 48`, and default static detail concurrency).
 - Bridge-started fetch runs include `--social-enabled` by default unless `socialEnabled: false` is passed.
 - Jobs page `Run Discovery + Fetch + Sync` and Admin `Run Jobs Fetcher` share this same bridge-default behavior.
 - `POST /tasks/run-jobs-bootstrap` is not a normal fetch preset. It is a first-run/retry bootstrap route that runs only `google_sheets`, `google_sheets_1er2oaxo`, and `google_sheets_1mvqhxat` into a private staging directory with no existing-output seed, no preserve-on-empty, forced refresh, circuit breaker ignored, and social disabled. It promotes `jobs-unified.json`, `jobs-unified-light.json`, `jobs-unified.csv`, and the report only when at least one sheet succeeds and output count is non-zero.
@@ -54,6 +60,7 @@ Optional overrides:
 - `maxPerDomain`
 - `fetchStrategy`
 - `adapterHttpConcurrency`
+- `staticDetailConcurrency`
 - `sourceTtlMinutes`
 - `respectSourceCadence`
 - `hotSourceCadenceMinutes`

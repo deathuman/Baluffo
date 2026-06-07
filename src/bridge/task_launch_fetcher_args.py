@@ -15,6 +15,11 @@ from typing import Any, TypedDict
 
 from src.jobs.common import config as jobs_common_config
 
+CONTAINER_DEFAULT_FETCH_MAX_WORKERS = 4
+CONTAINER_DEFAULT_FETCH_MAX_PER_DOMAIN = 2
+CONTAINER_DEFAULT_ADAPTER_HTTP_CONCURRENCY = 16
+CONTAINER_DEFAULT_STATIC_DETAIL_CONCURRENCY = 4
+
 
 class RunFetcherRequest(TypedDict, total=False):
     preset: str
@@ -22,6 +27,7 @@ class RunFetcherRequest(TypedDict, total=False):
     maxPerDomain: int
     fetchStrategy: str
     adapterHttpConcurrency: int
+    staticDetailConcurrency: int
     sourceTtlMinutes: int
     hotSourceCadenceMinutes: int
     coldSourceCadenceMinutes: int
@@ -58,6 +64,7 @@ def _apply_fetcher_shared_runtime_args(
     max_per_domain: int,
     fetch_strategy: str,
     adapter_http_concurrency: int,
+    static_detail_concurrency: int | None,
     hot_cadence: int,
     cold_cadence: int,
     circuit_failures: int,
@@ -73,6 +80,8 @@ def _apply_fetcher_shared_runtime_args(
             str(adapter_http_concurrency),
         ]
     )
+    if static_detail_concurrency is not None:
+        args.extend(["--static-detail-concurrency", str(static_detail_concurrency)])
     args.extend(["--circuit-breaker-failures", str(circuit_failures)])
     args.extend(["--circuit-breaker-cooldown-minutes", str(circuit_cooldown)])
     args.extend(["--browser-fallback-cooldown-minutes", str(browser_fallback_cooldown)])
@@ -86,6 +95,36 @@ def _apply_fetcher_shared_runtime_args(
     )
 
 
+def _fetcher_runtime_defaults(container_mode: bool) -> tuple[int, int, int]:
+    if container_mode:
+        return (
+            CONTAINER_DEFAULT_FETCH_MAX_WORKERS,
+            CONTAINER_DEFAULT_FETCH_MAX_PER_DOMAIN,
+            CONTAINER_DEFAULT_ADAPTER_HTTP_CONCURRENCY,
+        )
+    return (
+        jobs_common_config.DEFAULT_FETCH_MAX_WORKERS,
+        jobs_common_config.DEFAULT_FETCH_MAX_PER_DOMAIN,
+        jobs_common_config.DEFAULT_ADAPTER_HTTP_CONCURRENCY,
+    )
+
+
+def _static_detail_concurrency_from_payload(
+    data: dict[str, Any],
+    *,
+    safe_int: Callable[[Any, int, int, int], int],
+    container_mode: bool,
+) -> int | None:
+    if not container_mode and "staticDetailConcurrency" not in data:
+        return None
+    default_value = (
+        CONTAINER_DEFAULT_STATIC_DETAIL_CONCURRENCY
+        if container_mode
+        else jobs_common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY
+    )
+    return safe_int(data.get("staticDetailConcurrency"), default_value, 1, 64)
+
+
 # ── public API ──────────────────────────────────────────────────────
 
 
@@ -95,25 +134,32 @@ def build_fetcher_args_from_payload(
     safe_int: Callable[[Any, int, int, int], int],
     default_source_loaders: Callable[[], list[tuple[str, Any]]],
     failed_source_names_from_latest_report: Callable[[set[str] | None], list[str]],
+    container_mode: bool = False,
 ) -> tuple[list[str], str]:
     data = payload if isinstance(payload, dict) else {}
     preset = str(data.get("preset") or "default").strip().lower()
     args: list[str] = []
 
-    max_workers = safe_int(
-        data.get("maxWorkers"), jobs_common_config.DEFAULT_FETCH_MAX_WORKERS, 1, 16
-    )
-    max_per_domain = safe_int(
-        data.get("maxPerDomain"), jobs_common_config.DEFAULT_FETCH_MAX_PER_DOMAIN, 1, 6
-    )
+    (
+        default_max_workers,
+        default_max_per_domain,
+        default_adapter_http_concurrency,
+    ) = _fetcher_runtime_defaults(container_mode)
+    max_workers = safe_int(data.get("maxWorkers"), default_max_workers, 1, 16)
+    max_per_domain = safe_int(data.get("maxPerDomain"), default_max_per_domain, 1, 6)
     fetch_strategy = str(data.get("fetchStrategy") or "auto").strip().lower()
     if fetch_strategy not in {"auto", "http", "browser"}:
         fetch_strategy = "auto"
     adapter_http_concurrency = safe_int(
         data.get("adapterHttpConcurrency"),
-        jobs_common_config.DEFAULT_ADAPTER_HTTP_CONCURRENCY,
+        default_adapter_http_concurrency,
         1,
         128,
+    )
+    static_detail_concurrency = _static_detail_concurrency_from_payload(
+        data,
+        safe_int=safe_int,
+        container_mode=container_mode,
     )
     source_ttl = safe_int(data.get("sourceTtlMinutes"), 360, 0, 1440)
     hot_cadence = safe_int(data.get("hotSourceCadenceMinutes"), 15, 1, 240)
@@ -128,6 +174,7 @@ def build_fetcher_args_from_payload(
         max_per_domain=max_per_domain,
         fetch_strategy=fetch_strategy,
         adapter_http_concurrency=adapter_http_concurrency,
+        static_detail_concurrency=static_detail_concurrency,
         hot_cadence=hot_cadence,
         cold_cadence=cold_cadence,
         circuit_failures=circuit_failures,
@@ -147,6 +194,11 @@ def build_fetcher_args_from_payload(
         args.extend(["--force-refresh-all", "--ignore-circuit-breaker"])
         _set_cli_option(args, "--max-workers", "50")
         _set_cli_option(args, "--max-per-domain", "5")
+        _set_cli_option(
+            args,
+            "--adapter-http-concurrency",
+            str(jobs_common_config.DEFAULT_ADAPTER_HTTP_CONCURRENCY),
+        )
         _set_cli_option(
             args,
             "--static-detail-concurrency",
