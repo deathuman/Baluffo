@@ -57,7 +57,12 @@ export function bindAdminRuntimeEvents({
     [refs.adminRunDiscoveryUncappedBtnEl, () => discoveryController.runDiscoveryTask({ preset: "uncapped" })],
     [refs.adminLoadDiscoveryBtnEl, async () => {
       await registryController.loadDiscoveryData();
-      await discoveryController.loadDiscoveryLogChunk?.({ reset: true, guarded: false });
+      await discoveryController.loadDiscoveryLogChunk?.({
+        reset: true,
+        guarded: false,
+        view: "tail",
+        limitChars: 65536
+      });
     }],
     [refs.adminApproveSourcesBtnEl, () => registryController.approveSelectedSources()],
     [refs.adminRejectSourcesBtnEl, () => registryController.rejectSelectedSources()],

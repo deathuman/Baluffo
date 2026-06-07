@@ -10,6 +10,20 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.54] - 2026-06-07
+
+### Changed
+- Container Admin Fetcher and Discovery sections now load from explicit navigation, hash focus, or manual action instead of near-viewport observation.
+- Container Admin Fetcher and Discovery focused sections now request bounded recent log tails before continuing live polling from the returned offset.
+
+### Fixed
+- Container Admin Discovery manual refresh now uses the bounded log-tail path instead of rendering full historical log DOM.
+
+### Notes
+- This is a container/Umbrel Admin log-tail recovery patch. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- Chrome DevTools traces remain the primary acceptance signal for Umbrel page-load performance; backend route profiles remain supporting diagnostics.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.53] - 2026-06-07
 
 ### Changed

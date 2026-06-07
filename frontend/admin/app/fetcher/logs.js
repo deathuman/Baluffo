@@ -96,6 +96,8 @@ export function createAdminFetcherLogController({
       state,
       offsetKey: "fetcherLogRemoteOffset",
       reset: Boolean(options?.reset),
+      view: options?.view || "",
+      limitChars: Number(options?.limitChars || 0),
       onText: appendFetcherServerLogText
     });
     const text = String(payload?.text || "").trim();

@@ -115,12 +115,18 @@ export function loadLiveTaskLogChunk({
   state,
   offsetKey,
   reset = false,
+  view = "",
+  limitChars = 0,
   requestOptions = {},
   onText,
   onNextOffset
 }) {
   const offset = reset ? 0 : Math.max(0, Number(state[offsetKey]) || 0);
-  return getBridge(`${path}?offset=${offset}`, requestOptions).then(payload => {
+  const normalizedView = String(view || "").trim().toLowerCase();
+  const query = normalizedView === "tail"
+    ? `view=tail&limitChars=${encodeURIComponent(String(Math.max(1, Number(limitChars) || 65536)))}`
+    : `offset=${offset}`;
+  return getBridge(`${path}?${query}`, requestOptions).then(payload => {
     if (reset) {
       state[offsetKey] = 0;
     }

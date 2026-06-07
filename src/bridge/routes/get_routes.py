@@ -1531,6 +1531,64 @@ def _read_utf8_log_text(path: Path) -> str:
         return raw.decode("utf-8", errors="replace")
 
 
+def _safe_query_int(
+    query: dict[str, list[str]],
+    key: str,
+    default: int,
+    *,
+    minimum: int = 0,
+    maximum: int | None = None,
+) -> int:
+    raw = (query.get(key) or [str(default)])[0]
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        value = default
+    value = max(minimum, value)
+    if maximum is not None:
+        value = min(maximum, value)
+    return value
+
+
+def _log_chunk_payload(
+    text: str,
+    query: dict[str, list[str]],
+    *,
+    default_tail_limit_chars: int = 65536,
+) -> tuple[dict[str, Any], int]:
+    view = str((query.get("view") or ["offset"])[0] or "offset").strip().lower()
+    if view in {"", "offset", "full"}:
+        offset = _safe_query_int(query, "offset", 0, minimum=0)
+        chunk = text[offset:]
+        next_offset = len(text)
+        return {
+            "text": chunk,
+            "offset": offset,
+            "nextOffset": next_offset,
+            "hasMore": False,
+        }, 200
+    if view == "tail":
+        limit_chars = _safe_query_int(
+            query,
+            "limitChars",
+            default_tail_limit_chars,
+            minimum=4096,
+            maximum=131072,
+        )
+        next_offset = len(text)
+        offset = max(0, next_offset - limit_chars)
+        return {
+            "text": text[offset:],
+            "offset": offset,
+            "nextOffset": next_offset,
+            "hasMore": offset > 0,
+        }, 200
+    return {
+        "ok": False,
+        "error": f"unsupported log view: {view}",
+    }, 400
+
+
 def _json_error(exc: Exception) -> dict[str, Any]:
     return {"ok": False, "error": str(exc)}
 
@@ -1837,31 +1895,15 @@ def handle_get(
         return True
 
     if path == "/discovery/log":
-        offset_raw = (query.get("offset") or ["0"])[0]
-        try:
-            offset = max(0, int(offset_raw))
-        except ValueError:
-            offset = 0
         text = _read_utf8_log_text(api.DISCOVERY_LOG_PATH)
-        chunk = text[offset:]
-        next_offset = len(text)
-        handler.send_json(
-            {"text": chunk, "offset": offset, "nextOffset": next_offset, "hasMore": False}
-        )
+        payload, status = _log_chunk_payload(text, query)
+        handler.send_json(payload, status=status)
         return True
 
     if path == "/fetcher/log":
-        offset_raw = (query.get("offset") or ["0"])[0]
-        try:
-            offset = max(0, int(offset_raw))
-        except ValueError:
-            offset = 0
         text = _read_utf8_log_text(api.FETCHER_LOG_PATH)
-        chunk = text[offset:]
-        next_offset = len(text)
-        handler.send_json(
-            {"text": chunk, "offset": offset, "nextOffset": next_offset, "hasMore": False}
-        )
+        payload, status = _log_chunk_payload(text, query)
+        handler.send_json(payload, status=status)
         return True
 
     if _handle_ops_status_routes(handler, api=api, path=path, query=query):

@@ -120,6 +120,8 @@ export function createAdminDiscoveryLogController({
       state,
       offsetKey: "discoveryLogRemoteOffset",
       reset: Boolean(options?.reset),
+      view: options?.view || "",
+      limitChars: Number(options?.limitChars || 0),
       requestOptions: options?.requestOptions || {},
       onText: appendDiscoveryServerLogText
     });

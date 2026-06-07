@@ -1,21 +1,27 @@
 const SECTION_DEFINITIONS = Object.freeze({
   ops: {
     hash: "#admin-ops-section",
-    elementId: "admin-ops-section"
+    elementId: "admin-ops-section",
+    observe: true
   },
   fetcher: {
     hash: "#admin-fetcher-section",
-    elementId: "admin-fetcher-section"
+    elementId: "admin-fetcher-section",
+    observe: false
   },
   discovery: {
     hash: "#admin-discovery-section",
-    elementId: "admin-discovery-section"
+    elementId: "admin-discovery-section",
+    observe: false
   },
   sync: {
     hash: "#admin-sync-section",
-    elementId: "admin-sync-section"
+    elementId: "admin-sync-section",
+    observe: true
   }
 });
+
+const ADMIN_LOG_TAIL_LIMIT_CHARS = 65536;
 
 function sectionKeyFromHash(hashValue) {
   const normalized = String(hashValue || "").trim();
@@ -68,7 +74,12 @@ export function createAdminSectionLoadCoordinator({
   async function loadFetcherSection() {
     fetcherController?.setFetcherLogPlaceholder?.("Loading latest fetcher output...");
     await fetcherController?.loadLatestFetcherReport?.({ silent: true });
-    await fetcherController?.loadFetcherLogChunk?.({ reset: true, showEmptyState: true });
+    await fetcherController?.loadFetcherLogChunk?.({
+      reset: true,
+      showEmptyState: true,
+      view: "tail",
+      limitChars: ADMIN_LOG_TAIL_LIMIT_CHARS
+    });
   }
 
   async function loadDiscoverySection() {
@@ -77,7 +88,12 @@ export function createAdminSectionLoadCoordinator({
       sourceTablesOnly: true,
       skipIfFreshMs: 10000
     });
-    await discoveryController?.loadDiscoveryLogChunk?.({ reset: true, guarded: false });
+    await discoveryController?.loadDiscoveryLogChunk?.({
+      reset: true,
+      guarded: false,
+      view: "tail",
+      limitChars: ADMIN_LOG_TAIL_LIMIT_CHARS
+    });
   }
 
   async function loadSyncSection() {
@@ -159,11 +175,12 @@ export function createAdminSectionLoadCoordinator({
     if (started) return;
     started = true;
     Object.entries(SECTION_DEFINITIONS).forEach(([key, definition]) => {
+      if (!definition.observe) return;
       const sectionEl = documentObject?.getElementById?.(definition.elementId);
       if (sectionEl && typeof windowObject?.IntersectionObserver === "function") {
         const observer = new windowObject.IntersectionObserver(entries => {
           if (entries.some(entry => entry?.isIntersecting)) enqueueSection(key);
-        }, { rootMargin: "360px 0px", threshold: 0.01 });
+        }, { rootMargin: "120px 0px", threshold: 0.01 });
         observer.observe(sectionEl);
       }
     });

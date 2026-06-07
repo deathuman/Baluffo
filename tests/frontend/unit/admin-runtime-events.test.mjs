@@ -67,7 +67,7 @@ test("admin load discovery report button also reloads discovery log from the sta
 
     assert.deepEqual(calls, [
       ["loadDiscoveryData"],
-      ["loadDiscoveryLogChunk", { reset: true, guarded: false }]
+      ["loadDiscoveryLogChunk", { reset: true, guarded: false, view: "tail", limitChars: 65536 }]
     ]);
   } finally {
     global.window = previousWindow;
