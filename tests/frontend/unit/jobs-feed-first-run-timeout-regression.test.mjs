@@ -83,6 +83,120 @@ test("createJobsBoot first-run bootstrap request does not force a duplicate refr
   assert.deepEqual(startCall.options.body, { source: "jobs_first_run" });
 });
 
+test("createJobsBoot skips automatic Data Sources load in container mode", async () => {
+  let renderDataSourcesCalls = 0;
+  let pipelineWatchCalls = 0;
+  const deps = {
+    dom: { jobsList: {} },
+    runtimeState: { allJobs: [] },
+    emitDesktopStartupMetric: () => {},
+    authController: { initAuth: () => {} },
+    isDesktopRuntimeMode: () => false,
+    isContainerRuntimeMode: () => true,
+    feedController: {
+      readCachedJobs: async () => ({ jobs: [{ id: "cached-job" }], savedAt: Date.now() }),
+      setSourceStatus: () => {},
+      setProgress: () => {},
+      refreshJobsNow: async () => true,
+      updateLastUpdatedText: () => {},
+      fetchJobsReport: async () => EMPTY_REPORT,
+      loadStartupPreviewJobs: async () => false,
+      renderDataSources: async () => {
+        renderDataSourcesCalls += 1;
+      }
+    },
+    normalizeJobs: rows => rows,
+    professionLabels: {},
+    sanitizeUrl: url => url,
+    eventsController: { recalculateItemsPerPage: () => {} },
+    filtersController: { updateFilterOptions: () => {}, applyStateToFilters: () => {} },
+    applyFiltersAndRender: () => {},
+    markStartupRendered: () => {},
+    markJobsFirstInteractive: () => {},
+    isJobsCacheStale: () => false,
+    jobsCacheTtlMs: 0,
+    callJobsBridge: async () => ({}),
+    desktopJobsColdStart: false,
+    windowObject: {
+      setTimeout: fn => {
+        fn();
+        return 1;
+      },
+      clearTimeout: () => {}
+    },
+    setJobsStartupState: () => {},
+    bootstrapStartTimeoutMs: 30000,
+    bootstrapConfirmTimeoutMs: 0,
+    bootstrapConfirmIntervalMs: 0,
+    applyPendingAutoRefreshSignal: async () => {},
+    ensureJobsPipelineStatusWatch: () => {
+      pipelineWatchCalls += 1;
+    },
+    showError: () => {},
+    showFirstRunBootstrapNotice: () => {}
+  };
+
+  await createJobsBoot(deps).init();
+
+  assert.equal(renderDataSourcesCalls, 0);
+  assert.equal(pipelineWatchCalls, 1);
+});
+
+test("createJobsBoot keeps automatic Data Sources load outside container mode", async () => {
+  let renderDataSourcesCalls = 0;
+  const deps = {
+    dom: { jobsList: {} },
+    runtimeState: { allJobs: [] },
+    emitDesktopStartupMetric: () => {},
+    authController: { initAuth: () => {} },
+    isDesktopRuntimeMode: () => false,
+    isContainerRuntimeMode: () => false,
+    feedController: {
+      readCachedJobs: async () => ({ jobs: [{ id: "cached-job" }], savedAt: Date.now() }),
+      setSourceStatus: () => {},
+      setProgress: () => {},
+      refreshJobsNow: async () => true,
+      updateLastUpdatedText: () => {},
+      fetchJobsReport: async () => EMPTY_REPORT,
+      loadStartupPreviewJobs: async () => false,
+      renderDataSources: async () => {
+        renderDataSourcesCalls += 1;
+      }
+    },
+    normalizeJobs: rows => rows,
+    professionLabels: {},
+    sanitizeUrl: url => url,
+    eventsController: { recalculateItemsPerPage: () => {} },
+    filtersController: { updateFilterOptions: () => {}, applyStateToFilters: () => {} },
+    applyFiltersAndRender: () => {},
+    markStartupRendered: () => {},
+    markJobsFirstInteractive: () => {},
+    isJobsCacheStale: () => false,
+    jobsCacheTtlMs: 0,
+    callJobsBridge: async () => ({}),
+    desktopJobsColdStart: false,
+    windowObject: {
+      setTimeout: fn => {
+        fn();
+        return 1;
+      },
+      clearTimeout: () => {}
+    },
+    setJobsStartupState: () => {},
+    bootstrapStartTimeoutMs: 30000,
+    bootstrapConfirmTimeoutMs: 0,
+    bootstrapConfirmIntervalMs: 0,
+    applyPendingAutoRefreshSignal: async () => {},
+    ensureJobsPipelineStatusWatch: () => {},
+    showError: () => {},
+    showFirstRunBootstrapNotice: () => {}
+  };
+
+  await createJobsBoot(deps).init();
+
+  assert.equal(renderDataSourcesCalls, 1);
+});
+
 test("jobsFirstRunBootstrapNumberOverride accepts positive URL values and falls back otherwise", () => {
   assert.equal(
     jobsFirstRunBootstrapNumberOverride(

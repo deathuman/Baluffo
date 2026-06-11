@@ -148,11 +148,24 @@ export function createJobsFeedController({
     return fetchJsonFromCandidatesFromSources(urls, options);
   }
 
-  async function renderDataSources() {
-    return renderDataSourcesFromSources({
+  async function renderDataSources(options = {}) {
+    const force = Boolean(options?.force);
+    if (!force && runtimeState.dataSourcesLoaded) return runtimeState.dataSourcesLoadResult || null;
+    if (!force && runtimeState.dataSourcesLoadPromise) return runtimeState.dataSourcesLoadPromise;
+    if (dom.dataSourcesCaptionEl && !runtimeState.dataSourcesLoaded) {
+      dom.dataSourcesCaptionEl.textContent = "Loading source metadata...";
+    }
+    runtimeState.dataSourcesLoadPromise = renderDataSourcesFromSources({
       dataSourcesListEl: dom.dataSourcesListEl,
       dataSourcesCaptionEl: dom.dataSourcesCaptionEl
+    }).then(result => {
+      runtimeState.dataSourcesLoaded = true;
+      runtimeState.dataSourcesLoadResult = result || null;
+      return runtimeState.dataSourcesLoadResult;
+    }).finally(() => {
+      runtimeState.dataSourcesLoadPromise = null;
     });
+    return runtimeState.dataSourcesLoadPromise;
   }
 
   async function refreshJobsNow({ manual, firstLoad = false }) {

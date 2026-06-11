@@ -189,6 +189,7 @@ export function composeJobsRuntime(deps) {
     refreshJobsNow: (...args) => feedController.refreshJobsNow(...args),
     triggerJobsPipelineRun: (...args) => deps.triggerJobsPipelineRun(...args),
     handleAutoRefreshSignalValue: (...args) => deps.handleAutoRefreshSignalValue(...args),
+    renderDataSources: (...args) => feedController.renderDataSources(...args),
     applyFiltersAndRender: (...args) => deps.applyFiltersAndRender(...args),
     bindUi,
     bindAsyncClick,

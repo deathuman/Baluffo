@@ -556,7 +556,7 @@ export function createJobsPipelineController({
           pipelinePayload: payload
         });
       }
-      scheduleJobsPipelineStatusPoll(idlePollDelayMs);
+      clearJobsPipelinePolling();
     } catch (err) {
       markPipelineStatusPollFailure(jobsPipelineUiState);
       jobsPipelineUiState.bridgeOnline = false;

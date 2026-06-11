@@ -71,6 +71,10 @@ export function getSourceRegistryActiveUrlsForRuntime() {
   return isDesktopRuntimeMode() || isContainerRuntimeMode() ? [] : SOURCE_REGISTRY_ACTIVE_URLS;
 }
 
+export function getJobsFetchReportUrlsForRuntime() {
+  return isContainerRuntimeMode() ? [] : JOBS_FETCH_REPORT_URLS;
+}
+
 export async function fetchUnifiedJobs({
   setSourceStatus,
   jobsParsing,
@@ -105,7 +109,7 @@ export async function renderDataSources({
     dataSourcesListEl,
     dataSourcesCaptionEl,
     sourceRegistryActiveUrls: getSourceRegistryActiveUrlsForRuntime(),
-    jobsFetchReportUrls: JOBS_FETCH_REPORT_URLS,
+    jobsFetchReportUrls: getJobsFetchReportUrlsForRuntime(),
     sheetsFallbackSources: SHEETS_FALLBACK_SOURCES,
     fetchJsonFromCandidates
   });

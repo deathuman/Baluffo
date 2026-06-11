@@ -20,6 +20,7 @@ export function createJobsEventsController({
   refreshJobsNow,
   triggerJobsPipelineRun,
   handleAutoRefreshSignalValue,
+  renderDataSources,
   applyFiltersAndRender,
   bindUi,
   bindAsyncClick,
@@ -61,6 +62,12 @@ export function createJobsEventsController({
     bindAsyncClick(dom.adminPageBtn, openAdminPageFromJobs);
     bindAsyncClick(dom.refreshJobsBtn, () => refreshJobsNow({ manual: true }));
     bindAsyncClick(dom.jobsPipelineRunBtn, triggerJobsPipelineRun);
+    if (dom.dataSourcesDetailsEl) {
+      bindUi(dom.dataSourcesDetailsEl, "toggle", () => {
+        if (!dom.dataSourcesDetailsEl.open) return;
+        renderDataSources?.().catch(() => {});
+      });
+    }
   }
 
   function recalculateItemsPerPage() {

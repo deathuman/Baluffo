@@ -53,6 +53,7 @@ export function cacheJobsDom(doc = document) {
     quickFiltersResetBtn: doc.querySelector(ui(t.quickFiltersResetBtn)),
     dataSourcesListEl: doc.querySelector(ui(t.dataSourcesList)),
     dataSourcesCaptionEl: doc.querySelector(ui(t.dataSourcesCaption)),
+    dataSourcesDetailsEl: doc.querySelector(ui(t.dataSourcesList))?.closest?.("details") || null,
     jobsPipelineRunBtn: doc.querySelector(ui(t.jobsPipelineRunBtn))
   };
 }

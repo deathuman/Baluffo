@@ -1,4 +1,5 @@
 import { AdminConfig as adminConfig } from "../../shared/config/admin-config.js?v=2";
+import { resolveContainerRuntimeMode } from "../../shared/local-data/runtime-context.js";
 import { JobsStateModule as jobsStateModule } from "../state.js?v=4";
 import { postStartupMetricToBridge, resolveStartupProbeEnabled } from "../../../probes/startup-probe.js";
 import {
@@ -247,6 +248,7 @@ jobsBoot = createJobsBoot({
   markStartupRendered: jobsRuntime.markStartupRendered,
   markJobsFirstInteractive: jobsRuntime.markJobsFirstInteractive,
   isDesktopRuntimeMode: jobsRuntime.isDesktopRuntimeMode,
+  isContainerRuntimeMode: () => resolveContainerRuntimeMode(),
   desktopJobsColdStart: Boolean(adminConfig.DESKTOP_JOBS_COLD_START),
   bootstrapStartTimeoutMs: JOBS_BOOTSTRAP_START_TIMEOUT_MS,
   bootstrapConfirmTimeoutMs: JOBS_BOOTSTRAP_START_CONFIRM_MS,

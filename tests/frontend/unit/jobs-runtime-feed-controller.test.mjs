@@ -147,6 +147,33 @@ test("jobs feed controller refresh wiring updates bridge state and dispatches co
   ]);
 });
 
+test("jobs feed controller source metadata load is lazy and deduped", async () => {
+  let resolveLoad;
+  const calls = [];
+  const loadPromise = new Promise(resolve => {
+    resolveLoad = resolve;
+  });
+  const { controller, dom, runtimeState } = createFeedController({
+    renderDataSourcesFromSources: async refs => {
+      calls.push(refs);
+      return loadPromise;
+    }
+  });
+
+  const first = controller.renderDataSources();
+  const second = controller.renderDataSources();
+
+  assert.equal(calls.length, 1);
+  assert.equal(dom.dataSourcesCaptionEl.textContent, "Loading source metadata...");
+
+  resolveLoad({ ok: true });
+  await Promise.all([first, second]);
+
+  assert.equal(runtimeState.dataSourcesLoaded, true);
+  await controller.renderDataSources();
+  assert.equal(calls.length, 1);
+});
+
 test("jobs feed controller preview wiring normalizes rows and forwards startup preview hooks", async () => {
   const { controller, runtimeState, dom, perfCalls } = createFeedController();
 

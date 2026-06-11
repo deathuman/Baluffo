@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getSourceRegistryActiveUrlsForRuntime } from "../../../frontend/jobs/app/sources.js";
+import {
+  getJobsFetchReportUrlsForRuntime,
+  getSourceRegistryActiveUrlsForRuntime
+} from "../../../frontend/jobs/app/sources.js";
 import { normalizeSourceRows, renderDataSourcesPanel } from "../../../frontend/jobs/render.js";
 
 test("jobs source metadata keeps Google Sheets as a core source", () => {
@@ -25,6 +28,20 @@ test("jobs source metadata skips static registry fetches in desktop runtime", ()
       delete globalThis.window;
     } else {
       globalThis.window = originalWindow;
+    }
+  }
+});
+
+test("jobs source metadata omits fetch report URLs in container runtime", () => {
+  const originalConfig = globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG;
+  globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG = { runtime: { mode: "container" } };
+  try {
+    assert.deepEqual(getJobsFetchReportUrlsForRuntime(), []);
+  } finally {
+    if (originalConfig === undefined) {
+      delete globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG;
+    } else {
+      globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG = originalConfig;
     }
   }
 });

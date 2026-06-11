@@ -32,7 +32,9 @@ export function createJobsBoot(deps) {
     if (deps.runtimeState.nonCriticalStartupScheduled) return;
     deps.runtimeState.nonCriticalStartupScheduled = true;
     scheduleNonCriticalStartup(deps.windowObject, () => {
-      deps.feedController.renderDataSources().catch(() => {});
+      if (!deps.isContainerRuntimeMode?.()) {
+        deps.feedController.renderDataSources().catch(() => {});
+      }
       deps.ensureJobsPipelineStatusWatch();
     });
   }
