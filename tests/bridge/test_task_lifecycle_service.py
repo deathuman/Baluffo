@@ -428,7 +428,7 @@ def test_admin_lifecycle_reads_task_runs_from_sqlite_when_authoritative(
         assert current[0]["taskType"] == "sync"
 
 
-def test_admin_lifecycle_sqlite_read_mismatch_rolls_back_to_json(
+def test_admin_lifecycle_sqlite_read_does_not_fall_back_to_stale_json(
     tmp_path: Path,
 ) -> None:
     lifecycle_path = tmp_path / "admin-task-lifecycle.json"
@@ -469,9 +469,9 @@ def test_admin_lifecycle_sqlite_read_mismatch_rolls_back_to_json(
 
         current = lifecycle.get_current_runs()
 
-        assert current[0]["runId"] == "fetch_json_only"
-        assert store.get_authority_modes()["taskRuns"] == "json"
-        assert diagnostics[-1]["code"] == "taskRuns_sqlite_parity_failed"
+        assert current == []
+        assert store.get_authority_modes()["taskRuns"] == "sqlite"
+        assert not diagnostics
 
 
 def test_admin_lifecycle_reads_task_events_from_sqlite_when_authoritative(

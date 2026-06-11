@@ -85,14 +85,18 @@ async function waitForStartupMetric(apiRequest, eventName, timeoutMs = 30_000) {
   assert.fail(`${eventName} startup metric was not recorded`);
 }
 
-function isSummaryRequest(url, pathname) {
-  return url.pathname === pathname && url.searchParams.get("view") === "summary";
-}
-
 function isFullStartupOpsRequest(url) {
   const isFullTaskState = url.pathname === "/ops/task-state" && url.searchParams.get("view") !== "summary";
   const isFullRegistryConflicts = url.pathname === "/registry/conflicts" && url.searchParams.get("view") !== "summary";
-  return isFullTaskState || isFullRegistryConflicts;
+  const isAnyLegacyStartupSummary = [
+    "/ops/health",
+    "/ops/dashboard-health",
+    "/ops/task-state",
+    "/sync/status",
+    "/registry/conflicts",
+    "/discovery/report"
+  ].includes(url.pathname);
+  return isFullTaskState || isFullRegistryConflicts || isAnyLegacyStartupSummary;
 }
 
 async function waitForCapturedBridgeRequest(capturedBridgeRequests, predicate, label, timeoutMs = 5000) {
@@ -154,21 +158,16 @@ async function main() {
       const opsTrendsText = await page.locator("#admin-ops-trends").textContent();
       assert.doesNotMatch(String(opsTrendsText || ""), /Loading operations health/i);
 
-      await waitForCapturedBridgeRequest(
-        capturedBridgeRequests,
-        url => isSummaryRequest(url, "/ops/task-state"),
-        "Admin startup should request summary task state"
-      );
       const parsedRequests = await waitForCapturedBridgeRequest(
         capturedBridgeRequests,
-        url => isSummaryRequest(url, "/registry/conflicts"),
-        "Admin startup should request summary registry conflicts"
+        url => url.pathname === "/admin/bootstrap",
+        "Admin startup should request the bounded bootstrap payload"
       );
       const fullStartupRequests = parsedRequests.filter(isFullStartupOpsRequest);
       assert.deepEqual(
         fullStartupRequests.map(url => `${url.pathname}${url.search}`),
         [],
-        "Admin startup should not request full task-state or registry-conflicts payloads"
+        "Admin startup should not request legacy health/task/sync/discovery diagnostics"
       );
     }, scenarios);
 

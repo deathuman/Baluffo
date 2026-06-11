@@ -101,6 +101,24 @@ export function createAdminOverviewController({
     });
   }
 
+  function renderOverview(overview = {}, options = {}) {
+    const payload = overview && typeof overview === "object" && !Array.isArray(overview)
+      ? overview
+      : {};
+    renderTotals(payload?.totals || {});
+    const users = Array.isArray(payload?.users) ? payload.users : [];
+    if (users.length) {
+      renderUsers(users);
+    } else {
+      renderUsersEmpty("No local users found.");
+    }
+    if (options?.updateStatus !== false) {
+      setSourceStatus(`Loaded ${users.length} user account(s).`);
+    }
+    adminDispatch.dispatch({ type: adminActions.OVERVIEW_REFRESHED, payload: { at: new Date().toISOString() } });
+    return payload;
+  }
+
   async function refreshOverview(options = {}) {
     const detail = normalizeOverviewDetail(options?.detail);
     const background = Boolean(options?.background);
@@ -113,16 +131,7 @@ export function createAdminOverviewController({
         "Admin overview request timed out."
       );
       if (!overviewResult.ok) throw new Error(overviewResult.error || "Could not load admin overview.");
-      const overview = overviewResult.data || {};
-      renderTotals(overview?.totals || {});
-      const users = Array.isArray(overview?.users) ? overview.users : [];
-      if (users.length) {
-        renderUsers(users);
-      } else {
-        renderUsersEmpty("No local users found.");
-      }
-      setSourceStatus(`Loaded ${users.length} user account(s).`);
-      adminDispatch.dispatch({ type: adminActions.OVERVIEW_REFRESHED, payload: { at: new Date().toISOString() } });
+      const overview = renderOverview(overviewResult.data || {});
       if (options?.scheduleFullRefresh && detail === "summary") {
         scheduleFullRefresh();
       }
@@ -140,6 +149,7 @@ export function createAdminOverviewController({
   }
 
   return {
+    renderOverview,
     refreshOverview,
     renderUsersEmpty
   };

@@ -1097,7 +1097,8 @@ export function createOpsHealthController({
     syncTaskState = false,
     dispatchRefresh = false,
     scheduleDetails = false,
-    renderDeferredPanels = true
+    renderDeferredPanels = true,
+    schedulePolling = true
   } = {}) {
     if (renderToken !== opsRenderToken) return;
     const sourcePolicyRecommendations = getCachedSourcePolicyPayload();
@@ -1173,10 +1174,54 @@ export function createOpsHealthController({
     if (dispatchRefresh) {
       adminDispatch.dispatch({ type: adminActions.OPS_REFRESHED, payload: { at: new Date().toISOString() } });
     }
-    scheduleOpsHealthPolling(getOpsPollIntervalMs(liveTypes.size > 0 || registryConflictRunning));
+    if (schedulePolling) {
+      scheduleOpsHealthPolling(getOpsPollIntervalMs(liveTypes.size > 0 || registryConflictRunning));
+    }
     if (scheduleDetails) {
       scheduleOpsOverviewDetailData(renderToken);
     }
+  }
+
+  function applyBootstrapPayload(payload = {}) {
+    const renderToken = ++opsRenderToken;
+    const tasks = payload?.tasks && typeof payload.tasks === "object" ? payload.tasks : {};
+    const currentRows = Array.isArray(tasks.current) ? tasks.current : [];
+    const recentRows = Array.isArray(tasks.recent) ? tasks.recent : [];
+    const taskStatePayload = {
+      tasks: currentRows,
+      count: currentRows.length,
+      summary: true
+    };
+    const historyPayload = {
+      runs: recentRows,
+      count: recentRows.length,
+      summaryView: true
+    };
+    const health = {
+      ok: true,
+      status: "healthy",
+      summaryView: true,
+      alerts: [],
+      kpis: {},
+      schedule: {},
+      appVersion: String(payload?.app?.version || "")
+    };
+    state.latestOpsHealthCache = health;
+    state.latestOpsTaskStatePayload = taskStatePayload;
+    state.latestOpsHistoryPayload = historyPayload;
+    state.taskStateUnavailable = false;
+    state.opsHistoryLoaded = true;
+    state.opsHistoryFullLoaded = false;
+    renderOpsHealthSnapshot(renderToken, health, {
+      taskStatePayload,
+      registryConflictsPayload: getCachedRegistryConflictsPayload(),
+      syncTaskState: true,
+      dispatchRefresh: true,
+      scheduleDetails: false,
+      renderDeferredPanels: true,
+      schedulePolling: false
+    });
+    return { taskStatePayload, historyPayload };
   }
 
   async function loadTaskStateSummaryData(renderToken, options = {}) {
@@ -1345,6 +1390,7 @@ export function createOpsHealthController({
     setOpsReadinessShell,
     stopOpsHealthPolling,
     scheduleOpsHealthPolling,
+    applyBootstrapPayload,
     loadOpsHealthData,
     loadOpsHistoryData,
     loadOpsOverviewDetailData,

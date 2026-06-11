@@ -20,6 +20,7 @@ from typing import Any
 
 from pydantic import ValidationError as PydanticValidationError
 
+from src.bridge.admin_bootstrap import get_admin_bootstrap_payload
 from src.bridge.api import BridgeApi
 from src.bridge.container_mode import is_container_runtime, send_container_unavailable
 from src.bridge.discovery_audit_artifacts import get_discovery_audit_artifacts_payload
@@ -1699,6 +1700,11 @@ def handle_get(
 
     Important: `api` must be the currently running BridgeApi instance.
     """
+
+    if path == "/admin/bootstrap":
+        with time_operation("admin.bootstrap.route_payload"):
+            handler.send_json(get_admin_bootstrap_payload(api))
+        return True
 
     if path == "/discovery/report":
         return _handle_discovery_report_route(handler, api=api, query=query)

@@ -160,12 +160,12 @@ class AdminTaskLifecycle:
         self,
         *,
         surface: str,
-        json_rows: list[dict[str, Any]],
+        json_rows: Callable[[], list[dict[str, Any]]],
         sqlite_reader: Callable[[TaskRuntimeStore], list[dict[str, Any]]],
     ) -> list[dict[str, Any]]:
         runtime_store = self._runtime_store()
         if runtime_store is None:
-            return json_rows
+            return json_rows()
         try:
             mode = self._authority_mode(runtime_store, surface)
         except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
@@ -175,9 +175,9 @@ class AdminTaskLifecycle:
                 ok=False,
                 message=str(exc),
             )
-            return json_rows
+            return json_rows()
         if mode not in {"shadow", "sqlite"}:
-            return json_rows
+            return json_rows()
         try:
             sqlite_rows = sqlite_reader(runtime_store)
         except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
@@ -188,21 +188,15 @@ class AdminTaskLifecycle:
                 ok=False,
                 message=str(exc),
             )
-            return json_rows
+            return json_rows()
         if mode == "shadow":
+            fallback_rows = json_rows()
             self._compare_route_projection(
                 surface=surface,
-                json_rows=json_rows,
+                json_rows=fallback_rows,
                 sqlite_rows=sqlite_rows,
             )
-            return json_rows
-        if json_rows and not self._compare_route_projection(
-            surface=surface,
-            json_rows=json_rows,
-            sqlite_rows=sqlite_rows,
-        ):
-            self._rollback_surface(runtime_store, surface, f"{surface}_sqlite_parity_failed")
-            return json_rows
+            return fallback_rows
         return sqlite_rows
 
     def _get_service(self) -> TaskLifecycleService:
@@ -259,14 +253,14 @@ class AdminTaskLifecycle:
     def get_current_runs(self) -> list[dict[str, Any]]:
         return self._read_task_rows(
             surface="taskRuns",
-            json_rows=self._get_service().get_current_runs(),
+            json_rows=lambda: self._get_service().get_current_runs(),
             sqlite_reader=lambda runtime_store: runtime_store.current_task_runs(),
         )
 
     def get_recent_runs(self) -> list[dict[str, Any]]:
         return self._read_task_rows(
             surface="taskRuns",
-            json_rows=self._get_service().get_recent_runs(),
+            json_rows=lambda: self._get_service().get_recent_runs(),
             sqlite_reader=lambda runtime_store: runtime_store.recent_task_runs(),
         )
 

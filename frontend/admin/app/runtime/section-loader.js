@@ -2,7 +2,7 @@ const SECTION_DEFINITIONS = Object.freeze({
   ops: {
     hash: "#admin-ops-section",
     elementId: "admin-ops-section",
-    observe: true
+    observe: false
   },
   fetcher: {
     hash: "#admin-fetcher-section",
@@ -17,7 +17,7 @@ const SECTION_DEFINITIONS = Object.freeze({
   sync: {
     hash: "#admin-sync-section",
     elementId: "admin-sync-section",
-    observe: true
+    observe: false
   }
 });
 

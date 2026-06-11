@@ -108,6 +108,10 @@ test("admin auth controller initializes the composed admin view immediately", as
     loadSyncStatus: async options => {
       calls.push(`loadSyncStatus:${String(Boolean(options?.silent))}:${String(Boolean(options?.forceForm))}:${String(options?.includeLive !== false)}:${String(Boolean(options?.summary))}`);
     },
+    loadAdminBootstrap: async () => {
+      calls.push("loadAdminBootstrap");
+      return { ok: true };
+    },
     loadDiscoveryConfig: async options => {
       calls.push(`loadDiscoveryConfig:${String(Boolean(options?.silent))}:${String(Boolean(options?.forceForm))}`);
     },
@@ -130,15 +134,16 @@ test("admin auth controller initializes the composed admin view immediately", as
   assert.equal(refs.adminBridgeStatusBadgeEl.classList.contains("hidden"), false);
   assert.deepEqual(dispatched.map(item => item.type), []);
   assert.ok(calls.includes("resetBusyFlags"));
-  assert.ok(calls.includes("startBridgeStatusWatch:true:1500"));
-  assert.ok(calls.includes("awaitLocalDataReady"));
-  assert.ok(calls.includes("refreshOverview:summary:true"));
+  assert.equal(calls.some(item => item.startsWith("startBridgeStatusWatch:")), false);
+  assert.equal(calls.includes("awaitLocalDataReady"), false);
+  assert.equal(calls.includes("refreshOverview:summary:true"), false);
   assert.equal(calls.some(item => item.startsWith("loadDiscoveryData:")), false);
-  assert.ok(calls.includes("loadOpsHealthData:true"));
+  assert.equal(calls.includes("loadOpsHealthData:true"), false);
+  assert.ok(calls.includes("loadAdminBootstrap"));
   assert.equal(calls.filter(item => item === "opsReadinessShell").length, 2);
   assert.equal(calls.includes("opsPlaceholder:Loading operations health..."), false);
   assert.equal(calls.some(item => item.startsWith("loadDiscoveryConfig:")), false);
-  assert.ok(calls.includes("loadSyncStatus:true:true:false:true"));
+  assert.equal(calls.some(item => item.startsWith("loadSyncStatus:")), false);
   assert.equal(calls.includes("scheduleOpsHealthPolling:900"), false);
   assert.equal(refs.adminSyncStatusEl.textContent, "");
   assert.ok(calls.includes("fetcherPlaceholder:"));
@@ -148,27 +153,25 @@ test("admin auth controller initializes the composed admin view immediately", as
   const perfNames = perfCalls.map(item => `${item.type}:${item.name}`);
   for (const expected of [
     "mark:admin_auth_init_start",
-    "mark:admin_ops_health_fetch_start",
-    "mark:admin_sync_fetch_start",
+    "mark:admin_bootstrap_fetch_start",
     "mark:admin_auth_init_end",
     "measure:admin_auth_init",
-    "mark:admin_overview_fetch_start",
-    "mark:admin_overview_fetch_done",
-    "measure:admin_overview_fetch"
+    "mark:admin_bootstrap_fetch_done",
+    "measure:admin_bootstrap_fetch"
   ]) {
     assert.ok(perfNames.includes(expected), expected);
   }
   assert.ok(
-    perfNames.indexOf("measure:admin_auth_init") < perfNames.indexOf("mark:admin_overview_fetch_start"),
-    "overview fetch should wait until the initial Admin shell is measured"
+    perfNames.indexOf("mark:admin_bootstrap_fetch_start") < perfNames.indexOf("mark:admin_bootstrap_fetch_done"),
+    "bootstrap fetch should record start before completion"
   );
   assert.deepEqual(
-    perfCalls.find(item => item.name === "admin_overview_fetch")?.payload,
+    perfCalls.find(item => item.name === "admin_bootstrap_fetch")?.payload,
     { ok: true }
   );
 });
 
-test("admin overview waits for local data readiness without blocking the shell", async () => {
+test("admin bootstrap does not wait on the old local data readiness path", async () => {
   let resolveReady;
   const readyPromise = new Promise(resolve => {
     resolveReady = resolve;
@@ -203,13 +206,16 @@ test("admin overview waits for local data readiness without blocking the shell",
     setOpsReadinessShell() {},
     setBridgeStatusBadge() {},
     startBridgeStatusWatch() {},
-    refreshOverview: async options => {
-      calls.push(`refreshOverview:${String(options?.detail || "")}:${String(Boolean(options?.scheduleFullRefresh))}`);
+    refreshOverview: async () => {
+      calls.push("refreshOverview");
     },
     loadDiscoveryData: async () => {},
     loadOpsHealthData: async () => {},
     loadSyncStatus: async () => {},
     loadDiscoveryConfig: async () => {},
+    loadAdminBootstrap: async () => {
+      calls.push("loadAdminBootstrap");
+    },
     awaitLocalDataReady: () => readyPromise,
     logAdminError() {},
     showToast() {}
@@ -221,15 +227,16 @@ test("admin overview waits for local data readiness without blocking the shell",
 
   assert.equal(firstInteractiveCount, 1);
   assert.equal(refs.adminContentEl.classList.contains("hidden"), false);
-  assert.equal(calls.includes("refreshOverview:summary:true"), false);
+  assert.equal(calls.includes("refreshOverview"), false);
+  assert.ok(calls.includes("loadAdminBootstrap"));
 
   resolveReady(true);
   await new Promise(resolve => setTimeout(resolve, 0));
 
-  assert.ok(calls.includes("refreshOverview:summary:true"));
+  assert.equal(calls.includes("refreshOverview"), false);
 });
 
-test("admin auth schedules bounded deferred diagnostics after first summary render", async () => {
+test("admin auth does not schedule deferred diagnostics during startup", async () => {
   const originalSetTimeout = globalThis.setTimeout;
   const timers = [];
   globalThis.setTimeout = (callback, delayMs) => {
@@ -268,6 +275,9 @@ test("admin auth schedules bounded deferred diagnostics after first summary rend
         calls.push(`ops:${String(Boolean(options?.summary))}`);
       },
       loadSyncStatus: async () => {},
+      loadAdminBootstrap: async () => {
+        calls.push("bootstrap");
+      },
       awaitLocalDataReady: async () => true,
       loadPostInteractiveDiagnostics: async () => {
         calls.push("deferredDiagnostics");
@@ -278,14 +288,8 @@ test("admin auth schedules bounded deferred diagnostics after first summary rend
 
     assert.equal(controller.initAdminPage(), true);
     await new Promise(resolve => originalSetTimeout(resolve, 0));
-    assert.deepEqual(calls, ["ops:true"]);
-    assert.equal(timers.length, 1);
-    assert.equal(timers[0].delayMs, 5000);
-
-    timers[0].callback();
-    await Promise.resolve();
-    await Promise.resolve();
-    assert.deepEqual(calls, ["ops:true", "deferredDiagnostics"]);
+    assert.deepEqual(calls, ["bootstrap"]);
+    assert.equal(timers.length, 0);
   } finally {
     globalThis.setTimeout = originalSetTimeout;
   }

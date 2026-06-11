@@ -24,6 +24,7 @@ export function createAdminAuthController({
   loadDiscoveryConfig,
   loadOpsHealthData,
   loadSyncStatus,
+  loadAdminBootstrap,
   loadPostInteractiveDiagnostics,
   awaitLocalDataReady = async () => true,
   markAdminStep,
@@ -90,26 +91,6 @@ export function createAdminAuthController({
       });
   }
 
-  let postInteractiveDiagnosticsScheduled = false;
-
-  function schedulePostInteractiveDiagnostics() {
-    if (postInteractiveDiagnosticsScheduled || typeof loadPostInteractiveDiagnostics !== "function") return;
-    postInteractiveDiagnosticsScheduled = true;
-    const run = () => {
-      Promise.resolve()
-        .then(() => loadPostInteractiveDiagnostics())
-        .catch(err => {
-          logAdminError("Failed to load deferred admin diagnostics", err);
-        });
-    };
-    const delayMs = 5000;
-    if (typeof globalThis.setTimeout === "function") {
-      globalThis.setTimeout(run, delayMs);
-      return;
-    }
-    run();
-  }
-
   function initAdminPage() {
     markStep("admin_auth_init_start");
     syncAdminBusyUi();
@@ -131,22 +112,27 @@ export function createAdminAuthController({
     setSourceStatus("");
     setOpsReadinessShell();
     if (refs.adminSyncStatusEl) refs.adminSyncStatusEl.textContent = "";
-    startBridgeStatusWatch({ deferInitial: true, initialDelayMs: 1500 });
-    startInitialOverviewLoad();
+    setBridgeStatusBadge("checking", "Bridge Checking");
     runInitialTask({
-      start: "admin_ops_health_fetch_start",
-      end: "admin_ops_health_fetch_done",
-      measure: "admin_ops_health_fetch",
-      errorContext: "Failed to load ops health data",
-      task: () => loadOpsHealthData({ summary: true }),
-      afterSettled: schedulePostInteractiveDiagnostics
-    });
-    runInitialTask({
-      start: "admin_sync_fetch_start",
-      end: "admin_sync_fetch_done",
-      measure: "admin_sync_fetch",
-      errorContext: "Failed to load sync status",
-      task: () => loadSyncStatus({ silent: true, forceForm: true, includeLive: false, summary: true })
+      start: "admin_bootstrap_fetch_start",
+      end: "admin_bootstrap_fetch_done",
+      measure: "admin_bootstrap_fetch",
+      errorContext: "Failed to load admin bootstrap data",
+      task: async () => {
+        if (typeof loadAdminBootstrap !== "function") {
+          await startInitialOverviewLoad();
+          return null;
+        }
+        try {
+          const payload = await loadAdminBootstrap();
+          setBridgeStatusBadge("online", "Bridge Online");
+          return payload;
+        } catch (err) {
+          setBridgeStatusBadge("offline", "Bridge Offline");
+          setOpsPlaceholders(`Admin bootstrap unavailable: ${String(err?.message || err || "unknown error")}`);
+          throw err;
+        }
+      }
     });
     markStep("admin_auth_init_end");
     measureStep("admin_auth_init", "admin_auth_init_start", "admin_auth_init_end");

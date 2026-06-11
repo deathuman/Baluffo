@@ -231,6 +231,8 @@ def make_stub_bridge_api(tmp_path: Path, store: FakeDesktopLocalDataStore) -> Br
     api.compute_fetcher_metrics = lambda **kw: {"windowRuns": 20, "runs": [], "aggregates": {}}
     api.sync_history_from_reports = lambda: []
     api.get_lifecycle_run_history_rows = lambda: []
+    api.get_lifecycle_current_runs = lambda: []
+    api.get_lifecycle_recent_runs = lambda: []
     api.normalize_fetch_report_contract = lambda r: r
     api.normalize_discovery_report_contract = lambda r: r
 

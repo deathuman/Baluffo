@@ -10,6 +10,18 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.57] - 2026-06-11
+
+### Changed
+- Container Admin startup now uses one bounded `/admin/bootstrap` control-plane route for first-use data instead of fanning out across Ops, Sync, Registry, Discovery, and dashboard routes during first render.
+- Admin boot now renders overview summary, current running tasks, two recent runs, and sync readiness from the bootstrap payload, while full diagnostics remain tab-open or manual-refresh work.
+- Task lifecycle current/recent reads now trust SQLite authority without falling back to stale JSON lifecycle rows.
+
+### Notes
+- This is a container/Umbrel Admin startup recovery patch. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- Chrome DevTools traces on live Umbrel remain the acceptance signal for user-visible Admin and Jobs page-load performance.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.56] - 2026-06-07
 
 ### Fixed

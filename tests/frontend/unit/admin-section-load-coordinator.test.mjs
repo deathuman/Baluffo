@@ -145,7 +145,7 @@ test("admin section loader loads recent history on ops focus and older history o
   ]);
 });
 
-test("admin section loader observes only lightweight sections", () => {
+test("admin section loader does not auto-observe Admin sections on boot", () => {
   const observedIds = [];
   const documentObject = {
     getElementById(id) {
@@ -174,7 +174,7 @@ test("admin section loader observes only lightweight sections", () => {
 
   coordinator.start();
 
-  assert.deepEqual(observedIds, ["admin-ops-section", "admin-sync-section"]);
+  assert.deepEqual(observedIds, []);
 });
 
 test("admin section loader loads deferred Fetcher section only from explicit navigation", async () => {

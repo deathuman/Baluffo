@@ -221,28 +221,16 @@ export function composeAdminControllers({
   });
 
   async function loadPostInteractiveDiagnostics() {
-    async function refreshDiscoveryTabBadge() {
-      const payload = await getBridge("/discovery/report?view=summary");
-      const summary = payload?.summary || {};
-      const autoApproval = payload?.runtime?.autoApproval || {};
-      const queued = Number(summary.queuedCandidateCount ?? summary.queuedCount ?? 0);
-      const approved = Number(autoApproval.approvedCount ?? 0);
-      discoveryController.setDiscoveryLogPlaceholder(
-        queued || approved
-          ? `Discovery summary available: queued ${queued.toLocaleString()}, auto-approved ${approved.toLocaleString()}.`
-          : ""
-      );
-    }
-    const tasks = [
-      refreshDiscoveryTabBadge
-    ];
-    for (const task of tasks) {
-      try {
-        await task();
-      } catch (err) {
-        logAdminError("Deferred admin diagnostic load failed", err);
-      }
-    }
+    return null;
+  }
+
+  async function loadAdminBootstrap() {
+    const payload = await getBridge("/admin/bootstrap", { timeoutMs: 10000 });
+    overviewController.renderOverview(payload?.overview || {});
+    opsController.applyBootstrapPayload(payload || {});
+    state.latestSyncStatusCache = payload?.sync || null;
+    syncController.renderSyncStatus(payload?.sync || {}, { forceForm: true });
+    return payload || null;
   }
 
   authController = createAdminAuthController({
@@ -275,6 +263,7 @@ export function composeAdminControllers({
     loadDiscoveryConfig: (...args) => discoveryController.loadDiscoveryConfig(...args),
     loadOpsHealthData: (...args) => opsController.loadOpsHealthData(...args),
     loadSyncStatus: (...args) => syncController.loadSyncStatus(...args),
+    loadAdminBootstrap,
     loadPostInteractiveDiagnostics,
     awaitLocalDataReady: awaitBridgeReady,
     logAdminError,

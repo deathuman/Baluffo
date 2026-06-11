@@ -84,10 +84,13 @@ def build_bridge_api(config: Any) -> BridgeApi:
         sync_history_from_reports=root_mod.sync_history_from_reports,
         get_projected_run_history=ops_api.get_projected_run_history,
         get_lifecycle_run_history_rows=ops_api.get_lifecycle_run_history_rows,
+        get_lifecycle_current_runs=root_mod.get_lifecycle_current_runs,
+        get_lifecycle_recent_runs=root_mod.get_lifecycle_recent_runs,
         get_task_live_payload=ops_api.get_task_live_payload,
         get_current_task_state_payload=ops_api.get_current_task_state_payload,
         get_current_task_state_summary_payload=ops_api.get_current_task_state_summary_payload,
         should_exit_for_owner_timeout=root_mod.owner_session_should_exit,
         load_alert_state=root_mod.load_alert_state,
         save_alert_state=root_mod.save_alert_state,
+        app_version=root_mod.get_app_version(),
     )

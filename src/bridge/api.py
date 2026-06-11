@@ -312,6 +312,7 @@ class BridgeApi:
     DEDUP_REVIEW_STATE_PATH: Path = Path("data") / "dedup-review-state.json"
     DISCOVERY_CANDIDATES_PATH: Path | None = None
     DESKTOP_UPDATE_STATE_PATH: Path | None = None
+    app_version: str = ""
 
     # Grouped services (optional during migration).
     registry: RegistryService | None = None
@@ -385,6 +386,8 @@ class BridgeApi:
     sync_history_from_reports: Callable[[], list[JsonObject]] = _empty_startup_metrics
     get_projected_run_history: Callable[[], JsonObject] = _empty_rows_payload
     get_lifecycle_run_history_rows: Callable[[], list[JsonObject]] = _empty_startup_metrics
+    get_lifecycle_current_runs: Callable[[], list[JsonObject]] = _empty_startup_metrics
+    get_lifecycle_recent_runs: Callable[[], list[JsonObject]] = _empty_startup_metrics
     get_task_live_payload: Callable[[str], JsonObject] = _default_task_live_payload
     get_current_task_state_payload: Callable[[], JsonObject] = _default_current_task_state_payload
     get_current_task_state_summary_payload: Callable[

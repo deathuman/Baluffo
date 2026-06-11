@@ -104,6 +104,10 @@ UPDATE_CALLERS = (
     "frontend/jobs/app/desktop-update-controller.js",
     "frontend/shared/app-version.js",
 )
+ADMIN_BOOTSTRAP_CALLERS = (
+    "frontend/admin/app/auth.js",
+    "frontend/admin/app/runtime/composition.js",
+)
 
 
 def _route(
@@ -134,6 +138,14 @@ def _route(
 
 
 BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
+    _route(
+        "GET",
+        "/admin/bootstrap",
+        EXACT,
+        GET_HANDLER,
+        "public",
+        caller_files=ADMIN_BOOTSTRAP_CALLERS,
+    ),
     _route(
         "GET",
         "/discovery/report",

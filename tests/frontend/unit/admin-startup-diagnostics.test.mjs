@@ -7,19 +7,17 @@ const compositionSource = readFileSync(
   "utf8"
 );
 
-function extractPostInteractiveTasks(source) {
-  const match = source.match(/const tasks = \[([\s\S]*?)\];/);
-  assert.ok(match, "expected post-interactive task list");
-  return match[1];
-}
-
-test("admin startup deferred queue avoids full diagnostics fan-out", () => {
-  const tasks = extractPostInteractiveTasks(compositionSource);
-  assert.doesNotMatch(tasks, /loadOpsOverviewDetailData/);
-  assert.doesNotMatch(tasks, /loadLatestFetcherReport/);
-  assert.doesNotMatch(tasks, /loadOpsHistoryData/);
-  assert.doesNotMatch(tasks, /loadFetcherLogChunk/);
-  assert.doesNotMatch(tasks, /loadDiscoveryLogChunk/);
-  assert.doesNotMatch(tasks, /sourceTablesOnly:\s*true/);
-  assert.match(tasks, /refreshDiscoveryTabBadge/);
+test("admin startup has no automatic deferred diagnostics fan-out", () => {
+  const match = compositionSource.match(/async function loadPostInteractiveDiagnostics\(\) \{([\s\S]*?)\n  \}/);
+  assert.ok(match, "expected post-interactive diagnostics helper");
+  const body = match[1];
+  assert.match(body, /return null;/);
+  assert.doesNotMatch(body, /getBridge\(/);
+  assert.doesNotMatch(body, /loadOpsOverviewDetailData/);
+  assert.doesNotMatch(body, /loadLatestFetcherReport/);
+  assert.doesNotMatch(body, /loadOpsHistoryData/);
+  assert.doesNotMatch(body, /loadFetcherLogChunk/);
+  assert.doesNotMatch(body, /loadDiscoveryLogChunk/);
+  assert.doesNotMatch(body, /sourceTablesOnly:\s*true/);
+  assert.doesNotMatch(body, /\/discovery\/report\?view=summary/);
 });
