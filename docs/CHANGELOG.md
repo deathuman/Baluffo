@@ -10,6 +10,19 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.59] - 2026-06-11
+
+### Fixed
+- Jobs no longer loads the full fetch report during normal container page startup or navigation; source metadata is deferred until the Data Sources panel is opened.
+- Admin Fetcher and Discovery sections now use bounded summaries and short log tails by default, keeping full diagnostics manual or active-task-only.
+- Admin discovery/source-table loading no longer marks task and source action buttons as running work when backend task state is idle.
+- Jobs idle pipeline checks and the shared Admin bridge button now avoid overlapping status polling once idle state is confirmed.
+
+### Notes
+- This is a container/Umbrel frontend data-flow recovery patch. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- Chrome DevTools traces on live Umbrel remain the acceptance signal for user-visible Admin and Jobs page-load performance.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.58] - 2026-06-11
 
 ### Fixed
