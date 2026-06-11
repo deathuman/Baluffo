@@ -57,6 +57,7 @@ export function createAdminFetcherController({
   const reportController = createAdminFetcherReportController({
     state,
     refs,
+    getBridge,
     fetchJobsFetchReportJson,
     writeJobsAutoRefreshSignal,
     showToast,
@@ -217,6 +218,7 @@ export function createAdminFetcherController({
     restartFetcherCompletionWatch: watchController.restartFetcherCompletionWatch,
     getRestorableFetcherRunMeta: watchController.getRestorableFetcherRunMeta,
     appendFetcherLog: logController.appendFetcherLog,
+    loadLatestFetcherSummary: reportController.loadLatestFetcherSummary,
     loadFetcherLivePayload: watchController.loadFetcherLivePayload,
     loadLatestFetcherReport: reportController.loadLatestFetcherReport,
     copyLatestFailureSummary: reportController.copyLatestFailureSummary,

@@ -19,6 +19,7 @@ import {
 export function createAdminFetcherReportController({
   state,
   refs,
+  getBridge,
   fetchJobsFetchReportJson,
   writeJobsAutoRefreshSignal,
   showToast,
@@ -57,6 +58,29 @@ export function createAdminFetcherReportController({
 
   function updateFetcherProgressFromReport(report, { running = false } = {}) {
     setFetcherProgress(deriveFetcherProgressModel(report, { running }));
+  }
+
+  async function loadLatestFetcherSummary(options = {}) {
+    if (typeof getBridge !== "function") return null;
+    const silent = Boolean(options.silent);
+    try {
+      const payload = await getBridge("/ops/fetch-report?view=summary", { timeoutMs: 5000 });
+      if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+      const running = Boolean(state.adminBusyState.fetcherWatch || state.adminBusyState.liveFetchRunning);
+      updateFetcherProgressFromReport(payload, { running });
+      state.latestFetcherSummaryCache = payload;
+      if (!silent) {
+        const finishedAt = String(payload.finishedAt || "").trim();
+        const failed = Number(payload?.summary?.failedSources || 0);
+        const kept = Number(payload?.summary?.keptCount ?? payload?.summary?.outputCount ?? 0);
+        const suffix = finishedAt ? ` finished ${finishedAt}` : "not finished yet";
+        appendFetcherLog(`Fetcher summary: kept ${kept.toLocaleString()}, failed sources ${failed.toLocaleString()}, ${suffix}.`, failed > 0 ? "warn" : "info");
+      }
+      return payload;
+    } catch (err) {
+      if (!silent) appendFetcherLog(`Could not load fetcher summary: ${String(err?.message || err)}`, "warn");
+      return null;
+    }
   }
 
   async function loadLatestFetcherReport(options = {}) {
@@ -262,6 +286,7 @@ export function createAdminFetcherReportController({
     getFetcherTaskProgress,
     updateFetcherProgressFromReport,
     loadLatestFetcherReport,
+    loadLatestFetcherSummary,
     copyLatestFailureSummary,
     emitJobsAutoRefreshSignal,
     appendFetcherProgressFromReport

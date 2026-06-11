@@ -6,7 +6,6 @@ function isDiscoveryOperationBlocked(state) {
   return Boolean(
     state.adminBusyState.discoveryRun
     || state.adminBusyState.discoveryWatch
-    || state.adminBusyState.discoveryLoad
     || state.adminBusyState.discoveryWrite
     || state.adminBusyState.manualAdd
     || state.adminBusyState.manualCheck

@@ -55,7 +55,7 @@ async function flushMicrotasks(count = 6) {
 }
 
 test("admin section loader queues visible section loads with concurrency one", async () => {
-  const fetcherLoad = createDeferred();
+  const fetcherSummaryLoad = createDeferred();
   const discoveryLoad = createDeferred();
   const calls = [];
   const coordinator = createAdminSectionLoadCoordinator({
@@ -65,9 +65,9 @@ test("admin section loader queues visible section loads with concurrency one", a
       setFetcherLogPlaceholder(message) {
         calls.push(["fetcherPlaceholder", message]);
       },
-      loadLatestFetcherReport(options) {
-        calls.push(["fetcherReport", options]);
-        return fetcherLoad.promise;
+      loadLatestFetcherSummary(options) {
+        calls.push(["fetcherSummary", options]);
+        return fetcherSummaryLoad.promise;
       },
       loadFetcherLogChunk(options) {
         calls.push(["fetcherLog", options]);
@@ -97,22 +97,22 @@ test("admin section loader queues visible section loads with concurrency one", a
 
   assert.deepEqual(calls.slice(0, 2), [
     ["fetcherPlaceholder", "Loading latest fetcher output..."],
-    ["fetcherReport", { silent: true }]
+    ["fetcherLog", { reset: true, showEmptyState: true, view: "tail", limitChars: 8192 }]
   ]);
   assert.equal(calls.some(([name]) => name === "discoveryData"), false);
 
-  fetcherLoad.resolve({});
+  fetcherSummaryLoad.resolve({});
   await flushMicrotasks();
 
   assert.deepEqual(calls.slice(2), [
-    ["fetcherLog", { reset: true, showEmptyState: true, view: "tail", limitChars: 65536 }],
+    ["fetcherSummary", { silent: false }],
     ["discoveryPlaceholder", "Loading discovery output..."],
     ["discoveryData", { sourceTablesOnly: true, skipIfFreshMs: 10000 }]
   ]);
 
   discoveryLoad.resolve({});
   await flushMicrotasks();
-  assert.deepEqual(calls.at(-1), ["discoveryLog", { reset: true, guarded: false, view: "tail", limitChars: 65536 }]);
+  assert.deepEqual(calls.at(-1), ["discoveryLog", { reset: true, guarded: false, view: "tail", limitChars: 8192 }]);
 });
 
 test("admin section loader loads recent history on ops focus and older history on disclosure", async () => {
@@ -204,8 +204,8 @@ test("admin section loader loads deferred Fetcher section only from explicit nav
       setFetcherLogPlaceholder(message) {
         calls.push(["fetcherPlaceholder", message]);
       },
-      loadLatestFetcherReport(options) {
-        calls.push(["fetcherReport", options]);
+      loadLatestFetcherSummary(options) {
+        calls.push(["fetcherSummary", options]);
         return Promise.resolve({});
       },
       loadFetcherLogChunk(options) {
@@ -229,7 +229,7 @@ test("admin section loader loads deferred Fetcher section only from explicit nav
 
   assert.deepEqual(calls, [
     ["fetcherPlaceholder", "Loading latest fetcher output..."],
-    ["fetcherReport", { silent: true }],
-    ["fetcherLog", { reset: true, showEmptyState: true, view: "tail", limitChars: 65536 }]
+    ["fetcherLog", { reset: true, showEmptyState: true, view: "tail", limitChars: 8192 }],
+    ["fetcherSummary", { silent: false }]
   ]);
 });

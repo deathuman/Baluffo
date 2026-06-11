@@ -204,3 +204,42 @@ test("syncAdminBusyUi shows one registry busy message and preserves bulk labels"
   assert.match(refs.adminBulkBusyMessageEl.textContent, /Source registry actions are paused/);
   assert.equal(refs.adminBulkBusyMessageEl.classList.contains("hidden"), false);
 });
+
+test("syncAdminBusyUi treats source-table loading as local loading, not a running Discovery task", () => {
+  const busyState = {
+    fetcherRun: false,
+    fetcherWatch: false,
+    fetcherReportLoad: false,
+    liveFetchRunning: false,
+    discoveryRun: false,
+    discoveryWatch: false,
+    discoveryLoad: true,
+    discoveryWrite: false,
+    manualAdd: false,
+    manualCheck: false,
+    liveDiscoveryRunning: false,
+    syncRun: false,
+    liveSyncRunning: false,
+    opsLoad: false,
+    livePipelineRunning: false
+  };
+  const refs = buildRefs();
+
+  syncAdminBusyUi({
+    busyState,
+    viewState: toAdminViewState(busyState, { isUnlocked: true }),
+    fetcherPresetMeta: FETCHER_PRESET_META,
+    refs,
+    onSyncDiscoveryLogDisclosure() {}
+  });
+
+  assert.equal(refs.adminRunDiscoveryBtnEl.disabled, false);
+  assert.equal(refs.adminRunDiscoveryBtnEl.textContent, "Run Discovery");
+  assert.equal(refs.adminAddManualSourceBtnEl.disabled, false);
+  assert.equal(refs.adminAddManualSourceBtnEl.textContent, "Add Source");
+  assert.equal(refs.adminApproveSourcesBtnEl.disabled, false);
+  assert.equal(refs.adminBulkBusyMessageEl.classList.contains("hidden"), true);
+  assert.equal(refs.adminLoadDiscoveryBtnEl.disabled, true);
+  assert.equal(refs.adminLoadDiscoveryBtnEl.textContent, "Loading Discovery...");
+  assert.equal(refs.adminDiscoveryProgressBadgeEl.textContent, "Loading Source Data");
+});

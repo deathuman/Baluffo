@@ -25,6 +25,7 @@ export function createAdminBridgeButtonWatcher({
 }) {
   let currentState = "checking";
   let pollTimer = null;
+  let pollInFlight = null;
   let initialBridgeReadyResolved = false;
 
   function getRuntimeBridgeBaseFromLocation() {
@@ -94,6 +95,14 @@ export function createAdminBridgeButtonWatcher({
    * @returns {Promise<void>}
    */
   async function pollAdminBridgeButtonState() {
+    if (pollInFlight) return pollInFlight;
+    pollInFlight = pollAdminBridgeButtonStateOnce().finally(() => {
+      pollInFlight = null;
+    });
+    return pollInFlight;
+  }
+
+  async function pollAdminBridgeButtonStateOnce() {
     if (!buttonEl) return;
     if (!initialBridgeReadyResolved) {
       initialBridgeReadyResolved = true;

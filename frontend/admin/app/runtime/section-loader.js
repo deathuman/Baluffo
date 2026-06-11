@@ -21,7 +21,7 @@ const SECTION_DEFINITIONS = Object.freeze({
   }
 });
 
-const ADMIN_LOG_TAIL_LIMIT_CHARS = 65536;
+const ADMIN_SECTION_LOG_TAIL_LIMIT_CHARS = 8192;
 
 function sectionKeyFromHash(hashValue) {
   const normalized = String(hashValue || "").trim();
@@ -73,13 +73,13 @@ export function createAdminSectionLoadCoordinator({
 
   async function loadFetcherSection() {
     fetcherController?.setFetcherLogPlaceholder?.("Loading latest fetcher output...");
-    await fetcherController?.loadLatestFetcherReport?.({ silent: true });
     await fetcherController?.loadFetcherLogChunk?.({
       reset: true,
       showEmptyState: true,
       view: "tail",
-      limitChars: ADMIN_LOG_TAIL_LIMIT_CHARS
+      limitChars: ADMIN_SECTION_LOG_TAIL_LIMIT_CHARS
     });
+    await fetcherController?.loadLatestFetcherSummary?.({ silent: false });
   }
 
   async function loadDiscoverySection() {
@@ -92,7 +92,7 @@ export function createAdminSectionLoadCoordinator({
       reset: true,
       guarded: false,
       view: "tail",
-      limitChars: ADMIN_LOG_TAIL_LIMIT_CHARS
+      limitChars: ADMIN_SECTION_LOG_TAIL_LIMIT_CHARS
     });
   }
 

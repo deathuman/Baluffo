@@ -10,7 +10,6 @@ function isDiscoveryBusy(busyState) {
   return isAdminBusy(busyState, [
     "discoveryRun",
     "discoveryWatch",
-    "discoveryLoad",
     "discoveryWrite",
     "manualAdd",
     "manualCheck",
@@ -86,6 +85,7 @@ export function syncAdminBusyUi({
   const syncBusy = viewState.syncBusy;
   const pipelineBusy = viewState.pipelineBusy;
   const lockBusy = viewState.pipelineBusy;
+  const discoveryLoadBusy = Boolean(busyState.discoveryLoad);
 
   setButtonBusy(refs.adminRunFetcherBtnEl, fetcherBusy || lockBusy, fetcherPresetMeta.default.busyLabel);
   setButtonBusy(refs.adminRunFetcherIncrementalBtnEl, fetcherBusy || lockBusy, fetcherPresetMeta.incremental.busyLabel);
@@ -106,7 +106,7 @@ export function syncAdminBusyUi({
 
   setButtonBusy(refs.adminRunDiscoveryBtnEl, discoveryBusy || lockBusy, "Discovery Running...", "Run Discovery");
   setButtonBusy(refs.adminRunDiscoveryUncappedBtnEl, discoveryBusy || lockBusy, "Uncapped Discovery Running...", "Run Uncapped Discovery");
-  setButtonBusy(refs.adminLoadDiscoveryBtnEl, discoveryBusy || lockBusy, "Loading Discovery...", "Load Discovery");
+  setButtonBusy(refs.adminLoadDiscoveryBtnEl, discoveryBusy || discoveryLoadBusy || lockBusy, "Loading Discovery...", "Load Discovery");
   const registryBusy = discoveryBusy || lockBusy;
   setPreviewBulkBusyMessage(refs.adminBulkBusyMessageEl, registryBusy);
   setButtonBusy(refs.adminApproveSourcesBtnEl, registryBusy, "", "Approve Sources");
@@ -131,7 +131,13 @@ export function syncAdminBusyUi({
       : busyState.fetcherReportLoad
         ? "Loading Report"
         : "Fetcher Idle";
-  const discoveryLabel = busyState.liveDiscoveryRunning ? "Discovery Running" : (discoveryBusy ? "Discovery Busy" : "Discovery Idle");
+  const discoveryLabel = busyState.liveDiscoveryRunning
+    ? "Discovery Running"
+    : discoveryBusy
+      ? "Discovery Busy"
+      : discoveryLoadBusy
+        ? "Loading Source Data"
+        : "Discovery Idle";
   const opsLabel = pipelineBusy ? "Pipeline Running" : (opsBusy ? "Ops Refreshing" : "Ops Idle");
   setBusyBadge(refs.adminFetcherProgressBadgeEl, fetcherBusy ? "running" : "idle", fetcherLabel);
   setBusyBadge(refs.adminDiscoveryProgressBadgeEl, discoveryBusy ? "running" : "idle", discoveryLabel);
