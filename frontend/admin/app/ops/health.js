@@ -1098,6 +1098,7 @@ export function createOpsHealthController({
     dispatchRefresh = false,
     scheduleDetails = false,
     renderDeferredPanels = true,
+    renderActivityPanel = false,
     schedulePolling = true
   } = {}) {
     if (renderToken !== opsRenderToken) return;
@@ -1139,6 +1140,18 @@ export function createOpsHealthController({
       fetcherMetricsPayload
     });
     renderAdminOpsTrendsImpl(refs.adminOpsTrendsEl, historyRuns);
+    const historyRenderOptions = {
+      onCopyRunDiagnostics: handleCopyRunDiagnostics,
+      onAbortRun: handleAbortRun,
+      waitingForTaskState: Boolean(state.waitingForTaskState),
+      taskStateUnavailable: Boolean(state.taskStateUnavailable),
+      historyPending: Boolean(state.opsHistoryLoadPending),
+      historyLoaded: Boolean(state.opsHistoryLoaded),
+      historyFullLoaded: Boolean(state.opsHistoryFullLoaded)
+    };
+    if (renderActivityPanel) {
+      renderAdminOpsHistoryImpl(refs.adminOpsHistoryEl, runModel, historyRenderOptions);
+    }
     if (renderDeferredPanels) {
       getRenderScheduler()(() => {
         if (renderToken !== opsRenderToken) return;
@@ -1161,13 +1174,7 @@ export function createOpsHealthController({
           onDedupReviewAction: handleDedupReviewAction
         });
         renderAdminOpsHistoryImpl(refs.adminOpsHistoryEl, runModel, {
-          onCopyRunDiagnostics: handleCopyRunDiagnostics,
-          onAbortRun: handleAbortRun,
-          waitingForTaskState: Boolean(state.waitingForTaskState),
-          taskStateUnavailable: Boolean(state.taskStateUnavailable),
-          historyPending: Boolean(state.opsHistoryLoadPending),
-          historyLoaded: Boolean(state.opsHistoryLoaded),
-          historyFullLoaded: Boolean(state.opsHistoryFullLoaded)
+          ...historyRenderOptions
         });
       });
     }
@@ -1218,7 +1225,8 @@ export function createOpsHealthController({
       syncTaskState: true,
       dispatchRefresh: true,
       scheduleDetails: false,
-      renderDeferredPanels: true,
+      renderDeferredPanels: false,
+      renderActivityPanel: true,
       schedulePolling: false
     });
     return { taskStatePayload, historyPayload };
@@ -1242,7 +1250,8 @@ export function createOpsHealthController({
         taskStatePayload,
         registryConflictsPayload: getCachedRegistryConflictsPayload(),
         syncTaskState: true,
-        renderDeferredPanels: true
+        renderDeferredPanels: !options?.summary,
+        renderActivityPanel: Boolean(options?.summary)
       });
       return taskStatePayload;
     } catch (err) {
@@ -1257,7 +1266,8 @@ export function createOpsHealthController({
         taskStatePayload,
         registryConflictsPayload: getCachedRegistryConflictsPayload(),
         syncTaskState: true,
-        renderDeferredPanels: true
+        renderDeferredPanels: !options?.summary,
+        renderActivityPanel: Boolean(options?.summary)
       });
       return null;
     }

@@ -10,6 +10,16 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.58] - 2026-06-11
+
+### Fixed
+- Container Admin now applies active Fetcher and Discovery task progress directly from the bounded bootstrap task rows, so current work is visible immediately while full reports hydrate in the background.
+- Frontend smoke coverage now matches the load-on-view Admin contract: full Fetcher diagnostics are verified through explicit manual refresh instead of first-load auto fan-out.
+
+### Notes
+- This supersedes the unpublished-to-Umbrel `0.2.57` container image, whose GitHub Tests workflow failed on the old Admin diagnostics smoke expectation. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.57] - 2026-06-11
 
 ### Changed

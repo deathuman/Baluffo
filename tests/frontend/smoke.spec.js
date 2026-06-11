@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync } from "fs";
+import { execFileSync } from "child_process";
 import path from "path";
 import { test, expect } from "@playwright/test";
 
@@ -179,6 +180,28 @@ function writePlaywrightBridgeJson(relativeName, payload) {
     `${JSON.stringify(payload, null, 2)}\n`,
     "utf8"
   );
+}
+
+function seedPlaywrightTaskRuntime(rows) {
+  const python = process.env.PYTHON || "python";
+  const script = `
+import json
+import sys
+from pathlib import Path
+from src.storage import BaluffoStore, TaskRuntimeStore
+
+data_dir = Path(sys.argv[1])
+rows = json.loads(sys.argv[2])
+with BaluffoStore(data_dir) as store:
+    store.set_authority_mode("taskRuns", "sqlite", reason="playwright-smoke")
+    runtime = TaskRuntimeStore(store)
+    for row in rows:
+        runtime.upsert_task_run(row)
+`;
+  execFileSync(python, ["-c", script, PLAYWRIGHT_BRIDGE_DATA_DIR, JSON.stringify(rows)], {
+    cwd: process.cwd(),
+    stdio: "pipe"
+  });
 }
 
 test("index entry redirects to jobs", async ({ page }) => {
@@ -410,8 +433,12 @@ test("admin smoke: direct admin load shows bucketed fetch failure summary", asyn
   await expectTooltipText(page, page.locator("#admin-sync-test-btn"), "Verify GitHub App access");
   await expectTooltipText(page, page.locator("#admin-refresh-btn"), "Reload users");
 
-  // Load the fetch report - requires bridge to be running
+  // Manual diagnostics remain available, but direct Admin boot must not auto-load them.
+  await expect(page.locator("#admin-ops-fetcher-metrics")).not.toContainText(
+    "Fetcher diagnostics"
+  );
   await page.click("#admin-refresh-report-btn");
+  await page.click("#admin-refresh-ops-btn");
   const metrics = page.locator("#admin-ops-fetcher-metrics");
   const overviewTab = page.getByRole("tab", { name: "Overview" });
   const discoveryTab = page.getByRole("tab", { name: "Discovery Review" });
@@ -621,6 +648,32 @@ test("admin smoke: run history trims fetch live detail and discovery omits the l
       }
     ]
   });
+  seedPlaywrightTaskRuntime([
+    {
+      runId: fetchRunId,
+      taskType: "fetch",
+      status: "running",
+      stage: "executing_sources",
+      startedAt: nowIso,
+      heartbeatAt: nowIso,
+      ownerKind: "process",
+      ownerPid: process.pid,
+      taskProgress: fetchReport.taskProgress,
+      summary: fetchReport.summary
+    },
+    {
+      runId: discoveryRunId,
+      taskType: "discovery",
+      status: "running",
+      stage: "probing_candidates",
+      startedAt: nowIso,
+      heartbeatAt: nowIso,
+      ownerKind: "process",
+      ownerPid: process.pid,
+      taskProgress: discoveryReport.taskProgress,
+      summary: discoveryReport.summary
+    }
+  ]);
   writePlaywrightBridgeJson("jobs-fetch-report.json", fetchReport);
   writePlaywrightBridgeJson("jobs-fetch-tasks.json", staleFetchTasks);
   writePlaywrightBridgeJson("source-discovery-report.json", discoveryReport);

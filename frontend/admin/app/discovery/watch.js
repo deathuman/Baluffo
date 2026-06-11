@@ -139,6 +139,9 @@ export function createAdminDiscoveryWatchController({
       setOptimisticRun: setOptimisticDiscoveryRun,
       startWatch: () => startDiscoveryCompletionWatch(options)
     }, runMeta);
+    if (options?.initialReport && typeof options.initialReport === "object") {
+      updateDiscoveryProgressFromReport(options.initialReport, { running: true });
+    }
   }
 
   function restartDiscoveryCompletionWatch(runMeta = null, options = {}) {

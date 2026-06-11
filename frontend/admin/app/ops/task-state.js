@@ -84,7 +84,8 @@ export function createOpsTaskStateController({
         runId: fetchRow?.runId,
         startedAt: fetchRow?.startedAt
       }, {
-        announceStart: false
+        announceStart: false,
+        initialReport: fetchRow
       });
       loadLatestFetcherReport?.({ silent: true, hydrateActiveProgress: true }).catch(() => {});
     }
@@ -95,7 +96,8 @@ export function createOpsTaskStateController({
         runId: discoveryRow?.runId,
         startedAt: discoveryRow?.startedAt
       }, {
-        announceStart: false
+        announceStart: false,
+        initialReport: discoveryRow
       });
       loadLatestDiscoveryReport?.({ silent: true }).catch(() => {});
     }

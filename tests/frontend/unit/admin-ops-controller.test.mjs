@@ -86,7 +86,7 @@ test("admin bridge status pill uses lightweight ops health instead of registry s
   assert.equal(calls[0].options.timeoutMs, 5000);
   assert.equal(refs.adminBridgeStatusBadgeEl.textContent, "Bridge Online");
   assert.equal(refs.adminBridgeStatusBadgeEl.classList.contains("online"), true);
-  assert.deepEqual(statuses, ["online"]);
+  assert.deepEqual(statuses, ["online"]); assert.equal(typeof controller.applyBootstrapPayload, "function");
 });
 
 test("admin bridge status pill treats one failed health poll as checking, not offline", async () => {
@@ -599,14 +599,14 @@ test("admin ops controller quietly auto-attaches active fetch and discovery task
     onBridgeStatusChange() {},
     loadDiscoveryData: async () => {},
     attachToActiveFetchRun(runMeta, options) {
-      calls.push(`fetch:${String(runMeta?.runId || "")}:${String(options?.announceStart)}`);
+      calls.push(`fetch:${String(runMeta?.runId || "")}:${String(options?.announceStart)}:${String(options?.initialReport?.runId || "")}`);
     },
     loadLatestFetcherReport: async options => {
       calls.push(`fetchReport:${String(Boolean(options?.silent))}:${String(Boolean(options?.hydrateActiveProgress))}`);
       return {};
     },
     attachToActiveDiscoveryRun(runMeta, options) {
-      calls.push(`discovery:${String(runMeta?.runId || "")}:${String(options?.announceStart)}`);
+      calls.push(`discovery:${String(runMeta?.runId || "")}:${String(options?.announceStart)}:${String(options?.initialReport?.runId || "")}`);
     },
     loadLatestDiscoveryReport: async options => {
       calls.push(`discoveryReport:${String(Boolean(options?.silent))}`);
@@ -622,9 +622,9 @@ test("admin ops controller quietly auto-attaches active fetch and discovery task
   renderScheduler.flush();
   controller.stopOpsHealthPolling();
 
-  assert.ok(calls.includes("fetch:fetch_live_attach_1:false"));
+  assert.ok(calls.includes("fetch:fetch_live_attach_1:false:fetch_live_attach_1"));
   assert.ok(calls.includes("fetchReport:true:true"));
-  assert.ok(calls.includes("discovery:discovery_live_attach_1:false"));
+  assert.ok(calls.includes("discovery:discovery_live_attach_1:false:discovery_live_attach_1"));
   assert.ok(calls.includes("discoveryReport:true"));
 });
 

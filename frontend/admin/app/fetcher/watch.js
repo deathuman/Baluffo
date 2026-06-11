@@ -69,6 +69,9 @@ export function createAdminFetcherWatchController({
       setOptimisticRun: setOptimisticFetchRun,
       startWatch: () => startFetcherCompletionWatch(options)
     }, runMeta);
+    if (options?.initialReport && typeof options.initialReport === "object") {
+      updateFetcherProgressFromReport(options.initialReport, { running: true });
+    }
   }
 
   function restartFetcherCompletionWatch(runMeta = null, options = {}) {

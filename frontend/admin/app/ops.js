@@ -93,6 +93,7 @@ export function createAdminOpsController({
     selectOpsTab: healthController.selectOpsTab,
     stopOpsHealthPolling: healthController.stopOpsHealthPolling,
     scheduleOpsHealthPolling: healthController.scheduleOpsHealthPolling,
+    applyBootstrapPayload: healthController.applyBootstrapPayload,
     loadOpsHealthData: healthController.loadOpsHealthData,
     loadOpsHistoryData: healthController.loadOpsHistoryData,
     loadOpsOverviewDetailData: healthController.loadOpsOverviewDetailData,
