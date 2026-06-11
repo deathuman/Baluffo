@@ -44,6 +44,9 @@ def test_discovery_report_summary_returns_bounded_payload(tmp_path: Path) -> Non
     api.normalize_discovery_report_contract = lambda _payload: (_ for _ in ()).throw(
         AssertionError("summary view must not normalize the full discovery report")
     )
+    api.reconcile_terminal_discovery_report_from_state = lambda: (_ for _ in ()).throw(
+        AssertionError("summary view must not reconcile the full discovery report")
+    )
 
     handler = FakeHandler()
     result = handle_get(handler, api=api, path="/discovery/report", query={"view": ["summary"]})
@@ -61,6 +64,43 @@ def test_discovery_report_summary_returns_bounded_payload(tmp_path: Path) -> Non
     assert payload["recentLog"] == []
     assert "candidates" not in payload
     assert "failures" not in payload
+
+
+def test_fetch_report_summary_returns_bounded_payload(tmp_path: Path) -> None:
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
+    report = {
+        "runId": "fetch_1",
+        "status": "ok",
+        "startedAt": "2026-06-06T08:00:00Z",
+        "finishedAt": "2026-06-06T08:02:00Z",
+        "headerPadding": "x" * (768 * 1024),
+        "summary": {
+            "outputCount": 300,
+            "keptCount": 250,
+            "failedSources": 2,
+            "totalSources": 40,
+        },
+        "taskProgress": {"active": False, "phase": "complete", "percent": 100},
+        "sources": [
+            {"name": f"source-{index}", "details": {"large": "not returned"}}
+            for index in range(2000)
+        ],
+    }
+    api.JOBS_FETCH_REPORT_PATH.write_text(json.dumps(report), encoding="utf-8")
+
+    handler = FakeHandler()
+    result = handle_get(handler, api=api, path="/ops/fetch-report", query={"view": ["summary"]})
+
+    assert result is True
+    assert handler.sent[-1]["status"] == 200
+    payload = handler.sent[-1]["payload"]
+    assert payload["summaryView"] is True
+    assert payload["detailLevel"] == "summary"
+    assert payload["runId"] == "fetch_1"
+    assert payload["summary"]["keptCount"] == 250
+    assert payload["summary"]["failedSources"] == 2
+    assert "sources" not in payload
 
 
 def test_discovery_report_rejects_unknown_view(tmp_path: Path) -> None:

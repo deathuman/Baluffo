@@ -8,6 +8,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused GET tests.
 
 from __future__ import annotations
 
+import copy
 import io
 import json
 import logging
@@ -58,6 +59,10 @@ from src.storage import SourceRuntimeStore
 from src.storage_metrics import duration_ms, record_storage_read, snapshot_storage_metrics
 
 logger = logging.getLogger(__name__)
+
+_DISCOVERY_REPORT_SUMMARY_CACHE: dict[str, Any] = {}
+_FETCH_REPORT_SUMMARY_CACHE: dict[str, Any] = {}
+_FETCH_REPORT_SUMMARY_SCAN_MAX_BYTES = 16 * 1024 * 1024
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -203,6 +208,32 @@ def _read_json_prefix(path: Path, *, max_bytes: int = 1024 * 1024) -> str:
     return data.decode("utf-8", errors="ignore")
 
 
+def _path_signature(path: Path | None) -> tuple[str, int, int] | None:
+    if path is None:
+        return None
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return (str(path), int(stat.st_size), int(stat.st_mtime_ns))
+
+
+def _cached_summary_payload(
+    cache: dict[str, Any],
+    signature: tuple[str, int, int] | None,
+    builder,
+) -> dict[str, Any]:
+    if signature is not None and cache.get("signature") == signature:
+        cached = cache.get("payload")
+        if isinstance(cached, dict):
+            return copy.deepcopy(cached)
+    payload = builder()
+    if signature is not None and isinstance(payload, dict):
+        cache["signature"] = signature
+        cache["payload"] = copy.deepcopy(payload)
+    return payload
+
+
 def _sync_status_summary_payload(payload: dict[str, Any]) -> dict[str, Any]:
     config = _as_dict(payload.get("config"))
     runtime = _as_dict(payload.get("runtime"))
@@ -319,48 +350,107 @@ def _discovery_report_summary_payload(report: dict[str, Any]) -> dict[str, Any]:
 
 def _discovery_report_summary_payload_from_file(path: Any) -> dict[str, Any]:
     report_path = Path(path) if path else None
-    if not report_path or not report_path.exists():
+    signature = _path_signature(report_path)
+    if not report_path or signature is None:
         return _discovery_report_summary_payload({})
-    text = _read_json_prefix(report_path)
-    if not text:
-        return _discovery_report_summary_payload({})
-    spans = _top_level_json_field_spans(text)
-    summary = _as_dict(_decode_json_span(text, spans, "summary", {}))
-    runtime = _as_dict(_decode_json_span(text, spans, "runtime", {}))
-    task_progress = _as_dict(_decode_json_span(text, spans, "taskProgress", {}))
-    registry_finalization = _as_dict(runtime.get("registryFinalization"))
-    auto_approval = _as_dict(runtime.get("autoApproval"))
-    log_rows = (
-        _as_list(_decode_json_span(text, spans, "log", [], max_bytes=128 * 1024))
-        or _as_list(_decode_json_span(text, spans, "logs", [], max_bytes=128 * 1024))
-        or _as_list(runtime.get("log"))
-    )
-    payload = _discovery_report_summary_payload(
-        {
-            "runId": _decode_json_span(text, spans, "runId", ""),
-            "status": _decode_json_span(text, spans, "status", ""),
-            "startedAt": _decode_json_span(text, spans, "startedAt", ""),
-            "finishedAt": _decode_json_span(text, spans, "finishedAt", ""),
-            "summary": summary,
-            "runtime": {
-                "registryFinalization": registry_finalization,
-                "autoApproval": auto_approval,
-            },
-            "taskProgress": task_progress,
-            "log": log_rows,
+
+    def _build() -> dict[str, Any]:
+        text = _read_json_prefix(report_path, max_bytes=512 * 1024)
+        if not text:
+            return _discovery_report_summary_payload({})
+        spans = _top_level_json_field_spans(text)
+        summary = _as_dict(_decode_json_span(text, spans, "summary", {}))
+        runtime = _as_dict(_decode_json_span(text, spans, "runtime", {}))
+        task_progress = _as_dict(_decode_json_span(text, spans, "taskProgress", {}))
+        registry_finalization = _as_dict(runtime.get("registryFinalization"))
+        auto_approval = _as_dict(runtime.get("autoApproval"))
+        log_rows = (
+            _as_list(_decode_json_span(text, spans, "log", [], max_bytes=64 * 1024))
+            or _as_list(_decode_json_span(text, spans, "logs", [], max_bytes=64 * 1024))
+            or _as_list(runtime.get("log"))
+        )
+        payload = _discovery_report_summary_payload(
+            {
+                "runId": _decode_json_span(text, spans, "runId", ""),
+                "status": _decode_json_span(text, spans, "status", ""),
+                "startedAt": _decode_json_span(text, spans, "startedAt", ""),
+                "finishedAt": _decode_json_span(text, spans, "finishedAt", ""),
+                "summary": summary,
+                "runtime": {
+                    "registryFinalization": registry_finalization,
+                    "autoApproval": auto_approval,
+                },
+                "taskProgress": task_progress,
+                "log": log_rows,
+            }
+        )
+        payload["counts"] = {
+            "candidateCount": summary.get("candidateCount")
+            or summary.get("queuedCandidateCount")
+            or summary.get("newCandidateCount")
+            or 0,
+            "failureCount": summary.get("failureCount")
+            or summary.get("failedCount")
+            or summary.get("failedProbeCount")
+            or 0,
         }
-    )
-    payload["counts"] = {
-        "candidateCount": summary.get("candidateCount")
-        or summary.get("queuedCandidateCount")
-        or summary.get("newCandidateCount")
-        or 0,
-        "failureCount": summary.get("failureCount")
-        or summary.get("failedCount")
-        or summary.get("failedProbeCount")
-        or 0,
-    }
-    return payload
+        return payload
+
+    return _cached_summary_payload(_DISCOVERY_REPORT_SUMMARY_CACHE, signature, _build)
+
+
+def _fetch_report_summary_payload_from_file(path: Any) -> dict[str, Any]:
+    report_path = Path(path) if path else None
+    signature = _path_signature(report_path)
+    if not report_path or signature is None:
+        return {"ok": True, "summaryView": True, "detailLevel": "summary", "summary": {}}
+
+    def _build() -> dict[str, Any]:
+        text = _read_json_prefix(
+            report_path,
+            max_bytes=_FETCH_REPORT_SUMMARY_SCAN_MAX_BYTES,
+        )
+        if not text:
+            return {"ok": True, "summaryView": True, "detailLevel": "summary", "summary": {}}
+        spans = _top_level_json_field_spans(text)
+        summary = _as_dict(_decode_json_span(text, spans, "summary", {}))
+        task_progress = _as_dict(_decode_json_span(text, spans, "taskProgress", {}))
+        timing = _as_dict(_decode_json_span(text, spans, "timing", {}, max_bytes=64 * 1024))
+        return {
+            "ok": True,
+            "summaryView": True,
+            "detailLevel": "summary",
+            "runId": _clean_text(_decode_json_span(text, spans, "runId", "")),
+            "status": _clean_text(_decode_json_span(text, spans, "status", "")),
+            "startedAt": _clean_text(_decode_json_span(text, spans, "startedAt", "")),
+            "finishedAt": _clean_text(_decode_json_span(text, spans, "finishedAt", "")),
+            "summary": {
+                key: summary.get(key)
+                for key in (
+                    "outputCount",
+                    "keptCount",
+                    "fetchedCount",
+                    "failedSources",
+                    "totalSources",
+                    "successfulSources",
+                    "excludedSources",
+                    "durationMs",
+                )
+                if key in summary
+            },
+            "taskProgress": {
+                "active": bool(task_progress.get("active")),
+                "phase": _clean_text(task_progress.get("phase")),
+                "label": _clean_text(task_progress.get("label") or task_progress.get("phaseLabel")),
+                "percent": task_progress.get("percent", 0),
+            },
+            "timing": {
+                "durationMs": timing.get("durationMs"),
+                "fetchAndParseMs": timing.get("fetchAndParseMs"),
+            },
+        }
+
+    return _cached_summary_payload(_FETCH_REPORT_SUMMARY_CACHE, signature, _build)
 
 
 def _compact_live_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1630,7 +1720,7 @@ def _handle_discovery_report_route(
         from src.source_registry_io import load_runtime_evidence
 
         reconciler = getattr(api, "reconcile_terminal_discovery_report_from_state", None)
-        if callable(reconciler):
+        if view != "summary" and callable(reconciler):
             reconciler()
 
         if view == "summary":
@@ -1924,6 +2014,27 @@ def handle_get(
 
     if path == "/ops/fetch-report":
         view = str((query.get("view") or [""])[0] or "").strip().lower()
+        if view == "summary":
+            started_at = time.perf_counter()
+            failed = False
+            try:
+                handler.send_json(
+                    _fetch_report_summary_payload_from_file(api.JOBS_FETCH_REPORT_PATH)
+                )
+            except Exception:
+                failed = True
+                raise
+            finally:
+                _record_storage_read_metric(
+                    api,
+                    surface="sourceRuns.reportSummary",
+                    artifact="jobs-fetch-report.json",
+                    storage_kind="json",
+                    started_at=started_at,
+                    row_count=0,
+                    failed=failed,
+                )
+            return True
         started_at = time.perf_counter()
         source = "json"
         source_count = 0
