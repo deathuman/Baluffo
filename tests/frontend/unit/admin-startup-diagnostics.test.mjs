@@ -21,3 +21,18 @@ test("admin startup has no automatic deferred diagnostics fan-out", () => {
   assert.doesNotMatch(body, /sourceTablesOnly:\s*true/);
   assert.doesNotMatch(body, /\/discovery\/report\?view=summary/);
 });
+
+test("admin bootstrap schedules source table loading without report diagnostics", () => {
+  const schedulerMatch = compositionSource.match(/function scheduleBootstrapSourceTablesLoad\(\) \{([\s\S]*?)\n  \}/);
+  assert.ok(schedulerMatch, "expected bootstrap source table scheduler");
+  const schedulerBody = schedulerMatch[1];
+  assert.match(schedulerBody, /sourceTablesOnly:\s*true/);
+  assert.match(schedulerBody, /logChanges:\s*false/);
+  assert.doesNotMatch(schedulerBody, /loadLatestFetcherReport/);
+  assert.doesNotMatch(schedulerBody, /loadDiscoveryLogChunk/);
+  assert.doesNotMatch(schedulerBody, /getBridge\(/);
+
+  const bootstrapMatch = compositionSource.match(/async function loadAdminBootstrap\(\) \{([\s\S]*?)\n  \}/);
+  assert.ok(bootstrapMatch, "expected bootstrap loader");
+  assert.match(bootstrapMatch[1], /scheduleBootstrapSourceTablesLoad\(\)/);
+});

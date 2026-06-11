@@ -18,6 +18,13 @@ def _text(value: Any) -> str:
     return str(value or "").strip()
 
 
+def _int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _best_effort(default: Any, func: Any) -> Any:
     with suppress(Exception):
         return func()
@@ -109,31 +116,81 @@ def _recent_task_rows(api: BridgeApi, *, limit: int = 2) -> list[dict[str, Any]]
 
 def _sync_summary(api: BridgeApi) -> dict[str, Any]:
     config = _as_dict(_best_effort({"ready": False, "enabled": False}, api.sync_config_status))
+    runtime = _as_dict(_best_effort({}, api.load_sync_runtime_state))
     enabled = bool(config.get("enabled"))
     return {
         "ok": True,
         "summaryView": True,
+        "detailLevel": "summary",
         "config": config,
         "savedConfig": {"enabled": enabled},
-        "runtime": {},
+        "runtime": {
+            "lastPullAt": _text(runtime.get("lastPullAt")),
+            "lastPushAt": _text(runtime.get("lastPushAt")),
+            "lastAction": _text(runtime.get("lastAction")),
+            "lastResult": _text(runtime.get("lastResult")),
+            "lastError": _text(runtime.get("lastError")),
+        },
     }
 
 
-def _overview_summary(api: BridgeApi) -> dict[str, Any]:
+def _current_user_shell(user: Any) -> dict[str, Any]:
+    if not isinstance(user, dict):
+        return {}
+    uid = _text(
+        user.get("uid")
+        or user.get("userId")
+        or user.get("id")
+        or user.get("email")
+        or user.get("name")
+    )
+    name = _text(user.get("name") or user.get("displayName") or user.get("email") or uid)
+    if not uid and not name:
+        return {}
+    uid = uid or name
+    return {
+        "uid": uid,
+        "userId": uid,
+        "name": name or uid,
+        "displayName": name or uid,
+        "savedJobsCount": 0,
+        "notesBytes": 0,
+        "attachmentsCount": 0,
+        "attachmentsBytes": 0,
+        "totalBytes": 0,
+        "profileShell": True,
+    }
+
+
+def _overview_summary(api: BridgeApi, *, session: dict[str, Any] | None = None) -> dict[str, Any]:
     overview = _as_dict(
         _best_effort(
             {},
             lambda: api.desktop_local_data_store().get_admin_overview(detail="summary"),
         )
     )
+    current_user = _current_user_shell(_as_dict(session).get("user") if session else None)
     if overview:
+        users = _as_list(overview.get("users"))
+        if not users and current_user:
+            overview = dict(overview)
+            overview["users"] = [current_user]
+            totals = _as_dict(overview.get("totals"))
+            totals["users"] = max(1, _int(totals.get("users")))
+            totals["usersCount"] = max(1, _int(totals.get("usersCount")))
+            overview["totals"] = totals
         return overview
-    return {
+    fallback = {
         "users": [],
         "totals": {},
         "detailLevel": "summary",
         "error": "overview unavailable",
     }
+    if current_user:
+        fallback["users"] = [current_user]
+        fallback["totals"] = {"users": 1, "usersCount": 1}
+        fallback.pop("error", None)
+    return fallback
 
 
 def _session_summary(api: BridgeApi) -> dict[str, Any]:
@@ -143,6 +200,31 @@ def _session_summary(api: BridgeApi) -> dict[str, Any]:
         "desktopSession": desktop_session,
         "user": user,
     }
+
+
+def _schedule_summary(api: BridgeApi) -> dict[str, Any]:
+    ready = _as_dict(_best_effort({}, api.compute_ops_health_ready))
+    schedule = _as_dict(ready.get("schedule"))
+    if schedule:
+        return schedule
+    payload = _as_dict(_best_effort({}, api.get_jobs_pipeline_schedule_payload))
+    saved = _as_dict(payload.get("savedConfig"))
+    status = _as_dict(payload.get("status"))
+    if not saved and not status:
+        return {}
+    return {
+        "pipeline": {
+            **status,
+            "enabled": bool(saved.get("enabled", status.get("enabled", False))),
+            "intervalHours": _int(saved.get("intervalHours")),
+        }
+    }
+
+
+def _registry_summary(api: BridgeApi) -> dict[str, Any]:
+    payload = _as_dict(_best_effort({}, api.get_registry_summary_payload))
+    summary = _as_dict(payload.get("summary"))
+    return summary or payload
 
 
 def get_admin_bootstrap_payload(api: BridgeApi) -> dict[str, Any]:
@@ -164,12 +246,14 @@ def get_admin_bootstrap_payload(api: BridgeApi) -> dict[str, Any]:
             "startupReady": startup_ready,
         },
         "session": session,
-        "overview": _overview_summary(api),
+        "overview": _overview_summary(api, session=session),
         "tasks": {
             "current": current,
             "recent": recent,
             "currentCount": len(current),
             "recentCount": len(recent),
         },
+        "schedule": _schedule_summary(api),
+        "registrySummary": _registry_summary(api),
         "sync": _sync_summary(api),
     }

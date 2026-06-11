@@ -1204,13 +1204,23 @@ export function createOpsHealthController({
       count: recentRows.length,
       summaryView: true
     };
+    const registrySummary = payload?.registrySummary && typeof payload.registrySummary === "object"
+      ? payload.registrySummary
+      : {};
+    const kpis = {};
+    if (Object.keys(registrySummary).length) {
+      kpis.registrySync = { ...registrySummary };
+      if (Object.prototype.hasOwnProperty.call(registrySummary, "pendingCount")) {
+        kpis.pendingApprovalsCount = registrySummary.pendingCount;
+      }
+    }
     const health = {
       ok: true,
       status: "healthy",
       summaryView: true,
       alerts: [],
-      kpis: {},
-      schedule: {},
+      kpis,
+      schedule: payload?.schedule && typeof payload.schedule === "object" ? payload.schedule : {},
       appVersion: String(payload?.app?.version || "")
     };
     state.latestOpsHealthCache = health;

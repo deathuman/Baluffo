@@ -68,6 +68,7 @@ export function composeAdminControllers({
 }) {
   const adminDispatch = createAdminDispatcher();
   let authController;
+  let bootstrapSourceTablesLoadScheduled = false;
   let syncController;
   let opsController;
   let fetcherController;
@@ -224,12 +225,33 @@ export function composeAdminControllers({
     return null;
   }
 
+  function scheduleBootstrapSourceTablesLoad() {
+    if (bootstrapSourceTablesLoadScheduled) return;
+    bootstrapSourceTablesLoadScheduled = true;
+    const loadSourceTables = () => {
+      registryController.loadDiscoveryData({
+        sourceTablesOnly: true,
+        logChanges: false,
+        skipIfFreshMs: 10000
+      }).catch(err => {
+        logAdminError("Failed to load Admin source tables after bootstrap", err);
+      });
+    };
+    if (typeof globalThis.requestIdleCallback === "function") {
+      globalThis.requestIdleCallback(loadSourceTables, { timeout: 1500 });
+      return;
+    }
+    const timer = globalThis.setTimeout(loadSourceTables, 0);
+    timer?.unref?.();
+  }
+
   async function loadAdminBootstrap() {
     const payload = await getBridge("/admin/bootstrap", { timeoutMs: 10000 });
     overviewController.renderOverview(payload?.overview || {});
     opsController.applyBootstrapPayload(payload || {});
     state.latestSyncStatusCache = payload?.sync || null;
     syncController.renderSyncStatus(payload?.sync || {}, { forceForm: true });
+    scheduleBootstrapSourceTablesLoad();
     return payload || null;
   }
 

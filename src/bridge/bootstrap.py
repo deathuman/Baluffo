@@ -55,6 +55,7 @@ def build_bridge_api(
     get_jobs_pipeline_schedule_payload: Callable[[], dict[str, Any]],
     update_jobs_pipeline_schedule: Callable[[dict[str, Any] | None], dict[str, Any]],
     start_sync_task: Callable[..., dict[str, Any]],
+    load_sync_runtime_state: Callable[[], dict[str, Any]],
     get_discovery_config_payload: Callable[[], dict[str, Any]],
     update_saved_discovery_settings: Callable[[dict[str, Any]], dict[str, Any]],
     compute_ops_health: Callable[[], dict[str, Any]],
@@ -128,6 +129,7 @@ def build_bridge_api(
         abort_task=abort_task
         or (lambda _payload: (400, {"ok": False, "error": "task_abort_not_available"})),
         start_sync_task=start_sync_task,
+        load_sync_runtime_state=load_sync_runtime_state,
         get_discovery_config_payload=get_discovery_config_payload,
         update_saved_discovery_settings=update_saved_discovery_settings,
         compute_ops_health=compute_ops_health,

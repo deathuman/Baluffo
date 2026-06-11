@@ -134,7 +134,12 @@ test("admin sync status can skip live sync hydration during first boot", async (
           branch: "main",
           path: "baluffo/source-sync.json"
         },
-        runtime: {}
+        runtime: {
+          lastPullAt: "2026-06-11T21:39:53Z",
+          lastPushAt: "2026-06-04T17:27:36Z",
+          lastAction: "pull",
+          lastResult: "ok"
+        }
       };
     },
     postBridge: async () => ({}),
@@ -183,7 +188,12 @@ test("admin sync status summary preserves enabled form state during first boot",
           branch: "main",
           path: "baluffo/source-sync.json"
         },
-        runtime: {}
+        runtime: {
+          lastPullAt: "2026-06-11T21:39:53Z",
+          lastPushAt: "2026-06-04T17:27:36Z",
+          lastAction: "pull",
+          lastResult: "ok"
+        }
       };
     },
     postBridge: async () => ({}),
@@ -201,5 +211,8 @@ test("admin sync status summary preserves enabled form state during first boot",
 
   assert.deepEqual(paths, ["/sync/status?view=summary"]);
   assert.equal(refs.adminSyncEnabledEl.checked, true);
+  assert.match(refs.adminSyncStatusEl.innerHTML, /2026-06-11T21:39:53\.000Z/);
+  assert.match(refs.adminSyncStatusEl.innerHTML, /2026-06-04T17:27:36\.000Z/);
+  assert.match(refs.adminSyncStatusEl.innerHTML, /pull/);
   assert.equal(Boolean(state.adminBusyState.liveSyncRunning), false);
 });

@@ -40,6 +40,25 @@ test("admin render: alerts and kpis render healthy/critical states", () => {
   assert.match(kpisEl.innerHTML, /12\.3s/);
 });
 
+test("admin render: missing summary kpis remain pending instead of false zeros", () => {
+  const kpisEl = makeEl();
+  renderAdminOpsKpis(kpisEl, {
+    pendingApprovalsCount: 812,
+    registrySync: {
+      activeCount: 2309,
+      pendingCount: 812,
+      countBasis: "storage",
+      summaryExact: false
+    }
+  }, "healthy");
+
+  assert.match(kpisEl.innerHTML, /Loading latest fetch KPI/);
+  assert.match(kpisEl.innerHTML, /2[,.]309/);
+  assert.match(kpisEl.innerHTML, /812/);
+  assert.doesNotMatch(kpisEl.innerHTML, /Last Successful Fetch[\s\S]*unknown/);
+  assert.doesNotMatch(kpisEl.innerHTML, /Fetch Success \(7d\)[\s\S]*0\.0%/);
+});
+
 test("admin render: non-dismissible alerts omit dismiss control", () => {
   const alertsEl = makeEl();
   renderAdminOpsAlerts(alertsEl, [

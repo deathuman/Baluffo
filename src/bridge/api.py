@@ -213,6 +213,10 @@ def _ok_payload() -> JsonObject:
     return {"ok": True}
 
 
+def _empty_json_object() -> JsonObject:
+    return {}
+
+
 def _empty_rows_payload() -> JsonObject:
     return {"rows": []}
 
@@ -398,6 +402,7 @@ class BridgeApi:
 
     # Sync-specific helpers used by routes.
     get_sync_status_payload: Callable[[], JsonObject] = _ok_payload
+    load_sync_runtime_state: Callable[[], JsonObject] = _empty_json_object
     refresh_sync_config: Callable[[], Any] = _noop_desktop_local_data_store
     test_sync_config: Callable[[], JsonObject] = _not_started_noarg
     sync_pull_sources: Callable[[], JsonObject] = _not_started_noarg

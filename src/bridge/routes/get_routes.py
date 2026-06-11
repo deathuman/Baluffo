@@ -267,6 +267,9 @@ def _sync_status_summary_payload(payload: dict[str, Any]) -> dict[str, Any]:
             "message": _clean_text(runtime.get("message")),
             "lastPullAt": _clean_text(runtime.get("lastPullAt")),
             "lastPushAt": _clean_text(runtime.get("lastPushAt")),
+            "lastAction": _clean_text(runtime.get("lastAction")),
+            "lastResult": _clean_text(runtime.get("lastResult")),
+            "lastError": _clean_text(runtime.get("lastError")),
             "lastPull": {
                 "result": _clean_text(last_pull.get("result")),
                 "finishedAt": _clean_text(last_pull.get("finishedAt")),
@@ -2161,13 +2164,19 @@ def handle_get(
             )
             return True
         with time_operation("sync.status.summary" if view == "summary" else "sync.status"):
+            runtime_state: dict[str, Any] = {}
+            if view == "summary":
+                try:
+                    runtime_state = _as_dict(api.load_sync_runtime_state())
+                except Exception:
+                    runtime_state = {}
             payload = (
                 _sync_status_summary_payload(
                     {
                         "ok": True,
                         "config": api.sync_config_status(),
                         "savedConfig": {},
-                        "runtime": {},
+                        "runtime": runtime_state,
                     }
                 )
                 if view == "summary"

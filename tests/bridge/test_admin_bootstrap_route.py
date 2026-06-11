@@ -25,6 +25,30 @@ def test_admin_bootstrap_uses_bounded_control_plane_inputs(tmp_path: Path) -> No
     api = make_stub_bridge_api(tmp_path, store)
     api.app_version = "9.9.9"
     api.sync_config_status = lambda: {"ready": True, "enabled": True, "credentialsPackaged": True}
+    api.load_sync_runtime_state = lambda: {
+        "lastPullAt": "2026-06-11T21:39:53Z",
+        "lastPushAt": "2026-06-04T17:27:36Z",
+        "lastAction": "pull",
+        "lastResult": "ok",
+    }
+    api.compute_ops_health_ready = lambda: {
+        "schedule": {
+            "pipeline": {
+                "enabled": True,
+                "intervalHours": 12,
+                "nextRunAt": "2026-06-12T03:07:50Z",
+                "lastPipelineFinishedAt": "2026-06-11T15:07:50Z",
+            }
+        }
+    }
+    api.get_registry_summary_payload = lambda: {
+        "activeCount": 2309,
+        "pendingCount": 812,
+        "rejectedCount": 0,
+        "duplicatePendingCount": 1,
+        "summaryExact": False,
+        "countBasis": "storage",
+    }
     api.get_lifecycle_current_runs = lambda: [
         {
             "runId": "fetch_live",
@@ -62,14 +86,12 @@ def test_admin_bootstrap_uses_bounded_control_plane_inputs(tmp_path: Path) -> No
         raise AssertionError("admin bootstrap must not call heavy diagnostic helpers")
 
     api.compute_ops_health = forbidden
-    api.compute_ops_health_ready = forbidden
     api.compute_ops_dashboard_health = forbidden
     api.compute_ops_dashboard_health_summary = forbidden
     api.get_current_task_state_payload = forbidden
     api.get_current_task_state_summary_payload = forbidden
     api.get_sync_status_payload = forbidden
     api.load_state = forbidden
-    api.get_registry_summary_payload = forbidden
 
     handler = FakeHandler()
     result = handle_get(handler, api=api, path="/admin/bootstrap", query={})
@@ -83,5 +105,50 @@ def test_admin_bootstrap_uses_bounded_control_plane_inputs(tmp_path: Path) -> No
     assert payload["overview"]["totals"]["users"] == 1
     assert payload["sync"]["config"]["enabled"] is True
     assert payload["sync"]["savedConfig"]["enabled"] is True
+    assert payload["sync"]["runtime"]["lastPullAt"] == "2026-06-11T21:39:53Z"
+    assert payload["schedule"]["pipeline"]["enabled"] is True
+    assert payload["schedule"]["pipeline"]["intervalHours"] == 12
+    assert payload["registrySummary"]["activeCount"] == 2309
+    assert payload["registrySummary"]["pendingCount"] == 812
     assert [row["runId"] for row in payload["tasks"]["current"]] == ["fetch_live"]
     assert [row["runId"] for row in payload["tasks"]["recent"]] == ["old_3", "old_2"]
+
+
+def test_admin_bootstrap_includes_current_user_shell_when_overview_empty(
+    tmp_path: Path,
+) -> None:
+    store = FakeDesktopLocalDataStore()
+    user = store.sign_in("Andrea")
+    store.get_admin_overview = lambda *, detail="full": {  # type: ignore[attr-defined]
+        "detailLevel": detail,
+        "attachmentSizeBasis": "metadata",
+        "users": [],
+        "totals": {"users": 0, "savedJobs": 0},
+    }
+    api = make_stub_bridge_api(tmp_path, store)
+    api.get_lifecycle_current_runs = lambda: []
+    api.get_lifecycle_recent_runs = lambda: []
+    api.get_jobs_pipeline_status_payload = lambda: {"active": False}
+
+    handler = FakeHandler()
+    result = handle_get(handler, api=api, path="/admin/bootstrap", query={})
+
+    assert result is True
+    payload = handler.sent[-1]["payload"]
+    users = payload["overview"]["users"]
+    assert users == [
+        {
+            "uid": user["uid"],
+            "userId": user["uid"],
+            "name": "Andrea",
+            "displayName": "Andrea",
+            "savedJobsCount": 0,
+            "notesBytes": 0,
+            "attachmentsCount": 0,
+            "attachmentsBytes": 0,
+            "totalBytes": 0,
+            "profileShell": True,
+        }
+    ]
+    assert payload["overview"]["totals"]["users"] == 1
+    assert payload["overview"]["totals"]["usersCount"] == 1

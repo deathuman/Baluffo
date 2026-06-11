@@ -159,6 +159,12 @@ def test_sync_status_summary_uses_config_only(tmp_path: Path) -> None:
         "repo": "deathuman/Baluffo",
         "credentialsPackaged": True,
     }
+    api.load_sync_runtime_state = lambda: {
+        "lastPullAt": "2026-06-11T21:39:53Z",
+        "lastPushAt": "2026-06-04T17:27:36Z",
+        "lastAction": "pull",
+        "lastResult": "ok",
+    }
 
     handler = FakeHandler()
     result = handle_get(handler, api=api, path="/sync/status", query={"view": ["summary"]})
@@ -172,6 +178,10 @@ def test_sync_status_summary_uses_config_only(tmp_path: Path) -> None:
     assert payload["savedConfig"]["enabled"] is True
     assert payload["config"]["ready"] is True
     assert payload["config"]["credentialsPackaged"] is True
+    assert payload["runtime"]["lastPullAt"] == "2026-06-11T21:39:53Z"
+    assert payload["runtime"]["lastPushAt"] == "2026-06-04T17:27:36Z"
+    assert payload["runtime"]["lastAction"] == "pull"
+    assert payload["runtime"]["lastResult"] == "ok"
 
 
 def test_sync_status_rejects_unknown_view(tmp_path: Path) -> None:

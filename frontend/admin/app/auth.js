@@ -96,8 +96,8 @@ export function createAdminAuthController({
     syncAdminBusyUi();
     syncDiscoveryLogDisclosure();
     setSourceFilter("all");
-    setFetcherLogPlaceholder("");
-    setDiscoveryLogPlaceholder("");
+    setFetcherLogPlaceholder("Latest fetch report not loaded yet. Use Load latest fetch report to populate this panel.");
+    setDiscoveryLogPlaceholder("Latest discovery report not loaded yet. Use Load Discovery Report to populate this panel.");
     setManualSourceFeedback("", "muted");
     setOpsReadinessShell();
     setBridgeStatusBadge("checking", "Bridge Checking");

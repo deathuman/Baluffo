@@ -146,8 +146,8 @@ test("admin auth controller initializes the composed admin view immediately", as
   assert.equal(calls.some(item => item.startsWith("loadSyncStatus:")), false);
   assert.equal(calls.includes("scheduleOpsHealthPolling:900"), false);
   assert.equal(refs.adminSyncStatusEl.textContent, "");
-  assert.ok(calls.includes("fetcherPlaceholder:"));
-  assert.ok(calls.includes("discoveryPlaceholder:"));
+  assert.ok(calls.includes("fetcherPlaceholder:Latest fetch report not loaded yet. Use Load latest fetch report to populate this panel."));
+  assert.ok(calls.includes("discoveryPlaceholder:Latest discovery report not loaded yet. Use Load Discovery Report to populate this panel."));
   assert.equal(calls.some(item => /Loading latest jobs fetch report|Loading source discovery data/.test(item)), false);
   assert.equal(toasts.length, 0);
   const perfNames = perfCalls.map(item => `${item.type}:${item.name}`);

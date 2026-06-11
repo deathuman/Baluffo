@@ -112,6 +112,42 @@ function formatRegistryCountBasis(summary) {
   return "registry counts";
 }
 
+function hasOwnField(object, key) {
+  return Boolean(object && typeof object === "object" && Object.prototype.hasOwnProperty.call(object, key));
+}
+
+function formatPendingField(label = "Not loaded yet") {
+  return `<span class="muted">${escapeHtml(label)}</span>`;
+}
+
+function formatOptionalNumber(object, key, { pending = "Not loaded yet" } = {}) {
+  if (!hasOwnField(object, key)) return formatPendingField(pending);
+  const value = Number(object?.[key]);
+  if (!Number.isFinite(value)) return formatPendingField(pending);
+  return value.toLocaleString();
+}
+
+function formatOptionalPercent(object, key, { pending = "Not loaded yet" } = {}) {
+  if (!hasOwnField(object, key)) return formatPendingField(pending);
+  const value = Number(object?.[key]);
+  if (!Number.isFinite(value)) return formatPendingField(pending);
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function formatOptionalDuration(object, key, { pending = "Not loaded yet" } = {}) {
+  if (!hasOwnField(object, key)) return formatPendingField(pending);
+  const value = Number(object?.[key]);
+  if (!Number.isFinite(value)) return formatPendingField(pending);
+  return escapeHtml(formatDuration(value));
+}
+
+function formatOptionalText(object, key, { pending = "Not loaded yet", formatter = value => String(value) } = {}) {
+  if (!hasOwnField(object, key)) return formatPendingField(pending);
+  const value = object?.[key];
+  const text = formatter(value);
+  return escapeHtml(text || pending);
+}
+
 function renderPipelineScheduleControls(pipeline) {
   const interval = Number(pipeline?.intervalHours || 24);
   const safeInterval = Number.isFinite(interval)
@@ -186,21 +222,17 @@ export function renderAdminOpsKpis(kpisEl, kpis, status) {
   const canPatchInPlace = Boolean(kpisEl && kpisEl.dataset);
   const signature = stableOpsSignature({
     status: String(status || ""),
-    sevenDayFetchSuccessRate: Number(kpis?.sevenDayFetchSuccessRate || 0),
-    failedSourceRatioLatest: Number(kpis?.failedSourceRatioLatest || 0),
-    pendingApprovalsCount: Number(kpis?.pendingApprovalsCount || 0),
-    avgFetchDurationMs7d: Number(kpis?.avgFetchDurationMs7d || 0),
-    lastSuccessfulFetchAge: String(kpis?.lastSuccessfulFetchAge || ""),
+    sevenDayFetchSuccessRate: hasOwnField(kpis, "sevenDayFetchSuccessRate") ? kpis?.sevenDayFetchSuccessRate : "__pending__",
+    failedSourceRatioLatest: hasOwnField(kpis, "failedSourceRatioLatest") ? kpis?.failedSourceRatioLatest : "__pending__",
+    pendingApprovalsCount: hasOwnField(kpis, "pendingApprovalsCount") ? kpis?.pendingApprovalsCount : "__pending__",
+    avgFetchDurationMs7d: hasOwnField(kpis, "avgFetchDurationMs7d") ? kpis?.avgFetchDurationMs7d : "__pending__",
+    lastSuccessfulFetchAge: hasOwnField(kpis, "lastSuccessfulFetchAge") ? String(kpis?.lastSuccessfulFetchAge || "") : "__pending__",
     registrySync: kpis?.registrySync || {},
     providerCoverage: kpis?.providerCoverage || {},
     dedupReviewState: kpis?.dedupReviewState || {}
   });
   if (canPatchInPlace && kpisEl.dataset.opsKpisSig === signature) return;
   if (canPatchInPlace) kpisEl.dataset.opsKpisSig = signature;
-  const successRate = Number(kpis?.sevenDayFetchSuccessRate || 0);
-  const failedRatio = Number(kpis?.failedSourceRatioLatest || 0);
-  const pending = Number(kpis?.pendingApprovalsCount || 0);
-  const avgMs = Number(kpis?.avgFetchDurationMs7d || 0);
   const registrySync = kpis?.registrySync && typeof kpis.registrySync === "object"
     ? kpis.registrySync
     : {};
@@ -212,45 +244,53 @@ export function renderAdminOpsKpis(kpisEl, kpis, status) {
     : {};
   const statusClass = status === "critical" ? "critical" : status === "warning" ? "warning" : "healthy";
   const lastSyncAt = String(registrySync?.lastSyncAt || "");
-  const lastSyncLabel = lastSyncAt ? formatDateTime(lastSyncAt) : "Never";
+  const lastSyncLabel = lastSyncAt ? formatDateTime(lastSyncAt) : (hasOwnField(registrySync, "lastSyncAt") ? "Never" : "Not loaded yet");
+  const providerCoverageLoaded = hasOwnField(kpis, "providerCoverage");
+  const dedupReviewStateLoaded = hasOwnField(kpis, "dedupReviewState");
+  const providerCoverageSummary = providerCoverageLoaded
+    ? `validated ${Number(providerCoverage?.statusCounts?.validated_provider || 0).toLocaleString()},
+          probing ${Number((providerCoverage?.statusCounts?.probing || 0) + (providerCoverage?.statusCounts?.untested || 0)).toLocaleString()},
+          failed/unstable ${Number((providerCoverage?.statusCounts?.failed_provider || 0) + (providerCoverage?.statusCounts?.unstable_provider || 0)).toLocaleString()},
+          ready later ${Number((providerCoverage?.readyLaterProviders || []).length || 0).toLocaleString()}.
+          Static sources are retained.`
+    : formatPendingField();
+  const dedupReviewStateSummary = dedupReviewStateLoaded
+    ? escapeHtml(formatDedupReviewStateSummary(dedupReviewState))
+    : formatPendingField();
   const registryDiagnosticsHtml = `
     <details class="admin-ops-metrics-details admin-ops-registry-sync-details admin-ops-full-row">
       <summary>Registry and sync diagnostics</summary>
       <div class="admin-ops-metrics-details-body">
         <div class="admin-total-card">
           <div class="admin-total-label">Active Sources</div>
-          <div class="admin-total-value">${Number(registrySync?.activeCount || 0).toLocaleString()}</div>
+          <div class="admin-total-value">${formatOptionalNumber(registrySync, "activeCount")}</div>
         </div>
         <div class="admin-total-card">
           <div class="admin-total-label">Pending Review</div>
-          <div class="admin-total-value">${Number(registrySync?.pendingCount || 0).toLocaleString()}</div>
+          <div class="admin-total-value">${formatOptionalNumber(registrySync, "pendingCount")}</div>
         </div>
         <div class="admin-ops-schedule-item admin-ops-full-row">
           <strong>Registry &amp; Sync</strong>:
           ${escapeHtml(formatRegistryCountBasis(registrySync))},
-          hidden ${Number(registrySync?.hiddenPendingCount || 0).toLocaleString()},
-          deferred ${Number(registrySync?.deferredPendingCount || 0).toLocaleString()},
-          rejected local-only ${Number(registrySync?.ignoredRejectedCount || 0).toLocaleString()},
-          tombstones local-only ${Number(registrySync?.ignoredTombstonedCount || 0).toLocaleString()}.
+          hidden ${formatOptionalNumber(registrySync, "hiddenPendingCount")},
+          deferred ${formatOptionalNumber(registrySync, "deferredPendingCount")},
+          rejected local-only ${formatOptionalNumber(registrySync, "ignoredRejectedCount")},
+          tombstones local-only ${formatOptionalNumber(registrySync, "ignoredTombstonedCount")}.
         </div>
         <div class="admin-ops-schedule-item admin-ops-full-row">
           <strong>Last sync</strong>:
-          ${escapeHtml(String(registrySync?.lastSyncStatus || "never"))} @ ${escapeHtml(lastSyncLabel)};
-          pull ${Number(registrySync?.pulledCount || 0).toLocaleString()},
-          push ${Number(registrySync?.pushedCount || 0).toLocaleString()},
-          conflicts ${Number(registrySync?.conflictCount || 0).toLocaleString()},
-          invalid rows ${Number(registrySync?.invalidRowsCount || 0).toLocaleString()}.
+          ${hasOwnField(registrySync, "lastSyncStatus") ? escapeHtml(String(registrySync?.lastSyncStatus || "never")) : formatPendingField()} @ ${escapeHtml(lastSyncLabel)};
+          pull ${formatOptionalNumber(registrySync, "pulledCount")},
+          push ${formatOptionalNumber(registrySync, "pushedCount")},
+          conflicts ${formatOptionalNumber(registrySync, "conflictCount")},
+          invalid rows ${formatOptionalNumber(registrySync, "invalidRowsCount")}.
         </div>
         <div class="admin-ops-schedule-item admin-ops-full-row">
           <strong>Provider coverage</strong>:
-          validated ${Number(providerCoverage?.statusCounts?.validated_provider || 0).toLocaleString()},
-          probing ${Number((providerCoverage?.statusCounts?.probing || 0) + (providerCoverage?.statusCounts?.untested || 0)).toLocaleString()},
-          failed/unstable ${Number((providerCoverage?.statusCounts?.failed_provider || 0) + (providerCoverage?.statusCounts?.unstable_provider || 0)).toLocaleString()},
-          ready later ${Number((providerCoverage?.readyLaterProviders || []).length || 0).toLocaleString()}.
-          Static sources are retained.
+          ${providerCoverageSummary}
         </div>
         <div class="admin-ops-schedule-item admin-ops-full-row">
-          <strong>Dedup review-state</strong>: ${escapeHtml(formatDedupReviewStateSummary(dedupReviewState))}
+          <strong>Dedup review-state</strong>: ${dedupReviewStateSummary}
         </div>
       </div>
     </details>
@@ -262,23 +302,23 @@ export function renderAdminOpsKpis(kpisEl, kpis, status) {
     </div>
     <div class="admin-total-card">
       <div class="admin-total-label">Last Successful Fetch</div>
-      <div class="admin-total-value">${escapeHtml(String(kpis?.lastSuccessfulFetchAge || "unknown"))}</div>
+      <div class="admin-total-value">${formatOptionalText(kpis, "lastSuccessfulFetchAge", { pending: "Loading latest fetch KPI..." })}</div>
     </div>
     <div class="admin-total-card">
       <div class="admin-total-label">Fetch Success (7d)</div>
-      <div class="admin-total-value">${(successRate * 100).toFixed(1)}%</div>
+      <div class="admin-total-value">${formatOptionalPercent(kpis, "sevenDayFetchSuccessRate", { pending: "Loading latest fetch KPI..." })}</div>
     </div>
     <div class="admin-total-card">
       <div class="admin-total-label">Avg Fetch Duration (7d)</div>
-      <div class="admin-total-value">${formatDuration(avgMs)}</div>
+      <div class="admin-total-value">${formatOptionalDuration(kpis, "avgFetchDurationMs7d", { pending: "Loading latest fetch KPI..." })}</div>
     </div>
     <div class="admin-total-card">
       <div class="admin-total-label">Failed Source Ratio</div>
-      <div class="admin-total-value">${(failedRatio * 100).toFixed(1)}%</div>
+      <div class="admin-total-value">${formatOptionalPercent(kpis, "failedSourceRatioLatest", { pending: "Loading latest fetch KPI..." })}</div>
     </div>
     <div class="admin-total-card">
       <div class="admin-total-label">Pending Approvals</div>
-      <div class="admin-total-value">${pending.toLocaleString()}</div>
+      <div class="admin-total-value">${formatOptionalNumber(kpis, "pendingApprovalsCount")}</div>
     </div>
     ${registryDiagnosticsHtml}
   `;

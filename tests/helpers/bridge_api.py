@@ -294,6 +294,7 @@ def make_stub_bridge_api(tmp_path: Path, store: FakeDesktopLocalDataStore) -> Br
     api.check_for_update = lambda **kw: {"started": True, "status": api.get_update_status_payload()}
     api.download_update = lambda: {"started": True, "status": api.get_update_status_payload()}
     api.install_update = lambda: {"started": True, "status": api.get_update_status_payload()}
+    api.load_sync_runtime_state = lambda: {}
     api.get_desktop_session_payload = lambda: {
         "sessionId": "desktop-session-1",
         "ownerToken": "desktop-owner-1",
@@ -365,6 +366,7 @@ def build_admin_bridge_api(config: Any | None = None) -> BridgeApi:
         get_jobs_pipeline_schedule_payload=lambda: {},
         update_jobs_pipeline_schedule=lambda _payload: {},
         start_sync_task=admin_bridge.start_sync_task,
+        load_sync_runtime_state=admin_bridge.load_sync_runtime_state,
         get_discovery_config_payload=admin_bridge.get_discovery_config_payload,
         update_saved_discovery_settings=admin_bridge.update_saved_discovery_settings,
         compute_ops_health=admin_bridge.compute_ops_health,
