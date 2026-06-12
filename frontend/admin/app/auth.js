@@ -23,6 +23,7 @@ export function createAdminAuthController({
   refreshOverview,
   loadDiscoveryConfig,
   loadOpsHealthData,
+  loadPipelineStatusFallbackData,
   loadSyncStatus,
   loadAdminBootstrap,
   loadPostInteractiveDiagnostics,
@@ -113,6 +114,18 @@ export function createAdminAuthController({
     setOpsReadinessShell();
     if (refs.adminSyncStatusEl) refs.adminSyncStatusEl.textContent = "";
     setBridgeStatusBadge("checking", "Bridge Checking");
+    if (typeof loadPipelineStatusFallbackData === "function") {
+      Promise.resolve()
+        .then(() => loadPipelineStatusFallbackData())
+        .then(payload => {
+          if (payload?.active) {
+            setBridgeStatusBadge("degraded", "Bridge Degraded");
+          }
+        })
+        .catch(err => {
+          logAdminError("Failed to load pipeline status fallback", err);
+        });
+    }
     runInitialTask({
       start: "admin_bootstrap_fetch_start",
       end: "admin_bootstrap_fetch_done",
@@ -128,8 +141,7 @@ export function createAdminAuthController({
           setBridgeStatusBadge("online", "Bridge Online");
           return payload;
         } catch (err) {
-          setBridgeStatusBadge("offline", "Bridge Offline");
-          setOpsPlaceholders(`Admin bootstrap unavailable: ${String(err?.message || err || "unknown error")}`);
+          setBridgeStatusBadge("degraded", "Bridge Degraded");
           throw err;
         }
       }
@@ -147,7 +159,9 @@ export function createAdminAuthController({
         ? "online"
         : refs.adminBridgeStatusBadgeEl?.classList.contains("offline")
           ? "offline"
-          : "checking"
+          : refs.adminBridgeStatusBadgeEl?.classList.contains("degraded")
+            ? "degraded"
+            : "checking"
     };
   }
 

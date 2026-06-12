@@ -2699,6 +2699,16 @@
   background-color: var(--contract-temporary-text);
 }
 
+.admin-bridge-badge.degraded {
+  border-color: var(--contract-temporary-border);
+  background-color: var(--contract-temporary-bg);
+  color: var(--contract-temporary-text);
+}
+
+.admin-bridge-badge.degraded::before {
+  background-color: var(--contract-temporary-text);
+}
+
 .admin-bridge-badge.refresh-pulse {
   animation: adminBridgePulseOpacity 0.45s ease-out;
 }

@@ -37,6 +37,27 @@ def test_compute_ops_health_is_lightweight_liveness(admin_bridge_entrypoint_root
     assert "kpis" not in health
 
 
+def test_compute_ops_health_ready_avoids_lifecycle_and_schedule_reads(admin_bridge_entrypoint_root):
+    admin_bridge.save_json_atomic(
+        admin_bridge.TASK_LIFECYCLE_PATH,
+        {"schemaVersion": 1, "updatedAt": "", "rows": []},
+    )
+    admin_bridge.start_lifecycle_run(
+        run_id="fetch_ready_should_ignore_1",
+        task_type="fetch",
+        started_at="2026-05-07T10:00:00+00:00",
+    )
+
+    health = admin_bridge._get_ops_api().compute_ops_health_ready()
+
+    assert health["service"] == "baluffo-bridge"
+    assert health["status"] == "healthy"
+    assert health["ok"] is True
+    assert health["detailLevel"] == "ready"
+    assert health["lifecycle"]["currentCount"] == 0
+    assert health["schedule"] == {}
+
+
 def test_dashboard_health_uses_lightweight_registry_summary_without_full_state() -> None:
     deps = SimpleNamespace(
         get_history=lambda: [],

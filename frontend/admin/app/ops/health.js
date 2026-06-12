@@ -1592,13 +1592,22 @@ export function createOpsHealthController({
   function applyBootstrapPayload(payload = {}) {
     const renderToken = ++opsRenderToken;
     const tasks = payload?.tasks && typeof payload.tasks === "object" ? payload.tasks : {};
-    const currentRows = Array.isArray(tasks.current) ? tasks.current : [];
+    let currentRows = Array.isArray(tasks.current) ? tasks.current : [];
+    const cachedTaskStatePayload = getCachedTaskStatePayload();
+    let taskStateSource = "";
+    if (!currentRows.length && cachedTaskStatePayload?.source === "pipeline-status" && hasActiveRows(cachedTaskStatePayload)) {
+      currentRows = Array.isArray(cachedTaskStatePayload.tasks) ? cachedTaskStatePayload.tasks : [];
+      taskStateSource = "pipeline-status";
+    }
     const recentRows = Array.isArray(tasks.recent) ? tasks.recent : [];
     const taskStatePayload = {
       tasks: currentRows,
       count: currentRows.length,
       summary: true
     };
+    if (taskStateSource) {
+      taskStatePayload.source = taskStateSource;
+    }
     const historyPayload = {
       runs: recentRows,
       count: recentRows.length,
@@ -1683,15 +1692,18 @@ export function createOpsHealthController({
         status: "rejected",
         reason: err
       });
-      state.latestOpsTaskStatePayload = taskStatePayload || {};
-      state.taskStateUnavailable = true;
+      const fallbackTaskStatePayload = hasActiveRows(previousTaskStatePayload)
+        ? previousTaskStatePayload
+        : taskStatePayload || {};
+      state.latestOpsTaskStatePayload = fallbackTaskStatePayload || {};
+      state.taskStateUnavailable = !hasActiveRows(previousTaskStatePayload);
       const renderActivityPanel = Boolean(options?.summary)
         || !options?.fromPoll
-        || hasActiveRows(taskStatePayload)
+        || hasActiveRows(fallbackTaskStatePayload)
         || hasActiveRows(previousTaskStatePayload)
         || hasOptimisticRows();
       renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || {}, {
-        taskStatePayload,
+        taskStatePayload: fallbackTaskStatePayload,
         registryConflictsPayload: getCachedRegistryConflictsPayload(),
         syncTaskState: true,
         renderDeferredPanels: false,
@@ -1817,7 +1829,7 @@ export function createOpsHealthController({
         "admin_jobs_pipeline_status_fallback_fetch",
         { enabled: false }
       );
-      if (renderToken !== opsRenderToken) return null;
+      const activeRenderToken = renderToken === opsRenderToken ? renderToken : opsRenderToken;
       const taskStatePayload = buildPipelineTaskStatePayload(payload);
       if (!taskStatePayload) return payload || null;
       const cachedTaskStatePayload = getCachedTaskStatePayload();
@@ -1827,7 +1839,7 @@ export function createOpsHealthController({
       state.latestOpsTaskStatePayload = taskStatePayload;
       state.taskStateUnavailable = false;
       state.waitingForTaskState = false;
-      renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || {}, {
+      renderOpsHealthSnapshot(activeRenderToken, state.latestOpsHealthCache || {}, {
         taskStatePayload,
         registryConflictsPayload: getCachedRegistryConflictsPayload(),
         syncTaskState: true,
@@ -2003,6 +2015,7 @@ export function createOpsHealthController({
     stopOpsHealthPolling,
     scheduleOpsHealthPolling,
     applyBootstrapPayload,
+    loadPipelineStatusFallbackData,
     loadOpsHealthData,
     loadOpsHistoryData,
     loadOpsOverviewDetailData,

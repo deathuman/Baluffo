@@ -59,7 +59,7 @@ function createOpsControllerForBridgeStatus({
     idlePollIntervalMs: 1000
   });
 }
-test("admin bridge status pill uses lightweight ops health instead of registry summary", async () => {
+test("admin bridge status pill uses lightweight app readiness instead of registry summary", async () => {
   const refs = {
     adminBridgeStatusBadgeEl: createElement({ classList: createClassList() })
   };
@@ -69,18 +69,17 @@ test("admin bridge status pill uses lightweight ops health instead of registry s
     refs,
     getBridge: async (path, options = {}) => {
       calls.push({ path, options });
-      if (path === "/ops/health?view=ready") return { service: "baluffo-bridge", status: "healthy" };
+      if (path === "/app/ready") return { service: "baluffo-bridge", status: "healthy" };
       throw new Error(`unexpected path ${path}`);
     },
     onBridgeStatusChange(status) {
       statuses.push(status);
     }
   });
-
   await controller.pollBridgeStatus();
 
-  assert.deepEqual(calls.map(call => call.path), ["/ops/health?view=ready"]);
-  assert.equal(calls[0].options.timeoutMs, 5000);
+  assert.deepEqual(calls.map(call => call.path), ["/app/ready"]);
+  assert.equal(calls[0].options.timeoutMs, 3000);
   assert.equal(refs.adminBridgeStatusBadgeEl.textContent, "Bridge Online");
   assert.equal(refs.adminBridgeStatusBadgeEl.classList.contains("online"), true);
   assert.deepEqual(statuses, ["online"]); assert.equal(typeof controller.applyBootstrapPayload, "function");
@@ -95,15 +94,17 @@ test("admin bridge status pill treats one failed health poll as checking, not of
   const controller = createOpsControllerForBridgeStatus({
     refs,
     getBridge: async path => {
-      if (path !== "/ops/health?view=ready") throw new Error(`unexpected path ${path}`);
-      if (fail) throw new Error("Bridge request timed out");
-      return { service: "baluffo-bridge", status: "healthy" };
+      if (path === "/app/ready") {
+        if (fail) throw new Error("Bridge request timed out");
+        return { service: "baluffo-bridge", status: "healthy" };
+      }
+      if (path === "/tasks/run-jobs-pipeline-status") throw new Error("Bridge request timed out");
+      throw new Error(`unexpected path ${path}`);
     },
     onBridgeStatusChange(status) {
       statuses.push(status);
     }
   });
-
   await controller.pollBridgeStatus();
   fail = true;
   await controller.pollBridgeStatus();
@@ -819,8 +820,8 @@ test("admin ops controller clears live rows on task-state polling failure", asyn
   renderScheduler.flush();
   controller.stopOpsHealthPolling();
 
-  assert.deepEqual(renderedCurrentCounts, [1, 0]);
-  assert.equal(state.adminBusyState.liveFetchRunning, false);
+  assert.deepEqual(renderedCurrentCounts, [1, 1]);
+  assert.equal(state.adminBusyState.liveFetchRunning, true);
 });
 
 test("admin ops controller skips stale deferred detail renders after a newer refresh", async () => {

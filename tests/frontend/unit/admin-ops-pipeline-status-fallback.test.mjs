@@ -215,3 +215,166 @@ test("admin ops controller does not let delayed pipeline status replace richer t
   assert.equal(state.latestOpsTaskStatePayload.tasks[0].taskType, "fetch");
   controller.stopOpsHealthPolling();
 });
+
+test("admin ops controller keeps pipeline fallback when bootstrap has no current rows", async () => {
+  const state = {
+    latestOpsHealthCache: null,
+    adminBusyState: {
+      opsLoad: false,
+      liveFetchRunning: false,
+      liveDiscoveryRunning: false,
+      liveSyncRunning: false,
+      livePipelineRunning: false
+    }
+  };
+  const refs = {
+    adminBridgeStatusBadgeEl: createElement({ classList: createClassList() }),
+    adminOpsAlertsEl: createElement(),
+    adminOpsKpisEl: createElement(),
+    adminOpsScheduleEl: createElement(),
+    adminOpsFetcherMetricsEl: createElement(),
+    adminOpsHistoryEl: createElement(),
+    adminOpsTrendsEl: createElement(),
+    adminRegistryConflictsReviewEl: createElement()
+  };
+  const renderedCurrentRows = [];
+  const controller = createAdminOpsController({
+    state,
+    refs,
+    getBridge: async path => {
+      if (path === "/tasks/run-jobs-pipeline-status") {
+        return {
+          active: true,
+          runId: "pipeline_live_1",
+          startedAt: "2026-06-06T09:00:00.000Z",
+          stage: "fetch",
+          progress: { label: "Fetching job listings" }
+        };
+      }
+      throw new Error(`unexpected path ${path}`);
+    },
+    postBridge: async () => ({}),
+    deriveAdminRunsModel: ({ taskState }) => ({
+      currentRows: (taskState?.tasks || []).map(row => ({ ...row, isLive: true })),
+      visibleCompletedRows: [],
+      olderCompletedRows: [],
+      hasLiveRuns: Boolean((taskState?.tasks || []).length),
+      liveTypes: (taskState?.tasks || []).map(row => String(row?.taskType || row?.type || "").toLowerCase())
+    }),
+    getOpsPollIntervalMs: () => 5000,
+    renderAdminOpsAlerts() {},
+    renderAdminOpsKpis() {},
+    renderAdminOpsSchedule() {},
+    renderAdminOpsFetcherMetrics() {},
+    renderAdminOpsTrends() {},
+    renderAdminOpsHistory(_el, runModel) {
+      renderedCurrentRows.push(runModel.currentRows);
+    },
+    renderAdminRegistryConflicts() {},
+    setBusyFlag(key, value) {
+      state.adminBusyState[key] = value;
+    },
+    showToast() {},
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    adminDispatch: { dispatch() {} },
+    adminActions: { OPS_REFRESHED: "ops/refreshed" },
+    escapeHtml: value => String(value || ""),
+    onBridgeStatusChange() {},
+    bridgeStatusPollIntervalMs: 1000,
+    idlePollIntervalMs: 1000
+  });
+
+  await controller.loadPipelineStatusFallbackData();
+  assert.equal(renderedCurrentRows.at(-1)?.[0]?.runId, "pipeline_live_1");
+
+  controller.applyBootstrapPayload({
+    tasks: { current: [], recent: [] },
+    registrySummary: {},
+    schedule: {},
+    app: { version: "0.2.61" }
+  });
+
+  assert.equal(renderedCurrentRows.at(-1)?.[0]?.runId, "pipeline_live_1");
+  assert.equal(state.latestOpsTaskStatePayload.source, "pipeline-status");
+  controller.stopOpsHealthPolling();
+});
+
+test("admin ops controller applies active pipeline status even after bootstrap advances render token", async () => {
+  const state = {
+    latestOpsHealthCache: null,
+    adminBusyState: {
+      opsLoad: false,
+      liveFetchRunning: false,
+      liveDiscoveryRunning: false,
+      liveSyncRunning: false,
+      livePipelineRunning: false
+    }
+  };
+  const refs = {
+    adminOpsAlertsEl: createElement(),
+    adminOpsKpisEl: createElement(),
+    adminOpsScheduleEl: createElement(),
+    adminOpsFetcherMetricsEl: createElement(),
+    adminOpsHistoryEl: createElement(),
+    adminOpsTrendsEl: createElement(),
+    adminRegistryConflictsReviewEl: createElement()
+  };
+  const pipelineStatus = createDeferred();
+  const renderedCurrentRows = [];
+  const controller = createAdminOpsController({
+    state,
+    refs,
+    getBridge: async path => {
+      if (path === "/tasks/run-jobs-pipeline-status") return pipelineStatus.promise;
+      throw new Error(`unexpected path ${path}`);
+    },
+    postBridge: async () => ({}),
+    deriveAdminRunsModel: ({ taskState }) => ({
+      currentRows: (taskState?.tasks || []).map(row => ({ ...row, isLive: true })),
+      visibleCompletedRows: [],
+      olderCompletedRows: [],
+      hasLiveRuns: Boolean((taskState?.tasks || []).length),
+      liveTypes: (taskState?.tasks || []).map(row => String(row?.taskType || row?.type || "").toLowerCase())
+    }),
+    getOpsPollIntervalMs: () => 5000,
+    renderAdminOpsAlerts() {},
+    renderAdminOpsKpis() {},
+    renderAdminOpsSchedule() {},
+    renderAdminOpsFetcherMetrics() {},
+    renderAdminOpsTrends() {},
+    renderAdminOpsHistory(_el, runModel) {
+      renderedCurrentRows.push(runModel.currentRows);
+    },
+    renderAdminRegistryConflicts() {},
+    setBusyFlag(key, value) {
+      state.adminBusyState[key] = value;
+    },
+    showToast() {},
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    adminDispatch: { dispatch() {} },
+    adminActions: { OPS_REFRESHED: "ops/refreshed" },
+    escapeHtml: value => String(value || ""),
+    onBridgeStatusChange() {},
+    bridgeStatusPollIntervalMs: 1000,
+    idlePollIntervalMs: 1000
+  });
+
+  const fallbackPromise = controller.loadPipelineStatusFallbackData();
+  controller.applyBootstrapPayload({
+    tasks: { current: [], recent: [] },
+    registrySummary: {},
+    schedule: {},
+    app: { version: "0.2.61" }
+  });
+  pipelineStatus.resolve({
+    active: true,
+    runId: "pipeline_live_2",
+    stage: "fetch",
+    progress: { label: "Fetching job listings" }
+  });
+  await fallbackPromise;
+
+  assert.equal(renderedCurrentRows.at(-1)?.[0]?.runId, "pipeline_live_2");
+  assert.equal(state.adminBusyState.livePipelineRunning, true);
+  controller.stopOpsHealthPolling();
+});

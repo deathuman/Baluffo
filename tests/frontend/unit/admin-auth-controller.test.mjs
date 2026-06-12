@@ -115,6 +115,10 @@ test("admin auth controller initializes the composed admin view immediately", as
     loadDiscoveryConfig: async options => {
       calls.push(`loadDiscoveryConfig:${String(Boolean(options?.silent))}:${String(Boolean(options?.forceForm))}`);
     },
+    loadPipelineStatusFallbackData: async () => {
+      calls.push("loadPipelineStatusFallbackData");
+      return { active: false };
+    },
     awaitLocalDataReady: async () => {
       calls.push("awaitLocalDataReady");
       return true;
@@ -140,6 +144,7 @@ test("admin auth controller initializes the composed admin view immediately", as
   assert.equal(calls.some(item => item.startsWith("loadDiscoveryData:")), false);
   assert.equal(calls.includes("loadOpsHealthData:true"), false);
   assert.ok(calls.includes("loadAdminBootstrap"));
+  assert.ok(calls.includes("loadPipelineStatusFallbackData"));
   assert.equal(calls.filter(item => item === "opsReadinessShell").length, 2);
   assert.equal(calls.includes("opsPlaceholder:Loading operations health..."), false);
   assert.equal(calls.some(item => item.startsWith("loadDiscoveryConfig:")), false);
@@ -213,6 +218,10 @@ test("admin bootstrap does not wait on the old local data readiness path", async
     loadOpsHealthData: async () => {},
     loadSyncStatus: async () => {},
     loadDiscoveryConfig: async () => {},
+    loadPipelineStatusFallbackData: async () => {
+      calls.push("loadPipelineStatusFallbackData");
+      return { active: false };
+    },
     loadAdminBootstrap: async () => {
       calls.push("loadAdminBootstrap");
     },
@@ -229,6 +238,7 @@ test("admin bootstrap does not wait on the old local data readiness path", async
   assert.equal(refs.adminContentEl.classList.contains("hidden"), false);
   assert.equal(calls.includes("refreshOverview"), false);
   assert.ok(calls.includes("loadAdminBootstrap"));
+  assert.ok(calls.includes("loadPipelineStatusFallbackData"));
 
   resolveReady(true);
   await new Promise(resolve => setTimeout(resolve, 0));
@@ -274,6 +284,10 @@ test("admin auth does not schedule deferred diagnostics during startup", async (
       loadOpsHealthData: async options => {
         calls.push(`ops:${String(Boolean(options?.summary))}`);
       },
+      loadPipelineStatusFallbackData: async () => {
+        calls.push("pipelineStatus");
+        return { active: false };
+      },
       loadSyncStatus: async () => {},
       loadAdminBootstrap: async () => {
         calls.push("bootstrap");
@@ -288,13 +302,12 @@ test("admin auth does not schedule deferred diagnostics during startup", async (
 
     assert.equal(controller.initAdminPage(), true);
     await new Promise(resolve => originalSetTimeout(resolve, 0));
-    assert.deepEqual(calls, ["bootstrap"]);
+    assert.deepEqual(calls.sort(), ["bootstrap", "pipelineStatus"].sort());
     assert.equal(timers.length, 0);
   } finally {
     globalThis.setTimeout = originalSetTimeout;
   }
 });
-
 
 test("admin auth controller session view model tracks bridge badge state", async () => {
   const refs = {
@@ -326,6 +339,7 @@ test("admin auth controller session view model tracks bridge badge state", async
     loadLatestFetcherReport: async () => {},
     loadDiscoveryData: async () => {},
     loadOpsHealthData: async () => {},
+    loadPipelineStatusFallbackData: async () => ({}),
     loadSyncStatus: async () => {},
     loadDiscoveryConfig: async () => {},
     logAdminError() {},

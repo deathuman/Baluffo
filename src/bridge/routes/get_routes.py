@@ -2021,6 +2021,11 @@ def handle_get(
     Important: `api` must be the currently running BridgeApi instance.
     """
 
+    if path == "/app/ready":
+        with time_operation("app.ready.route_payload"):
+            handler.send_json(api.compute_ops_health_ready())
+        return True
+
     if path == "/admin/bootstrap":
         with time_operation("admin.bootstrap.route_payload"):
             handler.send_json(get_admin_bootstrap_payload(api))

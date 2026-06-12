@@ -135,6 +135,32 @@ def test_ops_health_ready_view_uses_ready_payload(tmp_path: Path) -> None:
     assert handler.sent[-1]["payload"]["detailLevel"] == "ready"
 
 
+def test_app_ready_uses_ready_payload(tmp_path: Path) -> None:
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
+    api.compute_ops_health = lambda: (_ for _ in ()).throw(
+        AssertionError("app ready must not build full ops health")
+    )
+    api.compute_ops_health_ready = lambda: {
+        "service": "baluffo-bridge",
+        "startupReady": True,
+        "detailLevel": "ready",
+        "schedule": {},
+        "lifecycle": {"currentCount": 0, "recentCount": 0, "latestHeartbeatAt": ""},
+    }
+
+    handler = FakeHandler()
+    result = handle_get(handler, api=api, path="/app/ready", query={})
+
+    assert result is True
+    assert handler.sent[-1]["status"] == 200
+    payload = handler.sent[-1]["payload"]
+    assert payload["service"] == "baluffo-bridge"
+    assert payload["detailLevel"] == "ready"
+    assert payload["lifecycle"]["currentCount"] == 0
+    assert payload["schedule"] == {}
+
+
 def test_ops_health_rejects_unknown_view(tmp_path: Path) -> None:
     store = FakeDesktopLocalDataStore()
     api = make_stub_bridge_api(tmp_path, store)

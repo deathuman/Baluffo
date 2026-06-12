@@ -17,13 +17,13 @@ import {
   renderUsersTableHtml
 } from "../../render.js?v=19";
 import { adminService } from "../../services.js";
-import { createAdminAuthController } from "../auth.js?v=4";
+import { createAdminAuthController } from "../auth.js?v=5";
 import { createAdminDiscoveryController } from "../discovery.js?v=1";
 import {
   createAdminFetcherController
 } from "../fetcher.js?v=13";
 import { createRestoreActiveRunWatches } from "../live-task.js";
-import { createAdminOpsController, formatBytes } from "../ops.js?v=20";
+import { createAdminOpsController, formatBytes } from "../ops.js?v=21";
 import { createAdminRegistryController } from "../registry.js?v=16";
 import { createAdminSyncController } from "../sync.js?v=13";
 import { createAdminOverviewController } from "./overview.js?v=14";
@@ -283,6 +283,7 @@ export function composeAdminControllers({
     refreshOverview: (...args) => overviewController.refreshOverview(...args),
     loadDiscoveryData: (...args) => registryController.loadDiscoveryData(...args),
     loadDiscoveryConfig: (...args) => discoveryController.loadDiscoveryConfig(...args),
+    loadPipelineStatusFallbackData: (...args) => opsController.loadPipelineStatusFallbackData(...args),
     loadOpsHealthData: (...args) => opsController.loadOpsHealthData(...args),
     loadSyncStatus: (...args) => syncController.loadSyncStatus(...args),
     loadAdminBootstrap,

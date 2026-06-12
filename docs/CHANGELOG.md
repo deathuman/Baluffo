@@ -10,6 +10,18 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.61] - 2026-06-12
+
+### Fixed
+- Added a minimal `/app/ready` liveness route and made `/ops/health?view=ready` use the same in-memory readiness payload so bridge badges do not wait on Ops/dashboard/report reads during active pipelines.
+- Admin now requests `/tasks/run-jobs-pipeline-status` immediately on boot and keeps a current Pipeline row plus Abort action visible when bootstrap, task-state, health, or dashboard routes are delayed.
+- Admin bootstrap and task-state failures no longer clear an active pipeline fallback row or force the bridge badge into a blocking offline state while the lightweight pipeline status route remains responsive.
+- Admin and Jobs bridge status checks now degrade gracefully during running-task contention instead of blocking navigation or clearing running/abort controls.
+
+### Notes
+- This is a container/Umbrel running-task stability patch. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.60] - 2026-06-12
 
 ### Fixed

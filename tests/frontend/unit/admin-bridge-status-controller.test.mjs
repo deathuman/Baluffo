@@ -54,7 +54,7 @@ test("admin bridge status pill shares an in-flight lightweight health poll", asy
   let callCount = 0;
   const controller = createOpsControllerForBridgeStatus({
     getBridge: async path => {
-      if (path !== "/ops/health?view=ready") throw new Error(`unexpected path ${path}`);
+      if (path !== "/app/ready") throw new Error(`unexpected path ${path}`);
       callCount += 1;
       return deferred.promise;
     }
@@ -67,4 +67,50 @@ test("admin bridge status pill shares an in-flight lightweight health poll", asy
 
   deferred.resolve({ service: "baluffo-bridge", status: "healthy" });
   await Promise.all([first, second]);
+});
+
+test("admin bridge status degrades when app ready is delayed but pipeline status responds", async () => {
+  const badge = createElement({ classList: createClassList() });
+  const states = [];
+  const controller = createAdminOpsController({
+    state: { adminBusyState: {} },
+    refs: { adminBridgeStatusBadgeEl: badge },
+    getBridge: async path => {
+      if (path === "/app/ready") throw new Error("ready delayed");
+      if (path === "/tasks/run-jobs-pipeline-status") return { active: true, runId: "pipeline_1" };
+      throw new Error(`unexpected path ${path}`);
+    },
+    postBridge: async () => ({}),
+    deriveAdminRunsModel: () => ({
+      currentRows: [],
+      visibleCompletedRows: [],
+      olderCompletedRows: [],
+      hasLiveRuns: false,
+      liveTypes: []
+    }),
+    getOpsPollIntervalMs: () => 5000,
+    renderAdminOpsAlerts() {},
+    renderAdminOpsKpis() {},
+    renderAdminOpsSchedule() {},
+    renderAdminOpsFetcherMetrics() {},
+    renderAdminOpsTrends() {},
+    renderAdminOpsHistory() {},
+    setBusyFlag() {},
+    showToast() {},
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    adminDispatch: { dispatch() {} },
+    adminActions: { OPS_REFRESHED: "ops/refreshed" },
+    escapeHtml: value => String(value || ""),
+    onBridgeStatusChange(state) {
+      states.push(state);
+    },
+    bridgeStatusPollIntervalMs: 1000,
+    idlePollIntervalMs: 1000
+  });
+
+  await controller.pollBridgeStatus();
+
+  assert.equal(badge.textContent, "Bridge Degraded");
+  assert.equal(badge.classList.contains("degraded"), true);
+  assert.deepEqual(states, ["degraded"]);
 });

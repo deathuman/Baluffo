@@ -958,28 +958,10 @@ class OpsApi:
 
     def compute_ops_health_ready(self) -> dict[str, Any]:
         with time_operation("ops.health.ready.total"):
-            with time_operation("ops.health.ready.current_runs"):
-                current_rows = self._current_lifecycle_rows()
             owner_state = dict(self._deps.get_owner_state() or {})
             startup_ready = (
                 True if not bool(self._deps.desktop_mode) else bool(owner_state.get("startedAt"))
             )
-            schedule: dict[str, Any] = {}
-            with time_operation("ops.health.ready.schedule"):
-                try:
-                    schedule = _ops_health.populate_schedule_next_run(
-                        self.parse_schedule_metadata(),
-                        [],
-                        self._deps.parse_iso,
-                    )
-                except Exception:
-                    schedule = {}
-                try:
-                    pipeline_schedule = self._pipeline_schedule_ops_entry_cached()
-                except (RuntimeError, OSError, TypeError, ValueError):
-                    pipeline_schedule = {}
-                if isinstance(pipeline_schedule, dict):
-                    schedule["pipeline"] = dict(pipeline_schedule)
             return {
                 "service": "baluffo-bridge",
                 "status": "healthy",
@@ -1001,11 +983,11 @@ class OpsApi:
                     "idleTimeoutSeconds": float(owner_state.get("idleTimeoutSeconds") or 0.0),
                 },
                 "lifecycle": {
-                    "currentCount": len(current_rows),
+                    "currentCount": 0,
                     "recentCount": 0,
                     "latestHeartbeatAt": "",
                 },
-                "schedule": schedule,
+                "schedule": {},
             }
 
     def compute_ops_health(self) -> dict[str, Any]:

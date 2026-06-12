@@ -24,9 +24,15 @@ export function createOpsBridgeStatusController({
   function setBridgeStatusBadge(stateValue, label) {
     if (!refs.adminBridgeStatusBadgeEl) return;
     const normalized = String(stateValue || "checking").toLowerCase();
-    refs.adminBridgeStatusBadgeEl.classList.remove("online", "offline", "checking");
+    refs.adminBridgeStatusBadgeEl.classList.remove("online", "offline", "checking", "degraded");
     refs.adminBridgeStatusBadgeEl.classList.add(
-      normalized === "online" ? "online" : normalized === "offline" ? "offline" : "checking"
+      normalized === "online"
+        ? "online"
+        : normalized === "offline"
+          ? "offline"
+          : normalized === "degraded"
+            ? "degraded"
+            : "checking"
     );
     refs.adminBridgeStatusBadgeEl.textContent = label || "Bridge Checking";
     setTooltip(refs.adminBridgeStatusBadgeEl, label || "Local admin bridge status");
@@ -79,7 +85,7 @@ export function createOpsBridgeStatusController({
       setBridgeStatusBadge("checking", "Bridge Checking");
     }
     try {
-      const healthPayload = await getBridge("/ops/health?view=ready", { timeoutMs: 5000 });
+      const healthPayload = await getBridge("/app/ready", { timeoutMs: 3000 });
       const serviceName = String(healthPayload?.service || "").trim();
       if (serviceName && serviceName !== "baluffo-bridge") {
         throw new Error("Bridge health response mismatch");
@@ -91,6 +97,20 @@ export function createOpsBridgeStatusController({
       }
       setBridgeStatusBadge("online", "Bridge Online");
     } catch {
+      try {
+        const pipelinePayload = await getBridge("/tasks/run-jobs-pipeline-status", { timeoutMs: 5000 });
+        if (pipelinePayload && typeof pipelinePayload === "object") {
+          bridgeStatusFailureCount = 0;
+          if (lastBridgeStatus !== "degraded") {
+            lastBridgeStatus = "degraded";
+            onBridgeStatusChange?.("degraded");
+          }
+          setBridgeStatusBadge("degraded", "Bridge Degraded");
+          return;
+        }
+      } catch {
+        // Fall through to normal offline handling.
+      }
       bridgeStatusFailureCount += 1;
       if (lastBridgeStatus === "online" && bridgeStatusFailureCount < 2) {
         setBridgeStatusBadge("checking", "Bridge Checking");
