@@ -34,7 +34,10 @@ test("admin registry controller can refresh source tables without full discovery
     }
   };
   const refs = {
-    adminDiscoverySummaryEl: createElement(),
+    adminDiscoverySummaryEl: createElement({
+      textContent: "Discovery report not loaded yet.",
+      innerHTML: "<div>Discovery report not loaded yet.</div>"
+    }),
     adminPendingSourcesEl: createElement(),
     adminActiveSourcesEl: createElement(),
     adminRejectedSourcesEl: createElement(),
@@ -49,7 +52,7 @@ test("admin registry controller can refresh source tables without full discovery
     getBridge: async path => {
       calls.push(String(path));
       if (path === "/discovery/report?view=summary") {
-        return { summary: { foundEndpointCount: 1, probedCandidateCount: 1 } };
+        throw new Error("source table refresh should not depend on discovery summary");
       }
       if (String(path).startsWith("/registry/sources")) {
         return registrySourcesPayload({
@@ -94,10 +97,10 @@ test("admin registry controller can refresh source tables without full discovery
   renderScheduler.flush();
 
   assert.deepEqual(calls, [
-    "/discovery/report?view=summary",
     "/registry/sources?buckets=pending,active,rejected&includeHiddenPending=0"
   ]);
   assert.equal(refs.adminPendingSourcesEl.innerHTML, "Pending");
   assert.equal(refs.adminActiveSourcesEl.innerHTML, "Active");
   assert.equal(refs.adminDiscoveryReviewEl.innerHTML, "keep review");
+  assert.equal(refs.adminDiscoverySummaryEl.textContent, "Discovery report not loaded yet.");
 });

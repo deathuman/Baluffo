@@ -222,12 +222,14 @@ export function createRegistryLoadController({
           setSourceTablePlaceholder(refs.adminRejectedSourcesEl, "rejected");
         }
         const sourceTablesOnly = Boolean(options?.sourceTablesOnly);
-        const reportPromise = loadDiscoveryEndpoint(
-          sourceTablesOnly ? "source discovery summary" : "source discovery report",
-          getBridge(sourceTablesOnly ? "/discovery/report?view=summary" : "/discovery/report"),
-          state.latestDiscoveryReportCache || { summary: {}, candidates: [], failures: [] },
-          { background }
-        );
+        const reportPromise = sourceTablesOnly
+          ? Promise.resolve(null)
+          : loadDiscoveryEndpoint(
+            "source discovery report",
+            getBridge("/discovery/report"),
+            state.latestDiscoveryReportCache || { summary: {}, candidates: [], failures: [] },
+            { background }
+          );
         const registrySummaryPromise = options?.completionRefresh
           ? loadDiscoveryEndpoint(
             "Admin registry summary",
@@ -251,8 +253,8 @@ export function createRegistryLoadController({
             state.latestFetcherReportCache || {}
           );
         const registrySourcesPath = `/registry/sources?buckets=pending,active,rejected&includeHiddenPending=${filterState.showZeroJobs ? "1" : "0"}`;
-        const registrySourcesPromise = Promise.all([reportPromise, registrySummaryPromise])
-          .then(([_report, registrySummary]) => loadDiscoveryEndpoint(
+        const registrySourcesPromise = registrySummaryPromise
+          .then(registrySummary => loadDiscoveryEndpoint(
             "Admin registry source tables",
             getBridge(registrySourcesPath, { timeoutMs: FULL_REGISTRY_LOAD_TIMEOUT_MS }),
             {
@@ -391,7 +393,7 @@ export function createRegistryLoadController({
         });
         const hiddenZeroJobsCount = pendingResult.hiddenZeroJobsCount;
 
-        if (refs.adminDiscoverySummaryEl) {
+        if (!sourceTablesOnly && refs.adminDiscoverySummaryEl) {
           const summaryText = `Found ${foundCount} | Probed ${probedCount} | Review queue ${queuedCount} | Deferred review ${deferredCount} | Deferred by caps ${capDeferredCount} | Job-positive deferred ${jobPositiveDeferredCount} | Validated ${lifecycleCounts.validated} | Auto-approved this run ${autoApprovedCount} | Active registry ${activeRegistryCount} (${registryCountBasisLabel}) | Failed ${failedCount} | Skipped dupes ${skippedCount} | Pending ${Number(pending?.summary?.pendingCount || 0)} | Rejected ${Number(rejected?.summary?.rejectedCount || 0)} | Hidden zero-jobs ${hiddenZeroJobsCount}`;
           refs.adminDiscoverySummaryEl.textContent = summaryText;
           refs.adminDiscoverySummaryEl.innerHTML = `<div>${summaryText}</div>`;
@@ -443,20 +445,24 @@ export function createRegistryLoadController({
           state.discoveryTablesRendered = true;
         }
         if (!partialLoadFailed && registryChanged && options?.logChanges !== false) {
-          appendDiscoveryLog("Loading source discovery report and registries...");
-          appendDiscoveryLog(
-            `Discovery summary: found ${foundCount}, probed ${probedCount}, review queue ${queuedCount}, auto-approved ${autoApprovedCount}, failed ${failedCount}, skipped duplicates ${skippedCount}.`,
-            "info"
-          );
-          const topFailures = Array.isArray(report?.topFailures) ? report.topFailures : [];
-          if (topFailures.length) {
-            const line = topFailures
-              .slice(0, 3)
-              .map(item => `${String(item?.key || "unknown")} (${Number(item?.count || 0)})`)
-              .join(", ");
-            appendDiscoveryLog(`Top failures: ${line}`, "warn");
+          if (sourceTablesOnly) {
+            appendDiscoveryLog("Source registry tables loaded.", "success");
+          } else {
+            appendDiscoveryLog("Loading source discovery report and registries...");
+            appendDiscoveryLog(
+              `Discovery summary: found ${foundCount}, probed ${probedCount}, review queue ${queuedCount}, auto-approved ${autoApprovedCount}, failed ${failedCount}, skipped duplicates ${skippedCount}.`,
+              "info"
+            );
+            const topFailures = Array.isArray(report?.topFailures) ? report.topFailures : [];
+            if (topFailures.length) {
+              const line = topFailures
+                .slice(0, 3)
+                .map(item => `${String(item?.key || "unknown")} (${Number(item?.count || 0)})`)
+                .join(", ");
+              appendDiscoveryLog(`Top failures: ${line}`, "warn");
+            }
+            appendDiscoveryLog("Source discovery data loaded.", "success");
           }
-          appendDiscoveryLog("Source discovery data loaded.", "success");
         }
         adminDispatch.dispatch({ type: adminActions.DISCOVERY_REFRESHED, payload: { at: new Date().toISOString() } });
         if (!partialLoadFailed) {
