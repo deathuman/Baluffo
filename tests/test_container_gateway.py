@@ -153,6 +153,25 @@ def test_gateway_does_not_static_fallback_admin_api_paths(tmp_path: Path) -> Non
     assert payload["path"] == "/admin/bootstrap"
 
 
+def test_gateway_proxied_responses_have_single_content_length(tmp_path: Path) -> None:
+    internal_server, internal_base_url = _serve_internal_bridge()
+    gateway_server, base_url = _serve_gateway_with_internal(tmp_path, internal_base_url)
+    try:
+        with urlopen(f"{base_url}/ops/health", timeout=2) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            content_lengths = response.headers.get_all("Content-Length")
+    finally:
+        gateway_server.shutdown()
+        gateway_server.server_close()
+        internal_server.shutdown()
+        internal_server.server_close()
+
+    assert payload["ok"] is True
+    assert payload["path"] == "/ops/health"
+    assert content_lengths is not None
+    assert len(content_lengths) == 1
+
+
 def test_gateway_pipeline_abort_queues_when_bridge_is_unreachable(tmp_path: Path) -> None:
     server, base_url = _serve_gateway(tmp_path, bridge_process=_FakeBridgeProcess())
     body = json.dumps(

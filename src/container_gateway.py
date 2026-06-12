@@ -221,7 +221,7 @@ class _GatewayHandler(BaseHTTPRequestHandler):
 
     def _send_proxied_response(self, status: int, headers: Any, body: bytes) -> None:
         self.send_response(int(status or 200))
-        blocked = {"connection", "transfer-encoding", "server", "date"}
+        blocked = {"connection", "content-length", "transfer-encoding", "server", "date"}
         for name, value in headers.items():
             if str(name).lower() in blocked:
                 continue
