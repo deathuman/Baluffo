@@ -10,6 +10,18 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.60] - 2026-06-12
+
+### Fixed
+- Admin deferred panels now avoid false empty or misleading status values while source tables, registry/sync diagnostics, discovery review, dedup lists, and fetch/discovery logs are still loading.
+- Admin Ops health now keeps KPI, warning, badge, and schedule state truthful across automatic summary polling and manual refreshes.
+- Jobs and Saved navigation keep the Admin entry point available during transient bridge delays, and Jobs preserves active pipeline/Abort state from the lightweight pipeline status route while optional Ops detail is delayed.
+- Desktop packaging now includes `admin.html` in the embedded static payload so Admin navigation does not return the generic packaged 404 page.
+
+### Notes
+- This is a container/Umbrel smoke build for the latest Admin truthfulness and running-task stability fixes. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.59] - 2026-06-11
 
 ### Fixed
