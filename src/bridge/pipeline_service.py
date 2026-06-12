@@ -117,11 +117,13 @@ class PipelineService:
                 progress = status.get("progress")
                 if isinstance(progress, dict):
                     status["progress"] = dict(progress)
+                status["activeChildren"] = self._copy_control_children(status)
         else:
             status = dict(payload)
             progress = status.get("progress")
             if isinstance(progress, dict):
                 status["progress"] = dict(progress)
+            status["activeChildren"] = self._copy_control_children(status)
         try:
             write_pipeline_status(
                 self._control_data_dir,
@@ -160,6 +162,115 @@ class PipelineService:
     def _pipeline_lifecycle_progress(status: dict[str, Any]) -> dict[str, Any]:
         return build_pipeline_task_progress(status)
 
+    @staticmethod
+    def _copy_control_children(status: dict[str, Any]) -> list[dict[str, Any]]:
+        children = status.get("activeChildren")
+        if not isinstance(children, list):
+            return []
+        rows: list[dict[str, Any]] = []
+        for child in children:
+            if not isinstance(child, dict):
+                continue
+            row = dict(child)
+            progress = row.get("taskProgress")
+            row["taskProgress"] = dict(progress) if isinstance(progress, dict) else {}
+            summary = row.get("summary")
+            row["summary"] = dict(summary) if isinstance(summary, dict) else {}
+            rows.append(row)
+        return rows[:3]
+
+    @staticmethod
+    def _child_stage_task_type(stage: str) -> str:
+        normalized = str(stage or "").strip().lower()
+        if normalized == "sync_push":
+            return "sync"
+        if normalized in {"discovery", "fetch"}:
+            return normalized
+        return ""
+
+    @staticmethod
+    def _child_phase_label(task_type: str) -> str:
+        labels = {
+            "discovery": "Discovery running",
+            "fetch": "Fetch running",
+            "sync": "Sync push running",
+        }
+        return labels.get(str(task_type or "").strip().lower(), "Task running")
+
+    def _build_control_child_row(
+        self,
+        *,
+        run_id: str,
+        task_type: str,
+        child_run_id: str,
+        started_at: str = "",
+    ) -> dict[str, Any]:
+        clean_task_type = str(task_type or "").strip().lower()
+        clean_child_run_id = str(child_run_id or "").strip()
+        phase_label = self._child_phase_label(clean_task_type)
+        return {
+            "id": clean_child_run_id,
+            "runId": clean_child_run_id,
+            "type": clean_task_type,
+            "taskType": clean_task_type,
+            "active": True,
+            "status": "running",
+            "displayStatus": "running",
+            "startedAt": str(started_at or "").strip(),
+            "finishedAt": "",
+            "parentRunId": str(run_id or "").strip(),
+            "parentTaskType": "pipeline",
+            "ownerKind": "pipeline",
+            "controlPlaneSource": "pipeline-status",
+            "displayOnly": True,
+            "taskProgress": {
+                "active": True,
+                "phaseKey": clean_task_type,
+                "phaseLabel": phase_label,
+                "mode": "indeterminate",
+                "ratio": 0,
+                "counts": {},
+            },
+            "summary": {
+                "stage": clean_task_type,
+                "pipelineRunId": str(run_id or "").strip(),
+                "controlPlane": True,
+            },
+        }
+
+    def _set_control_child_task(
+        self,
+        *,
+        run_id: str,
+        task_type: str,
+        child_run_id: str,
+        started_at: str = "",
+    ) -> None:
+        clean_task_type = str(task_type or "").strip().lower()
+        clean_child_run_id = str(child_run_id or "").strip()
+        if clean_task_type not in {"discovery", "fetch", "sync"} or not clean_child_run_id:
+            return
+        child_row = self._build_control_child_row(
+            run_id=run_id,
+            task_type=clean_task_type,
+            child_run_id=clean_child_run_id,
+            started_at=started_at,
+        )
+        with self._lock:
+            if str(self._status.get("runId") or "").strip() != str(run_id or "").strip():
+                return
+            if not bool(self._status.get("active")):
+                return
+            self._status["activeChildren"] = [child_row]
+            self._status["activeChildTaskType"] = clean_task_type
+            self._status["activeChildRunId"] = clean_child_run_id
+            self._status["activeChildPhaseLabel"] = child_row["taskProgress"]["phaseLabel"]
+            self._status["activeChildDisplayLabel"] = (
+                f"{clean_task_type.title()}: {child_row['taskProgress']['phaseLabel']}"
+            )
+            status_snapshot = dict(self._status)
+        self._write_control_status(status_snapshot)
+
     def _mark_stage(
         self, *, stage: str, current_step: int, total_steps: int, label: str, error: str = ""
     ) -> None:
@@ -170,6 +281,20 @@ class PipelineService:
             run_id = str(self._status.get("runId") or "")
             if error:
                 self._status["error"] = str(error)
+            stage_child_type = self._child_stage_task_type(str(stage or ""))
+            if stage_child_type:
+                self._status["activeChildren"] = [
+                    child
+                    for child in self._copy_control_children(self._status)
+                    if str(child.get("taskType") or child.get("type") or "").strip().lower()
+                    == stage_child_type
+                ]
+            else:
+                self._status["activeChildren"] = []
+                self._status["activeChildTaskType"] = ""
+                self._status["activeChildRunId"] = ""
+                self._status["activeChildPhaseLabel"] = ""
+                self._status["activeChildDisplayLabel"] = ""
             status_snapshot = dict(self._status)
         self._write_control_status(status_snapshot)
         if run_id and callable(self._heartbeat_lifecycle_run):
@@ -348,6 +473,11 @@ class PipelineService:
                         else ""
                     ),
                     "completedWithWarnings": bool(completed_with_warnings),
+                    "activeChildren": [],
+                    "activeChildTaskType": "",
+                    "activeChildRunId": "",
+                    "activeChildPhaseLabel": "",
+                    "activeChildDisplayLabel": "",
                     "finalOutputCount": int(final_output_count or 0),
                     "updatesFound": bool(updates_found),
                     "refreshRecommended": bool(updates_found),
@@ -907,7 +1037,14 @@ class PipelineService:
         run_id: str,
         task_type: str,
         child_run_id: str,
+        child_started_at: str = "",
     ) -> None:
+        self._set_control_child_task(
+            run_id=run_id,
+            task_type=task_type,
+            child_run_id=child_run_id,
+            started_at=child_started_at,
+        )
         if child_run_id and callable(self._attach_lifecycle_child):
             self._attach_lifecycle_child(
                 run_id=child_run_id,
@@ -957,7 +1094,10 @@ class PipelineService:
         discovery_started_at = str(discovery_result.get("startedAt") or self._now_iso())
         discovery_run_id = str(discovery_result.get("runId") or "").strip()
         self._attach_lifecycle_child_row(
-            run_id=run_id, task_type="discovery", child_run_id=discovery_run_id
+            run_id=run_id,
+            task_type="discovery",
+            child_run_id=discovery_run_id,
+            child_started_at=discovery_started_at,
         )
         if discovery_attached:
             self._log_attached_child(
@@ -1063,7 +1203,10 @@ class PipelineService:
         fetch_started_at = str(fetch_result.get("startedAt") or self._now_iso())
         fetch_run_id = str(fetch_result.get("runId") or "").strip()
         self._attach_lifecycle_child_row(
-            run_id=run_id, task_type="fetch", child_run_id=fetch_run_id
+            run_id=run_id,
+            task_type="fetch",
+            child_run_id=fetch_run_id,
+            child_started_at=fetch_started_at,
         )
         if fetch_attached:
             self._log_attached_child(run_id=run_id, task_type="fetch", child_run_id=fetch_run_id)
@@ -1145,7 +1288,12 @@ class PipelineService:
             )
             return warning
         sync_run_id = str(sync_result.get("runId") or "")
-        self._attach_lifecycle_child_row(run_id=run_id, task_type="sync", child_run_id=sync_run_id)
+        self._attach_lifecycle_child_row(
+            run_id=run_id,
+            task_type="sync",
+            child_run_id=sync_run_id,
+            child_started_at=str(sync_result.get("startedAt") or self._now_iso()),
+        )
         sync_row = self._wait_for_sync_push_row(sync_run_id)
         if self._abort_requested(run_id):
             raise PipelineAbortRequested("pipeline abort requested")
@@ -1323,6 +1471,11 @@ class PipelineService:
                     "completedWithWarnings": False,
                     "updatesFound": False,
                     "refreshRecommended": False,
+                    "activeChildren": [],
+                    "activeChildTaskType": "",
+                    "activeChildRunId": "",
+                    "activeChildPhaseLabel": "",
+                    "activeChildDisplayLabel": "",
                     "runRegistryConflictAdjudication": bool(
                         (payload or {}).get("runRegistryConflictAdjudication")
                     ),

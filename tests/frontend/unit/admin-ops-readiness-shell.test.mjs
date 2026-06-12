@@ -103,6 +103,7 @@ test("admin ops first dashboard health wait shows neutral shell then real data",
   const dashboardHealth = createDeferred();
   const { controller, refs, calls } = createFixture({
     getBridge: path => {
+      if (path === "/tasks/run-jobs-pipeline-status") return { active: false, stage: "idle" };
       if (path === "/ops/dashboard-health") return dashboardHealth.promise;
       if (path === "/ops/task-state?view=summary") return { tasks: [], count: 0, summary: true };
       if (path === "/registry/conflicts?view=summary") return { summary: { conflictCount: 0 }, conflicts: [], summaryView: true };
@@ -111,6 +112,7 @@ test("admin ops first dashboard health wait shows neutral shell then real data",
   });
 
   const loadPromise = controller.loadOpsHealthData();
+  await flush();
   await flush();
 
   assert.equal(refs.adminOpsTrendsEl.textContent, "No run trend data yet.");
@@ -129,6 +131,7 @@ test("admin ops first dashboard health wait shows neutral shell then real data",
 test("admin ops first dashboard health failure renders explicit unavailable state", async () => {
   const { controller, refs } = createFixture({
     getBridge: path => {
+      if (path === "/tasks/run-jobs-pipeline-status") return { active: false, stage: "idle" };
       if (path === "/ops/dashboard-health") throw new Error("Bridge request timed out");
       throw new Error(`unexpected path ${path}`);
     }

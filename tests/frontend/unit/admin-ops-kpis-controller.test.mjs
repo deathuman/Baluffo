@@ -321,8 +321,14 @@ test("admin bootstrap active rows start task-state polling without manual ops re
     state,
     getBridge: async path => {
       calls.push(path);
-      if (path === "/ops/task-state?view=summary") return { tasks: [{ taskType: "pipeline", runId: "pipeline_1", active: true }], count: 1, summary: true };
-      if (path === "/ops/fetch-kpis?view=summary") return { ok: true, kpis: {}, summaryView: true };
+      if (path === "/tasks/run-jobs-pipeline-status") {
+        return {
+          active: true,
+          runId: "pipeline_1",
+          stage: "fetch",
+          progress: { label: "Fetching job listings" }
+        };
+      }
       throw new Error(`unexpected path ${path}`);
     },
     deriveAdminRunsModel: () => ({
@@ -331,7 +337,8 @@ test("admin bootstrap active rows start task-state polling without manual ops re
       olderCompletedRows: [],
       hasLiveRuns: true,
       liveTypes: ["pipeline"]
-    })
+    }),
+    getOpsPollIntervalMs: () => 1
   }));
 
   controller.applyBootstrapPayload({
@@ -343,10 +350,10 @@ test("admin bootstrap active rows start task-state polling without manual ops re
     registrySummary: {},
     schedule: {}
   });
-  await new Promise(resolve => setTimeout(resolve, 0));
   await flushAdminOpsBackground();
-  controller.stopOpsHealthPolling();
 
-  assert.ok(calls.includes("/ops/task-state?view=summary"));
+  assert.ok(state.pipelineStatusPollTimer);
+  assert.equal(calls.includes("/ops/task-state?view=summary"), false);
   assert.equal(state.adminBusyState.livePipelineRunning, true);
+  controller.stopOpsHealthPolling();
 });

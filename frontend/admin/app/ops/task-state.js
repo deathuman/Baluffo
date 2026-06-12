@@ -78,7 +78,10 @@ export function createOpsTaskStateController({
   }
 
   function maybeAttachLiveTaskRows(liveTaskRows) {
-    const fetchRow = liveTaskRows.find(row => getTaskType(row) === "fetch" && hasTaskRunMeta(row));
+    const canAttachLiveWatch = row => String(row?.controlPlaneSource || "").trim() !== "pipeline-status";
+    const fetchRow = liveTaskRows.find(row => (
+      getTaskType(row) === "fetch" && hasTaskRunMeta(row) && canAttachLiveWatch(row)
+    ));
     if (fetchRow && !state.adminBusyState.fetcherWatch) {
       attachToActiveFetchRun?.({
         runId: fetchRow?.runId,
@@ -90,7 +93,9 @@ export function createOpsTaskStateController({
       loadLatestFetcherReport?.({ silent: true, hydrateActiveProgress: true }).catch(() => {});
     }
 
-    const discoveryRow = liveTaskRows.find(row => getTaskType(row) === "discovery" && hasTaskRunMeta(row));
+    const discoveryRow = liveTaskRows.find(row => (
+      getTaskType(row) === "discovery" && hasTaskRunMeta(row) && canAttachLiveWatch(row)
+    ));
     if (discoveryRow && !state.adminBusyState.discoveryWatch) {
       attachToActiveDiscoveryRun?.({
         runId: discoveryRow?.runId,

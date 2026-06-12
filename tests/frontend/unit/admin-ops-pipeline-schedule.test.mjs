@@ -41,6 +41,7 @@ test("admin ops pipeline schedule controls post normalized settings", async () =
     state,
     refs,
     getBridge: async path => {
+      if (path === "/tasks/run-jobs-pipeline-status") return { active: false, stage: "idle" };
       if (path === "/ops/dashboard-health") {
         return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
       }
@@ -113,6 +114,7 @@ test("admin ops pipeline schedule controls post normalized settings", async () =
   });
   await flushAdminOpsBackground();
   await flushAdminOpsBackground();
+  await new Promise(resolve => setTimeout(resolve, 0));
 
   assert.deepEqual(posts, [
     {

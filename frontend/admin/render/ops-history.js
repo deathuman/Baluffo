@@ -315,6 +315,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
         onAbortRun
         && inputIsLive
         && ["fetch", "discovery", "pipeline"].includes(type)
+        && (type === "pipeline" || String(row?.controlPlaneSource || "").trim() !== "pipeline-status")
         && String(row?.runId || row?.id || "").trim()
       ),
       durationText: runView.durationLabel || runView.elapsedLabel || formatDuration(Number(row?.elapsedMs ?? row?.durationMs ?? 0)),

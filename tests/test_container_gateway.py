@@ -121,6 +121,17 @@ def test_gateway_pipeline_status_reads_control_snapshot(tmp_path: Path) -> None:
             "runId": "pipeline_test",
             "stage": "fetch",
             "progress": {"label": "Fetching job listings", "percent": 50},
+            "activeChildren": [
+                {
+                    "taskType": "fetch",
+                    "type": "fetch",
+                    "runId": "fetch_test",
+                    "active": True,
+                    "status": "running",
+                    "taskProgress": {"phaseLabel": "Fetch running"},
+                    "summary": {"controlPlane": True},
+                }
+            ],
         },
         now_iso="2026-06-12T20:00:00Z",
     )
@@ -134,6 +145,8 @@ def test_gateway_pipeline_status_reads_control_snapshot(tmp_path: Path) -> None:
     assert payload["active"] is True
     assert payload["runId"] == "pipeline_test"
     assert payload["stage"] == "fetch"
+    assert payload["activeChildren"][0]["runId"] == "fetch_test"
+    assert payload["activeChildren"][0]["taskProgress"]["phaseLabel"] == "Fetch running"
     assert payload["bridgeAlive"] is True
     assert payload["bridgeListening"] is False
 

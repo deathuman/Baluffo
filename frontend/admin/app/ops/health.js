@@ -32,6 +32,7 @@ const OPS_PERFORMANCE_PROFILE_PATH = "/ops/performance-profile";
 const SOURCE_POLICY_DETAIL_PATH = "/source-policy/recommendations";
 const REGISTRY_CONFLICTS_SUMMARY_PATH = "/registry/conflicts?view=summary";
 const REGISTRY_CONFLICTS_DETAIL_PATH = "/registry/conflicts";
+const ACTIVE_PIPELINE_KPI_DELAYED_LABEL = "Delayed while job update is running.";
 
 function maybeUnrefTimer(timer) {
   timer?.unref?.();
@@ -593,9 +594,23 @@ export function createOpsHealthController({
   }
 
   function stopOpsHealthPolling() {
-    if (!state.opsHealthPollTimer) return;
-    clearTimeout(state.opsHealthPollTimer);
+    if (state.opsHealthPollTimer) clearTimeout(state.opsHealthPollTimer);
     state.opsHealthPollTimer = null;
+    stopPipelineStatusPolling();
+  }
+
+  function stopPipelineStatusPolling() {
+    if (!state.pipelineStatusPollTimer) return;
+    clearTimeout(state.pipelineStatusPollTimer);
+    state.pipelineStatusPollTimer = null;
+  }
+
+  function schedulePipelineStatusPolling(delayMs) {
+    stopPipelineStatusPolling();
+    const waitMs = Math.max(600, Number(delayMs) || 2000);
+    state.pipelineStatusPollTimer = maybeUnrefTimer(setTimeout(() => {
+      loadPipelineStatusFallbackData(opsRenderToken, { fromPoll: true }).catch(() => {});
+    }, waitMs));
   }
 
   function scheduleOpsHealthPolling(delayMs) {
@@ -1420,28 +1435,70 @@ export function createOpsHealthController({
       || payload?.progressLabel
       || (stage && stage !== "pipeline" ? `Pipeline ${stage}` : "Pipeline running")
     ).trim();
+    const parentSummary = payload?.summary && typeof payload.summary === "object" ? payload.summary : {};
+    const activeChildren = Array.isArray(payload?.activeChildren)
+      ? payload.activeChildren
+          .filter(row => row && typeof row === "object" && row.active !== false)
+          .slice(0, 3)
+          .map(row => ({
+            ...row,
+            id: String(row.id || row.runId || ""),
+            runId: String(row.runId || row.id || ""),
+            taskType: String(row.taskType || row.type || "").trim().toLowerCase(),
+            type: String(row.type || row.taskType || "").trim().toLowerCase(),
+            active: true,
+            status: String(row.status || "running"),
+            displayStatus: String(row.displayStatus || row.status || "running"),
+            controlPlaneSource: "pipeline-status",
+            displayOnly: true,
+            summary: {
+              ...(row.summary && typeof row.summary === "object" ? row.summary : {}),
+              controlPlane: true,
+              pipelineRunId: runId
+            },
+            taskProgress: row.taskProgress && typeof row.taskProgress === "object"
+              ? { ...row.taskProgress, active: true }
+              : {
+                  active: true,
+                  phaseKey: String(row.taskType || row.type || "task").trim().toLowerCase(),
+                  phaseLabel: "Task running",
+                  mode: "indeterminate",
+                  ratio: 0,
+                  counts: {}
+                }
+          }))
+      : [];
+    const parentRow = {
+      taskType: "pipeline",
+      type: "pipeline",
+      runId,
+      active: true,
+      startedAt,
+      status: "running",
+      controlPlaneSource: "pipeline-status",
+      taskProgress: {
+        ...progress,
+        phaseKey: progress.phaseKey || stage,
+        phaseLabel: progressLabel
+      },
+      summary: {
+        ...parentSummary,
+        activeChildTaskType: activeChildren[0]?.taskType || (stage && stage !== "pipeline" ? stage : undefined),
+        activeChildRunId: activeChildren[0]?.runId || "",
+        activeChildPhaseLabel: activeChildren[0]?.taskProgress?.phaseLabel || "",
+        activeChildDisplayLabel: activeChildren[0]?.taskProgress?.phaseLabel
+          ? `${String(activeChildren[0]?.taskType || "").trim()}: ${activeChildren[0].taskProgress.phaseLabel}`
+          : "",
+        stage
+      }
+    };
+    const tasks = [
+      ...activeChildren,
+      parentRow
+    ];
     return {
-      tasks: [
-        {
-          taskType: "pipeline",
-          type: "pipeline",
-          runId,
-          active: true,
-          startedAt,
-          status: "running",
-          taskProgress: {
-            ...progress,
-            phaseKey: progress.phaseKey || stage,
-            phaseLabel: progressLabel
-          },
-          summary: {
-            ...(payload?.summary && typeof payload.summary === "object" ? payload.summary : {}),
-            activeChildTaskType: stage && stage !== "pipeline" ? stage : undefined,
-            stage
-          }
-        }
-      ],
-      count: 1,
+      tasks,
+      count: tasks.length,
       summary: true,
       source: "pipeline-status"
     };
@@ -1514,6 +1571,12 @@ export function createOpsHealthController({
       state.latestOpsFetcherMetricsPayload || {},
       health || {}
     );
+    const controlPlanePipelineActive = Boolean(
+      taskStatePayload?.source === "pipeline-status" && hasActiveRows(taskStatePayload)
+    );
+    const fetchKpiPendingLabel = controlPlanePipelineActive
+      ? ACTIVE_PIPELINE_KPI_DELAYED_LABEL
+      : "Loading latest fetch KPI...";
 
     renderAdminOpsAlertsImpl(refs.adminOpsAlertsEl, health?.alerts || [], {
       onAck: async alertId => {
@@ -1526,7 +1589,12 @@ export function createOpsHealthController({
         }
       }
     });
-    renderAdminOpsKpisImpl(refs.adminOpsKpisEl, health?.kpis || {}, String(health?.status || "healthy"));
+    renderAdminOpsKpisImpl(
+      refs.adminOpsKpisEl,
+      health?.kpis || {},
+      String(health?.status || "healthy"),
+      { fetchKpiPendingLabel }
+    );
     renderAdminOpsScheduleImpl(refs.adminOpsScheduleEl, health?.schedule || {}, state.latestOpsHealthCache);
     renderOpsTabBadges(refs, {
       health,
@@ -1648,12 +1716,12 @@ export function createOpsHealthController({
       renderActivityPanel: true,
       schedulePolling: false
     });
-    loadFetchKpisSummaryData(renderToken, { silent: true }).catch(() => {});
+    if (!hasActiveRows(taskStatePayload)) {
+      loadFetchKpisSummaryData(renderToken, { silent: true }).catch(() => {});
+    }
     loadOpsTabCountsSummaryData(renderToken, { silent: true }).catch(() => {});
     if (hasActiveRows(taskStatePayload)) {
-      maybeUnrefTimer(setTimeout(() => {
-        loadTaskStateSummaryData(renderToken, { fromPoll: true, summary: true }).catch(() => {});
-      }, 0));
+      schedulePipelineStatusPolling(getOpsPollIntervalMs(true));
     }
     return { taskStatePayload, historyPayload };
   }
@@ -1822,7 +1890,7 @@ export function createOpsHealthController({
     return payload || null;
   }
 
-  async function loadPipelineStatusFallbackData(renderToken = opsRenderToken) {
+  async function loadPipelineStatusFallbackData(renderToken = opsRenderToken, options = {}) {
     try {
       const payload = await measuredGetBridge(
         JOBS_PIPELINE_STATUS_PATH,
@@ -1831,7 +1899,26 @@ export function createOpsHealthController({
       );
       const activeRenderToken = renderToken === opsRenderToken ? renderToken : opsRenderToken;
       const taskStatePayload = buildPipelineTaskStatePayload(payload);
-      if (!taskStatePayload) return payload || null;
+      if (!taskStatePayload) {
+        if (getCachedTaskStatePayload()?.source === "pipeline-status") {
+          state.latestOpsTaskStatePayload = { tasks: [], count: 0, summary: true, source: "pipeline-status" };
+          renderOpsHealthSnapshot(activeRenderToken, state.latestOpsHealthCache || {}, {
+            taskStatePayload: getCachedTaskStatePayload(),
+            registryConflictsPayload: getCachedRegistryConflictsPayload(),
+            syncTaskState: true,
+            renderDeferredPanels: false,
+            renderActivityPanel: true,
+            schedulePolling: false
+          });
+        }
+        stopPipelineStatusPolling();
+        if (options?.fromPoll) {
+          maybeUnrefTimer(setTimeout(() => {
+            loadOpsHealthData({ summary: true }).catch(() => {});
+          }, 0));
+        }
+        return payload || null;
+      }
       const cachedTaskStatePayload = getCachedTaskStatePayload();
       if (hasActiveRows(cachedTaskStatePayload) && cachedTaskStatePayload?.source !== "pipeline-status") {
         return payload || null;
@@ -1845,10 +1932,14 @@ export function createOpsHealthController({
         syncTaskState: true,
         renderDeferredPanels: false,
         renderActivityPanel: true,
-        schedulePolling: true
+        schedulePolling: false
       });
+      schedulePipelineStatusPolling(getOpsPollIntervalMs(true));
       return payload || null;
     } catch {
+      if (hasActiveRows(getCachedTaskStatePayload()) && getCachedTaskStatePayload()?.source === "pipeline-status") {
+        schedulePipelineStatusPolling(getOpsPollIntervalMs(true));
+      }
       return null;
     }
   }
@@ -1927,7 +2018,22 @@ export function createOpsHealthController({
     if (showLoadingState) setOpsReadinessShell();
     const measureFirstRender = !options?.fromPoll;
     if (measureFirstRender) markStep("admin_ops_health_first_render_start");
-    const pipelineStatusFallbackLoad = loadPipelineStatusFallbackData(renderToken);
+    const pipelinePayload = await loadPipelineStatusFallbackData(renderToken, {
+      fromPoll: Boolean(options?.fromPoll)
+    });
+    if (pipelinePayload?.active) {
+      if (measureFirstRender) {
+        markStep("admin_ops_health_first_render_done", { ok: true, source: "pipeline-status" });
+        measureStep(
+          "admin_ops_health_first_render",
+          "admin_ops_health_first_render_start",
+          "admin_ops_health_first_render_done",
+          { ok: true, source: "pipeline-status" }
+        );
+      }
+      setBusyFlag("opsLoad", false);
+      return;
+    }
     try {
       let health;
       const useSummaryView = Boolean(options?.summary);
@@ -1976,7 +2082,6 @@ export function createOpsHealthController({
       }
       loadOpsTabCountsSummaryData(renderToken, { silent: Boolean(options?.fromPoll) }).catch(() => {});
     } catch (err) {
-      await pipelineStatusFallbackLoad;
       if (measureFirstRender) {
         markStep("admin_ops_health_first_render_done", {
           ok: false,

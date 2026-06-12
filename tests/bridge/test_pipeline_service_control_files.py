@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from src.bridge.pipeline_control_files import write_abort_request
+from src.bridge.pipeline_control_files import read_pipeline_status, write_abort_request
 from src.bridge.pipeline_service import PipelineAbortRequested, PipelineRuntime, PipelineService
 
 
@@ -62,3 +62,50 @@ def test_pipeline_service_consumes_container_gateway_abort_request(tmp_path: Pat
             "reason": "test",
         }
     }
+
+
+def test_pipeline_service_writes_active_child_control_snapshot(tmp_path: Path) -> None:
+    service = _make_pipeline_service(
+        pipeline_status={"active": True, "runId": "pipeline_1", "stage": "fetch"},
+        control_data_dir=tmp_path,
+    )
+
+    service._attach_lifecycle_child_row(  # noqa: SLF001
+        run_id="pipeline_1",
+        task_type="fetch",
+        child_run_id="fetch_1",
+        child_started_at="2026-05-06T19:00:02Z",
+    )
+
+    payload = read_pipeline_status(tmp_path)
+    children = payload.get("activeChildren")
+    assert isinstance(children, list)
+    assert children[0]["taskType"] == "fetch"
+    assert children[0]["runId"] == "fetch_1"
+    assert children[0]["parentRunId"] == "pipeline_1"
+    assert children[0]["controlPlaneSource"] == "pipeline-status"
+    assert children[0]["displayOnly"] is True
+    assert children[0]["taskProgress"]["phaseLabel"] == "Fetch running"
+    assert payload["activeChildTaskType"] == "fetch"
+    assert payload["activeChildRunId"] == "fetch_1"
+
+
+def test_pipeline_service_clears_active_children_on_terminal_status(tmp_path: Path) -> None:
+    service = _make_pipeline_service(
+        pipeline_status={"active": True, "runId": "pipeline_1", "stage": "fetch"},
+        control_data_dir=tmp_path,
+    )
+    service._attach_lifecycle_child_row(  # noqa: SLF001
+        run_id="pipeline_1",
+        task_type="fetch",
+        child_run_id="fetch_1",
+        child_started_at="2026-05-06T19:00:02Z",
+    )
+
+    service._set_completed(status="ok", final_output_count=123)  # noqa: SLF001
+
+    payload = read_pipeline_status(tmp_path)
+    assert payload["active"] is False
+    assert payload["activeChildren"] == []
+    assert payload["activeChildTaskType"] == ""
+    assert payload["activeChildRunId"] == ""
