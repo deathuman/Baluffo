@@ -10,6 +10,17 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.63] - 2026-06-12
+
+### Fixed
+- Container gateway readiness now distinguishes an alive internal bridge process from a bridge socket that is actually listening, so `/app/ready` reports degraded until proxied bridge routes can respond.
+- Container gateway routing now treats `/admin/*` as API traffic instead of static fallback HTML, restoring `/admin/bootstrap` through the internal bridge.
+- Container bridge startup no longer performs source-registry ensure work before binding the internal bridge socket, reducing the chance that live `/data` registry reads leave gateway-only control routes up while bridge APIs refuse connections.
+
+### Notes
+- This is a forward fix for the failed live smoke of `0.2.62`, where the public gateway was installed but proxied internal bridge routes returned immediate `504 bridge_degraded` responses. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.62] - 2026-06-12
 
 ### Changed
