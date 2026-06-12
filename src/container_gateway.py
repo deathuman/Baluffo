@@ -113,169 +113,180 @@ class _GatewayState:
         return payload
 
 
-def _make_gateway_handler(state: _GatewayState) -> type[BaseHTTPRequestHandler]:
-    class GatewayHandler(BaseHTTPRequestHandler):
-        def log_message(self, format: str, *args: Any) -> None:
-            if str(os.environ.get("BALUFFO_GATEWAY_QUIET_REQUESTS") or "").lower() in {
-                "1",
-                "true",
-                "yes",
-            }:
-                return
-            super().log_message(format, *args)
+class _GatewayHandler(BaseHTTPRequestHandler):
+    gateway_state: _GatewayState | None = None
 
-        def send_json(self, payload: Any, status: int = 200) -> None:
-            body = _json_bytes(payload)
-            self.send_response(int(status or 200))
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+    def _state(self) -> _GatewayState:
+        if self.gateway_state is None:
+            raise RuntimeError("container gateway state is not configured")
+        return self.gateway_state
 
-        def send_bytes(
-            self,
-            body: bytes,
-            *,
-            content_type: str,
-            filename: str = "",
-            disposition: str = "inline",
-            status: int = 200,
-            cache_control: str = "no-store",
-            content_encoding: str = "",
-        ) -> None:
-            self.send_response(int(status or 200))
-            self.send_header("Content-Type", content_type)
-            self.send_header("Cache-Control", cache_control)
-            if content_encoding:
-                self.send_header("Content-Encoding", content_encoding)
-            if filename:
-                safe_filename = str(filename).replace('"', "")
-                safe_disposition = (
-                    "attachment" if str(disposition).lower() == "attachment" else "inline"
+    def log_message(self, format: str, *args: Any) -> None:
+        if str(os.environ.get("BALUFFO_GATEWAY_QUIET_REQUESTS") or "").lower() in {
+            "1",
+            "true",
+            "yes",
+        }:
+            return
+        super().log_message(format, *args)
+
+    def send_json(self, payload: Any, status: int = 200) -> None:
+        body = _json_bytes(payload)
+        self.send_response(int(status or 200))
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def send_bytes(
+        self,
+        body: bytes,
+        *,
+        content_type: str,
+        filename: str = "",
+        disposition: str = "inline",
+        status: int = 200,
+        cache_control: str = "no-store",
+        content_encoding: str = "",
+    ) -> None:
+        self.send_response(int(status or 200))
+        self.send_header("Content-Type", content_type)
+        self.send_header("Cache-Control", cache_control)
+        if content_encoding:
+            self.send_header("Content-Encoding", content_encoding)
+        if filename:
+            safe_filename = str(filename).replace('"', "")
+            safe_disposition = (
+                "attachment" if str(disposition).lower() == "attachment" else "inline"
+            )
+            self.send_header(
+                "Content-Disposition", f'{safe_disposition}; filename="{safe_filename}"'
+            )
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _proxy(self, *, timeout: float = DEFAULT_PROXY_TIMEOUT_SECONDS) -> None:
+        state = self._state()
+        target = f"{state.internal_base_url}{self.path}"
+        body: bytes | None = None
+        if self.command.upper() in {"POST", "PUT", "PATCH"}:
+            length = int(self.headers.get("content-length") or 0)
+            body = self.rfile.read(max(0, length))
+        request = Request(
+            target,
+            data=body,
+            method=self.command.upper(),
+            headers=_forwardable_headers(self.headers),
+        )
+        try:
+            with urlopen(request, timeout=float(timeout)) as response:
+                response_body = response.read()
+                self._send_proxied_response(
+                    int(response.status or 200),
+                    response.headers,
+                    response_body,
                 )
-                self.send_header(
-                    "Content-Disposition", f'{safe_disposition}; filename="{safe_filename}"'
-                )
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+        except HTTPError as exc:
+            self._send_proxied_response(int(exc.code or 500), exc.headers, exc.read())
+        except (OSError, TimeoutError, URLError) as exc:
+            self.send_json(
+                {
+                    "ok": False,
+                    "error": "bridge_degraded",
+                    "detail": str(exc),
+                    "gatewayReady": True,
+                },
+                status=504,
+            )
 
-        def _proxy(self, *, timeout: float = DEFAULT_PROXY_TIMEOUT_SECONDS) -> None:
-            target = f"{state.internal_base_url}{self.path}"
-            body: bytes | None = None
-            if self.command.upper() in {"POST", "PUT", "PATCH"}:
-                length = int(self.headers.get("content-length") or 0)
-                body = self.rfile.read(max(0, length))
-            request = Request(
-                target,
-                data=body,
-                method=self.command.upper(),
-                headers=_forwardable_headers(self.headers),
+    def _send_proxied_response(self, status: int, headers: Any, body: bytes) -> None:
+        self.send_response(int(status or 200))
+        blocked = {"connection", "transfer-encoding", "server", "date"}
+        for name, value in headers.items():
+            if str(name).lower() in blocked:
+                continue
+            self.send_header(str(name), str(value))
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _handle_abort(self) -> None:
+        state = self._state()
+        length = int(self.headers.get("content-length") or 0)
+        raw = self.rfile.read(max(0, length))
+        try:
+            payload = json.loads(raw.decode("utf-8") or "{}")
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            self.send_json({"ok": False, "error": "invalid_json"}, status=400)
+            return
+        task_type = str(payload.get("taskType") or payload.get("type") or "").strip().lower()
+        run_id = str(payload.get("runId") or payload.get("id") or "").strip()
+        if task_type == "pipeline" and run_id:
+            accepted = write_abort_request(
+                state.data_dir,
+                run_id=run_id,
+                task_type=task_type,
+                reason=str(payload.get("reason") or "user_abort_requested").strip(),
+                requested_at=_now_iso(),
             )
             try:
-                with urlopen(request, timeout=float(timeout)) as response:
-                    response_body = response.read()
+                request = Request(
+                    f"{state.internal_base_url}{self.path}",
+                    data=raw,
+                    method="POST",
+                    headers=_forwardable_headers(self.headers),
+                )
+                with urlopen(request, timeout=CONTROL_PROXY_TIMEOUT_SECONDS) as response:
                     self._send_proxied_response(
                         int(response.status or 200),
                         response.headers,
-                        response_body,
-                    )
-            except HTTPError as exc:
-                self._send_proxied_response(int(exc.code or 500), exc.headers, exc.read())
-            except (OSError, TimeoutError, URLError) as exc:
-                self.send_json(
-                    {
-                        "ok": False,
-                        "error": "bridge_degraded",
-                        "detail": str(exc),
-                        "gatewayReady": True,
-                    },
-                    status=504,
-                )
-
-        def _send_proxied_response(self, status: int, headers: Any, body: bytes) -> None:
-            self.send_response(int(status or 200))
-            blocked = {"connection", "transfer-encoding", "server", "date"}
-            for name, value in headers.items():
-                if str(name).lower() in blocked:
-                    continue
-                self.send_header(str(name), str(value))
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        def _handle_abort(self) -> None:
-            length = int(self.headers.get("content-length") or 0)
-            raw = self.rfile.read(max(0, length))
-            try:
-                payload = json.loads(raw.decode("utf-8") or "{}")
-            except (json.JSONDecodeError, UnicodeDecodeError):
-                self.send_json({"ok": False, "error": "invalid_json"}, status=400)
-                return
-            task_type = str(payload.get("taskType") or payload.get("type") or "").strip().lower()
-            run_id = str(payload.get("runId") or payload.get("id") or "").strip()
-            if task_type == "pipeline" and run_id:
-                accepted = write_abort_request(
-                    state.data_dir,
-                    run_id=run_id,
-                    task_type=task_type,
-                    reason=str(payload.get("reason") or "user_abort_requested").strip(),
-                    requested_at=_now_iso(),
-                )
-                try:
-                    request = Request(
-                        f"{state.internal_base_url}{self.path}",
-                        data=raw,
-                        method="POST",
-                        headers=_forwardable_headers(self.headers),
-                    )
-                    with urlopen(request, timeout=CONTROL_PROXY_TIMEOUT_SECONDS) as response:
-                        self._send_proxied_response(
-                            int(response.status or 200),
-                            response.headers,
-                            response.read(),
-                        )
-                        return
-                except (HTTPError, OSError, TimeoutError, URLError):
-                    self.send_json(
-                        {
-                            **accepted,
-                            "state": "abort_queued",
-                            "deferred": True,
-                            "gatewayAccepted": True,
-                        },
-                        status=202,
+                        response.read(),
                     )
                     return
-            self._proxy(timeout=DEFAULT_PROXY_TIMEOUT_SECONDS)
-
-        def do_GET(self) -> None:
-            path = _route_path(self.path)
-            if path == "/app/ready":
-                self.send_json(state.ready_payload())
+            except (HTTPError, OSError, TimeoutError, URLError):
+                self.send_json(
+                    {
+                        **accepted,
+                        "state": "abort_queued",
+                        "deferred": True,
+                        "gatewayAccepted": True,
+                    },
+                    status=202,
+                )
                 return
-            if path == "/tasks/run-jobs-pipeline-status":
-                self.send_json(state.pipeline_status_payload())
-                return
-            if state.static_service.handle_get(self, path=path):
-                return
-            self._proxy()
+        self._proxy(timeout=DEFAULT_PROXY_TIMEOUT_SECONDS)
 
-        def do_POST(self) -> None:
-            path = _route_path(self.path)
-            if path == "/tasks/abort":
-                self._handle_abort()
-                return
-            self._proxy()
+    def do_GET(self) -> None:
+        state = self._state()
+        path = _route_path(self.path)
+        if path == "/app/ready":
+            self.send_json(state.ready_payload())
+            return
+        if path == "/tasks/run-jobs-pipeline-status":
+            self.send_json(state.pipeline_status_payload())
+            return
+        if state.static_service.handle_get(self, path=path):
+            return
+        self._proxy()
 
-        def do_OPTIONS(self) -> None:
-            self.send_response(204)
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Content-Length", "0")
-            self.end_headers()
+    def do_POST(self) -> None:
+        path = _route_path(self.path)
+        if path == "/tasks/abort":
+            self._handle_abort()
+            return
+        self._proxy()
 
-    return GatewayHandler
+    def do_OPTIONS(self) -> None:
+        self.send_response(204)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+
+def _make_gateway_handler(state: _GatewayState) -> type[BaseHTTPRequestHandler]:
+    return type("GatewayHandler", (_GatewayHandler,), {"gateway_state": state})
 
 
 def _spawn_bridge(config: Any, *, internal_port: int) -> subprocess.Popen[bytes]:
