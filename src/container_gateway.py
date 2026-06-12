@@ -115,8 +115,6 @@ class _GatewayState:
 
 def _make_gateway_handler(state: _GatewayState) -> type[BaseHTTPRequestHandler]:
     class GatewayHandler(BaseHTTPRequestHandler):
-        server_version = "BaluffoContainerGateway/1"
-
         def log_message(self, format: str, *args: Any) -> None:
             if str(os.environ.get("BALUFFO_GATEWAY_QUIET_REQUESTS") or "").lower() in {
                 "1",
