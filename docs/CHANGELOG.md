@@ -10,6 +10,15 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.64] - 2026-06-12
+
+### Fixed
+- Container gateway proxied bridge responses now strip the upstream `Content-Length` before writing the gateway response length, avoiding duplicate content-length headers that Umbrel's proxy rejected with `HPE_UNEXPECTED_CONTENT_LENGTH`.
+
+### Notes
+- This is a forward fix for the failed live smoke of `0.2.63`, where gateway-native routes were healthy but proxied bridge routes returned Umbrel HTML `502` pages. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.63] - 2026-06-12
 
 ### Fixed
