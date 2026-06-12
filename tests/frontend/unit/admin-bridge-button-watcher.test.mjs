@@ -130,3 +130,159 @@ test("admin bridge button watcher skips overlapping interval polls", async () =>
     }
   }
 });
+
+test("admin bridge button watcher can degrade without blocking navigation on health timeout", async () => {
+  const originalWindow = globalThis.window;
+  const states = [];
+  globalThis.window = {
+    location: {
+      href: "http://192.168.50.61:8877/jobs.html"
+    },
+    sessionStorage: {
+      getItem() {
+        return "";
+      }
+    },
+    setInterval() {
+      return 1;
+    },
+    clearInterval() {}
+  };
+
+  try {
+    const watcher = createAdminBridgeButtonWatcher({
+      buttonEl: createButton(),
+      baseUrl: "",
+      fetchJson: async () => {
+        throw new Error("Bridge request timed out");
+      },
+      applyState: state => states.push(state),
+      awaitBridgeReady: async () => true,
+      degradeOnFailure: true
+    });
+
+    watcher.startAdminBridgeButtonWatch();
+    await new Promise(resolve => setImmediate(resolve));
+    watcher.stopAdminBridgeButtonWatch();
+
+    assert.equal(states.at(-1)?.state, "degraded");
+    assert.equal(states.at(-1)?.label, "Admin");
+    assert.match(String(states.at(-1)?.title || ""), /open Admin anyway/i);
+  } finally {
+    if (originalWindow === undefined) {
+      delete globalThis.window;
+    } else {
+      globalThis.window = originalWindow;
+    }
+  }
+});
+
+test("admin bridge button watcher keeps startup gate failures offline by default", async () => {
+  const originalWindow = globalThis.window;
+  const states = [];
+  globalThis.window = {
+    location: { href: "http://127.0.0.1:8877/jobs.html?desktop=1" },
+    sessionStorage: { getItem() { return ""; } },
+    setInterval() { return 1; },
+    clearInterval() {}
+  };
+
+  try {
+    const watcher = createAdminBridgeButtonWatcher({
+      buttonEl: createButton(),
+      baseUrl: "http://127.0.0.1:8877",
+      fetchJson: async () => ({ ok: true }),
+      applyState: state => states.push(state),
+      awaitBridgeReady: async () => false,
+      degradeOnFailure: true
+    });
+
+    watcher.startAdminBridgeButtonWatch();
+    await new Promise(resolve => setImmediate(resolve));
+    watcher.stopAdminBridgeButtonWatch();
+
+    assert.equal(states.at(-1)?.state, "offline");
+    assert.equal(states.at(-1)?.label, "Admin Offline");
+  } finally {
+    if (originalWindow === undefined) {
+      delete globalThis.window;
+    } else {
+      globalThis.window = originalWindow;
+    }
+  }
+});
+
+test("admin bridge button watcher can degrade when configured for startup gate failures", async () => {
+  const originalWindow = globalThis.window;
+  const states = [];
+  globalThis.window = {
+    location: { href: "http://192.168.50.61:8877/jobs.html" },
+    sessionStorage: { getItem() { return ""; } },
+    setInterval() { return 1; },
+    clearInterval() {}
+  };
+
+  try {
+    const watcher = createAdminBridgeButtonWatcher({
+      buttonEl: createButton(),
+      baseUrl: "",
+      fetchJson: async () => ({ ok: true }),
+      applyState: state => states.push(state),
+      awaitBridgeReady: async () => false,
+      degradeOnFailure: true,
+      degradeWhenBridgeNotReady: true
+    });
+
+    watcher.startAdminBridgeButtonWatch();
+    await new Promise(resolve => setImmediate(resolve));
+    watcher.stopAdminBridgeButtonWatch();
+
+    assert.equal(states.at(-1)?.state, "degraded");
+    assert.match(String(states.at(-1)?.title || ""), /open Admin anyway/i);
+  } finally {
+    if (originalWindow === undefined) {
+      delete globalThis.window;
+    } else {
+      globalThis.window = originalWindow;
+    }
+  }
+});
+
+test("admin bridge button watcher accepts a lightweight custom status path", async () => {
+  const originalWindow = globalThis.window;
+  const paths = [];
+  const states = [];
+  globalThis.window = {
+    location: { href: "http://192.168.50.61:8877/jobs.html" },
+    sessionStorage: { getItem() { return ""; } },
+    setInterval() { return 1; },
+    clearInterval() {}
+  };
+
+  try {
+    const watcher = createAdminBridgeButtonWatcher({
+      buttonEl: createButton(),
+      baseUrl: "",
+      fetchJson: async (_base, path) => {
+        paths.push(path);
+        return { ok: true, active: true };
+      },
+      applyState: state => states.push(state),
+      awaitBridgeReady: async () => true,
+      statusPath: "/tasks/run-jobs-pipeline-status"
+    });
+
+    watcher.startAdminBridgeButtonWatch();
+    await new Promise(resolve => setImmediate(resolve));
+    watcher.stopAdminBridgeButtonWatch();
+
+    assert.deepEqual(paths, ["/tasks/run-jobs-pipeline-status"]);
+    assert.equal(states.at(-1)?.state, "online");
+  } finally {
+    if (originalWindow === undefined) {
+      delete globalThis.window;
+    } else {
+      globalThis.window = originalWindow;
+    }
+  }
+});

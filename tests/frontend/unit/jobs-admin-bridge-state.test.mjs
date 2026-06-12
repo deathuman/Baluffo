@@ -65,6 +65,19 @@ test("jobs admin bridge state keeps checking, offline, and online states visible
 
   applyJobsAdminBridgeState({
     buttonEl,
+    state: "degraded",
+    label: "Admin",
+    title: "Admin status delayed; open Admin anyway",
+    runtimeState
+  });
+  assert.equal(runtimeState.adminBridgeButtonState, "degraded");
+  assert.equal(buttonEl.classList.contains("degraded"), true);
+  assert.equal(buttonEl.textContent, "Admin");
+  assert.equal(buttonEl.disabled, false);
+  assert.equal(buttonEl.attributes["aria-disabled"], "false");
+
+  applyJobsAdminBridgeState({
+    buttonEl,
     state: "online",
     label: "Admin Online",
     title: "Open admin panel",

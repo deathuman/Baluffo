@@ -233,6 +233,12 @@ def test_ops_dashboard_health_summary_avoids_history_and_fetch_report(tmp_path) 
                 "countBasis": "storage",
             },
             "get_sync_status_payload": lambda: {"ok": True, "config": {"ready": True}},
+            "load_sync_runtime_state": lambda: {
+                "lastPullAt": "2026-06-05T09:30:00+00:00",
+                "lastPushAt": "2026-06-05T09:45:00+00:00",
+                "lastAction": "push",
+                "lastResult": "ok",
+            },
         }
     )
 
@@ -241,3 +247,5 @@ def test_ops_dashboard_health_summary_avoids_history_and_fetch_report(tmp_path) 
     assert payload["summaryView"] is True
     assert payload["detailLevel"] == "summary"
     assert payload["kpis"]["pendingApprovalsCount"] == 7
+    assert payload["kpis"]["registrySync"]["lastSyncAt"] == "2026-06-05T09:45:00+00:00"
+    assert payload["kpis"]["registrySync"]["lastSyncStatus"] == "ok"

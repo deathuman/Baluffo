@@ -14,6 +14,7 @@ const ABORT_TERMINAL_REASON = "user_abort_requested";
 const ABORT_REQUEST_TIMEOUT_MS = 20000;
 const ABORT_REQUEST_VERIFY_GRACE_MS = 5000;
 const PIPELINE_START_TIMEOUT_MS = 18000;
+const PIPELINE_ACTIVE_STATUS_GRACE_MS = 45000;
 
 /**
  * @param {import("../../../shared/types.js").TaskStatePayload|null|undefined} payload
@@ -175,6 +176,28 @@ function markPipelineStatusPollFailure(jobsPipelineUiState) {
   const nextCount = Math.max(0, Number(jobsPipelineUiState.statusPollFailureCount || 0)) + 1;
   jobsPipelineUiState.statusPollFailureCount = nextCount;
   return nextCount;
+}
+
+function rememberActivePipelinePayload(jobsPipelineUiState, payload) {
+  if (!jobsPipelineUiState || !payload?.active) return;
+  jobsPipelineUiState.lastActivePipelinePayload = { ...payload, active: true };
+  jobsPipelineUiState.lastActivePipelineSeenAt = Date.now();
+}
+
+function getRecentActivePipelinePayload(jobsPipelineUiState) {
+  if (!jobsPipelineUiState) return null;
+  const seenAt = Number(jobsPipelineUiState.lastActivePipelineSeenAt || 0);
+  const payload = jobsPipelineUiState.lastActivePipelinePayload;
+  if (!payload?.active || !seenAt || Date.now() - seenAt > PIPELINE_ACTIVE_STATUS_GRACE_MS) {
+    return null;
+  }
+  return payload;
+}
+
+function clearRememberedActivePipeline(jobsPipelineUiState) {
+  if (!jobsPipelineUiState) return;
+  jobsPipelineUiState.lastActivePipelinePayload = null;
+  jobsPipelineUiState.lastActivePipelineSeenAt = 0;
 }
 
 function pipelineStartAttachedToast(message) {
@@ -400,6 +423,7 @@ export function createJobsPipelineController({
     jobsPipelineUiState.pendingStart = false;
     jobsPipelineUiState.runId = runId;
     jobsPipelineUiState.startedAt = startedAt;
+    rememberActivePipelinePayload(jobsPipelineUiState, activePayload);
     updateJobsPipelineUi({
       running: true,
       disabled: true,
@@ -444,6 +468,7 @@ export function createJobsPipelineController({
     jobsPipelineUiState.pendingStart = false;
     jobsPipelineUiState.runId = "";
     jobsPipelineUiState.startedAt = "";
+    clearRememberedActivePipeline(jobsPipelineUiState);
     updateJobsPipelineUi({
       running: false,
       disabled: !jobsPipelineUiState.bridgeOnline,
@@ -542,12 +567,28 @@ export function createJobsPipelineController({
       }
       if ((trackedRunId && trackedRunId === runId) || jobsPipelineUiState.active) {
         jobsPipelineUiState.updateTooltipFirstRunBootstrapActive = false;
-        await refreshJobsUpdateTooltipFromHealth();
+        refreshJobsUpdateTooltipFromHealth().catch(() => {});
         handlePipelineCompletionStatus(payload);
       } else {
         jobsPipelineUiState.updateTooltipFirstRunBootstrapActive = false;
         if (!jobsPipelineUiState.updateTooltipFirstRunKnown) {
-          await refreshJobsUpdateTooltipFromHealth();
+          refreshJobsUpdateTooltipFromHealth()
+            .then(() => {
+              if (
+                jobsPipelineUiState.active
+                || jobsPipelineUiState.pendingStart
+                || jobsPipelineUiState.runId
+              ) {
+                return;
+              }
+              updateJobsPipelineUi({
+                running: false,
+                disabled: false,
+                buttonLabel: "",
+                pipelinePayload: payload
+              });
+            })
+            .catch(() => {});
         }
         updateJobsPipelineUi({
           running: false,
@@ -559,9 +600,31 @@ export function createJobsPipelineController({
       clearJobsPipelinePolling();
     } catch (err) {
       markPipelineStatusPollFailure(jobsPipelineUiState);
-      jobsPipelineUiState.bridgeOnline = false;
       jobsPipelineUiState.updateTooltipBridgeError = String(err?.message || err || "bridge unavailable");
       jobsPipelineUiState.updateTooltipFirstRunBootstrapActive = false;
+      const recentActivePayload = getRecentActivePipelinePayload(jobsPipelineUiState);
+      if (recentActivePayload) {
+        jobsPipelineUiState.bridgeOnline = true;
+        jobsPipelineUiState.active = true;
+        jobsPipelineUiState.pendingStart = false;
+        jobsPipelineUiState.runId = String(recentActivePayload.runId || jobsPipelineUiState.runId || "");
+        jobsPipelineUiState.startedAt = String(recentActivePayload.startedAt || jobsPipelineUiState.startedAt || "");
+        updateJobsPipelineUi({
+          running: true,
+          disabled: true,
+          buttonLabel: getPipelineRunningLabel(recentActivePayload),
+          progressLabel: "Pipeline status delayed; retrying...",
+          pipelinePayload: recentActivePayload,
+          abortTask: {
+            active: true,
+            taskType: "pipeline",
+            runId: jobsPipelineUiState.runId
+          }
+        });
+        scheduleJobsPipelineStatusPoll(pollDelayMs);
+        return;
+      }
+      jobsPipelineUiState.bridgeOnline = false;
       jobsPipelineUiState.updateTooltipFirstRun = false;
       jobsPipelineUiState.updateTooltipFirstRunKnown = false;
       jobsPipelineUiState.active = false;
@@ -570,6 +633,7 @@ export function createJobsPipelineController({
       jobsPipelineUiState.pendingStart = false;
       jobsPipelineUiState.runId = "";
       jobsPipelineUiState.startedAt = "";
+      clearRememberedActivePipeline(jobsPipelineUiState);
       updateJobsPipelineUi({
         running: false,
         disabled: true,

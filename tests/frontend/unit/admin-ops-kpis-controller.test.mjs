@@ -263,7 +263,14 @@ test("admin registry and sync disclosure backfills missing summary data", async 
     latestOpsHealthCache: {
       alerts: [],
       status: "healthy",
-      kpis: {}
+      kpis: {
+        registrySync: {
+          activeCount: 12,
+          pendingCount: 4,
+          hiddenPendingCount: 0,
+          deferredPendingCount: 0
+        }
+      }
     }
   });
   const calls = [];
@@ -303,6 +310,7 @@ test("admin registry and sync disclosure backfills missing summary data", async 
 
   assert.ok(calls.includes("/ops/dashboard-health?view=summary"));
   assert.equal(state.latestOpsHealthCache.kpis.registrySync.activeCount, 12);
+  assert.equal(state.latestOpsHealthCache.kpis.registrySync.lastSyncStatus, "ok");
   assert.equal(renderedKpis.at(-1).registrySync.pendingCount, 4);
 });
 

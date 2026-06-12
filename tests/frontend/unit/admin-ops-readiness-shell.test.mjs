@@ -115,7 +115,7 @@ test("admin ops first dashboard health wait shows neutral shell then real data",
 
   assert.equal(refs.adminOpsTrendsEl.textContent, "No run trend data yet.");
   assert.equal(refs.adminOpsTrendsEl.textContent.includes("Loading operations health"), false);
-  assert.deepEqual(calls, ["/ops/dashboard-health"]);
+  assert.deepEqual(calls, ["/tasks/run-jobs-pipeline-status", "/ops/dashboard-health"]);
 
   dashboardHealth.resolve({ alerts: [], kpis: {}, schedule: {}, status: "healthy" });
   await loadPromise;

@@ -251,10 +251,21 @@ export function renderAdminOpsKpis(kpisEl, kpis, status) {
           failed/unstable ${Number((providerCoverage?.statusCounts?.failed_provider || 0) + (providerCoverage?.statusCounts?.unstable_provider || 0)).toLocaleString()},
           ready later ${Number((providerCoverage?.readyLaterProviders || []).length || 0).toLocaleString()}.
           Static sources are retained.`
-    : formatPendingField();
+    : "";
   const dedupReviewStateSummary = dedupReviewStateLoaded
     ? escapeHtml(formatDedupReviewStateSummary(dedupReviewState))
-    : formatPendingField();
+    : "";
+  const providerCoverageHtml = providerCoverageLoaded
+    ? `<div class="admin-ops-schedule-item admin-ops-full-row">
+          <strong>Provider coverage</strong>:
+          ${providerCoverageSummary}
+        </div>`
+    : "";
+  const dedupReviewStateHtml = dedupReviewStateLoaded
+    ? `<div class="admin-ops-schedule-item admin-ops-full-row">
+          <strong>Dedup review-state</strong>: ${dedupReviewStateSummary}
+        </div>`
+    : "";
   const registryDiagnosticsHtml = `
     <details class="admin-ops-metrics-details admin-ops-registry-sync-details admin-ops-full-row">
       <summary>Registry and sync diagnostics</summary>
@@ -283,13 +294,8 @@ export function renderAdminOpsKpis(kpisEl, kpis, status) {
           conflicts ${formatOptionalNumber(registrySync, "conflictCount")},
           invalid rows ${formatOptionalNumber(registrySync, "invalidRowsCount")}.
         </div>
-        <div class="admin-ops-schedule-item admin-ops-full-row">
-          <strong>Provider coverage</strong>:
-          ${providerCoverageSummary}
-        </div>
-        <div class="admin-ops-schedule-item admin-ops-full-row">
-          <strong>Dedup review-state</strong>: ${dedupReviewStateSummary}
-        </div>
+        ${providerCoverageHtml}
+        ${dedupReviewStateHtml}
       </div>
     </details>
   `;

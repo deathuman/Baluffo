@@ -20,9 +20,14 @@ export function createJobsBoot(deps) {
   }
 
   async function openAdminPageFromJobs() {
-    if (deps.runtimeState.adminBridgeButtonState !== "online") {
+    const adminBridgeState = deps.runtimeState.adminBridgeButtonState;
+    const canOpenAdmin = adminBridgeState === "online" || adminBridgeState === "degraded";
+    if (!canOpenAdmin && deps.isDesktopRuntimeMode()) {
       showToast("Admin bridge is offline.", "info");
       return;
+    }
+    if (adminBridgeState !== "online") {
+      showToast("Admin status is delayed; opening Admin anyway.", "info");
     }
     deps.rememberCurrentJobsUrl();
     navigateDesktopPage("admin.html");
@@ -120,7 +125,10 @@ export function createJobsBoot(deps) {
       baseUrl: deps.adminBridgeBase,
       fetchJson,
       applyState: deps.applyJobsAdminBridgeState,
-      awaitBridgeReady: deps.isDesktopRuntimeMode() ? awaitDesktopBootstrap : async () => true
+      awaitBridgeReady: deps.isDesktopRuntimeMode() ? awaitDesktopBootstrap : async () => true,
+      degradeOnFailure: true,
+      degradeWhenBridgeNotReady: !deps.isDesktopRuntimeMode(),
+      statusPath: deps.isDesktopRuntimeMode() ? "/ops/health?view=ready" : "/tasks/run-jobs-pipeline-status"
     });
     deps.runtimeState.desktopUpdateController = createJobsDesktopUpdateController({
       refs: deps.dom,

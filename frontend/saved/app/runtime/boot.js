@@ -131,7 +131,10 @@ export function createSavedBoot(deps) {
       baseUrl: deps.adminBridgeBase,
       fetchJson,
       applyState: applySavedAdminBridgeState,
-      awaitBridgeReady: deps.isDesktopRuntimeMode?.() ? awaitDesktopBootstrap : async () => true
+      awaitBridgeReady: deps.isDesktopRuntimeMode?.() ? awaitDesktopBootstrap : async () => true,
+      degradeOnFailure: true,
+      degradeWhenBridgeNotReady: !deps.isDesktopRuntimeMode?.(),
+      statusPath: deps.isDesktopRuntimeMode?.() ? "/ops/health?view=ready" : "/tasks/run-jobs-pipeline-status"
     });
     deps.viewState.adminBridgeWatcher?.startAdminBridgeButtonWatch();
     bindSavedJobsListDelegation({

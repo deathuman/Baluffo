@@ -14,7 +14,7 @@ export function applyJobsAdminBridgeState({
   }
   const tooltipTarget = buttonEl.closest?.("[data-admin-bridge-tooltip]") || buttonEl.parentElement || buttonEl;
   buttonEl.dataset.bridgeState = normalized;
-  buttonEl.classList.remove("online", "offline", "checking", "hidden");
+  buttonEl.classList.remove("online", "offline", "checking", "degraded", "hidden");
 
   if (normalized === "checking") {
     buttonEl.classList.add("checking");
@@ -23,6 +23,15 @@ export function applyJobsAdminBridgeState({
     setTooltip(tooltipTarget, title || "Checking admin bridge status");
     buttonEl.disabled = true;
     buttonEl.setAttribute("aria-disabled", "true");
+    return;
+  }
+  if (normalized === "degraded") {
+    buttonEl.classList.add("degraded", "checking");
+    buttonEl.textContent = label || "Admin";
+    setTooltip(buttonEl, "");
+    setTooltip(tooltipTarget, title || "Admin status delayed; open Admin anyway");
+    buttonEl.disabled = false;
+    buttonEl.setAttribute("aria-disabled", "false");
     return;
   }
 

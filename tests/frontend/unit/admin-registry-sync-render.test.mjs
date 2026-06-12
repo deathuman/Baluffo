@@ -63,3 +63,29 @@ test("admin render: ops KPI panel renders provider coverage confidence", () => {
   assert.match(el.innerHTML, /failed\/unstable 2/i);
   assert.match(el.innerHTML, /Static sources are retained/i);
 });
+
+test("admin render: registry sync details omit unrelated pending diagnostics", () => {
+  const el = makeEl();
+  renderAdminOpsKpis(el, {
+    lastSuccessfulFetchAge: "1h",
+    registrySync: {
+      activeCount: 12,
+      pendingCount: 5,
+      hiddenPendingCount: 0,
+      deferredPendingCount: 0,
+      ignoredRejectedCount: 0,
+      ignoredTombstonedCount: 0,
+      lastSyncAt: "",
+      lastSyncStatus: "never",
+      pulledCount: 0,
+      pushedCount: 0,
+      conflictCount: 0,
+      invalidRowsCount: 0,
+      summaryExact: false,
+      countBasis: "storage"
+    }
+  }, "healthy");
+
+  assert.doesNotMatch(el.innerHTML, /Provider coverage/i);
+  assert.doesNotMatch(el.innerHTML, /Dedup review-state/i);
+});

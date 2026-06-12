@@ -35,6 +35,19 @@ test("saved admin bridge state reflects checking, offline, and online states", (
 
   applySavedAdminBridgeState({
     buttonEl,
+    state: "degraded",
+    label: "Admin",
+    title: "Admin status delayed; open Admin anyway",
+    viewState
+  });
+  assert.equal(viewState.adminBridgeButtonState, "degraded");
+  assert.equal(buttonEl.classList.contains("degraded"), true);
+  assert.equal(buttonEl.textContent, "Admin");
+  assert.equal(buttonEl.disabled, false);
+  assert.equal(buttonEl.attributes["aria-disabled"], "false");
+
+  applySavedAdminBridgeState({
+    buttonEl,
     state: "online",
     label: "Admin Online",
     title: "Open admin panel",

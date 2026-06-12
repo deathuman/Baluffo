@@ -13,6 +13,9 @@
  * @param {Function} options.applyState - Callback to apply page-specific presentation: ({ state, label, title, activeAlerts }) => void
  * @param {number} [options.intervalMs] - Polling interval in milliseconds (default: 5000)
  * @param {Function} [options.awaitBridgeReady] - Optional startup gate before the first bridge poll
+ * @param {boolean} [options.degradeOnFailure] - Keep navigation available when health is delayed
+ * @param {boolean} [options.degradeWhenBridgeNotReady] - Degrade instead of offline when startup gate fails
+ * @param {string} [options.statusPath] - Lightweight status path used for polling
  * @returns {{ setAdminPageButtonState, pollAdminBridgeButtonState, startAdminBridgeButtonWatch, stopAdminBridgeButtonWatch }}
  */
 export function createAdminBridgeButtonWatcher({
@@ -21,7 +24,10 @@ export function createAdminBridgeButtonWatcher({
   fetchJson,
   applyState,
   intervalMs = 5000,
-  awaitBridgeReady = async () => true
+  awaitBridgeReady = async () => true,
+  degradeOnFailure = false,
+  degradeWhenBridgeNotReady = false,
+  statusPath = "/ops/health?view=ready"
 }) {
   let currentState = "checking";
   let pollTimer = null;
@@ -67,9 +73,10 @@ export function createAdminBridgeButtonWatcher({
 
   async function fetchHealth() {
     let lastError = null;
+    const path = String(statusPath || "/ops/health?view=ready");
     for (const candidateBase of getBridgeBaseCandidates()) {
       try {
-        return await fetchJson(candidateBase, "/ops/health?view=ready");
+        return await fetchJson(candidateBase, path);
       } catch (error) {
         lastError = error;
       }
@@ -90,6 +97,14 @@ export function createAdminBridgeButtonWatcher({
     applyState({ buttonEl, state: normalized, label, title, activeAlerts });
   }
 
+  function setDelayedStatus() {
+    setAdminPageButtonState(
+      "degraded",
+      "Admin",
+      "Admin status delayed; open Admin anyway"
+    );
+  }
+
   /**
    * Polls admin bridge health and updates button state.
    * @returns {Promise<void>}
@@ -107,12 +122,17 @@ export function createAdminBridgeButtonWatcher({
     if (!initialBridgeReadyResolved) {
       initialBridgeReadyResolved = true;
       if (!(await awaitBridgeReady())) {
-        setAdminPageButtonState("offline", "Admin Offline", "Admin bridge is offline");
+        if (degradeOnFailure && degradeWhenBridgeNotReady) setDelayedStatus();
+        else setAdminPageButtonState("offline", "Admin Offline", "Admin bridge is offline");
         return;
       }
     }
     if (currentState !== "online") {
-      setAdminPageButtonState("checking", "Admin", "Checking admin bridge status");
+      if (degradeOnFailure) {
+        setAdminPageButtonState("degraded", "Admin", "Checking Admin status; open Admin anyway");
+      } else {
+        setAdminPageButtonState("checking", "Admin", "Checking admin bridge status");
+      }
     }
     try {
       const payload = await fetchHealth();
@@ -123,7 +143,8 @@ export function createAdminBridgeButtonWatcher({
         : "Admin Online";
       setAdminPageButtonState("online", label, "Open admin panel", activeAlertCount);
     } catch {
-      setAdminPageButtonState("offline", "Admin Offline", "Admin bridge is offline");
+      if (degradeOnFailure) setDelayedStatus();
+      else setAdminPageButtonState("offline", "Admin Offline", "Admin bridge is offline");
     }
   }
 
@@ -132,7 +153,11 @@ export function createAdminBridgeButtonWatcher({
    */
   function startAdminBridgeButtonWatch() {
     if (!buttonEl || pollTimer) return;
-    setAdminPageButtonState("checking", "Admin", "Checking admin bridge status");
+    if (degradeOnFailure) {
+      setAdminPageButtonState("degraded", "Admin", "Checking Admin status; open Admin anyway");
+    } else {
+      setAdminPageButtonState("checking", "Admin", "Checking admin bridge status");
+    }
     pollAdminBridgeButtonState().catch(() => { });
     pollTimer = window.setInterval(() => {
       pollAdminBridgeButtonState().catch(() => { });

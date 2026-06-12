@@ -574,6 +574,7 @@ def get_ops_api() -> _OpsApiLike:
                 get_active_sync_runs=root_mod.SyncState.get_active_sync_runs,
                 get_sync_status_payload=root_mod.get_sync_status_payload,
                 sync_config_status=get_sync_service().sync_config_status,
+                load_sync_runtime_state=root_mod.load_sync_runtime_state,
                 get_jobs_pipeline_status_payload=root_mod.get_jobs_pipeline_status_payload,
                 get_jobs_pipeline_schedule_ops_entry=lambda: (
                     get_pipeline_schedule_service().get_ops_schedule_entry()

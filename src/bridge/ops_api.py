@@ -88,6 +88,9 @@ class OpsDeps:
         default_factory=lambda: lambda: {}
     )
     sync_config_status: Callable[[], dict[str, Any]] = field(default_factory=lambda: lambda: {})
+    load_sync_runtime_state: Callable[[], dict[str, Any]] = field(
+        default_factory=lambda: lambda: {}
+    )
 
 
 @dataclass(frozen=True)
@@ -810,7 +813,7 @@ class OpsApi:
                 try:
                     sync_status = {
                         "config": as_json_object(self._deps.sync_config_status()),
-                        "runtime": {},
+                        "runtime": as_json_object(self._deps.load_sync_runtime_state()),
                     }
                 except Exception:
                     sync_status = {}

@@ -299,9 +299,9 @@ test("admin ops controller startup uses summary ops routes before deferred detai
   controller.stopOpsHealthPolling();
 
   assert.deepEqual(calls, [
-    "/ops/dashboard-health?view=summary", "/ops/task-state?view=summary",
-    "/registry/conflicts?view=summary", "/ops/fetch-kpis?view=summary",
-    "/admin/ops-tab-counts?view=summary"
+    "/tasks/run-jobs-pipeline-status", "/ops/dashboard-health?view=summary",
+    "/ops/task-state?view=summary", "/registry/conflicts?view=summary",
+    "/ops/fetch-kpis?view=summary", "/admin/ops-tab-counts?view=summary"
   ]);
   assert.equal(historyRenderCount, 1);
 });
@@ -380,10 +380,9 @@ test("admin ops controller renders health before summary requests settle", async
 
   assert.equal(refs.adminOpsTrendsEl.textContent, "Health rendered");
   assert.equal(state.adminBusyState.opsLoad, false);
-  assert.deepEqual(calls.slice(0, 3), [
-    "/ops/dashboard-health",
-    "/ops/task-state?view=summary",
-    "/registry/conflicts?view=summary"
+  assert.deepEqual(calls.slice(0, 4), [
+    "/tasks/run-jobs-pipeline-status", "/ops/dashboard-health",
+    "/ops/task-state?view=summary", "/registry/conflicts?view=summary"
   ]);
 
   taskState.resolve({ tasks: [], count: 0, summary: true });

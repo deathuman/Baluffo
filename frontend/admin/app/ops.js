@@ -82,6 +82,7 @@ export function createAdminOpsController({
     taskStateController,
     getBridgeStatus: bridgeStatusController.getBridgeStatus,
     awaitBridgeReady,
+    loadLatestDiscoveryReport,
     markAdminStep,
     measureAdminStep,
     renderScheduler

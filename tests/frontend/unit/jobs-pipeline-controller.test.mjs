@@ -308,6 +308,7 @@ test("pollJobsPipelineStatus uses fetch_never_run alert for first-update tooltip
     });
 
     await controller.pollJobsPipelineStatus();
+    await new Promise(resolve => setImmediate(resolve));
 
     assert.equal(button.disabled, false);
     assert.equal(button.dataset.tooltip, JOBS_UPDATE_COPY.tooltipFirstRun);
