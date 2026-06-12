@@ -10,6 +10,18 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.65] - 2026-06-12
+
+### Fixed
+- Container Admin now uses the gateway pipeline status as the authoritative active-task source during running pipelines, including bounded display-only child rows for Fetch, Discovery, and Sync progress.
+- Pipeline status snapshots now expose bounded `activeChildren` rows so the gateway can keep Admin task visibility and Pipeline Abort available even when slow internal Ops routes are delayed.
+- Admin active-pipeline polling no longer depends on dashboard-health, task-state, fetch KPI, storage-health, or full diagnostics routes for current task rendering.
+
+### Notes
+- This is a container/Umbrel control-plane recovery patch. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- Full Ops diagnostics may still be delayed during running pipelines; task visibility, navigation, and Pipeline Abort are prioritized through the gateway control plane.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.64] - 2026-06-12
 
 ### Fixed
