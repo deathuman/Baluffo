@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
-from http.server import ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.request import Request, urlopen
 
@@ -37,6 +37,43 @@ def _serve_gateway(tmp_path: Path, *, bridge_process: _FakeBridgeProcess | None 
     return server, f"http://127.0.0.1:{server.server_address[1]}"
 
 
+class _TinyJsonHandler(BaseHTTPRequestHandler):
+    def log_message(self, format: str, *args: object) -> None:
+        return
+
+    def do_GET(self) -> None:
+        body = json.dumps({"ok": True, "path": self.path}).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+def _serve_internal_bridge():
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _TinyJsonHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, f"http://127.0.0.1:{server.server_address[1]}"
+
+
+def _serve_gateway_with_internal(
+    tmp_path: Path, internal_base_url: str, *, bridge_process: _FakeBridgeProcess | None = None
+):
+    state = _GatewayState(
+        data_dir=tmp_path / "data",
+        static_root=Path(__file__).resolve().parents[1],
+        internal_base_url=internal_base_url,
+        bridge_process=bridge_process or _FakeBridgeProcess(),
+    )
+    state.data_dir.mkdir(parents=True, exist_ok=True)
+    handler_cls = _make_gateway_handler(state)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler_cls)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, f"http://127.0.0.1:{server.server_address[1]}"
+
+
 def _get_json(base_url: str, path: str) -> dict:
     with urlopen(f"{base_url}{path}", timeout=2) as response:
         assert response.status == 200
@@ -53,8 +90,26 @@ def test_gateway_ready_does_not_require_internal_bridge(tmp_path: Path) -> None:
 
     assert payload["ok"] is True
     assert payload["appVersion"] == get_app_version()
+    assert payload["status"] == "degraded"
     assert payload["bridge"]["alive"] is True
+    assert payload["bridge"]["listening"] is False
     assert payload["runtime"]["mode"] == "container"
+
+
+def test_gateway_ready_reports_internal_bridge_listening(tmp_path: Path) -> None:
+    internal_server, internal_base_url = _serve_internal_bridge()
+    gateway_server, base_url = _serve_gateway_with_internal(tmp_path, internal_base_url)
+    try:
+        payload = _get_json(base_url, "/app/ready")
+    finally:
+        gateway_server.shutdown()
+        gateway_server.server_close()
+        internal_server.shutdown()
+        internal_server.server_close()
+
+    assert payload["status"] == "healthy"
+    assert payload["bridge"]["alive"] is True
+    assert payload["bridge"]["listening"] is True
 
 
 def test_gateway_pipeline_status_reads_control_snapshot(tmp_path: Path) -> None:
@@ -80,6 +135,22 @@ def test_gateway_pipeline_status_reads_control_snapshot(tmp_path: Path) -> None:
     assert payload["runId"] == "pipeline_test"
     assert payload["stage"] == "fetch"
     assert payload["bridgeAlive"] is True
+    assert payload["bridgeListening"] is False
+
+
+def test_gateway_does_not_static_fallback_admin_api_paths(tmp_path: Path) -> None:
+    internal_server, internal_base_url = _serve_internal_bridge()
+    gateway_server, base_url = _serve_gateway_with_internal(tmp_path, internal_base_url)
+    try:
+        payload = _get_json(base_url, "/admin/bootstrap")
+    finally:
+        gateway_server.shutdown()
+        gateway_server.server_close()
+        internal_server.shutdown()
+        internal_server.server_close()
+
+    assert payload["ok"] is True
+    assert payload["path"] == "/admin/bootstrap"
 
 
 def test_gateway_pipeline_abort_queues_when_bridge_is_unreachable(tmp_path: Path) -> None:

@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+from src import container_server
 from src.bridge.routes.get_routes import handle_get
 from src.bridge.routes.post_routes import handle_post
 from src.bridge.server.handler import make_handler
@@ -405,6 +406,47 @@ def test_container_mode_disables_desktop_only_routes(tmp_path: Path) -> None:
         assert handle_post(post_handler, api=api, path=path, payload={"url": "https://example.com"})
         assert post_handler.sent[-1]["status"] == 409
         assert post_handler.sent[-1]["payload"]["error"] == "not available in container mode"
+
+
+def test_container_bridge_does_not_ensure_registry_before_listen(
+    tmp_path: Path, monkeypatch
+) -> None:
+    calls: list[str] = []
+
+    class DummyConfig:
+        root = tmp_path / "root"
+        data_dir = tmp_path / "data"
+
+    DummyConfig.root.mkdir()
+    DummyConfig.data_dir.mkdir()
+
+    monkeypatch.setattr(
+        container_server.admin_bridge,
+        "configure_runtime_paths",
+        lambda _config: calls.append("configure_runtime_paths"),
+    )
+    monkeypatch.setattr(
+        container_server.admin_bridge,
+        "refresh_sync_config",
+        lambda: calls.append("refresh_sync_config"),
+    )
+    monkeypatch.setattr(
+        container_server.admin_bridge,
+        "ensure_active_registry",
+        lambda: (_ for _ in ()).throw(AssertionError("pre-listen registry ensure")),
+    )
+
+    def fake_build_bridge_api(_config):
+        calls.append("build_bridge_api")
+        return object()
+
+    monkeypatch.setattr(container_server.admin_bridge, "build_bridge_api", fake_build_bridge_api)
+
+    handler_cls, api = container_server.build_container_handler(DummyConfig())
+
+    assert handler_cls is not None
+    assert api is not None
+    assert calls == ["configure_runtime_paths", "refresh_sync_config", "build_bridge_api"]
 
 
 def test_seed_runtime_data_copies_defaults_and_never_overwrites(tmp_path: Path) -> None:

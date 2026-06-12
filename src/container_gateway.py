@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import subprocess
 import sys
 import threading
@@ -75,18 +76,33 @@ class _GatewayState:
             data_dir=Path(data_dir).resolve(),
         )
         self.internal_base_url = internal_base_url.rstrip("/")
+        parsed_internal = urlparse(self.internal_base_url)
+        self.internal_host = str(parsed_internal.hostname or "127.0.0.1")
+        self.internal_port = _coerce_port(parsed_internal.port, DEFAULT_INTERNAL_BRIDGE_PORT)
         self.bridge_process = bridge_process
         self.started_at = _now_iso()
 
     def bridge_alive(self) -> bool:
         return self.bridge_process.poll() is None
 
+    def bridge_listening(self, *, timeout: float = 0.15) -> bool:
+        if not self.bridge_alive():
+            return False
+        try:
+            with socket.create_connection(
+                (self.internal_host, self.internal_port), timeout=float(timeout)
+            ):
+                return True
+        except OSError:
+            return False
+
     def ready_payload(self) -> dict[str, Any]:
         alive = self.bridge_alive()
+        listening = self.bridge_listening()
         return {
             "ok": True,
             "service": "baluffo-container-gateway",
-            "status": "healthy" if alive else "degraded",
+            "status": "healthy" if listening else "degraded",
             "summaryView": True,
             "detailLevel": "ready",
             "timestamp": _now_iso(),
@@ -97,6 +113,7 @@ class _GatewayState:
             "bridge": {
                 "mode": "internal",
                 "alive": alive,
+                "listening": listening,
                 "exitCode": self.bridge_process.poll(),
             },
             "gateway": {"startedAt": self.started_at},
@@ -110,6 +127,7 @@ class _GatewayState:
         )
         payload["gatewayReady"] = True
         payload["bridgeAlive"] = self.bridge_alive()
+        payload["bridgeListening"] = self.bridge_listening()
         return payload
 
 

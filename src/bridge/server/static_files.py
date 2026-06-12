@@ -15,6 +15,7 @@ from src.shared.json_io import PIPELINE_GZIP_JSON_NAMES, read_json
 from src.storage_metrics import duration_ms, record_storage_read
 
 API_PREFIXES = (
+    "/admin",
     "/desktop-local-data",
     "/app",
     "/registry",

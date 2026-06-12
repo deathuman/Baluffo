@@ -93,7 +93,6 @@ def parse_args(
 def build_container_handler(config: RuntimeConfig):
     admin_bridge.configure_runtime_paths(config)
     admin_bridge.refresh_sync_config()
-    admin_bridge.ensure_active_registry()
     api = admin_bridge.build_bridge_api(config)
     static_service = StaticFileService(
         static_root=Path(config.root).resolve(),
