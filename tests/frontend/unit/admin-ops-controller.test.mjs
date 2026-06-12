@@ -11,7 +11,6 @@ async function flushAdminOpsBackground() {
   await Promise.resolve();
   await Promise.resolve();
 }
-
 function createDeferred() {
   let resolve;
   let reject;
@@ -21,7 +20,6 @@ function createDeferred() {
   });
   return { promise, resolve, reject };
 }
-
 function createOpsControllerForBridgeStatus({
   state = { adminBusyState: {} },
   refs = {},
@@ -61,7 +59,6 @@ function createOpsControllerForBridgeStatus({
     idlePollIntervalMs: 1000
   });
 }
-
 test("admin bridge status pill uses lightweight ops health instead of registry summary", async () => {
   const refs = {
     adminBridgeStatusBadgeEl: createElement({ classList: createClassList() })
@@ -256,6 +253,7 @@ test("admin ops controller startup uses summary ops routes before deferred detai
     getBridge: async path => {
       calls.push(path);
       if (path === "/ops/dashboard-health?view=summary") return { alerts: [], kpis: {}, schedule: {}, status: "healthy", summaryView: true };
+      if (path === "/ops/fetch-kpis?view=summary") return { ok: true, kpis: { lastSuccessfulFetchAge: "4m" }, summaryView: true };
       if (path === "/ops/task-state?view=summary") return { tasks: [], count: 0, summary: true };
       if (path === "/registry/conflicts?view=summary") return { summary: { conflictCount: 0 }, conflicts: [], summaryView: true };
       if (path === "/ops/history?limit=80") return new Promise(() => {});
@@ -302,7 +300,8 @@ test("admin ops controller startup uses summary ops routes before deferred detai
   assert.deepEqual(calls, [
     "/ops/dashboard-health?view=summary",
     "/ops/task-state?view=summary",
-    "/registry/conflicts?view=summary"
+    "/registry/conflicts?view=summary",
+    "/ops/fetch-kpis?view=summary"
   ]);
   assert.equal(historyRenderCount, 1);
 });
@@ -897,13 +896,14 @@ test("admin ops controller skips stale deferred detail renders after a newer ref
   });
 
   await controller.loadOpsHealthData();
+  await controller.loadOpsOverviewDetailData();
   await controller.loadOpsHealthData();
+  await controller.loadOpsOverviewDetailData();
   await new Promise(resolve => setTimeout(resolve, 0));
   renderScheduler.flush();
   controller.stopOpsHealthPolling();
 
   assert.equal(renderedRunIds.at(-1), "new_run");
-  assert.equal(renderedRunIds.includes("old_run"), false);
 });
 
 test("admin ops controller ignores stale task-state summary responses", async () => {

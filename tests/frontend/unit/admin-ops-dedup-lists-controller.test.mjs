@@ -87,6 +87,7 @@ test("admin ops controller renders health metrics and dedup lists separately", a
   });
 
   await controller.loadOpsHealthData();
+  await controller.loadOpsOverviewDetailData();
   await new Promise(resolve => setTimeout(resolve, 0));
   renderScheduler.flush();
   controller.stopOpsHealthPolling();

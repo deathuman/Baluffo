@@ -38,6 +38,8 @@ export function createAdminOverviewController({
   overviewTimeoutMs = DEFAULT_ADMIN_OVERVIEW_TIMEOUT_MS
 }) {
   let scheduledFullRefreshId = null;
+  let lastKnownUsers = [];
+  let lastKnownTotals = null;
 
   function normalizeOverviewDetail(detail) {
     const value = String(detail || "full").trim().toLowerCase();
@@ -101,12 +103,45 @@ export function createAdminOverviewController({
     });
   }
 
+  function normalizeUsers(users) {
+    return Array.isArray(users)
+      ? users.filter(user => user && typeof user === "object")
+      : [];
+  }
+
+  function normalizeTotals(totals) {
+    return totals && typeof totals === "object" && !Array.isArray(totals)
+      ? { ...totals }
+      : {};
+  }
+
+  function mergeOverviewState(payload) {
+    const incomingUsers = normalizeUsers(payload?.users);
+    const incomingTotals = normalizeTotals(payload?.totals);
+    if (incomingUsers.length) {
+      lastKnownUsers = incomingUsers.map(user => ({ ...user }));
+      lastKnownTotals = { ...incomingTotals };
+      return { users: incomingUsers, totals: incomingTotals };
+    }
+    const users = lastKnownUsers.length
+      ? lastKnownUsers.map(user => ({ ...user }))
+      : [];
+    const totals = {
+      ...(lastKnownTotals || {}),
+      ...incomingTotals
+    };
+    if (users.length) {
+      totals.usersCount = Math.max(Number(totals.usersCount || 0), users.length);
+    }
+    return { users, totals };
+  }
+
   function renderOverview(overview = {}, options = {}) {
     const payload = overview && typeof overview === "object" && !Array.isArray(overview)
       ? overview
       : {};
-    renderTotals(payload?.totals || {});
-    const users = Array.isArray(payload?.users) ? payload.users : [];
+    const { users, totals } = mergeOverviewState(payload);
+    renderTotals(totals);
     if (users.length) {
       renderUsers(users);
     } else {
@@ -116,7 +151,7 @@ export function createAdminOverviewController({
       setSourceStatus(`Loaded ${users.length} user account(s).`);
     }
     adminDispatch.dispatch({ type: adminActions.OVERVIEW_REFRESHED, payload: { at: new Date().toISOString() } });
-    return payload;
+    return { ...payload, users, totals };
   }
 
   async function refreshOverview(options = {}) {

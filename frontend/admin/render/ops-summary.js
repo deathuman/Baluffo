@@ -642,6 +642,8 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     taskFailureAttempts: metrics?.taskFailureAttempts || {},
     performanceProfile: metrics?.performanceProfile || {},
     runModel: options?.runModel || {},
+    includeDebugDiagnostics: options?.includeDebugDiagnostics !== false,
+    debugDiagnosticsLoading: Boolean(options?.debugDiagnosticsLoading),
     failureSummary: summary
   });
   if (canPatchInPlace && metricsEl.dataset.opsFetcherMetricsSig === signature) return;
@@ -1039,10 +1041,24 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   if (options?.includeDedupSection === true) {
     sectionHtmlByKey.dedup = dedupSectionHtml;
   }
-  const sectionHtml = `${taskLaneHtml}${buildOpsFetcherMetricSections(
-    sectionHtmlByKey,
-    diagnosticsByKey
-  ).map(formatOpsFetcherMetricSection).join("")}`;
+  const includeDebugDiagnostics = options?.includeDebugDiagnostics !== false;
+  const debugDiagnosticsHtml = `
+    <details class="admin-ops-metrics-details admin-ops-debug-diagnostics admin-ops-full-row">
+      <summary>Debug diagnostics</summary>
+      <div class="admin-ops-metrics-details-body">
+        <div class="admin-ops-schedule-item admin-ops-full-row">
+          Frontend counters, route timing profiles, audit artifacts, source-policy support data, task-failure attempts, and dedup support diagnostics are not loaded by default.
+          <button type="button" class="btn clear-filters-btn" data-action="load-debug-diagnostics"${options?.debugDiagnosticsLoading ? " disabled" : ""}>${options?.debugDiagnosticsLoading ? "Loading debug diagnostics..." : "Load debug diagnostics"}</button>
+        </div>
+      </div>
+    </details>
+  `;
+  const sectionHtml = includeDebugDiagnostics
+    ? `${taskLaneHtml}${buildOpsFetcherMetricSections(
+      sectionHtmlByKey,
+      diagnosticsByKey
+    ).map(formatOpsFetcherMetricSection).join("")}`
+    : `${taskLaneHtml}${debugDiagnosticsHtml}`;
   metricsEl.innerHTML = `
     <details class="admin-ops-metrics-details admin-ops-fetcher-diagnostics admin-ops-full-row">
       <summary>Fetcher diagnostics</summary>
@@ -1075,6 +1091,13 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
         const section = diagnosticsByKey[key];
         if (!section) return;
         options.onCopySectionDiagnostics(section);
+      });
+    });
+  }
+  if (typeof options?.onLoadDebugDiagnostics === "function") {
+    metricsEl.querySelectorAll('[data-action="load-debug-diagnostics"]').forEach(button => {
+      button.addEventListener("click", () => {
+        options.onLoadDebugDiagnostics();
       });
     });
   }

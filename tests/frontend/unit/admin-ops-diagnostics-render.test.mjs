@@ -80,6 +80,37 @@ test("admin render: frontend perf counters appear in ops diagnostics", () => {
   assert.match(metricsEl.innerHTML, /count 3/i);
 });
 
+test("admin render: debug diagnostics can be hidden behind explicit action", () => {
+  const debugButton = makeAttrButton({});
+  const metricsEl = makeEl({
+    '[data-action="load-debug-diagnostics"]': [debugButton]
+  });
+  let loaded = 0;
+
+  renderAdminOpsFetcherMetrics(metricsEl, {
+    latestRun: {},
+    history: {},
+    frontendPerfCounters: {
+      frontend_fetch_bridge_get_ops_health: { count: 3, p50Ms: 12, p95Ms: 48 }
+    },
+    performanceProfile: {
+      routeTimings: { routes: [{ label: "GET /ops/dashboard-health", p95Ms: 3100 }] }
+    }
+  }, null, {
+    includeDebugDiagnostics: false,
+    onLoadDebugDiagnostics: () => {
+      loaded += 1;
+    }
+  });
+
+  assert.match(metricsEl.innerHTML, /Debug diagnostics/i);
+  assert.match(metricsEl.innerHTML, /Load debug diagnostics/i);
+  assert.doesNotMatch(metricsEl.innerHTML, /Frontend fetch\/render counters/i);
+  assert.doesNotMatch(metricsEl.innerHTML, /Backend performance/i);
+  debugButton.click();
+  assert.equal(loaded, 1);
+});
+
 test("admin render: backend performance diagnostics are bounded and refreshable", () => {
   const copyButton = makeAttrButton({ "data-ops-diagnostics-copy": "performance" });
   const refreshButton = makeAttrButton({});

@@ -147,6 +147,7 @@ When `sourceRegistry=sqlite`, the registry GET routes and POST mutations read an
 | GET | `/ops/health?view=ready` | Lightweight bridge readiness check for startup/status badges. It avoids dashboard/support projections |
 | GET | `/ops/dashboard-health` | Full Admin dashboard health payload with alerts, KPIs, schedule state, and source-policy/dedup review indicators |
 | GET | `/ops/dashboard-health?view=summary` | Lightweight Admin first-paint dashboard summary. Avoids full fetch report, run history, discovery report, registry sources, fetcher metrics, storage-health detail, audit artifacts, and performance-profile hydration |
+| GET | `/ops/fetch-kpis?view=summary` | Bounded user-facing fetch KPI summary for Admin cards. It omits source-health arrays, provider coverage, dedup diagnostics, performance profile, audit artifacts, full history, and full fetch report bodies |
 | GET | `/ops/history?limit=` | Run history (sync/fetcher/discovery) |
 | GET | `/ops/task-live/<taskType>` | Detailed live task payload for `fetch`, `discovery`, or `sync` |
 | GET | `/ops/task-state` | Full current task projection for diagnostics, including task work-item/event detail when available |

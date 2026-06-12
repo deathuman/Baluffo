@@ -189,6 +189,7 @@ test("admin ops controller updates tab badges from loaded review payloads", asyn
   });
 
   await controller.loadOpsHealthData();
+  await controller.loadOpsOverviewDetailData();
   await controller.selectOpsTab("source-policy");
   await new Promise(resolve => setTimeout(resolve, 0));
   renderScheduler.flush();

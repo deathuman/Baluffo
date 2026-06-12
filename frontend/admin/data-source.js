@@ -40,6 +40,7 @@ const LIGHTWEIGHT_GET_DEDUPE_PATHS = new Set([
   "/admin/bootstrap",
   "/ops/health?view=ready",
   "/ops/dashboard-health?view=summary",
+  "/ops/fetch-kpis?view=summary",
   "/ops/task-state?view=summary",
   "/sync/status?view=summary",
   "/registry/conflicts?view=summary",

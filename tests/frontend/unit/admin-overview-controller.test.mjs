@@ -115,6 +115,25 @@ test("admin overview background full failure preserves summary UI", async () => 
   assert.deepEqual(fixture.toasts, []);
 });
 
+test("admin overview empty refresh preserves known signed-in user shell", async () => {
+  const fixture = createOverviewControllerFixture({
+    getAdminOverview: async () => ({
+      ok: true,
+      data: { users: [], totals: {}, detailLevel: "full" }
+    })
+  });
+
+  fixture.controller.renderOverview({
+    users: [{ uid: "local_andrea", name: "Andrea" }],
+    totals: { usersCount: 1, savedJobsCount: 3 },
+    detailLevel: "summary"
+  });
+  await fixture.controller.refreshOverview();
+
+  assert.equal(fixture.refs.adminUsersListEl.innerHTML, "local_andrea");
+  assert.equal(fixture.statuses.at(-1), "Loaded 1 user account(s).");
+});
+
 test("admin overview timeout produces scoped unavailable state", async () => {
   const fixture = createOverviewControllerFixture({
     overviewTimeoutMs: 1,

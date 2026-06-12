@@ -876,6 +876,51 @@ class OpsApi:
                 },
             }
 
+    def compute_ops_fetch_kpis_summary(self) -> dict[str, Any]:
+        with time_operation("ops.fetch_kpis.summary.total"):
+            with time_operation("ops.fetch_kpis.summary.history"):
+                history = list(self.get_projected_run_history().rows or [])
+                metrics = _ops_health.collect_fetch_history_metrics(
+                    history,
+                    self._deps.parse_iso,
+                    self._deps.now_utc,
+                )
+            with time_operation("ops.fetch_kpis.summary.registry"):
+                try:
+                    registry_summary = as_json_object(self._deps.get_registry_summary_payload())
+                except Exception:
+                    registry_summary = {}
+            last_success = as_json_object(metrics.get("lastSuccessFetch"))
+            latest_fetch = as_json_object(metrics.get("latestFetch"))
+            latest_summary = as_json_object(latest_fetch.get("summary"))
+            source_count = int(
+                latest_summary.get("sourceCount") or latest_summary.get("totalSources") or 0
+            )
+            failed_sources = int(latest_summary.get("failedSources") or 0)
+            kpis: dict[str, Any] = {
+                "sevenDayFetchSuccessRate": round(float(metrics["successRate7d"]), 4),
+                "avgFetchDurationMs7d": int(metrics["avgDurationMs7d"]),
+            }
+            if last_success:
+                finished_at = str(last_success.get("finishedAt") or "")
+                kpis["lastSuccessfulFetchAt"] = finished_at
+                kpis["lastSuccessfulFetchAge"] = _ops_health.format_age(
+                    finished_at,
+                    self._deps.parse_iso,
+                    self._deps.now_utc,
+                )
+            if source_count > 0:
+                kpis["failedSourceRatioLatest"] = round(failed_sources / source_count, 4)
+            if "pendingCount" in registry_summary:
+                kpis["pendingApprovalsCount"] = int(registry_summary.get("pendingCount") or 0)
+            return {
+                "ok": True,
+                "summaryView": True,
+                "detailLevel": "summary",
+                "generatedAt": self._deps.now_iso(),
+                "kpis": kpis,
+            }
+
     def compute_ops_health_ready(self) -> dict[str, Any]:
         with time_operation("ops.health.ready.total"):
             with time_operation("ops.health.ready.current_runs"):

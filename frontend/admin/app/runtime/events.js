@@ -11,7 +11,6 @@ export function bindAdminRuntimeEvents({
   refs,
   onRestoreActiveRunWatches,
   getLastJobsUrl,
-  onRefreshOverview,
   fetcherController,
   discoveryController,
   registryController,
@@ -42,7 +41,6 @@ export function bindAdminRuntimeEvents({
   ].forEach(([el, handler]) => bindUi(el, "click", handler));
 
   [
-    [refs.adminRefreshBtnEl, onRefreshOverview],
     [refs.adminRunFetcherBtnEl, () => fetcherController.triggerJobsFetcherTask({ preset: "default" })],
     [refs.adminRunFetcherIncrementalBtnEl, () => fetcherController.triggerJobsFetcherTask({ preset: "incremental" })],
     [refs.adminRunFetcherUncappedBtnEl, () => fetcherController.triggerJobsFetcherTask({ preset: "uncapped" })],

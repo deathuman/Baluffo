@@ -1509,6 +1509,25 @@ def _handle_ops_dashboard_health_route(
     return True
 
 
+def _handle_ops_fetch_kpis_route(
+    handler: BridgeResponseWriter,
+    *,
+    api: BridgeApi,
+    query: dict[str, list[str]],
+) -> bool:
+    view = str((query.get("view") or ["summary"])[0] or "summary").strip().lower()
+    if view not in {"", "summary"}:
+        handler.send_json(
+            {"ok": False, "error": f"unsupported fetch-kpis view: {view}"},
+            status=400,
+        )
+        return True
+    with time_operation("ops.fetch_kpis.summary.route_payload"):
+        payload = api.compute_ops_fetch_kpis_summary()
+    handler.send_json(payload)
+    return True
+
+
 def _handle_ops_status_routes(
     handler: BridgeResponseWriter,
     *,
@@ -1521,6 +1540,9 @@ def _handle_ops_status_routes(
 
     if path == "/ops/dashboard-health":
         return _handle_ops_dashboard_health_route(handler, api=api, query=query)
+
+    if path == "/ops/fetch-kpis":
+        return _handle_ops_fetch_kpis_route(handler, api=api, query=query)
 
     if path == "/ops/history":
         limit_raw = (query.get("limit") or ["30"])[0]

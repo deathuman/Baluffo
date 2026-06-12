@@ -18,6 +18,7 @@ import { renderAdminRegistryConflicts } from "../../render/registry-conflicts.js
 import { setTooltip } from "../../../shared/ui/index.js?v=6";
 
 const OPS_TASK_STATE_SUMMARY_PATH = "/ops/task-state?view=summary";
+const OPS_FETCH_KPIS_SUMMARY_PATH = "/ops/fetch-kpis?view=summary";
 const OPS_HISTORY_STARTUP_PATH = "/ops/history?limit=2";
 const OPS_HISTORY_DETAIL_PATH = "/ops/history?limit=80";
 const OPS_FETCHER_METRICS_DETAIL_PATH = "/ops/fetcher-metrics?windowRuns=80";
@@ -203,6 +204,8 @@ export function createOpsHealthController({
   let initialBridgeReadyResolved = false;
   let opsRenderToken = 0;
   let opsOverviewDetailLoad = null;
+  let opsOverviewDetailLoadToken = 0;
+  let fetchKpisLoad = null;
   let opsHistoryLoad = null;
   let opsHistoryLoadLimit = 0;
   let sourcePolicyDetailLoad = null;
@@ -234,6 +237,93 @@ export function createOpsHealthController({
       }
       throw err;
     }
+  }
+
+  function isPlainObject(value) {
+    return value && typeof value === "object" && !Array.isArray(value);
+  }
+
+  function hasUsefulValue(value) {
+    if (value === null || value === undefined) return false;
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+      return Boolean(normalized)
+        && normalized !== "unknown"
+        && normalized !== "never"
+        && normalized !== "none"
+        && normalized !== "not loaded yet";
+    }
+    return true;
+  }
+
+  const FETCH_KPI_ZERO_CAN_BE_PLACEHOLDER = new Set([
+    "sevenDayFetchSuccessRate",
+    "avgFetchDurationMs7d",
+    "failedSourceRatioLatest"
+  ]);
+
+  function mergeKpis(existing = {}, incoming = {}, { preserveExisting = false } = {}) {
+    const result = isPlainObject(existing) ? { ...existing } : {};
+    if (!isPlainObject(incoming)) return result;
+    Object.entries(incoming).forEach(([key, value]) => {
+      if (key === "registrySync" && isPlainObject(value)) {
+        result.registrySync = mergePlainObjects(
+          isPlainObject(result.registrySync) ? result.registrySync : {},
+          value,
+          { preserveUnknowns: preserveExisting }
+        );
+        return;
+      }
+      if (
+        preserveExisting
+        && Object.prototype.hasOwnProperty.call(result, key)
+        && hasUsefulValue(result[key])
+        && (
+          !hasUsefulValue(value)
+          || (FETCH_KPI_ZERO_CAN_BE_PLACEHOLDER.has(key) && Number(value) === 0)
+        )
+      ) {
+        return;
+      }
+      if (hasUsefulValue(value) || !Object.prototype.hasOwnProperty.call(result, key)) {
+        result[key] = value;
+      }
+    });
+    return result;
+  }
+
+  function mergePlainObjects(existing = {}, incoming = {}, { preserveUnknowns = false } = {}) {
+    const result = isPlainObject(existing) ? { ...existing } : {};
+    if (!isPlainObject(incoming)) return result;
+    Object.entries(incoming).forEach(([key, value]) => {
+      if (
+        preserveUnknowns
+        && Object.prototype.hasOwnProperty.call(result, key)
+        && hasUsefulValue(result[key])
+        && !hasUsefulValue(value)
+      ) {
+        return;
+      }
+      result[key] = value;
+    });
+    return result;
+  }
+
+  function mergeOpsHealth(existing = {}, incoming = {}, { summary = false } = {}) {
+    const base = isPlainObject(existing) ? existing : {};
+    const patch = isPlainObject(incoming) ? incoming : {};
+    const preserveExisting = Boolean(summary);
+    const merged = {
+      ...base,
+      ...patch,
+      kpis: mergeKpis(base.kpis, patch.kpis, { preserveExisting })
+    };
+    if (isPlainObject(base.schedule) || isPlainObject(patch.schedule)) {
+      merged.schedule = mergePlainObjects(base.schedule, patch.schedule, {
+        preserveUnknowns: preserveExisting
+      });
+    }
+    return merged;
   }
 
   function getOpsTabPanels() {
@@ -833,6 +923,9 @@ export function createOpsHealthController({
           onRefreshAuditArtifacts: handleRefreshAuditArtifacts,
           onRefreshTaskFailureAttempts: handleRefreshTaskFailureAttempts,
           onRefreshPerformanceProfile: handleRefreshPerformanceProfile,
+          onLoadDebugDiagnostics: handleLoadDebugDiagnostics,
+          includeDebugDiagnostics: Boolean(state.opsDebugDiagnosticsLoaded),
+          debugDiagnosticsLoading: Boolean(state.opsDebugDiagnosticsLoading),
           runModel
         }
       );
@@ -916,6 +1009,10 @@ export function createOpsHealthController({
   }
 
   function loadOpsOverviewDetailData(renderToken = opsRenderToken) {
+    if (opsOverviewDetailLoad && opsOverviewDetailLoadToken === renderToken) return opsOverviewDetailLoad;
+    state.opsDebugDiagnosticsLoading = true;
+    opsOverviewDetailLoadToken = renderToken;
+    renderDeferredOverviewDetails(renderToken);
     const detailLoad = (async () => {
       const [
         historyResult,
@@ -930,6 +1027,7 @@ export function createOpsHealthController({
         getBridge(OPS_TASK_FAILURE_ATTEMPTS_PATH),
         getBridge(OPS_PERFORMANCE_PROFILE_PATH)
       ]);
+      if (renderToken !== opsRenderToken) return;
       let changed = false;
       if (
         historyResult.status === "fulfilled"
@@ -978,14 +1076,26 @@ export function createOpsHealthController({
         state.latestOpsPerformanceProfilePayload = performanceProfileResult.value;
         changed = true;
       }
-      if (changed) renderDeferredOverviewDetails(renderToken);
+      if (changed) {
+        state.opsDebugDiagnosticsLoaded = true;
+        renderDeferredOverviewDetails(renderToken);
+      }
     })().finally(() => {
       if (opsOverviewDetailLoad === detailLoad) {
         opsOverviewDetailLoad = null;
+        opsOverviewDetailLoadToken = 0;
+        state.opsDebugDiagnosticsLoading = false;
+        renderDeferredOverviewDetails(renderToken);
       }
     });
     opsOverviewDetailLoad = detailLoad;
     return opsOverviewDetailLoad;
+  }
+
+  function handleLoadDebugDiagnostics() {
+    return loadOpsOverviewDetailData(opsRenderToken).catch(err => {
+      showToast(`Could not load debug diagnostics: ${getErrorMessage(err)}`, "error");
+    });
   }
 
   function scheduleOpsOverviewDetailData(renderToken = opsRenderToken) {
@@ -1063,6 +1173,25 @@ export function createOpsHealthController({
 
   function getCachedTaskStatePayload() {
     return getObjectValue(state.latestOpsTaskStatePayload);
+  }
+
+  function hasActiveRows(taskStatePayload = getCachedTaskStatePayload()) {
+    const rows = Array.isArray(taskStatePayload?.tasks) ? taskStatePayload.tasks : [];
+    return rows.some(row => row && row.active !== false && !row.finishedAt);
+  }
+
+  function hasOptimisticRows() {
+    return Boolean(state.discoveryOptimisticRun || state.fetchOptimisticRun);
+  }
+
+  function hasFetchKpiValues(kpis = state.latestOpsHealthCache?.kpis || {}) {
+    return [
+      "lastSuccessfulFetchAt",
+      "lastSuccessfulFetchAge",
+      "sevenDayFetchSuccessRate",
+      "avgFetchDurationMs7d",
+      "failedSourceRatioLatest"
+    ].some(key => hasUsefulValue(kpis?.[key]));
   }
 
   function deriveLiveRunContext(taskStatePayload, registryConflictsPayload) {
@@ -1167,6 +1296,9 @@ export function createOpsHealthController({
             onRefreshAuditArtifacts: handleRefreshAuditArtifacts,
             onRefreshTaskFailureAttempts: handleRefreshTaskFailureAttempts,
             onRefreshPerformanceProfile: handleRefreshPerformanceProfile,
+            onLoadDebugDiagnostics: handleLoadDebugDiagnostics,
+            includeDebugDiagnostics: Boolean(state.opsDebugDiagnosticsLoaded),
+            debugDiagnosticsLoading: Boolean(state.opsDebugDiagnosticsLoading),
             runModel
           }
         );
@@ -1223,13 +1355,13 @@ export function createOpsHealthController({
       schedule: payload?.schedule && typeof payload.schedule === "object" ? payload.schedule : {},
       appVersion: String(payload?.app?.version || "")
     };
-    state.latestOpsHealthCache = health;
+    state.latestOpsHealthCache = mergeOpsHealth(state.latestOpsHealthCache || {}, health, { summary: true });
     state.latestOpsTaskStatePayload = taskStatePayload;
     state.latestOpsHistoryPayload = historyPayload;
     state.taskStateUnavailable = false;
     state.opsHistoryLoaded = true;
     state.opsHistoryFullLoaded = false;
-    renderOpsHealthSnapshot(renderToken, health, {
+    renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || health, {
       taskStatePayload,
       registryConflictsPayload: getCachedRegistryConflictsPayload(),
       syncTaskState: true,
@@ -1239,10 +1371,17 @@ export function createOpsHealthController({
       renderActivityPanel: true,
       schedulePolling: false
     });
+    loadFetchKpisSummaryData(renderToken, { silent: true }).catch(() => {});
+    if (hasActiveRows(taskStatePayload)) {
+      maybeUnrefTimer(setTimeout(() => {
+        loadTaskStateSummaryData(renderToken, { fromPoll: true, summary: true }).catch(() => {});
+      }, 0));
+    }
     return { taskStatePayload, historyPayload };
   }
 
   async function loadTaskStateSummaryData(renderToken, options = {}) {
+    const previousTaskStatePayload = getCachedTaskStatePayload();
     try {
       const payload = await measuredGetBridge(
         OPS_TASK_STATE_SUMMARY_PATH,
@@ -1256,12 +1395,17 @@ export function createOpsHealthController({
       });
       state.latestOpsTaskStatePayload = taskStatePayload || {};
       state.taskStateUnavailable = Boolean(taskStatePayload?.taskStateUnavailable);
+      const renderActivityPanel = Boolean(options?.summary)
+        || !options?.fromPoll
+        || hasActiveRows(taskStatePayload)
+        || hasActiveRows(previousTaskStatePayload)
+        || hasOptimisticRows();
       renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || {}, {
         taskStatePayload,
         registryConflictsPayload: getCachedRegistryConflictsPayload(),
         syncTaskState: true,
-        renderDeferredPanels: !options?.summary,
-        renderActivityPanel: Boolean(options?.summary)
+        renderDeferredPanels: false,
+        renderActivityPanel
       });
       return taskStatePayload;
     } catch (err) {
@@ -1272,12 +1416,17 @@ export function createOpsHealthController({
       });
       state.latestOpsTaskStatePayload = taskStatePayload || {};
       state.taskStateUnavailable = true;
+      const renderActivityPanel = Boolean(options?.summary)
+        || !options?.fromPoll
+        || hasActiveRows(taskStatePayload)
+        || hasActiveRows(previousTaskStatePayload)
+        || hasOptimisticRows();
       renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || {}, {
         taskStatePayload,
         registryConflictsPayload: getCachedRegistryConflictsPayload(),
         syncTaskState: true,
-        renderDeferredPanels: !options?.summary,
-        renderActivityPanel: Boolean(options?.summary)
+        renderDeferredPanels: false,
+        renderActivityPanel
       });
       return null;
     }
@@ -1326,6 +1475,35 @@ export function createOpsHealthController({
     }
   }
 
+  async function loadFetchKpisSummaryData(renderToken = opsRenderToken, options = {}) {
+    if (!fetchKpisLoad) {
+      fetchKpisLoad = measuredGetBridge(
+        OPS_FETCH_KPIS_SUMMARY_PATH,
+        "admin_ops_fetch_kpis_summary_fetch",
+        { enabled: !options?.fromPoll && !options?.silent }
+      ).finally(() => {
+        fetchKpisLoad = null;
+      });
+    }
+    const payload = await fetchKpisLoad;
+    if (renderToken !== opsRenderToken) return payload || null;
+    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+      state.latestOpsHealthCache = mergeOpsHealth(
+        state.latestOpsHealthCache || {},
+        { kpis: payload.kpis || {}, summaryView: true },
+        { summary: true }
+      );
+      renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || {}, {
+        taskStatePayload: getCachedTaskStatePayload(),
+        registryConflictsPayload: getCachedRegistryConflictsPayload(),
+        renderDeferredPanels: false,
+        renderActivityPanel: false,
+        schedulePolling: false
+      });
+    }
+    return payload || null;
+  }
+
   async function loadOpsHealthData(options = {}) {
     if (state.adminBusyState.opsLoad) {
       if (options?.fromPoll) scheduleOpsHealthPolling(idlePollIntervalMs);
@@ -1362,14 +1540,18 @@ export function createOpsHealthController({
       }
       if (renderToken !== opsRenderToken) return;
       if (health && typeof health === "object" && !Array.isArray(health)) {
-        state.latestOpsHealthCache = health || null;
+        state.latestOpsHealthCache = mergeOpsHealth(
+          state.latestOpsHealthCache || {},
+          health || {},
+          { summary: useSummaryView }
+        );
       }
-      renderOpsHealthSnapshot(renderToken, health || {}, {
+      renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || health || {}, {
         taskStatePayload: getCachedTaskStatePayload(),
         registryConflictsPayload: getCachedRegistryConflictsPayload(),
         syncTaskState: Boolean(state.latestOpsTaskStatePayload),
         dispatchRefresh: true,
-        scheduleDetails: !useSummaryView,
+        scheduleDetails: false,
         renderDeferredPanels: false
       });
       if (measureFirstRender) {
@@ -1383,6 +1565,9 @@ export function createOpsHealthController({
       }
       loadTaskStateSummaryData(renderToken, options).catch(() => {});
       loadRegistryConflictsSummaryData(renderToken, options).catch(() => {});
+      if (!hasFetchKpiValues(state.latestOpsHealthCache?.kpis || {})) {
+        loadFetchKpisSummaryData(renderToken, { silent: Boolean(options?.fromPoll) }).catch(() => {});
+      }
     } catch (err) {
       if (measureFirstRender) {
         markStep("admin_ops_health_first_render_done", {

@@ -98,6 +98,7 @@ test("admin ops controller lazy-loads discovery audit artifacts into metrics", a
   });
 
   await controller.loadOpsHealthData();
+  await controller.loadOpsOverviewDetailData();
   await new Promise(resolve => setTimeout(resolve, 0));
   await flushAdminOpsBackground();
   renderScheduler.flush();

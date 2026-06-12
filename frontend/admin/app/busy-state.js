@@ -93,7 +93,6 @@ export function syncAdminBusyUi({
   setButtonBusy(refs.adminRunFetcherForceBtnEl, fetcherBusy || lockBusy, fetcherPresetMeta.force_full.busyLabel);
   setButtonBusy(refs.adminRetryFailedBtnEl, fetcherBusy || lockBusy, fetcherPresetMeta.retry_failed.busyLabel);
   setButtonBusy(refs.adminRefreshReportBtnEl, Boolean(busyState.fetcherReportLoad), "Loading Report...");
-  setButtonBusy(refs.adminRefreshBtnEl, false);
   setButtonBusy(refs.adminRefreshOpsBtnEl, opsBusy, "Refreshing...");
   setButtonBusy(refs.adminSyncTestBtnEl, syncBusy || lockBusy, "Testing...");
   setButtonBusy(refs.adminSyncPullBtnEl, syncBusy || lockBusy, "Pull Running...");

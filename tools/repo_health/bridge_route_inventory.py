@@ -300,6 +300,14 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "support",
         caller_files=ADMIN_OPS_CALLERS,
     ),
+    _route(
+        "GET",
+        "/ops/fetch-kpis",
+        EXACT,
+        GET_HANDLER,
+        "support",
+        caller_files=ADMIN_OPS_CALLERS,
+    ),
     _route("GET", "/ops/history", EXACT, GET_HANDLER, "support", caller_files=ADMIN_OPS_CALLERS),
     _route(
         "GET",

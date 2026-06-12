@@ -77,9 +77,18 @@ def build_bridge_api(
     check_registry_conflicts: Callable[[dict[str, Any] | None], dict[str, Any]] | None = None,
     load_registry_conflict_adjudication: Callable[[], dict[str, Any]] | None = None,
     compute_ops_dashboard_health_summary: Callable[[], dict[str, Any]] | None = None,
+    compute_ops_fetch_kpis_summary: Callable[[], dict[str, Any]] | None = None,
     get_current_task_state_summary_payload: Callable[[], dict[str, Any]] | None = None,
     abort_task: Callable[[dict[str, Any] | None], tuple[int, dict[str, Any]]] | None = None,
 ) -> BridgeApi:
+    def _empty_fetch_kpis_summary() -> dict[str, Any]:
+        return {
+            "ok": True,
+            "summaryView": True,
+            "detailLevel": "summary",
+            "kpis": {},
+        }
+
     return BridgeApi(
         runtime_config=config,
         app_version=app_version,
@@ -137,6 +146,9 @@ def build_bridge_api(
         compute_ops_dashboard_health=compute_ops_dashboard_health,
         compute_ops_dashboard_health_summary=(
             compute_ops_dashboard_health_summary or compute_ops_dashboard_health
+        ),
+        compute_ops_fetch_kpis_summary=(
+            compute_ops_fetch_kpis_summary or _empty_fetch_kpis_summary
         ),
         get_storage_health_payload=get_storage_health_payload,
         compute_fetcher_metrics=compute_fetcher_metrics,
