@@ -10,9 +10,16 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.62] - 2026-06-12
+
 ### Changed
 - Container/Umbrel runtime now uses a lightweight public gateway in front of the internal bridge so `/app/ready`, pipeline status, startup static assets, and pipeline abort intake remain responsive while heavier diagnostics or pipeline work are busy.
 - Container Jobs startup now keeps the first page on the bounded startup feed and defers the full light-feed refresh until explicit reload or a later safe refresh path, avoiding automatic multi-MiB feed reads before first usable UI.
+
+### Notes
+- This is a container/Umbrel control-plane recovery patch. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- Pipeline status and pipeline abort are now resilient through the public gateway; fetch/discovery child abort still depends on the internal bridge.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
 
 ## [0.2.61] - 2026-06-12
 
