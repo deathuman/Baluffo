@@ -63,6 +63,7 @@ def test_bundle_contains_runtime_assets_and_seeded_runtime_data_only() -> None:
         assert (output / "RELEASE_GUIDE.md").exists()
         assert (output / "app" / "update-manifest.json").exists()
         assert (output / "DESKTOP_UPDATE_MANIFEST_SCHEMA.json").exists()
+        assert (version_root / "admin.html").exists()
         assert (version_root / "frontend" / "admin" / "app.js").exists()
         assert (version_root / "src" / "admin_bridge.py").exists()
         assert (version_root / "src" / "app_version.py").exists()

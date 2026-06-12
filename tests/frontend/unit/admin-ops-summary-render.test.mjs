@@ -32,11 +32,11 @@ test("admin render: schedule/trends/history render deterministic core text", () 
     },
     { kpis: { lastRunResult: { type: "fetch", status: "ok", finishedAt: "2026-03-08T08:00:00.000Z" } } }
   );
-  assert.match(scheduleEl.innerHTML, /every 6h/i);
   assert.match(scheduleEl.innerHTML, /Pipeline/i);
   assert.match(scheduleEl.innerHTML, /data-action="save-pipeline-schedule"/i);
-  assert.match(scheduleEl.innerHTML, /manual task/i);
-  assert.match(scheduleEl.innerHTML, /fetch ok/i);
+  assert.doesNotMatch(scheduleEl.innerHTML, /<strong>Fetcher<\/strong>/i);
+  assert.doesNotMatch(scheduleEl.innerHTML, /<strong>Discovery<\/strong>/i);
+  assert.doesNotMatch(scheduleEl.innerHTML, /<strong>Last Run<\/strong>/i);
 
   const trendsEl = makeEl();
   renderAdminOpsTrends(trendsEl, [

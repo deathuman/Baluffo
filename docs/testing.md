@@ -223,6 +223,8 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | GameDevMap discovery lane | `python -m pytest -q tests/source_discovery -k gamedevmap`, then `python -m pytest -q tests/source_discovery`, then `npm run lint:precommit` |
 | Match developer lane directly | `python -m pytest tests -q -m "not slow and not packaging and not release" --color=no --basetemp=.tmp/pytest/basetemp` |
 
+When a Baluffo task asks for a “fresh build” without saying container, Docker, GHCR, or Umbrel image, treat that as the desktop portable build: `npm run build:portable-exe`.
+
 **Container / Umbrel targeted checks:**
 
 | Goal | Command |
@@ -353,7 +355,7 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
   - the bridge badge reaches `Bridge Online`,
   - `#admin-ops-trends` does not remain stuck on `Loading operations health...`,
   - `#admin-source-status` does not remain stuck on `Loading admin overview...`,
-  - startup requests use `/ops/health?view=ready`, `/ops/dashboard-health?view=summary`, `/ops/fetch-kpis?view=summary`, `/ops/task-state?view=summary`, `/sync/status?view=summary`, and `/registry/conflicts?view=summary`, not the full multi-MiB diagnostic routes.
+  - startup requests use `/ops/health?view=ready`, `/ops/dashboard-health?view=summary`, `/ops/fetch-kpis?view=summary`, `/ops/task-state?view=summary`, `/sync/status?view=summary`, `/registry/conflicts?view=summary`, and `/admin/ops-tab-counts?view=summary`, not the full multi-MiB diagnostic routes.
 - Use this lane for Admin startup, ops-summary payloads, desktop local-data overview, and packaged bridge availability changes.
 - For Umbrel page-load performance fixes, package/browser startup gates are supporting evidence only. Capture Chrome DevTools Performance traces for Admin cold/warm, Jobs cold/warm, and Jobs-to-Admin navigation before publishing; acceptance is based on Chrome-visible shell/useful-content timing, LCP element, request waterfall, long tasks, and absence of first-load full diagnostics.
 

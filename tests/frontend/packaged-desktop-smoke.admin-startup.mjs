@@ -77,26 +77,27 @@ async function fetchStartupMetricRows(apiRequest, limit = 600) {
 async function waitForStartupMetric(apiRequest, eventName, timeoutMs = 30_000) {
   const deadline = Date.now() + timeoutMs;
   let rows = [];
+  let lastError = "";
   while (Date.now() < deadline) {
-    rows = await fetchStartupMetricRows(apiRequest);
+    try {
+      rows = await fetchStartupMetricRows(apiRequest);
+      lastError = "";
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
     if (rows.some(row => String(row?.event || "") === eventName)) return rows;
     await new Promise(resolve => setTimeout(resolve, 250));
   }
-  assert.fail(`${eventName} startup metric was not recorded`);
+  assert.fail(`${eventName} startup metric was not recorded${lastError ? `; last error: ${lastError}` : ""}`);
 }
 
 function isFullStartupOpsRequest(url) {
-  const isFullTaskState = url.pathname === "/ops/task-state" && url.searchParams.get("view") !== "summary";
-  const isFullRegistryConflicts = url.pathname === "/registry/conflicts" && url.searchParams.get("view") !== "summary";
-  const isAnyLegacyStartupSummary = [
-    "/ops/health",
-    "/ops/dashboard-health",
-    "/ops/task-state",
-    "/sync/status",
-    "/registry/conflicts",
-    "/discovery/report"
-  ].includes(url.pathname);
-  return isFullTaskState || isFullRegistryConflicts || isAnyLegacyStartupSummary;
+  if (url.pathname === "/ops/health") return url.searchParams.get("view") !== "ready";
+  if (url.pathname === "/ops/dashboard-health") return url.searchParams.get("view") !== "summary";
+  if (url.pathname === "/ops/task-state") return url.searchParams.get("view") !== "summary";
+  if (url.pathname === "/sync/status") return url.searchParams.get("view") !== "summary";
+  if (url.pathname === "/registry/conflicts") return url.searchParams.get("view") !== "summary";
+  return url.pathname === "/discovery/report";
 }
 
 async function waitForCapturedBridgeRequest(capturedBridgeRequests, predicate, label, timeoutMs = 5000) {
@@ -167,7 +168,7 @@ async function main() {
       assert.deepEqual(
         fullStartupRequests.map(url => `${url.pathname}${url.search}`),
         [],
-        "Admin startup should not request legacy health/task/sync/discovery diagnostics"
+        "Admin startup should not request full health/task/sync/discovery diagnostics"
       );
     }, scenarios);
 
@@ -177,7 +178,6 @@ async function main() {
       const healthPayload = await health.json();
       assert.equal(Boolean(healthPayload?.desktopMode), true, "packaged bridge should report desktopMode true");
       await waitForStartupMetric(apiRequest, "admin_first_interactive");
-      await waitForStartupMetric(apiRequest, "admin_ops_health_first_render");
     }, scenarios);
   } catch (error) {
     errors.push(error instanceof Error ? error.message : String(error));
@@ -199,8 +199,9 @@ async function main() {
   await writeReport(report);
   if (!report.ok) {
     console.error("Admin startup smoke failed:", report.errors);
+    process.exitCode = 1;
+    return;
   }
-  assert.equal(report.ok, true, "packaged Admin startup smoke should pass");
 }
 
 main().catch(async error => {

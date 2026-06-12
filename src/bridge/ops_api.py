@@ -797,6 +797,8 @@ class OpsApi:
 
     def compute_ops_dashboard_health_summary(self) -> dict[str, Any]:
         with time_operation("ops.dashboard_health.summary.total"):
+            with time_operation("ops.dashboard_health.summary.history"):
+                history = list(self.get_projected_run_history().rows or [])
             with time_operation("ops.dashboard_health.summary.registry"):
                 try:
                     registry_summary = as_json_object(self._deps.get_registry_summary_payload())
@@ -833,10 +835,23 @@ class OpsApi:
                 summary=registry_summary,
                 tombstones={},
                 sync_status=sync_status,
-                history=[],
+                history=history,
             )
             pending_count = int(registry_summary.get("pendingCount") or 0)
             sync_ready = bool(as_json_object(sync_status.get("config")).get("ready", True))
+            alert_result = _ops_health.evaluate_alerts_summary(
+                history=history,
+                pending_count=pending_count,
+                load_alert_state_fn=self.load_alert_state,
+                save_alert_state_fn=self.save_alert_state,
+                parse_iso=self._deps.parse_iso,
+                now_iso=self._deps.now_iso,
+                now_utc=self._deps.now_utc,
+            )
+            alerts = list(alert_result.get("alerts") or [])
+            severity = _ops_health.derive_ops_severity(alerts)
+            if not sync_ready and severity == "healthy":
+                severity = "warning"
             return {
                 "service": "baluffo-bridge",
                 "desktopMode": bool(self._deps.desktop_mode),
@@ -853,18 +868,20 @@ class OpsApi:
                     "lastActivityAt": str(owner_state.get("lastActivityAt") or ""),
                     "idleTimeoutSeconds": float(owner_state.get("idleTimeoutSeconds") or 0.0),
                 },
-                "status": "healthy" if sync_ready else "warning",
+                "status": severity,
                 "summaryView": True,
                 "detailLevel": "summary",
+                "alertsEvaluated": True,
+                "alertBasis": "history",
                 "kpis": {
                     "pendingApprovalsCount": pending_count,
                     "sourcePolicyRecommendationExport": {},
                     "registrySync": registry_sync,
                 },
                 "schedule": schedule,
-                "alerts": [],
-                "suppressedAlertsCount": 0,
-                "historyCount": 0,
+                "alerts": alerts,
+                "suppressedAlertsCount": int(alert_result.get("suppressedCount") or 0),
+                "historyCount": len(history),
                 "updater": {
                     "currentVersion": str(self._deps.app_version or ""),
                     "latestVersion": "",
@@ -913,11 +930,26 @@ class OpsApi:
                 kpis["failedSourceRatioLatest"] = round(failed_sources / source_count, 4)
             if "pendingCount" in registry_summary:
                 kpis["pendingApprovalsCount"] = int(registry_summary.get("pendingCount") or 0)
+            alert_result = _ops_health.evaluate_alerts_summary(
+                history=history,
+                pending_count=int(registry_summary.get("pendingCount") or 0),
+                load_alert_state_fn=self.load_alert_state,
+                save_alert_state_fn=self.save_alert_state,
+                parse_iso=self._deps.parse_iso,
+                now_iso=self._deps.now_iso,
+                now_utc=self._deps.now_utc,
+            )
+            alerts = list(alert_result.get("alerts") or [])
             return {
                 "ok": True,
                 "summaryView": True,
                 "detailLevel": "summary",
                 "generatedAt": self._deps.now_iso(),
+                "status": _ops_health.derive_ops_severity(alerts),
+                "alerts": alerts,
+                "suppressedAlertsCount": int(alert_result.get("suppressedCount") or 0),
+                "alertsEvaluated": True,
+                "alertBasis": "history",
                 "kpis": kpis,
             }
 

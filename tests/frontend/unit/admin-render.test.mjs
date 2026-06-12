@@ -116,6 +116,13 @@ test("admin render: fetcher metrics render failure buckets and examples", () => 
   assert.match(metricsEl.innerHTML, /High-cost low-yield/i);
 });
 
+test("admin render: empty fetcher metrics render no orphan heading", () => {
+  const metricsEl = makeEl();
+  renderAdminOpsFetcherMetrics(metricsEl, null);
+
+  assert.equal(metricsEl.innerHTML, "");
+});
+
 test("admin render: signature patching skips redundant alerts/kpis/schedule rewrites", () => {
   const alertsEl = makeEl();
   alertsEl.dataset = {};
@@ -146,7 +153,7 @@ test("admin render: signature patching skips redundant alerts/kpis/schedule rewr
 
   const scheduleEl = makeEl();
   scheduleEl.dataset = {};
-  const schedule = { fetcher: { intervalHours: 6 }, discovery: { note: "manual_task" } };
+  const schedule = { pipeline: { enabled: true, intervalHours: 12 } };
   const latest = { kpis: { lastRunResult: { type: "fetch", status: "ok", finishedAt: "2026-03-08T08:00:00.000Z" } } };
   renderAdminOpsSchedule(scheduleEl, schedule, latest);
   assert.ok(scheduleEl.dataset.opsScheduleSig);

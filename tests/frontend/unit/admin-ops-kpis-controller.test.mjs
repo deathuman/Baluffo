@@ -147,6 +147,85 @@ test("admin ops summary polls preserve previously loaded fetch KPI values", asyn
   assert.equal(state.latestOpsHealthCache.kpis.failedSourceRatioLatest, 0.22);
 });
 
+test("admin ops lightweight polls cannot downgrade authoritative warning state", async () => {
+  const state = createOpsState({
+    latestOpsHealthCache: {
+      alertsEvaluated: true,
+      alerts: [
+        { id: "stale_fetch", severity: "warning", message: "Last fetch is stale." }
+      ],
+      status: "warning",
+      kpis: {
+        lastSuccessfulFetchAge: "26h",
+        sevenDayFetchSuccessRate: 0.91
+      }
+    }
+  });
+  const controller = createAdminOpsController(createBaseControllerOptions({
+    state,
+    getBridge: async path => {
+      if (path === "/ops/dashboard-health?view=summary") {
+        return {
+          alerts: [],
+          kpis: {},
+          schedule: {},
+          status: "healthy",
+          summaryView: true
+        };
+      }
+      if (path === "/ops/task-state?view=summary") return { tasks: [], count: 0, summary: true };
+      if (path === "/registry/conflicts?view=summary") return { summary: { conflictCount: 0 }, conflicts: [], summaryView: true };
+      throw new Error(`unexpected path ${path}`);
+    }
+  }));
+
+  await controller.loadOpsHealthData({ summary: true, fromPoll: true });
+  await flushAdminOpsBackground();
+  controller.stopOpsHealthPolling();
+
+  assert.equal(state.latestOpsHealthCache.status, "warning");
+  assert.equal(state.latestOpsHealthCache.alerts[0].id, "stale_fetch");
+  assert.equal(state.latestOpsHealthCache.kpis.lastSuccessfulFetchAge, "26h");
+});
+
+test("admin ops evaluated summary can clear a previous warning state", async () => {
+  const state = createOpsState({
+    latestOpsHealthCache: {
+      alertsEvaluated: true,
+      alerts: [
+        { id: "stale_fetch", severity: "warning", message: "Last fetch is stale." }
+      ],
+      status: "warning",
+      kpis: {}
+    }
+  });
+  const controller = createAdminOpsController(createBaseControllerOptions({
+    state,
+    getBridge: async path => {
+      if (path === "/ops/dashboard-health?view=summary") {
+        return {
+          alerts: [],
+          alertsEvaluated: true,
+          kpis: {},
+          schedule: {},
+          status: "healthy",
+          summaryView: true
+        };
+      }
+      if (path === "/ops/task-state?view=summary") return { tasks: [], count: 0, summary: true };
+      if (path === "/registry/conflicts?view=summary") return { summary: { conflictCount: 0 }, conflicts: [], summaryView: true };
+      throw new Error(`unexpected path ${path}`);
+    }
+  }));
+
+  await controller.loadOpsHealthData({ summary: true, fromPoll: true });
+  await flushAdminOpsBackground();
+  controller.stopOpsHealthPolling();
+
+  assert.equal(state.latestOpsHealthCache.status, "healthy");
+  assert.deepEqual(state.latestOpsHealthCache.alerts, []);
+});
+
 test("admin ops fetch KPI coalescing applies to the latest render token", async () => {
   const state = createOpsState();
   const renderedKpis = [];
@@ -177,6 +256,54 @@ test("admin ops fetch KPI coalescing applies to the latest render token", async 
 
   assert.equal(fetchKpisCalls, 1);
   assert.equal(renderedKpis.at(-1).lastSuccessfulFetchAge, "3m");
+});
+
+test("admin registry and sync disclosure backfills missing summary data", async () => {
+  const state = createOpsState({
+    latestOpsHealthCache: {
+      alerts: [],
+      status: "healthy",
+      kpis: {}
+    }
+  });
+  const calls = [];
+  const renderedKpis = [];
+  const controller = createAdminOpsController(createBaseControllerOptions({
+    state,
+    getBridge: async path => {
+      calls.push(path);
+      if (path === "/ops/dashboard-health?view=summary") {
+        return {
+          alerts: [],
+          alertsEvaluated: true,
+          kpis: {
+            registrySync: {
+              activeCount: 12,
+              pendingCount: 4,
+              lastSyncStatus: "ok",
+              lastSyncAt: "2026-03-08T08:00:00.000Z"
+            }
+          },
+          schedule: {},
+          status: "healthy",
+          summaryView: true
+        };
+      }
+      if (path === "/ops/fetch-kpis?view=summary") return { ok: true, kpis: {}, summaryView: true };
+      if (path === "/registry/conflicts?view=summary") return { summary: { conflictCount: 0 }, conflicts: [], summaryView: true };
+      throw new Error(`unexpected path ${path}`);
+    },
+    renderAdminOpsKpis(_el, kpis) {
+      renderedKpis.push(JSON.parse(JSON.stringify(kpis || {})));
+    }
+  }));
+
+  await controller.loadRegistrySyncDiagnosticsData({ silent: false });
+  controller.stopOpsHealthPolling();
+
+  assert.ok(calls.includes("/ops/dashboard-health?view=summary"));
+  assert.equal(state.latestOpsHealthCache.kpis.registrySync.activeCount, 12);
+  assert.equal(renderedKpis.at(-1).registrySync.pendingCount, 4);
 });
 
 test("admin bootstrap active rows start task-state polling without manual ops refresh", async () => {

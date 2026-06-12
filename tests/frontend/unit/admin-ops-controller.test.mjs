@@ -256,6 +256,7 @@ test("admin ops controller startup uses summary ops routes before deferred detai
       if (path === "/ops/fetch-kpis?view=summary") return { ok: true, kpis: { lastSuccessfulFetchAge: "4m" }, summaryView: true };
       if (path === "/ops/task-state?view=summary") return { tasks: [], count: 0, summary: true };
       if (path === "/registry/conflicts?view=summary") return { summary: { conflictCount: 0 }, conflicts: [], summaryView: true };
+      if (path === "/admin/ops-tab-counts?view=summary") return { ok: true, summaryView: true, badges: {} };
       if (path === "/ops/history?limit=80") return new Promise(() => {});
       if (path === "/ops/fetcher-metrics?windowRuns=80") return new Promise(() => {});
       throw new Error(`unexpected path ${path}`);
@@ -298,10 +299,9 @@ test("admin ops controller startup uses summary ops routes before deferred detai
   controller.stopOpsHealthPolling();
 
   assert.deepEqual(calls, [
-    "/ops/dashboard-health?view=summary",
-    "/ops/task-state?view=summary",
-    "/registry/conflicts?view=summary",
-    "/ops/fetch-kpis?view=summary"
+    "/ops/dashboard-health?view=summary", "/ops/task-state?view=summary",
+    "/registry/conflicts?view=summary", "/ops/fetch-kpis?view=summary",
+    "/admin/ops-tab-counts?view=summary"
   ]);
   assert.equal(historyRenderCount, 1);
 });

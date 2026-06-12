@@ -456,6 +456,157 @@ def _fetch_report_summary_payload_from_file(path: Any) -> dict[str, Any]:
     return _cached_summary_payload(_FETCH_REPORT_SUMMARY_CACHE, signature, _build)
 
 
+def _ops_tab_badge(
+    *,
+    count: int = 0,
+    tone: str = "neutral",
+    title: str = "",
+    loaded: bool = True,
+    error: str = "",
+) -> dict[str, Any]:
+    return {
+        "count": max(0, int(count or 0)),
+        "tone": str(tone or "neutral"),
+        "title": str(title or ""),
+        "loaded": bool(loaded),
+        "error": str(error or ""),
+    }
+
+
+def _source_policy_badge_from_artifacts(api: BridgeApi) -> dict[str, Any]:
+    recommendations, recommendation_warning = read_source_policy_recommendations_artifact(
+        api.SOURCE_POLICY_RECOMMENDATIONS_PATH
+    )
+    review_state, review_state_warning = read_source_policy_review_state_artifact(
+        api.SOURCE_POLICY_REVIEW_STATE_PATH
+    )
+    payload = merge_source_policy_review_state_into_recommendations(
+        recommendations_artifact=recommendations,
+        review_state=review_state,
+    )
+    pairs = _as_list(_as_dict(payload).get("pairs"))
+    needs_action = 0
+    for row in pairs:
+        row_obj = _as_dict(row)
+        review_state_text = _clean_text(row_obj.get("reviewState") or "new").lower()
+        if review_state_text in {"new", "acknowledged"}:
+            needs_action += 1
+    warnings = [warning for warning in (recommendation_warning, review_state_warning) if warning]
+    tone = "warning" if needs_action > 0 or warnings else "neutral"
+    title = (
+        f"{needs_action} source policy review item{'' if needs_action == 1 else 's'}"
+        if needs_action > 0
+        else "No source policy review items"
+    )
+    if warnings and needs_action <= 0:
+        title = "Source policy review summary has warnings"
+    return _ops_tab_badge(count=needs_action, tone=tone, title=title)
+
+
+def _admin_ops_tab_counts_summary(api: BridgeApi) -> dict[str, Any]:
+    badges: dict[str, dict[str, Any]] = {}
+
+    try:
+        health = _as_dict(api.compute_ops_dashboard_health_summary())
+        alerts = _as_list(health.get("alerts"))
+        critical_count = sum(
+            1
+            for alert in alerts
+            if _clean_text(_as_dict(alert).get("severity")).lower() == "critical"
+        )
+        badges["overview"] = _ops_tab_badge(
+            count=len(alerts),
+            tone="critical" if critical_count else "warning" if alerts else "neutral",
+            title=(
+                f"{len(alerts)} active alert{'' if len(alerts) == 1 else 's'}"
+                if alerts
+                else "No active alerts"
+            ),
+        )
+    except (OSError, RuntimeError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        badges["overview"] = _ops_tab_badge(
+            loaded=False,
+            title="Overview count unavailable",
+            error=str(exc),
+        )
+
+    try:
+        discovery = _discovery_report_summary_payload_from_file(api.DISCOVERY_REPORT_PATH)
+        counts = _as_dict(discovery.get("counts"))
+        review = _as_dict(discovery.get("candidateReview"))
+        count = _safe_int(
+            review.get("totalCandidates")
+            or counts.get("candidateCount")
+            or counts.get("failureCount")
+            or 0,
+            0,
+        )
+        badges["discovery"] = _ops_tab_badge(
+            count=count,
+            tone="warning" if count > 0 else "neutral",
+            title=(
+                f"{count} discovery review item{'' if count == 1 else 's'}"
+                if count > 0
+                else "No discovery review items"
+            ),
+        )
+    except (OSError, RuntimeError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        badges["discovery"] = _ops_tab_badge(
+            loaded=False,
+            title="Discovery review count unavailable",
+            error=str(exc),
+        )
+
+    try:
+        badges["source-policy"] = _source_policy_badge_from_artifacts(api)
+    except (OSError, RuntimeError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        badges["source-policy"] = _ops_tab_badge(
+            loaded=False,
+            title="Source policy review count unavailable",
+            error=str(exc),
+        )
+
+    try:
+        registry_summary = api.get_registry_summary_payload()
+        source_state_path = Path(api.JOBS_FETCH_REPORT_PATH).with_name("jobs-source-state.json")
+        conflicts_payload = load_registry_conflicts_summary_payload(
+            registry_summary=registry_summary,
+            source_state_path=source_state_path,
+            adjudication_payload=api.load_registry_conflict_adjudication(),
+            registry_auto_heal=api.get_registry_auto_heal_report(),
+        )
+        summary = _as_dict(conflicts_payload.get("summary"))
+        count = _safe_int(summary.get("conflictCount"), 0)
+        badges["registry-conflicts"] = _ops_tab_badge(
+            count=count,
+            tone="warning" if count > 0 else "neutral",
+            title=(
+                f"{count} registry conflict{'' if count == 1 else 's'}"
+                if count > 0
+                else "No registry conflicts"
+            ),
+        )
+    except (OSError, RuntimeError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        badges["registry-conflicts"] = _ops_tab_badge(
+            loaded=False,
+            title="Registry conflict count unavailable",
+            error=str(exc),
+        )
+
+    badges["dedup"] = _ops_tab_badge(
+        loaded=False,
+        title="Dedup count loads with dedup diagnostics",
+    )
+
+    return {
+        "ok": True,
+        "summaryView": True,
+        "detailLevel": "summary",
+        "generatedAt": api.now_iso(),
+        "badges": badges,
+    }
+
+
 def _compact_live_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
     compact_payload = dict(payload or {})
     sources = _as_list(payload.get("sources"))
@@ -1819,6 +1970,18 @@ def handle_get(
     if path == "/admin/bootstrap":
         with time_operation("admin.bootstrap.route_payload"):
             handler.send_json(get_admin_bootstrap_payload(api))
+        return True
+
+    if path == "/admin/ops-tab-counts":
+        view = str((query.get("view") or ["summary"])[0] or "summary").strip().lower()
+        if view not in {"", "summary"}:
+            handler.send_json(
+                {"ok": False, "error": f"unsupported ops-tab-counts view: {view}"},
+                status=400,
+            )
+            return True
+        with time_operation("admin.ops_tab_counts.summary.route_payload"):
+            handler.send_json(_admin_ops_tab_counts_summary(api))
         return True
 
     if path == "/discovery/report":

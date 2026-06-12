@@ -1604,8 +1604,8 @@
 }
 
 .admin-ops-history-row-running {
-  background: color-mix(in srgb, var(--contract-temporary-bg) 34%, var(--surface-3));
-  outline: 1px solid color-mix(in srgb, var(--contract-temporary-border) 54%, transparent);
+  background: color-mix(in srgb, var(--accent-soft-bg) 30%, var(--surface-3));
+  outline: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
   outline-offset: -1px;
 }
 

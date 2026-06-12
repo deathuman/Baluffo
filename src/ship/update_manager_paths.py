@@ -14,9 +14,10 @@ UPDATER_VERSION = "1.0.0"
 STATE_NAME = "update-state.json"
 CURRENT_NAME = "current.txt"
 LOG_NAME = "update-events.jsonl"
-REQUIRED_VERSION_FILES = ("src/admin_bridge.py", "index.html", "jobs.html", "saved.html")
+ROOT_HTML_FILES = ("index.html", "jobs.html", "saved.html", "admin.html")
+REQUIRED_VERSION_FILES = ("src/admin_bridge.py", *ROOT_HTML_FILES)
 BOOTSTRAP_DIR_NAME = "runtime-bootstrap"
-BOOTSTRAP_ROOT_HTML = ("index.html", "jobs.html", "saved.html")
+BOOTSTRAP_ROOT_HTML = ROOT_HTML_FILES
 BOOTSTRAP_VERSION_TAG = ".canonical-version"
 
 

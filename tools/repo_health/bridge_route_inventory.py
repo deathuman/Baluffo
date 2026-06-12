@@ -148,6 +148,14 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
     ),
     _route(
         "GET",
+        "/admin/ops-tab-counts",
+        EXACT,
+        GET_HANDLER,
+        "support",
+        caller_files=ADMIN_OPS_CALLERS,
+    ),
+    _route(
+        "GET",
         "/discovery/report",
         EXACT,
         GET_HANDLER,

@@ -38,6 +38,7 @@ export function emitAdminStartupMetricsBatch(adminBridgeBase, metrics = []) {
 
 const LIGHTWEIGHT_GET_DEDUPE_PATHS = new Set([
   "/admin/bootstrap",
+  "/admin/ops-tab-counts?view=summary",
   "/ops/health?view=ready",
   "/ops/dashboard-health?view=summary",
   "/ops/fetch-kpis?view=summary",

@@ -135,10 +135,11 @@ test("admin html groups operations health into overview discovery source-policy 
   assert.match(adminHtml, /data-ops-tab="discovery"/);
   assert.match(adminHtml, /data-ops-tab="source-policy"/);
   assert.match(adminHtml, /data-ops-tab="dedup"/);
-  assert.match(adminHtml, /data-ui="admin-ops-tab-badge" data-ops-tab="overview" aria-hidden="true">0<\/span>/);
-  assert.match(adminHtml, /data-ui="admin-ops-tab-badge" data-ops-tab="discovery" aria-hidden="true">0<\/span>/);
-  assert.match(adminHtml, /data-ui="admin-ops-tab-badge" data-ops-tab="source-policy" aria-hidden="true">0<\/span>/);
-  assert.match(adminHtml, /data-ui="admin-ops-tab-badge" data-ops-tab="dedup" aria-hidden="true">0<\/span>/);
+  assert.doesNotMatch(adminHtml, /<h4 class="admin-section-title">Fetcher Metrics<\/h4>/);
+  assert.match(adminHtml, /data-ui="admin-ops-tab-badge" data-ops-tab="overview" aria-hidden="true" title="Loading count">\.\.\.<\/span>/);
+  assert.match(adminHtml, /data-ui="admin-ops-tab-badge" data-ops-tab="discovery" aria-hidden="true" title="Loading count">\.\.\.<\/span>/);
+  assert.match(adminHtml, /data-ui="admin-ops-tab-badge" data-ops-tab="source-policy" aria-hidden="true" title="Loading count">\.\.\.<\/span>/);
+  assert.match(adminHtml, /data-ui="admin-ops-tab-badge" data-ops-tab="dedup" aria-hidden="true" title="Loading count">\.\.\.<\/span>/);
   assert.match(adminHtml, /id="admin-ops-tab-overview"/);
   assert.match(adminHtml, /id="admin-ops-tab-discovery"[^>]+hidden/);
   assert.match(adminHtml, /id="admin-discovery-review"/);

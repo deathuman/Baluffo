@@ -208,3 +208,123 @@ test("admin ops controller updates tab badges from loaded review payloads", asyn
   assert.equal(dedupBadge.attributes["data-tooltip"], "3 dedup blockers");
   assert.equal(dedupBadge.title, "");
 });
+
+test("admin ops tab badges use pending state until bounded counts load", async () => {
+  const state = {
+    latestOpsHealthCache: null,
+    adminBusyState: {
+      opsLoad: false,
+      liveFetchRunning: false,
+      liveDiscoveryRunning: false,
+      liveSyncRunning: false,
+      livePipelineRunning: false
+    }
+  };
+  const overviewBadge = createElement({ dataset: { opsTab: "overview" } });
+  const discoveryBadge = createElement({ dataset: { opsTab: "discovery" } });
+  const sourcePolicyBadge = createElement({ dataset: { opsTab: "source-policy" } });
+  const registryConflictsBadge = createElement({ dataset: { opsTab: "registry-conflicts" } });
+  const dedupBadge = createElement({ dataset: { opsTab: "dedup" } });
+  const refs = {
+    adminOpsTabBtnEls: [
+      createTabButton("overview"),
+      createTabButton("discovery"),
+      createTabButton("source-policy"),
+      createTabButton("registry-conflicts"),
+      createTabButton("dedup")
+    ],
+    adminOpsTabBadgeEls: [
+      overviewBadge,
+      discoveryBadge,
+      sourcePolicyBadge,
+      registryConflictsBadge,
+      dedupBadge
+    ],
+    adminOpsTabOverviewEl: createElement(),
+    adminOpsTabDiscoveryEl: createElement(),
+    adminOpsTabSourcePolicyEl: createElement(),
+    adminOpsTabRegistryConflictsEl: createElement(),
+    adminOpsTabDedupEl: createElement(),
+    adminSyncStatusEl: createElement(),
+    adminSyncConfigHintEl: createElement(),
+    adminOpsAlertsEl: createElement(),
+    adminOpsKpisEl: createElement(),
+    adminOpsScheduleEl: createElement(),
+    adminOpsFetcherMetricsEl: createElement(),
+    adminOpsHistoryEl: createElement(),
+    adminOpsTrendsEl: createElement(),
+    adminSourcePolicyReviewEl: createElement(),
+    adminRegistryConflictsReviewEl: createElement(),
+    adminDiscoveryReviewEl: createElement(),
+    adminOpsDedupListsEl: createElement()
+  };
+  const controller = createAdminOpsController({
+    state,
+    refs,
+    getBridge: async path => {
+      if (path === "/ops/dashboard-health?view=summary") {
+        return { alerts: [], kpis: {}, schedule: {}, status: "healthy", summaryView: true };
+      }
+      if (path === "/ops/task-state?view=summary") return { tasks: [], count: 0, summary: true };
+      if (path === "/registry/conflicts?view=summary") {
+        return { summary: { conflictCount: 0 }, summaryStatus: "ready", conflicts: [], summaryView: true };
+      }
+      if (path === "/ops/fetch-kpis?view=summary") return { ok: true, kpis: {}, summaryView: true };
+      if (path === "/admin/ops-tab-counts?view=summary") {
+        return {
+          ok: true,
+          summaryView: true,
+          badges: {
+            overview: { count: 2, tone: "warning", title: "2 active alerts", loaded: true },
+            discovery: { count: 0, tone: "neutral", title: "No discovery review items", loaded: true },
+            "source-policy": { count: 0, tone: "neutral", title: "Loading Source Policy Review count", loaded: false },
+            "registry-conflicts": { count: 1, tone: "warning", title: "1 registry conflict", loaded: true },
+            dedup: { count: 0, tone: "neutral", title: "Dedup count loads with dedup diagnostics", loaded: false }
+          }
+        };
+      }
+      throw new Error(`unexpected path ${path}`);
+    },
+    postBridge: async () => ({}),
+    deriveAdminRunsModel: () => ({
+      currentRows: [],
+      visibleCompletedRows: [],
+      olderCompletedRows: [],
+      hasLiveRuns: false,
+      liveTypes: []
+    }),
+    getOpsPollIntervalMs: () => 5000,
+    renderAdminOpsAlerts() {},
+    renderAdminOpsKpis() {},
+    renderAdminOpsSchedule() {},
+    renderAdminOpsFetcherMetrics() {},
+    renderAdminOpsTrends() {},
+    renderAdminOpsHistory() {},
+    renderAdminOpsDedupLists() {},
+    renderAdminSourcePolicyReview() {},
+    loadSyncStatus: async () => {},
+    setBusyFlag(key, value) {
+      state.adminBusyState[key] = value;
+    },
+    showToast() {},
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    adminDispatch: { dispatch() {} },
+    adminActions: { OPS_REFRESHED: "ops/refreshed" },
+    escapeHtml: value => String(value || ""),
+    onBridgeStatusChange() {},
+    bridgeStatusPollIntervalMs: 1000,
+    idlePollIntervalMs: 1000,
+    renderScheduler: createDeferredRenderScheduler().schedule
+  });
+
+  await controller.loadOpsHealthData({ summary: true });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  controller.stopOpsHealthPolling();
+
+  assert.equal(overviewBadge.textContent, "2");
+  assert.equal(discoveryBadge.textContent, "0");
+  assert.equal(sourcePolicyBadge.textContent, "...");
+  assert.equal(registryConflictsBadge.textContent, "1");
+  assert.equal(dedupBadge.textContent, "...");
+  assert.equal(sourcePolicyBadge.attributes["data-tooltip"], "Loading Source Policy Review count");
+});

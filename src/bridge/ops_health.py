@@ -352,6 +352,107 @@ def derive_ops_severity(alerts: list[dict[str, Any]]) -> str:
     return "healthy"
 
 
+def _finalize_alerts(
+    active_conditions: list[dict[str, Any]],
+    *,
+    load_alert_state_fn: Callable[[], dict[str, Any]],
+    save_alert_state_fn: Callable[[dict[str, Any]], None],
+) -> dict[str, Any]:
+    for row in active_conditions:
+        row["dismissible"] = str(row.get("id") or "") not in NON_DISMISSIBLE_ALERT_IDS
+
+    alert_state = load_alert_state_fn()
+    acked = dict(alert_state.get("acked") or {})
+    active_ids = {str(row.get("id") or "") for row in active_conditions}
+    non_dismissible_ids = {
+        str(row.get("id") or "")
+        for row in active_conditions
+        if not bool(row.get("dismissible", True))
+    }
+    for key in list(acked.keys()):
+        if key not in active_ids or key in non_dismissible_ids:
+            acked.pop(key, None)
+
+    visible_alerts = [row for row in active_conditions if str(row.get("id") or "") not in acked]
+    save_alert_state_fn({"acked": acked})
+    return {
+        "alerts": visible_alerts,
+        "suppressedCount": max(0, len(active_conditions) - len(visible_alerts)),
+    }
+
+
+def evaluate_alerts_summary(
+    *,
+    history: list[dict[str, Any]],
+    pending_count: int,
+    load_alert_state_fn: Callable[[], dict[str, Any]],
+    save_alert_state_fn: Callable[[dict[str, Any]], None],
+    parse_iso: Callable[[Any], datetime | None],
+    now_iso: Callable[[], str],
+    now_utc: Callable[[], datetime],
+) -> dict[str, Any]:
+    """Evaluate cheap, history-backed alerts for summary health routes.
+
+    This intentionally skips diagnostics that need full fetch reports, source rows,
+    social evidence, or deep dedup artifacts. It is authoritative for normal
+    user-facing stale/never fetch and pipeline-never-run warnings.
+    """
+
+    active_conditions: list[dict[str, Any]] = []
+    now = now_utc()
+    fetch_rows = [row for row in history if _task_type(row) == "fetch" and row.get("finishedAt")]
+    last_success_fetch = next(
+        (row for row in reversed(fetch_rows) if _successful_task(row)),
+        None,
+    )
+    stale_hours = None
+    if last_success_fetch:
+        finished = parse_iso(last_success_fetch.get("finishedAt"))
+        if finished:
+            stale_hours = (now - finished).total_seconds() / 3600.0
+    if stale_hours is None:
+        active_conditions.append(
+            {
+                "id": "fetch_never_run",
+                "severity": "warning",
+                "message": "No successful fetch has run yet. Run Jobs Fetcher to update the jobs listing.",
+                "value": None,
+                "triggeredAt": now_iso(),
+            }
+        )
+    elif stale_hours > STALE_FETCH_HOURS:
+        active_conditions.append(
+            {
+                "id": "stale_fetch",
+                "severity": "warning",
+                "message": f"Last successful fetch is older than {STALE_FETCH_HOURS}h. A full Jobs Fetcher run is suggested to update the jobs listing.",
+                "value": round(stale_hours, 2),
+                "triggeredAt": now_iso(),
+            }
+        )
+
+    if not _has_successful_full_pipeline(history):
+        active_conditions.append(
+            {
+                "id": "pipeline_never_run",
+                "severity": "warning",
+                "message": "No successful full Jobs pipeline has run yet. Coverage is limited until the full pipeline completes.",
+                "value": None,
+                "triggeredAt": now_iso(),
+            }
+        )
+
+    finalized = _finalize_alerts(
+        active_conditions,
+        load_alert_state_fn=load_alert_state_fn,
+        save_alert_state_fn=save_alert_state_fn,
+    )
+    return {
+        **finalized,
+        "pendingApprovals": int(pending_count),
+    }
+
+
 def evaluate_alerts(
     *,
     history: list[dict[str, Any]],
@@ -363,8 +464,6 @@ def evaluate_alerts(
     now_iso: Callable[[], str],
     now_utc: Callable[[], datetime],
 ) -> dict[str, Any]:
-    alert_state = load_alert_state_fn()
-    acked = dict(alert_state.get("acked") or {})
     active_conditions: list[dict[str, Any]] = []
     now = now_utc()
     fetch_rows = [row for row in history if _task_type(row) == "fetch" and row.get("finishedAt")]
@@ -541,22 +640,13 @@ def evaluate_alerts(
                 }
             )
 
-    for row in active_conditions:
-        row["dismissible"] = str(row.get("id") or "") not in NON_DISMISSIBLE_ALERT_IDS
-
-    active_ids = {row["id"] for row in active_conditions}
-    non_dismissible_ids = {
-        row["id"] for row in active_conditions if not bool(row.get("dismissible", True))
-    }
-    for key in list(acked.keys()):
-        if key not in active_ids or key in non_dismissible_ids:
-            acked.pop(key, None)
-
-    visible_alerts = [row for row in active_conditions if row["id"] not in acked]
-    save_alert_state_fn({"acked": acked})
+    finalized = _finalize_alerts(
+        active_conditions,
+        load_alert_state_fn=load_alert_state_fn,
+        save_alert_state_fn=save_alert_state_fn,
+    )
     return {
-        "alerts": visible_alerts,
-        "suppressedCount": max(0, len(active_conditions) - len(visible_alerts)),
+        **finalized,
         "pendingApprovals": int(pending_count),
     }
 

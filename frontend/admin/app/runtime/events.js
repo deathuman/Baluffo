@@ -93,6 +93,14 @@ export function bindAdminRuntimeEvents({
     });
   }
 
+  if (refs.adminOpsKpisEl) {
+    refs.adminOpsKpisEl.addEventListener("toggle", event => {
+      const target = event?.target;
+      if (!target?.matches?.(".admin-ops-registry-sync-details") || !target.open) return;
+      opsController.loadRegistrySyncDiagnosticsData?.({ silent: false }).catch(() => {});
+    }, true);
+  }
+
   bindWindowResize(() => {
     onSyncDiscoveryLogDisclosure();
   });

@@ -20,8 +20,6 @@ import {
   FETCHER_FAILURE_BUCKET_LABELS,
   formatDuration,
   formatDateTime,
-  formatLastRunCell,
-  formatScheduleCell,
   getRunStatusChipClass,
   sanitizeSlowSourceName,
   stableOpsSignature
@@ -324,23 +322,17 @@ export function renderAdminOpsKpis(kpisEl, kpis, status) {
   `;
 }
 
-export function renderAdminOpsSchedule(scheduleEl, schedule, latestOpsHealthCache) {
+export function renderAdminOpsSchedule(scheduleEl, schedule) {
   if (!scheduleEl) return;
   const canPatchInPlace = Boolean(scheduleEl && scheduleEl.dataset);
   const signature = stableOpsSignature({
-    schedule: schedule || {},
-    lastRunResult: latestOpsHealthCache?.kpis?.lastRunResult || {}
+    pipeline: schedule?.pipeline || {}
   });
   if (canPatchInPlace && scheduleEl.dataset.opsScheduleSig === signature) return;
   if (canPatchInPlace) scheduleEl.dataset.opsScheduleSig = signature;
   const pipeline = schedule?.pipeline || {};
-  const fetcher = schedule?.fetcher || {};
-  const discovery = schedule?.discovery || {};
   scheduleEl.innerHTML = `
     ${renderPipelineScheduleControls(pipeline)}
-    <div class="admin-ops-schedule-item"><strong>Fetcher</strong>: ${formatScheduleCell(fetcher)}</div>
-    <div class="admin-ops-schedule-item"><strong>Discovery</strong>: ${formatScheduleCell(discovery)}</div>
-    <div class="admin-ops-schedule-item"><strong>Last Run</strong>: ${formatLastRunCell(latestOpsHealthCache?.kpis?.lastRunResult || {})}</div>
   `;
 }
 
@@ -602,6 +594,12 @@ function formatOpsTaskLane(rows, diagnostics = null) {
  */
 export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary = null, options = {}) {
   if (!metricsEl) return;
+  const hasMetricsPayload = metrics && typeof metrics === "object" && !Array.isArray(metrics);
+  if (!hasMetricsPayload) {
+    metricsEl.innerHTML = "";
+    if (metricsEl.dataset) delete metricsEl.dataset.opsFetcherMetricsSig;
+    return;
+  }
   const latest = metrics?.latestRun || {};
   const history = metrics?.history || {};
   const summary = failureSummary && typeof failureSummary === "object"
@@ -1059,7 +1057,12 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
       diagnosticsByKey
     ).map(formatOpsFetcherMetricSection).join("")}`
     : `${taskLaneHtml}${debugDiagnosticsHtml}`;
+  if (!sectionHtml.trim()) {
+    metricsEl.innerHTML = "";
+    return;
+  }
   metricsEl.innerHTML = `
+    <h4 class="admin-section-title">Fetcher Diagnostics</h4>
     <details class="admin-ops-metrics-details admin-ops-fetcher-diagnostics admin-ops-full-row">
       <summary>Fetcher diagnostics</summary>
       <div class="admin-ops-metrics-details-body admin-ops-fetcher-diagnostics-body">

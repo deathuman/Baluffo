@@ -9,7 +9,7 @@ import { emitStartupMetric, logError, markFirstInteractive } from "../../shared/
 import { createPerfMarks } from "../../shared/perf-marks.js";
 import {
   appendAdminLogRow
-} from "../render.js?v=18";
+} from "../render.js?v=19";
 import {
   getErrorMessage as getErrorMessageFromDomain,
   normalizeLogLevel as normalizeLogLevelFromDomain,
@@ -53,12 +53,12 @@ import {
   FETCHER_PRESET_META
 } from "./fetcher.js?v=13";
 import { createAdminRuntimeState } from "./runtime/state.js";
-import { composeAdminControllers } from "./runtime/composition.js?v=21";
+import { composeAdminControllers } from "./runtime/composition.js?v=22";
 import { createAdminStartupMetrics } from "./runtime/effects.js";
 import { createBridgeCaller } from "./runtime/actions.js";
 import { resolveAdminBridgeBase } from "./runtime/bridge-base.js";
 import { setStatusText, toLocalTime } from "./runtime/view.js";
-import { bindAdminRuntimeEvents } from "./runtime/events.js?v=14";
+import { bindAdminRuntimeEvents } from "./runtime/events.js?v=15";
 import { applyAdminAdvancedBulkLayout } from "./bulk-actions.js";
 
 const JOBS_LAST_URL_KEY = adminConfig.JOBS_LAST_URL_KEY || "baluffo_jobs_last_url";

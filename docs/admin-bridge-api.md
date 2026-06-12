@@ -18,6 +18,7 @@ Compact reference for AI coders. Desktop endpoints are local-only on localhost; 
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/admin/bootstrap` | Bounded Admin control-plane startup payload: app/session readiness, local overview summary, current tasks, 2 recent runs, and sync readiness |
+| GET | `/admin/ops-tab-counts?view=summary` | Bounded Admin tab badge counts for Overview alerts, Discovery Review, Source Policy Review, Registry Conflicts, and pending/unavailable deep diagnostics |
 | GET | `/desktop-local-data/session` | Current user session |
 | GET | `/desktop-local-data/profiles` | List existing local desktop profiles |
 | POST | `/desktop-local-data/sign-in` | Create/sign-in profile |

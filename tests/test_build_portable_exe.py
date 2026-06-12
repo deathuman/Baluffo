@@ -16,6 +16,7 @@ from scripts.build_portable_exe import (
     MAIN_RUNTIME_HIDDEN_IMPORTS,
     OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES,
     OPTIONAL_SCRAPY_RUNTIME_PACKAGES,
+    REQUIRED_VERSION_FILES,
     STORAGE_RUNTIME_COLLECT_DATA_PACKAGES,
     UPDATER_HELPER_COLLECT_DATA_PACKAGES,
     UPDATER_HELPER_HIDDEN_IMPORTS,
@@ -154,6 +155,10 @@ def test_parse_args_defaults_to_shared_app_version() -> None:
         args = parse_args()
     assert DEFAULT_BUNDLE_VERSION == APP_VERSION
     assert args.bundle_version == APP_VERSION
+
+
+def test_portable_build_embeds_admin_root_html() -> None:
+    assert "admin.html" in REQUIRED_VERSION_FILES
 
 
 def test_resolve_icon_path_defaults_to_checked_in_favicon() -> None:

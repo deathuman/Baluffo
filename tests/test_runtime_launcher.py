@@ -217,6 +217,7 @@ def _seed_ship_root(root: Path, version: str = "1.2.3") -> None:
     _write(root / "app" / "versions" / version / "index.html", "<html></html>\n")
     _write(root / "app" / "versions" / version / "jobs.html", "<html></html>\n")
     _write(root / "app" / "versions" / version / "saved.html", "<html></html>\n")
+    _write(root / "app" / "versions" / version / "admin.html", "<html></html>\n")
     _write(root / "app" / "versions" / version / "src" / "admin_bridge.py", "print('ok')\n")
     (root / "data").mkdir(parents=True, exist_ok=True)
 
@@ -868,6 +869,7 @@ def test_heal_active_ship_version_restores_from_meipass_when_frozen() -> None:
         _write(embed / "index.html", "<html></html>\n")
         _write(embed / "jobs.html", "<html></html>\n")
         _write(embed / "saved.html", "<html></html>\n")
+        _write(embed / "admin.html", "<html></html>\n")
         (root / "data").mkdir(parents=True, exist_ok=True)
         layout = rl.resolve_runtime_layout(root)
         with (
@@ -876,6 +878,7 @@ def test_heal_active_ship_version_restores_from_meipass_when_frozen() -> None:
         ):
             rl.heal_active_ship_version(layout)
         assert (vdir / "src" / "admin_bridge.py").is_file()
+        assert (vdir / "admin.html").is_file()
 
 
 def test_run_bridge_server_forwards_desktop_owner_arguments() -> None:

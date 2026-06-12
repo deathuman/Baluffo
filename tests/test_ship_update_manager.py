@@ -33,6 +33,7 @@ def _seed_root(root: Path, version: str = "1.0.0") -> None:
     _write(root / "app" / "versions" / version / "index.html", "<html></html>\n")
     _write(root / "app" / "versions" / version / "jobs.html", "<html></html>\n")
     _write(root / "app" / "versions" / version / "saved.html", "<html></html>\n")
+    _write(root / "app" / "versions" / version / "admin.html", "<html></html>\n")
     (root / "app" / "staging").mkdir(parents=True, exist_ok=True)
     (root / "data" / "backups").mkdir(parents=True, exist_ok=True)
     (root / "data" / "migration-reports").mkdir(parents=True, exist_ok=True)
@@ -45,6 +46,7 @@ def _build_update_zip(work: Path, version: str) -> Path:
     _write(source / "index.html", "<html>new</html>\n")
     _write(source / "jobs.html", "<html>new</html>\n")
     _write(source / "saved.html", "<html>new</html>\n")
+    _write(source / "admin.html", "<html>new</html>\n")
     bundle = work / f"baluffo-{version}.zip"
     with ZipFile(bundle, "w", compression=ZIP_DEFLATED) as archive:
         for path in source.rglob("*"):
@@ -215,6 +217,7 @@ def _seed_full_version(root: Path, version: str) -> None:
     _write(base / "index.html", "<html></html>\n")
     _write(base / "jobs.html", "<html></html>\n")
     _write(base / "saved.html", "<html></html>\n")
+    _write(base / "admin.html", "<html></html>\n")
 
 
 def test_startup_check_auto_selects_healthy_version_when_current_broken() -> None:
@@ -340,11 +343,14 @@ def test_startup_check_repairs_current_from_runtime_bootstrap() -> None:
         canon = root / "app" / "versions" / "1.0.0"
         um.refresh_runtime_bootstrap(paths, canon, version_name="1.0.0")
         (canon / "src" / "admin_bridge.py").unlink()
+        (canon / "admin.html").unlink()
         assert not (canon / "src" / "admin_bridge.py").exists()
+        assert not (canon / "admin.html").exists()
         result = um.startup_check(root, root / "data")
         assert result["ok"] is True
         assert int(result.get("bootstrap_repair") or 0) >= 1
         assert (canon / "src" / "admin_bridge.py").exists()
+        assert (canon / "admin.html").exists()
 
 
 def test_apply_update_success_switches_current_version_and_keeps_data() -> None:
@@ -408,6 +414,7 @@ def test_recover_previous_swaps_versions() -> None:
         _write(root / "app" / "versions" / "1.0.0" / "index.html", "<html></html>\n")
         _write(root / "app" / "versions" / "1.0.0" / "jobs.html", "<html></html>\n")
         _write(root / "app" / "versions" / "1.0.0" / "saved.html", "<html></html>\n")
+        _write(root / "app" / "versions" / "1.0.0" / "admin.html", "<html></html>\n")
         state = json.loads((root / "app" / "update-state.json").read_text(encoding="utf-8"))
         state["previous_version"] = "1.0.0"
         (root / "app" / "update-state.json").write_text(json.dumps(state), encoding="utf-8")

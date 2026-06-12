@@ -18,7 +18,9 @@ import { renderAdminRegistryConflicts } from "../../render/registry-conflicts.js
 import { setTooltip } from "../../../shared/ui/index.js?v=6";
 
 const OPS_TASK_STATE_SUMMARY_PATH = "/ops/task-state?view=summary";
+const OPS_DASHBOARD_HEALTH_SUMMARY_PATH = "/ops/dashboard-health?view=summary";
 const OPS_FETCH_KPIS_SUMMARY_PATH = "/ops/fetch-kpis?view=summary";
+const OPS_TAB_COUNTS_SUMMARY_PATH = "/admin/ops-tab-counts?view=summary";
 const OPS_HISTORY_STARTUP_PATH = "/ops/history?limit=2";
 const OPS_HISTORY_DETAIL_PATH = "/ops/history?limit=80";
 const OPS_FETCHER_METRICS_DETAIL_PATH = "/ops/fetcher-metrics?windowRuns=80";
@@ -115,12 +117,77 @@ function toDedupBadgeState(dedupEvidence = {}) {
   };
 }
 
+function pendingBadgeState(title = "Loading count") {
+  return {
+    count: 0,
+    tone: "pending",
+    title,
+    loaded: false
+  };
+}
+
+function normalizeBadgeState(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  if (value.loaded === false) {
+    return pendingBadgeState(String(value.title || "Loading count"));
+  }
+  return {
+    count: Math.max(0, Number(value.count || 0)),
+    tone: String(value.tone || "neutral"),
+    title: String(value.title || "No items"),
+    loaded: true
+  };
+}
+
+function getSummaryBadgeState(tabCountsPayload, key) {
+  const badges = getObjectValue(tabCountsPayload?.badges);
+  return normalizeBadgeState(badges[key]);
+}
+
+function isLoadedOverviewHealth(health = {}) {
+  if (!health || typeof health !== "object") return false;
+  if (health.alertsEvaluated === true) return true;
+  if (health.summaryView === true) return false;
+  return Array.isArray(health.alerts) || Boolean(health.status);
+}
+
+function isLoadedDiscoveryReport(report = {}) {
+  if (!report || typeof report !== "object") return false;
+  return Boolean(report.candidateReview)
+    || Boolean(report.counts)
+    || Array.isArray(report.candidates)
+    || Array.isArray(report.failures)
+    || report.summaryView === true;
+}
+
+function isLoadedSourcePolicyPayload(payload = {}) {
+  if (!payload || typeof payload !== "object") return false;
+  return Boolean(payload.recommendations)
+    || Boolean(payload.providerCoverageLinkBackfill)
+    || Array.isArray(payload.warnings);
+}
+
+function isLoadedRegistryConflictsPayload(payload = {}) {
+  if (!payload || typeof payload !== "object") return false;
+  const status = String(payload.summaryStatus || "").toLowerCase();
+  if (status === "pending") return false;
+  return Boolean(status)
+    || Boolean(payload.summary)
+    || Array.isArray(payload.conflicts);
+}
+
+function isLoadedDedupPayload(payload = {}) {
+  const dedupEvidence = getObjectValue(payload?.latestRun?.dedupEvidence);
+  return Object.keys(dedupEvidence).length > 0;
+}
+
 function renderOpsTabBadges(refs, {
   health = {},
   discoveryReport = null,
   sourcePolicyRecommendations = {},
   registryConflictsPayload = {},
-  fetcherMetricsPayload = {}
+  fetcherMetricsPayload = {},
+  tabCountsPayload = null
 } = {}) {
   const badges = Array.isArray(refs?.adminOpsTabBadgeEls) ? refs.adminOpsTabBadgeEls : [];
   if (!badges.length) return;
@@ -131,13 +198,19 @@ function renderOpsTabBadges(refs, {
   const registryConflictsSummary = getObjectValue(registryConflictsPayload?.summary);
   const registrySummaryStatus = String(registryConflictsPayload?.summaryStatus || "").toLowerCase();
   const registryConflictCount = Number(registryConflictsSummary?.conflictCount || 0);
-  const registryConflictBadgeState = registrySummaryStatus === "pending" || registrySummaryStatus === "unavailable"
+  const registryConflictBadgeState = registrySummaryStatus === "pending"
     ? {
         count: 0,
+        tone: "pending",
+        title: "Registry conflict summary pending",
+        loaded: false
+      }
+    : registrySummaryStatus === "unavailable"
+      ? {
+        count: 0,
         tone: "neutral",
-        title: registrySummaryStatus === "unavailable"
-          ? "Registry conflict summary unavailable"
-          : "Registry conflict summary pending"
+        title: "Registry conflict summary unavailable",
+        loaded: true
       }
     : {
         count: registryConflictCount,
@@ -145,19 +218,34 @@ function renderOpsTabBadges(refs, {
         title: registryConflictCount > 0
           ? formatBadgeTitle(registryConflictCount, "registry conflict", "registry conflicts")
           : "No registry conflicts"
-      };
-  const badgeStates = {
-    overview: toAlertBadgeState(health?.alerts || []),
-    discovery: toDiscoveryBadgeState(discovery),
-    "source-policy": toSourcePolicyBadgeState(sourcePolicyRecommendations || {}),
-    "registry-conflicts": registryConflictBadgeState,
-    dedup: toDedupBadgeState(dedupEvidence)
+    };
+  const localBadgeStates = {
+    overview: isLoadedOverviewHealth(health)
+      ? toAlertBadgeState(health?.alerts || [])
+      : pendingBadgeState("Loading Overview count"),
+    discovery: isLoadedDiscoveryReport(discovery)
+      ? toDiscoveryBadgeState(discovery)
+      : pendingBadgeState("Loading Discovery Review count"),
+    "source-policy": isLoadedSourcePolicyPayload(sourcePolicyRecommendations)
+      ? toSourcePolicyBadgeState(sourcePolicyRecommendations || {})
+      : pendingBadgeState("Loading Source Policy Review count"),
+    "registry-conflicts": isLoadedRegistryConflictsPayload(registryConflictsPayload)
+      ? registryConflictBadgeState
+      : pendingBadgeState("Loading Registry Conflicts count"),
+    dedup: isLoadedDedupPayload(fetcherMetricsPayload)
+      ? toDedupBadgeState(dedupEvidence)
+      : pendingBadgeState("Loading Dedup Lists count")
   };
   badges.forEach(badge => {
     const key = String(badge?.dataset?.opsTab || badge?.getAttribute?.("data-ops-tab") || "");
-    const state = badgeStates[key] || { count: 0, tone: "neutral", title: "No items" };
+    const summaryState = getSummaryBadgeState(tabCountsPayload, key);
+    const localState = localBadgeStates[key];
+    const localLoaded = localState ? localState.loaded !== false : false;
+    const state = summaryState && (summaryState.loaded || !localLoaded)
+      ? summaryState
+      : (localState || summaryState || pendingBadgeState());
     if (badge) {
-      badge.textContent = Number(state.count || 0).toLocaleString();
+      badge.textContent = state.loaded === false ? "..." : Number(state.count || 0).toLocaleString();
       badge.setAttribute?.("data-badge-tone", state.tone);
       setTooltip(badge, state.title);
     }
@@ -205,7 +293,9 @@ export function createOpsHealthController({
   let opsRenderToken = 0;
   let opsOverviewDetailLoad = null;
   let opsOverviewDetailLoadToken = 0;
+  let dashboardHealthSummaryLoad = null;
   let fetchKpisLoad = null;
+  let opsTabCountsLoad = null;
   let opsHistoryLoad = null;
   let opsHistoryLoadLimit = 0;
   let sourcePolicyDetailLoad = null;
@@ -313,11 +403,23 @@ export function createOpsHealthController({
     const base = isPlainObject(existing) ? existing : {};
     const patch = isPlainObject(incoming) ? incoming : {};
     const preserveExisting = Boolean(summary);
+    const patchAlertsAuthoritative = !summary || patch.alertsEvaluated === true;
     const merged = {
       ...base,
       ...patch,
       kpis: mergeKpis(base.kpis, patch.kpis, { preserveExisting })
     };
+    if (!patchAlertsAuthoritative) {
+      if (Object.prototype.hasOwnProperty.call(base, "status")) merged.status = base.status;
+      if (Object.prototype.hasOwnProperty.call(base, "alerts")) merged.alerts = base.alerts;
+      if (Object.prototype.hasOwnProperty.call(base, "suppressedAlertsCount")) {
+        merged.suppressedAlertsCount = base.suppressedAlertsCount;
+      }
+      if (Object.prototype.hasOwnProperty.call(base, "alertsEvaluated")) {
+        merged.alertsEvaluated = base.alertsEvaluated;
+      }
+      if (Object.prototype.hasOwnProperty.call(base, "alertBasis")) merged.alertBasis = base.alertBasis;
+    }
     if (isPlainObject(base.schedule) || isPlainObject(patch.schedule)) {
       merged.schedule = mergePlainObjects(base.schedule, patch.schedule, {
         preserveUnknowns: preserveExisting
@@ -445,7 +547,8 @@ export function createOpsHealthController({
       health: { alerts: [] },
       discoveryReport: {},
       sourcePolicyRecommendations: {},
-      fetcherMetricsPayload: {}
+      fetcherMetricsPayload: {},
+      tabCountsPayload: state.latestOpsTabCountsPayload || null
     });
   }
 
@@ -792,7 +895,8 @@ export function createOpsHealthController({
       discoveryReport: state.latestDiscoveryReportCache || {},
       sourcePolicyRecommendations: getCachedSourcePolicyPayload(),
       registryConflictsPayload: getCachedRegistryConflictsPayload(),
-      fetcherMetricsPayload: buildFetcherMetricsPayload()
+      fetcherMetricsPayload: buildFetcherMetricsPayload(),
+      tabCountsPayload: state.latestOpsTabCountsPayload || null
     });
   }
 
@@ -818,7 +922,7 @@ export function createOpsHealthController({
       && typeof state.latestSourcePolicyRecommendationsPayload === "object"
       && !Array.isArray(state.latestSourcePolicyRecommendationsPayload)
       ? state.latestSourcePolicyRecommendationsPayload
-      : { recommendations: { pairs: [] } };
+      : { summaryStatus: "pending" };
   }
 
   function getCachedRegistryConflictsPayload() {
@@ -826,7 +930,7 @@ export function createOpsHealthController({
       && typeof state.latestRegistryConflictsPayload === "object"
       && !Array.isArray(state.latestRegistryConflictsPayload)
       ? state.latestRegistryConflictsPayload
-      : { summary: { conflictCount: 0 }, conflicts: [] };
+      : { summary: {}, summaryStatus: "pending", conflicts: [] };
   }
 
   function getCachedDiscoveryAuditArtifactsPayload() {
@@ -893,7 +997,8 @@ export function createOpsHealthController({
       discoveryReport: state.latestDiscoveryReportCache || {},
       sourcePolicyRecommendations: getCachedSourcePolicyPayload(),
       registryConflictsPayload: getCachedRegistryConflictsPayload(),
-      fetcherMetricsPayload: buildFetcherMetricsPayload()
+      fetcherMetricsPayload: buildFetcherMetricsPayload(),
+      tabCountsPayload: state.latestOpsTabCountsPayload || null
     });
   }
 
@@ -1266,7 +1371,8 @@ export function createOpsHealthController({
       discoveryReport: state.latestDiscoveryReportCache || {},
       sourcePolicyRecommendations,
       registryConflictsPayload,
-      fetcherMetricsPayload
+      fetcherMetricsPayload,
+      tabCountsPayload: state.latestOpsTabCountsPayload || null
     });
     renderAdminOpsTrendsImpl(refs.adminOpsTrendsEl, historyRuns);
     const historyRenderOptions = {
@@ -1372,6 +1478,7 @@ export function createOpsHealthController({
       schedulePolling: false
     });
     loadFetchKpisSummaryData(renderToken, { silent: true }).catch(() => {});
+    loadOpsTabCountsSummaryData(renderToken, { silent: true }).catch(() => {});
     if (hasActiveRows(taskStatePayload)) {
       maybeUnrefTimer(setTimeout(() => {
         loadTaskStateSummaryData(renderToken, { fromPoll: true, summary: true }).catch(() => {});
@@ -1490,7 +1597,15 @@ export function createOpsHealthController({
     if (payload && typeof payload === "object" && !Array.isArray(payload)) {
       state.latestOpsHealthCache = mergeOpsHealth(
         state.latestOpsHealthCache || {},
-        { kpis: payload.kpis || {}, summaryView: true },
+        {
+          kpis: payload.kpis || {},
+          status: payload.status,
+          alerts: payload.alerts,
+          suppressedAlertsCount: payload.suppressedAlertsCount,
+          alertsEvaluated: payload.alertsEvaluated,
+          alertBasis: payload.alertBasis,
+          summaryView: true
+        },
         { summary: true }
       );
       renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || {}, {
@@ -1500,6 +1615,94 @@ export function createOpsHealthController({
         renderActivityPanel: false,
         schedulePolling: false
       });
+    }
+    return payload || null;
+  }
+
+  async function loadDashboardHealthSummaryData(renderToken = opsRenderToken, options = {}) {
+    if (!dashboardHealthSummaryLoad) {
+      dashboardHealthSummaryLoad = measuredGetBridge(
+        OPS_DASHBOARD_HEALTH_SUMMARY_PATH,
+        "admin_dashboard_health_summary_fetch",
+        { enabled: !options?.fromPoll && !options?.silent }
+      ).finally(() => {
+        dashboardHealthSummaryLoad = null;
+      });
+    }
+    const payload = await dashboardHealthSummaryLoad;
+    if (renderToken !== opsRenderToken) return payload || null;
+    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+      state.latestOpsHealthCache = mergeOpsHealth(
+        state.latestOpsHealthCache || {},
+        payload || {},
+        { summary: true }
+      );
+      renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || payload || {}, {
+        taskStatePayload: getCachedTaskStatePayload(),
+        registryConflictsPayload: getCachedRegistryConflictsPayload(),
+        renderDeferredPanels: false,
+        renderActivityPanel: false,
+        schedulePolling: false
+      });
+    }
+    return payload || null;
+  }
+
+  async function loadRegistrySyncDiagnosticsData(options = {}) {
+    const renderToken = opsRenderToken;
+    renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || {}, {
+      taskStatePayload: getCachedTaskStatePayload(),
+      registryConflictsPayload: getCachedRegistryConflictsPayload(),
+      renderDeferredPanels: false,
+      renderActivityPanel: false,
+      schedulePolling: false
+    });
+    const registrySync = state.latestOpsHealthCache?.kpis?.registrySync;
+    const needsRegistrySync = !registrySync
+      || typeof registrySync !== "object"
+      || Array.isArray(registrySync)
+      || Object.keys(registrySync).length <= 0;
+    const loads = [
+      loadFetchKpisSummaryData(renderToken, { silent: Boolean(options?.silent) }),
+      loadRegistryConflictsSummaryData(renderToken, { fromPoll: true })
+    ];
+    if (needsRegistrySync) {
+      loads.unshift(loadDashboardHealthSummaryData(renderToken, {
+        fromPoll: true,
+        silent: Boolean(options?.silent)
+      }));
+    }
+    const results = await Promise.allSettled(loads);
+    const rejected = results.find(result => result.status === "rejected");
+    if (rejected) throw rejected.reason;
+    return {
+      dashboardHealth: needsRegistrySync && results[0].status === "fulfilled"
+        ? results[0].value
+        : null,
+      kpis: results[needsRegistrySync ? 1 : 0].status === "fulfilled"
+        ? results[needsRegistrySync ? 1 : 0].value
+        : null,
+      registryConflicts: results[needsRegistrySync ? 2 : 1].status === "fulfilled"
+        ? results[needsRegistrySync ? 2 : 1].value
+        : null
+    };
+  }
+
+  async function loadOpsTabCountsSummaryData(renderToken = opsRenderToken, options = {}) {
+    if (!opsTabCountsLoad) {
+      opsTabCountsLoad = measuredGetBridge(
+        OPS_TAB_COUNTS_SUMMARY_PATH,
+        "admin_ops_tab_counts_summary_fetch",
+        { enabled: !options?.fromPoll && !options?.silent }
+      ).finally(() => {
+        opsTabCountsLoad = null;
+      });
+    }
+    const payload = await opsTabCountsLoad;
+    if (renderToken !== opsRenderToken) return payload || null;
+    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+      state.latestOpsTabCountsPayload = payload;
+      rerenderOpsTabBadges();
     }
     return payload || null;
   }
@@ -1526,7 +1729,7 @@ export function createOpsHealthController({
       let health;
       const useSummaryView = Boolean(options?.summary);
       const dashboardHealthPath = useSummaryView
-        ? "/ops/dashboard-health?view=summary"
+        ? OPS_DASHBOARD_HEALTH_SUMMARY_PATH
         : "/ops/dashboard-health";
       try {
         health = await measuredGetBridge(
@@ -1568,6 +1771,7 @@ export function createOpsHealthController({
       if (!hasFetchKpiValues(state.latestOpsHealthCache?.kpis || {})) {
         loadFetchKpisSummaryData(renderToken, { silent: Boolean(options?.fromPoll) }).catch(() => {});
       }
+      loadOpsTabCountsSummaryData(renderToken, { silent: Boolean(options?.fromPoll) }).catch(() => {});
     } catch (err) {
       if (measureFirstRender) {
         markStep("admin_ops_health_first_render_done", {
@@ -1599,6 +1803,7 @@ export function createOpsHealthController({
     loadOpsHealthData,
     loadOpsHistoryData,
     loadOpsOverviewDetailData,
+    loadRegistrySyncDiagnosticsData,
     selectOpsTab
   };
 }

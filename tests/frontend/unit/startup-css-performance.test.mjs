@@ -18,6 +18,13 @@ test("admin bridge startup pulse avoids box-shadow animation", () => {
   assert.doesNotMatch(adminCss, /@keyframes\s+adminBridgePulse[^}]+box-shadow/s);
 });
 
+test("admin running task rows use neutral active styling", () => {
+  const runningRule = adminCss.match(/\.admin-ops-history-row-running\s*\{[\s\S]*?\}/)?.[0] || "";
+  assert.match(runningRule, /var\(--accent-soft-bg\)/);
+  assert.match(runningRule, /var\(--accent\)/);
+  assert.doesNotMatch(runningRule, /contract-temporary|danger/i);
+});
+
 test("shared source-list hover avoids transition-all on startup-visible lists", () => {
   assert.doesNotMatch(componentsCss, /\.sources-list\s+li\s*\{[^}]*transition:\s*all/s);
 });
