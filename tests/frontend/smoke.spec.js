@@ -431,7 +431,7 @@ test("admin smoke: direct admin load shows bucketed fetch failure summary", asyn
   await expect(page.locator("#admin-content")).toBeVisible();
   await expect(page.locator("h1")).toContainText(/Administration/i);
   await expectTooltipText(page, page.locator("#admin-sync-test-btn"), "Verify GitHub App access");
-  await expectTooltipText(page, page.locator("#admin-refresh-btn"), "Reload users");
+  await expect(page.locator("#admin-refresh-btn")).toHaveCount(0);
 
   // Manual diagnostics remain available, but direct Admin boot must not auto-load them.
   await expect(page.locator("#admin-ops-fetcher-metrics")).not.toContainText(
@@ -456,14 +456,7 @@ test("admin smoke: direct admin load shows bucketed fetch failure summary", asyn
   await expect(page.locator("#admin-ops-tab-source-policy-btn .admin-ops-tab-badge")).toBeVisible();
   await expect(page.locator("#admin-ops-tab-registry-conflicts-btn .admin-ops-tab-badge")).toBeVisible();
   await expect(page.locator("#admin-ops-tab-dedup-btn .admin-ops-tab-badge")).toBeVisible();
-  await expect(metrics).not.toContainText(/Loading/i, { timeout: 15000 });
-  await metrics.getByText("Fetcher diagnostics", { exact: true }).click();
-  await expect(metrics.getByText("Task Status", { exact: true })).toBeVisible();
-  await expect(metrics.getByRole("heading", { name: "Runtime" })).toBeVisible();
-  await expect(metrics.getByRole("heading", { name: "Failures" })).toBeVisible();
-  await expect(metrics.getByRole("heading", { name: "Source Health" })).toBeVisible();
-  await expect(metrics.getByRole("heading", { name: "Source Policy Signals" })).toBeVisible();
-  await expect(metrics.locator("details").first()).toBeVisible();
+  await expect(metrics).not.toContainText("Fetcher diagnostics", { timeout: 15000 });
 
   await discoveryTab.click();
   await expect(discoveryTab).toHaveAttribute("aria-selected", "true");

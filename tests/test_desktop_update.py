@@ -15,6 +15,11 @@ from src.ship.desktop_app import config as desktop_app_config
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
+def _write_required_root_html(version_root: Path) -> None:
+    for name in ("index.html", "jobs.html", "saved.html", "admin.html"):
+        (version_root / name).write_text("<html></html>\n", encoding="utf-8")
+
+
 def _write_credible_handoff_request(
     paths: du.DesktopUpdatePaths,
     session_root: Path,
@@ -135,7 +140,6 @@ def test_canonical_manifest_bytes_sorts_keys_and_omits_signature() -> None:
     }
 
     payload = du.canonical_manifest_bytes(manifest).decode("utf-8")
-
     assert payload == (
         '{"channel":"stable","portable_artifact":{"sha256":"'
         + ("a" * 64)
@@ -484,9 +488,7 @@ def test_load_desktop_update_public_keys_repairs_missing_current_pointer() -> No
         (version_root / "src").mkdir(parents=True, exist_ok=True)
         packaging_dir.mkdir(parents=True, exist_ok=True)
         (version_root / "src" / "admin_bridge.py").write_text("print('ok')\n", encoding="utf-8")
-        (version_root / "index.html").write_text("<html></html>\n", encoding="utf-8")
-        (version_root / "jobs.html").write_text("<html></html>\n", encoding="utf-8")
-        (version_root / "saved.html").write_text("<html></html>\n", encoding="utf-8")
+        _write_required_root_html(version_root)
         (app_dir / "update-state.json").write_text(
             json.dumps(
                 {
@@ -685,9 +687,7 @@ def test_resolve_release_repo_repairs_missing_current_pointer() -> None:
         (version_root / "src").mkdir(parents=True, exist_ok=True)
         packaging_dir.mkdir(parents=True, exist_ok=True)
         (version_root / "src" / "admin_bridge.py").write_text("print('ok')\n", encoding="utf-8")
-        (version_root / "index.html").write_text("<html></html>\n", encoding="utf-8")
-        (version_root / "jobs.html").write_text("<html></html>\n", encoding="utf-8")
-        (version_root / "saved.html").write_text("<html></html>\n", encoding="utf-8")
+        _write_required_root_html(version_root)
         (app_dir / "update-state.json").write_text(
             json.dumps(
                 {
