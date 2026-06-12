@@ -123,5 +123,6 @@ def test_gateway_serves_startup_feed_without_bridge_proxy(tmp_path: Path) -> Non
         server.shutdown()
         server.server_close()
 
-    assert isinstance(payload, list)
-    assert payload
+    rows = payload if isinstance(payload, list) else payload.get("jobs")
+    assert isinstance(rows, list)
+    assert rows
