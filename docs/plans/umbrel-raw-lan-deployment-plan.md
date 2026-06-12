@@ -48,7 +48,7 @@ The Umbrel app uses the standard `app_proxy` service with `PROXY_AUTH_ADD: "fals
 - Container startup prepares the Umbrel `/data` bind mount as root, then drops to the non-root `baluffo` runtime user before starting the server.
 - Container port comes from CLI/env/Compose (`8080` inside, `8877` outside through Umbrel `app_proxy`), not desktop `baluffo.config.json` ports.
 - Umbrel `app_proxy` owns host port `8877` from `umbrel-app.yml` and forwards to container port `8080` with `PROXY_AUTH_ADD: "false"`; the `web` service must not also publish `8877:8080`.
-- Docker packaging uses Python 3.13, `requirements-lock.txt`, baked Playwright Chromium, a non-root user, `VOLUME /data`, and a healthcheck against `/ops/health`.
+- Docker packaging uses Python 3.13, `requirements-lock.txt`, baked Playwright Chromium, a non-root user, `VOLUME /data`, and a container gateway healthcheck against `/app/ready`.
 - Image hygiene is protected by `.dockerignore` rules excluding local secrets, sync config, local profiles, DBs, logs, `_out`, and fetched artifacts.
 - GHCR workflow builds `linux/amd64` and `linux/arm64` with Docker buildx and QEMU, publishing `ghcr.io/deathuman/baluffo`.
 - Umbrel community app-store files live in this repo:

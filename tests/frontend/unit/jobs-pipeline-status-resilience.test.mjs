@@ -115,6 +115,50 @@ test("pollJobsPipelineStatus preserves recent active pipeline state across trans
   }
 });
 
+test("container pipeline polling does not wait on task-state enrichment for active status", async () => {
+  const restoreTimers = installFakeTimers();
+  try {
+    const button = createButtonMock();
+    const uiState = createJobsPipelineUiState();
+    const paths = [];
+
+    const controller = createJobsPipelineController({
+      refs: { jobsPipelineRunBtn: button },
+      jobsPipelineUiState: uiState,
+      callJobsBridge: async path => {
+        paths.push(path);
+        if (path === "/tasks/run-jobs-pipeline-status") {
+          return {
+            active: true,
+            runId: "pipeline_container_1",
+            startedAt: "2026-06-12T20:00:00.000Z",
+            stage: "fetch",
+            progress: { label: "Fetching job listings" }
+          };
+        }
+        throw new Error(`Unexpected bridge path: ${path}`);
+      },
+      getAllJobs: () => [],
+      showToast: () => {},
+      setRefreshJobsNeedsAttention: () => {},
+      isErrorStage: payload => Boolean(payload?.error),
+      pollDelayMs: 25,
+      idlePollDelayMs: 50,
+      isContainerRuntimeMode: () => true
+    });
+
+    await controller.pollJobsPipelineStatus();
+
+    assert.deepEqual(paths, ["/tasks/run-jobs-pipeline-status"]);
+    assert.equal(uiState.active, true);
+    assert.equal(uiState.runId, "pipeline_container_1");
+    assert.deepEqual(uiState.abortTask, { taskType: "pipeline", runId: "pipeline_container_1" });
+    assert.equal(button.disabled, false);
+  } finally {
+    restoreTimers();
+  }
+});
+
 test("idle first-run tooltip refresh does not repaint button after pipeline becomes active", async () => {
   const restoreTimers = installFakeTimers();
   try {

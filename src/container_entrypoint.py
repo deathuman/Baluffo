@@ -7,7 +7,7 @@ import os
 import sys
 from pathlib import Path
 
-from src import container_server
+from src import container_gateway, container_server
 
 DEFAULT_RUNTIME_USER = "baluffo"
 DEFAULT_RUNTIME_UID = 1000
@@ -88,6 +88,8 @@ def _drop_privileges(uid: int, gid: int, username: str) -> None:
 
 
 def prepare_runtime(argv: list[str] | None = None) -> None:
+    if not hasattr(os, "geteuid") or not hasattr(os, "setuid") or not hasattr(os, "setgid"):
+        return
     if hasattr(os, "geteuid") and os.geteuid() != 0:
         return
     uid, gid, username = _runtime_identity()
@@ -99,7 +101,7 @@ def prepare_runtime(argv: list[str] | None = None) -> None:
 def main(argv: list[str] | None = None) -> int:
     args = list(argv if argv is not None else sys.argv[1:])
     prepare_runtime(args)
-    return container_server.main(args)
+    return container_gateway.main(args)
 
 
 if __name__ == "__main__":

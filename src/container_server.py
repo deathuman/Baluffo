@@ -6,11 +6,14 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
 from src import admin_bridge
+from src.app_version import get_app_version
 from src.bridge.config import RuntimeConfig, _normalize_log_format, _normalize_log_level
+from src.bridge.pipeline_control_files import inactive_pipeline_status, write_pipeline_status
 from src.bridge.server.handler import make_handler
 from src.bridge.server.httpd import run_http_server
 from src.bridge.server.static_files import StaticFileService
@@ -103,6 +106,13 @@ def main(argv: list[str] | None = None) -> int:
     ensure_required_python()
     config = parse_args(argv)
     seed_runtime_data(Path(config.data_dir), source_root=Path(config.root), overwrite=False)
+    write_pipeline_status(
+        Path(config.data_dir),
+        inactive_pipeline_status(
+            app_version=get_app_version(),
+            now_iso=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        ),
+    )
     handler_cls, api = build_container_handler(config)
     return run_http_server(
         api=api,

@@ -145,7 +145,7 @@ When `sourceRegistry=sqlite`, the registry GET routes and POST mutations read an
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/ops/health` | Full bridge health check |
-| GET | `/app/ready` | Minimal in-memory bridge readiness check for UI liveness/status badges. It does not read lifecycle, schedule, registry, dashboard, history, reports, or SQLite-backed data |
+| GET | `/app/ready` | Minimal readiness check for UI liveness/status badges. In container mode this is served by the public gateway; it does not read lifecycle, schedule, registry, dashboard, history, reports, or SQLite-backed data |
 | GET | `/ops/health?view=ready` | Lightweight bridge readiness check for startup/status badges. It avoids dashboard/support projections |
 | GET | `/ops/dashboard-health` | Full Admin dashboard health payload with alerts, KPIs, schedule state, and source-policy/dedup review indicators |
 | GET | `/ops/dashboard-health?view=summary` | Lightweight Admin first-paint dashboard summary. Avoids full fetch report, run history, discovery report, registry sources, fetcher metrics, storage-health detail, audit artifacts, and performance-profile hydration |

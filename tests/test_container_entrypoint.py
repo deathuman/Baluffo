@@ -111,3 +111,18 @@ def test_drop_privileges_sets_runtime_home_and_user(monkeypatch) -> None:
     assert os.environ["HOME"] == "/home/baluffo"
     assert os.environ["USER"] == "baluffo"
     assert os.environ["LOGNAME"] == "baluffo"
+
+
+def test_prepare_runtime_skips_privilege_drop_when_posix_uid_tools_are_missing(
+    monkeypatch,
+) -> None:
+    monkeypatch.delattr(os, "geteuid", raising=False)
+    monkeypatch.delattr(os, "setuid", raising=False)
+    monkeypatch.delattr(os, "setgid", raising=False)
+    monkeypatch.setattr(
+        container_entrypoint.container_server,
+        "parse_args",
+        lambda _argv=None: (_ for _ in ()).throw(AssertionError("parse_args called")),
+    )
+
+    container_entrypoint.prepare_runtime([])

@@ -6,9 +6,15 @@ import threading
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from src.bridge.ops_live_payload import build_pipeline_task_progress
+from src.bridge.pipeline_control_files import (
+    clear_abort_request,
+    read_abort_request,
+    write_pipeline_status,
+)
 from src.bridge.task_abort_evidence import ABORT_TERMINAL_REASON, row_abort_requested
 
 PIPELINE_COMPLETION_NOTIFICATION_MIN_SECONDS = 60.0
@@ -64,6 +70,7 @@ class PipelineService:
         attach_lifecycle_child: Callable[..., dict[str, Any] | None] | None = None,
         clear_task_state: Callable[[str], None] | None = None,
         pipeline_completion_notifier: Callable[[dict[str, Any]], Any] | None = None,
+        control_data_dir: Path | None = None,
     ) -> None:
         self._lock = pipeline_state_lock
         self._status = pipeline_status
@@ -97,8 +104,46 @@ class PipelineService:
         self._attach_lifecycle_child = attach_lifecycle_child
         self._pipeline_completion_notifier = pipeline_completion_notifier
         self._completion_notification_run_id = ""
+        self._control_data_dir = Path(control_data_dir) if control_data_dir is not None else None
         if self._runtime.abort_requests is None:
             self._runtime.abort_requests = {}
+
+    def _write_control_status(self, payload: dict[str, Any] | None = None) -> None:
+        if self._control_data_dir is None:
+            return
+        if payload is None:
+            with self._lock:
+                status = dict(self._status)
+                progress = status.get("progress")
+                if isinstance(progress, dict):
+                    status["progress"] = dict(progress)
+        else:
+            status = dict(payload)
+            progress = status.get("progress")
+            if isinstance(progress, dict):
+                status["progress"] = dict(progress)
+        try:
+            write_pipeline_status(
+                self._control_data_dir,
+                status,
+                now_iso=str(self._now_iso() or ""),
+            )
+        except OSError:
+            self._bridge_log("warn", "jobs_pipeline_control_status_write_failed")
+
+    def _ingest_control_abort_request(self, run_id: str) -> bool:
+        if self._control_data_dir is None:
+            return False
+        request = read_abort_request(self._control_data_dir, run_id)
+        if not request:
+            return False
+        requests = self._runtime.abort_requests if self._runtime.abort_requests is not None else {}
+        requests[str(run_id or "").strip()] = {
+            "requestedAt": str(request.get("requestedAt") or self._now_iso() or ""),
+            "reason": str(request.get("reason") or "container_gateway_abort").strip(),
+        }
+        self._runtime.abort_requests = requests
+        return True
 
     @staticmethod
     def _pipeline_progress(current_step: int, total_steps: int, label: str) -> dict[str, Any]:
@@ -125,6 +170,8 @@ class PipelineService:
             run_id = str(self._status.get("runId") or "")
             if error:
                 self._status["error"] = str(error)
+            status_snapshot = dict(self._status)
+        self._write_control_status(status_snapshot)
         if run_id and callable(self._heartbeat_lifecycle_run):
             self._heartbeat_lifecycle_run(
                 run_id,
@@ -137,6 +184,7 @@ class PipelineService:
     def _abort_requested(self, run_id: str) -> bool:
         if not str(run_id or "").strip():
             return False
+        self._ingest_control_abort_request(run_id)
         requests = self._runtime.abort_requests or {}
         return str(run_id or "").strip() in requests
 
@@ -187,6 +235,8 @@ class PipelineService:
                 "Abort after sync..." if deferred else "Aborting...",
             )
             progress = self._pipeline_lifecycle_progress(dict(self._status))
+            status_snapshot = dict(self._status)
+        self._write_control_status(status_snapshot)
         if callable(self._heartbeat_lifecycle_run):
             self._heartbeat_lifecycle_run(
                 clean_run_id,
@@ -199,6 +249,8 @@ class PipelineService:
                     "abortReason": str(reason or "").strip(),
                 },
             )
+        if self._control_data_dir is not None:
+            clear_abort_request(self._control_data_dir, clean_run_id)
         return {
             "ok": True,
             "runId": clean_run_id,
@@ -324,6 +376,7 @@ class PipelineService:
                     "completedWithWarnings": bool(completed_with_warnings),
                 }
             progress = self._pipeline_lifecycle_progress(dict(self._status))
+            status_snapshot = dict(self._status)
             if run_id:
                 if callable(self._cancel_lifecycle_run) and canceled:
                     self._cancel_lifecycle_run(
@@ -378,6 +431,9 @@ class PipelineService:
             self._runtime.active_run_id = ""
             if self._runtime.abort_requests is not None:
                 self._runtime.abort_requests.pop(run_id, None)
+        self._write_control_status(status_snapshot)
+        if self._control_data_dir is not None and run_id:
+            clear_abort_request(self._control_data_dir, run_id)
         if status != "canceled":
             self._notify_pipeline_completion(completion_notification)
 
@@ -1277,6 +1333,8 @@ class PipelineService:
             )
             if self._runtime.abort_requests is not None:
                 self._runtime.abort_requests.pop(run_id, None)
+            status_snapshot = dict(self._status)
+            self._write_control_status(status_snapshot)
             if callable(self._start_lifecycle_run):
                 self._start_lifecycle_run(
                     run_id=run_id,
@@ -1284,7 +1342,7 @@ class PipelineService:
                     started_at=started_at,
                     stage="starting",
                     owner_kind="pipeline",
-                    progress=self._pipeline_lifecycle_progress(dict(self._status)),
+                    progress=self._pipeline_lifecycle_progress(status_snapshot),
                     summary={
                         "baselineOutputCount": int(baseline_output_count),
                         "jobsPageLoadedCount": int(max(0, jobs_page_loaded_count)),
@@ -1307,12 +1365,12 @@ class PipelineService:
                 baseline=baseline_output_count,
                 jobsPageLoadedCount=jobs_page_loaded_count,
             )
-            return {
-                "started": True,
-                "runId": run_id,
-                "stage": "starting",
-                "progress": dict(self._status.get("progress") or {}),
-            }
+        return {
+            "started": True,
+            "runId": run_id,
+            "stage": "starting",
+            "progress": dict(status_snapshot.get("progress") or {}),
+        }
 
 
 __all__ = ["PipelineRuntime", "PipelineService"]

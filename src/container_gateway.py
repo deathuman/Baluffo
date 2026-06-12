@@ -1,0 +1,354 @@
+#!/usr/bin/env python3
+"""Container public gateway for stable same-origin UI/control routes."""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+import threading
+import time
+from contextlib import suppress
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
+
+from src import container_server
+from src.app_version import get_app_version
+from src.bridge.pipeline_control_files import (
+    read_pipeline_status,
+    write_abort_request,
+)
+from src.bridge.server.static_files import StaticFileService
+from src.runtime_seed import seed_runtime_data
+
+DEFAULT_INTERNAL_BRIDGE_PORT = 18080
+DEFAULT_PROXY_TIMEOUT_SECONDS = 8.0
+CONTROL_PROXY_TIMEOUT_SECONDS = 1.0
+
+
+def _coerce_port(value: Any, default: int) -> int:
+    try:
+        port = int(str(value or "").strip())
+    except (TypeError, ValueError):
+        return int(default)
+    return port if 1 <= port <= 65535 else int(default)
+
+
+def _now_iso() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _json_bytes(payload: Any) -> bytes:
+    return json.dumps(payload, ensure_ascii=True, separators=(",", ":")).encode("utf-8")
+
+
+def _route_path(raw_path: str) -> str:
+    return str(urlparse(raw_path).path or "/").strip() or "/"
+
+
+def _forwardable_headers(headers: Any) -> dict[str, str]:
+    forwarded: dict[str, str] = {}
+    for name in ("accept", "accept-encoding", "content-type"):
+        value = headers.get(name)
+        if value:
+            forwarded[name.title()] = str(value)
+    return forwarded
+
+
+class _GatewayState:
+    def __init__(
+        self,
+        *,
+        data_dir: Path,
+        static_root: Path,
+        internal_base_url: str,
+        bridge_process: subprocess.Popen[bytes],
+    ) -> None:
+        self.data_dir = Path(data_dir)
+        self.static_service = StaticFileService(
+            static_root=Path(static_root).resolve(),
+            data_dir=Path(data_dir).resolve(),
+        )
+        self.internal_base_url = internal_base_url.rstrip("/")
+        self.bridge_process = bridge_process
+        self.started_at = _now_iso()
+
+    def bridge_alive(self) -> bool:
+        return self.bridge_process.poll() is None
+
+    def ready_payload(self) -> dict[str, Any]:
+        alive = self.bridge_alive()
+        return {
+            "ok": True,
+            "service": "baluffo-container-gateway",
+            "status": "healthy" if alive else "degraded",
+            "summaryView": True,
+            "detailLevel": "ready",
+            "timestamp": _now_iso(),
+            "startupReady": True,
+            "desktopMode": False,
+            "runtime": {"mode": "container", "localDataMode": "bridge"},
+            "appVersion": get_app_version(),
+            "bridge": {
+                "mode": "internal",
+                "alive": alive,
+                "exitCode": self.bridge_process.poll(),
+            },
+            "gateway": {"startedAt": self.started_at},
+        }
+
+    def pipeline_status_payload(self) -> dict[str, Any]:
+        payload = read_pipeline_status(
+            self.data_dir,
+            app_version=get_app_version(),
+            now_iso=_now_iso(),
+        )
+        payload["gatewayReady"] = True
+        payload["bridgeAlive"] = self.bridge_alive()
+        return payload
+
+
+def _make_gateway_handler(state: _GatewayState) -> type[BaseHTTPRequestHandler]:
+    class GatewayHandler(BaseHTTPRequestHandler):
+        server_version = "BaluffoContainerGateway/1"
+
+        def log_message(self, format: str, *args: Any) -> None:
+            if str(os.environ.get("BALUFFO_GATEWAY_QUIET_REQUESTS") or "").lower() in {
+                "1",
+                "true",
+                "yes",
+            }:
+                return
+            super().log_message(format, *args)
+
+        def send_json(self, payload: Any, status: int = 200) -> None:
+            body = _json_bytes(payload)
+            self.send_response(int(status or 200))
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def send_bytes(
+            self,
+            body: bytes,
+            *,
+            content_type: str,
+            filename: str = "",
+            disposition: str = "inline",
+            status: int = 200,
+            cache_control: str = "no-store",
+            content_encoding: str = "",
+        ) -> None:
+            self.send_response(int(status or 200))
+            self.send_header("Content-Type", content_type)
+            self.send_header("Cache-Control", cache_control)
+            if content_encoding:
+                self.send_header("Content-Encoding", content_encoding)
+            if filename:
+                safe_filename = str(filename).replace('"', "")
+                safe_disposition = (
+                    "attachment" if str(disposition).lower() == "attachment" else "inline"
+                )
+                self.send_header(
+                    "Content-Disposition", f'{safe_disposition}; filename="{safe_filename}"'
+                )
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _proxy(self, *, timeout: float = DEFAULT_PROXY_TIMEOUT_SECONDS) -> None:
+            target = f"{state.internal_base_url}{self.path}"
+            body: bytes | None = None
+            if self.command.upper() in {"POST", "PUT", "PATCH"}:
+                length = int(self.headers.get("content-length") or 0)
+                body = self.rfile.read(max(0, length))
+            request = Request(
+                target,
+                data=body,
+                method=self.command.upper(),
+                headers=_forwardable_headers(self.headers),
+            )
+            try:
+                with urlopen(request, timeout=float(timeout)) as response:
+                    response_body = response.read()
+                    self._send_proxied_response(
+                        int(response.status or 200),
+                        response.headers,
+                        response_body,
+                    )
+            except HTTPError as exc:
+                self._send_proxied_response(int(exc.code or 500), exc.headers, exc.read())
+            except (OSError, TimeoutError, URLError) as exc:
+                self.send_json(
+                    {
+                        "ok": False,
+                        "error": "bridge_degraded",
+                        "detail": str(exc),
+                        "gatewayReady": True,
+                    },
+                    status=504,
+                )
+
+        def _send_proxied_response(self, status: int, headers: Any, body: bytes) -> None:
+            self.send_response(int(status or 200))
+            blocked = {"connection", "transfer-encoding", "server", "date"}
+            for name, value in headers.items():
+                if str(name).lower() in blocked:
+                    continue
+                self.send_header(str(name), str(value))
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _handle_abort(self) -> None:
+            length = int(self.headers.get("content-length") or 0)
+            raw = self.rfile.read(max(0, length))
+            try:
+                payload = json.loads(raw.decode("utf-8") or "{}")
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                self.send_json({"ok": False, "error": "invalid_json"}, status=400)
+                return
+            task_type = str(payload.get("taskType") or payload.get("type") or "").strip().lower()
+            run_id = str(payload.get("runId") or payload.get("id") or "").strip()
+            if task_type == "pipeline" and run_id:
+                accepted = write_abort_request(
+                    state.data_dir,
+                    run_id=run_id,
+                    task_type=task_type,
+                    reason=str(payload.get("reason") or "user_abort_requested").strip(),
+                    requested_at=_now_iso(),
+                )
+                try:
+                    request = Request(
+                        f"{state.internal_base_url}{self.path}",
+                        data=raw,
+                        method="POST",
+                        headers=_forwardable_headers(self.headers),
+                    )
+                    with urlopen(request, timeout=CONTROL_PROXY_TIMEOUT_SECONDS) as response:
+                        self._send_proxied_response(
+                            int(response.status or 200),
+                            response.headers,
+                            response.read(),
+                        )
+                        return
+                except (HTTPError, OSError, TimeoutError, URLError):
+                    self.send_json(
+                        {
+                            **accepted,
+                            "state": "abort_queued",
+                            "deferred": True,
+                            "gatewayAccepted": True,
+                        },
+                        status=202,
+                    )
+                    return
+            self._proxy(timeout=DEFAULT_PROXY_TIMEOUT_SECONDS)
+
+        def do_GET(self) -> None:
+            path = _route_path(self.path)
+            if path == "/app/ready":
+                self.send_json(state.ready_payload())
+                return
+            if path == "/tasks/run-jobs-pipeline-status":
+                self.send_json(state.pipeline_status_payload())
+                return
+            if state.static_service.handle_get(self, path=path):
+                return
+            self._proxy()
+
+        def do_POST(self) -> None:
+            path = _route_path(self.path)
+            if path == "/tasks/abort":
+                self._handle_abort()
+                return
+            self._proxy()
+
+        def do_OPTIONS(self) -> None:
+            self.send_response(204)
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+    return GatewayHandler
+
+
+def _spawn_bridge(config: Any, *, internal_port: int) -> subprocess.Popen[bytes]:
+    command = [
+        sys.executable,
+        "-m",
+        "src.container_server",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        str(internal_port),
+        "--data-dir",
+        str(config.data_dir),
+        "--log-format",
+        str(config.log_format or "jsonl"),
+    ]
+    if getattr(config, "quiet_requests", False):
+        command.append("--quiet-requests")
+    env = dict(os.environ)
+    env["BALUFFO_INTERNAL_BRIDGE"] = "1"
+    return subprocess.Popen(command, cwd=str(config.root), env=env)
+
+
+def _start_exit_monitor(process: subprocess.Popen[bytes]) -> None:
+    def _monitor() -> None:
+        code = process.wait()
+        os._exit(int(code or 1))
+
+    thread = threading.Thread(target=_monitor, name="baluffo-bridge-monitor", daemon=True)
+    thread.start()
+
+
+def _terminate_bridge(process: subprocess.Popen[bytes]) -> None:
+    if process.poll() is not None:
+        return
+    with suppress(Exception):
+        process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        with suppress(Exception):
+            process.kill()
+
+
+def main(argv: list[str] | None = None) -> int:
+    config = container_server.parse_args(argv)
+    seed_runtime_data(Path(config.data_dir), source_root=Path(config.root), overwrite=False)
+    internal_port = _coerce_port(
+        os.environ.get("BALUFFO_INTERNAL_BRIDGE_PORT"),
+        DEFAULT_INTERNAL_BRIDGE_PORT,
+    )
+    bridge = _spawn_bridge(config, internal_port=internal_port)
+    _start_exit_monitor(bridge)
+    state = _GatewayState(
+        data_dir=Path(config.data_dir),
+        static_root=Path(config.root),
+        internal_base_url=f"http://127.0.0.1:{internal_port}",
+        bridge_process=bridge,
+    )
+    handler_cls = _make_gateway_handler(state)
+    server = ThreadingHTTPServer((str(config.host), int(config.port)), handler_cls)
+    server.daemon_threads = True
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        return 0
+    finally:
+        server.server_close()
+        _terminate_bridge(bridge)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

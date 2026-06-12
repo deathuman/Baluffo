@@ -229,7 +229,8 @@ export function createJobsPipelineController({
   setRefreshJobsNeedsAttention,
   isErrorStage,
   pollDelayMs,
-  idlePollDelayMs
+  idlePollDelayMs,
+  isContainerRuntimeMode = () => false
 }) {
   function updateJobsPipelineUi({
     pipelinePayload = null,
@@ -505,12 +506,15 @@ export function createJobsPipelineController({
       const runId = String(payload?.runId || "");
       const trackedRunId = String(jobsPipelineUiState.runId || "");
       const shouldLoadTaskState = Boolean(
-        active
-        || jobsPipelineUiState.active
-        || jobsPipelineUiState.pendingStart
-        || trackedRunId
-        || jobsPipelineUiState.abortRequested
-        || !jobsPipelineUiState.taskStateSummaryChecked
+        !isContainerRuntimeMode?.()
+        && (
+          active
+          || jobsPipelineUiState.active
+          || jobsPipelineUiState.pendingStart
+          || trackedRunId
+          || jobsPipelineUiState.abortRequested
+          || !jobsPipelineUiState.taskStateSummaryChecked
+        )
       );
       let taskStateKnown = false;
       let taskStatePayload = { tasks: [] };

@@ -64,6 +64,6 @@ EXPOSE 8080
 VOLUME ["/data"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD python -c "from urllib.request import urlopen; import sys; sys.exit(0 if urlopen('http://127.0.0.1:8080/ops/health', timeout=3).status == 200 else 1)"
+  CMD python -c "from urllib.request import urlopen; import sys; sys.exit(0 if urlopen('http://127.0.0.1:8080/app/ready', timeout=3).status == 200 else 1)"
 
 CMD ["python", "-m", "src.container_entrypoint", "--host", "0.0.0.0", "--port", "8080", "--data-dir", "/data", "--log-format", "jsonl"]

@@ -157,7 +157,8 @@ export function composeJobsRuntime(deps) {
     setRefreshJobsNeedsAttention: needsRefresh => feedController.setRefreshJobsNeedsAttention(needsRefresh),
     isErrorStage: payload => Boolean(payload?.error) || normalizeToken(payload?.stage) === "error",
     pollDelayMs: deps.pipelineStatusPollMs,
-    idlePollDelayMs: deps.pipelineStatusIdlePollMs
+    idlePollDelayMs: deps.pipelineStatusIdlePollMs,
+    isContainerRuntimeMode: () => Boolean(deps.isContainerRuntimeMode?.())
   });
 
   const startupPreviewController = createJobsStartupPreviewController({
@@ -231,6 +232,7 @@ export function composeJobsRuntime(deps) {
     markJobsFirstInteractive,
     applyFiltersAndRender: (...args) => deps.applyFiltersAndRender(...args),
     isDesktopRuntimeMode,
+    isContainerRuntimeMode: () => Boolean(deps.isContainerRuntimeMode?.()),
     logJobsError,
     logJobsInfo,
     getJobsLastUpdatedText: deps.getJobsLastUpdatedText,

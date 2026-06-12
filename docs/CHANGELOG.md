@@ -10,6 +10,10 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+### Changed
+- Container/Umbrel runtime now uses a lightweight public gateway in front of the internal bridge so `/app/ready`, pipeline status, startup static assets, and pipeline abort intake remain responsive while heavier diagnostics or pipeline work are busy.
+- Container Jobs startup now keeps the first page on the bounded startup feed and defers the full light-feed refresh until explicit reload or a later safe refresh path, avoiding automatic multi-MiB feed reads before first usable UI.
+
 ## [0.2.61] - 2026-06-12
 
 ### Fixed

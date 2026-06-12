@@ -115,6 +115,8 @@ def test_dockerfile_prepares_bind_mount_before_non_root_runtime() -> None:
     assert "COPY --from=container-frontend /container-frontend ./.container-frontend" in content
     assert "useradd --uid 1000 --gid baluffo" in content
     assert "src.container_entrypoint" in content
+    assert "http://127.0.0.1:8080/app/ready" in content
+    assert "http://127.0.0.1:8080/ops/health" not in content
     assert "USER baluffo" not in content
     assert "src.container_server" not in content.split("CMD", 1)[-1]
 

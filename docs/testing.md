@@ -234,7 +234,7 @@ When a Baluffo task asks for a “fresh build” without saying container, Docke
 | Container image build | `docker build -t ghcr.io/deathuman/baluffo:local .` |
 | Windows/reparse-safe image build fallback | `python scripts/docker_build_clean_context.py --tag ghcr.io/deathuman/baluffo:local` |
 | Container sync config packaging | `python -m pytest tests/test_container_packaging.py tests/test_build_container_sync_config.py tests/test_build_sync_app_config.py tests/test_source_sync.py -q` |
-| Container smoke | `docker run --rm -p 8877:8080 -v baluffo-data:/data ghcr.io/deathuman/baluffo:local`, then poll `http://127.0.0.1:8877/ops/health` and load `http://127.0.0.1:8877/jobs.html` |
+| Container smoke | `docker run --rm -p 8877:8080 -v baluffo-data:/data ghcr.io/deathuman/baluffo:local`, then poll `http://127.0.0.1:8877/app/ready`, verify `/tasks/run-jobs-pipeline-status`, and load `http://127.0.0.1:8877/jobs.html`; use `/ops/health` as a heavier diagnostic check |
 
 Prefer the normal `docker build .` command. The clean-context helper builds committed `HEAD` from a temporary `git archive` under `.tmp` and cleans it afterward, so it is only a fallback when live Windows workspace context transfer is blocked by reparse points or similar local artifacts.
 

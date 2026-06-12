@@ -734,6 +734,7 @@ def get_pipeline_service() -> _PipelineServiceLike:
                 attach_lifecycle_child=root_mod.attach_lifecycle_child,
                 clear_task_state=root_mod.clear_task_state,
                 pipeline_completion_notifier=pipeline_completion_notifier,
+                control_data_dir=getattr(root_mod.RUNTIME_CONFIG, "data_dir", None),
             )
         return cast(_PipelineServiceLike, root_mod._PIPELINE_SERVICE)
 

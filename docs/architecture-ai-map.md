@@ -32,7 +32,11 @@ src/admin_bridge.py (stable thin entrypoint / wiring-only composition root)
   -> src/bridge/ (services: sync, registry, discovery, pipeline, routes)
   -> src/bridge/admin_entrypoint_{runtime,services,registry_api,task_runtime}.py
 
-src/container_server.py (container same-origin UI/API entrypoint)
+src/container_gateway.py (container public same-origin gateway)
+  -> serves startup static assets + /app/ready + pipeline status/abort control plane
+  -> proxies non-critical/full API routes to internal bridge
+
+src/container_server.py (container internal bridge worker)
   -> src/bridge/server/handler.py + src/bridge/server/static_files.py
   -> src/runtime_seed.py
   -> same BridgeApi route surface with container-only desktop route suppression
@@ -75,7 +79,8 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 | `src/source_discovery.py` | Discover candidate sources (delegates to package) |
 | `src/dev_admin_supervisor.py` | Baluffo launcher (site + bridge + browser) |
 | `src/admin_bridge.py` | Bridge-only entry (expert/manual mode, wiring only) |
-| `src/container_server.py` | Container same-origin UI/API service entrypoint |
+| `src/container_gateway.py` | Container public same-origin control/static gateway |
+| `src/container_server.py` | Container internal bridge worker |
 | `src/jobs/pipeline.py` | Stable pipeline entry flow over `pipeline_{run_setup,execution_flow,finalize}.py` |
 | `src/source_discovery/` | Discovery package modules |
 | `src/packaged_desktop_smoke.py` | Packaged smoke CLI and rehearsal entry flow |
@@ -100,7 +105,7 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 | Admin ops | `frontend/admin/app/ops/{format,task-state,health,bridge-status}.js`, `frontend/admin/app/{auth,fetcher,discovery,sync}.js` | `frontend/admin/app/ops.js` only for stable controller/export changes |
 | Bridge API | `src/bridge/*.py` | `src/bridge/routes/{get_routes,post_routes,post_routes_admin,post_routes_local_data,post_routes_update}.py` |
 | Admin bridge entrypoint/runtime wiring | `src/bridge/admin_entrypoint_{runtime,services,api,registry_api,task_runtime}.py` | `src/admin_bridge.py` only for root-surface compatibility work |
-| Container / Umbrel runtime | `src/container_server.py`, `src/bridge/server/{handler,static_files}.py`, `src/bridge/container_mode.py`, `src/runtime_seed.py`, `Dockerfile`, `deathuman-baluffo/*` | `src/admin_bridge.py` only for shared BridgeApi assembly compatibility work |
+| Container / Umbrel runtime | `src/container_gateway.py`, `src/container_entrypoint.py`, `src/container_server.py`, `src/bridge/server/{handler,static_files}.py`, `src/bridge/container_mode.py`, `src/runtime_seed.py`, `Dockerfile`, `deathuman-baluffo/*` | `src/admin_bridge.py` only for shared BridgeApi assembly compatibility work |
 | Discovery behavior | `src/source_discovery/orchestrator.py`, `orchestrator_{runtime,generation,probe,finalize}.py`, `runtime_metrics.py`, `stage_control.py`, `reporting_{progress,candidates,backlog}.py`, `gamesmap_{cache,parsing,candidates}.py`, `web_search_{fetch,extract,candidates}.py` | `src/source_discovery.py` only for CLI compatibility, and `gamesmap.py`, `reporting.py`, or `web_search.py` only for stable import-surface compatibility work |
 | Bridge sync | `src/bridge/sync_service.py`, `src/source_sync_{config,runtime,snapshot,crypto}.py` | `src/source_sync.py` only for root-surface compatibility work, plus `src/bridge/sync_state.py` |
 | Bridge registry | `src/bridge/registry_service.py`, `src/source_registry_{identity,io,state,canonicalize,policy,auto_approval}.py` | `src/source_registry.py` only for compatibility-surface changes, plus `src/bridge/registry_tombstones.py` |

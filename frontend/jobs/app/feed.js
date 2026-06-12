@@ -271,6 +271,7 @@ export async function initJobsFeed(deps) {
     markJobsStep = () => {},
     initAuth,
     isDesktopRuntimeMode,
+    isContainerRuntimeMode = () => false,
     readCachedJobs,
     normalizeRows,
     recalculateItemsPerPage,
@@ -414,8 +415,12 @@ export async function initJobsFeed(deps) {
       markJobsFirstInteractive("cache");
 
       if (isJobsCacheStale(cached.savedAt, cacheTtlMs)) {
-        setSourceStatus(`Loaded ${getAllJobs().length.toLocaleString()} jobs from cache. Updating stale cache...`);
-        refreshJobsNow({ manual: false }).catch(() => {});
+        if (isContainerRuntimeMode()) {
+          setSourceStatus(`Loaded ${getAllJobs().length.toLocaleString()} jobs from local cache.`);
+        } else {
+          setSourceStatus(`Loaded ${getAllJobs().length.toLocaleString()} jobs from cache. Updating stale cache...`);
+          refreshJobsNow({ manual: false }).catch(() => {});
+        }
       } else {
         setSourceStatus(`Loaded ${getAllJobs().length.toLocaleString()} jobs from local cache.`);
       }
@@ -633,11 +638,17 @@ export async function initJobsFeed(deps) {
 
     const previewLoaded = await loadStartupPreviewJobs();
     if (previewLoaded) {
-      setSourceStatus(`Loaded ${getAllJobs().length.toLocaleString()} jobs from startup snapshot. Syncing full feed...`);
+      setSourceStatus(
+        isContainerRuntimeMode()
+          ? `Loaded ${getAllJobs().length.toLocaleString()} jobs from startup snapshot.`
+          : `Loaded ${getAllJobs().length.toLocaleString()} jobs from startup snapshot. Syncing full feed...`
+      );
       setHasInitializedJobsFeed(true);
       scheduleNonCriticalStartupWork();
       await applyPendingAutoRefreshSignal();
-      refreshJobsNow({ manual: false }).catch(() => {});
+      if (!isContainerRuntimeMode()) {
+        refreshJobsNow({ manual: false }).catch(() => {});
+      }
       return;
     }
 
