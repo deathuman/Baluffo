@@ -10,6 +10,19 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.69] - 2026-06-13
+
+### Fixed
+- Container Admin and Jobs active-fetch polling now use the additive `/ops/task-live/<task>?view=summary` route, keeping live task progress bounded without hydrating full fetch work-item payloads.
+- `/ops/task-live/<task>?view=summary` now returns lightweight task identity, status, progress, counts, timestamps, summary, and bounded recent events while preserving the full default task-live payload for diagnostics.
+- `/ops/health` now avoids expensive active-run detail work while a pipeline or fetch is active, keeping the existing route shape responsive during broad Umbrel fetches.
+- Source-sync shard pushes now serialize GitHub Contents writes to avoid branch-head conflicts when publishing multiple changed shards to the same remote branch.
+
+### Notes
+- This is a forward container/Umbrel patch for active-fetch route performance and source-sync recovery. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- The task-live summary route is additive; default `/ops/task-live/<task>` remains full-fidelity and backward compatible.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.68] - 2026-06-13
 
 ### Fixed

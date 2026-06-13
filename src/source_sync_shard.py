@@ -23,7 +23,8 @@ DEFAULT_PREFIX_LENGTH = 1
 PREFIX_LENGTH_STEP = 1
 MAX_PREFIX_LENGTH = 64
 DEFAULT_SHARD_READ_WORKERS = 8
-DEFAULT_SHARD_WRITE_WORKERS = 4
+# GitHub Contents writes advance the target branch; concurrent PUTs can race each other.
+DEFAULT_SHARD_WRITE_WORKERS = 1
 DEFAULT_BASE_PATH = "baluffo/source-sync/shards"
 DEFAULT_MANIFEST_FILE_NAME = "manifest.json"
 DEFAULT_GC_DELETE_LIMIT = 32

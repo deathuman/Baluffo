@@ -74,7 +74,7 @@ def _snapshot_with_many_sources(count: int) -> dict:
     }
 
 
-def test_push_sharded_snapshot_pushes_changed_shards_with_bounded_parallelism() -> None:
+def test_push_sharded_snapshot_serializes_branch_mutating_shard_writes() -> None:
     snapshot = _snapshot_with_many_sources(32)
     bundle = build_sharded_snapshot_bundle(snapshot, max_shard_size=1_000)
     module = _ConcurrentSyncModule(request_delay_s=0.02)
@@ -94,17 +94,14 @@ def test_push_sharded_snapshot_pushes_changed_shards_with_bounded_parallelism() 
     sequential_floor_s = (changed_count * 2 + 2) * module.request_delay_s
     assert result["pushed"] is True
     assert changed_count > 4
-    assert module.max_in_flight == 4
-    assert duration_s < sequential_floor_s * 0.75
-    assert result["shardResult"]["workerCount"] == 4
+    assert module.max_in_flight == 1
+    assert duration_s >= sequential_floor_s * 0.75
+    assert result["shardResult"]["workerCount"] == 1
     assert result["shardResult"]["parallelWallMs"] > 0
     assert result["remoteTiming"]["methodCounts"] == {
         "PUT": changed_count + 1,
         "GET": changed_count + 1,
     }
-    assert (
-        result["remoteTiming"]["totalRequestDurationMs"] > result["remoteTiming"]["wallDurationMs"]
-    )
     assert (
         result["remoteTiming"]["stageWallMs"]["pushChangedShards"]
         == result["shardResult"]["parallelWallMs"]
@@ -113,7 +110,7 @@ def test_push_sharded_snapshot_pushes_changed_shards_with_bounded_parallelism() 
     assert result["remoteTiming"]["stageWallMs"]["pruneShards"] > 0
 
 
-def test_push_sharded_snapshot_commits_manifest_after_parallel_verification() -> None:
+def test_push_sharded_snapshot_commits_manifest_after_shard_verification() -> None:
     snapshot = _snapshot_with_many_sources(16)
     bundle = build_sharded_snapshot_bundle(snapshot, max_shard_size=1_000)
     module = _ConcurrentSyncModule(request_delay_s=0.001)

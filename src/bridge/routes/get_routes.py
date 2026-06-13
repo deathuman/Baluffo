@@ -1733,6 +1733,33 @@ def _handle_ops_fetch_kpis_route(
     return True
 
 
+def _handle_ops_task_live_route(
+    handler: BridgeResponseWriter,
+    *,
+    api: BridgeApi,
+    path: str,
+    query: dict[str, list[str]],
+) -> bool:
+    if not path.startswith("/ops/task-live/"):
+        return False
+    task_type = path.removeprefix("/ops/task-live/").strip().lower()
+    if task_type not in {"fetch", "discovery", "sync"}:
+        handler.send_json(
+            {"ok": False, "error": f"unsupported task type: {task_type or 'unknown'}"},
+            status=404,
+        )
+        return True
+    view = str((query.get("view") or ["full"])[0] or "full").strip().lower()
+    if view not in {"", "full", "summary"}:
+        handler.send_json(
+            {"ok": False, "error": f"unsupported task-live view: {view}"},
+            status=400,
+        )
+        return True
+    handler.send_json(api.get_task_live_payload(task_type, summary=view == "summary"))
+    return True
+
+
 def _handle_ops_status_routes(
     handler: BridgeResponseWriter,
     *,
@@ -1770,22 +1797,7 @@ def _handle_ops_status_routes(
         handler.send_json(payload)
         return True
 
-    if path.startswith("/ops/task-live/"):
-        task_type = path.removeprefix("/ops/task-live/").strip().lower()
-        if task_type not in {"fetch", "discovery", "sync"}:
-            handler.send_json(
-                {"ok": False, "error": f"unsupported task type: {task_type or 'unknown'}"},
-                status=404,
-            )
-            return True
-        view = str((query.get("view") or ["full"])[0] or "full").strip().lower()
-        if view not in {"", "full", "summary"}:
-            handler.send_json(
-                {"ok": False, "error": f"unsupported task-live view: {view}"},
-                status=400,
-            )
-            return True
-        handler.send_json(api.get_task_live_payload(task_type, summary=view == "summary"))
+    if _handle_ops_task_live_route(handler, api=api, path=path, query=query):
         return True
 
     return False
