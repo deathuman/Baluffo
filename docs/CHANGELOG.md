@@ -16,6 +16,9 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 - Container Admin now replaces successful-but-partial fetch KPI payloads with terminal "No successful fetch yet" or "Not available" copy instead of leaving "Loading latest fetch KPI..." in KPI cards forever.
 - Admin source tables now preflight the fast pipeline status route before starting full `/registry/sources` loads, so active Discovery to Fetch transitions render delayed source-table copy without waiting on heavy registry reads.
 - Registry source-table HTTP 504s during active pipeline/fetch work now downgrade to the bounded delayed state instead of logging a blocking Admin registry source-table error.
+- Admin now stays on compact active-run polling when pipeline or task-state control routes time out during possible active Fetch, Pipeline, or Abort work, avoiding repeated dashboard, registry conflict, and tab-count route pressure.
+- Fetch log polling now backs off after repeated timeouts while preserving the last visible progress and log text.
+- Pipeline Abort now renders queued/aborting state immediately and keeps active child Fetch rows visible until backend evidence shows they have actually settled.
 
 ### Notes
 - This is a forward container/Umbrel recovery patch for the incomplete `0.2.66` live smoke. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
