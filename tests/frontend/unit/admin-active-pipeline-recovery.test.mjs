@@ -76,6 +76,13 @@ function createOpsController(overrides = {}) {
   });
 }
 
+async function flushAdminOpsBackground() {
+  await Promise.resolve();
+  await Promise.resolve();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  await Promise.resolve();
+}
+
 test("admin ops controller replaces stale pipeline child rows from fresher pipeline status", async () => {
   const state = createOpsState();
   const refs = createOpsRefs();
@@ -166,6 +173,59 @@ test("admin ops KPI cards show active-run delayed copy while pipeline is active"
   controller.stopOpsHealthPolling();
 });
 
+test("admin ops fetch KPI success replaces missing optional fields with terminal copy", async () => {
+  const state = createOpsState();
+  const refs = createOpsRefs();
+  const calls = [];
+  const controller = createOpsController({
+    state,
+    refs,
+    getBridge: async path => {
+      calls.push(path);
+      if (path === "/ops/dashboard-health?view=summary") {
+        return { alerts: [], kpis: {}, schedule: {}, status: "healthy", summaryView: true };
+      }
+      if (path === "/ops/fetch-kpis?view=summary") {
+        return {
+          ok: true,
+          summaryView: true,
+          status: "warning",
+          alertsEvaluated: true,
+          alertBasis: "history",
+          alerts: [
+            { id: "fetch_never_run", severity: "warning", message: "No successful fetch has run yet.", dismissible: false }
+          ],
+          kpis: {
+            sevenDayFetchSuccessRate: 0,
+            avgFetchDurationMs7d: 5220280,
+            pendingApprovalsCount: 813
+          }
+        };
+      }
+      if (path === "/ops/task-state?view=summary") return { tasks: [], count: 0, summary: true };
+      if (path === "/registry/conflicts?view=summary") return { summary: { conflictCount: 0 }, conflicts: [], summaryView: true };
+      throw new Error(`unexpected path ${path}`);
+    },
+    renderAdminOpsKpis(_el, kpis, status, options) {
+      renderAdminOpsKpis(refs.adminOpsKpisEl, kpis, status, options);
+    },
+    renderScheduler: callback => {
+      callback();
+      return () => {};
+    }
+  });
+
+  await controller.loadOpsHealthData({ summary: true });
+  await flushAdminOpsBackground();
+  controller.stopOpsHealthPolling();
+
+  assert.ok(calls.includes("/ops/fetch-kpis?view=summary"));
+  assert.doesNotMatch(refs.adminOpsKpisEl.innerHTML, /Loading latest fetch KPI/);
+  assert.match(refs.adminOpsKpisEl.innerHTML, /No successful fetch yet/);
+  assert.match(refs.adminOpsKpisEl.innerHTML, /0\.0%/);
+  assert.match(refs.adminOpsKpisEl.innerHTML, /813/);
+});
+
 test("admin registry controller delays source tables while pipeline fetch is active", async () => {
   const calls = [];
   const fixture = createRegistryControllerFixture({
@@ -191,4 +251,85 @@ test("admin registry controller delays source tables while pipeline fetch is act
   assert.match(fixture.refs.adminActiveSourcesEl.innerHTML, /Source tables delayed while job update is running/);
   assert.match(fixture.refs.adminRejectedSourcesEl.innerHTML, /Source tables delayed while job update is running/);
   assert.doesNotMatch(fixture.refs.adminPendingSourcesEl.innerHTML, /Loading pending sources/);
+});
+
+test("admin registry controller preflights pipeline status before source tables", async () => {
+  const calls = [];
+  const fixture = createRegistryControllerFixture({
+    state: {
+      adminBusyState: {
+        discoveryLoad: false,
+        livePipelineRunning: false,
+        liveFetchRunning: false
+      }
+    },
+    options: {
+      getBridge: async path => {
+        calls.push(String(path));
+        if (path === "/tasks/run-jobs-pipeline-status") {
+          return {
+            active: true,
+            runId: "pipeline_live_1",
+            stage: "fetch",
+            activeChildren: [
+              { taskType: "fetch", type: "fetch", runId: "fetch_live_1", active: true }
+            ]
+          };
+        }
+        throw new Error(`unexpected path ${path}`);
+      }
+    }
+  });
+  fixture.refs.adminPendingSourcesEl.innerHTML = '<div class="muted">Loading pending sources...</div>';
+  fixture.refs.adminActiveSourcesEl.innerHTML = '<div class="muted">Loading active sources...</div>';
+  fixture.refs.adminRejectedSourcesEl.innerHTML = '<div class="muted">Loading rejected sources...</div>';
+  const controller = createAdminRegistryController(fixture.options);
+
+  const result = await controller.loadDiscoveryData({ background: true });
+
+  assert.equal(result?.skipped, true);
+  assert.equal(result?.reason, "pipeline_running");
+  assert.deepEqual(calls, ["/tasks/run-jobs-pipeline-status"]);
+  assert.equal(fixture.state.adminBusyState.livePipelineRunning, true);
+  assert.equal(fixture.state.adminBusyState.liveFetchRunning, true);
+  assert.match(fixture.refs.adminPendingSourcesEl.innerHTML, /Source tables delayed while job update is running/);
+  assert.doesNotMatch(fixture.refs.adminPendingSourcesEl.innerHTML, /Loading pending sources/);
+});
+
+test("admin registry controller downgrades active pipeline registry 504 to delayed source tables", async () => {
+  let fixture;
+  fixture = createRegistryControllerFixture({
+    options: {
+      getBridge: async path => {
+        if (path === "/tasks/run-jobs-pipeline-status") return { active: false, stage: "idle" };
+        if (path === "/discovery/report") return { summary: {} };
+        if (path === "/discovery/candidates") return { candidates: [] };
+        if (String(path).startsWith("/registry/sources")) {
+          fixture.state.adminBusyState.livePipelineRunning = true;
+          fixture.state.adminBusyState.liveFetchRunning = true;
+          throw new Error("Bridge error (HTTP 504)");
+        }
+        throw new Error(`unexpected path ${path}`);
+      },
+      fetchJobsFetchReportJson: async () => ({ sources: [] })
+    }
+  });
+  const logs = [];
+  fixture.options.appendDiscoveryLog = message => {
+    logs.push(String(message));
+  };
+  fixture.refs.adminPendingSourcesEl.innerHTML = '<div class="muted">Loading pending sources...</div>';
+  fixture.refs.adminActiveSourcesEl.innerHTML = '<div class="muted">Loading active sources...</div>';
+  fixture.refs.adminRejectedSourcesEl.innerHTML = '<div class="muted">Loading rejected sources...</div>';
+  const controller = createAdminRegistryController(fixture.options);
+
+  const result = await controller.loadDiscoveryData({ background: true });
+  fixture.renderScheduler.flush();
+
+  assert.equal(result.partialLoadFailed, true);
+  assert.match(logs.join("\n"), /Source tables delayed while job update is running/);
+  assert.doesNotMatch(logs.join("\n"), /Could not load Admin registry source tables/);
+  assert.match(fixture.refs.adminPendingSourcesEl.innerHTML, /Source tables delayed while job update is running/);
+  assert.match(fixture.refs.adminActiveSourcesEl.innerHTML, /Source tables delayed while job update is running/);
+  assert.match(fixture.refs.adminRejectedSourcesEl.innerHTML, /Source tables delayed while job update is running/);
 });

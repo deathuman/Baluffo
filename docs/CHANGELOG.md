@@ -10,6 +10,18 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.67] - 2026-06-13
+
+### Fixed
+- Container Admin now replaces successful-but-partial fetch KPI payloads with terminal "No successful fetch yet" or "Not available" copy instead of leaving "Loading latest fetch KPI..." in KPI cards forever.
+- Admin source tables now preflight the fast pipeline status route before starting full `/registry/sources` loads, so active Discovery to Fetch transitions render delayed source-table copy without waiting on heavy registry reads.
+- Registry source-table HTTP 504s during active pipeline/fetch work now downgrade to the bounded delayed state instead of logging a blocking Admin registry source-table error.
+
+### Notes
+- This is a forward container/Umbrel recovery patch for the incomplete `0.2.66` live smoke. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- Full registry source tables remain diagnostic/operator data and may be delayed while a job update is running; current pipeline visibility and usable Admin navigation remain prioritized.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.66] - 2026-06-13
 
 ### Fixed

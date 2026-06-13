@@ -51,6 +51,7 @@ test("admin registry controller can refresh source tables without full discovery
     refs,
     getBridge: async path => {
       calls.push(String(path));
+      if (path === "/tasks/run-jobs-pipeline-status") return { active: false, stage: "idle" };
       if (path === "/discovery/report?view=summary") {
         throw new Error("source table refresh should not depend on discovery summary");
       }
@@ -97,6 +98,7 @@ test("admin registry controller can refresh source tables without full discovery
   renderScheduler.flush();
 
   assert.deepEqual(calls, [
+    "/tasks/run-jobs-pipeline-status",
     "/registry/sources?buckets=pending,active,rejected&includeHiddenPending=0"
   ]);
   assert.equal(refs.adminPendingSourcesEl.innerHTML, "Pending");

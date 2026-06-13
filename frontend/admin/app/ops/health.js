@@ -1633,8 +1633,13 @@ export function createOpsHealthController({
     const activePipelineOrFetch = Boolean(
       controlPlanePipelineActive || liveTypes.has("pipeline") || liveTypes.has("fetch")
     );
+    const fetchKpisLoaded = Boolean(health?.fetchKpisLoaded);
+    const fetchNeverRun = Array.isArray(health?.alerts)
+      && health.alerts.some(alert => String(alert?.id || "") === "fetch_never_run");
     const fetchKpiPendingLabel = activePipelineOrFetch
       ? ACTIVE_PIPELINE_KPI_DELAYED_LABEL
+      : fetchKpisLoaded
+        ? (fetchNeverRun ? "No successful fetch yet" : "Not available")
       : "Loading latest fetch KPI...";
 
     renderAdminOpsAlertsImpl(refs.adminOpsAlertsEl, health?.alerts || [], {
@@ -1921,6 +1926,7 @@ export function createOpsHealthController({
           suppressedAlertsCount: payload.suppressedAlertsCount,
           alertsEvaluated: payload.alertsEvaluated,
           alertBasis: payload.alertBasis,
+          fetchKpisLoaded: true,
           summaryView: true
         },
         { summary: true }

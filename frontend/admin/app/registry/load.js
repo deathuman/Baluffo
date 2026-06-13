@@ -4,8 +4,10 @@ import { renderDiscoveryCandidateReviewHtml } from "../../render.js?v=16";
 const ADMIN_SHOW_ZERO_JOBS_KEY = "baluffo_admin_show_zero_jobs_sources";
 const CAP_DEFER_REASONS = new Set(["adapter_cap", "domain_cap", "top_n_cap"]);
 const FULL_REGISTRY_LOAD_TIMEOUT_MS = 60000;
+const PIPELINE_STATUS_PREFLIGHT_TIMEOUT_MS = 3000;
 const REGISTRY_REFRESH_RETRY_DELAY_MS = 5000;
 const ACTIVE_PIPELINE_SOURCE_TABLES_DELAYED_LABEL = "Source tables delayed while job update is running.";
+const JOBS_PIPELINE_STATUS_PATH = "/tasks/run-jobs-pipeline-status";
 
 function getDiscoveryCandidatesRows(payload) {
   return Array.isArray(payload?.candidates) ? payload.candidates : [];
@@ -155,6 +157,79 @@ export function createRegistryLoadController({
     });
   }
 
+  function pipelineStatusIndicatesActive(payload = {}) {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+    if (payload.active === true) return true;
+    const activeChildren = Array.isArray(payload.activeChildren) ? payload.activeChildren : [];
+    if (activeChildren.some(row => row && typeof row === "object" && row.active !== false)) {
+      return true;
+    }
+    const stage = String(payload.stage || payload?.progress?.phaseKey || "").trim().toLowerCase();
+    return Boolean(stage && stage !== "idle" && stage !== "complete" && stage !== "completed" && stage !== "error");
+  }
+
+  function rememberPipelineStatusPayload(payload = {}) {
+    if (!pipelineStatusIndicatesActive(payload)) return;
+    const activeChildren = Array.isArray(payload.activeChildren)
+      ? payload.activeChildren
+          .filter(row => row && typeof row === "object" && row.active !== false)
+          .slice(0, 3)
+          .map(row => ({
+            ...row,
+            taskType: String(row.taskType || row.type || "").trim().toLowerCase(),
+            type: String(row.type || row.taskType || "").trim().toLowerCase(),
+            active: true
+          }))
+      : [];
+    const stage = String(payload.stage || payload?.progress?.phaseKey || "pipeline").trim().toLowerCase();
+    const runId = String(payload.runId || "").trim();
+    const parentRow = {
+      taskType: "pipeline",
+      type: "pipeline",
+      runId,
+      active: true,
+      startedAt: String(payload.startedAt || ""),
+      status: "running",
+      controlPlaneSource: "pipeline-status",
+      summary: { stage },
+      taskProgress: payload.progress && typeof payload.progress === "object"
+        ? { ...payload.progress, active: true }
+        : { active: true, phaseKey: stage, phaseLabel: stage === "pipeline" ? "Pipeline running" : `Pipeline ${stage}` }
+    };
+    const tasks = [...activeChildren, parentRow];
+    state.latestOpsTaskStatePayload = {
+      tasks,
+      count: tasks.length,
+      summary: true,
+      source: "pipeline-status"
+    };
+    setBusyFlag("livePipelineRunning", true);
+    setBusyFlag(
+      "liveFetchRunning",
+      activeChildren.some(row => String(row?.taskType || row?.type || "").trim().toLowerCase() === "fetch") || stage === "fetch"
+    );
+    state.discoveryPipelineStatusLastActiveAtMs = Date.now();
+  }
+
+  async function refreshActivePipelineStatus() {
+    if (activePipelineOrFetchRunning()) return true;
+    try {
+      const payload = await getBridge(JOBS_PIPELINE_STATUS_PATH, { timeoutMs: PIPELINE_STATUS_PREFLIGHT_TIMEOUT_MS });
+      if (pipelineStatusIndicatesActive(payload)) {
+        rememberPipelineStatusPayload(payload);
+        return true;
+      }
+    } catch {
+      // Source tables should remain available when the fast control-plane preflight is unavailable.
+    }
+    return activePipelineOrFetchRunning();
+  }
+
+  function recentlyDetectedActivePipeline() {
+    const lastActiveAtMs = Number(state.discoveryPipelineStatusLastActiveAtMs || 0);
+    return lastActiveAtMs > 0 && Date.now() - lastActiveAtMs < 120000;
+  }
+
   function renderSourceTablesDelayed({ onlyIfPlaceholder = false } = {}) {
     if (!onlyIfPlaceholder || sourceTableNeedsDelayedPlaceholder(refs.adminPendingSourcesEl)) {
       setSourceTableDelayedPlaceholder(refs.adminPendingSourcesEl);
@@ -182,7 +257,18 @@ export function createRegistryLoadController({
       return await promise;
     } catch (err) {
       const message = getErrorMessage(err);
-      if (options?.registryRefresh && options?.background && /timed out/i.test(message)) {
+      const registryRefreshDelayedByPipeline = Boolean(
+        options?.registryRefresh
+        && (
+          activePipelineOrFetchRunning()
+          || recentlyDetectedActivePipeline()
+        )
+        && /(timed out|timeout|HTTP 504|\b504\b)/i.test(message)
+      );
+      if (registryRefreshDelayedByPipeline) {
+        renderSourceTablesDelayed({ onlyIfPlaceholder: Boolean(options?.background) });
+        appendDiscoveryLog(ACTIVE_PIPELINE_SOURCE_TABLES_DELAYED_LABEL, "warn");
+      } else if (options?.registryRefresh && options?.background && /timed out/i.test(message)) {
         appendDiscoveryLog("Source table refresh delayed; retrying.", "warn");
       } else {
         appendDiscoveryLog(`Could not load ${label}: ${message}`, "error");
@@ -247,7 +333,14 @@ export function createRegistryLoadController({
         partialLoadFailed: false
       };
     }
-    const livePipelineOrFetchRunning = activePipelineOrFetchRunning();
+    const background = Boolean(options?.background);
+    const showPlaceholders = !background && options?.suppressPlaceholders !== true;
+    if (showPlaceholders) {
+      setSourceTablePlaceholder(refs.adminPendingSourcesEl, "pending");
+      setSourceTablePlaceholder(refs.adminActiveSourcesEl, "active");
+      setSourceTablePlaceholder(refs.adminRejectedSourcesEl, "rejected");
+    }
+    const livePipelineOrFetchRunning = await refreshActivePipelineStatus();
     const allowDuringActivePipeline = Boolean(options?.forceDuringActivePipeline);
     if (livePipelineOrFetchRunning && !allowDuringActivePipeline) {
       const background = Boolean(options?.background);
@@ -277,17 +370,10 @@ export function createRegistryLoadController({
     }
     state.discoveryLastLoadStartedAtMs = nowMs;
     const renderToken = ++registryRenderToken;
-    const background = Boolean(options?.background);
-    const showPlaceholders = !background && options?.suppressPlaceholders !== true;
     setBusyFlag("discoveryLoad", true);
     state.discoveryLoadPromise = (async () => {
       try {
         const filterState = toAdminFilterState();
-        if (showPlaceholders) {
-          setSourceTablePlaceholder(refs.adminPendingSourcesEl, "pending");
-          setSourceTablePlaceholder(refs.adminActiveSourcesEl, "active");
-          setSourceTablePlaceholder(refs.adminRejectedSourcesEl, "rejected");
-        }
         const sourceTablesOnly = Boolean(options?.sourceTablesOnly);
         const reportPromise = sourceTablesOnly
           ? Promise.resolve(null)
