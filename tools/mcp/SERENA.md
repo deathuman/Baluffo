@@ -11,7 +11,7 @@ Use this guide when you are setting up Serena for Baluffo repo work.
 - The repo docs stay canonical if Serena memory and repo docs ever diverge.
 - `.serena/` is local-only state and must stay untracked.
 
-For the repo's optional browser-driving MCP server, see [PLAYWRIGHT.md](PLAYWRIGHT.md).
+For Codex browser inspection, use the built-in in-app Browser and Developer mode; do not add Chrome DevTools MCP or `@playwright/mcp` for Baluffo. The repo-local Playwright MCP in [PLAYWRIGHT.md](PLAYWRIGHT.md) is retained only as a deprecated fallback for non-Codex clients.
 
 ## Install Serena
 

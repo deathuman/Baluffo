@@ -4,19 +4,19 @@
 
 ## What Lives Here
 
-`tools/mcp/` owns repo MCP tooling docs and MCP server entrypoints used during development.
+`tools/mcp/` owns repo MCP tooling docs and MCP server entrypoints used during development. Codex browser inspection uses the built-in in-app Browser and Developer mode from `docs/AI_ASSISTANT_GUIDE.md`, not Chrome DevTools MCP or `@playwright/mcp`.
 
 - Use [SERENA.md](SERENA.md) for the required repo AI tooling standard.
-- Use [PLAYWRIGHT.md](PLAYWRIGHT.md) for the optional browser-driving MCP server.
 - Use [BASIC_MEMORY.md](BASIC_MEMORY.md) for the required external AI continuity memory (cross-client handoff, project gotchas, current focus).
+- Use [PLAYWRIGHT.md](PLAYWRIGHT.md) only for the deprecated local Playwright MCP fallback when a non-Codex client lacks built-in browser control.
 
 ## Start Here
 
 | Document | Role | Use it when |
 |----------|------|-------------|
 | [SERENA.md](SERENA.md) | Required AI tooling | You are setting up Serena for Codex CLI or OpenCode, or checking the repo's Serena-memory rules |
-| [PLAYWRIGHT.md](PLAYWRIGHT.md) | Optional task-specific tooling | You need the local Playwright MCP server for browser interaction or visual verification |
 | [BASIC_MEMORY.md](BASIC_MEMORY.md) | Required external AI continuity memory | You need durable cross-client handoff notes, project gotchas, and current focus across Codex/OpenCode/Cline |
+| [PLAYWRIGHT.md](PLAYWRIGHT.md) | Deprecated fallback tooling | A non-Codex client lacks built-in browser control and the user explicitly wants the local Playwright MCP fallback |
 
 ## Which MCP Tool Should I Use?
 
@@ -24,7 +24,8 @@
 |------|------------|
 | Standard AI-assisted repo work | [SERENA.md](SERENA.md) |
 | Symbol-aware navigation and refactors | [SERENA.md](SERENA.md) |
-| Browser actions, screenshots, or page inspection | [PLAYWRIGHT.md](PLAYWRIGHT.md) |
+| Codex browser actions, screenshots, console/network inspection, or page inspection | [`docs/AI_ASSISTANT_GUIDE.md`](../../docs/AI_ASSISTANT_GUIDE.md) and Codex in-app Browser Developer mode |
+| Non-Codex browser fallback when explicitly requested | [PLAYWRIGHT.md](PLAYWRIGHT.md) |
 | Cross-client AI handoff memory | [BASIC_MEMORY.md](BASIC_MEMORY.md) |
 | General repo coding task with no browser interaction | [SERENA.md](SERENA.md) plus [BASIC_MEMORY.md](BASIC_MEMORY.md) when the task creates durable continuity value |
 

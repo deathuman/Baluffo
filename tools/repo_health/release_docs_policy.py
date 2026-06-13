@@ -236,8 +236,16 @@ def test_serena_tooling_is_first_class_for_codex_and_opencode(repo_root: Path) -
     assert "SERENA.md" in mcp_index_text
     assert "PLAYWRIGHT.md" in mcp_index_text
     assert "Conventions for Future MCP Docs" in mcp_index_text
+    assert "Codex browser inspection uses the built-in in-app Browser" in mcp_index_text
+    assert "not Chrome DevTools MCP or `@playwright/mcp`" in mcp_index_text
     assert "For the MCP tooling landing page, use [INDEX.md](INDEX.md)." in playwright_text
+    assert "deprecated local Playwright MCP fallback" in playwright_text
+    assert (
+        "Do not configure Chrome DevTools MCP, `@playwright/mcp`, or this local server"
+        in playwright_text
+    )
     assert "[PLAYWRIGHT.md](PLAYWRIGHT.md)" in serena_text
+    assert "use the built-in in-app Browser and Developer mode" in serena_text
     assert "Codex CLI" in serena_text
     assert "OpenCode" in serena_text
     assert "repo docs stay canonical" in serena_text
@@ -266,7 +274,12 @@ def test_serena_tooling_is_first_class_for_codex_and_opencode(repo_root: Path) -
     assert "[`../tools/mcp/INDEX.md`](../tools/mcp/INDEX.md)" in index_text
     assert "../tools/mcp/README.md" not in index_text
     assert "Serena memory and repo docs ever diverge" in guide_text
+    assert (
+        "Do not configure Chrome DevTools MCP, `@playwright/mcp`, or standalone Playwright"
+        in guide_text
+    )
     assert "required Serena setup" in tools_text
+    assert "deprecated non-Codex Playwright MCP fallback" in tools_text
     assert "OpenCode" in tools_text
     assert opencode["mcp"]["serena"]["command"] == [
         "serena",

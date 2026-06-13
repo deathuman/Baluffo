@@ -75,6 +75,8 @@ After a long live-hotfix or release patch cycle, pause before continuing direct 
 
 ## Codex In-App Browser Visual QA
 
+Use Codex's built-in Browser plugin and in-app browser for Baluffo visual QA, screenshots, interaction, console/network inspection, and Developer-mode/CDP debugging. Do not configure Chrome DevTools MCP, `@playwright/mcp`, or standalone Playwright automation for Codex browser inspection in this repo.
+
 For visual inspection in the Codex in-app browser, use the bridge-backed desktop runtime instead of a bare static server. From the repo root:
 
 ```powershell
