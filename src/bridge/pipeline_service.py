@@ -338,49 +338,65 @@ class PipelineService:
         requests = self._runtime.abort_requests or {}
         return dict(requests.get(str(run_id or "").strip()) or {})
 
+    @staticmethod
+    def _normalized_abortable_child_row(row: dict[str, Any]) -> dict[str, Any] | None:
+        task_type = str(row.get("taskType") or row.get("type") or "").strip().lower()
+        child_run_id = str(row.get("runId") or row.get("id") or "").strip()
+        if task_type not in {"fetch", "discovery"} or not child_run_id:
+            return None
+        return {**row, "taskType": task_type, "runId": child_run_id}
+
+    @staticmethod
+    def _pipeline_parent_run_id(row: dict[str, Any]) -> str:
+        summary = row.get("summary") if isinstance(row.get("summary"), dict) else {}
+        return str(row.get("parentRunId") or summary.get("pipelineRunId") or "").strip()
+
+    @staticmethod
+    def _row_is_active_unfinished(row: dict[str, Any]) -> bool:
+        return row.get("active") is not False and not str(row.get("finishedAt") or "").strip()
+
+    def _append_abortable_child_row(
+        self,
+        rows: list[dict[str, Any]],
+        seen: set[tuple[str, str]],
+        row: dict[str, Any],
+    ) -> None:
+        normalized = self._normalized_abortable_child_row(row)
+        if normalized is None:
+            return
+        key = (str(normalized["taskType"]), str(normalized["runId"]))
+        if key in seen:
+            return
+        seen.add(key)
+        rows.append(normalized)
+
+    def _projected_run_history_rows(self) -> list[dict[str, Any]]:
+        if not callable(self._get_projected_run_history):
+            return []
+        try:
+            projection = self._get_projected_run_history()
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return []
+        projected_rows = getattr(projection, "rows", []) if projection is not None else []
+        if not isinstance(projected_rows, list):
+            return []
+        return [row for row in projected_rows if isinstance(row, dict)]
+
     def _active_abortable_child_rows(self, run_id: str) -> list[dict[str, Any]]:
         clean_run_id = str(run_id or "").strip()
         if not clean_run_id:
             return []
         rows: list[dict[str, Any]] = []
         seen: set[tuple[str, str]] = set()
-
-        def add_row(row: dict[str, Any]) -> None:
-            task_type = str(row.get("taskType") or row.get("type") or "").strip().lower()
-            child_run_id = str(row.get("runId") or row.get("id") or "").strip()
-            if task_type not in {"fetch", "discovery"} or not child_run_id:
-                return
-            key = (task_type, child_run_id)
-            if key in seen:
-                return
-            seen.add(key)
-            rows.append({**row, "taskType": task_type, "runId": child_run_id})
-
         with self._lock:
             for child in self._copy_control_children(self._status):
-                parent_run_id = str(child.get("parentRunId") or "").strip()
-                if parent_run_id == clean_run_id:
-                    add_row(child)
-
-        if callable(self._get_projected_run_history):
-            try:
-                projection = self._get_projected_run_history()
-            except (AttributeError, RuntimeError, TypeError, ValueError):
-                projection = None
-            projected_rows = getattr(projection, "rows", []) if projection is not None else []
-            if isinstance(projected_rows, list):
-                for row in projected_rows:
-                    if not isinstance(row, dict):
-                        continue
-                    summary = row.get("summary") if isinstance(row.get("summary"), dict) else {}
-                    parent_run_id = str(
-                        row.get("parentRunId") or summary.get("pipelineRunId") or ""
-                    ).strip()
-                    if parent_run_id != clean_run_id:
-                        continue
-                    if row.get("active") is False or str(row.get("finishedAt") or "").strip():
-                        continue
-                    add_row(row)
+                if self._pipeline_parent_run_id(child) == clean_run_id:
+                    self._append_abortable_child_row(rows, seen, child)
+        for row in self._projected_run_history_rows():
+            if self._pipeline_parent_run_id(row) != clean_run_id:
+                continue
+            if self._row_is_active_unfinished(row):
+                self._append_abortable_child_row(rows, seen, row)
         return rows
 
     def _request_active_child_aborts(self, run_id: str) -> None:
