@@ -87,15 +87,17 @@ export function createOpsBridgeStatusController({
     try {
       const healthPayload = await getBridge("/app/ready", { timeoutMs: 3000 });
       const serviceName = String(healthPayload?.service || "").trim();
-      if (serviceName && serviceName !== "baluffo-bridge") {
+      if (serviceName && !["baluffo-bridge", "baluffo-container-gateway"].includes(serviceName)) {
         throw new Error("Bridge health response mismatch");
       }
       bridgeStatusFailureCount = 0;
-      if (lastBridgeStatus !== "online") {
-        lastBridgeStatus = "online";
-        onBridgeStatusChange?.("online");
+      const readyStatus = String(healthPayload?.status || "").trim().toLowerCase();
+      const nextStatus = readyStatus === "degraded" ? "degraded" : "online";
+      if (lastBridgeStatus !== nextStatus) {
+        lastBridgeStatus = nextStatus;
+        onBridgeStatusChange?.(nextStatus);
       }
-      setBridgeStatusBadge("online", "Bridge Online");
+      setBridgeStatusBadge(nextStatus, nextStatus === "degraded" ? "Bridge Degraded" : "Bridge Online");
     } catch {
       try {
         const pipelinePayload = await getBridge("/tasks/run-jobs-pipeline-status", { timeoutMs: 5000 });

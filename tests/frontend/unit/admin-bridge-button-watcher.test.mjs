@@ -59,7 +59,7 @@ test("admin bridge button watcher falls back to desktop bridge URL params", asyn
     watcher.stopAdminBridgeButtonWatch();
 
     assert.deepEqual(bases, ["http://127.0.0.1:8877", "http://127.0.0.1:64433"]);
-    assert.deepEqual(paths, ["/ops/health?view=ready", "/ops/health?view=ready"]);
+    assert.deepEqual(paths, ["/app/ready", "/app/ready"]);
     assert.equal(states.at(-1)?.state, "online");
     assert.equal(states.at(-1)?.label, "Admin Online");
   } finally {
@@ -114,7 +114,7 @@ test("admin bridge button watcher skips overlapping interval polls", async () =>
     intervalCallback();
     await new Promise(resolve => setImmediate(resolve));
 
-    assert.deepEqual(paths, ["/ops/health?view=ready"]);
+    assert.deepEqual(paths, ["/app/ready"]);
     assert.equal(readyCalls, 1);
 
     deferred.resolve({ summary: { activeAlertCount: 0 } });

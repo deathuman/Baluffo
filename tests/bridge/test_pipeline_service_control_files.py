@@ -90,6 +90,31 @@ def test_pipeline_service_writes_active_child_control_snapshot(tmp_path: Path) -
     assert payload["activeChildRunId"] == "fetch_1"
 
 
+def test_pipeline_service_refreshes_control_snapshot_during_child_heartbeat(
+    tmp_path: Path,
+) -> None:
+    timestamps = iter(["2026-05-06T19:00:00Z", "2026-05-06T19:00:15Z"])
+    service = _make_pipeline_service(
+        pipeline_status={"active": True, "runId": "pipeline_1", "stage": "fetch"},
+        control_data_dir=tmp_path,
+        now_iso=lambda: next(timestamps),
+    )
+    service._attach_lifecycle_child_row(  # noqa: SLF001
+        run_id="pipeline_1",
+        task_type="fetch",
+        child_run_id="fetch_1",
+        child_started_at="2026-05-06T19:00:02Z",
+    )
+
+    service._heartbeat_pipeline_wait()  # noqa: SLF001
+
+    payload = read_pipeline_status(tmp_path)
+    assert payload["active"] is True
+    assert payload["stage"] == "fetch"
+    assert payload["snapshotAt"] == "2026-05-06T19:00:15Z"
+    assert payload["activeChildren"][0]["runId"] == "fetch_1"
+
+
 def test_pipeline_service_clears_active_children_on_terminal_status(tmp_path: Path) -> None:
     service = _make_pipeline_service(
         pipeline_status={"active": True, "runId": "pipeline_1", "stage": "fetch"},

@@ -174,7 +174,16 @@ test("admin ops controller does not let delayed pipeline status replace richer t
               active: true,
               runId: "pipeline_live_1",
               startedAt: "2026-06-06T09:00:00.000Z",
-              stage: "fetch"
+              stage: "fetch",
+              activeChildren: [
+                {
+                  taskType: "fetch",
+                  type: "fetch",
+                  runId: "fetch_live_1",
+                  active: true,
+                  startedAt: "2026-06-06T09:00:01.000Z"
+                }
+              ]
             }
           : { active: false, stage: "idle" };
       }
@@ -188,6 +197,7 @@ test("admin ops controller does not let delayed pipeline status replace richer t
               taskType: "fetch",
               type: "fetch",
               runId: "fetch_live_1",
+              parentTaskType: "pipeline",
               active: true,
               startedAt: "2026-06-06T09:00:01.000Z"
             }

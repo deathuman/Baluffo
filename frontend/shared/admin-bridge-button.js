@@ -27,7 +27,7 @@ export function createAdminBridgeButtonWatcher({
   awaitBridgeReady = async () => true,
   degradeOnFailure = false,
   degradeWhenBridgeNotReady = false,
-  statusPath = "/ops/health?view=ready"
+  statusPath = "/app/ready"
 }) {
   let currentState = "checking";
   let pollTimer = null;
@@ -73,7 +73,7 @@ export function createAdminBridgeButtonWatcher({
 
   async function fetchHealth() {
     let lastError = null;
-    const path = String(statusPath || "/ops/health?view=ready");
+    const path = String(statusPath || "/app/ready");
     for (const candidateBase of getBridgeBaseCandidates()) {
       try {
         return await fetchJson(candidateBase, path);

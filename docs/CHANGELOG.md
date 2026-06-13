@@ -10,6 +10,20 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.66] - 2026-06-13
+
+### Fixed
+- Container Admin now keeps the gateway pipeline status snapshot fresh during active Fetch child waits, so `/tasks/run-jobs-pipeline-status` does not freeze on a stale `snapshotAt` while fetch progress continues.
+- Admin current runs now lets fresher pipeline status replace stale Discovery child rows when the pipeline advances to Fetch, while preserving richer matching task-state rows.
+- Admin source tables and fetch KPI cards now show bounded delayed copy during active pipeline/fetch work instead of indefinite loading placeholders when registry or summary routes are delayed.
+- Admin now suppresses Abort buttons for pipeline-owned child rows and keeps Abort scoped to standalone Fetch/Discovery runs plus the Pipeline parent.
+- Admin bridge status checks now use `/app/ready` and accept container-gateway ready/degraded payloads so the badge does not briefly report offline while lightweight gateway routes are healthy.
+
+### Notes
+- This is a container/Umbrel active-fetch recovery patch. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- Full registry source tables remain deferred while a job update is running; active pipeline visibility, current Fetch state, and Pipeline Abort stay prioritized through the gateway control plane.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.65] - 2026-06-12
 
 ### Fixed

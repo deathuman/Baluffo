@@ -297,6 +297,16 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
       String(row?.finishedAt || ""),
       String(index)
     ].join("|");
+    const pipelineOwnedChild = Boolean(
+      type !== "pipeline"
+      && (
+        String(row?.parentTaskType || "").trim().toLowerCase() === "pipeline"
+        || String(row?.parentRunId || row?.summary?.pipelineRunId || "").trim()
+        || row?.displayOnly
+        || row?.summary?.controlPlane
+        || String(row?.controlPlaneSource || "").trim() === "pipeline-status"
+      )
+    );
     return {
       key,
       runId: String(row?.runId || row?.id || ""),
@@ -315,7 +325,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
         onAbortRun
         && inputIsLive
         && ["fetch", "discovery", "pipeline"].includes(type)
-        && (type === "pipeline" || String(row?.controlPlaneSource || "").trim() !== "pipeline-status")
+        && !pipelineOwnedChild
         && String(row?.runId || row?.id || "").trim()
       ),
       durationText: runView.durationLabel || runView.elapsedLabel || formatDuration(Number(row?.elapsedMs ?? row?.durationMs ?? 0)),

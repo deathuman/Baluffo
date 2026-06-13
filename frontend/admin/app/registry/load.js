@@ -5,6 +5,7 @@ const ADMIN_SHOW_ZERO_JOBS_KEY = "baluffo_admin_show_zero_jobs_sources";
 const CAP_DEFER_REASONS = new Set(["adapter_cap", "domain_cap", "top_n_cap"]);
 const FULL_REGISTRY_LOAD_TIMEOUT_MS = 60000;
 const REGISTRY_REFRESH_RETRY_DELAY_MS = 5000;
+const ACTIVE_PIPELINE_SOURCE_TABLES_DELAYED_LABEL = "Source tables delayed while job update is running.";
 
 function getDiscoveryCandidatesRows(payload) {
   return Array.isArray(payload?.candidates) ? payload.candidates : [];
@@ -123,6 +124,49 @@ export function createRegistryLoadController({
     container.innerHTML = `<div class="muted">Loading ${bucketLabel} sources...</div>`;
   }
 
+  function setSourceTableDelayedPlaceholder(container) {
+    if (!container) return;
+    container.innerHTML = `<div class="muted">${ACTIVE_PIPELINE_SOURCE_TABLES_DELAYED_LABEL}</div>`;
+  }
+
+  function setSourceTableUnavailablePlaceholder(container, bucketLabel) {
+    if (!container) return;
+    container.innerHTML = `<div class="no-results">Could not load ${bucketLabel} sources. Retry after the running job update finishes.</div>`;
+  }
+
+  function sourceTableNeedsDelayedPlaceholder(container) {
+    if (!container) return false;
+    const currentText = String(container.textContent || container.innerHTML || "").trim();
+    return !currentText
+      || /Loading (pending|active|rejected) sources/i.test(currentText)
+      || currentText.includes(ACTIVE_PIPELINE_SOURCE_TABLES_DELAYED_LABEL);
+  }
+
+  function activePipelineOrFetchRunning() {
+    if (state.adminBusyState?.livePipelineRunning || state.adminBusyState?.liveFetchRunning) {
+      return true;
+    }
+    const rows = Array.isArray(state.latestOpsTaskStatePayload?.tasks)
+      ? state.latestOpsTaskStatePayload.tasks
+      : [];
+    return rows.some(row => {
+      const type = String(row?.taskType || row?.type || "").trim().toLowerCase();
+      return row?.active !== false && !row?.finishedAt && (type === "pipeline" || type === "fetch");
+    });
+  }
+
+  function renderSourceTablesDelayed({ onlyIfPlaceholder = false } = {}) {
+    if (!onlyIfPlaceholder || sourceTableNeedsDelayedPlaceholder(refs.adminPendingSourcesEl)) {
+      setSourceTableDelayedPlaceholder(refs.adminPendingSourcesEl);
+    }
+    if (!onlyIfPlaceholder || sourceTableNeedsDelayedPlaceholder(refs.adminActiveSourcesEl)) {
+      setSourceTableDelayedPlaceholder(refs.adminActiveSourcesEl);
+    }
+    if (!onlyIfPlaceholder || sourceTableNeedsDelayedPlaceholder(refs.adminRejectedSourcesEl)) {
+      setSourceTableDelayedPlaceholder(refs.adminRejectedSourcesEl);
+    }
+  }
+
   function scheduleDeferredRender(callback) {
     const scheduleRender = typeof renderScheduler === "function"
       ? renderScheduler
@@ -196,6 +240,29 @@ export function createRegistryLoadController({
       return {
         skipped: true,
         reason: "discovery_running",
+        report: state.latestDiscoveryReportCache || null,
+        pendingRows: [],
+        activeRows: [],
+        rejectedRows: [],
+        partialLoadFailed: false
+      };
+    }
+    const livePipelineOrFetchRunning = activePipelineOrFetchRunning();
+    const allowDuringActivePipeline = Boolean(options?.forceDuringActivePipeline);
+    if (livePipelineOrFetchRunning && !allowDuringActivePipeline) {
+      const background = Boolean(options?.background);
+      if (options?.suppressPlaceholders !== true) {
+        renderSourceTablesDelayed({ onlyIfPlaceholder: background });
+      }
+      const lastNoticeAtMs = Number(state.discoveryPipelineDeferredLoadNoticeAtMs || 0);
+      if (!background && nowMs - lastNoticeAtMs > 5000) {
+        state.discoveryPipelineDeferredLoadNoticeAtMs = nowMs;
+        appendDiscoveryLog(ACTIVE_PIPELINE_SOURCE_TABLES_DELAYED_LABEL, "warn");
+      }
+      return {
+        skipped: true,
+        reason: "pipeline_running",
+        sourceTablesDelayed: true,
         report: state.latestDiscoveryReportCache || null,
         pendingRows: [],
         activeRows: [],
@@ -288,7 +355,11 @@ export function createRegistryLoadController({
               filterState.showZeroJobs ? rows : rows.filter(row => getSourceDiscoveryJobsCount(row) !== 0)
             );
             scheduleDeferredRender(() => {
-              if (background || loadFailed || renderToken !== registryRenderToken) return;
+              if (background || renderToken !== registryRenderToken) return;
+              if (loadFailed) {
+                setSourceTableUnavailablePlaceholder(refs.adminPendingSourcesEl, "pending");
+                return;
+              }
               renderSourcesTable(refs.adminPendingSourcesEl, visibleRows, "pending");
               if (
                 refs.adminPendingSourcesEl
@@ -318,7 +389,11 @@ export function createRegistryLoadController({
             );
             const visibleRows = applySourceFilter(rows);
             scheduleDeferredRender(() => {
-              if (background || loadFailed || renderToken !== registryRenderToken) return;
+              if (background || renderToken !== registryRenderToken) return;
+              if (loadFailed) {
+                setSourceTableUnavailablePlaceholder(refs.adminActiveSourcesEl, "active");
+                return;
+              }
               renderSourcesTable(refs.adminActiveSourcesEl, visibleRows, "active");
             });
             return { payload: active, rows, visibleRows, loadFailed };
@@ -340,7 +415,11 @@ export function createRegistryLoadController({
             );
             const visibleRows = applySourceFilter(rows);
             scheduleDeferredRender(() => {
-              if (background || loadFailed || renderToken !== registryRenderToken) return;
+              if (background || renderToken !== registryRenderToken) return;
+              if (loadFailed) {
+                setSourceTableUnavailablePlaceholder(refs.adminRejectedSourcesEl, "rejected");
+                return;
+              }
               renderSourcesTable(refs.adminRejectedSourcesEl, visibleRows, "rejected");
             });
             return { payload: rejected, rows, visibleRows, loadFailed };

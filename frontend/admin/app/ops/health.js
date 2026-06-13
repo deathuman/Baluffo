@@ -226,7 +226,8 @@ function renderOpsTabBadges(refs, {
   sourcePolicyRecommendations = {},
   registryConflictsPayload = {},
   fetcherMetricsPayload = {},
-  tabCountsPayload = null
+  tabCountsPayload = null,
+  activePipelineOrFetch = false
 } = {}) {
   const badges = Array.isArray(refs?.adminOpsTabBadgeEls) ? refs.adminOpsTabBadgeEls : [];
   if (!badges.length) return;
@@ -258,22 +259,27 @@ function renderOpsTabBadges(refs, {
           ? formatBadgeTitle(registryConflictCount, "registry conflict", "registry conflicts")
           : "No registry conflicts"
     };
+  const overviewPendingTitle = activePipelineOrFetch ? ACTIVE_PIPELINE_KPI_DELAYED_LABEL : "Loading Overview count";
+  const discoveryPendingTitle = activePipelineOrFetch ? ACTIVE_PIPELINE_KPI_DELAYED_LABEL : "Loading Discovery Review count";
+  const sourcePolicyPendingTitle = activePipelineOrFetch ? ACTIVE_PIPELINE_KPI_DELAYED_LABEL : "Loading Source Policy Review count";
+  const registryConflictsPendingTitle = activePipelineOrFetch ? ACTIVE_PIPELINE_KPI_DELAYED_LABEL : "Loading Registry Conflicts count";
+  const dedupPendingTitle = activePipelineOrFetch ? ACTIVE_PIPELINE_KPI_DELAYED_LABEL : "Loading Dedup Lists count";
   const localBadgeStates = {
     overview: isLoadedOverviewHealth(health)
       ? toAlertBadgeState(health?.alerts || [])
-      : pendingBadgeState("Loading Overview count"),
+      : pendingBadgeState(overviewPendingTitle),
     discovery: isLoadedDiscoveryReport(discovery)
       ? toDiscoveryBadgeState(discovery)
-      : pendingBadgeState("Loading Discovery Review count"),
+      : pendingBadgeState(discoveryPendingTitle),
     "source-policy": isLoadedSourcePolicyPayload(sourcePolicyRecommendations)
       ? toSourcePolicyBadgeState(sourcePolicyRecommendations || {})
-      : pendingBadgeState("Loading Source Policy Review count"),
+      : pendingBadgeState(sourcePolicyPendingTitle),
     "registry-conflicts": isLoadedRegistryConflictsPayload(registryConflictsPayload)
       ? registryConflictBadgeState
-      : pendingBadgeState("Loading Registry Conflicts count"),
+      : pendingBadgeState(registryConflictsPendingTitle),
     dedup: isLoadedDedupPayload(fetcherMetricsPayload)
       ? toDedupBadgeState(dedupEvidence)
-      : pendingBadgeState("Loading Dedup Lists count")
+      : pendingBadgeState(dedupPendingTitle)
   };
   badges.forEach(badge => {
     const key = String(badge?.dataset?.opsTab || badge?.getAttribute?.("data-ops-tab") || "");
@@ -1423,6 +1429,56 @@ export function createOpsHealthController({
     return rows.some(row => row && row.active !== false && !row.finishedAt);
   }
 
+  function getTaskRowType(row) {
+    return String(row?.taskType || row?.type || "").trim().toLowerCase();
+  }
+
+  function getPipelineRunIdFromTaskState(taskStatePayload = {}) {
+    const rows = Array.isArray(taskStatePayload?.tasks) ? taskStatePayload.tasks : [];
+    const pipelineRow = rows.find(row => getTaskRowType(row) === "pipeline" && String(row?.runId || row?.id || "").trim());
+    return String(pipelineRow?.runId || pipelineRow?.id || "").trim();
+  }
+
+  function getPipelineChildSignature(taskStatePayload = {}, pipelineRunId = "") {
+    const cleanPipelineRunId = String(pipelineRunId || "").trim();
+    const rows = Array.isArray(taskStatePayload?.tasks) ? taskStatePayload.tasks : [];
+    return rows
+      .filter(row => {
+        const type = getTaskRowType(row);
+        if (!type || type === "pipeline" || row?.active === false || row?.finishedAt) return false;
+        const parentRunId = String(row?.parentRunId || row?.summary?.pipelineRunId || "").trim();
+        const parentTaskType = String(row?.parentTaskType || "").trim().toLowerCase();
+        return cleanPipelineRunId
+          ? parentRunId === cleanPipelineRunId || (!parentRunId && parentTaskType === "pipeline")
+          : parentTaskType === "pipeline" || Boolean(parentRunId);
+      })
+      .map(row => `${getTaskRowType(row)}|${String(row?.runId || row?.id || "").trim()}`)
+      .filter(Boolean)
+      .sort()
+      .join(",");
+  }
+
+  function shouldKeepExistingActiveTaskState(existingPayload, pipelineStatusPayload) {
+    if (!hasActiveRows(existingPayload)) return false;
+    if (existingPayload?.source === "pipeline-status") return false;
+    const pipelineRunId = getPipelineRunIdFromTaskState(pipelineStatusPayload);
+    if (!pipelineRunId) return true;
+    const existingRows = Array.isArray(existingPayload?.tasks) ? existingPayload.tasks : [];
+    const hasRelatedPipelineRows = existingRows.some(row => {
+      const type = getTaskRowType(row);
+      const parentRunId = String(row?.parentRunId || row?.summary?.pipelineRunId || "").trim();
+      const parentTaskType = String(row?.parentTaskType || "").trim().toLowerCase();
+      return (
+        type === "pipeline" && String(row?.runId || row?.id || "").trim() === pipelineRunId
+      ) || parentRunId === pipelineRunId
+        || (!parentRunId && parentTaskType === "pipeline");
+    });
+    if (!hasRelatedPipelineRows) return true;
+    const nextChildSignature = getPipelineChildSignature(pipelineStatusPayload, pipelineRunId);
+    if (!nextChildSignature) return true;
+    return getPipelineChildSignature(existingPayload, pipelineRunId) === nextChildSignature;
+  }
+
   function buildPipelineTaskStatePayload(payload = {}) {
     if (!payload?.active) return null;
     const progress = getObjectValue(payload?.progress);
@@ -1574,7 +1630,10 @@ export function createOpsHealthController({
     const controlPlanePipelineActive = Boolean(
       taskStatePayload?.source === "pipeline-status" && hasActiveRows(taskStatePayload)
     );
-    const fetchKpiPendingLabel = controlPlanePipelineActive
+    const activePipelineOrFetch = Boolean(
+      controlPlanePipelineActive || liveTypes.has("pipeline") || liveTypes.has("fetch")
+    );
+    const fetchKpiPendingLabel = activePipelineOrFetch
       ? ACTIVE_PIPELINE_KPI_DELAYED_LABEL
       : "Loading latest fetch KPI...";
 
@@ -1602,7 +1661,8 @@ export function createOpsHealthController({
       sourcePolicyRecommendations,
       registryConflictsPayload,
       fetcherMetricsPayload,
-      tabCountsPayload: state.latestOpsTabCountsPayload || null
+      tabCountsPayload: state.latestOpsTabCountsPayload || null,
+      activePipelineOrFetch
     });
     renderAdminOpsTrendsImpl(refs.adminOpsTrendsEl, historyRuns);
     const historyRenderOptions = {
@@ -1667,6 +1727,20 @@ export function createOpsHealthController({
       currentRows = Array.isArray(cachedTaskStatePayload.tasks) ? cachedTaskStatePayload.tasks : [];
       taskStateSource = "pipeline-status";
     }
+    const candidateTaskStatePayload = {
+      tasks: currentRows,
+      count: currentRows.length,
+      summary: true
+    };
+    if (
+      currentRows.length
+      && cachedTaskStatePayload?.source === "pipeline-status"
+      && hasActiveRows(cachedTaskStatePayload)
+      && !shouldKeepExistingActiveTaskState(candidateTaskStatePayload, cachedTaskStatePayload)
+    ) {
+      currentRows = Array.isArray(cachedTaskStatePayload.tasks) ? cachedTaskStatePayload.tasks : [];
+      taskStateSource = "pipeline-status";
+    }
     const recentRows = Array.isArray(tasks.recent) ? tasks.recent : [];
     const taskStatePayload = {
       tasks: currentRows,
@@ -1719,9 +1793,10 @@ export function createOpsHealthController({
     if (!hasActiveRows(taskStatePayload)) {
       loadFetchKpisSummaryData(renderToken, { silent: true }).catch(() => {});
     }
-    loadOpsTabCountsSummaryData(renderToken, { silent: true }).catch(() => {});
     if (hasActiveRows(taskStatePayload)) {
       schedulePipelineStatusPolling(getOpsPollIntervalMs(true));
+    } else {
+      loadOpsTabCountsSummaryData(renderToken, { silent: true }).catch(() => {});
     }
     return { taskStatePayload, historyPayload };
   }
@@ -1920,7 +1995,7 @@ export function createOpsHealthController({
         return payload || null;
       }
       const cachedTaskStatePayload = getCachedTaskStatePayload();
-      if (hasActiveRows(cachedTaskStatePayload) && cachedTaskStatePayload?.source !== "pipeline-status") {
+      if (shouldKeepExistingActiveTaskState(cachedTaskStatePayload, taskStatePayload)) {
         return payload || null;
       }
       state.latestOpsTaskStatePayload = taskStatePayload;

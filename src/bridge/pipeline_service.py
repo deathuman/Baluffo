@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -18,6 +19,7 @@ from src.bridge.pipeline_control_files import (
 from src.bridge.task_abort_evidence import ABORT_TERMINAL_REASON, row_abort_requested
 
 PIPELINE_COMPLETION_NOTIFICATION_MIN_SECONDS = 60.0
+CONTROL_STATUS_HEARTBEAT_MIN_SECONDS = 10.0
 SYNC_REMOTE_CONFLICT_KIND = "recoverable_remote_conflict"
 SYNC_PUSH_WARNING_KIND = "sync_push_failed"
 
@@ -105,6 +107,7 @@ class PipelineService:
         self._pipeline_completion_notifier = pipeline_completion_notifier
         self._completion_notification_run_id = ""
         self._control_data_dir = Path(control_data_dir) if control_data_dir is not None else None
+        self._control_status_last_write_monotonic = 0.0
         if self._runtime.abort_requests is None:
             self._runtime.abort_requests = {}
 
@@ -132,6 +135,22 @@ class PipelineService:
             )
         except OSError:
             self._bridge_log("warn", "jobs_pipeline_control_status_write_failed")
+
+    def _maybe_write_control_status_heartbeat(self) -> None:
+        if self._control_data_dir is None:
+            return
+        now_monotonic = time.monotonic()
+        if (
+            now_monotonic - self._control_status_last_write_monotonic
+            < CONTROL_STATUS_HEARTBEAT_MIN_SECONDS
+        ):
+            return
+        with self._lock:
+            status_snapshot = dict(self._status)
+            if not bool(status_snapshot.get("active")):
+                return
+        self._control_status_last_write_monotonic = now_monotonic
+        self._write_control_status(status_snapshot)
 
     def _ingest_control_abort_request(self, run_id: str) -> bool:
         if self._control_data_dir is None:
@@ -1030,6 +1049,7 @@ class PipelineService:
                 progress=progress,
                 summary={"stage": stage},
             )
+        self._maybe_write_control_status_heartbeat()
 
     def _attach_lifecycle_child_row(
         self,
