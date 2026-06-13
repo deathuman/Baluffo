@@ -10,6 +10,9 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+### Fixed
+- Admin source tables now request the compact `/registry/sources?view=table` payload, preserving table actions and filters while avoiding full source diagnostic fields that made idle Umbrel source loads too large and slow.
+
 ## [0.2.69] - 2026-06-13
 
 ### Fixed

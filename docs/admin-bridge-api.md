@@ -5,7 +5,7 @@
 > - **Canonical for:** endpoint surface, route naming, and high-level request intent
 > - **Not canonical for:** backend business logic internals or service ownership
 > - **Then inspect:** `src/bridge/routes/{get_routes,post_routes,post_routes_admin,post_routes_local_data,post_routes_update}.py`, `src/bridge/*.py`, `frontend/*/services.js`
-> - **Last updated:** 2026-06-05
+> - **Last updated:** 2026-06-14
 > - **Ownership note:** ops/task-state internals now compose through `src/bridge/ops_api.py`, `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, `src/bridge/ops_task_{fetch_live,discovery_live,projection}.py`, and `src/bridge/ops_live_payload.py`
 > - **Local-data ownership note:** desktop local-data storage now routes through `src/local_data_store.py` as a thin facade over `src/local_data_store_{shared,profiles,saved_jobs,attachments,backup}.py`, while the shared desktop runtime stays rooted at `frontend/shared/local-data/desktop-client.js` over `frontend/shared/local-data/desktop/{api,lifecycle,navigation,state}.js`
 > - **Desktop update ownership note:** the helper executable stays rooted at `src/ship/desktop_updater.py` over `src/ship/desktop_updater_{ui,release,install}.py`, while the Jobs desktop update UI stays rooted at `frontend/jobs/app/desktop-update.js` over `frontend/jobs/app/desktop-update-{model,dom,controller}.js`
@@ -69,7 +69,8 @@ These `/app/*` routes are desktop-runtime routes. In container mode, `/app/updat
 | GET | `/registry/rejected` | List rejected sources |
 | GET | `/registry/summary` | Lightweight registry summary counts without source rows |
 | GET | `/registry/summary?view=exact` | Normalized registry summary counts without source rows; slower than the default summary and intended for diagnostics |
-| GET | `/registry/sources?buckets=pending,active,rejected&includeHiddenPending=0` | Combined registry source-table payload for selected buckets from one backend state load |
+| GET | `/registry/sources?view=table&buckets=pending,active,rejected&includeHiddenPending=0` | Compact Admin source-table payload for selected buckets from one backend state load |
+| GET | `/registry/sources?buckets=pending,active,rejected&includeHiddenPending=0` | Full diagnostic source payload for selected buckets from one backend state load |
 | GET | `/registry/conflicts` | Full duplicate-family conflict report with triage buckets, ranked review queues, advisory winners, row diffs, evidence cards, and lifecycle actions |
 | GET | `/registry/conflicts?view=summary` | Cheap Admin startup conflict summary. It must not build the full conflict queue; it returns cached exact counts when available, otherwise `summaryStatus: "pending"` with registry counts and `detailRoute` |
 | POST | `/registry/approve` | Approve pending sources (`{ids: []}`) |
@@ -83,7 +84,7 @@ These `/app/*` routes are desktop-runtime routes. In container mode, `/app/updat
 | POST | `/registry/delete` | Local-only delete; writes tombstones and removes sources from the registry (`{ids: [], urls: []}`) |
 | POST | `/sources/manual` | Add manual source (`{url: ""}`) |
 
-The default `/registry/summary` response is a cheap storage snapshot and returns `summaryExact: false`, `countBasis: "storage"`. Use `/registry/summary?view=exact` only when diagnostics need normalized counts from the same path as the full registry state. The combined `/registry/sources` response also marks its summary as `summaryExact: true`, `countBasis: "normalized"` because it already performed one full state load.
+The default `/registry/summary` response is a cheap storage snapshot and returns `summaryExact: false`, `countBasis: "storage"`. Use `/registry/summary?view=exact` only when diagnostics need normalized counts from the same path as the full registry state. The combined `/registry/sources` response also marks its summary as `summaryExact: true`, `countBasis: "normalized"` because it already performed one full state load. Admin source tables use `/registry/sources?view=table`, which keeps the same envelope and source-table/action fields but omits heavy diagnostic fields such as full `pages`, `detailPagesSample`, raw source-directory details, and nested evidence payloads. Table view keeps direct source URL fields and includes `pages[0]` only as a fallback when the direct table URL fields are absent. The default `/registry/sources` view remains full-fidelity for diagnostics.
 
 When `sourceRegistry=sqlite`, the registry GET routes and POST mutations read and publish through the SQLite source-registry generation before regenerating active/pending/rejected/tombstone compatibility exports. Payload shapes stay unchanged. Storage, busy-timeout, missing-generation, parity, export, or direct-JSON-drift failures persist `sourceRegistry=json` and return the JSON artifact path while leaving SQLite rows available for diagnostics.
 

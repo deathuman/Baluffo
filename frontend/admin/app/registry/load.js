@@ -394,7 +394,7 @@ export function createRegistryLoadController({
             resolveLatestFetchReport(options),
             state.latestFetcherReportCache || {}
           );
-        const registrySourcesPath = `/registry/sources?buckets=pending,active,rejected&includeHiddenPending=${filterState.showZeroJobs ? "1" : "0"}`;
+        const registrySourcesPath = `/registry/sources?view=table&buckets=pending,active,rejected&includeHiddenPending=${filterState.showZeroJobs ? "1" : "0"}`;
         const registrySourcesPromise = registrySummaryPromise
           .then(registrySummary => loadDiscoveryEndpoint(
             "Admin registry source tables",
