@@ -8,6 +8,7 @@ const PIPELINE_STATUS_PREFLIGHT_TIMEOUT_MS = 3000;
 const REGISTRY_REFRESH_RETRY_DELAY_MS = 5000;
 const ACTIVE_PIPELINE_SOURCE_TABLES_DELAYED_LABEL = "Source tables delayed while job update is running.";
 const JOBS_PIPELINE_STATUS_PATH = "/tasks/run-jobs-pipeline-status";
+const INACTIVE_PIPELINE_STAGES = new Set(["idle", "complete", "completed", "error", "failed", "canceled", "cancelled", "aborted"]);
 
 function getDiscoveryCandidatesRows(payload) {
   return Array.isArray(payload?.candidates) ? payload.candidates : [];
@@ -165,7 +166,9 @@ export function createRegistryLoadController({
       return true;
     }
     const stage = String(payload.stage || payload?.progress?.phaseKey || "").trim().toLowerCase();
-    return Boolean(stage && stage !== "idle" && stage !== "complete" && stage !== "completed" && stage !== "error");
+    if (!stage || INACTIVE_PIPELINE_STAGES.has(stage)) return false;
+    if (payload.active === false) return false;
+    return true;
   }
 
   function rememberPipelineStatusActivity(payload = {}) {
@@ -198,6 +201,7 @@ export function createRegistryLoadController({
         rememberPipelineStatusActivity(payload);
         return true;
       }
+      state.discoveryPipelineStatusLastActiveAtMs = 0;
       if (force) {
         setBusyFlag("livePipelineRunning", false);
         setBusyFlag("liveFetchRunning", false);

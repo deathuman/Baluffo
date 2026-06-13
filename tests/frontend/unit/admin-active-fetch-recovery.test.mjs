@@ -318,3 +318,50 @@ test("admin source tables refresh after active pipeline becomes idle", async () 
   assert.match(fixture.refs.adminPendingSourcesEl.innerHTML, /Studio Pending/);
   assert.match(fixture.refs.adminActiveSourcesEl.innerHTML, /Studio Active/);
 });
+
+test("admin source tables load after canceled pipeline status reports inactive", async () => {
+  const calls = [];
+  const fixture = createRegistryControllerFixture({
+    state: {
+      sourceTablesDelayedDuringActiveRun: true,
+      discoveryPipelineStatusLastActiveAtMs: Date.now(),
+      adminBusyState: { discoveryLoad: false, livePipelineRunning: false, liveFetchRunning: false }
+    },
+    options: {
+      getBridge: async path => {
+        calls.push(String(path));
+        if (path === "/tasks/run-jobs-pipeline-status") {
+          return { active: false, stage: "canceled", activeChildren: [] };
+        }
+        if (path === "/discovery/report") return { summary: {} };
+        if (path === "/discovery/candidates") return { candidates: [] };
+        if (String(path).startsWith("/registry/sources")) {
+          return {
+            ok: true,
+            sources: {
+              pending: [{ name: "Recovered Pending", sourceId: "p1", url: "https://pending.example" }],
+              active: [{ name: "Recovered Active", sourceId: "a1", url: "https://active.example" }],
+              rejected: []
+            },
+            summary: { pendingCount: 1, activeCount: 1, rejectedCount: 0 }
+          };
+        }
+        throw new Error(`unexpected path ${path}`);
+      },
+      fetchJobsFetchReportJson: async () => ({ sources: [] })
+    }
+  });
+  const controller = createAdminRegistryController(fixture.options);
+
+  const result = await controller.loadDiscoveryData();
+  fixture.renderScheduler.flush();
+
+  assert.equal(result?.skipped, undefined);
+  assert.equal(result?.partialLoadFailed, false);
+  assert.equal(fixture.state.sourceTablesDelayedDuringActiveRun, false);
+  assert.equal(fixture.state.discoveryPipelineStatusLastActiveAtMs, 0);
+  assert.ok(calls.includes("/tasks/run-jobs-pipeline-status"));
+  assert.ok(calls.some(path => path.startsWith("/registry/sources")));
+  assert.match(fixture.refs.adminPendingSourcesEl.innerHTML, /Recovered Pending/);
+  assert.match(fixture.refs.adminActiveSourcesEl.innerHTML, /Recovered Active/);
+});

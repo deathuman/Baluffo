@@ -10,6 +10,16 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.68] - 2026-06-13
+
+### Fixed
+- Container Admin source tables now treat terminal pipeline control-plane stages such as `canceled` as idle, so a post-abort refresh loads registry source rows instead of staying stuck on "Source tables delayed while job update is running."
+- Source-table recovery now clears the recent active-pipeline marker when the fast pipeline status route reports an inactive terminal state, preventing fresh Admin pages from inheriting stale active-fetch deferral.
+
+### Notes
+- This is a forward container/Umbrel recovery patch for the incomplete `0.2.67` live smoke. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.67] - 2026-06-13
 
 ### Fixed
