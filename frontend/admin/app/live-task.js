@@ -140,10 +140,13 @@ export function loadLiveTaskLogChunk({
 export function loadTaskLivePayload({
   getBridge,
   taskType,
+  view = "",
   requestOptions = {}
 }) {
+  const normalizedView = String(view || "").trim().toLowerCase();
+  const query = normalizedView ? `?view=${encodeURIComponent(normalizedView)}` : "";
   return getBridge(
-    `/ops/task-live/${encodeURIComponent(String(taskType || "").trim().toLowerCase())}`,
+    `/ops/task-live/${encodeURIComponent(String(taskType || "").trim().toLowerCase())}${query}`,
     requestOptions
   )
     .then(payload => (payload && typeof payload === "object" ? payload : null));

@@ -158,7 +158,8 @@ def current_task_payload() -> dict[str, object]:
     ).get_current_task_state_payload()
 
 
-def task_live_payload(task_type: str) -> dict[str, object]:
+def task_live_payload(task_type: str, *, summary: bool = False) -> dict[str, object]:
     return admin_bridge.build_bridge_api(admin_bridge.RUNTIME_CONFIG).get_task_live_payload(
-        task_type
+        task_type,
+        summary=summary,
     )

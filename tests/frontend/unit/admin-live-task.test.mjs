@@ -328,7 +328,7 @@ test("admin live-task restore helper silently hydrates fetch progress on first b
       if (String(path).startsWith("/fetcher/log?offset=") || String(path).startsWith("/fetcher/log?view=tail")) {
         return { text: "", nextOffset: 0 };
       }
-      if (path === "/ops/task-live/fetch") {
+      if (path === "/ops/task-live/fetch?view=summary") {
         return {
           active: true,
           runId: "fetch_boot_restore_1",

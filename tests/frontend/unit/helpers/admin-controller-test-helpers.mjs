@@ -291,7 +291,7 @@ export function createDiscoveryControllerFixture({
       if (String(path).startsWith("/discovery/log?offset=")) {
         return { text: "", nextOffset: 0 };
       }
-      if (path === "/ops/task-live/discovery") return {};
+      if (path === "/ops/task-live/discovery?view=summary") return {};
       if (path === "/discovery/report") return {};
       return {};
     },
@@ -379,7 +379,7 @@ export function createFetcherControllerFixture({
       if (String(path).startsWith("/fetcher/log?offset=") || String(path).startsWith("/fetcher/log?view=tail")) {
         return { text: "", nextOffset: 0 };
       }
-      if (path === "/ops/task-live/fetch") return {};
+      if (path === "/ops/task-live/fetch?view=summary") return {};
       return {};
     },
     postBridge: async path => {

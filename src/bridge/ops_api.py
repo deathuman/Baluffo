@@ -992,12 +992,22 @@ class OpsApi:
             }
 
     def compute_ops_health(self) -> dict[str, Any]:
-        with time_operation("ops.health.current_runs"):
-            current_rows = self._current_lifecycle_rows()
-        with time_operation("ops.health.recent_runs"):
-            recent_rows = self._recent_lifecycle_rows()
         with time_operation("ops.health.pipeline_status"):
             pipeline_status = self._deps.get_jobs_pipeline_status_payload()
+        pipeline_active = bool(
+            pipeline_status.get("active") if isinstance(pipeline_status, dict) else False
+        )
+        with time_operation("ops.health.current_runs"):
+            current_rows = self._current_lifecycle_rows()
+        active_run_present = pipeline_active or any(
+            _row_active(row) and _task_type(row) in {"pipeline", "fetch", "discovery"}
+            for row in current_rows
+        )
+        if active_run_present:
+            recent_rows = []
+        else:
+            with time_operation("ops.health.recent_runs"):
+                recent_rows = self._recent_lifecycle_rows()
         with time_operation("ops.health.owner_state"):
             owner_state = dict(self._deps.get_owner_state() or {})
         startup_ready = (
@@ -1008,7 +1018,7 @@ class OpsApi:
             for row in current_rows
             if str(row.get("heartbeatAt") or "").strip()
         ]
-        if isinstance(pipeline_status, dict) and bool(pipeline_status.get("active")):
+        if isinstance(pipeline_status, dict) and pipeline_active:
             heartbeat_at = str(
                 pipeline_status.get("heartbeatAt")
                 or as_json_object(pipeline_status.get("runtime")).get("heartbeatAt")
@@ -1054,9 +1064,7 @@ class OpsApi:
             },
             "schedule": schedule,
             "pipeline": {
-                "active": bool(
-                    pipeline_status.get("active") if isinstance(pipeline_status, dict) else False
-                ),
+                "active": pipeline_active,
                 "runId": str(
                     pipeline_status.get("runId") if isinstance(pipeline_status, dict) else ""
                 ).strip(),
@@ -1069,12 +1077,15 @@ class OpsApi:
     def get_task_live_payload(
         self,
         task_type: str,
+        *,
+        summary: bool = False,
     ) -> LiveTaskPayload:
         projection = self.get_projected_run_history()
         return _ops_task_live.get_task_live_payload(
             self._task_live_context(),
             task_type,
             projection=projection,
+            summary=summary,
         )
 
     def get_current_task_state_payload(self) -> TaskStatePayload:

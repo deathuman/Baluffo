@@ -121,6 +121,248 @@ def build_fetch_report_recent_events(
     return events
 
 
+def _projection_row_for_task(
+    projection: _run_history_api.LifecycleProjection,
+    *,
+    task_type: str,
+    run_id: str,
+) -> dict[str, Any]:
+    clean_task_type = str(task_type or "").strip().lower()
+    clean_run_id = str(run_id or "").strip()
+    for row in reversed(projection.rows):
+        if not isinstance(row, dict):
+            continue
+        row_task_type = str(row.get("taskType") or row.get("type") or "").strip().lower()
+        row_run_id = str(row.get("runId") or row.get("id") or "").strip()
+        if row_task_type == clean_task_type and (not clean_run_id or row_run_id == clean_run_id):
+            return dict(row)
+    return {}
+
+
+def _active_task_artifact_matches_current(
+    context: Any,
+    fetch_tasks: dict[str, Any],
+    *,
+    current_run_id: str,
+) -> bool:
+    artifact_run_id = str(fetch_tasks.get("runId") or "").strip()
+    if current_run_id and artifact_run_id and artifact_run_id != current_run_id:
+        return False
+    if not (
+        _ops_live_payload.live_task_signal_is_recent(
+            _ops_live_payload.live_task_heartbeat_at(fetch_tasks),
+            parse_iso=context.deps.parse_iso,
+            now_utc=context.deps.now_utc,
+        )
+        or _ops_live_payload.live_task_artifact_recently_updated(
+            context.paths.jobs_fetch_tasks,
+            now_utc=context.deps.now_utc(),
+        )
+    ):
+        return False
+    task_progress = as_json_object(fetch_tasks.get("taskProgress"))
+    return bool(
+        not str(fetch_tasks.get("finishedAt") or "").strip()
+        and (
+            fetch_tasks.get("active")
+            or task_progress.get("active")
+            or artifact_run_id
+            or str(fetch_tasks.get("startedAt") or "").strip()
+            or bool(fetch_tasks.get("recentEvents"))
+        )
+    )
+
+
+def _merged_summary_counts(
+    progress: dict[str, Any],
+    summary: dict[str, Any],
+) -> dict[str, Any]:
+    counts = copy_json_object(progress.get("counts"))
+
+    def _set_max(key: str, *values: Any) -> None:
+        counts[key] = max(
+            _ops_live_payload.coerce_non_negative_int(counts.get(key)),
+            *[_ops_live_payload.coerce_non_negative_int(value) for value in values],
+        )
+
+    _set_max("sourceCount", summary.get("sourceCount"), summary.get("totalSources"))
+    _set_max("outputCount", summary.get("outputCount"), summary.get("canonicalKept"))
+    _set_max("failedSources", summary.get("failedSources"), summary.get("error"))
+    _set_max("excludedSources", summary.get("excludedSources"), summary.get("excluded"))
+    successful_sources = _ops_live_payload.coerce_non_negative_int(
+        summary.get("successfulSources") or summary.get("ok")
+    )
+    _set_max(
+        "resolvedSources",
+        successful_sources
+        + _ops_live_payload.coerce_non_negative_int(counts.get("failedSources"))
+        + _ops_live_payload.coerce_non_negative_int(counts.get("excludedSources")),
+    )
+    _set_max("completedTasks", counts.get("resolvedSources"))
+    _set_max("runningTasks", summary.get("runningTasks"), summary.get("running"))
+    _set_max("queuedTasks", summary.get("queuedTasks"), summary.get("queued"))
+    return counts
+
+
+def _synthetic_summary_event(
+    *,
+    run_id: str,
+    heartbeat_at: str,
+    active: bool,
+    progress: dict[str, Any],
+) -> dict[str, Any] | None:
+    if not active or not heartbeat_at:
+        return None
+    counts = as_json_object(progress.get("counts"))
+    total_sources = _ops_live_payload.coerce_non_negative_int(counts.get("sourceCount"))
+    resolved_sources = _ops_live_payload.coerce_non_negative_int(counts.get("resolvedSources"))
+    running_tasks = _ops_live_payload.coerce_non_negative_int(counts.get("runningTasks"))
+    queued_tasks = _ops_live_payload.coerce_non_negative_int(counts.get("queuedTasks"))
+    output_count = _ops_live_payload.coerce_non_negative_int(counts.get("outputCount"))
+    failed_sources = _ops_live_payload.coerce_non_negative_int(counts.get("failedSources"))
+    resolved_label = (
+        f"{resolved_sources}/{total_sources} sources resolved"
+        if total_sources > 0
+        else f"{resolved_sources} sources resolved"
+    )
+    return {
+        "timestamp": heartbeat_at,
+        "level": "muted",
+        "taskType": "fetch",
+        "runId": run_id,
+        "phaseKey": str(progress.get("phaseKey") or "executing_sources"),
+        "message": (
+            f"{str(progress.get('phaseLabel') or 'Executing sources').strip()}: "
+            f"{resolved_label}, running {running_tasks}, queued {queued_tasks}, "
+            f"output {output_count}, failed {failed_sources}."
+        ),
+    }
+
+
+def build_fetch_live_summary_payload(
+    context: Any,
+    *,
+    projection: _run_history_api.LifecycleProjection,
+    task_state: dict[str, Any],
+) -> dict[str, Any]:
+    fetch_state = as_json_object(task_state.get("fetch"))
+    fetch_snapshot = projection.child_tasks.get("fetch")
+    snapshot_run_id = str(fetch_snapshot.run_id if fetch_snapshot else "").strip()
+    snapshot_row = _projection_row_for_task(
+        projection,
+        task_type="fetch",
+        run_id=snapshot_run_id,
+    )
+    fetch_tasks = normalize_live_task_payload(
+        as_json_object(load_runtime_evidence(context.paths.jobs_fetch_tasks, {})),
+        task_type="fetch",
+    )
+    task_artifact_current = _active_task_artifact_matches_current(
+        context,
+        fetch_tasks,
+        current_run_id=snapshot_run_id,
+    )
+    live_source = fetch_tasks if task_artifact_current else {}
+
+    run_id = str(
+        snapshot_run_id or live_source.get("runId") or fetch_state.get("runId") or ""
+    ).strip()
+    active = bool(fetch_snapshot and fetch_snapshot.active) or bool(live_source.get("active"))
+    started_at = str(
+        (fetch_snapshot.started_at if fetch_snapshot else "")
+        or live_source.get("startedAt")
+        or fetch_state.get("startedAt")
+        or ""
+    ).strip()
+    finished_at = str(
+        (fetch_snapshot.finished_at if fetch_snapshot else "")
+        or live_source.get("finishedAt")
+        or ""
+    ).strip()
+    heartbeat_at = str(
+        live_source.get("heartbeatAt")
+        or snapshot_row.get("heartbeatAt")
+        or as_json_object(snapshot_row.get("taskProgress")).get("updatedAt")
+        or as_json_object(live_source.get("taskProgress")).get("updatedAt")
+        or ""
+    ).strip()
+    summary = {
+        **(dict(fetch_snapshot.summary) if fetch_snapshot is not None else {}),
+        **as_json_object(live_source.get("summary")),
+    }
+    progress_source = (
+        as_json_object(live_source.get("taskProgress"))
+        if live_source.get("taskProgress")
+        else (
+            dict(fetch_snapshot.task_progress)
+            if fetch_snapshot is not None
+            else as_json_object(fetch_state.get("taskProgress"))
+        )
+    )
+    progress = normalize_live_task_progress(progress_source)
+    counts = _merged_summary_counts(progress, summary)
+    if active:
+        progress["active"] = True
+        if not str(progress.get("phaseKey") or "").strip():
+            progress["phaseKey"] = "executing_sources"
+        if not str(progress.get("phaseLabel") or "").strip():
+            progress["phaseLabel"] = "Executing sources"
+        source_count = _ops_live_payload.coerce_non_negative_int(counts.get("sourceCount"))
+        resolved_sources = _ops_live_payload.coerce_non_negative_int(counts.get("resolvedSources"))
+        if source_count > 0:
+            progress["mode"] = "determinate"
+            progress["ratio"] = min(1.0, resolved_sources / max(1, source_count))
+        elif str(progress.get("mode") or "").strip().lower() not in {
+            "determinate",
+            "indeterminate",
+        }:
+            progress["mode"] = "indeterminate"
+    progress["counts"] = counts
+
+    recent_events = list(as_json_object(live_source).get("recentEvents") or [])
+    if not recent_events:
+        event = _synthetic_summary_event(
+            run_id=run_id,
+            heartbeat_at=heartbeat_at,
+            active=active,
+            progress=progress,
+        )
+        if event:
+            recent_events = [event]
+
+    payload = {
+        "taskType": "fetch",
+        "status": "running"
+        if active
+        else str(
+            (fetch_snapshot.terminal_status if fetch_snapshot else "")
+            or live_source.get("status")
+            or ""
+        )
+        .strip()
+        .lower(),
+        "active": active,
+        "runId": run_id,
+        "startedAt": started_at,
+        "finishedAt": "" if active else finished_at,
+        "heartbeatAt": heartbeat_at,
+        "taskProgress": progress,
+        "summary": summary,
+        "recentEvents": recent_events,
+        "outputs": {
+            **(dict(fetch_snapshot.outputs) if fetch_snapshot is not None else {}),
+            **as_json_object(live_source.get("outputs")),
+        },
+    }
+    return normalize_live_task_payload(
+        payload,
+        task_type="fetch",
+        run_id=run_id,
+        started_at=started_at,
+        finished_at="" if active else finished_at,
+    )
+
+
 def build_fetch_live_payload(
     context: Any,
     *,

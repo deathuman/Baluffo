@@ -1778,7 +1778,14 @@ def _handle_ops_status_routes(
                 status=404,
             )
             return True
-        handler.send_json(api.get_task_live_payload(task_type))
+        view = str((query.get("view") or ["full"])[0] or "full").strip().lower()
+        if view not in {"", "full", "summary"}:
+            handler.send_json(
+                {"ok": False, "error": f"unsupported task-live view: {view}"},
+                status=400,
+            )
+            return True
+        handler.send_json(api.get_task_live_payload(task_type, summary=view == "summary"))
         return True
 
     return False

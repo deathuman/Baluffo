@@ -84,6 +84,7 @@ export function createAdminDiscoveryWatchController({
     return loadTaskLivePayload({
       getBridge,
       taskType: "discovery",
+      view: "summary",
       requestOptions: options?.requestOptions || {}
     });
   }

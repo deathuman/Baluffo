@@ -290,7 +290,7 @@ test("admin fetcher controller renders progress from the shared task progress co
             nextOffset: 120
           };
         }
-        if (path === "/ops/task-live/fetch") {
+        if (path === "/ops/task-live/fetch?view=summary") {
           return {
             runId: "fetch_live_1",
             startedAt: "2026-03-08T10:00:00.000Z",
@@ -473,7 +473,7 @@ test("admin fetcher controller keeps current live detail when an active report r
         if (String(path).startsWith("/fetcher/log?offset=") || String(path).startsWith("/fetcher/log?view=tail")) {
           return { text: "", nextOffset: 0 };
         }
-        if (path === "/ops/task-live/fetch") {
+        if (path === "/ops/task-live/fetch?view=summary") {
           return {
             runId: "fetch_live_current_1",
             startedAt: "2026-03-08T10:00:00.000Z",
@@ -590,7 +590,7 @@ test("admin fetcher controller hydrates progress from the report without replayi
         if (String(path).startsWith("/fetcher/log?offset=") || String(path).startsWith("/fetcher/log?view=tail")) {
           return { text: "", nextOffset: 0 };
         }
-        if (path === "/ops/task-live/fetch") {
+        if (path === "/ops/task-live/fetch?view=summary") {
           return {};
         }
         return {};
@@ -708,7 +708,7 @@ test("admin fetcher controller only emits generic active heartbeat after sustain
         if (String(path).startsWith("/fetcher/log?offset=") || String(path).startsWith("/fetcher/log?view=tail")) {
           return { text: "", nextOffset: 0 };
         }
-        if (path === "/ops/task-live/fetch") {
+        if (path === "/ops/task-live/fetch?view=summary") {
           return {
             taskType: "fetch",
             active: true,
@@ -930,7 +930,7 @@ test("admin fetcher controller treats scrapy fallback progress changes as summar
         if (String(path).startsWith("/fetcher/log?offset=") || String(path).startsWith("/fetcher/log?view=tail")) {
           return { text: "", nextOffset: 0 };
         }
-        if (path === "/ops/task-live/fetch") {
+        if (path === "/ops/task-live/fetch?view=summary") {
           return livePayloads[Math.min(livePayloadIndex++, livePayloads.length - 1)];
         }
         return {};
@@ -1036,7 +1036,7 @@ test("admin fetcher controller prefers task-live payload during active runs and 
         if (String(path).startsWith("/fetcher/log?offset=") || String(path).startsWith("/fetcher/log?view=tail")) {
           return { text: "", nextOffset: 0 };
         }
-        if (path === "/ops/task-live/fetch") {
+        if (path === "/ops/task-live/fetch?view=summary") {
           return {
             runId: "fetch_live_1",
             startedAt: "2026-03-08T10:00:00.000Z",
@@ -1155,7 +1155,7 @@ test("admin fetcher controller syncs source tables once after completion", async
         if (String(path).startsWith("/fetcher/log?offset=") || String(path).startsWith("/fetcher/log?view=tail")) {
           return { text: "", nextOffset: 0 };
         }
-        if (path === "/ops/task-live/fetch") {
+        if (path === "/ops/task-live/fetch?view=summary") {
           return {
             runId: "fetch_done_1",
             startedAt: "2026-03-08T10:00:00.000Z",

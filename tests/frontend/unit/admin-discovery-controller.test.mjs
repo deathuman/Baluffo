@@ -187,7 +187,7 @@ test("admin discovery controller emits summary-first live progress and updates p
       }
     });
     fixture.options.getBridge = async path => {
-        if (path === "/ops/task-live/discovery") {
+        if (path === "/ops/task-live/discovery?view=summary") {
           return {
             runId: "discovery_123",
             startedAt: "2026-03-08T10:01:00.000Z",
@@ -329,7 +329,7 @@ test("admin discovery controller applies live progress when runId matches despit
       state,
       refs,
       getBridge: async path => {
-        if (path === "/ops/task-live/discovery") {
+        if (path === "/ops/task-live/discovery?view=summary") {
           return {
             taskType: "discovery",
             active: true,
@@ -478,7 +478,7 @@ test("admin discovery controller syncs source tables once after completion", asy
       state,
       refs,
       getBridge: async path => {
-        if (path === "/ops/task-live/discovery") {
+        if (path === "/ops/task-live/discovery?view=summary") {
           return null;
         }
         if (path === "/discovery/report") {
@@ -550,7 +550,7 @@ test("admin discovery controller waits for registry finalization before source t
       options: {
         getBridge: async path => {
           fixture.calls.push(path);
-          if (path === "/ops/task-live/discovery") return null;
+          if (path === "/ops/task-live/discovery?view=summary") return null;
           if (path === "/discovery/report") {
             return {
               runId: "discovery_finalizing_1",
@@ -600,7 +600,7 @@ test("admin discovery controller completes when finalization is terminal and aut
       options: {
         getBridge: async path => {
           fixture.calls.push(path);
-          if (path === "/ops/task-live/discovery") return null;
+          if (path === "/ops/task-live/discovery?view=summary") return null;
           if (path === "/discovery/report") {
             return {
               runId: "discovery_done_failed_auto_approval",
@@ -1099,7 +1099,7 @@ test("admin discovery controller hydrates progress from the report when live pay
       }
     });
     fixture.options.getBridge = async path => {
-        if (path === "/ops/task-live/discovery") return {};
+        if (path === "/ops/task-live/discovery?view=summary") return {};
         if (path === "/discovery/report") {
           return {
             startedAt: "2026-03-08T10:01:00.000Z",
@@ -1157,7 +1157,7 @@ test("admin discovery controller skips overlapping live and log polls", async ()
   try {
     const fixture = createDiscoveryControllerFixture();
     fixture.options.getBridge = async path => {
-      if (path === "/ops/task-live/discovery") {
+      if (path === "/ops/task-live/discovery?view=summary") {
         liveCalls += 1;
         return new Promise(resolve => {
           resolveLive = resolve;
@@ -1208,7 +1208,7 @@ test("admin discovery controller backs off after transport failures and resets a
   try {
     const fixture = createDiscoveryControllerFixture();
     fixture.options.getBridge = async path => {
-      if (path === "/ops/task-live/discovery") {
+      if (path === "/ops/task-live/discovery?view=summary") {
         if (failLive) throw new Error("Network error: bridge unreachable");
         return {};
       }

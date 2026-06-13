@@ -54,7 +54,7 @@ test("createJobsBoot first-run bootstrap request does not force a duplicate refr
       if (path === "/tasks/run-jobs-bootstrap") {
         return { started: true, runId: "jobs_bootstrap_matrix" };
       }
-      if (path === "/ops/task-live/fetch") return null;
+      if (path === "/ops/task-live/fetch?view=summary") return null;
       return {};
     },
     desktopJobsColdStart: true,

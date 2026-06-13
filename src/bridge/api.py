@@ -393,7 +393,7 @@ class BridgeApi:
     get_lifecycle_run_history_rows: Callable[[], list[JsonObject]] = _empty_startup_metrics
     get_lifecycle_current_runs: Callable[[], list[JsonObject]] = _empty_startup_metrics
     get_lifecycle_recent_runs: Callable[[], list[JsonObject]] = _empty_startup_metrics
-    get_task_live_payload: Callable[[str], JsonObject] = _default_task_live_payload
+    get_task_live_payload: Callable[..., JsonObject] = _default_task_live_payload
     get_current_task_state_payload: Callable[[], JsonObject] = _default_current_task_state_payload
     get_current_task_state_summary_payload: Callable[
         [],

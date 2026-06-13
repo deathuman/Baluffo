@@ -54,6 +54,7 @@ export function createAdminFetcherWatchController({
     return loadTaskLivePayload({
       getBridge,
       taskType: "fetch",
+      view: "summary",
       requestOptions: options?.requestOptions || {}
     });
   }

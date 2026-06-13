@@ -152,6 +152,7 @@ When `sourceRegistry=sqlite`, the registry GET routes and POST mutations read an
 | GET | `/ops/fetch-kpis?view=summary` | Bounded user-facing fetch KPI summary for Admin cards. It omits source-health arrays, provider coverage, dedup diagnostics, performance profile, audit artifacts, full history, and full fetch report bodies |
 | GET | `/ops/history?limit=` | Run history (sync/fetcher/discovery) |
 | GET | `/ops/task-live/<taskType>` | Detailed live task payload for `fetch`, `discovery`, or `sync` |
+| GET | `/ops/task-live/<taskType>?view=summary` | Compact active-polling live task payload preserving run identity, status, task progress, summary, timestamps, and bounded recent events while omitting full work items |
 | GET | `/ops/task-state` | Full current task projection for diagnostics, including task work-item/event detail when available |
 | GET | `/ops/task-state?view=summary` | Compact hot-path task projection preserving active task identity/progress while omitting full work items and bounding recent events |
 | GET | `/ops/fetch-report` | Last fetch summary |
@@ -201,7 +202,7 @@ Known sensitive field names such as tokens, passwords, secrets, API keys, and au
 - Desktop sign-in UI should call `/desktop-local-data/profiles` first and prefer existing-profile selection. If that load fails, the current desktop flow is explicit `Retry` / `Create new profile` / `Cancel`, not blind text entry for existing profiles.
 - `/app/update-status` is the desktop source of truth for installed app version and updater state. Jobs/Saved/Admin desktop chrome reads `currentVersion` from this payload.
 - `/ops/alerts/ack` does not persist acknowledgement for active non-dismissible alerts. The first-run `fetch_never_run` guidance remains visible until a successful fetch clears the condition; `pipeline_never_run` remains visible until a successful full Jobs pipeline lifecycle row exists, including after sheet bootstrap.
-- `/ops/task-live/<taskType>` is the detailed live surface for fetch/discovery/sync. It emits `workItems`, `recentEvents`, `taskProgress`, and lifecycle fields; it does not emit a detailed `tasks` alias anymore.
+- `/ops/task-live/<taskType>` is the detailed live surface for fetch/discovery/sync. It emits `workItems`, `recentEvents`, `taskProgress`, and lifecycle fields; it does not emit a detailed `tasks` alias anymore. Active Admin and Jobs polling should use `/ops/task-live/<taskType>?view=summary`; the summary view preserves the live task envelope, `taskProgress`, `summary`, identity, status, timestamps, and bounded recent events, and omits full `workItems` while exposing `workItemCount`/`workItemsTruncated`.
 - `recentEvents` rows on `/ops/task-live/<taskType>` are normalized by `src/shared/live_task.py` and use the shared live task event envelope:
   - `schemaVersion`: currently `1`.
   - `event`: stable event token, preferring an explicit `event`, then `phaseKey`, then `live_task_event`.

@@ -207,7 +207,7 @@ test("admin fetcher controller backs off task-live timeouts without clearing pro
       if (String(path).startsWith("/fetcher/log?offset=") || String(path).startsWith("/fetcher/log?view=tail")) {
         return { text: "", nextOffset: 0 };
       }
-      if (path === "/ops/task-live/fetch") {
+      if (path === "/ops/task-live/fetch?view=summary") {
         taskLiveCalls += 1;
         throw new Error("Bridge error (HTTP 504)");
       }
