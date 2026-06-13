@@ -32,6 +32,7 @@ export function createAdminOpsController({
   loadLatestFetcherReport,
   attachToActiveDiscoveryRun,
   loadLatestDiscoveryReport,
+  onActivePipelineIdle,
   bridgeStatusPollIntervalMs,
   idlePollIntervalMs,
   awaitBridgeReady,
@@ -83,6 +84,7 @@ export function createAdminOpsController({
     getBridgeStatus: bridgeStatusController.getBridgeStatus,
     awaitBridgeReady,
     loadLatestDiscoveryReport,
+    onActivePipelineIdle,
     markAdminStep,
     measureAdminStep,
     renderScheduler

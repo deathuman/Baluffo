@@ -64,6 +64,57 @@ def test_pipeline_service_consumes_container_gateway_abort_request(tmp_path: Pat
     }
 
 
+def test_pipeline_control_abort_requests_child_and_waits_for_live_child(
+    tmp_path: Path,
+) -> None:
+    runtime = PipelineRuntime(abort_requests={})
+    child_abort_requests: list[tuple[str, str, str]] = []
+    live_children = {"fetch_1": True}
+    status: dict[str, Any] = {"active": True, "runId": "pipeline_1", "stage": "fetch"}
+    service = _make_pipeline_service(
+        pipeline_status=status,
+        runtime=runtime,
+        control_data_dir=tmp_path,
+        child_run_is_live=lambda _task_type, run_id: bool(live_children.get(run_id)),
+        abort_child_run=lambda task_type, run_id, reason: (
+            child_abort_requests.append((task_type, run_id, reason)) or {"ok": True}
+        ),
+    )
+    service._attach_lifecycle_child_row(  # noqa: SLF001
+        run_id="pipeline_1",
+        task_type="fetch",
+        child_run_id="fetch_1",
+        child_started_at="2026-05-06T19:00:02Z",
+    )
+    write_abort_request(
+        tmp_path,
+        run_id="pipeline_1",
+        task_type="pipeline",
+        reason="gateway_abort",
+        requested_at="2026-05-06T19:00:03Z",
+    )
+
+    service._check_abort("pipeline_1")  # noqa: SLF001
+    service._set_completed(status="canceled", final_output_count=10)  # noqa: SLF001
+
+    assert child_abort_requests == [("fetch", "fetch_1", "gateway_abort")]
+    assert status["active"] is True
+    assert status["stage"] == "aborting"
+    assert status["activeChildren"][0]["runId"] == "fetch_1"
+
+    live_children["fetch_1"] = False
+    try:
+        service._check_abort("pipeline_1")  # noqa: SLF001
+    except PipelineAbortRequested:
+        pass
+    else:
+        raise AssertionError("expected gateway abort to finish once child is not live")
+
+    service._set_completed(status="canceled", final_output_count=10)  # noqa: SLF001
+    assert status["active"] is False
+    assert status["stage"] == "canceled"
+
+
 def test_pipeline_service_writes_active_child_control_snapshot(tmp_path: Path) -> None:
     service = _make_pipeline_service(
         pipeline_status={"active": True, "runId": "pipeline_1", "stage": "fetch"},

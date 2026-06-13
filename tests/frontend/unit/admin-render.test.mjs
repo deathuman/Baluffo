@@ -59,6 +59,16 @@ test("admin render: missing summary kpis remain pending instead of false zeros",
   assert.doesNotMatch(kpisEl.innerHTML, /Fetch Success \(7d\)[\s\S]*0\.0%/);
 });
 
+test("admin render: null KPI text fields use terminal fallback copy", () => {
+  const kpisEl = makeEl();
+  renderAdminOpsKpis(kpisEl, { lastSuccessfulFetchAge: null }, "healthy", {
+    fetchKpiPendingLabels: { lastSuccessfulFetchAge: "No successful fetch yet" }
+  });
+
+  assert.match(kpisEl.innerHTML, /No successful fetch yet/);
+  assert.doesNotMatch(kpisEl.innerHTML, />null</i);
+});
+
 test("admin render: non-dismissible alerts omit dismiss control", () => {
   const alertsEl = makeEl();
   renderAdminOpsAlerts(alertsEl, [

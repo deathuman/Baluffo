@@ -375,3 +375,62 @@ def test_task_state_filters_pipeline_owned_child_when_parent_stage_mismatches() 
         str(item.get("code") or "") == "pipeline_child_stage_mismatch"
         for item in payload.get("diagnostics") or []
     )
+
+
+def test_task_state_keeps_aborting_pipeline_child_when_parent_is_inactive() -> None:
+    started_at = admin_bridge.now_iso()
+    admin_bridge.save_json_atomic(
+        admin_bridge.TASK_LIFECYCLE_PATH,
+        {"schemaVersion": 1, "updatedAt": "", "rows": []},
+    )
+    admin_bridge.bridge_runtime_state.PIPELINE_STATUS.update(
+        {
+            "active": False,
+            "runId": "pipeline_aborted_1",
+            "stage": "canceled",
+            "startedAt": started_at,
+            "finishedAt": started_at,
+            "progress": {
+                "currentStep": 3,
+                "totalSteps": 3,
+                "percent": 100,
+                "label": "Pipeline canceled",
+            },
+        }
+    )
+    try:
+        admin_bridge.start_lifecycle_run(
+            run_id="fetch_aborting_1",
+            task_type="fetch",
+            started_at=started_at,
+            stage="aborting",
+            owner_kind="pipeline",
+            parent_run_id="pipeline_aborted_1",
+            parent_task_type="pipeline",
+            progress=active_progress("aborting", "Aborting...", {}),
+            summary={"abortRequestedAt": started_at, "abortReason": "admin_ops_abort"},
+        )
+
+        api = admin_bridge.build_bridge_api(admin_bridge.RUNTIME_CONFIG)
+        full_payload = api.get_current_task_state_payload()
+        summary_payload = api.get_current_task_state_summary_payload()
+    finally:
+        admin_bridge.bridge_runtime_state.PIPELINE_STATUS.update(
+            {
+                "active": False,
+                "runId": "",
+                "stage": "idle",
+                "startedAt": "",
+                "finishedAt": "",
+                "progress": {"currentStep": 0, "totalSteps": 3, "percent": 0, "label": "Idle"},
+            }
+        )
+
+    assert {str(row.get("taskType") or "") for row in full_payload.get("tasks") or []} == {"fetch"}
+    assert {str(row.get("taskType") or "") for row in summary_payload.get("tasks") or []} == {
+        "fetch"
+    }
+    assert any(
+        str(item.get("code") or "") == "pipeline_child_parent_inactive_after_abort"
+        for item in summary_payload.get("diagnostics") or []
+    )

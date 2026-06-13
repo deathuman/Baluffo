@@ -40,6 +40,19 @@ function firstMeaningfulPipelineLabel(...values) {
   return values.map(value => String(value || "").trim()).find(value => value && !isZeroPipelineProgressLabel(value)) || "";
 }
 
+function rowAbortRequested(row) {
+  const summary = row?.summary && typeof row.summary === "object" ? row.summary : {};
+  const progress = row?.taskProgress && typeof row.taskProgress === "object" ? row.taskProgress : {};
+  return Boolean(
+    String(summary?.abortRequestedAt || "").trim()
+    || String(summary?.abortReason || "").trim()
+    || String(row?.stage || "").trim().toLowerCase() === "aborting"
+    || String(row?.lifecycleStatus || "").trim().toLowerCase() === "aborting"
+    || String(row?.displayStatus || "").trim().toLowerCase() === "aborting"
+    || String(progress?.phaseKey || "").trim().toLowerCase() === "aborting"
+  );
+}
+
 export function renderAdminOpsTrends(trendsEl, runs) {
   if (!trendsEl) return;
   const canPatchInPlace = Boolean(trendsEl && trendsEl.dataset);
@@ -307,6 +320,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
         || String(row?.controlPlaneSource || "").trim() === "pipeline-status"
       )
     );
+    const abortRequested = rowAbortRequested(row);
     return {
       key,
       runId: String(row?.runId || row?.id || ""),
@@ -326,6 +340,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
         && inputIsLive
         && ["fetch", "discovery", "pipeline"].includes(type)
         && !pipelineOwnedChild
+        && !abortRequested
         && String(row?.runId || row?.id || "").trim()
       ),
       durationText: runView.durationLabel || runView.elapsedLabel || formatDuration(Number(row?.elapsedMs ?? row?.durationMs ?? 0)),

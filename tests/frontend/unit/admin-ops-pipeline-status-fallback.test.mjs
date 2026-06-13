@@ -11,6 +11,8 @@ import {
 async function flushAdminOpsBackground() {
   await Promise.resolve();
   await Promise.resolve();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  await Promise.resolve();
 }
 
 test("admin ops controller renders active pipeline from status when dashboard health is delayed", async () => {
@@ -37,11 +39,13 @@ test("admin ops controller renders active pipeline from status when dashboard he
   const renderedCurrentRows = [];
   const renderedKpis = [];
   const watcherCalls = [];
+  const calls = [];
   const renderScheduler = createDeferredRenderScheduler();
   const controller = createAdminOpsController({
     state,
     refs,
     getBridge: async path => {
+      calls.push(path);
       if (path === "/tasks/run-jobs-pipeline-status") {
         return {
           active: true,
@@ -66,11 +70,52 @@ test("admin ops controller renders active pipeline from status when dashboard he
         };
       }
       if (path === "/ops/dashboard-health?view=summary") throw new Error("dashboard should not load while pipeline is active");
-      if (path === "/ops/task-state?view=summary") throw new Error("task-state delayed");
+      if (path === "/ops/task-state?view=summary") {
+        return {
+          tasks: [
+            {
+              taskType: "fetch",
+              type: "fetch",
+              runId: "fetch_live_1",
+              parentTaskType: "pipeline",
+              parentRunId: "pipeline_live_1",
+              active: true,
+              startedAt: "2026-06-06T09:00:01.000Z",
+              status: "running",
+              taskProgress: {
+                active: true,
+                phaseLabel: "Executing sources",
+                mode: "determinate",
+                ratio: 0.12,
+                counts: { completedSources: 12, sourceCount: 100 }
+              }
+            },
+            {
+              taskType: "pipeline",
+              type: "pipeline",
+              runId: "pipeline_live_1",
+              active: true,
+              startedAt: "2026-06-06T09:00:00.000Z"
+            }
+          ],
+          count: 2,
+          summary: true
+        };
+      }
       if (path === "/registry/conflicts?view=summary") {
         return { summary: { conflictCount: 0 }, conflicts: [], summaryView: true };
       }
-      if (path === "/ops/fetch-kpis?view=summary") return { ok: true, kpis: {}, summaryView: true };
+      if (path === "/ops/fetch-kpis?view=summary") {
+        return {
+          ok: true,
+          kpis: {
+            sevenDayFetchSuccessRate: 0,
+            avgFetchDurationMs7d: 5220280,
+            pendingApprovalsCount: 813
+          },
+          summaryView: true
+        };
+      }
       if (path === "/admin/ops-tab-counts?view=summary") return { ok: true, summaryView: true, badges: {} };
       throw new Error(`unexpected path ${path}`);
     },
@@ -130,11 +175,15 @@ test("admin ops controller renders active pipeline from status when dashboard he
     renderedCurrentRows.at(-1)?.map(row => row.runId),
     ["fetch_live_1", "pipeline_live_1"]
   );
-  assert.equal(renderedCurrentRows.at(-1)?.[0]?.displayOnly, true);
+  assert.equal(renderedCurrentRows.at(-1)?.[0]?.displayOnly, undefined);
+  assert.equal(renderedCurrentRows.at(-1)?.[0]?.taskProgress?.ratio, 0.12);
   assert.equal(state.adminBusyState.livePipelineRunning, true);
   assert.equal(state.adminBusyState.liveFetchRunning, true);
-  assert.equal(renderedKpis.at(-1)?.fetchKpiPendingLabel, "Delayed while job update is running.");
-  assert.deepEqual(watcherCalls, []);
+  assert.ok(calls.includes("/ops/task-state?view=summary"));
+  assert.ok(calls.includes("/ops/fetch-kpis?view=summary"));
+  assert.equal(calls.includes("/admin/ops-tab-counts?view=summary"), false);
+  assert.equal(renderedKpis.at(-1)?.fetchKpiPendingLabel, "Not available");
+  assert.deepEqual(watcherCalls, ["attach-fetch", "load-fetch-report"]);
 
   await loadPromise;
   controller.stopOpsHealthPolling();

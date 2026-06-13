@@ -20,7 +20,7 @@ test("admin fetcher controller stores optimistic run metadata while fetch watch 
     });
     fixture.options.getBridge = async path => {
       fixture.calls.push(path);
-        if (String(path).startsWith("/fetcher/log?offset=")) {
+        if (String(path).startsWith("/fetcher/log?offset=") || String(path).startsWith("/fetcher/log?view=tail")) {
           return { text: "", nextOffset: 0 };
         }
         return {};
@@ -118,13 +118,6 @@ test("admin fetcher controller starts live progress watching for an explicit bri
   };
   const fixture = createFetcherControllerFixture({
     options: {
-      getBridge: async path => {
-      if (String(path).startsWith("/fetcher/log?offset=")) {
-        return { text: "", nextOffset: 0 };
-      }
-      if (path === "/ops/dashboard-health") return {};
-      return activeReport;
-    },
       fetchJobsFetchReportJson: async () => activeReport
     }
   });
@@ -135,6 +128,7 @@ test("admin fetcher controller starts live progress watching for an explicit bri
       runId: "fetch_123",
       startedAt: "2026-03-08T10:00:00.000Z"
     });
+    await Promise.resolve();
 
     assert.equal(fixture.state.adminBusyState.fetcherWatch, true);
     assert.equal(fixture.state.adminBusyState.liveFetchRunning, false);
@@ -146,6 +140,7 @@ test("admin fetcher controller starts live progress watching for an explicit bri
     assert.ok(!fixture.logs.some(line => /timeout window/i.test(line)));
     assert.equal(fixture.refs.adminFetcherProgressEl.classList.contains("hidden"), false);
     assert.equal(fixture.refs.adminFetcherProgressEl.classList.contains("indeterminate"), true);
+    assert.ok(fixture.calls.includes("/fetcher/log?view=tail&limitChars=8192"));
     assert.ok(timerStub.scheduled.length >= 2);
   } finally {
     controller?.stopFetcherCompletionWatch?.();
@@ -180,7 +175,7 @@ test("admin fetcher controller can restore a live watch from local state when th
     },
     options: {
       getBridge: async path => {
-      if (String(path).startsWith("/fetcher/log?offset=")) {
+      if (String(path).startsWith("/fetcher/log?offset=") || String(path).startsWith("/fetcher/log?view=tail")) {
         return { text: "", nextOffset: 0 };
       }
       return {
@@ -289,7 +284,7 @@ test("admin fetcher controller renders progress from the shared task progress co
       state,
       refs,
       getBridge: async path => {
-        if (String(path).startsWith("/fetcher/log?offset=")) {
+        if (String(path).startsWith("/fetcher/log?offset=") || String(path).startsWith("/fetcher/log?view=tail")) {
           return {
             text: "[2026-03-08T10:00:01.000Z] [jobs_fetcher] START source=Studio A\n[2026-03-08T10:00:02.000Z] [jobs_fetcher] WARN source=Studio B HTTP 403\n",
             nextOffset: 120
@@ -475,7 +470,7 @@ test("admin fetcher controller keeps current live detail when an active report r
       state,
       refs,
       getBridge: async path => {
-        if (String(path).startsWith("/fetcher/log?offset=")) {
+        if (String(path).startsWith("/fetcher/log?offset=") || String(path).startsWith("/fetcher/log?view=tail")) {
           return { text: "", nextOffset: 0 };
         }
         if (path === "/ops/task-live/fetch") {
@@ -592,7 +587,7 @@ test("admin fetcher controller hydrates progress from the report without replayi
       }
     });
     fixture.options.getBridge = async path => {
-        if (String(path).startsWith("/fetcher/log?offset=")) {
+        if (String(path).startsWith("/fetcher/log?offset=") || String(path).startsWith("/fetcher/log?view=tail")) {
           return { text: "", nextOffset: 0 };
         }
         if (path === "/ops/task-live/fetch") {
@@ -710,7 +705,7 @@ test("admin fetcher controller only emits generic active heartbeat after sustain
       state,
       refs,
       getBridge: async path => {
-        if (String(path).startsWith("/fetcher/log?offset=")) {
+        if (String(path).startsWith("/fetcher/log?offset=") || String(path).startsWith("/fetcher/log?view=tail")) {
           return { text: "", nextOffset: 0 };
         }
         if (path === "/ops/task-live/fetch") {
@@ -932,7 +927,7 @@ test("admin fetcher controller treats scrapy fallback progress changes as summar
       state,
       refs,
       getBridge: async path => {
-        if (String(path).startsWith("/fetcher/log?offset=")) {
+        if (String(path).startsWith("/fetcher/log?offset=") || String(path).startsWith("/fetcher/log?view=tail")) {
           return { text: "", nextOffset: 0 };
         }
         if (path === "/ops/task-live/fetch") {
@@ -1038,7 +1033,7 @@ test("admin fetcher controller prefers task-live payload during active runs and 
       state,
       refs,
       getBridge: async path => {
-        if (String(path).startsWith("/fetcher/log?offset=")) {
+        if (String(path).startsWith("/fetcher/log?offset=") || String(path).startsWith("/fetcher/log?view=tail")) {
           return { text: "", nextOffset: 0 };
         }
         if (path === "/ops/task-live/fetch") {
@@ -1157,7 +1152,7 @@ test("admin fetcher controller syncs source tables once after completion", async
       state,
       refs,
       getBridge: async path => {
-        if (String(path).startsWith("/fetcher/log?offset=")) {
+        if (String(path).startsWith("/fetcher/log?offset=") || String(path).startsWith("/fetcher/log?view=tail")) {
           return { text: "", nextOffset: 0 };
         }
         if (path === "/ops/task-live/fetch") {
@@ -1277,7 +1272,7 @@ test("admin fetcher controller forwards uncapped preset payload", async () => {
     state,
     refs,
     getBridge: async path => {
-      if (String(path).startsWith("/fetcher/log?offset=")) {
+      if (String(path).startsWith("/fetcher/log?offset=") || String(path).startsWith("/fetcher/log?view=tail")) {
         return { text: "", nextOffset: 0 };
       }
       return {};

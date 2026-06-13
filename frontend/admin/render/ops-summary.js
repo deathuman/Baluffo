@@ -139,7 +139,7 @@ function formatOptionalDuration(object, key, { pending = "Not loaded yet" } = {}
   return escapeHtml(formatDuration(value));
 }
 
-function formatOptionalText(object, key, { pending = "Not loaded yet", formatter = value => String(value) } = {}) {
+function formatOptionalText(object, key, { pending = "Not loaded yet", formatter = value => (value == null ? "" : String(value)) } = {}) {
   if (!hasOwnField(object, key)) return formatPendingField(pending);
   const value = object?.[key];
   const text = formatter(value);
@@ -218,10 +218,15 @@ export function renderAdminOpsAlerts(alertsEl, alerts, handlers = {}) {
 export function renderAdminOpsKpis(kpisEl, kpis, status, options = {}) {
   if (!kpisEl) return;
   const fetchKpiPendingLabel = String(options?.fetchKpiPendingLabel || "Loading latest fetch KPI...");
+  const fetchKpiPendingLabels = options?.fetchKpiPendingLabels && typeof options.fetchKpiPendingLabels === "object"
+    ? options.fetchKpiPendingLabels
+    : {};
+  const pendingLabelFor = key => String(fetchKpiPendingLabels[key] || fetchKpiPendingLabel);
   const canPatchInPlace = Boolean(kpisEl && kpisEl.dataset);
   const signature = stableOpsSignature({
     status: String(status || ""),
     fetchKpiPendingLabel,
+    fetchKpiPendingLabels,
     sevenDayFetchSuccessRate: hasOwnField(kpis, "sevenDayFetchSuccessRate") ? kpis?.sevenDayFetchSuccessRate : "__pending__",
     failedSourceRatioLatest: hasOwnField(kpis, "failedSourceRatioLatest") ? kpis?.failedSourceRatioLatest : "__pending__",
     pendingApprovalsCount: hasOwnField(kpis, "pendingApprovalsCount") ? kpis?.pendingApprovalsCount : "__pending__",
@@ -308,19 +313,19 @@ export function renderAdminOpsKpis(kpisEl, kpis, status, options = {}) {
     </div>
     <div class="admin-total-card">
       <div class="admin-total-label">Last Successful Fetch</div>
-      <div class="admin-total-value">${formatOptionalText(kpis, "lastSuccessfulFetchAge", { pending: fetchKpiPendingLabel })}</div>
+      <div class="admin-total-value">${formatOptionalText(kpis, "lastSuccessfulFetchAge", { pending: pendingLabelFor("lastSuccessfulFetchAge") })}</div>
     </div>
     <div class="admin-total-card">
       <div class="admin-total-label">Fetch Success (7d)</div>
-      <div class="admin-total-value">${formatOptionalPercent(kpis, "sevenDayFetchSuccessRate", { pending: fetchKpiPendingLabel })}</div>
+      <div class="admin-total-value">${formatOptionalPercent(kpis, "sevenDayFetchSuccessRate", { pending: pendingLabelFor("sevenDayFetchSuccessRate") })}</div>
     </div>
     <div class="admin-total-card">
       <div class="admin-total-label">Avg Fetch Duration (7d)</div>
-      <div class="admin-total-value">${formatOptionalDuration(kpis, "avgFetchDurationMs7d", { pending: fetchKpiPendingLabel })}</div>
+      <div class="admin-total-value">${formatOptionalDuration(kpis, "avgFetchDurationMs7d", { pending: pendingLabelFor("avgFetchDurationMs7d") })}</div>
     </div>
     <div class="admin-total-card">
       <div class="admin-total-label">Failed Source Ratio</div>
-      <div class="admin-total-value">${formatOptionalPercent(kpis, "failedSourceRatioLatest", { pending: fetchKpiPendingLabel })}</div>
+      <div class="admin-total-value">${formatOptionalPercent(kpis, "failedSourceRatioLatest", { pending: pendingLabelFor("failedSourceRatioLatest") })}</div>
     </div>
     <div class="admin-total-card">
       <div class="admin-total-label">Pending Approvals</div>

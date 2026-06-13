@@ -701,6 +701,14 @@ def get_pipeline_service() -> _PipelineServiceLike:
                     completion=payload,
                 )
 
+            def pipeline_abort_child_run(
+                task_type: str, run_id: str, reason: str
+            ) -> dict[str, Any]:
+                _status, result = get_task_abort_service().abort_task(
+                    {"taskType": task_type, "runId": run_id, "reason": reason}
+                )
+                return result
+
             root_mod._PIPELINE_SERVICE = root_mod.PipelineService(
                 pipeline_state_lock=bridge_runtime_state.PIPELINE_STATE_LOCK,
                 pipeline_status=bridge_runtime_state.PIPELINE_STATUS,
@@ -726,6 +734,7 @@ def get_pipeline_service() -> _PipelineServiceLike:
                 get_projected_run_history=root_mod._get_ops_api().get_projected_run_history,
                 run_registry_conflict_adjudication=pipeline_run_registry_conflict_adjudication,
                 refresh_child_task_heartbeat=pipeline_refresh_child_task_heartbeat,
+                abort_child_run=pipeline_abort_child_run,
                 start_lifecycle_run=root_mod.start_lifecycle_run,
                 heartbeat_lifecycle_run=root_mod.heartbeat_lifecycle_run,
                 finish_lifecycle_run=root_mod.finish_lifecycle_run,

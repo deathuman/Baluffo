@@ -376,7 +376,7 @@ export function createFetcherControllerFixture({
     refs,
     getBridge: async path => {
       calls.push(path);
-      if (String(path).startsWith("/fetcher/log?offset=")) {
+      if (String(path).startsWith("/fetcher/log?offset=") || String(path).startsWith("/fetcher/log?view=tail")) {
         return { text: "", nextOffset: 0 };
       }
       if (path === "/ops/task-live/fetch") return {};

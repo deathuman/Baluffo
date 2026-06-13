@@ -64,6 +64,7 @@ class PipelineService:
         run_registry_conflict_adjudication: Callable[[dict[str, Any]], dict[str, Any]]
         | None = None,
         refresh_child_task_heartbeat: Callable[[str, str, str], bool] | None = None,
+        abort_child_run: Callable[[str, str, str], Any] | None = None,
         start_lifecycle_run: Callable[..., dict[str, Any]] | None = None,
         heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None] | None = None,
         finish_lifecycle_run: Callable[..., dict[str, Any]] | None = None,
@@ -98,6 +99,7 @@ class PipelineService:
         self._get_projected_run_history = get_projected_run_history
         self._run_registry_conflict_adjudication = run_registry_conflict_adjudication
         self._refresh_child_task_heartbeat = refresh_child_task_heartbeat
+        self._abort_child_run = abort_child_run
         self._start_lifecycle_run = start_lifecycle_run
         self._heartbeat_lifecycle_run = heartbeat_lifecycle_run
         self._finish_lifecycle_run = finish_lifecycle_run
@@ -336,6 +338,122 @@ class PipelineService:
         requests = self._runtime.abort_requests or {}
         return dict(requests.get(str(run_id or "").strip()) or {})
 
+    def _active_abortable_child_rows(self, run_id: str) -> list[dict[str, Any]]:
+        clean_run_id = str(run_id or "").strip()
+        if not clean_run_id:
+            return []
+        rows: list[dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+
+        def add_row(row: dict[str, Any]) -> None:
+            task_type = str(row.get("taskType") or row.get("type") or "").strip().lower()
+            child_run_id = str(row.get("runId") or row.get("id") or "").strip()
+            if task_type not in {"fetch", "discovery"} or not child_run_id:
+                return
+            key = (task_type, child_run_id)
+            if key in seen:
+                return
+            seen.add(key)
+            rows.append({**row, "taskType": task_type, "runId": child_run_id})
+
+        with self._lock:
+            for child in self._copy_control_children(self._status):
+                parent_run_id = str(child.get("parentRunId") or "").strip()
+                if parent_run_id == clean_run_id:
+                    add_row(child)
+
+        if callable(self._get_projected_run_history):
+            try:
+                projection = self._get_projected_run_history()
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                projection = None
+            projected_rows = getattr(projection, "rows", []) if projection is not None else []
+            if isinstance(projected_rows, list):
+                for row in projected_rows:
+                    if not isinstance(row, dict):
+                        continue
+                    summary = row.get("summary") if isinstance(row.get("summary"), dict) else {}
+                    parent_run_id = str(
+                        row.get("parentRunId") or summary.get("pipelineRunId") or ""
+                    ).strip()
+                    if parent_run_id != clean_run_id:
+                        continue
+                    if row.get("active") is False or str(row.get("finishedAt") or "").strip():
+                        continue
+                    add_row(row)
+        return rows
+
+    def _request_active_child_aborts(self, run_id: str) -> None:
+        clean_run_id = str(run_id or "").strip()
+        if not clean_run_id:
+            return
+        reason = str(self._abort_metadata(clean_run_id).get("reason") or "pipeline_abort").strip()
+        for child in self._active_abortable_child_rows(clean_run_id):
+            task_type = str(child.get("taskType") or "").strip().lower()
+            child_run_id = str(child.get("runId") or "").strip()
+            if (
+                not task_type
+                or not child_run_id
+                or self._child_abort_requested(task_type, child_run_id)
+            ):
+                continue
+            if not callable(self._abort_child_run):
+                continue
+            try:
+                self._abort_child_run(task_type, child_run_id, reason)
+            except (RuntimeError, TypeError, ValueError, OSError) as exc:
+                self._bridge_log(
+                    "warn",
+                    "jobs_pipeline_child_abort_request_failed",
+                    runId=clean_run_id,
+                    childTask=task_type,
+                    childRunId=child_run_id,
+                    error=str(exc),
+                )
+
+    def _has_live_abortable_child(self, run_id: str) -> bool:
+        for child in self._active_abortable_child_rows(run_id):
+            task_type = str(child.get("taskType") or "").strip().lower()
+            child_run_id = str(child.get("runId") or "").strip()
+            if self._child_task_has_live_evidence(task_type, child_run_id):
+                return True
+        return False
+
+    def _mark_abort_pending(self, run_id: str, *, defer_sync: bool = False) -> None:
+        clean_run_id = str(run_id or "").strip()
+        if not clean_run_id:
+            return
+        metadata = self._abort_metadata(clean_run_id)
+        requested_at = str(metadata.get("requestedAt") or self._now_iso() or "").strip()
+        reason = str(metadata.get("reason") or "").strip()
+        with self._lock:
+            if str(self._status.get("runId") or "").strip() != clean_run_id:
+                return
+            if not bool(self._status.get("active")):
+                return
+            next_stage = "abort_pending_sync" if defer_sync else "aborting"
+            self._status["stage"] = next_stage
+            self._status["progress"] = self._pipeline_progress(
+                3 if defer_sync else 0,
+                3,
+                "Abort after sync..." if defer_sync else "Aborting...",
+            )
+            progress = self._pipeline_lifecycle_progress(dict(self._status))
+            status_snapshot = dict(self._status)
+        self._write_control_status(status_snapshot)
+        if callable(self._heartbeat_lifecycle_run):
+            self._heartbeat_lifecycle_run(
+                clean_run_id,
+                "pipeline",
+                stage=next_stage,
+                progress=progress,
+                summary={
+                    "stage": next_stage,
+                    "abortRequestedAt": requested_at,
+                    "abortReason": reason,
+                },
+            )
+
     def _check_abort(self, run_id: str, *, defer_sync: bool = False) -> None:
         clean_run_id = str(run_id or "").strip()
         if not self._abort_requested(clean_run_id):
@@ -343,6 +461,11 @@ class PipelineService:
         with self._lock:
             stage = str(self._status.get("stage") or "").strip().lower()
         if defer_sync and stage in {"sync_push", "abort_pending_sync"}:
+            self._mark_abort_pending(clean_run_id, defer_sync=True)
+            return
+        self._mark_abort_pending(clean_run_id)
+        self._request_active_child_aborts(clean_run_id)
+        if self._has_live_abortable_child(clean_run_id):
             return
         raise PipelineAbortRequested("pipeline abort requested")
 
@@ -449,6 +572,11 @@ class PipelineService:
         sync_warning: dict[str, Any] | None = None,
     ) -> None:
         completion_notification: dict[str, Any] | None = None
+        with self._lock:
+            pending_run_id = str(self._status.get("runId") or "")
+        if status == "canceled" and self._has_live_abortable_child(pending_run_id):
+            self._mark_abort_pending(pending_run_id)
+            return
         with self._lock:
             run_id = str(self._status.get("runId") or "")
             baseline = int(self._status.get("baselineOutputCount") or 0)

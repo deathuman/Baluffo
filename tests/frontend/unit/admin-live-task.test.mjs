@@ -325,7 +325,7 @@ test("admin live-task restore helper silently hydrates fetch progress on first b
   try {
     const fixture = createFetcherControllerFixture();
     fixture.options.getBridge = async path => {
-      if (String(path).startsWith("/fetcher/log?offset=")) {
+      if (String(path).startsWith("/fetcher/log?offset=") || String(path).startsWith("/fetcher/log?view=tail")) {
         return { text: "", nextOffset: 0 };
       }
       if (path === "/ops/task-live/fetch") {

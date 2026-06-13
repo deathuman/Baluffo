@@ -23,6 +23,7 @@ from src.bridge import report_normalizer
 from src.bridge import run_history_api as _run_history_api
 from src.bridge.fetch_report_review_state import load_fetch_report_with_dedup_review_state
 from src.bridge.performance_profile import time_operation
+from src.bridge.task_abort_evidence import row_abort_requested
 from src.shared.json_shapes import as_json_object
 from src.shared.live_task import LiveTaskPayload, TaskStatePayload, TaskStateRow
 from src.source_registry_io import load_runtime_evidence
@@ -1129,7 +1130,16 @@ class OpsApi:
             parent_run_id = str(row.get("parentRunId") or "").strip()
             if parent_task_type == "pipeline":
                 parent_stage = parent_stage_by_run_id.get(parent_run_id, "")
-                if not parent_stage or parent_stage != task_type:
+                if not parent_stage and row_abort_requested(row):
+                    diagnostics.append(
+                        {
+                            "code": "pipeline_child_parent_inactive_after_abort",
+                            "taskType": task_type,
+                            "runId": run_id,
+                            "parentRunId": parent_run_id,
+                        }
+                    )
+                elif not parent_stage or parent_stage != task_type:
                     diagnostics.append(
                         {
                             "code": "pipeline_child_stage_mismatch",
@@ -1210,7 +1220,16 @@ class OpsApi:
             parent_run_id = str(row.get("parentRunId") or "").strip()
             if parent_task_type == "pipeline":
                 parent_stage = parent_stage_by_run_id.get(parent_run_id, "")
-                if not parent_stage or parent_stage != task_type:
+                if not parent_stage and row_abort_requested(row):
+                    diagnostics.append(
+                        {
+                            "code": "pipeline_child_parent_inactive_after_abort",
+                            "taskType": task_type,
+                            "runId": run_id,
+                            "parentRunId": parent_run_id,
+                        }
+                    )
+                elif not parent_stage or parent_stage != task_type:
                     diagnostics.append(
                         {
                             "code": "pipeline_child_stage_mismatch",

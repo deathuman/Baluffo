@@ -80,6 +80,7 @@ export function createAdminRegistryController({
     setManualSourceFeedback: ui.setManualSourceFeedback,
     loadDiscoveryData: loadController.loadDiscoveryData,
     syncSourceTablesAfterTaskCompletion: loadController.syncSourceTablesAfterTaskCompletion,
+    refreshSourceTablesAfterActiveRunIdle: loadController.refreshSourceTablesAfterActiveRunIdle,
     addManualSource: mutationController.addManualSource,
     approveSelectedSources: mutationController.approveSelectedSources,
     rejectSelectedSources: mutationController.rejectSelectedSources,

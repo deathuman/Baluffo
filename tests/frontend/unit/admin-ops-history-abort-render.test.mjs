@@ -88,6 +88,17 @@ test("admin ops history: current abort actions are scoped to abortable live task
         summary: { currentStep: 2, totalSteps: 4 }
       },
       {
+        type: "fetch",
+        runId: "fetch_aborting_1",
+        active: true,
+        isLive: true,
+        startedAt: "2026-03-08T10:02:30.000Z",
+        heartbeatAt: new Date().toISOString(),
+        stage: "aborting",
+        taskProgress: { phaseKey: "aborting", phaseLabel: "Aborting..." },
+        summary: { abortRequestedAt: "2026-03-08T10:02:31.000Z" }
+      },
+      {
         type: "sync",
         runId: "sync_live_1",
         active: true,
@@ -113,6 +124,7 @@ test("admin ops history: current abort actions are scoped to abortable live task
 
   assert.match(historyEl.innerHTML, /fetch_control_plane_1/);
   assert.match(historyEl.innerHTML, /fetch_pipeline_child_1/);
+  assert.match(historyEl.innerHTML, /fetch_aborting_1/);
   assert.equal((historyEl.innerHTML.match(/data-ops-run-abort=/g) || []).length, 3);
   assert.match(historyEl.innerHTML, /admin-ops-run-abort-btn/);
   assert.equal(abortButtons.length, 3);

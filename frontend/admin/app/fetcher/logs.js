@@ -1,9 +1,15 @@
 import {
+  createLiveTaskPollGuard,
+  getLiveTaskPollBackoffDelay,
   loadLiveTaskLogChunk,
   markLiveTaskActivity,
   resetLiveTaskPlaceholder,
+  runGuardedLiveTaskPoll,
   scheduleAsyncWatchTimer
 } from "../live-task.js";
+
+const FETCHER_LOG_POLL_TIMEOUT_MS = 3500;
+const FETCHER_LOG_POLL_BACKOFF_MAX_MS = 5000;
 
 export function createAdminFetcherLogController({
   state,
@@ -89,6 +95,17 @@ export function createAdminFetcherLogController({
     });
   }
 
+  function getFetcherLogPollGuard(baseDelayMs) {
+    if (!state.fetcherLiveProgressState || typeof state.fetcherLiveProgressState !== "object") return null;
+    if (!state.fetcherLiveProgressState.logPollGuard) {
+      state.fetcherLiveProgressState.logPollGuard = createLiveTaskPollGuard({
+        baseDelayMs: Math.max(250, Number(baseDelayMs) || 900),
+        maxDelayMs: FETCHER_LOG_POLL_BACKOFF_MAX_MS
+      });
+    }
+    return state.fetcherLiveProgressState.logPollGuard;
+  }
+
   async function loadFetcherLogChunk(options = {}) {
     const payload = await loadLiveTaskLogChunk({
       getBridge,
@@ -98,6 +115,7 @@ export function createAdminFetcherLogController({
       reset: Boolean(options?.reset),
       view: options?.view || "",
       limitChars: Number(options?.limitChars || 0),
+      requestOptions: options?.requestOptions || {},
       onText: appendFetcherServerLogText
     });
     const text = String(payload?.text || "").trim();
@@ -117,13 +135,23 @@ export function createAdminFetcherLogController({
 
   function scheduleFetcherLogPoll(delayMs) {
     stopFetcherLogPolling();
+    const baseDelayMs = Math.max(250, Number(delayMs) || 900);
+    const logPollGuard = getFetcherLogPollGuard(baseDelayMs);
     scheduleAsyncWatchTimer({
       state,
       timerKey: "fetcherLogPollTimer",
-      delayMs: Math.max(250, Number(delayMs) || 900),
-      task: () => loadFetcherLogChunk().catch(() => null).finally(() => {
+      delayMs: baseDelayMs,
+      task: () => runGuardedLiveTaskPoll(
+        logPollGuard,
+        () => loadFetcherLogChunk({
+          requestOptions: { timeoutMs: FETCHER_LOG_POLL_TIMEOUT_MS }
+        })
+      ).finally(() => {
         if (state.adminBusyState.fetcherWatch) {
-          scheduleFetcherLogPoll(delayMs);
+          scheduleFetcherLogPoll(Math.max(
+            baseDelayMs,
+            getLiveTaskPollBackoffDelay(logPollGuard, 0)
+          ));
         }
       })
     });

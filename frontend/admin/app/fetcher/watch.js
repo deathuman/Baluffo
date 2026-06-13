@@ -2,12 +2,15 @@ import {
   attachToActiveRun,
   clearOptimisticRun,
   createBoundedSignatureSet,
+  createLiveTaskPollGuard,
+  getLiveTaskPollBackoffDelay,
   getRestorableRunMeta,
   loadTaskLivePayload,
   parseReportTimestampMs,
   pickMeaningfulTaskLivePayload,
   pickTaskLivePayload,
   restartCompletionWatch,
+  runGuardedLiveTaskPoll,
   scheduleAsyncWatchTimer,
   setOptimisticRun,
   startLiveTaskWatch,
@@ -19,6 +22,10 @@ import {
   selectSlowSources
 } from "../fetcher-summary.js";
 import { buildTaskRunLogLabel } from "../../../shared/task-run-view-model.js";
+
+const FETCHER_INITIAL_LOG_TAIL_LIMIT_CHARS = 8192;
+const FETCHER_LIVE_POLL_TIMEOUT_MS = 3500;
+const FETCHER_LIVE_POLL_BACKOFF_MAX_MS = 5000;
 
 export function createAdminFetcherWatchController({
   state,
@@ -43,10 +50,11 @@ export function createAdminFetcherWatchController({
     clearOptimisticRun(state, "fetchOptimisticRun");
   }
 
-  async function loadFetcherLivePayload() {
+  async function loadFetcherLivePayload(options = {}) {
     return loadTaskLivePayload({
       getBridge,
-      taskType: "fetch"
+      taskType: "fetch",
+      requestOptions: options?.requestOptions || {}
     });
   }
 
@@ -95,11 +103,19 @@ export function createAdminFetcherWatchController({
         recentEventSignatures: createBoundedSignatureSet(),
         serverLogSignatures: createBoundedSignatureSet(),
         lastHeartbeatAtMs: 0,
-        lastActivityAtMs: Date.now()
+        lastActivityAtMs: Date.now(),
+        livePollGuard: createLiveTaskPollGuard({
+          baseDelayMs: activeProgressPollIntervalMs,
+          maxDelayMs: FETCHER_LIVE_POLL_BACKOFF_MAX_MS
+        })
       }),
       setProgress: () => updateFetcherProgressFromReport(null, { running: true }),
       onStart: announceStart ? () => appendFetcherLog("Fetcher started. Watching live progress...", "info") : null,
-      loadInitialLogChunk: () => loadFetcherLogChunk({ reset: true }).catch(() => {}),
+      loadInitialLogChunk: () => loadFetcherLogChunk({
+        reset: true,
+        view: "tail",
+        limitChars: FETCHER_INITIAL_LOG_TAIL_LIMIT_CHARS
+      }).catch(() => {}),
       scheduleLogPoll: () => scheduleFetcherLogPoll(activeProgressPollIntervalMs),
       scheduleCompletionPoll: () => scheduleFetcherCompletionPoll(0)
     });
@@ -131,12 +147,28 @@ export function createAdminFetcherWatchController({
 
   async function pollFetcherCompletion() {
     const now = Date.now();
-    const livePayload = await loadFetcherLivePayload().catch(() => null);
+    const liveState = state.fetcherLiveProgressState;
+    const liveResult = await runGuardedLiveTaskPoll(
+      liveState?.livePollGuard,
+      () => loadFetcherLivePayload({
+        requestOptions: { timeoutMs: FETCHER_LIVE_POLL_TIMEOUT_MS }
+      })
+    );
+    const livePayload = liveResult?.ok ? liveResult.value : null;
     const identityLivePayload = pickTaskLivePayload(livePayload);
     const meaningfulLivePayload = pickMeaningfulTaskLivePayload(livePayload);
     const liveEnvelope = meaningfulLivePayload || identityLivePayload;
     const liveStartedMs = parseReportTimestampMs(liveEnvelope?.startedAt);
     const liveFinishedMs = parseReportTimestampMs(liveEnvelope?.finishedAt);
+    const nextPollDelayMs = Math.max(
+      activeProgressPollIntervalMs,
+      getLiveTaskPollBackoffDelay(liveState?.livePollGuard, 0)
+    );
+
+    if (liveResult && liveResult.ok === false) {
+      scheduleFetcherCompletionPoll(nextPollDelayMs);
+      return;
+    }
 
     if (meaningfulLivePayload && liveStartedMs >= (state.fetcherLaunchAtMs - 1000)) {
       if (liveFinishedMs <= 0) {
@@ -195,7 +227,7 @@ export function createAdminFetcherWatchController({
       return;
     }
 
-    scheduleFetcherCompletionPoll(activeProgressPollIntervalMs);
+    scheduleFetcherCompletionPoll(nextPollDelayMs);
   }
 
   return {

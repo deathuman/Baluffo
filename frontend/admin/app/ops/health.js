@@ -33,6 +33,15 @@ const SOURCE_POLICY_DETAIL_PATH = "/source-policy/recommendations";
 const REGISTRY_CONFLICTS_SUMMARY_PATH = "/registry/conflicts?view=summary";
 const REGISTRY_CONFLICTS_DETAIL_PATH = "/registry/conflicts";
 const ACTIVE_PIPELINE_KPI_DELAYED_LABEL = "Delayed while job update is running.";
+const FETCH_KPI_LOADING_LABEL = "Loading latest fetch KPI...";
+const FETCH_KPI_UNAVAILABLE_LABEL = "Not available";
+const FETCH_KPI_NO_SUCCESS_LABEL = "No successful fetch yet";
+const OPS_DEGRADED_ACTIVE_TTL_MS = 30000;
+const OPS_HEAVY_ROUTE_BACKOFF_BASE_MS = 5000;
+const OPS_HEAVY_ROUTE_BACKOFF_MAX_MS = 30000;
+const OPS_HEAVY_ROUTE_DASHBOARD = "dashboard-health";
+const OPS_HEAVY_ROUTE_REGISTRY_CONFLICTS = "registry-conflicts";
+const OPS_HEAVY_ROUTE_TAB_COUNTS = "ops-tab-counts";
 
 function maybeUnrefTimer(timer) {
   timer?.unref?.();
@@ -324,6 +333,7 @@ export function createOpsHealthController({
   getBridgeStatus,
   awaitBridgeReady = async () => true,
   loadLatestDiscoveryReport,
+  onActivePipelineIdle,
   markAdminStep,
   measureAdminStep,
   getFrontendPerfCounters = () => {
@@ -347,6 +357,40 @@ export function createOpsHealthController({
   let sourcePolicyDetailLoad = null;
   let registryConflictsDetailLoad = null;
   let dedupListsDetailLoad = null;
+
+  function getOpsRouteBackoffs() {
+    if (!state.opsRouteBackoffs || typeof state.opsRouteBackoffs !== "object" || Array.isArray(state.opsRouteBackoffs)) {
+      state.opsRouteBackoffs = {};
+    }
+    return state.opsRouteBackoffs;
+  }
+
+  function isOpsRouteBackedOff(routeKey) {
+    const entry = getOpsRouteBackoffs()[String(routeKey || "")];
+    return Boolean(entry && Date.now() < Number(entry.untilMs || 0));
+  }
+
+  function markOpsRouteFailure(routeKey) {
+    const key = String(routeKey || "");
+    if (!key) return;
+    const routeBackoffs = getOpsRouteBackoffs();
+    const previous = routeBackoffs[key] || {};
+    const failureCount = Math.max(1, Number(previous.failureCount || 0) + 1);
+    const delayMs = Math.min(
+      OPS_HEAVY_ROUTE_BACKOFF_MAX_MS,
+      OPS_HEAVY_ROUTE_BACKOFF_BASE_MS * (2 ** (failureCount - 1))
+    );
+    routeBackoffs[key] = {
+      failureCount,
+      untilMs: Date.now() + delayMs
+    };
+  }
+
+  function clearOpsRouteFailure(routeKey) {
+    const key = String(routeKey || "");
+    if (!key || !state.opsRouteBackoffs) return;
+    delete state.opsRouteBackoffs[key];
+  }
 
   function markStep(name, payload = {}) {
     if (typeof markAdminStep === "function") markAdminStep(name, payload);
@@ -615,7 +659,7 @@ export function createOpsHealthController({
     stopPipelineStatusPolling();
     const waitMs = Math.max(600, Number(delayMs) || 2000);
     state.pipelineStatusPollTimer = maybeUnrefTimer(setTimeout(() => {
-      loadPipelineStatusFallbackData(opsRenderToken, { fromPoll: true }).catch(() => {});
+      loadActiveOpsSummaryData(opsRenderToken, { fromPoll: true }).catch(() => {});
     }, waitMs));
   }
 
@@ -770,23 +814,35 @@ export function createOpsHealthController({
     const taskType = String(row?.taskType || "").trim().toLowerCase();
     const runId = String(row?.runId || "").trim();
     if (!taskType || !runId) return;
+    if (hasPendingOpsAbort(taskType, runId)) {
+      showToast("Task abort is already queued.", "info");
+      return;
+    }
     const confirmed = typeof globalThis.confirm === "function"
       ? globalThis.confirm(`Abort ${taskType} task ${runId}?`)
       : true;
     if (!confirmed) return;
+    const pendingAbort = setPendingOpsAbort(taskType, runId, {
+      startedAt: String(row?.startedAt || "")
+    });
+    applyOptimisticAbortRow(taskType, runId, pendingAbort);
     try {
       const result = await postBridge("/tasks/abort", {
         taskType,
         runId,
         reason: "admin_ops_abort",
       });
-      if (!result?.ok && !result?.abortAccepted) {
+      if (!isAbortAcceptedResult(result)) {
         throw new Error(String(result?.error || "abort failed"));
       }
-      showToast("Task abort requested.", "success");
-      await loadOpsHealthData();
+      showToast(result?.gatewayAccepted ? "Task abort queued." : "Task abort requested.", "success");
+      await loadActiveOpsSummaryData(opsRenderToken, { fromPoll: false });
     } catch (err) {
+      clearPendingOpsAbort(taskType, runId);
       showToast(`Could not abort task: ${getErrorMessage(err)}`, "error");
+      if (hasActivePipelineOrFetchRows()) {
+        await loadActiveOpsSummaryData(opsRenderToken, { fromPoll: false });
+      }
     }
   }
 
@@ -1433,6 +1489,139 @@ export function createOpsHealthController({
     return String(row?.taskType || row?.type || "").trim().toLowerCase();
   }
 
+  function getTaskRowRunId(row) {
+    return String(row?.runId || row?.id || "").trim();
+  }
+
+  function getOpsAbortRequests() {
+    if (!state.adminOpsAbortRequests || typeof state.adminOpsAbortRequests !== "object" || Array.isArray(state.adminOpsAbortRequests)) {
+      state.adminOpsAbortRequests = {};
+    }
+    return state.adminOpsAbortRequests;
+  }
+
+  function getOpsAbortKey(taskType, runId) {
+    return `${String(taskType || "").trim().toLowerCase()}|${String(runId || "").trim()}`;
+  }
+
+  function hasPendingOpsAbort(taskType, runId) {
+    const key = getOpsAbortKey(taskType, runId);
+    return Boolean(key.trim() && getOpsAbortRequests()[key]);
+  }
+
+  function setPendingOpsAbort(taskType, runId, value = {}) {
+    const key = getOpsAbortKey(taskType, runId);
+    if (!key.trim()) return null;
+    const pending = {
+      taskType: String(taskType || "").trim().toLowerCase(),
+      runId: String(runId || "").trim(),
+      requestedAt: new Date().toISOString(),
+      ...value
+    };
+    getOpsAbortRequests()[key] = pending;
+    return pending;
+  }
+
+  function clearPendingOpsAbort(taskType, runId) {
+    const key = getOpsAbortKey(taskType, runId);
+    if (!key.trim() || !state.adminOpsAbortRequests) return;
+    delete state.adminOpsAbortRequests[key];
+  }
+
+  function clearAllPendingOpsAborts() {
+    state.adminOpsAbortRequests = {};
+  }
+
+  function hasPendingOpsAbortRequests() {
+    return Object.keys(getOpsAbortRequests()).length > 0;
+  }
+
+  function buildOptimisticAbortRow(row, taskType, runId, pendingAbort) {
+    const existingProgress = getObjectValue(row?.taskProgress || row?.progress);
+    const summary = getObjectValue(row?.summary);
+    const startedAt = String(row?.startedAt || pendingAbort?.startedAt || "").trim();
+    return {
+      ...getObjectValue(row),
+      id: String(row?.id || runId),
+      runId,
+      taskType,
+      type: taskType,
+      active: true,
+      isLive: true,
+      status: "running",
+      displayStatus: "aborting",
+      lifecycleStatus: "aborting",
+      stage: "aborting",
+      startedAt,
+      finishedAt: "",
+      taskProgress: {
+        ...existingProgress,
+        active: true,
+        phaseKey: "aborting",
+        phaseLabel: "Aborting...",
+        label: "Aborting...",
+        mode: String(existingProgress?.mode || "indeterminate")
+      },
+      summary: {
+        ...summary,
+        abortRequestedAt: String(summary?.abortRequestedAt || pendingAbort?.requestedAt || ""),
+        abortReason: String(summary?.abortReason || "admin_ops_abort")
+      }
+    };
+  }
+
+  function applyOptimisticAbortRow(taskType, runId, pendingAbort = null) {
+    const cleanTaskType = String(taskType || "").trim().toLowerCase();
+    const cleanRunId = String(runId || "").trim();
+    if (!cleanTaskType || !cleanRunId) return null;
+    const abortMeta = pendingAbort || setPendingOpsAbort(cleanTaskType, cleanRunId);
+    const existingPayload = getCachedTaskStatePayload();
+    const existingRows = Array.isArray(existingPayload?.tasks) ? existingPayload.tasks : [];
+    let matched = false;
+    const tasks = existingRows.map(row => {
+      if (getTaskRowType(row) !== cleanTaskType || getTaskRowRunId(row) !== cleanRunId) {
+        return row;
+      }
+      matched = true;
+      return buildOptimisticAbortRow(row, cleanTaskType, cleanRunId, abortMeta);
+    });
+    if (!matched) {
+      tasks.unshift(buildOptimisticAbortRow({}, cleanTaskType, cleanRunId, abortMeta));
+    }
+    state.latestOpsTaskStatePayload = {
+      ...getObjectValue(existingPayload),
+      tasks,
+      count: tasks.length,
+      summary: true
+    };
+    if (cleanTaskType === "pipeline") setBusyFlag("livePipelineRunning", true);
+    if (cleanTaskType === "fetch") setBusyFlag("liveFetchRunning", true);
+    if (cleanTaskType === "discovery") setBusyFlag("liveDiscoveryRunning", true);
+    if (["pipeline", "fetch", "discovery"].includes(cleanTaskType)) {
+      state.opsActivePipelineOrFetchLastActive = true;
+      markOpsDegradedActive("abort_requested");
+    }
+    renderOpsHealthSnapshot(opsRenderToken, state.latestOpsHealthCache || {}, {
+      taskStatePayload: state.latestOpsTaskStatePayload,
+      registryConflictsPayload: getCachedRegistryConflictsPayload(),
+      syncTaskState: true,
+      renderDeferredPanels: false,
+      renderActivityPanel: true,
+      schedulePolling: false
+    });
+    return state.latestOpsTaskStatePayload;
+  }
+
+  function isAbortAcceptedResult(result) {
+    return Boolean(
+      result?.ok
+      || result?.abortAccepted
+      || result?.gatewayAccepted
+      || result?.accepted
+      || Number(result?.status) === 202
+    );
+  }
+
   function getPipelineRunIdFromTaskState(taskStatePayload = {}) {
     const rows = Array.isArray(taskStatePayload?.tasks) ? taskStatePayload.tasks : [];
     const pipelineRow = rows.find(row => getTaskRowType(row) === "pipeline" && String(row?.runId || row?.id || "").trim());
@@ -1442,6 +1631,10 @@ export function createOpsHealthController({
   function getPipelineChildSignature(taskStatePayload = {}, pipelineRunId = "") {
     const cleanPipelineRunId = String(pipelineRunId || "").trim();
     const rows = Array.isArray(taskStatePayload?.tasks) ? taskStatePayload.tasks : [];
+    const hasMatchingPipelineRow = Boolean(cleanPipelineRunId) && rows.some(row => (
+      getTaskRowType(row) === "pipeline"
+      && String(row?.runId || row?.id || "").trim() === cleanPipelineRunId
+    ));
     return rows
       .filter(row => {
         const type = getTaskRowType(row);
@@ -1449,7 +1642,9 @@ export function createOpsHealthController({
         const parentRunId = String(row?.parentRunId || row?.summary?.pipelineRunId || "").trim();
         const parentTaskType = String(row?.parentTaskType || "").trim().toLowerCase();
         return cleanPipelineRunId
-          ? parentRunId === cleanPipelineRunId || (!parentRunId && parentTaskType === "pipeline")
+          ? parentRunId === cleanPipelineRunId
+            || (!parentRunId && parentTaskType === "pipeline")
+            || (hasMatchingPipelineRow && !parentRunId && !parentTaskType)
           : parentTaskType === "pipeline" || Boolean(parentRunId);
       })
       .map(row => `${getTaskRowType(row)}|${String(row?.runId || row?.id || "").trim()}`)
@@ -1564,6 +1759,39 @@ export function createOpsHealthController({
     return Boolean(state.discoveryOptimisticRun || state.fetchOptimisticRun);
   }
 
+  function hasRecentOpsDegradedActive() {
+    return Date.now() < Number(state.opsDegradedActiveUntilMs || 0);
+  }
+
+  function hasPossibleActiveRunEvidence({ includeRecent = true } = {}) {
+    const busyState = state.adminBusyState || {};
+    return Boolean(
+      hasActivePipelineOrFetchRows(getCachedTaskStatePayload())
+      || hasOptimisticRows()
+      || hasPendingOpsAbortRequests()
+      || state.opsActivePipelineOrFetchLastActive
+      || state.fetcherLiveProgressState
+      || state.discoveryLiveProgressState
+      || busyState.fetcherWatch
+      || busyState.discoveryWatch
+      || busyState.livePipelineRunning
+      || busyState.liveFetchRunning
+      || busyState.liveDiscoveryRunning
+      || (includeRecent && hasRecentOpsDegradedActive())
+    );
+  }
+
+  function markOpsDegradedActive(reason = "control_plane_unavailable") {
+    state.opsDegradedActiveUntilMs = Date.now() + OPS_DEGRADED_ACTIVE_TTL_MS;
+    state.opsDegradedActiveReason = String(reason || "control_plane_unavailable");
+    state.opsActivePipelineOrFetchLastActive = true;
+  }
+
+  function clearOpsDegradedActive() {
+    state.opsDegradedActiveUntilMs = 0;
+    state.opsDegradedActiveReason = "";
+  }
+
   function hasFetchKpiValues(kpis = state.latestOpsHealthCache?.kpis || {}) {
     return [
       "lastSuccessfulFetchAt",
@@ -1572,6 +1800,45 @@ export function createOpsHealthController({
       "avgFetchDurationMs7d",
       "failedSourceRatioLatest"
     ].some(key => hasUsefulValue(kpis?.[key]));
+  }
+
+  function hasActivePipelineOrFetchRows(taskStatePayload = getCachedTaskStatePayload()) {
+    const rows = Array.isArray(taskStatePayload?.tasks) ? taskStatePayload.tasks : [];
+    return rows.some(row => {
+      const type = getTaskRowType(row);
+      return row && row.active !== false && !row.finishedAt && (type === "pipeline" || type === "fetch");
+    });
+  }
+
+  function buildFetchKpiPendingLabels(health = {}, activePipelineOrFetch = false) {
+    const fetchKpisLoaded = Boolean(health?.fetchKpisLoaded);
+    const fetchKpisDelayed = Boolean(health?.fetchKpisDelayedDuringActiveRun);
+    const fetchNeverRun = Array.isArray(health?.alerts)
+      && health.alerts.some(alert => String(alert?.id || "") === "fetch_never_run");
+    if (fetchKpisLoaded) {
+      const generic = FETCH_KPI_UNAVAILABLE_LABEL;
+      return {
+        default: generic,
+        lastSuccessfulFetchAge: fetchNeverRun ? FETCH_KPI_NO_SUCCESS_LABEL : generic,
+        lastSuccessfulFetchAt: fetchNeverRun ? FETCH_KPI_NO_SUCCESS_LABEL : generic,
+        sevenDayFetchSuccessRate: generic,
+        avgFetchDurationMs7d: generic,
+        failedSourceRatioLatest: generic
+      };
+    }
+    const pending = fetchKpisDelayed && activePipelineOrFetch
+      ? ACTIVE_PIPELINE_KPI_DELAYED_LABEL
+      : FETCH_KPI_LOADING_LABEL;
+    return { default: pending };
+  }
+
+  function notifyActivePipelineIdleIfNeeded(wasActive, isActive) {
+    state.opsActivePipelineOrFetchLastActive = Boolean(isActive);
+    if (!wasActive || isActive || typeof onActivePipelineIdle !== "function") return;
+    Promise.resolve(onActivePipelineIdle({
+      reason: "active_pipeline_idle",
+      at: new Date().toISOString()
+    })).catch(() => {});
   }
 
   function deriveLiveRunContext(taskStatePayload, registryConflictsPayload) {
@@ -1633,14 +1900,8 @@ export function createOpsHealthController({
     const activePipelineOrFetch = Boolean(
       controlPlanePipelineActive || liveTypes.has("pipeline") || liveTypes.has("fetch")
     );
-    const fetchKpisLoaded = Boolean(health?.fetchKpisLoaded);
-    const fetchNeverRun = Array.isArray(health?.alerts)
-      && health.alerts.some(alert => String(alert?.id || "") === "fetch_never_run");
-    const fetchKpiPendingLabel = activePipelineOrFetch
-      ? ACTIVE_PIPELINE_KPI_DELAYED_LABEL
-      : fetchKpisLoaded
-        ? (fetchNeverRun ? "No successful fetch yet" : "Not available")
-      : "Loading latest fetch KPI...";
+    const fetchKpiPendingLabels = buildFetchKpiPendingLabels(health, activePipelineOrFetch);
+    const fetchKpiPendingLabel = String(fetchKpiPendingLabels.default || FETCH_KPI_LOADING_LABEL);
 
     renderAdminOpsAlertsImpl(refs.adminOpsAlertsEl, health?.alerts || [], {
       onAck: async alertId => {
@@ -1657,7 +1918,7 @@ export function createOpsHealthController({
       refs.adminOpsKpisEl,
       health?.kpis || {},
       String(health?.status || "healthy"),
-      { fetchKpiPendingLabel }
+      { fetchKpiPendingLabel, fetchKpiPendingLabels }
     );
     renderAdminOpsScheduleImpl(refs.adminOpsScheduleEl, health?.schedule || {}, state.latestOpsHealthCache);
     renderOpsTabBadges(refs, {
@@ -1795,12 +2056,19 @@ export function createOpsHealthController({
       renderActivityPanel: true,
       schedulePolling: false
     });
-    if (!hasActiveRows(taskStatePayload)) {
-      loadFetchKpisSummaryData(renderToken, { silent: true }).catch(() => {});
-    }
-    if (hasActiveRows(taskStatePayload)) {
-      schedulePipelineStatusPolling(getOpsPollIntervalMs(true));
+    if (hasActivePipelineOrFetchRows(taskStatePayload)) {
+      state.opsActivePipelineOrFetchLastActive = true;
+      loadActiveOpsSupplementalData(renderToken, {
+        fromPoll: false
+      }).finally(() => {
+        if (renderToken === opsRenderToken && (
+          state.opsActivePipelineOrFetchLastActive || hasActivePipelineOrFetchRows()
+        )) {
+          schedulePipelineStatusPolling(getOpsPollIntervalMs(true));
+        }
+      }).catch(() => {});
     } else {
+      loadFetchKpisSummaryData(renderToken, { silent: true }).catch(() => {});
       loadOpsTabCountsSummaryData(renderToken, { silent: true }).catch(() => {});
     }
     return { taskStatePayload, historyPayload };
@@ -1831,11 +2099,15 @@ export function createOpsHealthController({
         registryConflictsPayload: getCachedRegistryConflictsPayload(),
         syncTaskState: true,
         renderDeferredPanels: false,
-        renderActivityPanel
+        renderActivityPanel,
+        schedulePolling: options?.schedulePolling !== false
       });
       return taskStatePayload;
     } catch (err) {
       if (renderToken !== opsRenderToken) return null;
+      if (hasPossibleActiveRunEvidence({ includeRecent: false })) {
+        markOpsDegradedActive("task_state_summary_unavailable");
+      }
       const taskStatePayload = taskStateController.resolveTaskStatePayload({
         status: "rejected",
         reason: err
@@ -1855,7 +2127,8 @@ export function createOpsHealthController({
         registryConflictsPayload: getCachedRegistryConflictsPayload(),
         syncTaskState: true,
         renderDeferredPanels: false,
-        renderActivityPanel
+        renderActivityPanel,
+        schedulePolling: options?.schedulePolling !== false
       });
       return null;
     }
@@ -1863,6 +2136,9 @@ export function createOpsHealthController({
 
   async function loadRegistryConflictsSummaryData(renderToken, options = {}) {
     if (state.registryConflictsDetailLoaded) return getCachedRegistryConflictsPayload();
+    if (isOpsRouteBackedOff(OPS_HEAVY_ROUTE_REGISTRY_CONFLICTS)) {
+      return getCachedRegistryConflictsPayload();
+    }
     try {
       const payload = await measuredGetBridge(
         REGISTRY_CONFLICTS_SUMMARY_PATH,
@@ -1870,6 +2146,7 @@ export function createOpsHealthController({
         { enabled: !options?.fromPoll }
       );
       if (renderToken !== opsRenderToken || state.registryConflictsDetailLoaded) return null;
+      clearOpsRouteFailure(OPS_HEAVY_ROUTE_REGISTRY_CONFLICTS);
       const registryConflictsPayload = payload
         && typeof payload === "object"
         && !Array.isArray(payload)
@@ -1887,6 +2164,7 @@ export function createOpsHealthController({
       return registryConflictsPayload;
     } catch {
       if (renderToken !== opsRenderToken || state.registryConflictsDetailLoaded) return null;
+      markOpsRouteFailure(OPS_HEAVY_ROUTE_REGISTRY_CONFLICTS);
       const registryConflictsPayload = {
         summary: { conflictCount: 0 },
         summaryStatus: "unavailable",
@@ -1914,7 +2192,29 @@ export function createOpsHealthController({
         fetchKpisLoad = null;
       });
     }
-    const payload = await fetchKpisLoad;
+    let payload;
+    try {
+      payload = await fetchKpisLoad;
+    } catch (err) {
+      if (renderToken === opsRenderToken && hasPossibleActiveRunEvidence()) {
+        state.latestOpsHealthCache = mergeOpsHealth(
+          state.latestOpsHealthCache || {},
+          {
+            fetchKpisDelayedDuringActiveRun: true,
+            summaryView: true
+          },
+          { summary: true }
+        );
+        renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || {}, {
+          taskStatePayload: getCachedTaskStatePayload(),
+          registryConflictsPayload: getCachedRegistryConflictsPayload(),
+          renderDeferredPanels: false,
+          renderActivityPanel: false,
+          schedulePolling: false
+        });
+      }
+      throw err;
+    }
     if (renderToken !== opsRenderToken) return payload || null;
     if (payload && typeof payload === "object" && !Array.isArray(payload)) {
       state.latestOpsHealthCache = mergeOpsHealth(
@@ -1927,6 +2227,7 @@ export function createOpsHealthController({
           alertsEvaluated: payload.alertsEvaluated,
           alertBasis: payload.alertBasis,
           fetchKpisLoaded: true,
+          fetchKpisDelayedDuringActiveRun: false,
           summaryView: true
         },
         { summary: true }
@@ -1943,6 +2244,9 @@ export function createOpsHealthController({
   }
 
   async function loadDashboardHealthSummaryData(renderToken = opsRenderToken, options = {}) {
+    if (isOpsRouteBackedOff(OPS_HEAVY_ROUTE_DASHBOARD)) {
+      return state.latestOpsHealthCache || null;
+    }
     if (!dashboardHealthSummaryLoad) {
       dashboardHealthSummaryLoad = measuredGetBridge(
         OPS_DASHBOARD_HEALTH_SUMMARY_PATH,
@@ -1952,8 +2256,15 @@ export function createOpsHealthController({
         dashboardHealthSummaryLoad = null;
       });
     }
-    const payload = await dashboardHealthSummaryLoad;
+    let payload;
+    try {
+      payload = await dashboardHealthSummaryLoad;
+    } catch (err) {
+      markOpsRouteFailure(OPS_HEAVY_ROUTE_DASHBOARD);
+      throw err;
+    }
     if (renderToken !== opsRenderToken) return payload || null;
+    clearOpsRouteFailure(OPS_HEAVY_ROUTE_DASHBOARD);
     if (payload && typeof payload === "object" && !Array.isArray(payload)) {
       state.latestOpsHealthCache = mergeOpsHealth(
         state.latestOpsHealthCache || {},
@@ -1972,6 +2283,7 @@ export function createOpsHealthController({
   }
 
   async function loadPipelineStatusFallbackData(renderToken = opsRenderToken, options = {}) {
+    const shouldScheduleNext = options?.scheduleNext !== false;
     try {
       const payload = await measuredGetBridge(
         JOBS_PIPELINE_STATUS_PATH,
@@ -1993,15 +2305,23 @@ export function createOpsHealthController({
           });
         }
         stopPipelineStatusPolling();
-        if (options?.fromPoll) {
-          maybeUnrefTimer(setTimeout(() => {
-            loadOpsHealthData({ summary: true }).catch(() => {});
-          }, 0));
+        if (options?.fromPoll && shouldScheduleNext) {
+          if (hasPossibleActiveRunEvidence({ includeRecent: false })) {
+            markOpsDegradedActive("pipeline_status_idle_task_state_unknown");
+            schedulePipelineStatusPolling(getOpsPollIntervalMs(true));
+          } else {
+            maybeUnrefTimer(setTimeout(() => {
+              loadOpsHealthData({ summary: true }).catch(() => {});
+            }, 0));
+          }
         }
         return payload || null;
       }
       const cachedTaskStatePayload = getCachedTaskStatePayload();
       if (shouldKeepExistingActiveTaskState(cachedTaskStatePayload, taskStatePayload)) {
+        if (shouldScheduleNext) {
+          schedulePipelineStatusPolling(getOpsPollIntervalMs(true));
+        }
         return payload || null;
       }
       state.latestOpsTaskStatePayload = taskStatePayload;
@@ -2015,14 +2335,100 @@ export function createOpsHealthController({
         renderActivityPanel: true,
         schedulePolling: false
       });
-      schedulePipelineStatusPolling(getOpsPollIntervalMs(true));
-      return payload || null;
-    } catch {
-      if (hasActiveRows(getCachedTaskStatePayload()) && getCachedTaskStatePayload()?.source === "pipeline-status") {
+      if (shouldScheduleNext) {
         schedulePipelineStatusPolling(getOpsPollIntervalMs(true));
       }
-      return null;
+      return payload || null;
+    } catch {
+      if (hasPossibleActiveRunEvidence({ includeRecent: false })) {
+        markOpsDegradedActive("pipeline_status_unavailable");
+      }
+      if (shouldScheduleNext && hasPossibleActiveRunEvidence()) {
+        schedulePipelineStatusPolling(getOpsPollIntervalMs(true));
+      }
+      return hasPossibleActiveRunEvidence() ? { active: true, degradedActive: true } : null;
     }
+  }
+
+  async function loadActiveOpsSupplementalData(renderToken = opsRenderToken, options = {}) {
+    const taskStatePromise = loadTaskStateSummaryData(renderToken, {
+      ...options,
+      fromPoll: Boolean(options?.fromPoll),
+      summary: true,
+      schedulePolling: false
+    }).then(value => ({ loaded: Boolean(value), payload: value || null })).catch(() => ({ loaded: false, payload: null }));
+    const fetchKpisPromise = loadFetchKpisSummaryData(renderToken, {
+      fromPoll: true,
+      silent: true
+    }).catch(() => null);
+    const [taskStateResult] = await Promise.allSettled([taskStatePromise, fetchKpisPromise]);
+    if (taskStateResult.status === "fulfilled" && taskStateResult.value?.payload) {
+      return options?.returnMeta
+        ? {
+            taskStatePayload: taskStateResult.value.payload,
+            taskStateLoaded: Boolean(taskStateResult.value.loaded)
+          }
+        : taskStateResult.value.payload;
+    }
+    const fallbackPayload = getCachedTaskStatePayload();
+    return options?.returnMeta
+      ? { taskStatePayload: fallbackPayload, taskStateLoaded: false }
+      : fallbackPayload;
+  }
+
+  async function loadActiveOpsSummaryData(renderToken = opsRenderToken, options = {}) {
+    const wasActive = Boolean(
+      state.opsActivePipelineOrFetchLastActive
+      || hasActivePipelineOrFetchRows(getCachedTaskStatePayload())
+    );
+    const pipelinePayload = await loadPipelineStatusFallbackData(renderToken, {
+      ...options,
+      fromPoll: Boolean(options?.fromPoll),
+      scheduleNext: false
+    });
+    if (renderToken !== opsRenderToken) return pipelinePayload || null;
+    const supplemental = await loadActiveOpsSupplementalData(renderToken, {
+      ...options,
+      fromPoll: Boolean(options?.fromPoll),
+      returnMeta: true
+    });
+    if (renderToken !== opsRenderToken) return pipelinePayload || null;
+    const taskStatePayload = supplemental?.taskStatePayload || getCachedTaskStatePayload();
+    const taskStateLoaded = Boolean(supplemental?.taskStateLoaded);
+    const hasActiveTaskRows = hasActivePipelineOrFetchRows(taskStatePayload);
+    const pipelineKnownIdle = Boolean(pipelinePayload && pipelinePayload.active === false && !pipelinePayload.degradedActive);
+    const positiveIdle = Boolean(
+      pipelineKnownIdle
+      && taskStateLoaded
+      && !hasActiveTaskRows
+      && !hasPendingOpsAbortRequests()
+    );
+    const degradedActive = Boolean(
+      !positiveIdle
+      && (
+        pipelinePayload?.degradedActive
+        || (!taskStateLoaded && hasPossibleActiveRunEvidence())
+        || (!pipelinePayload && hasPossibleActiveRunEvidence())
+      )
+    );
+    const isActive = Boolean(pipelinePayload?.active || hasActiveTaskRows || degradedActive);
+    if (positiveIdle) {
+      clearOpsDegradedActive();
+      clearAllPendingOpsAborts();
+    } else if (degradedActive) {
+      markOpsDegradedActive("active_summary_unresolved");
+    }
+    notifyActivePipelineIdleIfNeeded(wasActive, isActive);
+    if (isActive) {
+      schedulePipelineStatusPolling(getOpsPollIntervalMs(true));
+    } else {
+      clearOpsDegradedActive();
+      stopPipelineStatusPolling();
+      maybeUnrefTimer(setTimeout(() => {
+        loadOpsHealthData({ summary: true }).catch(() => {});
+      }, 0));
+    }
+    return pipelinePayload || null;
   }
 
   async function loadRegistrySyncDiagnosticsData(options = {}) {
@@ -2036,33 +2442,59 @@ export function createOpsHealthController({
     });
     const registrySync = state.latestOpsHealthCache?.kpis?.registrySync;
     const needsRegistrySync = !hasRegistrySyncDetails(registrySync);
-    const loads = [
-      loadFetchKpisSummaryData(renderToken, { silent: Boolean(options?.silent) }),
-      loadRegistryConflictsSummaryData(renderToken, { fromPoll: true })
-    ];
-    if (needsRegistrySync) {
-      loads.unshift(loadDashboardHealthSummaryData(renderToken, {
-        fromPoll: true,
-        silent: Boolean(options?.silent)
-      }));
+    if (!needsRegistrySync) {
+      return {
+        dashboardHealth: null,
+        registrySync,
+        kpis: null,
+        registryConflicts: null
+      };
     }
-    const results = await Promise.allSettled(loads);
-    const rejected = results.find(result => result.status === "rejected");
-    if (rejected) throw rejected.reason;
+    const payload = await measuredGetBridge(
+      OPS_DASHBOARD_HEALTH_SUMMARY_PATH,
+      "admin_registry_sync_diagnostics_fetch",
+      { enabled: !options?.silent }
+    );
+    if (renderToken !== opsRenderToken) {
+      return {
+        dashboardHealth: payload || null,
+        registrySync: null,
+        kpis: null,
+        registryConflicts: null
+      };
+    }
+    const nextRegistrySync = payload?.kpis?.registrySync;
+    if (nextRegistrySync && typeof nextRegistrySync === "object" && !Array.isArray(nextRegistrySync)) {
+      state.latestOpsHealthCache = mergeOpsHealth(
+        state.latestOpsHealthCache || {},
+        {
+          kpis: {
+            registrySync: nextRegistrySync
+          },
+          summaryView: true
+        },
+        { summary: true }
+      );
+      renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || {}, {
+        taskStatePayload: getCachedTaskStatePayload(),
+        registryConflictsPayload: getCachedRegistryConflictsPayload(),
+        renderDeferredPanels: false,
+        renderActivityPanel: false,
+        schedulePolling: false
+      });
+    }
     return {
-      dashboardHealth: needsRegistrySync && results[0].status === "fulfilled"
-        ? results[0].value
-        : null,
-      kpis: results[needsRegistrySync ? 1 : 0].status === "fulfilled"
-        ? results[needsRegistrySync ? 1 : 0].value
-        : null,
-      registryConflicts: results[needsRegistrySync ? 2 : 1].status === "fulfilled"
-        ? results[needsRegistrySync ? 2 : 1].value
-        : null
+      dashboardHealth: payload || null,
+      registrySync: nextRegistrySync || null,
+      kpis: null,
+      registryConflicts: null
     };
   }
 
   async function loadOpsTabCountsSummaryData(renderToken = opsRenderToken, options = {}) {
+    if (isOpsRouteBackedOff(OPS_HEAVY_ROUTE_TAB_COUNTS)) {
+      return state.latestOpsTabCountsPayload || null;
+    }
     if (!opsTabCountsLoad) {
       opsTabCountsLoad = measuredGetBridge(
         OPS_TAB_COUNTS_SUMMARY_PATH,
@@ -2072,9 +2504,16 @@ export function createOpsHealthController({
         opsTabCountsLoad = null;
       });
     }
-    const payload = await opsTabCountsLoad;
+    let payload;
+    try {
+      payload = await opsTabCountsLoad;
+    } catch (err) {
+      markOpsRouteFailure(OPS_HEAVY_ROUTE_TAB_COUNTS);
+      throw err;
+    }
     if (renderToken !== opsRenderToken) return payload || null;
     if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+      clearOpsRouteFailure(OPS_HEAVY_ROUTE_TAB_COUNTS);
       state.latestOpsTabCountsPayload = payload;
       rerenderOpsTabBadges();
     }
@@ -2103,6 +2542,7 @@ export function createOpsHealthController({
       fromPoll: Boolean(options?.fromPoll)
     });
     if (pipelinePayload?.active) {
+      state.opsActivePipelineOrFetchLastActive = true;
       if (measureFirstRender) {
         markStep("admin_ops_health_first_render_done", { ok: true, source: "pipeline-status" });
         measureStep(
@@ -2113,6 +2553,36 @@ export function createOpsHealthController({
         );
       }
       setBusyFlag("opsLoad", false);
+      loadActiveOpsSupplementalData(renderToken, {
+        fromPoll: Boolean(options?.fromPoll)
+      }).finally(() => {
+        if (renderToken === opsRenderToken && (
+          state.opsActivePipelineOrFetchLastActive || hasActivePipelineOrFetchRows()
+        )) {
+          schedulePipelineStatusPolling(getOpsPollIntervalMs(true));
+        }
+      }).catch(() => {});
+      return;
+    }
+    if (pipelinePayload?.degradedActive || hasPossibleActiveRunEvidence()) {
+      markOpsDegradedActive(pipelinePayload?.degradedActive ? "pipeline_status_unavailable" : "possible_active_unresolved");
+      if (measureFirstRender) {
+        markStep("admin_ops_health_first_render_done", { ok: true, source: "degraded-active" });
+        measureStep(
+          "admin_ops_health_first_render",
+          "admin_ops_health_first_render_start",
+          "admin_ops_health_first_render_done",
+          { ok: true, source: "degraded-active" }
+        );
+      }
+      setBusyFlag("opsLoad", false);
+      loadActiveOpsSummaryData(renderToken, {
+        fromPoll: Boolean(options?.fromPoll)
+      }).catch(() => {
+        if (renderToken === opsRenderToken && hasPossibleActiveRunEvidence()) {
+          schedulePipelineStatusPolling(getOpsPollIntervalMs(true));
+        }
+      });
       return;
     }
     try {
@@ -2122,13 +2592,16 @@ export function createOpsHealthController({
         ? OPS_DASHBOARD_HEALTH_SUMMARY_PATH
         : "/ops/dashboard-health";
       try {
-        health = await measuredGetBridge(
-          dashboardHealthPath,
-          "admin_dashboard_health_fetch",
-          { enabled: !options?.fromPoll }
-        );
+        health = useSummaryView
+          ? await loadDashboardHealthSummaryData(renderToken, options)
+          : await measuredGetBridge(
+              dashboardHealthPath,
+              "admin_dashboard_health_fetch",
+              { enabled: !options?.fromPoll }
+            );
       } catch (err) {
         if (!state.latestOpsHealthCache) throw err;
+        markOpsRouteFailure(OPS_HEAVY_ROUTE_DASHBOARD);
         health = state.latestOpsHealthCache;
       }
       if (renderToken !== opsRenderToken) return;

@@ -168,7 +168,7 @@ export function createRegistryLoadController({
     return Boolean(stage && stage !== "idle" && stage !== "complete" && stage !== "completed" && stage !== "error");
   }
 
-  function rememberPipelineStatusPayload(payload = {}) {
+  function rememberPipelineStatusActivity(payload = {}) {
     if (!pipelineStatusIndicatesActive(payload)) return;
     const activeChildren = Array.isArray(payload.activeChildren)
       ? payload.activeChildren
@@ -182,27 +182,6 @@ export function createRegistryLoadController({
           }))
       : [];
     const stage = String(payload.stage || payload?.progress?.phaseKey || "pipeline").trim().toLowerCase();
-    const runId = String(payload.runId || "").trim();
-    const parentRow = {
-      taskType: "pipeline",
-      type: "pipeline",
-      runId,
-      active: true,
-      startedAt: String(payload.startedAt || ""),
-      status: "running",
-      controlPlaneSource: "pipeline-status",
-      summary: { stage },
-      taskProgress: payload.progress && typeof payload.progress === "object"
-        ? { ...payload.progress, active: true }
-        : { active: true, phaseKey: stage, phaseLabel: stage === "pipeline" ? "Pipeline running" : `Pipeline ${stage}` }
-    };
-    const tasks = [...activeChildren, parentRow];
-    state.latestOpsTaskStatePayload = {
-      tasks,
-      count: tasks.length,
-      summary: true,
-      source: "pipeline-status"
-    };
     setBusyFlag("livePipelineRunning", true);
     setBusyFlag(
       "liveFetchRunning",
@@ -211,13 +190,17 @@ export function createRegistryLoadController({
     state.discoveryPipelineStatusLastActiveAtMs = Date.now();
   }
 
-  async function refreshActivePipelineStatus() {
-    if (activePipelineOrFetchRunning()) return true;
+  async function refreshActivePipelineStatus({ force = false } = {}) {
+    if (!force && activePipelineOrFetchRunning()) return true;
     try {
       const payload = await getBridge(JOBS_PIPELINE_STATUS_PATH, { timeoutMs: PIPELINE_STATUS_PREFLIGHT_TIMEOUT_MS });
       if (pipelineStatusIndicatesActive(payload)) {
-        rememberPipelineStatusPayload(payload);
+        rememberPipelineStatusActivity(payload);
         return true;
+      }
+      if (force) {
+        setBusyFlag("livePipelineRunning", false);
+        setBusyFlag("liveFetchRunning", false);
       }
     } catch {
       // Source tables should remain available when the fast control-plane preflight is unavailable.
@@ -266,7 +249,8 @@ export function createRegistryLoadController({
         && /(timed out|timeout|HTTP 504|\b504\b)/i.test(message)
       );
       if (registryRefreshDelayedByPipeline) {
-        renderSourceTablesDelayed({ onlyIfPlaceholder: Boolean(options?.background) });
+        state.sourceTablesDelayedDuringActiveRun = true;
+        renderSourceTablesDelayed({ onlyIfPlaceholder: true });
         appendDiscoveryLog(ACTIVE_PIPELINE_SOURCE_TABLES_DELAYED_LABEL, "warn");
       } else if (options?.registryRefresh && options?.background && /timed out/i.test(message)) {
         appendDiscoveryLog("Source table refresh delayed; retrying.", "warn");
@@ -333,19 +317,13 @@ export function createRegistryLoadController({
         partialLoadFailed: false
       };
     }
-    const background = Boolean(options?.background);
-    const showPlaceholders = !background && options?.suppressPlaceholders !== true;
-    if (showPlaceholders) {
-      setSourceTablePlaceholder(refs.adminPendingSourcesEl, "pending");
-      setSourceTablePlaceholder(refs.adminActiveSourcesEl, "active");
-      setSourceTablePlaceholder(refs.adminRejectedSourcesEl, "rejected");
-    }
     const livePipelineOrFetchRunning = await refreshActivePipelineStatus();
     const allowDuringActivePipeline = Boolean(options?.forceDuringActivePipeline);
     if (livePipelineOrFetchRunning && !allowDuringActivePipeline) {
       const background = Boolean(options?.background);
+      state.sourceTablesDelayedDuringActiveRun = true;
       if (options?.suppressPlaceholders !== true) {
-        renderSourceTablesDelayed({ onlyIfPlaceholder: background });
+        renderSourceTablesDelayed({ onlyIfPlaceholder: true });
       }
       const lastNoticeAtMs = Number(state.discoveryPipelineDeferredLoadNoticeAtMs || 0);
       if (!background && nowMs - lastNoticeAtMs > 5000) {
@@ -362,6 +340,13 @@ export function createRegistryLoadController({
         rejectedRows: [],
         partialLoadFailed: false
       };
+    }
+    const background = Boolean(options?.background);
+    const showPlaceholders = !background && options?.suppressPlaceholders !== true;
+    if (showPlaceholders) {
+      setSourceTablePlaceholder(refs.adminPendingSourcesEl, "pending");
+      setSourceTablePlaceholder(refs.adminActiveSourcesEl, "active");
+      setSourceTablePlaceholder(refs.adminRejectedSourcesEl, "rejected");
     }
     const skipIfFreshMs = Math.max(0, Number(options?.skipIfFreshMs || 0));
     const lastLoadAtMs = Number(state.discoveryLastLoadSucceededAtMs || 0);
@@ -631,6 +616,7 @@ export function createRegistryLoadController({
         }
         adminDispatch.dispatch({ type: adminActions.DISCOVERY_REFRESHED, payload: { at: new Date().toISOString() } });
         if (!partialLoadFailed) {
+          state.sourceTablesDelayedDuringActiveRun = false;
           state.discoveryLastLoadSucceededAtMs = Date.now();
         }
         return {
@@ -694,8 +680,29 @@ export function createRegistryLoadController({
     return result;
   }
 
+  async function refreshSourceTablesAfterActiveRunIdle(options = {}) {
+    if (!state.sourceTablesDelayedDuringActiveRun) return null;
+    if (state.adminBusyState?.discoveryLoad) return state.discoveryLoadPromise || null;
+    const stillActive = await refreshActivePipelineStatus({ force: true });
+    if (stillActive) return null;
+    const result = await loadDiscoveryData({
+      sourceTablesOnly: true,
+      background: true,
+      completionRefresh: true,
+      suppressPlaceholders: true,
+      logChanges: false,
+      fetchReport: options?.fetchReport || null,
+      forceFetchReport: Boolean(options?.fetchReport)
+    });
+    if (result && !result.partialLoadFailed && !result.skipped) {
+      state.sourceTablesDelayedDuringActiveRun = false;
+    }
+    return result;
+  }
+
   return {
     loadDiscoveryData,
-    syncSourceTablesAfterTaskCompletion
+    syncSourceTablesAfterTaskCompletion,
+    refreshSourceTablesAfterActiveRunIdle
   };
 }

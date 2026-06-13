@@ -296,8 +296,6 @@ test("admin registry and sync disclosure backfills missing summary data", async 
           summaryView: true
         };
       }
-      if (path === "/ops/fetch-kpis?view=summary") return { ok: true, kpis: {}, summaryView: true };
-      if (path === "/registry/conflicts?view=summary") return { summary: { conflictCount: 0 }, conflicts: [], summaryView: true };
       throw new Error(`unexpected path ${path}`);
     },
     renderAdminOpsKpis(_el, kpis) {
@@ -309,6 +307,8 @@ test("admin registry and sync disclosure backfills missing summary data", async 
   controller.stopOpsHealthPolling();
 
   assert.ok(calls.includes("/ops/dashboard-health?view=summary"));
+  assert.equal(calls.includes("/ops/fetch-kpis?view=summary"), false);
+  assert.equal(calls.includes("/registry/conflicts?view=summary"), false);
   assert.equal(state.latestOpsHealthCache.kpis.registrySync.activeCount, 12);
   assert.equal(state.latestOpsHealthCache.kpis.registrySync.lastSyncStatus, "ok");
   assert.equal(renderedKpis.at(-1).registrySync.pendingCount, 4);
@@ -328,6 +328,26 @@ test("admin bootstrap active rows start task-state polling without manual ops re
           stage: "fetch",
           progress: { label: "Fetching job listings" }
         };
+      }
+      if (path === "/ops/task-state?view=summary") {
+        return {
+          tasks: [
+            {
+              taskType: "fetch",
+              type: "fetch",
+              runId: "fetch_1",
+              parentTaskType: "pipeline",
+              active: true,
+              taskProgress: { active: true, phaseLabel: "Executing sources", ratio: 0.2 }
+            },
+            { taskType: "pipeline", type: "pipeline", runId: "pipeline_1", active: true }
+          ],
+          count: 2,
+          summary: true
+        };
+      }
+      if (path === "/ops/fetch-kpis?view=summary") {
+        return { ok: true, kpis: { pendingApprovalsCount: 813 }, summaryView: true };
       }
       throw new Error(`unexpected path ${path}`);
     },
@@ -353,7 +373,8 @@ test("admin bootstrap active rows start task-state polling without manual ops re
   await flushAdminOpsBackground();
 
   assert.ok(state.pipelineStatusPollTimer);
-  assert.equal(calls.includes("/ops/task-state?view=summary"), false);
+  assert.ok(calls.includes("/ops/task-state?view=summary"));
+  assert.ok(calls.includes("/ops/fetch-kpis?view=summary"));
   assert.equal(state.adminBusyState.livePipelineRunning, true);
   controller.stopOpsHealthPolling();
 });

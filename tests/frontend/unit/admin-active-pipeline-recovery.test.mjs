@@ -142,37 +142,6 @@ test("admin ops controller replaces stale pipeline child rows from fresher pipel
   controller.stopOpsHealthPolling();
 });
 
-test("admin ops KPI cards show active-run delayed copy while pipeline is active", () => {
-  const state = createOpsState();
-  const refs = createOpsRefs();
-  const controller = createOpsController({
-    state,
-    refs,
-    getBridge: async path => {
-      if (path === "/tasks/run-jobs-pipeline-status") return { active: true, runId: "pipeline_live_1" };
-      throw new Error(`unexpected path ${path}`);
-    },
-    renderAdminOpsKpis
-  });
-
-  controller.applyBootstrapPayload({
-    app: { version: "0.2.66" },
-    tasks: {
-      current: [
-        { taskType: "fetch", type: "fetch", runId: "fetch_live_1", parentTaskType: "pipeline", active: true },
-        { taskType: "pipeline", type: "pipeline", runId: "pipeline_live_1", active: true }
-      ],
-      recent: []
-    },
-    registrySummary: {},
-    schedule: {}
-  });
-
-  assert.match(refs.adminOpsKpisEl.innerHTML, /Delayed while job update is running\./);
-  assert.doesNotMatch(refs.adminOpsKpisEl.innerHTML, /Loading latest fetch KPI/);
-  controller.stopOpsHealthPolling();
-});
-
 test("admin ops fetch KPI success replaces missing optional fields with terminal copy", async () => {
   const state = createOpsState();
   const refs = createOpsRefs();
@@ -257,6 +226,12 @@ test("admin registry controller preflights pipeline status before source tables"
   const calls = [];
   const fixture = createRegistryControllerFixture({
     state: {
+      latestOpsTaskStatePayload: {
+        tasks: [],
+        count: 0,
+        summary: true,
+        sentinel: "keep"
+      },
       adminBusyState: {
         discoveryLoad: false,
         livePipelineRunning: false,
@@ -292,6 +267,8 @@ test("admin registry controller preflights pipeline status before source tables"
   assert.deepEqual(calls, ["/tasks/run-jobs-pipeline-status"]);
   assert.equal(fixture.state.adminBusyState.livePipelineRunning, true);
   assert.equal(fixture.state.adminBusyState.liveFetchRunning, true);
+  assert.equal(fixture.state.latestOpsTaskStatePayload.sentinel, "keep");
+  assert.equal(fixture.state.latestOpsTaskStatePayload.tasks.length, 0);
   assert.match(fixture.refs.adminPendingSourcesEl.innerHTML, /Source tables delayed while job update is running/);
   assert.doesNotMatch(fixture.refs.adminPendingSourcesEl.innerHTML, /Loading pending sources/);
 });

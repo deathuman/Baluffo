@@ -106,6 +106,7 @@ export function composeAdminControllers({
     escapeHtml,
     onBridgeStatusChange: () => {},
     loadDiscoveryData: (...args) => registryController.loadDiscoveryData(...args),
+    onActivePipelineIdle: (...args) => registryController?.refreshSourceTablesAfterActiveRunIdle?.(...args),
     attachToActiveFetchRun: (...args) => fetcherController?.attachToActiveFetchRun?.(...args),
     loadLatestFetcherReport: options => fetcherController?.loadLatestFetcherReport?.(options),
     attachToActiveDiscoveryRun: (...args) => discoveryController?.attachToActiveDiscoveryRun?.(...args),

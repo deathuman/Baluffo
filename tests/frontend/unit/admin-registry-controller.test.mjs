@@ -373,6 +373,7 @@ test("admin registry controller renders registry buckets when the combined sourc
   const fixture = createRegistryControllerFixture({
     options: {
       getBridge: path => {
+        if (path === "/tasks/run-jobs-pipeline-status") return { active: false, stage: "idle" };
         if (path === "/discovery/report") return report.promise;
         if (path === "/discovery/candidates") return candidates.promise;
         if (String(path).startsWith("/registry/sources")) return sources.promise;
@@ -384,8 +385,7 @@ test("admin registry controller renders registry buckets when the combined sourc
   });
   const controller = createAdminRegistryController(fixture.options);
 
-  const loadPromise = controller.loadDiscoveryData();
-
+  const loadPromise = controller.loadDiscoveryData(); await flushMicrotasks(2);
   assert.match(fixture.refs.adminPendingSourcesEl.innerHTML, /Loading pending sources/);
   assert.match(fixture.refs.adminActiveSourcesEl.innerHTML, /Loading active sources/);
   assert.match(fixture.refs.adminRejectedSourcesEl.innerHTML, /Loading rejected sources/);
