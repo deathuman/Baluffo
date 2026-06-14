@@ -10,8 +10,15 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.70] - 2026-06-14
+
 ### Fixed
 - Admin source tables now request the compact `/registry/sources?view=table` payload, preserving table actions and filters while avoiding full source diagnostic fields that made idle Umbrel source loads too large and slow.
+
+### Notes
+- This is a forward container/Umbrel patch for bounded Admin registry source-table payloads. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- The registry source-table view is additive; default `/registry/sources` remains full-fidelity and backward compatible.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
 
 ## [0.2.69] - 2026-06-13
 
