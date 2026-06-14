@@ -97,6 +97,14 @@ function queryJobsColdStartFlag() {
   }
 }
 
+function resolveDesktopJobsColdStart() {
+  const runtimeValue = BALUFFO_RUNTIME_CONFIG?.runtime?.jobsColdStart;
+  if (typeof runtimeValue === "boolean") {
+    return runtimeValue;
+  }
+  return queryJobsColdStartFlag();
+}
+
 export const AdminConfig = {
   JOBS_LAST_URL_KEY: "baluffo_jobs_last_url",
   JOBS_FETCHER_COMMAND: "python -m src.jobs_fetcher",
@@ -107,9 +115,7 @@ export const AdminConfig = {
   FETCH_REPORT_POLL_TIMEOUT_MS: 10 * 60 * 1000,
   ADMIN_BRIDGE_BASE: resolveRuntimeBridgeBase(),
   BRIDGE_STATUS_POLL_INTERVAL_MS: 10000,
-  DESKTOP_JOBS_COLD_START: Boolean(
-    BALUFFO_RUNTIME_CONFIG?.runtime?.jobsColdStart || queryJobsColdStartFlag()
-  ),
+  DESKTOP_JOBS_COLD_START: resolveDesktopJobsColdStart(),
   GITHUB_APP_ENABLED_DEFAULT: Boolean(
     BALUFFO_FRONTEND_RUNTIME_CONFIG?.security?.github_app_enabled_default ?? true
   )

@@ -1,5 +1,9 @@
 import { hasActiveTaskStateRows } from "../../live-task.js";
-import { consumeDesktopNavigationBypass, hasDesktopNavigationBypass } from "./navigation.js";
+import {
+  armDesktopReloadBypass,
+  consumeDesktopNavigationBypass,
+  hasDesktopNavigationBypass
+} from "./navigation.js";
 import {
   DESKTOP_BOOTSTRAP_RETRY_INTERVAL_MS,
   DESKTOP_BOOTSTRAP_RETRY_WINDOW_MS,
@@ -40,6 +44,14 @@ function hasActiveDesktopWork() {
 
 const CONFIRMED_ACTIVE_WORK_CLOSE_REASON = "confirmed_active_work_close";
 const ACTIVE_WORK_CLOSE_ATTEMPT_REASON = "active_work_close_attempt";
+
+function isDesktopReloadShortcut(event) {
+  const key = String(event?.key || "").toLowerCase();
+  const code = String(event?.code || "").toLowerCase();
+  const isFunctionReload = key === "f5" || code === "f5";
+  const isKeyboardReload = key === "r" && Boolean(event?.ctrlKey || event?.metaKey);
+  return Boolean(isFunctionReload || isKeyboardReload);
+}
 
 function isActiveUpdatePayload(payload) {
   const status = payload && typeof payload === "object" ? payload : {};
@@ -167,6 +179,11 @@ function bindDesktopLifecycleEvents(clearDesktopNavigationBypass) {
     return;
   }
   window.__baluffoDesktopLifecycleBound = true;
+  window.addEventListener?.("keydown", event => {
+    if (isDesktopReloadShortcut(event)) {
+      armDesktopReloadBypass();
+    }
+  });
   window.addEventListener?.("beforeunload", event => {
     const bypassDesktopNavigation = hasDesktopNavigationBypass();
     desktopState.desktopCloseAttemptPending = true;

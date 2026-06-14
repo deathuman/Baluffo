@@ -155,10 +155,10 @@ def cleanup_runtime_launch(
     site_process,
 ) -> None:
     api = desktop_api()
+    api._windows_close_desktop_job(desktop_job)
     api.terminate_process(bridge_process)
     api.terminate_process(site_process)
     api.terminate_process(browser_process)
-    api._windows_close_desktop_job(desktop_job)
     api.release_instance_lock(instance_lock)
     if session_state_written:
         api.clear_session_state()

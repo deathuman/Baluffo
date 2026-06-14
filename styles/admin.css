@@ -2858,6 +2858,12 @@
   background-color: var(--surface-3);
 }
 
+.action-center-item.action-center-item-neutral {
+  border-color: var(--surface-8);
+  background-color: var(--surface-3);
+  color: var(--text-secondary);
+}
+
 .action-center-item.action-center-item-critical {
   border-left: 3px solid var(--critical, #f85149);
 }

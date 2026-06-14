@@ -56,6 +56,7 @@ STARTUP_METRICS_PATH = (
 DESKTOP_SESSION_LOCK = threading.RLock()
 DESKTOP_SESSION_CLOSING_GRACE_S = 8.0
 DESKTOP_SESSION_ACTIVITY_AT = ""
+REGULAR_DESKTOP_CLOSE_SHUTDOWN_GRACE_S = 0.5
 OWNER_STATE: dict[str, Any] = {
     "ownerMode": "",
     "ownerToken": "",
@@ -196,6 +197,15 @@ def _clear_shutdown_request_for_page(page_id: str) -> None:
     DESKTOP_SESSION_STATE["shutdownPageId"] = ""
 
 
+def _clear_regular_shutdown_request() -> None:
+    shutdown_reason = str(DESKTOP_SESSION_STATE.get("shutdownReason") or "").strip().lower()
+    if shutdown_reason not in REGULAR_DESKTOP_CLOSE_REASONS:
+        return
+    DESKTOP_SESSION_STATE["shutdownRequestedAt"] = ""
+    DESKTOP_SESSION_STATE["shutdownReason"] = ""
+    DESKTOP_SESSION_STATE["shutdownPageId"] = ""
+
+
 def _record_desktop_shutdown_request(
     *,
     page_id: str,
@@ -271,6 +281,7 @@ def update_desktop_session_lifecycle(
         )
         if normalized_state == "alive":
             page_state["closingSince"] = ""
+            _clear_regular_shutdown_request()
             _clear_shutdown_request_for_page(normalized_page_id)
         else:
             _record_desktop_shutdown_request(
@@ -346,11 +357,17 @@ def owner_session_should_exit(*, parse_iso: ParseIso, now_utc: NowUtc) -> bool:
     with DESKTOP_SESSION_LOCK:
         shutdown_requested = bool(str(DESKTOP_SESSION_STATE.get("shutdownRequestedAt") or ""))
         shutdown_reason = str(DESKTOP_SESSION_STATE.get("shutdownReason") or "").strip().lower()
-    if shutdown_requested and shutdown_reason in {
-        CONFIRMED_ACTIVE_WORK_CLOSE_REASON,
-        *REGULAR_DESKTOP_CLOSE_REASONS,
-    }:
+        shutdown_requested_at = str(DESKTOP_SESSION_STATE.get("shutdownRequestedAt") or "")
+    if shutdown_requested and shutdown_reason == CONFIRMED_ACTIVE_WORK_CLOSE_REASON:
         return True
+    if shutdown_requested and shutdown_reason in REGULAR_DESKTOP_CLOSE_REASONS:
+        requested_at = parse_iso(shutdown_requested_at)
+        if requested_at is None:
+            return True
+        elapsed_seconds = (now_utc() - requested_at).total_seconds()
+        if elapsed_seconds >= REGULAR_DESKTOP_CLOSE_SHUTDOWN_GRACE_S:
+            return True
+        return False
     timeout_seconds = max(0.0, float(OWNER_STATE.get("idleTimeoutSeconds") or 0.0))
     if timeout_seconds <= 0.0:
         return False
@@ -390,6 +407,7 @@ __all__ = [
     "TASK_ABORT_SERVICE_LOCK",
     "TASK_PROCESS_REGISTRY",
     "DESKTOP_LOCAL_DATA_STORE",
+    "REGULAR_DESKTOP_CLOSE_SHUTDOWN_GRACE_S",
     "DESKTOP_SESSION_CLOSING_GRACE_S",
     "DESKTOP_SESSION_LOCK",
     "DESKTOP_SESSION_STATE",

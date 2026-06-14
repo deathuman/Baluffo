@@ -159,69 +159,48 @@ test("admin registry controller loads filtered discovery state and dispatches re
   assert.deepEqual(busyTransitions, ["discoveryLoad:true", "discoveryLoad:false"]);
 });
 
-test("admin registry controller defers heavy discovery loads while discovery is running", async () => {
-  const state = {
-    activeSourceFilter: "all",
-    latestDiscoveryReportCache: { runId: "discovery_live_1", summary: {} },
-    adminBusyState: {
-      discoveryLoad: false,
-      discoveryWatch: true,
-      liveDiscoveryRunning: true
-    }
-  };
-  const refs = {
-    adminDiscoverySummaryEl: createElement(),
-    adminPendingSourcesEl: createElement(),
-    adminActiveSourcesEl: createElement(),
-    adminRejectedSourcesEl: createElement(),
-    adminManualSourceFeedbackEl: createElement()
-  };
+test("admin registry controller defers heavy discovery loads while loading source tables during discovery", async () => {
   const calls = [];
-  const logs = [];
-  const busyTransitions = [];
-  const controller = createAdminRegistryController({
-    state,
-    refs,
-    getBridge: async path => {
-      calls.push(path);
-      throw new Error(`unexpected path ${path}`);
+  const fixture = createRegistryControllerFixture({
+    state: {
+      latestDiscoveryReportCache: { runId: "discovery_live_1", summary: {} },
+      adminBusyState: { discoveryLoad: false, discoveryWatch: true, liveDiscoveryRunning: true }
     },
-    postBridge: async () => ({}),
-    fetchJobsFetchReportJson: async () => {
-      calls.push("fetchReport");
-      return {};
-    },
-    mergeSourceDiscoveryCandidates: rows => rows,
-    mergeSourceStatusFromReport: rows => rows,
-    applySourceFilter: rows => rows,
-    getSourceJobsFoundCount: row => Number(row?.jobsFound || 0),
-    deriveSourceStatus: row => String(row?.status || "unknown"),
-    renderSourcesTableHtml: rows => rows.map(row => row.name).join("|"),
-    readShowZeroJobs: () => false,
-    normalizeSourceFilter: value => value,
-    adminDispatch: { dispatch() {} },
-    adminActions: { DISCOVERY_REFRESHED: "discovery/refreshed" },
-    appendDiscoveryLog(message) {
-      logs.push(String(message));
-    },
-    formatManualCheckFailureMessage: () => "failed",
-    loadOpsHealthData: async () => {},
-    setBusyFlag(key, value) {
-      busyTransitions.push(`${key}:${String(value)}`);
-      state.adminBusyState[key] = value;
-    },
-    showToast() {},
-    getErrorMessage: err => String(err?.message || err || "unknown"),
-    renderScheduler: callback => callback()
+    options: {
+      getBridge: async path => {
+        calls.push(String(path));
+        if (path === "/tasks/run-jobs-pipeline-status") {
+          return { active: true, stage: "discovery" };
+        }
+        if (String(path).startsWith("/registry/sources")) {
+          return {
+            ok: true,
+            sources: { pending: [], active: [], rejected: [] },
+            summary: { pendingCount: 0, activeCount: 0, rejectedCount: 0, hiddenPendingCount: 0 }
+          };
+        }
+        throw new Error(`unexpected path ${path}`);
+      }
+    }
   });
+  const controller = createAdminRegistryController(fixture.options);
 
   const result = await controller.loadDiscoveryData();
 
-  assert.equal(result?.skipped, true);
-  assert.equal(result?.reason, "discovery_running");
-  assert.deepEqual(calls, []);
-  assert.deepEqual(busyTransitions, []);
-  assert.ok(logs.some(line => /tables will refresh after this run completes/i.test(line)));
+  assert.equal(result?.skipped, undefined);
+  assert.equal(result?.partialLoadFailed, false);
+  assert.ok(calls.includes("/tasks/run-jobs-pipeline-status"));
+  assert.ok(calls.some(path => String(path).startsWith("/registry/sources?view=table")));
+  assert.ok(!calls.includes("/discovery/report"));
+  assert.ok(!calls.includes("/discovery/candidates"));
+  assert.ok(!calls.includes("fetchReport"));
+  assert.deepEqual(fixture.busyTransitions, [
+    "livePipelineRunning:true",
+    "liveFetchRunning:false",
+    "discoveryLoad:true",
+    "discoveryLoad:false"
+  ]);
+  assert.ok(fixture.logs.some(line => /source registry tables loaded/i.test(line)));
 });
 
 test("admin registry controller allows completion refresh while discovery watch is still active", async () => {

@@ -46,6 +46,11 @@ function armDesktopNavigationBypass(targetUrl) {
   return true;
 }
 
+export function armDesktopReloadBypass() {
+  desktopState.desktopNavigationBypassExpiresAt = Date.now() + DESKTOP_NAVIGATION_BYPASS_WINDOW_MS;
+  return true;
+}
+
 export function consumeDesktopNavigationBypass() {
   const hasBypass = hasDesktopNavigationBypass();
   clearDesktopNavigationBypass();

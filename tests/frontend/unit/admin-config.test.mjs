@@ -130,6 +130,31 @@ test("AdminConfig treats jobsColdStart URL flag as an independent fallback", asy
   assert.equal(AdminConfig.DESKTOP_JOBS_COLD_START, true);
 });
 
+test("AdminConfig lets explicit runtime cold-start false override stale URL flag", async () => {
+  globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG = Object.freeze({
+    bridge: {
+      host: "127.0.0.1",
+      port: 61236
+    },
+    runtime: {
+      desktop: true,
+      jobsColdStart: false
+    }
+  });
+  global.window = {
+    location: { href: "http://127.0.0.1:8080/jobs.html?desktop=1&jobsColdStart=1" },
+    sessionStorage: buildSessionStorage()
+  };
+
+  const { AdminConfig } = await importFresh(
+    "../../../frontend/shared/config/admin-config.js",
+    { relativeTo: import.meta.url }
+  );
+
+  assert.equal(AdminConfig.DESKTOP_JOBS_COLD_START, false);
+  delete globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG;
+});
+
 test("AdminConfig overwrites stale cached bridge base with active desktop runtime config", async () => {
   globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG = Object.freeze({
     bridge: {

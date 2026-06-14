@@ -96,7 +96,7 @@ Optional overrides:
   - archived lifecycle rows are moved into yearly transparent gzip-backed cold files (`jobs-lifecycle-archive-{year}.json.gz`) and loaded on demand only.
   - report/debug JSON remains pretty-printed for operator readability.
   - warning limits are `80_000_000` bytes for full JSON, `60_000_000` bytes for light JSON, and `50_000_000` bytes for CSV.
-  - package builds no longer seed row-bearing jobs artifacts (`jobs-unified*.json(.gz)`, `jobs-unified.csv`, or `jobs-unified-startup.json`). The desktop launcher quarantines stale row artifacts from upgraded installs when no successful runtime report proves a real local feed.
+  - package builds no longer seed row-bearing jobs artifacts (`jobs-unified*.json(.gz)`, `jobs-unified.csv`, or `jobs-unified-startup.json`). The desktop launcher quarantines stale row artifacts from upgraded installs only when they do not look like newer runtime-generated feed files, and can restore a previously false-quarantined runtime feed from the cleanup backup.
 - Static HTTP fetch policy:
   - static listing and detail fetches should go through the shared `fetch_html_cached` path so cache, per-domain throttling, and redirect handling stay consistent.
   - one redirect hop is allowed for 301/302/303/307/308 when the target is HTTP(S), contains no credentials, does not downgrade HTTPS to HTTP, and stays on the same host or a `www.`/bare-host alias.

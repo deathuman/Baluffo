@@ -109,7 +109,7 @@ def has_successful_runtime_jobs_report_for_static_serving(data_dir: str | Path) 
 
 
 def jobs_cold_start_required(data_dir: str | Path) -> bool:
-    return not has_successful_runtime_jobs_report(data_dir)
+    return not has_loadable_runtime_feed_artifacts(data_dir)
 
 
 def jobs_cold_start_required_for_static_serving(data_dir: str | Path) -> bool:

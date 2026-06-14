@@ -320,6 +320,42 @@ async function main() {
         firstRunNoticeDismissed
       };
     }, scenarios);
+
+    await runScenario("Desktop Admin reload shortcuts keep runtime alive", async () => {
+      const beforeRows = await fetchStartupMetricRows(apiRequest);
+      const beforeRegularCloseCount = countStartupEvent(beforeRows, "desktop_regular_close_shutdown_requested");
+      const beforeOwnerExitCount = countStartupEvent(beforeRows, "admin_bridge_owner_session_exit_requested");
+
+      for (const shortcut of ["F5", "Control+Shift+R"]) {
+        await page.keyboard.press(shortcut);
+        await page.waitForLoadState("domcontentloaded", { timeout: 30_000 });
+        await waitForAdminDesktopPageReady(page);
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      const health = await fetchHealth(apiRequest, { attempts: 12, delayMs: 250 });
+      const afterRows = await fetchStartupMetricRows(apiRequest);
+      const afterRegularCloseCount = countStartupEvent(afterRows, "desktop_regular_close_shutdown_requested");
+      const afterOwnerExitCount = countStartupEvent(afterRows, "admin_bridge_owner_session_exit_requested");
+      assert.equal(
+        afterRegularCloseCount,
+        beforeRegularCloseCount,
+        "keyboard reloads should not request a regular desktop close"
+      );
+      assert.equal(
+        afterOwnerExitCount,
+        beforeOwnerExitCount,
+        "keyboard reloads should not request owner-session exit"
+      );
+      return {
+        currentPath: new URL(page.url()).pathname,
+        desktopMode: Boolean(health?.desktopMode),
+        beforeRegularCloseCount,
+        afterRegularCloseCount,
+        beforeOwnerExitCount,
+        afterOwnerExitCount
+      };
+    }, scenarios);
   } catch (error) {
     errors.push(error instanceof Error ? error.message : String(error));
   } finally {

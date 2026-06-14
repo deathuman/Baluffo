@@ -145,8 +145,38 @@ export function createRegistryLoadController({
       || currentText.includes(ACTIVE_PIPELINE_SOURCE_TABLES_DELAYED_LABEL);
   }
 
+  function activeDiscoveryRunning() {
+    if (
+      state.adminBusyState?.liveDiscoveryRunning
+      || state.adminBusyState?.discoveryWatch
+      || state.discoveryLiveProgressState
+    ) {
+      return true;
+    }
+    const rows = Array.isArray(state.latestOpsTaskStatePayload?.tasks)
+      ? state.latestOpsTaskStatePayload.tasks
+      : [];
+    return rows.some(row => {
+      const type = String(row?.taskType || row?.type || "").trim().toLowerCase();
+      return row?.active !== false && !row?.finishedAt && type === "discovery";
+    });
+  }
+
+  function activeFetchRunning() {
+    if (state.adminBusyState?.liveFetchRunning) {
+      return true;
+    }
+    const rows = Array.isArray(state.latestOpsTaskStatePayload?.tasks)
+      ? state.latestOpsTaskStatePayload.tasks
+      : [];
+    return rows.some(row => {
+      const type = String(row?.taskType || row?.type || "").trim().toLowerCase();
+      return row?.active !== false && !row?.finishedAt && type === "fetch";
+    });
+  }
+
   function activePipelineOrFetchRunning() {
-    if (state.adminBusyState?.livePipelineRunning || state.adminBusyState?.liveFetchRunning) {
+    if (state.adminBusyState?.livePipelineRunning || activeFetchRunning()) {
       return true;
     }
     const rows = Array.isArray(state.latestOpsTaskStatePayload?.tasks)
@@ -158,6 +188,44 @@ export function createRegistryLoadController({
     });
   }
 
+  function activeSyncRunning() {
+    if (state.adminBusyState?.syncRun || state.adminBusyState?.liveSyncRunning) {
+      return true;
+    }
+    const rows = Array.isArray(state.latestOpsTaskStatePayload?.tasks)
+      ? state.latestOpsTaskStatePayload.tasks
+      : [];
+    return rows.some(row => {
+      const type = String(row?.taskType || row?.type || "").trim().toLowerCase();
+      return row?.active !== false && !row?.finishedAt && type === "sync";
+    });
+  }
+
+  function activeAdminRegistryWorkRunning() {
+    return activePipelineOrFetchRunning() || activeDiscoveryRunning() || activeSyncRunning();
+  }
+
+  function pipelineStatusStage(payload = {}) {
+    return String(payload?.stage || payload?.progress?.phaseKey || "").trim().toLowerCase();
+  }
+
+  function pipelineStatusHasActiveChild(payload = {}, taskType) {
+    const normalizedTaskType = String(taskType || "").trim().toLowerCase();
+    const activeChildren = Array.isArray(payload?.activeChildren) ? payload.activeChildren : [];
+    return activeChildren.some(row => {
+      const childType = String(row?.taskType || row?.type || "").trim().toLowerCase();
+      return childType === normalizedTaskType && row?.active !== false && !row?.finishedAt;
+    });
+  }
+
+  function pipelineStatusIndicatesFetch(payload = {}) {
+    return pipelineStatusStage(payload) === "fetch" || pipelineStatusHasActiveChild(payload, "fetch");
+  }
+
+  function pipelineStatusIndicatesDiscovery(payload = {}) {
+    return pipelineStatusStage(payload) === "discovery" || pipelineStatusHasActiveChild(payload, "discovery");
+  }
+
   function pipelineStatusIndicatesActive(payload = {}) {
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
     if (payload.active === true) return true;
@@ -165,7 +233,7 @@ export function createRegistryLoadController({
     if (activeChildren.some(row => row && typeof row === "object" && row.active !== false)) {
       return true;
     }
-    const stage = String(payload.stage || payload?.progress?.phaseKey || "").trim().toLowerCase();
+    const stage = pipelineStatusStage(payload);
     if (!stage || INACTIVE_PIPELINE_STAGES.has(stage)) return false;
     if (payload.active === false) return false;
     return true;
@@ -173,28 +241,17 @@ export function createRegistryLoadController({
 
   function rememberPipelineStatusActivity(payload = {}) {
     if (!pipelineStatusIndicatesActive(payload)) return;
-    const activeChildren = Array.isArray(payload.activeChildren)
-      ? payload.activeChildren
-          .filter(row => row && typeof row === "object" && row.active !== false)
-          .slice(0, 3)
-          .map(row => ({
-            ...row,
-            taskType: String(row.taskType || row.type || "").trim().toLowerCase(),
-            type: String(row.type || row.taskType || "").trim().toLowerCase(),
-            active: true
-          }))
-      : [];
-    const stage = String(payload.stage || payload?.progress?.phaseKey || "pipeline").trim().toLowerCase();
+    state.discoveryPipelineStatusPayload = payload;
     setBusyFlag("livePipelineRunning", true);
     setBusyFlag(
       "liveFetchRunning",
-      activeChildren.some(row => String(row?.taskType || row?.type || "").trim().toLowerCase() === "fetch") || stage === "fetch"
+      pipelineStatusIndicatesFetch(payload)
     );
     state.discoveryPipelineStatusLastActiveAtMs = Date.now();
   }
 
   async function refreshActivePipelineStatus({ force = false } = {}) {
-    if (!force && activePipelineOrFetchRunning()) return true;
+    if (!force && activeFetchRunning()) return true;
     try {
       const payload = await getBridge(JOBS_PIPELINE_STATUS_PATH, { timeoutMs: PIPELINE_STATUS_PREFLIGHT_TIMEOUT_MS });
       if (pipelineStatusIndicatesActive(payload)) {
@@ -202,6 +259,7 @@ export function createRegistryLoadController({
         return true;
       }
       state.discoveryPipelineStatusLastActiveAtMs = 0;
+      state.discoveryPipelineStatusPayload = null;
       if (force) {
         setBusyFlag("livePipelineRunning", false);
         setBusyFlag("liveFetchRunning", false);
@@ -209,6 +267,13 @@ export function createRegistryLoadController({
     } catch {
       // Source tables should remain available when the fast control-plane preflight is unavailable.
     }
+    return activePipelineOrFetchRunning();
+  }
+
+  function shouldDeferSourceTablesForActivePipeline() {
+    const payload = state.discoveryPipelineStatusPayload || null;
+    if (activeFetchRunning() || pipelineStatusIndicatesFetch(payload)) return true;
+    if (activeDiscoveryRunning() || pipelineStatusIndicatesDiscovery(payload)) return false;
     return activePipelineOrFetchRunning();
   }
 
@@ -244,15 +309,15 @@ export function createRegistryLoadController({
       return await promise;
     } catch (err) {
       const message = getErrorMessage(err);
-      const registryRefreshDelayedByPipeline = Boolean(
+      const registryRefreshDelayedByActiveWork = Boolean(
         options?.registryRefresh
         && (
-          activePipelineOrFetchRunning()
+          activeAdminRegistryWorkRunning()
           || recentlyDetectedActivePipeline()
         )
         && /(timed out|timeout|HTTP 504|\b504\b)/i.test(message)
       );
-      if (registryRefreshDelayedByPipeline) {
+      if (registryRefreshDelayedByActiveWork) {
         state.sourceTablesDelayedDuringActiveRun = true;
         renderSourceTablesDelayed({ onlyIfPlaceholder: true });
         appendDiscoveryLog(ACTIVE_PIPELINE_SOURCE_TABLES_DELAYED_LABEL, "warn");
@@ -263,7 +328,8 @@ export function createRegistryLoadController({
       }
       return {
         ...(fallback && typeof fallback === "object" && !Array.isArray(fallback) ? fallback : {}),
-        __loadFailed: true
+        __loadFailed: true,
+        __delayedDuringActiveRun: registryRefreshDelayedByActiveWork
       };
     }
   }
@@ -276,11 +342,13 @@ export function createRegistryLoadController({
       state.discoveryRegistryRefreshRetryTimer = null;
       loadDiscoveryData({
         background: true,
+        sourceTablesOnly: true,
         completionRefresh: true,
         suppressPlaceholders: true,
         logChanges: false,
         fetchReport: options?.fetchReport || null,
-        forceFetchReport: Boolean(options?.fetchReport)
+        forceFetchReport: Boolean(options?.fetchReport),
+        forcePipelinePreflight: Boolean(options?.forcePipelinePreflight)
       }).catch(() => {});
     }, REGISTRY_REFRESH_RETRY_DELAY_MS);
     if (typeof state.discoveryRegistryRefreshRetryTimer?.unref === "function") {
@@ -291,39 +359,14 @@ export function createRegistryLoadController({
   async function loadDiscoveryData(options = {}) {
     if (state.adminBusyState.discoveryLoad) return state.discoveryLoadPromise || null;
     const nowMs = Date.now();
-    const liveDiscoveryRunning = Boolean(
-      state.adminBusyState?.liveDiscoveryRunning
-      || state.adminBusyState?.discoveryWatch
-      || state.discoveryLiveProgressState
-    );
+    const liveDiscoveryRunning = activeDiscoveryRunning();
     const allowDuringLiveDiscovery = Boolean(
       options?.allowDuringLiveDiscovery
       || options?.completionRefresh
       || options?.forceDuringLiveDiscovery
     );
-    if (liveDiscoveryRunning && !allowDuringLiveDiscovery) {
-      const background = Boolean(options?.background);
-      const lastNoticeAtMs = Number(state.discoveryDeferredLoadNoticeAtMs || 0);
-      if (!background && nowMs - lastNoticeAtMs > 5000) {
-        state.discoveryDeferredLoadNoticeAtMs = nowMs;
-        appendDiscoveryLog(
-          "Discovery is running; source tables will refresh after this run completes.",
-          "info"
-        );
-      }
-      return {
-        skipped: true,
-        reason: "discovery_running",
-        report: state.latestDiscoveryReportCache || null,
-        pendingRows: [],
-        activeRows: [],
-        rejectedRows: [],
-        partialLoadFailed: false
-      };
-    }
-    const livePipelineOrFetchRunning = await refreshActivePipelineStatus();
-    const allowDuringActivePipeline = Boolean(options?.forceDuringActivePipeline);
-    if (livePipelineOrFetchRunning && !allowDuringActivePipeline) {
+    const sourceTablesOnlyForLiveDiscovery = liveDiscoveryRunning && !allowDuringLiveDiscovery;
+    if (activeSyncRunning()) {
       const background = Boolean(options?.background);
       state.sourceTablesDelayedDuringActiveRun = true;
       if (options?.suppressPlaceholders !== true) {
@@ -334,6 +377,34 @@ export function createRegistryLoadController({
         state.discoveryPipelineDeferredLoadNoticeAtMs = nowMs;
         appendDiscoveryLog(ACTIVE_PIPELINE_SOURCE_TABLES_DELAYED_LABEL, "warn");
       }
+      scheduleRegistryRefreshRetry({ forcePipelinePreflight: true });
+      return {
+        skipped: true,
+        reason: "sync_running",
+        sourceTablesDelayed: true,
+        report: state.latestDiscoveryReportCache || null,
+        pendingRows: [],
+        activeRows: [],
+        rejectedRows: [],
+        partialLoadFailed: false
+      };
+    }
+    const livePipelineOrFetchRunning = await refreshActivePipelineStatus({
+      force: Boolean(options?.forcePipelinePreflight)
+    });
+    const allowDuringActivePipeline = Boolean(options?.forceDuringActivePipeline);
+    if (livePipelineOrFetchRunning && shouldDeferSourceTablesForActivePipeline() && !allowDuringActivePipeline) {
+      const background = Boolean(options?.background);
+      state.sourceTablesDelayedDuringActiveRun = true;
+      if (options?.suppressPlaceholders !== true) {
+        renderSourceTablesDelayed({ onlyIfPlaceholder: true });
+      }
+      const lastNoticeAtMs = Number(state.discoveryPipelineDeferredLoadNoticeAtMs || 0);
+      if (!background && nowMs - lastNoticeAtMs > 5000) {
+        state.discoveryPipelineDeferredLoadNoticeAtMs = nowMs;
+        appendDiscoveryLog(ACTIVE_PIPELINE_SOURCE_TABLES_DELAYED_LABEL, "warn");
+      }
+      scheduleRegistryRefreshRetry({ forcePipelinePreflight: true });
       return {
         skipped: true,
         reason: "pipeline_running",
@@ -363,7 +434,7 @@ export function createRegistryLoadController({
     state.discoveryLoadPromise = (async () => {
       try {
         const filterState = toAdminFilterState();
-        const sourceTablesOnly = Boolean(options?.sourceTablesOnly);
+        const sourceTablesOnly = Boolean(options?.sourceTablesOnly || sourceTablesOnlyForLiveDiscovery);
         const reportPromise = sourceTablesOnly
           ? Promise.resolve(null)
           : loadDiscoveryEndpoint(
@@ -414,7 +485,8 @@ export function createRegistryLoadController({
                 ? registrySources.sources.pending
                 : [],
               summary: registrySources?.summary || {},
-              __loadFailed: Boolean(registrySources?.__loadFailed)
+              __loadFailed: Boolean(registrySources?.__loadFailed),
+              __delayedDuringActiveRun: Boolean(registrySources?.__delayedDuringActiveRun)
             };
             const loadFailed = Boolean(pending?.__loadFailed);
             const rows = mergeSourceStatusFromReport(
@@ -432,7 +504,11 @@ export function createRegistryLoadController({
             scheduleDeferredRender(() => {
               if (background || renderToken !== registryRenderToken) return;
               if (loadFailed) {
-                setSourceTableUnavailablePlaceholder(refs.adminPendingSourcesEl, "pending");
+                if (pending.__delayedDuringActiveRun) {
+                  renderSourceTablesDelayed({ onlyIfPlaceholder: true });
+                } else {
+                  setSourceTableUnavailablePlaceholder(refs.adminPendingSourcesEl, "pending");
+                }
                 return;
               }
               renderSourcesTable(refs.adminPendingSourcesEl, visibleRows, "pending");
@@ -454,7 +530,8 @@ export function createRegistryLoadController({
                 ? registrySources.sources.active
                 : [],
               summary: registrySources?.summary || {},
-              __loadFailed: Boolean(registrySources?.__loadFailed)
+              __loadFailed: Boolean(registrySources?.__loadFailed),
+              __delayedDuringActiveRun: Boolean(registrySources?.__delayedDuringActiveRun)
             };
             const loadFailed = Boolean(active?.__loadFailed);
             const rows = mergeSourceStatusFromReport(
@@ -466,7 +543,11 @@ export function createRegistryLoadController({
             scheduleDeferredRender(() => {
               if (background || renderToken !== registryRenderToken) return;
               if (loadFailed) {
-                setSourceTableUnavailablePlaceholder(refs.adminActiveSourcesEl, "active");
+                if (active.__delayedDuringActiveRun) {
+                  renderSourceTablesDelayed({ onlyIfPlaceholder: true });
+                } else {
+                  setSourceTableUnavailablePlaceholder(refs.adminActiveSourcesEl, "active");
+                }
                 return;
               }
               renderSourcesTable(refs.adminActiveSourcesEl, visibleRows, "active");
@@ -480,7 +561,8 @@ export function createRegistryLoadController({
                 ? registrySources.sources.rejected
                 : [],
               summary: registrySources?.summary || {},
-              __loadFailed: Boolean(registrySources?.__loadFailed)
+              __loadFailed: Boolean(registrySources?.__loadFailed),
+              __delayedDuringActiveRun: Boolean(registrySources?.__delayedDuringActiveRun)
             };
             const loadFailed = Boolean(rejected?.__loadFailed);
             const rows = mergeSourceStatusFromReport(
@@ -492,7 +574,11 @@ export function createRegistryLoadController({
             scheduleDeferredRender(() => {
               if (background || renderToken !== registryRenderToken) return;
               if (loadFailed) {
-                setSourceTableUnavailablePlaceholder(refs.adminRejectedSourcesEl, "rejected");
+                if (rejected.__delayedDuringActiveRun) {
+                  renderSourceTablesDelayed({ onlyIfPlaceholder: true });
+                } else {
+                  setSourceTableUnavailablePlaceholder(refs.adminRejectedSourcesEl, "rejected");
+                }
                 return;
               }
               renderSourcesTable(refs.adminRejectedSourcesEl, visibleRows, "rejected");
@@ -685,8 +771,16 @@ export function createRegistryLoadController({
   }
 
   async function refreshSourceTablesAfterActiveRunIdle(options = {}) {
-    if (!state.sourceTablesDelayedDuringActiveRun) return null;
+    const needsRecovery = Boolean(
+      state.sourceTablesDelayedDuringActiveRun
+      || !state.discoveryTablesRendered
+      || sourceTableNeedsDelayedPlaceholder(refs.adminPendingSourcesEl)
+      || sourceTableNeedsDelayedPlaceholder(refs.adminActiveSourcesEl)
+      || sourceTableNeedsDelayedPlaceholder(refs.adminRejectedSourcesEl)
+    );
+    if (!needsRecovery) return null;
     if (state.adminBusyState?.discoveryLoad) return state.discoveryLoadPromise || null;
+    if (activeSyncRunning()) return null;
     const stillActive = await refreshActivePipelineStatus({ force: true });
     if (stillActive) return null;
     const result = await loadDiscoveryData({

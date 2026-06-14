@@ -234,7 +234,7 @@ export function composeAdminControllers({
     return tasks.some(row => {
       const taskType = String(row?.taskType || row?.type || "").trim().toLowerCase();
       const status = String(row?.status || row?.lifecycleStatus || "").trim().toLowerCase();
-      return ["pipeline", "fetch", "discovery"].includes(taskType)
+      return ["pipeline", "fetch", "discovery", "sync"].includes(taskType)
         && row?.active !== false
         && !String(row?.finishedAt || "").trim()
         && !["ok", "success", "succeeded", "failed", "error", "canceled", "cancelled"].includes(status);

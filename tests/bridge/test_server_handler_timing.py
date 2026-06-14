@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from src.bridge.performance_profile import clear_performance_profile, snapshot_performance_profile
+from src.bridge.server import httpd
 from src.bridge.server.handler import make_handler
 from src.shared.timing_counters import clear_counters, snapshot_counters
 from tests.helpers.bridge_api import FakeDesktopLocalDataStore, make_stub_bridge_api
@@ -80,3 +81,49 @@ def test_handler_performance_profile_redacts_query_params(tmp_path: Path) -> Non
     labels = [row["label"] for row in profile["routeTimings"]["routes"]]
     assert "GET /ops/task-state" in labels
     assert all("hidden" not in label and "token" not in label for label in labels)
+
+
+def test_run_http_server_uses_short_idle_poll_for_owner_shutdown(monkeypatch) -> None:
+    created_servers: list[object] = []
+
+    class FakeServer:
+        def __init__(self, _address, _handler_cls) -> None:
+            self.timeout = 0
+            self.handled = 0
+            self.closed = False
+            created_servers.append(self)
+
+        def handle_request(self) -> None:
+            self.handled += 1
+
+        def server_close(self) -> None:
+            self.closed = True
+
+    class FakeApi:
+        def __init__(self) -> None:
+            self.logs: list[tuple[str, str]] = []
+
+        def bridge_log(self, level: str, event: str, **_fields: object) -> None:
+            self.logs.append((level, event))
+
+        def should_exit_for_owner_timeout(self) -> bool:
+            return True
+
+    monkeypatch.setattr(httpd, "ThreadingHTTPServer", FakeServer)
+    api = FakeApi()
+
+    assert (
+        httpd.run_http_server(
+            api=api,
+            host="127.0.0.1",
+            port=0,
+            handler_cls=object,
+        )
+        == 0
+    )
+
+    server = created_servers[0]
+    assert server.timeout == 0.25
+    assert server.handled == 1
+    assert server.closed is True
+    assert ("info", "admin_bridge_owner_timeout_shutdown") in api.logs

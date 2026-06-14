@@ -85,6 +85,8 @@ test("admin sync controller hydrates status and runs save/test/pull/push flows",
 
   assert.equal(state.syncConfigDirty, false);
   assert.ok(paths.includes("/sync/status"));
+  assert.ok(paths.includes("/ops/task-live/sync?view=summary"));
+  assert.equal(paths.includes("/ops/task-live/sync"), false);
   assert.ok(paths.includes("/sync/config:{\"enabled\":true}"));
   assert.ok(paths.includes("/sync/test:{}"));
   assert.ok(paths.includes("/tasks/run-sync-pull:{}"));
@@ -105,6 +107,59 @@ test("admin sync controller hydrates status and runs save/test/pull/push flows",
     "syncRun:true",
     "syncRun:false"
   ]);
+});
+
+test("admin sync status hydrates live state from summary task-live route", async () => {
+  const paths = [];
+  const state = {
+    syncConfigDirty: false,
+    latestSyncStatusCache: null,
+    adminBusyState: { liveSyncRunning: false }
+  };
+  const refs = {
+    adminSyncEnabledEl: createElement({ checked: false }),
+    adminSyncStatusEl: createElement(),
+    adminSyncConfigHintEl: createElement()
+  };
+  const controller = createAdminSyncController({
+    state,
+    refs,
+    getBridge: async path => {
+      paths.push(path);
+      if (path === "/sync/status?view=summary") {
+        return {
+          savedConfig: { enabled: true },
+          config: { enabled: true, state: "ready", repo: "org/repo", branch: "main" },
+          runtime: { lastAction: "pull", lastResult: "running" }
+        };
+      }
+      if (path === "/ops/task-live/sync?view=summary") {
+        return {
+          active: true,
+          taskProgress: { active: true, phaseLabel: "Pulling remote source registry" },
+          summary: { action: "pull" }
+        };
+      }
+      throw new Error(`unexpected path ${path}`);
+    },
+    postBridge: async () => ({}),
+    isSyncBusy: () => false,
+    setBusyFlag(key, value) {
+      state.adminBusyState[key] = value;
+    },
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    showToast() {},
+    toLocalTime: value => value.toISOString(),
+    loadOpsHealthData: async () => {},
+    scheduleOpsHealthPolling() {},
+    escapeHtml: value => String(value)
+  });
+
+  await controller.loadSyncStatus({ silent: true, forceForm: true, summary: true });
+
+  assert.deepEqual(paths, ["/sync/status?view=summary", "/ops/task-live/sync?view=summary"]);
+  assert.equal(state.adminBusyState.liveSyncRunning, true);
+  assert.match(refs.adminSyncStatusEl.innerHTML, /Connected to org\/repo/i);
 });
 
 test("admin sync status can skip live sync hydration during first boot", async () => {

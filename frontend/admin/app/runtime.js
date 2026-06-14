@@ -1,10 +1,7 @@
 import { AdminConfig as adminConfig } from "../../shared/config/admin-config.js";
 import { awaitDesktopBootstrap } from "../../shared/local-data/desktop-client.js";
 import { resolveBridgeLocalDataMode, resolveDesktopRuntimeMode } from "../../shared/local-data/runtime-context.js";
-import {
-  showToast,
-  setText
-} from "../../shared/ui/index.js?v=6";
+import { showToast, setText } from "../../shared/ui/index.js?v=6";
 import { emitStartupMetric, logError, markFirstInteractive } from "../../shared/app-boot.js";
 import { createPerfMarks } from "../../shared/perf-marks.js";
 import {
@@ -247,6 +244,7 @@ function cacheDom() {
 function bootAdminPage() {
   state.activeSourceFilter = normalizeSourceFilterFromModule(readSourceFilter(ADMIN_SOURCE_FILTER_KEY, "all"));
   cacheDom();
+  void waitForAdminBridgeReady().catch(err => logAdminError("Admin desktop bootstrap failed", err));
   ({
     authController,
     syncController,
@@ -313,7 +311,7 @@ function bootAdminPage() {
     onSetSourceFilter: setSourceFilter
   });
   authController.initAdminPage();
-  actionCenterController.startPolling({ initialDelayMs: 5000 }); inspectorController.init();
+  actionCenterController.startPolling(); inspectorController.init();
 }
 
 export { bootAdminPage as boot };

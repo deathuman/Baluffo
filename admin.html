@@ -27,7 +27,14 @@
       <div class="action-center-header">
         <h2 class="action-center-title">Action Center</h2>
       </div>
-      <div id="admin-action-center-items" data-ui="admin-action-center-items" class="action-center-items"></div>
+      <div id="admin-action-center-items" data-ui="admin-action-center-items" class="action-center-items">
+        <div class="action-center-item action-center-item-neutral" data-state="checking">
+          <div class="action-center-item-body">
+            <span class="action-center-item-icon">i</span>
+            <span class="action-center-item-summary">Checking operational signals...</span>
+          </div>
+        </div>
+      </div>
       <div class="action-center-footer">
         <button id="admin-action-center-copy-btn" data-ui="admin-action-center-copy-btn" class="btn action-center-copy-btn" data-tooltip="Copy all health, sync, and storage diagnostics to clipboard">Copy all diagnostics</button>
       </div>

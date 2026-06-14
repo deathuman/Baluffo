@@ -537,56 +537,6 @@ def test_owner_session_exits_for_confirmed_active_work_close(
         assert admin_bridge.owner_session_should_exit() is True
 
 
-def test_owner_session_exits_immediately_for_regular_desktop_close_when_idle(
-    admin_bridge_entrypoint_root,
-):
-    cfg = admin_bridge.RuntimeConfig(
-        root=admin_bridge_entrypoint_root,
-        data_dir=admin_bridge_entrypoint_root,
-        host="127.0.0.1",
-        port=8877,
-        log_format="human",
-        log_level="info",
-        quiet_requests=False,
-        desktop_mode=True,
-        owner_mode="desktop-window",
-        owner_token="owner-1",
-        desktop_session_id="session-1",
-        started_by="test",
-        owner_idle_timeout_s=15.0,
-    )
-    admin_bridge.configure_runtime_paths(cfg)
-    status_code, payload = admin_bridge.update_desktop_session_lifecycle(
-        owner_token="owner-1",
-        session_id="session-1",
-        page_id="page-1",
-        state="closing",
-        reason="beforeunload",
-    )
-    assert status_code == 200
-    assert payload["reason"] == "beforeunload"
-
-    with (
-        mock.patch.object(
-            admin_bridge,
-            "_get_ops_api",
-            return_value=mock.Mock(
-                get_current_task_state_payload=mock.Mock(return_value={"tasks": []})
-            ),
-        ),
-        mock.patch.object(
-            admin_bridge,
-            "_get_desktop_update_service",
-            return_value=mock.Mock(
-                get_status_payload=mock.Mock(
-                    return_value={"downloadState": "idle", "installState": "idle"}
-                )
-            ),
-        ),
-    ):
-        assert admin_bridge.owner_session_should_exit() is True
-
-
 def test_regular_desktop_close_stays_alive_for_active_task_or_update_handoff(
     admin_bridge_entrypoint_root,
 ):

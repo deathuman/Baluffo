@@ -100,7 +100,7 @@ test("desktop page startup shells avoid passive loading placeholders", () => {
   assert.match(savedHtml, /id="activity-panel-body"[^>]*><\/div>/);
 
   assert.doesNotMatch(adminHtml, /Loading admin overview|Loading operational signals|No discovery report loaded yet/);
-  assert.match(adminHtml, /id="admin-action-center-items"[^>]*><\/div>/);
+  assert.match(adminHtml, /id="admin-action-center-items"[\s\S]*Checking operational signals\.\.\./);
 });
 
 test("desktop page titles keep the Baluffo window identity token", () => {

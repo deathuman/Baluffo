@@ -23,10 +23,12 @@ if str(ROOT) not in sys.path:
 
 from src.app_version import get_app_version
 from src.baluffo_config import get_bridge_defaults, get_desktop_defaults, get_security_defaults
-from src.shared.json_io import PIPELINE_GZIP_JSON_NAMES
+from src.shared.json_io import PIPELINE_GZIP_JSON_NAMES, existing_json_candidate
 from src.ship import update_manager
 from src.ship.jobs_first_run_state import (
     ROW_BEARING_JOBS_ARTIFACTS,
+    RUNTIME_FEED_ARTIFACTS,
+    has_plausible_runtime_feed_artifacts_for_static_serving,
     has_successful_runtime_jobs_report,
     jobs_cold_start_required,
     jobs_cold_start_required_for_static_serving,
@@ -113,6 +115,157 @@ def _row_artifact_candidates(data_dir: Path) -> list[Path]:
     return sorted({path.resolve() for path in candidates})
 
 
+def _runtime_feed_artifact_candidates(data_dir: Path) -> list[Path]:
+    candidates: list[Path] = []
+    for name in RUNTIME_FEED_ARTIFACTS:
+        path = Path(data_dir) / name
+        if name.endswith(".json"):
+            candidate = existing_json_candidate(path)
+            if candidate is not None:
+                candidates.append(candidate)
+            continue
+        if path.exists():
+            candidates.append(path)
+    return sorted({path.resolve() for path in candidates})
+
+
+def _parse_iso_timestamp(value: object) -> float | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.timestamp()
+
+
+def _load_json_object(path: Path) -> dict[str, object]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _completed_user_data_migration_timestamp(data_dir: Path) -> float | None:
+    report_path = Path(data_dir) / "migration-reports" / "windows-user-data-migration.json"
+    report = _load_json_object(report_path)
+    if not report:
+        return None
+    if report.get("completed") is False:
+        return None
+    status = str(report.get("status") or "").strip().lower()
+    if status in {"error", "failed"}:
+        return None
+    return _parse_iso_timestamp(report.get("createdAt"))
+
+
+def _artifact_modified_after(path: Path, cutoff_timestamp: float) -> bool:
+    try:
+        return Path(path).stat().st_mtime > cutoff_timestamp + 1
+    except OSError:
+        return False
+
+
+def _runtime_feed_artifacts_include_updates_after(
+    data_dir: Path,
+    cutoff_timestamp: float | None,
+) -> bool:
+    if cutoff_timestamp is None:
+        return False
+    if not has_plausible_runtime_feed_artifacts_for_static_serving(data_dir):
+        return False
+    candidates = _runtime_feed_artifact_candidates(data_dir)
+    return bool(candidates) and all(
+        _artifact_modified_after(path, cutoff_timestamp) for path in candidates
+    )
+
+
+def _runtime_feed_artifacts_include_updates_after_migration(data_dir: Path) -> bool:
+    return _runtime_feed_artifacts_include_updates_after(
+        data_dir,
+        _completed_user_data_migration_timestamp(data_dir),
+    )
+
+
+def _write_jobs_row_artifact_restore_report(
+    data_dir: Path,
+    timestamp: str,
+    report: dict[str, object],
+) -> dict[str, object]:
+    report_dir = data_dir / "migration-reports"
+    try:
+        report_dir.mkdir(parents=True, exist_ok=True)
+        report_path = report_dir / f"stripped-packaged-jobs-restore-{timestamp}.json"
+        report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+        report["reportPath"] = str(report_path)
+    except OSError as exc:
+        report["reportError"] = str(exc)
+    return report
+
+
+def _restore_false_quarantined_jobs_row_artifacts(data_dir: Path) -> dict[str, object]:
+    migration_timestamp = _completed_user_data_migration_timestamp(data_dir)
+    if migration_timestamp is None:
+        return {"restored": [], "failed": [], "skipped": "no_completed_migration_report"}
+
+    report_dir = data_dir / "migration-reports"
+    try:
+        reports = sorted(
+            report_dir.glob("stripped-packaged-jobs-cleanup-*.json"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+    except OSError:
+        reports = []
+
+    for report_path in reports:
+        cleanup_report = _load_json_object(report_path)
+        if cleanup_report.get("reason") != "no_successful_runtime_jobs_report":
+            continue
+        backup_dir = Path(str(cleanup_report.get("backupDir") or ""))
+        if not backup_dir.is_dir():
+            continue
+        backup_candidates = _row_artifact_candidates(backup_dir)
+        if not backup_candidates:
+            continue
+        if not _runtime_feed_artifacts_include_updates_after(backup_dir, migration_timestamp):
+            continue
+
+        restored: list[str] = []
+        failed: list[dict[str, str]] = []
+        for source in backup_candidates:
+            target = data_dir / source.name
+            if target.exists():
+                continue
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
+            except (OSError, shutil.Error) as exc:
+                failed.append({"path": str(source), "target": str(target), "error": str(exc)})
+                continue
+            restored.append(str(target))
+
+        timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        restore_report = {
+            "schemaVersion": 1,
+            "createdAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "reason": "false_quarantined_runtime_jobs_artifacts",
+            "backupDir": str(backup_dir),
+            "sourceReportPath": str(report_path),
+            "restored": restored,
+            "failed": failed,
+        }
+        return _write_jobs_row_artifact_restore_report(data_dir, timestamp, restore_report)
+
+    return {"restored": [], "failed": [], "skipped": "no_false_quarantine_backup"}
+
+
 def _is_row_bearing_jobs_artifact_request(trace_path: str) -> bool:
     normalized = str(trace_path or "").split("?", 1)[0].split("#", 1)[0].lstrip("/")
     artifact_name = normalized.removesuffix(".gz")
@@ -131,9 +284,24 @@ def quarantine_stale_jobs_row_artifacts(data_dir: str | Path) -> dict[str, objec
     data_path = Path(data_dir)
     candidates = _row_artifact_candidates(data_path)
     if not candidates:
+        restore_result = _restore_false_quarantined_jobs_row_artifacts(data_path)
+        if restore_result.get("restored") or restore_result.get("failed"):
+            return {
+                "quarantined": [],
+                "failed": restore_result.get("failed", []),
+                "skipped": "restored_false_quarantined_runtime_artifacts",
+                "restored": restore_result.get("restored", []),
+                "restoreReportPath": restore_result.get("reportPath", ""),
+            }
         return {"quarantined": [], "failed": [], "skipped": "no_artifacts"}
     if has_successful_runtime_jobs_report(data_path):
         return {"quarantined": [], "failed": [], "skipped": "successful_runtime_report"}
+    if _runtime_feed_artifacts_include_updates_after_migration(data_path):
+        return {
+            "quarantined": [],
+            "failed": [],
+            "skipped": "runtime_artifacts_newer_than_migration",
+        }
 
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     backup_dir = data_path / "backups" / f"stripped-packaged-jobs-{timestamp}"

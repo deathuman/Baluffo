@@ -38,7 +38,7 @@ def run_http_server(
                 "admin_bridge_on_started_failed",
                 error=str(exc),
             )
-    server.timeout = 1.0
+    server.timeout = 0.25
     should_exit_for_owner_timeout = getattr(api, "should_exit_for_owner_timeout", None)
     try:
         while True:

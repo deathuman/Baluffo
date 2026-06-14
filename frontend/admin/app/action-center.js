@@ -4,6 +4,9 @@ const POLL_INTERVAL_MS = 30000;
 const INITIAL_FULL_POLL_DELAY_MS = 10000;
 const DISMISS_KEY_PREFIX = "baluffo_action_dismissed_";
 const MAX_ITEMS = 3;
+const CHECKING_SUMMARY = "Checking operational signals...";
+const PARTIAL_SUMMARY = "No immediate action from core signals. Storage check pending.";
+const UNAVAILABLE_SUMMARY = "Operational signals unavailable. Retry or copy diagnostics for details.";
 
 const SIGNAL_ORDER = [
   "storage_health",
@@ -34,6 +37,10 @@ function formatAge(hours) {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function hasPayload(value) {
+  return Boolean(value && typeof value === "object");
 }
 
 function isoMs(value) {
@@ -226,7 +233,6 @@ export function createActionCenterController({
   showToast,
   logAdminError
 }) {
-  let initialPollTimer = null;
   let pollTimer = null;
   let fullPollTimer = null;
   const pollCache = { health: null, sync: null, storage: null };
@@ -290,16 +296,57 @@ export function createActionCenterController({
     </div>`;
   }
 
-  function renderHealthyState() {
-    return `<div class="action-center-item action-center-item-ok">
+  function renderStatusState({
+    className,
+    state,
+    icon,
+    summary
+  }) {
+    return `<div class="action-center-item ${className}" data-state="${state}">
       <div class="action-center-item-body">
-        <span class="action-center-item-icon">\u2713</span>
-        <span class="action-center-item-summary">All systems operational</span>
+        <span class="action-center-item-icon">${icon}</span>
+        <span class="action-center-item-summary">${summary}</span>
       </div>
     </div>`;
   }
 
-  function renderSignals(signals) {
+  function renderCheckingState() {
+    return renderStatusState({
+      className: "action-center-item-neutral",
+      state: "checking",
+      icon: "i",
+      summary: CHECKING_SUMMARY
+    });
+  }
+
+  function renderPartialState() {
+    return renderStatusState({
+      className: "action-center-item-neutral",
+      state: "partial",
+      icon: "i",
+      summary: PARTIAL_SUMMARY
+    });
+  }
+
+  function renderUnavailableState() {
+    return renderStatusState({
+      className: "action-center-item-warning",
+      state: "unavailable",
+      icon: "\u26A0",
+      summary: UNAVAILABLE_SUMMARY
+    });
+  }
+
+  function renderHealthyState() {
+    return renderStatusState({
+      className: "action-center-item-ok",
+      state: "healthy",
+      icon: "\u2713",
+      summary: "All systems operational"
+    });
+  }
+
+  function renderSignals(signals, pollMeta = {}) {
     const itemsContainer = refs.actionCenterItemsEl;
     if (!itemsContainer) return;
 
@@ -312,7 +359,15 @@ export function createActionCenterController({
 
     let html = "";
     if (visible.length === 0) {
-      html = renderHealthyState();
+      if (pollMeta.allRequiredChecked) {
+        html = renderHealthyState();
+      } else if (pollMeta.coreChecked && pollMeta.storagePending) {
+        html = renderPartialState();
+      } else if (!pollMeta.anyChecked) {
+        html = renderUnavailableState();
+      } else {
+        html = renderUnavailableState();
+      }
     } else {
       for (const signal of visible) {
         html += renderItemHtml(signal);
@@ -410,13 +465,24 @@ export function createActionCenterController({
           ? getBridge("/ops/storage-health", { timeoutMs: 5000 }).catch(() => null)
           : Promise.resolve(pollCache.storage || null)
       ]);
+      const storagePayload = includeStorage ? storage : pollCache.storage || null;
       pollCache.health = health;
       pollCache.sync = sync;
-      pollCache.storage = storage;
-      const signals = evaluateAll(health, sync, storage);
-      renderSignals(signals);
+      pollCache.storage = storagePayload;
+      const healthChecked = hasPayload(health);
+      const syncChecked = hasPayload(sync);
+      const storageChecked = hasPayload(storagePayload);
+      const pollMeta = {
+        anyChecked: healthChecked || syncChecked || storageChecked,
+        coreChecked: healthChecked && syncChecked,
+        storagePending: !storageChecked && includeStorage === false,
+        allRequiredChecked: healthChecked && syncChecked && storageChecked
+      };
+      const signals = evaluateAll(health, sync, storagePayload);
+      renderSignals(signals, pollMeta);
     } catch (err) {
       if (logAdminError) logAdminError("action_center_poll", err);
+      renderSignals({}, { anyChecked: false });
     }
   }
 
@@ -443,24 +509,15 @@ export function createActionCenterController({
 
   function startPolling(options = {}) {
     stopPolling();
-    const initialDelayMs = Math.max(0, Number(options?.initialDelayMs) || 0);
+    const itemsEl = refs.actionCenterItemsEl;
+    if (itemsEl) itemsEl.innerHTML = renderCheckingState();
     const runInitialPoll = () => {
       pollActionCenter({ includeStorage: false }).then(() => {
-        const itemsEl = refs.actionCenterItemsEl;
         bindEvents(itemsEl);
       });
     };
-    if (initialDelayMs > 0) {
-      initialPollTimer = setTimeout(() => {
-        initialPollTimer = null;
-        runInitialPoll();
-      }, initialDelayMs);
-    } else {
-      runInitialPoll();
-    }
-    const fullPollDelayMs = initialDelayMs > 0
-      ? initialDelayMs + INITIAL_FULL_POLL_DELAY_MS
-      : INITIAL_FULL_POLL_DELAY_MS;
+    runInitialPoll();
+    const fullPollDelayMs = Math.max(0, Number(options?.fullPollDelayMs) || INITIAL_FULL_POLL_DELAY_MS);
     fullPollTimer = setTimeout(() => {
       pollActionCenter({ includeStorage: true }).catch(() => {});
       fullPollTimer = null;
@@ -471,10 +528,6 @@ export function createActionCenterController({
   }
 
   function stopPolling() {
-    if (initialPollTimer) {
-      clearTimeout(initialPollTimer);
-      initialPollTimer = null;
-    }
     if (fullPollTimer) {
       clearTimeout(fullPollTimer);
       fullPollTimer = null;

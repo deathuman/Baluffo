@@ -43,6 +43,8 @@ const OPS_HEAVY_ROUTE_BACKOFF_MAX_MS = 30000;
 const OPS_HEAVY_ROUTE_DASHBOARD = "dashboard-health";
 const OPS_HEAVY_ROUTE_REGISTRY_CONFLICTS = "registry-conflicts";
 const OPS_HEAVY_ROUTE_TAB_COUNTS = "ops-tab-counts";
+const ACTIVE_PIPELINE_OR_FETCH_TASK_TYPES = new Set(["pipeline", "fetch"]);
+const ACTIVE_ADMIN_TASK_TYPES = new Set(["pipeline", "fetch", "discovery", "sync"]);
 
 function maybeUnrefTimer(timer) {
   timer?.unref?.();
@@ -1800,12 +1802,28 @@ export function createOpsHealthController({
     return Date.now() < Number(state.opsDegradedActiveUntilMs || 0);
   }
 
-  function hasPossibleActiveRunEvidence({ includeRecent = true } = {}) {
+  function hasPossiblePipelineOrFetchEvidence({ includeRecent = true } = {}) {
     const busyState = state.adminBusyState || {};
     return Boolean(
       hasActivePipelineOrFetchRows(getCachedTaskStatePayload())
       || hasOptimisticRows()
       || hasPendingOpsAbortRequests()
+      || state.opsActivePipelineOrFetchLastActive
+      || state.fetcherLiveProgressState
+      || busyState.fetcherWatch
+      || busyState.livePipelineRunning
+      || busyState.liveFetchRunning
+      || (includeRecent && hasRecentOpsDegradedActive() && state.opsActivePipelineOrFetchLastActive)
+    );
+  }
+
+  function hasPossibleActiveRunEvidence({ includeRecent = true } = {}) {
+    const busyState = state.adminBusyState || {};
+    return Boolean(
+      hasActiveAdminWorkRows(getCachedTaskStatePayload())
+      || hasOptimisticRows()
+      || hasPendingOpsAbortRequests()
+      || state.opsActiveAdminWorkLastActive
       || state.opsActivePipelineOrFetchLastActive
       || state.fetcherLiveProgressState
       || state.discoveryLiveProgressState
@@ -1814,6 +1832,7 @@ export function createOpsHealthController({
       || busyState.livePipelineRunning
       || busyState.liveFetchRunning
       || busyState.liveDiscoveryRunning
+      || busyState.liveSyncRunning
       || (includeRecent && hasRecentOpsDegradedActive())
     );
   }
@@ -1821,7 +1840,10 @@ export function createOpsHealthController({
   function markOpsDegradedActive(reason = "control_plane_unavailable") {
     state.opsDegradedActiveUntilMs = Date.now() + OPS_DEGRADED_ACTIVE_TTL_MS;
     state.opsDegradedActiveReason = String(reason || "control_plane_unavailable");
-    state.opsActivePipelineOrFetchLastActive = true;
+    state.opsActiveAdminWorkLastActive = true;
+    if (hasPossiblePipelineOrFetchEvidence({ includeRecent: false })) {
+      state.opsActivePipelineOrFetchLastActive = true;
+    }
   }
 
   function clearOpsDegradedActive() {
@@ -1840,10 +1862,18 @@ export function createOpsHealthController({
   }
 
   function hasActivePipelineOrFetchRows(taskStatePayload = getCachedTaskStatePayload()) {
+    return hasActiveRowsForTypes(taskStatePayload, ACTIVE_PIPELINE_OR_FETCH_TASK_TYPES);
+  }
+
+  function hasActiveAdminWorkRows(taskStatePayload = getCachedTaskStatePayload()) {
+    return hasActiveRowsForTypes(taskStatePayload, ACTIVE_ADMIN_TASK_TYPES);
+  }
+
+  function hasActiveRowsForTypes(taskStatePayload, taskTypes) {
     const rows = Array.isArray(taskStatePayload?.tasks) ? taskStatePayload.tasks : [];
     return rows.some(row => {
       const type = getTaskRowType(row);
-      return row && row.active !== false && !row.finishedAt && (type === "pipeline" || type === "fetch");
+      return row && row.active !== false && !row.finishedAt && taskTypes.has(type);
     });
   }
 
@@ -1869,11 +1899,12 @@ export function createOpsHealthController({
     return { default: pending };
   }
 
-  function notifyActivePipelineIdleIfNeeded(wasActive, isActive) {
-    state.opsActivePipelineOrFetchLastActive = Boolean(isActive);
+  function notifyActiveAdminWorkIdleIfNeeded(wasActive, isActive, { wasPipelineOrFetchActive = false, pipelineOrFetchActive = false } = {}) {
+    state.opsActiveAdminWorkLastActive = Boolean(isActive);
+    state.opsActivePipelineOrFetchLastActive = Boolean(pipelineOrFetchActive);
     if (!wasActive || isActive || typeof onActivePipelineIdle !== "function") return;
     Promise.resolve(onActivePipelineIdle({
-      reason: "active_pipeline_idle",
+      reason: wasPipelineOrFetchActive ? "active_pipeline_idle" : "active_admin_work_idle",
       at: new Date().toISOString()
     })).catch(() => {});
   }
@@ -2100,13 +2131,16 @@ export function createOpsHealthController({
       renderActivityPanel: true,
       schedulePolling: false
     });
-    if (hasActivePipelineOrFetchRows(taskStatePayload)) {
-      state.opsActivePipelineOrFetchLastActive = true;
+    if (hasActiveAdminWorkRows(taskStatePayload)) {
+      state.opsActiveAdminWorkLastActive = true;
+      if (hasActivePipelineOrFetchRows(taskStatePayload)) {
+        state.opsActivePipelineOrFetchLastActive = true;
+      }
       loadActiveOpsSupplementalData(renderToken, {
         fromPoll: false
       }).finally(() => {
         if (renderToken === opsRenderToken && (
-          state.opsActivePipelineOrFetchLastActive || hasActivePipelineOrFetchRows()
+          state.opsActiveAdminWorkLastActive || hasActiveAdminWorkRows()
         )) {
           schedulePipelineStatusPolling(getOpsPollIntervalMs(true));
         }
@@ -2476,9 +2510,16 @@ export function createOpsHealthController({
   }
 
   async function loadActiveOpsSummaryData(renderToken = opsRenderToken, options = {}) {
-    const wasActive = Boolean(
+    const cachedTaskStatePayload = getCachedTaskStatePayload();
+    const wasPipelineOrFetchActive = Boolean(
       state.opsActivePipelineOrFetchLastActive
-      || hasActivePipelineOrFetchRows(getCachedTaskStatePayload())
+      || hasActivePipelineOrFetchRows(cachedTaskStatePayload)
+    );
+    const wasActive = Boolean(
+      state.opsActiveAdminWorkLastActive
+      || wasPipelineOrFetchActive
+      || hasActiveAdminWorkRows(cachedTaskStatePayload)
+      || state.adminBusyState?.liveSyncRunning
     );
     const pipelinePayload = await loadPipelineStatusFallbackData(renderToken, {
       ...options,
@@ -2494,7 +2535,8 @@ export function createOpsHealthController({
     if (renderToken !== opsRenderToken) return pipelinePayload || null;
     const taskStatePayload = supplemental?.taskStatePayload || getCachedTaskStatePayload();
     const taskStateLoaded = Boolean(supplemental?.taskStateLoaded);
-    const hasActiveTaskRows = hasActivePipelineOrFetchRows(taskStatePayload);
+    const hasActiveTaskRows = hasActiveAdminWorkRows(taskStatePayload);
+    const hasActivePipelineOrFetchTaskRows = hasActivePipelineOrFetchRows(taskStatePayload);
     const pipelineKnownIdle = Boolean(pipelinePayload && pipelinePayload.active === false && !pipelinePayload.degradedActive);
     const positiveIdle = Boolean(
       pipelineKnownIdle
@@ -2510,18 +2552,30 @@ export function createOpsHealthController({
         || (!pipelinePayload && hasPossibleActiveRunEvidence())
       )
     );
+    const pipelineOrFetchActive = Boolean(
+      pipelinePayload?.active
+      || hasActivePipelineOrFetchTaskRows
+      || (degradedActive && hasPossiblePipelineOrFetchEvidence())
+    );
     const isActive = Boolean(pipelinePayload?.active || hasActiveTaskRows || degradedActive);
     if (positiveIdle) {
       clearOpsDegradedActive();
       clearAllPendingOpsAborts();
+      state.opsActiveAdminWorkLastActive = false;
+      state.opsActivePipelineOrFetchLastActive = false;
     } else if (degradedActive) {
       markOpsDegradedActive("active_summary_unresolved");
     }
-    notifyActivePipelineIdleIfNeeded(wasActive, isActive);
+    notifyActiveAdminWorkIdleIfNeeded(wasActive, isActive, {
+      wasPipelineOrFetchActive,
+      pipelineOrFetchActive
+    });
     if (isActive) {
       schedulePipelineStatusPolling(getOpsPollIntervalMs(true));
     } else {
       clearOpsDegradedActive();
+      state.opsActiveAdminWorkLastActive = false;
+      state.opsActivePipelineOrFetchLastActive = false;
       stopPipelineStatusPolling();
       maybeUnrefTimer(setTimeout(() => {
         loadOpsHealthData({ summary: true }).catch(() => {});
@@ -2533,6 +2587,7 @@ export function createOpsHealthController({
         taskStatePayload,
         taskStateLoaded,
         hasActiveTaskRows,
+        hasActivePipelineOrFetchTaskRows,
         degradedActive,
         isActive,
         positiveIdle
@@ -2652,6 +2707,7 @@ export function createOpsHealthController({
       fromPoll: Boolean(options?.fromPoll)
     });
     if (pipelinePayload?.active) {
+      state.opsActiveAdminWorkLastActive = true;
       state.opsActivePipelineOrFetchLastActive = true;
       ensurePipelineScheduleLoaded({ silent: true }).catch(() => {});
       if (measureFirstRender) {
@@ -2668,7 +2724,7 @@ export function createOpsHealthController({
         fromPoll: Boolean(options?.fromPoll)
       }).finally(() => {
         if (renderToken === opsRenderToken && (
-          state.opsActivePipelineOrFetchLastActive || hasActivePipelineOrFetchRows()
+          state.opsActiveAdminWorkLastActive || hasActiveAdminWorkRows()
         )) {
           schedulePipelineStatusPolling(getOpsPollIntervalMs(true));
         }
