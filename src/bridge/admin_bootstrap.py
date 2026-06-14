@@ -114,6 +114,23 @@ def _recent_task_rows(api: BridgeApi, *, limit: int = 2) -> list[dict[str, Any]]
     return rows[: max(0, int(limit))]
 
 
+def _has_active_pipeline_work(rows: list[dict[str, Any]]) -> bool:
+    terminal_statuses = {"ok", "succeeded", "success", "failed", "error", "canceled", "cancelled"}
+    for row in rows:
+        task_type = _text(row.get("taskType") or row.get("type")).lower()
+        if task_type not in {"pipeline", "fetch", "discovery"}:
+            continue
+        if row.get("active") is False:
+            continue
+        if _text(row.get("finishedAt")):
+            continue
+        status = _text(row.get("status") or row.get("lifecycleStatus")).lower()
+        if status in terminal_statuses:
+            continue
+        return True
+    return False
+
+
 def _sync_summary(api: BridgeApi) -> dict[str, Any]:
     config = _as_dict(_best_effort({"ready": False, "enabled": False}, api.sync_config_status))
     runtime = _as_dict(_best_effort({}, api.load_sync_runtime_state))
@@ -230,6 +247,7 @@ def _registry_summary(api: BridgeApi) -> dict[str, Any]:
 def get_admin_bootstrap_payload(api: BridgeApi) -> dict[str, Any]:
     current = _current_task_rows(api)
     recent = _recent_task_rows(api, limit=2)
+    active_pipeline_work = _has_active_pipeline_work(current)
     session = _session_summary(api)
     runtime_config = getattr(api, "runtime_config", None)
     desktop_mode = bool(getattr(runtime_config, "desktop_mode", False))
@@ -254,6 +272,14 @@ def get_admin_bootstrap_payload(api: BridgeApi) -> dict[str, Any]:
             "recentCount": len(recent),
         },
         "schedule": _schedule_summary(api),
-        "registrySummary": _registry_summary(api),
+        "registrySummary": (
+            {
+                "summaryView": True,
+                "detailLevel": "deferred",
+                "deferredDuringActiveRun": True,
+            }
+            if active_pipeline_work
+            else _registry_summary(api)
+        ),
         "sync": _sync_summary(api),
     }

@@ -4,7 +4,7 @@ export {
   renderAdminOpsFetcherMetrics,
   renderAdminOpsKpis,
   renderAdminOpsSchedule
-} from "./ops-summary.js?v=16";
+} from "./ops-summary.js?v=17";
 export {
   renderAdminOpsHistory,
   renderAdminOpsTrends

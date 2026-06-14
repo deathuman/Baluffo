@@ -885,6 +885,21 @@ class TaskLaunchApi:
             },
         )
 
+    def _append_packaged_smoke_bootstrap_heartbeat_log(
+        self, *, run_id: str, heartbeat_at: str
+    ) -> None:
+        try:
+            self._paths.fetcher_log.parent.mkdir(parents=True, exist_ok=True)
+            with self._paths.fetcher_log.open("a", encoding="utf-8") as handle:
+                handle.write(f"[{heartbeat_at}] Packaged smoke bootstrap heartbeat for {run_id}\n")
+        except OSError as exc:
+            self._deps.bridge_log(
+                "warning",
+                "packaged_smoke_bootstrap_log_heartbeat_failed",
+                runId=run_id,
+                error=str(exc),
+            )
+
     def _write_packaged_smoke_bootstrap_terminal_staging(
         self,
         *,
@@ -969,6 +984,10 @@ class TaskLaunchApi:
                         heartbeat_at=self._deps.now_iso(),
                         save_json_atomic=save_json_atomic,
                         staging_dir=staging_dir,
+                    )
+                    self._append_packaged_smoke_bootstrap_heartbeat_log(
+                        run_id=run_id,
+                        heartbeat_at=self._deps.now_iso(),
                     )
             else:
                 time.sleep(delay_s)

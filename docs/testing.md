@@ -359,6 +359,14 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 - Use this lane for Admin startup, ops-summary payloads, desktop local-data overview, and packaged bridge availability changes.
 - For Umbrel page-load performance fixes, package/browser startup gates are supporting evidence only. Capture Chrome DevTools Performance traces for Admin cold/warm, Jobs cold/warm, and Jobs-to-Admin navigation before publishing; acceptance is based on Chrome-visible shell/useful-content timing, LCP element, request waterfall, long tasks, and absence of first-load full diagnostics.
 
+### Admin Active-Fetch In-App Browser Proof
+
+- Admin active-fetch recovery work must include a Codex in-app Browser visual proof before release closeout when the user-visible risk is false-empty panels, stale rows, log progress, or heavy-route timeout spam.
+- Start a local patched bridge-backed runtime with `BALUFFO_PACKAGED_SMOKE_RUNTIME=1`, `BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_MODE=controlled-heartbeat-success`, `BALUFFO_PACKAGED_SMOKE_ADMIN_BOOTSTRAP_FAIL_ONCE=1`, and an isolated `--data-dir`; use `src/dev_admin_supervisor.py --no-browser` on explicit free ports.
+- From the Codex Browser runtime, import `scripts/admin_active_fetch_browser_proof.mjs` and run `runAdminActiveFetchBrowserProof({ browser, baseUrl, bridgeBase, expectBootstrapFailOnce: true })`. The helper creates a fresh in-app Browser tab, seeds a local profile and schedule, starts a controlled bootstrap fetch, and writes screenshots plus DOM/console/resource evidence under `_out/admin-active-fetch-browser-proof/`.
+- The proof must show Stored Profiles, Pipeline schedule, Source Sync, source-table delayed placeholders, Current Runs, and fetch log/progress are Browser-visible without a reload, and it must not show repeated heavy-route timeout spam while active.
+- Live Umbrel Browser smoke only counts after `/ops/health.appVersion` matches the forward patch version; live `0.2.70` or older evidence is diagnostic only for this recovery.
+
 ## Desktop Updater Rehearsal Contract
 
 - `npm run test:frontend:packaged:update-rehearsal` is the packaged `N -> N+1` updater gate for the portable desktop runtime.

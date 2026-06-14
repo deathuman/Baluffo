@@ -89,7 +89,7 @@ function formatPipelineScheduleStatus(entry) {
   const interval = Number(entry?.intervalHours || 0);
   const next = formatDateTime(entry?.nextRunAt || "");
   const error = String(entry?.lastTriggerError || "").trim();
-  if (!entry || Object.keys(entry).length === 0) return "unknown";
+  if (!entry || Object.keys(entry).length === 0) return "loading";
   if (!entry.enabled) return "disabled";
   if (error) return `needs attention: ${error}`;
   if (entry.pending) return "pending; waiting for idle";

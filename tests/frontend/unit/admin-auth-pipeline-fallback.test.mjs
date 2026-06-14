@@ -54,6 +54,10 @@ test("admin bootstrap timeout keeps pipeline-status fallback and avoids global o
       calls.push("bootstrap");
       throw new Error("Bridge request timed out");
     },
+    loadCriticalBootstrapFallbacks: async ({ reason } = {}) => {
+      calls.push(`criticalFallback:${reason}`);
+    },
+    getErrorMessage: err => String(err?.message || err || "unknown"),
     loadDiscoveryConfig: async () => {},
     logAdminError() {},
     showToast() {}
@@ -64,6 +68,7 @@ test("admin bootstrap timeout keeps pipeline-status fallback and avoids global o
 
   assert.ok(calls.includes("pipelineStatus"));
   assert.ok(calls.includes("bootstrap"));
+  assert.ok(calls.includes("criticalFallback:Bridge request timed out"));
   assert.ok(calls.includes("bridge:degraded:Bridge Degraded"));
   assert.equal(calls.some(item => item.startsWith("bridge:offline:")), false);
   assert.equal(calls.some(item => item.startsWith("placeholder:Admin bootstrap unavailable")), false);

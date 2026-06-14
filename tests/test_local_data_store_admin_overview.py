@@ -51,6 +51,29 @@ def test_admin_overview_summary_uses_attachment_metadata_without_stat(monkeypatc
         assert overview["attachmentSizeBasis"] == "metadata"
 
 
+def test_admin_overview_includes_profile_shell_without_user_directory() -> None:
+    with workspace_tmpdir("local-data-store-admin-overview-profile-shell") as tmp:
+        store = LocalDataStore(LocalDataPaths.from_data_dir(Path(tmp) / "data"))
+        user = store.sign_in("Browser Proof User")
+
+        overview = store.get_admin_overview(detail="summary")
+
+        assert overview["totals"]["usersCount"] == 1
+        assert overview["users"] == [
+            {
+                "uid": user["uid"],
+                "name": "Browser Proof User",
+                "email": "",
+                "savedJobsCount": 0,
+                "notesBytes": 0,
+                "attachmentsCount": 0,
+                "attachmentsBytes": 0,
+                "totalBytes": 0,
+                "profileShell": True,
+            }
+        ]
+
+
 def test_admin_overview_full_prefers_filesystem_size_over_metadata() -> None:
     with _store_with_attachment() as (store, _uid):
         overview = store.get_admin_overview(detail="full")

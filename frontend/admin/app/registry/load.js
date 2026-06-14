@@ -1,5 +1,5 @@
 import { deriveDiscoveryLifecycleCounts, deriveDiscoveryQueuedCount } from "../../domain.js";
-import { renderDiscoveryCandidateReviewHtml } from "../../render.js?v=16";
+import { renderDiscoveryCandidateReviewHtml } from "../../render.js?v=20";
 
 const ADMIN_SHOW_ZERO_JOBS_KEY = "baluffo_admin_show_zero_jobs_sources";
 const CAP_DEFER_REASONS = new Set(["adapter_cap", "domain_cap", "top_n_cap"]);
@@ -707,6 +707,7 @@ export function createRegistryLoadController({
   return {
     loadDiscoveryData,
     syncSourceTablesAfterTaskCompletion,
-    refreshSourceTablesAfterActiveRunIdle
+    refreshSourceTablesAfterActiveRunIdle,
+    renderSourceTablesDelayed
   };
 }

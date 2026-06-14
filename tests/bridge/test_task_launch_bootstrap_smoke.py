@@ -126,9 +126,11 @@ def test_packaged_smoke_heartbeat_bootstrap_writes_running_heartbeats_and_termin
         assert any(row.get("taskProgress", {}).get("active") is True for row in saved_tasks)
         assert saved_tasks[-1]["taskProgress"]["active"] is False
         report = read_json(staging_dir / "jobs-fetch-report.json", {})
+        fetcher_log = (data_dir / "jobs-fetcher.log").read_text(encoding="utf-8")
         rows = read_json(staging_dir / "jobs-unified-light.json", [])
         startup_rows = read_json(staging_dir / "jobs-unified-startup.json", [])
         assert report["summary"]["smokeMode"] == "controlled-heartbeat-success"
         assert report["summary"]["coverageScope"] == BOOTSTRAP_COVERAGE_SCOPE
+        assert "Packaged smoke bootstrap heartbeat for jobs_bootstrap_abcdef1234" in fetcher_log
         assert rows[0]["title"] == "Packaged First-Run Technical Cinematic Animator"
         assert startup_rows == rows

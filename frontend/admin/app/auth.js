@@ -26,10 +26,12 @@ export function createAdminAuthController({
   loadPipelineStatusFallbackData,
   loadSyncStatus,
   loadAdminBootstrap,
+  loadCriticalBootstrapFallbacks,
   loadPostInteractiveDiagnostics,
   awaitLocalDataReady = async () => true,
   markAdminStep,
   measureAdminStep,
+  getErrorMessage = err => String(err?.message || err || "unknown error"),
   logAdminError,
   _showToast
 }) {
@@ -142,6 +144,9 @@ export function createAdminAuthController({
           return payload;
         } catch (err) {
           setBridgeStatusBadge("degraded", "Bridge Degraded");
+          if (typeof loadCriticalBootstrapFallbacks === "function") {
+            await loadCriticalBootstrapFallbacks({ reason: getErrorMessage(err) });
+          }
           throw err;
         }
       }

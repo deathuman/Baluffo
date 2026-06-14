@@ -1,7 +1,7 @@
-import { createRegistryLoadController } from "./registry/load.js?v=16";
+import { createRegistryLoadController } from "./registry/load.js?v=17";
 import { createRegistryMutationController } from "./registry/mutations.js";
 import { scheduleAdminRender } from "./registry/render-scheduler.js";
-import { createRegistryUi } from "./registry/ui.js?v=15";
+import { createRegistryUi } from "./registry/ui.js?v=16";
 
 export function createAdminRegistryController({
   state,
@@ -81,6 +81,7 @@ export function createAdminRegistryController({
     loadDiscoveryData: loadController.loadDiscoveryData,
     syncSourceTablesAfterTaskCompletion: loadController.syncSourceTablesAfterTaskCompletion,
     refreshSourceTablesAfterActiveRunIdle: loadController.refreshSourceTablesAfterActiveRunIdle,
+    renderSourceTablesDelayed: loadController.renderSourceTablesDelayed,
     addManualSource: mutationController.addManualSource,
     approveSelectedSources: mutationController.approveSelectedSources,
     rejectSelectedSources: mutationController.rejectSelectedSources,

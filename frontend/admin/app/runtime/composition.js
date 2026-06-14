@@ -15,16 +15,16 @@ import {
   renderTotalsHtml,
   renderUsersEmptyHtml,
   renderUsersTableHtml
-} from "../../render.js?v=19";
+} from "../../render.js?v=20";
 import { adminService } from "../../services.js";
-import { createAdminAuthController } from "../auth.js?v=5";
+import { createAdminAuthController } from "../auth.js?v=6";
 import { createAdminDiscoveryController } from "../discovery.js?v=1";
 import {
   createAdminFetcherController
 } from "../fetcher.js?v=13";
 import { createRestoreActiveRunWatches } from "../live-task.js";
-import { createAdminOpsController, formatBytes } from "../ops.js?v=21";
-import { createAdminRegistryController } from "../registry.js?v=16";
+import { createAdminOpsController, formatBytes } from "../ops.js?v=23";
+import { createAdminRegistryController } from "../registry.js?v=17";
 import { createAdminSyncController } from "../sync.js?v=13";
 import { createAdminOverviewController } from "./overview.js?v=14";
 import { createActionCenterController } from "../action-center.js";
@@ -226,6 +226,66 @@ export function composeAdminControllers({
     return null;
   }
 
+  function activeSummaryIndicatesAdminWork(activeSummary) {
+    if (activeSummary?.isActive || activeSummary?.pipelinePayload?.active) return true;
+    const tasks = Array.isArray(activeSummary?.taskStatePayload?.tasks)
+      ? activeSummary.taskStatePayload.tasks
+      : [];
+    return tasks.some(row => {
+      const taskType = String(row?.taskType || row?.type || "").trim().toLowerCase();
+      const status = String(row?.status || row?.lifecycleStatus || "").trim().toLowerCase();
+      return ["pipeline", "fetch", "discovery"].includes(taskType)
+        && row?.active !== false
+        && !String(row?.finishedAt || "").trim()
+        && !["ok", "success", "succeeded", "failed", "error", "canceled", "cancelled"].includes(status);
+    });
+  }
+
+  async function loadCriticalBootstrapFallbacks() {
+    const activeSummary = typeof opsController.loadActiveOpsSummaryData === "function"
+      ? await opsController.loadActiveOpsSummaryData({
+        fromPoll: false,
+        returnMeta: true,
+        silent: true
+      }).catch(() => null)
+      : null;
+    const activeAdminWork = activeSummaryIndicatesAdminWork(activeSummary);
+    if (activeAdminWork) {
+      registryController.renderSourceTablesDelayed({ onlyIfPlaceholder: false });
+    }
+    const tasks = [
+      overviewController.refreshOverview({
+        detail: "summary",
+        scheduleFullRefresh: false,
+        timeoutMs: 5000
+      }),
+      syncController.loadSyncStatus({
+        silent: true,
+        forceForm: true,
+        includeLive: false,
+        summary: true
+      }),
+      opsController.loadPipelineScheduleData({
+        silent: true,
+        force: true
+      }),
+      activeAdminWork
+        ? Promise.resolve({ skipped: true, reason: "active_admin_work" })
+        : registryController.loadDiscoveryData({
+          sourceTablesOnly: true,
+          logChanges: false
+        })
+    ];
+    const results = await Promise.allSettled(tasks);
+    results.forEach((result, index) => {
+      if (result.status === "rejected") {
+        const labels = ["Admin overview fallback", "Sync status fallback", "Pipeline schedule fallback", "Source table fallback"];
+        logAdminError(labels[index] || "Admin bootstrap fallback", result.reason);
+      }
+    });
+    return results;
+  }
+
   function scheduleBootstrapSourceTablesLoad() {
     if (bootstrapSourceTablesLoadScheduled) return;
     bootstrapSourceTablesLoadScheduled = true;
@@ -288,6 +348,7 @@ export function composeAdminControllers({
     loadOpsHealthData: (...args) => opsController.loadOpsHealthData(...args),
     loadSyncStatus: (...args) => syncController.loadSyncStatus(...args),
     loadAdminBootstrap,
+    loadCriticalBootstrapFallbacks,
     loadPostInteractiveDiagnostics,
     awaitLocalDataReady: awaitBridgeReady,
     logAdminError,

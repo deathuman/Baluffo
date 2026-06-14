@@ -8,7 +8,7 @@ import {
   renderAdminOpsSchedule,
   renderAdminOpsTrends,
   renderDiscoveryCandidateReviewHtml
-} from "../../render.js?v=18";
+} from "../../render.js?v=20";
 import {
   filterSourcePolicyReviewPairs,
   getMigrationLinkLinkedActions,
@@ -21,6 +21,7 @@ import { setTooltip } from "../../../shared/ui/index.js?v=6";
 const OPS_TASK_STATE_SUMMARY_PATH = "/ops/task-state?view=summary";
 const OPS_DASHBOARD_HEALTH_SUMMARY_PATH = "/ops/dashboard-health?view=summary";
 const JOBS_PIPELINE_STATUS_PATH = "/tasks/run-jobs-pipeline-status";
+const JOBS_PIPELINE_SCHEDULE_PATH = "/tasks/jobs-pipeline-schedule";
 const OPS_FETCH_KPIS_SUMMARY_PATH = "/ops/fetch-kpis?view=summary";
 const OPS_TAB_COUNTS_SUMMARY_PATH = "/admin/ops-tab-counts?view=summary";
 const OPS_HISTORY_STARTUP_PATH = "/ops/history?limit=2";
@@ -351,6 +352,7 @@ export function createOpsHealthController({
   let opsOverviewDetailLoadToken = 0;
   let dashboardHealthSummaryLoad = null;
   let fetchKpisLoad = null;
+  let pipelineScheduleLoad = null;
   let opsTabCountsLoad = null;
   let opsHistoryLoad = null;
   let opsHistoryLoadLimit = 0;
@@ -517,6 +519,41 @@ export function createOpsHealthController({
       });
     }
     return merged;
+  }
+
+  function normalizePipelineSchedulePayload(payload = {}) {
+    if (isPlainObject(payload?.schedule) && isPlainObject(payload.schedule.pipeline)) {
+      return payload.schedule;
+    }
+    if (isPlainObject(payload?.pipeline)) {
+      return { pipeline: { ...payload.pipeline } };
+    }
+    const saved = isPlainObject(payload?.savedConfig) ? payload.savedConfig : {};
+    const status = isPlainObject(payload?.status) ? payload.status : {};
+    if (!Object.keys(saved).length && !Object.keys(status).length) return {};
+    const enabled = Object.prototype.hasOwnProperty.call(saved, "enabled")
+      ? Boolean(saved.enabled)
+      : Boolean(status.enabled);
+    const intervalHours = Number(
+      Object.prototype.hasOwnProperty.call(saved, "intervalHours")
+        ? saved.intervalHours
+        : status.intervalHours
+    );
+    return {
+      pipeline: {
+        ...status,
+        enabled,
+        ...(Number.isFinite(intervalHours) && intervalHours > 0 ? { intervalHours } : {})
+      }
+    };
+  }
+
+  function hasKnownPipelineSchedule(schedule = state.latestOpsHealthCache?.schedule) {
+    return Boolean(
+      isPlainObject(schedule)
+      && isPlainObject(schedule.pipeline)
+      && Object.keys(schedule.pipeline).length > 0
+    );
   }
 
   function getOpsTabPanels() {
@@ -1920,7 +1957,14 @@ export function createOpsHealthController({
       String(health?.status || "healthy"),
       { fetchKpiPendingLabel, fetchKpiPendingLabels }
     );
-    renderAdminOpsScheduleImpl(refs.adminOpsScheduleEl, health?.schedule || {}, state.latestOpsHealthCache);
+    const scheduleForRender = hasKnownPipelineSchedule(health?.schedule)
+      ? health.schedule
+      : (
+          hasKnownPipelineSchedule(state.latestOpsHealthCache?.schedule)
+            ? state.latestOpsHealthCache.schedule
+            : (health?.schedule || {})
+        );
+    renderAdminOpsScheduleImpl(refs.adminOpsScheduleEl, scheduleForRender, state.latestOpsHealthCache);
     renderOpsTabBadges(refs, {
       health,
       discoveryReport: state.latestDiscoveryReportCache || {},
@@ -2072,6 +2116,61 @@ export function createOpsHealthController({
       loadOpsTabCountsSummaryData(renderToken, { silent: true }).catch(() => {});
     }
     return { taskStatePayload, historyPayload };
+  }
+
+  async function loadPipelineScheduleData(options = {}) {
+    if (!options?.force && hasKnownPipelineSchedule()) {
+      renderAdminOpsScheduleImpl(
+        refs.adminOpsScheduleEl,
+        state.latestOpsHealthCache?.schedule || {},
+        state.latestOpsHealthCache
+      );
+      return state.latestOpsHealthCache?.schedule || {};
+    }
+    if (pipelineScheduleLoad) return pipelineScheduleLoad;
+    pipelineScheduleLoad = measuredGetBridge(
+      JOBS_PIPELINE_SCHEDULE_PATH,
+      "admin_pipeline_schedule_fetch",
+      { enabled: !options?.silent }
+    )
+      .then(payload => {
+        const schedule = normalizePipelineSchedulePayload(payload);
+        if (hasKnownPipelineSchedule(schedule)) {
+          state.latestOpsHealthCache = mergeOpsHealth(
+            state.latestOpsHealthCache || {},
+            { schedule, summaryView: true },
+            { summary: true }
+          );
+        }
+        renderAdminOpsScheduleImpl(
+          refs.adminOpsScheduleEl,
+          hasKnownPipelineSchedule(state.latestOpsHealthCache?.schedule)
+            ? state.latestOpsHealthCache.schedule
+            : schedule,
+          state.latestOpsHealthCache
+        );
+        return hasKnownPipelineSchedule(state.latestOpsHealthCache?.schedule)
+          ? state.latestOpsHealthCache.schedule
+          : schedule;
+      })
+      .catch(err => {
+        if (!hasKnownPipelineSchedule()) {
+          renderAdminOpsScheduleImpl(refs.adminOpsScheduleEl, {}, state.latestOpsHealthCache);
+        }
+        if (!options?.silent) {
+          showToast(`Could not load pipeline schedule: ${getErrorMessage(err)}`, "error");
+        }
+        return null;
+      })
+      .finally(() => {
+        pipelineScheduleLoad = null;
+      });
+    return pipelineScheduleLoad;
+  }
+
+  function ensurePipelineScheduleLoaded(options = {}) {
+    if (hasKnownPipelineSchedule()) return Promise.resolve(state.latestOpsHealthCache?.schedule || {});
+    return loadPipelineScheduleData({ silent: true, ...options });
   }
 
   async function loadTaskStateSummaryData(renderToken, options = {}) {
@@ -2428,6 +2527,17 @@ export function createOpsHealthController({
         loadOpsHealthData({ summary: true }).catch(() => {});
       }, 0));
     }
+    if (options?.returnMeta) {
+      return {
+        pipelinePayload: pipelinePayload || null,
+        taskStatePayload,
+        taskStateLoaded,
+        hasActiveTaskRows,
+        degradedActive,
+        isActive,
+        positiveIdle
+      };
+    }
     return pipelinePayload || null;
   }
 
@@ -2543,6 +2653,7 @@ export function createOpsHealthController({
     });
     if (pipelinePayload?.active) {
       state.opsActivePipelineOrFetchLastActive = true;
+      ensurePipelineScheduleLoaded({ silent: true }).catch(() => {});
       if (measureFirstRender) {
         markStep("admin_ops_health_first_render_done", { ok: true, source: "pipeline-status" });
         measureStep(
@@ -2674,7 +2785,9 @@ export function createOpsHealthController({
     stopOpsHealthPolling,
     scheduleOpsHealthPolling,
     applyBootstrapPayload,
+    loadPipelineScheduleData,
     loadPipelineStatusFallbackData,
+    loadActiveOpsSummaryData: options => loadActiveOpsSummaryData(opsRenderToken, options || {}),
     loadOpsHealthData,
     loadOpsHistoryData,
     loadOpsOverviewDetailData,

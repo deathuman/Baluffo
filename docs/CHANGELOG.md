@@ -10,6 +10,9 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+### Fixed
+- Admin active-fetch fallback hydration now keeps Stored Profiles, Source Sync, Pipeline schedule, and source-table delayed placeholders populated when `/admin/bootstrap` is unavailable during active job updates, with a smoke-only fail-once gate and in-app Browser proof helper for visual regression checks.
+
 ## [0.2.70] - 2026-06-14
 
 ### Fixed

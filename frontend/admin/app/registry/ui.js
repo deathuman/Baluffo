@@ -1,4 +1,4 @@
-import { renderSourcesTableHtml } from "../../render.js?v=17";
+import { renderSourcesTableHtml } from "../../render.js?v=20";
 
 const SOURCE_TABLE_ROW_HEIGHT_PX = 52;
 const SOURCE_TABLE_VISIBLE_ROWS = 15;

@@ -12,6 +12,7 @@ import copy
 import io
 import json
 import logging
+import os
 import re
 import time
 import zipfile
@@ -57,6 +58,22 @@ from src.source_registry import is_hidden_from_default
 from src.source_registry_io import load_runtime_evidence_array
 from src.storage import SourceRuntimeStore
 from src.storage_metrics import duration_ms, record_storage_read, snapshot_storage_metrics
+
+_ADMIN_BOOTSTRAP_SMOKE_FAIL_ONCE_CONSUMED = False
+
+
+def _consume_admin_bootstrap_smoke_fail_once() -> bool:
+    if str(os.getenv("BALUFFO_PACKAGED_SMOKE_RUNTIME") or "").strip() != "1":
+        return False
+    requested = str(os.getenv("BALUFFO_PACKAGED_SMOKE_ADMIN_BOOTSTRAP_FAIL_ONCE") or "")
+    if requested.strip().lower() not in {"1", "true", "yes", "on"}:
+        return False
+    global _ADMIN_BOOTSTRAP_SMOKE_FAIL_ONCE_CONSUMED
+    if _ADMIN_BOOTSTRAP_SMOKE_FAIL_ONCE_CONSUMED:
+        return False
+    _ADMIN_BOOTSTRAP_SMOKE_FAIL_ONCE_CONSUMED = True
+    return True
+
 
 logger = logging.getLogger(__name__)
 
@@ -2194,6 +2211,16 @@ def handle_get(
 
     if path == "/admin/bootstrap":
         with time_operation("admin.bootstrap.route_payload"):
+            if _consume_admin_bootstrap_smoke_fail_once():
+                handler.send_json(
+                    {
+                        "ok": False,
+                        "error": "packaged smoke forced admin bootstrap timeout",
+                        "smokeFailure": True,
+                    },
+                    status=504,
+                )
+                return True
             handler.send_json(get_admin_bootstrap_payload(api))
         return True
 

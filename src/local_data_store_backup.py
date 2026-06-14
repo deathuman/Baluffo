@@ -470,10 +470,12 @@ def get_admin_overview(paths: LocalDataPaths, detail: str = "full") -> dict[str,
             return cached
         use_filesystem_size = detail == "full"
         users = []
+        seen_uids: set[str] = set()
         for user_dir in sorted(paths.users.iterdir()) if paths.users.exists() else []:
             if not user_dir.is_dir():
                 continue
             uid = user_dir.name
+            seen_uids.add(uid)
             profile = profile_for_uid(paths, uid) or {"name": uid, "email": ""}
             saved_jobs = load_saved_job_rows(paths, uid)
             attachments = load_attachment_rows(paths, uid)
@@ -498,6 +500,25 @@ def get_admin_overview(paths: LocalDataPaths, detail: str = "full") -> dict[str,
                     "attachmentsCount": len(attachments),
                     "attachmentsBytes": attachments_bytes,
                     "totalBytes": notes_bytes + attachments_bytes,
+                }
+            )
+        for profile in load_profiles(paths):
+            uid = str(profile.get("id") or "").strip()
+            name = str(profile.get("name") or "").strip()
+            if not uid or not name or uid in seen_uids:
+                continue
+            seen_uids.add(uid)
+            users.append(
+                {
+                    "uid": uid,
+                    "name": name,
+                    "email": str(profile.get("email") or ""),
+                    "savedJobsCount": 0,
+                    "notesBytes": 0,
+                    "attachmentsCount": 0,
+                    "attachmentsBytes": 0,
+                    "totalBytes": 0,
+                    "profileShell": True,
                 }
             )
         users.sort(key=lambda row: (-_as_int(row["totalBytes"]), str(row["name"])))
