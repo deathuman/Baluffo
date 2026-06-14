@@ -10,8 +10,14 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.71] - 2026-06-14
+
 ### Fixed
 - Admin active-fetch fallback hydration now keeps Stored Profiles, Source Sync, Pipeline schedule, and source-table delayed placeholders populated when `/admin/bootstrap` is unavailable during active job updates, with a smoke-only fail-once gate and in-app Browser proof helper for visual regression checks.
+
+### Notes
+- This is a forward container/Umbrel patch for Admin active-fetch false-empty recovery. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
 
 ## [0.2.70] - 2026-06-14
 
