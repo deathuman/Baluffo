@@ -23,7 +23,7 @@ charset-normalizer==3.4.7
     # via requests
 constantly==23.10.4
     # via twisted
-cryptography==46.0.7
+cryptography==48.0.1
     # via
     #   pyopenssl
     #   scrapy
@@ -123,7 +123,7 @@ pyinstaller==6.19.0
     # via -r requirements.txt
 pyinstaller-hooks-contrib==2026.4
     # via pyinstaller
-pyopenssl==26.0.0
+pyopenssl==26.2.0
     # via scrapy
 queuelib==1.9.0
     # via scrapy

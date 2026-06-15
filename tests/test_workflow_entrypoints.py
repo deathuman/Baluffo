@@ -31,8 +31,9 @@ def test_dev_pipeline_targeted_npm_entrypoint_starts_without_relative_import_fai
 
     combined = "\n".join(part for part in (completed.stdout, completed.stderr) if part)
     report_path = tmp_path / "jobs-fetch-report.json"
-    assert completed.returncode in (0, 2), combined
-    assert report_path.exists(), combined
+    assert completed.returncode == 2, combined
+    assert "No requested --only-sources entries matched available loaders" in combined
+    assert not report_path.exists(), combined
     assert "attempted relative import with no known parent package" not in combined
 
 

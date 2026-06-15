@@ -51,14 +51,16 @@ def test_pipeline_output_contract_preserves_camelcase_schema() -> None:
 
 
 @mock.patch("sys.argv", ["jobs_fetcher.py", "--only-sources", "missing-dummy-source", "--quiet"])
-def test_pipeline_executes_end_to_end_without_silent_failure() -> None:
+def test_pipeline_rejects_unknown_only_sources_without_silent_success() -> None:
     """
-    Guard test to ensure the jobs_fetcher CLI execution path doesn't break
-    or silently swallow arguments.
+    Guard test to ensure unknown targeted selectors fail clearly instead of
+    silently running an empty fetch.
     """
     fake_report = {
         "summary": {"outputCount": 1, "failedSources": 0},
         "outputs": {"report": "unit-test-report.json"},
     }
-    with mock.patch("src.jobs.pipeline.run_pipeline", return_value=fake_report):
-        assert jobs_fetcher.main() == 0
+    with mock.patch("src.jobs.pipeline.run_pipeline", return_value=fake_report) as run_pipeline:
+        assert jobs_fetcher.main() == 2
+
+    run_pipeline.assert_not_called()
