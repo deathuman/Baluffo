@@ -38,6 +38,23 @@ DYNAMIC_REDUNDANT_PROVIDER_REASON = "dynamic_redundant_provider"
 _STATIC_SOURCE_PREFIX = "static_source::"
 
 
+def _positive_int(*values: Any) -> int:
+    for value in values:
+        try:
+            coerced = int(value or 0)
+        except (TypeError, ValueError):
+            continue
+        if coerced > 0:
+            return coerced
+    return 0
+
+
+def _source_state_proves_feed_output(entry: dict[str, Any] | None) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    return _positive_int(entry.get("lastKeptCount"), entry.get("lastJobsFound")) > 0
+
+
 def build_excluded_source_report(
     source_name: str,
     reason: str,
@@ -271,11 +288,16 @@ def apply_incremental_cache_exclusions(
     get_incremental_cache_decision: Callable[..., dict[str, str]],
     build_excluded_source_report: Callable[[str, str], dict[str, Any]],
     source_report_meta: dict[str, dict[str, Any]],
+    published_source_names: set[str] | None = None,
 ) -> tuple[list[tuple[str, SourceLoader]], list[dict[str, Any]]]:
     if force_refresh_all or not incremental_cache_enabled:
         return selected_loaders, []
     skipped_rows: list[dict[str, Any]] = []
     filtered_loaders: list[tuple[str, SourceLoader]] = []
+    published_names = {
+        clean_text(name) for name in (published_source_names or set()) if clean_text(name)
+    }
+    require_published_feed_evidence = published_source_names is not None
     for name, loader in selected_loaders:
         adapter = clean_text(source_report_meta.get(name, {}).get("adapter"))
         if (
@@ -293,6 +315,13 @@ def apply_incremental_cache_exclusions(
         cache_decision = clean_text(decision.get("cacheDecision")) or "run_now"
         cache_reason = clean_text(decision.get("cacheDecisionReason")) or "run_now"
         if cache_decision in {"skip_fresh", "cooldown_skip"}:
+            if (
+                require_published_feed_evidence
+                and clean_text(name) not in published_names
+                and _source_state_proves_feed_output(source_state_rows.get(name))
+            ):
+                filtered_loaders.append((name, loader))
+                continue
             row = build_excluded_source_report(name, f"cache_{cache_reason}")
             row["cacheDecision"] = cache_decision
             row["cacheDecisionReason"] = cache_reason

@@ -42,6 +42,13 @@ class RunFetcherRequest(TypedDict, total=False):
     onlySources: list[str]
 
 
+class OnlySourcesValidationError(ValueError):
+    def __init__(self, requested: list[str]) -> None:
+        self.requested = list(requested)
+        joined = ", ".join(self.requested) if self.requested else "<empty>"
+        super().__init__(f"No requested onlySources matched available loaders: {joined}")
+
+
 # ── small pure helpers ──────────────────────────────────────────────
 
 
@@ -55,6 +62,11 @@ def _set_cli_option(args: list[str], option: str, value: str) -> None:
         args[index + 1] = value
     else:
         args.append(value)
+
+
+def _remove_cli_flag(args: list[str], option: str) -> None:
+    while option in args:
+        args.pop(args.index(option))
 
 
 def _apply_fetcher_shared_runtime_args(
@@ -229,7 +241,18 @@ def build_fetcher_args_from_payload(
     if isinstance(only_sources, list):
         sanitized = [str(item).strip() for item in only_sources if str(item).strip()]
         if sanitized:
-            args.extend(["--only-sources", ",".join(sanitized)])
+            available_names = {name for name, _loader in default_source_loaders()}
+            matched = [name for name in sanitized if name in available_names]
+            if not matched:
+                raise OnlySourcesValidationError(sanitized)
+            _remove_cli_flag(args, "--skip-successful-sources")
+            _remove_cli_flag(args, "--respect-source-cadence")
+            if "--force-refresh-all" not in args:
+                args.append("--force-refresh-all")
+            if "--ignore-circuit-breaker" not in args:
+                args.append("--ignore-circuit-breaker")
+            _set_cli_option(args, "--source-ttl-minutes", "0")
+            args.extend(["--only-sources", ",".join(matched)])
     return args, preset
 
 
@@ -248,6 +271,7 @@ def build_fetcher_extra_env_from_preset(preset: str) -> dict[str, str]:
 
 
 __all__ = [
+    "OnlySourcesValidationError",
     "RunFetcherRequest",
     "build_fetcher_args_from_payload",
     "build_fetcher_extra_env_from_preset",

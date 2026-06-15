@@ -158,6 +158,25 @@ def _existing_output_has_rows(json_path: Path) -> bool:
     return False
 
 
+def _published_source_names_from_rows(rows: list[CanonicalJob]) -> set[str]:
+    names: set[str] = set()
+    for row in rows:
+        payload = row.to_dict()
+        source_name = clean_text(payload.get("source"))
+        if source_name:
+            names.add(source_name)
+        source_bundle = payload.get("sourceBundle")
+        if not isinstance(source_bundle, list):
+            continue
+        for item in source_bundle:
+            if not isinstance(item, dict):
+                continue
+            bundled_source = clean_text(item.get("source"))
+            if bundled_source:
+                names.add(bundled_source)
+    return names
+
+
 def _include_linked_static_validation_loaders(
     selected_loaders: list[tuple[str, SourceLoader]],
     *,
@@ -276,6 +295,7 @@ def prepare_pipeline_run(
             clean_text=clean_text,
         )
         canonical_rows.extend(CanonicalJob.from_mapping(row) for row in seeded_rows)
+    published_source_names = _published_source_names_from_rows(canonical_rows)
 
     effective_social_config_path = (
         Path(social_config_path)
@@ -390,6 +410,7 @@ def prepare_pipeline_run(
             source_report_meta=SOURCE_REPORT_META,
         ),
         source_report_meta=SOURCE_REPORT_META,
+        published_source_names=published_source_names if incremental_cache_enabled else None,
     )
     if incremental_skipped:
         source_reports.extend(incremental_skipped)

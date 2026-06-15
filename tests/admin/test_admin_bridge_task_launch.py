@@ -256,6 +256,32 @@ def test_container_uncapped_fetcher_remains_intentionally_aggressive(
     assert args[args.index("--static-detail-concurrency") + 1] == "10"
 
 
+def test_only_sources_payload_bypasses_incremental_cadence_and_circuit_breaker() -> None:
+    qloc_source = "static_source::static:listing_url:https://qloc.elevato.net/en/"
+    with mock.patch.object(
+        admin_bridge,
+        "default_source_loaders",
+        return_value=[(qloc_source, lambda **_: []), ("other_source", lambda **_: [])],
+    ):
+        args, preset = admin_bridge.build_fetcher_args_from_payload(
+            {
+                "preset": "force_full",
+                "onlySources": [qloc_source],
+                "skipSuccessfulSources": True,
+                "respectSourceCadence": True,
+                "ignoreCircuitBreaker": False,
+            }
+        )
+
+    assert preset == "force_full"
+    assert args[args.index("--only-sources") + 1] == qloc_source
+    assert "--force-refresh-all" in args
+    assert "--ignore-circuit-breaker" in args
+    assert "--skip-successful-sources" not in args
+    assert "--respect-source-cadence" not in args
+    assert args[args.index("--source-ttl-minutes") + 1] == "0"
+
+
 @dataclass(frozen=True)
 class _BackgroundScriptCommandCase:
     name: str
@@ -478,6 +504,27 @@ def test_start_fetcher_task_spawn_failure_writes_terminal_error_report():
     assert str(matching[0].get("lifecycleStatus") or "") == "failed"
     assert str((matching[0].get("summary") or {}).get("error") or "") == "spawn denied"
     assert admin_bridge.load_run_history() == []
+
+
+def test_start_fetcher_task_rejects_unknown_only_sources_without_live_runtime():
+    with (
+        mock.patch.object(
+            admin_bridge,
+            "default_source_loaders",
+            return_value=[("google_sheets", lambda **_: [])],
+        ),
+        mock.patch.object(admin_bridge, "run_background_script") as spawn,
+    ):
+        result = admin_bridge.start_fetcher_task(
+            {"onlySources": ["static_source::static:listing_url:https://qloc.elevato.net/en/"]}
+        )
+
+    assert result["started"] is False
+    assert str(result.get("status") or "") == "error"
+    assert "No requested onlySources matched available loaders" in str(result.get("error") or "")
+    spawn.assert_not_called()
+    assert admin_bridge.get_lifecycle_current_runs() == []
+    assert not admin_bridge.JOBS_FETCH_REPORT_PATH.exists()
 
 
 def test_start_fetcher_task_sets_uncapped_static_budget_env():

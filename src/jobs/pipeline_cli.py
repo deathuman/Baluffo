@@ -24,6 +24,10 @@ DEFAULT_SOCIAL_LOOKBACK_MINUTES = common_config.DEFAULT_SOCIAL_LOOKBACK_MINUTES
 load_social_config = common_social.load_social_config
 
 
+class OnlySourcesSelectionError(ValueError):
+    pass
+
+
 def _default_loaders_for_args(
     args: argparse.Namespace,
     social_config: dict[str, Any],
@@ -59,6 +63,10 @@ def _only_sources_selection(
             )
         )
     missing = [name for name in only_sources if name not in {item[0] for item in source_loaders}]
+    if not source_loaders:
+        raise OnlySourcesSelectionError(
+            f"No requested --only-sources entries matched available loaders: {', '.join(only_sources)}"
+        )
     if missing:
         print(
             f"[jobs_fetcher] WARN unknown --only-sources entries: {', '.join(missing)}",
@@ -176,7 +184,7 @@ def _run_pipeline_from_args(
         ),
         show_progress=not args.quiet,
         selection_exclusions=selection_exclusions,
-        force_refresh_all=bool(args.force_refresh_all),
+        force_refresh_all=bool(args.force_refresh_all or forced_only_sources),
         include_linked_static_validation=bool(
             getattr(args, "include_linked_static_validation", False)
         ),
@@ -227,9 +235,13 @@ def run_cli(
         lookback_minutes=int(args.social_lookback_minutes or DEFAULT_SOCIAL_LOOKBACK_MINUTES),
     )
     default_loaders = _default_loaders_for_args(args, social_config, default_source_loaders)
-    source_loaders, seed_from_existing_output, selection_exclusions, forced_only_sources = (
-        _only_sources_selection(args, default_loaders)
-    )
+    try:
+        source_loaders, seed_from_existing_output, selection_exclusions, forced_only_sources = (
+            _only_sources_selection(args, default_loaders)
+        )
+    except OnlySourcesSelectionError as exc:
+        print(f"[jobs_fetcher] ERROR {exc}", flush=True)
+        return 2
     skipped_loaders, skipped_seed = _apply_skip_successful_selection(
         args=args,
         source_loaders=source_loaders,

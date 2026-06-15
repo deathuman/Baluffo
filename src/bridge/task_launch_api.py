@@ -54,6 +54,7 @@ from src.bridge.task_launch_fetch_lifecycle import (
     write_fetch_launch_failure as _write_fetch_launch_failure_fn,
 )
 from src.bridge.task_launch_fetcher_args import (
+    OnlySourcesValidationError,
     RunFetcherRequest,
 )
 from src.bridge.task_launch_fetcher_args import (
@@ -2284,9 +2285,28 @@ class TaskLaunchApi:
 
             run_id = f"fetch_{uuid.uuid4().hex[:10]}"
             started_at = self._deps.now_iso()
-            fetcher_args, preset = self.build_fetcher_args_from_payload(
-                payload if isinstance(payload, dict) else {}
-            )
+            try:
+                fetcher_args, preset = self.build_fetcher_args_from_payload(
+                    payload if isinstance(payload, dict) else {}
+                )
+            except OnlySourcesValidationError as exc:
+                self._deps.bridge_log(
+                    "warn",
+                    "fetch_launch_rejected",
+                    runId=run_id,
+                    task="jobs_fetcher",
+                    reason="only_sources_no_match",
+                    error=str(exc),
+                )
+                return {
+                    "started": False,
+                    "task": "jobs_fetcher",
+                    "taskType": "fetch",
+                    "runId": run_id,
+                    "startedAt": started_at,
+                    "status": "error",
+                    "error": str(exc),
+                }
             extra_env = self.build_fetcher_extra_env_from_preset(preset)
             self._paths.fetcher_log.parent.mkdir(parents=True, exist_ok=True)
             self._paths.fetcher_log.write_text(

@@ -6,6 +6,7 @@ import hashlib
 import re
 from collections.abc import Sequence
 from typing import Any
+from urllib.parse import urlparse
 
 from src.jobs.adapters.parsers.location import normalize_location_details
 from src.jobs.canonicalize import (
@@ -251,6 +252,74 @@ def _is_google_sheets_row(job: CanonicalJob | dict[str, Any]) -> bool:
     return clean_text(payload.get("source")).startswith("google_sheets")
 
 
+def _url_host(value: Any) -> str:
+    try:
+        return (urlparse(clean_text(value)).hostname or "").lower()
+    except ValueError:
+        return ""
+
+
+def _is_elevato_url(value: Any) -> bool:
+    host = _url_host(value)
+    return host == "elevato.net" or host.endswith(".elevato.net")
+
+
+def _is_elevato_static_row(job: CanonicalJob | dict[str, Any]) -> bool:
+    payload = job.to_dict() if isinstance(job, CanonicalJob) else dict(job)
+    source = clean_text(payload.get("source"))
+    adapter = norm_text(payload.get("adapter"))
+    return (
+        adapter == "static" or source.startswith(("static_source::", "static:listing_url:"))
+    ) and _is_elevato_url(payload.get("jobLink"))
+
+
+def _is_google_sheets_elevato_row(job: CanonicalJob | dict[str, Any]) -> bool:
+    payload = job.to_dict() if isinstance(job, CanonicalJob) else dict(job)
+    return _is_google_sheets_row(payload) and _is_elevato_url(payload.get("jobLink"))
+
+
+def _elevato_company_identity(job: CanonicalJob | dict[str, Any]) -> str:
+    payload = job.to_dict() if isinstance(job, CanonicalJob) else dict(job)
+    company = _normalize_company_identity(payload.get("company"))
+    for suffix in (" careers", " career", " jobs"):
+        if company.endswith(suffix):
+            company = company[: -len(suffix)].strip()
+            break
+    return company
+
+
+def _elevato_rows_have_compatible_locations(
+    left: CanonicalJob | dict[str, Any], right: CanonicalJob | dict[str, Any]
+) -> bool:
+    left_payload = left.to_dict() if isinstance(left, CanonicalJob) else dict(left)
+    right_payload = right.to_dict() if isinstance(right, CanonicalJob) else dict(right)
+    for field in ("city", "country"):
+        left_value = norm_text(left_payload.get(field))
+        right_value = norm_text(right_payload.get(field))
+        if left_value and right_value and left_value != right_value:
+            return False
+    return True
+
+
+def _is_elevato_static_google_sheets_pair(
+    left: CanonicalJob | dict[str, Any], right: CanonicalJob | dict[str, Any]
+) -> bool:
+    left_payload = left.to_dict() if isinstance(left, CanonicalJob) else dict(left)
+    right_payload = right.to_dict() if isinstance(right, CanonicalJob) else dict(right)
+    if not (
+        (_is_elevato_static_row(left_payload) and _is_google_sheets_elevato_row(right_payload))
+        or (_is_elevato_static_row(right_payload) and _is_google_sheets_elevato_row(left_payload))
+    ):
+        return False
+    if _normalize_title_identity(left_payload.get("title")) != _normalize_title_identity(
+        right_payload.get("title")
+    ):
+        return False
+    if _elevato_company_identity(left_payload) != _elevato_company_identity(right_payload):
+        return False
+    return _elevato_rows_have_compatible_locations(left_payload, right_payload)
+
+
 def _has_google_sheets_generic_role_title(job: CanonicalJob | dict[str, Any]) -> bool:
     payload = job.to_dict() if isinstance(job, CanonicalJob) else dict(job)
     title = norm_text(payload.get("title"))
@@ -360,6 +429,10 @@ def _company_display_quality(value: Any) -> int:
 def choose_base_record(
     left: CanonicalJob, right: CanonicalJob
 ) -> tuple[CanonicalJob, CanonicalJob]:
+    if _is_elevato_static_google_sheets_pair(left, right):
+        if _is_elevato_static_row(right):
+            return right, left
+        return left, right
     left_rich = record_richness(left)
     right_rich = record_richness(right)
     if right_rich > left_rich:
@@ -532,8 +605,31 @@ def _source_bundle_count_from_row(row: dict[str, Any], bundle: list[dict[str, An
     return max(0, count, len(bundle))
 
 
-def _source_bundle_working_sample(bundle: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [dict(item) for item in bundle[: max(0, int(_SOURCE_BUNDLE_OUTPUT_SAMPLE_LIMIT))]]
+def _should_hide_stale_elevato_bundle_item(
+    *, primary: dict[str, Any], item: dict[str, Any]
+) -> bool:
+    return (
+        _is_elevato_static_row(primary)
+        and clean_text(item.get("source")).startswith("google_sheets")
+        and _is_elevato_url(item.get("jobLink"))
+    )
+
+
+def _source_bundle_working_sample(
+    bundle: list[dict[str, Any]], *, primary: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
+    limit = max(0, int(_SOURCE_BUNDLE_OUTPUT_SAMPLE_LIMIT))
+    filtered: list[dict[str, Any]] = []
+    primary_payload = primary or {}
+    for item in bundle:
+        if primary_payload and _should_hide_stale_elevato_bundle_item(
+            primary=primary_payload, item=item
+        ):
+            continue
+        filtered.append(dict(item))
+        if len(filtered) >= limit:
+            break
+    return filtered
 
 
 def _source_bundle_state_from_payload(
@@ -828,6 +924,17 @@ def _blocks_trusted_distinct_non_primary_merge(
     return bool(current_primary and target_primary and current_primary != target_primary)
 
 
+def _find_elevato_static_google_sheets_target(
+    current: CanonicalJob, merged_rows: list[CanonicalJob]
+) -> int | None:
+    if not (_is_elevato_static_row(current) or _is_google_sheets_elevato_row(current)):
+        return None
+    for idx, target in enumerate(merged_rows):
+        if _is_elevato_static_google_sheets_pair(current, target):
+            return idx
+    return None
+
+
 def _social_key(payload: dict[str, Any]) -> str:
     if clean_text(payload.get("source")) in SOCIAL_SOURCE_NAMES and clean_text(
         payload.get("sourceJobId")
@@ -897,6 +1004,9 @@ def _find_merge_target(
     )
     if sparse_blocked or sparse_target_idx is not None:
         return sparse_target_idx, sparse_reason
+    elevato_target_idx = _find_elevato_static_google_sheets_target(current, merged_rows)
+    if elevato_target_idx is not None:
+        return elevato_target_idx, "sparse_identity"
     alias_target_idx = _find_smartrecruiters_title_location_alias_target(
         current=current,
         merged_rows=merged_rows,
@@ -1114,7 +1224,7 @@ def _append_new_dedup_row(
     location_entries, placeholder_location_entries, location_keys = _location_state_from_payload(
         item
     )
-    item["sourceBundle"] = _source_bundle_working_sample(source_bundle)
+    item["sourceBundle"] = _source_bundle_working_sample(source_bundle, primary=item)
     item["sourceBundleCount"] = source_bundle_count
     _apply_location_state_sample(
         merged=item,
@@ -1416,7 +1526,7 @@ def _attach_source_bundle_state(
         payload = row.to_dict()
         if idx < len(source_bundles_by_idx):
             source_bundle = source_bundles_by_idx[idx]
-            payload["sourceBundle"] = _source_bundle_working_sample(source_bundle)
+            payload["sourceBundle"] = _source_bundle_working_sample(source_bundle, primary=payload)
             payload["sourceBundleCount"] = max(
                 int(row.sourceBundleCount or 0),
                 source_bundle_counts_by_idx[idx],

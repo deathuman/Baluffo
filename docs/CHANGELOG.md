@@ -10,6 +10,11 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+### Fixed
+- Jobs updates now distinguish source-check freshness from feed-producing freshness, so active static sources such as QLOC are not skipped unless their exact source identity is already represented in the published feed.
+- Explicit fetch `onlySources` requests now fail fast when no selector matches and otherwise bypass incremental freshness, cadence, and circuit-breaker skips for the selected source.
+- Elevato static rows now win over stale Google Sheets Elevato detail rows for the same opening, keeping the live QLOC Technical Artist `j,240` link as the public primary job and hiding the expired `j,229` detail link from the public bundle sample.
+
 ## [0.2.74] - 2026-06-15
 
 ### Fixed
