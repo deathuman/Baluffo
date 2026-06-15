@@ -239,14 +239,18 @@ test("admin live-task restore helper restarts active fetch and discovery watches
         finishedAt: ""
       };
     },
-    loadLatestFetcherReport: async options => {
-      calls.push(`loadLatestFetcherReport:${String(Boolean(options?.silent))}`);
+    loadLatestFetcherSummary: async options => {
+      calls.push(`loadLatestFetcherSummary:${String(Boolean(options?.silent))}`);
       return {
         runId: "fetch_restore_2",
         startedAt: "2026-03-29T11:49:22+02:00",
         finishedAt: "",
         taskProgress: { active: true, phaseKey: "executing_sources", phaseLabel: "Executing sources" }
       };
+    },
+    loadLatestFetcherReport: async options => {
+      calls.push(`loadLatestFetcherReport:${String(Boolean(options?.silent))}`);
+      throw new Error("full fetch report should not hydrate active live restore");
     },
     fetcherController: {
       attachToActiveFetchRun(runMeta, options) {
@@ -284,7 +288,8 @@ test("admin live-task restore helper restarts active fetch and discovery watches
     calls.filter(line => line === "attachToActiveDiscoveryRun:discovery_restore_2:false").length,
     1
   );
-  assert.ok(calls.includes("loadLatestFetcherReport:true"));
+  assert.ok(calls.includes("loadLatestFetcherSummary:true"));
+  assert.equal(calls.includes("loadLatestFetcherReport:true"), false);
 });
 
 test("admin live-task restore helper reattaches fetch watch from an active cold-load report", async () => {
@@ -324,9 +329,22 @@ test("admin live-task restore helper silently hydrates fetch progress on first b
   let controller;
   try {
     const fixture = createFetcherControllerFixture();
+    const activeFetchProgressPayload = {
+      runId: "fetch_boot_restore_1",
+      startedAt: "2026-03-08T10:00:00.000Z", finishedAt: "",
+      taskProgress: {
+        active: true,
+        phaseKey: "executing_sources", phaseLabel: "Executing sources", mode: "determinate", ratio: 0.5,
+        counts: { resolvedSources: 6, sourceCount: 12, runningTasks: 6, queuedTasks: 0, outputCount: 18, failedSources: 1, excludedSources: 0 }
+      },
+      summary: { outputCount: 18, failedSources: 1, excludedSources: 0, sourceCount: 12 }
+    };
     fixture.options.getBridge = async path => {
       if (String(path).startsWith("/fetcher/log?offset=") || String(path).startsWith("/fetcher/log?view=tail")) {
         return { text: "", nextOffset: 0 };
+      }
+      if (path === "/ops/fetch-report?view=summary") {
+        return activeFetchProgressPayload;
       }
       if (path === "/ops/task-live/fetch?view=summary") {
         return {
@@ -339,26 +357,7 @@ test("admin live-task restore helper silently hydrates fetch progress on first b
       return {};
     };
     fixture.options.fetchJobsFetchReportJson = async () => ({
-      runId: "fetch_boot_restore_1",
-      startedAt: "2026-03-08T10:00:00.000Z",
-      finishedAt: "",
-      taskProgress: {
-        active: true,
-        phaseKey: "executing_sources",
-        phaseLabel: "Executing sources",
-        mode: "determinate",
-        ratio: 0.5,
-        counts: {
-          resolvedSources: 6,
-          sourceCount: 12,
-          runningTasks: 6,
-          queuedTasks: 0,
-          outputCount: 18,
-          failedSources: 1,
-          excludedSources: 0
-        }
-      },
-      summary: { outputCount: 18, failedSources: 1, excludedSources: 0, sourceCount: 12 },
+      ...activeFetchProgressPayload,
       sources: [{ name: "Studio A", status: "running" }]
     });
     fixture.options.loadOpsHealthData = async () => {};
@@ -366,6 +365,7 @@ test("admin live-task restore helper silently hydrates fetch progress on first b
 
     const restoreActiveRunWatches = createRestoreActiveRunWatches({
       loadFetcherLivePayload: (...args) => controller.loadFetcherLivePayload(...args),
+      loadLatestFetcherSummary: options => controller.loadLatestFetcherSummary(options),
       loadLatestFetcherReport: options => controller.loadLatestFetcherReport(options),
       fetcherController: controller,
       loadDiscoveryLivePayload: async () => null,

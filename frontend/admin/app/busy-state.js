@@ -1,3 +1,5 @@
+import { deriveAdminActiveWorkContext } from "./active-work-policy.js";
+
 function isAdminBusy(busyState, keys) {
   return keys.some(key => Boolean(busyState?.[key]));
 }
@@ -86,6 +88,8 @@ export function syncAdminBusyUi({
   const pipelineBusy = viewState.pipelineBusy;
   const lockBusy = viewState.pipelineBusy;
   const discoveryLoadBusy = Boolean(busyState.discoveryLoad);
+  const activeWorkContext = deriveAdminActiveWorkContext({ busyState });
+  const registryActionsBusy = !activeWorkContext.sourceMutationsAllowed;
 
   setButtonBusy(refs.adminRunFetcherBtnEl, fetcherBusy || lockBusy, fetcherPresetMeta.default.busyLabel);
   setButtonBusy(refs.adminRunFetcherIncrementalBtnEl, fetcherBusy || lockBusy, fetcherPresetMeta.incremental.busyLabel);
@@ -106,21 +110,21 @@ export function syncAdminBusyUi({
   setButtonBusy(refs.adminRunDiscoveryBtnEl, discoveryBusy || lockBusy, "Discovery Running...", "Run Discovery");
   setButtonBusy(refs.adminRunDiscoveryUncappedBtnEl, discoveryBusy || lockBusy, "Uncapped Discovery Running...", "Run Uncapped Discovery");
   setButtonBusy(refs.adminLoadDiscoveryBtnEl, discoveryBusy || discoveryLoadBusy || lockBusy, "Loading Discovery...", "Load Discovery");
-  const registryBusy = discoveryBusy || lockBusy;
+  const registryBusy = registryActionsBusy;
   setPreviewBulkBusyMessage(refs.adminBulkBusyMessageEl, registryBusy);
   setButtonBusy(refs.adminApproveSourcesBtnEl, registryBusy, "", "Approve Sources");
   setButtonBusy(refs.adminRejectSourcesBtnEl, registryBusy, "", "Reject Sources");
   setButtonBusy(refs.adminDeleteSourcesBtnEl, registryBusy, "", "Delete Sources");
   setButtonBusy(refs.adminRestoreRejectedBtnEl, registryBusy, "", "Restore Rejected");
   setButtonBusy(refs.adminDemoteActiveBtnEl, registryBusy, "", "Demote Active");
-  setButtonBusy(refs.adminAddManualSourceBtnEl, discoveryBusy || lockBusy, "Adding Source...", "Add Source");
+  setButtonBusy(refs.adminAddManualSourceBtnEl, registryBusy, "Adding Source...", "Add Source");
   if (refs.adminManualSourceUrlEl) {
-    refs.adminManualSourceUrlEl.disabled = discoveryBusy || lockBusy;
-    refs.adminManualSourceUrlEl.setAttribute("aria-disabled", (discoveryBusy || lockBusy) ? "true" : "false");
+    refs.adminManualSourceUrlEl.disabled = registryBusy;
+    refs.adminManualSourceUrlEl.setAttribute("aria-disabled", registryBusy ? "true" : "false");
   }
   refs.adminSourceFilterBtnEls.forEach(btn => {
-    btn.disabled = discoveryBusy || lockBusy;
-    btn.setAttribute("aria-disabled", (discoveryBusy || lockBusy) ? "true" : "false");
+    btn.disabled = registryBusy;
+    btn.setAttribute("aria-disabled", registryBusy ? "true" : "false");
   });
 
   const fetcherLabel = busyState.fetcherWatch

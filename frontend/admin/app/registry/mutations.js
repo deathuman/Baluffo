@@ -1,16 +1,10 @@
 import { requestConfirmationDialog } from "../../../local-data/profile-name-dialog.js";
+import { deriveAdminActiveWorkContext } from "../active-work-policy.js";
 
-const DISCOVERY_OPERATION_BLOCKED_MESSAGE = "Another discovery operation is running.";
+const REGISTRY_OPERATION_BLOCKED_MESSAGE = "Source registry actions are paused while Admin work is running.";
 
-function isDiscoveryOperationBlocked(state) {
-  return Boolean(
-    state.adminBusyState.discoveryRun
-    || state.adminBusyState.discoveryWatch
-    || state.adminBusyState.discoveryWrite
-    || state.adminBusyState.manualAdd
-    || state.adminBusyState.manualCheck
-    || state.adminBusyState.liveDiscoveryRunning
-  );
+function isRegistryOperationBlocked(state) {
+  return !deriveAdminActiveWorkContext({ state }).sourceMutationsAllowed;
 }
 
 async function runRegistryMutation({
@@ -21,8 +15,8 @@ async function runRegistryMutation({
   execute,
   onError
 }) {
-  if (isDiscoveryOperationBlocked(state)) {
-    showToast(DISCOVERY_OPERATION_BLOCKED_MESSAGE, "info");
+  if (isRegistryOperationBlocked(state)) {
+    showToast(REGISTRY_OPERATION_BLOCKED_MESSAGE, "info");
     return null;
   }
   if (state.adminBusyState[busyKey]) {

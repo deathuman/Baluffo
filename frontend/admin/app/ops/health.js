@@ -17,6 +17,11 @@ import {
 } from "../../render/source-policy-review.js?v=6";
 import { renderAdminRegistryConflicts } from "../../render/registry-conflicts.js?v=6";
 import { setTooltip } from "../../../shared/ui/index.js?v=6";
+import {
+  ACTIVE_ADMIN_TASK_TYPES,
+  ACTIVE_PIPELINE_OR_FETCH_TASK_TYPES,
+  hasActiveAdminTaskRows
+} from "../active-work-policy.js";
 
 const OPS_TASK_STATE_SUMMARY_PATH = "/ops/task-state?view=summary";
 const OPS_DASHBOARD_HEALTH_SUMMARY_PATH = "/ops/dashboard-health?view=summary";
@@ -43,8 +48,6 @@ const OPS_HEAVY_ROUTE_BACKOFF_MAX_MS = 30000;
 const OPS_HEAVY_ROUTE_DASHBOARD = "dashboard-health";
 const OPS_HEAVY_ROUTE_REGISTRY_CONFLICTS = "registry-conflicts";
 const OPS_HEAVY_ROUTE_TAB_COUNTS = "ops-tab-counts";
-const ACTIVE_PIPELINE_OR_FETCH_TASK_TYPES = new Set(["pipeline", "fetch"]);
-const ACTIVE_ADMIN_TASK_TYPES = new Set(["pipeline", "fetch", "discovery", "sync"]);
 
 function maybeUnrefTimer(timer) {
   timer?.unref?.();
@@ -1862,19 +1865,11 @@ export function createOpsHealthController({
   }
 
   function hasActivePipelineOrFetchRows(taskStatePayload = getCachedTaskStatePayload()) {
-    return hasActiveRowsForTypes(taskStatePayload, ACTIVE_PIPELINE_OR_FETCH_TASK_TYPES);
+    return hasActiveAdminTaskRows(taskStatePayload, ACTIVE_PIPELINE_OR_FETCH_TASK_TYPES);
   }
 
   function hasActiveAdminWorkRows(taskStatePayload = getCachedTaskStatePayload()) {
-    return hasActiveRowsForTypes(taskStatePayload, ACTIVE_ADMIN_TASK_TYPES);
-  }
-
-  function hasActiveRowsForTypes(taskStatePayload, taskTypes) {
-    const rows = Array.isArray(taskStatePayload?.tasks) ? taskStatePayload.tasks : [];
-    return rows.some(row => {
-      const type = getTaskRowType(row);
-      return row && row.active !== false && !row.finishedAt && taskTypes.has(type);
-    });
+    return hasActiveAdminTaskRows(taskStatePayload, ACTIVE_ADMIN_TASK_TYPES);
   }
 
   function buildFetchKpiPendingLabels(health = {}, activePipelineOrFetch = false) {

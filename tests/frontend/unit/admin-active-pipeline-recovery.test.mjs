@@ -195,13 +195,24 @@ test("admin ops fetch KPI success replaces missing optional fields with terminal
   assert.match(refs.adminOpsKpisEl.innerHTML, /813/);
 });
 
-test("admin registry controller delays source tables while pipeline fetch is active", async () => {
+test("admin registry controller loads compact source tables while pipeline fetch is active", async () => {
   const calls = [];
   const fixture = createRegistryControllerFixture({
     state: { adminBusyState: { discoveryLoad: false, livePipelineRunning: true, liveFetchRunning: true } },
     options: {
-      getBridge: async path => {
-        calls.push(path);
+      getBridge: async (path, requestOptions = {}) => {
+        calls.push({ path: String(path), requestOptions });
+        if (String(path).startsWith("/registry/sources")) {
+          return {
+            ok: true,
+            sources: {
+              pending: [{ name: "Pending Fetch Studio", sourceId: "p1", url: "https://pending.example" }],
+              active: [{ name: "Active Fetch Studio", sourceId: "a1", url: "https://active.example" }],
+              rejected: []
+            },
+            summary: { pendingCount: 1, activeCount: 1, rejectedCount: 0 }
+          };
+        }
         throw new Error(`unexpected path ${path}`);
       }
     }
@@ -212,14 +223,16 @@ test("admin registry controller delays source tables while pipeline fetch is act
   const controller = createAdminRegistryController(fixture.options);
 
   const result = await controller.loadDiscoveryData({ background: true });
+  fixture.renderScheduler.flush();
 
-  assert.equal(result?.skipped, true);
-  assert.equal(result?.reason, "pipeline_running");
-  assert.deepEqual(calls, []);
-  assert.match(fixture.refs.adminPendingSourcesEl.innerHTML, /Source tables delayed while job update is running/);
-  assert.match(fixture.refs.adminActiveSourcesEl.innerHTML, /Source tables delayed while job update is running/);
-  assert.match(fixture.refs.adminRejectedSourcesEl.innerHTML, /Source tables delayed while job update is running/);
-  assert.doesNotMatch(fixture.refs.adminPendingSourcesEl.innerHTML, /Loading pending sources/);
+  assert.equal(result?.partialLoadFailed, false);
+  assert.ok(calls.some(call => call.path.startsWith("/registry/sources?view=table")));
+  assert.ok(!calls.some(call => call.path === "/discovery/report"));
+  assert.ok(!calls.some(call => call.path === "/discovery/candidates"));
+  assert.equal(calls.find(call => call.path.startsWith("/registry/sources"))?.requestOptions.timeoutMs, 10000);
+  assert.equal(fixture.state.sourceTablesLoadState, "loaded");
+  assert.match(fixture.refs.adminPendingSourcesEl.innerHTML, /Pending Fetch Studio/);
+  assert.match(fixture.refs.adminActiveSourcesEl.innerHTML, /Active Fetch Studio/);
 });
 
 test("admin registry controller preflights pipeline status before source tables", async () => {
@@ -251,6 +264,17 @@ test("admin registry controller preflights pipeline status before source tables"
             ]
           };
         }
+        if (String(path).startsWith("/registry/sources")) {
+          return {
+            ok: true,
+            sources: {
+              pending: [{ name: "Pending Pipeline Studio", sourceId: "p1", url: "https://pending.example" }],
+              active: [{ name: "Active Pipeline Studio", sourceId: "a1", url: "https://active.example" }],
+              rejected: []
+            },
+            summary: { pendingCount: 1, activeCount: 1, rejectedCount: 0 }
+          };
+        }
         throw new Error(`unexpected path ${path}`);
       }
     }
@@ -261,29 +285,27 @@ test("admin registry controller preflights pipeline status before source tables"
   const controller = createAdminRegistryController(fixture.options);
 
   const result = await controller.loadDiscoveryData({ background: true });
+  fixture.renderScheduler.flush();
 
-  assert.equal(result?.skipped, true);
-  assert.equal(result?.reason, "pipeline_running");
-  assert.deepEqual(calls, ["/tasks/run-jobs-pipeline-status"]);
+  assert.equal(result?.partialLoadFailed, false);
+  assert.ok(calls.includes("/tasks/run-jobs-pipeline-status"));
+  assert.ok(calls.some(path => path.startsWith("/registry/sources?view=table")));
+  assert.ok(!calls.includes("/discovery/report"));
+  assert.ok(!calls.includes("/discovery/candidates"));
   assert.equal(fixture.state.adminBusyState.livePipelineRunning, true);
   assert.equal(fixture.state.adminBusyState.liveFetchRunning, true);
   assert.equal(fixture.state.latestOpsTaskStatePayload.sentinel, "keep");
   assert.equal(fixture.state.latestOpsTaskStatePayload.tasks.length, 0);
-  assert.match(fixture.refs.adminPendingSourcesEl.innerHTML, /Source tables delayed while job update is running/);
-  assert.doesNotMatch(fixture.refs.adminPendingSourcesEl.innerHTML, /Loading pending sources/);
+  assert.match(fixture.refs.adminPendingSourcesEl.innerHTML, /Pending Pipeline Studio/);
 });
 
 test("admin registry controller downgrades active pipeline registry 504 to delayed source tables", async () => {
   let fixture;
   fixture = createRegistryControllerFixture({
+    state: { adminBusyState: { discoveryLoad: false, livePipelineRunning: true, liveFetchRunning: true } },
     options: {
       getBridge: async path => {
-        if (path === "/tasks/run-jobs-pipeline-status") return { active: false, stage: "idle" };
-        if (path === "/discovery/report") return { summary: {} };
-        if (path === "/discovery/candidates") return { candidates: [] };
         if (String(path).startsWith("/registry/sources")) {
-          fixture.state.adminBusyState.livePipelineRunning = true;
-          fixture.state.adminBusyState.liveFetchRunning = true;
           throw new Error("Bridge error (HTTP 504)");
         }
         throw new Error(`unexpected path ${path}`);

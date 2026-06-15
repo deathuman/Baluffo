@@ -151,6 +151,10 @@ test("admin ops controller renders active pipeline from status when dashboard he
     attachToActiveFetchRun() {
       watcherCalls.push("attach-fetch");
     },
+    loadLatestFetcherSummary() {
+      watcherCalls.push("load-fetch-summary");
+      return Promise.resolve(null);
+    },
     loadLatestFetcherReport() {
       watcherCalls.push("load-fetch-report");
       return Promise.resolve(null);
@@ -183,7 +187,7 @@ test("admin ops controller renders active pipeline from status when dashboard he
   assert.ok(calls.includes("/ops/fetch-kpis?view=summary"));
   assert.equal(calls.includes("/admin/ops-tab-counts?view=summary"), false);
   assert.equal(renderedKpis.at(-1)?.fetchKpiPendingLabel, "Not available");
-  assert.deepEqual(watcherCalls, ["attach-fetch", "load-fetch-report"]);
+  assert.deepEqual(watcherCalls, ["attach-fetch", "load-fetch-summary"]);
 
   await loadPromise;
   controller.stopOpsHealthPolling();

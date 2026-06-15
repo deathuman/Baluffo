@@ -48,9 +48,9 @@ import {
 } from "./sources.js";
 import {
   FETCHER_PRESET_META
-} from "./fetcher.js?v=13";
+} from "./fetcher.js?v=14";
 import { createAdminRuntimeState } from "./runtime/state.js";
-import { composeAdminControllers } from "./runtime/composition.js?v=25";
+import { composeAdminControllers } from "./runtime/composition.js?v=26";
 import { createAdminStartupMetrics } from "./runtime/effects.js";
 import { createBridgeCaller } from "./runtime/actions.js";
 import { resolveAdminBridgeBase } from "./runtime/bridge-base.js";

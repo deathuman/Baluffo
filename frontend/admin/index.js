@@ -1,6 +1,6 @@
 import "../shared/local-data/app-client.js";
 import "../shared/config/admin-config.js";
-import { boot as bootAdminPage } from "./app.js?v=26";
+import { boot as bootAdminPage } from "./app.js?v=27";
 import { installGlobalTooltipController } from "../shared/ui/tooltip-controller.js";
 import { installExplainStateHandler } from "../shared/ui/explain-state.js";
 import { observeLongTasks } from "../../probes/long-task-observer.js";

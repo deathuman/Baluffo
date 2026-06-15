@@ -8,7 +8,6 @@ const REPO_ROOT = path.resolve(SCRIPT_DIR, "..");
 const DEFAULT_OUTPUT_ROOT = path.join(REPO_ROOT, "_out", "admin-active-fetch-browser-proof");
 const SOURCE_TABLES_DELAYED_LABEL = "Source tables delayed while job update is running.";
 const HEAVY_ROUTE_PATTERNS = [
-  /\/registry\/sources(?:\?|$)/i,
   /\/registry\/conflicts(?:\?|$)/i,
   /\/admin\/ops-tab-counts(?:\?|$)/i,
   /\/ops\/dashboard-health(?:\?|$)/i
@@ -227,17 +226,30 @@ function assertHydratedAdminState(state, { scenario, requireSyncReady = false })
     ["active", state.activeSources],
     ["rejected", state.rejectedSources]
   ]) {
-    assert.match(textValue, new RegExp(SOURCE_TABLES_DELAYED_LABEL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"), `${scenario}: ${label} sources should show active-run delayed placeholder`);
+    assert.ok(String(textValue || "").trim().length > 0, `${scenario}: ${label} sources should not be blank`);
+    assert.doesNotMatch(String(textValue || ""), /^Loading/i, `${scenario}: ${label} sources should not remain on loading copy`);
+    assert.doesNotMatch(String(textValue || ""), /Could not load .* sources/i, `${scenario}: ${label} sources should not show unavailable source-table copy`);
   }
+}
+
+function isHeavyRoute(name) {
+  const value = String(name || "");
+  if (/\/registry\/sources(?:\?|$)/i.test(value)) {
+    return !/[?&]view=table(?:&|$)/i.test(value);
+  }
+  if (/\/ops\/fetch-report(?:\?|$)/i.test(value)) {
+    return !/[?&]view=(?:summary|live)(?:&|$)/i.test(value);
+  }
+  return HEAVY_ROUTE_PATTERNS.some(pattern => pattern.test(value));
 }
 
 function heavyRouteEvidence(resources, logs) {
   const resourceMatches = resources
     .map(entry => String(entry?.name || ""))
-    .filter(name => HEAVY_ROUTE_PATTERNS.some(pattern => pattern.test(name)));
+    .filter(name => isHeavyRoute(name));
   const logMatches = logs
     .map(entry => String(entry?.message || ""))
-    .filter(message => HEAVY_ROUTE_PATTERNS.some(pattern => pattern.test(message)) && /504|timeout|timed out|Gateway Timeout/i.test(message));
+    .filter(message => isHeavyRoute(message) && /504|timeout|timed out|Gateway Timeout/i.test(message));
   return { resourceMatches, logMatches };
 }
 
@@ -260,12 +272,12 @@ async function runBrowserScenario({
     await tab.playwright.waitForLoadState({ state: "domcontentloaded", timeoutMs: 30_000 });
     const settled = await waitFor(`${scenario} Browser-visible Admin panels`, async () => {
       const state = await extractAdminState(tab);
-      const hasSourcesDelayed = [state.pendingSources, state.activeSources, state.rejectedSources]
-        .every(textValue => textValue.includes(SOURCE_TABLES_DELAYED_LABEL));
+      const hasSourcesState = [state.pendingSources, state.activeSources, state.rejectedSources]
+        .every(textValue => String(textValue || "").trim().length > 0 && !/^Loading/i.test(String(textValue || "")));
       const hasProfile = state.usersList.length > 0 || /Loaded \d+ user account/i.test(state.sourceStatus);
       const hasSchedule = state.opsSchedule.length > 0 && !/Pipeline:\s*unknown/i.test(state.opsSchedule);
       const hasSync = state.syncStatus.length > 0;
-      return hasSourcesDelayed && hasProfile && hasSchedule && hasSync ? state : null;
+      return hasSourcesState && hasProfile && hasSchedule && hasSync ? state : null;
     }, { timeoutMs: 30_000, intervalMs: 500 });
 
     assertHydratedAdminState(settled, { scenario, requireSyncReady });

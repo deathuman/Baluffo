@@ -4,7 +4,7 @@ export function createOpsTaskStateController({
   state,
   setBusyFlag,
   attachToActiveFetchRun,
-  loadLatestFetcherReport,
+  loadLatestFetcherSummary,
   attachToActiveDiscoveryRun,
   loadLatestDiscoveryReport
 }) {
@@ -79,6 +79,12 @@ export function createOpsTaskStateController({
 
   function maybeAttachLiveTaskRows(liveTaskRows) {
     const canAttachLiveWatch = row => String(row?.controlPlaneSource || "").trim() !== "pipeline-status";
+    const hydrateActiveFetchProgress = () => {
+      if (typeof loadLatestFetcherSummary === "function") {
+        return loadLatestFetcherSummary({ silent: true }).catch(() => {});
+      }
+      return Promise.resolve(null);
+    };
     const fetchRow = liveTaskRows.find(row => (
       getTaskType(row) === "fetch" && hasTaskRunMeta(row) && canAttachLiveWatch(row)
     ));
@@ -90,7 +96,7 @@ export function createOpsTaskStateController({
         announceStart: false,
         initialReport: fetchRow
       });
-      loadLatestFetcherReport?.({ silent: true, hydrateActiveProgress: true }).catch(() => {});
+      hydrateActiveFetchProgress();
     }
 
     const discoveryRow = liveTaskRows.find(row => (

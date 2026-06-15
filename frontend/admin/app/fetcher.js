@@ -130,7 +130,7 @@ export function createAdminFetcherController({
         getSourceStatusSetter()("Triggered local fetcher task via admin bridge.");
         showToast("Fetcher started via admin bridge.", "success");
         loadOpsHealthData().catch(() => {});
-        reportController.loadLatestFetcherReport({ silent: true }).catch(() => {});
+        reportController.loadLatestFetcherSummary({ silent: true }).catch(() => {});
         return;
       }
       if (bridgeStatus === 409 && bridge?.alreadyRunning) {
@@ -139,7 +139,7 @@ export function createAdminFetcherController({
         getSourceStatusSetter()("Attached to the active fetcher task via admin bridge.");
         showToast("Fetcher already running. Attached to active run.", "info");
         loadOpsHealthData().catch(() => {});
-        reportController.loadLatestFetcherReport({ silent: true }).catch(() => {});
+        reportController.loadLatestFetcherSummary({ silent: true }).catch(() => {});
         return;
       }
     } catch {

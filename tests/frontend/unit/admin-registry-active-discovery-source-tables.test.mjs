@@ -108,6 +108,7 @@ test("admin registry delayed fetch source tables recover when retry observes idl
   const timers = stubScheduledTimers();
   try {
     const calls = [];
+    let registrySourceCalls = 0;
     const fixture = createRegistryControllerFixture({
       state: {
         adminBusyState: {
@@ -122,6 +123,8 @@ test("admin registry delayed fetch source tables recover when retry observes idl
           if (path === "/tasks/run-jobs-pipeline-status") return { active: false, stage: "idle" };
           if (path === "/registry/summary") return { ok: true, summary: { pendingCount: 1, activeCount: 1 } };
           if (String(path).startsWith("/registry/sources")) {
+            registrySourceCalls += 1;
+            if (registrySourceCalls === 1) throw new Error("Bridge error (HTTP 504)");
             return {
               ok: true,
               sources: {
@@ -139,9 +142,10 @@ test("admin registry delayed fetch source tables recover when retry observes idl
     const controller = createAdminRegistryController(fixture.options);
 
     const firstResult = await controller.loadDiscoveryData({ background: true });
-    assert.equal(firstResult?.skipped, true);
-    assert.equal(firstResult?.reason, "pipeline_running");
-    assert.deepEqual(calls, []);
+    assert.equal(firstResult?.partialLoadFailed, true);
+    assert.ok(calls.some(path => path.startsWith("/registry/sources?view=table")));
+    assert.ok(!calls.includes("/discovery/report"));
+    assert.ok(!calls.includes("/discovery/candidates"));
     assert.equal(timers.scheduled.length, 1);
     assert.match(fixture.refs.adminPendingSourcesEl.innerHTML, /Source tables delayed while job update is running/);
 

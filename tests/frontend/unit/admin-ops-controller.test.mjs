@@ -600,9 +600,8 @@ test("admin ops controller quietly auto-attaches active fetch and discovery task
     attachToActiveFetchRun(runMeta, options) {
       calls.push(`fetch:${String(runMeta?.runId || "")}:${String(options?.announceStart)}:${String(options?.initialReport?.runId || "")}`);
     },
-    loadLatestFetcherReport: async options => {
-      calls.push(`fetchReport:${String(Boolean(options?.silent))}:${String(Boolean(options?.hydrateActiveProgress))}`);
-      return {};
+    loadLatestFetcherSummary: async options => {
+      calls.push(`fetchSummary:${String(Boolean(options?.silent))}`); return {};
     },
     attachToActiveDiscoveryRun(runMeta, options) {
       calls.push(`discovery:${String(runMeta?.runId || "")}:${String(options?.announceStart)}:${String(options?.initialReport?.runId || "")}`);
@@ -622,7 +621,7 @@ test("admin ops controller quietly auto-attaches active fetch and discovery task
   controller.stopOpsHealthPolling();
 
   assert.ok(calls.includes("fetch:fetch_live_attach_1:false:fetch_live_attach_1"));
-  assert.ok(calls.includes("fetchReport:true:true"));
+  assert.ok(calls.includes("fetchSummary:true"));
   assert.ok(calls.includes("discovery:discovery_live_attach_1:false:discovery_live_attach_1"));
   assert.ok(calls.includes("discoveryReport:true"));
 });

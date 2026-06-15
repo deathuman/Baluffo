@@ -10,6 +10,10 @@ const opsSource = readFileSync(
   new URL("../../../frontend/admin/app/ops.js", import.meta.url),
   "utf8"
 );
+const activeFetchProofSource = readFileSync(
+  new URL("../../../scripts/admin_active_fetch_browser_proof.mjs", import.meta.url),
+  "utf8"
+);
 
 test("admin startup has no automatic deferred diagnostics fan-out", () => {
   const match = compositionSource.match(/async function loadPostInteractiveDiagnostics\(\) \{([\s\S]*?)\n  \}/);
@@ -47,11 +51,16 @@ test("admin critical bootstrap fallback gates source tables behind compact activ
   const body = match[1];
   assert.match(body, /loadActiveOpsSummaryData/);
   assert.match(body, /returnMeta:\s*true/);
-  assert.match(body, /renderSourceTablesDelayed/);
+  assert.match(body, /markSourceTablesDelayedForActiveWork/);
   assert.match(body, /activeAdminWork\s*\?\s*Promise\.resolve/);
   assert.match(body, /sourceTablesOnly:\s*true/);
 });
 
 test("admin ops controller forwards compact active summary loader to composition", () => {
   assert.match(opsSource, /loadActiveOpsSummaryData:\s*healthController\.loadActiveOpsSummaryData/);
+});
+
+test("admin active-fetch browser proof treats full fetch report as heavy", () => {
+  assert.match(activeFetchProofSource, /\/ops\\\/fetch-report/);
+  assert.match(activeFetchProofSource, /view=\(\?:summary\|live\)/);
 });

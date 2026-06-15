@@ -1,14 +1,22 @@
 import { deriveDiscoveryLifecycleCounts, deriveDiscoveryQueuedCount } from "../../domain.js";
 import { renderDiscoveryCandidateReviewHtml } from "../../render.js?v=20";
+import {
+  deriveAdminActiveWorkContext,
+  pipelineStatusIndicatesActive,
+  pipelineStatusIndicatesDiscovery,
+  pipelineStatusIndicatesFetch
+} from "../active-work-policy.js";
 
 const ADMIN_SHOW_ZERO_JOBS_KEY = "baluffo_admin_show_zero_jobs_sources";
 const CAP_DEFER_REASONS = new Set(["adapter_cap", "domain_cap", "top_n_cap"]);
 const FULL_REGISTRY_LOAD_TIMEOUT_MS = 60000;
+const ACTIVE_REGISTRY_LOAD_TIMEOUT_MS = 10000;
 const PIPELINE_STATUS_PREFLIGHT_TIMEOUT_MS = 3000;
 const REGISTRY_REFRESH_RETRY_DELAY_MS = 5000;
+const REGISTRY_REFRESH_RETRY_MAX_DELAY_MS = 30000;
 const ACTIVE_PIPELINE_SOURCE_TABLES_DELAYED_LABEL = "Source tables delayed while job update is running.";
 const JOBS_PIPELINE_STATUS_PATH = "/tasks/run-jobs-pipeline-status";
-const INACTIVE_PIPELINE_STAGES = new Set(["idle", "complete", "completed", "error", "failed", "canceled", "cancelled", "aborted"]);
+const SOURCE_TABLE_RECOVERY_STATES = new Set(["delayed-active", "retrying-active", "recovering-idle", "unavailable"]);
 
 function getDiscoveryCandidatesRows(payload) {
   return Array.isArray(payload?.candidates) ? payload.candidates : [];
@@ -137,6 +145,16 @@ export function createRegistryLoadController({
     container.innerHTML = `<div class="no-results">Could not load ${bucketLabel} sources. Retry after the running job update finishes.</div>`;
   }
 
+  function setSourceTablesLoadState(status, reason = "") {
+    state.sourceTablesLoadState = String(status || "");
+    state.sourceTablesLoadReason = String(reason || "");
+    state.sourceTablesLoadUpdatedAtMs = Date.now();
+  }
+
+  function sourceTablesLoadStateNeedsRecovery() {
+    return SOURCE_TABLE_RECOVERY_STATES.has(String(state.sourceTablesLoadState || ""));
+  }
+
   function sourceTableNeedsDelayedPlaceholder(container) {
     if (!container) return false;
     const currentText = String(container.textContent || container.innerHTML || "").trim();
@@ -146,97 +164,23 @@ export function createRegistryLoadController({
   }
 
   function activeDiscoveryRunning() {
-    if (
-      state.adminBusyState?.liveDiscoveryRunning
-      || state.adminBusyState?.discoveryWatch
-      || state.discoveryLiveProgressState
-    ) {
-      return true;
-    }
-    const rows = Array.isArray(state.latestOpsTaskStatePayload?.tasks)
-      ? state.latestOpsTaskStatePayload.tasks
-      : [];
-    return rows.some(row => {
-      const type = String(row?.taskType || row?.type || "").trim().toLowerCase();
-      return row?.active !== false && !row?.finishedAt && type === "discovery";
-    });
+    return deriveAdminActiveWorkContext({ state }).discoveryActive;
   }
 
   function activeFetchRunning() {
-    if (state.adminBusyState?.liveFetchRunning) {
-      return true;
-    }
-    const rows = Array.isArray(state.latestOpsTaskStatePayload?.tasks)
-      ? state.latestOpsTaskStatePayload.tasks
-      : [];
-    return rows.some(row => {
-      const type = String(row?.taskType || row?.type || "").trim().toLowerCase();
-      return row?.active !== false && !row?.finishedAt && type === "fetch";
-    });
+    return deriveAdminActiveWorkContext({ state }).fetchActive;
   }
 
   function activePipelineOrFetchRunning() {
-    if (state.adminBusyState?.livePipelineRunning || activeFetchRunning()) {
-      return true;
-    }
-    const rows = Array.isArray(state.latestOpsTaskStatePayload?.tasks)
-      ? state.latestOpsTaskStatePayload.tasks
-      : [];
-    return rows.some(row => {
-      const type = String(row?.taskType || row?.type || "").trim().toLowerCase();
-      return row?.active !== false && !row?.finishedAt && (type === "pipeline" || type === "fetch");
-    });
+    return deriveAdminActiveWorkContext({ state }).pipelineOrFetchActive;
   }
 
   function activeSyncRunning() {
-    if (state.adminBusyState?.syncRun || state.adminBusyState?.liveSyncRunning) {
-      return true;
-    }
-    const rows = Array.isArray(state.latestOpsTaskStatePayload?.tasks)
-      ? state.latestOpsTaskStatePayload.tasks
-      : [];
-    return rows.some(row => {
-      const type = String(row?.taskType || row?.type || "").trim().toLowerCase();
-      return row?.active !== false && !row?.finishedAt && type === "sync";
-    });
+    return deriveAdminActiveWorkContext({ state }).syncActive;
   }
 
   function activeAdminRegistryWorkRunning() {
-    return activePipelineOrFetchRunning() || activeDiscoveryRunning() || activeSyncRunning();
-  }
-
-  function pipelineStatusStage(payload = {}) {
-    return String(payload?.stage || payload?.progress?.phaseKey || "").trim().toLowerCase();
-  }
-
-  function pipelineStatusHasActiveChild(payload = {}, taskType) {
-    const normalizedTaskType = String(taskType || "").trim().toLowerCase();
-    const activeChildren = Array.isArray(payload?.activeChildren) ? payload.activeChildren : [];
-    return activeChildren.some(row => {
-      const childType = String(row?.taskType || row?.type || "").trim().toLowerCase();
-      return childType === normalizedTaskType && row?.active !== false && !row?.finishedAt;
-    });
-  }
-
-  function pipelineStatusIndicatesFetch(payload = {}) {
-    return pipelineStatusStage(payload) === "fetch" || pipelineStatusHasActiveChild(payload, "fetch");
-  }
-
-  function pipelineStatusIndicatesDiscovery(payload = {}) {
-    return pipelineStatusStage(payload) === "discovery" || pipelineStatusHasActiveChild(payload, "discovery");
-  }
-
-  function pipelineStatusIndicatesActive(payload = {}) {
-    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
-    if (payload.active === true) return true;
-    const activeChildren = Array.isArray(payload.activeChildren) ? payload.activeChildren : [];
-    if (activeChildren.some(row => row && typeof row === "object" && row.active !== false)) {
-      return true;
-    }
-    const stage = pipelineStatusStage(payload);
-    if (!stage || INACTIVE_PIPELINE_STAGES.has(stage)) return false;
-    if (payload.active === false) return false;
-    return true;
+    return deriveAdminActiveWorkContext({ state }).isActive;
   }
 
   function rememberPipelineStatusActivity(payload = {}) {
@@ -270,11 +214,17 @@ export function createRegistryLoadController({
     return activePipelineOrFetchRunning();
   }
 
-  function shouldDeferSourceTablesForActivePipeline() {
-    const payload = state.discoveryPipelineStatusPayload || null;
-    if (activeFetchRunning() || pipelineStatusIndicatesFetch(payload)) return true;
-    if (activeDiscoveryRunning() || pipelineStatusIndicatesDiscovery(payload)) return false;
-    return activePipelineOrFetchRunning();
+  function sourceTablesActiveContext({ livePipelineOrFetchRunning = false } = {}) {
+    const context = deriveAdminActiveWorkContext({
+      state,
+      livePipelineOrFetchRunning
+    });
+    return {
+      active: context.isActive,
+      canLoadCompact: context.sourceTablesCanLoadCompact || !context.isActive,
+      reason: context.reason,
+      taskType: context.taskType
+    };
   }
 
   function recentlyDetectedActivePipeline() {
@@ -292,6 +242,12 @@ export function createRegistryLoadController({
     if (!onlyIfPlaceholder || sourceTableNeedsDelayedPlaceholder(refs.adminRejectedSourcesEl)) {
       setSourceTableDelayedPlaceholder(refs.adminRejectedSourcesEl);
     }
+  }
+
+  function markSourceTablesDelayedForActiveWork(reason = "active_admin_work", options = {}) {
+    state.sourceTablesDelayedDuringActiveRun = true;
+    setSourceTablesLoadState("delayed-active", reason);
+    renderSourceTablesDelayed({ onlyIfPlaceholder: options?.onlyIfPlaceholder !== false });
   }
 
   function scheduleDeferredRender(callback) {
@@ -318,8 +274,7 @@ export function createRegistryLoadController({
         && /(timed out|timeout|HTTP 504|\b504\b)/i.test(message)
       );
       if (registryRefreshDelayedByActiveWork) {
-        state.sourceTablesDelayedDuringActiveRun = true;
-        renderSourceTablesDelayed({ onlyIfPlaceholder: true });
+        markSourceTablesDelayedForActiveWork("active_registry_timeout", { onlyIfPlaceholder: true });
         appendDiscoveryLog(ACTIVE_PIPELINE_SOURCE_TABLES_DELAYED_LABEL, "warn");
       } else if (options?.registryRefresh && options?.background && /timed out/i.test(message)) {
         appendDiscoveryLog("Source table refresh delayed; retrying.", "warn");
@@ -334,10 +289,28 @@ export function createRegistryLoadController({
     }
   }
 
+  function nextRegistryRefreshRetryDelay() {
+    const currentDelay = Number(state.discoveryRegistryRefreshRetryDelayMs || REGISTRY_REFRESH_RETRY_DELAY_MS);
+    const delay = Math.min(
+      REGISTRY_REFRESH_RETRY_MAX_DELAY_MS,
+      Math.max(REGISTRY_REFRESH_RETRY_DELAY_MS, currentDelay)
+    );
+    state.discoveryRegistryRefreshRetryDelayMs = Math.min(
+      REGISTRY_REFRESH_RETRY_MAX_DELAY_MS,
+      delay * 2
+    );
+    return delay;
+  }
+
+  function resetRegistryRefreshRetryDelay() {
+    state.discoveryRegistryRefreshRetryDelayMs = REGISTRY_REFRESH_RETRY_DELAY_MS;
+  }
+
   function scheduleRegistryRefreshRetry(options = {}) {
     if (state.discoveryRegistryRefreshRetryTimer || typeof globalThis.setTimeout !== "function") {
       return;
     }
+    const delay = nextRegistryRefreshRetryDelay();
     state.discoveryRegistryRefreshRetryTimer = globalThis.setTimeout(() => {
       state.discoveryRegistryRefreshRetryTimer = null;
       loadDiscoveryData({
@@ -350,7 +323,7 @@ export function createRegistryLoadController({
         forceFetchReport: Boolean(options?.fetchReport),
         forcePipelinePreflight: Boolean(options?.forcePipelinePreflight)
       }).catch(() => {});
-    }, REGISTRY_REFRESH_RETRY_DELAY_MS);
+    }, delay);
     if (typeof state.discoveryRegistryRefreshRetryTimer?.unref === "function") {
       state.discoveryRegistryRefreshRetryTimer.unref();
     }
@@ -359,18 +332,13 @@ export function createRegistryLoadController({
   async function loadDiscoveryData(options = {}) {
     if (state.adminBusyState.discoveryLoad) return state.discoveryLoadPromise || null;
     const nowMs = Date.now();
-    const liveDiscoveryRunning = activeDiscoveryRunning();
-    const allowDuringLiveDiscovery = Boolean(
-      options?.allowDuringLiveDiscovery
-      || options?.completionRefresh
-      || options?.forceDuringLiveDiscovery
-    );
-    const sourceTablesOnlyForLiveDiscovery = liveDiscoveryRunning && !allowDuringLiveDiscovery;
     if (activeSyncRunning()) {
       const background = Boolean(options?.background);
-      state.sourceTablesDelayedDuringActiveRun = true;
       if (options?.suppressPlaceholders !== true) {
-        renderSourceTablesDelayed({ onlyIfPlaceholder: true });
+        markSourceTablesDelayedForActiveWork("sync_running", { onlyIfPlaceholder: true });
+      } else {
+        state.sourceTablesDelayedDuringActiveRun = true;
+        setSourceTablesLoadState("delayed-active", "sync_running");
       }
       const lastNoticeAtMs = Number(state.discoveryPipelineDeferredLoadNoticeAtMs || 0);
       if (!background && nowMs - lastNoticeAtMs > 5000) {
@@ -392,12 +360,19 @@ export function createRegistryLoadController({
     const livePipelineOrFetchRunning = await refreshActivePipelineStatus({
       force: Boolean(options?.forcePipelinePreflight)
     });
-    const allowDuringActivePipeline = Boolean(options?.forceDuringActivePipeline);
-    if (livePipelineOrFetchRunning && shouldDeferSourceTablesForActivePipeline() && !allowDuringActivePipeline) {
+    const activeContext = sourceTablesActiveContext({ livePipelineOrFetchRunning });
+    const activeCompactSourceTables = Boolean(
+      activeContext.active
+      && activeContext.canLoadCompact
+      && !options?.forceFullDiscoveryDuringActiveRun
+    );
+    if (activeContext.active && !activeContext.canLoadCompact) {
       const background = Boolean(options?.background);
-      state.sourceTablesDelayedDuringActiveRun = true;
       if (options?.suppressPlaceholders !== true) {
-        renderSourceTablesDelayed({ onlyIfPlaceholder: true });
+        markSourceTablesDelayedForActiveWork(activeContext.reason, { onlyIfPlaceholder: true });
+      } else {
+        state.sourceTablesDelayedDuringActiveRun = true;
+        setSourceTablesLoadState("delayed-active", activeContext.reason);
       }
       const lastNoticeAtMs = Number(state.discoveryPipelineDeferredLoadNoticeAtMs || 0);
       if (!background && nowMs - lastNoticeAtMs > 5000) {
@@ -407,7 +382,7 @@ export function createRegistryLoadController({
       scheduleRegistryRefreshRetry({ forcePipelinePreflight: true });
       return {
         skipped: true,
-        reason: "pipeline_running",
+        reason: activeContext.reason,
         sourceTablesDelayed: true,
         report: state.latestDiscoveryReportCache || null,
         pendingRows: [],
@@ -416,8 +391,11 @@ export function createRegistryLoadController({
         partialLoadFailed: false
       };
     }
+    if (activeCompactSourceTables && options?.suppressPlaceholders !== true) {
+      markSourceTablesDelayedForActiveWork(activeContext.reason, { onlyIfPlaceholder: true });
+    }
     const background = Boolean(options?.background);
-    const showPlaceholders = !background && options?.suppressPlaceholders !== true;
+    const showPlaceholders = !background && !activeCompactSourceTables && options?.suppressPlaceholders !== true;
     if (showPlaceholders) {
       setSourceTablePlaceholder(refs.adminPendingSourcesEl, "pending");
       setSourceTablePlaceholder(refs.adminActiveSourcesEl, "active");
@@ -431,10 +409,18 @@ export function createRegistryLoadController({
     state.discoveryLastLoadStartedAtMs = nowMs;
     const renderToken = ++registryRenderToken;
     setBusyFlag("discoveryLoad", true);
+    setSourceTablesLoadState(
+      activeCompactSourceTables
+        ? "retrying-active"
+        : options?.completionRefresh
+          ? "recovering-idle"
+          : "loading",
+      activeContext.reason
+    );
     state.discoveryLoadPromise = (async () => {
       try {
         const filterState = toAdminFilterState();
-        const sourceTablesOnly = Boolean(options?.sourceTablesOnly || sourceTablesOnlyForLiveDiscovery);
+        const sourceTablesOnly = Boolean(options?.sourceTablesOnly || activeCompactSourceTables);
         const reportPromise = sourceTablesOnly
           ? Promise.resolve(null)
           : loadDiscoveryEndpoint(
@@ -443,7 +429,8 @@ export function createRegistryLoadController({
             state.latestDiscoveryReportCache || { summary: {}, candidates: [], failures: [] },
             { background }
           );
-        const registrySummaryPromise = options?.completionRefresh
+        const loadRegistrySummary = Boolean(options?.completionRefresh && !activeCompactSourceTables);
+        const registrySummaryPromise = loadRegistrySummary
           ? loadDiscoveryEndpoint(
             "Admin registry summary",
             getBridge("/registry/summary"),
@@ -466,10 +453,13 @@ export function createRegistryLoadController({
             state.latestFetcherReportCache || {}
           );
         const registrySourcesPath = `/registry/sources?view=table&buckets=pending,active,rejected&includeHiddenPending=${filterState.showZeroJobs ? "1" : "0"}`;
+        const registrySourcesTimeoutMs = activeCompactSourceTables
+          ? ACTIVE_REGISTRY_LOAD_TIMEOUT_MS
+          : FULL_REGISTRY_LOAD_TIMEOUT_MS;
         const registrySourcesPromise = registrySummaryPromise
           .then(registrySummary => loadDiscoveryEndpoint(
             "Admin registry source tables",
-            getBridge(registrySourcesPath, { timeoutMs: FULL_REGISTRY_LOAD_TIMEOUT_MS }),
+            getBridge(registrySourcesPath, { timeoutMs: registrySourcesTimeoutMs }),
             {
               ok: false,
               sources: { pending: [], active: [], rejected: [] },
@@ -521,7 +511,14 @@ export function createRegistryLoadController({
                 refs.adminPendingSourcesEl.innerHTML = `<div class="no-results">${hiddenZeroJobsCount.toLocaleString()} pending sources have 0 discovery jobs and are hidden. Enable "Show zero-jobs pending sources" to view them.</div>`;
               }
             });
-            return { payload: pending, rows, hiddenZeroJobsCount, visibleRows, loadFailed };
+            return {
+              payload: pending,
+              rows,
+              hiddenZeroJobsCount,
+              visibleRows,
+              loadFailed,
+              delayedDuringActiveRun: Boolean(pending?.__delayedDuringActiveRun)
+            };
           });
         const activeRowsPromise = Promise.all([registrySourcesPromise, discoveryCandidatesPromise, latestFetchReportPromise])
           .then(([registrySources, discoveryCandidates, latestFetchReport]) => {
@@ -552,7 +549,13 @@ export function createRegistryLoadController({
               }
               renderSourcesTable(refs.adminActiveSourcesEl, visibleRows, "active");
             });
-            return { payload: active, rows, visibleRows, loadFailed };
+            return {
+              payload: active,
+              rows,
+              visibleRows,
+              loadFailed,
+              delayedDuringActiveRun: Boolean(active?.__delayedDuringActiveRun)
+            };
           });
         const rejectedRowsPromise = Promise.all([registrySourcesPromise, discoveryCandidatesPromise, latestFetchReportPromise])
           .then(([registrySources, discoveryCandidates, latestFetchReport]) => {
@@ -583,7 +586,13 @@ export function createRegistryLoadController({
               }
               renderSourcesTable(refs.adminRejectedSourcesEl, visibleRows, "rejected");
             });
-            return { payload: rejected, rows, visibleRows, loadFailed };
+            return {
+              payload: rejected,
+              rows,
+              visibleRows,
+              loadFailed,
+              delayedDuringActiveRun: Boolean(rejected?.__delayedDuringActiveRun)
+            };
           });
         const [report, discoveryCandidates, pendingResult, activeResult, rejectedResult] = await Promise.all([
           reportPromise,
@@ -625,6 +634,13 @@ export function createRegistryLoadController({
           || pendingResult.loadFailed
           || activeResult.loadFailed
           || rejectedResult.loadFailed
+        );
+        const registryDelayedDuringActiveRun = Boolean(
+          pending?.__delayedDuringActiveRun
+          || active?.__delayedDuringActiveRun
+          || rejected?.__delayedDuringActiveRun
+          || activeResult.delayedDuringActiveRun
+          || rejectedResult.delayedDuringActiveRun
         );
         const registrySignature = buildDiscoveryRegistrySignature({
           pending: pendingRows,
@@ -708,6 +724,13 @@ export function createRegistryLoadController({
         if (!partialLoadFailed) {
           state.sourceTablesDelayedDuringActiveRun = false;
           state.discoveryLastLoadSucceededAtMs = Date.now();
+          setSourceTablesLoadState("loaded", activeContext.reason);
+          resetRegistryRefreshRetryDelay();
+        } else if (registryDelayedDuringActiveRun) {
+          markSourceTablesDelayedForActiveWork("active_registry_timeout", { onlyIfPlaceholder: true });
+          scheduleRegistryRefreshRetry({ forcePipelinePreflight: true, fetchReport: options?.fetchReport || null });
+        } else {
+          setSourceTablesLoadState("unavailable", activeContext.reason);
         }
         return {
           report,
@@ -717,6 +740,7 @@ export function createRegistryLoadController({
           partialLoadFailed
         };
       } catch (err) {
+        setSourceTablesLoadState("unavailable", activeContext.reason);
         appendDiscoveryLog(`Could not load source discovery data: ${getErrorMessage(err)}`, "error");
         if (refs.adminDiscoverySummaryEl) {
           const message = getErrorMessage(err);
@@ -772,7 +796,8 @@ export function createRegistryLoadController({
 
   async function refreshSourceTablesAfterActiveRunIdle(options = {}) {
     const needsRecovery = Boolean(
-      state.sourceTablesDelayedDuringActiveRun
+      sourceTablesLoadStateNeedsRecovery()
+      || state.sourceTablesDelayedDuringActiveRun
       || !state.discoveryTablesRendered
       || sourceTableNeedsDelayedPlaceholder(refs.adminPendingSourcesEl)
       || sourceTableNeedsDelayedPlaceholder(refs.adminActiveSourcesEl)
@@ -802,6 +827,7 @@ export function createRegistryLoadController({
     loadDiscoveryData,
     syncSourceTablesAfterTaskCompletion,
     refreshSourceTablesAfterActiveRunIdle,
-    renderSourceTablesDelayed
+    renderSourceTablesDelayed,
+    markSourceTablesDelayedForActiveWork
   };
 }

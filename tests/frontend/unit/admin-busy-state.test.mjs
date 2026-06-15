@@ -205,6 +205,42 @@ test("syncAdminBusyUi shows one registry busy message and preserves bulk labels"
   assert.equal(refs.adminBulkBusyMessageEl.classList.contains("hidden"), false);
 });
 
+test("syncAdminBusyUi pauses source actions during standalone fetch", () => {
+  const busyState = {
+    fetcherRun: false,
+    fetcherWatch: true,
+    fetcherReportLoad: false,
+    liveFetchRunning: true,
+    discoveryRun: false,
+    discoveryWatch: false,
+    discoveryLoad: false,
+    discoveryWrite: false,
+    manualAdd: false,
+    manualCheck: false,
+    liveDiscoveryRunning: false,
+    syncRun: false,
+    liveSyncRunning: false,
+    opsLoad: false,
+    livePipelineRunning: false
+  };
+  const refs = buildRefs();
+  refs.adminSourceFilterBtnEls = [createElement("Pending"), createElement("Active")];
+
+  syncAdminBusyUi({
+    busyState,
+    viewState: toAdminViewState(busyState, { isUnlocked: true }),
+    fetcherPresetMeta: FETCHER_PRESET_META,
+    refs,
+    onSyncDiscoveryLogDisclosure() {}
+  });
+
+  assert.equal(refs.adminApproveSourcesBtnEl.disabled, true);
+  assert.equal(refs.adminAddManualSourceBtnEl.disabled, true);
+  assert.equal(refs.adminManualSourceUrlEl.disabled, true);
+  assert.equal(refs.adminSourceFilterBtnEls.every(btn => btn.disabled), true);
+  assert.match(refs.adminBulkBusyMessageEl.textContent, /Source registry actions are paused/);
+});
+
 test("syncAdminBusyUi treats source-table loading as local loading, not a running Discovery task", () => {
   const busyState = {
     fetcherRun: false,

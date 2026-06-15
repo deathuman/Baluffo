@@ -474,6 +474,7 @@ export function resetLiveTaskPlaceholder({
 
 export function createRestoreActiveRunWatches({
   loadFetcherLivePayload,
+  loadLatestFetcherSummary,
   loadLatestFetcherReport,
   fetcherController,
   loadDiscoveryLivePayload,
@@ -488,6 +489,11 @@ export function createRestoreActiveRunWatches({
     }
 
     restorePromise = (async () => {
+      const hydrateActiveFetcherProgress = async () => {
+        if (typeof loadLatestFetcherSummary === "function") {
+          await loadLatestFetcherSummary({ silent: true }).catch(() => null);
+        }
+      };
       const fetchLivePayload = await loadFetcherLivePayload?.().catch(() => null);
       if (isRestorableLiveTaskRun(fetchLivePayload)) {
         fetcherController?.attachToActiveFetchRun?.({
@@ -496,7 +502,7 @@ export function createRestoreActiveRunWatches({
         }, {
           announceStart: false
         });
-        await loadLatestFetcherReport?.({ silent: true, hydrateActiveProgress: true }).catch(() => null);
+        await hydrateActiveFetcherProgress();
       } else {
         const fetchReport = await loadLatestFetcherReport({ silent: true }).catch(() => null);
         const fetchMeta = fetcherController?.getRestorableFetcherRunMeta?.(fetchReport);
@@ -504,7 +510,7 @@ export function createRestoreActiveRunWatches({
           fetcherController?.attachToActiveFetchRun?.(fetchMeta, {
             announceStart: false
           });
-          await loadLatestFetcherReport?.({ silent: true, hydrateActiveProgress: true }).catch(() => null);
+          await hydrateActiveFetcherProgress();
         } else if (isRestorableLiveTaskRun(fetchReport)) {
           fetcherController?.attachToActiveFetchRun?.({
             runId: fetchReport?.runId,
@@ -512,7 +518,7 @@ export function createRestoreActiveRunWatches({
           }, {
             announceStart: false
           });
-          await loadLatestFetcherReport?.({ silent: true, hydrateActiveProgress: true }).catch(() => null);
+          await hydrateActiveFetcherProgress();
         }
       }
 

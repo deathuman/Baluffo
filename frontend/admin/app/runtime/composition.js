@@ -21,14 +21,15 @@ import { createAdminAuthController } from "../auth.js?v=6";
 import { createAdminDiscoveryController } from "../discovery.js?v=1";
 import {
   createAdminFetcherController
-} from "../fetcher.js?v=13";
+} from "../fetcher.js?v=14";
 import { createRestoreActiveRunWatches } from "../live-task.js";
-import { createAdminOpsController, formatBytes } from "../ops.js?v=23";
-import { createAdminRegistryController } from "../registry.js?v=17";
+import { createAdminOpsController, formatBytes } from "../ops.js?v=24";
+import { createAdminRegistryController } from "../registry.js?v=18";
 import { createAdminSyncController } from "../sync.js?v=13";
 import { createAdminOverviewController } from "./overview.js?v=14";
 import { createActionCenterController } from "../action-center.js";
 import { createAdminInspectorController } from "../inspector.js";
+import { activeSummaryIndicatesAdminWork } from "../active-work-policy.js";
 
 export function composeAdminControllers({
   state,
@@ -108,6 +109,7 @@ export function composeAdminControllers({
     loadDiscoveryData: (...args) => registryController.loadDiscoveryData(...args),
     onActivePipelineIdle: (...args) => registryController?.refreshSourceTablesAfterActiveRunIdle?.(...args),
     attachToActiveFetchRun: (...args) => fetcherController?.attachToActiveFetchRun?.(...args),
+    loadLatestFetcherSummary: options => fetcherController?.loadLatestFetcherSummary?.(options),
     loadLatestFetcherReport: options => fetcherController?.loadLatestFetcherReport?.(options),
     attachToActiveDiscoveryRun: (...args) => discoveryController?.attachToActiveDiscoveryRun?.(...args),
     loadLatestDiscoveryReport: options => discoveryController?.loadLatestDiscoveryReport?.(options),
@@ -174,6 +176,7 @@ export function composeAdminControllers({
 
   const restoreActiveRunWatches = createRestoreActiveRunWatches({
     loadFetcherLivePayload: (...args) => fetcherController.loadFetcherLivePayload(...args),
+    loadLatestFetcherSummary: options => fetcherController.loadLatestFetcherSummary(options),
     loadLatestFetcherReport: options => fetcherController.loadLatestFetcherReport(options),
     fetcherController,
     loadDiscoveryLivePayload: (...args) => discoveryController.loadDiscoveryLivePayload(...args),
@@ -226,21 +229,6 @@ export function composeAdminControllers({
     return null;
   }
 
-  function activeSummaryIndicatesAdminWork(activeSummary) {
-    if (activeSummary?.isActive || activeSummary?.pipelinePayload?.active) return true;
-    const tasks = Array.isArray(activeSummary?.taskStatePayload?.tasks)
-      ? activeSummary.taskStatePayload.tasks
-      : [];
-    return tasks.some(row => {
-      const taskType = String(row?.taskType || row?.type || "").trim().toLowerCase();
-      const status = String(row?.status || row?.lifecycleStatus || "").trim().toLowerCase();
-      return ["pipeline", "fetch", "discovery", "sync"].includes(taskType)
-        && row?.active !== false
-        && !String(row?.finishedAt || "").trim()
-        && !["ok", "success", "succeeded", "failed", "error", "canceled", "cancelled"].includes(status);
-    });
-  }
-
   async function loadCriticalBootstrapFallbacks() {
     const activeSummary = typeof opsController.loadActiveOpsSummaryData === "function"
       ? await opsController.loadActiveOpsSummaryData({
@@ -251,7 +239,7 @@ export function composeAdminControllers({
       : null;
     const activeAdminWork = activeSummaryIndicatesAdminWork(activeSummary);
     if (activeAdminWork) {
-      registryController.renderSourceTablesDelayed({ onlyIfPlaceholder: false });
+      registryController.markSourceTablesDelayedForActiveWork?.("active_admin_work", { onlyIfPlaceholder: false });
     }
     const tasks = [
       overviewController.refreshOverview({

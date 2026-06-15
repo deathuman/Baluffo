@@ -257,9 +257,16 @@ test("admin active poll notifies source tables when pipeline transitions idle", 
 });
 
 test("admin source tables preserve rendered rows while active refresh is delayed", async () => {
+  const calls = [];
   const fixture = createRegistryControllerFixture({
     state: { adminBusyState: { discoveryLoad: false, livePipelineRunning: true, liveFetchRunning: true } },
-    options: { getBridge: async path => { throw new Error(`unexpected path ${path}`); } }
+    options: {
+      getBridge: async path => {
+        calls.push(String(path));
+        if (String(path).startsWith("/registry/sources")) throw new Error("Bridge error (HTTP 504)");
+        throw new Error(`unexpected path ${path}`);
+      }
+    }
   });
   fixture.refs.adminPendingSourcesEl.innerHTML = '<table><tbody><tr><td>Existing Pending Studio</td></tr></tbody></table>';
   fixture.refs.adminActiveSourcesEl.innerHTML = '<table><tbody><tr><td>Existing Active Studio</td></tr></tbody></table>';
@@ -268,9 +275,12 @@ test("admin source tables preserve rendered rows while active refresh is delayed
 
   const result = await controller.loadDiscoveryData({ background: false });
 
-  assert.equal(result?.skipped, true);
-  assert.equal(result?.reason, "pipeline_running");
+  assert.equal(result?.partialLoadFailed, true);
+  assert.ok(calls.some(path => path.startsWith("/registry/sources?view=table")));
+  assert.ok(!calls.includes("/discovery/report"));
+  assert.ok(!calls.includes("/discovery/candidates"));
   assert.equal(fixture.state.sourceTablesDelayedDuringActiveRun, true);
+  assert.equal(fixture.state.sourceTablesLoadState, "delayed-active");
   assert.match(fixture.refs.adminPendingSourcesEl.innerHTML, /Existing Pending Studio/);
   assert.match(fixture.refs.adminActiveSourcesEl.innerHTML, /Existing Active Studio/);
   assert.match(fixture.refs.adminRejectedSourcesEl.innerHTML, /Source tables delayed while job update is running/);

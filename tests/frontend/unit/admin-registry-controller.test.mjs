@@ -226,6 +226,7 @@ test("admin registry controller allows completion refresh while discovery watch 
     refs,
     getBridge: async (path, requestOptions = {}) => {
       calls.push({ path, requestOptions });
+      if (path === "/tasks/run-jobs-pipeline-status") return { active: true, stage: "discovery" };
       if (path === "/discovery/report") return { summary: {}, finishedAt: "2026-03-08T10:05:00Z" };
       if (path === "/registry/summary") return { ok: true, summary: {} };
       if (path === "/discovery/candidates") return { candidates: [] };
@@ -258,12 +259,13 @@ test("admin registry controller allows completion refresh while discovery watch 
   const result = await controller.loadDiscoveryData({ background: true, completionRefresh: true });
 
   assert.equal(result?.skipped, undefined);
-  assert.ok(calls.some(call => call.path === "/discovery/report"));
-  const summaryIndex = calls.findIndex(call => call.path === "/registry/summary");
+  assert.ok(calls.some(call => call.path === "/tasks/run-jobs-pipeline-status"));
+  assert.ok(!calls.some(call => call.path === "/discovery/report"));
+  assert.ok(!calls.some(call => call.path === "/discovery/candidates"));
+  assert.ok(!calls.some(call => call.path === "/registry/summary"));
   const sourcesIndex = calls.findIndex(call => String(call.path).startsWith("/registry/sources"));
-  assert.ok(summaryIndex >= 0);
-  assert.ok(sourcesIndex > summaryIndex);
-  assert.equal(calls[sourcesIndex].requestOptions.timeoutMs, 60000);
+  assert.ok(sourcesIndex >= 0);
+  assert.equal(calls[sourcesIndex].requestOptions.timeoutMs, 10000);
 });
 
 test("admin registry controller treats background registry source timeout as delayed partial load", async () => {
