@@ -100,6 +100,7 @@ test("initJobsFeed first-run bootstrap state machine covers start, attach, evide
     let refreshes = 0;
     const { calls, deps } = createBaseDeps({
       isDesktopRuntimeMode: () => true,
+      desktopJobsColdStart: true,
       windowObject: { localStorage },
       bootstrapPollIntervalMs: 0,
       bootstrapTimeoutMs: 1000,
@@ -144,6 +145,7 @@ test("initJobsFeed confirms a timed-out bootstrap start from the active report",
   const startOptions = [];
   const { calls, deps } = createBaseDeps({
     isDesktopRuntimeMode: () => true,
+    desktopJobsColdStart: true,
     windowObject: { localStorage },
     bootstrapPollIntervalMs: 0,
     bootstrapTimeoutMs: 1000,
@@ -189,6 +191,7 @@ test("initJobsFeed shows an unconfirmed start error without writing failed marke
   let bootstrapStarts = 0;
   const { calls, deps } = createBaseDeps({
     isDesktopRuntimeMode: () => true,
+    desktopJobsColdStart: true,
     windowObject: { localStorage },
     bootstrapConfirmTimeoutMs: 0,
     fetchJobsReport: async () => {
@@ -219,6 +222,7 @@ test("initJobsFeed retry re-renders first-run progress and loads completed feed 
   const progressCalls = [];
   const { calls, deps } = createBaseDeps({
     isDesktopRuntimeMode: () => true,
+    desktopJobsColdStart: true,
     windowObject: { localStorage },
     bootstrapPollIntervalMs: 0,
     bootstrapTimeoutMs: 1000,

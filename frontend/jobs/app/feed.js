@@ -372,12 +372,15 @@ export async function initJobsFeed(deps) {
     const launchColdStartPending = desktopMode
       && Boolean(desktopJobsColdStart)
       && !launchColdStartAlreadyHandled(windowObject);
-    const localReportPresent = Boolean(localReport && typeof localReport === "object");
     const localReportSuccessful = isSuccessfulJobsFetchReport(localReport);
+    const bootstrapMarker = desktopMode ? bootstrapAutoStartMarker(windowObject) : { status: "none" };
+    const bootstrapMarkerRunning = bootstrapMarker.status === "running"
+      || bootstrapMarker.status === "legacy";
+    const activeBootstrapReport = isActiveBootstrapReport(localReport);
     const firstRunRequired = Boolean(
       desktopMode
       && !localReportSuccessful
-      && (launchColdStartPending || localReportPresent)
+      && (launchColdStartPending || bootstrapMarkerRunning || activeBootstrapReport)
     );
     const firstRunAction = firstRunRequired
       ? bootstrapColdStartAction(localReport, windowObject, {

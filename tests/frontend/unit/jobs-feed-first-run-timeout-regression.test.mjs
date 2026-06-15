@@ -236,6 +236,7 @@ test("initJobsFeed applies smoke URL timeout override for first-run bootstrap", 
   const { localStorage } = createLocalStorage();
   const { calls, deps } = createBaseDeps({
     isDesktopRuntimeMode: () => true,
+    desktopJobsColdStart: true,
     windowObject: {
       localStorage,
       location: {
@@ -266,6 +267,7 @@ test("initJobsFeed waits past timeout while task-live heartbeat stays fresh", as
   let refreshes = 0;
   const { calls, deps } = createBaseDeps({
     isDesktopRuntimeMode: () => true,
+    desktopJobsColdStart: true,
     windowObject: { localStorage },
     bootstrapPollIntervalMs: 0,
     bootstrapTimeoutMs: 1,
@@ -301,6 +303,7 @@ test("initJobsFeed checks the final report once more before showing timeout", as
   let refreshes = 0;
   const { calls, deps } = createBaseDeps({
     isDesktopRuntimeMode: () => true,
+    desktopJobsColdStart: true,
     windowObject: { localStorage },
     bootstrapPollIntervalMs: 0,
     bootstrapTimeoutMs: 1,
@@ -327,6 +330,7 @@ test("initJobsFeed retry loads an already completed feed before starting another
   let refreshes = 0;
   const { calls, deps } = createBaseDeps({
     isDesktopRuntimeMode: () => true,
+    desktopJobsColdStart: true,
     windowObject: { localStorage },
     bootstrapConfirmTimeoutMs: 0,
     fetchJobsReport: async () => {

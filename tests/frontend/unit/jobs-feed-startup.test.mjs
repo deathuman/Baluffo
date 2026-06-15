@@ -176,7 +176,7 @@ test("initJobsFeed skips packaged feeds and auto-starts bootstrap on desktop col
   let pendingAutoRefreshCalled = false;
   const eventOrder = [];
   const { calls, deps } = createBaseDeps({
-    isDesktopRuntimeMode: () => true,
+    isDesktopRuntimeMode: () => true, desktopJobsColdStart: true,
     windowObject: { localStorage },
     bootstrapPollIntervalMs: 0,
     bootstrapTimeoutMs: 1000,
@@ -244,7 +244,7 @@ test("initJobsFeed keeps waiting past first-run timeout while task-live heartbea
   let taskLiveCalls = 0;
   let refreshOptions = null;
   const { calls, deps } = createBaseDeps({
-    isDesktopRuntimeMode: () => true,
+    isDesktopRuntimeMode: () => true, desktopJobsColdStart: true,
     windowObject: { localStorage },
     bootstrapPollIntervalMs: 0,
     bootstrapTimeoutMs: 1,
@@ -282,7 +282,7 @@ test("initJobsFeed keeps waiting past first-run timeout while task-live heartbea
 test("initJobsFeed times out when first-run task-live heartbeat is stale", async () => {
   const { localStorage } = createLocalStorage();
   const { calls, deps } = createBaseDeps({
-    isDesktopRuntimeMode: () => true,
+    isDesktopRuntimeMode: () => true, desktopJobsColdStart: true,
     windowObject: { localStorage },
     bootstrapPollIntervalMs: 0,
     bootstrapTimeoutMs: 1,
@@ -308,7 +308,7 @@ test("initJobsFeed does not await the first-run notice before bootstrap polling"
   let refreshCompleted = false;
   let reportCalls = 0;
   const { deps } = createBaseDeps({
-    isDesktopRuntimeMode: () => true,
+    isDesktopRuntimeMode: () => true, desktopJobsColdStart: true,
     windowObject: { localStorage },
     bootstrapPollIntervalMs: 0,
     bootstrapTimeoutMs: 1000,
@@ -343,7 +343,7 @@ test("initJobsFeed shows retryable no-data UI when first-run feed has no display
   let errorMessage = "";
   let retryable = false;
   const { deps } = createBaseDeps({
-    isDesktopRuntimeMode: () => true,
+    isDesktopRuntimeMode: () => true, desktopJobsColdStart: true,
     windowObject: { localStorage },
     bootstrapPollIntervalMs: 0,
     bootstrapTimeoutMs: 1000,
@@ -373,7 +373,7 @@ test("initJobsFeed skips first-run notice and bootstrap for returning desktop us
   let bootstrapStarts = 0;
   let refreshCalls = 0;
   const { calls, deps } = createBaseDeps({
-    isDesktopRuntimeMode: () => true,
+    isDesktopRuntimeMode: () => true, desktopJobsColdStart: true,
     windowObject: { localStorage },
     fetchJobsReport: async () => ({
       finishedAt: "2026-05-17T10:00:00+00:00",
@@ -397,34 +397,31 @@ test("initJobsFeed skips first-run notice and bootstrap for returning desktop us
   assert.deepEqual(calls.showError, []);
 });
 
-test("initJobsFeed does not infer first-run from an unavailable report without launch flag", async () => {
+test("initJobsFeed does not infer first-run from a stale failed report without launch flag", async () => {
   const { localStorage } = createLocalStorage();
-  let bootstrapStarts = 0;
-  let startupPreviewCalled = false;
-  let pendingAutoRefreshCalled = false;
+  let bootstrapStarts = 0, startupPreviewCalled = false, pendingAutoRefreshCalled = false, refreshOptions = null;
   const { calls, deps } = createBaseDeps({
     isDesktopRuntimeMode: () => true,
     windowObject: { localStorage },
-    fetchJobsReport: async () => {
-      throw new Error("bridge unavailable");
-    },
-    startJobsBootstrap: async () => {
-      bootstrapStarts += 1;
-      return { started: true };
-    },
-    loadStartupPreviewJobs: async () => {
-      startupPreviewCalled = true;
+    fetchJobsReport: async () => ({
+      runId: "fetch_stale_error", status: "error",
+      finishedAt: "2026-06-14T19:39:35.575984+00:00",
+      summary: { outputCount: 41765, error: "owner_inactive_without_terminal_report" }
+    }),
+    startJobsBootstrap: async () => { bootstrapStarts += 1; return { started: true }; },
+    loadStartupPreviewJobs: async () => { startupPreviewCalled = true; return false; },
+    refreshJobsNow: async options => {
+      refreshOptions = options;
       return true;
     },
-    applyPendingAutoRefreshSignal: async () => {
-      pendingAutoRefreshCalled = true;
-    }
+    applyPendingAutoRefreshSignal: async () => { pendingAutoRefreshCalled = true; }
   });
 
   await initJobsFeed(deps);
 
   assert.equal(startupPreviewCalled, true);
   assert.equal(pendingAutoRefreshCalled, true);
+  assert.deepEqual(refreshOptions, { manual: false, firstLoad: true });
   assert.equal(bootstrapStarts, 0);
   assert.deepEqual(calls.notices, []);
   assert.equal(calls.metrics.find(metric => metric.event === "jobs_first_run_gate_evaluated")?.payload.action, "skip");
@@ -435,8 +432,7 @@ test("initJobsFeed skips launch-time desktop cold-start marker when report is su
   let bootstrapStarts = 0;
   let refreshOptions = null;
   const { calls, deps } = createBaseDeps({
-    isDesktopRuntimeMode: () => true,
-    desktopJobsColdStart: true,
+    isDesktopRuntimeMode: () => true, desktopJobsColdStart: true,
     windowObject: { localStorage, sessionStorage },
     bootstrapPollIntervalMs: 0,
     bootstrapTimeoutMs: 1000,
@@ -501,6 +497,7 @@ test("initJobsFeed ignores failed bootstrap marker when first-run is still requi
   let refreshOptions = null;
   const { calls, deps } = createBaseDeps({
     isDesktopRuntimeMode: () => true,
+    desktopJobsColdStart: true,
     windowObject: { localStorage },
     bootstrapPollIntervalMs: 0,
     bootstrapTimeoutMs: 1000,
