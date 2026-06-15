@@ -133,6 +133,8 @@ def get_incremental_cache_decision(
     next_eligible = parse_datetime(entry.get("nextEligibleCheckAt"))
     now_dt = datetime.now(UTC)
     if next_eligible and next_eligible > now_dt:
+        if effective_adapter == "static" and not _has_fetch_success_history(entry):
+            return {"cacheDecision": "run_now", "cacheDecisionReason": "no_success_history"}
         return _future_next_eligible_decision(entry)
     personio_decision = _personio_cooldown_decision(entry, now_dt, effective_adapter)
     if personio_decision:
@@ -144,6 +146,14 @@ def get_incremental_cache_decision(
     if effective_adapter == "static":
         return _static_cache_decision(entry, age_seconds)
     return _provider_cache_decision(entry, age_seconds, now_dt)
+
+
+def _has_fetch_success_history(entry: dict[str, Any]) -> bool:
+    return bool(
+        parse_datetime(entry.get("lastSuccessAt"))
+        or parse_datetime(entry.get("lastSuccessfulFetchAt"))
+        or parse_datetime(entry.get("lastNonEmptyAt"))
+    )
 
 
 def _future_next_eligible_decision(entry: dict[str, Any]) -> dict[str, str]:
