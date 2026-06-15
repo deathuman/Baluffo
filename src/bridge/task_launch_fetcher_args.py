@@ -137,6 +137,94 @@ def _static_detail_concurrency_from_payload(
     return safe_int(data.get("staticDetailConcurrency"), default_value, 1, 64)
 
 
+def _apply_fetcher_preset_args(
+    args: list[str],
+    *,
+    preset: str,
+    source_ttl: int,
+    default_source_loaders: Callable[[], list[tuple[str, Any]]],
+    failed_source_names_from_latest_report: Callable[[set[str] | None], list[str]],
+) -> str:
+    if preset == "incremental":
+        args.extend(["--skip-successful-sources", "--source-ttl-minutes", str(source_ttl)])
+        return preset
+    if preset == "retry_failed":
+        available_names = {name for name, _loader in default_source_loaders()}
+        failed_names = failed_source_names_from_latest_report(available_names)
+        if failed_names:
+            args.extend(["--only-sources", ",".join(failed_names)])
+        args.extend(["--ignore-circuit-breaker"])
+        return preset
+    if preset == "uncapped":
+        args.extend(["--force-refresh-all", "--ignore-circuit-breaker"])
+        _set_cli_option(args, "--max-workers", "50")
+        _set_cli_option(args, "--max-per-domain", "5")
+        _set_cli_option(
+            args,
+            "--adapter-http-concurrency",
+            str(jobs_common_config.DEFAULT_ADAPTER_HTTP_CONCURRENCY),
+        )
+        _set_cli_option(
+            args,
+            "--static-detail-concurrency",
+            str(jobs_common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY),
+        )
+        _set_cli_option(args, "--source-ttl-minutes", "0")
+        return preset
+    if preset == "force_full":
+        args.extend(["--ignore-circuit-breaker"])
+        return preset
+    return "default"
+
+
+def _apply_fetcher_flag_overrides(
+    args: list[str],
+    data: dict[str, Any],
+    *,
+    source_ttl: int,
+) -> None:
+    if bool(data.get("skipSuccessfulSources")) and "--skip-successful-sources" not in args:
+        args.append("--skip-successful-sources")
+        args.extend(["--source-ttl-minutes", str(source_ttl)])
+    if bool(data.get("respectSourceCadence")) and "--respect-source-cadence" not in args:
+        args.append("--respect-source-cadence")
+    if bool(data.get("ignoreCircuitBreaker")) and "--ignore-circuit-breaker" not in args:
+        args.append("--ignore-circuit-breaker")
+    if bool(data.get("quiet")) and "--quiet" not in args:
+        args.append("--quiet")
+    social_enabled = data.get("socialEnabled")
+    if social_enabled is None:
+        social_enabled = True
+    if bool(social_enabled) and "--social-enabled" not in args:
+        args.append("--social-enabled")
+
+
+def _apply_only_sources_override(
+    args: list[str],
+    data: dict[str, Any],
+    *,
+    default_source_loaders: Callable[[], list[tuple[str, Any]]],
+) -> None:
+    only_sources = data.get("onlySources")
+    if not isinstance(only_sources, list):
+        return
+    sanitized = [str(item).strip() for item in only_sources if str(item).strip()]
+    if not sanitized:
+        return
+    available_names = {name for name, _loader in default_source_loaders()}
+    matched = [name for name in sanitized if name in available_names]
+    if not matched:
+        raise OnlySourcesValidationError(sanitized)
+    _remove_cli_flag(args, "--skip-successful-sources")
+    _remove_cli_flag(args, "--respect-source-cadence")
+    if "--force-refresh-all" not in args:
+        args.append("--force-refresh-all")
+    if "--ignore-circuit-breaker" not in args:
+        args.append("--ignore-circuit-breaker")
+    _set_cli_option(args, "--source-ttl-minutes", "0")
+    args.extend(["--only-sources", ",".join(matched)])
+
+
 # ── public API ──────────────────────────────────────────────────────
 
 
@@ -194,65 +282,15 @@ def build_fetcher_args_from_payload(
         browser_fallback_cooldown=browser_fallback_cooldown,
     )
 
-    if preset == "incremental":
-        args.extend(["--skip-successful-sources", "--source-ttl-minutes", str(source_ttl)])
-    elif preset == "retry_failed":
-        available_names = {name for name, _loader in default_source_loaders()}
-        failed_names = failed_source_names_from_latest_report(available_names)
-        if failed_names:
-            args.extend(["--only-sources", ",".join(failed_names)])
-        args.extend(["--ignore-circuit-breaker"])
-    elif preset == "uncapped":
-        args.extend(["--force-refresh-all", "--ignore-circuit-breaker"])
-        _set_cli_option(args, "--max-workers", "50")
-        _set_cli_option(args, "--max-per-domain", "5")
-        _set_cli_option(
-            args,
-            "--adapter-http-concurrency",
-            str(jobs_common_config.DEFAULT_ADAPTER_HTTP_CONCURRENCY),
-        )
-        _set_cli_option(
-            args,
-            "--static-detail-concurrency",
-            str(jobs_common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY),
-        )
-        _set_cli_option(args, "--source-ttl-minutes", "0")
-    elif preset == "force_full":
-        args.extend(["--ignore-circuit-breaker"])
-    else:
-        preset = "default"
-
-    if bool(data.get("skipSuccessfulSources")) and "--skip-successful-sources" not in args:
-        args.append("--skip-successful-sources")
-        args.extend(["--source-ttl-minutes", str(source_ttl)])
-    if bool(data.get("respectSourceCadence")) and "--respect-source-cadence" not in args:
-        args.append("--respect-source-cadence")
-    if bool(data.get("ignoreCircuitBreaker")) and "--ignore-circuit-breaker" not in args:
-        args.append("--ignore-circuit-breaker")
-    if bool(data.get("quiet")) and "--quiet" not in args:
-        args.append("--quiet")
-    social_enabled = data.get("socialEnabled")
-    if social_enabled is None:
-        social_enabled = True
-    if bool(social_enabled) and "--social-enabled" not in args:
-        args.append("--social-enabled")
-
-    only_sources = data.get("onlySources")
-    if isinstance(only_sources, list):
-        sanitized = [str(item).strip() for item in only_sources if str(item).strip()]
-        if sanitized:
-            available_names = {name for name, _loader in default_source_loaders()}
-            matched = [name for name in sanitized if name in available_names]
-            if not matched:
-                raise OnlySourcesValidationError(sanitized)
-            _remove_cli_flag(args, "--skip-successful-sources")
-            _remove_cli_flag(args, "--respect-source-cadence")
-            if "--force-refresh-all" not in args:
-                args.append("--force-refresh-all")
-            if "--ignore-circuit-breaker" not in args:
-                args.append("--ignore-circuit-breaker")
-            _set_cli_option(args, "--source-ttl-minutes", "0")
-            args.extend(["--only-sources", ",".join(matched)])
+    preset = _apply_fetcher_preset_args(
+        args,
+        preset=preset,
+        source_ttl=source_ttl,
+        default_source_loaders=default_source_loaders,
+        failed_source_names_from_latest_report=failed_source_names_from_latest_report,
+    )
+    _apply_fetcher_flag_overrides(args, data, source_ttl=source_ttl)
+    _apply_only_sources_override(args, data, default_source_loaders=default_source_loaders)
     return args, preset
 
 
