@@ -15,6 +15,7 @@ from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.provider_api import ensure_registered as ensure_provider_plugins
 from src.jobs.adapters.plugins.static import (
     ats_wrappers,
+    elevato,
     frontier,
     kojima,
     sheet_studios,
@@ -84,6 +85,7 @@ __all__ = [
     "classify_job_page",
     "default_registry",
     "ensure_provider_plugins",
+    "elevato",
     "extract_rendered_card_jobs",
     "frontier",
     "hashlib",

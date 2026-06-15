@@ -6,7 +6,7 @@ import time
 from collections import Counter
 from collections.abc import Callable
 from typing import Any
-from urllib.parse import urljoin, urlparse
+from urllib.parse import unquote, urljoin, urlparse
 
 from src.jobs.adapters.html_parsers import (
     html_fragment_lines,
@@ -51,6 +51,7 @@ _DEFAULT_DETAIL_PATH_TOKENS = [
     "/positions/",
 ]
 _DEFAULT_DETAIL_QUERY_KEYS = ["job_id", "gh_jid", "jid", "jobid"]
+_ELEVATO_DETAIL_PATH_RE = re.compile(r"(?i)/(?:[a-z]{2}/)?[^/?#]+,j,\d+(?:$|[/?#])")
 
 KNOWN_NON_JOB_DETAIL_HOSTS = (
     "discord.com",
@@ -372,6 +373,10 @@ def is_probable_job_detail_url(
     query = parsed.query.lower()
     if host_matches_domain(host, "linkedin.com") or host_matches_domain(host, "linkedin.cn"):
         return False
+    if (host == "elevato.net" or host.endswith(".elevato.net")) and _ELEVATO_DETAIL_PATH_RE.search(
+        unquote(path)
+    ):
+        return True
     if host_matches_domain(host, "larian.com") and "/careers/location/" in path:
         return False
     path_tokens = list(default_path_tokens)

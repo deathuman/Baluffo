@@ -57,3 +57,29 @@ def test_process_detail_link_rejects_template_url_without_fetching() -> None:
     assert result["rows"] == []
     assert result["fetchMs"] == 0
     assert result["rejectedClassification"] == "dead_listing_page"
+
+
+def test_add_detail_link_accepts_elevato_comma_job_paths() -> None:
+    detail_links: list[tuple[str, str]] = []
+    detail_seen: set[str] = set()
+    seen_links: set[str] = set()
+    link_rejections: Counter[str] = Counter()
+
+    static_helpers.add_detail_link(
+        detail_links,
+        detail_seen,
+        seen_links,
+        link_rejections,
+        candidate_url="/en/technical-artist,j,240?source=10",
+        anchor_text="Technical Artist",
+        enforce_heuristics=True,
+        page_url="https://qloc.elevato.net/en/",
+        source={"company": "QLOC"},
+        default_path_tokens=[],
+        default_query_keys=[],
+    )
+
+    assert detail_links == [
+        ("https://qloc.elevato.net/en/technical-artist,j,240", "Technical Artist")
+    ]
+    assert not link_rejections

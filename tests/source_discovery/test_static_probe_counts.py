@@ -86,6 +86,30 @@ def test_static_probe_counts_positive_static_job_signals() -> None:
                 "lastReliableJobsFound": 102,
             },
         },
+        {
+            "case_id": "elevato-comma-job-paths",
+            "candidate": {
+                "adapter": "static",
+                "listing_url": "https://qloc.elevato.net/en/",
+            },
+            "html": """
+            <main>
+              <a href="https://qloc.elevato.net/en/translator-proofreader,j,242">
+                Translator / Proofreader
+              </a>
+              <a href="https://qloc.elevato.net/en/technical-artist,j,240?source=10">
+                Technical Artist
+              </a>
+              <a href="https://q-loc.com/privacy-policy/personal-data-processing/">Privacy</a>
+              <a href="https://qloc.elevato.net/en/job-offers,j">Show all job offers</a>
+            </main>
+            """,
+            "count": 2,
+            "candidate_fields": {
+                "lastProbeCountReason": "detail_links",
+                "lastReliableJobsFound": 2,
+            },
+        },
     ]
 
     for case in cases:

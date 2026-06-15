@@ -10,7 +10,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from html import unescape
 from typing import Any
-from urllib.parse import parse_qsl, urljoin, urlparse
+from urllib.parse import parse_qsl, unquote, urljoin, urlparse
 from xml.etree import ElementTree as ET
 
 from src.jobs.adapters.html_parsers import parse_jobpostings_from_html
@@ -31,6 +31,7 @@ TryPlaywrightFn = Callable[[str, int], tuple[str, str]]
 
 
 _STATIC_DETAIL_PATH_RE = re.compile(r"(?i)/(?:jobs?|positions?|openings?|vacancies?)/[^/?#]+")
+_ELEVATO_DETAIL_PATH_RE = re.compile(r"(?i)/(?:[a-z]{2}/)?[^/?#]+,j,\d+(?:$|[/?#])")
 _STATIC_LISTING_PATH_RE = re.compile(
     r"(?i)/(?:careers?|jobs?|positions?|openings?|vacancies?|work-with-us|join-us)(?:/|$)"
 )
@@ -164,6 +165,14 @@ def _is_same_listing_query_detail_link(base_url: str, absolute_url: str, label: 
     return bool(query_keys & _STATIC_DETAIL_QUERY_KEYS)
 
 
+def _is_elevato_detail_link(absolute_url: str) -> bool:
+    parsed = urlparse(absolute_url or "")
+    host = (parsed.hostname or "").lower()
+    if host != "elevato.net" and not host.endswith(".elevato.net"):
+        return False
+    return bool(_ELEVATO_DETAIL_PATH_RE.search(unquote(parsed.path or "")))
+
+
 def _static_result_count(text: str, base_url: str) -> int:
     if not _STATIC_LISTING_PATH_RE.search(_normalized_listing_path(base_url)):
         return 0
@@ -203,6 +212,7 @@ def _static_detail_links(text: str, base_url: str) -> tuple[str, ...]:
             continue
         if (
             not _STATIC_DETAIL_PATH_RE.search(parsed.path)
+            and not _is_elevato_detail_link(absolute)
             and not _is_same_listing_detail_link(base_url, absolute, label)
             and not same_listing_query_detail
         ):
