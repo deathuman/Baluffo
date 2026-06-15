@@ -118,10 +118,9 @@ async function postDesktopLifecycle(state, { keepalive = false, reason = "" } = 
   if (!desktopState.desktopSession || !desktopState.desktopPageId) {
     return null;
   }
-  return fetch(DESKTOP_SESSION_LIFECYCLE_URL, {
+  const requestOptions = {
     method: "POST",
     cache: "no-store",
-    keepalive,
     headers: {
       "Content-Type": "application/json"
     },
@@ -132,7 +131,11 @@ async function postDesktopLifecycle(state, { keepalive = false, reason = "" } = 
       state,
       reason: String(reason || "")
     })
-  });
+  };
+  if (keepalive) {
+    requestOptions.keepalive = true;
+  }
+  return fetch(DESKTOP_SESSION_LIFECYCLE_URL, requestOptions);
 }
 
 function sendDesktopClosingSignal(reason) {
@@ -249,7 +252,7 @@ function startDesktopLifecycle(clearDesktopNavigationBypass) {
     if (desktopState.desktopClosingSignaled) {
       return;
     }
-    postDesktopLifecycle("alive", { keepalive: true }).catch(() => {});
+    postDesktopLifecycle("alive").catch(() => {});
   };
   sendAlive();
   if (!desktopState.desktopLifecycleHeartbeatTimer) {

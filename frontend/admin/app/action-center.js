@@ -231,7 +231,8 @@ export function createActionCenterController({
   getBridge,
   postBridge,
   showToast,
-  logAdminError
+  logAdminError,
+  onSyncStatus
 }) {
   let pollTimer = null;
   let fullPollTimer = null;
@@ -469,6 +470,9 @@ export function createActionCenterController({
       pollCache.health = health;
       pollCache.sync = sync;
       pollCache.storage = storagePayload;
+      if (hasPayload(sync) && typeof onSyncStatus === "function") {
+        onSyncStatus(sync);
+      }
       const healthChecked = hasPayload(health);
       const syncChecked = hasPayload(sync);
       const storageChecked = hasPayload(storagePayload);

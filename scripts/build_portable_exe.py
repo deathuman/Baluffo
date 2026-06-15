@@ -25,7 +25,9 @@ DEFAULT_ICON_PATH = ROOT / "favicon.ico"
 PORTABLE_BUILD_PROVENANCE_FILE = ".baluffo-portable-build.json"
 CACHE_MANIFEST_FILE = "manifest.json"
 CACHE_SCHEMA_VERSION = 1
+DEFAULT_CACHE_RETAIN_ENTRIES = 5
 PORTABLE_BUILD_VERSION_ENV = "BALUFFO_PORTABLE_BUILD_VERSION"
+PORTABLE_BUILD_CACHE_RETAIN_ENV = "BALUFFO_PORTABLE_BUILD_CACHE_RETAIN"
 PLAYWRIGHT_BROWSER_NAME = "chromium-headless-shell"
 PLAYWRIGHT_BROWSER_CACHE_PREFIX = "chromium_headless_shell"
 PLAYWRIGHT_BROWSER_EXE_NAME = "chrome-headless-shell.exe"
@@ -105,6 +107,19 @@ PACKAGE_VERSION_NAMES = (
     "twisted",
     "certifi",
 )
+
+
+def _available_metadata_packages(package_names: tuple[str, ...]) -> tuple[str, ...]:
+    available: list[str] = []
+    for package_name in package_names:
+        try:
+            importlib.metadata.version(package_name)
+        except importlib.metadata.PackageNotFoundError:
+            continue
+        available.append(package_name)
+    return tuple(available)
+
+
 BUILD_SKIP_DIR_NAMES = {"__pycache__", ".pytest_cache", "node_modules"}
 BUILD_SKIP_FILE_SUFFIXES = {".pyc", ".pyo"}
 OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES = tuple(
@@ -181,6 +196,15 @@ MAIN_RUNTIME_COLLECT_ALL_PACKAGES = tuple(
     for package_name in OPTIONAL_SCRAPY_RUNTIME_PACKAGES
     if package_name not in {"twisted", "queuelib"}
 )
+SCRAPY_VERSION_METADATA_PACKAGES = (
+    "lxml",
+    "cssselect",
+    "parsel",
+    "w3lib",
+    "Twisted",
+    "cryptography",
+)
+MAIN_RUNTIME_COPY_METADATA_PACKAGES = _available_metadata_packages(SCRAPY_VERSION_METADATA_PACKAGES)
 # PyInstaller's broad Scrapy/Twisted collection otherwise walks test-only dependency
 # trees and reports missing optional test plugins; keep runtime packages, exclude tests.
 MAIN_RUNTIME_EXCLUDED_MODULES = (
@@ -375,6 +399,7 @@ def portable_build_fingerprint(
             "hiddenImports": list(MAIN_RUNTIME_HIDDEN_IMPORTS),
             "collectData": list(MAIN_RUNTIME_COLLECT_DATA_PACKAGES),
             "collectAll": list(MAIN_RUNTIME_COLLECT_ALL_PACKAGES),
+            "copyMetadata": list(MAIN_RUNTIME_COPY_METADATA_PACKAGES),
             "excludedModules": list(MAIN_RUNTIME_EXCLUDED_MODULES),
             "updaterHiddenImports": list(UPDATER_HELPER_HIDDEN_IMPORTS),
             "updaterCollectData": list(UPDATER_HELPER_COLLECT_DATA_PACKAGES),
@@ -394,22 +419,75 @@ def _cache_portable_dir(fingerprint: str, cache_root: Path = BUILD_CACHE_ROOT) -
     return _cache_entry_dir(fingerprint, cache_root) / "portable"
 
 
+def _is_portable_cache_entry(path: Path) -> bool:
+    name = str(path.name or "")
+    return bool(path.is_dir() and len(name) == 64 and all(ch in "0123456789abcdef" for ch in name))
+
+
+def _cache_entry_sort_key(path: Path) -> float:
+    manifest_path = path / CACHE_MANIFEST_FILE
+    try:
+        return manifest_path.stat().st_mtime
+    except OSError:
+        try:
+            return path.stat().st_mtime
+        except OSError:
+            return 0.0
+
+
+def _prune_portable_build_cache(
+    *,
+    cache_root: Path = BUILD_CACHE_ROOT,
+    retain_entries: int = DEFAULT_CACHE_RETAIN_ENTRIES,
+    keep_fingerprints: tuple[str, ...] = (),
+) -> list[Path]:
+    retain_count = max(0, int(retain_entries or 0))
+    if retain_count <= 0:
+        return []
+    root = Path(cache_root).expanduser().resolve()
+    if not root.is_dir():
+        return []
+    keep_names = {str(fingerprint) for fingerprint in keep_fingerprints if fingerprint}
+    entries = sorted(
+        (entry for entry in root.iterdir() if _is_portable_cache_entry(entry)),
+        key=_cache_entry_sort_key,
+        reverse=True,
+    )
+    retained: set[str] = set(keep_names)
+    for entry in entries:
+        if len(retained) >= retain_count:
+            break
+        retained.add(entry.name)
+    removed: list[Path] = []
+    for entry in entries:
+        if entry.name in retained:
+            continue
+        _remove_path_with_retry(entry)
+        removed.append(entry)
+    return removed
+
+
 def _remove_path_with_retry(path: Path) -> None:
     if not path.exists():
         return
     last_error: Exception | None = None
+    removal_path = path
     for _ in range(10):
         try:
-            if path.is_dir():
-                shutil.rmtree(path)
+            if removal_path == path:
+                stale_path = path.with_name(f"{path.name}.delete-{os.getpid()}-{time.time_ns()}")
+                path.replace(stale_path)
+                removal_path = stale_path
+            if removal_path.is_dir():
+                shutil.rmtree(removal_path)
             else:
-                path.unlink()
+                removal_path.unlink()
             last_error = None
             break
         except PermissionError as exc:
             last_error = exc
             time.sleep(0.25)
-    if path.exists():
+    if removal_path.exists():
         raise RuntimeError(f"Could not clear path due to a file lock: {path}") from last_error
 
 
@@ -761,6 +839,8 @@ def run_pyinstaller(
         command.extend(["--collect-data", package_name])
     for package_name in MAIN_RUNTIME_COLLECT_ALL_PACKAGES:
         command.extend(["--collect-all", package_name])
+    for package_name in MAIN_RUNTIME_COPY_METADATA_PACKAGES:
+        command.extend(["--copy-metadata", package_name])
     for module_name in MAIN_RUNTIME_EXCLUDED_MODULES:
         command.extend(["--exclude-module", module_name])
     ship_version_dir = output_dir / "ship" / "app" / "versions" / bundle_version
@@ -888,6 +968,7 @@ def build_or_reuse_portable(
     icon_path: Path,
     force: bool = False,
     cache_root: Path = BUILD_CACHE_ROOT,
+    cache_retain_entries: int = DEFAULT_CACHE_RETAIN_ENTRIES,
 ) -> tuple[Path, Path, dict[str, object]]:
     fingerprint_payload = portable_build_fingerprint(
         version=version,
@@ -911,6 +992,13 @@ def build_or_reuse_portable(
             cache_status="hit",
         )
         print(f"Portable build cache hit: {fingerprint}")
+        removed_entries = _prune_portable_build_cache(
+            cache_root=cache_root,
+            retain_entries=cache_retain_entries,
+            keep_fingerprints=(fingerprint,),
+        )
+        if removed_entries:
+            print(f"Portable build cache pruned: {len(removed_entries)} old entrie(s)")
         return output_dir / f"{exe_name}.exe", output_dir / "BaluffoUpdater.exe", provenance
 
     portable_root = build_portable_layout(output_dir, version)
@@ -935,7 +1023,29 @@ def build_or_reuse_portable(
         exe_name=exe_name,
     )
     print(f"Portable build cache stored: {fingerprint}")
+    removed_entries = _prune_portable_build_cache(
+        cache_root=cache_root,
+        retain_entries=cache_retain_entries,
+        keep_fingerprints=(fingerprint,),
+    )
+    if removed_entries:
+        print(f"Portable build cache pruned: {len(removed_entries)} old entrie(s)")
     return exe_path, helper_path, provenance
+
+
+def _resolve_cache_retain_entries(cli_value: int | None, env: dict[str, str] | None = None) -> int:
+    if cli_value is not None:
+        return max(0, int(cli_value))
+    env_map = env if env is not None else os.environ
+    raw = str(env_map.get(PORTABLE_BUILD_CACHE_RETAIN_ENV) or "").strip()
+    if raw:
+        try:
+            return max(0, int(raw))
+        except ValueError:
+            raise RuntimeError(
+                f"{PORTABLE_BUILD_CACHE_RETAIN_ENV} must be a non-negative integer."
+            ) from None
+    return DEFAULT_CACHE_RETAIN_ENTRIES
 
 
 def parse_args() -> argparse.Namespace:
@@ -947,6 +1057,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-zip", action="store_true")
     parser.add_argument("--skip-latest-mirror", action="store_true")
     parser.add_argument("--force", action="store_true", help="Bypass the portable build cache.")
+    parser.add_argument(
+        "--cache-retain",
+        type=int,
+        default=None,
+        help=(
+            "Keep this many content-addressed portable build cache entries after the build "
+            f"(default: ${PORTABLE_BUILD_CACHE_RETAIN_ENV} or {DEFAULT_CACHE_RETAIN_ENTRIES}; "
+            "0 disables pruning)."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -963,6 +1083,7 @@ def main() -> int:
         exe_name=exe_name,
         icon_path=icon_path,
         force=bool(args.force),
+        cache_retain_entries=_resolve_cache_retain_entries(args.cache_retain),
     )
     print(f"Portable executable ready: {exe_path}")
     print(f"Updater helper ready: {helper_path}")

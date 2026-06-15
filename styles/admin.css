@@ -135,13 +135,12 @@
   font-size: 0.84rem;
 }
 
-.pending-source-checkbox,
-.active-source-checkbox,
-.rejected-source-checkbox {
+input[type="checkbox"] {
   appearance: none;
   -webkit-appearance: none;
   width: 14px;
   height: 14px;
+  flex: 0 0 auto;
   margin: 0;
   border-radius: 3px;
   border: 1px solid color-mix(in srgb, #d6d6d6 72%, var(--surface-11));
@@ -151,23 +150,18 @@
   vertical-align: middle;
 }
 
-.pending-source-checkbox:hover,
-.active-source-checkbox:hover,
-.rejected-source-checkbox:hover {
+input[type="checkbox"]:hover:not(:disabled) {
   border-color: color-mix(in srgb, #dcdcdc 86%, var(--surface-11));
   background: color-mix(in srgb, #dedede 28%, transparent);
 }
 
-.pending-source-checkbox:checked,
-.active-source-checkbox:checked,
-.rejected-source-checkbox:checked {
+input[type="checkbox"]:checked,
+input[type="checkbox"]:indeterminate {
   border-color: color-mix(in srgb, #cfcfcf 90%, var(--surface-11));
   background: color-mix(in srgb, #cfcfcf 55%, transparent);
 }
 
-.pending-source-checkbox:checked::after,
-.active-source-checkbox:checked::after,
-.rejected-source-checkbox:checked::after {
+input[type="checkbox"]:checked::after {
   content: "";
   position: absolute;
   left: 3px;
@@ -179,44 +173,102 @@
   transform: rotate(45deg);
 }
 
-.admin-select-all-checkbox,
-.admin-select-all-label .admin-select-all-checkbox {
-  appearance: none;
-  -webkit-appearance: none;
-  width: 14px;
-  height: 14px;
-  margin: 0;
-  border-radius: 3px;
-  border: 1px solid color-mix(in srgb, #d6d6d6 72%, var(--surface-11));
-  background: color-mix(in srgb, #d6d6d6 20%, transparent);
-  cursor: pointer;
-  position: relative;
-  vertical-align: middle;
-}
-
-.admin-select-all-checkbox:hover,
-.admin-select-all-label .admin-select-all-checkbox:hover {
-  border-color: color-mix(in srgb, #dcdcdc 86%, var(--surface-11));
-  background: color-mix(in srgb, #dedede 28%, transparent);
-}
-
-.admin-select-all-checkbox:checked,
-.admin-select-all-label .admin-select-all-checkbox:checked {
-  border-color: color-mix(in srgb, #cfcfcf 90%, var(--surface-11));
-  background: color-mix(in srgb, #cfcfcf 55%, transparent);
-}
-
-.admin-select-all-checkbox:checked::after,
-.admin-select-all-label .admin-select-all-checkbox:checked::after {
+input[type="checkbox"]:indeterminate::after {
   content: "";
   position: absolute;
   left: 3px;
-  top: 0px;
-  width: 4px;
-  height: 8px;
-  border: solid color-mix(in srgb, #f4f4f4 92%, #ffffff);
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
+  top: 5px;
+  width: 6px;
+  height: 2px;
+  border-radius: 999px;
+  border: 0;
+  background: color-mix(in srgb, #f4f4f4 92%, #ffffff);
+  transform: none;
+}
+
+input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+html,
+body,
+.admin-registry-conflicts-list,
+.admin-registry-conflict-diff-body,
+.admin-ops-history-older .admin-ops-history-older-scroll,
+#admin-pending-sources .jobs-table-body,
+#admin-active-sources .jobs-table-body,
+#admin-rejected-sources .jobs-table-body,
+.admin-fetcher-log,
+.inspector-content,
+.inspector-raw {
+  scrollbar-width: thin;
+  scrollbar-color: var(--surface-18) var(--surface-1);
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+.admin-registry-conflicts-list::-webkit-scrollbar,
+.admin-registry-conflict-diff-body::-webkit-scrollbar,
+.admin-ops-history-older .admin-ops-history-older-scroll::-webkit-scrollbar,
+#admin-pending-sources .jobs-table-body::-webkit-scrollbar,
+#admin-active-sources .jobs-table-body::-webkit-scrollbar,
+#admin-rejected-sources .jobs-table-body::-webkit-scrollbar,
+.admin-fetcher-log::-webkit-scrollbar,
+.inspector-content::-webkit-scrollbar,
+.inspector-raw::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+html::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track,
+.admin-registry-conflicts-list::-webkit-scrollbar-track,
+.admin-registry-conflict-diff-body::-webkit-scrollbar-track,
+.admin-ops-history-older .admin-ops-history-older-scroll::-webkit-scrollbar-track,
+#admin-pending-sources .jobs-table-body::-webkit-scrollbar-track,
+#admin-active-sources .jobs-table-body::-webkit-scrollbar-track,
+#admin-rejected-sources .jobs-table-body::-webkit-scrollbar-track,
+.admin-fetcher-log::-webkit-scrollbar-track,
+.inspector-content::-webkit-scrollbar-track,
+.inspector-raw::-webkit-scrollbar-track {
+  background: var(--surface-1);
+  border-radius: 999px;
+}
+
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb,
+.admin-registry-conflicts-list::-webkit-scrollbar-thumb,
+.admin-registry-conflict-diff-body::-webkit-scrollbar-thumb,
+.admin-ops-history-older .admin-ops-history-older-scroll::-webkit-scrollbar-thumb,
+#admin-pending-sources .jobs-table-body::-webkit-scrollbar-thumb,
+#admin-active-sources .jobs-table-body::-webkit-scrollbar-thumb,
+#admin-rejected-sources .jobs-table-body::-webkit-scrollbar-thumb,
+.admin-fetcher-log::-webkit-scrollbar-thumb,
+.inspector-content::-webkit-scrollbar-thumb,
+.inspector-raw::-webkit-scrollbar-thumb {
+  background: var(--surface-18);
+  border: 2px solid var(--surface-1);
+  border-radius: 999px;
+}
+
+html::-webkit-scrollbar-thumb:hover,
+body::-webkit-scrollbar-thumb:hover,
+.admin-registry-conflicts-list::-webkit-scrollbar-thumb:hover,
+.admin-registry-conflict-diff-body::-webkit-scrollbar-thumb:hover,
+.admin-ops-history-older .admin-ops-history-older-scroll::-webkit-scrollbar-thumb:hover,
+#admin-pending-sources .jobs-table-body::-webkit-scrollbar-thumb:hover,
+#admin-active-sources .jobs-table-body::-webkit-scrollbar-thumb:hover,
+#admin-rejected-sources .jobs-table-body::-webkit-scrollbar-thumb:hover,
+.admin-fetcher-log::-webkit-scrollbar-thumb:hover,
+.inspector-content::-webkit-scrollbar-thumb:hover,
+.inspector-raw::-webkit-scrollbar-thumb:hover {
+  background: var(--surface-20);
 }
 
 .admin-select-all-label {
@@ -389,6 +441,12 @@
   gap: 0.45rem;
   margin-bottom: 0.55rem;
   min-height: 2.35rem;
+}
+
+.admin-ops-alerts:empty,
+#admin-ops-fetcher-metrics:empty {
+  min-height: 0;
+  margin-bottom: 0;
 }
 
 .admin-alert-banner {
@@ -1666,43 +1724,6 @@
   border-radius: 0;
 }
 
-.admin-ops-run-detail {
-  margin: 0;
-  padding: 0 0.75rem 0.65rem;
-  background: color-mix(in srgb, var(--surface-4) 62%, transparent);
-}
-
-.admin-ops-run-detail > summary {
-  cursor: pointer;
-  width: max-content;
-  max-width: 100%;
-  padding: 0.25rem 0;
-  color: var(--text-secondary);
-  font-size: 0.78rem;
-  user-select: none;
-}
-
-.admin-ops-run-detail > summary::-webkit-details-marker {
-  display: none;
-}
-
-.admin-ops-run-detail > summary::after {
-  content: " +";
-}
-
-.admin-ops-run-detail[open] > summary::after {
-  content: " -";
-}
-
-.admin-ops-run-detail-body {
-  display: grid;
-  gap: 0.5rem;
-  padding: 0.55rem 0.65rem;
-  border: 1px solid color-mix(in srgb, var(--surface-11) 78%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--surface-3) 76%, transparent);
-}
-
 .admin-ops-run-detail-head,
 .admin-ops-run-detail-meta {
   display: flex;
@@ -1884,6 +1905,13 @@
 
 .admin-ops-history-older .jobs-table-body {
   border-top: 1px solid color-mix(in srgb, var(--surface-11) 82%, transparent);
+}
+
+.admin-ops-history-older .admin-ops-history-older-scroll {
+  max-height: clamp(18rem, 52vh, 34rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .admin-ops-trend-summary {
@@ -2499,41 +2527,12 @@
   max-height: calc(var(--admin-source-visible-rows) * var(--admin-source-row-height));
   overflow-y: auto;
   overflow-anchor: none;
-  scrollbar-width: thin;
-  scrollbar-color: var(--surface-18) var(--surface-1);
 }
 
 .admin-source-virtual-spacer {
   flex: 0 0 auto;
   min-height: 0;
   pointer-events: none;
-}
-
-#admin-pending-sources .jobs-table-body::-webkit-scrollbar,
-#admin-active-sources .jobs-table-body::-webkit-scrollbar,
-#admin-rejected-sources .jobs-table-body::-webkit-scrollbar {
-  width: 10px;
-}
-
-#admin-pending-sources .jobs-table-body::-webkit-scrollbar-track,
-#admin-active-sources .jobs-table-body::-webkit-scrollbar-track,
-#admin-rejected-sources .jobs-table-body::-webkit-scrollbar-track {
-  background: var(--surface-1);
-  border-radius: 999px;
-}
-
-#admin-pending-sources .jobs-table-body::-webkit-scrollbar-thumb,
-#admin-active-sources .jobs-table-body::-webkit-scrollbar-thumb,
-#admin-rejected-sources .jobs-table-body::-webkit-scrollbar-thumb {
-  background: var(--surface-18);
-  border-radius: 999px;
-  border: 2px solid var(--surface-1);
-}
-
-#admin-pending-sources .jobs-table-body::-webkit-scrollbar-thumb:hover,
-#admin-active-sources .jobs-table-body::-webkit-scrollbar-thumb:hover,
-#admin-rejected-sources .jobs-table-body::-webkit-scrollbar-thumb:hover {
-  background: var(--surface-20);
 }
 
 .admin-rejected-section {
@@ -2755,27 +2754,6 @@
   font-size: 0.82rem;
   line-height: 1.45;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
-  scrollbar-width: thin;
-  scrollbar-color: var(--surface-18) var(--surface-1);
-}
-
-.admin-fetcher-log::-webkit-scrollbar {
-  width: 10px;
-}
-
-.admin-fetcher-log::-webkit-scrollbar-track {
-  background: var(--surface-1);
-  border-radius: 10px;
-}
-
-.admin-fetcher-log::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, var(--surface-20), var(--surface-18));
-  border-radius: 10px;
-  border: 2px solid var(--surface-1);
-}
-
-.admin-fetcher-log::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, var(--surface-18), var(--accent));
 }
 
 .admin-fetcher-line {

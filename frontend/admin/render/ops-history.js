@@ -609,14 +609,6 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
 
   const olderOpen = canPatchInPlace ? Boolean(historyEl.querySelector(".admin-ops-history-older")?.open) : false;
   const recentOpen = canPatchInPlace ? Boolean(historyEl.querySelector(".admin-ops-history-recent")?.open) : false;
-  const openRunDetailKeys = new Set();
-  if (canPatchInPlace) {
-    historyEl.querySelectorAll(".admin-ops-history-run[data-run-key]").forEach(runEl => {
-      if (runEl.querySelector(".admin-ops-run-detail")?.open) {
-        openRunDetailKeys.add(String(runEl.dataset?.runKey || runEl.getAttribute?.("data-run-key") || ""));
-      }
-    });
-  }
   if (canPatchInPlace) {
     historyEl.dataset.opsStructureSig = structureSignature;
   }
@@ -658,42 +650,9 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
   }).join("");
 
   const renderCompletedRows = views => views.map(view => {
-    const metaItems = [
-      view.startedText ? `<span><strong>Started</strong> ${escapeHtml(view.startedText)}</span>` : "",
-      view.finishedText ? `<span><strong>Finished</strong> ${escapeHtml(view.finishedText)}</span>` : "",
-      view.durationText ? `<span><strong>Duration</strong> ${escapeHtml(view.durationText)}</span>` : ""
-    ].filter(Boolean).join("");
-    const warningFailureItems = [
-      view.warningSummary ? `<div class="admin-ops-run-detail-warning">${escapeHtml(view.warningSummary)}</div>` : "",
-      view.failureSummary ? `<div class="admin-ops-run-detail-failure">${escapeHtml(view.failureSummary)}</div>` : ""
-    ].filter(Boolean).join("");
-    const hintItems = view.diagnosticHints.length
-      ? `<ul>${view.diagnosticHints.map(hint => `<li>${escapeHtml(hint)}</li>`).join("")}</ul>`
-      : '<div class="muted">No diagnostic hints for this run.</div>';
     return `
       <div class="admin-ops-history-run" data-row-area="${view.rowArea}" data-run-key="${escapeHtml(view.key)}">
         ${renderCompactRows([view])}
-        <details class="admin-ops-run-detail">
-          <summary>${escapeHtml(view.title)} details</summary>
-          <div class="admin-ops-run-detail-body">
-            <div class="admin-ops-run-detail-head">
-              <div>
-                <strong>${escapeHtml(view.primaryLabel)}</strong>
-                ${view.secondaryLabel ? `<span>${escapeHtml(view.secondaryLabel)}</span>` : ""}
-              </div>
-              <div>
-                <span class="admin-status-chip ${view.statusClass}">${escapeHtml(view.statusText)}</span>
-              </div>
-            </div>
-            <div class="admin-ops-run-detail-meta">${metaItems}</div>
-            <div class="admin-ops-run-detail-summary"><strong>Summary</strong> ${escapeHtml(view.progressLabel || view.outputOrQueuedText)}</div>
-            ${warningFailureItems || '<div class="muted">No warnings or failures recorded for this run.</div>'}
-            <div class="admin-ops-run-detail-hints">
-              <strong>Diagnostic hints</strong>
-              ${hintItems}
-            </div>
-          </div>
-        </details>
       </div>
     `;
   }).join("");
@@ -748,14 +707,14 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
     ${olderCompletedViews.length ? `
       <details class="admin-ops-history-older admin-ops-completed-runs" data-ops-load-older-history>
         <summary>Older runs (${olderCompletedViews.length})</summary>
-        <div class="jobs-table-body">
+        <div class="jobs-table-body admin-ops-history-older-scroll">
           ${renderCompletedRows(olderCompletedViews)}
         </div>
       </details>
     ` : (historyLoaded && !historyFullLoaded) ? `
       <details class="admin-ops-history-older admin-ops-completed-runs" data-ops-load-older-history>
         <summary>Older runs</summary>
-        <div class="jobs-table-body">
+        <div class="jobs-table-body admin-ops-history-older-scroll">
           <div class="admin-ops-loading admin-section-loading">Open to load older run history.</div>
         </div>
       </details>
@@ -767,13 +726,6 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
     if (recentDetailsEl) recentDetailsEl.open = recentOpen;
     const detailsEl = historyEl.querySelector(".admin-ops-history-older");
     if (detailsEl) detailsEl.open = olderOpen;
-    historyEl.querySelectorAll(".admin-ops-history-run[data-run-key]").forEach(runEl => {
-      const key = String(runEl.dataset?.runKey || runEl.getAttribute?.("data-run-key") || "");
-      const runDetailsEl = runEl.querySelector(".admin-ops-run-detail");
-      if (runDetailsEl && openRunDetailKeys.has(key)) {
-        runDetailsEl.open = true;
-      }
-    });
   }
   attachCopyHandlers();
   attachAbortHandlers();

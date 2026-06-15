@@ -42,6 +42,9 @@ const ACTIVE_PIPELINE_KPI_DELAYED_LABEL = "Delayed while job update is running."
 const FETCH_KPI_LOADING_LABEL = "Loading latest fetch KPI...";
 const FETCH_KPI_UNAVAILABLE_LABEL = "Not available";
 const FETCH_KPI_NO_SUCCESS_LABEL = "No successful fetch yet";
+const OPS_TAB_BADGE_PENDING_TEXT = "...";
+const OPS_TAB_BADGE_DELAYED_TEXT = "-";
+const OPS_TAB_COUNTS_UNAVAILABLE_LABEL = "Count temporarily unavailable; retrying.";
 const OPS_DEGRADED_ACTIVE_TTL_MS = 30000;
 const OPS_HEAVY_ROUTE_BACKOFF_BASE_MS = 5000;
 const OPS_HEAVY_ROUTE_BACKOFF_MAX_MS = 30000;
@@ -145,19 +148,29 @@ function toDedupBadgeState(dedupEvidence = {}) {
   };
 }
 
-function pendingBadgeState(title = "Loading count") {
+function pendingBadgeState(title = "Loading count", options = {}) {
   return {
     count: 0,
-    tone: "pending",
+    tone: String(options?.tone || "pending"),
     title,
-    loaded: false
+    loaded: false,
+    pendingText: String(options?.pendingText || OPS_TAB_BADGE_PENDING_TEXT)
   };
+}
+
+function delayedBadgeState(title = ACTIVE_PIPELINE_KPI_DELAYED_LABEL) {
+  return pendingBadgeState(title, {
+    pendingText: OPS_TAB_BADGE_DELAYED_TEXT
+  });
 }
 
 function normalizeBadgeState(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   if (value.loaded === false) {
-    return pendingBadgeState(String(value.title || "Loading count"));
+    return pendingBadgeState(String(value.title || "Loading count"), {
+      tone: value.tone,
+      pendingText: value.pendingText
+    });
   }
   return {
     count: Math.max(0, Number(value.count || 0)),
@@ -242,7 +255,8 @@ function renderOpsTabBadges(refs, {
   registryConflictsPayload = {},
   fetcherMetricsPayload = {},
   tabCountsPayload = null,
-  activePipelineOrFetch = false
+  activePipelineOrFetch = false,
+  tabCountsUnavailable = false
 } = {}) {
   const badges = Array.isArray(refs?.adminOpsTabBadgeEls) ? refs.adminOpsTabBadgeEls : [];
   if (!badges.length) return;
@@ -274,27 +288,31 @@ function renderOpsTabBadges(refs, {
           ? formatBadgeTitle(registryConflictCount, "registry conflict", "registry conflicts")
           : "No registry conflicts"
     };
-  const overviewPendingTitle = activePipelineOrFetch ? ACTIVE_PIPELINE_KPI_DELAYED_LABEL : "Loading Overview count";
-  const discoveryPendingTitle = activePipelineOrFetch ? ACTIVE_PIPELINE_KPI_DELAYED_LABEL : "Loading Discovery Review count";
-  const sourcePolicyPendingTitle = activePipelineOrFetch ? ACTIVE_PIPELINE_KPI_DELAYED_LABEL : "Loading Source Policy Review count";
-  const registryConflictsPendingTitle = activePipelineOrFetch ? ACTIVE_PIPELINE_KPI_DELAYED_LABEL : "Loading Registry Conflicts count";
-  const dedupPendingTitle = activePipelineOrFetch ? ACTIVE_PIPELINE_KPI_DELAYED_LABEL : "Loading Dedup Lists count";
+  const pendingBadge = title => (
+    activePipelineOrFetch
+      ? delayedBadgeState()
+      : tabCountsUnavailable
+        ? pendingBadgeState(OPS_TAB_COUNTS_UNAVAILABLE_LABEL, {
+            pendingText: OPS_TAB_BADGE_DELAYED_TEXT
+          })
+        : pendingBadgeState(title)
+  );
   const localBadgeStates = {
     overview: isLoadedOverviewHealth(health)
       ? toAlertBadgeState(health?.alerts || [])
-      : pendingBadgeState(overviewPendingTitle),
+      : pendingBadge("Loading Overview count"),
     discovery: isLoadedDiscoveryReport(discovery)
       ? toDiscoveryBadgeState(discovery)
-      : pendingBadgeState(discoveryPendingTitle),
+      : pendingBadge("Loading Discovery Review count"),
     "source-policy": isLoadedSourcePolicyPayload(sourcePolicyRecommendations)
       ? toSourcePolicyBadgeState(sourcePolicyRecommendations || {})
-      : pendingBadgeState(sourcePolicyPendingTitle),
+      : pendingBadge("Loading Source Policy Review count"),
     "registry-conflicts": isLoadedRegistryConflictsPayload(registryConflictsPayload)
       ? registryConflictBadgeState
-      : pendingBadgeState(registryConflictsPendingTitle),
+      : pendingBadge("Loading Registry Conflicts count"),
     dedup: isLoadedDedupPayload(fetcherMetricsPayload)
       ? toDedupBadgeState(dedupEvidence)
-      : pendingBadgeState(dedupPendingTitle)
+      : pendingBadge("Loading Dedup Lists count")
   };
   badges.forEach(badge => {
     const key = String(badge?.dataset?.opsTab || badge?.getAttribute?.("data-ops-tab") || "");
@@ -305,7 +323,9 @@ function renderOpsTabBadges(refs, {
       ? summaryState
       : (localState || summaryState || pendingBadgeState());
     if (badge) {
-      badge.textContent = state.loaded === false ? "..." : Number(state.count || 0).toLocaleString();
+      badge.textContent = state.loaded === false
+        ? String(state.pendingText || OPS_TAB_BADGE_PENDING_TEXT)
+        : Number(state.count || 0).toLocaleString();
       badge.setAttribute?.("data-badge-tone", state.tone);
       setTooltip(badge, state.title);
     }
@@ -1167,13 +1187,21 @@ export function createOpsHealthController({
   }
 
   function rerenderOpsTabBadges() {
+    const activePipelineOrFetch = Boolean(
+      state.opsActivePipelineOrFetchLastActive
+      || state.adminBusyState?.livePipelineRunning
+      || state.adminBusyState?.liveFetchRunning
+      || hasActivePipelineOrFetchRows(getCachedTaskStatePayload())
+    );
     renderOpsTabBadges(refs, {
       health: state.latestOpsHealthCache || {},
       discoveryReport: state.latestDiscoveryReportCache || {},
       sourcePolicyRecommendations: getCachedSourcePolicyPayload(),
       registryConflictsPayload: getCachedRegistryConflictsPayload(),
       fetcherMetricsPayload: buildFetcherMetricsPayload(),
-      tabCountsPayload: state.latestOpsTabCountsPayload || null
+      tabCountsPayload: state.latestOpsTabCountsPayload || null,
+      activePipelineOrFetch,
+      tabCountsUnavailable: Boolean(state.opsTabCountsUnavailable && !activePipelineOrFetch)
     });
   }
 
@@ -1963,6 +1991,9 @@ export function createOpsHealthController({
     const activePipelineOrFetch = Boolean(
       controlPlanePipelineActive || liveTypes.has("pipeline") || liveTypes.has("fetch")
     );
+    if (activePipelineOrFetch) {
+      state.opsTabCountsDelayedDuringActiveRun = true;
+    }
     const fetchKpiPendingLabels = buildFetchKpiPendingLabels(health, activePipelineOrFetch);
     const fetchKpiPendingLabel = String(fetchKpiPendingLabels.default || FETCH_KPI_LOADING_LABEL);
 
@@ -1998,7 +2029,8 @@ export function createOpsHealthController({
       registryConflictsPayload,
       fetcherMetricsPayload,
       tabCountsPayload: state.latestOpsTabCountsPayload || null,
-      activePipelineOrFetch
+      activePipelineOrFetch,
+      tabCountsUnavailable: Boolean(state.opsTabCountsUnavailable && !activePipelineOrFetch)
     });
     renderAdminOpsTrendsImpl(refs.adminOpsTrendsEl, historyRuns);
     const historyRenderOptions = {
@@ -2142,7 +2174,10 @@ export function createOpsHealthController({
       }).catch(() => {});
     } else {
       loadFetchKpisSummaryData(renderToken, { silent: true }).catch(() => {});
-      loadOpsTabCountsSummaryData(renderToken, { silent: true }).catch(() => {});
+      loadOpsTabCountsSummaryData(renderToken, {
+        silent: true,
+        force: Boolean(state.opsTabCountsDelayedDuringActiveRun)
+      }).catch(() => {});
     }
     return { taskStatePayload, historyPayload };
   }
@@ -2652,7 +2687,11 @@ export function createOpsHealthController({
   }
 
   async function loadOpsTabCountsSummaryData(renderToken = opsRenderToken, options = {}) {
-    if (isOpsRouteBackedOff(OPS_HEAVY_ROUTE_TAB_COUNTS)) {
+    if (!options?.force && isOpsRouteBackedOff(OPS_HEAVY_ROUTE_TAB_COUNTS)) {
+      if (renderToken === opsRenderToken && !state.latestOpsTabCountsPayload) {
+        state.opsTabCountsUnavailable = true;
+        rerenderOpsTabBadges();
+      }
       return state.latestOpsTabCountsPayload || null;
     }
     if (!opsTabCountsLoad) {
@@ -2669,11 +2708,17 @@ export function createOpsHealthController({
       payload = await opsTabCountsLoad;
     } catch (err) {
       markOpsRouteFailure(OPS_HEAVY_ROUTE_TAB_COUNTS);
+      if (renderToken === opsRenderToken && !state.latestOpsTabCountsPayload) {
+        state.opsTabCountsUnavailable = true;
+        rerenderOpsTabBadges();
+      }
       throw err;
     }
     if (renderToken !== opsRenderToken) return payload || null;
     if (payload && typeof payload === "object" && !Array.isArray(payload)) {
       clearOpsRouteFailure(OPS_HEAVY_ROUTE_TAB_COUNTS);
+      state.opsTabCountsDelayedDuringActiveRun = false;
+      state.opsTabCountsUnavailable = false;
       state.latestOpsTabCountsPayload = payload;
       rerenderOpsTabBadges();
     }
@@ -2796,7 +2841,10 @@ export function createOpsHealthController({
       if (!hasFetchKpiValues(state.latestOpsHealthCache?.kpis || {})) {
         loadFetchKpisSummaryData(renderToken, { silent: Boolean(options?.fromPoll) }).catch(() => {});
       }
-      loadOpsTabCountsSummaryData(renderToken, { silent: Boolean(options?.fromPoll) }).catch(() => {});
+      loadOpsTabCountsSummaryData(renderToken, {
+        silent: Boolean(options?.fromPoll),
+        force: Boolean(state.opsTabCountsDelayedDuringActiveRun)
+      }).catch(() => {});
     } catch (err) {
       if (measureFirstRender) {
         markStep("admin_ops_health_first_render_done", {

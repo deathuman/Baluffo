@@ -271,3 +271,47 @@ test("admin sync status summary preserves enabled form state during first boot",
   assert.match(refs.adminSyncStatusEl.innerHTML, /pull/);
   assert.equal(Boolean(state.adminBusyState.liveSyncRunning), false);
 });
+
+test("admin sync status renders misconfigured packaged config as needs attention", () => {
+  const state = { syncConfigDirty: false, latestSyncStatusCache: null };
+  const refs = {
+    adminSyncEnabledEl: createElement({ checked: false }),
+    adminSyncStatusEl: createElement(),
+    adminSyncConfigHintEl: createElement()
+  };
+  const controller = createAdminSyncController({
+    state,
+    refs,
+    getBridge: async () => ({}),
+    postBridge: async () => ({}),
+    isSyncBusy: () => false,
+    setBusyFlag() {},
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    showToast() {},
+    toLocalTime: value => value.toISOString(),
+    loadOpsHealthData: async () => {},
+    scheduleOpsHealthPolling() {},
+    escapeHtml: value => String(value)
+  });
+
+  controller.renderSyncStatus({
+    savedConfig: { enabled: true },
+    config: {
+      enabled: true,
+      ready: false,
+      state: "misconfigured",
+      repo: "",
+      branch: "main",
+      path: "baluffo/source-sync.json",
+      missing: ["packaged_github_app_config"],
+      message: "Missing packaged GitHub App config.",
+      credentialsPackaged: false
+    },
+    runtime: { lastAction: "pull", lastResult: "ok", lastError: "" }
+  }, { forceForm: true });
+
+  assert.equal(refs.adminSyncEnabledEl.checked, true);
+  assert.match(refs.adminSyncStatusEl.innerHTML, /Needs Attention/);
+  assert.match(refs.adminSyncStatusEl.innerHTML, /Missing: packaged_github_app_config/);
+  assert.doesNotMatch(refs.adminSyncStatusEl.innerHTML, /Connected to unknown and ready/);
+});

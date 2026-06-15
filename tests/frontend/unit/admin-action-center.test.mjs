@@ -19,7 +19,8 @@ function cleanStoragePayload() {
 }
 
 function createFixture({
-  getBridge
+  getBridge,
+  onSyncStatus
 } = {}) {
   const refs = {
     actionCenterItemsEl: createElement(),
@@ -43,7 +44,8 @@ function createFixture({
     }),
     postBridge: async () => ({}),
     showToast() {},
-    logAdminError() {}
+    logAdminError() {},
+    onSyncStatus
   });
   return { refs, calls, controller };
 }
@@ -164,4 +166,34 @@ test("action center renders remote sync conflict as reviewable warning", async (
   assert.match(refs.actionCenterItemsEl.innerHTML, /Sync needs attention/);
   assert.match(refs.actionCenterItemsEl.innerHTML, /Sync conflict needs review; data refresh can continue/);
   assert.match(refs.actionCenterItemsEl.innerHTML, /data-preset="sync_pull"/);
+});
+
+test("action center publishes fresh sync status for Source Sync panel hydration", async () => {
+  const syncPayload = {
+    config: {
+      enabled: true,
+      ready: false,
+      state: "misconfigured",
+      missing: ["packaged_github_app_config"],
+      message: "Missing packaged GitHub App config.",
+      credentialsPackaged: false
+    },
+    runtime: { lastAction: "pull", lastResult: "ok", lastError: "" }
+  };
+  let publishedSync = null;
+  const { refs, controller } = createFixture({
+    getBridge: async path => {
+      if (path === "/ops/health?view=ready") return cleanHealthPayload();
+      if (path === "/sync/status?view=summary") return syncPayload;
+      return null;
+    },
+    onSyncStatus(payload) {
+      publishedSync = payload;
+    }
+  });
+
+  await controller.pollActionCenter({ includeStorage: false });
+
+  assert.equal(publishedSync, syncPayload);
+  assert.match(refs.actionCenterItemsEl.innerHTML, /Sync is enabled but not configured/);
 });

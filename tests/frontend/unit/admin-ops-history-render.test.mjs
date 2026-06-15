@@ -23,7 +23,7 @@ function makeButton(attributeValue) {
   };
 }
 
-test("admin ops history: completed run details show warning, failure, and capped hints read-only", () => {
+test("admin ops history: completed rows omit inline detail disclosures", () => {
   const historyEl = makeEl();
   renderAdminOpsHistory(historyEl, {
     currentRows: [],
@@ -72,14 +72,10 @@ test("admin ops history: completed run details show warning, failure, and capped
 
   assert.match(historyEl.innerHTML, /admin-ops-history-row/);
   assert.match(historyEl.innerHTML, /Progress \/ Summary/);
-  assert.match(historyEl.innerHTML, /admin-ops-run-detail/);
-  assert.match(historyEl.innerHTML, /Fetcher details/i);
-  assert.match(historyEl.innerHTML, /completed with warnings/i);
-  assert.match(historyEl.innerHTML, /2 source warnings?/i);
-  assert.match(historyEl.innerHTML, /1 failed source/i);
-  assert.match(historyEl.innerHTML, /9\/9 sources resolved/i);
+  assert.doesNotMatch(historyEl.innerHTML, /<details class="admin-ops-run-detail"/i);
+  assert.doesNotMatch(historyEl.innerHTML, /Fetcher details/i);
+  assert.doesNotMatch(historyEl.innerHTML, /Sync details/i);
   assert.match(historyEl.innerHTML, /Sync push/i);
-  assert.match(historyEl.innerHTML, /remote rejected test payload/i);
   assert.doesNotMatch(historyEl.innerHTML, /<button/i);
   assert.doesNotMatch(historyEl.innerHTML, /raw payload/i);
 });
@@ -236,7 +232,7 @@ test("admin ops history: selected run analysis renders bounded read-only evidenc
   assert.doesNotMatch(historyEl.innerHTML, /Event 5/);
   assert.match(historyEl.innerHTML, /Timeline/);
   assert.match(historyEl.innerHTML, /source order|3\/8\/2026|2026/);
-  assert.match(historyEl.innerHTML, /admin-ops-run-detail/);
+  assert.match(historyEl.innerHTML, /admin-ops-run-detail-head/);
   assert.doesNotMatch(historyEl.innerHTML, /admin-ops-run-card/);
   assert.doesNotMatch(historyEl.innerHTML, /role="progressbar"/i);
   assert.doesNotMatch(historyEl.innerHTML, /<button[^>]*>(?:Start|Stop|Retry|Clear|Cleanup|Lifecycle)/i);
@@ -371,7 +367,7 @@ test("admin ops history: selected run analysis renders timeline empty state", ()
   assert.match(historyEl.innerHTML, /Selected Run Analysis/);
   assert.match(historyEl.innerHTML, /Timeline/);
   assert.match(historyEl.innerHTML, /No timeline evidence recorded for this run/);
-  assert.match(historyEl.innerHTML, /admin-ops-run-detail/);
+  assert.match(historyEl.innerHTML, /admin-ops-run-detail-head/);
   assert.doesNotMatch(historyEl.innerHTML, /<button[^>]*>(?:Start|Stop|Retry|Clear|Cleanup|Lifecycle)/i);
 });
 
@@ -459,7 +455,7 @@ test("admin ops history: pipeline no-progress scenarios show neutral fallback", 
         }],
         olderCompletedRows: []
       },
-      matches: [/Pipeline completed/, /No stage diagnostics are available for this pipeline run/],
+      matches: [/Pipeline completed/],
       nonMatches: [/step 0/i, /output 0 \(baseline 0\)/i]
     }
   ];
@@ -472,7 +468,7 @@ test("admin ops history: pipeline no-progress scenarios show neutral fallback", 
   }
 });
 
-test("admin ops history: completed pipeline drawer shows parent and child diagnostics", () => {
+test("admin ops history: selected completed pipeline analysis shows parent and child diagnostics", () => {
   const historyEl = makeEl();
   renderAdminOpsHistory(historyEl, {
     currentRows: [],
@@ -524,11 +520,15 @@ test("admin ops history: completed pipeline drawer shows parent and child diagno
       }
     ],
     olderCompletedRows: []
+  }, {
+    selectedRunKey: "completed|||pipeline|2026-03-08T09:00:00.000Z|2026-03-08T10:00:00.000Z|0"
   });
 
+  assert.match(historyEl.innerHTML, /Selected Run Analysis/);
   assert.match(historyEl.innerHTML, /Pipeline output 175 vs comparison base 150; updates found/);
   assert.match(historyEl.innerHTML, /Discovery completed/);
   assert.match(historyEl.innerHTML, /Fetch completed/);
+  assert.doesNotMatch(historyEl.innerHTML, /<details class="admin-ops-run-detail"/i);
   assert.doesNotMatch(historyEl.innerHTML, /step 0/i);
   assert.doesNotMatch(historyEl.innerHTML, /output 0 \(baseline 0\)/i);
 });

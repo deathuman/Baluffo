@@ -214,7 +214,11 @@ export function composeAdminControllers({
     getBridge,
     postBridge,
     showToast,
-    logAdminError
+    logAdminError,
+    onSyncStatus: payload => {
+      state.latestSyncStatusCache = payload || null;
+      syncController.renderSyncStatus(payload || {});
+    }
   });
 
   const inspectorController = createAdminInspectorController({

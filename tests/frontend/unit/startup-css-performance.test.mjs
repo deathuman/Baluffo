@@ -35,6 +35,30 @@ test("admin source tables reserve a fixed virtual viewport height", () => {
   assert.match(adminCss, /\.admin-source-row\s*\{[\s\S]*height:\s*var\(--admin-source-row-height/);
 });
 
+test("admin checkboxes use one polished source-list style", () => {
+  const checkboxRule = adminCss.match(/input\[type="checkbox"\]\s*\{[\s\S]*?\}/)?.[0] || "";
+  assert.match(checkboxRule, /appearance:\s*none/);
+  assert.match(checkboxRule, /width:\s*14px/);
+  assert.match(checkboxRule, /height:\s*14px/);
+  assert.match(checkboxRule, /border-radius:\s*3px/);
+  assert.match(checkboxRule, /color-mix\(in srgb,\s*#d6d6d6 72%,\s*var\(--surface-11\)\)/);
+  assert.match(adminCss, /input\[type="checkbox"\]:checked::after\s*\{[\s\S]*transform:\s*rotate\(45deg\)/);
+  assert.match(adminCss, /input\[type="checkbox"\]:indeterminate::after\s*\{[\s\S]*border-radius:\s*999px/);
+  assert.doesNotMatch(adminCss, /\.pending-source-checkbox,[\s\S]*?\.rejected-source-checkbox\s*\{/);
+});
+
+test("admin scrollbars use the source-list style everywhere", () => {
+  assert.match(adminCss, /#admin-pending-sources \.jobs-table-body/);
+  assert.match(adminCss, /\.admin-fetcher-log/);
+  assert.match(adminCss, /\.admin-registry-conflicts-list/);
+  assert.match(adminCss, /\.admin-ops-history-older \.admin-ops-history-older-scroll/);
+  assert.match(adminCss, /\.inspector-content/);
+  assert.match(adminCss, /scrollbar-color:\s*var\(--surface-18\)\s+var\(--surface-1\)/);
+  assert.match(adminCss, /::-webkit-scrollbar-thumb\s*\{[\s\S]*background:\s*var\(--surface-18\)/);
+  assert.match(adminCss, /::-webkit-scrollbar-thumb:hover\s*\{[\s\S]*background:\s*var\(--surface-20\)/);
+  assert.doesNotMatch(adminCss, /\.admin-fetcher-log::-webkit-scrollbar-thumb\s*\{/);
+});
+
 test("admin first-paint dynamic panels reserve stable height before data arrives", () => {
   assert.match(adminCss, /#admin-source-status\.source-status\s*\{[\s\S]*min-height:/);
   assert.match(adminCss, /\.action-center-items\s*\{[\s\S]*min-height:/);
@@ -44,6 +68,18 @@ test("admin first-paint dynamic panels reserve stable height before data arrives
   assert.match(adminCss, /\.admin-ops-alerts\s*\{[\s\S]*min-height:/);
   assert.match(adminCss, /\.admin-ops-kpis\s*\{[\s\S]*min-height:/);
   assert.match(adminCss, /\.admin-ops-schedule\s*\{[\s\S]*min-height:/);
+});
+
+test("admin optional ops slots collapse when empty", () => {
+  assert.match(adminCss, /\.admin-ops-alerts:empty,[\s\S]*#admin-ops-fetcher-metrics:empty\s*\{[\s\S]*min-height:\s*0/);
+  assert.match(adminCss, /\.admin-ops-alerts:empty,[\s\S]*#admin-ops-fetcher-metrics:empty\s*\{[\s\S]*margin-bottom:\s*0/);
+});
+
+test("admin older runs use a bounded scroll area", () => {
+  const rule = adminCss.match(/\.admin-ops-history-older \.admin-ops-history-older-scroll\s*\{[\s\S]*?\}/)?.[0] || "";
+  assert.match(rule, /max-height:\s*clamp\(18rem,\s*52vh,\s*34rem\)/);
+  assert.match(rule, /overflow-y:\s*auto/);
+  assert.match(rule, /scrollbar-gutter:\s*stable/);
 });
 
 test("jobs first-paint layout reserves scroll gutter and late content space", () => {

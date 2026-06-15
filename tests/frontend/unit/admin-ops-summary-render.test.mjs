@@ -91,6 +91,7 @@ test("admin render: schedule/trends/history render deterministic core text", () 
   assert.match(historyEl.innerHTML, /admin-ops-history-recent/);
   assert.doesNotMatch(historyEl.innerHTML, /<details[^>]*admin-ops-history-recent[^>]*open/i);
   assert.match(historyEl.innerHTML, /Older runs \(2\)/);
+  assert.match(historyEl.innerHTML, /admin-ops-history-older-scroll/);
   assert.match(historyEl.innerHTML, /running/);
   assert.match(historyEl.innerHTML, /critical/);
   assert.doesNotMatch(historyEl.innerHTML, /admin-ops-run-card/);

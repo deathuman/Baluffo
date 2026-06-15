@@ -1,3 +1,4 @@
+import importlib.metadata
 import importlib.util
 import json
 from pathlib import Path
@@ -12,11 +13,13 @@ from scripts.build_portable_exe import (
     DEFAULT_ICON_PATH,
     MAIN_RUNTIME_COLLECT_ALL_PACKAGES,
     MAIN_RUNTIME_COLLECT_DATA_PACKAGES,
+    MAIN_RUNTIME_COPY_METADATA_PACKAGES,
     MAIN_RUNTIME_EXCLUDED_MODULES,
     MAIN_RUNTIME_HIDDEN_IMPORTS,
     OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES,
     OPTIONAL_SCRAPY_RUNTIME_PACKAGES,
     REQUIRED_VERSION_FILES,
+    SCRAPY_VERSION_METADATA_PACKAGES,
     STORAGE_RUNTIME_COLLECT_DATA_PACKAGES,
     UPDATER_HELPER_COLLECT_DATA_PACKAGES,
     UPDATER_HELPER_HIDDEN_IMPORTS,
@@ -255,6 +258,21 @@ def test_portable_build_keeps_scrapy_runtime_collection() -> None:
     assert "twisted" not in MAIN_RUNTIME_COLLECT_ALL_PACKAGES
     assert "queuelib" not in MAIN_RUNTIME_COLLECT_ALL_PACKAGES
     assert {"scrapy", "scrapy_playwright", "twisted"}.issubset(set(MAIN_RUNTIME_HIDDEN_IMPORTS))
+
+
+def test_portable_build_copies_scrapy_version_metadata() -> None:
+    available = []
+    for package_name in SCRAPY_VERSION_METADATA_PACKAGES:
+        try:
+            importlib.metadata.version(package_name)
+        except importlib.metadata.PackageNotFoundError:
+            continue
+        available.append(package_name)
+
+    assert set(available).issubset(set(MAIN_RUNTIME_COPY_METADATA_PACKAGES))
+    for package_name in ("lxml", "Twisted"):
+        if package_name in available:
+            assert package_name in MAIN_RUNTIME_COPY_METADATA_PACKAGES
 
 
 def test_portable_build_can_find_playwright_chromium_headless_shell_cache() -> None:
