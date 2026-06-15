@@ -10,6 +10,16 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.73] - 2026-06-15
+
+### Fixed
+- Static source discovery and fetching now support Elevato-hosted job boards such as QLOC, including comma-style `,j,<id>` job URLs so the live QLOC Technical Artist opening is detected from the English board.
+- Expired Elevato detail pages are treated as empty/removed evidence, while generic "Join <company>" pages and privacy-policy links are filtered out of static job output.
+
+### Notes
+- This is a forward container/Umbrel patch for QLOC/Elevato source recovery. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.72] - 2026-06-15
 
 ### Fixed
