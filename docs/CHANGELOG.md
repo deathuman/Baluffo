@@ -10,6 +10,16 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.76] - 2026-06-16
+
+### Fixed
+- Static source freshness now ignores source-check-only `nextEligibleCheckAt` state that has no successful feed-producing fetch history, so active Elevato sources such as QLOC run in the next normal Jobs update instead of being skipped as fresh with `lastJobsKept: 0`.
+- QLOC feed recovery now covers the live `0.2.75` failure mode where the active registry row had `jobsFound: 9` but the published feed still carried stale Google Sheets `j,229` evidence and lacked the live Elevato `j,240` opening.
+
+### Notes
+- This is a forward container/Umbrel correction after the `0.2.75` live QLOC smoke failed. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.75] - 2026-06-16
 
 ### Fixed
