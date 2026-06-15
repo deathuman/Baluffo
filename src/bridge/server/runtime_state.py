@@ -350,24 +350,56 @@ def _prune_desktop_pages(
         return had_pages, bool(active_pages)
 
 
+def _desktop_close_request_should_exit(
+    *,
+    shutdown_reason: str,
+    shutdown_requested_at: str,
+    parse_iso: ParseIso,
+    now_utc: NowUtc,
+) -> bool | None:
+    if not shutdown_requested_at:
+        return None
+    if shutdown_reason == CONFIRMED_ACTIVE_WORK_CLOSE_REASON:
+        return True
+    if shutdown_reason not in REGULAR_DESKTOP_CLOSE_REASONS:
+        return None
+    requested_at = parse_iso(shutdown_requested_at)
+    if requested_at is None:
+        return True
+    elapsed_seconds = (now_utc() - requested_at).total_seconds()
+    return bool(elapsed_seconds >= REGULAR_DESKTOP_CLOSE_SHUTDOWN_GRACE_S)
+
+
+def _owner_should_exit_after_desktop_pages_pruned(
+    *,
+    owner_mode: str,
+    last_activity: datetime | None,
+    timeout_seconds: float,
+    now_utc: NowUtc,
+) -> bool:
+    if owner_mode != "desktop-window":
+        return True
+    if last_activity is None:
+        return False
+    idle_seconds = (now_utc() - last_activity).total_seconds()
+    return bool(idle_seconds > timeout_seconds)
+
+
 def owner_session_should_exit(*, parse_iso: ParseIso, now_utc: NowUtc) -> bool:
     owner_mode = str(OWNER_STATE.get("ownerMode") or "").strip()
     if not owner_mode:
         return False
     with DESKTOP_SESSION_LOCK:
-        shutdown_requested = bool(str(DESKTOP_SESSION_STATE.get("shutdownRequestedAt") or ""))
         shutdown_reason = str(DESKTOP_SESSION_STATE.get("shutdownReason") or "").strip().lower()
         shutdown_requested_at = str(DESKTOP_SESSION_STATE.get("shutdownRequestedAt") or "")
-    if shutdown_requested and shutdown_reason == CONFIRMED_ACTIVE_WORK_CLOSE_REASON:
-        return True
-    if shutdown_requested and shutdown_reason in REGULAR_DESKTOP_CLOSE_REASONS:
-        requested_at = parse_iso(shutdown_requested_at)
-        if requested_at is None:
-            return True
-        elapsed_seconds = (now_utc() - requested_at).total_seconds()
-        if elapsed_seconds >= REGULAR_DESKTOP_CLOSE_SHUTDOWN_GRACE_S:
-            return True
-        return False
+    close_request_should_exit = _desktop_close_request_should_exit(
+        shutdown_reason=shutdown_reason,
+        shutdown_requested_at=shutdown_requested_at,
+        parse_iso=parse_iso,
+        now_utc=now_utc,
+    )
+    if close_request_should_exit is not None:
+        return close_request_should_exit
     timeout_seconds = max(0.0, float(OWNER_STATE.get("idleTimeoutSeconds") or 0.0))
     if timeout_seconds <= 0.0:
         return False
@@ -380,12 +412,12 @@ def owner_session_should_exit(*, parse_iso: ParseIso, now_utc: NowUtc) -> bool:
         return False
     last_activity = parse_iso(OWNER_STATE.get("lastActivityAt"))
     if had_pages:
-        if owner_mode == "desktop-window":
-            if last_activity is None:
-                return False
-            idle_seconds = (now_utc() - last_activity).total_seconds()
-            return bool(idle_seconds > timeout_seconds)
-        return True
+        return _owner_should_exit_after_desktop_pages_pruned(
+            owner_mode=owner_mode,
+            last_activity=last_activity,
+            timeout_seconds=timeout_seconds,
+            now_utc=now_utc,
+        )
     if last_activity is None:
         return False
     idle_seconds = (now_utc() - last_activity).total_seconds()

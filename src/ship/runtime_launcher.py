@@ -209,6 +209,55 @@ def _write_jobs_row_artifact_restore_report(
     return report
 
 
+def _false_quarantine_backup_dir_from_report(
+    report_path: Path,
+    migration_timestamp: float,
+) -> Path | None:
+    cleanup_report = _load_json_object(report_path)
+    if cleanup_report.get("reason") != "no_successful_runtime_jobs_report":
+        return None
+    backup_dir = Path(str(cleanup_report.get("backupDir") or ""))
+    if not backup_dir.is_dir():
+        return None
+    if not _row_artifact_candidates(backup_dir):
+        return None
+    if not _runtime_feed_artifacts_include_updates_after(backup_dir, migration_timestamp):
+        return None
+    return backup_dir
+
+
+def _restore_jobs_row_artifact_backup(
+    data_dir: Path,
+    report_path: Path,
+    backup_dir: Path,
+) -> dict[str, object]:
+    restored: list[str] = []
+    failed: list[dict[str, str]] = []
+    for source in _row_artifact_candidates(backup_dir):
+        target = data_dir / source.name
+        if target.exists():
+            continue
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+        except (OSError, shutil.Error) as exc:
+            failed.append({"path": str(source), "target": str(target), "error": str(exc)})
+            continue
+        restored.append(str(target))
+
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    restore_report = {
+        "schemaVersion": 1,
+        "createdAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "reason": "false_quarantined_runtime_jobs_artifacts",
+        "backupDir": str(backup_dir),
+        "sourceReportPath": str(report_path),
+        "restored": restored,
+        "failed": failed,
+    }
+    return _write_jobs_row_artifact_restore_report(data_dir, timestamp, restore_report)
+
+
 def _restore_false_quarantined_jobs_row_artifacts(data_dir: Path) -> dict[str, object]:
     migration_timestamp = _completed_user_data_migration_timestamp(data_dir)
     if migration_timestamp is None:
@@ -225,43 +274,10 @@ def _restore_false_quarantined_jobs_row_artifacts(data_dir: Path) -> dict[str, o
         reports = []
 
     for report_path in reports:
-        cleanup_report = _load_json_object(report_path)
-        if cleanup_report.get("reason") != "no_successful_runtime_jobs_report":
+        backup_dir = _false_quarantine_backup_dir_from_report(report_path, migration_timestamp)
+        if backup_dir is None:
             continue
-        backup_dir = Path(str(cleanup_report.get("backupDir") or ""))
-        if not backup_dir.is_dir():
-            continue
-        backup_candidates = _row_artifact_candidates(backup_dir)
-        if not backup_candidates:
-            continue
-        if not _runtime_feed_artifacts_include_updates_after(backup_dir, migration_timestamp):
-            continue
-
-        restored: list[str] = []
-        failed: list[dict[str, str]] = []
-        for source in backup_candidates:
-            target = data_dir / source.name
-            if target.exists():
-                continue
-            try:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source, target)
-            except (OSError, shutil.Error) as exc:
-                failed.append({"path": str(source), "target": str(target), "error": str(exc)})
-                continue
-            restored.append(str(target))
-
-        timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-        restore_report = {
-            "schemaVersion": 1,
-            "createdAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-            "reason": "false_quarantined_runtime_jobs_artifacts",
-            "backupDir": str(backup_dir),
-            "sourceReportPath": str(report_path),
-            "restored": restored,
-            "failed": failed,
-        }
-        return _write_jobs_row_artifact_restore_report(data_dir, timestamp, restore_report)
+        return _restore_jobs_row_artifact_backup(data_dir, report_path, backup_dir)
 
     return {"restored": [], "failed": [], "skipped": "no_false_quarantine_backup"}
 
@@ -280,20 +296,91 @@ def _is_row_bearing_jobs_artifact_request(trace_path: str) -> bool:
     return safe_parts[0].removesuffix(".gz") in ROW_BEARING_JOBS_ARTIFACT_NAMES
 
 
+def _jobs_row_artifact_cleanup_report(
+    *,
+    backup_dir: Path,
+    quarantined: list[str],
+    failed: list[dict[str, str]],
+) -> dict[str, object]:
+    return {
+        "schemaVersion": 1,
+        "createdAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "reason": "no_successful_runtime_jobs_report",
+        "backupDir": str(backup_dir),
+        "quarantined": quarantined,
+        "failed": failed,
+    }
+
+
+def _write_jobs_row_artifact_cleanup_report(
+    *,
+    report_dir: Path,
+    timestamp: str,
+    report: dict[str, object],
+    report_error: str,
+) -> dict[str, object]:
+    if report_error:
+        report["reportError"] = report_error
+        return report
+    if not report_dir.exists():
+        return report
+    report_path = report_dir / f"stripped-packaged-jobs-cleanup-{timestamp}.json"
+    try:
+        report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+        report["reportPath"] = str(report_path)
+    except OSError as exc:
+        report["reportError"] = str(exc)
+    return report
+
+
+def _jobs_row_artifact_backup_failures(
+    candidates: list[Path],
+    backup_dir: Path,
+    error: BaseException,
+) -> list[dict[str, str]]:
+    return [
+        {"path": str(source), "target": str(backup_dir / source.name), "error": str(error)}
+        for source in candidates
+    ]
+
+
+def _move_jobs_row_artifacts_to_backup(
+    candidates: list[Path],
+    backup_dir: Path,
+) -> tuple[list[str], list[dict[str, str]]]:
+    quarantined: list[str] = []
+    failed: list[dict[str, str]] = []
+    for source in candidates:
+        target = backup_dir / source.name
+        if target.exists():
+            target = backup_dir / f"{source.stem}-{len(quarantined) + 1}{source.suffix}"
+        try:
+            shutil.move(str(source), str(target))
+        except (OSError, shutil.Error) as exc:
+            failed.append({"path": str(source), "target": str(target), "error": str(exc)})
+            continue
+        quarantined.append(str(source))
+    return quarantined, failed
+
+
+def _restore_or_skip_missing_jobs_row_artifacts(data_path: Path) -> dict[str, object]:
+    restore_result = _restore_false_quarantined_jobs_row_artifacts(data_path)
+    if restore_result.get("restored") or restore_result.get("failed"):
+        return {
+            "quarantined": [],
+            "failed": restore_result.get("failed", []),
+            "skipped": "restored_false_quarantined_runtime_artifacts",
+            "restored": restore_result.get("restored", []),
+            "restoreReportPath": restore_result.get("reportPath", ""),
+        }
+    return {"quarantined": [], "failed": [], "skipped": "no_artifacts"}
+
+
 def quarantine_stale_jobs_row_artifacts(data_dir: str | Path) -> dict[str, object]:
     data_path = Path(data_dir)
     candidates = _row_artifact_candidates(data_path)
     if not candidates:
-        restore_result = _restore_false_quarantined_jobs_row_artifacts(data_path)
-        if restore_result.get("restored") or restore_result.get("failed"):
-            return {
-                "quarantined": [],
-                "failed": restore_result.get("failed", []),
-                "skipped": "restored_false_quarantined_runtime_artifacts",
-                "restored": restore_result.get("restored", []),
-                "restoreReportPath": restore_result.get("reportPath", ""),
-            }
-        return {"quarantined": [], "failed": [], "skipped": "no_artifacts"}
+        return _restore_or_skip_missing_jobs_row_artifacts(data_path)
     if has_successful_runtime_jobs_report(data_path):
         return {"quarantined": [], "failed": [], "skipped": "successful_runtime_report"}
     if _runtime_feed_artifacts_include_updates_after_migration(data_path):
@@ -318,67 +405,31 @@ def quarantine_stale_jobs_row_artifacts(data_dir: str | Path) -> dict[str, objec
     try:
         backup_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        failed.extend(
-            {
-                "path": str(source),
-                "target": str(backup_dir / source.name),
-                "error": str(exc),
-            }
-            for source in candidates
+        failed = _jobs_row_artifact_backup_failures(candidates, backup_dir, exc)
+        report = _jobs_row_artifact_cleanup_report(
+            backup_dir=backup_dir,
+            quarantined=quarantined,
+            failed=failed,
         )
-        report = {
-            "schemaVersion": 1,
-            "createdAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-            "reason": "no_successful_runtime_jobs_report",
-            "backupDir": str(backup_dir),
-            "quarantined": quarantined,
-            "failed": failed,
-        }
-        if report_error:
-            report["reportError"] = report_error
-        elif report_dir.exists():
-            report_path = report_dir / f"stripped-packaged-jobs-cleanup-{timestamp}.json"
-            try:
-                report_path.write_text(
-                    json.dumps(report, indent=2, ensure_ascii=False),
-                    encoding="utf-8",
-                )
-                report["reportPath"] = str(report_path)
-            except OSError as report_exc:
-                report["reportError"] = str(report_exc)
-        return report
+        return _write_jobs_row_artifact_cleanup_report(
+            report_dir=report_dir,
+            timestamp=timestamp,
+            report=report,
+            report_error=report_error,
+        )
 
-    for source in candidates:
-        target = backup_dir / source.name
-        if target.exists():
-            target = backup_dir / f"{source.stem}-{len(quarantined) + 1}{source.suffix}"
-        try:
-            shutil.move(str(source), str(target))
-        except (OSError, shutil.Error) as exc:
-            failed.append({"path": str(source), "target": str(target), "error": str(exc)})
-            continue
-        quarantined.append(str(source))
-
-    report = {
-        "schemaVersion": 1,
-        "createdAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-        "reason": "no_successful_runtime_jobs_report",
-        "backupDir": str(backup_dir),
-        "quarantined": quarantined,
-        "failed": failed,
-    }
-    if report_error:
-        report["reportError"] = report_error
-    elif report_dir.exists():
-        report_path = report_dir / f"stripped-packaged-jobs-cleanup-{timestamp}.json"
-        try:
-            report_path.write_text(
-                json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8"
-            )
-            report["reportPath"] = str(report_path)
-        except OSError as exc:
-            report["reportError"] = str(exc)
-    return report
+    quarantined, failed = _move_jobs_row_artifacts_to_backup(candidates, backup_dir)
+    report = _jobs_row_artifact_cleanup_report(
+        backup_dir=backup_dir,
+        quarantined=quarantined,
+        failed=failed,
+    )
+    return _write_jobs_row_artifact_cleanup_report(
+        report_dir=report_dir,
+        timestamp=timestamp,
+        report=report,
+        report_error=report_error,
+    )
 
 
 def safe_quarantine_stale_jobs_row_artifacts(data_dir: str | Path) -> dict[str, object]:
