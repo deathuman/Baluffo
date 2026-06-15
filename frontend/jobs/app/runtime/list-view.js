@@ -134,6 +134,8 @@ export function displayJobs(jobs, {
   });
 
   if (totalCount === 0) {
+    jobsList.dataset.renderState = "empty";
+    delete jobsList.dataset.renderedRows;
     const emptyMessage = EMPTY_STATE_MESSAGES[String(emptyStateReason || "").trim()]
       || EMPTY_STATE_MESSAGES.default;
     setTimedInnerHTML(
@@ -154,6 +156,8 @@ export function displayJobs(jobs, {
   const pageJobs = Array.isArray(pageJobsOverride)
     ? pageJobsOverride
     : jobs.slice(startIndex, startIndex + state.itemsPerPage);
+  jobsList.dataset.renderState = "rows";
+  jobsList.dataset.renderedRows = String(pageJobs.length);
   emitDesktopStartupMetric("jobs_display_markup_start", {
     pageJobs: pageJobs.length,
     totalPages

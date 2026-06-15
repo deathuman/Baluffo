@@ -264,6 +264,10 @@
   min-height: calc(2.95rem + (10 * 3.35rem));
 }
 
+.jobs-page .jobs-list[data-render-state="rows"] {
+  min-height: 0;
+}
+
 .jobs-page .job-row-header {
   grid-template-columns: minmax(19rem, 1.8fr) minmax(10rem, 0.86fr) minmax(11rem, 0.76fr) 7.4rem 6.4rem 2.4rem;
   column-gap: 0.64rem;

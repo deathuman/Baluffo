@@ -40,6 +40,34 @@ function formatRegistryCountBasis(summary) {
   return "loaded counts";
 }
 
+function formatPendingApprovalBreakdown(summary) {
+  const pendingApproval = summary?.pendingApproval && typeof summary.pendingApproval === "object"
+    ? summary.pendingApproval
+    : null;
+  if (!pendingApproval) return "";
+  const buckets = pendingApproval.reviewBucketCounts && typeof pendingApproval.reviewBucketCounts === "object"
+    ? pendingApproval.reviewBucketCounts
+    : {};
+  const blockers = pendingApproval.blockerCounts && typeof pendingApproval.blockerCounts === "object"
+    ? pendingApproval.blockerCounts
+    : {};
+  const autoEligible = Number(pendingApproval.autoApprovalEligibleCount || buckets.auto_approvable || 0);
+  const weakSignal = Number(buckets.weak_signal || blockers.weak_signal || 0);
+  const zeroJobs = Number(buckets.zero_jobs || blockers.zero_jobs || 0);
+  const conflictDemoted = Number(buckets.conflict_demoted || blockers.conflict_demoted || 0);
+  const existingMatch = Number(buckets.existing_match || blockers.existing_match || 0);
+  const deferred = Number(buckets.deferred || blockers.deferred || 0);
+  const parts = [
+    `auto-eligible ${autoEligible.toLocaleString()}`,
+    `weak ${weakSignal.toLocaleString()}`,
+    `zero jobs ${zeroJobs.toLocaleString()}`,
+    `conflict-demoted ${conflictDemoted.toLocaleString()}`,
+    `existing-match ${existingMatch.toLocaleString()}`,
+    `deferred ${deferred.toLocaleString()}`
+  ];
+  return parts.join(", ");
+}
+
 function fnv1a32(value, seed = 0x811c9dc5) {
   let hash = seed >>> 0;
   const text = String(value ?? "");
@@ -650,7 +678,11 @@ export function createRegistryLoadController({
         const hiddenZeroJobsCount = pendingResult.hiddenZeroJobsCount;
 
         if (!sourceTablesOnly && refs.adminDiscoverySummaryEl) {
-          const summaryText = `Found ${foundCount} | Probed ${probedCount} | Review queue ${queuedCount} | Deferred review ${deferredCount} | Deferred by caps ${capDeferredCount} | Job-positive deferred ${jobPositiveDeferredCount} | Validated ${lifecycleCounts.validated} | Auto-approved this run ${autoApprovedCount} | Active registry ${activeRegistryCount} (${registryCountBasisLabel}) | Failed ${failedCount} | Skipped dupes ${skippedCount} | Pending ${Number(pending?.summary?.pendingCount || 0)} | Rejected ${Number(rejected?.summary?.rejectedCount || 0)} | Hidden zero-jobs ${hiddenZeroJobsCount}`;
+          const pendingApprovalBreakdown = formatPendingApprovalBreakdown(pending?.summary);
+          const pendingApprovalText = pendingApprovalBreakdown
+            ? ` | Pending source blockers: ${pendingApprovalBreakdown}`
+            : "";
+          const summaryText = `Found ${foundCount} | Probed ${probedCount} | Review queue ${queuedCount} | Deferred review ${deferredCount} | Deferred by caps ${capDeferredCount} | Job-positive deferred ${jobPositiveDeferredCount} | Validated ${lifecycleCounts.validated} | Auto-approved this run ${autoApprovedCount} | Active registry ${activeRegistryCount} (${registryCountBasisLabel}) | Failed ${failedCount} | Skipped dupes ${skippedCount} | Pending sources ${Number(pending?.summary?.pendingCount || 0)}${pendingApprovalText} | Rejected ${Number(rejected?.summary?.rejectedCount || 0)} | Hidden zero-jobs ${hiddenZeroJobsCount}`;
           refs.adminDiscoverySummaryEl.textContent = summaryText;
           refs.adminDiscoverySummaryEl.innerHTML = `<div>${summaryText}</div>`;
         }

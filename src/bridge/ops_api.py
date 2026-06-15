@@ -933,7 +933,9 @@ class OpsApi:
             if source_count > 0:
                 kpis["failedSourceRatioLatest"] = round(failed_sources / source_count, 4)
             if "pendingCount" in registry_summary:
-                kpis["pendingApprovalsCount"] = int(registry_summary.get("pendingCount") or 0)
+                pending_sources_count = int(registry_summary.get("pendingCount") or 0)
+                kpis["pendingSourcesCount"] = pending_sources_count
+                kpis["pendingApprovalsCount"] = pending_sources_count
             alert_result = _ops_health.evaluate_alerts_summary(
                 history=history,
                 pending_count=int(registry_summary.get("pendingCount") or 0),

@@ -130,6 +130,98 @@ def test_registry_sources_table_view_returns_compact_rows(tmp_path: Path) -> Non
     assert encoded_size < 5_000
 
 
+def test_registry_sources_table_view_explains_pending_auto_approval_blockers(
+    tmp_path: Path,
+) -> None:
+    api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    api.load_state = lambda: {  # type: ignore[assignment]
+        "active": [
+            {
+                "id": "static:listing_url:https://existing.example/jobs",
+                "name": "Existing",
+                "studio": "Existing",
+                "adapter": "static",
+                "listing_url": "https://existing.example/jobs",
+                "registryState": "active",
+            }
+        ],
+        "pending": [
+            {
+                "id": "static:listing_url:https://eligible.example/jobs",
+                "name": "Eligible",
+                "adapter": "static",
+                "listing_url": "https://eligible.example/jobs",
+                "jobsFound": 2,
+                "registryState": "pending",
+            },
+            {
+                "id": "static:listing_url:https://weak.example/jobs",
+                "name": "Weak",
+                "adapter": "static",
+                "listing_url": "https://weak.example/jobs",
+                "jobsFound": 1,
+                "weakSignal": True,
+                "registryState": "pending",
+            },
+            {
+                "id": "static:listing_url:https://zero.example/jobs",
+                "name": "Zero",
+                "adapter": "static",
+                "listing_url": "https://zero.example/jobs",
+                "jobsFound": 0,
+                "registryState": "pending",
+            },
+            {
+                "id": "static:listing_url:https://conflict.example/jobs",
+                "name": "Conflict",
+                "adapter": "static",
+                "listing_url": "https://conflict.example/jobs",
+                "jobsFound": 3,
+                "pendingReason": "registry_conflict_safe_auto_demote",
+                "stateChangedBy": "registry_conflict_safe_auto_demote",
+                "registryState": "pending",
+            },
+            {
+                "id": "static:listing_url:https://existing.example/jobs/",
+                "name": "Existing variant",
+                "studio": "Existing",
+                "adapter": "static",
+                "listing_url": "https://existing.example/jobs/",
+                "jobsFound": 4,
+                "registryState": "pending",
+            },
+        ],
+        "rejected": [],
+    }
+    _install_empty_discovery_candidates(api, tmp_path)
+
+    handler = FakeHandler()
+    assert handle_get(
+        handler,
+        api=api,
+        path="/registry/sources",
+        query={"view": ["table"], "buckets": ["pending"]},
+    )
+
+    payload = handler.sent[-1]["payload"]
+    rows = {row["name"]: row for row in payload["sources"]["pending"]}
+    pending_approval = payload["summary"]["pendingApproval"]
+    assert rows["Eligible"]["autoApprovalEligible"] is True
+    assert rows["Eligible"]["reviewBucket"] == "auto_approvable"
+    assert rows["Weak"]["reviewBucket"] == "weak_signal"
+    assert rows["Weak"]["primaryBlocker"] == "weak_signal"
+    assert rows["Zero"]["reviewBucket"] == "zero_jobs"
+    assert rows["Conflict"]["reviewBucket"] == "conflict_demoted"
+    assert rows["Existing variant"]["reviewBucket"] == "existing_match"
+    assert rows["Existing variant"]["approvalBlockers"] == ["existing_match"]
+    assert pending_approval["autoApprovalEligibleCount"] == 1
+    assert pending_approval["reviewBucketCounts"]["auto_approvable"] == 1
+    assert pending_approval["reviewBucketCounts"]["weak_signal"] == 1
+    assert pending_approval["reviewBucketCounts"]["zero_jobs"] == 1
+    assert pending_approval["reviewBucketCounts"]["conflict_demoted"] == 1
+    assert pending_approval["reviewBucketCounts"]["existing_match"] == 1
+
+
 def test_registry_sources_table_view_preserves_hidden_pending_filter(tmp_path: Path) -> None:
     api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
     api.load_state = lambda: {  # type: ignore[assignment]

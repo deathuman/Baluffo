@@ -187,6 +187,73 @@ export function deriveSourceApprovalStatus(row, mode = "pending") {
     };
   }
 
+  const backendBucket = String(row?.reviewBucket || "").trim().toLowerCase();
+  const backendPrimaryBlocker = String(row?.primaryBlocker || "").trim().toLowerCase();
+  const backendBlockerLabels = Array.isArray(row?.approvalBlockerLabels)
+    ? row.approvalBlockerLabels.map(item => String(item || "").trim()).filter(Boolean)
+    : [];
+  if (row?.autoApprovalEligible === true || backendBucket === "auto_approvable") {
+    return {
+      label: "Auto-approvable",
+      title: "Pending source satisfies the discovery auto-approval policy.",
+      tone: "healthy"
+    };
+  }
+  if (backendBucket || backendPrimaryBlocker) {
+    const blocker = backendPrimaryBlocker || backendBucket;
+    const blockerTitle = backendBlockerLabels.length
+      ? `Not auto-approved because: ${backendBlockerLabels.join("; ")}.`
+      : "Not auto-approved by the current discovery policy.";
+    if (backendBucket === "conflict_demoted" || blocker === "conflict_demoted") {
+      return {
+        label: "Blocked: conflict-demoted",
+        title: blockerTitle,
+        tone: "warning"
+      };
+    }
+    if (backendBucket === "weak_signal" || blocker === "weak_signal") {
+      return {
+        label: "Blocked: weak signal",
+        title: blockerTitle,
+        tone: "warning"
+      };
+    }
+    if (backendBucket === "zero_jobs" || blocker === "zero_jobs") {
+      return {
+        label: "Blocked: 0 discovery jobs",
+        title: blockerTitle,
+        tone: "warning"
+      };
+    }
+    if (backendBucket === "error" || blocker === "error" || blocker === "blocking_state") {
+      return {
+        label: "Blocked: error",
+        title: blockerTitle,
+        tone: "critical"
+      };
+    }
+    if (backendBucket === "deferred" || blocker === "deferred") {
+      const reason = String(row?.deferReason || row?.pendingReason || "").trim();
+      return {
+        label: reason ? `Deferred: ${reason}` : "Deferred",
+        title: blockerTitle,
+        tone: "warning"
+      };
+    }
+    if (backendBucket === "existing_match" || blocker === "existing_match") {
+      return {
+        label: "Blocked: existing source",
+        title: blockerTitle,
+        tone: "warning"
+      };
+    }
+    return {
+      label: "Manual review",
+      title: blockerTitle,
+      tone: "warning"
+    };
+  }
+
   const lastProbeError = String(row?.lastProbeError || row?.error || "").trim();
   const status = normalizeSourceStatusToken(row?.status);
   const discoveryJobs = getSourceDiscoveryJobsCount(row);

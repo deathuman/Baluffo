@@ -38,6 +38,8 @@ test("admin render: alerts and kpis render healthy/critical states", () => {
   assert.match(kpisEl.innerHTML, /admin-status-chip critical/);
   assert.match(kpisEl.innerHTML, /91\.0%/);
   assert.match(kpisEl.innerHTML, /12\.3s/);
+  assert.match(kpisEl.innerHTML, /Pending Sources/);
+  assert.doesNotMatch(kpisEl.innerHTML, /Pending Approvals/);
 });
 
 test("admin render: missing summary kpis remain pending instead of false zeros", () => {

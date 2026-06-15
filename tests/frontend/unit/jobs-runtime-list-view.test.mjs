@@ -65,11 +65,35 @@ test("jobs list view uses the jobs length when no totalCountOverride is provided
   }
 });
 
+test("jobs list view marks rendered rows so CSS does not reserve a fixed ten-row shell", () => {
+  const previousWindow = globalThis.window;
+  globalThis.window = {
+    requestAnimationFrame: callback => {
+      if (typeof callback === "function") callback();
+      return 1;
+    }
+  };
+
+  try {
+    const result = renderJobsList([
+      { id: "1", title: "Gameplay Engineer", company: "Studio", country: "NL" },
+      { id: "2", title: "Technical Artist", company: "Studio", country: "NL" }
+    ]);
+
+    assert.equal(result.jobsList.dataset.renderState, "rows");
+    assert.equal(result.jobsList.dataset.renderedRows, "2");
+  } finally {
+    globalThis.window = previousWindow;
+  }
+});
+
 test("jobs list view keeps the generic empty message for filter misses", () => {
   const { jobsList, resultsSummary } = renderJobsList([], {
     allJobs: [{ id: "1" }]
   });
 
+  assert.equal(jobsList.dataset.renderState, "empty");
+  assert.equal(jobsList.dataset.renderedRows, undefined);
   assert.match(jobsList.innerHTML, /No jobs found matching your filters\./);
   assert.doesNotMatch(jobsList.innerHTML, /Preparing first-run jobs/);
   assert.equal(resultsSummary.textContent, "Showing 0 jobs (1 loaded)");

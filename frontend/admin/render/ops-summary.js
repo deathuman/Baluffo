@@ -229,7 +229,7 @@ export function renderAdminOpsKpis(kpisEl, kpis, status, options = {}) {
     fetchKpiPendingLabels,
     sevenDayFetchSuccessRate: hasOwnField(kpis, "sevenDayFetchSuccessRate") ? kpis?.sevenDayFetchSuccessRate : "__pending__",
     failedSourceRatioLatest: hasOwnField(kpis, "failedSourceRatioLatest") ? kpis?.failedSourceRatioLatest : "__pending__",
-    pendingApprovalsCount: hasOwnField(kpis, "pendingApprovalsCount") ? kpis?.pendingApprovalsCount : "__pending__",
+    pendingSourcesCount: hasOwnField(kpis, "pendingSourcesCount") ? kpis?.pendingSourcesCount : (hasOwnField(kpis, "pendingApprovalsCount") ? kpis?.pendingApprovalsCount : "__pending__"),
     avgFetchDurationMs7d: hasOwnField(kpis, "avgFetchDurationMs7d") ? kpis?.avgFetchDurationMs7d : "__pending__",
     lastSuccessfulFetchAge: hasOwnField(kpis, "lastSuccessfulFetchAge") ? String(kpis?.lastSuccessfulFetchAge || "") : "__pending__",
     registrySync: kpis?.registrySync || {},
@@ -248,6 +248,9 @@ export function renderAdminOpsKpis(kpisEl, kpis, status, options = {}) {
     ? kpis.dedupReviewState
     : {};
   const statusClass = status === "critical" ? "critical" : status === "warning" ? "warning" : "healthy";
+  const pendingSourcesKpis = hasOwnField(kpis, "pendingSourcesCount")
+    ? kpis
+    : { ...(kpis || {}), pendingSourcesCount: kpis?.pendingApprovalsCount };
   const lastSyncAt = String(registrySync?.lastSyncAt || "");
   const lastSyncLabel = lastSyncAt ? formatDateTime(lastSyncAt) : (hasOwnField(registrySync, "lastSyncAt") ? "Never" : "Not loaded yet");
   const providerCoverageLoaded = hasOwnField(kpis, "providerCoverage");
@@ -328,8 +331,8 @@ export function renderAdminOpsKpis(kpisEl, kpis, status, options = {}) {
       <div class="admin-total-value">${formatOptionalPercent(kpis, "failedSourceRatioLatest", { pending: pendingLabelFor("failedSourceRatioLatest") })}</div>
     </div>
     <div class="admin-total-card">
-      <div class="admin-total-label">Pending Approvals</div>
-      <div class="admin-total-value">${formatOptionalNumber(kpis, "pendingApprovalsCount")}</div>
+      <div class="admin-total-label">Pending Sources</div>
+      <div class="admin-total-value">${formatOptionalNumber(pendingSourcesKpis, "pendingSourcesCount")}</div>
     </div>
     ${registryDiagnosticsHtml}
   `;

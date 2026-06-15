@@ -55,6 +55,7 @@ from src.jobs.common.contracts_source_policy_review_state import (
 )
 from src.shared.timing_counters import snapshot_counters
 from src.source_registry import is_hidden_from_default
+from src.source_registry_auto_approval import annotate_pending_auto_approval_rows
 from src.source_registry_io import load_runtime_evidence_array
 from src.storage import SourceRuntimeStore
 from src.storage_metrics import duration_ms, record_storage_read, snapshot_storage_metrics
@@ -1388,6 +1389,17 @@ def _read_discovery_candidate_rows(api: BridgeApi) -> list[dict[str, Any]]:
     return load_runtime_evidence_array(candidates_path, [])
 
 
+def _read_discovery_report_candidate_rows(api: BridgeApi) -> list[dict[str, Any]]:
+    report_path = getattr(api, "DISCOVERY_REPORT_PATH", None)
+    if report_path is None:
+        return []
+    try:
+        report = _as_dict(api.load_json_object(Path(report_path), {}))
+    except Exception:
+        return []
+    return [row for row in _as_list(report.get("candidates")) if isinstance(row, dict)]
+
+
 def _overlay_discovery_candidate_fields(
     rows: list[dict[str, Any]],
     candidates: list[dict[str, Any]],
@@ -1506,6 +1518,7 @@ _REGISTRY_SOURCE_TABLE_SCALAR_FIELDS = {
     "_lastStatus",
     "adapter",
     "api_url",
+    "autoApprovalEligible",
     "board_url",
     "careersUrl",
     "careers_url",
@@ -1524,8 +1537,10 @@ _REGISTRY_SOURCE_TABLE_SCALAR_FIELDS = {
     "listing_url",
     "name",
     "pendingReason",
+    "primaryBlocker",
     "quarantineReason",
     "registryState",
+    "reviewBucket",
     "sampleCount",
     "sourceId",
     "sourceUrl",
@@ -1536,7 +1551,12 @@ _REGISTRY_SOURCE_TABLE_SCALAR_FIELDS = {
     "url",
     "weakSignal",
 }
-_REGISTRY_SOURCE_TABLE_ARRAY_FIELDS = {"rankReasons", "reasons"}
+_REGISTRY_SOURCE_TABLE_ARRAY_FIELDS = {
+    "approvalBlockers",
+    "approvalBlockerLabels",
+    "rankReasons",
+    "reasons",
+}
 _REGISTRY_SOURCE_TABLE_STRING_LIMIT = 256
 _REGISTRY_SOURCE_TABLE_ACTION_STRING_LIMIT = 2048
 _REGISTRY_SOURCE_TABLE_RELEVANT_REASONS = {
@@ -1574,7 +1594,7 @@ def _compact_registry_source_table_action_value(value: Any) -> Any:
     return _compact_registry_source_table_value(value)
 
 
-def _compact_registry_source_table_array(value: Any) -> list[Any]:
+def _compact_registry_source_table_array(value: Any, *, relevant_only: bool = True) -> list[Any]:
     if not isinstance(value, list):
         return []
     compact: list[Any] = []
@@ -1582,7 +1602,7 @@ def _compact_registry_source_table_array(value: Any) -> list[Any]:
         if not _registry_source_table_has_value(item):
             continue
         reason = str(item).strip()
-        if reason not in _REGISTRY_SOURCE_TABLE_RELEVANT_REASONS:
+        if relevant_only and reason not in _REGISTRY_SOURCE_TABLE_RELEVANT_REASONS:
             continue
         compact.append(_compact_registry_source_table_value(reason))
     return compact
@@ -1612,7 +1632,10 @@ def _registry_source_table_row(row: dict[str, Any]) -> dict[str, Any]:
         )
     for key in _REGISTRY_SOURCE_TABLE_ARRAY_FIELDS:
         if key in row:
-            items = _compact_registry_source_table_array(row.get(key))
+            items = _compact_registry_source_table_array(
+                row.get(key),
+                relevant_only=key in {"rankReasons", "reasons"},
+            )
             if items:
                 compact[key] = items
     if "registryState" not in compact and _registry_source_table_has_value(
@@ -1735,6 +1758,17 @@ def _registry_sources_payload(
                 dict(row) for row in state.get("rejected") or [] if isinstance(row, dict)
             ]
         if table_view:
+            if "pending" in sources:
+                annotated_pending, pending_approval_summary = annotate_pending_auto_approval_rows(
+                    sources.get("pending") or [],
+                    active_rows=[row for row in state.get("active") or [] if isinstance(row, dict)],
+                    report_candidates=_read_discovery_report_candidate_rows(api),
+                )
+                sources["pending"] = annotated_pending
+                summary["pendingApproval"] = pending_approval_summary
+                summary["pendingAutoApprovalEligibleCount"] = int(
+                    pending_approval_summary.get("autoApprovalEligibleCount") or 0
+                )
             sources = {
                 bucket: [_registry_source_table_row(row) for row in rows]
                 for bucket, rows in sources.items()
