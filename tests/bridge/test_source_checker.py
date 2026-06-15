@@ -233,6 +233,47 @@ def test_static_source_check_ignores_recruitee_no_job_bucket() -> None:
     assert error == ""
 
 
+def test_static_source_check_counts_elevato_comma_job_links() -> None:
+    html = """
+    <html><body>
+      <a href="https://qloc.elevato.net/en/translator-proofreader,j,242">
+        Translator / Proofreader
+      </a>
+      <a href="https://qloc.elevato.net/en/technical-artist,j,240?source=10">
+        Technical Artist
+      </a>
+      <a href="https://q-loc.com/privacy-policy/personal-data-processing/">Privacy</a>
+      <a href="https://qloc.elevato.net/en/join-qloc,j,83">Join QLOC!</a>
+      <a href="https://qloc.elevato.net/en/job-offers,j">Show all job offers</a>
+    </body></html>
+    """
+
+    ok, jobs_found, error, weak_signal, _meta = source_checker.check_static_source(
+        {
+            "name": "QLOC (Sheet)",
+            "studio": "QLOC",
+            "company": "QLOC",
+            "adapter": "static",
+            "pages": ["https://qloc.elevato.net/en/"],
+            "listing_url": "https://qloc.elevato.net/en/",
+        },
+        12,
+        fetch_page_with_alternates=lambda _url, _timeout_s: (html, "", False, False, ""),
+        fetch_page=lambda _url, _timeout_s: ("<html><body></body></html>", "", False, False),
+        fetch_text=lambda _url, _timeout_s: "",
+        html_extractor=html_extractor,
+        parse_jobpostings_from_html=parse_jobpostings_from_html,
+        normalize_job_url=admin_bridge.normalize_job_url,
+        source_identity=source_identity,
+        suggest_alternate_career_urls=lambda _url: [],
+    )
+
+    assert ok is True
+    assert jobs_found == 2
+    assert weak_signal is True
+    assert error == ""
+
+
 def test_static_source_check_does_not_count_repeated_lever_board_links_as_jobs() -> None:
     html = """
     <html><body>

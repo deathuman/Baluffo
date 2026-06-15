@@ -10,6 +10,16 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.74] - 2026-06-15
+
+### Fixed
+- Admin/source-check validation now recognizes Elevato comma-style `,j,<id>` job links, so targeted QLOC checks report live job evidence instead of leaving QLOC pending with `jobsFound: 0`.
+- Elevato source-check link extraction filters generic "Join <company>" anchors while preserving real openings such as QLOC Technical Artist.
+
+### Notes
+- This is a forward container/Umbrel correction for the `0.2.73` QLOC source-check smoke gap. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.73] - 2026-06-15
 
 ### Fixed

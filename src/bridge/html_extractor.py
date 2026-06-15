@@ -13,6 +13,8 @@ from src.shared.regex import find_urls_in_text
 from src.source_registry import normalize_source_url
 from src.url_hosts import host_matches_domain
 
+_ELEVATO_DETAIL_PATH_RE = re.compile(r"(?i)/(?:[a-z]{2}/)?[^/?#]+,j,\d+(?:$|[/?#])")
+
 
 def _is_ignored_job_href(href: str) -> bool:
     clean = str(href or "").strip()
@@ -102,6 +104,23 @@ def _is_job_like_path(path: str) -> bool:
     return False
 
 
+def _is_elevato_detail_url(url: str) -> bool:
+    parsed = urlparse(str(url or ""))
+    host = (parsed.hostname or "").lower()
+    if host != "elevato.net" and not host.endswith(".elevato.net"):
+        return False
+    return bool(_ELEVATO_DETAIL_PATH_RE.search(parsed.path or ""))
+
+
+def _is_generic_elevato_anchor(anchor_body: str, path: str) -> bool:
+    text = re.sub(r"(?is)<[^>]+>", " ", str(anchor_body or ""))
+    text = html_module.unescape(re.sub(r"\s+", " ", text).strip()).lower()
+    path_slug = (path or "").strip("/").split("/")[-1].lower()
+    if path_slug.startswith("join-"):
+        return True
+    return bool(re.search(r"\bjoin(?: us| [a-z0-9_-]+)?\b", text))
+
+
 def _embedded_job_url_candidates(absolute: str) -> list[str]:
     low = absolute.lower()
     if _is_ignored_job_url(absolute):
@@ -142,7 +161,10 @@ def extract_job_like_links(html: str, base_url: str) -> list[str]:
         path = (parsed.path or "").lower()
         if _is_ignored_job_url(absolute):
             continue
-        if not _is_job_like_path(path):
+        elevato_detail = _is_elevato_detail_url(absolute) and not _is_generic_elevato_anchor(
+            anchor.group(3), path
+        )
+        if not _is_job_like_path(path) and not elevato_detail:
             continue
         normalized = normalize_job_url(absolute)
         if not normalized or normalized in seen:
