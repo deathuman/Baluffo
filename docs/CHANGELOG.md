@@ -10,6 +10,17 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.72] - 2026-06-15
+
+### Fixed
+- Admin Ops startup now avoids false-empty and false-healthy panels: Action Center shows a neutral checking state until required signals complete, Source Sync hydrates from live sync status, source-table delayed states stay visible during active work, tab badges show bounded delayed/unavailable states, and Older Runs uses a contained scroll area without broken inline detail rows.
+- Desktop lifecycle handling now keeps idle packaged windows alive by sending regular owner heartbeats, while keyboard reloads continue to bypass close shutdown handling.
+- Portable desktop builds now keep Scrapy/lxml package metadata needed by fetch subprocesses and prune `_out/portable-build-cache` to a bounded set of recent bundle caches.
+
+### Notes
+- This is the Umbrel Docker release candidate used to validate the current Admin, Jobs, source sync, and desktop rollup before a later public desktop tag. No desktop release tag is created by this container publish; `v0.2.43` remains the latest public desktop release until explicit tag approval.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.71] - 2026-06-14
 
 ### Fixed
