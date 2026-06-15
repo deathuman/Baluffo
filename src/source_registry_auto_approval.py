@@ -211,6 +211,78 @@ def _pending_row_is_auto_approvable(
     return True
 
 
+def _pending_row_is_deferred(row: dict[str, Any], report: dict[str, Any]) -> bool:
+    return bool(row.get("deferred")) or bool(report.get("deferred"))
+
+
+def _unique_pending_blockers(candidates: tuple[tuple[str, bool], ...]) -> list[str]:
+    blockers: list[str] = []
+    for blocker, is_blocked in candidates:
+        if is_blocked and blocker not in blockers:
+            blockers.append(blocker)
+    return blockers
+
+
+def _has_deferred_existing_match_reason(
+    row: dict[str, Any],
+    report: dict[str, Any],
+) -> bool:
+    if not _pending_row_is_deferred(row, report):
+        return False
+    rank_reasons = _rank_reason_tokens(report or row)
+    return bool(rank_reasons & AUTO_APPROVAL_EXISTING_MATCH_REASONS)
+
+
+def _pending_auto_approval_blockers(
+    row: dict[str, Any],
+    report: dict[str, Any],
+    *,
+    active_aliases: set[str],
+    moved_aliases: set[str],
+) -> list[str]:
+    return _unique_pending_blockers(
+        (
+            ("conflict_demoted", _row_has_blocked_auto_approval_reason(row)),
+            (
+                "existing_match",
+                _has_active_static_alias(
+                    row,
+                    active_aliases=active_aliases,
+                    moved_aliases=moved_aliases,
+                ),
+            ),
+            ("deferred", _pending_row_is_deferred(row, report)),
+            ("weak_signal", bool(row.get("weakSignal")) or bool(report.get("weakSignal"))),
+            ("blocking_state", _discovery_row_has_blocking_state(row, report)),
+            ("zero_jobs", _discovery_jobs_count(row, report) <= 0),
+            ("error", _discovery_row_has_blocking_error(row, report)),
+            ("existing_match", _has_deferred_existing_match_reason(row, report)),
+        )
+    )
+
+
+def _pending_auto_approval_review_state(
+    blockers: list[str],
+    *,
+    auto_approval_eligible: bool,
+) -> tuple[str, str, list[str]]:
+    if auto_approval_eligible:
+        return "auto_approvable", "", blockers
+    bucket_priority = (
+        ("conflict_demoted", "conflict_demoted", "conflict_demoted"),
+        ("weak_signal", "weak_signal", "weak_signal"),
+        ("zero_jobs", "zero_jobs", "zero_jobs"),
+        ("error", "error", "error"),
+        ("blocking_state", "error", "blocking_state"),
+        ("deferred", "deferred", "deferred"),
+        ("existing_match", "existing_match", "existing_match"),
+    )
+    for blocker, review_bucket, primary_blocker in bucket_priority:
+        if blocker in blockers:
+            return review_bucket, primary_blocker, blockers
+    return "manual_review", "manual_review", [*blockers, "manual_review"]
+
+
 def classify_pending_auto_approval(
     row: dict[str, Any],
     *,
@@ -221,65 +293,23 @@ def classify_pending_auto_approval(
     """Return read-only policy evidence explaining pending auto-approval state."""
 
     report = as_json_object(report_row)
-    blockers: list[str] = []
     active_aliases = active_static_aliases or set()
     moved_aliases = moved_static_aliases or set()
-    if _row_has_blocked_auto_approval_reason(row):
-        blockers.append("conflict_demoted")
-    if _has_active_static_alias(
+    blockers = _pending_auto_approval_blockers(
         row,
+        report,
         active_aliases=active_aliases,
         moved_aliases=moved_aliases,
-    ):
-        blockers.append("existing_match")
-    deferred = bool(row.get("deferred")) or bool(report.get("deferred"))
-    if deferred:
-        blockers.append("deferred")
-    if bool(row.get("weakSignal")) or bool(report.get("weakSignal")):
-        blockers.append("weak_signal")
-    if _discovery_row_has_blocking_state(row, report):
-        blockers.append("blocking_state")
-    if _discovery_jobs_count(row, report) <= 0:
-        blockers.append("zero_jobs")
-    if _discovery_row_has_blocking_error(row, report):
-        blockers.append("error")
-    rank_reasons = _rank_reason_tokens(report or row)
-    if (
-        deferred
-        and rank_reasons & AUTO_APPROVAL_EXISTING_MATCH_REASONS
-        and "existing_match" not in blockers
-    ):
-        blockers.append("existing_match")
+    )
 
     auto_approval_eligible = not blockers and _pending_row_is_auto_approvable(
         row,
         report_row=report,
     )
-    if auto_approval_eligible:
-        review_bucket = "auto_approvable"
-        primary_blocker = ""
-    elif "conflict_demoted" in blockers:
-        review_bucket = "conflict_demoted"
-        primary_blocker = "conflict_demoted"
-    elif "weak_signal" in blockers:
-        review_bucket = "weak_signal"
-        primary_blocker = "weak_signal"
-    elif "zero_jobs" in blockers:
-        review_bucket = "zero_jobs"
-        primary_blocker = "zero_jobs"
-    elif "error" in blockers or "blocking_state" in blockers:
-        review_bucket = "error"
-        primary_blocker = "error" if "error" in blockers else "blocking_state"
-    elif "deferred" in blockers:
-        review_bucket = "deferred"
-        primary_blocker = "deferred"
-    elif "existing_match" in blockers:
-        review_bucket = "existing_match"
-        primary_blocker = "existing_match"
-    else:
-        review_bucket = "manual_review"
-        primary_blocker = "manual_review"
-        blockers.append("manual_review")
+    review_bucket, primary_blocker, blockers = _pending_auto_approval_review_state(
+        blockers,
+        auto_approval_eligible=auto_approval_eligible,
+    )
 
     return {
         "autoApprovalEligible": bool(auto_approval_eligible),
