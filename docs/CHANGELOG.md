@@ -10,6 +10,16 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.77] - 2026-06-16
+
+### Fixed
+- Normal Jobs updates now build static source loaders from the SQLite-backed active source-registry authority before falling back to JSON exports, so active Source Sync/Admin rows such as QLOC are actually selected by the fetcher child process.
+- QLOC feed recovery now covers the live `0.2.76` miss where QLOC was active with `jobsFound: 9` but the full Jobs update selected only built-in provider-family loaders, leaving the published feed on stale Google Sheets `j,229` rows and missing the live Elevato `j,240` opening.
+
+### Notes
+- This is a forward container/Umbrel correction after the `0.2.76` live QLOC smoke exposed a source-selection gap. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.76] - 2026-06-16
 
 ### Fixed
