@@ -1,8 +1,13 @@
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 from src import jobs_fetcher as jf
 from src.shared.json_io import read_json
+from src.storage.baluffo_store import BaluffoStore
+from src.storage.source_registry_runtime import SourceRegistryRuntimeStore
 from tests.helpers.temp_paths import workspace_tmpdir
 
 QLOC_SOURCE = "static_source::static:listing_url:https://qloc.elevato.net/en/"
@@ -128,6 +133,48 @@ def test_run_pipeline_does_not_treat_source_check_only_state_as_fresh() -> None:
         assert report_row["status"] == "ok"
         assert any(str(row.get("jobLink") or "") == QLOC_J240 for row in rows)
         assert not any(str(row.get("jobLink") or "") == QLOC_J229 for row in rows)
+
+
+def test_fetcher_child_process_loads_sqlite_registry_static_sources() -> None:
+    with workspace_tmpdir("jobs-fetcher-sqlite-registry-static-loader") as tmp:
+        out = Path(tmp)
+        with BaluffoStore(out) as store:
+            SourceRegistryRuntimeStore(store).replace_state(
+                state={
+                    "active": [
+                        {
+                            "id": "static:listing_url:https://qloc.elevato.net/en/",
+                            "name": "QLOC (Sheet)",
+                            "adapter": "static",
+                            "listing_url": "https://qloc.elevato.net/en/",
+                            "enabledByDefault": True,
+                        }
+                    ],
+                    "pending": [],
+                    "rejected": [],
+                },
+                tombstones={},
+                generation="sqlite-qloc",
+                reason="unit-test",
+            )
+
+        script = (
+            "import json;"
+            "from src import jobs_fetcher as jf;"
+            "print(json.dumps([name for name, _loader in jf.default_source_loaders() "
+            "if 'qloc.elevato.net' in name]))"
+        )
+        env = {**os.environ, "BALUFFO_DATA_DIR": str(out)}
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            check=True,
+            cwd=Path(__file__).resolve().parents[1],
+            env=env,
+            text=True,
+            capture_output=True,
+        )
+
+        assert json.loads(result.stdout) == [QLOC_SOURCE]
 
 
 def test_run_pipeline_refreshes_fresh_static_source_missing_from_published_feed() -> None:

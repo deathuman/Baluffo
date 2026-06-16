@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 from src import source_registry_io as _registry_io
 from src.jobs.common.config import SOURCE_REGISTRY_ACTIVE_PATH
+from src.storage import BaluffoStore, BaluffoStoreError
+from src.storage.source_registry_runtime import SourceRegistryRuntimeStore
 
 _REGISTRY_SEED_NAMES = {
     "source-registry-active.json": "source-registry-active.seed.json",
@@ -42,6 +45,20 @@ def load_registry_from_file(path: Path, fallback: Sequence[dict[str, Any]]) -> l
     return _registry_io.load_json_array(Path(path), [dict(row) for row in fallback])
 
 
+def _load_registry_from_sqlite_authority(path: Path) -> list[dict[str, Any]]:
+    data_dir = Path(path).expanduser().resolve().parent
+    try:
+        with BaluffoStore(data_dir) as store:
+            if store.get_authority_modes().get("sourceRegistry") != "sqlite":
+                return []
+            runtime = SourceRegistryRuntimeStore(store)
+            state = runtime.current_state()
+    except (BaluffoStoreError, OSError, RuntimeError, sqlite3.Error, ValueError):
+        return []
+    active_rows = state.get("active") if isinstance(state, dict) else []
+    return [dict(row) for row in active_rows or [] if isinstance(row, dict)]
+
+
 def read_approved_since_last_run(path: Path) -> int:
     try:
         if not path.exists():
@@ -55,7 +72,9 @@ def read_approved_since_last_run(path: Path) -> int:
 
 
 def load_studio_source_registry(default_registry: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
-    rows = load_registry_from_file(SOURCE_REGISTRY_ACTIVE_PATH, default_registry)
+    rows = _load_registry_from_sqlite_authority(SOURCE_REGISTRY_ACTIVE_PATH)
+    if not rows:
+        rows = load_registry_from_file(SOURCE_REGISTRY_ACTIVE_PATH, default_registry)
     filtered = [
         row
         for row in rows
