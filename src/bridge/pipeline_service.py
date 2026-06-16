@@ -10,6 +10,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from src.bridge.active_task_snapshot import (
+    pipeline_status_to_task_row,
+    upsert_snapshot_rows,
+    write_snapshot,
+)
 from src.bridge.ops_live_payload import build_pipeline_task_progress
 from src.bridge.pipeline_control_files import (
     clear_abort_request,
@@ -130,11 +135,25 @@ class PipelineService:
                 status["progress"] = dict(progress)
             status["activeChildren"] = self._copy_control_children(status)
         try:
+            snapshot_at = str(self._now_iso() or "")
             write_pipeline_status(
                 self._control_data_dir,
                 status,
-                now_iso=str(self._now_iso() or ""),
+                now_iso=snapshot_at,
             )
+            snapshot_status = {**status, "snapshotAt": str(status.get("snapshotAt") or snapshot_at)}
+            if bool(status.get("active")):
+                upsert_snapshot_rows(
+                    self._control_data_dir / "admin-active-task-snapshot.json",
+                    [pipeline_status_to_task_row(snapshot_status)],
+                    snapshot_at=str(snapshot_status.get("snapshotAt") or snapshot_at),
+                )
+            elif str(status.get("runId") or "").strip():
+                write_snapshot(
+                    self._control_data_dir / "admin-active-task-snapshot.json",
+                    [pipeline_status_to_task_row(snapshot_status)],
+                    snapshot_at=str(snapshot_status.get("snapshotAt") or snapshot_at),
+                )
         except OSError:
             self._bridge_log("warn", "jobs_pipeline_control_status_write_failed")
 

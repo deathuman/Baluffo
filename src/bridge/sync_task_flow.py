@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol
 
+from src.bridge.active_task_snapshot import upsert_snapshot_rows
 from src.shared.json_shapes import as_json_object
 from src.shared.live_task import (
     append_live_task_event,
@@ -194,6 +195,7 @@ def run_sync_task_worker(
     bridge_log: BridgeLogFunc,
     save_json_atomic: SaveJsonAtomicFunc,
     live_task_path: Path,
+    active_snapshot_path: Path | None = None,
     record_task_event: RecordTaskEventFunc | None = None,
     upsert_sync_run: UpsertSyncRunFunc | None = None,
 ) -> None:
@@ -287,6 +289,8 @@ def run_sync_task_worker(
             outputs={},
         )
         save_json_atomic(live_task_path, payload)
+        if active_snapshot_path is not None:
+            upsert_snapshot_rows(active_snapshot_path, [payload], snapshot_at=timestamp)
 
     def progress_callback(
         *,

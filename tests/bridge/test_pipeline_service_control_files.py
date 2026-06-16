@@ -5,6 +5,7 @@ from typing import Any
 
 from src.bridge.pipeline_control_files import read_pipeline_status, write_abort_request
 from src.bridge.pipeline_service import PipelineAbortRequested, PipelineRuntime, PipelineService
+from src.source_registry_io import load_runtime_evidence
 
 
 def _make_pipeline_service(**overrides: Any) -> PipelineService:
@@ -185,3 +186,7 @@ def test_pipeline_service_clears_active_children_on_terminal_status(tmp_path: Pa
     assert payload["activeChildren"] == []
     assert payload["activeChildTaskType"] == ""
     assert payload["activeChildRunId"] == ""
+    snapshot = load_runtime_evidence(tmp_path / "admin-active-task-snapshot.json", {})
+    assert snapshot["count"] == 1
+    assert snapshot["tasks"][0]["taskType"] == "pipeline"
+    assert snapshot["tasks"][0]["active"] is False

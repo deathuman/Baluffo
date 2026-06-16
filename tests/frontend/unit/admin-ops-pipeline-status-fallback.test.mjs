@@ -72,6 +72,8 @@ test("admin ops controller renders active pipeline from status when dashboard he
       if (path === "/ops/dashboard-health?view=summary") throw new Error("dashboard should not load while pipeline is active");
       if (path === "/ops/task-state?view=summary") {
         return {
+          source: "hot-active-snapshot",
+          hotSnapshot: true,
           tasks: [
             {
               taskType: "fetch",
@@ -184,6 +186,7 @@ test("admin ops controller renders active pipeline from status when dashboard he
   assert.equal(state.adminBusyState.livePipelineRunning, true);
   assert.equal(state.adminBusyState.liveFetchRunning, true);
   assert.ok(calls.includes("/ops/task-state?view=summary"));
+  assert.equal(renderedCurrentRows.at(-1)?.[0]?.runId, "fetch_live_1");
   assert.ok(calls.includes("/ops/fetch-kpis?view=summary"));
   assert.equal(calls.includes("/admin/ops-tab-counts?view=summary"), false);
   assert.equal(renderedKpis.at(-1)?.fetchKpiPendingLabel, "Not available");

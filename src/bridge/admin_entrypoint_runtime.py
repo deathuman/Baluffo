@@ -78,6 +78,7 @@ def configure_runtime_paths(config: Any) -> None:
     root_mod.TASK_LIFECYCLE_PATH = data_dir / "admin-task-lifecycle.json"
     root_mod.OPS_ALERT_STATE_PATH = data_dir / "admin-alert-state.json"
     root_mod.JOBS_FETCH_REPORT_PATH = data_dir / "jobs-fetch-report.json"
+    root_mod.ADMIN_ACTIVE_TASK_SNAPSHOT_PATH = data_dir / "admin-active-task-snapshot.json"
     root_mod.JOBS_PIPELINE_SCHEDULE_CONFIG_PATH = data_dir / "jobs-pipeline-schedule-config.json"
     root_mod.SOURCE_POLICY_RECOMMENDATIONS_PATH = data_dir / "source-policy-recommendations.json"
     root_mod.SOURCE_POLICY_REVIEW_STATE_PATH = data_dir / "source-policy-review-state.json"

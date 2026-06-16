@@ -363,7 +363,7 @@ def test_cleanup_runtime_evidence_journals_quarantines_known_stale_journals(
     result = registry_io.cleanup_runtime_evidence_journals(tmp_path)
 
     assert result["ok"] is True
-    assert result["checked"] == 5
+    assert result["checked"] == 6
     assert len(result["quarantined"]) == 3
     assert not stale_report_journal.exists()
     assert not stale_candidates_journal.exists()

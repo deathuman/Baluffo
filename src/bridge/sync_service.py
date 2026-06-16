@@ -918,6 +918,7 @@ class SyncService:
             bridge_log=self._bridge_log,
             save_json_atomic=save_json_atomic,
             live_task_path=self._sync_live_task_path,
+            active_snapshot_path=self._data_dir / "admin-active-task-snapshot.json",
             record_task_event=self._record_sync_task_event,
             upsert_sync_run=self._upsert_sync_run,
         )

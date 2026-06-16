@@ -13,6 +13,7 @@ from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Any
 
+from src.bridge.active_task_snapshot import upsert_snapshot_rows
 from src.bridge.task_abort_evidence import (
     ABORT_TERMINAL_REASON,
     repair_discovery_canceled_evidence,
@@ -46,6 +47,7 @@ class DiscoveryPaths:
     settings: Any
     approval_state: Any
     task_state: Any | None = None
+    active_task_snapshot: Any | None = None
 
 
 @dataclass(frozen=True)
@@ -113,6 +115,35 @@ class DiscoveryService:
             summary=dict(summary or {}),
             terminal_reason="completed",
         )
+        if self._paths.active_task_snapshot is not None:
+            upsert_snapshot_rows(
+                self._paths.active_task_snapshot,
+                [
+                    {
+                        "taskType": "discovery",
+                        "type": "discovery",
+                        "runId": run_id,
+                        "id": run_id,
+                        "active": False,
+                        "status": "ok",
+                        "startedAt": started_at,
+                        "heartbeatAt": finished_at,
+                        "finishedAt": finished_at,
+                        "taskProgress": {
+                            "active": False,
+                            "phaseKey": "completed",
+                            "phaseLabel": "Discovery completed",
+                            "mode": "determinate",
+                            "ratio": 1,
+                            "updatedAt": finished_at,
+                            "counts": {},
+                        },
+                        "summary": dict(summary or {}),
+                        "outputs": {"report": str(self._paths.report)},
+                    }
+                ],
+                snapshot_at=finished_at,
+            )
 
     def _cancel_discovery_run(
         self,
@@ -140,6 +171,28 @@ class DiscoveryService:
             summary=dict(report.get("summary") or {}),
             progress=dict(report.get("taskProgress") or {}),
         )
+        if self._paths.active_task_snapshot is not None:
+            upsert_snapshot_rows(
+                self._paths.active_task_snapshot,
+                [
+                    {
+                        "taskType": "discovery",
+                        "type": "discovery",
+                        "runId": run_id,
+                        "id": run_id,
+                        "active": False,
+                        "status": "canceled",
+                        "startedAt": str(report.get("startedAt") or ""),
+                        "heartbeatAt": str(report.get("finishedAt") or canceled_at),
+                        "finishedAt": str(report.get("finishedAt") or canceled_at),
+                        "terminalReason": ABORT_TERMINAL_REASON,
+                        "taskProgress": dict(report.get("taskProgress") or {}),
+                        "summary": dict(report.get("summary") or {}),
+                        "outputs": {"report": str(self._paths.report)},
+                    }
+                ],
+                snapshot_at=str(report.get("finishedAt") or canceled_at),
+            )
         return report
 
     @staticmethod
@@ -211,6 +264,28 @@ class DiscoveryService:
             progress=progress or None,
             summary=summary or None,
         )
+        if self._paths.active_task_snapshot is not None:
+            upsert_snapshot_rows(
+                self._paths.active_task_snapshot,
+                [
+                    {
+                        "taskType": "discovery",
+                        "type": "discovery",
+                        "runId": run_id,
+                        "id": run_id,
+                        "active": True,
+                        "status": "running",
+                        "startedAt": started_at,
+                        "heartbeatAt": now,
+                        "finishedAt": "",
+                        "stage": stage or "running",
+                        "taskProgress": progress,
+                        "summary": summary,
+                        "outputs": {"report": str(self._paths.report)},
+                    }
+                ],
+                snapshot_at=now,
+            )
 
     @staticmethod
     def _lifecycle_status_token(row: dict[str, Any]) -> str:

@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from src import fetcher_metrics as fetcher_metrics_module
+from src.bridge import active_task_snapshot as _active_task_snapshot
 from src.bridge import ops_health as _ops_health
 from src.bridge import ops_history_projection as _ops_history_projection
 from src.bridge import ops_live_payload as _ops_live_payload
@@ -34,6 +35,7 @@ from src.storage_metrics import duration_ms, record_storage_read
 class OpsPaths:
     ops_alert_state: Path
     jobs_fetch_report: Path
+    active_task_snapshot: Path
     dedup_review_state: Path
     jobs_fetch_tasks: Path
     discovery_report: Path
@@ -740,6 +742,22 @@ class OpsApi:
     def _task_live_context(self) -> _ops_task_live.OpsTaskLiveContext:
         return _ops_task_live.OpsTaskLiveContext(paths=self._paths, deps=self._deps)
 
+    def _fresh_active_task_snapshot(self) -> dict[str, Any] | None:
+        return _active_task_snapshot.load_fresh_snapshot(
+            self._paths.active_task_snapshot,
+            now=self._deps.now_utc(),
+        )
+
+    @staticmethod
+    def _should_use_hot_snapshot(
+        snapshot: dict[str, Any] | None,
+        pipeline_status: dict[str, Any],
+    ) -> bool:
+        return bool(
+            (snapshot and _active_task_snapshot.snapshot_has_active_task(snapshot))
+            or _active_task_snapshot.pipeline_is_active(pipeline_status)
+        )
+
     def _load_fetch_report_with_dedup_review_state(self) -> dict[str, Any]:
         payload, warning = load_fetch_report_with_dedup_review_state(
             normalize_fetch_report_contract=self._deps.normalize_fetch_report_contract,
@@ -1082,6 +1100,17 @@ class OpsApi:
         *,
         summary: bool = False,
     ) -> LiveTaskPayload:
+        if summary:
+            pipeline_status = self._deps.get_jobs_pipeline_status_payload()
+            snapshot = self._fresh_active_task_snapshot()
+            if self._should_use_hot_snapshot(snapshot, pipeline_status):
+                hot_payload = _active_task_snapshot.live_summary_from_snapshot(
+                    snapshot,
+                    task_type,
+                    pipeline_status=pipeline_status,
+                )
+                if hot_payload is not None:
+                    return cast(LiveTaskPayload, hot_payload)
         projection = self.get_projected_run_history()
         return _ops_task_live.get_task_live_payload(
             self._task_live_context(),
@@ -1201,8 +1230,17 @@ class OpsApi:
         }
 
     def get_current_task_state_summary_payload(self) -> TaskStatePayload:
-        lifecycle_current = self._current_lifecycle_rows()
         pipeline_status = self._deps.get_jobs_pipeline_status_payload()
+        snapshot = self._fresh_active_task_snapshot()
+        if self._should_use_hot_snapshot(snapshot, pipeline_status):
+            hot_payload = _active_task_snapshot.task_state_summary_from_snapshot(
+                snapshot,
+                pipeline_status=pipeline_status,
+            )
+            if hot_payload is not None:
+                return cast(TaskStatePayload, hot_payload)
+
+        lifecycle_current = self._current_lifecycle_rows()
         pipeline_row = (
             _pipeline_status_to_task_row(pipeline_status)
             if isinstance(pipeline_status, dict) and bool(pipeline_status.get("active"))

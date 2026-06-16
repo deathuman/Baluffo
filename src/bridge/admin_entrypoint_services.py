@@ -141,6 +141,16 @@ def _as_json_object(payload: Any) -> JsonObject:
     return payload if isinstance(payload, dict) else {}
 
 
+def _active_task_snapshot_path(root_mod: Any) -> Path:
+    return Path(
+        getattr(
+            root_mod,
+            "ADMIN_ACTIVE_TASK_SNAPSHOT_PATH",
+            Path(root_mod.RUNTIME_CONFIG.data_dir) / "admin-active-task-snapshot.json",
+        )
+    )
+
+
 def _matching_live_report_progress(
     root_mod: Any,
     *,
@@ -443,6 +453,7 @@ def get_discovery_service() -> _DiscoveryServiceLike:
                     settings=root_mod.DISCOVERY_CONFIG_PATH,
                     approval_state=root_mod.APPROVAL_STATE_PATH,
                     task_state=root_mod.TASK_STATE_PATH,
+                    active_task_snapshot=_active_task_snapshot_path(root_mod),
                 ),
                 deps=root_mod.DiscoveryDeps(
                     schema_version=root_mod.SCHEMA_VERSION,
@@ -546,6 +557,7 @@ def get_ops_api() -> _OpsApiLike:
             paths=root_mod._ops_api.OpsPaths(
                 ops_alert_state=root_mod.OPS_ALERT_STATE_PATH,
                 jobs_fetch_report=root_mod.JOBS_FETCH_REPORT_PATH,
+                active_task_snapshot=_active_task_snapshot_path(root_mod),
                 dedup_review_state=root_mod.DEDUP_REVIEW_STATE_PATH,
                 jobs_fetch_tasks=root_mod.JOBS_FETCH_TASKS_PATH,
                 discovery_report=root_mod.DISCOVERY_REPORT_PATH,

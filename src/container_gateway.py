@@ -15,11 +15,19 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
 
 from src import container_server
 from src.app_version import get_app_version
+from src.bridge.active_task_snapshot import (
+    live_summary_from_snapshot,
+    load_fresh_snapshot,
+    pipeline_is_active,
+    snapshot_has_active_task,
+    snapshot_path,
+    task_state_summary_from_snapshot,
+)
 from src.bridge.pipeline_control_files import (
     read_pipeline_status,
     write_abort_request,
@@ -50,6 +58,10 @@ def _json_bytes(payload: Any) -> bytes:
 
 def _route_path(raw_path: str) -> str:
     return str(urlparse(raw_path).path or "/").strip() or "/"
+
+
+def _query_params(raw_path: str) -> dict[str, list[str]]:
+    return parse_qs(urlparse(raw_path).query, keep_blank_values=True)
 
 
 def _forwardable_headers(headers: Any) -> dict[str, str]:
@@ -129,6 +141,32 @@ class _GatewayState:
         payload["bridgeAlive"] = self.bridge_alive()
         payload["bridgeListening"] = self.bridge_listening()
         return payload
+
+    def _fresh_active_snapshot(self) -> dict[str, Any] | None:
+        return load_fresh_snapshot(snapshot_path(self.data_dir))
+
+    def _hot_snapshot_is_active(
+        self,
+        snapshot: dict[str, Any] | None,
+        pipeline_status: dict[str, Any],
+    ) -> bool:
+        return bool(
+            (snapshot and snapshot_has_active_task(snapshot)) or pipeline_is_active(pipeline_status)
+        )
+
+    def task_state_summary_payload(self) -> dict[str, Any] | None:
+        pipeline_status = self.pipeline_status_payload()
+        snapshot = self._fresh_active_snapshot()
+        if not self._hot_snapshot_is_active(snapshot, pipeline_status):
+            return None
+        return task_state_summary_from_snapshot(snapshot, pipeline_status=pipeline_status)
+
+    def task_live_summary_payload(self, task_type: str) -> dict[str, Any] | None:
+        pipeline_status = self.pipeline_status_payload()
+        snapshot = self._fresh_active_snapshot()
+        if not self._hot_snapshot_is_active(snapshot, pipeline_status):
+            return None
+        return live_summary_from_snapshot(snapshot, task_type, pipeline_status=pipeline_status)
 
 
 class _GatewayHandler(BaseHTTPRequestHandler):
@@ -279,12 +317,25 @@ class _GatewayHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         state = self._state()
         path = _route_path(self.path)
+        query = _query_params(self.path)
         if path == "/app/ready":
             self.send_json(state.ready_payload())
             return
         if path == "/tasks/run-jobs-pipeline-status":
             self.send_json(state.pipeline_status_payload())
             return
+        view = str((query.get("view") or [""])[0] or "").strip().lower()
+        if path == "/ops/task-state" and view == "summary":
+            payload = state.task_state_summary_payload()
+            if payload is not None:
+                self.send_json(payload)
+                return
+        if path.startswith("/ops/task-live/") and view == "summary":
+            task_type = path.removeprefix("/ops/task-live/").strip().lower()
+            payload = state.task_live_summary_payload(task_type)
+            if payload is not None:
+                self.send_json(payload)
+                return
         if state.static_service.handle_get(self, path=path):
             return
         self._proxy()

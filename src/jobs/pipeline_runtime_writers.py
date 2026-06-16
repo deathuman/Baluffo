@@ -7,6 +7,7 @@ from collections.abc import Callable
 from typing import Any, Protocol, cast
 from urllib.parse import urlparse
 
+from src.bridge.active_task_snapshot import upsert_snapshot_rows
 from src.jobs.models import CanonicalJob
 from src.jobs.pipeline_bootstrap import PipelinePaths
 from src.jobs.text_utils import clean_text
@@ -389,6 +390,7 @@ def make_task_state_writer(
     started_at: str,
     report_path: str,
     task_state_path: Any,
+    active_snapshot_path: Any | None = None,
     normalize_task_state_payload: Callable[..., dict[str, Any]],
     write_text_if_changed: Callable[[Any, str], Any],
 ) -> Callable[..., None]:
@@ -412,6 +414,12 @@ def make_task_state_writer(
             write_text_if_changed(
                 task_state_path, json.dumps(payload, indent=2, ensure_ascii=False)
             )
+            if active_snapshot_path is not None:
+                upsert_snapshot_rows(
+                    active_snapshot_path,
+                    [payload],
+                    snapshot_at=str(payload.get("heartbeatAt") or now_iso() or ""),
+                )
 
     return write_task_state
 

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from src.bridge.active_task_snapshot import empty_snapshot
 from src.shared.json_io import (
     copy_json_file_to_storage,
     existing_json_candidate,
@@ -85,6 +86,7 @@ def seed_runtime_data(
         "source-discovery-candidates.json": [],
         "source-discovery-report.json": {"summary": {}, "candidates": [], "failures": []},
         "jobs-fetch-tasks.json": {"summary": {}, "tasks": [], "outputs": {}},
+        "admin-active-task-snapshot.json": empty_snapshot(),
         "jobs-source-state.json": {"schemaVersion": 1, "updatedAt": "", "sources": {}},
         "jobs-success-cache.json": {"updatedAt": "", "successfulSources": []},
         "admin-task-state.json": {},

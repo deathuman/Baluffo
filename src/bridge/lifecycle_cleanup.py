@@ -487,9 +487,21 @@ def cleanup_orphaned_startup_tasks(
     history_path = root / "admin-run-history.json"
     fetch_report_path = root / "jobs-fetch-report.json"
     fetch_tasks_path = root / "jobs-fetch-tasks.json"
+    active_snapshot_path = root / "admin-active-task-snapshot.json"
     discovery_report_path = root / "source-discovery-report.json"
     finished_at = str(now_iso() or "")
     error = "owner_inactive_without_terminal_report"
+    _write_json(
+        active_snapshot_path,
+        {
+            "schemaVersion": _schema_version_int(),
+            "summary": True,
+            "source": "hot-active-snapshot",
+            "snapshotAt": "",
+            "tasks": [],
+            "count": 0,
+        },
+    )
 
     lifecycle_payload = _load_json_object(
         lifecycle_path,
@@ -559,6 +571,7 @@ def reset_admin_task_lifecycle(data_dir: Path) -> dict[str, Any]:
     task_state_path = root / "admin-task-state.json"
     fetch_report_path = root / "jobs-fetch-report.json"
     fetch_tasks_path = root / "jobs-fetch-tasks.json"
+    active_snapshot_path = root / "admin-active-task-snapshot.json"
     discovery_report_path = root / "source-discovery-report.json"
     discovery_candidates_path = root / "source-discovery-candidates.json"
     pending_path = root / "source-registry-pending.json"
@@ -616,6 +629,17 @@ def reset_admin_task_lifecycle(data_dir: Path) -> dict[str, Any]:
             },
             "tasks": [],
             "outputs": {"report": str(fetch_report_path)},
+        },
+    )
+    _write_json(
+        active_snapshot_path,
+        {
+            "schemaVersion": _schema_version_int(),
+            "summary": True,
+            "source": "hot-active-snapshot",
+            "snapshotAt": "",
+            "tasks": [],
+            "count": 0,
         },
     )
     _write_json(

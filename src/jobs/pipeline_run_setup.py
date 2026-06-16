@@ -454,6 +454,7 @@ def prepare_pipeline_run(
         started_at=started_at,
         report_path=str(paths.report_path),
         task_state_path=paths.task_state_path,
+        active_snapshot_path=paths.active_task_snapshot_path,
         normalize_task_state_payload=normalize_task_state_payload,
         write_text_if_changed=write_hot_text_if_changed,
     )

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import threading
+from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.request import Request, urlopen
 
 from src.app_version import get_app_version
+from src.bridge.active_task_snapshot import write_snapshot
 from src.bridge.pipeline_control_files import (
     abort_request_path,
     write_pipeline_status,
@@ -149,6 +151,69 @@ def test_gateway_pipeline_status_reads_control_snapshot(tmp_path: Path) -> None:
     assert payload["activeChildren"][0]["taskProgress"]["phaseLabel"] == "Fetch running"
     assert payload["bridgeAlive"] is True
     assert payload["bridgeListening"] is False
+
+
+def test_gateway_serves_task_state_summary_from_hot_snapshot_without_bridge(
+    tmp_path: Path,
+) -> None:
+    data_dir = tmp_path / "data"
+    now = datetime.now(UTC).isoformat()
+    write_snapshot(
+        data_dir / "admin-active-task-snapshot.json",
+        [
+            {
+                "taskType": "fetch",
+                "runId": "fetch_hot",
+                "active": True,
+                "status": "running",
+                "startedAt": now,
+                "heartbeatAt": now,
+                "taskProgress": {"active": True, "phaseLabel": "Fetching"},
+                "workItems": [{"id": "source-1"}],
+            }
+        ],
+        snapshot_at=now,
+    )
+    server, base_url = _serve_gateway(tmp_path, bridge_process=_FakeBridgeProcess())
+    try:
+        payload = _get_json(base_url, "/ops/task-state?view=summary")
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert payload["source"] == "hot-active-snapshot"
+    assert payload["count"] == 1
+    assert payload["tasks"][0]["runId"] == "fetch_hot"
+    assert payload["tasks"][0]["workItemCount"] == 1
+
+
+def test_gateway_serves_task_live_summary_from_pipeline_control_fallback(
+    tmp_path: Path,
+) -> None:
+    data_dir = tmp_path / "data"
+    write_pipeline_status(
+        data_dir,
+        {
+            "active": True,
+            "runId": "pipeline_hot",
+            "stage": "fetch",
+            "startedAt": "2026-06-16T10:00:00Z",
+            "progress": {"label": "Fetch", "percent": 66},
+        },
+        now_iso="2026-06-16T10:00:05Z",
+    )
+    server, base_url = _serve_gateway(tmp_path, bridge_process=_FakeBridgeProcess())
+    try:
+        payload = _get_json(base_url, "/ops/task-live/fetch?view=summary")
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert payload["source"] == "hot-active-snapshot"
+    assert payload["taskType"] == "fetch"
+    assert payload["active"] is True
+    assert payload["workItems"] == []
+    assert payload["diagnostics"][0]["code"] == "hot_snapshot_child_synthetic_from_pipeline_status"
 
 
 def test_gateway_does_not_static_fallback_admin_api_paths(tmp_path: Path) -> None:

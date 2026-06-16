@@ -17,6 +17,7 @@ class AdminBridgeTestPaths:
     task_lifecycle: Path
     ops_alert_state: Path
     jobs_fetch_report: Path
+    active_task_snapshot: Path
     jobs_fetch_tasks: Path
     discovery_report: Path
     discovery_candidates: Path
@@ -43,6 +44,7 @@ def admin_bridge_test_paths(root: Path) -> AdminBridgeTestPaths:
         task_lifecycle=root / "admin-task-lifecycle.json",
         ops_alert_state=root / "admin-alert-state.json",
         jobs_fetch_report=root / "jobs-fetch-report.json",
+        active_task_snapshot=root / "admin-active-task-snapshot.json",
         jobs_fetch_tasks=root / "jobs-fetch-tasks.json",
         discovery_report=root / "source-discovery-report.json",
         discovery_candidates=root / "source-discovery-candidates.json",
@@ -68,6 +70,12 @@ def patch_admin_bridge_paths(monkeypatch: Any, paths: AdminBridgeTestPaths) -> N
     monkeypatch.setattr(admin_bridge, "TASK_LIFECYCLE_PATH", paths.task_lifecycle)
     monkeypatch.setattr(admin_bridge, "OPS_ALERT_STATE_PATH", paths.ops_alert_state)
     monkeypatch.setattr(admin_bridge, "JOBS_FETCH_REPORT_PATH", paths.jobs_fetch_report)
+    monkeypatch.setattr(
+        admin_bridge,
+        "ADMIN_ACTIVE_TASK_SNAPSHOT_PATH",
+        paths.active_task_snapshot,
+        raising=False,
+    )
     monkeypatch.setattr(admin_bridge, "JOBS_FETCH_TASKS_PATH", paths.jobs_fetch_tasks)
     monkeypatch.setattr(admin_bridge, "DISCOVERY_REPORT_PATH", paths.discovery_report)
     monkeypatch.setattr(admin_bridge, "DISCOVERY_CANDIDATES_PATH", paths.discovery_candidates)

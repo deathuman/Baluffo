@@ -12,6 +12,7 @@ class PipelinePaths:
     light_json_path: Path
     startup_json_path: Path
     report_path: Path
+    active_task_snapshot_path: Path
     success_cache_path: Path
     source_state_path: Path
     lifecycle_state_path: Path
@@ -35,6 +36,7 @@ def build_pipeline_paths(output_dir: Path) -> PipelinePaths:
         light_json_path=root / "jobs-unified-light.json",
         startup_json_path=root / "jobs-unified-startup.json",
         report_path=root / "jobs-fetch-report.json",
+        active_task_snapshot_path=root / "admin-active-task-snapshot.json",
         success_cache_path=root / "jobs-success-cache.json",
         source_state_path=root / "jobs-source-state.json",
         lifecycle_state_path=root / "jobs-lifecycle-state.json",

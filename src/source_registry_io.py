@@ -60,6 +60,7 @@ _WRITE_RETRY_BACKOFF_BASE_S = 0.012
 # Files that must never use load_json_array; they are runtime evidence artifacts
 # that should be read via load_runtime_evidence or load_runtime_evidence_array.
 _RUNTIME_EVIDENCE_FILE_NAMES = {
+    "admin-active-task-snapshot.json",
     "jobs-fetch-report.json",
     "jobs-fetch-tasks.json",
     "source-discovery-candidates.json",

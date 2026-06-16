@@ -357,6 +357,13 @@ def run_sync_task_worker(
         bridge_log=root_mod.bridge_log,
         save_json_atomic=root_mod.save_json_atomic,
         live_task_path=root_mod.SYNC_LIVE_TASK_PATH,
+        active_snapshot_path=Path(
+            getattr(
+                root_mod,
+                "ADMIN_ACTIVE_TASK_SNAPSHOT_PATH",
+                Path(root_mod.RUNTIME_CONFIG.data_dir) / "admin-active-task-snapshot.json",
+            )
+        ),
     )
 
 

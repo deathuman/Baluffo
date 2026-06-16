@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from unittest import mock
 
 from src.bridge import ops_api as ops_api_module
+from src.bridge.active_task_snapshot import write_snapshot
 
 
 def _make_ops_api(
@@ -30,6 +31,7 @@ def _make_ops_api(
     paths = ops_api_module.OpsPaths(
         ops_alert_state=tmp_path / "ops-alert-state.json",
         jobs_fetch_report=tmp_path / "jobs-fetch-report.json",
+        active_task_snapshot=tmp_path / "admin-active-task-snapshot.json",
         dedup_review_state=tmp_path / "dedup-review-state.json",
         jobs_fetch_tasks=tmp_path / "jobs-fetch-tasks.json",
         discovery_report=tmp_path / "source-discovery-report.json",
@@ -72,6 +74,88 @@ def _make_ops_api(
         get_jobs_pipeline_schedule_ops_entry=pipeline_schedule,
     )
     return ops_api_module.OpsApi(paths=paths, deps=deps), calls
+
+
+def test_task_state_summary_uses_fresh_hot_snapshot_without_lifecycle_rows(tmp_path) -> None:
+    api, calls = _make_ops_api(
+        tmp_path,
+        current_rows=[
+            {
+                "taskType": "fetch",
+                "runId": "fetch_slow_projection",
+                "status": "running",
+                "startedAt": "2026-06-05T09:00:00+00:00",
+            }
+        ],
+        recent_rows=[],
+    )
+    write_snapshot(
+        tmp_path / "admin-active-task-snapshot.json",
+        [
+            {
+                "taskType": "fetch",
+                "runId": "fetch_hot",
+                "active": True,
+                "status": "running",
+                "startedAt": "2026-06-05T10:00:00+00:00",
+                "heartbeatAt": "2026-06-05T10:00:00+00:00",
+                "taskProgress": {"active": True, "phaseLabel": "Fetching"},
+                "workItems": [{"id": "source-1"}],
+            }
+        ],
+        snapshot_at="2026-06-05T10:00:00+00:00",
+    )
+
+    payload = api.get_current_task_state_summary_payload()
+
+    assert calls["current"] == 0
+    assert payload["source"] == "hot-active-snapshot"
+    assert payload["count"] == 1
+    assert payload["tasks"][0]["runId"] == "fetch_hot"
+    assert "workItems" not in payload["tasks"][0]
+    assert payload["tasks"][0]["workItemCount"] == 1
+
+
+def test_task_live_summary_uses_fresh_hot_snapshot_without_projection(tmp_path) -> None:
+    api, calls = _make_ops_api(
+        tmp_path,
+        current_rows=[],
+        recent_rows=[
+            {
+                "taskType": "fetch",
+                "runId": "fetch_old",
+                "status": "succeeded",
+                "startedAt": "2026-06-05T09:00:00+00:00",
+            }
+        ],
+    )
+    write_snapshot(
+        tmp_path / "admin-active-task-snapshot.json",
+        [
+            {
+                "taskType": "fetch",
+                "runId": "fetch_hot",
+                "active": True,
+                "status": "running",
+                "startedAt": "2026-06-05T10:00:00+00:00",
+                "heartbeatAt": "2026-06-05T10:00:00+00:00",
+                "taskProgress": {"active": True, "phaseLabel": "Fetching"},
+                "summary": {"running": 1},
+                "recentEvents": [{"message": f"event {index}"} for index in range(7)],
+                "workItems": [{"id": "source-1"}],
+            }
+        ],
+        snapshot_at="2026-06-05T10:00:00+00:00",
+    )
+
+    payload = api.get_task_live_payload("fetch", summary=True)
+
+    assert calls["recent"] == 0
+    assert payload["source"] == "hot-active-snapshot"
+    assert payload["runId"] == "fetch_hot"
+    assert payload["workItems"] == []
+    assert payload["workItemCount"] == 1
+    assert len(payload["recentEvents"]) == 5
 
 
 def test_ops_api_reuses_lifecycle_rows_during_admin_read_burst(tmp_path) -> None:
