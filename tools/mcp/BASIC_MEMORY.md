@@ -234,6 +234,18 @@ __pycache__/
 4. Commit and push durable BaluffoMemory updates as part of normal closeout when memory changed and the network is available.
 5. If memory push fails or network is unavailable, report the pending BaluffoMemory status and the exact command to retry.
 
+### Git-Backed Closeout Checklist
+
+Before pushing BaluffoMemory:
+
+1. Run `git fetch` and inspect `git status --short --branch`, `git log origin/main..HEAD`, and untracked files.
+2. Pull or rebase only when there is no conflict; if a conflict appears, stop and inspect the conflicting notes manually.
+3. Stage only durable continuity notes. Do not stage accidental nested vault paths such as `baluffo-memory/...` inside the BaluffoMemory repo unless they have been intentionally moved into the normal vault layout.
+4. Update stale routing notes such as `baluffo/current-focus.md` when release versions, active work, or next-step guidance changed.
+5. Run a targeted secret scan or `git diff --cached` review before committing. Never commit secrets, private keys, token values, local config files, databases, indexes, or cache artifacts.
+6. Run `basic-memory status --project baluffo-memory` and `basic-memory reindex --project baluffo-memory --search`.
+7. Commit with a message that names the durable event, push `main`, and confirm `git status --short --branch` is clean.
+
 ## Merge-Conflict Handling
 
 If `git pull` hits a merge conflict, stop, inspect the conflicting notes, and resolve manually or ask the user how to proceed.

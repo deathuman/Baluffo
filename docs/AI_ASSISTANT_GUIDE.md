@@ -43,7 +43,7 @@ Canonical docs are authoritative only for the surface they declare. Use routing 
 
 If Serena memory and repo docs ever diverge, the repo docs stay canonical.
 
-After a long live-hotfix or release patch cycle, pause before continuing direct improvements. Check whether repo docs, Basic Memory, and local skills now encode the new workflow lessons; if the latest public desktop release is behind container/Umbrel-proven `main`, decide whether a desktop rollup release should be planned before more feature work.
+After a long live-hotfix or release patch cycle, pause before continuing direct improvements. Check whether repo docs, Basic Memory, and local skills now encode the new workflow lessons; if the latest public desktop release is behind container/Umbrel-proven `main`, decide whether a desktop rollup release should be planned before more feature work. After a public shared desktop/Umbrel release, update stale `current-focus` memory, push the curated BaluffoMemory repo, and verify local release skills still point agents at the current release closeout checklist.
 
 ## Common Wrong Assumptions
 

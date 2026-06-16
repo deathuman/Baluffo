@@ -362,10 +362,12 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 ### Admin Active-Fetch In-App Browser Proof
 
 - Admin active-fetch recovery work must include a Codex in-app Browser visual proof before release closeout when the user-visible risk is false-empty panels, stale rows, log progress, or heavy-route timeout spam.
+- Always create a fresh Browser-managed tab and navigate it explicitly; do not rely on the currently selected tab that the prompt reports.
 - Start a local patched bridge-backed runtime with `BALUFFO_PACKAGED_SMOKE_RUNTIME=1`, `BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_MODE=controlled-heartbeat-success`, `BALUFFO_PACKAGED_SMOKE_ADMIN_BOOTSTRAP_FAIL_ONCE=1`, and an isolated `--data-dir`; use `src/dev_admin_supervisor.py --no-browser` on explicit free ports.
 - From the Codex Browser runtime, import `scripts/admin_active_fetch_browser_proof.mjs` and run `runAdminActiveFetchBrowserProof({ browser, baseUrl, bridgeBase, expectBootstrapFailOnce: true })`. The helper creates a fresh in-app Browser tab, seeds a local profile and schedule, starts a controlled bootstrap fetch, and writes screenshots plus DOM/console/resource evidence under `_out/admin-active-fetch-browser-proof/`.
 - The proof must show Stored Profiles, Pipeline schedule, Source Sync, source-table delayed placeholders, Current Runs, and fetch log/progress are Browser-visible without a reload, and it must not show repeated heavy-route timeout spam while active.
-- Live Umbrel Browser smoke only counts after `/ops/health.appVersion` matches the forward patch version; live `0.2.70` or older evidence is diagnostic only for this recovery.
+- Active-run route sampling should use finite fixed-attempt probes, not indefinite shell loops. For active-route performance work, sample `/tasks/run-jobs-pipeline-status`, `/ops/task-state?view=summary`, `/ops/task-live/fetch?view=summary`, and `/app/ready`; acceptance should include zero 504s and p95 under the target named in the release plan.
+- Live Umbrel Browser smoke only counts after `/ops/health.appVersion` matches the forward patch version; older live evidence is diagnostic only for that recovery.
 
 ## Desktop Updater Rehearsal Contract
 

@@ -400,6 +400,21 @@ Before any release:
 4. Validate any declared migrations and rollback behavior.
 5. Rehearse the release on a staging machine before publish.
 
+### Shared Desktop + Umbrel Public Closeout
+
+When one version is intended to be both the public desktop release and the Umbrel Docker release:
+
+1. Confirm `main`, `origin/main`, `src/app_version.py`, `docs/CHANGELOG.md`, and release metadata all name the same version, and confirm the target tag/release does not already exist.
+2. Run `npm run release:preflight` on the exact commit to tag, then confirm the repo is still clean.
+3. Build local desktop artifacts for the same version: `npm run build:portable-exe -- --bundle-version <version>` and `npm run build:ship-bundle -- --bundle-version <version>`, then verify the portable ZIP and ship ZIP embed `app/current.txt == <version>` and `APP_VERSION = "<version>"`.
+4. Create an annotated `v<version>` tag only after local gates and artifact checks pass, push only that tag, and watch every tag-triggered workflow that can publish artifacts: `build-portable-exe`, `Build Container`, and `build-linux`.
+5. Verify the GitHub release is published, not draft, not prerelease, and that release notes came from the matching `docs/CHANGELOG.md` version section.
+6. Verify release assets: portable ZIP, ship ZIP, desktop update manifest, and Linux AppImage when the Linux workflow publishes it.
+7. Download `baluffo-desktop-update-manifest.json` and confirm its version, channel, schema, key id, signature, minimum updater version, rollback flag, portable artifact URL, checksum, and size match the release asset.
+8. Reconfirm GHCR `ghcr.io/deathuman/baluffo:<version>` after tag-side workflows finish, recording the final index digest and `linux/amd64` plus `linux/arm64` platforms.
+9. Reconfirm live Umbrel on the shipped version with `/app/ready`, `/ops/health`, `/tasks/run-jobs-pipeline-status`, `/ops/task-state?view=summary`, and `/sync/status?view=summary`.
+10. Record commit, tag, release URL, workflow run ids, asset names/sizes, manifest evidence, GHCR digest/platforms, Umbrel endpoint status, and residual risks in Basic Memory, then commit and push the curated BaluffoMemory repo.
+
 ### Ship Bundle Verification
 
 1. Build the ship bundle for the target version.
