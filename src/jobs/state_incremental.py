@@ -81,6 +81,8 @@ def adapter_for_cache(source_name: str, entry: dict[str, Any], adapter: str = ""
     explicit = clean_text(adapter)
     if explicit:
         return explicit
+    if clean_text(source_name).startswith("static_source::"):
+        return "static"
     from_meta = clean_text(SOURCE_REPORT_META.get(source_name, {}).get("adapter"))
     if from_meta:
         return from_meta

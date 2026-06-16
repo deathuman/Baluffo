@@ -73,6 +73,28 @@ def load_studio_source_registry() -> list[dict[str, Any]]:
     return common_sources.load_studio_source_registry(DEFAULT_STUDIO_SOURCE_REGISTRY)
 
 
+def load_runtime_studio_source_registry(active_path: Path) -> list[dict[str, Any]]:
+    return common_sources.load_runtime_studio_source_registry(active_path)
+
+
+def replace_studio_source_registry(rows: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    previous = [dict(row) for row in STUDIO_SOURCE_REGISTRY if isinstance(row, dict)]
+    STUDIO_SOURCE_REGISTRY[:] = [dict(row) for row in rows if isinstance(row, dict)]
+    return previous
+
+
+def activate_runtime_studio_source_registry(active_path: Path) -> list[dict[str, Any]] | None:
+    rows = load_runtime_studio_source_registry(active_path)
+    if not rows:
+        return None
+    return replace_studio_source_registry(rows)
+
+
+def restore_studio_source_registry(previous: Sequence[dict[str, Any]] | None) -> None:
+    if previous is not None:
+        replace_studio_source_registry(previous)
+
+
 def read_approved_since_last_run(path: Path) -> int:
     return common_sources.read_approved_since_last_run(path)
 

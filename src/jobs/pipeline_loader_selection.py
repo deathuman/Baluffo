@@ -52,7 +52,7 @@ def _positive_int(*values: Any) -> int:
 def _source_state_proves_feed_output(entry: dict[str, Any] | None) -> bool:
     if not isinstance(entry, dict):
         return False
-    return _positive_int(entry.get("lastKeptCount"), entry.get("lastJobsFound")) > 0
+    return _positive_int(entry.get("lastKeptCount"), entry.get("lastJobsKept")) > 0
 
 
 def build_excluded_source_report(
@@ -61,10 +61,13 @@ def build_excluded_source_report(
     *,
     source_report_meta: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
+    adapter = clean_text(source_report_meta.get(source_name, {}).get("adapter"))
+    if not adapter and clean_text(source_name).startswith(_STATIC_SOURCE_PREFIX):
+        adapter = "static"
     return {
         "name": source_name,
         "status": "excluded",
-        "adapter": clean_text(source_report_meta.get(source_name, {}).get("adapter")) or "custom",
+        "adapter": adapter or "custom",
         "fetchStrategy": clean_text(source_report_meta.get(source_name, {}).get("fetchStrategy"))
         or "auto",
         "studio": clean_text(source_report_meta.get(source_name, {}).get("studio")) or "",
@@ -239,6 +242,8 @@ def sort_selected_loaders(
     def _source_priority(item: tuple[str, SourceLoader]) -> tuple[int, int]:
         source_name = clean_text(item[0])
         adapter = clean_text(source_report_meta.get(source_name, {}).get("adapter"))
+        if not adapter and source_name.startswith(_STATIC_SOURCE_PREFIX):
+            adapter = "static"
         state = (
             source_state_rows.get(source_name)
             if isinstance(source_state_rows.get(source_name), dict)
@@ -300,6 +305,8 @@ def apply_incremental_cache_exclusions(
     require_published_feed_evidence = published_source_names is not None
     for name, loader in selected_loaders:
         adapter = clean_text(source_report_meta.get(name, {}).get("adapter"))
+        if not adapter and clean_text(name).startswith(_STATIC_SOURCE_PREFIX):
+            adapter = "static"
         if (
             adapter in BOARD_LEVEL_INCREMENTAL_PROVIDER_ADAPTERS
             or name in DETAIL_LEVEL_INCREMENTAL_SOURCE_NAMES

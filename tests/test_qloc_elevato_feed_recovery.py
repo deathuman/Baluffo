@@ -1,10 +1,15 @@
+import argparse
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
 
+import src.jobs.adapters as adapters_mod
 from src import jobs_fetcher as jf
+from src.jobs import pipeline as pipeline_mod
+from src.jobs import pipeline_cli as pipeline_cli_mod
+from src.jobs.adapters import static_sources as static_sources_mod
 from src.shared.json_io import read_json
 from src.storage.baluffo_store import BaluffoStore
 from src.storage.source_registry_runtime import SourceRegistryRuntimeStore
@@ -60,7 +65,7 @@ def _write_fresh_qloc_source_state(out: Path) -> None:
                 "updatedAt": jf.now_iso(),
                 "sources": {
                     QLOC_SOURCE: {
-                        "lastAdapter": "static",
+                        "lastAdapter": "custom",
                         "lastStatus": "ok",
                         "lastSuccessAt": jf.now_iso(),
                         "lastKeptCount": 9,
@@ -104,6 +109,23 @@ def _write_source_check_only_qloc_state(out: Path) -> None:
     )
 
 
+def _write_qloc_active_registry(out: Path) -> None:
+    (out / "source-registry-active.json").write_text(
+        json.dumps(
+            [
+                {
+                    "id": "static:listing_url:https://qloc.elevato.net/en/",
+                    "name": "QLOC (Sheet)",
+                    "adapter": "static",
+                    "listing_url": "https://qloc.elevato.net/en/",
+                    "enabledByDefault": True,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_run_pipeline_does_not_treat_source_check_only_state_as_fresh() -> None:
     calls = {"count": 0}
 
@@ -133,6 +155,119 @@ def test_run_pipeline_does_not_treat_source_check_only_state_as_fresh() -> None:
         assert report_row["status"] == "ok"
         assert any(str(row.get("jobLink") or "") == QLOC_J240 for row in rows)
         assert not any(str(row.get("jobLink") or "") == QLOC_J229 for row in rows)
+
+
+def test_run_pipeline_default_loaders_use_output_dir_active_registry(monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    def _fake_static_loader_builder(source_row: dict[str, object], _loader_name: str):
+        def _loader(**_: object):
+            calls.append(dict(source_row))
+            return [_qloc_job()]
+
+        return _loader
+
+    monkeypatch.setattr(adapters_mod, "DEFAULT_SOURCE_LOADER_NAMES", [])
+    monkeypatch.setattr(
+        static_sources_mod, "_build_static_source_loader", _fake_static_loader_builder
+    )
+
+    with workspace_tmpdir("jobs-fetcher-output-dir-registry-static-loader") as tmp:
+        out = Path(tmp)
+        _write_qloc_active_registry(out)
+        (out / "jobs-unified.json").write_text(
+            json.dumps(
+                [
+                    {
+                        "title": "Legacy Producer",
+                        "company": "Other Studio",
+                        "jobLink": "https://example.com/jobs/legacy-producer",
+                        "source": "google_sheets",
+                    }
+                ]
+            ),
+            encoding="utf-8",
+        )
+        _write_source_check_only_qloc_state(out)
+
+        report = jf.run_pipeline(output_dir=out, show_progress=False)
+
+        rows = read_json(out / "jobs-unified.json", [])
+        assert [str(row.get("listing_url") or "") for row in calls] == [
+            "https://qloc.elevato.net/en/"
+        ]
+        assert int(report["summary"].get("outputCount") or 0) == 2
+        assert any(str(row.get("jobLink") or "") == QLOC_J240 for row in rows)
+
+
+def test_run_cli_only_sources_resolves_output_dir_active_registry(monkeypatch) -> None:
+    selected_names: list[str] = []
+
+    def _fake_static_loader_builder(_source_row: dict[str, object], _loader_name: str):
+        def _loader(**_: object):
+            return [_qloc_job()]
+
+        return _loader
+
+    def _fake_run_pipeline(**kwargs: object) -> dict[str, object]:
+        source_loaders = kwargs.get("source_loaders")
+        assert isinstance(source_loaders, list)
+        selected_names.extend(name for name, _loader in source_loaders)
+        return {
+            "summary": {"outputCount": 1, "failedSources": 0},
+            "outputs": {"report": "report.json"},
+            "runtime": {},
+        }
+
+    monkeypatch.setattr(adapters_mod, "DEFAULT_SOURCE_LOADER_NAMES", [])
+    monkeypatch.setattr(
+        static_sources_mod, "_build_static_source_loader", _fake_static_loader_builder
+    )
+
+    with workspace_tmpdir("jobs-fetcher-cli-output-dir-registry-only-sources") as tmp:
+        out = Path(tmp)
+        _write_qloc_active_registry(out)
+        args = argparse.Namespace(
+            output_dir=str(out),
+            social_config_path=str(out / "social-sources-config.json"),
+            social_enabled=False,
+            social_lookback_minutes=30,
+            only_sources=QLOC_SOURCE,
+            skip_successful_sources=False,
+            no_seed_existing_output=False,
+            timeout=1,
+            retries=0,
+            backoff=0.0,
+            no_preserve_previous_on_empty=False,
+            source_ttl_minutes=360,
+            max_workers=1,
+            max_per_domain=1,
+            fetch_strategy="http",
+            adapter_http_concurrency=1,
+            google_sheets_redirect_concurrency=1,
+            static_detail_concurrency=1,
+            circuit_breaker_failures=3,
+            circuit_breaker_cooldown_minutes=180,
+            browser_fallback_cooldown_minutes=30,
+            circuit_breaker_zero_kept=3,
+            respect_source_cadence=False,
+            hot_source_cadence_minutes=15,
+            cold_source_cadence_minutes=60,
+            ignore_circuit_breaker=False,
+            force_refresh_all=False,
+            include_linked_static_validation=False,
+            include_pending_provider_migration=False,
+            quiet=True,
+        )
+
+        code = pipeline_cli_mod.run_cli(
+            args,
+            run_pipeline=_fake_run_pipeline,
+            default_source_loaders=pipeline_mod.default_source_loaders,
+        )
+
+        assert code == 0
+        assert selected_names == [QLOC_SOURCE]
 
 
 def test_fetcher_child_process_loads_sqlite_registry_static_sources() -> None:

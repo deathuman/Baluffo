@@ -74,13 +74,31 @@ def read_approved_since_last_run(path: Path) -> int:
         return 0
 
 
-def load_studio_source_registry(default_registry: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
-    rows = _load_registry_from_sqlite_authority(SOURCE_REGISTRY_ACTIVE_PATH)
-    if not rows:
-        rows = load_registry_from_file(SOURCE_REGISTRY_ACTIVE_PATH, default_registry)
+def _filter_runtime_registry_rows(rows: Sequence[Any]) -> list[dict[str, Any]]:
     filtered = [
         row
         for row in rows
         if isinstance(row, dict) and not _looks_like_placeholder_registry_row(row)
     ]
+    return filtered
+
+
+def load_runtime_studio_source_registry(active_path: Path) -> list[dict[str, Any]]:
+    path = Path(active_path)
+    rows = _load_registry_from_sqlite_authority(path)
+    if not rows:
+        rows = load_registry_from_file(path, [])
+    return _filter_runtime_registry_rows(rows)
+
+
+def load_studio_source_registry(
+    default_registry: Sequence[dict[str, Any]],
+    *,
+    active_path: Path | None = None,
+) -> list[dict[str, Any]]:
+    path = Path(active_path) if active_path is not None else SOURCE_REGISTRY_ACTIVE_PATH
+    rows = _load_registry_from_sqlite_authority(path)
+    if not rows:
+        rows = load_registry_from_file(path, default_registry)
+    filtered = _filter_runtime_registry_rows(rows)
     return filtered if filtered else [dict(row) for row in default_registry]

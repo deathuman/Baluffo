@@ -117,12 +117,17 @@ def run_pipeline(
 ) -> dict[str, Any]:
     run_started_mono = time.perf_counter()
     setup: pipeline_run_setup_mod.PipelineRunSetup | None = None
+    output_dir_path = Path(output_dir)
+    previous_studio_source_registry: list[dict[str, Any]] | None = None
     previous_include_pending = jobs_registry.set_include_pending_provider_migration(
         include_pending_provider_migration
     )
     try:
+        previous_studio_source_registry = jobs_registry.activate_runtime_studio_source_registry(
+            output_dir_path / "source-registry-active.json"
+        )
         setup = pipeline_run_setup_mod.prepare_pipeline_run(
-            output_dir=Path(output_dir),
+            output_dir=output_dir_path,
             run_id=run_id,
             started_at_override=started_at_override,
             timeout_s=timeout_s,
@@ -188,6 +193,7 @@ def run_pipeline(
             static_suppression_policy=setup.runtime_payload.get("staticSuppressionPolicy"),
         )
     finally:
+        jobs_registry.restore_studio_source_registry(previous_studio_source_registry)
         jobs_registry.set_include_pending_provider_migration(previous_include_pending)
         if setup is not None:
             setup.stop_progress_reporter()

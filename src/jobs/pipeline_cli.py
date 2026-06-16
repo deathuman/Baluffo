@@ -6,6 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from src.jobs import registry as jobs_registry
 from src.jobs.common import config as common_config
 from src.jobs.common import social as common_social
 from src.jobs.interfaces import SourceLoader
@@ -229,33 +230,40 @@ def run_cli(
     run_pipeline: Callable[..., dict[str, Any]],
     default_source_loaders: Callable[..., list[tuple[str, SourceLoader]]],
 ) -> int:
-    social_config = load_social_config(
-        config_path=Path(args.social_config_path),
-        enabled=bool(args.social_enabled),
-        lookback_minutes=int(args.social_lookback_minutes or DEFAULT_SOCIAL_LOOKBACK_MINUTES),
-    )
-    default_loaders = _default_loaders_for_args(args, social_config, default_source_loaders)
+    previous_studio_source_registry: list[dict[str, Any]] | None = None
     try:
-        source_loaders, seed_from_existing_output, selection_exclusions, forced_only_sources = (
-            _only_sources_selection(args, default_loaders)
+        previous_studio_source_registry = jobs_registry.activate_runtime_studio_source_registry(
+            Path(args.output_dir) / "source-registry-active.json"
         )
-    except OnlySourcesSelectionError as exc:
-        print(f"[jobs_fetcher] ERROR {exc}", flush=True)
-        return 2
-    skipped_loaders, skipped_seed = _apply_skip_successful_selection(
-        args=args,
-        source_loaders=source_loaders,
-        default_loaders=default_loaders,
-        selection_exclusions=selection_exclusions,
-    )
-    report = _run_pipeline_from_args(
-        args=args,
-        run_pipeline=run_pipeline,
-        source_loaders=skipped_loaders,
-        seed_from_existing_output=bool(seed_from_existing_output or skipped_seed),
-        selection_exclusions=_dedupe_selection_exclusions(selection_exclusions),
-        forced_only_sources=forced_only_sources,
-        env_run_id=clean_text(os.environ.get("BALUFFO_FETCH_RUN_ID")),
-        env_started_at=clean_text(os.environ.get("BALUFFO_FETCH_STARTED_AT")),
-    )
-    return _print_pipeline_summary(report)
+        social_config = load_social_config(
+            config_path=Path(args.social_config_path),
+            enabled=bool(args.social_enabled),
+            lookback_minutes=int(args.social_lookback_minutes or DEFAULT_SOCIAL_LOOKBACK_MINUTES),
+        )
+        default_loaders = _default_loaders_for_args(args, social_config, default_source_loaders)
+        try:
+            source_loaders, seed_from_existing_output, selection_exclusions, forced_only_sources = (
+                _only_sources_selection(args, default_loaders)
+            )
+        except OnlySourcesSelectionError as exc:
+            print(f"[jobs_fetcher] ERROR {exc}", flush=True)
+            return 2
+        skipped_loaders, skipped_seed = _apply_skip_successful_selection(
+            args=args,
+            source_loaders=source_loaders,
+            default_loaders=default_loaders,
+            selection_exclusions=selection_exclusions,
+        )
+        report = _run_pipeline_from_args(
+            args=args,
+            run_pipeline=run_pipeline,
+            source_loaders=skipped_loaders,
+            seed_from_existing_output=bool(seed_from_existing_output or skipped_seed),
+            selection_exclusions=_dedupe_selection_exclusions(selection_exclusions),
+            forced_only_sources=forced_only_sources,
+            env_run_id=clean_text(os.environ.get("BALUFFO_FETCH_RUN_ID")),
+            env_started_at=clean_text(os.environ.get("BALUFFO_FETCH_STARTED_AT")),
+        )
+        return _print_pipeline_summary(report)
+    finally:
+        jobs_registry.restore_studio_source_registry(previous_studio_source_registry)
