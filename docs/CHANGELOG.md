@@ -10,6 +10,18 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.81] - 2026-06-16
+
+### Fixed
+- Active Discovery, Fetch, and Sync operator routes now publish a bounded hot task snapshot, so compact Admin/Jobs polling can read current progress without rebuilding lifecycle projections or hydrating large reports during active work.
+- `/ops/task-state?view=summary` and `/ops/task-live/<task>?view=summary` now prefer the hot active-task snapshot while it is fresh, preserving existing route shapes while stripping full work items, source lists, registry diagnostics, and unbounded event arrays.
+- The Umbrel container gateway now serves compact task-state and task-live summaries directly from the hot snapshot or pipeline control fallback when active work is in progress, reducing exposure to internal bridge slowness and avoiding active-route 504s.
+- Runtime startup/cleanup now seeds and clears `admin-active-task-snapshot.json`, preventing stale active rows from surviving restarts while keeping full run history and diagnostics on the existing authoritative idle paths.
+
+### Notes
+- This is a forward Umbrel/container release candidate before the public desktop tag. Do not reuse `0.2.80`; use `0.2.81` for the next clean Umbrel smoke and, if that smoke passes, the later public desktop tag.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.80] - 2026-06-16
 
 ### Fixed
