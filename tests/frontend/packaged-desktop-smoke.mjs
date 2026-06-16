@@ -313,8 +313,8 @@ async function main() {
       await updateToggle.click();
       const updatePanel = page.locator("#desktop-update-panel");
       await updatePanel.waitFor({ state: "visible", timeout: 15_000 });
-      const titleText = await page.locator("#desktop-update-title").textContent();
-      assert.match(String(titleText || ""), /Desktop updates|Baluffo is up to date|available|Could not check/i);
+      await page.waitForFunction(() => /Desktop updates|Baluffo is up to date|available|Could not check/i.test(String(document.querySelector("#desktop-update-title")?.textContent || "")), null, { timeout: 20_000 });
+      assert.match(String(await page.locator("#desktop-update-title").textContent() || ""), /Desktop updates|Baluffo is up to date|available|Could not check/i);
     }, scenarios);
 
     await runScenario("Jobs sign-in succeeds", async () => {
