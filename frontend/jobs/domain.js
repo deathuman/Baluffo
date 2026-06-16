@@ -1,16 +1,19 @@
 export {
   canonicalizeCountryName,
   buildJobLocationSummary,
+  classifyCityFilterRejection,
   detectContractType,
   detectWorkType,
   fullCountryName,
+  getCityFilterOptionValues,
+  isCityFilterEligible,
   isValidCityFilterOption,
   isSemanticallyValidLocationValue,
   isValidCountry,
   normalizeCountryToken,
   sanitizeLocationField,
   sanitizePublicText
-} from "./domain/query.js";
+} from "./domain/query.js?v=1";
 export {
   classifyCompanyType,
   getJobKeyForJob,
@@ -25,4 +28,4 @@ export {
   getJobLocationCities,
   getJobLocationCountries,
   mapFreshnessAgeToScore
-} from "./domain/view.js";
+} from "./domain/view.js?v=1";

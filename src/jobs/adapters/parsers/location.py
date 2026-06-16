@@ -17,7 +17,9 @@ from src.jobs.adapters.location_rules import (
 from src.jobs.normalizers import normalize_country
 from src.jobs.text_utils import (
     COUNTRY_TOKEN_ALIASES,
+    classify_city_filter_rejection,
     clean_text,
+    get_city_filter_option_values,
     invalid_location_reason,
     is_city_noise_fragment,
     looks_like_country_token,
@@ -577,6 +579,10 @@ def _fragment_to_location(fragment: str) -> tuple[str, str] | None:
     if not _fragment_looks_like_location_value(fragment):
         return None
     city, country, _ = parse_generic_location_fields(fragment)
+    if not city and country != "Unknown" and "," in fragment:
+        candidate_city = clean_text(fragment.rsplit(",", 1)[0])
+        if get_city_filter_option_values(candidate_city, country):
+            city = candidate_city
     inferred_country = _infer_country_from_city(fragment) or _infer_country_from_region(fragment)
     if city and country == "Unknown" and inferred_country:
         country = inferred_country
@@ -630,6 +636,24 @@ def _append_location_entry(
     city: str,
     country: str,
 ) -> bool:
+    city_options = get_city_filter_option_values(city, country) if city else []
+    if city and not city_options:
+        return False
+    if len(city_options) > 1:
+        appended = False
+        for city_option in city_options:
+            appended = (
+                _append_location_entry(
+                    locations=locations,
+                    seen=seen,
+                    city=city_option,
+                    country=country,
+                )
+                or appended
+            )
+        return appended
+    if city_options:
+        city = city_options[0]
     country_key = _country_key(country)
     city_key = _normalize_city_key(city)
     key = "|".join([city_key, country_key])
@@ -676,6 +700,7 @@ def normalize_location_details(location_value: Any) -> dict[str, Any]:
     locations: list[dict[str, str]] = []
     seen: set[str] = set()
     pending_country = ""
+    pending_compound_city = ""
     fallback_country = ""
     for fragment in _iter_location_fragments(location_value):
         parsed = _fragment_to_location(fragment)
@@ -683,21 +708,37 @@ def normalize_location_details(location_value: Any) -> dict[str, Any]:
             continue
         city, country = parsed
         if not city and country != "Unknown":
+            if pending_compound_city and not locations:
+                if _append_location_entry(
+                    locations=locations,
+                    seen=seen,
+                    city=pending_compound_city,
+                    country=country,
+                ):
+                    pending_compound_city = ""
+                    fallback_country = country
+                else:
+                    pending_compound_city = ""
             if not locations:
                 pending_country = country
                 fallback_country = country
             continue
         if country == "Unknown" and pending_country and not locations:
             country = pending_country
+        appended = _append_location_entry(
+            locations=locations,
+            seen=seen,
+            city=city,
+            country=country,
+        )
         if (
-            _append_location_entry(
-                locations=locations,
-                seen=seen,
-                city=city,
-                country=country,
-            )
-            and country != "Unknown"
+            not appended
+            and city
+            and country == "Unknown"
+            and classify_city_filter_rejection(city) == "compound_non_city"
         ):
+            pending_compound_city = city
+        if appended and country != "Unknown":
             pending_country = ""
 
     primary_city, primary_country, location_summary = _primary_location_payload(

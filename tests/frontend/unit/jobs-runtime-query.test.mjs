@@ -8,7 +8,12 @@ import {
   jobMatchesLifecycleFilter,
   sortJobs
 } from "../../../frontend/jobs/app/runtime/query.js";
-import { sanitizeLocationField } from "../../../frontend/jobs/domain.js";
+import {
+  getJobLocationCities,
+  getJobLocationCountries,
+  isCityFilterEligible,
+  sanitizeLocationField
+} from "../../../frontend/jobs/domain.js";
 
 test("jobs runtime query helpers derive filter options from the full job set", () => {
   const options = buildFilterOptions([
@@ -47,10 +52,23 @@ test("jobs runtime query helpers derive filter options from the full job set", (
       sector: "Games",
       city: "Rotterdam",
       country: "Onsite"
+    },
+    {
+      profession: "engineer",
+      sector: "Tech",
+      city: "Development",
+      country: "NL"
+    },
+    {
+      profession: "artist",
+      sector: "Art",
+      city: "sqs",
+      country: "US"
     }
   ], {
     getJobLocationCities: job => [job.city].filter(Boolean),
     getJobLocationCountries: job => [job.country].filter(Boolean),
+    isCityFilterEligible,
     isValidCountry: value => Boolean(sanitizeLocationField(value, "country")),
     isSemanticallyValidLocationValue: value => Boolean(sanitizeLocationField(value, "city")),
     getAvailableRegionOptions: countries => countries.map(country => ({
@@ -63,7 +81,36 @@ test("jobs runtime query helpers derive filter options from the full job set", (
   assert.deepEqual(options.availableProfessions, ["artist", "designer", "engineer", "producer", "writer"]);
   assert.deepEqual(options.availableCities, ["Amsterdam", "Rotterdam"]);
   assert.deepEqual(options.availableCountries, ["CA", "GB", "Japan", "NL", "US"]);
-  assert.deepEqual(options.availableSectors, ["Art", "Games", "Narrative"]);
+  assert.deepEqual(options.availableSectors, ["Art", "Games", "Narrative", "Tech"]);
+});
+
+test("jobs runtime query builds city options from same-country compound locations only", () => {
+  const options = buildFilterOptions([
+    {
+      profession: "engineer",
+      sector: "Games",
+      locations: [{ city: "Tokyo or Fukuoka", country: "Japan" }]
+    },
+    {
+      profession: "artist",
+      sector: "Games",
+      locations: [{ city: "New York or London", country: "US" }]
+    },
+    {
+      profession: "producer",
+      sector: "Games",
+      locations: [{ city: "S.F. or North America", country: "Unknown" }]
+    }
+  ], {
+    getJobLocationCities,
+    getJobLocationCountries,
+    isCityFilterEligible,
+    isValidCountry: value => Boolean(sanitizeLocationField(value, "country")),
+    isSemanticallyValidLocationValue: value => Boolean(sanitizeLocationField(value, "city")),
+    fullCountryName: value => value
+  });
+
+  assert.deepEqual(options.availableCities, ["Fukuoka", "Tokyo"]);
 });
 
 test("jobs runtime query helpers filter jobs by search, new-only, and country selection", () => {

@@ -19,6 +19,7 @@ export function createFilterOptionsAccumulator() {
 export function addJobToFilterOptions(accumulator, job, {
   getJobLocationCities = () => [],
   getJobLocationCountries = () => [],
+  isCityFilterEligible = null,
   isSemanticallyValidLocationValue = () => true,
   isValidCountry = () => true
 } = {}) {
@@ -27,7 +28,10 @@ export function addJobToFilterOptions(accumulator, job, {
   });
   if (job.profession) accumulator.professions.add(job.profession);
   getJobLocationCities(job).forEach(city => {
-    if (city && isCleanFilterOptionValue(city, { isSemanticallyValidLocationValue })) {
+    const cityEligible = typeof isCityFilterEligible === "function"
+      ? isCityFilterEligible(city)
+      : isCleanFilterOptionValue(city, { isSemanticallyValidLocationValue });
+    if (city && cityEligible) {
       accumulator.cities.add(city);
     }
   });
@@ -60,6 +64,7 @@ export function finalizeFilterOptions(accumulator, {
 export function buildFilterOptions(allJobs, {
   getJobLocationCities = () => [],
   getJobLocationCountries = () => [],
+  isCityFilterEligible = null,
   isSemanticallyValidLocationValue = () => true,
   isValidCountry = () => true,
   getAvailableRegionOptions = () => [],
@@ -70,6 +75,7 @@ export function buildFilterOptions(allJobs, {
     addJobToFilterOptions(accumulator, job, {
       getJobLocationCities,
       getJobLocationCountries,
+      isCityFilterEligible,
       isSemanticallyValidLocationValue,
       isValidCountry
     });

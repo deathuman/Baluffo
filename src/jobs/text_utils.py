@@ -79,6 +79,13 @@ CITY_FILTER_DATE_NOISE_RE = re.compile(
 CITY_FILTER_COUNTRY_CODE_BUNDLE_RE = re.compile(
     r"(?i)^[a-z]{2}\s*-\s*[^;]+(?:\s*;\s*[a-z]{2}\s*-\s*[^;]+)+$"
 )
+CITY_FILTER_TIME_RE = re.compile(r"^\d{1,2}:\d{2}(?::\d{2})?$")
+CITY_FILTER_CSS_UNIT_RE = re.compile(
+    r"(?i)(?:\b\d+(?:\.\d+)?fr\b|[);]\s*$|var\(|calc\(|grid-template|grid-column)"
+)
+CITY_FILTER_OR_BUNDLE_RE = re.compile(r"(?i)\b(?:or|and)\b")
+CITY_FILTER_COMPOUND_SPLIT_RE = re.compile(r"(?i)\s+\b(?:or|and)\b\s+")
+CITY_FILTER_TWO_LETTER_ALLOWLIST = {"la", "dc", "sf"}
 COUNTRY_TOKEN_ALIASES = {
     "england": "uk",
     "great britain": "uk",
@@ -282,12 +289,28 @@ def load_city_noise_contract() -> dict[str, Any]:
             fragments.append(text)
         return fragments
 
+    def _load_country_hints(values: Any) -> dict[str, str]:
+        hints: dict[str, str] = {}
+        if not isinstance(values, dict):
+            return hints
+        for key, value in values.items():
+            city_key = normalize_city_noise_text(key)
+            country = normalize_country(clean_text(value))
+            if city_key and country:
+                hints[city_key] = country
+        return hints
+
     return {
         "version": int(raw.get("version") or 1),
         "proseFragments": _load_fragments(raw.get("proseFragments")),
         "sentencePrefixes": _load_fragments(raw.get("sentencePrefixes")),
         "placeholderFragments": _load_fragments(raw.get("placeholderFragments")),
         "knownJunkTokens": _load_fragments(raw.get("knownJunkTokens")),
+        "cityFilterAllowedTokens": _load_fragments(raw.get("cityFilterAllowedTokens")),
+        "cityFilterRejectedTokens": _load_fragments(raw.get("cityFilterRejectedTokens")),
+        "cityFilterRejectedFragments": _load_fragments(raw.get("cityFilterRejectedFragments")),
+        "cityFilterRejectedPrefixes": _load_fragments(raw.get("cityFilterRejectedPrefixes")),
+        "cityFilterSplitCountryHints": _load_country_hints(raw.get("cityFilterSplitCountryHints")),
     }
 
 
@@ -313,6 +336,100 @@ def is_city_noise_fragment(value: Any) -> bool:
     return any(
         _matches_city_sentence_prefix(text, prefix) for prefix in contract["sentencePrefixes"]
     )
+
+
+def classify_city_filter_rejection(value: Any) -> str:
+    text = sanitize_public_text(value)
+    if not text:
+        return "empty"
+    normalized = normalize_city_noise_text(text)
+    contract = load_city_noise_contract()
+    if normalized in contract["cityFilterAllowedTokens"]:
+        return ""
+    if invalid_location_reason(text, field_name="city"):
+        return "semantic_location_noise"
+    if CITY_FILTER_TIME_RE.fullmatch(text):
+        return "time_fragment"
+    if CITY_FILTER_CSS_UNIT_RE.search(text) and not re.search(r"\b(?:st|saint)\.", text, re.I):
+        return "css_fragment"
+    if normalized in contract["cityFilterRejectedTokens"]:
+        return "known_non_city"
+    if any(
+        _matches_city_sentence_prefix(normalized, prefix)
+        for prefix in contract["cityFilterRejectedPrefixes"]
+    ):
+        return "prose_or_navigation"
+    if any(
+        fragment and fragment in normalized for fragment in contract["cityFilterRejectedFragments"]
+    ):
+        return "prose_or_navigation"
+    if CITY_FILTER_OR_BUNDLE_RE.search(text):
+        return "compound_non_city"
+    if (
+        len(text) == 2
+        and text.isalpha()
+        and text.upper() == text
+        and normalized not in CITY_FILTER_TWO_LETTER_ALLOWLIST
+    ):
+        return "ambiguous_code"
+    return ""
+
+
+def is_city_filter_eligible(value: Any) -> bool:
+    return not classify_city_filter_rejection(value)
+
+
+def _city_filter_country_key(value: Any) -> str:
+    text = clean_text(value)
+    if not text or norm_text(text) in {"unknown", "remote", "worldwide", "hybrid", "onsite"}:
+        return ""
+    country, _reason = sanitize_country_text(text)
+    if not country or norm_text(country) in {"unknown", "remote", "worldwide", "hybrid", "onsite"}:
+        return ""
+    return normalize_country(country)
+
+
+def _city_filter_compound_parts(value: Any) -> list[str]:
+    text = sanitize_public_text(value)
+    if not text:
+        return []
+    parts = [sanitize_public_text(part) for part in CITY_FILTER_COMPOUND_SPLIT_RE.split(text)]
+    parts = [part for part in parts if part]
+    if len(parts) < 2 or len(parts) > 4:
+        return []
+    return parts
+
+
+def get_city_filter_option_values(value: Any, country: Any = "") -> list[str]:
+    text = sanitize_public_text(value)
+    if not text:
+        return []
+    rejection = classify_city_filter_rejection(text)
+    if not rejection:
+        return [text]
+    if rejection != "compound_non_city":
+        return []
+    country_key = _city_filter_country_key(country)
+    if not country_key:
+        return []
+    hints = load_city_noise_contract()["cityFilterSplitCountryHints"]
+    parts = _city_filter_compound_parts(text)
+    if not parts:
+        return []
+    option_values: list[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        if classify_city_filter_rejection(part):
+            return []
+        hinted_country = hints.get(normalize_city_noise_text(part), "")
+        if not hinted_country or normalize_country(hinted_country) != country_key:
+            return []
+        option_key = normalize_city_noise_text(part)
+        if option_key in seen:
+            continue
+        seen.add(option_key)
+        option_values.append(part)
+    return option_values
 
 
 def resolve_country_acceptance_value(value: Any) -> str:

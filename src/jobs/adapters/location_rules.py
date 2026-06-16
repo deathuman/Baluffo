@@ -5,7 +5,12 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from src.jobs.text_utils import clean_text, looks_like_country_token, norm_text
+from src.jobs.text_utils import (
+    classify_city_filter_rejection,
+    clean_text,
+    looks_like_country_token,
+    norm_text,
+)
 
 _REMOTEISH_LOCATION_TOKENS = {"remote", "anywhere", "worldwide", "global"}
 _LOCATION_LABEL_TOKENS = {
@@ -114,6 +119,14 @@ _CITY_LOCATION_ALLOWLIST = {
     "ciudad juarez",
     "ciudad lópez mateos",
     "central jakarta",
+    "mccammon",
+    "mchenry",
+    "mckinney",
+    "mclean",
+    "newport news",
+    "thành phố thủ dầu một",
+    "thanh pho thu dau mot",
+    "tweed heads",
     "burleigh heads",
     "browns plains",
     "gold coast",
@@ -792,6 +805,13 @@ def classify_city_garbage(value: Any) -> str:
     closer_result = _classify_unopened_city_closer(token)
     if closer_result:
         return closer_result
+    filter_rejection = classify_city_filter_rejection(token)
+    if filter_rejection and filter_rejection != "semantic_location_noise":
+        if filter_rejection in {"time_fragment", "css_fragment", "ambiguous_code"}:
+            return "technical_noise"
+        if filter_rejection in {"prose_or_navigation", "compound_non_city"}:
+            return "prose_bleed"
+        return "role_category"
     for classifier in (
         lambda: _classify_chrome_or_label_noise(token, normalized),
         lambda: _classify_prose_or_role_noise(normalized),

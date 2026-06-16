@@ -67,7 +67,13 @@ from src.jobs.state_source_state import (
     write_source_state,
     write_success_cache,
 )
-from src.jobs.text_utils import clean_text, norm_text, sanitize_location_text
+from src.jobs.text_utils import (
+    classify_city_filter_rejection,
+    clean_text,
+    get_city_filter_option_values,
+    norm_text,
+    sanitize_location_text,
+)
 from src.pipeline_io import (
     read_existing_output,
     serialize_rows_for_csv,
@@ -94,6 +100,47 @@ def _is_missing_country_placeholder(value: Any) -> bool:
     return norm_text(value) in _MISSING_COUNTRY_PLACEHOLDERS
 
 
+def _clean_final_location_entry(
+    item: dict[str, Any],
+) -> tuple[list[dict[str, str]], dict[str, str]]:
+    raw_city = clean_text(item.get("city"))
+    raw_country = clean_text(item.get("country"))
+    city, city_reason = sanitize_location_text(raw_city, field_name="city")
+    country, country_reason = ("", "")
+    if raw_country and not _is_missing_country_placeholder(raw_country):
+        country, country_reason = sanitize_location_text(raw_country, field_name="country")
+    city_options = get_city_filter_option_values(city, country) if city else []
+    city_filter_reason = classify_city_filter_rejection(city) if city and not city_options else ""
+    cleaned_items = [{"city": option, "country": country} for option in city_options]
+    if not cleaned_items and country:
+        cleaned_items = [{"city": "", "country": country}]
+    reasons: dict[str, str] = {}
+    if raw_city and (not city_options or city_options != [city]):
+        reasons["city"] = city_reason or city_filter_reason or "split_compound_city"
+    if raw_country and raw_country != country and not _is_missing_country_placeholder(raw_country):
+        reasons["country"] = country_reason or "cleaned_country"
+    return cleaned_items, reasons
+
+
+def _location_summary_from_clean_entries(entries: list[dict[str, str]]) -> str:
+    return " | ".join(
+        ", ".join(
+            part for part in [clean_text(item.get("city")), clean_text(item.get("country"))] if part
+        )
+        for item in entries
+        if clean_text(item.get("city")) or clean_text(item.get("country"))
+    )
+
+
+def _is_high_confidence_summary_rejection(reason: str) -> bool:
+    return reason in {
+        "known_non_city",
+        "prose_or_navigation",
+        "css_fragment",
+        "time_fragment",
+    }
+
+
 def _apply_final_location_quality_guardrail(rows: list[dict[str, Any]]) -> dict[str, Any]:
     field_counts: Counter[str] = Counter()
     reason_counts: Counter[str] = Counter()
@@ -101,10 +148,60 @@ def _apply_final_location_quality_guardrail(rows: list[dict[str, Any]]) -> dict[
     for row in rows:
         if not isinstance(row, dict):
             continue
+        raw_locations = row.get("locations")
+        if isinstance(raw_locations, list):
+            cleaned_locations: list[dict[str, str]] = []
+            seen_locations: set[str] = set()
+            for item in raw_locations:
+                if not isinstance(item, dict):
+                    continue
+                cleaned_items, item_reasons = _clean_final_location_entry(item)
+                for nested_field, reason in item_reasons.items():
+                    field_name = f"locations.{nested_field}"
+                    field_counts[field_name] += 1
+                    reason_counts[reason] += 1
+                    if len(examples) < 20:
+                        examples.append(
+                            {
+                                "company": clean_text(row.get("company")),
+                                "title": clean_text(row.get("title")),
+                                "source": clean_text(row.get("source")),
+                                "jobLink": clean_text(row.get("jobLink")),
+                                "field": field_name,
+                                "reason": reason,
+                                "value": clean_text(item.get(nested_field)),
+                            }
+                        )
+                if not cleaned_items:
+                    continue
+                for cleaned_item in cleaned_items:
+                    key = "|".join(
+                        [
+                            norm_text(cleaned_item.get("city")),
+                            norm_text(cleaned_item.get("country")),
+                        ]
+                    )
+                    if key in seen_locations:
+                        continue
+                    seen_locations.add(key)
+                    cleaned_locations.append(cleaned_item)
+            if cleaned_locations != raw_locations:
+                row["locations"] = cleaned_locations
+            rebuilt_summary = _location_summary_from_clean_entries(cleaned_locations)
+            if clean_text(row.get("locationSummary")) != rebuilt_summary:
+                if clean_text(row.get("locationSummary")):
+                    field_counts["locationSummary"] += 1
+                    reason_counts["rebuilt_from_clean_locations"] += 1
+                row["locationSummary"] = rebuilt_summary
         for field_name in ("city", "country"):
             if field_name == "country" and _is_missing_country_placeholder(row.get(field_name)):
                 continue
             value, reason = sanitize_location_text(row.get(field_name), field_name=field_name)
+            if field_name == "city" and value:
+                filter_reason = classify_city_filter_rejection(value)
+                if filter_reason:
+                    value = ""
+                    reason = filter_reason
             if not reason:
                 continue
             if len(examples) < 20:
@@ -122,6 +219,30 @@ def _apply_final_location_quality_guardrail(rows: list[dict[str, Any]]) -> dict[
             row[field_name] = value
             field_counts[field_name] += 1
             reason_counts[reason] += 1
+        if not isinstance(raw_locations, list):
+            summary_reason = classify_city_filter_rejection(row.get("locationSummary"))
+            if _is_high_confidence_summary_rejection(summary_reason):
+                replacement_summary = ", ".join(
+                    part
+                    for part in [clean_text(row.get("city")), clean_text(row.get("country"))]
+                    if part and not _is_missing_country_placeholder(part)
+                )
+                if clean_text(row.get("locationSummary")) != replacement_summary:
+                    if len(examples) < 20:
+                        examples.append(
+                            {
+                                "company": clean_text(row.get("company")),
+                                "title": clean_text(row.get("title")),
+                                "source": clean_text(row.get("source")),
+                                "jobLink": clean_text(row.get("jobLink")),
+                                "field": "locationSummary",
+                                "reason": summary_reason,
+                                "value": clean_text(row.get("locationSummary")),
+                            }
+                        )
+                    row["locationSummary"] = replacement_summary
+                    field_counts["locationSummary"] += 1
+                    reason_counts[summary_reason] += 1
     return {
         "totalRows": len(rows),
         "invalidLocationFieldCount": int(sum(field_counts.values())),

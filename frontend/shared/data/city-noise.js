@@ -19,13 +19,32 @@ function normalizeCityNoiseList(values) {
   return result;
 }
 
+function normalizeCityNoiseMap(value) {
+  const result = {};
+  const entries = value && typeof value === "object" && !Array.isArray(value)
+    ? Object.entries(value)
+    : [];
+  for (const [rawKey, rawValue] of entries) {
+    const key = normalizeCityNoiseText(rawKey);
+    const mappedValue = String(rawValue || "").trim();
+    if (!key || !mappedValue) continue;
+    result[key] = mappedValue;
+  }
+  return result;
+}
+
 function normalizeCityNoiseContract(data) {
   return {
     version: Number(data?.version || 1),
     proseFragments: normalizeCityNoiseList(data?.proseFragments),
     sentencePrefixes: normalizeCityNoiseList(data?.sentencePrefixes),
     placeholderFragments: normalizeCityNoiseList(data?.placeholderFragments),
-    knownJunkTokens: normalizeCityNoiseList(data?.knownJunkTokens)
+    knownJunkTokens: normalizeCityNoiseList(data?.knownJunkTokens),
+    cityFilterAllowedTokens: normalizeCityNoiseList(data?.cityFilterAllowedTokens),
+    cityFilterRejectedTokens: normalizeCityNoiseList(data?.cityFilterRejectedTokens),
+    cityFilterRejectedFragments: normalizeCityNoiseList(data?.cityFilterRejectedFragments),
+    cityFilterRejectedPrefixes: normalizeCityNoiseList(data?.cityFilterRejectedPrefixes),
+    cityFilterSplitCountryHints: normalizeCityNoiseMap(data?.cityFilterSplitCountryHints)
   };
 }
 

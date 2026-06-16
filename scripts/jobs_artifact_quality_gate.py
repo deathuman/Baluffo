@@ -24,7 +24,13 @@ from src.jobs.common.exact_category_titles import (
     looks_like_static_container_url,
 )
 from src.jobs.job_link_company import company_from_job_link
-from src.jobs.text_utils import clean_text, norm_text, normalize_url
+from src.jobs.text_utils import (
+    classify_city_filter_rejection,
+    clean_text,
+    get_city_filter_option_values,
+    norm_text,
+    normalize_url,
+)
 
 
 def _resolve_csv_path(value: str) -> Path:
@@ -74,13 +80,52 @@ def _location(row: dict[str, Any]) -> str:
     )
 
 
+def _parsed_locations(value: Any) -> list[dict[str, Any]]:
+    payload = _parsed_bundle(value)
+    return payload if payload else []
+
+
+def _city_filter_candidate_hits(
+    row: dict[str, Any],
+) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    hits: list[dict[str, str]] = []
+    warnings: list[dict[str, str]] = []
+
+    def _add_structured_city_hit(field_name: str, value: Any, country: Any) -> None:
+        text = clean_text(value)
+        if not text:
+            return
+        if get_city_filter_option_values(text, country):
+            return
+        reason = classify_city_filter_rejection(text)
+        if not reason:
+            return
+        target = warnings if reason == "compound_non_city" else hits
+        target.append({"field": field_name, "value": text, "reason": reason})
+
+    _add_structured_city_hit("city", row.get("city"), row.get("country"))
+    summary_text = clean_text(row.get("locationSummary"))
+    summary_reason = classify_city_filter_rejection(summary_text) if summary_text else ""
+    if summary_reason in {
+        "known_non_city",
+        "prose_or_navigation",
+        "css_fragment",
+        "time_fragment",
+    }:
+        hits.append({"field": "locationSummary", "value": summary_text, "reason": summary_reason})
+    for item in _parsed_locations(row.get("locations")):
+        _add_structured_city_hit("locations.city", item.get("city"), item.get("country"))
+    return hits, warnings
+
+
 def _example(
     row: dict[str, Any],
     *,
     evidence: str = "",
     resolved_company: str = "",
-) -> dict[str, str]:
-    return {
+    city_filter_hits: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    example: dict[str, Any] = {
         "title": clean_text(row.get("title")),
         "company": clean_text(row.get("company")),
         "location": _location(row),
@@ -91,6 +136,9 @@ def _example(
         "companyEvidence": evidence,
         "resolvedCompany": resolved_company,
     }
+    if city_filter_hits:
+        example["cityFilterHits"] = city_filter_hits
+    return example
 
 
 def _has_exact_category_evidence(row: dict[str, Any]) -> bool:
@@ -181,6 +229,38 @@ def analyze_jobs_artifact(value: str) -> dict[str, Any]:
     static_container_rows = [row for row in rows if _has_static_container_artifact_evidence(row)]
     for row in static_container_rows[:20]:
         static_container_examples.append(_example(row, evidence="static_container_artifact_title"))
+    city_filter_rows: list[tuple[dict[str, str], list[dict[str, str]]]] = []
+    city_filter_warning_rows: list[tuple[dict[str, str], list[dict[str, str]]]] = []
+    city_filter_reason_counts: Counter[str] = Counter()
+    city_filter_field_counts: Counter[str] = Counter()
+    city_filter_warning_reason_counts: Counter[str] = Counter()
+    city_filter_warning_field_counts: Counter[str] = Counter()
+    for row in rows:
+        hits, warnings = _city_filter_candidate_hits(row)
+        if hits:
+            city_filter_rows.append((row, hits))
+            city_filter_reason_counts.update(hit["reason"] for hit in hits)
+            city_filter_field_counts.update(hit["field"] for hit in hits)
+        if warnings:
+            city_filter_warning_rows.append((row, warnings))
+            city_filter_warning_reason_counts.update(hit["reason"] for hit in warnings)
+            city_filter_warning_field_counts.update(hit["field"] for hit in warnings)
+    city_filter_examples = [
+        _example(
+            row,
+            evidence="city_filter_non_city_candidate",
+            city_filter_hits=hits[:5],
+        )
+        for row, hits in city_filter_rows[:20]
+    ]
+    city_filter_warning_examples = [
+        _example(
+            row,
+            evidence="city_filter_compound_display_only",
+            city_filter_hits=hits[:5],
+        )
+        for row, hits in city_filter_warning_rows[:20]
+    ]
 
     strong_unknown_examples: list[dict[str, str]] = []
     weak_unknown_examples: list[dict[str, str]] = []
@@ -222,8 +302,15 @@ def analyze_jobs_artifact(value: str) -> dict[str, Any]:
         weak_unknown_examples.append(_example(row, evidence="no_strong_company_evidence"))
         weak_unknown_host_counts[_host(row.get("jobLink")) or ""] += 1
 
-    blocked = len(exact_category_rows) + len(static_container_rows) + len(strong_unknown_examples)
+    blocked = (
+        len(exact_category_rows)
+        + len(static_container_rows)
+        + len(strong_unknown_examples)
+        + len(city_filter_rows)
+    )
     status = "blocked" if blocked else ("warning" if weak_unknown_examples else "pass")
+    if not blocked and city_filter_warning_rows:
+        status = "warning"
     return {
         "status": status,
         "ok": blocked == 0,
@@ -232,15 +319,23 @@ def analyze_jobs_artifact(value: str) -> dict[str, Any]:
             "rows": len(rows),
             "exactCategoryTitleLeaks": len(exact_category_rows),
             "staticContainerTitleLeaks": len(static_container_rows),
+            "cityFilterCandidateLeaks": len(city_filter_rows),
+            "cityFilterCompoundWarnings": len(city_filter_warning_rows),
             "unknownCompanyStrongEvidenceLeaks": len(strong_unknown_examples),
             "unknownCompanyWeakEvidenceWarnings": len(weak_unknown_examples),
+            "cityFilterCandidateReasonCounts": dict(city_filter_reason_counts),
+            "cityFilterCandidateFieldCounts": dict(city_filter_field_counts),
+            "cityFilterCompoundWarningReasonCounts": dict(city_filter_warning_reason_counts),
+            "cityFilterCompoundWarningFieldCounts": dict(city_filter_warning_field_counts),
         },
         "blocked": {
             "exactCategoryTitleExamples": exact_category_examples,
             "staticContainerTitleExamples": static_container_examples,
+            "cityFilterCandidateExamples": city_filter_examples,
             "unknownCompanyExamples": strong_unknown_examples[:20],
         },
         "warnings": {
+            "cityFilterCompoundExamples": city_filter_warning_examples,
             "unknownCompanyExamples": weak_unknown_examples[:20],
             "unknownCompanyHostCounts": dict(weak_unknown_host_counts.most_common(20)),
         },
@@ -263,12 +358,16 @@ def main(argv: list[str] | None = None) -> int:
         print(
             "status={status} rows={rows} exactCategoryTitleLeaks={titles} "
             "staticContainerTitleLeaks={containers} "
+            "cityFilterCandidateLeaks={city_filter} "
+            "cityFilterCompoundWarnings={city_compound} "
             "unknownCompanyStrongEvidenceLeaks={strong} "
             "unknownCompanyWeakEvidenceWarnings={weak}".format(
                 status=report["status"],
                 rows=counts["rows"],
                 titles=counts["exactCategoryTitleLeaks"],
                 containers=counts["staticContainerTitleLeaks"],
+                city_filter=counts["cityFilterCandidateLeaks"],
+                city_compound=counts["cityFilterCompoundWarnings"],
                 strong=counts["unknownCompanyStrongEvidenceLeaks"],
                 weak=counts["unknownCompanyWeakEvidenceWarnings"],
             )

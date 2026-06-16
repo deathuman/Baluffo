@@ -4,7 +4,7 @@ import {
   canonicalizeCountryName,
   fullCountryName as fullCountryNameFromDomainLayer,
   normalizeCountryToken
-} from "../domain.js";
+} from "../domain.js?v=1";
 import {
   getAvailableRegionOptions as getAvailableRegionOptionsFromModule,
   getCountryFilterOptionLabel as getCountryFilterOptionLabelFromModule,

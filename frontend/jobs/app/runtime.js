@@ -14,12 +14,13 @@ import {
   isInternshipJob,
   isValidCountry,
   isSemanticallyValidLocationValue,
+  isCityFilterEligible,
   getJobLocationCities,
   getJobLocationCountries,
   normalizeJobs,
   getJobKeyForJob,
   toJobSnapshot
-} from "../domain.js";
+} from "../domain.js?v=1";
 import { isJobsApiReady, jobsAuthService, jobsSavedJobsService, jobsPageService } from "../services.js";
 import { createJobsDispatcher, JOBS_ACTIONS } from "../actions.js";
 import { renderJobRowHtml, showJobsError } from "../render.js?v=5";
@@ -57,7 +58,7 @@ import {
   compareJobsForSort,
   createFilterOptionsAccumulator,
   finalizeFilterOptions
-} from "./runtime/query.js?v=4";
+} from "./runtime/query.js?v=6";
 import { refreshJobsFeed, loadStartupPreviewJobsFeed } from "./feed.js?v=10";
 import { setProgressVisibility, setStatusText } from "./runtime/view.js";
 import {
@@ -71,7 +72,7 @@ import {
   fetchJsonFromCandidates as fetchJsonFromCandidatesFromSources,
   renderDataSources as renderDataSourcesFromSources
 } from "./sources.js";
-import { composeJobsRuntime } from "./runtime/composition.js?v=14";
+import { composeJobsRuntime } from "./runtime/composition.js?v=15";
 import { createJobsBoot } from "./runtime/boot.js?v=6";
 import { createJobsPageFlow } from "./runtime/page-flow.js?v=6";
 
@@ -139,6 +140,7 @@ const jobsRuntime = composeJobsRuntime({
   getJobLocationCountries,
   isValidCountry,
   isSemanticallyValidLocationValue,
+  isCityFilterEligible,
   readQuickFilterPreferences,
   writeQuickFilterPreferences,
   quickFilterPrefsKey: QUICK_FILTER_PREFS_KEY,

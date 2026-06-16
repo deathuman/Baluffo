@@ -82,3 +82,48 @@ def test_deduplicate_jobs_does_not_remerge_accumulated_locations() -> None:
     assert stats["mergedCount"] == 999
     assert len(merged) == 1
     assert len(merged[0].locations) == 1000
+
+
+def test_deduplicate_jobs_filters_carried_compound_city_locations() -> None:
+    rows = [
+        CanonicalJob.from_mapping(
+            {
+                "title": "Senior Backend Engineer",
+                "company": "Example Studio",
+                "city": "Tokyo or Fukuoka",
+                "country": "Japan",
+                "locations": [{"city": "Tokyo or Fukuoka", "country": "Japan"}],
+                "workType": "Onsite",
+                "contractType": "Full-time",
+                "jobLink": "https://example.com/careers/jobs/123",
+                "sector": "Game",
+                "source": "greenhouse",
+                "sourceJobId": "greenhouse-1",
+            }
+        ),
+        CanonicalJob.from_mapping(
+            {
+                "title": "Senior Backend Engineer",
+                "company": "Example Studio",
+                "city": "New York or London",
+                "country": "US",
+                "locations": [{"city": "New York or London", "country": "US"}],
+                "workType": "Onsite",
+                "contractType": "Full-time",
+                "jobLink": "https://example.com/careers/jobs/123",
+                "sector": "Game",
+                "source": "greenhouse",
+                "sourceJobId": "greenhouse-2",
+            }
+        ),
+    ]
+
+    merged, stats = deduplicate_jobs(rows)
+
+    assert stats["mergedCount"] == 1
+    assert len(merged) == 1
+    assert merged[0].locations == [
+        {"city": "Tokyo", "country": "Japan"},
+        {"city": "Fukuoka", "country": "Japan"},
+    ]
+    assert merged[0].locationSummary == "Tokyo, Japan | Fukuoka, Japan"

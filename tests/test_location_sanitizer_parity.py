@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 from src.jobs.text_utils import (
+    get_city_filter_option_values,
     load_city_noise_contract,
     load_country_acceptance_contract,
     sanitize_location_text,
@@ -27,7 +28,7 @@ def _frontend_probe(repo_root: Path, cases: list[dict[str, object]]) -> dict[str
         (repo_root / "frontend" / "shared" / "data" / "country-acceptance.js").resolve().as_uri()
     )
     script = f"""
-import {{ sanitizeLocationField, isSemanticallyValidLocationValue }} from {json.dumps(domain_uri)};
+import {{ getCityFilterOptionValues, sanitizeLocationField, isSemanticallyValidLocationValue }} from {json.dumps(domain_uri)};
 import {{ CITY_NOISE_CONTRACT }} from {json.dumps(city_noise_uri)};
 import {{ COUNTRY_ACCEPTANCE }} from {json.dumps(country_acceptance_uri)};
 
@@ -37,11 +38,15 @@ const results = cases.map((entry) => {{
   const valid = entry.field === "city"
     ? isSemanticallyValidLocationValue(entry.value, entry.field)
     : Boolean(sanitized);
+  const cityFilterOptions = entry.field === "city"
+    ? getCityFilterOptionValues(entry.value, entry.cityFilterCountry || "")
+    : [];
   return {{
     field: entry.field,
     value: entry.value,
     sanitized,
     valid,
+    cityFilterOptions,
   }};
 }});
 
@@ -91,3 +96,20 @@ def test_location_sanitizer_outputs_stay_in_sync_with_frontend(repo_root: Path) 
         assert frontend_result["valid"] is case["valid"]
         assert frontend_result["sanitized"] == sanitized
         assert frontend_result["valid"] is valid
+
+
+def test_city_filter_option_outputs_stay_in_sync_with_frontend(repo_root: Path) -> None:
+    cases = [
+        {"field": "city", "value": "Tokyo or Fukuoka", "cityFilterCountry": "Japan"},
+        {"field": "city", "value": "Tokyo or Fukuoka", "cityFilterCountry": ""},
+        {"field": "city", "value": "New York or London", "cityFilterCountry": "US"},
+        {"field": "city", "value": "S.F. or North America", "cityFilterCountry": "Unknown"},
+        {"field": "city", "value": "McLean", "cityFilterCountry": "US"},
+    ]
+    frontend = _frontend_probe(repo_root, cases)
+
+    for case, frontend_result in zip(cases, frontend["results"], strict=True):
+        assert frontend_result["cityFilterOptions"] == get_city_filter_option_values(
+            case["value"],
+            case.get("cityFilterCountry", ""),
+        )

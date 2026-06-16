@@ -30,6 +30,7 @@ export function createJobsFiltersController({
   getJobLocationCountries,
   isValidCountry,
   isSemanticallyValidLocationValue,
+  isCityFilterEligible = isSemanticallyValidLocationValue,
   readQuickFilterPreferences,
   writeQuickFilterPreferences,
   QUICK_FILTER_PREFS_KEY,
@@ -265,6 +266,7 @@ export function createJobsFiltersController({
       isValidCountry,
       getAvailableRegionOptions: getAvailableRegionOptionsForJobs,
       fullCountryName: fullCountryNameForJobs,
+      isCityFilterEligible,
       isSemanticallyValidLocationValue
     });
     const seenCityOptions = new Set();
@@ -273,7 +275,7 @@ export function createJobsFiltersController({
         const text = String(city || "").trim();
         if (!text || seenCityOptions.has(text)) return false;
         if (text.includes("<") || text.includes(">")) return false;
-        if (!isSemanticallyValidLocationValue(text, "city")) return false;
+        if (!isCityFilterEligible(text)) return false;
         seenCityOptions.add(text);
         return true;
       });

@@ -5,7 +5,7 @@ import {
 import {
   CITY_NOISE_CONTRACT,
   normalizeCityNoiseText
-} from "../../shared/data/city-noise.js";
+} from "../../shared/data/city-noise.js?v=1";
 
 export function detectWorkType(text) {
   if (!text) return "Onsite";
@@ -187,6 +187,11 @@ const CITY_FILTER_EXACT_NOISE_TOKENS = new Set([
 ]);
 const CITY_FILTER_DATE_NOISE_RE = /^(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z.]*\s+\d{1,2}$/i;
 const CITY_FILTER_COUNTRY_CODE_BUNDLE_RE = /^[a-z]{2}\s*-\s*[^;]+(?:\s*;\s*[a-z]{2}\s*-\s*[^;]+)+$/i;
+const CITY_FILTER_TIME_RE = /^\d{1,2}:\d{2}(?::\d{2})?$/;
+const CITY_FILTER_CSS_UNIT_RE = /(?:\b\d+(?:\.\d+)?fr\b|[);]\s*$|var\(|calc\(|grid-template|grid-column)/i;
+const CITY_FILTER_OR_BUNDLE_RE = /\b(?:or|and)\b/i;
+const CITY_FILTER_COMPOUND_SPLIT_RE = /\s+\b(?:or|and)\b\s+/i;
+const CITY_FILTER_TWO_LETTER_ALLOWLIST = new Set(["la", "dc", "sf"]);
 
 function isCityFilterOnlyNoise(value) {
   const text = normalizeCityNoiseText(value);
@@ -248,9 +253,80 @@ export function sanitizeLocationField(value, field = "city") {
   return isSemanticallyValidLocationValue(text, field) ? text : "";
 }
 
+function matchesCityFilterContractList(text, key, matcher) {
+  const contract = CITY_NOISE_CONTRACT || {};
+  const values = Array.isArray(contract[key]) ? contract[key] : [];
+  return values.some(value => matcher(value));
+}
+
+export function classifyCityFilterRejection(value) {
+  const text = sanitizePublicText(value);
+  if (!text) return "empty";
+  const normalized = normalizeCityNoiseText(text);
+  const contract = CITY_NOISE_CONTRACT || {};
+  if (Array.isArray(contract.cityFilterAllowedTokens) && contract.cityFilterAllowedTokens.includes(normalized)) return "";
+  if (invalidLocationReason(text, "city")) return "semantic_location_noise";
+  if (CITY_FILTER_TIME_RE.test(text)) return "time_fragment";
+  if (CITY_FILTER_CSS_UNIT_RE.test(text) && !/\b(?:st|saint)\./i.test(text)) return "css_fragment";
+  if (Array.isArray(contract.cityFilterRejectedTokens) && contract.cityFilterRejectedTokens.includes(normalized)) return "known_non_city";
+  if (matchesCityFilterContractList(normalized, "cityFilterRejectedPrefixes", prefix => matchesCitySentencePrefix(normalized, prefix))) {
+    return "prose_or_navigation";
+  }
+  if (matchesCityFilterContractList(normalized, "cityFilterRejectedFragments", fragment => normalized.includes(fragment))) {
+    return "prose_or_navigation";
+  }
+  if (CITY_FILTER_OR_BUNDLE_RE.test(text)) return "compound_non_city";
+  if (text.length === 2 && /^[A-Z]{2}$/.test(text) && !CITY_FILTER_TWO_LETTER_ALLOWLIST.has(normalized)) return "ambiguous_code";
+  return "";
+}
+
+export function isCityFilterEligible(value) {
+  return !classifyCityFilterRejection(value);
+}
+
+function cityFilterCountryKey(value) {
+  const text = sanitizePublicText(value);
+  if (!text || ["unknown", "remote", "worldwide", "hybrid", "onsite"].includes(text.toLowerCase())) return "";
+  const country = sanitizeCountryField(text);
+  if (!country || ["unknown", "remote", "worldwide", "hybrid", "onsite"].includes(country.toLowerCase())) return "";
+  return normalizeCountryToken(country);
+}
+
+function getCityFilterCompoundParts(value) {
+  const text = sanitizePublicText(value);
+  if (!text) return [];
+  const parts = text.split(CITY_FILTER_COMPOUND_SPLIT_RE).map(part => sanitizePublicText(part)).filter(Boolean);
+  return parts.length >= 2 && parts.length <= 4 ? parts : [];
+}
+
+export function getCityFilterOptionValues(value, country = "") {
+  const text = sanitizePublicText(value);
+  if (!text) return [];
+  const rejection = classifyCityFilterRejection(text);
+  if (!rejection) return [text];
+  if (rejection !== "compound_non_city") return [];
+  const countryKey = cityFilterCountryKey(country);
+  if (!countryKey) return [];
+  const hints = CITY_NOISE_CONTRACT?.cityFilterSplitCountryHints || {};
+  const parts = getCityFilterCompoundParts(text);
+  if (!parts.length) return [];
+  const seen = new Set();
+  const values = [];
+  for (const part of parts) {
+    if (classifyCityFilterRejection(part)) return [];
+    const hintedCountryKey = cityFilterCountryKey(hints[normalizeCityNoiseText(part)] || "");
+    if (!hintedCountryKey || hintedCountryKey !== countryKey) return [];
+    const optionKey = normalizeCityNoiseText(part);
+    if (seen.has(optionKey)) continue;
+    seen.add(optionKey);
+    values.push(part);
+  }
+  return values;
+}
+
 export function isValidCityFilterOption(value) {
   const text = sanitizePublicText(value);
-  return Boolean(text && isSemanticallyValidLocationValue(text, "city"));
+  return Boolean(text && isCityFilterEligible(text));
 }
 
 function normalizeLocationEntry(entry) {

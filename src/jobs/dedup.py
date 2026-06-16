@@ -23,7 +23,7 @@ from src.jobs.common.exact_category_titles import is_exact_category_title
 from src.jobs.interfaces import JobProcessor
 from src.jobs.models import CanonicalJob
 from src.jobs.page_gating import looks_like_job_title_candidate
-from src.jobs.text_utils import sanitize_location_text
+from src.jobs.text_utils import get_city_filter_option_values, sanitize_location_text
 
 from .common import config as common_config
 from .common import social as common_social
@@ -685,13 +685,29 @@ def _collect_location_entries(
             if not isinstance(item, dict):
                 continue
             normalized_item = _normalized_location_item(item)
-            if not _is_meaningful_location_value(
-                normalized_item.get("city")
-            ) and not _is_meaningful_location_value(normalized_item.get("country")):
-                if not placeholder_location_entries:
-                    placeholder_location_entries.append(normalized_item)
-                continue
-            location_entries.append(normalized_item)
+            city_options = (
+                get_city_filter_option_values(
+                    normalized_item.get("city"),
+                    normalized_item.get("country"),
+                )
+                if normalized_item.get("city")
+                else []
+            )
+            normalized_items = [
+                {**normalized_item, "city": city_option} for city_option in city_options
+            ]
+            if normalized_item.get("city") and not normalized_items:
+                normalized_items = [{**normalized_item, "city": ""}]
+            if not normalized_items:
+                normalized_items = [normalized_item]
+            for normalized_item in normalized_items:
+                if not _is_meaningful_location_value(
+                    normalized_item.get("city")
+                ) and not _is_meaningful_location_value(normalized_item.get("country")):
+                    if not placeholder_location_entries:
+                        placeholder_location_entries.append(normalized_item)
+                    continue
+                location_entries.append(normalized_item)
     return location_entries, placeholder_location_entries
 
 

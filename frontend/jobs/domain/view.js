@@ -1,7 +1,8 @@
 import {
   parseTimestampMs,
+  getCityFilterOptionValues,
   sanitizeLocationField
-} from "./query.js";
+} from "./query.js?v=1";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -10,14 +11,18 @@ export function getJobLocationCities(job) {
   const cities = [];
   const seen = new Set();
   for (const location of locations) {
-    const city = sanitizeLocationField(location?.city || "", "city");
-    if (!city || seen.has(city)) continue;
-    seen.add(city);
-    cities.push(city);
+    getCityFilterOptionValues(location?.city || "", location?.country || "").forEach(city => {
+      if (!city || seen.has(city)) return;
+      seen.add(city);
+      cities.push(city);
+    });
   }
   if (cities.length === 0) {
-    const fallbackCity = sanitizeLocationField(job?.city || "", "city");
-    if (fallbackCity) cities.push(fallbackCity);
+    getCityFilterOptionValues(job?.city || "", job?.country || "").forEach(city => {
+      if (!city || seen.has(city)) return;
+      seen.add(city);
+      cities.push(city);
+    });
   }
   return cities;
 }
