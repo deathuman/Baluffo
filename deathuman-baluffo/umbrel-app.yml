@@ -4,7 +4,7 @@ name: Baluffo
 tagline: Local-first game jobs aggregator
 icon: https://raw.githubusercontent.com/deathuman/Baluffo/main/packaging/baluffo.png
 category: development
-version: "0.2.77"
+version: "0.2.78"
 port: 8877
 description: >-
   Baluffo aggregates game-industry jobs, keeps saved jobs and attachments local,

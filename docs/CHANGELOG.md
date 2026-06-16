@@ -10,6 +10,17 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.78] - 2026-06-16
+
+### Fixed
+- Jobs updates now activate the runtime active source registry from the explicit fetch output directory before default loader selection, so container fetch children consume the live SQLite/JSON registry instead of an import-time packaged fallback.
+- Targeted `onlySources` selection now resolves dynamic registry-backed static loaders such as `static_source::static:listing_url:https://qloc.elevato.net/en/` before task launch, avoiding zero-loader targeted runs for valid active sources.
+- Dynamic `static_source::...` loaders are classified as `static` for incremental cache decisions and source reports, so source-check-only freshness cannot hide QLOC when the published feed has no QLOC row.
+
+### Notes
+- This is a forward container/Umbrel correction after the `0.2.77` live QLOC smoke still excluded QLOC as `cache_within_freshness_window` and left `j,240` out of the feed. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.77] - 2026-06-16
 
 ### Fixed
