@@ -5,7 +5,7 @@
 > - **Canonical for:** system boundaries, task routing, compatibility-surface detail, and the expanded verification matrix
 > - **Not canonical for:** endpoint payloads or data schema details
 > - **Then inspect:** the minimal source files listed in the task table, plus the matching contract doc if shape changes are involved
-> - **Last updated:** 2026-06-01
+> - **Last updated:** 2026-06-16
 >
 > Start with [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) first. Retired boundary-charter detail now lives in git history; this map is the current routing source.
 > For any file described below as a stable thin surface, compatibility surface, or monkeypatch surface, preserve the root-level exported names that tests or leaf modules patch through that root unless the matching contract tests and docs are updated in the same change.
@@ -103,6 +103,7 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 | Admin runtime wiring | `frontend/admin/app/runtime/{composition,overview,events,state,view,effects,actions}.js` | `frontend/admin/app/runtime.js` only for page-entry wiring/export changes |
 | Admin registry | `frontend/admin/app/registry/{ui,load,mutations}.js` | `frontend/admin/app/registry.js` only for stable controller/export changes |
 | Admin ops | `frontend/admin/app/ops/{format,task-state,health,bridge-status}.js`, `frontend/admin/app/{auth,fetcher,discovery,sync}.js` | `frontend/admin/app/ops.js` only for stable controller/export changes |
+| Admin/Umbrel active-run route slowness or stale progress | `src/bridge/active_task_snapshot.py`, `src/bridge/ops_api.py`, `src/container_gateway.py`, `src/jobs/pipeline_runtime_writers.py`, `src/bridge/{discovery_service,sync_task_flow}.py` | Full history/detail projection modules only after active summary routes and the hot snapshot path are ruled out |
 | Bridge API | `src/bridge/*.py` | `src/bridge/routes/{get_routes,post_routes,post_routes_admin,post_routes_local_data,post_routes_update}.py` |
 | Admin bridge entrypoint/runtime wiring | `src/bridge/admin_entrypoint_{runtime,services,api,registry_api,task_runtime}.py` | `src/admin_bridge.py` only for root-surface compatibility work |
 | Container / Umbrel runtime | `src/container_gateway.py`, `src/container_entrypoint.py`, `src/container_server.py`, `src/bridge/server/{handler,static_files}.py`, `src/bridge/container_mode.py`, `src/runtime_seed.py`, `Dockerfile`, `deathuman-baluffo/*` | `src/admin_bridge.py` only for shared BridgeApi assembly compatibility work |
@@ -152,6 +153,7 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 - `container_mode.py` - container-only desktop route suppression helpers
 - `server/handler.py`, `server/static_files.py` - shared HTTP handler and container static/runtime-data serving
 - `ops_api.py` - stable OpsApi surface over `ops_history_projection.py`, `ops_task_live.py`, `ops_task_{fetch_live,discovery_live,projection}.py`, and `ops_live_payload.py`
+- `active_task_snapshot.py` - hot active-run summary artifact for bounded `/ops/task-state?view=summary` and `/ops/task-live/<task>?view=summary` during fetch/discovery/sync
 - `source_check_api.py` - source probe/check helpers
 
 **Still in `admin_bridge.py`:** bridge startup entrypoint, one-line `build_bridge_api(...)` wrapper, stable compatibility exports, and root monkeypatch seams
@@ -228,6 +230,7 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 | `data/source-registry-tombstones.json` | Local-only delete ledger keyed by source identity |
 | `data/source-sync.json` | Remote sync snapshot v2 (`active` and `pending` only) |
 | `data/source-discovery-report.json` | Last discovery run |
+| `data/admin-active-task-snapshot.json` | Hot active-run summary for Admin/Jobs/Umbrel compact task routes |
 | `data/local-user-data/profiles.json` | Desktop-local profile registry |
 | `data/local-user-data/session.json` | Desktop-local current session |
 | `data/local-user-data/users/{uid}/*` | Desktop-local per-user saved jobs, notes, attachments |
@@ -239,6 +242,7 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 - **Desktop single-instance:** If healthy session exists, raise error - do not open another window
 - **Desktop startup:** start site + bridge -> wait for page URL readiness -> wait for `/ops/health` before steady state
 - **Container startup:** seed `/data` only when missing -> start one same-origin UI/API server -> keep desktop lifecycle/updater routes disabled
+- **Active task summaries:** while fetch/discovery/sync is active, `/ops/task-state?view=summary` and `/ops/task-live/<task>?view=summary` should read bounded hot snapshots; idle history, full diagnostics, and detail routes stay on authoritative projection/report paths
 - **Session/watchdog:** store metadata in `desktop-session.json`, track browser heartbeat, close on idle timeout
 
 ---
