@@ -10,6 +10,20 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.80] - 2026-06-16
+
+### Fixed
+- Admin remains populated and responsive during active work, with hydrated Stored Profiles, Source Sync, Pipeline schedule, Action Center, source-table placeholders, compact tab badges, bounded Older Runs, and consistent polished controls instead of blank or stale panels.
+- Jobs updates, search, and feed publication now recover cleanly after broad fetches: multi-term searches match across job fields, completed updates refresh the visible feed automatically, gzip feed responses preserve their headers, and the Jobs table keeps a stable visual height at narrower desktop widths.
+- QLOC/Elevato source recovery is included end to end: Elevato boards and comma-style job URLs are parsed, expired detail pages are filtered, live QLOC `technical-artist,j,240` rows replace stale Google Sheets `j,229` evidence, and active runtime registry sources are selected by normal Jobs updates.
+- Desktop packaged runtime fixes cover keyboard reloads, idle liveness, false first-run modal behavior with existing data, packaged Scrapy/lxml metadata, source-sync configuration loading, and bounded portable build-cache retention.
+- Umbrel/Admin performance and reliability improvements from the container patch series are included, including compact registry source-table payloads, lightweight task-live summary polling, active-fetch timeout backoff, pipeline abort recovery, and active-run-safe bootstrap behavior.
+
+### Notes
+- This is the shared desktop and Umbrel Docker release candidate after the container/Umbrel-only patch series from `0.2.44` through `0.2.79`; `v0.2.43` remains the previous public desktop release.
+- The container image preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+- No existing release tags are moved or recreated for this rollup.
+
 ## [0.2.79] - 2026-06-16
 
 ### Fixed
