@@ -11,6 +11,7 @@ from typing import Any
 from src import source_registry_io as _registry_io
 from src.jobs.common.config import SOURCE_REGISTRY_ACTIVE_PATH
 from src.storage import BaluffoStore, BaluffoStoreError
+from src.storage.baluffo_store import DEFAULT_DB_NAME
 from src.storage.source_registry_runtime import SourceRegistryRuntimeStore
 
 _REGISTRY_SEED_NAMES = {
@@ -47,6 +48,8 @@ def load_registry_from_file(path: Path, fallback: Sequence[dict[str, Any]]) -> l
 
 def _load_registry_from_sqlite_authority(path: Path) -> list[dict[str, Any]]:
     data_dir = Path(path).expanduser().resolve().parent
+    if not (data_dir / DEFAULT_DB_NAME).exists():
+        return []
     try:
         with BaluffoStore(data_dir) as store:
             if store.get_authority_modes().get("sourceRegistry") != "sqlite":
