@@ -7,6 +7,7 @@ import {
   scheduleJobsPipelineStatusPoll as scheduleJobsPipelineStatusPollFromModule,
   updateJobsPipelineUi as updateJobsPipelineUiFromModule
 } from "../pipeline.js?v=10";
+import { isActiveTaskStateRow } from "../../../shared/live-task.js";
 
 const BLOCKING_TASK_TYPES = new Set(["pipeline", "fetch", "discovery", "sync"]);
 const ABORTABLE_TASK_TYPES = new Set(["pipeline", "fetch", "discovery"]);
@@ -15,6 +16,7 @@ const ABORT_REQUEST_TIMEOUT_MS = 20000;
 const ABORT_REQUEST_VERIFY_GRACE_MS = 5000;
 const PIPELINE_START_TIMEOUT_MS = 18000;
 const PIPELINE_ACTIVE_STATUS_GRACE_MS = 45000;
+const IDLE_TASK_STATE_RECHECK_MS = 5000;
 
 /**
  * @param {import("../../../shared/types.js").TaskStatePayload|null|undefined} payload
@@ -36,6 +38,11 @@ function taskRunId(task) {
   return String(task?.runId || task?.id || "").trim();
 }
 
+function shouldRecheckIdleTaskState(jobsPipelineUiState) {
+  const lastCheckedAt = Number(jobsPipelineUiState.lastTaskStateSummaryCheckedAt || 0);
+  return !lastCheckedAt || Date.now() - lastCheckedAt >= IDLE_TASK_STATE_RECHECK_MS;
+}
+
 function normalizeAbortTarget(task) {
   const taskType = normalizeTaskType(task);
   const runId = taskRunId(task);
@@ -43,7 +50,7 @@ function normalizeAbortTarget(task) {
 }
 
 function isAbortableTask(task) {
-  return Boolean(task?.active) && ABORTABLE_TASK_TYPES.has(normalizeTaskType(task)) && taskRunId(task);
+  return isActiveTaskStateRow(task) && ABORTABLE_TASK_TYPES.has(normalizeTaskType(task)) && taskRunId(task);
 }
 
 function taskMatchesAbortTarget(task, target) {
@@ -143,7 +150,7 @@ function isFirstRunBootstrapTask(task) {
 function getBlockingTask(taskStatePayload, trackedRunId = "") {
   const tasks = getTaskStateRows(taskStatePayload);
   const activeTasks = tasks.filter(task => (
-    Boolean(task?.active) && BLOCKING_TASK_TYPES.has(normalizeTaskType(task))
+    isActiveTaskStateRow(task) && BLOCKING_TASK_TYPES.has(normalizeTaskType(task))
   ));
   if (!activeTasks.length) {
     return null;
@@ -305,7 +312,7 @@ export function createJobsPipelineController({
     }
     if (!taskStateKnown) return false;
     return getTaskStateRows(taskStatePayload).some(task => (
-      Boolean(task?.active) && taskMatchesAbortTarget(task, target)
+      isActiveTaskStateRow(task) && taskMatchesAbortTarget(task, target)
     ));
   }
 
@@ -518,6 +525,7 @@ export function createJobsPipelineController({
           || trackedRunId
           || jobsPipelineUiState.abortRequested
           || !jobsPipelineUiState.taskStateSummaryChecked
+          || shouldRecheckIdleTaskState(jobsPipelineUiState)
         )
       );
       let taskStateKnown = false;
@@ -527,10 +535,12 @@ export function createJobsPipelineController({
           taskStatePayload = await callJobsBridge("/ops/task-state?view=summary");
           taskStateKnown = true;
           jobsPipelineUiState.taskStateSummaryChecked = true;
+          jobsPipelineUiState.lastTaskStateSummaryCheckedAt = Date.now();
         } catch {
           taskStateKnown = false;
           if (!active && !jobsPipelineUiState.active && !jobsPipelineUiState.pendingStart) {
             jobsPipelineUiState.taskStateSummaryChecked = true;
+            jobsPipelineUiState.lastTaskStateSummaryCheckedAt = Date.now();
           }
         }
       }
@@ -605,7 +615,7 @@ export function createJobsPipelineController({
           pipelinePayload: payload
         });
       }
-      clearJobsPipelinePolling();
+      scheduleJobsPipelineStatusPoll(idlePollDelayMs);
     } catch (err) {
       markPipelineStatusPollFailure(jobsPipelineUiState);
       jobsPipelineUiState.updateTooltipBridgeError = String(err?.message || err || "bridge unavailable");

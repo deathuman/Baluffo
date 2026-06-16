@@ -15,14 +15,22 @@ export function getTaskStateRows(payload) {
   return Array.isArray(payload?.tasks) ? payload.tasks : [];
 }
 
+const ACTIVE_TASK_STATUSES = new Set(["running", "starting", "pending", "queued", "aborting"]);
+
+/**
+ * @param {import("./types.js").TaskStateRow|null|undefined} task
+ * @returns {boolean}
+ */
+export function isActiveTaskStateRow(task) {
+  const status = String(task?.lifecycleStatus || task?.status || "").trim().toLowerCase();
+  return Boolean(task?.active || task?.taskProgress?.active || task?.progress?.active)
+    || (!String(task?.finishedAt || "").trim() && ACTIVE_TASK_STATUSES.has(status));
+}
+
 /**
  * @param {import("./types.js").TaskStatePayload|null|undefined} payload
  * @returns {boolean}
  */
 export function hasActiveTaskStateRows(payload) {
-  const activeStatuses = new Set(["running", "starting", "pending", "queued", "aborting"]);
-  return getTaskStateRows(payload).some(task => {
-    const status = String(task?.lifecycleStatus || task?.status || "").trim().toLowerCase();
-    return Boolean(task?.active || task?.taskProgress?.active) || activeStatuses.has(status);
-  });
+  return getTaskStateRows(payload).some(isActiveTaskStateRow);
 }

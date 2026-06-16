@@ -27,6 +27,7 @@ export function createJobsPipelineUiState() {
     updateTooltipFirstRun: false,
     updateTooltipFirstRunKnown: false,
     taskStateSummaryChecked: false,
+    lastTaskStateSummaryCheckedAt: 0,
     lastActivePipelinePayload: null,
     lastActivePipelineSeenAt: 0,
     abortTask: null,

@@ -182,11 +182,14 @@ test("pollJobsPipelineStatus uses first-run bootstrap tooltip while sheet bootst
                 taskType: "fetch",
                 task: "jobs_bootstrap",
                 runId: "jobs_bootstrap_test",
-                active: true,
+                status: "running",
                 startedAt: "2026-05-18T00:00:00.000Z",
                 summary: { coverageScope: "bootstrap_sheets" },
+                progress: {
+                  active: true,
+                  phaseLabel: "Executing sources"
+                },
                 taskProgress: {
-                  phaseLabel: "Executing sources",
                   counts: { outputCount: 120 }
                 }
               }
