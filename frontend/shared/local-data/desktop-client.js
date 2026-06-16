@@ -13,11 +13,8 @@ export { getDesktopBootstrapStats };
 export async function awaitDesktopBootstrap({ enableLifecycle = true } = {}) {
   if (!desktopState.desktopApiInitialized || desktopState.desktopBoundWindow !== window) {
     initDesktopLocalDataClient({ enableLifecycle });
-  } else {
-    desktopState.desktopLifecycleEnabled = Boolean(enableLifecycle);
-    if (!desktopState.desktopLifecycleEnabled) {
-      stopDesktopLifecycle();
-    }
+  } else if (enableLifecycle) {
+    desktopState.desktopLifecycleEnabled = true;
   }
   return waitForDesktopBootstrap();
 }
@@ -35,18 +32,21 @@ export function initDesktopLocalDataClient({ enableLifecycle = true } = {}) {
     desktopState.desktopActiveWorkSnapshot.hasActiveTask = false;
     desktopState.desktopActiveWorkSnapshot.hasActiveUpdate = false;
   }
-  desktopState.desktopLifecycleEnabled = Boolean(enableLifecycle);
-  if (!desktopState.desktopLifecycleEnabled) {
-    stopDesktopLifecycle();
-  }
   const needsBootstrap = !desktopState.desktopApiInitialized || windowChanged;
+  if (needsBootstrap) {
+    desktopState.desktopLifecycleEnabled = Boolean(enableLifecycle);
+    if (!desktopState.desktopLifecycleEnabled) {
+      stopDesktopLifecycle();
+    }
+  } else if (enableLifecycle) {
+    desktopState.desktopLifecycleEnabled = true;
+  }
   desktopState.desktopApiInitialized = true;
   desktopState.desktopBoundWindow = window;
   window.JobAppLocalData = desktopApi;
   if (!needsBootstrap) {
     return desktopApi;
   }
-  // Keep the persisted session hint until the bridge session refresh resolves.
   desktopState.currentUser = null;
   void bootstrapDesktopApi({
     refreshCurrentUser,

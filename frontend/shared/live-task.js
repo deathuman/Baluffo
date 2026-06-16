@@ -20,5 +20,9 @@ export function getTaskStateRows(payload) {
  * @returns {boolean}
  */
 export function hasActiveTaskStateRows(payload) {
-  return getTaskStateRows(payload).some(task => Boolean(task?.active));
+  const activeStatuses = new Set(["running", "starting", "pending", "queued", "aborting"]);
+  return getTaskStateRows(payload).some(task => {
+    const status = String(task?.lifecycleStatus || task?.status || "").trim().toLowerCase();
+    return Boolean(task?.active || task?.taskProgress?.active) || activeStatuses.has(status);
+  });
 }

@@ -265,7 +265,7 @@ function startDesktopLifecycle(clearDesktopNavigationBypass) {
   if (!desktopState.desktopActiveWorkTimer) {
     desktopState.desktopActiveWorkTimer = window.setInterval(() => {
       refreshDesktopActiveWorkSnapshot().catch(() => {});
-    }, DESKTOP_LIFECYCLE_HEARTBEAT_MS);
+    }, Math.min(1000, DESKTOP_LIFECYCLE_HEARTBEAT_MS));
   }
 }
 

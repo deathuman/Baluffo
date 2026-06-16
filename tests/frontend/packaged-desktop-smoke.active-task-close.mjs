@@ -138,11 +138,11 @@ async function main() {
     await page.goto(desktopUrl(`jobs.html?${FIRST_RUN_SMOKE_QUERY}`), {
       waitUntil: "domcontentloaded"
     });
-    await page.waitForFunction(() => Boolean(window.JobAppLocalData), null, { timeout: 30_000 });
+    await page.waitForFunction(() => Boolean(window.JobAppLocalData && window.__baluffoDesktopLifecycleBound), null, { timeout: 30_000 });
     const startPayload = await assertUiBootstrapRequest(await waitForUiBootstrapRequest(requests));
     const runId = String(startPayload?.runId || "");
     await waitForActiveBootstrap(apiRequest, runId);
-    await page.waitForTimeout(5500);
+    await page.mouse.click(20, 20).then(() => page.waitForTimeout(5500));
 
     let dialogAccepted = false;
     let dialogMessage = "";

@@ -166,26 +166,27 @@ function setupDesktopGlobals({
 test("desktop beforeunload prompts when admin bridge work is active", async () => {
   const { eventListeners, beaconCalls, fetchCalls } = setupDesktopGlobals({
     taskPayload: {
-      tasks: [{ taskType: "fetch", active: true }],
+      tasks: [{ taskType: "fetch", lifecycleStatus: "running", status: "running" }],
       count: 1
     }
   });
-  const { initDesktopLocalDataClient } = await importFresh(
+  const { awaitDesktopBootstrap, initDesktopLocalDataClient } = await importFresh(
     "../../../frontend/shared/local-data/desktop-client.js",
     { relativeTo: import.meta.url }
   );
   initDesktopLocalDataClient();
+  await awaitDesktopBootstrap({ enableLifecycle: false });
   await flushMicrotasks();
 
   const taskStateCalls = fetchCalls.filter(call => call.url.includes("/ops/task-state"));
   assert.ok(taskStateCalls.length >= 1);
   assert.ok(taskStateCalls.every(call => call.url.includes("/ops/task-state?view=summary")));
+  assert.equal(window.__baluffoDesktopLifecycleBound, true);
   const beforeUnload = eventListeners.get("beforeunload");
   assert.equal(typeof beforeUnload, "function");
 
   const event = createBeforeUnloadEvent();
   const result = beforeUnload(event);
-
   assert.equal(result, "");
   assert.equal(event.defaultPrevented, true);
   assert.equal(event.returnValue, "");
