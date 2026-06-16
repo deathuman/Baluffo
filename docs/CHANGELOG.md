@@ -10,6 +10,18 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.79] - 2026-06-16
+
+### Fixed
+- Jobs search now tokenizes multi-term queries across a combined title, company, location, source, and URL search index, so searches such as `QLOC Technical Artist` match the recovered QLOC Technical Artist row.
+- Jobs updates now refresh the visible feed automatically after a completed update reports fresh data, replacing stale startup/cache rows without requiring a manual Reload.
+- Gzip-backed Jobs feed serving now has regression coverage for the expected `Content-Encoding: gzip` response header.
+
+### Notes
+- This is a forward container/Umbrel patch for the post-`0.2.78` Jobs UX gap. No desktop release tag is created; `v0.2.43` remains the latest public desktop release.
+- This patch preserves the existing QLOC/Elevato ingestion, registry, sync, and source-selection behavior from `0.2.78`.
+- This patch preserves the same-origin Linux container path for Umbrel raw-LAN installs, including GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.78] - 2026-06-16
 
 ### Fixed
