@@ -110,6 +110,63 @@ test("jobs runtime query helpers filter jobs by search, new-only, and country se
   assert.equal(filtered[0].title, "Gameplay Engineer");
 });
 
+test("jobs runtime query helpers match multi-term search across job fields", () => {
+  const jobs = [
+    {
+      id: "qloc-240",
+      title: "Technical Artist",
+      company: "Qloc careers",
+      sector: "Game",
+      city: "",
+      country: "",
+      source: "static_source::static:listing_url:https://qloc.elevato.net/en/",
+      jobLink: "https://qloc.elevato.net/en/technical-artist,j,240",
+      status: "active"
+    },
+    {
+      id: "other-technical",
+      title: "Technical Artist",
+      company: "Other Studio",
+      sector: "Game",
+      city: "",
+      country: "",
+      status: "active"
+    },
+    {
+      id: "qloc-tester",
+      title: "Software Tester",
+      company: "QLOC",
+      sector: "Tech",
+      city: "",
+      country: "",
+      status: "active"
+    }
+  ];
+
+  const baseOptions = {
+    getJobLocationCities: job => [job.city].filter(Boolean),
+    getJobLocationCountries: job => [job.country].filter(Boolean),
+    matchesCountrySelection: (country, selections) => selections.includes(country)
+  };
+
+  assert.deepEqual(
+    filterJobs(jobs, { search: "QLOC", countries: [] }, baseOptions).map(job => job.id),
+    ["qloc-240", "qloc-tester"]
+  );
+  assert.deepEqual(
+    filterJobs(jobs, { search: "Technical Artist", countries: [] }, baseOptions).map(job => job.id),
+    ["qloc-240", "other-technical"]
+  );
+  assert.deepEqual(
+    filterJobs(jobs, { search: "QLOC Technical Artist", countries: [] }, baseOptions).map(job => job.id),
+    ["qloc-240"]
+  );
+  assert.deepEqual(
+    filterJobs(jobs, { search: "technical-artist,j,240", countries: [] }, baseOptions).map(job => job.id),
+    ["qloc-240"]
+  );
+});
+
 test("jobs runtime query helpers filter by read-only lifecycle evidence", () => {
   const jobs = [
     { id: "active", title: "Active", status: "active" },

@@ -227,6 +227,7 @@ export function createJobsPipelineController({
   getAllJobs,
   showToast,
   setRefreshJobsNeedsAttention,
+  refreshJobsAfterPipelineCompletion = null,
   isErrorStage,
   pollDelayMs,
   idlePollDelayMs,
@@ -492,6 +493,9 @@ export function createJobsPipelineController({
       showToast(JOBS_UPDATE_COPY.completedWithUpdates, "success");
     } else if (payload?.error) {
       showToast(`Job update failed: ${String(payload.error)}`, "error");
+    }
+    if (updatesFound && typeof refreshJobsAfterPipelineCompletion === "function") {
+      refreshJobsAfterPipelineCompletion(payload).catch(() => {});
     }
   }
 

@@ -12,7 +12,7 @@ import {
 } from "../startup.js";
 import { matchesCountrySelection as matchesCountrySelectionForJobs } from "../countries.js";
 import { displayJobs as displayJobsFromView, goToPage as goToPageFromView, updateResultsSummary as updateResultsSummaryFromView } from "./list-view.js?v=6";
-import { filterJobs, sortJobs as sortJobsFromQuery } from "./query.js?v=4";
+import { filterJobs, sortJobs as sortJobsFromQuery } from "./query.js?v=5";
 
 export function createJobsPageFlow(deps) {
   function ensureJobsPipelineStatusWatch() {

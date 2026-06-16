@@ -223,6 +223,7 @@ test("pollJobsPipelineStatus announces completion only after blocking tasks clea
     uiState.runId = "pipeline_1";
     uiState.startedAt = "2026-03-12T12:00:00.000Z";
     const toasts = [];
+    const refreshCalls = [];
     let refreshNeedsAttention = false;
 
     const controller = createJobsPipelineController({
@@ -253,6 +254,9 @@ test("pollJobsPipelineStatus announces completion only after blocking tasks clea
       setRefreshJobsNeedsAttention: value => {
         refreshNeedsAttention = Boolean(value);
       },
+      refreshJobsAfterPipelineCompletion: async payload => {
+        refreshCalls.push(payload);
+      },
       isErrorStage: payload => Boolean(payload?.error),
       pollDelayMs: 25,
       idlePollDelayMs: 50
@@ -263,12 +267,8 @@ test("pollJobsPipelineStatus announces completion only after blocking tasks clea
     assert.equal(uiState.active, false);
     assert.equal(button.disabled, false);
     assert.equal(refreshNeedsAttention, true);
-    assert.deepEqual(toasts, [
-      {
-        message: "Job update completed. Reload jobs to load updated listings.",
-        kind: "success"
-      }
-    ]);
+    assert.deepEqual(toasts, [{ message: "Job update completed. Loading updated listings.", kind: "success" }]);
+    assert.deepEqual(refreshCalls.map(payload => payload.runId), ["pipeline_1"]);
   } finally {
     restoreTimers();
   }

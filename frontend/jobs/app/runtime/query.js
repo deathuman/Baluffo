@@ -95,6 +95,52 @@ export function jobMatchesLifecycleFilter(job, lifecycleFilter) {
   return status === filterValue;
 }
 
+function normalizeSearchValue(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+export function tokenizeJobsSearchQuery(value) {
+  return normalizeSearchValue(value)
+    .split(/\s+/)
+    .map(token => token.trim())
+    .filter(Boolean);
+}
+
+export function buildJobSearchText(job, {
+  getJobLocationCities = () => [],
+  getJobLocationCountries = () => []
+} = {}) {
+  const fields = [
+    job?.title,
+    job?.company,
+    job?.city,
+    job?.country,
+    job?.sector,
+    job?.locationSummary,
+    job?.source,
+    job?.sourceName,
+    job?.sourceId,
+    job?.sourceJobId,
+    job?.jobLink,
+    job?.url,
+    job?.link,
+    job?.applyUrl,
+    job?.sourceUrl,
+    ...getJobLocationCities(job),
+    ...getJobLocationCountries(job)
+  ];
+  return normalizeSearchValue(fields.filter(Boolean).join(" "));
+}
+
+export function jobMatchesSearch(job, searchTokens, options = {}) {
+  if (!Array.isArray(searchTokens) || searchTokens.length === 0) return true;
+  const haystack = buildJobSearchText(job, options);
+  return searchTokens.every(token => haystack.includes(token));
+}
+
 export function filterJobs(allJobs, filters, {
   currentUser = null,
   seenJobKeys = new Set(),
@@ -104,7 +150,7 @@ export function filterJobs(allJobs, filters, {
   isInternshipJob = () => false,
   matchesCountrySelection = () => false
 } = {}) {
-  const searchTerm = String(filters?.search || "").toLowerCase();
+  const searchTokens = tokenizeJobsSearchQuery(filters?.search || "");
   const filterCountries = Array.from(filters?.countries || []);
 
   return (allJobs || []).filter(job => {
@@ -120,15 +166,10 @@ export function filterJobs(allJobs, filters, {
     const jobKey = getJobKeyForJob(job);
     const matchesNewOnly = !filters?.newOnly || !currentUser || !seenJobKeys.has(jobKey);
     const matchesInternship = !filters?.excludeInternship || !isInternshipJob(job);
-    const matchesSearch =
-      !searchTerm ||
-      String(job.title || "").toLowerCase().includes(searchTerm) ||
-      String(job.company || "").toLowerCase().includes(searchTerm) ||
-      String(job.city || "").toLowerCase().includes(searchTerm) ||
-      String(job.sector || "").toLowerCase().includes(searchTerm) ||
-      String(job.locationSummary || "").toLowerCase().includes(searchTerm) ||
-      locationCities.some(value => String(value || "").toLowerCase().includes(searchTerm)) ||
-      locationCountries.some(value => String(value || "").toLowerCase().includes(searchTerm));
+    const matchesSearch = jobMatchesSearch(job, searchTokens, {
+      getJobLocationCities: () => locationCities,
+      getJobLocationCountries: () => locationCountries
+    });
 
     return matchesWorkType
       && matchesLifecycle

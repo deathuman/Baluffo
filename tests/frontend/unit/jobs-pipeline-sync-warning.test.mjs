@@ -73,6 +73,7 @@ test("pipeline sync warning completes the update with non-blocking Jobs copy", a
     const uiState = createJobsPipelineUiState();
     Object.assign(uiState, { active: true, runId: "pipeline_1", startedAt: "2026-03-12T12:00:00Z" });
     const toasts = [];
+    const refreshCalls = [];
     let refreshNeedsAttention = false;
     const controller = createJobsPipelineController({
       refs: { jobsPipelineRunBtn: button },
@@ -98,6 +99,9 @@ test("pipeline sync warning completes the update with non-blocking Jobs copy", a
       setRefreshJobsNeedsAttention: value => {
         refreshNeedsAttention = Boolean(value);
       },
+      refreshJobsAfterPipelineCompletion: async payload => {
+        refreshCalls.push(payload);
+      },
       isErrorStage: payload => Boolean(payload?.error) || String(payload?.stage || "") === "error"
     });
 
@@ -107,9 +111,10 @@ test("pipeline sync warning completes the update with non-blocking Jobs copy", a
     assert.equal(button.disabled, false);
     assert.equal(refreshNeedsAttention, true);
     assert.deepEqual(toasts, [{
-      message: "Job update completed. Reload jobs to load updated listings. Source sync needs attention.",
+      message: "Job update completed. Loading updated listings. Source sync needs attention.",
       kind: "warn"
     }]);
+    assert.equal(refreshCalls.length, 1);
   } finally {
     restoreTimers();
   }

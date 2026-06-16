@@ -12,12 +12,12 @@ import { createJobsEventsController } from "./events.js";
 import { createJobsFeedController } from "./feed-controller.js";
 import { createJobsFiltersController } from "./filters-ui.js?v=7";
 import { setupJobsListDelegation as setupJobsListDelegationFromEvents } from "./jobs-list-events.js";
-import { createJobsPipelineController } from "./pipeline-controller.js?v=11";
+import { createJobsPipelineController } from "./pipeline-controller.js?v=12";
 import { createJobsStartupPreviewController } from "./startup-preview.js";
 import { createJobsStartupMetrics } from "./effects.js";
 import { createJobsRuntimeState } from "./state.js?v=2";
 import { createJobsUrlPersistence } from "./url-persistence.js?v=5";
-import { sortJobs as sortJobsFromQuery } from "./query.js?v=4";
+import { sortJobs as sortJobsFromQuery } from "./query.js?v=5";
 
 const JOBS_LOG_SCOPE = "jobs";
 
@@ -155,6 +155,7 @@ export function composeJobsRuntime(deps) {
     getAllJobs: () => runtimeState.allJobs,
     showToast,
     setRefreshJobsNeedsAttention: needsRefresh => feedController.setRefreshJobsNeedsAttention(needsRefresh),
+    refreshJobsAfterPipelineCompletion: () => feedController.refreshJobsNow({ manual: false }),
     isErrorStage: payload => Boolean(payload?.error) || normalizeToken(payload?.stage) === "error",
     pollDelayMs: deps.pipelineStatusPollMs,
     idlePollDelayMs: deps.pipelineStatusIdlePollMs,

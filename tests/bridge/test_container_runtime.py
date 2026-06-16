@@ -167,6 +167,31 @@ def test_container_handler_backfills_startup_feed_from_gzip_light_feed(
     assert json.loads(body.decode("utf-8"))[0]["id"] == "job-1"
 
 
+def test_container_handler_serves_gzip_backed_jobs_feed_with_encoding_header(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "root"
+    data_dir = tmp_path / "data"
+    root.mkdir(parents=True)
+    data_dir.mkdir(parents=True)
+    (root / "jobs.html").write_text("<html>jobs</html>\n", encoding="utf-8")
+    rows = [{"id": "qloc-240", "title": "Technical Artist", "company": "Qloc careers"}]
+    with gzip.open(data_dir / "jobs-unified-light.json.gz", mode="wt", encoding="utf-8") as handle:
+        json.dump(rows, handle)
+
+    with _served(_make_container_handler(root, data_dir)) as base_url:
+        response, body = _read_url(
+            base_url,
+            "/data/jobs-unified-light.json",
+            headers={"Accept-Encoding": "gzip, deflate"},
+        )
+
+    assert response.status == 200
+    assert response.headers["Content-Encoding"] == "gzip"
+    assert "application/json" in response.headers["Content-Type"]
+    assert json.loads(gzip.decompress(body).decode("utf-8")) == rows
+
+
 def test_container_handler_serves_startup_feed_when_backfill_persist_fails(
     tmp_path: Path,
     monkeypatch,
