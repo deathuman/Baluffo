@@ -55,6 +55,78 @@ def test_build_github_ssl_context_loads_certifi_bundle(monkeypatch: pytest.Monke
     assert seen["cafiles"] == ["/tmp/certifi/cacert.pem"]
 
 
+def test_build_github_ssl_context_ignores_missing_certifi_where(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen = {"cafiles": []}
+
+    class FakeContext:
+        def load_default_certs(self) -> None:
+            return None
+
+        def load_verify_locations(self, *, cafile=None) -> None:  # noqa: ANN001
+            seen["cafiles"].append(cafile)
+
+    class BrokenCertifi:
+        pass
+
+    monkeypatch.setattr(github_https.ssl, "create_default_context", lambda: FakeContext())
+    monkeypatch.setattr(github_https, "certifi", BrokenCertifi())
+
+    context = github_https.build_github_ssl_context()
+
+    assert isinstance(context, FakeContext)
+    assert seen["cafiles"] == []
+
+
+def test_build_github_ssl_context_ignores_certifi_os_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen = {"cafiles": []}
+
+    class FakeContext:
+        def load_default_certs(self) -> None:
+            return None
+
+        def load_verify_locations(self, *, cafile=None) -> None:  # noqa: ANN001
+            seen["cafiles"].append(cafile)
+
+    class BrokenCertifi:
+        @staticmethod
+        def where() -> str:
+            raise OSError("certifi bundle unavailable")
+
+    monkeypatch.setattr(github_https.ssl, "create_default_context", lambda: FakeContext())
+    monkeypatch.setattr(github_https, "certifi", BrokenCertifi())
+
+    context = github_https.build_github_ssl_context()
+
+    assert isinstance(context, FakeContext)
+    assert seen["cafiles"] == []
+
+
+def test_build_github_ssl_context_does_not_swallow_unexpected_certifi_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeContext:
+        def load_default_certs(self) -> None:
+            return None
+
+        def load_verify_locations(self, *, cafile=None) -> None:  # noqa: ANN001
+            return None
+
+    class BrokenCertifi:
+        @staticmethod
+        def where() -> str:
+            raise RuntimeError("unexpected certifi failure")
+
+    monkeypatch.setattr(github_https.ssl, "create_default_context", lambda: FakeContext())
+    monkeypatch.setattr(github_https, "certifi", BrokenCertifi())
+
+    with pytest.raises(RuntimeError, match="unexpected certifi failure"):
+        github_https.build_github_ssl_context()
+
+
 def test_build_github_ssl_context_rejects_missing_bundle(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BALUFFO_TEST_CA_BUNDLE", "C:/missing-ca.pem")
     monkeypatch.setattr(github_https, "certifi", None)

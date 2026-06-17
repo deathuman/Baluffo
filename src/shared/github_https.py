@@ -47,7 +47,7 @@ def build_github_ssl_context(*, ca_bundle_envs: tuple[str, ...] = ()) -> ssl.SSL
     certifi_path = ""
     try:
         certifi_path = str(certifi.where() if certifi else "").strip()
-    except Exception:
+    except (AttributeError, OSError):
         certifi_path = ""
     if certifi_path:
         context.load_verify_locations(cafile=certifi_path)

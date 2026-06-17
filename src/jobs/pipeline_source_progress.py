@@ -45,7 +45,7 @@ def console_safe_text(value: Any) -> str:
     encoding = str(getattr(stream, "encoding", "") or "").strip() or "utf-8"
     try:
         return text.encode(encoding, errors="backslashreplace").decode(encoding)
-    except Exception:
+    except (LookupError, UnicodeError, ValueError):
         return text.encode("ascii", errors="backslashreplace").decode("ascii")
 
 
