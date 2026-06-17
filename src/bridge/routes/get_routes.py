@@ -45,6 +45,7 @@ from src.bridge.routes.get_fetch_report_sources import (
     hydrate_fetch_report_sources_from_sqlite,
 )
 from src.bridge.routes.get_ops_diagnostics import handle_ops_diagnostic_routes
+from src.bridge.routes.get_ops_status import handle_ops_status_routes
 from src.bridge.routes.response_writer import BridgeResponseWriter
 from src.bridge.routes.route_storage_metrics import record_storage_read_metric
 from src.bridge.source_policy_link_backfill import (
@@ -991,146 +992,6 @@ def _handle_registry_routes(
     return False
 
 
-def _handle_ops_health_route(
-    handler: BridgeResponseWriter,
-    *,
-    api: BridgeApi,
-    query: dict[str, list[str]],
-) -> bool:
-    view = str((query.get("view") or ["full"])[0] or "full").strip().lower()
-    if view not in {"", "full", "ready"}:
-        handler.send_json(
-            {"ok": False, "error": f"unsupported ops health view: {view}"},
-            status=400,
-        )
-        return True
-    op_label = "ops.health.ready.route_payload" if view == "ready" else "ops.health.route_payload"
-    with time_operation(op_label):
-        payload = api.compute_ops_health_ready() if view == "ready" else api.compute_ops_health()
-    handler.send_json(payload)
-    return True
-
-
-def _handle_ops_dashboard_health_route(
-    handler: BridgeResponseWriter,
-    *,
-    api: BridgeApi,
-    query: dict[str, list[str]],
-) -> bool:
-    view = str((query.get("view") or ["full"])[0] or "full").strip().lower()
-    if view not in {"", "full", "summary"}:
-        handler.send_json(
-            {"ok": False, "error": f"unsupported dashboard-health view: {view}"},
-            status=400,
-        )
-        return True
-    dashboard_health_fn = (
-        getattr(api, "compute_ops_dashboard_health_summary", None)
-        if view == "summary"
-        else getattr(api, "compute_ops_dashboard_health", None)
-    )
-    op_label = (
-        "ops.dashboard_health.summary.route_payload"
-        if view == "summary"
-        else "ops.dashboard_health.route_payload"
-    )
-    with time_operation(op_label):
-        payload = (
-            dashboard_health_fn() if callable(dashboard_health_fn) else api.compute_ops_health()
-        )
-    handler.send_json(payload)
-    return True
-
-
-def _handle_ops_fetch_kpis_route(
-    handler: BridgeResponseWriter,
-    *,
-    api: BridgeApi,
-    query: dict[str, list[str]],
-) -> bool:
-    view = str((query.get("view") or ["summary"])[0] or "summary").strip().lower()
-    if view not in {"", "summary"}:
-        handler.send_json(
-            {"ok": False, "error": f"unsupported fetch-kpis view: {view}"},
-            status=400,
-        )
-        return True
-    with time_operation("ops.fetch_kpis.summary.route_payload"):
-        payload = api.compute_ops_fetch_kpis_summary()
-    handler.send_json(payload)
-    return True
-
-
-def _handle_ops_task_live_route(
-    handler: BridgeResponseWriter,
-    *,
-    api: BridgeApi,
-    path: str,
-    query: dict[str, list[str]],
-) -> bool:
-    if not path.startswith("/ops/task-live/"):
-        return False
-    task_type = path.removeprefix("/ops/task-live/").strip().lower()
-    if task_type not in {"fetch", "discovery", "sync"}:
-        handler.send_json(
-            {"ok": False, "error": f"unsupported task type: {task_type or 'unknown'}"},
-            status=404,
-        )
-        return True
-    view = str((query.get("view") or ["full"])[0] or "full").strip().lower()
-    if view not in {"", "full", "summary"}:
-        handler.send_json(
-            {"ok": False, "error": f"unsupported task-live view: {view}"},
-            status=400,
-        )
-        return True
-    handler.send_json(api.get_task_live_payload(task_type, summary=view == "summary"))
-    return True
-
-
-def _handle_ops_status_routes(
-    handler: BridgeResponseWriter,
-    *,
-    api: BridgeApi,
-    path: str,
-    query: dict[str, list[str]],
-) -> bool:
-    if path == "/ops/health":
-        return _handle_ops_health_route(handler, api=api, query=query)
-
-    if path == "/ops/dashboard-health":
-        return _handle_ops_dashboard_health_route(handler, api=api, query=query)
-
-    if path == "/ops/fetch-kpis":
-        return _handle_ops_fetch_kpis_route(handler, api=api, query=query)
-
-    if path == "/ops/history":
-        limit_raw = (query.get("limit") or ["30"])[0]
-        try:
-            limit = max(1, min(200, int(limit_raw)))
-        except ValueError:
-            limit = 30
-        rows = list(api.get_lifecycle_run_history_rows() or [])
-        handler.send_json({"runs": rows[-limit:], "count": len(rows)})
-        return True
-
-    if path == "/ops/task-state":
-        view = str((query.get("view") or [""])[0] or "").strip().lower()
-        if view == "summary":
-            with time_operation("ops.task_state.summary"):
-                payload = api.get_current_task_state_summary_payload()
-        else:
-            with time_operation("ops.task_state.full"):
-                payload = api.get_current_task_state_payload()
-        handler.send_json(payload)
-        return True
-
-    if _handle_ops_task_live_route(handler, api=api, path=path, query=query):
-        return True
-
-    return False
-
-
 def _read_utf8_log_text(path: Path) -> str:
     try:
         raw = path.read_bytes()
@@ -1553,7 +1414,7 @@ def handle_get(
         handler.send_json(payload, status=status)
         return True
 
-    if _handle_ops_status_routes(handler, api=api, path=path, query=query):
+    if handle_ops_status_routes(handler, api=api, path=path, query=query):
         return True
 
     if path == "/discovery/config":

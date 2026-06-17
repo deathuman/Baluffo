@@ -35,7 +35,7 @@ def test_system_map_generator_includes_bridge_route_inventory(tmp_path: Path) ->
     assert any(
         route["method"] == "GET"
         and route["pattern"] == "/ops/task-state"
-        and route["handlerFile"] == "src/bridge/routes/get_routes.py"
+        and route["handlerFile"] == "src/bridge/routes/get_ops_status.py"
         for route in routes
     )
     assert any(

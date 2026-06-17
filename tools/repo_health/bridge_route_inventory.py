@@ -11,6 +11,7 @@ ADMIN_BRIDGE_API = "docs/admin-bridge-api.md"
 
 ROUTE_HANDLER_METHODS = {
     "src/bridge/routes/get_ops_diagnostics.py": "GET",
+    "src/bridge/routes/get_ops_status.py": "GET",
     "src/bridge/routes/get_routes.py": "GET",
     "src/bridge/routes/post_routes_admin.py": "POST",
     "src/bridge/routes/post_routes_local_data.py": "POST",
@@ -59,6 +60,7 @@ class DiscoveredRoute:
 
 GET_HANDLER = "src/bridge/routes/get_routes.py"
 GET_OPS_DIAGNOSTICS_HANDLER = "src/bridge/routes/get_ops_diagnostics.py"
+GET_OPS_STATUS_HANDLER = "src/bridge/routes/get_ops_status.py"
 POST_ADMIN_HANDLER = "src/bridge/routes/post_routes_admin.py"
 POST_LOCAL_DATA_HANDLER = "src/bridge/routes/post_routes_local_data.py"
 POST_UPDATE_HANDLER = "src/bridge/routes/post_routes_update.py"
@@ -306,7 +308,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/ops/health",
         EXACT,
-        GET_HANDLER,
+        GET_OPS_STATUS_HANDLER,
         "support",
         caller_files=ADMIN_OPS_CALLERS + ("frontend/shared/admin-bridge-button.js",),
     ),
@@ -314,7 +316,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/ops/dashboard-health",
         EXACT,
-        GET_HANDLER,
+        GET_OPS_STATUS_HANDLER,
         "support",
         caller_files=ADMIN_OPS_CALLERS,
     ),
@@ -322,11 +324,18 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/ops/fetch-kpis",
         EXACT,
-        GET_HANDLER,
+        GET_OPS_STATUS_HANDLER,
         "support",
         caller_files=ADMIN_OPS_CALLERS,
     ),
-    _route("GET", "/ops/history", EXACT, GET_HANDLER, "support", caller_files=ADMIN_OPS_CALLERS),
+    _route(
+        "GET",
+        "/ops/history",
+        EXACT,
+        GET_OPS_STATUS_HANDLER,
+        "support",
+        caller_files=ADMIN_OPS_CALLERS,
+    ),
     _route(
         "GET",
         "/discovery/config",
@@ -339,7 +348,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/ops/task-state",
         EXACT,
-        GET_HANDLER,
+        GET_OPS_STATUS_HANDLER,
         "support",
         caller_files=ADMIN_OPS_CALLERS + PIPELINE_CALLERS,
     ),
@@ -347,7 +356,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/ops/task-live/",
         PREFIX,
-        GET_HANDLER,
+        GET_OPS_STATUS_HANDLER,
         "support",
         caller_files=("frontend/admin/app/live-task.js",),
     ),
