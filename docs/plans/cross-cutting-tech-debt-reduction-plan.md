@@ -5,7 +5,7 @@
 > - **Canonical for:** the June 2026 cross-cutting tech debt inventory: BridgeApi god object, admin_bridge legacy globals, get_routes.py decomposition, bare except Exception, _as_dict/_as_list proliferation, test-time sleep/port coupling, data model and contract drift, desktop/ship update-system complexity, deferred macOS platform gap, shared-layer isolation violations, and CSS/build infrastructure gaps
 > - **Not canonical for:** jobs/fetcher-specific refactoring (see [`initial_findings.md`](initial_findings.md)), source-discovery decomposition, adapter plugin internals, or individual component tests
 > - **Then inspect:** [`../architecture-ai-map.md`](../architecture-ai-map.md), [`refactor-charter-template.md`](refactor-charter-template.md), [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md), bridge service leaf modules, and component-specific test coverage
-> - **Last updated:** 2026-06-17 — validated against current source; multiple P0 implementation slices completed; macOS platform work deferred by product priority; stale footprint counts and unsafe acceptance criteria corrected; _as_dict/_as_list remains P3 (4 callers, contained refactor)
+> - **Last updated:** 2026-06-17 — validated against current source; multiple P0 implementation slices completed; fetch-report source-run read support extracted from GET routes; macOS platform work deferred by product priority; stale footprint counts and unsafe acceptance criteria corrected; _as_dict/_as_list remains P3 (4 callers, contained refactor)
 
 ## Summary
 
@@ -17,7 +17,7 @@ A systematic analysis identified twelve cross-cutting tech debt clusters that im
 |------|----------|----------------|----------------------------|
 | BridgeApi god object | P0 | Partial | Current-task default payload builders merged; classification warning documented. Field audit/split still open. |
 | admin_bridge legacy globals | P0 | Partial | 5-way root injection seam now has explicit coverage. Singleton/service-holder migration still open. |
-| get_routes.py monolith | P0 | Partial | Partial JSON parser, provider-coverage link backfill, and registry source table compaction extracted with tests. Dispatch split and caches still open. |
+| get_routes.py monolith | P0 | Partial | Partial JSON parser, provider-coverage link backfill, registry source table compaction, and fetch-report source-run read support extracted with tests. Dispatch split and caches still open. |
 | Data model drift (CanonicalJob) | P0 | Done for missing-field slice | `CanonicalJobSchema` now preserves `lifecycleEvent`, `lifecycleReason`, `locations`, and `locationSummary`; `DATA_CONTRACT.md` documents locations fields. `id` consistency remains deferred by strategy. |
 | Fetch report normalization duplicated | P0 | Partial | Shared-compatible task-progress helpers extracted while preserving bridge/jobs count semantics. Source-row, socialSummary, and timingSummary unification remain open. |
 | macOS platform gap | Deferred | Deferred | No `_darwin.py`; current desktop package maps non-Windows to `_linux.py`. Real gap, but not a near-term blocker. |
@@ -40,6 +40,7 @@ Completed on 2026-06-17:
 - **get_routes partial JSON extraction:** top-level partial JSON span/decode/prefix helpers moved to `src/shared/partial_json.py` with direct unit tests; `handle_get` remains the public route entrypoint.
 - **get_routes provider backfill extraction:** provider-coverage link-backfill loading/enrichment moved to `src/bridge/source_policy_link_backfill.py`; `/source-policy/recommendations` keeps the same response shape.
 - **get_routes registry table extraction:** `/registry/sources?view=table` row compaction moved to `src/bridge/registry_source_table.py`; route dispatch, bucket filtering, and pending auto-approval enrichment remain route-owned.
+- **get_routes fetch-report source-run extraction:** SQLite source-run read/hydration and rollback diagnostics moved to `src/bridge/routes/get_fetch_report_sources.py`; shared route storage-read metrics moved to `src/bridge/routes/route_storage_metrics.py`; `/ops/fetch-report` and `/ops/fetch-report/sources` keep the same response shapes.
 - **CanonicalJob missing-field preservation:** `CanonicalJobSchema` now includes `lifecycleEvent`, `lifecycleReason`, `locations`, and `locationSummary`; schema dump preservation is tested.
 - **Fetch-report task progress compatibility:** bridge and jobs use shared task-progress helpers while keeping their existing public count shapes and compatibility differences.
 - **Exception suppression ratchet:** two URL parsing catches and jobs transport request catches were narrowed from `except Exception`; update POST routes now use `src/bridge/routes/error_boundary.py`; `tools/repo_health/source_suppression_budget.json` now budgets `BLE001` at 122.
@@ -190,6 +191,7 @@ Every new GET endpoint for a new platform requires navigating this monolith. The
 - Extract hand-rolled JSON parser into `src/shared/partial_json.py` with tests
 - Extract provider coverage link backfill into `src/bridge/source_policy_link_backfill.py` (done)
 - Extract registry source table compacting into `src/bridge/registry_source_table.py` (done)
+- Extract fetch-report source-run read/hydration support into `src/bridge/routes/get_fetch_report_sources.py` (done)
 - Split `handle_get` dispatch into per-domain files (`get_ops.py`, `get_registry.py`, `get_discovery.py`, `get_admin.py`)
 - Replace `_as_dict`, `_as_list`, `_clean_text`, `_safe_int` with imports from shared utils
 - Remove module-level mutable caches (replace with LRU or remove)
@@ -636,6 +638,7 @@ The frontend has a JS build pipeline (esbuild) but **zero CSS processing**:
 | 9 | Extract partial JSON parser from get_routes.py → `src/shared/partial_json.py` | §3 | 2 files | Low | None |
 | 10 | Extract provider coverage link backfill from get_routes.py | §3 | 2 files | Done | Completed 2026-06-17 |
 | 10A | Extract registry source table compaction from get_routes.py | §3 | 2 files | Done | Completed 2026-06-17 |
+| 10B | Extract fetch-report source-run read support from get_routes.py | §3 | 2 files | Done | Completed 2026-06-17 |
 | 11 | Replace `except Exception` in low-risk files (post_routes_update, adapters, shared) | §4 | ~15 files | Partial | Update POST route and jobs transport request-catch slices completed 2026-06-17 |
 | 12 | Service holder dataclass for admin_bridge singletons | §2 | 6 files | Medium | None |
 | 13 | Align `CanonicalJobSchema` with canonical dataclass: add missing 4 fields (`lifecycleEvent`, `lifecycleReason`, `locations`, `locationSummary`), fix `id` type | §7A | 2-3 files | Medium | None (but verify with integration test) |
