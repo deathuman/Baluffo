@@ -300,6 +300,30 @@ def test_bridge_log_retained_write_failure_does_not_break_console_output(
     assert buf.getvalue().strip() == "[admin_bridge][INFO] hello_bridge runId=abc123"
 
 
+def test_bridge_log_retained_unexpected_failure_is_not_swallowed(
+    admin_bridge_entrypoint_root,
+):
+    cfg = admin_bridge.RuntimeConfig(
+        root=admin_bridge_entrypoint_root,
+        data_dir=admin_bridge_entrypoint_root / "runtime-data",
+        host="127.0.0.1",
+        port=8877,
+        log_format="human",
+        log_level="info",
+        quiet_requests=False,
+    )
+    admin_bridge.configure_runtime_paths(cfg)
+    with (
+        mock.patch.object(
+            admin_bridge.diagnostic_events,
+            "append_bridge_event",
+            side_effect=RuntimeError("unexpected diagnostic event failure"),
+        ),
+        pytest.raises(RuntimeError, match="unexpected diagnostic event failure"),
+    ):
+        admin_bridge.bridge_log("info", "hello_bridge", runId="abc123")
+
+
 def test_startup_banner_redacts_owner_token_in_retained_events(admin_bridge_entrypoint_root):
     data_dir = admin_bridge_entrypoint_root / "runtime-data"
     cfg = admin_bridge.RuntimeConfig(

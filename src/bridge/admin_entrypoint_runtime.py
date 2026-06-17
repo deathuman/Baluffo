@@ -48,7 +48,7 @@ def bridge_log(level: str, message: str, **fields: Any) -> None:
             payload["ts"],
         )
         root_mod.diagnostic_events.append_bridge_event(root_mod.ADMIN_BRIDGE_EVENTS_PATH, event)
-    except Exception:
+    except OSError:
         pass
     if root_mod._normalize_log_format(root_mod.RUNTIME_CONFIG.log_format) == "jsonl":
         try:
