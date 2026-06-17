@@ -11,6 +11,7 @@ ADMIN_BRIDGE_API = "docs/admin-bridge-api.md"
 
 ROUTE_HANDLER_METHODS = {
     "src/bridge/routes/get_discovery.py": "GET",
+    "src/bridge/routes/get_local_data.py": "GET",
     "src/bridge/routes/get_ops_diagnostics.py": "GET",
     "src/bridge/routes/get_ops_status.py": "GET",
     "src/bridge/routes/get_registry.py": "GET",
@@ -62,6 +63,7 @@ class DiscoveredRoute:
 
 GET_HANDLER = "src/bridge/routes/get_routes.py"
 GET_DISCOVERY_HANDLER = "src/bridge/routes/get_discovery.py"
+GET_LOCAL_DATA_HANDLER = "src/bridge/routes/get_local_data.py"
 GET_OPS_DIAGNOSTICS_HANDLER = "src/bridge/routes/get_ops_diagnostics.py"
 GET_OPS_STATUS_HANDLER = "src/bridge/routes/get_ops_status.py"
 GET_REGISTRY_HANDLER = "src/bridge/routes/get_registry.py"
@@ -190,7 +192,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/desktop-local-data/session",
         EXACT,
-        GET_HANDLER,
+        GET_LOCAL_DATA_HANDLER,
         "public",
         caller_files=LOCAL_DATA_CALLERS,
     ),
@@ -198,7 +200,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/desktop-local-data/profiles",
         EXACT,
-        GET_HANDLER,
+        GET_LOCAL_DATA_HANDLER,
         "public",
         caller_files=LOCAL_DATA_CALLERS,
     ),
@@ -206,7 +208,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/desktop-local-data/saved-jobs",
         EXACT,
-        GET_HANDLER,
+        GET_LOCAL_DATA_HANDLER,
         "public",
         caller_files=LOCAL_DATA_CALLERS,
     ),
@@ -214,7 +216,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/desktop-local-data/saved-job-keys",
         EXACT,
-        GET_HANDLER,
+        GET_LOCAL_DATA_HANDLER,
         "public",
         caller_files=LOCAL_DATA_CALLERS,
     ),
@@ -222,7 +224,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/desktop-local-data/attachments",
         EXACT,
-        GET_HANDLER,
+        GET_LOCAL_DATA_HANDLER,
         "public",
         caller_files=LOCAL_DATA_CALLERS,
     ),
@@ -230,7 +232,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/desktop-local-data/attachments/content",
         EXACT,
-        GET_HANDLER,
+        GET_LOCAL_DATA_HANDLER,
         "public",
         caller_files=LOCAL_DATA_CALLERS,
     ),
@@ -238,7 +240,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/desktop-local-data/backup/export-file",
         EXACT,
-        GET_HANDLER,
+        GET_LOCAL_DATA_HANDLER,
         "public",
         caller_files=LOCAL_DATA_CALLERS,
     ),
@@ -246,7 +248,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/desktop-local-data/activity",
         EXACT,
-        GET_HANDLER,
+        GET_LOCAL_DATA_HANDLER,
         "public",
         caller_files=LOCAL_DATA_CALLERS,
     ),
@@ -254,7 +256,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/desktop-local-data/startup-metrics",
         EXACT,
-        GET_HANDLER,
+        GET_LOCAL_DATA_HANDLER,
         "support",
         caller_files=STARTUP_METRIC_CALLERS,
     ),
