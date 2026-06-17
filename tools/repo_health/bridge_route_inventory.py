@@ -17,6 +17,7 @@ ROUTE_HANDLER_METHODS = {
     "src/bridge/routes/get_ops_status.py": "GET",
     "src/bridge/routes/get_registry.py": "GET",
     "src/bridge/routes/get_routes.py": "GET",
+    "src/bridge/routes/get_source_policy.py": "GET",
     "src/bridge/routes/post_routes_admin.py": "POST",
     "src/bridge/routes/post_routes_local_data.py": "POST",
     "src/bridge/routes/post_routes_update.py": "POST",
@@ -69,6 +70,7 @@ GET_LOCAL_DATA_HANDLER = "src/bridge/routes/get_local_data.py"
 GET_OPS_DIAGNOSTICS_HANDLER = "src/bridge/routes/get_ops_diagnostics.py"
 GET_OPS_STATUS_HANDLER = "src/bridge/routes/get_ops_status.py"
 GET_REGISTRY_HANDLER = "src/bridge/routes/get_registry.py"
+GET_SOURCE_POLICY_HANDLER = "src/bridge/routes/get_source_policy.py"
 POST_ADMIN_HANDLER = "src/bridge/routes/post_routes_admin.py"
 POST_LOCAL_DATA_HANDLER = "src/bridge/routes/post_routes_local_data.py"
 POST_UPDATE_HANDLER = "src/bridge/routes/post_routes_update.py"
@@ -460,7 +462,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/source-policy/recommendations",
         EXACT,
-        GET_HANDLER,
+        GET_SOURCE_POLICY_HANDLER,
         "support",
         caller_files=ADMIN_OPS_CALLERS,
     ),
