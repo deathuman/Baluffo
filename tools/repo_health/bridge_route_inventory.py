@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 ADMIN_BRIDGE_API = "docs/admin-bridge-api.md"
 
 ROUTE_HANDLER_METHODS = {
+    "src/bridge/routes/get_ops_diagnostics.py": "GET",
     "src/bridge/routes/get_routes.py": "GET",
     "src/bridge/routes/post_routes_admin.py": "POST",
     "src/bridge/routes/post_routes_local_data.py": "POST",
@@ -57,6 +58,7 @@ class DiscoveredRoute:
 
 
 GET_HANDLER = "src/bridge/routes/get_routes.py"
+GET_OPS_DIAGNOSTICS_HANDLER = "src/bridge/routes/get_ops_diagnostics.py"
 POST_ADMIN_HANDLER = "src/bridge/routes/post_routes_admin.py"
 POST_LOCAL_DATA_HANDLER = "src/bridge/routes/post_routes_local_data.py"
 POST_UPDATE_HANDLER = "src/bridge/routes/post_routes_update.py"
@@ -353,7 +355,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/ops/fetcher-metrics",
         EXACT,
-        GET_HANDLER,
+        GET_OPS_DIAGNOSTICS_HANDLER,
         "support",
         caller_files=ADMIN_FETCHER_CALLERS,
     ),
@@ -361,7 +363,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/ops/perf-counters",
         EXACT,
-        GET_HANDLER,
+        GET_OPS_DIAGNOSTICS_HANDLER,
         "internal",
         contract_doc="",
         rationale="Internal diagnostics snapshot for route timing and perf-counter tests.",
@@ -370,21 +372,31 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/ops/performance-profile",
         EXACT,
-        GET_HANDLER,
+        GET_OPS_DIAGNOSTICS_HANDLER,
         "support",
         caller_files=ADMIN_OPS_CALLERS,
     ),
     _route(
-        "GET", "/ops/storage-metrics", EXACT, GET_HANDLER, "support", caller_files=ADMIN_OPS_CALLERS
+        "GET",
+        "/ops/storage-metrics",
+        EXACT,
+        GET_OPS_DIAGNOSTICS_HANDLER,
+        "support",
+        caller_files=ADMIN_OPS_CALLERS,
     ),
     _route(
-        "GET", "/ops/storage-health", EXACT, GET_HANDLER, "support", caller_files=ADMIN_OPS_CALLERS
+        "GET",
+        "/ops/storage-health",
+        EXACT,
+        GET_OPS_DIAGNOSTICS_HANDLER,
+        "support",
+        caller_files=ADMIN_OPS_CALLERS,
     ),
     _route(
         "GET",
         "/ops/discovery-audit-artifacts",
         EXACT,
-        GET_HANDLER,
+        GET_OPS_DIAGNOSTICS_HANDLER,
         "support",
         caller_files=ADMIN_OPS_CALLERS,
     ),
@@ -392,7 +404,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/ops/task-failure-attempts",
         EXACT,
-        GET_HANDLER,
+        GET_OPS_DIAGNOSTICS_HANDLER,
         "support",
         caller_files=ADMIN_OPS_CALLERS,
     ),
@@ -400,7 +412,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/ops/fetch-report/sources",
         EXACT,
-        GET_HANDLER,
+        GET_OPS_DIAGNOSTICS_HANDLER,
         "support",
         caller_files=ADMIN_FETCHER_CALLERS,
     ),

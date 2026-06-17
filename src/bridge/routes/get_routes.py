@@ -25,9 +25,8 @@ from pydantic import ValidationError as PydanticValidationError
 from src.bridge.admin_bootstrap import get_admin_bootstrap_payload
 from src.bridge.api import BridgeApi
 from src.bridge.container_mode import is_container_runtime, send_container_unavailable
-from src.bridge.discovery_audit_artifacts import get_discovery_audit_artifacts_payload
 from src.bridge.fetch_report_review_state import load_fetch_report_with_dedup_review_state
-from src.bridge.performance_profile import snapshot_performance_profile, time_operation
+from src.bridge.performance_profile import time_operation
 from src.bridge.registry_conflict_adjudication import overlay_adjudication
 from src.bridge.registry_conflicts import (
     build_registry_conflicts_summary_cache_key,
@@ -43,20 +42,16 @@ from src.bridge.routes.error_boundary import (
     send_json_boundary,
 )
 from src.bridge.routes.get_fetch_report_sources import (
-    fetch_report_sources_payload,
     hydrate_fetch_report_sources_from_sqlite,
 )
+from src.bridge.routes.get_ops_diagnostics import handle_ops_diagnostic_routes
 from src.bridge.routes.response_writer import BridgeResponseWriter
-from src.bridge.routes.route_storage_metrics import (
-    record_storage_read_metric,
-    storage_metrics_data_dir,
-)
+from src.bridge.routes.route_storage_metrics import record_storage_read_metric
 from src.bridge.source_policy_link_backfill import (
     enrich_provider_coverage_link_backfill,
     load_provider_coverage_link_backfill,
     source_policy_soak_report_path,
 )
-from src.bridge.task_failure_attempts import get_task_failure_attempts_payload
 from src.core.schemas import LocalSavedJobRowSchema
 from src.jobs.common.contracts_source_policy_recommendations import (
     merge_source_policy_review_state_into_recommendations,
@@ -70,11 +65,9 @@ from src.shared.partial_json import (
     read_json_prefix,
     top_level_json_field_spans,
 )
-from src.shared.timing_counters import snapshot_counters
 from src.source_registry import is_hidden_from_default
 from src.source_registry_auto_approval import annotate_pending_auto_approval_rows
 from src.source_registry_io import load_runtime_evidence_array
-from src.storage_metrics import snapshot_storage_metrics
 
 _ADMIN_BOOTSTRAP_SMOKE_FAIL_ONCE_CONSUMED = False
 
@@ -581,22 +574,6 @@ def _compact_live_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any
         if isinstance(row, dict)
     ]
     return compact_payload
-
-
-def _performance_profile_runtime(api: BridgeApi) -> dict[str, Any]:
-    runtime_config = getattr(api, "runtime_config", None)
-    owner_mode = str(getattr(runtime_config, "owner_mode", "") or "")
-    if is_container_runtime(api):
-        runtime_mode = "container"
-    elif bool(getattr(runtime_config, "desktop_mode", False)):
-        runtime_mode = "desktop"
-    else:
-        runtime_mode = "bridge"
-    return {
-        "appVersion": str(getattr(api, "app_version", "") or ""),
-        "runtimeMode": runtime_mode,
-        "ownerMode": owner_mode,
-    }
 
 
 def _safe_int(value: Any, default: int = 0) -> int:
@@ -1154,59 +1131,6 @@ def _handle_ops_status_routes(
     return False
 
 
-def _handle_ops_diagnostic_routes(
-    handler: BridgeResponseWriter,
-    *,
-    api: BridgeApi,
-    path: str,
-    query: dict[str, list[str]],
-) -> bool:
-    if path == "/ops/fetcher-metrics":
-        window_raw = (query.get("windowRuns") or ["20"])[0]
-        try:
-            window_runs = max(1, min(200, int(window_raw)))
-        except ValueError:
-            window_runs = 20
-        handler.send_json(api.compute_fetcher_metrics(window_runs=window_runs))
-        return True
-
-    if path == "/ops/perf-counters":
-        handler.send_json({"ok": True, "counters": snapshot_counters()})
-        return True
-
-    if path == "/ops/performance-profile":
-        handler.send_json(snapshot_performance_profile(runtime=_performance_profile_runtime(api)))
-        return True
-
-    if path == "/ops/storage-metrics":
-        handler.send_json(
-            {
-                "ok": True,
-                "storageMetrics": snapshot_storage_metrics(storage_metrics_data_dir(api)),
-                "routeCounters": snapshot_counters(),
-            }
-        )
-        return True
-
-    if path == "/ops/storage-health":
-        handler.send_json(api.get_storage_health_payload())
-        return True
-
-    if path == "/ops/discovery-audit-artifacts":
-        handler.send_json(get_discovery_audit_artifacts_payload(api))
-        return True
-
-    if path == "/ops/task-failure-attempts":
-        handler.send_json(get_task_failure_attempts_payload(api))
-        return True
-
-    if path == "/ops/fetch-report/sources":
-        handler.send_json(fetch_report_sources_payload(api, query))
-        return True
-
-    return False
-
-
 def _read_utf8_log_text(path: Path) -> str:
     try:
         raw = path.read_bytes()
@@ -1636,7 +1560,7 @@ def handle_get(
         handler.send_json(api.get_discovery_config_payload())
         return True
 
-    if _handle_ops_diagnostic_routes(handler, api=api, path=path, query=query):
+    if handle_ops_diagnostic_routes(handler, api=api, path=path, query=query):
         return True
 
     if path == "/ops/fetch-report":
