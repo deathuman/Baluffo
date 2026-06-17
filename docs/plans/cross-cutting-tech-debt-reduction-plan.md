@@ -17,7 +17,7 @@ A systematic analysis identified twelve cross-cutting tech debt clusters that im
 |------|----------|----------------|----------------------------|
 | BridgeApi god object | P0 | Partial | Current-task default payload builders merged; classification warning documented. Field audit/split still open. |
 | admin_bridge legacy globals | P0 | Partial | 5-way root injection seam now has explicit coverage. Singleton/service-holder migration still open. |
-| get_routes.py monolith | P0 | Partial | Partial JSON parser extracted to `src/shared/partial_json.py` with tests. Provider backfill, registry table, dispatch split, and caches still open. |
+| get_routes.py monolith | P0 | Partial | Partial JSON parser and provider-coverage link backfill extracted with tests. Registry table, dispatch split, and caches still open. |
 | Data model drift (CanonicalJob) | P0 | Done for missing-field slice | `CanonicalJobSchema` now preserves `lifecycleEvent`, `lifecycleReason`, `locations`, and `locationSummary`; `DATA_CONTRACT.md` documents locations fields. `id` consistency remains deferred by strategy. |
 | Fetch report normalization duplicated | P0 | Partial | Shared-compatible task-progress helpers extracted while preserving bridge/jobs count semantics. Source-row, socialSummary, and timingSummary unification remain open. |
 | macOS platform gap | Deferred | Deferred | No `_darwin.py`; current desktop package maps non-Windows to `_linux.py`. Real gap, but not a near-term blocker. |
@@ -38,6 +38,7 @@ Completed on 2026-06-17:
 - **BridgeApi default payload dedup:** `_default_current_task_state_payload()` now supports the summary variant without duplicate builders.
 - **admin_bridge root seam coverage:** tests assert all five injected entrypoint modules point back to `admin_bridge`.
 - **get_routes partial JSON extraction:** top-level partial JSON span/decode/prefix helpers moved to `src/shared/partial_json.py` with direct unit tests; `handle_get` remains the public route entrypoint.
+- **get_routes provider backfill extraction:** provider-coverage link-backfill loading/enrichment moved to `src/bridge/source_policy_link_backfill.py`; `/source-policy/recommendations` keeps the same response shape.
 - **CanonicalJob missing-field preservation:** `CanonicalJobSchema` now includes `lifecycleEvent`, `lifecycleReason`, `locations`, and `locationSummary`; schema dump preservation is tested.
 - **Fetch-report task progress compatibility:** bridge and jobs use shared task-progress helpers while keeping their existing public count shapes and compatibility differences.
 - **Exception suppression ratchet:** two URL parsing catches were narrowed from `except Exception`; `tools/repo_health/source_suppression_budget.json` now budgets `BLE001` at 127.
@@ -160,13 +161,13 @@ Multi-instance scenarios (multiple bridges, parallel operations) are impossible 
 
 ### Problem
 
-`src/bridge/routes/get_routes.py` is **2,667 lines** with **87 private functions** and **1 public entry point** (`handle_get`). It contains 5 distinct subsystems:
+`src/bridge/routes/get_routes.py` is now **1,958 lines** with **1 public entry point** (`handle_get`). It originally contained 5 distinct subsystems; 2 have now been extracted:
 
 | Subsystem | Lines | Description |
 |-----------|-------|-------------|
 | Hand-rolled JSON parser | ~120 | `_skip_json_string`, `_skip_json_value`, `_top_level_json_field_spans`, `_read_json_prefix` — custom partial JSON reading to avoid loading large files |
 | File caching | ~20 | `_path_signature`, `_cached_summary_payload` + 2 module-level cache dicts |
-| Provider coverage backfill | ~390 | `_load_provider_coverage_link_backfill`, `_provider_coverage_rows`, `_linked_candidate_from_*`, `_registry_linked_candidates` — migration link logic |
+| Provider coverage backfill | Extracted | Moved to `src/bridge/source_policy_link_backfill.py`; route now imports load/enrich helpers |
 | Registry table compacting | ~200 | `_compact_registry_source_table_value`, `_registry_source_table_row` + 7 config sets |
 | Ops health dispatch | ~200 | `_handle_ops_health_route`, `_handle_ops_dashboard_health_route`, `_handle_ops_fetch_kpis_route` |
 
@@ -186,7 +187,7 @@ Every new GET endpoint for a new platform requires navigating this monolith. The
 ### In Scope
 
 - Extract hand-rolled JSON parser into `src/shared/partial_json.py` with tests
-- Extract provider coverage link backfill into `src/bridge/provider_coverage.py` (or similar)
+- Extract provider coverage link backfill into `src/bridge/source_policy_link_backfill.py` (done)
 - Extract registry source table compacting into a helper in `registry_conflicts.py` or new leaf
 - Split `handle_get` dispatch into per-domain files (`get_ops.py`, `get_registry.py`, `get_discovery.py`, `get_admin.py`)
 - Replace `_as_dict`, `_as_list`, `_clean_text`, `_safe_int` with imports from shared utils
@@ -201,7 +202,7 @@ Every new GET endpoint for a new platform requires navigating this monolith. The
 ### Implementation Shape
 
 1. **Extract partial JSON parser** → `src/shared/partial_json.py`
-2. **Extract provider coverage link backfill** (functions `_load_provider_coverage_link_backfill` through `_enrich_link_backfill_review_candidates`, ~lines 951-1344) → `src/bridge/provider_coverage.py`
+2. **Extract provider coverage link backfill** (functions `_load_provider_coverage_link_backfill` through `_enrich_link_backfill_review_candidates`) → `src/bridge/source_policy_link_backfill.py` (done)
 3. **Extract registry table compacting** (functions `_compact_registry_source_table_value` through `_registry_source_table_row`, ~lines 1583-1654) → place in existing `registry_conflicts.py` or `src/bridge/registry/`
 4. **Split dispatch:** Create `src/bridge/routes/get/` package with `ops.py`, `registry.py`, `discovery.py`, `admin.py`. Each gets the relevant portion of `handle_get`'s if-elif chain.
 5. **Replace private helpers** with shared imports.
@@ -632,7 +633,7 @@ The frontend has a JS build pipeline (esbuild) but **zero CSS processing**:
 | # | Action | Area | Files | Risk | Dependencies |
 |---|--------|------|-------|------|-------------|
 | 9 | Extract partial JSON parser from get_routes.py → `src/shared/partial_json.py` | §3 | 2 files | Low | None |
-| 10 | Extract provider coverage link backfill from get_routes.py | §3 | 2 files | Medium | None |
+| 10 | Extract provider coverage link backfill from get_routes.py | §3 | 2 files | Done | Completed 2026-06-17 |
 | 11 | Replace `except Exception` in low-risk files (post_routes_update, adapters, shared) | §4 | ~15 files | Low | None |
 | 12 | Service holder dataclass for admin_bridge singletons | §2 | 6 files | Medium | None |
 | 13 | Align `CanonicalJobSchema` with canonical dataclass: add missing 4 fields (`lifecycleEvent`, `lifecycleReason`, `locations`, `locationSummary`), fix `id` type | §7A | 2-3 files | Medium | None (but verify with integration test) |
