@@ -16,6 +16,7 @@ ROUTE_HANDLER_METHODS = {
     "src/bridge/routes/get_ops_diagnostics.py": "GET",
     "src/bridge/routes/get_ops_status.py": "GET",
     "src/bridge/routes/get_registry.py": "GET",
+    "src/bridge/routes/get_registry_conflicts.py": "GET",
     "src/bridge/routes/get_routes.py": "GET",
     "src/bridge/routes/get_source_policy.py": "GET",
     "src/bridge/routes/post_routes_admin.py": "POST",
@@ -70,6 +71,7 @@ GET_LOCAL_DATA_HANDLER = "src/bridge/routes/get_local_data.py"
 GET_OPS_DIAGNOSTICS_HANDLER = "src/bridge/routes/get_ops_diagnostics.py"
 GET_OPS_STATUS_HANDLER = "src/bridge/routes/get_ops_status.py"
 GET_REGISTRY_HANDLER = "src/bridge/routes/get_registry.py"
+GET_REGISTRY_CONFLICTS_HANDLER = "src/bridge/routes/get_registry_conflicts.py"
 GET_SOURCE_POLICY_HANDLER = "src/bridge/routes/get_source_policy.py"
 POST_ADMIN_HANDLER = "src/bridge/routes/post_routes_admin.py"
 POST_LOCAL_DATA_HANDLER = "src/bridge/routes/post_routes_local_data.py"
@@ -470,7 +472,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/registry/conflicts",
         EXACT,
-        GET_HANDLER,
+        GET_REGISTRY_CONFLICTS_HANDLER,
         "support",
         caller_files=ADMIN_REGISTRY_CALLERS,
     ),

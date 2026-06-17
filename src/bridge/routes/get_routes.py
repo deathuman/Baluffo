@@ -9,7 +9,6 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused GET tests.
 from __future__ import annotations
 
 import json
-import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -18,14 +17,6 @@ from src.bridge.admin_bootstrap import get_admin_bootstrap_payload
 from src.bridge.api import BridgeApi
 from src.bridge.container_mode import is_container_runtime, send_container_unavailable
 from src.bridge.performance_profile import time_operation
-from src.bridge.registry_conflict_adjudication import overlay_adjudication
-from src.bridge.registry_conflicts import (
-    build_registry_conflicts_summary_cache_key,
-    load_registry_conflicts_payload,
-    load_registry_conflicts_summary_payload,
-    summarize_registry_conflicts_payload,
-    write_registry_conflicts_summary_cache,
-)
 from src.bridge.routes.error_boundary import (
     send_json_boundary,
 )
@@ -35,6 +26,10 @@ from src.bridge.routes.get_local_data import handle_local_data_get_routes
 from src.bridge.routes.get_ops_diagnostics import handle_ops_diagnostic_routes
 from src.bridge.routes.get_ops_status import handle_ops_status_routes
 from src.bridge.routes.get_registry import handle_registry_routes
+from src.bridge.routes.get_registry_conflicts import (
+    handle_registry_conflict_routes,
+    registry_conflicts_badge_from_exact_summary,
+)
 from src.bridge.routes.get_source_policy import handle_source_policy_routes
 from src.bridge.routes.response_writer import BridgeResponseWriter
 from src.bridge.routes.route_payload_helpers import (
@@ -71,9 +66,6 @@ def _consume_admin_bootstrap_smoke_fail_once() -> bool:
         return False
     _ADMIN_BOOTSTRAP_SMOKE_FAIL_ONCE_CONSUMED = True
     return True
-
-
-logger = logging.getLogger(__name__)
 
 
 def _sync_status_summary_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -214,55 +206,6 @@ def _discovery_review_badge_from_report(api: BridgeApi) -> dict[str, Any]:
     )
 
 
-def _registry_conflicts_badge_from_exact_summary(api: BridgeApi) -> dict[str, Any]:
-    registry_summary = api.get_registry_summary_payload()
-    source_state_path = Path(api.JOBS_FETCH_REPORT_PATH).with_name("jobs-source-state.json")
-    adjudication = api.load_registry_conflict_adjudication()
-    registry_auto_heal = api.get_registry_auto_heal_report()
-    conflicts_payload = load_registry_conflicts_summary_payload(
-        registry_summary=registry_summary,
-        source_state_path=source_state_path,
-        adjudication_payload=adjudication,
-        registry_auto_heal=registry_auto_heal,
-    )
-    if _clean_text(conflicts_payload.get("summaryStatus")).lower() != "ready":
-        full_payload = load_registry_conflicts_payload(
-            load_state=api.load_state,
-            load_json_object=api.load_json_object,
-            source_state_path=source_state_path,
-            adjudication_payload=adjudication,
-        )
-        full_payload = overlay_adjudication(full_payload, adjudication)
-        full_payload["registrySummary"] = registry_summary
-        full_payload["registryAutoHeal"] = registry_auto_heal
-        full_payload["ok"] = True
-        conflicts_payload = summarize_registry_conflicts_payload(full_payload)
-        try:
-            cache_key = build_registry_conflicts_summary_cache_key(
-                registry_summary=registry_summary,
-                source_state_path=source_state_path,
-                adjudication_payload=adjudication,
-            )
-            write_registry_conflicts_summary_cache(
-                source_state_path=source_state_path,
-                cache_key=cache_key,
-                payload=conflicts_payload,
-            )
-        except OSError:
-            logger.debug("Could not write registry conflicts summary cache", exc_info=True)
-    summary = _as_dict(conflicts_payload.get("summary"))
-    count = _safe_int(summary.get("conflictCount"), 0)
-    return _ops_tab_badge(
-        count=count,
-        tone="warning" if count > 0 else "neutral",
-        title=(
-            f"{count} registry conflict{'' if count == 1 else 's'}"
-            if count > 0
-            else "No registry conflicts"
-        ),
-    )
-
-
 def _admin_ops_tab_counts_summary(api: BridgeApi) -> dict[str, Any]:
     badges: dict[str, dict[str, Any]] = {}
 
@@ -309,7 +252,7 @@ def _admin_ops_tab_counts_summary(api: BridgeApi) -> dict[str, Any]:
         )
 
     try:
-        badges["registry-conflicts"] = _registry_conflicts_badge_from_exact_summary(api)
+        badges["registry-conflicts"] = registry_conflicts_badge_from_exact_summary(api)
     except (OSError, RuntimeError, TypeError, ValueError, json.JSONDecodeError) as exc:
         badges["registry-conflicts"] = _ops_tab_badge(
             loaded=False,
@@ -415,49 +358,7 @@ def handle_get(
     if handle_source_policy_routes(handler, api=api, path=path, query=query):
         return True
 
-    if path == "/registry/conflicts":
-        view = str((query.get("view") or [""])[0] or "").strip().lower()
-        source_state_path = Path(api.JOBS_FETCH_REPORT_PATH).with_name("jobs-source-state.json")
-        adjudication = api.load_registry_conflict_adjudication()
-        registry_summary = api.get_registry_summary_payload()
-        registry_auto_heal = api.get_registry_auto_heal_report()
-        if view == "summary":
-            handler.send_json(
-                load_registry_conflicts_summary_payload(
-                    registry_summary=registry_summary,
-                    source_state_path=source_state_path,
-                    adjudication_payload=adjudication,
-                    registry_auto_heal=registry_auto_heal,
-                )
-            )
-            return True
-        state = api.load_state()
-        registry_summary = api.get_registry_summary_payload()
-        registry_auto_heal = api.get_registry_auto_heal_report()
-        payload = load_registry_conflicts_payload(
-            load_state=lambda: state,
-            load_json_object=api.load_json_object,
-            source_state_path=source_state_path,
-            adjudication_payload=adjudication,
-        )
-        payload = overlay_adjudication(payload, adjudication)
-        payload["registrySummary"] = api.summarize_state(state)
-        payload["registryAutoHeal"] = registry_auto_heal
-        payload["ok"] = True
-        try:
-            cache_key = build_registry_conflicts_summary_cache_key(
-                registry_summary=registry_summary,
-                source_state_path=source_state_path,
-                adjudication_payload=adjudication,
-            )
-            write_registry_conflicts_summary_cache(
-                source_state_path=source_state_path,
-                cache_key=cache_key,
-                payload=summarize_registry_conflicts_payload(payload),
-            )
-        except OSError:
-            logger.debug("Could not write registry conflicts summary cache", exc_info=True)
-        handler.send_json(payload)
+    if handle_registry_conflict_routes(handler, api=api, path=path, query=query):
         return True
 
     if path == "/sync/status":
