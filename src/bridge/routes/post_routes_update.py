@@ -4,7 +4,12 @@ from typing import Any
 
 from src.bridge.api import BridgeApi
 from src.bridge.container_mode import is_container_runtime, send_container_unavailable
+from src.bridge.routes.error_boundary import send_json_boundary
 from src.bridge.routes.response_writer import BridgeResponseWriter
+
+
+def _update_route_error(exc: Exception) -> dict[str, Any]:
+    return {"started": False, "error": str(exc)}
 
 
 def handle_post(handler: BridgeResponseWriter, *, api: BridgeApi, path: str, payload: Any) -> bool:
@@ -12,33 +17,36 @@ def handle_post(handler: BridgeResponseWriter, *, api: BridgeApi, path: str, pay
         if is_container_runtime(api):
             send_container_unavailable(handler)
             return True
-        try:
+
+        def _payload() -> dict[str, Any]:
             force = bool((payload or {}).get("force")) if isinstance(payload, dict) else False
-            handler.send_json(api.check_for_update(force=force))
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json({"started": False, "error": str(exc)}, status=500)
+            return api.check_for_update(force=force)
+
+        send_json_boundary(handler, _payload, error_status=500, error_payload=_update_route_error)
         return True
 
     if path == "/app/download-update":
         if is_container_runtime(api):
             send_container_unavailable(handler)
             return True
-        try:
-            result = api.download_update()
-            handler.send_json(result, status=200)
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json({"started": False, "error": str(exc)}, status=500)
+        send_json_boundary(
+            handler,
+            api.download_update,
+            error_status=500,
+            error_payload=_update_route_error,
+        )
         return True
 
     if path == "/app/install-update":
         if is_container_runtime(api):
             send_container_unavailable(handler)
             return True
-        try:
-            result = api.install_update()
-            handler.send_json(result, status=200)
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json({"started": False, "error": str(exc)}, status=500)
+        send_json_boundary(
+            handler,
+            api.install_update,
+            error_status=500,
+            error_payload=_update_route_error,
+        )
         return True
 
     return False

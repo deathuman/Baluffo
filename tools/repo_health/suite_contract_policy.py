@@ -1352,6 +1352,7 @@ def test_bridge_route_ble001_suppressions_stay_in_boundary_helper(repo_root: Pat
         route_root / "get_routes.py",
         route_root / "post_routes_admin.py",
         route_root / "post_routes_local_data.py",
+        route_root / "post_routes_update.py",
     )
     offenders = [
         str(path.relative_to(repo_root))
