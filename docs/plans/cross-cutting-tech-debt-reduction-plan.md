@@ -15,7 +15,7 @@ A systematic analysis identified twelve cross-cutting tech debt clusters that im
 
 | Area | Severity | Current status | Footprint / remaining work |
 |------|----------|----------------|----------------------------|
-| BridgeApi god object | P0 | Partial | Current-task default payload builders merged; classification warning documented. Field audit/split still open. |
+| BridgeApi god object | P0 | Partial | Current-task default payload builders merged; source-derived field classification guardrail added. Field deletion/split still open. |
 | admin_bridge legacy globals | P0 | Partial | 5-way root injection seam now has explicit coverage. Singleton/service-holder migration still open. |
 | get_routes.py monolith | P0 | Done for route-owned behavior | Partial JSON parser, provider-coverage link backfill, registry source table compaction, fetch-report source-run read support, ops diagnostics routes, ops status routes, admin bootstrap route, admin ops-tab counts route, app routes, registry routes, registry-conflicts route, sync status route, pipeline task routes, discovery routes, fetch-report routes, source-policy recommendations route, and desktop local-data GET routes extracted with tests. `handle_get` remains the public delegating entrypoint. |
 | Data model drift (CanonicalJob) | P0 | Done for missing-field slice | `CanonicalJobSchema` now preserves `lifecycleEvent`, `lifecycleReason`, `locations`, and `locationSummary`; `DATA_CONTRACT.md` documents locations fields. `id` consistency remains deferred by strategy. |
@@ -36,6 +36,7 @@ Expected implementation: ~9-13 engineering days across all phases.
 Completed on 2026-06-17:
 
 - **BridgeApi default payload dedup:** `_default_current_task_state_payload()` now supports the summary variant without duplicate builders.
+- **BridgeApi field classification guardrail:** `tools/repo_health/bridge_api_field_inventory.py` now classifies all 90 `BridgeApi` dataclass fields as runtime/path, service handle, bootstrap-injected, service-wired, route/post-route/helper-used, test-overridden, or default-only evidence; repo guardrails fail on field-count drift or unsafe default-only production references.
 - **admin_bridge root seam coverage:** tests assert all five injected entrypoint modules point back to `admin_bridge`.
 - **get_routes partial JSON extraction:** top-level partial JSON span/decode/prefix helpers moved to `src/shared/partial_json.py` with direct unit tests; `handle_get` remains the public route entrypoint.
 - **get_routes provider backfill extraction:** provider-coverage link-backfill loading/enrichment moved to `src/bridge/source_policy_link_backfill.py`; `/source-policy/recommendations` keeps the same response shape.
@@ -106,7 +107,7 @@ A new platform (headless CLI, alternative container runtime, native desktop vari
 
 ### Implementation Shape
 
-1. **Default/stub classification:** Map every BridgeApi field to route-used, service-wired, test-only, or true default. Do not delete a stub from grep evidence alone; many stubs are dataclass default behavior for unsupported routes/platforms.
+1. **Default/stub classification:** Map every BridgeApi field to route-used, service-wired, test-only, or true default. Do not delete a stub from grep evidence alone; many stubs are dataclass default behavior for unsupported routes/platforms. (Guardrail complete; deletion decisions still require field-by-field review.)
 2. **Dedup stub payloads:** Merge `_default_current_task_state_payload` and `_default_current_task_state_summary_payload` into one with an optional `summary` parameter.
 3. **Name cleanup:** Rename confusing stubs (`_noop_desktop_local_data_store` → `_noop`, `_empty_startup_metrics` → `_empty_json_list`, `_not_started_noarg` → `_not_started_result`).
 4. **Route-scoped context:** Add a `RouteContext` frozen dataclass that exposes only the ~20 fields routes actually read. BridgeApi creates it once per request.
@@ -649,7 +650,8 @@ The frontend has a JS build pipeline (esbuild) but **zero CSS processing**:
 | 2 | Fix `json_io.py` layer violation: move storage_metrics calls to callers | §9A | 2-3 files | Low | None |
 | 3 | Fix hardcoded box-shadow CSS bug + deduplicate theme init | §9B | 2 files | Low | None |
 | 4 | Migrate 4 pipeline files from `utils.py._as_list`/`_as_dict` to `json_shapes.py` public variants; remove private trio from `utils.py` | §5 | 5 files | Low | None |
-| 5 | Remove dead stub functions from BridgeApi (audit first) | §1 | 1 file | Low | None |
+| 5 | Add BridgeApi field classification guardrail before dead-stub removal | §1 | 3 files | Done | Completed 2026-06-17 |
+| 5A | Remove dead stub functions from BridgeApi after classification evidence | §1 | 1 file | Low | Phase 1 #5 |
 | 6 | Merge `_default_current_task_state_payload` / `_default_current_task_state_summary_payload` | §1 | 1 file | Low | None |
 | 7 | Replace `time.sleep(N)` in tests (tiny delays) with `threading.Event` | §6 | ~8 files | Low | None |
 | 8 | Parameterize port 8877 with conftest fixture | §6 | ~15 test files | Low | None |

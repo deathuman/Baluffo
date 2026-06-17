@@ -26,6 +26,7 @@ if str(ROOT) not in sys.path:
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 
+from bridge_api_field_inventory import check_bridge_api_field_inventory
 from bridge_route_inventory import check_bridge_route_inventory
 
 GROUPS = (
@@ -503,7 +504,13 @@ def run_compat_group() -> list[GuardFailure]:
         for name, value in inspect.getmembers(module, inspect.isfunction)
         if name.startswith("test_") and name not in excluded
     ]
-    return _run_python_checks("compat", checks)
+    failures = _run_python_checks("compat", checks)
+    bridge_api_failure = _failure_from_messages(
+        "compat", "check_bridge_api_field_inventory", check_bridge_api_field_inventory()
+    )
+    if bridge_api_failure:
+        failures.append(bridge_api_failure)
+    return failures
 
 
 def run_routes_group() -> list[GuardFailure]:
