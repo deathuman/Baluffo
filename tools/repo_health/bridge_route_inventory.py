@@ -11,6 +11,7 @@ ADMIN_BRIDGE_API = "docs/admin-bridge-api.md"
 
 ROUTE_HANDLER_METHODS = {
     "src/bridge/routes/get_discovery.py": "GET",
+    "src/bridge/routes/get_fetch_report.py": "GET",
     "src/bridge/routes/get_local_data.py": "GET",
     "src/bridge/routes/get_ops_diagnostics.py": "GET",
     "src/bridge/routes/get_ops_status.py": "GET",
@@ -63,6 +64,7 @@ class DiscoveredRoute:
 
 GET_HANDLER = "src/bridge/routes/get_routes.py"
 GET_DISCOVERY_HANDLER = "src/bridge/routes/get_discovery.py"
+GET_FETCH_REPORT_HANDLER = "src/bridge/routes/get_fetch_report.py"
 GET_LOCAL_DATA_HANDLER = "src/bridge/routes/get_local_data.py"
 GET_OPS_DIAGNOSTICS_HANDLER = "src/bridge/routes/get_ops_diagnostics.py"
 GET_OPS_STATUS_HANDLER = "src/bridge/routes/get_ops_status.py"
@@ -310,7 +312,12 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         caller_files=ADMIN_DISCOVERY_CALLERS,
     ),
     _route(
-        "GET", "/fetcher/log", EXACT, GET_HANDLER, "support", caller_files=ADMIN_FETCHER_CALLERS
+        "GET",
+        "/fetcher/log",
+        EXACT,
+        GET_FETCH_REPORT_HANDLER,
+        "support",
+        caller_files=ADMIN_FETCHER_CALLERS,
     ),
     _route(
         "GET",
@@ -437,7 +444,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/ops/fetch-report/sources",
         EXACT,
-        GET_OPS_DIAGNOSTICS_HANDLER,
+        GET_FETCH_REPORT_HANDLER,
         "support",
         caller_files=ADMIN_FETCHER_CALLERS,
     ),
@@ -445,7 +452,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/ops/fetch-report",
         EXACT,
-        GET_HANDLER,
+        GET_FETCH_REPORT_HANDLER,
         "support",
         caller_files=ADMIN_FETCHER_CALLERS,
     ),

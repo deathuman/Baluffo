@@ -5,7 +5,7 @@
 > - **Canonical for:** the June 2026 cross-cutting tech debt inventory: BridgeApi god object, admin_bridge legacy globals, get_routes.py decomposition, bare except Exception, _as_dict/_as_list proliferation, test-time sleep/port coupling, data model and contract drift, desktop/ship update-system complexity, deferred macOS platform gap, shared-layer isolation violations, and CSS/build infrastructure gaps
 > - **Not canonical for:** jobs/fetcher-specific refactoring (see [`initial_findings.md`](initial_findings.md)), source-discovery decomposition, adapter plugin internals, or individual component tests
 > - **Then inspect:** [`../architecture-ai-map.md`](../architecture-ai-map.md), [`refactor-charter-template.md`](refactor-charter-template.md), [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md), bridge service leaf modules, and component-specific test coverage
-> - **Last updated:** 2026-06-17 — validated against current source; multiple P0 implementation slices completed; registry, discovery, and desktop local-data GET routes extracted from GET routes; macOS platform work deferred by product priority; stale footprint counts and unsafe acceptance criteria corrected; _as_dict/_as_list remains P3 (4 callers, contained refactor)
+> - **Last updated:** 2026-06-17 — validated against current source; multiple P0 implementation slices completed; registry, discovery, fetch-report, and desktop local-data GET routes extracted from GET routes; macOS platform work deferred by product priority; stale footprint counts and unsafe acceptance criteria corrected; _as_dict/_as_list remains P3 (4 callers, contained refactor)
 
 ## Summary
 
@@ -17,7 +17,7 @@ A systematic analysis identified twelve cross-cutting tech debt clusters that im
 |------|----------|----------------|----------------------------|
 | BridgeApi god object | P0 | Partial | Current-task default payload builders merged; classification warning documented. Field audit/split still open. |
 | admin_bridge legacy globals | P0 | Partial | 5-way root injection seam now has explicit coverage. Singleton/service-holder migration still open. |
-| get_routes.py monolith | P0 | Partial | Partial JSON parser, provider-coverage link backfill, registry source table compaction, fetch-report source-run read support, ops diagnostics routes, ops status routes, registry routes, discovery routes, and desktop local-data GET routes extracted with tests. Remaining dispatch split and caches still open. |
+| get_routes.py monolith | P0 | Partial | Partial JSON parser, provider-coverage link backfill, registry source table compaction, fetch-report source-run read support, ops diagnostics routes, ops status routes, registry routes, discovery routes, fetch-report routes, and desktop local-data GET routes extracted with tests. Remaining dispatch split and caches still open. |
 | Data model drift (CanonicalJob) | P0 | Done for missing-field slice | `CanonicalJobSchema` now preserves `lifecycleEvent`, `lifecycleReason`, `locations`, and `locationSummary`; `DATA_CONTRACT.md` documents locations fields. `id` consistency remains deferred by strategy. |
 | Fetch report normalization duplicated | P0 | Partial | Shared-compatible task-progress helpers extracted while preserving bridge/jobs count semantics. Source-row, socialSummary, and timingSummary unification remain open. |
 | macOS platform gap | Deferred | Deferred | No `_darwin.py`; current desktop package maps non-Windows to `_linux.py`. Real gap, but not a near-term blocker. |
@@ -46,6 +46,7 @@ Completed on 2026-06-17:
 - **get_routes registry extraction:** `/registry/active`, `/registry/pending`, `/registry/rejected`, `/registry/sources`, and `/registry/summary` dispatch moved to `src/bridge/routes/get_registry.py`; registry conflicts remain route-owned in `get_routes.py`.
 - **get_routes discovery extraction:** `/discovery/report`, `/discovery/candidates`, `/discovery/log`, and `/discovery/config` dispatch moved to `src/bridge/routes/get_discovery.py`; shared log chunking and route payload helpers moved to `src/bridge/routes/route_payload_helpers.py`; fetcher log and fetch-report routes remain in `get_routes.py`.
 - **get_routes desktop local-data GET extraction:** `/desktop-local-data/session`, `/desktop-local-data/profiles`, `/desktop-local-data/saved-jobs`, `/desktop-local-data/saved-job-keys`, `/desktop-local-data/attachments`, `/desktop-local-data/attachments/content`, `/desktop-local-data/backup/export-file`, `/desktop-local-data/activity`, and `/desktop-local-data/startup-metrics` dispatch moved to `src/bridge/routes/get_local_data.py`; POST local-data routes remain in `post_routes_local_data.py`.
+- **get_routes fetch-report extraction:** `/fetcher/log`, `/ops/fetch-report`, and `/ops/fetch-report/sources` dispatch moved to `src/bridge/routes/get_fetch_report.py`; source-row read/hydration remains in `get_fetch_report_sources.py`.
 - **CanonicalJob missing-field preservation:** `CanonicalJobSchema` now includes `lifecycleEvent`, `lifecycleReason`, `locations`, and `locationSummary`; schema dump preservation is tested.
 - **Fetch-report task progress compatibility:** bridge and jobs use shared task-progress helpers while keeping their existing public count shapes and compatibility differences.
 - **Exception suppression ratchet:** two URL parsing catches and jobs transport request catches were narrowed from `except Exception`; update POST routes now use `src/bridge/routes/error_boundary.py`; `tools/repo_health/source_suppression_budget.json` now budgets `BLE001` at 122.
@@ -202,6 +203,7 @@ Every new GET endpoint for a new platform requires navigating this monolith. The
 - Extract registry route family into `src/bridge/routes/get_registry.py` (done)
 - Extract discovery route family into `src/bridge/routes/get_discovery.py` (done)
 - Extract desktop local-data GET route family into `src/bridge/routes/get_local_data.py` (done)
+- Extract fetch-report route family into `src/bridge/routes/get_fetch_report.py` (done)
 - Split `handle_get` dispatch into per-domain files (`get_ops.py`, `get_registry.py`, `get_discovery.py`, `get_admin.py`)
 - Replace `_as_dict`, `_as_list`, `_clean_text`, `_safe_int` with imports from shared utils
 - Remove module-level mutable caches (replace with LRU or remove)
@@ -654,6 +656,7 @@ The frontend has a JS build pipeline (esbuild) but **zero CSS processing**:
 | 10E | Extract registry route family from get_routes.py | §3 | 4 files | Done | Completed 2026-06-17 |
 | 10F | Extract discovery route family from get_routes.py | §3 | 4 files | Done | Completed 2026-06-17 |
 | 10G | Extract desktop local-data GET route family from get_routes.py | §3 | 5 files | Done | Completed 2026-06-17 |
+| 10H | Extract fetch-report route family from get_routes.py | §3 | 5 files | Done | Completed 2026-06-17 |
 | 11 | Replace `except Exception` in low-risk files (post_routes_update, adapters, shared) | §4 | ~15 files | Partial | Update POST route and jobs transport request-catch slices completed 2026-06-17 |
 | 12 | Service holder dataclass for admin_bridge singletons | §2 | 6 files | Medium | None |
 | 13 | Align `CanonicalJobSchema` with canonical dataclass: add missing 4 fields (`lifecycleEvent`, `lifecycleReason`, `locations`, `locationSummary`), fix `id` type | §7A | 2-3 files | Medium | None (but verify with integration test) |
