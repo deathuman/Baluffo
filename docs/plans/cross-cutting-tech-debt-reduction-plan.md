@@ -15,7 +15,7 @@ A systematic analysis identified twelve cross-cutting tech debt clusters that im
 
 | Area | Severity | Current status | Footprint / remaining work |
 |------|----------|----------------|----------------------------|
-| BridgeApi god object | P0 | Partial | Current-task default payload builders merged; source-derived field classification guardrail added. Field deletion/split still open. |
+| BridgeApi god object | P0 | Partial | Current-task default payload builders merged; source-derived field classification guardrail added and hardened for dynamic API lookups. Field deletion/split still open. |
 | admin_bridge legacy globals | P0 | Partial | 5-way root injection seam now has explicit coverage. Singleton/service-holder migration still open. |
 | get_routes.py monolith | P0 | Done for route-owned behavior | Partial JSON parser, provider-coverage link backfill, registry source table compaction, fetch-report source-run read support, ops diagnostics routes, ops status routes, admin bootstrap route, admin ops-tab counts route, app routes, registry routes, registry-conflicts route, sync status route, pipeline task routes, discovery routes, fetch-report routes, source-policy recommendations route, and desktop local-data GET routes extracted with tests. `handle_get` remains the public delegating entrypoint. |
 | Data model drift (CanonicalJob) | P0 | Done for missing-field slice | `CanonicalJobSchema` now preserves `lifecycleEvent`, `lifecycleReason`, `locations`, and `locationSummary`; `DATA_CONTRACT.md` documents locations fields. `id` consistency remains deferred by strategy. |
@@ -36,7 +36,7 @@ Expected implementation: ~9-13 engineering days across all phases.
 Completed on 2026-06-17:
 
 - **BridgeApi default payload dedup:** `_default_current_task_state_payload()` now supports the summary variant without duplicate builders.
-- **BridgeApi field classification guardrail:** `tools/repo_health/bridge_api_field_inventory.py` now classifies all 90 `BridgeApi` dataclass fields as runtime/path, service handle, bootstrap-injected, service-wired, route/post-route/helper-used, test-overridden, or default-only evidence; repo guardrails fail on field-count drift or unsafe default-only production references.
+- **BridgeApi field classification guardrail:** `tools/repo_health/bridge_api_field_inventory.py` now classifies all 90 `BridgeApi` dataclass fields as runtime/path, service handle, bootstrap-injected, service-wired, route/post-route/helper-used, test-overridden, or default-only evidence; repo guardrails fail on field-count drift or unsafe default-only production references, including dynamic `getattr(api, "...")` lookups.
 - **admin_bridge root seam coverage:** tests assert all five injected entrypoint modules point back to `admin_bridge`.
 - **get_routes partial JSON extraction:** top-level partial JSON span/decode/prefix helpers moved to `src/shared/partial_json.py` with direct unit tests; `handle_get` remains the public route entrypoint.
 - **get_routes provider backfill extraction:** provider-coverage link-backfill loading/enrichment moved to `src/bridge/source_policy_link_backfill.py`; `/source-policy/recommendations` keeps the same response shape.

@@ -118,12 +118,23 @@ def _api_attribute_refs(path: Path, field_names: set[str]) -> set[str]:
     tree = _parse_python(path)
     refs: set[str] = set()
     for node in ast.walk(tree):
-        if not isinstance(node, ast.Attribute):
-            continue
-        if node.attr not in field_names:
-            continue
-        if isinstance(node.value, ast.Name) and node.value.id == "api":
-            refs.add(node.attr)
+        if isinstance(node, ast.Attribute):
+            if node.attr not in field_names:
+                continue
+            if isinstance(node.value, ast.Name) and node.value.id == "api":
+                refs.add(node.attr)
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "getattr"
+            and len(node.args) >= 2
+            and isinstance(node.args[0], ast.Name)
+            and node.args[0].id == "api"
+            and isinstance(node.args[1], ast.Constant)
+            and isinstance(node.args[1].value, str)
+            and node.args[1].value in field_names
+        ):
+            refs.add(node.args[1].value)
     return refs
 
 

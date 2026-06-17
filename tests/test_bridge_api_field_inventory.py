@@ -16,6 +16,7 @@ def _write(tmp_path: Path, rel_path: str, source: str) -> Path:
 
 def test_current_bridge_api_inventory_is_complete() -> None:
     fields = inventory.collect_bridge_api_field_inventory()
+    by_name = {field.name: field for field in fields}
 
     assert len(fields) == inventory.EXPECTED_BRIDGE_API_FIELD_COUNT
     assert inventory.check_bridge_api_field_inventory() == []
@@ -25,6 +26,19 @@ def test_current_bridge_api_inventory_is_complete() -> None:
         "desktop_local_data_store",
         "get_sync_status_payload",
     }
+    assert {
+        "route-used",
+        "post-route-used",
+    } <= set(by_name["compute_ops_dashboard_health"].categories)
+    assert (
+        "src/bridge/routes/get_ops_status.py" in by_name["compute_ops_dashboard_health"].references
+    )
+    assert (
+        "src/bridge/routes/post_routes_admin.py"
+        in by_name["compute_ops_dashboard_health"].references
+    )
+    assert "helper-used" in by_name["should_exit_for_owner_timeout"].categories
+    assert "src/bridge/server/httpd.py" in by_name["should_exit_for_owner_timeout"].references
     assert all(field.categories for field in fields)
 
 
@@ -162,6 +176,69 @@ def test_inventory_rejects_default_only_field_with_string_production_reference(
         "BridgeApi field string_only is default-only but referenced by production code: "
         "src/bridge/helper.py.",
     ]
+
+
+def test_inventory_classifies_dynamic_getattr_api_refs(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write(
+        tmp_path,
+        "src/bridge/api.py",
+        """
+        from dataclasses import dataclass
+
+        @dataclass
+        class BridgeApi:
+            route_payload: object | None = None
+            post_payload: object | None = None
+            helper_payload: object | None = None
+            self_lookup: object | None = None
+
+            def helper(self) -> None:
+                getattr(self, "self_lookup", None)
+        """,
+    )
+    _write(
+        tmp_path,
+        "src/bridge/routes/get_example.py",
+        """
+        def handle(api):
+            return getattr(api, "route_payload", None)
+        """,
+    )
+    _write(
+        tmp_path,
+        "src/bridge/routes/post_routes_example.py",
+        """
+        def handle(api):
+            return getattr(api, "post_payload", None)
+        """,
+    )
+    _write(
+        tmp_path,
+        "src/bridge/server/httpd.py",
+        """
+        def serve(api):
+            return getattr(api, "helper_payload", None)
+        """,
+    )
+    monkeypatch.setattr(inventory, "EXPECTED_BRIDGE_API_FIELD_COUNT", 4)
+    monkeypatch.setattr(inventory, "RUNTIME_PATH_FIELDS", set())
+    monkeypatch.setattr(inventory, "SERVICE_HANDLE_FIELDS", set())
+
+    by_name = {
+        field.name: field for field in inventory.collect_bridge_api_field_inventory(tmp_path)
+    }
+
+    assert by_name["route_payload"].categories == ("route-used",)
+    assert by_name["route_payload"].references == ("src/bridge/routes/get_example.py",)
+    assert by_name["post_payload"].categories == ("post-route-used",)
+    assert by_name["post_payload"].references == ("src/bridge/routes/post_routes_example.py",)
+    assert by_name["helper_payload"].categories == ("helper-used",)
+    assert by_name["helper_payload"].references == ("src/bridge/server/httpd.py",)
+    assert by_name["self_lookup"].categories == ("default-only",)
+    assert inventory.check_bridge_api_field_inventory(tmp_path) == []
 
 
 def test_repo_guardrails_compat_group_runs_bridge_api_inventory(monkeypatch) -> None:
