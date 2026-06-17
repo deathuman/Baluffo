@@ -11,6 +11,7 @@ ADMIN_BRIDGE_API = "docs/admin-bridge-api.md"
 
 ROUTE_HANDLER_METHODS = {
     "src/bridge/routes/get_admin_bootstrap.py": "GET",
+    "src/bridge/routes/get_admin_ops_tab_counts.py": "GET",
     "src/bridge/routes/get_app.py": "GET",
     "src/bridge/routes/get_discovery.py": "GET",
     "src/bridge/routes/get_fetch_report.py": "GET",
@@ -70,6 +71,7 @@ class DiscoveredRoute:
 
 GET_HANDLER = "src/bridge/routes/get_routes.py"
 GET_ADMIN_BOOTSTRAP_HANDLER = "src/bridge/routes/get_admin_bootstrap.py"
+GET_ADMIN_OPS_TAB_COUNTS_HANDLER = "src/bridge/routes/get_admin_ops_tab_counts.py"
 GET_APP_HANDLER = "src/bridge/routes/get_app.py"
 GET_DISCOVERY_HANDLER = "src/bridge/routes/get_discovery.py"
 GET_FETCH_REPORT_HANDLER = "src/bridge/routes/get_fetch_report.py"
@@ -174,7 +176,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/admin/ops-tab-counts",
         EXACT,
-        GET_HANDLER,
+        GET_ADMIN_OPS_TAB_COUNTS_HANDLER,
         "support",
         caller_files=ADMIN_OPS_CALLERS,
     ),
