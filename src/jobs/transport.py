@@ -116,7 +116,7 @@ def conditional_revalidate_url(
                     "etag": str(response.headers.get("ETag") or ""),
                     "lastModified": str(response.headers.get("Last-Modified") or ""),
                 }
-        except Exception as exc:  # noqa: BLE001
+        except httpx.HTTPError as exc:
             exc_response = getattr(exc, "response", None)
             if exc_response is not None:
                 exc_headers = getattr(exc_response, "headers", {})
@@ -176,7 +176,7 @@ class PooledRedirectResolver:
                 response = self._client.request(method, normalized)
                 resolved = normalize_url(str(response.url))
                 return resolved or normalized
-            except Exception as exc:  # noqa: BLE001
+            except httpx.HTTPError as exc:
                 last_error = exc
                 status_code = int(getattr(getattr(exc, "response", None), "status_code", 0) or 0)
                 if method == "HEAD" and status_code in {400, 403, 405, 429, 500, 501, 503}:

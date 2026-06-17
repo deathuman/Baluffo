@@ -22,7 +22,7 @@ A systematic analysis identified twelve cross-cutting tech debt clusters that im
 | Fetch report normalization duplicated | P0 | Partial | Shared-compatible task-progress helpers extracted while preserving bridge/jobs count semantics. Source-row, socialSummary, and timingSummary unification remain open. |
 | macOS platform gap | Deferred | Deferred | No `_darwin.py`; current desktop package maps non-Windows to `_linux.py`. Real gap, but not a near-term blocker. |
 | Update subsystem over-engineering | P0 | Open | 16 files across two parallel subsystems, root-injection/re-export facades, and runtime `update_manager` coupling inside `src/ship/`. Import-compatible facades preserved. |
-| Bare `except Exception` | P0 | Partial | Two URL parsing fallbacks narrowed and update POST routes moved onto the shared route boundary; BLE001 budget lowered from 129 to 124. Broader HTTP/process boundaries remain open. |
+| Bare `except Exception` | P0 | Partial | Two URL parsing fallbacks narrowed, update POST routes moved onto the shared route boundary, and jobs transport request catches narrowed; BLE001 budget lowered from 129 to 122. Broader HTTP/process boundaries remain open. |
 | `json_io.py` shared-layer violation | P1 | Open | Imports from `src.storage_metrics`, violating "stdlib-only" shared-layer contract. |
 | Test time/port coupling | P1 | Open | 23 `time.sleep()`, 39 hardcoded port 8877 references, 81 monkeypatches on admin_bridge internals. |
 | `parse_iso` proliferation | P2 | Open | 9 locations, 4 semantic groups; 3 bridge versions skip tzinfo normalization (latent comparison bug). |
@@ -42,11 +42,11 @@ Completed on 2026-06-17:
 - **get_routes registry table extraction:** `/registry/sources?view=table` row compaction moved to `src/bridge/registry_source_table.py`; route dispatch, bucket filtering, and pending auto-approval enrichment remain route-owned.
 - **CanonicalJob missing-field preservation:** `CanonicalJobSchema` now includes `lifecycleEvent`, `lifecycleReason`, `locations`, and `locationSummary`; schema dump preservation is tested.
 - **Fetch-report task progress compatibility:** bridge and jobs use shared task-progress helpers while keeping their existing public count shapes and compatibility differences.
-- **Exception suppression ratchet:** two URL parsing catches were narrowed from `except Exception`; update POST routes now use `src/bridge/routes/error_boundary.py`; `tools/repo_health/source_suppression_budget.json` now budgets `BLE001` at 124.
+- **Exception suppression ratchet:** two URL parsing catches and jobs transport request catches were narrowed from `except Exception`; update POST routes now use `src/bridge/routes/error_boundary.py`; `tools/repo_health/source_suppression_budget.json` now budgets `BLE001` at 122.
 
 Verification evidence for this slice:
 
-- `npm run test:py:extended` passed: `3454 passed, 1 skipped`
+- `npm run test:py:extended` passed: `3458 passed, 1 skipped`
 - `npm run lint:repo-guardrails` passed
 
 ---
@@ -636,7 +636,7 @@ The frontend has a JS build pipeline (esbuild) but **zero CSS processing**:
 | 9 | Extract partial JSON parser from get_routes.py → `src/shared/partial_json.py` | §3 | 2 files | Low | None |
 | 10 | Extract provider coverage link backfill from get_routes.py | §3 | 2 files | Done | Completed 2026-06-17 |
 | 10A | Extract registry source table compaction from get_routes.py | §3 | 2 files | Done | Completed 2026-06-17 |
-| 11 | Replace `except Exception` in low-risk files (post_routes_update, adapters, shared) | §4 | ~15 files | Partial | Update POST route slice completed 2026-06-17 |
+| 11 | Replace `except Exception` in low-risk files (post_routes_update, adapters, shared) | §4 | ~15 files | Partial | Update POST route and jobs transport request-catch slices completed 2026-06-17 |
 | 12 | Service holder dataclass for admin_bridge singletons | §2 | 6 files | Medium | None |
 | 13 | Align `CanonicalJobSchema` with canonical dataclass: add missing 4 fields (`lifecycleEvent`, `lifecycleReason`, `locations`, `locationSummary`), fix `id` type | §7A | 2-3 files | Medium | None (but verify with integration test) |
 | 14 | Start updater facade migration: add direct leaf imports for low-risk consumers while keeping `desktop_updater.py` and `desktop_update.py` compatible | §8B | 2-4 files | Medium | None |
