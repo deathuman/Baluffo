@@ -15,6 +15,7 @@ ROUTE_HANDLER_METHODS = {
     "src/bridge/routes/get_local_data.py": "GET",
     "src/bridge/routes/get_ops_diagnostics.py": "GET",
     "src/bridge/routes/get_ops_status.py": "GET",
+    "src/bridge/routes/get_pipeline_tasks.py": "GET",
     "src/bridge/routes/get_registry.py": "GET",
     "src/bridge/routes/get_registry_conflicts.py": "GET",
     "src/bridge/routes/get_routes.py": "GET",
@@ -71,6 +72,7 @@ GET_FETCH_REPORT_HANDLER = "src/bridge/routes/get_fetch_report.py"
 GET_LOCAL_DATA_HANDLER = "src/bridge/routes/get_local_data.py"
 GET_OPS_DIAGNOSTICS_HANDLER = "src/bridge/routes/get_ops_diagnostics.py"
 GET_OPS_STATUS_HANDLER = "src/bridge/routes/get_ops_status.py"
+GET_PIPELINE_TASKS_HANDLER = "src/bridge/routes/get_pipeline_tasks.py"
 GET_REGISTRY_HANDLER = "src/bridge/routes/get_registry.py"
 GET_REGISTRY_CONFLICTS_HANDLER = "src/bridge/routes/get_registry_conflicts.py"
 GET_SOURCE_POLICY_HANDLER = "src/bridge/routes/get_source_policy.py"
@@ -485,7 +487,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/tasks/run-jobs-pipeline-status",
         EXACT,
-        GET_HANDLER,
+        GET_PIPELINE_TASKS_HANDLER,
         "public",
         caller_files=PIPELINE_CALLERS,
     ),
@@ -493,7 +495,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/tasks/jobs-pipeline-schedule",
         EXACT,
-        GET_HANDLER,
+        GET_PIPELINE_TASKS_HANDLER,
         "support",
         caller_files=ADMIN_OPS_CALLERS,
         verification="python -m pytest tests/bridge/test_pipeline_schedule_routes.py -q",

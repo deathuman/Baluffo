@@ -25,6 +25,7 @@ from src.bridge.routes.get_fetch_report import handle_fetch_report_routes
 from src.bridge.routes.get_local_data import handle_local_data_get_routes
 from src.bridge.routes.get_ops_diagnostics import handle_ops_diagnostic_routes
 from src.bridge.routes.get_ops_status import handle_ops_status_routes
+from src.bridge.routes.get_pipeline_tasks import handle_pipeline_task_routes
 from src.bridge.routes.get_registry import handle_registry_routes
 from src.bridge.routes.get_registry_conflicts import (
     handle_registry_conflict_routes,
@@ -315,12 +316,7 @@ def handle_get(
     if handle_sync_routes(handler, api=api, path=path, query=query):
         return True
 
-    if path == "/tasks/jobs-pipeline-schedule":
-        handler.send_json(api.get_jobs_pipeline_schedule_payload())
-        return True
-
-    if path == "/tasks/run-jobs-pipeline-status":
-        handler.send_json(api.get_jobs_pipeline_status_payload())
+    if handle_pipeline_task_routes(handler, api=api, path=path, query=query):
         return True
 
     return False
