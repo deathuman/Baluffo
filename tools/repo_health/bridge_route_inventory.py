@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 ADMIN_BRIDGE_API = "docs/admin-bridge-api.md"
 
 ROUTE_HANDLER_METHODS = {
+    "src/bridge/routes/get_discovery.py": "GET",
     "src/bridge/routes/get_ops_diagnostics.py": "GET",
     "src/bridge/routes/get_ops_status.py": "GET",
     "src/bridge/routes/get_registry.py": "GET",
@@ -60,6 +61,7 @@ class DiscoveredRoute:
 
 
 GET_HANDLER = "src/bridge/routes/get_routes.py"
+GET_DISCOVERY_HANDLER = "src/bridge/routes/get_discovery.py"
 GET_OPS_DIAGNOSTICS_HANDLER = "src/bridge/routes/get_ops_diagnostics.py"
 GET_OPS_STATUS_HANDLER = "src/bridge/routes/get_ops_status.py"
 GET_REGISTRY_HANDLER = "src/bridge/routes/get_registry.py"
@@ -172,7 +174,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/discovery/report",
         EXACT,
-        GET_HANDLER,
+        GET_DISCOVERY_HANDLER,
         "support",
         caller_files=ADMIN_DISCOVERY_CALLERS,
     ),
@@ -180,7 +182,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/discovery/candidates",
         EXACT,
-        GET_HANDLER,
+        GET_DISCOVERY_HANDLER,
         "public",
         caller_files=ADMIN_DISCOVERY_CALLERS,
     ),
@@ -298,7 +300,12 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         caller_files=ADMIN_REGISTRY_CALLERS,
     ),
     _route(
-        "GET", "/discovery/log", EXACT, GET_HANDLER, "support", caller_files=ADMIN_DISCOVERY_CALLERS
+        "GET",
+        "/discovery/log",
+        EXACT,
+        GET_DISCOVERY_HANDLER,
+        "support",
+        caller_files=ADMIN_DISCOVERY_CALLERS,
     ),
     _route(
         "GET", "/fetcher/log", EXACT, GET_HANDLER, "support", caller_files=ADMIN_FETCHER_CALLERS
@@ -347,7 +354,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/discovery/config",
         EXACT,
-        GET_HANDLER,
+        GET_DISCOVERY_HANDLER,
         "public",
         caller_files=ADMIN_DISCOVERY_CALLERS,
     ),
