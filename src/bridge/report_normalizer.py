@@ -18,6 +18,10 @@ from src.jobs.common.contracts_source_health import normalize_source_health_payl
 from src.jobs.common.contracts_static_suppression_policy import (
     normalize_static_suppression_policy_payload,
 )
+from src.shared.fetch_report_progress import (
+    derive_fetch_task_progress,
+    normalize_fetch_task_progress,
+)
 from src.source_discovery.candidate_review import (
     build_candidate_review_payload,
     enrich_candidates_for_review,
@@ -87,89 +91,6 @@ def coerce_fetch_report_detail_row(detail: Any) -> dict[str, Any] | None:
         "keptCount": safe_int(candidate.get("keptCount"), 0, 0, 1_000_000),
         "lowConfidenceDropped": safe_int(candidate.get("lowConfidenceDropped"), 0, 0, 1_000_000),
         "error": str(candidate.get("error") or "").strip(),
-    }
-
-
-def _normalize_task_progress(
-    payload: Any, *, default_active_when_missing: bool = False
-) -> dict[str, Any]:
-    src = _as_dict(payload)
-    mode = str(src.get("mode") or "").strip().lower()
-    if mode not in {"determinate", "indeterminate"}:
-        mode = "indeterminate"
-    counts_raw = _as_dict(src.get("counts"))
-    counts: dict[str, Any] = {}
-    for key, value in counts_raw.items():
-        clean_key = str(key or "").strip()
-        if not clean_key:
-            continue
-        if isinstance(value, bool):
-            counts[clean_key] = bool(value)
-        elif isinstance(value, (int, float)) and not isinstance(value, bool):
-            counts[clean_key] = safe_int(value, 0, 0, 1_000_000_000)
-        else:
-            text = str(value or "").strip()
-            if text:
-                counts[clean_key] = text
-    ratio = safe_float(src.get("ratio"))
-    if "active" in src:
-        active = bool(src.get("active"))
-    else:
-        active = bool(default_active_when_missing)
-    return {
-        "active": active,
-        "phaseKey": str(src.get("phaseKey") or "").strip(),
-        "phaseLabel": str(src.get("phaseLabel") or "").strip(),
-        "mode": mode,
-        "ratio": max(0.0, min(1.0, ratio)),
-        "targetLabel": str(src.get("targetLabel") or "").strip(),
-        "targetUrl": str(src.get("targetUrl") or "").strip(),
-        "updatedAt": str(src.get("updatedAt") or "").strip(),
-        "counts": counts,
-    }
-
-
-def _derive_fetch_task_progress(src: dict[str, Any], summary: dict[str, Any]) -> dict[str, Any]:
-    finished_at = str(src.get("finishedAt") or "").strip()
-    successful = safe_int(summary.get("successfulSources"), 0, 0, 1_000_000)
-    failed = safe_int(summary.get("failedSources"), 0, 0, 1_000_000)
-    excluded = safe_int(summary.get("excludedSources"), 0, 0, 1_000_000)
-    resolved = successful + failed + excluded
-    output_count = safe_int(summary.get("outputCount"), 0, 0, 1_000_000_000)
-    source_count = safe_int(summary.get("sourceCount"), resolved, 0, 1_000_000)
-    if finished_at:
-        return {
-            "active": False,
-            "phaseKey": "completed",
-            "phaseLabel": "Completed",
-            "mode": "determinate",
-            "ratio": 1.0,
-            "counts": {
-                "resolvedSources": resolved,
-                "sourceCount": max(source_count, resolved),
-                "outputCount": output_count,
-                "failedSources": failed,
-                "excludedSources": excluded,
-            },
-        }
-    ratio = 0.0
-    mode = "indeterminate"
-    if source_count > 0 and resolved <= source_count:
-        mode = "determinate"
-        ratio = max(0.0, min(1.0, resolved / max(1, source_count)))
-    return {
-        "active": True,
-        "phaseKey": "executing_sources",
-        "phaseLabel": "Executing sources",
-        "mode": mode,
-        "ratio": ratio,
-        "counts": {
-            "resolvedSources": resolved,
-            "sourceCount": source_count,
-            "outputCount": output_count,
-            "failedSources": failed,
-            "excludedSources": excluded,
-        },
     }
 
 
@@ -546,7 +467,7 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
             ],
         },
     }
-    task_progress = _normalize_task_progress(
+    task_progress = normalize_fetch_task_progress(
         src.get("taskProgress"),
         default_active_when_missing=not bool(str(src.get("finishedAt") or "").strip()),
     )
@@ -607,7 +528,7 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
     }
     finished_at = str(normalized.get("finishedAt") or "").strip()
     if finished_at:
-        task_progress = _derive_fetch_task_progress(normalized, normalized_summary)
+        task_progress = derive_fetch_task_progress(normalized, normalized_summary)
     elif not task_progress.get("phaseKey"):
         has_progress_evidence = bool(
             normalized["runId"]
@@ -620,7 +541,7 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
             or normalized_runtime.get("heartbeatAt")
         )
         if has_progress_evidence:
-            task_progress = _derive_fetch_task_progress(normalized, normalized_summary)
+            task_progress = derive_fetch_task_progress(normalized, normalized_summary)
         else:
             task_progress = {
                 "active": False,
@@ -711,7 +632,7 @@ def normalize_discovery_report_contract(payload: dict[str, Any]) -> dict[str, An
             if isinstance(row, dict)
         ],
     }
-    task_progress = _normalize_task_progress(
+    task_progress = normalize_fetch_task_progress(
         src.get("taskProgress"),
         default_active_when_missing=not bool(str(src.get("finishedAt") or "").strip()),
     )

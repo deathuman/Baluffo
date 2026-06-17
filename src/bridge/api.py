@@ -232,12 +232,15 @@ def _default_task_live_payload(_task_type: str = "") -> JsonObject:
     }
 
 
-def _default_current_task_state_payload() -> JsonObject:
-    return {"tasks": [], "count": 0}
+def _default_current_task_state_payload(*, summary: bool = False) -> JsonObject:
+    payload: JsonObject = {"tasks": [], "count": 0}
+    if summary:
+        payload["summary"] = True
+    return payload
 
 
 def _default_current_task_state_summary_payload() -> JsonObject:
-    return {"tasks": [], "count": 0, "summary": True}
+    return _default_current_task_state_payload(summary=True)
 
 
 def _disabled_sync_config_status() -> JsonObject:
@@ -299,6 +302,11 @@ class BridgeApi:
     This is intentionally a thin composition layer: concrete behavior lives in
     services/modules under `src.bridge.*` and/or is injected from the entrypoint
     during migration away from `src.admin_bridge` globals.
+
+    The field groups below are the current safe classification: runtime/path
+    data, optional service handles, route-facing capabilities, registry helpers,
+    task/ops helpers, sync/discovery settings, and jobs-pipeline status. Defaults
+    are compatibility behavior and must not be deleted from grep evidence alone.
     """
 
     # Runtime/config

@@ -25,7 +25,7 @@ def _static_source_primary_host(row: dict[str, Any]) -> str:
         if host.startswith("www."):
             host = host[4:]
         return host
-    except Exception:  # noqa: BLE001
+    except ValueError:
         return ""
 
 

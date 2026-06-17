@@ -38,11 +38,15 @@ class CanonicalJobSchema(BaseModel):
     firstSeenAt: str = ""
     lastSeenAt: str = ""
     removedAt: str = ""
+    lifecycleEvent: str = ""
+    lifecycleReason: str = ""
     dedupKey: str = ""
     qualityScore: int = 0
     focusScore: int = 0
     sourceBundleCount: int = 0
     sourceBundle: list[dict[str, Any]] = Field(default_factory=list)
+    locations: list[dict[str, Any]] = Field(default_factory=list)
+    locationSummary: str = ""
     adapter: str = ""
     studio: str = ""
 

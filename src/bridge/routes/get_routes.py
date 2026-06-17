@@ -53,6 +53,11 @@ from src.jobs.common.contracts_source_policy_recommendations import (
 from src.jobs.common.contracts_source_policy_review_state import (
     read_source_policy_review_state_artifact,
 )
+from src.shared.partial_json import (
+    decode_json_span,
+    read_json_prefix,
+    top_level_json_field_spans,
+)
 from src.shared.timing_counters import snapshot_counters
 from src.source_registry import is_hidden_from_default
 from src.source_registry_auto_approval import annotate_pending_auto_approval_rows
@@ -101,129 +106,6 @@ def _last_items(value: Any, limit: int) -> list[Any]:
 
 def _clean_text(value: Any) -> str:
     return str(value or "").strip()
-
-
-def _skip_json_string(text: str, index: int) -> int:
-    index += 1
-    size = len(text)
-    while index < size:
-        char = text[index]
-        if char == "\\":
-            index += 2
-            continue
-        if char == '"':
-            return index + 1
-        index += 1
-    return size
-
-
-def _skip_json_value(text: str, index: int) -> int:
-    size = len(text)
-    while index < size and text[index].isspace():
-        index += 1
-    if index >= size:
-        return size
-    if text[index] == '"':
-        return _skip_json_string(text, index)
-    if text[index] in "[{":
-        open_char = text[index]
-        close_char = "]" if open_char == "[" else "}"
-        depth = 1
-        index += 1
-        while index < size and depth > 0:
-            char = text[index]
-            if char == '"':
-                index = _skip_json_string(text, index)
-                continue
-            if char == open_char:
-                depth += 1
-            elif char == close_char:
-                depth -= 1
-            index += 1
-        return index
-    while index < size and text[index] not in ",}]":
-        index += 1
-    return index
-
-
-def _skip_json_whitespace(text: str, index: int) -> int:
-    size = len(text)
-    while index < size and text[index].isspace():
-        index += 1
-    return index
-
-
-def _decode_top_level_json_key(
-    text: str, index: int, decoder: json.JSONDecoder
-) -> tuple[str | None, int]:
-    index = _skip_json_whitespace(text, index)
-    if index >= len(text) or text[index] in "}":
-        return None, len(text)
-    if text[index] != '"':
-        return None, len(text)
-    try:
-        key, next_index = decoder.raw_decode(text, index)
-    except ValueError:
-        return None, len(text)
-    if not isinstance(key, str):
-        return None, len(text)
-    next_index = _skip_json_whitespace(text, next_index)
-    if next_index >= len(text) or text[next_index] != ":":
-        return None, len(text)
-    return key, next_index + 1
-
-
-def _next_top_level_json_field_index(text: str, index: int) -> int:
-    index = _skip_json_whitespace(text, index)
-    if index < len(text) and text[index] == ",":
-        return index + 1
-    return index
-
-
-def _top_level_json_field_spans(text: str) -> dict[str, tuple[int, int]]:
-    decoder = json.JSONDecoder()
-    index = _skip_json_whitespace(text, 0)
-    if index >= len(text) or text[index] != "{":
-        return {}
-    index += 1
-    spans: dict[str, tuple[int, int]] = {}
-    while index < len(text):
-        key, value_start = _decode_top_level_json_key(text, index, decoder)
-        if key is None:
-            break
-        value_end = _skip_json_value(text, value_start)
-        spans[key] = (value_start, value_end)
-        index = _next_top_level_json_field_index(text, value_end)
-    return spans
-
-
-def _decode_json_span(
-    text: str,
-    spans: dict[str, tuple[int, int]],
-    key: str,
-    default: Any,
-    *,
-    max_bytes: int = 256 * 1024,
-) -> Any:
-    span = spans.get(key)
-    if not span:
-        return default
-    start, end = span
-    if end < start or (end - start) > max_bytes:
-        return default
-    try:
-        return json.loads(text[start:end])
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return default
-
-
-def _read_json_prefix(path: Path, *, max_bytes: int = 1024 * 1024) -> str:
-    try:
-        with path.open("rb") as handle:
-            data = handle.read(max(1, int(max_bytes)))
-    except OSError:
-        return ""
-    return data.decode("utf-8", errors="ignore")
 
 
 def _path_signature(path: Path | None) -> tuple[str, int, int] | None:
@@ -376,26 +258,26 @@ def _discovery_report_summary_payload_from_file(path: Any) -> dict[str, Any]:
         return _discovery_report_summary_payload({})
 
     def _build() -> dict[str, Any]:
-        text = _read_json_prefix(report_path, max_bytes=512 * 1024)
+        text = read_json_prefix(report_path, max_bytes=512 * 1024)
         if not text:
             return _discovery_report_summary_payload({})
-        spans = _top_level_json_field_spans(text)
-        summary = _as_dict(_decode_json_span(text, spans, "summary", {}))
-        runtime = _as_dict(_decode_json_span(text, spans, "runtime", {}))
-        task_progress = _as_dict(_decode_json_span(text, spans, "taskProgress", {}))
+        spans = top_level_json_field_spans(text)
+        summary = _as_dict(decode_json_span(text, spans, "summary", {}))
+        runtime = _as_dict(decode_json_span(text, spans, "runtime", {}))
+        task_progress = _as_dict(decode_json_span(text, spans, "taskProgress", {}))
         registry_finalization = _as_dict(runtime.get("registryFinalization"))
         auto_approval = _as_dict(runtime.get("autoApproval"))
         log_rows = (
-            _as_list(_decode_json_span(text, spans, "log", [], max_bytes=64 * 1024))
-            or _as_list(_decode_json_span(text, spans, "logs", [], max_bytes=64 * 1024))
+            _as_list(decode_json_span(text, spans, "log", [], max_bytes=64 * 1024))
+            or _as_list(decode_json_span(text, spans, "logs", [], max_bytes=64 * 1024))
             or _as_list(runtime.get("log"))
         )
         payload = _discovery_report_summary_payload(
             {
-                "runId": _decode_json_span(text, spans, "runId", ""),
-                "status": _decode_json_span(text, spans, "status", ""),
-                "startedAt": _decode_json_span(text, spans, "startedAt", ""),
-                "finishedAt": _decode_json_span(text, spans, "finishedAt", ""),
+                "runId": decode_json_span(text, spans, "runId", ""),
+                "status": decode_json_span(text, spans, "status", ""),
+                "startedAt": decode_json_span(text, spans, "startedAt", ""),
+                "finishedAt": decode_json_span(text, spans, "finishedAt", ""),
                 "summary": summary,
                 "runtime": {
                     "registryFinalization": registry_finalization,
@@ -427,24 +309,24 @@ def _fetch_report_summary_payload_from_file(path: Any) -> dict[str, Any]:
         return {"ok": True, "summaryView": True, "detailLevel": "summary", "summary": {}}
 
     def _build() -> dict[str, Any]:
-        text = _read_json_prefix(
+        text = read_json_prefix(
             report_path,
             max_bytes=_FETCH_REPORT_SUMMARY_SCAN_MAX_BYTES,
         )
         if not text:
             return {"ok": True, "summaryView": True, "detailLevel": "summary", "summary": {}}
-        spans = _top_level_json_field_spans(text)
-        summary = _as_dict(_decode_json_span(text, spans, "summary", {}))
-        task_progress = _as_dict(_decode_json_span(text, spans, "taskProgress", {}))
-        timing = _as_dict(_decode_json_span(text, spans, "timing", {}, max_bytes=64 * 1024))
+        spans = top_level_json_field_spans(text)
+        summary = _as_dict(decode_json_span(text, spans, "summary", {}))
+        task_progress = _as_dict(decode_json_span(text, spans, "taskProgress", {}))
+        timing = _as_dict(decode_json_span(text, spans, "timing", {}, max_bytes=64 * 1024))
         return {
             "ok": True,
             "summaryView": True,
             "detailLevel": "summary",
-            "runId": _clean_text(_decode_json_span(text, spans, "runId", "")),
-            "status": _clean_text(_decode_json_span(text, spans, "status", "")),
-            "startedAt": _clean_text(_decode_json_span(text, spans, "startedAt", "")),
-            "finishedAt": _clean_text(_decode_json_span(text, spans, "finishedAt", "")),
+            "runId": _clean_text(decode_json_span(text, spans, "runId", "")),
+            "status": _clean_text(decode_json_span(text, spans, "status", "")),
+            "startedAt": _clean_text(decode_json_span(text, spans, "startedAt", "")),
+            "finishedAt": _clean_text(decode_json_span(text, spans, "finishedAt", "")),
             "summary": {
                 key: summary.get(key)
                 for key in (

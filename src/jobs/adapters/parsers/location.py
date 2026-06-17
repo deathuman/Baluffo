@@ -10,6 +10,7 @@ from src.jobs.adapters.location_rules import (
     _LOCATION_WORK_TYPE_TOKENS,
     _REMOTEISH_LOCATION_TOKENS,
     _looks_like_location_name,
+    classify_city_garbage,
 )
 from src.jobs.adapters.location_rules import (
     is_plausibly_location_candidate as _is_plausibly_location_candidate,
@@ -498,6 +499,20 @@ def _dict_location_fragments(location_value: dict[str, Any]) -> list[str]:
     text, country = _extract_location_text_and_country(location_value)
     if text and "|" in text:
         return _split_pipe_fragments(text)
+    normalized_text = _normalize_location_key(text)
+    if (
+        text
+        and country
+        and (
+            normalized_text not in _REMOTEISH_LOCATION_TOKENS
+            and (
+                is_city_noise_fragment(text)
+                or classify_city_filter_rejection(text)
+                or classify_city_garbage(text)
+            )
+        )
+    ):
+        return [country]
     if text and country:
         return [f"{text}, {country}"]
     if text:
@@ -572,7 +587,12 @@ def _fragment_looks_like_location_value(fragment: Any) -> bool:
 
 
 def _fragment_to_location(fragment: str) -> tuple[str, str] | None:
-    if is_city_noise_fragment(fragment) and not _looks_like_country_token(fragment):
+    normalized = _normalize_location_key(fragment)
+    if (
+        normalized not in _REMOTEISH_LOCATION_TOKENS
+        and is_city_noise_fragment(fragment)
+        and not _looks_like_country_token(fragment)
+    ):
         return None
     if invalid_location_reason(fragment, field_name="city") and fragment.count(",") >= 3:
         return None
@@ -636,24 +656,27 @@ def _append_location_entry(
     city: str,
     country: str,
 ) -> bool:
-    city_options = get_city_filter_option_values(city, country) if city else []
-    if city and not city_options:
-        return False
-    if len(city_options) > 1:
-        appended = False
-        for city_option in city_options:
-            appended = (
-                _append_location_entry(
-                    locations=locations,
-                    seen=seen,
-                    city=city_option,
-                    country=country,
+    if _normalize_location_key(city) in _REMOTEISH_LOCATION_TOKENS:
+        country = country if country != "Unknown" else "Remote"
+    else:
+        city_options = get_city_filter_option_values(city, country) if city else []
+        if city and not city_options:
+            return False
+        if len(city_options) > 1:
+            appended = False
+            for city_option in city_options:
+                appended = (
+                    _append_location_entry(
+                        locations=locations,
+                        seen=seen,
+                        city=city_option,
+                        country=country,
+                    )
+                    or appended
                 )
-                or appended
-            )
-        return appended
-    if city_options:
-        city = city_options[0]
+            return appended
+        if city_options:
+            city = city_options[0]
     country_key = _country_key(country)
     city_key = _normalize_city_key(city)
     key = "|".join([city_key, country_key])

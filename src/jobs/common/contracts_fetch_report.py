@@ -7,6 +7,7 @@ from typing import Any
 from src.contracts import SCHEMA_VERSION
 from src.jobs.common.numbers import _clamped_int
 from src.jobs.text_utils import clean_text
+from src.shared.fetch_report_progress import derive_fetch_task_progress
 from src.shared.json_shapes import as_json_object, copy_json_object, json_object_rows
 from src.shared.live_task import (
     build_live_task_contract_fields,
@@ -198,30 +199,13 @@ def _normalize_lifecycle_summary(payload: Any, summary: dict[str, Any]) -> dict[
 
 
 def _completed_fetch_task_progress(summary: dict[str, Any]) -> dict[str, Any]:
-    source_count = _clamped_int(summary.get("sourceCount"), 0, 0)
-    failed_sources = _clamped_int(summary.get("failedSources"), 0, 0)
-    excluded_sources = _clamped_int(summary.get("excludedSources"), 0, 0)
-    successful_sources = _clamped_int(summary.get("successfulSources"), 0, 0)
-    resolved_sources = successful_sources + failed_sources + excluded_sources
-    output_count = _clamped_int(summary.get("outputCount"), 0, 0)
-    return {
-        "active": False,
-        "phaseKey": "completed",
-        "phaseLabel": "Completed",
-        "mode": "determinate",
-        "ratio": 1.0,
-        "counts": {
-            "sourceCount": source_count,
-            "totalTasks": source_count,
-            "queuedTasks": 0,
-            "runningTasks": 0,
-            "completedTasks": resolved_sources,
-            "resolvedSources": resolved_sources,
-            "outputCount": output_count,
-            "failedSources": failed_sources,
-            "excludedSources": excluded_sources,
-        },
-    }
+    return derive_fetch_task_progress(
+        {"finishedAt": "completed"},
+        summary,
+        include_task_counts=True,
+        max_completed_source_count_with_resolved=False,
+        source_count_default=0,
+    )
 
 
 def _apply_completed_fetch_report_truth(payload: dict[str, Any]) -> dict[str, Any]:

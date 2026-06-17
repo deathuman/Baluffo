@@ -72,7 +72,7 @@ def structured_source_host(source_row: dict[str, Any]) -> str:
         return ""
     try:
         host = (urlparse(url).netloc or "").strip().lower()
-    except Exception:  # noqa: BLE001
+    except ValueError:
         return ""
     return host[4:] if host.startswith("www.") else host
 

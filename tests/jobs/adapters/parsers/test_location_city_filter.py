@@ -70,6 +70,14 @@ def test_normalize_location_details_splits_same_country_compound_city() -> None:
     assert details["locationSummary"] == "Tokyo, Japan | Fukuoka, Japan"
 
 
+def test_normalize_location_details_preserves_remote_locality_with_country() -> None:
+    details = normalize_location_details({"addressLocality": "Remote", "addressCountry": "US"})
+
+    assert details["city"] == "Remote"
+    assert details["country"] == "Remote"
+    assert details["locations"] == [{"city": "Remote", "country": "Remote"}]
+
+
 @pytest.mark.parametrize(
     ("value", "expected_country"),
     [("New York or London, US", "US"), ("S.F. or North America", "Unknown")],

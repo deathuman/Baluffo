@@ -346,7 +346,10 @@ def _merge_detail_job(
 ) -> dict[str, Any]:
     merged = dict(listing_row)
     for key, value in detail_row.items():
-        if clean_text(value) or value in {0}:
+        if isinstance(value, (dict, list)):
+            if value:
+                merged[key] = value
+        elif clean_text(value) or value == 0:
             merged[key] = value
     merged["adapter"] = adapter_name
     merged["studio"] = studio
