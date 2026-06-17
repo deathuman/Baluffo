@@ -12,6 +12,7 @@ ADMIN_BRIDGE_API = "docs/admin-bridge-api.md"
 ROUTE_HANDLER_METHODS = {
     "src/bridge/routes/get_ops_diagnostics.py": "GET",
     "src/bridge/routes/get_ops_status.py": "GET",
+    "src/bridge/routes/get_registry.py": "GET",
     "src/bridge/routes/get_routes.py": "GET",
     "src/bridge/routes/post_routes_admin.py": "POST",
     "src/bridge/routes/post_routes_local_data.py": "POST",
@@ -61,6 +62,7 @@ class DiscoveredRoute:
 GET_HANDLER = "src/bridge/routes/get_routes.py"
 GET_OPS_DIAGNOSTICS_HANDLER = "src/bridge/routes/get_ops_diagnostics.py"
 GET_OPS_STATUS_HANDLER = "src/bridge/routes/get_ops_status.py"
+GET_REGISTRY_HANDLER = "src/bridge/routes/get_registry.py"
 POST_ADMIN_HANDLER = "src/bridge/routes/post_routes_admin.py"
 POST_LOCAL_DATA_HANDLER = "src/bridge/routes/post_routes_local_data.py"
 POST_UPDATE_HANDLER = "src/bridge/routes/post_routes_update.py"
@@ -264,13 +266,18 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
     ),
     _route("GET", "/app/update-status", EXACT, GET_HANDLER, "public", caller_files=UPDATE_CALLERS),
     _route(
-        "GET", "/registry/active", EXACT, GET_HANDLER, "public", caller_files=ADMIN_REGISTRY_CALLERS
+        "GET",
+        "/registry/active",
+        EXACT,
+        GET_REGISTRY_HANDLER,
+        "public",
+        caller_files=ADMIN_REGISTRY_CALLERS,
     ),
     _route(
         "GET",
         "/registry/pending",
         EXACT,
-        GET_HANDLER,
+        GET_REGISTRY_HANDLER,
         "public",
         caller_files=ADMIN_REGISTRY_CALLERS,
     ),
@@ -278,7 +285,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/registry/rejected",
         EXACT,
-        GET_HANDLER,
+        GET_REGISTRY_HANDLER,
         "public",
         caller_files=ADMIN_REGISTRY_CALLERS,
     ),
@@ -286,7 +293,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/registry/sources",
         EXACT,
-        GET_HANDLER,
+        GET_REGISTRY_HANDLER,
         "public",
         caller_files=ADMIN_REGISTRY_CALLERS,
     ),
@@ -300,7 +307,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/registry/summary",
         EXACT,
-        GET_HANDLER,
+        GET_REGISTRY_HANDLER,
         "public",
         caller_files=ADMIN_REGISTRY_CALLERS,
     ),
