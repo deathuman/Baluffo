@@ -19,6 +19,7 @@ ROUTE_HANDLER_METHODS = {
     "src/bridge/routes/get_registry_conflicts.py": "GET",
     "src/bridge/routes/get_routes.py": "GET",
     "src/bridge/routes/get_source_policy.py": "GET",
+    "src/bridge/routes/get_sync.py": "GET",
     "src/bridge/routes/post_routes_admin.py": "POST",
     "src/bridge/routes/post_routes_local_data.py": "POST",
     "src/bridge/routes/post_routes_update.py": "POST",
@@ -73,6 +74,7 @@ GET_OPS_STATUS_HANDLER = "src/bridge/routes/get_ops_status.py"
 GET_REGISTRY_HANDLER = "src/bridge/routes/get_registry.py"
 GET_REGISTRY_CONFLICTS_HANDLER = "src/bridge/routes/get_registry_conflicts.py"
 GET_SOURCE_POLICY_HANDLER = "src/bridge/routes/get_source_policy.py"
+GET_SYNC_HANDLER = "src/bridge/routes/get_sync.py"
 POST_ADMIN_HANDLER = "src/bridge/routes/post_routes_admin.py"
 POST_LOCAL_DATA_HANDLER = "src/bridge/routes/post_routes_local_data.py"
 POST_UPDATE_HANDLER = "src/bridge/routes/post_routes_update.py"
@@ -476,7 +478,9 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "support",
         caller_files=ADMIN_REGISTRY_CALLERS,
     ),
-    _route("GET", "/sync/status", EXACT, GET_HANDLER, "public", caller_files=ADMIN_SYNC_CALLERS),
+    _route(
+        "GET", "/sync/status", EXACT, GET_SYNC_HANDLER, "public", caller_files=ADMIN_SYNC_CALLERS
+    ),
     _route(
         "GET",
         "/tasks/run-jobs-pipeline-status",
