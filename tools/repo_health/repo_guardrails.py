@@ -28,6 +28,7 @@ if str(TOOLS_ROOT) not in sys.path:
 
 from bridge_api_field_inventory import check_bridge_api_field_inventory
 from bridge_route_inventory import check_bridge_route_inventory
+from desktop_update_facade_inventory import check_desktop_update_facade_inventory
 
 GROUPS = (
     "docs",
@@ -510,6 +511,13 @@ def run_compat_group() -> list[GuardFailure]:
     )
     if bridge_api_failure:
         failures.append(bridge_api_failure)
+    desktop_update_failure = _failure_from_messages(
+        "compat",
+        "check_desktop_update_facade_inventory",
+        check_desktop_update_facade_inventory(),
+    )
+    if desktop_update_failure:
+        failures.append(desktop_update_failure)
     return failures
 
 
