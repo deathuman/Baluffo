@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 ADMIN_BRIDGE_API = "docs/admin-bridge-api.md"
 
 ROUTE_HANDLER_METHODS = {
+    "src/bridge/routes/get_admin_bootstrap.py": "GET",
     "src/bridge/routes/get_app.py": "GET",
     "src/bridge/routes/get_discovery.py": "GET",
     "src/bridge/routes/get_fetch_report.py": "GET",
@@ -68,6 +69,7 @@ class DiscoveredRoute:
 
 
 GET_HANDLER = "src/bridge/routes/get_routes.py"
+GET_ADMIN_BOOTSTRAP_HANDLER = "src/bridge/routes/get_admin_bootstrap.py"
 GET_APP_HANDLER = "src/bridge/routes/get_app.py"
 GET_DISCOVERY_HANDLER = "src/bridge/routes/get_discovery.py"
 GET_FETCH_REPORT_HANDLER = "src/bridge/routes/get_fetch_report.py"
@@ -164,7 +166,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/admin/bootstrap",
         EXACT,
-        GET_HANDLER,
+        GET_ADMIN_BOOTSTRAP_HANDLER,
         "public",
         caller_files=ADMIN_BOOTSTRAP_CALLERS,
     ),

@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from src.bridge.routes import get_routes
+from src.bridge.routes import get_admin_bootstrap
 from src.bridge.routes.get_routes import handle_get
 from tests.helpers.bridge_api import FakeDesktopLocalDataStore, FakeHandler, make_stub_bridge_api
 
@@ -138,7 +138,7 @@ def test_admin_bootstrap_includes_registry_summary_when_idle(tmp_path: Path) -> 
 def test_admin_bootstrap_smoke_fail_once_is_guarded_and_single_use(
     monkeypatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr(get_routes, "_ADMIN_BOOTSTRAP_SMOKE_FAIL_ONCE_CONSUMED", False)
+    monkeypatch.setattr(get_admin_bootstrap, "_ADMIN_BOOTSTRAP_SMOKE_FAIL_ONCE_CONSUMED", False)
     monkeypatch.setenv("BALUFFO_PACKAGED_SMOKE_ADMIN_BOOTSTRAP_FAIL_ONCE", "1")
     monkeypatch.delenv("BALUFFO_PACKAGED_SMOKE_RUNTIME", raising=False)
     store = FakeDesktopLocalDataStore()

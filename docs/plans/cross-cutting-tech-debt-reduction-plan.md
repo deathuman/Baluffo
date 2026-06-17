@@ -5,7 +5,7 @@
 > - **Canonical for:** the June 2026 cross-cutting tech debt inventory: BridgeApi god object, admin_bridge legacy globals, get_routes.py decomposition, bare except Exception, _as_dict/_as_list proliferation, test-time sleep/port coupling, data model and contract drift, desktop/ship update-system complexity, deferred macOS platform gap, shared-layer isolation violations, and CSS/build infrastructure gaps
 > - **Not canonical for:** jobs/fetcher-specific refactoring (see [`initial_findings.md`](initial_findings.md)), source-discovery decomposition, adapter plugin internals, or individual component tests
 > - **Then inspect:** [`../architecture-ai-map.md`](../architecture-ai-map.md), [`refactor-charter-template.md`](refactor-charter-template.md), [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md), bridge service leaf modules, and component-specific test coverage
-> - **Last updated:** 2026-06-17 — validated against current source; multiple P0 implementation slices completed; app, registry, registry-conflicts, sync status, pipeline task, discovery, fetch-report, source-policy recommendations, and desktop local-data GET routes extracted from GET routes; macOS platform work deferred by product priority; stale footprint counts and unsafe acceptance criteria corrected; _as_dict/_as_list remains P3 (4 callers, contained refactor)
+> - **Last updated:** 2026-06-17 — validated against current source; multiple P0 implementation slices completed; admin bootstrap, app, registry, registry-conflicts, sync status, pipeline task, discovery, fetch-report, source-policy recommendations, and desktop local-data GET routes extracted from GET routes; macOS platform work deferred by product priority; stale footprint counts and unsafe acceptance criteria corrected; _as_dict/_as_list remains P3 (4 callers, contained refactor)
 
 ## Summary
 
@@ -17,7 +17,7 @@ A systematic analysis identified twelve cross-cutting tech debt clusters that im
 |------|----------|----------------|----------------------------|
 | BridgeApi god object | P0 | Partial | Current-task default payload builders merged; classification warning documented. Field audit/split still open. |
 | admin_bridge legacy globals | P0 | Partial | 5-way root injection seam now has explicit coverage. Singleton/service-holder migration still open. |
-| get_routes.py monolith | P0 | Partial | Partial JSON parser, provider-coverage link backfill, registry source table compaction, fetch-report source-run read support, ops diagnostics routes, ops status routes, app routes, registry routes, registry-conflicts route, sync status route, pipeline task routes, discovery routes, fetch-report routes, source-policy recommendations route, and desktop local-data GET routes extracted with tests. Remaining dispatch split and caches still open. |
+| get_routes.py monolith | P0 | Partial | Partial JSON parser, provider-coverage link backfill, registry source table compaction, fetch-report source-run read support, ops diagnostics routes, ops status routes, admin bootstrap route, app routes, registry routes, registry-conflicts route, sync status route, pipeline task routes, discovery routes, fetch-report routes, source-policy recommendations route, and desktop local-data GET routes extracted with tests. Remaining ops-tab counts dispatch split and caches/helper cleanup still open. |
 | Data model drift (CanonicalJob) | P0 | Done for missing-field slice | `CanonicalJobSchema` now preserves `lifecycleEvent`, `lifecycleReason`, `locations`, and `locationSummary`; `DATA_CONTRACT.md` documents locations fields. `id` consistency remains deferred by strategy. |
 | Fetch report normalization duplicated | P0 | Partial | Shared-compatible task-progress helpers extracted while preserving bridge/jobs count semantics. Source-row, socialSummary, and timingSummary unification remain open. |
 | macOS platform gap | Deferred | Deferred | No `_darwin.py`; current desktop package maps non-Windows to `_linux.py`. Real gap, but not a near-term blocker. |
@@ -52,6 +52,7 @@ Completed on 2026-06-17:
 - **get_routes sync status extraction:** `/sync/status` full and summary GET dispatch moved to `src/bridge/routes/get_sync.py`; summary payload shape, unsupported-view errors, best-effort runtime-state fallback, and timing labels stay unchanged.
 - **get_routes pipeline task extraction:** `/tasks/jobs-pipeline-schedule` and `/tasks/run-jobs-pipeline-status` GET dispatch moved to `src/bridge/routes/get_pipeline_tasks.py`; payload sources and POST schedule updates stay unchanged.
 - **get_routes app route extraction:** `/app/ready` and `/app/update-status` GET dispatch moved to `src/bridge/routes/get_app.py`; readiness payload source, update-status error boundary, and container unavailable behavior stay unchanged.
+- **get_routes admin bootstrap extraction:** `/admin/bootstrap` GET dispatch moved to `src/bridge/routes/get_admin_bootstrap.py`; packaged-smoke fail-once guard, timing label, and bounded bootstrap payload source stay unchanged.
 - **CanonicalJob missing-field preservation:** `CanonicalJobSchema` now includes `lifecycleEvent`, `lifecycleReason`, `locations`, and `locationSummary`; schema dump preservation is tested.
 - **Fetch-report task progress compatibility:** bridge and jobs use shared task-progress helpers while keeping their existing public count shapes and compatibility differences.
 - **Exception suppression ratchet:** two URL parsing catches and jobs transport request catches were narrowed from `except Exception`; update POST routes now use `src/bridge/routes/error_boundary.py`; `tools/repo_health/source_suppression_budget.json` now budgets `BLE001` at 122.
@@ -174,17 +175,18 @@ Multi-instance scenarios (multiple bridges, parallel operations) are impossible 
 
 ### Problem
 
-`src/bridge/routes/get_routes.py` is now **2,044 lines** with **1 public entry point** (`handle_get`). It originally contained 5 distinct subsystems; 3 have now been extracted:
+`src/bridge/routes/get_routes.py` is now **273 lines** with **1 public entry point** (`handle_get`). It originally contained 5 distinct subsystems; most route families have now been extracted:
 
 | Subsystem | Lines | Description |
 |-----------|-------|-------------|
 | Hand-rolled JSON parser | ~120 | `_skip_json_string`, `_skip_json_value`, `_top_level_json_field_spans`, `_read_json_prefix` — custom partial JSON reading to avoid loading large files |
-| File caching | ~20 | `_path_signature`, `_cached_summary_payload` + 2 module-level cache dicts |
+| File caching | mostly extracted | caches moved with their route families; remaining helper use is limited to ops-tab badge summary |
 | Provider coverage backfill | Extracted | Moved to `src/bridge/source_policy_link_backfill.py`; route now imports load/enrich helpers |
 | Registry table compacting | Extracted | Moved to `src/bridge/registry_source_table.py`; route now imports the compact-row helper |
-| Ops health dispatch | ~200 | `_handle_ops_health_route`, `_handle_ops_dashboard_health_route`, `_handle_ops_fetch_kpis_route` |
+| Ops health dispatch | Extracted | Moved to `src/bridge/routes/get_ops_status.py`; route now delegates to the handler |
+| Admin bootstrap dispatch | Extracted | Moved to `src/bridge/routes/get_admin_bootstrap.py`; smoke fail-once state moved with the route |
 
-Additionally: 6 module-level mutable state items (3 caches, 1 consume-once bool flag, 7 quasi-constant config sets), private duplicates of `_as_dict`, `_as_list`, `_clean_text`, `_safe_int`.
+Additionally: remaining route-owned behavior is focused on `/admin/ops-tab-counts`; helper imports for `_as_dict`, `_as_list`, `_clean_text`, `_safe_int`, and `_path_signature` remain for that summary payload.
 
 **Why it blocks platform expansion:**
 
@@ -209,6 +211,7 @@ Every new GET endpoint for a new platform requires navigating this monolith. The
 - Extract discovery route family into `src/bridge/routes/get_discovery.py` (done)
 - Extract desktop local-data GET route family into `src/bridge/routes/get_local_data.py` (done)
 - Extract fetch-report route family into `src/bridge/routes/get_fetch_report.py` (done)
+- Extract admin bootstrap route into `src/bridge/routes/get_admin_bootstrap.py` (done)
 - Split `handle_get` dispatch into per-domain files (`get_ops.py`, `get_registry.py`, `get_discovery.py`, `get_admin.py`)
 - Replace `_as_dict`, `_as_list`, `_clean_text`, `_safe_int` with imports from shared utils
 - Remove module-level mutable caches (replace with LRU or remove)
@@ -667,6 +670,7 @@ The frontend has a JS build pipeline (esbuild) but **zero CSS processing**:
 | 10K | Extract sync status GET route from get_routes.py | §3 | 4 files | Done | Completed 2026-06-17 |
 | 10L | Extract pipeline task GET routes from get_routes.py | §3 | 4 files | Done | Completed 2026-06-17 |
 | 10M | Extract app GET routes from get_routes.py | §3 | 4 files | Done | Completed 2026-06-17 |
+| 10N | Extract admin bootstrap GET route from get_routes.py | §3 | 4 files | Done | Completed 2026-06-17 |
 | 11 | Replace `except Exception` in low-risk files (post_routes_update, adapters, shared) | §4 | ~15 files | Partial | Update POST route and jobs transport request-catch slices completed 2026-06-17 |
 | 12 | Service holder dataclass for admin_bridge singletons | §2 | 6 files | Medium | None |
 | 13 | Align `CanonicalJobSchema` with canonical dataclass: add missing 4 fields (`lifecycleEvent`, `lifecycleReason`, `locations`, `locationSummary`), fix `id` type | §7A | 2-3 files | Medium | None (but verify with integration test) |
