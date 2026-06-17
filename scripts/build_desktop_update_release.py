@@ -15,13 +15,15 @@ if str(ROOT) not in sys.path:
 
 from src.app_version import APP_VERSION
 from src.python_version_guard import ensure_required_python
-from src.ship.desktop_update import (
+from src.ship.desktop_update_manifest import (
     DESKTOP_UPDATE_MANIFEST_ASSET,
     DESKTOP_UPDATE_SCHEMA_VERSION,
     DESKTOP_UPDATER_VERSION,
+    sign_manifest,
+)
+from src.ship.desktop_update_shared import (
     compute_sha256,
     iso_now,
-    sign_manifest,
 )
 
 DEFAULT_PRIVATE_KEY_ENV = "BALUFFO_DESKTOP_UPDATE_PRIVATE_KEY_B64"

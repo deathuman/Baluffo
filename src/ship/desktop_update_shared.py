@@ -17,6 +17,7 @@ from typing import Any, cast
 
 from src.shared.json_io import read_json_object
 from src.shared.utils import now_iso
+from src.ship import desktop_update_manifest as manifest_mod
 
 root: Any | None = None
 
@@ -140,17 +141,11 @@ def compare_versions(left: str, right: str) -> int:
 
 
 def sort_json(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {key: sort_json(value[key]) for key in sorted(value)}
-    if isinstance(value, list):
-        return [sort_json(item) for item in value]
-    return value
+    return manifest_mod.sort_json(value)
 
 
 def canonical_manifest_bytes(manifest: dict[str, Any]) -> bytes:
-    payload = {key: value for key, value in dict(manifest).items() if key != "signature"}
-    canonical = sort_json(payload)
-    return json.dumps(canonical, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return manifest_mod.canonical_manifest_bytes(manifest)
 
 
 def _decode_public_keys_payload(payload: Any) -> dict[str, bytes]:
@@ -209,31 +204,21 @@ def verify_manifest_signature(
     public_keys: dict[str, bytes] | None = None,
 ) -> None:
     deps = _root()
-    if deps.Ed25519PublicKey is None:
-        raise RuntimeError("Ed25519 verification is unavailable in this runtime.")
-    key_id = str(manifest.get("key_id") or "").strip()
-    if not key_id:
-        raise ValueError("Desktop manifest key_id is required.")
     available = public_keys if public_keys is not None else deps.load_desktop_update_public_keys()
-    public_key_bytes = available.get(key_id)
-    if not public_key_bytes:
-        raise ValueError(f"Desktop manifest key_id is unknown: {key_id}")
-    signature_b64 = str(manifest.get("signature") or "").strip()
-    if not signature_b64:
-        raise ValueError("Desktop manifest signature is required.")
-    signature = base64.b64decode(signature_b64)
-    public_key = deps.Ed25519PublicKey.from_public_bytes(public_key_bytes)
-    public_key.verify(signature, deps.canonical_manifest_bytes(manifest))
+    manifest_mod.verify_manifest_signature(
+        manifest,
+        public_keys=available,
+        public_key_cls=deps.Ed25519PublicKey,
+    )
 
 
 def sign_manifest(manifest: dict[str, Any], private_key_bytes: bytes) -> str:
     deps = _root()
-    if deps.Ed25519PrivateKey is None:
-        raise RuntimeError("Ed25519 signing is unavailable in this runtime.")
-    payload = {key: value for key, value in dict(manifest).items() if key != "signature"}
-    key = deps.Ed25519PrivateKey.from_private_bytes(private_key_bytes)
-    signature = key.sign(deps.canonical_manifest_bytes(payload))
-    return base64.b64encode(signature).decode("ascii")
+    return manifest_mod.sign_manifest(
+        manifest,
+        private_key_bytes,
+        private_key_cls=deps.Ed25519PrivateKey,
+    )
 
 
 def validate_desktop_manifest(manifest: dict[str, Any]) -> None:

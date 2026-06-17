@@ -35,20 +35,17 @@ from src.shared.github_https import (
 from src.ship import desktop_update_service as desktop_update_service_mod
 from src.ship import desktop_update_shared as desktop_update_shared_mod
 from src.ship import desktop_update_state as desktop_update_state_mod
-
-try:
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import (
-        Ed25519PrivateKey as _Ed25519PrivateKey,
-    )
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import (
-        Ed25519PublicKey as _Ed25519PublicKey,
-    )
-except Exception:  # noqa: BLE001
-    Ed25519PrivateKey: Any = None
-    Ed25519PublicKey: Any = None
-else:
-    Ed25519PrivateKey = _Ed25519PrivateKey
-    Ed25519PublicKey = _Ed25519PublicKey
+from src.ship.desktop_update_manifest import (
+    DESKTOP_UPDATE_MANIFEST_ASSET,
+    DESKTOP_UPDATE_SCHEMA_VERSION,
+    DESKTOP_UPDATER_VERSION,
+)
+from src.ship.desktop_update_manifest import (
+    Ed25519SigningClass as _Ed25519PrivateKey,
+)
+from src.ship.desktop_update_manifest import (
+    Ed25519VerifierClass as _Ed25519PublicKey,
+)
 
 try:
     import psutil as _psutil
@@ -58,11 +55,8 @@ else:
     psutil = _psutil
 
 
-DESKTOP_UPDATE_SCHEMA_VERSION = 1
 DESKTOP_UPDATE_CHANNEL = "stable"
-DESKTOP_UPDATE_MANIFEST_ASSET = "baluffo-desktop-update-manifest.json"
 DESKTOP_UPDATE_HELPER_NAME = "BaluffoUpdater.exe"
-DESKTOP_UPDATER_VERSION = "2.0.1"
 DEFAULT_RELEASE_CHECK_THROTTLE_SECONDS = 6 * 60 * 60
 DOWNLOAD_CHUNK_SIZE = 1024 * 256
 GITHUB_API_BASE = "https://api.github.com"
@@ -142,6 +136,8 @@ Request = _Request
 urlopen = _urlopen
 get_app_version = _get_app_version
 compare_baluffo_versions = _compare_baluffo_versions
+Ed25519PrivateKey = _Ed25519PrivateKey
+Ed25519PublicKey = _Ed25519PublicKey
 GITHUB_CA_BUNDLE_ENV = _GITHUB_CA_BUNDLE_ENV
 build_github_ssl_context = _build_github_ssl_context_impl
 wrap_github_request_error = _wrap_github_request_error
