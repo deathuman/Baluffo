@@ -15,11 +15,8 @@ from typing import Any
 
 from src.bridge.admin_bootstrap import get_admin_bootstrap_payload
 from src.bridge.api import BridgeApi
-from src.bridge.container_mode import is_container_runtime, send_container_unavailable
 from src.bridge.performance_profile import time_operation
-from src.bridge.routes.error_boundary import (
-    send_json_boundary,
-)
+from src.bridge.routes.get_app import handle_app_routes
 from src.bridge.routes.get_discovery import handle_discovery_routes
 from src.bridge.routes.get_fetch_report import handle_fetch_report_routes
 from src.bridge.routes.get_local_data import handle_local_data_get_routes
@@ -233,10 +230,6 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return int(default)
 
 
-def _json_error(exc: Exception) -> dict[str, Any]:
-    return {"ok": False, "error": str(exc)}
-
-
 def handle_get(
     handler: BridgeResponseWriter, *, api: BridgeApi, path: str, query: dict[str, list[str]]
 ) -> bool:
@@ -245,9 +238,7 @@ def handle_get(
     Important: `api` must be the currently running BridgeApi instance.
     """
 
-    if path == "/app/ready":
-        with time_operation("app.ready.route_payload"):
-            handler.send_json(api.compute_ops_health_ready())
+    if handle_app_routes(handler, api=api, path=path, query=query):
         return True
 
     if path == "/admin/bootstrap":
@@ -281,18 +272,6 @@ def handle_get(
         return True
 
     if handle_local_data_get_routes(handler, api=api, path=path, query=query):
-        return True
-
-    if path == "/app/update-status":
-        if is_container_runtime(api):
-            send_container_unavailable(handler)
-            return True
-        send_json_boundary(
-            handler,
-            api.get_update_status_payload,
-            error_status=500,
-            error_payload=_json_error,
-        )
         return True
 
     if handle_registry_routes(handler, api=api, path=path, query=query):

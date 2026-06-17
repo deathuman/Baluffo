@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 ADMIN_BRIDGE_API = "docs/admin-bridge-api.md"
 
 ROUTE_HANDLER_METHODS = {
+    "src/bridge/routes/get_app.py": "GET",
     "src/bridge/routes/get_discovery.py": "GET",
     "src/bridge/routes/get_fetch_report.py": "GET",
     "src/bridge/routes/get_local_data.py": "GET",
@@ -67,6 +68,7 @@ class DiscoveredRoute:
 
 
 GET_HANDLER = "src/bridge/routes/get_routes.py"
+GET_APP_HANDLER = "src/bridge/routes/get_app.py"
 GET_DISCOVERY_HANDLER = "src/bridge/routes/get_discovery.py"
 GET_FETCH_REPORT_HANDLER = "src/bridge/routes/get_fetch_report.py"
 GET_LOCAL_DATA_HANDLER = "src/bridge/routes/get_local_data.py"
@@ -178,7 +180,7 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "GET",
         "/app/ready",
         EXACT,
-        GET_HANDLER,
+        GET_APP_HANDLER,
         "public",
         caller_files=ADMIN_OPS_CALLERS,
     ),
@@ -278,7 +280,14 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "support",
         caller_files=STARTUP_METRIC_CALLERS,
     ),
-    _route("GET", "/app/update-status", EXACT, GET_HANDLER, "public", caller_files=UPDATE_CALLERS),
+    _route(
+        "GET",
+        "/app/update-status",
+        EXACT,
+        GET_APP_HANDLER,
+        "public",
+        caller_files=UPDATE_CALLERS,
+    ),
     _route(
         "GET",
         "/registry/active",
