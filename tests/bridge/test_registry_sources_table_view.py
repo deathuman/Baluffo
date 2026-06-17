@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from src.bridge.routes.get_routes import handle_get
 from tests.helpers.bridge_api import FakeDesktopLocalDataStore, FakeHandler, make_stub_bridge_api
 
@@ -256,6 +258,55 @@ def test_registry_sources_table_view_preserves_hidden_pending_filter(tmp_path: P
         "visible",
         "hidden",
     ]
+
+
+def test_registry_sources_table_view_ignores_invalid_discovery_report(
+    tmp_path: Path,
+) -> None:
+    api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    api.load_state = lambda: {  # type: ignore[assignment]
+        "active": [],
+        "pending": [{"id": "pending", "name": "Pending", "jobsFound": 1}],
+        "rejected": [],
+    }
+    api.load_json_object = lambda _path, _default: (_ for _ in ()).throw(  # type: ignore[assignment]
+        ValueError("malformed discovery report")
+    )
+    _install_empty_discovery_candidates(api, tmp_path)
+
+    handler = FakeHandler()
+    assert handle_get(
+        handler,
+        api=api,
+        path="/registry/sources",
+        query={"view": ["table"], "buckets": ["pending"]},
+    )
+
+    assert handler.sent[-1]["status"] == 200
+    assert handler.sent[-1]["payload"]["sources"]["pending"][0]["id"] == "pending"
+
+
+def test_registry_sources_table_view_propagates_unexpected_discovery_report_failure(
+    tmp_path: Path,
+) -> None:
+    api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    api.load_state = lambda: {  # type: ignore[assignment]
+        "active": [],
+        "pending": [{"id": "pending", "name": "Pending", "jobsFound": 1}],
+        "rejected": [],
+    }
+    api.load_json_object = lambda _path, _default: (_ for _ in ()).throw(  # type: ignore[assignment]
+        RuntimeError("unexpected discovery loader failure")
+    )
+    _install_empty_discovery_candidates(api, tmp_path)
+
+    with pytest.raises(RuntimeError, match="unexpected discovery loader failure"):
+        handle_get(
+            FakeHandler(),
+            api=api,
+            path="/registry/sources",
+            query={"view": ["table"], "buckets": ["pending"]},
+        )
 
 
 def test_registry_sources_table_view_keeps_large_payload_bounded(tmp_path: Path) -> None:

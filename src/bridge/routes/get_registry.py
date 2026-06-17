@@ -68,7 +68,7 @@ def _read_discovery_report_candidate_rows(api: BridgeApi) -> list[dict[str, Any]
         return []
     try:
         report = _as_dict(api.load_json_object(Path(report_path), {}))
-    except Exception:
+    except (OSError, TypeError, ValueError):
         return []
     return [row for row in _as_list(report.get("candidates")) if isinstance(row, dict)]
 

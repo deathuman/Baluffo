@@ -167,7 +167,7 @@ def _accepts_gzip(handler: Any) -> bool:
     header = ""
     try:
         header = str(handler.headers.get("Accept-Encoding", ""))
-    except Exception:
+    except AttributeError:
         header = ""
     return any(part.strip().lower() == "gzip" for part in header.split(","))
 

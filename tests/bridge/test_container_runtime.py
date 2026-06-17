@@ -9,11 +9,13 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+import pytest
+
 from src import container_server
 from src.bridge.routes.get_routes import handle_get
 from src.bridge.routes.post_routes import handle_post
 from src.bridge.server.handler import make_handler
-from src.bridge.server.static_files import StaticFileService
+from src.bridge.server.static_files import StaticFileService, _accepts_gzip
 from src.runtime_seed import seed_runtime_data
 from tests.helpers.bridge_api import FakeDesktopLocalDataStore, FakeHandler, make_stub_bridge_api
 
@@ -190,6 +192,22 @@ def test_container_handler_serves_gzip_backed_jobs_feed_with_encoding_header(
     assert response.headers["Content-Encoding"] == "gzip"
     assert "application/json" in response.headers["Content-Type"]
     assert json.loads(gzip.decompress(body).decode("utf-8")) == rows
+
+
+def test_static_gzip_detection_treats_missing_headers_as_not_accepted() -> None:
+    assert _accepts_gzip(object()) is False
+
+
+def test_static_gzip_detection_does_not_swallow_unexpected_header_failure() -> None:
+    class BrokenHeaders:
+        def get(self, _name: str, _default: str = "") -> str:
+            raise RuntimeError("unexpected header failure")
+
+    class Handler:
+        headers = BrokenHeaders()
+
+    with pytest.raises(RuntimeError, match="unexpected header failure"):
+        _accepts_gzip(Handler())
 
 
 def test_container_handler_serves_startup_feed_when_backfill_persist_fails(
