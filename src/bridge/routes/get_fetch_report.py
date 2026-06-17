@@ -119,12 +119,10 @@ def _handle_fetch_report_route(
     view = str((query.get("view") or [""])[0] or "").strip().lower()
     if view == "summary":
         started_at = time.perf_counter()
-        failed = False
+        failed = True
         try:
             handler.send_json(_fetch_report_summary_payload_from_file(api.JOBS_FETCH_REPORT_PATH))
-        except Exception:
-            failed = True
-            raise
+            failed = False
         finally:
             record_storage_read_metric(
                 api,
@@ -139,7 +137,7 @@ def _handle_fetch_report_route(
     started_at = time.perf_counter()
     source = "json"
     source_count = 0
-    failed = False
+    failed = True
     try:
         payload, dedup_review_state_warning = load_fetch_report_with_dedup_review_state(
             normalize_fetch_report_contract=api.normalize_fetch_report_contract,
@@ -156,9 +154,7 @@ def _handle_fetch_report_route(
         if isinstance(payload, dict):
             source_count = len(_as_list(payload.get("sources")))
         handler.send_json(payload)
-    except Exception:
-        failed = True
-        raise
+        failed = False
     finally:
         record_storage_read_metric(
             api,

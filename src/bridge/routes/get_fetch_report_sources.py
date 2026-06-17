@@ -173,7 +173,7 @@ def fetch_report_sources_payload(
     started_at = time.perf_counter()
     source = "json"
     rows: list[dict[str, Any]] = []
-    failed = False
+    failed = True
     try:
         report, warning = load_fetch_report_with_dedup_review_state(
             normalize_fetch_report_contract=api.normalize_fetch_report_contract,
@@ -209,7 +209,7 @@ def fetch_report_sources_payload(
                     row for row in json_rows if _clean_text(row.get("status")).lower() == status
                 ]
             rows = json_rows[offset : offset + limit]
-        return {
+        payload = {
             "ok": True,
             "runId": run_id,
             "sources": rows,
@@ -219,9 +219,8 @@ def fetch_report_sources_payload(
             "source": source,
             "warning": warning,
         }
-    except Exception:
-        failed = True
-        raise
+        failed = False
+        return payload
     finally:
         record_storage_read_metric(
             api,

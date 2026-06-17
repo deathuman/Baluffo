@@ -210,15 +210,13 @@ def _registry_summary_route_payload(
             "allowedViews": ["storage", "exact"],
         }
     started_at = time.perf_counter()
-    failed = False
+    failed = True
     try:
         if view == "exact":
             summary = _as_dict(api.get_registry_exact_summary_payload())
         else:
             summary = _as_dict(api.get_registry_summary_payload())
-    except Exception:
-        failed = True
-        raise
+        failed = False
     finally:
         record_storage_read_metric(
             api,
@@ -259,7 +257,7 @@ def _registry_sources_payload(
             "invalidBuckets": invalid,
         }
     started_at = time.perf_counter()
-    failed = False
+    failed = True
     row_count = 0
     storage_kind = "normalized"
     try:
@@ -312,10 +310,8 @@ def _registry_sources_payload(
         if table_view:
             payload["detailLevel"] = "table"
             payload["summaryView"] = True
+        failed = False
         return 200, payload
-    except Exception:
-        failed = True
-        raise
     finally:
         record_storage_read_metric(
             api,
