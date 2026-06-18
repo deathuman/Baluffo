@@ -396,7 +396,7 @@ def pid_is_running(pid: int) -> bool:
         try:
             process = psutil.Process(pid)
             return bool(process.is_running()) and process.status() != psutil.STATUS_ZOMBIE
-        except Exception:
+        except (psutil.Error, OSError, ValueError):
             return False
     if sys.platform == "win32":
         return _pid_is_running_windows(pid)

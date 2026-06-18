@@ -115,7 +115,7 @@ def _load_credible_handoff_install_plan(paths: Any) -> dict[str, Any]:
         return {}
     try:
         session_root = _resolve_runtime_path(session_root_raw)
-    except Exception:
+    except (OSError, RuntimeError, ValueError):
         return {}
     session_state = _as_dict(read_desktop_session_state(session_root))
     if _as_int(session_state.get("launcherPid")) != launcher_pid:
