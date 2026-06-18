@@ -559,7 +559,7 @@ class OpsApi:
                 task_type
             ):
                 return True
-        except Exception:
+        except (OSError, TypeError, ValueError):
             return True
         if task_type == "pipeline":
             return (

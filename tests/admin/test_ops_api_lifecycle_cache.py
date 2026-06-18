@@ -334,6 +334,41 @@ def test_task_state_summary_repairs_stale_terminal_sync_row(tmp_path) -> None:
     }
 
 
+def test_ops_live_task_evidence_fallback_is_expected_failures_only(tmp_path) -> None:
+    api, _calls = _make_ops_api(tmp_path, current_rows=[], recent_rows=[])
+    api._deps = ops_api_module.OpsDeps(
+        **{
+            **api._deps.__dict__,
+            "task_running_from_state": mock.Mock(side_effect=OSError("state unavailable")),
+        }
+    )
+
+    assert (
+        api._has_live_task_evidence(
+            task_type="fetch",
+            run_id="fetch_1",
+            row={},
+            pipeline_status={},
+        )
+        is True
+    )
+
+    api._deps = ops_api_module.OpsDeps(
+        **{
+            **api._deps.__dict__,
+            "task_running_from_state": mock.Mock(side_effect=RuntimeError("programmer bug")),
+        }
+    )
+
+    with pytest.raises(RuntimeError, match="programmer bug"):
+        api._has_live_task_evidence(
+            task_type="fetch",
+            run_id="fetch_1",
+            row={},
+            pipeline_status={},
+        )
+
+
 def test_ops_dashboard_health_summary_avoids_history_and_fetch_report(tmp_path) -> None:
     api, _calls = _make_ops_api(tmp_path, current_rows=[], recent_rows=[])
 

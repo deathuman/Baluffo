@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from src.bridge.routes.get_routes import handle_get
 from tests.helpers.bridge_api import FakeDesktopLocalDataStore, FakeHandler, make_stub_bridge_api
 
@@ -208,6 +210,42 @@ def test_sync_status_summary_uses_config_only(tmp_path: Path) -> None:
     assert payload["runtime"]["lastPushAt"] == "2026-06-04T17:27:36Z"
     assert payload["runtime"]["lastAction"] == "pull"
     assert payload["runtime"]["lastResult"] == "ok"
+
+
+def test_sync_status_summary_runtime_fallback_is_expected_failures_only(
+    tmp_path: Path,
+) -> None:
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
+    api.get_sync_status_payload = lambda: (_ for _ in ()).throw(
+        AssertionError("summary view must not build full sync status")
+    )
+    api.sync_config_status = lambda: {
+        "enabled": True,
+        "ready": True,
+        "repo": "deathuman/Baluffo",
+        "credentialsPackaged": True,
+    }
+    api.load_sync_runtime_state = lambda: (_ for _ in ()).throw(
+        OSError("runtime state unavailable")
+    )
+
+    handler = FakeHandler()
+    result = handle_get(handler, api=api, path="/sync/status", query={"view": ["summary"]})
+
+    assert result is True
+    assert handler.sent[-1]["status"] == 200
+    payload = handler.sent[-1]["payload"]
+    assert payload["summaryView"] is True
+    assert payload["runtime"]["lastPullAt"] == ""
+    assert payload["runtime"]["lastPushAt"] == ""
+    assert payload["runtime"]["lastAction"] == ""
+    assert payload["runtime"]["lastResult"] == ""
+
+    api.load_sync_runtime_state = lambda: (_ for _ in ()).throw(RuntimeError("programmer bug"))
+
+    with pytest.raises(RuntimeError, match="programmer bug"):
+        handle_get(FakeHandler(), api=api, path="/sync/status", query={"view": ["summary"]})
 
 
 def test_sync_status_rejects_unknown_view(tmp_path: Path) -> None:

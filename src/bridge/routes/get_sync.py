@@ -84,7 +84,7 @@ def handle_sync_routes(
             if view == "summary":
                 try:
                     runtime_state = _as_dict(api.load_sync_runtime_state())
-                except Exception:
+                except (OSError, TypeError, ValueError):
                     runtime_state = {}
             payload = (
                 _sync_status_summary_payload(
