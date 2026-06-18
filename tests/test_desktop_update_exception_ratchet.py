@@ -190,10 +190,9 @@ def _download_manifest(content: bytes) -> dict[str, object]:
     }
 
 
-def test_run_download_worker_progress_status_bug_marks_download_failed() -> None:
+def test_run_download_worker_progress_status_bug_is_not_suppressed() -> None:
     with workspace_tmpdir("desktop-update") as tmp:
         data_dir = Path(tmp) / "portable" / "ship" / "data"
-        paths = du_shared.DesktopUpdatePaths.from_data_dir(data_dir)
         service = du_service.DesktopUpdateService(
             data_dir=data_dir,
             current_version_getter=lambda: "0.1.0",
@@ -223,13 +222,9 @@ def test_run_download_worker_progress_status_bug_marks_download_failed() -> None
         with (
             mock.patch.object(du_service, "save_status", side_effect=flaky_save_status),
             mock.patch.object(du_service, "download_file", side_effect=fake_download),
+            pytest.raises(AssertionError, match="unexpected progress bug"),
         ):
             service._run_download_worker(_download_manifest(content))
-
-        status = update_state.load_status(paths, current_version="0.1.0")
-        assert status["downloadState"] == "failed"
-        assert status["installState"] == "idle"
-        assert status["lastError"] == "unexpected progress bug"
 
 
 def test_download_update_start_does_not_suppress_unexpected_thread_failures() -> None:

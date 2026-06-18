@@ -502,7 +502,7 @@ class DesktopUpdateService:
                     "lastError": "",
                 },
             )
-        except Exception as exc:
+        except (OSError, RuntimeError, ValueError) as exc:
             with contextlib.suppress(OSError):
                 target.unlink()
             current_status = load_status(self.paths, current_version=self.current_version())
