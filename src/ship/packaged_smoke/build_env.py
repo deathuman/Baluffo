@@ -306,7 +306,7 @@ def is_windows_process_elevated() -> bool:
         return False
     try:
         return bool(deps.ctypes.windll.shell32.IsUserAnAdmin())
-    except Exception:
+    except (AttributeError, OSError):
         return False
 
 

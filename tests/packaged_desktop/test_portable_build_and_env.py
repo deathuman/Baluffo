@@ -1,6 +1,7 @@
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 import pytest
@@ -9,6 +10,37 @@ from src import packaged_desktop_smoke as smoke
 from tests.helpers.temp_paths import workspace_tmpdir
 
 pytestmark = [pytest.mark.packaging, pytest.mark.slow]
+
+
+def test_is_windows_process_elevated_treats_expected_api_failure_as_not_elevated() -> None:
+    fake_ctypes = SimpleNamespace(
+        windll=SimpleNamespace(
+            shell32=SimpleNamespace(IsUserAnAdmin=mock.Mock(side_effect=OSError("denied")))
+        )
+    )
+
+    with (
+        mock.patch.object(smoke, "os", SimpleNamespace(name="nt")),
+        mock.patch.object(smoke, "ctypes", fake_ctypes, create=True),
+    ):
+        assert smoke.is_windows_process_elevated() is False
+
+
+def test_is_windows_process_elevated_does_not_swallow_unexpected_api_failure() -> None:
+    fake_ctypes = SimpleNamespace(
+        windll=SimpleNamespace(
+            shell32=SimpleNamespace(
+                IsUserAnAdmin=mock.Mock(side_effect=RuntimeError("unexpected elevation bug"))
+            )
+        )
+    )
+
+    with (
+        mock.patch.object(smoke, "os", SimpleNamespace(name="nt")),
+        mock.patch.object(smoke, "ctypes", fake_ctypes, create=True),
+        pytest.raises(RuntimeError, match="unexpected elevation bug"),
+    ):
+        smoke.is_windows_process_elevated()
 
 
 def test_ensure_portable_exe_raises_when_missing_and_build_still_missing() -> None:

@@ -467,7 +467,7 @@ def _windows_window_is_cloaked(hwnd: int) -> bool:
             api.ctypes.byref(cloaked),
             api.ctypes.sizeof(cloaked),
         )
-    except Exception:
+    except (AttributeError, OSError):
         return False
     return int(result or 0) == 0 and int(cloaked.value or 0) != 0
 
@@ -479,7 +479,7 @@ def _windows_window_class_name(hwnd: int) -> str:
     class_name = api.ctypes.create_unicode_buffer(512)
     try:
         length = api.ctypes.windll.user32.GetClassNameW(hwnd, class_name, 512)
-    except Exception:
+    except (AttributeError, OSError):
         return ""
     if int(length or 0) <= 0:
         return ""
@@ -525,7 +525,7 @@ def _enumerate_visible_desktop_windows() -> list[dict[str, object]]:
     )
     try:
         api.ctypes.windll.user32.EnumWindows(callback, 0)
-    except Exception:
+    except (AttributeError, OSError):
         return []
     return matches
 
