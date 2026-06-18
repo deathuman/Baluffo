@@ -23,15 +23,7 @@ def fetch_html_with_fallback(
     """Return (html, error, browser_attempted, browser_used)."""
     try:
         html = fetch_text(url, timeout_s)
-        if not looks_like_challenge(html) or has_extractable_job_data(html, url):
-            return html, "", False, False
-        browser_html, browser_error = try_playwright(url, timeout_s)
-        if browser_html:
-            return browser_html, "", True, True
-        if browser_error:
-            return "", f"{url}: {browser_error}", True, False
-        return html, "", True, False
-    except Exception as exc:  # noqa: BLE001
+    except (OSError, RuntimeError, ValueError) as exc:
         if not is_http_forbidden(exc):
             return "", f"{url}: {exc}", False, False
         browser_html, browser_error = try_playwright(url, timeout_s)
@@ -40,6 +32,15 @@ def fetch_html_with_fallback(
         if browser_error:
             return "", f"{url}: {browser_error}", True, False
         return "", f"{url}: {exc}", True, False
+
+    if not looks_like_challenge(html) or has_extractable_job_data(html, url):
+        return html, "", False, False
+    browser_html, browser_error = try_playwright(url, timeout_s)
+    if browser_html:
+        return browser_html, "", True, True
+    if browser_error:
+        return "", f"{url}: {browser_error}", True, False
+    return html, "", True, False
 
 
 def html_has_extractable_job_data(html: str, page_url: str, *, html_extractor: Any) -> bool:
