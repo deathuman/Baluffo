@@ -272,7 +272,7 @@ class DesktopUpdateService:
         temp_helper: Path | None,
     ) -> dict[str, Any]:
         error = "Baluffo did not confirm the install handoff. Try install again."
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(OSError):
             write_handoff_diagnostics(self.paths)
         clear_handoff_request(self.paths)
         clear_install_plan(self.paths)
