@@ -1492,7 +1492,7 @@ def test_request_install_writes_plan_and_launches_helper() -> None:
 
         with (
             mock.patch.object(du_service, "resolve_desktop_session_root", lambda: session_root),
-            mock.patch.object(du.shutil, "disk_usage", return_value=mock.Mock(free=10**9)),
+            mock.patch.object(du_service.shutil, "disk_usage", return_value=mock.Mock(free=10**9)),
             mock.patch.object(update_state, "pid_is_running", return_value=True),
             mock.patch.object(du_service, "verify_manifest_signature"),
         ):
@@ -1534,7 +1534,7 @@ def test_request_install_fails_preflight_when_data_root_lacks_space() -> None:
         paths, service, _download_path = _prepare_ready_install(data_dir)
 
         with mock.patch.object(
-            du.shutil,
+            du_service.shutil,
             "disk_usage",
             return_value=mock.Mock(free=1),
         ):
@@ -1561,7 +1561,7 @@ def test_request_install_fails_preflight_when_install_root_lacks_space() -> None
         low_space = mock.Mock(free=1)
 
         with mock.patch.object(
-            du.shutil,
+            du_service.shutil,
             "disk_usage",
             side_effect=[high_space, low_space],
         ) as disk_usage_mock:
@@ -1632,7 +1632,7 @@ def test_request_install_returns_handoff_unconfirmed_when_post_write_verificatio
 
         with (
             mock.patch.object(du_service, "resolve_desktop_session_root", lambda: session_root),
-            mock.patch.object(du.shutil, "disk_usage", return_value=mock.Mock(free=10**9)),
+            mock.patch.object(du_service.shutil, "disk_usage", return_value=mock.Mock(free=10**9)),
             mock.patch.object(update_state, "pid_is_running", return_value=False),
             mock.patch.object(du_service, "verify_manifest_signature"),
         ):

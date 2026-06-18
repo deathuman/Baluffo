@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import contextlib
+import os
+import shutil
+import tempfile
+import threading
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -122,15 +126,15 @@ class DesktopUpdateService:
     ) -> None:
         deps = _root()
         self._deps = deps
-        env_install_root = str(deps.os.environ.get("BALUFFO_INSTALL_ROOT") or "").strip()
-        env_ship_root = str(deps.os.environ.get("BALUFFO_SHIP_ROOT") or "").strip()
+        env_install_root = str(os.environ.get("BALUFFO_INSTALL_ROOT") or "").strip()
+        env_ship_root = str(os.environ.get("BALUFFO_SHIP_ROOT") or "").strip()
         self.paths = DesktopUpdatePaths.from_data_dir(
             data_dir,
             install_root=install_root or (Path(env_install_root) if env_install_root else None),
             ship_root=ship_root or (Path(env_ship_root) if env_ship_root else None),
         )
         self._current_version_getter = current_version_getter or get_app_version
-        self._lock = deps.threading.RLock()
+        self._lock = threading.RLock()
         self._download_thread: Any | None = None
         self._stable_releases: list[dict[str, Any]] = []
 
@@ -530,7 +534,6 @@ class DesktopUpdateService:
                 self._download_thread = None
 
     def download_update(self) -> dict[str, Any]:
-        deps = self._deps
         status = self.check_for_update(force=False)
         with self._lock:
             status = self._reconcile_status_locked(status=status)
@@ -587,7 +590,7 @@ class DesktopUpdateService:
                         },
                     )
                 )
-                thread = deps.threading.Thread(
+                thread = threading.Thread(
                     target=self._run_download_worker,
                     args=(manifest,),
                     daemon=True,
@@ -606,7 +609,6 @@ class DesktopUpdateService:
                 )
 
     def _ensure_install_preflight(self, zip_path: Path) -> None:
-        deps = self._deps
         if not zip_path.is_file():
             raise RuntimeError(f"Downloaded update ZIP not found: {zip_path}")
         helper_path = self.paths.install_root / constants_mod.DESKTOP_UPDATE_HELPER_NAME
@@ -615,19 +617,18 @@ class DesktopUpdateService:
         self.paths.updater_dir.mkdir(parents=True, exist_ok=True)
         self.paths.rollback_root.mkdir(parents=True, exist_ok=True)
         required_free = max(int(zip_path.stat().st_size) * 3, 128 * 1024 * 1024)
-        data_root_usage = deps.shutil.disk_usage(self.paths.updater_dir)
+        data_root_usage = shutil.disk_usage(self.paths.updater_dir)
         if int(data_root_usage.free) < required_free:
             raise RuntimeError(
                 "Not enough free disk space in the desktop update data root for staging and rollback."
             )
-        install_root_usage = deps.shutil.disk_usage(self.paths.install_root)
+        install_root_usage = shutil.disk_usage(self.paths.install_root)
         if int(install_root_usage.free) < required_free:
             raise RuntimeError(
                 "Not enough free disk space in the Baluffo install root for runtime replacement."
             )
 
     def request_install(self) -> dict[str, Any]:
-        deps = self._deps
         with self._lock:
             status = self._reconcile_status_locked()
             if str(status.get("downloadState") or "").strip().lower() != "downloaded":
@@ -666,11 +667,10 @@ class DesktopUpdateService:
                 )
             helper_source = self.paths.install_root / constants_mod.DESKTOP_UPDATE_HELPER_NAME
             temp_helper = (
-                Path(deps.tempfile.gettempdir()).resolve()
-                / f"BaluffoUpdater-{uuid.uuid4().hex}.exe"
+                Path(tempfile.gettempdir()).resolve() / f"BaluffoUpdater-{uuid.uuid4().hex}.exe"
             )
             try:
-                deps.shutil.copy2(helper_source, temp_helper)
+                shutil.copy2(helper_source, temp_helper)
             except Exception as exc:
                 return self._install_failure_locked(
                     status=status,
