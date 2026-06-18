@@ -6,8 +6,10 @@ from urllib import error as urllib_error
 
 import pytest
 
-from src.ship import desktop_update as du
+from src.ship import desktop_update_shared as du_shared
+from src.ship import desktop_update_state as update_state
 from src.ship import desktop_updater as updater
+from src.ship.desktop_update_constants import MANIFEST_CACHE_FILE
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -22,7 +24,7 @@ def _write_install_plan(
         "tempHelperPath": str(install_root / "BaluffoUpdater.exe"),
         "targetVersion": "1.4.0",
         "currentVersion": "0.1.0",
-        "manifestPath": str(install_root / "ship" / "data" / "updater" / du.MANIFEST_CACHE_FILE),
+        "manifestPath": str(install_root / "ship" / "data" / "updater" / MANIFEST_CACHE_FILE),
         "downloadedZipPath": str(zip_path),
         "expectedZipSha256": "expected-zip-sha",
         "manifestKeyId": "desktop-ed25519-test",
@@ -173,7 +175,6 @@ def test_main_failure_path_still_uses_native_error_message(monkeypatch) -> None:
         monkeypatch.setattr(updater.threading, "Thread", ImmediateThread)
 
         result = updater.main([])
-
         assert result == 1
         show_message.assert_called_once_with("Baluffo Update Failed", "boom during install")
 
@@ -183,7 +184,7 @@ def test_recover_interrupted_install_restores_runtime_snapshot_and_backup(monkey
         install_root = Path(tmp) / "portable"
         ship_root = install_root / "ship"
         data_dir = ship_root / "data"
-        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        paths = du_shared.DesktopUpdatePaths.from_data_dir(data_dir)
         rollback_root = paths.rollback_root / "1.4.0-20260414-120000"
         runtime_file = install_root / "Baluffo.exe"
         runtime_file.parent.mkdir(parents=True, exist_ok=True)
@@ -193,10 +194,10 @@ def test_recover_interrupted_install_restores_runtime_snapshot_and_backup(monkey
         snapshot_file.write_text("previous-runtime", encoding="utf-8")
         backup_ref = Path(tmp) / "backup-ref"
         backup_ref.mkdir(parents=True, exist_ok=True)
-        du.save_status(
+        update_state.save_status(
             paths,
             {
-                **du.default_status_payload(current_version="0.1.0"),
+                **update_state.default_status_payload(current_version="0.1.0"),
                 "installState": "installing",
                 "installStage": "migrating",
                 "rollbackPath": str(rollback_root),
@@ -213,8 +214,7 @@ def test_recover_interrupted_install_restores_runtime_snapshot_and_backup(monkey
             paths=paths,
             rollback_root=rollback_root,
         )
-
-        status = du.load_status(paths, current_version="0.1.0")
+        status = update_state.load_status(paths, current_version="0.1.0")
         assert completed is False
         assert runtime_file.read_text(encoding="utf-8") == "previous-runtime"
         restore_backup.assert_called_once()
@@ -231,13 +231,13 @@ def test_run_install_finishes_stale_verifying_state_when_target_is_already_healt
         install_root = Path(tmp) / "portable"
         ship_root = install_root / "ship"
         data_dir = ship_root / "data"
-        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        paths = du_shared.DesktopUpdatePaths.from_data_dir(data_dir)
         zip_path = paths.downloads_dir / "baluffo-portable-1.4.0.zip"
         zip_path.parent.mkdir(parents=True, exist_ok=True)
         zip_path.write_text("zip", encoding="utf-8")
         rollback_root = paths.rollback_root / "1.4.0-20260414-120000"
         plan = _write_install_plan(paths.install_plan_path, install_root, rollback_root, zip_path)
-        du.write_json_atomic(
+        du_shared.write_json_atomic(
             paths.manifest_cache_path,
             {
                 "manifest": {
@@ -248,10 +248,10 @@ def test_run_install_finishes_stale_verifying_state_when_target_is_already_healt
                 }
             },
         )
-        du.save_status(
+        update_state.save_status(
             paths,
             {
-                **du.default_status_payload(current_version="0.1.0"),
+                **update_state.default_status_payload(current_version="0.1.0"),
                 "installState": "verifying",
                 "installStage": "verifying",
                 "downloadState": "downloaded",
@@ -276,7 +276,7 @@ def test_run_install_finishes_stale_verifying_state_when_target_is_already_healt
 
         result = updater.run_install(paths.install_plan_path)
 
-        status = du.load_status(paths, current_version="1.4.0")
+        status = update_state.load_status(paths, current_version="1.4.0")
         assert result == {"ok": True, "installedVersion": "1.4.0"}
         assert wait_for_exit.call_count == 0
         assert status["installState"] == "installed"
@@ -289,13 +289,13 @@ def test_run_install_uses_env_override_for_relaunch_verification_timeout(monkeyp
         install_root = Path(tmp) / "portable"
         ship_root = install_root / "ship"
         data_dir = ship_root / "data"
-        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        paths = du_shared.DesktopUpdatePaths.from_data_dir(data_dir)
         zip_path = paths.downloads_dir / "baluffo-portable-1.4.0.zip"
         zip_path.parent.mkdir(parents=True, exist_ok=True)
         zip_path.write_text("zip", encoding="utf-8")
         rollback_root = paths.rollback_root / "1.4.0-20260414-120000"
         _write_install_plan(paths.install_plan_path, install_root, rollback_root, zip_path)
-        du.write_json_atomic(
+        du_shared.write_json_atomic(
             paths.manifest_cache_path,
             {
                 "manifest": {
@@ -346,7 +346,7 @@ def test_run_install_recovers_manifest_cache_from_release_metadata(monkeypatch) 
         install_root = Path(tmp) / "portable"
         ship_root = install_root / "ship"
         data_dir = ship_root / "data"
-        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        paths = du_shared.DesktopUpdatePaths.from_data_dir(data_dir)
         zip_path = paths.downloads_dir / "baluffo-portable-1.4.0.zip"
         zip_path.parent.mkdir(parents=True, exist_ok=True)
         zip_path.write_text("zip", encoding="utf-8")
@@ -419,11 +419,11 @@ def test_run_install_redownloads_zip_when_cached_artifact_is_missing(monkeypatch
         install_root = Path(tmp) / "portable"
         ship_root = install_root / "ship"
         data_dir = ship_root / "data"
-        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        paths = du_shared.DesktopUpdatePaths.from_data_dir(data_dir)
         zip_path = paths.downloads_dir / "baluffo-portable-1.4.0.zip"
         rollback_root = paths.rollback_root / "1.4.0-20260414-120000"
         _write_install_plan(paths.install_plan_path, install_root, rollback_root, zip_path)
-        du.write_json_atomic(
+        du_shared.write_json_atomic(
             paths.manifest_cache_path,
             {
                 "manifest": {
@@ -476,11 +476,11 @@ def test_run_install_records_zip_reverification_failure_after_redownload(monkeyp
         install_root = Path(tmp) / "portable"
         ship_root = install_root / "ship"
         data_dir = ship_root / "data"
-        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        paths = du_shared.DesktopUpdatePaths.from_data_dir(data_dir)
         zip_path = paths.downloads_dir / "baluffo-portable-1.4.0.zip"
         rollback_root = paths.rollback_root / "1.4.0-20260414-120000"
         _write_install_plan(paths.install_plan_path, install_root, rollback_root, zip_path)
-        du.write_json_atomic(
+        du_shared.write_json_atomic(
             paths.manifest_cache_path,
             {
                 "manifest": {
@@ -513,7 +513,7 @@ def test_run_install_records_zip_reverification_failure_after_redownload(monkeyp
         with pytest.raises(RuntimeError, match="Downloaded desktop ZIP failed re-verification."):
             updater.run_install(paths.install_plan_path)
 
-        status = du.load_status(paths, current_version="0.1.0")
+        status = update_state.load_status(paths, current_version="0.1.0")
         assert status["lastError"].startswith("desktop_update_zip_reverification_failed:")
         assert status["installState"] == "failed"
         assert status["installStage"] == "failed"
@@ -526,13 +526,13 @@ def test_run_install_records_specific_failure_when_relaunch_verification_fails(
         install_root = Path(tmp) / "portable"
         ship_root = install_root / "ship"
         data_dir = ship_root / "data"
-        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        paths = du_shared.DesktopUpdatePaths.from_data_dir(data_dir)
         zip_path = paths.downloads_dir / "baluffo-portable-1.4.0.zip"
         zip_path.parent.mkdir(parents=True, exist_ok=True)
         zip_path.write_text("zip", encoding="utf-8")
         rollback_root = paths.rollback_root / "1.4.0-20260414-120000"
         _write_install_plan(paths.install_plan_path, install_root, rollback_root, zip_path)
-        du.write_json_atomic(
+        du_shared.write_json_atomic(
             paths.manifest_cache_path,
             {
                 "manifest": {
@@ -582,7 +582,7 @@ def test_run_install_records_specific_failure_when_relaunch_verification_fails(
         ):
             updater.run_install(paths.install_plan_path)
 
-        status = du.load_status(paths, current_version="0.1.0")
+        status = update_state.load_status(paths, current_version="0.1.0")
         assert status["lastError"].startswith("desktop_update_relaunch_verification_failed:")
         assert status["installState"] == "failed"
         assert status["installStage"] == "failed"
@@ -595,7 +595,7 @@ def test_verify_target_startup_retries_after_transient_bridge_refusal(monkeypatc
         install_root = Path(tmp) / "portable"
         ship_root = install_root / "ship"
         data_dir = Path(tmp) / "AppData" / "Roaming" / "Baluffo"
-        paths = du.DesktopUpdatePaths.from_data_dir(
+        paths = du_shared.DesktopUpdatePaths.from_data_dir(
             data_dir,
             install_root=install_root,
             ship_root=ship_root,
@@ -613,7 +613,7 @@ def test_verify_target_startup_retries_after_transient_bridge_refusal(monkeypatc
             json.dumps({"bridgePort": 8877}),
             encoding="utf-8",
         )
-        du.write_success_marker(
+        update_state.write_success_marker(
             paths,
             app_version="1.4.0",
             bridge_port=8877,

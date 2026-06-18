@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-EXPECTED_FACADE_IMPORT_COUNT = 4
+EXPECTED_FACADE_IMPORT_COUNT = 3
 
 FACADE_MODULES = {
     "src.ship.desktop_update",
