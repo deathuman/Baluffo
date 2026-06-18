@@ -13,6 +13,7 @@ from src.app_version import get_app_version
 from src.ship import desktop_update_constants as constants_mod
 from src.ship import desktop_update_manifest as manifest_mod
 from src.ship.desktop_update_shared import (
+    DesktopUpdatePaths,
     compute_sha256,
     desktop_update_public_key_candidate_paths,
     download_file,
@@ -20,10 +21,13 @@ from src.ship.desktop_update_shared import (
     install_stage_label,
     iso_now,
     load_desktop_update_public_keys,
+    read_desktop_session_state,
+    resolve_desktop_session_root,
     resolve_github_api_base,
     resolve_release_repo,
     validate_desktop_manifest,
     verify_manifest_signature,
+    write_json_atomic,
 )
 from src.ship.desktop_update_state import (
     _cached_release_notes,
@@ -118,7 +122,7 @@ class DesktopUpdateService:
         self._deps = deps
         env_install_root = str(deps.os.environ.get("BALUFFO_INSTALL_ROOT") or "").strip()
         env_ship_root = str(deps.os.environ.get("BALUFFO_SHIP_ROOT") or "").strip()
-        self.paths = deps.DesktopUpdatePaths.from_data_dir(
+        self.paths = DesktopUpdatePaths.from_data_dir(
             data_dir,
             install_root=install_root or (Path(env_install_root) if env_install_root else None),
             ship_root=ship_root or (Path(env_ship_root) if env_ship_root else None),
@@ -421,7 +425,7 @@ class DesktopUpdateService:
                 latest_release_notes_entry,
                 release_notes_history,
             )
-            deps.write_json_atomic(
+            write_json_atomic(
                 self.paths.manifest_cache_path,
                 {
                     "cachedAt": iso_now(),
@@ -654,8 +658,8 @@ class DesktopUpdateService:
                     error=str(exc),
                     error_code="install_preflight_failed",
                 )
-            session_root = deps.resolve_desktop_session_root()
-            session_state = deps.read_desktop_session_state(session_root)
+            session_root = resolve_desktop_session_root()
+            session_state = read_desktop_session_state(session_root)
             launcher_pid = int(session_state.get("launcherPid") or 0)
             launcher_token = str(session_state.get("launcherToken") or "").strip()
             if launcher_pid <= 0 or not launcher_token:
@@ -707,8 +711,8 @@ class DesktopUpdateService:
                     "launcherToken": launcher_token,
                     "desktopSessionRoot": str(session_root),
                 }
-                deps.write_json_atomic(self.paths.install_plan_path, plan)
-                deps.write_json_atomic(
+                write_json_atomic(self.paths.install_plan_path, plan)
+                write_json_atomic(
                     self.paths.handoff_request_path,
                     {
                         "requestedAt": iso_now(),

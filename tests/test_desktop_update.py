@@ -10,7 +10,7 @@ import pytest
 
 from src import app_version
 from src.ship import desktop_update as du
-from src.ship import desktop_update_service as update_service
+from src.ship import desktop_update_service as du_service
 from src.ship import desktop_update_shared as du_shared
 from src.ship import desktop_update_state as update_state
 from src.ship.desktop_app import config as desktop_app_config
@@ -1257,7 +1257,7 @@ def test_run_download_worker_does_not_abort_when_progress_status_write_fails(mon
             return target
 
         monkeypatch.setattr(du, "save_status", flaky_save_status)
-        monkeypatch.setattr(update_service, "download_file", fake_download)
+        monkeypatch.setattr(du_service, "download_file", fake_download)
 
         service._run_download_worker(manifest)
 
@@ -1491,10 +1491,10 @@ def test_request_install_writes_plan_and_launches_helper() -> None:
         )
 
         with (
-            mock.patch.object(du, "resolve_desktop_session_root", return_value=session_root),
+            mock.patch.object(du_service, "resolve_desktop_session_root", lambda: session_root),
             mock.patch.object(du.shutil, "disk_usage", return_value=mock.Mock(free=10**9)),
             mock.patch.object(update_state, "pid_is_running", return_value=True),
-            mock.patch.object(update_service, "verify_manifest_signature"),
+            mock.patch.object(du_service, "verify_manifest_signature"),
         ):
             result = service.request_install()
         assert result["started"] is True
@@ -1631,10 +1631,10 @@ def test_request_install_returns_handoff_unconfirmed_when_post_write_verificatio
         )
 
         with (
-            mock.patch.object(du, "resolve_desktop_session_root", return_value=session_root),
+            mock.patch.object(du_service, "resolve_desktop_session_root", lambda: session_root),
             mock.patch.object(du.shutil, "disk_usage", return_value=mock.Mock(free=10**9)),
             mock.patch.object(update_state, "pid_is_running", return_value=False),
-            mock.patch.object(update_service, "verify_manifest_signature"),
+            mock.patch.object(du_service, "verify_manifest_signature"),
         ):
             result = service.request_install()
 
@@ -1692,7 +1692,7 @@ def test_run_download_worker_failure_clears_install_ready_state_and_bad_zip() ->
             },
         }
 
-        with mock.patch.object(update_service, "download_file", return_value=target):
+        with mock.patch.object(du_service, "download_file", return_value=target):
             service._run_download_worker(manifest)
 
         status = du.load_status(paths, current_version="0.1.0")

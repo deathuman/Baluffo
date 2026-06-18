@@ -14,8 +14,8 @@ TRACKED_MODULES = (
     "src/ship/desktop_update_service.py",
 )
 
-EXPECTED_DEPENDENCY_COUNT = 16
-EXPECTED_REFERENCE_COUNT = 70
+EXPECTED_DEPENDENCY_COUNT = 12
+EXPECTED_REFERENCE_COUNT = 64
 
 CATEGORIES = {
     "constant",
@@ -41,12 +41,8 @@ STDLIB_BINDINGS = {
 }
 
 SHARED_HELPERS = {
-    "DesktopUpdatePaths",
     "_resolve_runtime_path",
-    "read_desktop_session_state",
     "read_json",
-    "resolve_desktop_session_root",
-    "write_json_atomic",
 }
 
 STATE_HELPERS = {
@@ -61,11 +57,8 @@ EXTERNAL_ADAPTERS = {
 CRYPTO_BINDINGS: set[str] = set()
 
 RUNTIME_PATH_DEPENDENCIES = {
-    "DesktopUpdatePaths",
     "_RUNTIME_SESSION_ROOT_FALLBACK",
     "_resolve_runtime_path",
-    "read_desktop_session_state",
-    "resolve_desktop_session_root",
 }
 
 MUTABLE_COMPAT_HOOKS = (
@@ -74,11 +67,9 @@ MUTABLE_COMPAT_HOOKS = (
     | CRYPTO_BINDINGS
     | {
         "_RUNTIME_SESSION_ROOT_FALLBACK",
-        "DesktopUpdatePaths",
         "load_status",
         "read_json",
         "save_status",
-        "write_json_atomic",
     }
 )
 

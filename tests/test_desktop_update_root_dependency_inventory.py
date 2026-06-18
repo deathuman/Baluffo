@@ -33,8 +33,11 @@ def test_current_desktop_update_root_dependency_inventory_is_complete() -> None:
     assert len(rows) == inventory.EXPECTED_DEPENDENCY_COUNT
     assert sum(len(row.references) for row in rows) == inventory.EXPECTED_REFERENCE_COUNT
     assert inventory.check_desktop_update_root_dependency_inventory() == []
-    assert by_name["DesktopUpdatePaths"].categories == (
-        "mutable-compat-hook",
+    assert "DesktopUpdatePaths" not in by_name
+    assert "read_desktop_session_state" not in by_name
+    assert "resolve_desktop_session_root" not in by_name
+    assert "write_json_atomic" not in by_name
+    assert by_name["_resolve_runtime_path"].categories == (
         "runtime-path",
         "shared-helper",
     )
