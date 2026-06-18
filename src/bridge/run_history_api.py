@@ -637,7 +637,7 @@ def project_run_history(deps: SyncHistoryDeps) -> LifecycleProjection:
     diagnostics: list[dict[str, Any]] = []
     try:
         pipeline_status = deps.get_jobs_pipeline_status_payload()
-    except Exception:  # noqa: BLE001
+    except (OSError, RuntimeError, TypeError, ValueError):
         pipeline_status = {}
     if not isinstance(pipeline_status, dict):
         pipeline_status = {}
