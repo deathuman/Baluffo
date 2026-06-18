@@ -14,8 +14,8 @@ TRACKED_MODULES = (
     "src/ship/desktop_update_service.py",
 )
 
-EXPECTED_DEPENDENCY_COUNT = 47
-EXPECTED_REFERENCE_COUNT = 133
+EXPECTED_DEPENDENCY_COUNT = 43
+EXPECTED_REFERENCE_COUNT = 124
 
 CATEGORIES = {
     "constant",
@@ -67,10 +67,6 @@ SHARED_HELPERS = {
 }
 
 STATE_HELPERS = {
-    "_normalize_release_notes_entry",
-    "_normalize_release_notes_history",
-    "_normalize_release_notes_payload",
-    "_portable_artifact_name",
     "clear_handoff_diagnostics",
     "clear_handoff_request",
     "clear_install_plan",

@@ -19,6 +19,9 @@ from src.ship.desktop_update_state import (
     _handoff_status_pending,
     _manifest_to_status,
     _normalize_installed_status,
+    _normalize_release_notes_entry,
+    _normalize_release_notes_history,
+    _normalize_release_notes_payload,
     _portable_artifact_name,
     _reconcile_downloaded_artifact_status,
     _reconcile_handoff_status,
@@ -378,7 +381,7 @@ class DesktopUpdateService:
         try:
             release = self._resolve_latest_release()
             manifest = self._resolve_manifest_from_release(release)
-            release_notes = deps._normalize_release_notes_payload(
+            release_notes = _normalize_release_notes_payload(
                 release,
                 fallback_url=str(manifest.get("release_notes_url") or "").strip(),
                 fallback_title=str(manifest.get("version") or "").strip(),
@@ -388,8 +391,8 @@ class DesktopUpdateService:
                 release
             ):
                 stable_releases = [release]
-            release_notes_history = deps._normalize_release_notes_history(stable_releases)
-            latest_release_notes_entry = deps._normalize_release_notes_entry(
+            release_notes_history = _normalize_release_notes_history(stable_releases)
+            latest_release_notes_entry = _normalize_release_notes_entry(
                 {
                     **release,
                     **release_notes,

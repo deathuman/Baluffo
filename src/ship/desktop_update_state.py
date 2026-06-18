@@ -442,10 +442,9 @@ def _normalize_release_notes_history(payload: Any) -> list[dict[str, str]]:
 def _cached_release_notes(
     cached_manifest: dict[str, Any], *, target_version: str = "", manifest_url: str = ""
 ) -> dict[str, str]:
-    deps = _root()
     payload = _as_dict(cached_manifest.get("releaseNotes"))
     return _as_str_dict(
-        deps._normalize_release_notes_payload(
+        _normalize_release_notes_payload(
             payload,
             fallback_url=manifest_url,
             fallback_title=target_version,
@@ -454,8 +453,7 @@ def _cached_release_notes(
 
 
 def _cached_release_notes_history(cached_manifest: dict[str, Any]) -> list[dict[str, str]]:
-    deps = _root()
-    return list(deps._normalize_release_notes_history(cached_manifest.get("releaseNotesHistory")))
+    return list(_normalize_release_notes_history(cached_manifest.get("releaseNotesHistory")))
 
 
 def _portable_artifact_name(manifest: dict[str, Any]) -> str:
@@ -473,7 +471,6 @@ def _manifest_to_status(
     release_notes: dict[str, Any] | None = None,
     release_notes_history: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    deps = _root()
     next_status = dict(existing)
     target_version = str(manifest.get("version") or "").strip()
     preserve_last_error = (
@@ -484,12 +481,12 @@ def _manifest_to_status(
         )
         else ""
     )
-    release_notes_payload = deps._normalize_release_notes_payload(
+    release_notes_payload = _normalize_release_notes_payload(
         release_notes,
         fallback_url=str(manifest.get("release_notes_url") or "").strip(),
         fallback_title=target_version,
     )
-    release_notes_history_payload = deps._normalize_release_notes_history(
+    release_notes_history_payload = _normalize_release_notes_history(
         release_notes_history
         if release_notes_history is not None
         else existing.get("releaseNotesHistory")
@@ -502,7 +499,7 @@ def _manifest_to_status(
         }
     ):
         release_notes_history_payload = [
-            deps._normalize_release_notes_entry(
+            _normalize_release_notes_entry(
                 {
                     **release_notes_payload,
                     "releaseVersion": target_version,
@@ -555,11 +552,10 @@ def _reconcile_downloaded_artifact_status(
     manifest: dict[str, Any],
     status: dict[str, Any],
 ) -> dict[str, Any]:
-    deps = _root()
     next_status = dict(status)
     install_state = str(next_status.get("installState") or "").strip().lower()
     artifact = _as_dict(manifest.get("portable_artifact"))
-    artifact_path = paths.downloads_dir / deps._portable_artifact_name(manifest)
+    artifact_path = paths.downloads_dir / _portable_artifact_name(manifest)
     expected_hash = str(artifact.get("sha256") or "").strip().lower()
     if artifact_path.is_file() and expected_hash:
         if compute_sha256(artifact_path).lower() == expected_hash:
