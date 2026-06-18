@@ -28,6 +28,8 @@ class _FakeStringVar:
 
 
 class _FakeRoot(_FakeWidget):
+    mainloop_error: Exception | None = None
+
     def title(self, _value: str) -> None:
         return None
 
@@ -65,6 +67,8 @@ class _FakeRoot(_FakeWidget):
         callback()
 
     def mainloop(self) -> None:
+        if self.mainloop_error is not None:
+            raise self.mainloop_error
         return None
 
     def destroy(self) -> None:
@@ -87,6 +91,7 @@ def _fake_tk_modules(
     *,
     theme_error: Exception | None = None,
     bar_stop_error: Exception | None = None,
+    mainloop_error: Exception | None = None,
 ) -> tuple[object, object]:
     class FakeStyle:
         def __init__(self, _root) -> None:  # noqa: ANN001
@@ -102,10 +107,15 @@ def _fake_tk_modules(
     class FakeBar(_FakeBar):
         stop_error = bar_stop_error
 
+    class FakeRoot(_FakeRoot):
+        pass
+
+    FakeRoot.mainloop_error = mainloop_error
+
     fake_ttk = SimpleNamespace(Style=FakeStyle, Progressbar=FakeBar)
     fake_tk = SimpleNamespace(
         TclError=_FakeTclError,
-        Tk=_FakeRoot,
+        Tk=FakeRoot,
         Frame=_FakeWidget,
         Label=_FakeWidget,
         StringVar=_FakeStringVar,
@@ -226,5 +236,36 @@ def test_helper_progress_window_does_not_suppress_unexpected_progress_stop_failu
     with (
         _patch_tk_import(fake_tk, fake_ttk),
         pytest.raises(RuntimeError, match="unexpected bar bug"),
+    ):
+        progress.run("Preparing update")
+
+
+def test_helper_progress_window_ignores_expected_mainloop_failures(monkeypatch) -> None:
+    progress = updater_ui.HelperProgressWindow()
+    progress._queue.put(("close", ""))
+    progress._closed = mock.Mock(wait=mock.Mock(return_value=True), set=mock.Mock())
+    fake_tk, fake_ttk = _fake_tk_modules(mainloop_error=_FakeTclError("window closed"))
+
+    monkeypatch.setattr(updater_ui, "root", None)
+    monkeypatch.setattr(updater_ui.os, "name", "nt")
+    with _patch_tk_import(fake_tk, fake_ttk):
+        progress.run("Preparing update")
+
+    assert progress._closed.set.call_count >= 1
+
+
+def test_helper_progress_window_does_not_suppress_unexpected_mainloop_failures(
+    monkeypatch,
+) -> None:
+    progress = updater_ui.HelperProgressWindow()
+    progress._queue.put(("close", ""))
+    progress._closed = mock.Mock(wait=mock.Mock(return_value=True), set=mock.Mock())
+    fake_tk, fake_ttk = _fake_tk_modules(mainloop_error=RuntimeError("unexpected loop bug"))
+
+    monkeypatch.setattr(updater_ui, "root", None)
+    monkeypatch.setattr(updater_ui.os, "name", "nt")
+    with (
+        _patch_tk_import(fake_tk, fake_ttk),
+        pytest.raises(RuntimeError, match="unexpected loop bug"),
     ):
         progress.run("Preparing update")

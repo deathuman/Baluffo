@@ -227,7 +227,7 @@ class HelperProgressWindow:
             root_window.after(120, drain)
 
         root_window.after(120, drain)
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(tk.TclError, OSError):
             root_window.mainloop()
         self._closed.set()
 
