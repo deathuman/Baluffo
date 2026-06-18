@@ -16,7 +16,7 @@ try:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import (
         Ed25519PublicKey as _Ed25519VerifierClass,
     )
-except Exception:  # noqa: BLE001
+except ImportError:
     Ed25519SigningClass: Any = None
     Ed25519VerifierClass: Any = None
 else:
