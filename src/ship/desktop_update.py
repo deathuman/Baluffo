@@ -90,7 +90,6 @@ _RUNTIME_SESSION_ROOT_FALLBACK: Path | None = None
 
 desktop_update_shared_mod.root = sys.modules[__name__]
 desktop_update_state_mod.root = sys.modules[__name__]
-desktop_update_service_mod.root = sys.modules[__name__]
 
 contextlib = _contextlib
 ctypes = _ctypes

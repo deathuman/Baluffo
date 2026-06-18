@@ -88,7 +88,7 @@ from src.jobs.common.registry_defaults import (
 from src.jobs.transport import normalize_url as _normalize_job_url
 from src.shared.utils import now_iso as _now_iso
 from src.shared.utils import now_utc
-from src.ship.desktop_update import DesktopUpdateService
+from src.ship.desktop_update_service import DesktopUpdateService
 from src.source_registry import (
     ACTIVE_PATH,
     DISCOVERY_CANDIDATES_PATH,

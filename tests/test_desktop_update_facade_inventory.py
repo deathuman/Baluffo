@@ -21,13 +21,12 @@ def test_current_desktop_update_facade_inventory_is_complete() -> None:
     assert len(rows) == inventory.EXPECTED_FACADE_IMPORT_COUNT
     assert inventory.check_desktop_update_facade_inventory() == []
     assert {
-        "src/admin_bridge.py",
         "src/packaged_desktop_smoke.py",
     } <= set(by_path)
+    assert "src/admin_bridge.py" not in by_path
     assert "src/ship/desktop_app/__init__.py" not in by_path
     assert "src/ship/desktop_updater.py" not in by_path
     assert "scripts/build_desktop_update_release.py" not in by_path
-    assert by_path["src/admin_bridge.py"].categories == ("compatibility-root",)
     assert sum(1 for row in rows if row.module == "src.ship.desktop_updater") == 2
     assert all(row.categories for row in rows)
 

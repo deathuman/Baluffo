@@ -59,14 +59,6 @@ from src.ship.desktop_update_state import (
     write_handoff_diagnostics,
 )
 
-root: Any | None = None
-
-
-def _root() -> Any:
-    if root is None:
-        raise RuntimeError("desktop_update_service.root is not configured")
-    return root
-
 
 def _as_dict(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
@@ -124,8 +116,6 @@ class DesktopUpdateService:
         ship_root: Path | None = None,
         current_version_getter: Callable[[], str] | None = None,
     ) -> None:
-        deps = _root()
-        self._deps = deps
         env_install_root = str(os.environ.get("BALUFFO_INSTALL_ROOT") or "").strip()
         env_ship_root = str(os.environ.get("BALUFFO_SHIP_ROOT") or "").strip()
         self.paths = DesktopUpdatePaths.from_data_dir(
