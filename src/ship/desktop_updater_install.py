@@ -503,7 +503,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
         )
         with contextlib.suppress(OSError, RuntimeError, ValueError, shutil.Error):
             module._restore_install_snapshot(install_root, rollback_root)
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(OSError, RuntimeError):
             module._launch_executable(install_root / "Baluffo.exe", data_dir=data_dir)
         module._save_install_stage_status(
             paths,

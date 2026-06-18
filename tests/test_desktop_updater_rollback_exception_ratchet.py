@@ -41,7 +41,8 @@ def _write_install_plan(plan_path: Path, install_root: Path, rollback_root: Path
 def _run_install_with_backup_restore_failure(
     *,
     tmp: Path,
-    restore_failure: BaseException,
+    restore_failure: BaseException | None = None,
+    launch_failure: BaseException | None = None,
 ) -> None:
     install_root = tmp / "portable"
     data_dir = install_root / "ship" / "data"
@@ -90,7 +91,7 @@ def _run_install_with_backup_restore_failure(
             side_effect=restore_failure,
         ),
         mock.patch.object(updater, "_restore_install_snapshot"),
-        mock.patch.object(updater, "_launch_executable"),
+        mock.patch.object(updater, "_launch_executable", side_effect=launch_failure),
     ):
         updater.run_install(paths.install_plan_path)
 
@@ -114,6 +115,28 @@ def test_run_install_does_not_suppress_unexpected_data_backup_restore_failures()
         _run_install_with_backup_restore_failure(
             tmp=Path(tmp),
             restore_failure=AssertionError("unexpected data backup bug"),
+        )
+
+
+def test_run_install_suppresses_expected_rollback_launch_failures() -> None:
+    with (
+        workspace_tmpdir("desktop-updater") as tmp,
+        pytest.raises(RuntimeError, match="install replacement failed"),
+    ):
+        _run_install_with_backup_restore_failure(
+            tmp=Path(tmp),
+            launch_failure=OSError("desktop relaunch failed"),
+        )
+
+
+def test_run_install_does_not_suppress_unexpected_rollback_launch_failures() -> None:
+    with (
+        workspace_tmpdir("desktop-updater") as tmp,
+        pytest.raises(AssertionError, match="unexpected relaunch bug"),
+    ):
+        _run_install_with_backup_restore_failure(
+            tmp=Path(tmp),
+            launch_failure=AssertionError("unexpected relaunch bug"),
         )
 
 
