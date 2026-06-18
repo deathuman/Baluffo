@@ -91,8 +91,7 @@ def install_stage_label(
     install_state: str | None,
     install_stage: str | None = None,
 ) -> str:
-    deps = _root()
-    stage = deps.normalize_install_stage(install_state, install_stage)
+    stage = normalize_install_stage(install_state, install_stage)
     return str(constants_mod.INSTALL_STAGE_LABELS.get(stage) or "")
 
 

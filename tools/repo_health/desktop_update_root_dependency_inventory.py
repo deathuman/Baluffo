@@ -14,8 +14,8 @@ TRACKED_MODULES = (
     "src/ship/desktop_update_service.py",
 )
 
-EXPECTED_DEPENDENCY_COUNT = 66
-EXPECTED_REFERENCE_COUNT = 181
+EXPECTED_DEPENDENCY_COUNT = 64
+EXPECTED_REFERENCE_COUNT = 169
 
 CATEGORIES = {
     "constant",
@@ -53,7 +53,6 @@ SHARED_HELPERS = {
     "_runtime_session_root_candidate_fallback",
     "_uses_github_https",
     "_write_atomic",
-    "compare_versions",
     "compute_sha256",
     "desktop_update_public_key_candidate_paths",
     "download_file",
@@ -61,7 +60,6 @@ SHARED_HELPERS = {
     "install_stage_label",
     "iso_now",
     "load_desktop_update_public_keys",
-    "normalize_install_stage",
     "pid_is_running",
     "read_desktop_session_state",
     "read_json",

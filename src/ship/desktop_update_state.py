@@ -13,6 +13,13 @@ from src.ship.desktop_update_manifest import (
     DESKTOP_UPDATE_SCHEMA_VERSION,
     DESKTOP_UPDATER_VERSION,
 )
+from src.ship.desktop_update_shared import (
+    compare_versions,
+    compute_sha256,
+    install_stage_label,
+    iso_now,
+    normalize_install_stage,
+)
 
 root: Any | None = None
 
@@ -118,7 +125,6 @@ def _handoff_status_pending(status: dict[str, Any]) -> bool:
 
 
 def _apply_credible_handoff_status(status: dict[str, Any]) -> dict[str, Any]:
-    deps = _root()
     next_status = dict(status or {})
     install_state = str(next_status.get("installState") or "").strip().lower()
     if install_state == "waiting_for_exit":
@@ -127,7 +133,7 @@ def _apply_credible_handoff_status(status: dict[str, Any]) -> dict[str, Any]:
     else:
         next_status["installState"] = "handoff_requested"
         next_status["installStage"] = "preparing"
-    next_status["installStageLabel"] = deps.install_stage_label(
+    next_status["installStageLabel"] = install_stage_label(
         next_status.get("installState"),
         next_status.get("installStage"),
     )
@@ -172,11 +178,11 @@ def load_status(paths: Any, *, current_version: str | None = None) -> dict[str, 
         current_version or status.get("currentVersion") or get_app_version()
     )
     status, _credible_handoff_plan, _stale_handoff = deps._reconcile_handoff_status(paths, status)
-    status["installStage"] = deps.normalize_install_stage(
+    status["installStage"] = normalize_install_stage(
         status.get("installState"),
         status.get("installStage"),
     )
-    status["installStageLabel"] = deps.install_stage_label(
+    status["installStageLabel"] = install_stage_label(
         status.get("installState"),
         status.get("installStage"),
     )
@@ -283,7 +289,7 @@ def write_success_marker(
 ) -> None:
     deps = _root()
     payload = {
-        "writtenAt": deps.iso_now(),
+        "writtenAt": iso_now(),
         "appVersion": str(app_version or ""),
         "bridgePort": int(bridge_port),
         "launcherToken": str(launcher_token or ""),
@@ -294,7 +300,7 @@ def write_success_marker(
 def write_handoff_diagnostics(paths: Any) -> dict[str, Any]:
     deps = _root()
     payload: dict[str, Any] = {
-        "writtenAt": deps.iso_now(),
+        "writtenAt": iso_now(),
         "handoffRequestPresent": bool(paths.handoff_request_path.exists()),
         "installPlanPresent": bool(paths.install_plan_path.exists()),
         "installPlanValid": False,
@@ -515,25 +521,25 @@ def _manifest_to_status(
             "channel": str(manifest.get("channel") or DESKTOP_UPDATE_CHANNEL),
             **release_notes_payload,
             "releaseNotesHistory": release_notes_history_payload,
-            "lastCheckedAt": deps.iso_now(),
+            "lastCheckedAt": iso_now(),
             "lastError": preserve_last_error,
             "blockedReason": "",
         }
     )
-    if deps.compare_versions(target_version, current_version) <= 0:
+    if compare_versions(target_version, current_version) <= 0:
         next_status["availability"] = "up_to_date"
         next_status["updateAvailable"] = False
         next_status["installState"] = "idle"
         return next_status
     minimum_helper = str(manifest.get("min_desktop_updater_version") or "").strip()
     minimum_current = str(manifest.get("min_supported_current_version") or "").strip()
-    if minimum_helper and deps.compare_versions(DESKTOP_UPDATER_VERSION, minimum_helper) < 0:
+    if minimum_helper and compare_versions(DESKTOP_UPDATER_VERSION, minimum_helper) < 0:
         next_status["availability"] = "blocked"
         next_status["updateAvailable"] = True
         next_status["blockedReason"] = "helper_too_old"
         next_status["installState"] = "blocked"
         return next_status
-    if minimum_current and deps.compare_versions(current_version, minimum_current) < 0:
+    if minimum_current and compare_versions(current_version, minimum_current) < 0:
         next_status["availability"] = "blocked"
         next_status["updateAvailable"] = True
         next_status["blockedReason"] = "current_version_too_old"
@@ -557,7 +563,7 @@ def _reconcile_downloaded_artifact_status(
     artifact_path = paths.downloads_dir / deps._portable_artifact_name(manifest)
     expected_hash = str(artifact.get("sha256") or "").strip().lower()
     if artifact_path.is_file() and expected_hash:
-        if deps.compute_sha256(artifact_path).lower() == expected_hash:
+        if compute_sha256(artifact_path).lower() == expected_hash:
             size_bytes = int(artifact_path.stat().st_size)
             next_status["downloadState"] = "downloaded"
             if install_state not in constants_mod.INSTALL_STATES_PRESERVING_DOWNLOADED_ARTIFACT:
@@ -603,7 +609,6 @@ def _normalize_installed_status(
     *,
     current_version: str,
 ) -> dict[str, Any]:
-    deps = _root()
     next_status = dict(status)
     install_state = str(next_status.get("installState") or "").strip().lower()
     target_version = str(
@@ -611,7 +616,7 @@ def _normalize_installed_status(
     ).strip()
     if install_state != "installed" or not target_version:
         return next_status
-    if deps.compare_versions(target_version, current_version) > 0:
+    if compare_versions(target_version, current_version) > 0:
         return next_status
     next_status.update(
         {
