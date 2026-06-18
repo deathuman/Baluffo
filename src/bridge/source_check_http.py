@@ -145,7 +145,7 @@ def discover_redirect_career_candidates(source_url: str, timeout_s: int) -> list
                 final_url = normalize_source_url(resp.geturl() or "")
                 charset = resp.headers.get_content_charset() or "utf-8"
                 body = resp.read().decode(charset, errors="replace")
-        except Exception:
+        except (LookupError, OSError, UnicodeError, ValueError):
             continue
         if final_url and final_url not in seen:
             low = final_url.lower()
