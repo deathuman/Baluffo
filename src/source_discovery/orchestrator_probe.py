@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import time
-from contextlib import suppress
 from typing import Any
 from urllib.parse import urlparse
 
@@ -108,13 +107,15 @@ async def _run_probe_batch(
 
 def _browser_fallback_controls(*, state: DiscoveryRunState) -> tuple[Any, asyncio.Semaphore | None]:
     try_playwright = None
-    with suppress(Exception):
+    try:
         from src.bridge.source_check_http import try_fetch_with_playwright as _try_pw
 
         browser_fallback_guard = BrowserFallbackCircuitBreaker.from_state(
             state.source_state_rows, cooldown_minutes=30
         )
         try_playwright = browser_fallback_guard.wrap(_try_pw)
+    except (ImportError, TypeError, ValueError):
+        try_playwright = None
     return try_playwright, asyncio.Semaphore(5) if try_playwright else None
 
 
