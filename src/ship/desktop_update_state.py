@@ -95,7 +95,7 @@ def _load_credible_handoff_install_plan(paths: Any) -> dict[str, Any]:
     if not paths.handoff_request_path.exists():
         return {}
     try:
-        plan = deps.validate_install_plan(deps.read_json(paths.install_plan_path, {}))
+        plan = validate_install_plan(deps.read_json(paths.install_plan_path, {}))
     except ValueError:
         return {}
     launcher_pid = int(plan.get("launcherPid") or 0)
@@ -171,7 +171,7 @@ def _reconcile_handoff_status(
 
 def load_status(paths: Any, *, current_version: str | None = None) -> dict[str, Any]:
     deps = _root()
-    status = deps.default_status_payload(current_version=current_version)
+    status = default_status_payload(current_version=current_version)
     status.update(_as_dict(deps.read_json(paths.install_state_path, {})))
     status["currentVersion"] = str(
         current_version or status.get("currentVersion") or get_app_version()
@@ -245,12 +245,12 @@ def helper_runtime_tmpdir() -> Path:
 
 def launch_staged_update_helper(paths: Any) -> None:
     deps = _root()
-    plan = deps.validate_install_plan(deps.read_json(paths.install_plan_path, {}))
+    plan = validate_install_plan(deps.read_json(paths.install_plan_path, {}))
     helper_path = Path(str(plan.get("tempHelperPath") or "")).expanduser().resolve()
     if not helper_path.is_file():
         raise RuntimeError(f"Staged desktop updater helper not found: {helper_path}")
     paths.updater_dir.mkdir(parents=True, exist_ok=True)
-    runtime_tmpdir = deps.helper_runtime_tmpdir()
+    runtime_tmpdir = helper_runtime_tmpdir()
     runtime_tmpdir.mkdir(parents=True, exist_ok=True)
     creationflags = 0
     env = deps.os.environ.copy()
@@ -312,7 +312,7 @@ def write_handoff_diagnostics(paths: Any) -> dict[str, Any]:
         "launcherTokenMatchesSession": False,
     }
     try:
-        plan = deps.validate_install_plan(deps.read_json(paths.install_plan_path, {}))
+        plan = validate_install_plan(deps.read_json(paths.install_plan_path, {}))
     except ValueError as exc:
         payload["installPlanError"] = str(exc)
         deps.write_json_atomic(paths.handoff_diagnostics_path, payload)

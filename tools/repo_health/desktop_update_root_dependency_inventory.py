@@ -14,8 +14,8 @@ TRACKED_MODULES = (
     "src/ship/desktop_update_service.py",
 )
 
-EXPECTED_DEPENDENCY_COUNT = 43
-EXPECTED_REFERENCE_COUNT = 124
+EXPECTED_DEPENDENCY_COUNT = 40
+EXPECTED_REFERENCE_COUNT = 119
 
 CATEGORIES = {
     "constant",
@@ -72,12 +72,9 @@ STATE_HELPERS = {
     "clear_install_plan",
     "clear_staged_helper",
     "clear_success_marker",
-    "default_status_payload",
-    "helper_runtime_tmpdir",
     "load_status",
     "read_cached_manifest",
     "save_status",
-    "validate_install_plan",
     "write_handoff_diagnostics",
 }
 
