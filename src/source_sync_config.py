@@ -238,7 +238,14 @@ def load_packaged_sync_config(module: Any, *, env: dict[str, str] | None = None)
                 env_map,
                 key_derivation=key_derivation,
             )
-        except Exception as exc:  # noqa: BLE001
+        except (
+            AssertionError,
+            BinasciiError,
+            InvalidTag,
+            RuntimeError,
+            UnicodeError,
+            ValueError,
+        ) as exc:
             if key_derivation == module.KEY_DERIVATION_MACHINE:
                 decryption_error = (
                     "Packaged GitHub App key is machine-bound and cannot be decrypted on this "
