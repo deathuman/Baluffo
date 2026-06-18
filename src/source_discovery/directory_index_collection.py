@@ -9,7 +9,7 @@ def _capture_index_call_failure(
 ) -> tuple[Any, Any]:
     try:
         return call(), None
-    except Exception as exc:  # noqa: BLE001
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
         return None, {
             "name": name,
             "adapter": adapter,

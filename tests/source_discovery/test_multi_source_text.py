@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from src.source_discovery.multi_source_text import fetch_first_nonempty_text
 
 
@@ -69,3 +71,15 @@ def test_fetch_first_nonempty_text_all_failures_preserves_last_error() -> None:
         "https://sheet.example/second",
     ]
     assert result.last_error == "failed second"
+
+
+def test_fetch_first_nonempty_text_does_not_swallow_unexpected_fetch_failure() -> None:
+    def fake_fetch(_url: str, _timeout_s: int) -> str:
+        raise AssertionError("unexpected fetcher bug")
+
+    with pytest.raises(AssertionError, match="unexpected fetcher bug"):
+        fetch_first_nonempty_text(
+            ["https://sheet.example/csv"],
+            timeout_s=5,
+            fetcher=fake_fetch,
+        )

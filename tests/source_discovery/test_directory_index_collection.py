@@ -154,3 +154,39 @@ def test_collect_directory_index_entries_aggregates_unresolved_references() -> N
 
     assert int(collected["unresolvedReferenceCount"]) == 5
     assert collected["failures"] == []
+
+
+def test_collect_directory_index_entries_does_not_swallow_unexpected_fetch_failure() -> None:
+    def fake_fetch(_url: str, _: int) -> str:
+        raise AssertionError("unexpected fetch bug")
+
+    def parse_index_entries(html: str, _base_url: str) -> tuple[list[dict[str, object]], dict]:
+        return ([{"detailUrl": html}], {})
+
+    with pytest.raises(AssertionError, match="unexpected fetch bug"):
+        collect_directory_index_entries(
+            timeout_s=5,
+            fetcher=fake_fetch,
+            parse_index_entries=parse_index_entries,
+            base_url="https://directory.example",
+            index_urls=["https://directory.example/one"],
+            adapter="example",
+        )
+
+
+def test_collect_directory_index_entries_does_not_swallow_unexpected_parse_failure() -> None:
+    def fake_fetch(url: str, _: int) -> str:
+        return url
+
+    def parse_index_entries(_html: str, _base_url: str) -> tuple[list[dict[str, object]], dict]:
+        raise AssertionError("unexpected parse bug")
+
+    with pytest.raises(AssertionError, match="unexpected parse bug"):
+        collect_directory_index_entries(
+            timeout_s=5,
+            fetcher=fake_fetch,
+            parse_index_entries=parse_index_entries,
+            base_url="https://directory.example",
+            index_urls=["https://directory.example/one"],
+            adapter="example",
+        )

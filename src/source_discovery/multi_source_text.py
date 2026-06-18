@@ -42,7 +42,7 @@ def fetch_first_nonempty_text(
             if text.strip():
                 selected_url = candidate_url
                 break
-        except Exception as exc:  # noqa: BLE001
+        except (OSError, RuntimeError, ValueError) as exc:
             last_error = str(exc)
             continue
     return MultiSourceTextResult(
