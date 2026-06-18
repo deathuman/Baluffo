@@ -43,7 +43,7 @@ def _write_profile_outputs(profiler: cProfile.Profile, *, profile_name: str) -> 
     text_stream = io.StringIO()
     try:
         pstats.Stats(str(profile_path), stream=text_stream).sort_stats("cumulative").print_stats(30)
-    except Exception as exc:  # pragma: no cover - defensive across Python/profile formats
+    except (EOFError, OSError, TypeError, ValueError) as exc:
         text_stream.write(f"Unable to render profile summary: {exc}\n")
     (out_dir / f"{safe_name}.prof.txt").write_text(text_stream.getvalue(), encoding="utf-8")
 
