@@ -250,23 +250,22 @@ def owner_session_should_exit() -> bool:
     if expired:
         try:
             active_tasks_payload = root_mod._get_ops_api().get_current_task_state_payload()
-            active_tasks = [
-                {
-                    "taskType": str(task.get("taskType") or task.get("type") or "").strip().lower(),
-                    "runId": str(task.get("runId") or "").strip(),
-                }
-                for task in (
-                    active_tasks_payload.get("tasks")
-                    if isinstance(active_tasks_payload.get("tasks"), list)
-                    else []
-                )
-                if isinstance(task, dict)
-                and bool(task.get("active"))
-                and str(task.get("taskType") or task.get("type") or "").strip().lower()
-                in {"fetch", "discovery", "pipeline", "sync"}
-            ]
-        except Exception:
-            active_tasks = []
+        except (OSError, RuntimeError, ValueError):
+            active_tasks_payload = {}
+        active_task_rows = (
+            active_tasks_payload.get("tasks") if isinstance(active_tasks_payload, dict) else []
+        )
+        active_tasks = [
+            {
+                "taskType": str(task.get("taskType") or task.get("type") or "").strip().lower(),
+                "runId": str(task.get("runId") or "").strip(),
+            }
+            for task in (active_task_rows if isinstance(active_task_rows, list) else [])
+            if isinstance(task, dict)
+            and bool(task.get("active"))
+            and str(task.get("taskType") or task.get("type") or "").strip().lower()
+            in {"fetch", "discovery", "pipeline", "sync"}
+        ]
         shutdown_reason = (
             str(bridge_runtime_state.get_desktop_session_payload().get("shutdownReason") or "")
             .strip()
