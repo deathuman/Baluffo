@@ -310,11 +310,23 @@ def _get_fernet_key() -> bytes:
         keyring = None
 
     if keyring is not None:
+        keyring_error = getattr(getattr(keyring, "errors", None), "KeyringError", None)
+        expected_keyring_errors: tuple[type[BaseException], ...] = (
+            (keyring_error,)
+            if isinstance(keyring_error, type) and issubclass(keyring_error, BaseException)
+            else ()
+        )
+        keyring_fallback_errors = (
+            *expected_keyring_errors,
+            BinasciiError,
+            UnicodeError,
+            ValueError,
+        )
         try:
             stored = keyring.get_password("Baluffo", "sync-fernet-key")
             if stored:
                 return base64.urlsafe_b64decode(stored)
-        except Exception:
+        except keyring_fallback_errors:
             pass
 
     key_dir = _resolve_xdg_config_root()
