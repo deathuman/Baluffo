@@ -352,3 +352,36 @@ def test_async_http_text_fetcher_close_propagates_unexpected_stop_failure(
 
     assert fetcher._closed is True
     assert thread.joined_with is None
+
+
+def test_resolve_fetch_text_impl_falls_back_when_async_fetcher_init_expected_failure(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(transport, "httpx", object())
+
+    class _InitFailsExpected:
+        def __init__(self, *, max_connections: int) -> None:
+            raise RuntimeError("async loop unavailable")
+
+    monkeypatch.setattr(transport, "AsyncHttpTextFetcher", _InitFailsExpected)
+
+    fetch_text, chosen, async_fetcher = transport.resolve_fetch_text_impl(fetch_strategy="auto")
+
+    assert fetch_text is transport.default_fetch_text
+    assert chosen == "urllib"
+    assert async_fetcher is None
+
+
+def test_resolve_fetch_text_impl_propagates_unexpected_async_fetcher_init_failure(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(transport, "httpx", object())
+
+    class _InitFailsUnexpected:
+        def __init__(self, *, max_connections: int) -> None:
+            raise AssertionError("unexpected async fetcher bug")
+
+    monkeypatch.setattr(transport, "AsyncHttpTextFetcher", _InitFailsUnexpected)
+
+    with pytest.raises(AssertionError, match="unexpected async fetcher bug"):
+        transport.resolve_fetch_text_impl(fetch_strategy="auto")

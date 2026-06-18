@@ -6,7 +6,6 @@ import asyncio
 import threading
 from collections.abc import Callable
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from contextlib import suppress
 from typing import Any
 
 from src.jobs.adapters import community
@@ -423,8 +422,10 @@ def resolve_fetch_text_impl(
     if fetch_text is not default_fetch_text and fetch_text is not common_default_fetch_text:
         return fetch_text, "custom", async_fetcher
     if strategy in {"http", "auto"} and httpx is not None:
-        with suppress(Exception):
+        try:
             async_fetcher = AsyncHttpTextFetcher(max_connections=adapter_http_concurrency)
             chosen = "httpx_async"
             return async_fetcher.fetch_text, chosen, async_fetcher
+        except _EXPECTED_ASYNC_TRANSPORT_CLOSE_EXCEPTIONS:
+            pass
     return default_fetch_text, chosen, async_fetcher
