@@ -30,7 +30,7 @@ def fetch_with_retries(
             heartbeat_callback()
         try:
             return fetch_text(url, int(timeout_s or 1))
-        except Exception as exc:  # noqa: BLE001
+        except (OSError, RuntimeError, ValueError) as exc:
             last_error = exc
             if _is_non_retriable_http_error(exc):
                 break

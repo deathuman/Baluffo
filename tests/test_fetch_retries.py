@@ -36,3 +36,17 @@ def test_fetch_with_retries_still_retries_transient_errors() -> None:
         == "ok"
     )
     assert attempts == 2
+
+
+def test_fetch_with_retries_does_not_swallow_unexpected_fetcher_failure() -> None:
+    attempts = 0
+
+    def fetch_text(_url: str, _timeout_s: int) -> str:
+        nonlocal attempts
+        attempts += 1
+        raise AssertionError("unexpected fetcher bug")
+
+    with pytest.raises(AssertionError, match="unexpected fetcher bug"):
+        fetch_with_retries("https://example.com/jobs", fetch_text, 5, retries=2, backoff_s=0)
+
+    assert attempts == 1
