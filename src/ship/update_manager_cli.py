@@ -11,6 +11,8 @@ from .update_manager_apply import apply_update
 from .update_manager_recovery import create_support_bundle, recover_previous, startup_check
 from .update_manager_validation import sign_manifest
 
+EXPECTED_CLI_FAILURES = (OSError, RuntimeError, ValueError)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Baluffo ship update manager.")
@@ -83,7 +85,7 @@ def main() -> int:
             print(sign_manifest(args.version, args.sha256, str(args.signing_key)))
             return 0
 
-    except Exception as exc:
+    except EXPECTED_CLI_FAILURES as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, indent=2))
         return 1
     return 1
