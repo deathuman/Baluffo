@@ -257,3 +257,58 @@ def test_request_install_helper_staging_does_not_suppress_unexpected_failures() 
             pytest.raises(AssertionError, match="unexpected"),
         ):
             service.request_install()
+
+
+def test_request_install_handoff_write_returns_structured_expected_failures() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        _paths, service = _ready_install_service(Path(tmp) / "portable" / "ship" / "data")
+        session_root = Path(tmp) / "session"
+        session_root.mkdir(parents=True, exist_ok=True)
+        update_state.write_json_atomic(
+            session_root / "desktop-session.json",
+            {"launcherPid": 1234, "launcherToken": "token-1"},
+        )
+
+        with (
+            mock.patch.object(service, "_ensure_install_preflight", return_value=None),
+            mock.patch.object(
+                du_service, "resolve_desktop_session_root", return_value=session_root
+            ),
+            mock.patch.object(du_service.shutil, "copy2", return_value=None),
+            mock.patch.object(
+                du_service,
+                "write_json_atomic",
+                side_effect=OSError("state write failed"),
+            ),
+        ):
+            result = service.request_install()
+
+        assert result["started"] is False
+        assert result["errorCode"] == "install_start_failed"
+        assert result["error"] == "Could not start the desktop update install: state write failed"
+
+
+def test_request_install_handoff_write_does_not_suppress_unexpected_failures() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        _paths, service = _ready_install_service(Path(tmp) / "portable" / "ship" / "data")
+        session_root = Path(tmp) / "session"
+        session_root.mkdir(parents=True, exist_ok=True)
+        update_state.write_json_atomic(
+            session_root / "desktop-session.json",
+            {"launcherPid": 1234, "launcherToken": "token-1"},
+        )
+
+        with (
+            mock.patch.object(service, "_ensure_install_preflight", return_value=None),
+            mock.patch.object(
+                du_service, "resolve_desktop_session_root", return_value=session_root
+            ),
+            mock.patch.object(du_service.shutil, "copy2", return_value=None),
+            mock.patch.object(
+                du_service,
+                "write_json_atomic",
+                side_effect=AssertionError("unexpected"),
+            ),
+            pytest.raises(AssertionError, match="unexpected"),
+        ):
+            service.request_install()

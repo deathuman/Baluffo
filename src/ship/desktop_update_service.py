@@ -740,7 +740,7 @@ class DesktopUpdateService:
                     "status": verified_status,
                     "exitRequested": True,
                 }
-            except Exception as exc:
+            except (OSError, RuntimeError, ValueError) as exc:
                 return self._install_failure_locked(
                     status=status,
                     error=f"Could not start the desktop update install: {exc}",
