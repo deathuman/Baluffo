@@ -95,7 +95,7 @@ class QuietSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
     def handle_one_request(self) -> None:
         try:
             return super().handle_one_request()
-        except Exception as exc:  # noqa: BLE001
+        except OSError as exc:
             if _is_expected_client_disconnect(exc):
                 self.close_connection = True
                 return
