@@ -36,6 +36,11 @@ SESSION_FILENAME = "admin-dev-session.json"
 TASK_STATE_FILENAME = "admin-task-state.json"
 FETCH_REPORT_FILENAME = "jobs-fetch-report.json"
 FETCH_TASKS_FILENAME = "jobs-fetch-tasks.json"
+_EXPECTED_RECLAIM_TERMINATE_EXCEPTIONS = (
+    OSError,
+    subprocess.SubprocessError,
+    TimeoutError,
+)
 
 
 @dataclass(frozen=True)
@@ -288,7 +293,7 @@ def reclaim_previous_dev_session(
     _clear_task_state(data_dir)
     _reset_fetch_artifacts(data_dir)
     for pid in targets:
-        with contextlib.suppress(Exception):  # noqa: BLE001
+        with contextlib.suppress(*_EXPECTED_RECLAIM_TERMINATE_EXCEPTIONS):
             _terminate_pid(pid)
     return {"stopped": bool(targets), "killedPids": targets}
 

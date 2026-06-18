@@ -142,6 +142,34 @@ def test_stop_owned_session_clears_artifacts_even_when_a_pid_is_stubborn() -> No
         assert str(reset_report.get("runId") or "") == ""
 
 
+def test_stop_owned_session_does_not_suppress_unexpected_terminate_failure() -> None:
+    with workspace_tmpdir("dev-admin-supervisor-stop-unexpected") as tmp:
+        data_dir = Path(tmp) / "data"
+        supervisor.save_session_state(
+            data_dir,
+            {
+                "supervisorPid": 11,
+                "sitePid": 22,
+                "bridgePid": 33,
+            },
+        )
+
+        with (
+            mock.patch.object(
+                supervisor,
+                "_terminate_pid",
+                side_effect=AssertionError("unexpected terminate bug"),
+            ) as terminate_pid,
+            pytest.raises(AssertionError, match="unexpected terminate bug"),
+        ):
+            supervisor.stop_owned_session(data_dir)
+
+        terminate_pid.assert_called_once_with(33)
+        assert not (data_dir / "admin-dev-session.json").exists()
+        reset_report = json.loads((data_dir / "jobs-fetch-report.json").read_text(encoding="utf-8"))
+        assert str(reset_report.get("runId") or "") == ""
+
+
 @pytest.mark.windows
 def test_terminate_pid_uses_bounded_taskkill_on_windows() -> None:
     with (
