@@ -119,7 +119,7 @@ class HelperProgressWindow:
         root_window.configure(bg=tokens["window_bg"])
 
         style = ttk.Style(root_window)
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(tk.TclError, OSError):
             style.theme_use("clam")
         style.configure(
             "Baluffo.Helper.Horizontal.TProgressbar",
