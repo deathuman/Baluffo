@@ -1,9 +1,11 @@
+from hashlib import sha256
 from pathlib import Path
 from unittest import mock
 
 import pytest
 
 from src.ship import desktop_update_constants as update_constants
+from src.ship import desktop_update_service as du_service
 from src.ship import desktop_update_shared as du_shared
 from src.ship import desktop_update_state as update_state
 from src.ship import update_manager
@@ -144,3 +146,65 @@ def test_resolve_ship_current_version_does_not_suppress_unexpected_failures() ->
             pytest.raises(AssertionError, match="unexpected"),
         ):
             du_shared._resolve_ship_current_version(ship_root)
+
+
+def _ready_install_service(
+    data_dir: Path,
+) -> tuple[du_shared.DesktopUpdatePaths, du_service.DesktopUpdateService]:
+    paths = du_shared.DesktopUpdatePaths.from_data_dir(data_dir)
+    zip_path = paths.downloads_dir / "baluffo-portable-1.4.0.zip"
+    zip_path.parent.mkdir(parents=True, exist_ok=True)
+    zip_path.write_bytes(b"portable update")
+    expected_sha = sha256(zip_path.read_bytes()).hexdigest()
+    update_state.save_status(
+        paths,
+        {
+            **update_state.default_status_payload(current_version="0.1.0"),
+            "availability": "available",
+            "updateAvailable": True,
+            "downloadState": "downloaded",
+            "downloadedZipPath": str(zip_path),
+        },
+    )
+    service = du_service.DesktopUpdateService(
+        data_dir=data_dir,
+        current_version_getter=lambda: "0.1.0",
+    )
+    manifest = {
+        "version": "1.4.0",
+        "portable_artifact": {"sha256": expected_sha},
+        "key_id": "desktop-ed25519-test",
+    }
+    service._load_cached_manifest_parts = mock.Mock(return_value=({}, manifest, {}, []))
+    return paths, service
+
+
+def test_request_install_preflight_returns_structured_expected_failures() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        _paths, service = _ready_install_service(Path(tmp) / "portable" / "ship" / "data")
+
+        with mock.patch.object(
+            service,
+            "_ensure_install_preflight",
+            side_effect=OSError("disk unavailable"),
+        ):
+            result = service.request_install()
+
+        assert result["started"] is False
+        assert result["errorCode"] == "install_preflight_failed"
+        assert result["error"] == "disk unavailable"
+
+
+def test_request_install_preflight_does_not_suppress_unexpected_failures() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        _paths, service = _ready_install_service(Path(tmp) / "portable" / "ship" / "data")
+
+        with (
+            mock.patch.object(
+                service,
+                "_ensure_install_preflight",
+                side_effect=AssertionError("unexpected"),
+            ),
+            pytest.raises(AssertionError, match="unexpected"),
+        ):
+            service.request_install()

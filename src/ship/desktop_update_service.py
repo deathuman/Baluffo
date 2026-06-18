@@ -639,7 +639,7 @@ class DesktopUpdateService:
             zip_path = Path(str(status.get("downloadedZipPath") or "")).expanduser().resolve()
             try:
                 self._ensure_install_preflight(zip_path)
-            except Exception as exc:
+            except (OSError, RuntimeError, ValueError) as exc:
                 return self._install_failure_locked(
                     status=status,
                     error=str(exc),
