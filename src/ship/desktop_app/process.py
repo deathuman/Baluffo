@@ -12,6 +12,8 @@ from typing import cast
 
 from ._compat import desktop_api
 
+_EXPECTED_TERMINATE_EXCEPTIONS = (OSError, subprocess.SubprocessError)
+
 
 def _entry_command() -> list[str]:
     api = desktop_api()
@@ -119,7 +121,7 @@ def terminate_process(process: subprocess.Popen[str] | None) -> None:
     if process is None or process.poll() is not None:
         return
     if api.os.name == "nt":
-        with contextlib.suppress(Exception):  # noqa: BLE001
+        with contextlib.suppress(*_EXPECTED_TERMINATE_EXCEPTIONS):
             api.subprocess.run(
                 ["taskkill", "/PID", str(int(process.pid)), "/T", "/F"],
                 stdout=api.subprocess.DEVNULL,
@@ -129,7 +131,7 @@ def terminate_process(process: subprocess.Popen[str] | None) -> None:
             )
             process.wait(timeout=5)
             return
-    with contextlib.suppress(Exception):  # noqa: BLE001
+    with contextlib.suppress(*_EXPECTED_TERMINATE_EXCEPTIONS):
         process.terminate()
         process.wait(timeout=5)
 
