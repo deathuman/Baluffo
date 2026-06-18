@@ -6,6 +6,12 @@ import contextlib
 from pathlib import Path
 from typing import Any
 
+from src.ship.desktop_update_manifest import (
+    DESKTOP_UPDATE_CHANNEL,
+    DESKTOP_UPDATE_SCHEMA_VERSION,
+    DESKTOP_UPDATER_VERSION,
+)
+
 root: Any | None = None
 
 
@@ -45,8 +51,8 @@ def _as_int(value: Any, default: int = 0) -> int:
 def default_status_payload(*, current_version: str | None = None) -> dict[str, Any]:
     deps = _root()
     return {
-        "schemaVersion": deps.DESKTOP_UPDATE_SCHEMA_VERSION,
-        "channel": deps.DESKTOP_UPDATE_CHANNEL,
+        "schemaVersion": DESKTOP_UPDATE_SCHEMA_VERSION,
+        "channel": DESKTOP_UPDATE_CHANNEL,
         "currentVersion": str(current_version or deps.get_app_version()),
         "latestVersion": "",
         "targetVersion": "",
@@ -67,7 +73,7 @@ def default_status_payload(*, current_version: str | None = None) -> dict[str, A
         "blockedReason": "",
         "manifestPath": "",
         "downloadedZipPath": "",
-        "helperVersion": deps.DESKTOP_UPDATER_VERSION,
+        "helperVersion": DESKTOP_UPDATER_VERSION,
         "installStage": "idle",
         "installStageLabel": "",
         "helperUpdatedAt": "",
@@ -502,7 +508,7 @@ def _manifest_to_status(
             "currentVersion": str(current_version or ""),
             "latestVersion": target_version,
             "targetVersion": target_version,
-            "channel": str(manifest.get("channel") or deps.DESKTOP_UPDATE_CHANNEL),
+            "channel": str(manifest.get("channel") or DESKTOP_UPDATE_CHANNEL),
             **release_notes_payload,
             "releaseNotesHistory": release_notes_history_payload,
             "lastCheckedAt": deps.iso_now(),
@@ -517,7 +523,7 @@ def _manifest_to_status(
         return next_status
     minimum_helper = str(manifest.get("min_desktop_updater_version") or "").strip()
     minimum_current = str(manifest.get("min_supported_current_version") or "").strip()
-    if minimum_helper and deps.compare_versions(deps.DESKTOP_UPDATER_VERSION, minimum_helper) < 0:
+    if minimum_helper and deps.compare_versions(DESKTOP_UPDATER_VERSION, minimum_helper) < 0:
         next_status["availability"] = "blocked"
         next_status["updateAvailable"] = True
         next_status["blockedReason"] = "helper_too_old"

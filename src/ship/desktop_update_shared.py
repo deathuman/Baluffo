@@ -162,7 +162,7 @@ def _decode_public_keys_payload(payload: Any) -> dict[str, bytes]:
 def desktop_update_public_key_candidate_paths(ship_root: Path) -> tuple[Path, ...]:
     deps = _root()
     resolved_ship = Path(ship_root).expanduser().resolve()
-    candidates: list[Path] = [resolved_ship / "app" / deps.PUBLIC_KEYS_FILE]
+    candidates: list[Path] = [resolved_ship / "app" / manifest_mod.PUBLIC_KEYS_FILE]
     current_version = deps._resolve_ship_current_version(resolved_ship)
     if current_version:
         candidates.append(
@@ -171,7 +171,7 @@ def desktop_update_public_key_candidate_paths(ship_root: Path) -> tuple[Path, ..
             / "versions"
             / current_version
             / "packaging"
-            / deps.PUBLIC_KEYS_FILE
+            / manifest_mod.PUBLIC_KEYS_FILE
         )
     return tuple(candidates)
 
@@ -222,7 +222,6 @@ def sign_manifest(manifest: dict[str, Any], private_key_bytes: bytes) -> str:
 
 
 def validate_desktop_manifest(manifest: dict[str, Any]) -> None:
-    deps = _root()
     required = (
         "schema_version",
         "key_id",
@@ -248,7 +247,7 @@ def validate_desktop_manifest(manifest: dict[str, Any]) -> None:
             raise ValueError(f"Desktop manifest portable_artifact missing {key}.")
     if not isinstance(manifest.get("migration_plan"), list):
         raise ValueError("Desktop manifest migration_plan must be a list.")
-    if str(manifest.get("channel") or "").strip().lower() != deps.DESKTOP_UPDATE_CHANNEL:
+    if str(manifest.get("channel") or "").strip().lower() != manifest_mod.DESKTOP_UPDATE_CHANNEL:
         raise ValueError("Desktop manifest channel is unsupported.")
 
 
