@@ -49,6 +49,42 @@ def classify_static_fetch_exception(
     return classification, classification in common_config.STATIC_CLASSIFICATIONS_FOR_BROWSER_QUEUE
 
 
+def is_static_fetch_fallback_exception(exc: Exception) -> bool:
+    if isinstance(exc, (HttpStatusError, OSError)):
+        return True
+    if not isinstance(exc, RuntimeError):
+        return False
+    msg = str(exc or "")
+    return any(
+        token in msg
+        for token in (
+            "HTTP 4",
+            "HTTP 5",
+            "HTTP Error 4",
+            "HTTP Error 5",
+            "Network error",
+            "Too Many Requests",
+            "timed out",
+            "Timeout",
+        )
+    )
+
+
+def fetch_static_html_or_none(
+    fetch_text: Callable[[str, int], str],
+    url: str,
+    timeout_s: int,
+) -> str | None:
+    try:
+        return fetch_text(url, timeout_s)
+    except OSError:
+        return None
+    except RuntimeError as exc:
+        if not is_static_fetch_fallback_exception(exc):
+            raise
+        return None
+
+
 @dataclass(frozen=True)
 class StaticSourceRuntimeConfig:
     static_profile: str

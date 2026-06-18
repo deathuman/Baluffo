@@ -18,6 +18,7 @@ from src.jobs.adapters.plugins.static._runner import (
 )
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.adapters.provider_parsers import parse_generic_location_fields
+from src.jobs.adapters.static_runtime_support import fetch_static_html_or_none
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, normalize_url
 
@@ -192,17 +193,15 @@ def _collect_blizzard_jobs(
     search_pages = _extract_blizzard_search_results_links(listing_html, page_url)
     if not search_pages:
         for role_url in _extract_blizzard_role_links(listing_html, page_url):
-            try:
-                role_html = fetch_text(role_url, timeout_s)
-            except Exception:
+            role_html = fetch_static_html_or_none(fetch_text, role_url, timeout_s)
+            if role_html is None:
                 continue
             for search_url in _extract_blizzard_search_results_links(role_html, role_url):
                 if search_url not in search_pages:
                     search_pages.append(search_url)
     for search_url in search_pages:
-        try:
-            results_html = fetch_text(search_url, timeout_s)
-        except Exception:
+        results_html = fetch_static_html_or_none(fetch_text, search_url, timeout_s)
+        if results_html is None:
             continue
         for row in _parse_blizzard_search_results(
             html=results_html,

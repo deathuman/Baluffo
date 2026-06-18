@@ -14,6 +14,7 @@ from src.jobs.adapters.plugins.static._runner import (
     static_plugin_context_values,
 )
 from src.jobs.adapters.plugins.types import AdapterPluginContext
+from src.jobs.adapters.static_runtime_support import fetch_static_html_or_none
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, normalize_url
 
@@ -131,9 +132,8 @@ def _merge_details(
     for detail_url in details:
         detail_html = fetched.get(detail_url)
         if detail_html is None:
-            try:
-                detail_html = fetch_text(detail_url, timeout_s)
-            except Exception:
+            detail_html = fetch_static_html_or_none(fetch_text, detail_url, timeout_s)
+            if detail_html is None:
                 continue
         for row in parser(
             detail_html,
