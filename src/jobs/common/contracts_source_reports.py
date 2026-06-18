@@ -17,6 +17,7 @@ from src.jobs.common.taxonomy import (
     has_explicit_empty_evidence,
 )
 from src.jobs.text_utils import clean_text, norm_text
+from src.shared.fetch_report_normalization import normalize_fetch_report_source_row_base
 from src.shared.json_shapes import as_json_list, as_json_object
 
 _CANONICAL_DROP_REASON_KEYS = (
@@ -499,43 +500,22 @@ def _apply_details(target: dict[str, Any], src: dict[str, Any]) -> None:
 
 def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
     src = as_json_object(row)
-    normalized: dict[str, Any] = {
-        "name": clean_text(src.get("name")),
-        "status": norm_text(src.get("status")) or "error",
-        "adapter": clean_text(src.get("adapter")) or "custom",
-        "fetchStrategy": clean_text(src.get("fetchStrategy")) or "auto",
-        "studio": clean_text(src.get("studio")),
-        "fetchedCount": _clamped_int(src.get("fetchedCount"), 0, 0),
-        "keptCount": _clamped_int(src.get("keptCount"), 0, 0),
-        "lowConfidenceDropped": _clamped_int(src.get("lowConfidenceDropped"), 0, 0),
-        "duplicateRate": _float_or_zero(src.get("duplicateRate")),
-        "error": clean_text(src.get("error")),
-        "durationMs": _clamped_int(src.get("durationMs"), 0, 0),
-        "lastStatus": clean_text(src.get("lastStatus")),
-        "lastRunAt": clean_text(src.get("lastRunAt")),
-        "lastCheckedAt": clean_text(src.get("lastCheckedAt")),
-        "lastSuccessAt": clean_text(src.get("lastSuccessAt")),
-        "lastSuccessfulFetchAt": clean_text(src.get("lastSuccessfulFetchAt"))
-        or clean_text(src.get("lastSuccessAt")),
-        "lastSeenInFetchAt": clean_text(src.get("lastSeenInFetchAt"))
-        or clean_text(src.get("lastCheckedAt"))
-        or clean_text(src.get("lastRunAt")),
-        "lastKeptCount": _clamped_int(src.get("lastKeptCount"), 0, 0),
-        "lastJobsKept": _clamped_int(
-            src.get("lastJobsKept"), _clamped_int(src.get("lastKeptCount"), 0, 0), 0
-        ),
-        "consecutiveFailures": _clamped_int(src.get("consecutiveFailures"), 0, 0),
-        "failureCount": _clamped_int(
-            src.get("failureCount"), _clamped_int(src.get("consecutiveFailures"), 0, 0), 0
-        ),
-        "consecutiveZeroKept": _clamped_int(src.get("consecutiveZeroKept"), 0, 0),
-        "zeroJobStreak": _clamped_int(
-            src.get("zeroJobStreak"), _clamped_int(src.get("consecutiveZeroKept"), 0, 0), 0
-        ),
-        "healthScore": _clamped_int(src.get("healthScore"), 100, 0),
-        "health": norm_text(src.get("health")) or "",
-        "healthReason": clean_text(src.get("healthReason")),
-    }
+    normalized = normalize_fetch_report_source_row_base(
+        src,
+        clean_text_func=clean_text,
+        normalize_text_func=norm_text,
+        lowercase_status=True,
+        status_default="error",
+        adapter_default="custom",
+        fetch_strategy_default="auto",
+        last_seen_fallback_last_run=True,
+        last_jobs_kept_fallback_last_kept=True,
+        failure_count_fallback_consecutive=True,
+        zero_job_streak_fallback_consecutive=True,
+        health_score_default=100,
+        health_score_max=None,
+        include_duplicate_rate=True,
+    )
 
     failure_bucket, _, _ = _apply_zero_kept_classification(normalized, src)
 

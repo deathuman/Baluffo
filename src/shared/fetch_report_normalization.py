@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from src.shared.json_shapes import as_json_list, as_json_object, json_object_rows
@@ -29,6 +31,219 @@ def _float_or_zero(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _normalize_text(value: Any) -> str:
+    return " ".join(_clean_text(value).split()).lower()
+
+
+@dataclass(frozen=True)
+class _SourceRowBaseOptions:
+    clean_text_func: Callable[[Any], str]
+    normalize_text_func: Callable[[Any], str] | None
+    lowercase_status: bool
+    lowercase_adapter: bool
+    status_default: str
+    adapter_default: str
+    fetch_strategy_default: str
+    last_status_fallback_status: bool
+    last_status_lowercase: bool
+    last_checked_fallback_last_seen: bool
+    last_success_fallback_last_successful: bool
+    last_successful_fallback_last_success: bool
+    last_seen_fallback_last_checked: bool
+    last_seen_fallback_last_run: bool
+    last_jobs_kept_fallback_last_kept: bool
+    failure_count_fallback_consecutive: bool
+    zero_job_streak_fallback_consecutive: bool
+    health_score_default: int
+    health_score_max: int | None
+    count_max: int | None
+    duration_max: int | None
+    include_duplicate_rate: bool
+
+
+def _source_row_clean(value: Any, options: _SourceRowBaseOptions) -> str:
+    return str(options.clean_text_func(value) or "").strip()
+
+
+def _source_row_norm(value: Any, options: _SourceRowBaseOptions) -> str:
+    if options.normalize_text_func is not None:
+        return str(options.normalize_text_func(value) or "").strip()
+    return _normalize_text(value)
+
+
+def _source_row_number(
+    value: Any,
+    options: _SourceRowBaseOptions,
+    *,
+    default: int = 0,
+    maximum: int | None = None,
+) -> int:
+    ceiling = options.count_max if maximum is None else maximum
+    parsed = _clamped_int(value, default=default, maximum=ceiling or 1_000_000_000)
+    return parsed if ceiling is None else min(ceiling, parsed)
+
+
+def _source_row_text_fields(src: dict[str, Any], options: _SourceRowBaseOptions) -> dict[str, Any]:
+    clean = lambda value: _source_row_clean(value, options)
+    norm = lambda value: _source_row_norm(value, options)
+    status = norm(src.get("status")) if options.lowercase_status else clean(src.get("status"))
+    adapter = clean(src.get("adapter"))
+    if options.lowercase_adapter:
+        adapter = adapter.lower()
+    last_status = clean(src.get("lastStatus"))
+    if not last_status and options.last_status_fallback_status:
+        last_status = clean(src.get("status"))
+    if options.last_status_lowercase:
+        last_status = last_status.lower()
+    return {
+        "name": clean(src.get("name")),
+        "status": status or options.status_default,
+        "adapter": adapter or options.adapter_default,
+        "fetchStrategy": clean(src.get("fetchStrategy")) or options.fetch_strategy_default,
+        "studio": clean(src.get("studio")),
+        "error": clean(src.get("error")),
+        "lastStatus": last_status,
+        "lastRunAt": clean(src.get("lastRunAt")),
+        "health": norm(src.get("health")) if options.lowercase_status else clean(src.get("health")),
+        "healthReason": clean(src.get("healthReason")),
+    }
+
+
+def _first_text(
+    src: dict[str, Any],
+    options: _SourceRowBaseOptions,
+    *keys: str,
+) -> str:
+    for key in keys:
+        value = _source_row_clean(src.get(key), options)
+        if value:
+            return value
+    return ""
+
+
+def _source_row_date_fields(src: dict[str, Any], options: _SourceRowBaseOptions) -> dict[str, str]:
+    checked_keys = (
+        ("lastCheckedAt", "lastSeenInFetchAt")
+        if options.last_checked_fallback_last_seen
+        else ("lastCheckedAt",)
+    )
+    success_keys = (
+        ("lastSuccessAt", "lastSuccessfulFetchAt")
+        if options.last_success_fallback_last_successful
+        else ("lastSuccessAt",)
+    )
+    successful_keys = (
+        ("lastSuccessfulFetchAt", "lastSuccessAt")
+        if options.last_successful_fallback_last_success
+        else ("lastSuccessfulFetchAt",)
+    )
+    seen_keys = ["lastSeenInFetchAt"]
+    if options.last_seen_fallback_last_checked:
+        seen_keys.append("lastCheckedAt")
+    if options.last_seen_fallback_last_run:
+        seen_keys.append("lastRunAt")
+    return {
+        "lastCheckedAt": _first_text(src, options, *checked_keys),
+        "lastSuccessAt": _first_text(src, options, *success_keys),
+        "lastSuccessfulFetchAt": _first_text(src, options, *successful_keys),
+        "lastSeenInFetchAt": _first_text(src, options, *seen_keys),
+    }
+
+
+def _source_row_count_fields(src: dict[str, Any], options: _SourceRowBaseOptions) -> dict[str, int]:
+    number = lambda value, default=0, maximum=None: _source_row_number(
+        value, options, default=default, maximum=maximum
+    )
+    last_kept_count = number(src.get("lastKeptCount"))
+    consecutive_failures = number(src.get("consecutiveFailures"))
+    consecutive_zero_kept = number(src.get("consecutiveZeroKept"))
+    return {
+        "fetchedCount": number(src.get("fetchedCount")),
+        "keptCount": number(src.get("keptCount")),
+        "lowConfidenceDropped": number(src.get("lowConfidenceDropped")),
+        "durationMs": number(src.get("durationMs"), maximum=options.duration_max),
+        "lastKeptCount": last_kept_count,
+        "lastJobsKept": number(
+            src.get("lastJobsKept"),
+            default=last_kept_count if options.last_jobs_kept_fallback_last_kept else 0,
+        ),
+        "consecutiveFailures": consecutive_failures,
+        "failureCount": number(
+            src.get("failureCount"),
+            default=(consecutive_failures if options.failure_count_fallback_consecutive else 0),
+        ),
+        "consecutiveZeroKept": consecutive_zero_kept,
+        "zeroJobStreak": number(
+            src.get("zeroJobStreak"),
+            default=(consecutive_zero_kept if options.zero_job_streak_fallback_consecutive else 0),
+        ),
+        "healthScore": number(
+            src.get("healthScore"),
+            default=options.health_score_default,
+            maximum=options.health_score_max,
+        ),
+    }
+
+
+def normalize_fetch_report_source_row_base(
+    row: Any,
+    *,
+    clean_text_func: Any = _clean_text,
+    normalize_text_func: Any | None = None,
+    lowercase_status: bool = False,
+    lowercase_adapter: bool = False,
+    status_default: str = "",
+    adapter_default: str = "",
+    fetch_strategy_default: str = "",
+    last_status_fallback_status: bool = False,
+    last_status_lowercase: bool = False,
+    last_checked_fallback_last_seen: bool = False,
+    last_success_fallback_last_successful: bool = False,
+    last_successful_fallback_last_success: bool = True,
+    last_seen_fallback_last_checked: bool = True,
+    last_seen_fallback_last_run: bool = False,
+    last_jobs_kept_fallback_last_kept: bool = False,
+    failure_count_fallback_consecutive: bool = False,
+    zero_job_streak_fallback_consecutive: bool = False,
+    health_score_default: int = 0,
+    health_score_max: int | None = 100,
+    count_max: int | None = None,
+    duration_max: int | None = None,
+    include_duplicate_rate: bool = False,
+) -> dict[str, Any]:
+    src = as_json_object(row)
+    options = _SourceRowBaseOptions(
+        clean_text_func=clean_text_func,
+        normalize_text_func=normalize_text_func,
+        lowercase_status=lowercase_status,
+        lowercase_adapter=lowercase_adapter,
+        status_default=status_default,
+        adapter_default=adapter_default,
+        fetch_strategy_default=fetch_strategy_default,
+        last_status_fallback_status=last_status_fallback_status,
+        last_status_lowercase=last_status_lowercase,
+        last_checked_fallback_last_seen=last_checked_fallback_last_seen,
+        last_success_fallback_last_successful=last_success_fallback_last_successful,
+        last_successful_fallback_last_success=last_successful_fallback_last_success,
+        last_seen_fallback_last_checked=last_seen_fallback_last_checked,
+        last_seen_fallback_last_run=last_seen_fallback_last_run,
+        last_jobs_kept_fallback_last_kept=last_jobs_kept_fallback_last_kept,
+        failure_count_fallback_consecutive=failure_count_fallback_consecutive,
+        zero_job_streak_fallback_consecutive=zero_job_streak_fallback_consecutive,
+        health_score_default=health_score_default,
+        health_score_max=health_score_max,
+        count_max=count_max,
+        duration_max=duration_max,
+        include_duplicate_rate=include_duplicate_rate,
+    )
+    payload = _source_row_text_fields(src, options)
+    payload.update(_source_row_date_fields(src, options))
+    payload.update(_source_row_count_fields(src, options))
+    if options.include_duplicate_rate:
+        payload["duplicateRate"] = _float_or_zero(src.get("duplicateRate"))
+    return payload
 
 
 def normalize_fetch_report_social_channel(payload: Any) -> dict[str, Any]:

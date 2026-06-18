@@ -20,6 +20,7 @@ from src.jobs.common.contracts_static_suppression_policy import (
 )
 from src.shared.fetch_report_normalization import (
     normalize_fetch_report_social_summary,
+    normalize_fetch_report_source_row_base,
     normalize_fetch_report_timing_summary,
 )
 from src.shared.fetch_report_progress import (
@@ -242,49 +243,21 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
                 parsed_detail = coerce_fetch_report_detail_row(detail)
                 if parsed_detail:
                     normalized_details.append(parsed_detail)
-            normalized_rows.append(
+            normalized_row = normalize_fetch_report_source_row_base(
+                row,
+                lowercase_status=True,
+                lowercase_adapter=True,
+                last_status_fallback_status=True,
+                last_status_lowercase=True,
+                last_checked_fallback_last_seen=True,
+                last_success_fallback_last_successful=True,
+                health_score_default=0,
+                health_score_max=100,
+                count_max=1_000_000,
+                duration_max=86_400_000,
+            )
+            normalized_row.update(
                 {
-                    "name": str(row.get("name") or "").strip(),
-                    "status": str(row.get("status") or "").strip().lower(),
-                    "adapter": str(row.get("adapter") or "").strip().lower(),
-                    "fetchStrategy": str(row.get("fetchStrategy") or "").strip(),
-                    "studio": str(row.get("studio") or "").strip(),
-                    "fetchedCount": safe_int(row.get("fetchedCount"), 0, 0, 1_000_000),
-                    "keptCount": safe_int(row.get("keptCount"), 0, 0, 1_000_000),
-                    "lowConfidenceDropped": safe_int(
-                        row.get("lowConfidenceDropped"), 0, 0, 1_000_000
-                    ),
-                    "error": str(row.get("error") or "").strip(),
-                    "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
-                    "lastStatus": str(row.get("lastStatus") or row.get("status") or "")
-                    .strip()
-                    .lower(),
-                    "lastRunAt": str(row.get("lastRunAt") or "").strip(),
-                    "lastCheckedAt": str(
-                        row.get("lastCheckedAt") or row.get("lastSeenInFetchAt") or ""
-                    ).strip(),
-                    "lastSuccessAt": str(
-                        row.get("lastSuccessAt") or row.get("lastSuccessfulFetchAt") or ""
-                    ).strip(),
-                    "lastSuccessfulFetchAt": str(
-                        row.get("lastSuccessfulFetchAt") or row.get("lastSuccessAt") or ""
-                    ).strip(),
-                    "lastSeenInFetchAt": str(
-                        row.get("lastSeenInFetchAt") or row.get("lastCheckedAt") or ""
-                    ).strip(),
-                    "lastKeptCount": safe_int(row.get("lastKeptCount"), 0, 0, 1_000_000),
-                    "lastJobsKept": safe_int(row.get("lastJobsKept"), 0, 0, 1_000_000),
-                    "consecutiveFailures": safe_int(
-                        row.get("consecutiveFailures"), 0, 0, 1_000_000
-                    ),
-                    "failureCount": safe_int(row.get("failureCount"), 0, 0, 1_000_000),
-                    "consecutiveZeroKept": safe_int(
-                        row.get("consecutiveZeroKept"), 0, 0, 1_000_000
-                    ),
-                    "zeroJobStreak": safe_int(row.get("zeroJobStreak"), 0, 0, 1_000_000),
-                    "healthScore": safe_int(row.get("healthScore"), 0, 0, 100),
-                    "health": str(row.get("health") or "").strip().lower(),
-                    "healthReason": str(row.get("healthReason") or "").strip(),
                     "classification": str(row.get("classification") or "").strip(),
                     "failureBucket": str(row.get("failureBucket") or "").strip(),
                     "zeroKeptClassification": str(row.get("zeroKeptClassification") or "").strip(),
@@ -311,6 +284,7 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
                     "details": normalized_details,
                 }
             )
+            normalized_rows.append(normalized_row)
         return normalized_rows
 
     normalized_sources = _normalize_source_rows(sources)

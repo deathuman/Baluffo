@@ -66,6 +66,88 @@ def test_bridge_fetch_report_keeps_empty_timing_summary_shape() -> None:
     assert "timingSummary" not in jobs["runtime"]
 
 
+def test_bridge_and_jobs_fetch_report_normalizers_share_source_row_base_overlap() -> None:
+    payload = {
+        "sources": [
+            {
+                "name": "Source A",
+                "status": "OK",
+                "adapter": "static",
+                "fetchStrategy": "auto",
+                "studio": "Studio A",
+                "fetchedCount": 12,
+                "keptCount": 3,
+                "lowConfidenceDropped": 1,
+                "error": "",
+                "durationMs": 44,
+                "lastStatus": "ok",
+                "lastRunAt": "2026-06-17T08:00:00+00:00",
+                "lastCheckedAt": "2026-06-17T08:01:00+00:00",
+                "lastSuccessAt": "2026-06-17T08:02:00+00:00",
+                "lastSuccessfulFetchAt": "2026-06-17T08:02:00+00:00",
+                "lastSeenInFetchAt": "2026-06-17T08:03:00+00:00",
+                "lastKeptCount": 2,
+                "lastJobsKept": 2,
+                "consecutiveFailures": 1,
+                "failureCount": 1,
+                "consecutiveZeroKept": 0,
+                "zeroJobStreak": 0,
+                "healthScore": 75,
+                "health": "warning",
+                "healthReason": "slow",
+            }
+        ]
+    }
+
+    bridge_row = normalize_fetch_report_contract(payload)["sources"][0]
+    jobs_row = normalize_fetch_report_payload(payload)["sources"][0]
+
+    for key in (
+        "name",
+        "status",
+        "adapter",
+        "fetchStrategy",
+        "studio",
+        "fetchedCount",
+        "keptCount",
+        "lowConfidenceDropped",
+        "error",
+        "durationMs",
+        "lastStatus",
+        "lastRunAt",
+        "lastCheckedAt",
+        "lastSuccessAt",
+        "lastSuccessfulFetchAt",
+        "lastSeenInFetchAt",
+        "lastKeptCount",
+        "lastJobsKept",
+        "consecutiveFailures",
+        "failureCount",
+        "consecutiveZeroKept",
+        "zeroJobStreak",
+        "healthScore",
+        "health",
+        "healthReason",
+    ):
+        assert bridge_row[key] == jobs_row[key]
+
+
+def test_bridge_and_jobs_source_row_defaults_remain_compatible_but_distinct() -> None:
+    payload = {"sources": [{}]}
+
+    bridge_row = normalize_fetch_report_contract(payload)["sources"][0]
+    jobs_row = normalize_fetch_report_payload(payload)["sources"][0]
+
+    assert bridge_row["status"] == ""
+    assert jobs_row["status"] == "error"
+    assert bridge_row["adapter"] == ""
+    assert jobs_row["adapter"] == "custom"
+    assert bridge_row["fetchStrategy"] == ""
+    assert jobs_row["fetchStrategy"] == "auto"
+    assert bridge_row["healthScore"] == 0
+    assert jobs_row["healthScore"] == 100
+
+
 def test_bridge_and_jobs_fetch_report_normalizers_share_social_and_timing_overlap() -> None:
     payload = {
         "socialSummary": {
