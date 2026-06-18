@@ -14,6 +14,7 @@ from src.ship.desktop_update_manifest import (
     DESKTOP_UPDATER_VERSION,
 )
 from src.ship.desktop_update_shared import (
+    DesktopUpdatePaths,
     compare_versions,
     compute_sha256,
     install_stage_label,
@@ -195,14 +196,13 @@ def save_status(paths: Any, payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def updater_install_requested(data_dir: Path) -> bool:
-    deps = _root()
-    paths = deps.DesktopUpdatePaths.from_data_dir(Path(data_dir))
-    state = deps.load_status(paths)
+    paths = DesktopUpdatePaths.from_data_dir(Path(data_dir))
+    state = load_status(paths)
     state, credible_handoff_plan, stale_handoff = _reconcile_handoff_status(paths, state)
     if stale_handoff:
-        deps.clear_handoff_request(paths)
-        deps.clear_install_plan(paths)
-        deps.save_status(paths, state)
+        clear_handoff_request(paths)
+        clear_install_plan(paths)
+        save_status(paths, state)
         return False
     if credible_handoff_plan:
         return True
