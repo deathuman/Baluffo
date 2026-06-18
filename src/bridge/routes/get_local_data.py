@@ -140,6 +140,84 @@ def _handle_backup_export_file_route(
     return True
 
 
+def _handle_profiles_route(handler: BridgeResponseWriter, *, api: BridgeApi) -> bool:
+    send_json_boundary(
+        handler,
+        lambda: {"ok": True, "profiles": api.desktop_local_data_store().list_profiles()},
+        error_status=400,
+        error_payload=_json_error,
+    )
+    return True
+
+
+def _handle_saved_job_keys_route(
+    handler: BridgeResponseWriter,
+    *,
+    api: BridgeApi,
+    query: dict[str, list[str]],
+) -> bool:
+    def _payload() -> dict[str, Any]:
+        uid = (query.get("uid") or [""])[0]
+        return {"ok": True, "keys": api.desktop_local_data_store().get_saved_job_keys(uid)}
+
+    send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
+    return True
+
+
+def _handle_attachments_route(
+    handler: BridgeResponseWriter,
+    *,
+    api: BridgeApi,
+    query: dict[str, list[str]],
+) -> bool:
+    def _payload() -> dict[str, Any]:
+        uid = (query.get("uid") or [""])[0]
+        job_key = (query.get("jobKey") or [""])[0]
+        return {
+            "ok": True,
+            "rows": api.desktop_local_data_store().list_attachments_for_job(uid, job_key),
+        }
+
+    send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
+    return True
+
+
+def _handle_activity_route(
+    handler: BridgeResponseWriter,
+    *,
+    api: BridgeApi,
+    query: dict[str, list[str]],
+) -> bool:
+    def _payload() -> dict[str, Any]:
+        uid = (query.get("uid") or [""])[0]
+        limit = int((query.get("limit") or ["300"])[0])
+        return {
+            "ok": True,
+            "rows": api.desktop_local_data_store().list_activity_for_user(uid, limit),
+        }
+
+    send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
+    return True
+
+
+def _handle_startup_metrics_route(
+    handler: BridgeResponseWriter,
+    *,
+    api: BridgeApi,
+    query: dict[str, list[str]],
+) -> bool:
+    def _payload() -> dict[str, Any]:
+        limit_raw = (query.get("limit") or ["200"])[0]
+        try:
+            limit = int(limit_raw)
+        except ValueError:
+            limit = 200
+        return {"ok": True, "rows": api.read_startup_metrics(limit)}
+
+    send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
+    return True
+
+
 def handle_local_data_get_routes(
     handler: BridgeResponseWriter,
     *,
@@ -151,38 +229,16 @@ def handle_local_data_get_routes(
         return _handle_session_route(handler, api=api)
 
     if path == "/desktop-local-data/profiles":
-        send_json_boundary(
-            handler,
-            lambda: {"ok": True, "profiles": api.desktop_local_data_store().list_profiles()},
-            error_status=400,
-            error_payload=_json_error,
-        )
-        return True
+        return _handle_profiles_route(handler, api=api)
 
     if path == "/desktop-local-data/saved-jobs":
         return _handle_saved_jobs_route(handler, api=api, query=query)
 
     if path == "/desktop-local-data/saved-job-keys":
-
-        def _payload() -> dict[str, Any]:
-            uid = (query.get("uid") or [""])[0]
-            return {"ok": True, "keys": api.desktop_local_data_store().get_saved_job_keys(uid)}
-
-        send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
-        return True
+        return _handle_saved_job_keys_route(handler, api=api, query=query)
 
     if path == "/desktop-local-data/attachments":
-
-        def _payload() -> dict[str, Any]:
-            uid = (query.get("uid") or [""])[0]
-            job_key = (query.get("jobKey") or [""])[0]
-            return {
-                "ok": True,
-                "rows": api.desktop_local_data_store().list_attachments_for_job(uid, job_key),
-            }
-
-        send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
-        return True
+        return _handle_attachments_route(handler, api=api, query=query)
 
     if path == "/desktop-local-data/attachments/content":
         return _handle_attachment_content_route(handler, api=api, query=query)
@@ -191,29 +247,9 @@ def handle_local_data_get_routes(
         return _handle_backup_export_file_route(handler, api=api, query=query)
 
     if path == "/desktop-local-data/activity":
-
-        def _payload() -> dict[str, Any]:
-            uid = (query.get("uid") or [""])[0]
-            limit = int((query.get("limit") or ["300"])[0])
-            return {
-                "ok": True,
-                "rows": api.desktop_local_data_store().list_activity_for_user(uid, limit),
-            }
-
-        send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
-        return True
+        return _handle_activity_route(handler, api=api, query=query)
 
     if path == "/desktop-local-data/startup-metrics":
-
-        def _payload() -> dict[str, Any]:
-            limit_raw = (query.get("limit") or ["200"])[0]
-            try:
-                limit = int(limit_raw)
-            except ValueError:
-                limit = 200
-            return {"ok": True, "rows": api.read_startup_metrics(limit)}
-
-        send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
-        return True
+        return _handle_startup_metrics_route(handler, api=api, query=query)
 
     return False

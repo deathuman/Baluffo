@@ -338,6 +338,30 @@ def is_city_noise_fragment(value: Any) -> bool:
     )
 
 
+def _city_filter_contract_rejection(normalized: str, contract: dict[str, Any]) -> str:
+    if normalized in contract["cityFilterRejectedTokens"]:
+        return "known_non_city"
+    if any(
+        _matches_city_sentence_prefix(normalized, prefix)
+        for prefix in contract["cityFilterRejectedPrefixes"]
+    ):
+        return "prose_or_navigation"
+    if any(
+        fragment and fragment in normalized for fragment in contract["cityFilterRejectedFragments"]
+    ):
+        return "prose_or_navigation"
+    return ""
+
+
+def _is_ambiguous_city_filter_code(text: str, normalized: str) -> bool:
+    return (
+        len(text) == 2
+        and text.isalpha()
+        and text.upper() == text
+        and normalized not in CITY_FILTER_TWO_LETTER_ALLOWLIST
+    )
+
+
 def classify_city_filter_rejection(value: Any) -> str:
     text = sanitize_public_text(value)
     if not text:
@@ -352,25 +376,12 @@ def classify_city_filter_rejection(value: Any) -> str:
         return "time_fragment"
     if CITY_FILTER_CSS_UNIT_RE.search(text) and not re.search(r"\b(?:st|saint)\.", text, re.I):
         return "css_fragment"
-    if normalized in contract["cityFilterRejectedTokens"]:
-        return "known_non_city"
-    if any(
-        _matches_city_sentence_prefix(normalized, prefix)
-        for prefix in contract["cityFilterRejectedPrefixes"]
-    ):
-        return "prose_or_navigation"
-    if any(
-        fragment and fragment in normalized for fragment in contract["cityFilterRejectedFragments"]
-    ):
-        return "prose_or_navigation"
+    contract_rejection = _city_filter_contract_rejection(normalized, contract)
+    if contract_rejection:
+        return contract_rejection
     if CITY_FILTER_OR_BUNDLE_RE.search(text):
         return "compound_non_city"
-    if (
-        len(text) == 2
-        and text.isalpha()
-        and text.upper() == text
-        and normalized not in CITY_FILTER_TWO_LETTER_ALLOWLIST
-    ):
+    if _is_ambiguous_city_filter_code(text, normalized):
         return "ambiguous_code"
     return ""
 
