@@ -118,7 +118,7 @@ def _write_atomic(path: Path, payload: str) -> None:
     tmp = path.with_name(f"{path.name}.{deps.os.getpid()}.{uuid.uuid4().hex}.tmp")
     tmp.write_text(payload, encoding="utf-8")
     try:
-        deps._replace_with_retry(tmp, path)
+        _replace_with_retry(tmp, path)
     finally:
         if tmp.exists():
             with contextlib.suppress(OSError):
@@ -195,13 +195,13 @@ def load_desktop_update_public_keys(
                     continue
                 payload = deps.read_json(path, {})
                 if payload:
-                    return _as_bytes_dict(deps._decode_public_keys_payload(payload))
+                    return _as_bytes_dict(_decode_public_keys_payload(payload))
         return {}
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise RuntimeError("Invalid BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_JSON payload.") from exc
-    return _as_bytes_dict(deps._decode_public_keys_payload(payload))
+    return _as_bytes_dict(_decode_public_keys_payload(payload))
 
 
 def verify_manifest_signature(
@@ -209,8 +209,7 @@ def verify_manifest_signature(
     *,
     public_keys: dict[str, bytes] | None = None,
 ) -> None:
-    deps = _root()
-    available = public_keys if public_keys is not None else deps.load_desktop_update_public_keys()
+    available = public_keys if public_keys is not None else load_desktop_update_public_keys()
     manifest_mod.verify_manifest_signature(
         manifest,
         public_keys=available,
@@ -421,21 +420,21 @@ def _json_headers() -> dict[str, str]:
 
 def fetch_json(url: str, *, timeout_s: float = 20.0) -> Any:
     deps = _root()
-    request = Request(str(url), headers=deps._json_headers())
+    request = Request(str(url), headers=_json_headers())
     timeout = max(1.0, float(timeout_s))
     try:
-        if deps._uses_github_https(url):
+        if _uses_github_https(url):
             response_ctx = deps.urlopen(
                 request,
                 timeout=timeout,
-                context=deps._build_desktop_update_ssl_context(),
+                context=_build_desktop_update_ssl_context(),
             )
         else:
             response_ctx = deps.urlopen(request, timeout=timeout)
         with response_ctx as response:
             payload = response.read().decode("utf-8")
     except (ssl.SSLError, URLError) as exc:
-        if deps._uses_github_https(url):
+        if _uses_github_https(url):
             raise wrap_github_request_error(
                 exc,
                 prefix="Desktop update request failed",
@@ -458,16 +457,16 @@ def download_file(
     try:
         timeout = max(5.0, float(timeout_s))
         try:
-            if deps._uses_github_https(url):
+            if _uses_github_https(url):
                 response_ctx = deps.urlopen(
                     request,
                     timeout=timeout,
-                    context=deps._build_desktop_update_ssl_context(),
+                    context=_build_desktop_update_ssl_context(),
                 )
             else:
                 response_ctx = deps.urlopen(request, timeout=timeout)
         except (ssl.SSLError, URLError) as exc:
-            if deps._uses_github_https(url):
+            if _uses_github_https(url):
                 raise wrap_github_request_error(
                     exc,
                     prefix="Desktop update request failed",
@@ -488,7 +487,7 @@ def download_file(
                 downloaded += len(chunk)
                 if callable(on_progress):
                     on_progress(downloaded, total)
-        deps._replace_with_retry(temp_target, target)
+        _replace_with_retry(temp_target, target)
         return target
     finally:
         if temp_target.exists():

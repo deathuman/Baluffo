@@ -14,8 +14,8 @@ TRACKED_MODULES = (
     "src/ship/desktop_update_service.py",
 )
 
-EXPECTED_DEPENDENCY_COUNT = 64
-EXPECTED_REFERENCE_COUNT = 169
+EXPECTED_DEPENDENCY_COUNT = 59
+EXPECTED_REFERENCE_COUNT = 157
 
 CATEGORIES = {
     "constant",
@@ -42,16 +42,11 @@ STDLIB_BINDINGS = {
 
 SHARED_HELPERS = {
     "DesktopUpdatePaths",
-    "_build_desktop_update_ssl_context",
-    "_decode_public_keys_payload",
-    "_json_headers",
     "_looks_like_windows_absolute_path",
-    "_replace_with_retry",
     "_resolve_desktop_session_root_fallback",
     "_resolve_runtime_path",
     "_resolve_ship_current_version",
     "_runtime_session_root_candidate_fallback",
-    "_uses_github_https",
     "_write_atomic",
     "compute_sha256",
     "desktop_update_public_key_candidate_paths",
