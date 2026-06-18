@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 
 try:
     import httpx as httpx_mod
-except Exception:  # noqa: BLE001
+except ImportError:
     httpx: Any | None = None
 else:
     httpx = httpx_mod

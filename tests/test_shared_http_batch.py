@@ -1,7 +1,48 @@
+import builtins
+import importlib
 import threading
 import time
 
-from src.shared.http_batch import fetch_pages_batched
+import pytest
+
+from src.shared import http_batch
+
+fetch_pages_batched = http_batch.fetch_pages_batched
+
+
+def test_optional_httpx_import_failure_falls_back_to_sync_path(monkeypatch) -> None:
+    real_import = builtins.__import__
+
+    def fake_import(name, globals_=None, locals_=None, fromlist=(), level=0):  # noqa: ANN001
+        if name == "httpx":
+            raise ModuleNotFoundError("No module named 'httpx'")
+        return real_import(name, globals_, locals_, fromlist, level)
+
+    with monkeypatch.context() as context:
+        context.setattr(builtins, "__import__", fake_import)
+        reloaded = importlib.reload(http_batch)
+
+    try:
+        assert reloaded.httpx is None
+    finally:
+        importlib.reload(http_batch)
+
+
+def test_optional_httpx_import_does_not_hide_unexpected_failures(monkeypatch) -> None:
+    real_import = builtins.__import__
+
+    def fake_import(name, globals_=None, locals_=None, fromlist=(), level=0):  # noqa: ANN001
+        if name == "httpx":
+            raise RuntimeError("unexpected httpx import bug")
+        return real_import(name, globals_, locals_, fromlist, level)
+
+    try:
+        with monkeypatch.context() as context:
+            context.setattr(builtins, "__import__", fake_import)
+            with pytest.raises(RuntimeError, match="unexpected httpx import bug"):
+                importlib.reload(http_batch)
+    finally:
+        importlib.reload(http_batch)
 
 
 def test_fetch_pages_batched_preserves_order_and_respects_limits_on_sync_path() -> None:
