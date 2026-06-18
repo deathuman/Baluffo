@@ -179,6 +179,59 @@ def _ready_install_service(
     return paths, service
 
 
+def _download_manifest(content: bytes) -> dict[str, object]:
+    return {
+        "version": "1.5.0",
+        "portable_artifact": {
+            "url": "https://example.com/baluffo-portable-1.5.0.zip",
+            "sha256": sha256(content).hexdigest(),
+            "size_bytes": len(content),
+        },
+    }
+
+
+def test_run_download_worker_progress_status_bug_marks_download_failed() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+        paths = du_shared.DesktopUpdatePaths.from_data_dir(data_dir)
+        service = du_service.DesktopUpdateService(
+            data_dir=data_dir,
+            current_version_getter=lambda: "0.1.0",
+        )
+        content = b"portable-zip"
+
+        def flaky_save_status(
+            update_paths: du_shared.DesktopUpdatePaths, payload: dict[str, object]
+        ) -> dict[str, object]:
+            if payload.get("downloadState") == "downloading":
+                raise AssertionError("unexpected progress bug")
+            return update_state.save_status(update_paths, payload)
+
+        def fake_download(
+            _url: str,
+            target: Path,
+            *,
+            on_progress=None,
+            timeout_s: float = 300.0,
+        ) -> Path:
+            if callable(on_progress):
+                on_progress(5, len(content))
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+            return target
+
+        with (
+            mock.patch.object(du_service, "save_status", side_effect=flaky_save_status),
+            mock.patch.object(du_service, "download_file", side_effect=fake_download),
+        ):
+            service._run_download_worker(_download_manifest(content))
+
+        status = update_state.load_status(paths, current_version="0.1.0")
+        assert status["downloadState"] == "failed"
+        assert status["installState"] == "idle"
+        assert status["lastError"] == "unexpected progress bug"
+
+
 def test_request_install_preflight_returns_structured_expected_failures() -> None:
     with workspace_tmpdir("desktop-update") as tmp:
         _paths, service = _ready_install_service(Path(tmp) / "portable" / "ship" / "data")

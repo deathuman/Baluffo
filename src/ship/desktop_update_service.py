@@ -481,7 +481,7 @@ class DesktopUpdateService:
                         "lastError": "",
                     },
                 )
-            except Exception:
+            except (OSError, RuntimeError, ValueError):
                 return
 
         try:
