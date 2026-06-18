@@ -167,7 +167,7 @@ class PooledRedirectResolver:
                         max_connections=max(2, int(max_connections or 1) * 2),
                     ),
                 )
-            except Exception:  # noqa: BLE001
+            except _EXPECTED_TRANSPORT_CLOSE_EXCEPTIONS:
                 self._client = None
         if isinstance(initial_cache, dict) and initial_cache:
             self.seed_cache(initial_cache)
