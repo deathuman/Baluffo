@@ -36,6 +36,9 @@ class SourceSyncShardError(ValueError):
     """Raised when rows cannot be represented as bounded source-sync shards."""
 
 
+_EXPECTED_REMOTE_SYNC_EXCEPTIONS = (OSError, RuntimeError, ValueError)
+
+
 def _duration_ms(started_at: float, finished_at: float) -> int:
     return max(0, int(round((finished_at - started_at) * 1000)))
 
@@ -482,7 +485,7 @@ def push_shard(
         if int(status or 0) in {409, 422}:
             try:
                 read_shard(module, config, shard.manifest_entry(), opener=opener)
-            except Exception as exc:
+            except _EXPECTED_REMOTE_SYNC_EXCEPTIONS as exc:
                 raise RuntimeError(message_text) from exc
             return {
                 "ok": True,
@@ -625,7 +628,7 @@ def _push_and_verify_changed_shard(
             message=f"Update Baluffo source sync shard {shard.bucket}/{shard.key}",
             opener=opener,
         )
-    except Exception as exc:
+    except _EXPECTED_REMOTE_SYNC_EXCEPTIONS as exc:
         remote_requests.append(
             _remote_timing_row(
                 operation="pushShard",
@@ -654,7 +657,7 @@ def _push_and_verify_changed_shard(
     verify_started_at = time.perf_counter()
     try:
         verified = read_shard(module, config, shard.manifest_entry(), opener=opener)
-    except Exception as exc:
+    except _EXPECTED_REMOTE_SYNC_EXCEPTIONS as exc:
         remote_requests.append(
             _remote_timing_row(
                 operation="verifyShard",
@@ -933,7 +936,7 @@ def push_sharded_snapshot(
             sha=committed_manifest_sha,
             opener=opener,
         )
-    except Exception as exc:
+    except _EXPECTED_REMOTE_SYNC_EXCEPTIONS as exc:
         remote_requests.append(
             _remote_timing_row(
                 operation="pushManifest",
