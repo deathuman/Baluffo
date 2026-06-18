@@ -1740,7 +1740,7 @@ def _resolve_job_link(
     ):
         try:
             resolved_link = normalize_url(resolve_redirect_url(normalized_link))
-        except Exception:  # noqa: BLE001
+        except (OSError, RuntimeError, TypeError, ValueError):
             resolved_link = normalized_link
         if resolved_link:
             normalized_link = resolved_link
