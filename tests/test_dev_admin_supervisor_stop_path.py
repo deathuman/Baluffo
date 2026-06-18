@@ -156,6 +156,49 @@ def test_terminate_pid_uses_bounded_taskkill_on_windows() -> None:
     assert run_mock.call_args.kwargs["timeout"] == supervisor.STOP_PID_TERMINATION_TIMEOUT_S
 
 
+def test_terminate_pid_posix_suppresses_expected_kill_failure() -> None:
+    class TimedOutProcess:
+        def __enter__(self) -> TimedOutProcess:
+            return self
+
+        def __exit__(self, *_args: object) -> bool:
+            return False
+
+        def wait(self, *, timeout: float) -> None:
+            raise supervisor.subprocess.TimeoutExpired("kill", timeout)
+
+        def kill(self) -> None:
+            raise OSError("process already exited")
+
+    with (
+        mock.patch.object(supervisor.os, "name", "posix"),
+        mock.patch.object(supervisor.subprocess, "Popen", return_value=TimedOutProcess()),
+    ):
+        supervisor._terminate_pid(456)
+
+
+def test_terminate_pid_posix_does_not_suppress_unexpected_kill_failure() -> None:
+    class BrokenProcess:
+        def __enter__(self) -> BrokenProcess:
+            return self
+
+        def __exit__(self, *_args: object) -> bool:
+            return False
+
+        def wait(self, *, timeout: float) -> None:
+            raise supervisor.subprocess.TimeoutExpired("kill", timeout)
+
+        def kill(self) -> None:
+            raise AssertionError("unexpected kill bug")
+
+    with (
+        mock.patch.object(supervisor.os, "name", "posix"),
+        mock.patch.object(supervisor.subprocess, "Popen", return_value=BrokenProcess()),
+        pytest.raises(AssertionError, match="unexpected kill bug"),
+    ):
+        supervisor._terminate_pid(456)
+
+
 def test_stop_owned_session_reclaims_task_state_pids_when_session_file_is_missing() -> None:
     with workspace_tmpdir("dev-admin-supervisor-task-state") as tmp:
         data_dir = Path(tmp) / "data"

@@ -144,7 +144,7 @@ def _terminate_pid_tree_posix(pid: int) -> None:
         try:
             process.wait(timeout=float(STOP_PID_TERMINATION_TIMEOUT_S))
         except subprocess.TimeoutExpired:
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(OSError):
                 process.kill()
 
 
