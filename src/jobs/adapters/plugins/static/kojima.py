@@ -16,6 +16,7 @@ from src.jobs.adapters.plugins.static._runner import (
 )
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.adapters.provider_parsers import parse_generic_location_fields
+from src.jobs.adapters.static_runtime_support import is_static_fetch_fallback_exception
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, normalize_url, sanitize_public_text
 
@@ -54,8 +55,11 @@ def _fetch_kojima_html(
             )
             if dynamic and dynamic not in html:
                 return dynamic
-    except Exception:
+    except OSError:
         pass
+    except RuntimeError as exc:
+        if not is_static_fetch_fallback_exception(exc):
+            raise
     return html
 
 

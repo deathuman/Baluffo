@@ -1,6 +1,6 @@
 import pytest
 
-from src.jobs.adapters.plugins.static import blizzard, littlechicken
+from src.jobs.adapters.plugins.static import blizzard, kojima, littlechicken
 from src.jobs.adapters.static_runtime_support import is_static_fetch_fallback_exception
 
 from ._helpers import jf
@@ -121,4 +121,56 @@ def test_littlechicken_plugin_detail_fetch_fallback_is_expected_fetch_failures_o
                 "id": "littlechicken",
             },
             parse_jobpostings_from_html=jf.parse_jobpostings_from_html,
+        )
+
+
+def test_kojima_dynamic_listing_fallback_is_expected_fetch_failures_only() -> None:
+    listing_html = """
+        <div data-viewref="kjp_job_listing">
+          <a href="/en/game-programmer">Game Programmer</a>
+        </div>
+        """
+
+    def fake_fetch(url: str, _: int) -> str:
+        if url == "https://www.kojimaproductions.jp/en/careers":
+            return listing_html
+        raise RuntimeError(f"Unexpected URL: {url}")
+
+    def http_failure_dynamic(**_: object) -> str:
+        raise RuntimeError("HTTP 500 for https://www.kojimaproductions.jp/kjpviewloader/load")
+
+    rows = kojima.run(
+        fetch_text=fake_fetch,
+        timeout_s=5,
+        retries=0,
+        backoff_s=0,
+        pages=["https://www.kojimaproductions.jp/en/careers"],
+        source_row={
+            "name": "Kojima Productions",
+            "company": "Kojima Productions",
+            "id": "kojima",
+        },
+        parse_jobpostings_from_html=lambda *_args, **_kwargs: [],
+        maybe_fetch_kojima_job_listing_html=http_failure_dynamic,
+    )
+
+    assert [row["title"] for row in rows] == ["Game Programmer"]
+
+    def unexpected_dynamic(**_: object) -> str:
+        raise RuntimeError("programmer bug")
+
+    with pytest.raises(RuntimeError, match="programmer bug"):
+        kojima.run(
+            fetch_text=fake_fetch,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+            pages=["https://www.kojimaproductions.jp/en/careers"],
+            source_row={
+                "name": "Kojima Productions",
+                "company": "Kojima Productions",
+                "id": "kojima",
+            },
+            parse_jobpostings_from_html=lambda *_args, **_kwargs: [],
+            maybe_fetch_kojima_job_listing_html=unexpected_dynamic,
         )
