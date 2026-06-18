@@ -143,7 +143,8 @@ def apply_update(
         write_state(paths, state, status="ready", error="")
         refresh_runtime_bootstrap(paths, target_dir, version_name=next_version)
         log_event(paths, "update_succeeded", {"from": current_version, "to": next_version})
-    except Exception as exc:
+    except BaseException as exc:
+        # Treat apply as a transactional cleanup boundary, then re-raise every failure.
         rollback_report = rollback_migrations(
             paths, manifest.get("migration_plan") or [], backup_ref
         )
