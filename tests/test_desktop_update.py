@@ -224,7 +224,7 @@ def test_pid_is_running_prefers_psutil_when_available() -> None:
     fake_psutil.Process.return_value = process
     fake_psutil.STATUS_ZOMBIE = "zombie"
 
-    with mock.patch.object(du, "psutil", fake_psutil):
+    with mock.patch.object(du_shared, "psutil", fake_psutil):
         assert du.pid_is_running(4242) is True
 
 
@@ -236,7 +236,7 @@ def test_pid_is_running_rejects_zombie_psutil_processes() -> None:
     fake_psutil.Process.return_value = process
     fake_psutil.STATUS_ZOMBIE = "zombie"
 
-    with mock.patch.object(du, "psutil", fake_psutil):
+    with mock.patch.object(du_shared, "psutil", fake_psutil):
         assert du.pid_is_running(4242) is False
 
 
@@ -256,7 +256,7 @@ def test_pid_is_running_windows_fallback_accepts_live_pid_without_psutil() -> No
     kernel32.GetExitCodeProcess.side_effect = fake_get_exit_code_process
 
     with (
-        mock.patch.object(du, "psutil", None),
+        mock.patch.object(du_shared, "psutil", None),
         mock.patch.object(du_shared.sys, "platform", "win32"),
         mock.patch.object(
             du_shared.ctypes,
@@ -277,7 +277,7 @@ def test_pid_is_running_windows_fallback_rejects_open_failed_pid_without_psutil(
     kernel32.OpenProcess.return_value = 0
 
     with (
-        mock.patch.object(du, "psutil", None),
+        mock.patch.object(du_shared, "psutil", None),
         mock.patch.object(du_shared.sys, "platform", "win32"),
         mock.patch.object(
             du_shared.ctypes,

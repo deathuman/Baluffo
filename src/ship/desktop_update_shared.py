@@ -28,7 +28,15 @@ from src.shared.utils import now_iso
 from src.ship import desktop_update_constants as constants_mod
 from src.ship import desktop_update_manifest as manifest_mod
 
+try:
+    import psutil as _psutil
+except ImportError:
+    psutil: Any = None
+else:
+    psutil = _psutil
+
 root: Any | None = None
+_RUNTIME_SESSION_ROOT_FALLBACK: Path | None = None
 
 
 def _root() -> Any:
@@ -286,14 +294,14 @@ def resolve_release_repo(*, install_root: Path, ship_root: Path) -> str:
 
 
 def _runtime_session_root_candidate_fallback() -> Path:
-    deps = _root()
-    if deps._RUNTIME_SESSION_ROOT_FALLBACK is None:
-        deps._RUNTIME_SESSION_ROOT_FALLBACK = (
+    global _RUNTIME_SESSION_ROOT_FALLBACK
+    if _RUNTIME_SESSION_ROOT_FALLBACK is None:
+        _RUNTIME_SESSION_ROOT_FALLBACK = (
             Path(tempfile.gettempdir()).resolve()
             / "BaluffoRuntime"
             / f"desktop-session-{os.getpid()}-{uuid.uuid4().hex[:8]}"
         ).resolve()
-    return Path(deps._RUNTIME_SESSION_ROOT_FALLBACK)
+    return Path(_RUNTIME_SESSION_ROOT_FALLBACK)
 
 
 def _resolve_desktop_session_root_fallback(env: dict[str, str] | None = None) -> Path:
@@ -381,14 +389,13 @@ def _pid_is_running_windows(pid: int) -> bool:
 
 
 def pid_is_running(pid: int) -> bool:
-    deps = _root()
     pid = int(pid or 0)
     if pid <= 0:
         return False
-    if deps.psutil is not None:
+    if psutil is not None:
         try:
-            process = deps.psutil.Process(pid)
-            return bool(process.is_running()) and process.status() != deps.psutil.STATUS_ZOMBIE
+            process = psutil.Process(pid)
+            return bool(process.is_running()) and process.status() != psutil.STATUS_ZOMBIE
         except Exception:
             return False
     if sys.platform == "win32":
