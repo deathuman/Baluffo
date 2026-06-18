@@ -49,7 +49,7 @@ from src.ship.desktop_update_manifest import (
 
 try:
     import psutil as _psutil
-except Exception:  # noqa: BLE001
+except ImportError:
     psutil: Any = None
 else:
     psutil = _psutil
