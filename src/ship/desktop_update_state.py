@@ -15,11 +15,16 @@ from src.ship.desktop_update_manifest import (
 )
 from src.ship.desktop_update_shared import (
     DesktopUpdatePaths,
+    _resolve_runtime_path,
     compare_versions,
     compute_sha256,
     install_stage_label,
     iso_now,
     normalize_install_stage,
+    pid_is_running,
+    read_desktop_session_state,
+    read_json,
+    write_json_atomic,
 )
 
 root: Any | None = None
@@ -92,11 +97,10 @@ def default_status_payload(*, current_version: str | None = None) -> dict[str, A
 
 
 def _load_credible_handoff_install_plan(paths: Any) -> dict[str, Any]:
-    deps = _root()
     if not paths.handoff_request_path.exists():
         return {}
     try:
-        plan = validate_install_plan(deps.read_json(paths.install_plan_path, {}))
+        plan = validate_install_plan(read_json(paths.install_plan_path, {}))
     except ValueError:
         return {}
     launcher_pid = int(plan.get("launcherPid") or 0)
@@ -104,13 +108,13 @@ def _load_credible_handoff_install_plan(paths: Any) -> dict[str, Any]:
     session_root_raw = str(plan.get("desktopSessionRoot") or "").strip()
     if launcher_pid <= 0 or not launcher_token or not session_root_raw:
         return {}
-    if not deps.pid_is_running(launcher_pid):
+    if not pid_is_running(launcher_pid):
         return {}
     try:
-        session_root = deps._resolve_runtime_path(session_root_raw)
+        session_root = _resolve_runtime_path(session_root_raw)
     except Exception:
         return {}
-    session_state = _as_dict(deps.read_desktop_session_state(session_root))
+    session_state = _as_dict(read_desktop_session_state(session_root))
     if _as_int(session_state.get("launcherPid")) != launcher_pid:
         return {}
     if str(session_state.get("launcherToken") or "").strip() != launcher_token:
@@ -171,9 +175,8 @@ def _reconcile_handoff_status(
 
 
 def load_status(paths: Any, *, current_version: str | None = None) -> dict[str, Any]:
-    deps = _root()
     status = default_status_payload(current_version=current_version)
-    status.update(_as_dict(deps.read_json(paths.install_state_path, {})))
+    status.update(_as_dict(read_json(paths.install_state_path, {})))
     status["currentVersion"] = str(
         current_version or status.get("currentVersion") or get_app_version()
     )
@@ -190,8 +193,7 @@ def load_status(paths: Any, *, current_version: str | None = None) -> dict[str, 
 
 
 def save_status(paths: Any, payload: dict[str, Any]) -> dict[str, Any]:
-    deps = _root()
-    deps.write_json_atomic(paths.install_state_path, payload)
+    write_json_atomic(paths.install_state_path, payload)
     return payload
 
 
@@ -286,18 +288,16 @@ def write_success_marker(
     bridge_port: int,
     launcher_token: str,
 ) -> None:
-    deps = _root()
     payload = {
         "writtenAt": iso_now(),
         "appVersion": str(app_version or ""),
         "bridgePort": int(bridge_port),
         "launcherToken": str(launcher_token or ""),
     }
-    deps.write_json_atomic(paths.success_marker_path, payload)
+    write_json_atomic(paths.success_marker_path, payload)
 
 
 def write_handoff_diagnostics(paths: Any) -> dict[str, Any]:
-    deps = _root()
     payload: dict[str, Any] = {
         "writtenAt": iso_now(),
         "handoffRequestPresent": bool(paths.handoff_request_path.exists()),
@@ -312,10 +312,10 @@ def write_handoff_diagnostics(paths: Any) -> dict[str, Any]:
         "launcherTokenMatchesSession": False,
     }
     try:
-        plan = validate_install_plan(deps.read_json(paths.install_plan_path, {}))
+        plan = validate_install_plan(read_json(paths.install_plan_path, {}))
     except ValueError as exc:
         payload["installPlanError"] = str(exc)
-        deps.write_json_atomic(paths.handoff_diagnostics_path, payload)
+        write_json_atomic(paths.handoff_diagnostics_path, payload)
         return payload
     payload["installPlanValid"] = True
     launcher_pid = _as_int(plan.get("launcherPid"))
@@ -323,10 +323,10 @@ def write_handoff_diagnostics(paths: Any) -> dict[str, Any]:
     session_root_raw = str(plan.get("desktopSessionRoot") or "").strip()
     payload["launcherPid"] = launcher_pid
     if launcher_pid > 0:
-        payload["launcherPidRunning"] = bool(deps.pid_is_running(launcher_pid))
+        payload["launcherPidRunning"] = bool(pid_is_running(launcher_pid))
     if session_root_raw:
         try:
-            session_root = deps._resolve_runtime_path(session_root_raw)
+            session_root = _resolve_runtime_path(session_root_raw)
         except (OSError, RuntimeError, ValueError) as exc:
             payload["desktopSessionRoot"] = session_root_raw
             payload["desktopSessionRootError"] = type(exc).__name__
@@ -334,7 +334,7 @@ def write_handoff_diagnostics(paths: Any) -> dict[str, Any]:
             session_state_path = session_root / "desktop-session.json"
             payload["desktopSessionRoot"] = str(session_root)
             payload["desktopSessionFilePresent"] = bool(session_state_path.exists())
-            session_state = _as_dict(deps.read_desktop_session_state(session_root))
+            session_state = _as_dict(read_desktop_session_state(session_root))
             session_launcher_pid = _as_int(session_state.get("launcherPid"))
             session_launcher_token = str(session_state.get("launcherToken") or "").strip()
             payload["sessionLauncherPid"] = session_launcher_pid
@@ -344,13 +344,12 @@ def write_handoff_diagnostics(paths: Any) -> dict[str, Any]:
             payload["launcherTokenMatchesSession"] = bool(
                 launcher_token and session_launcher_token == launcher_token
             )
-    deps.write_json_atomic(paths.handoff_diagnostics_path, payload)
+    write_json_atomic(paths.handoff_diagnostics_path, payload)
     return payload
 
 
 def read_cached_manifest(paths: Any) -> dict[str, Any]:
-    deps = _root()
-    return _as_dict(deps.read_json(paths.manifest_cache_path, {}))
+    return _as_dict(read_json(paths.manifest_cache_path, {}))
 
 
 def _normalize_release_notes_payload(

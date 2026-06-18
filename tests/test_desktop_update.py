@@ -12,6 +12,7 @@ from src import app_version
 from src.ship import desktop_update as du
 from src.ship import desktop_update_service as update_service
 from src.ship import desktop_update_shared as du_shared
+from src.ship import desktop_update_state as update_state
 from src.ship.desktop_app import config as desktop_app_config
 from tests.helpers.temp_paths import workspace_tmpdir
 
@@ -430,8 +431,7 @@ def test_updater_install_requested_accepts_credible_handoff_state() -> None:
             session_root,
             install_state="waiting_for_exit",
         )
-
-        with mock.patch.object(du, "pid_is_running", return_value=True):
+        with mock.patch.object(update_state, "pid_is_running", return_value=True):
             assert du.updater_install_requested(data_dir) is True
             status = du.load_status(paths, current_version="0.1.0")
 
@@ -454,7 +454,7 @@ def test_load_status_derives_install_stage_label_from_install_state() -> None:
         session_root = Path(tmp) / "session"
         _write_credible_handoff_request(paths, session_root, install_state="waiting_for_exit")
 
-        with mock.patch.object(du, "pid_is_running", return_value=True):
+        with mock.patch.object(update_state, "pid_is_running", return_value=True):
             status = du.load_status(paths, current_version="0.1.0")
 
         assert status["installStage"] == "waiting_for_exit"
@@ -968,7 +968,7 @@ def test_get_status_payload_preserves_handoff_state_with_downloaded_zip() -> Non
             },
         )
 
-        with mock.patch.object(du, "pid_is_running", return_value=True):
+        with mock.patch.object(update_state, "pid_is_running", return_value=True):
             status = service.get_status_payload()
 
         assert status["downloadState"] == "downloaded"
@@ -1493,7 +1493,7 @@ def test_request_install_writes_plan_and_launches_helper() -> None:
         with (
             mock.patch.object(du, "resolve_desktop_session_root", return_value=session_root),
             mock.patch.object(du.shutil, "disk_usage", return_value=mock.Mock(free=10**9)),
-            mock.patch.object(du, "pid_is_running", return_value=True),
+            mock.patch.object(update_state, "pid_is_running", return_value=True),
             mock.patch.object(update_service, "verify_manifest_signature"),
         ):
             result = service.request_install()
@@ -1633,7 +1633,7 @@ def test_request_install_returns_handoff_unconfirmed_when_post_write_verificatio
         with (
             mock.patch.object(du, "resolve_desktop_session_root", return_value=session_root),
             mock.patch.object(du.shutil, "disk_usage", return_value=mock.Mock(free=10**9)),
-            mock.patch.object(du, "pid_is_running", return_value=False),
+            mock.patch.object(update_state, "pid_is_running", return_value=False),
             mock.patch.object(update_service, "verify_manifest_signature"),
         ):
             result = service.request_install()
