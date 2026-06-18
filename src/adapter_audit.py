@@ -252,7 +252,7 @@ def _run_case(case: dict[str, Any]) -> dict[str, Any]:
             backoff_s=0.5,
         )
         jobs_count = len(rows)
-    except Exception as exc:  # noqa: BLE001
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
         error_text = str(exc)
     duration_ms = int((time.perf_counter() - started) * 1000)
     diagnostics = dict(SOURCE_DIAGNOSTICS.get(case["diagnostic"], {}))

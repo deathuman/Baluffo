@@ -1,8 +1,8 @@
 {
   "scope": "src",
-  "max_total_comments": 108,
+  "max_total_comments": 107,
   "max_by_code": {
-    "BLE001": 98,
+    "BLE001": 97,
     "PLC2701": 1,
     "S310": 2,
     "S603": 1,

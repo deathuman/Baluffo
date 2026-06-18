@@ -1,3 +1,5 @@
+import pytest
+
 from src import adapter_audit
 
 
@@ -37,3 +39,38 @@ def test_ashby_summary_aggregates_counts(monkeypatch, tmp_path) -> None:
         "keptJobsCount": 41,
         "removedStaleOrEmptyCount": 5,
     }
+
+
+def test_run_case_records_expected_runner_failure() -> None:
+    def failing_runner(**_kwargs):
+        raise RuntimeError("adapter temporarily unavailable")
+
+    result = adapter_audit._run_case(
+        {
+            "name": "example",
+            "family": "community",
+            "runner": failing_runner,
+            "diagnostic": "example",
+            "source_type": "built_in",
+        }
+    )
+
+    assert result["jobsCount"] == 0
+    assert result["error"] == "adapter temporarily unavailable"
+    assert result["bucket"] == "follow-up-needed"
+
+
+def test_run_case_does_not_swallow_unexpected_runner_failure() -> None:
+    def failing_runner(**_kwargs):
+        raise AssertionError("unexpected adapter audit bug")
+
+    with pytest.raises(AssertionError, match="unexpected adapter audit bug"):
+        adapter_audit._run_case(
+            {
+                "name": "example",
+                "family": "community",
+                "runner": failing_runner,
+                "diagnostic": "example",
+                "source_type": "built_in",
+            }
+        )
