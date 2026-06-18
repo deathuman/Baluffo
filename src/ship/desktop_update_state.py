@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import contextlib
+import os
+import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -239,15 +242,13 @@ def clear_staged_helper(path: Path | None) -> None:
 
 
 def helper_runtime_tmpdir() -> Path:
-    deps = _root()
     return Path(
-        Path(deps.tempfile.gettempdir()).resolve() / constants_mod.HELPER_RUNTIME_TMP_ROOT_NAME
+        Path(tempfile.gettempdir()).resolve() / constants_mod.HELPER_RUNTIME_TMP_ROOT_NAME
     ).resolve()
 
 
 def launch_staged_update_helper(paths: Any) -> None:
-    deps = _root()
-    plan = validate_install_plan(deps.read_json(paths.install_plan_path, {}))
+    plan = validate_install_plan(read_json(paths.install_plan_path, {}))
     helper_path = Path(str(plan.get("tempHelperPath") or "")).expanduser().resolve()
     if not helper_path.is_file():
         raise RuntimeError(f"Staged desktop updater helper not found: {helper_path}")
@@ -255,7 +256,7 @@ def launch_staged_update_helper(paths: Any) -> None:
     runtime_tmpdir = helper_runtime_tmpdir()
     runtime_tmpdir.mkdir(parents=True, exist_ok=True)
     creationflags = 0
-    env = deps.os.environ.copy()
+    env = os.environ.copy()
     env["TEMP"] = str(runtime_tmpdir)
     env["TMP"] = str(runtime_tmpdir)
     data_dir = str(plan.get("dataDir") or "").strip()
@@ -264,14 +265,14 @@ def launch_staged_update_helper(paths: Any) -> None:
         env["BALUFFO_DATA_DIR"] = data_dir
     if install_root:
         env["BALUFFO_INSTALL_ROOT"] = install_root
-        env["BALUFFO_SHIP_ROOT"] = str(deps._resolve_runtime_path(install_root) / "ship")
-    if deps.os.name == "nt":
-        creationflags = int(getattr(deps.subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+        env["BALUFFO_SHIP_ROOT"] = str(_resolve_runtime_path(install_root) / "ship")
+    if os.name == "nt":
+        creationflags = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
     with (
         paths.helper_stdout_log_path.open("ab") as helper_stdout,
         paths.helper_stderr_log_path.open("ab") as helper_stderr,
     ):
-        deps.subprocess.Popen(
+        subprocess.Popen(
             [str(helper_path), "--install-plan", str(paths.install_plan_path)],
             cwd=str(paths.updater_dir),
             stdout=helper_stdout,

@@ -1742,14 +1742,14 @@ def test_launch_staged_update_helper_uses_logged_spawn_contract() -> None:
             },
         )
 
-        with mock.patch.object(du.subprocess, "Popen") as popen_mock:
+        with mock.patch.object(update_state.subprocess, "Popen") as popen_mock:
             du.launch_staged_update_helper(paths)
 
         popen_mock.assert_called_once()
         _, kwargs = popen_mock.call_args
         expected_flags = 0
-        if du.os.name == "nt":
-            expected_flags = int(getattr(du.subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+        if update_state.os.name == "nt":
+            expected_flags = int(getattr(update_state.subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
         assert int(kwargs.get("creationflags") or 0) == expected_flags
         assert kwargs["cwd"] == str(paths.updater_dir)
         assert isinstance(kwargs["env"], dict)
