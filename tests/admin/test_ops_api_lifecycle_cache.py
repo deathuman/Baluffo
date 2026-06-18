@@ -2,6 +2,8 @@ import time
 from datetime import UTC, datetime
 from unittest import mock
 
+import pytest
+
 from src.bridge import ops_api as ops_api_module
 from src.bridge.active_task_snapshot import write_snapshot
 
@@ -224,6 +226,38 @@ def test_ops_api_lifecycle_cache_expires_quickly(tmp_path, monkeypatch) -> None:
 
     assert [row["runId"] for row in api.get_projected_run_history().rows] == ["fetch_active_new"]
     assert calls == {"current": 2, "recent": 2, "schedule": 0}
+
+
+def test_ops_api_lifecycle_loader_failure_records_failed_storage_read(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    api, _calls = _make_ops_api(tmp_path, current_rows=[], recent_rows=[])
+    records: list[dict[str, object]] = []
+
+    def fail_current_rows() -> list[dict[str, object]]:
+        raise RuntimeError("task runtime unavailable")
+
+    api._deps = ops_api_module.OpsDeps(
+        **{
+            **api._deps.__dict__,
+            "get_lifecycle_current_runs": fail_current_rows,
+        }
+    )
+    monkeypatch.setattr(
+        ops_api_module,
+        "record_storage_read",
+        lambda **kwargs: records.append(dict(kwargs)),
+    )
+
+    with pytest.raises(RuntimeError, match="task runtime unavailable"):
+        api.get_projected_run_history()
+
+    assert records
+    assert records[-1]["surface"] == "taskRuns.current"
+    assert records[-1]["artifact"] == "task-runs"
+    assert records[-1]["failed"] is True
+    assert records[-1]["row_count"] == 0
 
 
 def test_task_state_summary_does_not_hydrate_full_live_reports(tmp_path, monkeypatch) -> None:

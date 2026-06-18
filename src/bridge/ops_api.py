@@ -508,12 +508,10 @@ class OpsApi:
 
         started_at = time.perf_counter()
         rows: list[dict[str, Any]] = []
-        failed = False
+        failed = True
         try:
             rows = [dict(row) for row in loader()]
-        except Exception:
-            failed = True
-            raise
+            failed = False
         finally:
             self._record_storage_read(
                 surface=surface,
