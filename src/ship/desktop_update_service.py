@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -333,13 +334,11 @@ class DesktopUpdateService:
             last_checked_at = str(status.get("lastCheckedAt") or "").strip()
             if not force and last_checked_at and self.paths.manifest_cache_path.exists():
                 try:
-                    last_checked = deps.datetime.fromisoformat(
-                        last_checked_at.replace("Z", "+00:00")
-                    )
+                    last_checked = datetime.fromisoformat(last_checked_at.replace("Z", "+00:00"))
                 except ValueError:
                     last_checked = None
                 if last_checked is not None:
-                    age = (deps.datetime.now(deps.UTC) - last_checked).total_seconds()
+                    age = (datetime.now(UTC) - last_checked).total_seconds()
                     if age < constants_mod.DEFAULT_RELEASE_CHECK_THROTTLE_SECONDS:
                         (
                             cached,
@@ -655,7 +654,7 @@ class DesktopUpdateService:
                 deps.clear_handoff_diagnostics(self.paths)
                 rollback_path = self.paths.rollback_root / (
                     f"{str(manifest.get('version') or '').strip()}-"
-                    f"{deps.datetime.now(deps.UTC).strftime('%Y%m%d-%H%M%S')}"
+                    f"{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}"
                 )
                 plan = {
                     "planVersion": 1,
