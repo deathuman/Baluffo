@@ -107,6 +107,81 @@ def test_fetch_pages_batched_preserves_order_and_respects_limits_on_sync_path() 
     assert progress_calls[-1] == (4, 4)
 
 
+def test_fetch_pages_batched_does_not_hide_unexpected_fetch_bug() -> None:
+    jobs = [{"url": "https://a.example/bug", "payload": {"id": "a"}}]
+
+    def fake_fetch(_job: dict[str, object], _url: str, _timeout_s: int) -> str:
+        raise AssertionError("unexpected fetch bug")
+
+    with pytest.raises(AssertionError, match="unexpected fetch bug"):
+        fetch_pages_batched(
+            5,
+            jobs,
+            sync_fetch=fake_fetch,
+            total_concurrency=1,
+            per_host_concurrency=1,
+        )
+
+
+def test_fetch_pages_batched_treats_missing_fixture_fetch_as_row_failure() -> None:
+    jobs = [{"url": "https://a.example/missing", "payload": {"id": "a"}}]
+
+    def fake_fetch(_job: dict[str, object], url: str, _timeout_s: int) -> str:
+        raise KeyError(url)
+
+    results = fetch_pages_batched(
+        5,
+        jobs,
+        sync_fetch=fake_fetch,
+        total_concurrency=1,
+        per_host_concurrency=1,
+    )
+
+    assert results[0]["ok"] is False
+    assert "https://a.example/missing" in str(results[0]["error"])
+
+
+def test_fetch_pages_batched_ignores_expected_progress_callback_failure() -> None:
+    jobs = [{"url": "https://a.example/ok", "payload": {"id": "a"}}]
+
+    def fake_fetch(_job: dict[str, object], url: str, _timeout_s: int) -> str:
+        return f"<html>{url}</html>"
+
+    def fail_progress(_completed: int, _total: int) -> None:
+        raise RuntimeError("progress sink unavailable")
+
+    results = fetch_pages_batched(
+        5,
+        jobs,
+        sync_fetch=fake_fetch,
+        total_concurrency=1,
+        per_host_concurrency=1,
+        progress_callback=fail_progress,
+    )
+
+    assert results[0]["ok"] is True
+
+
+def test_fetch_pages_batched_does_not_hide_unexpected_progress_callback_bug() -> None:
+    jobs = [{"url": "https://a.example/ok", "payload": {"id": "a"}}]
+
+    def fake_fetch(_job: dict[str, object], url: str, _timeout_s: int) -> str:
+        return f"<html>{url}</html>"
+
+    def fail_progress(_completed: int, _total: int) -> None:
+        raise AssertionError("unexpected progress bug")
+
+    with pytest.raises(AssertionError, match="unexpected progress bug"):
+        fetch_pages_batched(
+            5,
+            jobs,
+            sync_fetch=fake_fetch,
+            total_concurrency=1,
+            per_host_concurrency=1,
+            progress_callback=fail_progress,
+        )
+
+
 def test_fetch_pages_batched_uses_async_fetch_when_provided() -> None:
     jobs = [
         {"url": "https://async.example/a", "payload": {"id": "a"}},

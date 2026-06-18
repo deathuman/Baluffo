@@ -14,6 +14,14 @@ except ImportError:
 else:
     httpx = httpx_mod
 
+_EXPECTED_PAGE_FETCH_EXCEPTIONS = (KeyError, OSError, RuntimeError, TimeoutError, ValueError)
+if httpx is not None:
+    _EXPECTED_PAGE_FETCH_EXCEPTIONS = (
+        *_EXPECTED_PAGE_FETCH_EXCEPTIONS,
+        httpx.HTTPError,
+    )
+_EXPECTED_PROGRESS_CALLBACK_EXCEPTIONS = (OSError, RuntimeError, TypeError, ValueError)
+
 
 PageSyncFetch = Callable[[dict[str, Any], str, int], str]
 PageAsyncFetch = Callable[[Any, dict[str, Any], str, int], Awaitable[str]]
@@ -57,7 +65,7 @@ async def _fetch_pages_batched_async(
             async with host_sem:
                 try:
                     text = await _call_fetch(client, job, url)
-                except Exception as exc:  # noqa: BLE001
+                except _EXPECTED_PAGE_FETCH_EXCEPTIONS as exc:
                     return index, {
                         "job": job,
                         "payload": job.get("payload"),
@@ -88,7 +96,7 @@ async def _fetch_pages_batched_async(
             if callable(progress_callback):
                 try:
                     progress_callback(completed, total)
-                except Exception:  # noqa: BLE001
+                except _EXPECTED_PROGRESS_CALLBACK_EXCEPTIONS:
                     pass
         return [result for result in results if isinstance(result, dict)]
 
