@@ -9,6 +9,8 @@ import hashlib
 import json
 import ssl
 import sys
+import time
+import uuid
 from collections.abc import Callable
 from ctypes import wintypes
 from dataclasses import dataclass
@@ -103,7 +105,7 @@ def _replace_with_retry(source: Path, target: Path) -> None:
         except PermissionError:
             if attempt >= (constants_mod.ATOMIC_WRITE_RETRY_ATTEMPTS - 1):
                 raise
-            deps.time.sleep(
+            time.sleep(
                 min(
                     constants_mod.ATOMIC_WRITE_RETRY_MAX_DELAY_S,
                     constants_mod.ATOMIC_WRITE_RETRY_BASE_DELAY_S * (attempt + 1),
@@ -114,7 +116,7 @@ def _replace_with_retry(source: Path, target: Path) -> None:
 def _write_atomic(path: Path, payload: str) -> None:
     deps = _root()
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.{deps.os.getpid()}.{deps.uuid.uuid4().hex}.tmp")
+    tmp = path.with_name(f"{path.name}.{deps.os.getpid()}.{uuid.uuid4().hex}.tmp")
     tmp.write_text(payload, encoding="utf-8")
     try:
         deps._replace_with_retry(tmp, path)
@@ -298,7 +300,7 @@ def _runtime_session_root_candidate_fallback() -> Path:
         deps._RUNTIME_SESSION_ROOT_FALLBACK = (
             Path(deps.tempfile.gettempdir()).resolve()
             / "BaluffoRuntime"
-            / f"desktop-session-{deps.os.getpid()}-{deps.uuid.uuid4().hex[:8]}"
+            / f"desktop-session-{deps.os.getpid()}-{uuid.uuid4().hex[:8]}"
         ).resolve()
     return Path(deps._RUNTIME_SESSION_ROOT_FALLBACK)
 
@@ -452,7 +454,7 @@ def download_file(
 ) -> Path:
     deps = _root()
     target.parent.mkdir(parents=True, exist_ok=True)
-    temp_target = target.with_name(f"{target.name}.{deps.uuid.uuid4().hex}.download")
+    temp_target = target.with_name(f"{target.name}.{uuid.uuid4().hex}.download")
     request = Request(str(url), headers={"User-Agent": constants_mod.USER_AGENT})
     try:
         timeout = max(5.0, float(timeout_s))

@@ -14,8 +14,8 @@ TRACKED_MODULES = (
     "src/ship/desktop_update_service.py",
 )
 
-EXPECTED_DEPENDENCY_COUNT = 68
-EXPECTED_REFERENCE_COUNT = 186
+EXPECTED_DEPENDENCY_COUNT = 66
+EXPECTED_REFERENCE_COUNT = 181
 
 CATEGORIES = {
     "constant",
@@ -37,9 +37,7 @@ STDLIB_BINDINGS = {
     "subprocess",
     "tempfile",
     "threading",
-    "time",
     "urlopen",
-    "uuid",
 }
 
 SHARED_HELPERS = {

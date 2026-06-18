@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -640,7 +641,7 @@ class DesktopUpdateService:
             helper_source = self.paths.install_root / constants_mod.DESKTOP_UPDATE_HELPER_NAME
             temp_helper = (
                 Path(deps.tempfile.gettempdir()).resolve()
-                / f"BaluffoUpdater-{deps.uuid.uuid4().hex}.exe"
+                / f"BaluffoUpdater-{uuid.uuid4().hex}.exe"
             )
             try:
                 deps.shutil.copy2(helper_source, temp_helper)
