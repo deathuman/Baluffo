@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import time
 import traceback
-from contextlib import suppress
 from http.server import BaseHTTPRequestHandler
 from typing import Any, Protocol
 from urllib.parse import parse_qs, urlparse
@@ -17,6 +16,16 @@ from src.shared.timing_counters import normalize_counter_category, time_block
 
 class StaticGetService(Protocol):
     def handle_get(self, handler: Any, *, path: str) -> bool: ...
+
+
+_EXPECTED_HANDLER_ROUTE_PATH_EXCEPTIONS = (AttributeError, TypeError, ValueError)
+_EXPECTED_HANDLER_STATUS_EXCEPTIONS = AttributeError
+_EXPECTED_HANDLER_BOOKKEEPING_EXCEPTIONS = (
+    AttributeError,
+    OSError,
+    TypeError,
+    ValueError,
+)
 
 
 def _is_expected_client_disconnect(exc: BaseException) -> bool:
@@ -37,8 +46,10 @@ def _is_expected_client_disconnect(exc: BaseException) -> bool:
 def _request_timing_category(handler: BaseHTTPRequestHandler, method: str, path: str = "") -> str:
     route_path = path or ""
     if not route_path:
-        with suppress(Exception):
+        try:
             route_path = _route_path(handler)
+        except _EXPECTED_HANDLER_ROUTE_PATH_EXCEPTIONS:
+            route_path = ""
     route_token = normalize_counter_category(route_path)
     return f"bridge_request_{str(method or '').strip().lower() or 'unknown'}_{route_token}"
 
@@ -54,9 +65,11 @@ def _handle_response_write_exception(
         handler.close_connection = True
         return True
     route_path = ""
-    with suppress(Exception):
+    try:
         route_path = _route_path(handler)
-    with suppress(Exception):
+    except _EXPECTED_HANDLER_ROUTE_PATH_EXCEPTIONS:
+        route_path = ""
+    try:
         api.bridge_log(
             "error",
             "http_response_write_failed",
@@ -65,6 +78,8 @@ def _handle_response_write_exception(
             status=int(status),
             error=str(exc),
         )
+    except _EXPECTED_HANDLER_BOOKKEEPING_EXCEPTIONS:
+        pass
     return False
 
 
@@ -100,8 +115,10 @@ def _send_json_response(
     except UnicodeEncodeError:
         body = json.dumps(payload, ensure_ascii=True, default=str).encode("utf-8")
     try:
-        with suppress(Exception):
+        try:
             handler._baluffo_last_response_status = int(status)
+        except _EXPECTED_HANDLER_STATUS_EXCEPTIONS:
+            pass
         handler.send_response(status)
         handler.send_header("Content-Type", "application/json; charset=utf-8")
         handler.send_header("Cache-Control", "no-store")
@@ -128,8 +145,10 @@ def _send_bytes_response(
     content_encoding: str = "",
 ) -> None:
     try:
-        with suppress(Exception):
+        try:
             handler._baluffo_last_response_status = int(status)
+        except _EXPECTED_HANDLER_STATUS_EXCEPTIONS:
+            pass
         handler.send_response(status)
         handler.send_header("Content-Type", content_type)
         handler.send_header("Cache-Control", str(cache_control or "no-store"))
@@ -184,16 +203,20 @@ def _handle_get_request(
     with time_block(_request_timing_category(handler, "get")):
         try:
             path = _route_path(handler)
-            with suppress(Exception):
+            try:
                 api.mark_desktop_session_activity(path)
+            except _EXPECTED_HANDLER_BOOKKEEPING_EXCEPTIONS:
+                pass
             query = _route_query(handler)
-            with suppress(Exception):
+            try:
                 api.bridge_log(
                     "info",
                     "http_get_route",
                     rawPath=getattr(handler, "path", ""),
                     routePath=path,
                 )
+            except _EXPECTED_HANDLER_BOOKKEEPING_EXCEPTIONS:
+                pass
 
             from src.bridge.routes.get_routes import handle_get
 
@@ -204,8 +227,10 @@ def _handle_get_request(
             handler.send_json({"error": "Not found"}, status=404)
         except Exception as exc:  # noqa: BLE001
             failed = True
-            with suppress(Exception):
+            try:
                 api.bridge_log("error", "http_get_handler_failed", path=path, error=str(exc))
+            except _EXPECTED_HANDLER_BOOKKEEPING_EXCEPTIONS:
+                pass
             handler.send_json(
                 {
                     "error": "Internal server error",
@@ -232,8 +257,10 @@ def _handle_post_request(handler: BaseHTTPRequestHandler, api: BridgeApi) -> Non
     with time_block(_request_timing_category(handler, "post")):
         try:
             path = _route_path(handler)
-            with suppress(Exception):
+            try:
                 api.mark_desktop_session_activity(path)
+            except _EXPECTED_HANDLER_BOOKKEEPING_EXCEPTIONS:
+                pass
             payload = read_json_from_request(handler)
             from src.bridge.routes.post_routes import handle_post
 
@@ -242,7 +269,7 @@ def _handle_post_request(handler: BaseHTTPRequestHandler, api: BridgeApi) -> Non
             handler.send_json({"error": "Not found"}, status=404)
         except BaseException as exc:  # noqa: BLE001
             failed = True
-            with suppress(Exception):
+            try:
                 api.bridge_log(
                     "error",
                     "http_post_handler_failed",
@@ -250,6 +277,8 @@ def _handle_post_request(handler: BaseHTTPRequestHandler, api: BridgeApi) -> Non
                     error=str(exc),
                     detail=traceback.format_exc(),
                 )
+            except _EXPECTED_HANDLER_BOOKKEEPING_EXCEPTIONS:
+                pass
             handler.send_json(
                 {
                     "error": "Internal server error",

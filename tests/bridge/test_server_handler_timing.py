@@ -4,7 +4,10 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from src.bridge.performance_profile import clear_performance_profile, snapshot_performance_profile
+from src.bridge.server import handler as server_handler
 from src.bridge.server import httpd
 from src.bridge.server.handler import make_handler
 from src.shared.timing_counters import clear_counters, snapshot_counters
@@ -27,6 +30,57 @@ class HandlerHarness:
         self.responses.append({"payload": payload, "status": status})
 
 
+class _ResponseWriterHarness:
+    path = "/ops/health"
+    command = "GET"
+    close_connection = False
+
+    def __init__(self) -> None:
+        self.headers: list[tuple[str, str]] = []
+        self.response_status: int | None = None
+        self.ended = False
+        self.wfile = self
+        self.body = b""
+
+    def send_response(self, status: int) -> None:
+        self.response_status = status
+
+    def send_header(self, key: str, value: str) -> None:
+        self.headers.append((key, value))
+
+    def end_headers(self) -> None:
+        self.ended = True
+
+    def write(self, body: bytes) -> None:
+        self.body += body
+
+
+class _StatusAssignmentRaisesAttributeError(_ResponseWriterHarness):
+    @property
+    def _baluffo_last_response_status(self) -> int:
+        return 0
+
+    @_baluffo_last_response_status.setter
+    def _baluffo_last_response_status(self, _value: int) -> None:
+        raise AttributeError("status not writable")
+
+
+class _StatusAssignmentRaisesAssertion(_ResponseWriterHarness):
+    @property
+    def _baluffo_last_response_status(self) -> int:
+        return 0
+
+    @_baluffo_last_response_status.setter
+    def _baluffo_last_response_status(self, _value: int) -> None:
+        raise AssertionError("unexpected status bookkeeping bug")
+
+
+class _PathRaisesRuntimeError:
+    @property
+    def path(self) -> str:
+        raise RuntimeError("unexpected path bug")
+
+
 def setup_function() -> None:
     clear_counters()
     clear_performance_profile()
@@ -35,6 +89,42 @@ def setup_function() -> None:
 def teardown_function() -> None:
     clear_counters()
     clear_performance_profile()
+
+
+def test_request_timing_category_suppresses_missing_path_only() -> None:
+    category = server_handler._request_timing_category(object(), "GET")
+
+    assert category == "bridge_request_get_unknown"
+
+
+def test_request_timing_category_propagates_unexpected_path_failure() -> None:
+    with pytest.raises(RuntimeError, match="unexpected path bug"):
+        server_handler._request_timing_category(_PathRaisesRuntimeError(), "GET")
+
+
+def test_send_json_response_suppresses_expected_status_bookkeeping_failure(
+    tmp_path: Path,
+) -> None:
+    api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    handler = _StatusAssignmentRaisesAttributeError()
+
+    server_handler._send_json_response(handler, api, {"ok": True}, status=202)
+
+    assert handler.response_status == 202
+    assert handler.ended is True
+    assert b'"ok": true' in handler.body
+
+
+def test_send_json_response_propagates_unexpected_status_bookkeeping_failure(
+    tmp_path: Path,
+) -> None:
+    api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    handler = _StatusAssignmentRaisesAssertion()
+
+    with pytest.raises(AssertionError, match="unexpected status bookkeeping bug"):
+        server_handler._send_json_response(handler, api, {"ok": True}, status=202)
+
+    assert handler.response_status is None
 
 
 def test_handler_records_get_request_timing(tmp_path: Path) -> None:
@@ -49,6 +139,36 @@ def test_handler_records_get_request_timing(tmp_path: Path) -> None:
     assert harness.responses[-1]["status"] == 200
     assert counters["bridge_request_get_ops_health"]["count"] == 1
     assert profile["routeTimings"]["routes"][0]["label"] == "GET /ops/health"
+
+
+def test_handler_suppresses_expected_session_activity_failure(tmp_path: Path) -> None:
+    api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    api.mark_desktop_session_activity = lambda _path: (_ for _ in ()).throw(  # type: ignore[assignment]
+        OSError("session store unavailable")
+    )
+    handler_cls = make_handler(api=api)
+    harness = HandlerHarness(handler_cls, method="GET", path="/ops/health")
+
+    harness.handler.do_GET()
+
+    assert harness.responses[-1]["status"] == 200
+    assert harness.responses[-1]["payload"]["ok"] is True
+
+
+def test_handler_converts_unexpected_session_activity_failure_to_500(
+    tmp_path: Path,
+) -> None:
+    api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    api.mark_desktop_session_activity = lambda _path: (_ for _ in ()).throw(  # type: ignore[assignment]
+        AssertionError("unexpected session bookkeeping bug")
+    )
+    handler_cls = make_handler(api=api)
+    harness = HandlerHarness(handler_cls, method="GET", path="/ops/health")
+
+    harness.handler.do_GET()
+
+    assert harness.responses[-1]["status"] == 500
+    assert "unexpected session bookkeeping bug" in harness.responses[-1]["payload"]["detail"]
 
 
 def test_handler_records_post_request_timing_for_not_found(tmp_path: Path) -> None:
