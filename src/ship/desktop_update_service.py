@@ -12,6 +12,12 @@ from typing import Any
 from src.app_version import get_app_version
 from src.ship import desktop_update_constants as constants_mod
 from src.ship import desktop_update_manifest as manifest_mod
+from src.ship.desktop_update_shared import (
+    desktop_update_public_key_candidate_paths,
+    install_stage_label,
+    iso_now,
+    load_desktop_update_public_keys,
+)
 from src.ship.desktop_update_state import (
     _cached_release_notes,
     _cached_release_notes_history,
@@ -283,12 +289,9 @@ class DesktopUpdateService:
         )
 
     def load_public_keys(self) -> dict[str, bytes]:
-        deps = self._deps
         return _as_bytes_dict(
-            deps.load_desktop_update_public_keys(
-                candidate_paths=deps.desktop_update_public_key_candidate_paths(
-                    self.paths.ship_root
-                ),
+            load_desktop_update_public_keys(
+                candidate_paths=desktop_update_public_key_candidate_paths(self.paths.ship_root),
             )
         )
 
@@ -416,7 +419,7 @@ class DesktopUpdateService:
             deps.write_json_atomic(
                 self.paths.manifest_cache_path,
                 {
-                    "cachedAt": deps.iso_now(),
+                    "cachedAt": iso_now(),
                     "releaseId": int(release.get("id") or 0),
                     "releaseTag": str(release.get("tag_name") or ""),
                     "manifest": manifest,
@@ -445,7 +448,7 @@ class DesktopUpdateService:
                     self.paths,
                     {
                         **deps.load_status(self.paths, current_version=current_version),
-                        "lastCheckedAt": deps.iso_now(),
+                        "lastCheckedAt": iso_now(),
                         "availability": "error",
                         "updateAvailable": False,
                         "lastError": str(exc),
@@ -694,7 +697,7 @@ class DesktopUpdateService:
                     "helperStdoutPath": str(self.paths.helper_stdout_log_path),
                     "helperStderrPath": str(self.paths.helper_stderr_log_path),
                     "helperDiagnosticsPath": str(self.paths.helper_diagnostics_log_path),
-                    "createdAt": deps.iso_now(),
+                    "createdAt": iso_now(),
                     "launcherPid": launcher_pid,
                     "launcherToken": launcher_token,
                     "desktopSessionRoot": str(session_root),
@@ -703,7 +706,7 @@ class DesktopUpdateService:
                 deps.write_json_atomic(
                     self.paths.handoff_request_path,
                     {
-                        "requestedAt": deps.iso_now(),
+                        "requestedAt": iso_now(),
                         "targetVersion": str(manifest.get("version") or "").strip(),
                         "launcherPid": launcher_pid,
                         "launcherToken": launcher_token,
@@ -715,11 +718,11 @@ class DesktopUpdateService:
                         **status,
                         "installState": "handoff_requested",
                         "installStage": "preparing",
-                        "installStageLabel": deps.install_stage_label(
+                        "installStageLabel": install_stage_label(
                             "handoff_requested",
                             "preparing",
                         ),
-                        "helperUpdatedAt": deps.iso_now(),
+                        "helperUpdatedAt": iso_now(),
                         "lastError": "",
                         "manifestPath": str(self.paths.manifest_cache_path),
                         "downloadedZipPath": str(zip_path),
