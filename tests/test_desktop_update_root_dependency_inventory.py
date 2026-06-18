@@ -37,13 +37,11 @@ def test_current_desktop_update_root_dependency_inventory_is_complete() -> None:
     assert "read_desktop_session_state" not in by_name
     assert "resolve_desktop_session_root" not in by_name
     assert "write_json_atomic" not in by_name
+    assert "load_status" not in by_name
+    assert "save_status" not in by_name
     assert by_name["_resolve_runtime_path"].categories == (
         "runtime-path",
         "shared-helper",
-    )
-    assert by_name["load_status"].categories == (
-        "mutable-compat-hook",
-        "state-helper",
     )
     assert by_name["os"].categories == (
         "mutable-compat-hook",

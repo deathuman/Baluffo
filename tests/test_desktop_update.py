@@ -1256,7 +1256,7 @@ def test_run_download_worker_does_not_abort_when_progress_status_write_fails(mon
             target.write_bytes(content)
             return target
 
-        monkeypatch.setattr(du, "save_status", flaky_save_status)
+        monkeypatch.setattr(du_service, "save_status", flaky_save_status)
         monkeypatch.setattr(du_service, "download_file", fake_download)
 
         service._run_download_worker(manifest)

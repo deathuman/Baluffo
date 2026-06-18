@@ -49,7 +49,9 @@ from src.ship.desktop_update_state import (
     clear_install_plan,
     clear_staged_helper,
     clear_success_marker,
+    load_status,
     read_cached_manifest,
+    save_status,
     write_handoff_diagnostics,
 )
 
@@ -164,12 +166,11 @@ class DesktopUpdateService:
         cached_manifest: dict[str, Any] | None = None,
         manifest: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        deps = self._deps
         current_version = self.current_version()
         existing = (
             dict(status)
             if isinstance(status, dict)
-            else deps.load_status(self.paths, current_version=current_version)
+            else load_status(self.paths, current_version=current_version)
         )
         existing, _credible_handoff_plan, _stale_handoff = _reconcile_handoff_status(
             self.paths,
@@ -230,7 +231,7 @@ class DesktopUpdateService:
         if not next_status.get("releaseNotesHistory") and release_notes_history:
             next_status["releaseNotesHistory"] = release_notes_history
         if next_status != existing:
-            return _as_dict(deps.save_status(self.paths, next_status))
+            return _as_dict(save_status(self.paths, next_status))
         return dict(next_status)
 
     def _download_failure_locked(
@@ -241,11 +242,10 @@ class DesktopUpdateService:
         error_code: str,
         mutate_status: bool = False,
     ) -> dict[str, Any]:
-        deps = self._deps
         next_status = dict(status)
         if mutate_status:
             next_status = _as_dict(
-                deps.save_status(
+                save_status(
                     self.paths,
                     _stale_download_failed_status(next_status, message=error),
                 )
@@ -259,9 +259,8 @@ class DesktopUpdateService:
         error: str,
         error_code: str,
     ) -> dict[str, Any]:
-        deps = self._deps
         next_status = _as_dict(
-            deps.save_status(
+            save_status(
                 self.paths,
                 {
                     **dict(status),
@@ -278,7 +277,6 @@ class DesktopUpdateService:
         zip_path: Path,
         temp_helper: Path | None,
     ) -> dict[str, Any]:
-        deps = self._deps
         error = "Baluffo did not confirm the install handoff. Try install again."
         with contextlib.suppress(Exception):
             write_handoff_diagnostics(self.paths)
@@ -286,7 +284,7 @@ class DesktopUpdateService:
         clear_install_plan(self.paths)
         clear_staged_helper(temp_helper)
         retryable_status = _as_dict(
-            deps.save_status(
+            save_status(
                 self.paths,
                 _retryable_install_status(status, zip_path=zip_path, error=error),
             )
@@ -359,7 +357,6 @@ class DesktopUpdateService:
         return dict(manifest)
 
     def check_for_update(self, *, force: bool = False) -> dict[str, Any]:
-        deps = self._deps
         with self._lock:
             current_version = self.current_version()
             status = self._reconcile_status_locked()
@@ -380,7 +377,7 @@ class DesktopUpdateService:
                         ) = self._load_cached_manifest_parts()
                         if manifest:
                             return _as_dict(
-                                deps.save_status(
+                                save_status(
                                     self.paths,
                                     self._reconcile_status_locked(
                                         status=_manifest_to_status(
@@ -395,7 +392,7 @@ class DesktopUpdateService:
                                     ),
                                 )
                             )
-            deps.save_status(self.paths, {**status, "availability": "checking", "lastError": ""})
+            save_status(self.paths, {**status, "availability": "checking", "lastError": ""})
         try:
             release = self._resolve_latest_release()
             manifest = self._resolve_manifest_from_release(release)
@@ -439,7 +436,7 @@ class DesktopUpdateService:
             next_status = _manifest_to_status(
                 current_version=current_version,
                 manifest=manifest,
-                existing=deps.load_status(self.paths, current_version=current_version),
+                existing=load_status(self.paths, current_version=current_version),
                 release_notes=release_notes,
                 release_notes_history=release_notes_history,
             )
@@ -453,10 +450,10 @@ class DesktopUpdateService:
                 )
         except Exception as exc:
             return _as_dict(
-                deps.save_status(
+                save_status(
                     self.paths,
                     {
-                        **deps.load_status(self.paths, current_version=current_version),
+                        **load_status(self.paths, current_version=current_version),
                         "lastCheckedAt": iso_now(),
                         "availability": "error",
                         "updateAvailable": False,
@@ -466,7 +463,6 @@ class DesktopUpdateService:
             )
 
     def _run_download_worker(self, manifest: dict[str, Any]) -> None:
-        deps = self._deps
         artifact = _as_dict(manifest.get("portable_artifact"))
         target = self.paths.downloads_dir / _portable_artifact_name(manifest)
         last_reported_percent = -1
@@ -480,10 +476,10 @@ class DesktopUpdateService:
                 return
             last_reported_percent = clamped_percent
             try:
-                deps.save_status(
+                save_status(
                     self.paths,
                     {
-                        **deps.load_status(self.paths, current_version=self.current_version()),
+                        **load_status(self.paths, current_version=self.current_version()),
                         "downloadState": "downloading",
                         "downloadedBytes": int(downloaded),
                         "totalBytes": int(total_bytes),
@@ -499,10 +495,10 @@ class DesktopUpdateService:
             expected_hash = str(artifact.get("sha256") or "").strip().lower()
             if expected_hash and compute_sha256(target).lower() != expected_hash:
                 raise RuntimeError("Downloaded portable ZIP checksum mismatch.")
-            deps.save_status(
+            save_status(
                 self.paths,
                 {
-                    **deps.load_status(self.paths, current_version=self.current_version()),
+                    **load_status(self.paths, current_version=self.current_version()),
                     "downloadState": "downloaded",
                     "downloadedBytes": int(target.stat().st_size),
                     "totalBytes": int(target.stat().st_size),
@@ -515,8 +511,8 @@ class DesktopUpdateService:
         except Exception as exc:
             with contextlib.suppress(OSError):
                 target.unlink()
-            current_status = deps.load_status(self.paths, current_version=self.current_version())
-            deps.save_status(
+            current_status = load_status(self.paths, current_version=self.current_version())
+            save_status(
                 self.paths,
                 {
                     **current_status,
@@ -577,7 +573,7 @@ class DesktopUpdateService:
             try:
                 self.paths.downloads_dir.mkdir(parents=True, exist_ok=True)
                 state = _as_dict(
-                    deps.save_status(
+                    save_status(
                         self.paths,
                         {
                             **status,
@@ -721,7 +717,7 @@ class DesktopUpdateService:
                         "launcherToken": launcher_token,
                     },
                 )
-                deps.save_status(
+                save_status(
                     self.paths,
                     {
                         **status,
@@ -738,9 +734,7 @@ class DesktopUpdateService:
                         "rollbackPath": str(rollback_path),
                     },
                 )
-                verified_status = deps.load_status(
-                    self.paths, current_version=self.current_version()
-                )
+                verified_status = load_status(self.paths, current_version=self.current_version())
                 verified_status, credible_handoff_plan, _stale_handoff = _reconcile_handoff_status(
                     self.paths,
                     verified_status,

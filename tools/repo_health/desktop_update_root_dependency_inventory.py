@@ -14,8 +14,8 @@ TRACKED_MODULES = (
     "src/ship/desktop_update_service.py",
 )
 
-EXPECTED_DEPENDENCY_COUNT = 12
-EXPECTED_REFERENCE_COUNT = 64
+EXPECTED_DEPENDENCY_COUNT = 10
+EXPECTED_REFERENCE_COUNT = 45
 
 CATEGORIES = {
     "constant",
@@ -45,10 +45,7 @@ SHARED_HELPERS = {
     "read_json",
 }
 
-STATE_HELPERS = {
-    "load_status",
-    "save_status",
-}
+STATE_HELPERS = {}
 
 EXTERNAL_ADAPTERS = {
     "psutil",
@@ -67,9 +64,7 @@ MUTABLE_COMPAT_HOOKS = (
     | CRYPTO_BINDINGS
     | {
         "_RUNTIME_SESSION_ROOT_FALLBACK",
-        "load_status",
         "read_json",
-        "save_status",
     }
 )
 
