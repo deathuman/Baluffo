@@ -18,6 +18,10 @@ from src.jobs.common.contracts_source_health import normalize_source_health_payl
 from src.jobs.common.contracts_static_suppression_policy import (
     normalize_static_suppression_policy_payload,
 )
+from src.shared.fetch_report_normalization import (
+    normalize_fetch_report_social_summary,
+    normalize_fetch_report_timing_summary,
+)
 from src.shared.fetch_report_progress import (
     derive_fetch_task_progress,
     normalize_fetch_task_progress,
@@ -226,21 +230,6 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
     source_families = _as_list(src.get("sourceFamilies"))
     social_summary_raw = _as_dict(src.get("socialSummary"))
 
-    def _normalize_social_channel(payload: Any) -> dict[str, Any]:
-        src_channel = payload if isinstance(payload, dict) else {}
-        return {
-            "keptCount": safe_int(src_channel.get("keptCount"), 0, 0, 1_000_000),
-            "uniqueKeptCount": safe_int(src_channel.get("uniqueKeptCount"), 0, 0, 1_000_000),
-            "officialBoardOverlapCount": safe_int(
-                src_channel.get("officialBoardOverlapCount"), 0, 0, 1_000_000
-            ),
-            "duplicateCount": safe_int(src_channel.get("duplicateCount"), 0, 0, 1_000_000),
-            "duplicateRate": max(0.0, min(1.0, safe_float(src_channel.get("duplicateRate")))),
-            "lowConfidenceDropped": safe_int(
-                src_channel.get("lowConfidenceDropped"), 0, 0, 1_000_000
-            ),
-        }
-
     def _normalize_source_rows(rows: list[Any]) -> list[dict[str, Any]]:
         normalized_rows: list[dict[str, Any]] = []
         for row in rows:
@@ -385,87 +374,18 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
             }
         )
     timing_summary_raw = _as_dict(runtime.get("timingSummary"))
-    stage_totals_raw = _as_dict(timing_summary_raw.get("stageTotalsMs"))
-    stage_top_raw = _as_list(timing_summary_raw.get("stageTop"))
-    adapter_timings_raw = _as_list(timing_summary_raw.get("adapterTimings"))
-    slowest_adapters_raw = _as_list(timing_summary_raw.get("slowestAdapters"))
-    high_cost_raw = _as_list(timing_summary_raw.get("highCostLowYieldSources"))
     normalized_summary = dict(summary)
     normalized_runtime: JsonObject = {
         **dict(runtime),
         "slowestSources": slowest_sources,
-        "timingSummary": {
-            "totalDurationMs": safe_int(
-                timing_summary_raw.get("totalDurationMs"), 0, 0, 86_400_000
-            ),
-            "medianSourceDurationMs": safe_int(
-                timing_summary_raw.get("medianSourceDurationMs"), 0, 0, 86_400_000
-            ),
-            "p95SourceDurationMs": safe_int(
-                timing_summary_raw.get("p95SourceDurationMs"), 0, 0, 86_400_000
-            ),
-            "stageTotalsMs": {
-                "fetchAndParse": safe_int(stage_totals_raw.get("fetchAndParse"), 0, 0, 86_400_000),
-                "listingFetch": safe_int(stage_totals_raw.get("listingFetch"), 0, 0, 86_400_000),
-                "parseCsv": safe_int(stage_totals_raw.get("parseCsv"), 0, 0, 86_400_000),
-                "candidateExtraction": safe_int(
-                    stage_totals_raw.get("candidateExtraction"), 0, 0, 86_400_000
-                ),
-                "detailFetch": safe_int(stage_totals_raw.get("detailFetch"), 0, 0, 86_400_000),
-                "redirectResolve": safe_int(
-                    stage_totals_raw.get("redirectResolve"), 0, 0, 86_400_000
-                ),
-                "canonicalization": safe_int(
-                    stage_totals_raw.get("canonicalization"), 0, 0, 86_400_000
-                ),
-            },
-            "stageTop": [
-                {
-                    "stage": str(row.get("stage") or "").strip(),
-                    "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
-                }
-                for row in stage_top_raw[:5]
-                if isinstance(row, dict) and str(row.get("stage") or "").strip()
-            ],
-            "adapterTimings": [
-                {
-                    "adapter": str(row.get("adapter") or "").strip().lower(),
-                    "sourceCount": safe_int(row.get("sourceCount"), 0, 0, 1_000_000),
-                    "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
-                    "medianDurationMs": safe_int(row.get("medianDurationMs"), 0, 0, 86_400_000),
-                    "fetchedCount": safe_int(row.get("fetchedCount"), 0, 0, 1_000_000),
-                    "keptCount": safe_int(row.get("keptCount"), 0, 0, 1_000_000),
-                    "errorCount": safe_int(row.get("errorCount"), 0, 0, 1_000_000),
-                    "zeroKeptCount": safe_int(row.get("zeroKeptCount"), 0, 0, 1_000_000),
-                }
-                for row in adapter_timings_raw[:20]
-                if isinstance(row, dict)
-            ],
-            "slowestAdapters": [
-                {
-                    "adapter": str(row.get("adapter") or "").strip().lower(),
-                    "sourceCount": safe_int(row.get("sourceCount"), 0, 0, 1_000_000),
-                    "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
-                    "medianDurationMs": safe_int(row.get("medianDurationMs"), 0, 0, 86_400_000),
-                    "fetchedCount": safe_int(row.get("fetchedCount"), 0, 0, 1_000_000),
-                    "keptCount": safe_int(row.get("keptCount"), 0, 0, 1_000_000),
-                    "errorCount": safe_int(row.get("errorCount"), 0, 0, 1_000_000),
-                    "zeroKeptCount": safe_int(row.get("zeroKeptCount"), 0, 0, 1_000_000),
-                }
-                for row in slowest_adapters_raw[:5]
-                if isinstance(row, dict)
-            ],
-            "highCostLowYieldSources": [
-                {
-                    "name": str(row.get("name") or "").strip(),
-                    "adapter": str(row.get("adapter") or "").strip().lower(),
-                    "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
-                    "keptCount": safe_int(row.get("keptCount"), 0, 0, 1_000_000),
-                }
-                for row in high_cost_raw[:5]
-                if isinstance(row, dict)
-            ],
-        },
+        "timingSummary": normalize_fetch_report_timing_summary(
+            timing_summary_raw,
+            include_wall_clock=False,
+            include_detail_heavy_sources=False,
+            lowercase_adapters=True,
+            default_missing_labels=False,
+            include_empty_shape=True,
+        ),
     }
     task_progress = normalize_fetch_task_progress(
         src.get("taskProgress"),
@@ -476,41 +396,7 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
         "runId": str(src.get("runId") or "").strip(),
         "startedAt": str(src.get("startedAt") or "").strip(),
         "finishedAt": str(src.get("finishedAt") or "").strip(),
-        "socialSummary": {
-            "pilotWindowStartAt": str(social_summary_raw.get("pilotWindowStartAt") or "").strip(),
-            "pilotWindowEndAt": str(social_summary_raw.get("pilotWindowEndAt") or "").strip(),
-            "scheduledRunCount": safe_int(
-                social_summary_raw.get("scheduledRunCount"), 0, 0, 1_000_000
-            ),
-            "keptCount": safe_int(social_summary_raw.get("keptCount"), 0, 0, 1_000_000),
-            "uniqueKeptCount": safe_int(social_summary_raw.get("uniqueKeptCount"), 0, 0, 1_000_000),
-            "officialBoardOverlapCount": safe_int(
-                social_summary_raw.get("officialBoardOverlapCount"), 0, 0, 1_000_000
-            ),
-            "duplicateCount": safe_int(social_summary_raw.get("duplicateCount"), 0, 0, 1_000_000),
-            "duplicateRate": max(
-                0.0, min(1.0, safe_float(social_summary_raw.get("duplicateRate")))
-            ),
-            "lowConfidenceDropped": safe_int(
-                social_summary_raw.get("lowConfidenceDropped"), 0, 0, 1_000_000
-            ),
-            "sampleSize": safe_int(social_summary_raw.get("sampleSize"), 0, 0, 1_000_000),
-            "reviewedCount": safe_int(social_summary_raw.get("reviewedCount"), 0, 0, 1_000_000),
-            "falsePositiveCount": safe_int(
-                social_summary_raw.get("falsePositiveCount"), 0, 0, 1_000_000
-            ),
-            "falsePositiveRate": max(
-                0.0, min(1.0, safe_float(social_summary_raw.get("falsePositiveRate")))
-            ),
-            "reviewArtifactPath": str(social_summary_raw.get("reviewArtifactPath") or "").strip(),
-            "channels": {
-                str(key).strip(): _normalize_social_channel(value)
-                for key, value in _as_dict(social_summary_raw.get("channels")).items()
-                if str(key).strip()
-            },
-        }
-        if social_summary_raw
-        else {},
+        "socialSummary": normalize_fetch_report_social_summary(social_summary_raw),
         "runtime": normalized_runtime,
         "summary": normalized_summary,
         "taskProgress": task_progress,

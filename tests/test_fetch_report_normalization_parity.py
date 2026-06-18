@@ -57,6 +57,15 @@ def test_jobs_completed_progress_preserves_summary_source_count_when_lower_than_
     assert jobs_counts["completedTasks"] == 2
 
 
+def test_bridge_fetch_report_keeps_empty_timing_summary_shape() -> None:
+    bridge = normalize_fetch_report_contract({})
+    jobs = normalize_fetch_report_payload({})
+
+    assert bridge["runtime"]["timingSummary"]["totalDurationMs"] == 0
+    assert bridge["runtime"]["timingSummary"]["stageTotalsMs"]["fetchAndParse"] == 0
+    assert "timingSummary" not in jobs["runtime"]
+
+
 def test_bridge_and_jobs_fetch_report_normalizers_share_social_and_timing_overlap() -> None:
     payload = {
         "socialSummary": {
@@ -80,6 +89,7 @@ def test_bridge_and_jobs_fetch_report_normalizers_share_social_and_timing_overla
         "runtime": {
             "timingSummary": {
                 "totalDurationMs": 100,
+                "wallClockDurationMs": 120,
                 "medianSourceDurationMs": 10,
                 "p95SourceDurationMs": 20,
                 "stageTotalsMs": {"fetchAndParse": 80, "detailFetch": 30},
@@ -109,6 +119,15 @@ def test_bridge_and_jobs_fetch_report_normalizers_share_social_and_timing_overla
                 ],
                 "highCostLowYieldSources": [
                     {"name": "slow", "adapter": "static", "durationMs": 99, "keptCount": 0}
+                ],
+                "detailHeavySources": [
+                    {
+                        "name": "detail-heavy",
+                        "adapter": "static",
+                        "durationMs": 80,
+                        "keptCount": 2,
+                        "detailFetchMs": 70,
+                    }
                 ],
             }
         },
@@ -140,3 +159,7 @@ def test_bridge_and_jobs_fetch_report_normalizers_share_social_and_timing_overla
     assert bridge_timing["adapterTimings"][0] == jobs_timing["adapterTimings"][0]
     assert bridge_timing["slowestAdapters"][0] == jobs_timing["slowestAdapters"][0]
     assert bridge_timing["highCostLowYieldSources"][0] == jobs_timing["highCostLowYieldSources"][0]
+    assert "wallClockDurationMs" not in bridge_timing
+    assert jobs_timing["wallClockDurationMs"] == 120
+    assert "detailHeavySources" not in bridge_timing
+    assert jobs_timing["detailHeavySources"][0]["detailFetchMs"] == 70

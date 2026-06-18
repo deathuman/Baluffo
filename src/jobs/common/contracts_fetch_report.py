@@ -7,6 +7,7 @@ from typing import Any
 from src.contracts import SCHEMA_VERSION
 from src.jobs.common.numbers import _clamped_int
 from src.jobs.text_utils import clean_text
+from src.shared.fetch_report_normalization import normalize_fetch_report_social_summary
 from src.shared.fetch_report_progress import derive_fetch_task_progress
 from src.shared.json_shapes import as_json_object, copy_json_object, json_object_rows
 from src.shared.live_task import (
@@ -19,7 +20,7 @@ from .contracts_provider_static_overlap import normalize_provider_static_overlap
 from .contracts_redundant_static_proposals import (
     normalize_redundant_static_proposals_payload,
 )
-from .contracts_runtime import _float_or_zero, normalize_runtime_payload
+from .contracts_runtime import normalize_runtime_payload
 from .contracts_source_health import normalize_source_health_payload
 from .contracts_source_reports import normalize_source_report_row
 from .contracts_static_suppression_policy import normalize_static_suppression_policy_payload
@@ -29,20 +30,6 @@ def _normalize_count_map(payload: Any) -> dict[str, int]:
     src = as_json_object(payload)
     return {
         clean_text(key): _clamped_int(value, 0, 0) for key, value in src.items() if clean_text(key)
-    }
-
-
-def _normalize_social_channel_summary(payload: Any) -> dict[str, Any]:
-    src_channel = as_json_object(payload)
-    return {
-        "keptCount": _clamped_int(src_channel.get("keptCount"), 0, 0),
-        "uniqueKeptCount": _clamped_int(src_channel.get("uniqueKeptCount"), 0, 0),
-        "officialBoardOverlapCount": _clamped_int(
-            src_channel.get("officialBoardOverlapCount"), 0, 0
-        ),
-        "duplicateCount": _clamped_int(src_channel.get("duplicateCount"), 0, 0),
-        "duplicateRate": max(0.0, min(1.0, _float_or_zero(src_channel.get("duplicateRate")))),
-        "lowConfidenceDropped": _clamped_int(src_channel.get("lowConfidenceDropped"), 0, 0),
     }
 
 
@@ -246,7 +233,6 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
     normalized_source_rows = [normalize_source_report_row(row) for row in source_rows]
     runtime = as_json_object(src.get("runtime"))
     social_summary_raw = as_json_object(src.get("socialSummary"))
-    social_channels_raw = as_json_object(social_summary_raw.get("channels"))
 
     normalized_payload = {
         "schemaVersion": SCHEMA_VERSION,
@@ -258,37 +244,7 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
         **live_task_fields,
         "runtime": normalize_runtime_payload(runtime, selected_source_count=len(source_rows)),
         "summary": summary,
-        "socialSummary": {
-            "pilotWindowStartAt": clean_text(social_summary_raw.get("pilotWindowStartAt")),
-            "pilotWindowEndAt": clean_text(social_summary_raw.get("pilotWindowEndAt")),
-            "scheduledRunCount": _clamped_int(social_summary_raw.get("scheduledRunCount"), 0, 0),
-            "keptCount": _clamped_int(social_summary_raw.get("keptCount"), 0, 0),
-            "uniqueKeptCount": _clamped_int(social_summary_raw.get("uniqueKeptCount"), 0, 0),
-            "officialBoardOverlapCount": _clamped_int(
-                social_summary_raw.get("officialBoardOverlapCount"), 0, 0
-            ),
-            "duplicateCount": _clamped_int(social_summary_raw.get("duplicateCount"), 0, 0),
-            "duplicateRate": max(
-                0.0, min(1.0, _float_or_zero(social_summary_raw.get("duplicateRate")))
-            ),
-            "lowConfidenceDropped": _clamped_int(
-                social_summary_raw.get("lowConfidenceDropped"), 0, 0
-            ),
-            "sampleSize": _clamped_int(social_summary_raw.get("sampleSize"), 0, 0),
-            "reviewedCount": _clamped_int(social_summary_raw.get("reviewedCount"), 0, 0),
-            "falsePositiveCount": _clamped_int(social_summary_raw.get("falsePositiveCount"), 0, 0),
-            "falsePositiveRate": max(
-                0.0, min(1.0, _float_or_zero(social_summary_raw.get("falsePositiveRate")))
-            ),
-            "reviewArtifactPath": clean_text(social_summary_raw.get("reviewArtifactPath")),
-            "channels": {
-                clean_text(key): _normalize_social_channel_summary(value)
-                for key, value in social_channels_raw.items()
-                if clean_text(key)
-            },
-        }
-        if social_summary_raw
-        else {},
+        "socialSummary": normalize_fetch_report_social_summary(social_summary_raw),
         "contaminationAudit": _normalize_contamination_audit(src.get("contaminationAudit")),
         "locationQualityAudit": _normalize_location_quality_audit(src.get("locationQualityAudit")),
         "cityGarbageAudit": _normalize_city_garbage_audit(src.get("cityGarbageAudit")),

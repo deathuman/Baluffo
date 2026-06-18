@@ -6,6 +6,7 @@ from typing import Any
 
 from src.jobs.common.numbers import _clamped_int
 from src.jobs.text_utils import clean_text
+from src.shared.fetch_report_normalization import normalize_fetch_report_timing_summary
 from src.shared.json_shapes import as_json_list, as_json_object, json_object_rows
 
 
@@ -14,18 +15,6 @@ def _float_or_zero(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
-
-
-def _normalize_stage_totals(stage_totals: dict[str, Any]) -> dict[str, int]:
-    return {
-        "fetchAndParse": _clamped_int(stage_totals.get("fetchAndParse"), 0, 0),
-        "listingFetch": _clamped_int(stage_totals.get("listingFetch"), 0, 0),
-        "parseCsv": _clamped_int(stage_totals.get("parseCsv"), 0, 0),
-        "candidateExtraction": _clamped_int(stage_totals.get("candidateExtraction"), 0, 0),
-        "detailFetch": _clamped_int(stage_totals.get("detailFetch"), 0, 0),
-        "redirectResolve": _clamped_int(stage_totals.get("redirectResolve"), 0, 0),
-        "canonicalization": _clamped_int(stage_totals.get("canonicalization"), 0, 0),
-    }
 
 
 def _normalize_named_duration_rows(
@@ -144,53 +133,5 @@ def normalize_runtime_payload(
 
     timing_summary_raw = as_json_object(src.get("timingSummary"))
     if timing_summary_raw:
-        stage_totals = as_json_object(timing_summary_raw.get("stageTotalsMs"))
-        stage_top = as_json_list(timing_summary_raw.get("stageTop"))
-        adapter_timings = as_json_list(timing_summary_raw.get("adapterTimings"))
-        slowest_adapters = as_json_list(timing_summary_raw.get("slowestAdapters"))
-        high_cost_low_yield_sources = as_json_list(
-            timing_summary_raw.get("highCostLowYieldSources")
-        )
-        detail_heavy_sources = as_json_list(timing_summary_raw.get("detailHeavySources"))
-        payload["timingSummary"] = {
-            "totalDurationMs": _clamped_int(timing_summary_raw.get("totalDurationMs"), 0, 0),
-            "wallClockDurationMs": _clamped_int(
-                timing_summary_raw.get("wallClockDurationMs"), 0, 0
-            ),
-            "medianSourceDurationMs": _clamped_int(
-                timing_summary_raw.get("medianSourceDurationMs"), 0, 0
-            ),
-            "p95SourceDurationMs": _clamped_int(
-                timing_summary_raw.get("p95SourceDurationMs"), 0, 0
-            ),
-            "stageTotalsMs": _normalize_stage_totals(stage_totals),
-            "stageTop": _normalize_named_duration_rows(
-                stage_top,
-                name_key="stage",
-                limit=5,
-            ),
-            "adapterTimings": _normalize_named_duration_rows(
-                adapter_timings,
-                name_key="adapter",
-                limit=20,
-                include_source_count=True,
-            ),
-            "slowestAdapters": _normalize_named_duration_rows(
-                slowest_adapters,
-                name_key="adapter",
-                limit=5,
-                include_source_count=True,
-            ),
-            "highCostLowYieldSources": _normalize_named_duration_rows(
-                high_cost_low_yield_sources,
-                name_key="name",
-                limit=5,
-            ),
-            "detailHeavySources": _normalize_named_duration_rows(
-                detail_heavy_sources,
-                name_key="name",
-                limit=10,
-                include_detail_fetch=True,
-            ),
-        }
+        payload["timingSummary"] = normalize_fetch_report_timing_summary(timing_summary_raw)
     return payload
