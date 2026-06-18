@@ -227,44 +227,42 @@ def parse_reddit_html_payload(
     """Parse Reddit HTML content for job posts when JSON and RSS fail."""
     out: list[RawJob] = []
     low_conf_count = 0
+    if not isinstance(html_text, str):
+        return out, low_conf_count
 
-    try:
-        for container in _reddit_html_containers(html_text):
-            title = _reddit_html_title(container)
-            if not title:
-                continue
-            link = _reddit_html_first_link(container)
-            posted_at = _reddit_html_posted_at(container)
-            apply_url = social_extract_apply_url(container, link)
-            rejected, reject_reason = _reddit_html_reject_reason(
-                title=title,
-                text=strip_html_text(container),
-                min_confidence=min_confidence,
-                reject_for_hire_posts=reject_for_hire_posts,
-                apply_url=apply_url,
-                link=link,
-            )
-            if rejected:
-                low_conf_count += 1
-                _increment_reason(reject_reasons, reject_reason)
-                continue
+    for container in _reddit_html_containers(html_text):
+        title = _reddit_html_title(container)
+        if not title:
+            continue
+        link = _reddit_html_first_link(container)
+        posted_at = _reddit_html_posted_at(container)
+        apply_url = social_extract_apply_url(container, link)
+        rejected, reject_reason = _reddit_html_reject_reason(
+            title=title,
+            text=strip_html_text(container),
+            min_confidence=min_confidence,
+            reject_for_hire_posts=reject_for_hire_posts,
+            apply_url=apply_url,
+            link=link,
+        )
+        if rejected:
+            low_conf_count += 1
+            _increment_reason(reject_reasons, reject_reason)
+            continue
 
-            job_entry, reject_reason = _reddit_html_job_entry(
-                container=container,
-                subreddit=subreddit,
-                title=title,
-                link=link,
-                apply_url=apply_url,
-                posted_at=posted_at,
-            )
-            if not job_entry:
-                low_conf_count += 1
-                _increment_reason(reject_reasons, reject_reason)
-                continue
-            out.append(job_entry)
-
-    except Exception:
-        pass
+        job_entry, reject_reason = _reddit_html_job_entry(
+            container=container,
+            subreddit=subreddit,
+            title=title,
+            link=link,
+            apply_url=apply_url,
+            posted_at=posted_at,
+        )
+        if not job_entry:
+            low_conf_count += 1
+            _increment_reason(reject_reasons, reject_reason)
+            continue
+        out.append(job_entry)
 
     return out, low_conf_count
 
