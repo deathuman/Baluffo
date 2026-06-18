@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from contextlib import suppress
 from typing import Any
 
 from src.bridge.api import BridgeApi
@@ -25,10 +24,20 @@ def _int(value: Any, default: int = 0) -> int:
         return default
 
 
+_EXPECTED_BOOTSTRAP_FALLBACK_EXCEPTIONS = (
+    AttributeError,
+    OSError,
+    RuntimeError,
+    TypeError,
+    ValueError,
+)
+
+
 def _best_effort(default: Any, func: Any) -> Any:
-    with suppress(Exception):
+    try:
         return func()
-    return default
+    except _EXPECTED_BOOTSTRAP_FALLBACK_EXCEPTIONS:
+        return default
 
 
 def _compact_task_row(row: dict[str, Any]) -> dict[str, Any]:

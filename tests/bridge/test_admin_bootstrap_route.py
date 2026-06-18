@@ -3,6 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
+
+from src.bridge import admin_bootstrap
 from src.bridge.routes import get_admin_bootstrap
 from src.bridge.routes.get_routes import handle_get
 from tests.helpers.bridge_api import FakeDesktopLocalDataStore, FakeHandler, make_stub_bridge_api
@@ -16,6 +19,29 @@ def _overview_summary(store: FakeDesktopLocalDataStore, detail: str) -> dict[str
         "users": users,
         "totals": {"users": len(users), "savedJobs": 1},
     }
+
+
+def _raise(exc: BaseException) -> None:
+    raise exc
+
+
+def test_admin_bootstrap_best_effort_suppresses_expected_fallback_failures() -> None:
+    assert (
+        admin_bootstrap._best_effort("fallback", lambda: _raise(RuntimeError("offline")))  # noqa: SLF001
+        == "fallback"
+    )
+    assert (
+        admin_bootstrap._best_effort("fallback", lambda: _raise(OSError("unavailable")))  # noqa: SLF001
+        == "fallback"
+    )
+
+
+def test_admin_bootstrap_best_effort_does_not_hide_unexpected_failures() -> None:
+    with pytest.raises(AssertionError, match="unexpected bootstrap bug"):
+        admin_bootstrap._best_effort(  # noqa: SLF001
+            "fallback",
+            lambda: _raise(AssertionError("unexpected bootstrap bug")),
+        )
 
 
 def test_admin_bootstrap_uses_bounded_control_plane_inputs(tmp_path: Path) -> None:
