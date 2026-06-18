@@ -1115,11 +1115,18 @@ def test_desktop_updater_root_exports_required_compatibility_names() -> None:
 def test_packaged_desktop_smoke_root_exports_required_compatibility_names() -> None:
     packaged_smoke = importlib.import_module("src.packaged_desktop_smoke")
     required_names = {
+        "DESKTOP_UPDATE_MANIFEST_ASSET",
+        "DESKTOP_UPDATE_SCHEMA_VERSION",
+        "DESKTOP_UPDATER_VERSION",
+        "Ed25519SigningClass",
+        "compute_sha256",
         "fetch_json",
+        "get_app_version",
         "read_startup_metrics_file",
         "run_packaged_smoke",
         "run_portable_build",
         "select_startup_probe_browser",
+        "sign_manifest",
         "write_startup_summary",
     }
 
@@ -1127,6 +1134,27 @@ def test_packaged_desktop_smoke_root_exports_required_compatibility_names() -> N
     assert not missing, (
         "src.packaged_desktop_smoke must keep its stable smoke-runner surface intact during "
         f"refactors; missing: {', '.join(missing)}"
+    )
+
+
+def test_packaged_update_rehearsal_uses_leaf_manifest_helpers(repo_root: Path) -> None:
+    target = repo_root / "src" / "ship" / "packaged_smoke" / "rehearsal_update.py"
+    text = target.read_text(encoding="utf-8")
+    forbidden = {
+        "deps.desktop_update_mod.DESKTOP_UPDATE_MANIFEST_ASSET",
+        "deps.desktop_update_mod.DESKTOP_UPDATE_SCHEMA_VERSION",
+        "deps.desktop_update_mod.DESKTOP_UPDATER_VERSION",
+        "deps.desktop_update_mod.Ed25519PrivateKey",
+        "deps.desktop_update_mod.compute_sha256",
+        "deps.desktop_update_mod.get_app_version",
+        "deps.desktop_update_mod.sign_manifest",
+    }
+
+    present = sorted(item for item in forbidden if item in text)
+
+    assert not present, (
+        "packaged update rehearsal must use pure leaf manifest/signing helpers through "
+        f"the packaged smoke root, not desktop_update facade symbols: {', '.join(present)}"
     )
 
 

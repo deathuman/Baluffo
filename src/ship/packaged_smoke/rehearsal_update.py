@@ -218,9 +218,9 @@ def _start_desktop_update_release_server(
             "html_url": f"{base_url}/release-notes",
             "assets": [
                 {
-                    "name": deps.desktop_update_mod.DESKTOP_UPDATE_MANIFEST_ASSET,
+                    "name": deps.DESKTOP_UPDATE_MANIFEST_ASSET,
                     "browser_download_url": (
-                        f"{base_url}/assets/{deps.desktop_update_mod.DESKTOP_UPDATE_MANIFEST_ASSET}"
+                        f"{base_url}/assets/{deps.DESKTOP_UPDATE_MANIFEST_ASSET}"
                     ),
                 }
             ],
@@ -531,9 +531,9 @@ def run_desktop_update_rehearsal(
     deps = _root()
     started = time.perf_counter()
     portable_root = exe_path.parent.resolve()
-    if deps.desktop_update_mod.Ed25519PrivateKey is None:
+    if deps.Ed25519SigningClass is None:
         raise RuntimeError("Desktop update rehearsal requires Ed25519 signing support.")
-    private_key = deps.desktop_update_mod.Ed25519PrivateKey.generate()
+    private_key = deps.Ed25519SigningClass.generate()
     public_key_b64 = base64.b64encode(private_key.public_key().public_bytes_raw()).decode("ascii")
     key_id = "desktop-ed25519-rehearsal"
     install_root, target_root, source_psutil_removed = _prepare_desktop_update_rehearsal_roots(
@@ -549,19 +549,19 @@ def run_desktop_update_rehearsal(
         artifacts_dir / "baluffo-portable-update.zip",
     )
     manifest = {
-        "schema_version": deps.desktop_update_mod.DESKTOP_UPDATE_SCHEMA_VERSION,
+        "schema_version": deps.DESKTOP_UPDATE_SCHEMA_VERSION,
         "key_id": key_id,
         "channel": deps.desktop_update_mod.DESKTOP_UPDATE_CHANNEL,
-        "version": deps.desktop_update_mod.get_app_version(),
+        "version": deps.get_app_version(),
         "published_at": deps.utc_now_iso(),
         "release_notes_url": "",
-        "min_desktop_updater_version": deps.desktop_update_mod.DESKTOP_UPDATER_VERSION,
+        "min_desktop_updater_version": deps.DESKTOP_UPDATER_VERSION,
         "min_supported_current_version": "0.0.0",
         "data_schema_version": "1",
         "rollback_allowed": True,
         "portable_artifact": {
             "url": "",
-            "sha256": deps.desktop_update_mod.compute_sha256(target_zip),
+            "sha256": deps.compute_sha256(target_zip),
             "size_bytes": int(target_zip.stat().st_size),
         },
         "migration_plan": [],
@@ -585,7 +585,7 @@ def run_desktop_update_rehearsal(
         )
         manifest["release_notes_url"] = f"{base_url}/release-notes"
         manifest["portable_artifact"]["url"] = f"{base_url}/assets/baluffo-portable-update.zip"
-        manifest["signature"] = deps.desktop_update_mod.sign_manifest(
+        manifest["signature"] = deps.sign_manifest(
             manifest,
             private_key.private_bytes_raw(),
         )
@@ -709,7 +709,7 @@ def run_desktop_update_rehearsal(
             session_state_path.unlink()
         relaunched = deps._wait_for_relaunched_runtime(
             expected_data_dir=data_dir,
-            expected_version=deps.desktop_update_mod.get_app_version(),
+            expected_version=deps.get_app_version(),
             timeout_s=max(45.0, runtime_timeout_s),
             env=runtime_env,
         )

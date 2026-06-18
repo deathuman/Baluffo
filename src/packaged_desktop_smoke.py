@@ -44,15 +44,12 @@ from src.ship.packaged_smoke import rehearsal_update as packaged_smoke_rehearsal
 from src.ship.packaged_smoke import rehearsals as packaged_smoke_rehearsals_mod
 from src.ship.packaged_smoke import runtime as packaged_smoke_runtime_mod
 from src.ship.packaged_smoke import startup_metrics as packaged_smoke_startup_metrics_mod
-from src.ship.startup_probe_policy import (
-    EMBEDDED_PAGE_PROBES as _EMBEDDED_PAGE_PROBES,
-)
+from src.ship.packaged_smoke import update_manifest_helpers as update_manifest_helpers_mod
+from src.ship.startup_probe_policy import EMBEDDED_PAGE_PROBES as _EMBEDDED_PAGE_PROBES
 from src.ship.startup_probe_policy import (
     REQUIRED_STARTUP_PROBE_LAUNCH_MODE as _REQUIRED_STARTUP_PROBE_LAUNCH_MODE,
 )
-from src.ship.startup_probe_policy import (
-    STARTUP_REQUIRED_EVENTS as _STARTUP_REQUIRED_EVENTS,
-)
+from src.ship.startup_probe_policy import STARTUP_REQUIRED_EVENTS as _STARTUP_REQUIRED_EVENTS
 from src.ship.startup_probe_policy import (
     classify_startup_probe_failure as _classify_startup_probe_failure,
 )
@@ -65,18 +62,14 @@ from src.ship.startup_probe_policy import (
 from src.ship.startup_probe_policy import (
     select_startup_probe_browser as _select_startup_probe_browser_policy,
 )
-from src.ship.startup_probe_policy import (
-    startup_metric_fields as _startup_metric_fields,
-)
+from src.ship.startup_probe_policy import startup_metric_fields as _startup_metric_fields
 from src.ship.startup_probe_policy import (
     startup_probe_browser_details as _startup_probe_browser_details,
 )
 from src.ship.startup_probe_policy import (
     startup_profile_required_events as _startup_profile_required_events,
 )
-from src.ship.startup_profile import (
-    render_startup_summary,
-)
+from src.ship.startup_profile import render_startup_summary
 from src.ship.startup_profile import (
     summarize_startup_metrics as _summarize_startup_metrics,
 )
@@ -158,6 +151,13 @@ ProcessMemorySampler = _ProcessMemorySampler
 utc_now_iso = _utc_now_iso
 desktop_app_mod = _desktop_app_mod
 desktop_update_mod = _desktop_update_mod
+DESKTOP_UPDATE_MANIFEST_ASSET = update_manifest_helpers_mod.DESKTOP_UPDATE_MANIFEST_ASSET
+DESKTOP_UPDATE_SCHEMA_VERSION = update_manifest_helpers_mod.DESKTOP_UPDATE_SCHEMA_VERSION
+DESKTOP_UPDATER_VERSION = update_manifest_helpers_mod.DESKTOP_UPDATER_VERSION
+Ed25519SigningClass = update_manifest_helpers_mod.Ed25519SigningClass
+compute_sha256 = update_manifest_helpers_mod.compute_sha256
+get_app_version = update_manifest_helpers_mod.get_app_version
+sign_manifest = update_manifest_helpers_mod.sign_manifest
 EMBEDDED_PAGE_PROBES = _EMBEDDED_PAGE_PROBES
 STARTUP_REQUIRED_EVENTS = _STARTUP_REQUIRED_EVENTS
 classify_startup_probe_failure = _classify_startup_probe_failure
