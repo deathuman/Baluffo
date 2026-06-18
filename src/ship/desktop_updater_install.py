@@ -309,7 +309,7 @@ def _recover_interrupted_install(
     if stage in SUCCESS_RECOVERY_STAGES:
         try:
             module._verify_target_startup(plan, timeout_s=5.0)
-        except Exception:  # noqa: BLE001
+        except (OSError, RuntimeError, ValueError):
             pass
         else:
             module._finalize_success(paths, plan, rollback_root)
