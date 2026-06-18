@@ -27,6 +27,13 @@ from src.ship.desktop_update_state import (
     _reconcile_handoff_status,
     _retryable_install_status,
     _stale_download_failed_status,
+    clear_handoff_diagnostics,
+    clear_handoff_request,
+    clear_install_plan,
+    clear_staged_helper,
+    clear_success_marker,
+    read_cached_manifest,
+    write_handoff_diagnostics,
 )
 
 root: Any | None = None
@@ -119,11 +126,10 @@ class DesktopUpdateService:
         *,
         cached_manifest: dict[str, Any] | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any], dict[str, str], list[dict[str, str]]]:
-        deps = self._deps
         cached = (
             dict(cached_manifest)
             if isinstance(cached_manifest, dict)
-            else deps.read_cached_manifest(self.paths)
+            else read_cached_manifest(self.paths)
         )
         manifest = _as_dict(cached.get("manifest"))
         release_notes = _cached_release_notes(
@@ -258,10 +264,10 @@ class DesktopUpdateService:
         deps = self._deps
         error = "Baluffo did not confirm the install handoff. Try install again."
         with contextlib.suppress(Exception):
-            deps.write_handoff_diagnostics(self.paths)
-        deps.clear_handoff_request(self.paths)
-        deps.clear_install_plan(self.paths)
-        deps.clear_staged_helper(temp_helper)
+            write_handoff_diagnostics(self.paths)
+        clear_handoff_request(self.paths)
+        clear_install_plan(self.paths)
+        clear_staged_helper(temp_helper)
         retryable_status = _as_dict(
             deps.save_status(
                 self.paths,
@@ -429,7 +435,7 @@ class DesktopUpdateService:
                 return dict(
                     self._reconcile_status_locked(
                         status=next_status,
-                        cached_manifest=deps.read_cached_manifest(self.paths),
+                        cached_manifest=read_cached_manifest(self.paths),
                         manifest=manifest,
                     )
                 )
@@ -664,8 +670,8 @@ class DesktopUpdateService:
                     error_code="install_start_failed",
                 )
             try:
-                deps.clear_success_marker(self.paths)
-                deps.clear_handoff_diagnostics(self.paths)
+                clear_success_marker(self.paths)
+                clear_handoff_diagnostics(self.paths)
                 rollback_path = self.paths.rollback_root / (
                     f"{str(manifest.get('version') or '').strip()}-"
                     f"{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}"
