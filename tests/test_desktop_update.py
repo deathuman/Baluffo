@@ -525,7 +525,7 @@ def test_write_json_atomic_retries_transient_permission_error() -> None:
     with workspace_tmpdir("desktop-update") as tmp:
         target = Path(tmp) / "portable" / "ship" / "data" / "updater" / "install-state.json"
         calls = {"count": 0}
-        original_replace = du.os.replace
+        original_replace = du_shared.os.replace
 
         def flaky_replace(src, dst):  # noqa: ANN001
             calls["count"] += 1
@@ -533,7 +533,7 @@ def test_write_json_atomic_retries_transient_permission_error() -> None:
                 raise PermissionError(32, "sharing violation")
             return original_replace(src, dst)
 
-        with mock.patch.object(du.os, "replace", side_effect=flaky_replace):
+        with mock.patch.object(du_shared.os, "replace", side_effect=flaky_replace):
             du.write_json_atomic(target, {"ok": True})
 
         assert json.loads(target.read_text(encoding="utf-8"))["ok"] is True
@@ -565,7 +565,7 @@ def test_download_file_retries_transient_permission_error_on_finalize() -> None:
         content = b"portable-zip"
         calls = {"count": 0}
         seen = {}
-        original_replace = du.os.replace
+        original_replace = du_shared.os.replace
 
         def flaky_replace(src, dst):  # noqa: ANN001
             calls["count"] += 1
@@ -580,7 +580,7 @@ def test_download_file_retries_transient_permission_error_on_finalize() -> None:
 
         with (
             mock.patch.object(du, "urlopen", side_effect=fake_urlopen),
-            mock.patch.object(du.os, "replace", side_effect=flaky_replace),
+            mock.patch.object(du_shared.os, "replace", side_effect=flaky_replace),
         ):
             result = du.download_file("https://example.com/app.zip", target)
 
@@ -739,7 +739,7 @@ def test_resolve_desktop_session_root_falls_back_to_temp_when_primary_is_not_wri
 
         with (
             mock.patch.dict(
-                du.os.environ,
+                du_shared.os.environ,
                 {
                     "LOCALAPPDATA": str(local_app_data),
                     "XDG_DATA_HOME": str(xdg_data),
@@ -749,7 +749,7 @@ def test_resolve_desktop_session_root_falls_back_to_temp_when_primary_is_not_wri
                 },
                 clear=False,
             ),
-            mock.patch.object(du.tempfile, "gettempdir", return_value=str(temp_root)),
+            mock.patch.object(du_shared.tempfile, "gettempdir", return_value=str(temp_root)),
             mock.patch.object(Path, "write_text", new=flaky_write_text),
         ):
             session_root = du.resolve_desktop_session_root()

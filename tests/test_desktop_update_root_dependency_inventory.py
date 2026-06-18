@@ -43,13 +43,13 @@ def test_current_desktop_update_root_dependency_inventory_is_complete() -> None:
         "runtime-path",
         "shared-helper",
     )
-    assert by_name["os"].categories == (
-        "mutable-compat-hook",
-        "stdlib-binding",
-    )
     assert by_name["psutil"].categories == (
         "external-adapter",
         "mutable-compat-hook",
+    )
+    assert by_name["urlopen"].categories == (
+        "mutable-compat-hook",
+        "stdlib-binding",
     )
     assert all(row.categories for row in rows)
 

@@ -7,8 +7,10 @@ import contextlib
 import ctypes
 import hashlib
 import json
+import os
 import ssl
 import sys
+import tempfile
 import time
 import uuid
 from collections.abc import Callable
@@ -52,8 +54,7 @@ def iso_now() -> str:
 
 
 def resolve_github_api_base() -> str:
-    deps = _root()
-    value = str(deps.os.environ.get(constants_mod.GITHUB_API_BASE_ENV) or "").strip()
+    value = str(os.environ.get(constants_mod.GITHUB_API_BASE_ENV) or "").strip()
     return value.rstrip("/") if value else constants_mod.GITHUB_API_BASE
 
 
@@ -96,10 +97,9 @@ def install_stage_label(
 
 
 def _replace_with_retry(source: Path, target: Path) -> None:
-    deps = _root()
     for attempt in range(constants_mod.ATOMIC_WRITE_RETRY_ATTEMPTS):
         try:
-            deps.os.replace(source, target)
+            os.replace(source, target)
             return
         except PermissionError:
             if attempt >= (constants_mod.ATOMIC_WRITE_RETRY_ATTEMPTS - 1):
@@ -113,9 +113,8 @@ def _replace_with_retry(source: Path, target: Path) -> None:
 
 
 def _write_atomic(path: Path, payload: str) -> None:
-    deps = _root()
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.{deps.os.getpid()}.{uuid.uuid4().hex}.tmp")
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
     tmp.write_text(payload, encoding="utf-8")
     try:
         _replace_with_retry(tmp, path)
@@ -183,15 +182,14 @@ def desktop_update_public_key_candidate_paths(ship_root: Path) -> tuple[Path, ..
 def load_desktop_update_public_keys(
     *, candidate_paths: list[Path] | tuple[Path, ...] | None = None
 ) -> dict[str, bytes]:
-    deps = _root()
-    raw = str(deps.os.environ.get("BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_JSON") or "").strip()
+    raw = str(os.environ.get("BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_JSON") or "").strip()
     if not raw:
         if candidate_paths:
             for candidate in candidate_paths:
                 path = Path(candidate).expanduser().resolve()
                 if not path.is_file():
                     continue
-                payload = deps.read_json(path, {})
+                payload = read_json(path, {})
                 if payload:
                     return _as_bytes_dict(_decode_public_keys_payload(payload))
         return {}
@@ -270,20 +268,17 @@ def _resolve_ship_current_version(ship_root: Path) -> str:
 
 
 def resolve_release_repo(*, install_root: Path, ship_root: Path) -> str:
-    deps = _root()
-    env_repo = str(deps.os.environ.get("BALUFFO_DESKTOP_UPDATE_REPO") or "").strip()
+    env_repo = str(os.environ.get("BALUFFO_DESKTOP_UPDATE_REPO") or "").strip()
     if env_repo:
         return env_repo
     current_version = _resolve_ship_current_version(ship_root)
     if current_version:
         packaging_dir = ship_root / "app" / "versions" / current_version / "packaging"
-        payload = _as_dict(
-            deps.read_json(packaging_dir / constants_mod.DESKTOP_UPDATE_CONFIG_FILE, {})
-        )
+        payload = _as_dict(read_json(packaging_dir / constants_mod.DESKTOP_UPDATE_CONFIG_FILE, {}))
         repo = str(payload.get("repo") or "").strip()
         if repo:
             return repo
-        payload = _as_dict(deps.read_json(packaging_dir / "github-app-sync-config.json", {}))
+        payload = _as_dict(read_json(packaging_dir / "github-app-sync-config.json", {}))
         repo = str(payload.get("repo") or "").strip()
         if repo:
             return repo
@@ -294,21 +289,20 @@ def _runtime_session_root_candidate_fallback() -> Path:
     deps = _root()
     if deps._RUNTIME_SESSION_ROOT_FALLBACK is None:
         deps._RUNTIME_SESSION_ROOT_FALLBACK = (
-            Path(deps.tempfile.gettempdir()).resolve()
+            Path(tempfile.gettempdir()).resolve()
             / "BaluffoRuntime"
-            / f"desktop-session-{deps.os.getpid()}-{uuid.uuid4().hex[:8]}"
+            / f"desktop-session-{os.getpid()}-{uuid.uuid4().hex[:8]}"
         ).resolve()
     return Path(deps._RUNTIME_SESSION_ROOT_FALLBACK)
 
 
 def _resolve_desktop_session_root_fallback(env: dict[str, str] | None = None) -> Path:
-    deps = _root()
-    env_map = env if env is not None else deps.os.environ
+    env_map = env if env is not None else os.environ
     env_override = str(env_map.get("BALUFFO_DESKTOP_SESSION_ROOT") or "").strip()
     candidates: list[Path] = []
     if env_override:
         candidates.append(Path(env_override).expanduser().resolve())
-    if deps.os.name != "nt":
+    if os.name != "nt":
         xdg_data = str(env_map.get("XDG_DATA_HOME") or "").strip()
         if not xdg_data:
             xdg_data = str(Path.home() / ".local" / "share")
@@ -319,7 +313,7 @@ def _resolve_desktop_session_root_fallback(env: dict[str, str] | None = None) ->
     else:
         candidates.append((Path.home() / "AppData" / "Local" / "Baluffo").resolve())
     username = str(env_map.get("USERNAME") or env_map.get("USER") or "user").strip() or "user"
-    candidates.append((Path(deps.tempfile.gettempdir()) / f"Baluffo-{username}").resolve())
+    candidates.append((Path(tempfile.gettempdir()) / f"Baluffo-{username}").resolve())
     candidates.append(_runtime_session_root_candidate_fallback())
     for candidate in candidates:
         try:
@@ -350,17 +344,15 @@ def _looks_like_windows_absolute_path(value: str) -> bool:
 
 
 def _resolve_runtime_path(value: Path | str) -> Path:
-    deps = _root()
     raw = str(value or "").strip()
     expanded = str(Path(raw).expanduser()) if raw else raw
-    if deps.os.name != "nt" and _looks_like_windows_absolute_path(expanded):
+    if os.name != "nt" and _looks_like_windows_absolute_path(expanded):
         return Path(expanded.replace("\\", "/"))
     return Path(expanded).resolve()
 
 
 def read_desktop_session_state(session_root: Path) -> dict[str, Any]:
-    deps = _root()
-    return _as_dict(deps.read_json(Path(session_root) / "desktop-session.json", {}))
+    return _as_dict(read_json(Path(session_root) / "desktop-session.json", {}))
 
 
 def _pid_is_running_windows(pid: int) -> bool:
@@ -402,7 +394,7 @@ def pid_is_running(pid: int) -> bool:
     if sys.platform == "win32":
         return _pid_is_running_windows(pid)
     try:
-        deps.os.kill(pid, 0)
+        os.kill(pid, 0)
     except OSError:
         return False
     return True
