@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -243,7 +244,7 @@ class DesktopUpdateService:
     ) -> dict[str, Any]:
         deps = self._deps
         error = "Baluffo did not confirm the install handoff. Try install again."
-        with deps.contextlib.suppress(Exception):
+        with contextlib.suppress(Exception):
             deps.write_handoff_diagnostics(self.paths)
         deps.clear_handoff_request(self.paths)
         deps.clear_install_plan(self.paths)
@@ -481,7 +482,7 @@ class DesktopUpdateService:
                 },
             )
         except Exception as exc:
-            with deps.contextlib.suppress(OSError):
+            with contextlib.suppress(OSError):
                 target.unlink()
             current_status = deps.load_status(self.paths, current_version=self.current_version())
             deps.save_status(
