@@ -81,7 +81,7 @@ def coerce_fetch_report_detail_row(detail: Any) -> dict[str, Any] | None:
             except json.JSONDecodeError:
                 try:
                     parsed = ast.literal_eval(raw)
-                except Exception:  # noqa: BLE001
+                except (SyntaxError, ValueError):
                     parsed = None
             if isinstance(parsed, dict):
                 candidate = parsed
