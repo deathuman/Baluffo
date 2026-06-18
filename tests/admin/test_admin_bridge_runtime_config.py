@@ -580,13 +580,14 @@ def test_regular_desktop_close_stays_alive_for_active_task_or_update_handoff(
         owner_idle_timeout_s=15.0,
     )
     admin_bridge.configure_runtime_paths(cfg)
-    admin_bridge.update_desktop_session_lifecycle(
-        owner_token="owner-1",
-        session_id="session-1",
-        page_id="page-1",
-        state="closing",
-        reason="beforeunload",
-    )
+    with mock.patch.object(admin_bridge, "now_iso", return_value="2026-03-01T00:00:00+00:00"):
+        admin_bridge.update_desktop_session_lifecycle(
+            owner_token="owner-1",
+            session_id="session-1",
+            page_id="page-1",
+            state="closing",
+            reason="beforeunload",
+        )
 
     with (
         mock.patch.object(

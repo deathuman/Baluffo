@@ -230,7 +230,7 @@ def update_desktop_session_lifecycle(
 def _desktop_update_handoff_active(root_mod: Any) -> bool:
     try:
         status = root_mod._get_desktop_update_service().get_status_payload()
-    except Exception:
+    except (OSError, RuntimeError, ValueError):
         return False
     if not isinstance(status, dict):
         return False
