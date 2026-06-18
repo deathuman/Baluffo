@@ -31,8 +31,8 @@ if os.name == "nt":
     import winreg
 
 from src.app_version import get_app_version
-from src.ship.desktop_update import (
-    DesktopUpdatePaths,
+from src.ship.desktop_update_shared import DesktopUpdatePaths
+from src.ship.desktop_update_state import (
     launch_staged_update_helper,
     load_status,
     updater_install_requested,

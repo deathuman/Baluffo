@@ -23,9 +23,9 @@ def test_current_desktop_update_facade_inventory_is_complete() -> None:
     assert {
         "src/admin_bridge.py",
         "src/packaged_desktop_smoke.py",
-        "src/ship/desktop_app/__init__.py",
         "src/ship/desktop_updater.py",
     } <= set(by_path)
+    assert "src/ship/desktop_app/__init__.py" not in by_path
     assert "scripts/build_desktop_update_release.py" not in by_path
     assert by_path["src/admin_bridge.py"].categories == ("compatibility-root",)
     assert by_path["src/ship/desktop_updater.py"].categories == (
