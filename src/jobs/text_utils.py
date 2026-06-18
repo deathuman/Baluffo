@@ -375,10 +375,6 @@ def classify_city_filter_rejection(value: Any) -> str:
     return ""
 
 
-def is_city_filter_eligible(value: Any) -> bool:
-    return not classify_city_filter_rejection(value)
-
-
 def _city_filter_country_key(value: Any) -> str:
     text = clean_text(value)
     if not text or norm_text(text) in {"unknown", "remote", "worldwide", "hybrid", "onsite"}:

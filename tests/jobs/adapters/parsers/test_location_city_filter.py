@@ -6,7 +6,6 @@ from src.jobs.adapters.parsers.location import normalize_location_details
 from src.jobs.text_utils import (
     classify_city_filter_rejection,
     get_city_filter_option_values,
-    is_city_filter_eligible,
 )
 
 
@@ -30,7 +29,7 @@ from src.jobs.text_utils import (
     ],
 )
 def test_appdata_city_dropdown_pollutants_are_not_filter_eligible(value: str) -> None:
-    assert is_city_filter_eligible(value) is False
+    assert classify_city_filter_rejection(value)
 
 
 @pytest.mark.parametrize(
@@ -47,12 +46,11 @@ def test_appdata_city_dropdown_pollutants_are_not_filter_eligible(value: str) ->
     ],
 )
 def test_appdata_city_false_positives_remain_filter_eligible(value: str) -> None:
-    assert is_city_filter_eligible(value) is True
+    assert classify_city_filter_rejection(value) == ""
 
 
 def test_city_filter_compound_values_split_only_with_matching_country_hints() -> None:
     assert classify_city_filter_rejection("Tokyo or Fukuoka") == "compound_non_city"
-    assert is_city_filter_eligible("Tokyo or Fukuoka") is False
     assert get_city_filter_option_values("Tokyo or Fukuoka", "Japan") == ["Tokyo", "Fukuoka"]
     assert get_city_filter_option_values("Tokyo or Fukuoka", "") == []
     assert get_city_filter_option_values("New York or London", "US") == []
