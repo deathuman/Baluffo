@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from src.source_discovery import gameprog
 
 from ._helpers import sd, workspace_tmpdir
@@ -97,6 +99,54 @@ def test_gameprog_public_discovery_uses_audit_path_by_default() -> None:
         assert len(static_rows) == 1
         assert failures == []
         assert audit_path.exists()
+
+
+def test_gameprog_teams_fetch_failure_stays_in_failure_channel() -> None:
+    config = {
+        "gameprog": {
+            "enabled": True,
+            "activeAuditTtlMinutes": 0,
+            "teamsUrl": "https://gameprog.it/teams.json",
+            "websiteOnlyFallback": True,
+            "maxStudios": 1,
+        }
+    }
+
+    provider_rows, static_rows, failures = sd.discover_gameprog_candidates(
+        5,
+        config=config,
+        fetcher=lambda *_args: (_ for _ in ()).throw(
+            RuntimeError("fetch failed: teams unavailable")
+        ),
+    )
+
+    assert provider_rows == []
+    assert static_rows == []
+    assert len(failures) == 1
+    assert failures[0]["adapter"] == "gameprog"
+    assert failures[0]["stage"] == "teams_json_fetch"
+    assert failures[0]["error"] == "fetch failed: teams unavailable"
+
+
+def test_gameprog_teams_fetch_propagates_unexpected_runtime_failure() -> None:
+    config = {
+        "gameprog": {
+            "enabled": True,
+            "activeAuditTtlMinutes": 0,
+            "teamsUrl": "https://gameprog.it/teams.json",
+            "websiteOnlyFallback": True,
+            "maxStudios": 1,
+        }
+    }
+
+    with pytest.raises(RuntimeError, match="unexpected URL"):
+        sd.discover_gameprog_candidates(
+            5,
+            config=config,
+            fetcher=lambda *_args: (_ for _ in ()).throw(
+                RuntimeError("unexpected URL: https://gameprog.it/teams.json")
+            ),
+        )
 
 
 def test_gameprog_audit_reuses_fresh_completed_artifact_without_network_work() -> None:

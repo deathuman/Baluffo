@@ -212,6 +212,24 @@ def _empty_gameprog_summary() -> dict[str, int]:
     }
 
 
+def _is_gameprog_directory_fetch_failure(exc: RuntimeError) -> bool:
+    message = str(exc or "").strip().lower()
+    if not message or "unexpected url" in message or "programmer bug" in message:
+        return False
+    return any(
+        token in message
+        for token in (
+            "fetch failed",
+            "http",
+            "network",
+            "timed out",
+            "timeout",
+            "temporary failure",
+            "down",
+        )
+    )
+
+
 def _apply_gameprog_provider_provenance(
     providers: list[dict[str, Any]],
     *,
@@ -401,7 +419,25 @@ def _gameprog_scan(
     started = time.perf_counter()
     try:
         teams_json = fetcher(teams_url, timeout_s)
-    except Exception as exc:
+    except OSError as exc:
+        batch_timing["teamsFetchMs"] = audit_ledger.duration_ms(started)
+        failures.append(
+            {
+                "name": teams_url,
+                "adapter": "gameprog",
+                "error": str(exc),
+                "stage": "teams_json_fetch",
+            }
+        )
+        return empty_directory_scan_result(
+            failures=failures,
+            summary=_empty_gameprog_summary(),
+            batch_timing=batch_timing,
+            write_cache=False,
+        )
+    except RuntimeError as exc:
+        if not _is_gameprog_directory_fetch_failure(exc):
+            raise
         batch_timing["teamsFetchMs"] = audit_ledger.duration_ms(started)
         failures.append(
             {
