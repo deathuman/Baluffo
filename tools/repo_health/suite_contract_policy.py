@@ -1145,7 +1145,9 @@ def test_packaged_update_rehearsal_uses_leaf_manifest_helpers(repo_root: Path) -
         "deps.desktop_update_mod.DESKTOP_UPDATE_SCHEMA_VERSION",
         "deps.desktop_update_mod.DESKTOP_UPDATER_VERSION",
         "deps.desktop_update_mod.Ed25519PrivateKey",
+        "deps.desktop_update_mod.PUBLIC_KEYS_FILE",
         "deps.desktop_update_mod.compute_sha256",
+        "deps.desktop_update_mod.DESKTOP_UPDATE_CHANNEL",
         "deps.desktop_update_mod.get_app_version",
         "deps.desktop_update_mod.sign_manifest",
     }

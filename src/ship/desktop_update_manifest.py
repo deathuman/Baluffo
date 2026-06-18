@@ -26,7 +26,9 @@ else:
 
 DESKTOP_UPDATE_SCHEMA_VERSION = 1
 DESKTOP_UPDATE_MANIFEST_ASSET = "baluffo-desktop-update-manifest.json"
+DESKTOP_UPDATE_CHANNEL = "stable"
 DESKTOP_UPDATER_VERSION = "2.0.1"
+PUBLIC_KEYS_FILE = "desktop-update-public-keys.json"
 
 
 def sort_json(value: Any) -> Any:
@@ -82,10 +84,12 @@ def verify_manifest_signature(
 
 __all__ = [
     "DESKTOP_UPDATE_MANIFEST_ASSET",
+    "DESKTOP_UPDATE_CHANNEL",
     "DESKTOP_UPDATE_SCHEMA_VERSION",
     "DESKTOP_UPDATER_VERSION",
     "Ed25519SigningClass",
     "Ed25519VerifierClass",
+    "PUBLIC_KEYS_FILE",
     "canonical_manifest_bytes",
     "sign_manifest",
     "sort_json",

@@ -41,12 +41,12 @@ def _inject_desktop_update_public_keys(portable_root: Path, public_keys: dict[st
         )
     payload = json.dumps(public_keys, indent=2, sort_keys=True)
     targets = [
-        app_dir / deps.desktop_update_mod.PUBLIC_KEYS_FILE,
+        app_dir / deps.update_manifest_helpers_mod.PUBLIC_KEYS_FILE,
         app_dir
         / "versions"
         / current_version
         / "packaging"
-        / deps.desktop_update_mod.PUBLIC_KEYS_FILE,
+        / deps.update_manifest_helpers_mod.PUBLIC_KEYS_FILE,
     ]
     for target in targets:
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -551,7 +551,7 @@ def run_desktop_update_rehearsal(
     manifest = {
         "schema_version": deps.DESKTOP_UPDATE_SCHEMA_VERSION,
         "key_id": key_id,
-        "channel": deps.desktop_update_mod.DESKTOP_UPDATE_CHANNEL,
+        "channel": deps.update_manifest_helpers_mod.DESKTOP_UPDATE_CHANNEL,
         "version": deps.get_app_version(),
         "published_at": deps.utc_now_iso(),
         "release_notes_url": "",

@@ -36,9 +36,11 @@ from src.ship import desktop_update_service as desktop_update_service_mod
 from src.ship import desktop_update_shared as desktop_update_shared_mod
 from src.ship import desktop_update_state as desktop_update_state_mod
 from src.ship.desktop_update_manifest import (
+    DESKTOP_UPDATE_CHANNEL,
     DESKTOP_UPDATE_MANIFEST_ASSET,
     DESKTOP_UPDATE_SCHEMA_VERSION,
     DESKTOP_UPDATER_VERSION,
+    PUBLIC_KEYS_FILE,
 )
 from src.ship.desktop_update_manifest import (
     Ed25519SigningClass as _Ed25519PrivateKey,
@@ -55,7 +57,6 @@ else:
     psutil = _psutil
 
 
-DESKTOP_UPDATE_CHANNEL = "stable"
 DESKTOP_UPDATE_HELPER_NAME = "BaluffoUpdater.exe"
 DEFAULT_RELEASE_CHECK_THROTTLE_SECONDS = 6 * 60 * 60
 DOWNLOAD_CHUNK_SIZE = 1024 * 256
@@ -72,7 +73,6 @@ HELPER_STDOUT_LOG_FILE = "desktop-updater-helper.stdout.log"
 HELPER_STDERR_LOG_FILE = "desktop-updater-helper.stderr.log"
 HELPER_DIAGNOSTICS_LOG_FILE = "desktop-updater-helper.diagnostics.jsonl"
 HELPER_RUNTIME_TMP_ROOT_NAME = "BaluffoUpdaterRuntime"
-PUBLIC_KEYS_FILE = "desktop-update-public-keys.json"
 DESKTOP_UPDATE_CONFIG_FILE = "desktop-update-config.json"
 USER_AGENT = f"BaluffoDesktopUpdater/{DESKTOP_UPDATER_VERSION}"
 ATOMIC_WRITE_RETRY_ATTEMPTS = 20
@@ -219,12 +219,14 @@ DesktopUpdateService = desktop_update_service_mod.DesktopUpdateService
 
 
 __all__ = [
+    "DESKTOP_UPDATE_CHANNEL",
     "DESKTOP_UPDATE_HELPER_NAME",
     "DESKTOP_UPDATE_MANIFEST_ASSET",
     "DESKTOP_UPDATE_SCHEMA_VERSION",
     "DESKTOP_UPDATER_VERSION",
     "DesktopUpdatePaths",
     "DesktopUpdateService",
+    "PUBLIC_KEYS_FILE",
     "canonical_manifest_bytes",
     "clear_success_marker",
     "clear_handoff_diagnostics",
