@@ -391,12 +391,12 @@ def _start_exit_monitor(process: subprocess.Popen[bytes]) -> None:
 def _terminate_bridge(process: subprocess.Popen[bytes]) -> None:
     if process.poll() is not None:
         return
-    with suppress(Exception):
+    with suppress(OSError):
         process.terminate()
     try:
         process.wait(timeout=5)
     except subprocess.TimeoutExpired:
-        with suppress(Exception):
+        with suppress(OSError):
             process.kill()
 
 

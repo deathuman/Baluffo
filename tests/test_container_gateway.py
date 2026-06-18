@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import threading
 from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.request import Request, urlopen
+
+import pytest
 
 from src.app_version import get_app_version
 from src.bridge.active_task_snapshot import write_snapshot
@@ -13,7 +16,7 @@ from src.bridge.pipeline_control_files import (
     abort_request_path,
     write_pipeline_status,
 )
-from src.container_gateway import _GatewayState, _make_gateway_handler
+from src.container_gateway import _GatewayState, _make_gateway_handler, _terminate_bridge
 
 
 class _FakeBridgeProcess:
@@ -22,6 +25,35 @@ class _FakeBridgeProcess:
 
     def poll(self) -> int | None:
         return self.exit_code
+
+
+class _TerminableBridgeProcess:
+    def __init__(
+        self,
+        *,
+        terminate_error: BaseException | None = None,
+        kill_error: BaseException | None = None,
+    ) -> None:
+        self.terminate_error = terminate_error
+        self.kill_error = kill_error
+        self.terminated = False
+        self.killed = False
+
+    def poll(self) -> None:
+        return None
+
+    def terminate(self) -> None:
+        self.terminated = True
+        if self.terminate_error is not None:
+            raise self.terminate_error
+
+    def wait(self, timeout: float | None = None) -> None:
+        raise subprocess.TimeoutExpired("bridge", timeout or 0)
+
+    def kill(self) -> None:
+        self.killed = True
+        if self.kill_error is not None:
+            raise self.kill_error
 
 
 def _serve_gateway(tmp_path: Path, *, bridge_process: _FakeBridgeProcess | None = None):
@@ -80,6 +112,25 @@ def _get_json(base_url: str, path: str) -> dict:
     with urlopen(f"{base_url}{path}", timeout=2) as response:
         assert response.status == 200
         return json.loads(response.read().decode("utf-8"))
+
+
+def test_terminate_bridge_suppresses_expected_process_os_errors() -> None:
+    process = _TerminableBridgeProcess(
+        terminate_error=ProcessLookupError("already exited"),
+        kill_error=ProcessLookupError("already exited"),
+    )
+
+    _terminate_bridge(process)  # type: ignore[arg-type]
+
+    assert process.terminated is True
+    assert process.killed is True
+
+
+def test_terminate_bridge_does_not_suppress_unexpected_process_errors() -> None:
+    process = _TerminableBridgeProcess(terminate_error=AssertionError("bad process shim"))
+
+    with pytest.raises(AssertionError, match="bad process shim"):
+        _terminate_bridge(process)  # type: ignore[arg-type]
 
 
 def test_gateway_ready_does_not_require_internal_bridge(tmp_path: Path) -> None:
