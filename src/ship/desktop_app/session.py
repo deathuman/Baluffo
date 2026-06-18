@@ -17,6 +17,8 @@ from pathlib import Path
 from ._compat import desktop_api
 from .config import ACTIVE_WORK_TASK_TYPES, INSTANCE_CONFLICT_RETRY_S, INSTANCE_LOCK_WAIT_S
 
+_EXPECTED_RECLAIM_CALLBACK_EXCEPTIONS = (OSError, RuntimeError, TypeError, ValueError)
+
 
 @dataclass(frozen=True)
 class InstanceLock:
@@ -176,7 +178,7 @@ def acquire_instance_lock(
                 with contextlib.suppress(OSError):
                     path.unlink()
                 if callable(on_reclaim):
-                    with contextlib.suppress(Exception):
+                    with contextlib.suppress(*_EXPECTED_RECLAIM_CALLBACK_EXCEPTIONS):
                         on_reclaim("stale_lock_owner")
                 continue
             time.sleep(0.2)
