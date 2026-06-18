@@ -3,8 +3,9 @@ from unittest import mock
 
 import pytest
 
-from src.ship import desktop_update as du
 from src.ship import desktop_update_service as update_service
+from src.ship import desktop_update_shared as du_shared
+from src.ship import desktop_update_state as update_state
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -44,8 +45,11 @@ def _release(version: str, body: str) -> dict[str, object]:
 def test_check_for_update_caches_release_notes_history() -> None:
     with workspace_tmpdir("desktop-update-history") as tmp:
         data_dir = Path(tmp) / "portable" / "ship" / "data"
-        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
-        service = du.DesktopUpdateService(data_dir=data_dir, current_version_getter=lambda: "0.1.0")
+        paths = du_shared.DesktopUpdatePaths.from_data_dir(data_dir)
+        service = update_service.DesktopUpdateService(
+            data_dir=data_dir,
+            current_version_getter=lambda: "0.1.0",
+        )
         release = _release("1.5.0", "### Fixed\n- Latest notes")
         service._stable_releases = [
             release,
@@ -58,7 +62,7 @@ def test_check_for_update_caches_release_notes_history() -> None:
         ):
             status = service.check_for_update(force=True)
 
-        cached = du.read_json(paths.manifest_cache_path, {})
+        cached = du_shared.read_json(paths.manifest_cache_path, {})
         assert [entry["releaseVersion"] for entry in status["releaseNotesHistory"]] == [
             "1.5.0",
             "1.4.0",
@@ -70,8 +74,11 @@ def test_check_for_update_caches_release_notes_history() -> None:
 def test_cached_release_notes_history_survives_throttle_and_restart() -> None:
     with workspace_tmpdir("desktop-update-history") as tmp:
         data_dir = Path(tmp) / "portable" / "ship" / "data"
-        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
-        service = du.DesktopUpdateService(data_dir=data_dir, current_version_getter=lambda: "0.1.0")
+        paths = du_shared.DesktopUpdatePaths.from_data_dir(data_dir)
+        service = update_service.DesktopUpdateService(
+            data_dir=data_dir,
+            current_version_getter=lambda: "0.1.0",
+        )
         history = [
             {
                 "releaseNotesUrl": "https://example.com/releases/v1.5.0",
@@ -90,10 +97,10 @@ def test_cached_release_notes_history_survives_throttle_and_restart() -> None:
                 "releaseVersion": "1.4.0",
             },
         ]
-        du.write_json_atomic(
+        du_shared.write_json_atomic(
             paths.manifest_cache_path,
             {
-                "cachedAt": du.iso_now(),
+                "cachedAt": du_shared.iso_now(),
                 "releaseId": 123,
                 "releaseTag": "v1.5.0",
                 "manifest": _manifest(),
@@ -101,9 +108,12 @@ def test_cached_release_notes_history_survives_throttle_and_restart() -> None:
                 "releaseNotesHistory": history,
             },
         )
-        du.save_status(
+        update_state.save_status(
             paths,
-            {**du.default_status_payload(current_version="0.1.0"), "lastCheckedAt": du.iso_now()},
+            {
+                **update_state.default_status_payload(current_version="0.1.0"),
+                "lastCheckedAt": du_shared.iso_now(),
+            },
         )
 
         with mock.patch.object(service, "_resolve_latest_release") as latest_release_mock:
@@ -118,9 +128,12 @@ def test_cached_release_notes_history_survives_throttle_and_restart() -> None:
 def test_old_release_note_cache_backfills_single_history_entry() -> None:
     with workspace_tmpdir("desktop-update-history") as tmp:
         data_dir = Path(tmp) / "portable" / "ship" / "data"
-        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
-        service = du.DesktopUpdateService(data_dir=data_dir, current_version_getter=lambda: "0.1.0")
-        du.write_json_atomic(
+        paths = du_shared.DesktopUpdatePaths.from_data_dir(data_dir)
+        service = update_service.DesktopUpdateService(
+            data_dir=data_dir,
+            current_version_getter=lambda: "0.1.0",
+        )
+        du_shared.write_json_atomic(
             paths.manifest_cache_path,
             {
                 "manifest": _manifest(),
@@ -152,7 +165,10 @@ def test_resolve_latest_release_filters_unstable_releases_and_keeps_history(
 ) -> None:
     with workspace_tmpdir("desktop-update-history") as tmp:
         data_dir = Path(tmp) / "portable" / "ship" / "data"
-        service = du.DesktopUpdateService(data_dir=data_dir, current_version_getter=lambda: "0.1.0")
+        service = update_service.DesktopUpdateService(
+            data_dir=data_dir,
+            current_version_getter=lambda: "0.1.0",
+        )
 
         monkeypatch.setattr(update_service, "resolve_release_repo", lambda **_kw: "owner/repo")
         monkeypatch.setattr(

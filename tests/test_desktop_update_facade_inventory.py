@@ -26,6 +26,7 @@ def test_current_desktop_update_facade_inventory_is_complete() -> None:
     assert "src/ship/desktop_app/__init__.py" not in by_path
     assert "src/ship/desktop_updater.py" not in by_path
     assert "scripts/build_desktop_update_release.py" not in by_path
+    assert "tests/test_desktop_update_release_notes_history.py" not in by_path
     assert sum(1 for row in rows if row.module == "src.ship.desktop_updater") == 2
     assert all(row.categories for row in rows)
 
