@@ -17,6 +17,7 @@ from typing import Any, cast
 
 from src.shared.json_io import read_json_object
 from src.shared.utils import now_iso
+from src.ship import desktop_update_constants as constants_mod
 from src.ship import desktop_update_manifest as manifest_mod
 
 root: Any | None = None
@@ -46,8 +47,8 @@ def iso_now() -> str:
 
 def resolve_github_api_base() -> str:
     deps = _root()
-    value = str(deps.os.environ.get(deps.GITHUB_API_BASE_ENV) or "").strip()
-    return value.rstrip("/") if value else deps.GITHUB_API_BASE
+    value = str(deps.os.environ.get(constants_mod.GITHUB_API_BASE_ENV) or "").strip()
+    return value.rstrip("/") if value else constants_mod.GITHUB_API_BASE
 
 
 def _uses_github_https(url: str) -> bool:
@@ -60,7 +61,10 @@ def _build_desktop_update_ssl_context() -> ssl.SSLContext:
         return cast(
             ssl.SSLContext,
             deps.build_github_ssl_context(
-                ca_bundle_envs=(deps.DESKTOP_UPDATE_CA_BUNDLE_ENV, deps.GITHUB_CA_BUNDLE_ENV)
+                ca_bundle_envs=(
+                    constants_mod.DESKTOP_UPDATE_CA_BUNDLE_ENV,
+                    constants_mod.GITHUB_CA_BUNDLE_ENV,
+                )
             ),
         )
     except RuntimeError as exc:
@@ -71,12 +75,11 @@ def normalize_install_stage(
     install_state: str | None,
     install_stage: str | None = None,
 ) -> str:
-    deps = _root()
     stage = str(install_stage or "").strip().lower()
     state = str(install_state or "").strip().lower()
     if stage and not (stage == "idle" and state and state != "idle"):
         return stage
-    return str(deps.INSTALL_STATE_STAGE_DEFAULTS.get(state) or "idle")
+    return str(constants_mod.INSTALL_STATE_STAGE_DEFAULTS.get(state) or "idle")
 
 
 def install_stage_label(
@@ -85,22 +88,22 @@ def install_stage_label(
 ) -> str:
     deps = _root()
     stage = deps.normalize_install_stage(install_state, install_stage)
-    return str(deps.INSTALL_STAGE_LABELS.get(stage) or "")
+    return str(constants_mod.INSTALL_STAGE_LABELS.get(stage) or "")
 
 
 def _replace_with_retry(source: Path, target: Path) -> None:
     deps = _root()
-    for attempt in range(deps.ATOMIC_WRITE_RETRY_ATTEMPTS):
+    for attempt in range(constants_mod.ATOMIC_WRITE_RETRY_ATTEMPTS):
         try:
             deps.os.replace(source, target)
             return
         except PermissionError:
-            if attempt >= (deps.ATOMIC_WRITE_RETRY_ATTEMPTS - 1):
+            if attempt >= (constants_mod.ATOMIC_WRITE_RETRY_ATTEMPTS - 1):
                 raise
             deps.time.sleep(
                 min(
-                    deps.ATOMIC_WRITE_RETRY_MAX_DELAY_S,
-                    deps.ATOMIC_WRITE_RETRY_BASE_DELAY_S * (attempt + 1),
+                    constants_mod.ATOMIC_WRITE_RETRY_MAX_DELAY_S,
+                    constants_mod.ATOMIC_WRITE_RETRY_BASE_DELAY_S * (attempt + 1),
                 )
             )
 
@@ -275,7 +278,9 @@ def resolve_release_repo(*, install_root: Path, ship_root: Path) -> str:
     current_version = deps._resolve_ship_current_version(ship_root)
     if current_version:
         packaging_dir = ship_root / "app" / "versions" / current_version / "packaging"
-        payload = _as_dict(deps.read_json(packaging_dir / deps.DESKTOP_UPDATE_CONFIG_FILE, {}))
+        payload = _as_dict(
+            deps.read_json(packaging_dir / constants_mod.DESKTOP_UPDATE_CONFIG_FILE, {})
+        )
         repo = str(payload.get("repo") or "").strip()
         if repo:
             return repo
@@ -406,10 +411,9 @@ def pid_is_running(pid: int) -> bool:
 
 
 def _json_headers() -> dict[str, str]:
-    deps = _root()
     return {
         "Accept": "application/vnd.github+json",
-        "User-Agent": deps.USER_AGENT,
+        "User-Agent": constants_mod.USER_AGENT,
     }
 
 
@@ -448,7 +452,7 @@ def download_file(
     deps = _root()
     target.parent.mkdir(parents=True, exist_ok=True)
     temp_target = target.with_name(f"{target.name}.{deps.uuid.uuid4().hex}.download")
-    request = deps.Request(str(url), headers={"User-Agent": deps.USER_AGENT})
+    request = deps.Request(str(url), headers={"User-Agent": constants_mod.USER_AGENT})
     try:
         timeout = max(5.0, float(timeout_s))
         try:
@@ -475,7 +479,7 @@ def download_file(
                 total = 0
             downloaded = 0
             while True:
-                chunk = response.read(deps.DOWNLOAD_CHUNK_SIZE)
+                chunk = response.read(constants_mod.DOWNLOAD_CHUNK_SIZE)
                 if not chunk:
                     break
                 handle.write(chunk)
@@ -538,14 +542,14 @@ class DesktopUpdatePaths:
             data_dir=resolved_data,
             updater_dir=updater_dir,
             downloads_dir=updater_dir / "downloads",
-            manifest_cache_path=updater_dir / deps.MANIFEST_CACHE_FILE,
-            install_plan_path=updater_dir / deps.INSTALL_PLAN_FILE,
-            install_state_path=updater_dir / deps.INSTALL_STATE_FILE,
+            manifest_cache_path=updater_dir / constants_mod.MANIFEST_CACHE_FILE,
+            install_plan_path=updater_dir / constants_mod.INSTALL_PLAN_FILE,
+            install_state_path=updater_dir / constants_mod.INSTALL_STATE_FILE,
             rollback_root=updater_dir / "rollback",
-            success_marker_path=updater_dir / deps.SUCCESS_MARKER_FILE,
-            handoff_request_path=updater_dir / deps.HANDOFF_REQUEST_FILE,
-            handoff_diagnostics_path=updater_dir / deps.HANDOFF_DIAGNOSTICS_FILE,
-            helper_stdout_log_path=updater_dir / deps.HELPER_STDOUT_LOG_FILE,
-            helper_stderr_log_path=updater_dir / deps.HELPER_STDERR_LOG_FILE,
-            helper_diagnostics_log_path=updater_dir / deps.HELPER_DIAGNOSTICS_LOG_FILE,
+            success_marker_path=updater_dir / constants_mod.SUCCESS_MARKER_FILE,
+            handoff_request_path=updater_dir / constants_mod.HANDOFF_REQUEST_FILE,
+            handoff_diagnostics_path=updater_dir / constants_mod.HANDOFF_DIAGNOSTICS_FILE,
+            helper_stdout_log_path=updater_dir / constants_mod.HELPER_STDOUT_LOG_FILE,
+            helper_stderr_log_path=updater_dir / constants_mod.HELPER_STDERR_LOG_FILE,
+            helper_diagnostics_log_path=updater_dir / constants_mod.HELPER_DIAGNOSTICS_LOG_FILE,
         )

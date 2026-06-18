@@ -6,6 +6,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from src.ship import desktop_update_constants as constants_mod
+from src.ship import desktop_update_manifest as manifest_mod
+
 root: Any | None = None
 
 
@@ -303,7 +306,8 @@ class DesktopUpdateService:
                 asset
                 for asset in assets
                 if isinstance(asset, dict)
-                and str(asset.get("name") or "").strip() == deps.DESKTOP_UPDATE_MANIFEST_ASSET
+                and str(asset.get("name") or "").strip()
+                == manifest_mod.DESKTOP_UPDATE_MANIFEST_ASSET
             ),
             None,
         )
@@ -336,7 +340,7 @@ class DesktopUpdateService:
                     last_checked = None
                 if last_checked is not None:
                     age = (deps.datetime.now(deps.UTC) - last_checked).total_seconds()
-                    if age < deps.DEFAULT_RELEASE_CHECK_THROTTLE_SECONDS:
+                    if age < constants_mod.DEFAULT_RELEASE_CHECK_THROTTLE_SECONDS:
                         (
                             cached,
                             manifest,
@@ -578,7 +582,7 @@ class DesktopUpdateService:
         deps = self._deps
         if not zip_path.is_file():
             raise RuntimeError(f"Downloaded update ZIP not found: {zip_path}")
-        helper_path = self.paths.install_root / deps.DESKTOP_UPDATE_HELPER_NAME
+        helper_path = self.paths.install_root / constants_mod.DESKTOP_UPDATE_HELPER_NAME
         if not helper_path.is_file():
             raise RuntimeError(f"Installed desktop updater helper not found: {helper_path}")
         self.paths.updater_dir.mkdir(parents=True, exist_ok=True)
@@ -633,7 +637,7 @@ class DesktopUpdateService:
                     error="The desktop launcher session is unavailable for updater handoff.",
                     error_code="install_session_unavailable",
                 )
-            helper_source = self.paths.install_root / deps.DESKTOP_UPDATE_HELPER_NAME
+            helper_source = self.paths.install_root / constants_mod.DESKTOP_UPDATE_HELPER_NAME
             temp_helper = (
                 Path(deps.tempfile.gettempdir()).resolve()
                 / f"BaluffoUpdater-{deps.uuid.uuid4().hex}.exe"

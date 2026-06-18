@@ -6,6 +6,7 @@ import contextlib
 from pathlib import Path
 from typing import Any
 
+from src.ship import desktop_update_constants as constants_mod
 from src.ship.desktop_update_manifest import (
     DESKTOP_UPDATE_CHANNEL,
     DESKTOP_UPDATE_SCHEMA_VERSION,
@@ -110,9 +111,9 @@ def _load_credible_handoff_install_plan(paths: Any) -> dict[str, Any]:
 
 
 def _handoff_status_pending(status: dict[str, Any]) -> bool:
-    deps = _root()
     return bool(
-        str(status.get("installState") or "").strip().lower() in deps.HANDOFF_PENDING_INSTALL_STATES
+        str(status.get("installState") or "").strip().lower()
+        in constants_mod.HANDOFF_PENDING_INSTALL_STATES
     )
 
 
@@ -144,9 +145,12 @@ def _reconcile_handoff_status(
     if credible_plan:
         return deps._apply_credible_handoff_status(next_status), credible_plan, False
     handoff_marker_present = paths.handoff_request_path.exists()
-    if install_state not in deps.HANDOFF_PENDING_INSTALL_STATES and not handoff_marker_present:
+    if (
+        install_state not in constants_mod.HANDOFF_PENDING_INSTALL_STATES
+        and not handoff_marker_present
+    ):
         return next_status, {}, False
-    if install_state in deps.HANDOFF_PENDING_INSTALL_STATES:
+    if install_state in constants_mod.HANDOFF_PENDING_INSTALL_STATES:
         next_status.update(
             {
                 "installState": "idle",
@@ -230,7 +234,7 @@ def clear_staged_helper(path: Path | None) -> None:
 def helper_runtime_tmpdir() -> Path:
     deps = _root()
     return Path(
-        Path(deps.tempfile.gettempdir()).resolve() / deps.HELPER_RUNTIME_TMP_ROOT_NAME
+        Path(deps.tempfile.gettempdir()).resolve() / constants_mod.HELPER_RUNTIME_TMP_ROOT_NAME
     ).resolve()
 
 
@@ -556,7 +560,7 @@ def _reconcile_downloaded_artifact_status(
         if deps.compute_sha256(artifact_path).lower() == expected_hash:
             size_bytes = int(artifact_path.stat().st_size)
             next_status["downloadState"] = "downloaded"
-            if install_state not in deps.INSTALL_STATES_PRESERVING_DOWNLOADED_ARTIFACT:
+            if install_state not in constants_mod.INSTALL_STATES_PRESERVING_DOWNLOADED_ARTIFACT:
                 next_status["installState"] = "ready"
             next_status["downloadedBytes"] = size_bytes
             next_status["totalBytes"] = size_bytes

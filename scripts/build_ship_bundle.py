@@ -105,6 +105,7 @@ APP_RUNTIME_SCRIPT_DIRS = (
 APP_RUNTIME_SHIP_FILES = (
     "__init__.py",
     "desktop_update.py",
+    "desktop_update_constants.py",
     "desktop_update_manifest.py",
     "desktop_update_service.py",
     "desktop_update_shared.py",

@@ -24,14 +24,12 @@ from urllib.request import urlopen as _urlopen
 from src.app_version import get_app_version as _get_app_version
 from src.baluffo_version import compare_baluffo_versions as _compare_baluffo_versions
 from src.shared.github_https import (
-    GITHUB_CA_BUNDLE_ENV as _GITHUB_CA_BUNDLE_ENV,
-)
-from src.shared.github_https import (
     build_github_ssl_context as _build_github_ssl_context_impl,
 )
 from src.shared.github_https import (
     wrap_github_request_error as _wrap_github_request_error,
 )
+from src.ship import desktop_update_constants as desktop_update_constants_mod
 from src.ship import desktop_update_service as desktop_update_service_mod
 from src.ship import desktop_update_shared as desktop_update_shared_mod
 from src.ship import desktop_update_state as desktop_update_state_mod
@@ -57,62 +55,37 @@ else:
     psutil = _psutil
 
 
-DESKTOP_UPDATE_HELPER_NAME = "BaluffoUpdater.exe"
-DEFAULT_RELEASE_CHECK_THROTTLE_SECONDS = 6 * 60 * 60
-DOWNLOAD_CHUNK_SIZE = 1024 * 256
-GITHUB_API_BASE = "https://api.github.com"
-GITHUB_API_BASE_ENV = "BALUFFO_DESKTOP_UPDATE_GITHUB_API_BASE"
-DESKTOP_UPDATE_CA_BUNDLE_ENV = "BALUFFO_DESKTOP_UPDATE_CA_BUNDLE"
-INSTALL_STATE_FILE = "install-state.json"
-INSTALL_PLAN_FILE = "install-plan.json"
-MANIFEST_CACHE_FILE = "manifest-cache.json"
-SUCCESS_MARKER_FILE = "post-install-success.json"
-HANDOFF_REQUEST_FILE = "handoff-requested.json"
-HANDOFF_DIAGNOSTICS_FILE = "handoff-diagnostics.json"
-HELPER_STDOUT_LOG_FILE = "desktop-updater-helper.stdout.log"
-HELPER_STDERR_LOG_FILE = "desktop-updater-helper.stderr.log"
-HELPER_DIAGNOSTICS_LOG_FILE = "desktop-updater-helper.diagnostics.jsonl"
-HELPER_RUNTIME_TMP_ROOT_NAME = "BaluffoUpdaterRuntime"
-DESKTOP_UPDATE_CONFIG_FILE = "desktop-update-config.json"
-USER_AGENT = f"BaluffoDesktopUpdater/{DESKTOP_UPDATER_VERSION}"
-ATOMIC_WRITE_RETRY_ATTEMPTS = 20
-ATOMIC_WRITE_RETRY_BASE_DELAY_S = 0.05
-ATOMIC_WRITE_RETRY_MAX_DELAY_S = 0.5
-INSTALL_STATE_STAGE_DEFAULTS = {
-    "handoff_requested": "preparing",
-    "waiting_for_exit": "waiting_for_exit",
-    "installing": "installing",
-    "verifying": "verifying",
-    "installed": "installed",
-    "failed": "failed",
-}
-INSTALL_STAGE_LABELS = {
-    "idle": "",
-    "preparing": "Preparing update",
-    "waiting_for_exit": "Closing Baluffo",
-    "extracting": "Installing update",
-    "snapshotting": "Installing update",
-    "backup": "Installing update",
-    "replacing": "Installing update",
-    "migrating": "Installing update",
-    "relaunching": "Restarting Baluffo",
-    "verifying": "Restarting Baluffo",
-    "recovering": "Installing update",
-    "rolling_back": "Installing update",
-    "installed": "",
-    "failed": "",
-}
-INSTALL_STATES_PRESERVING_DOWNLOADED_ARTIFACT = frozenset(
-    {
-        "handoff_requested",
-        "waiting_for_exit",
-        "installing",
-        "verifying",
-        "installed",
-        "failed",
-    }
+ATOMIC_WRITE_RETRY_ATTEMPTS = desktop_update_constants_mod.ATOMIC_WRITE_RETRY_ATTEMPTS
+ATOMIC_WRITE_RETRY_BASE_DELAY_S = desktop_update_constants_mod.ATOMIC_WRITE_RETRY_BASE_DELAY_S
+ATOMIC_WRITE_RETRY_MAX_DELAY_S = desktop_update_constants_mod.ATOMIC_WRITE_RETRY_MAX_DELAY_S
+DEFAULT_RELEASE_CHECK_THROTTLE_SECONDS = (
+    desktop_update_constants_mod.DEFAULT_RELEASE_CHECK_THROTTLE_SECONDS
 )
-HANDOFF_PENDING_INSTALL_STATES = frozenset({"handoff_requested", "waiting_for_exit"})
+DESKTOP_UPDATE_CA_BUNDLE_ENV = desktop_update_constants_mod.DESKTOP_UPDATE_CA_BUNDLE_ENV
+DESKTOP_UPDATE_CONFIG_FILE = desktop_update_constants_mod.DESKTOP_UPDATE_CONFIG_FILE
+DESKTOP_UPDATE_HELPER_NAME = desktop_update_constants_mod.DESKTOP_UPDATE_HELPER_NAME
+DOWNLOAD_CHUNK_SIZE = desktop_update_constants_mod.DOWNLOAD_CHUNK_SIZE
+GITHUB_API_BASE = desktop_update_constants_mod.GITHUB_API_BASE
+GITHUB_API_BASE_ENV = desktop_update_constants_mod.GITHUB_API_BASE_ENV
+GITHUB_CA_BUNDLE_ENV = desktop_update_constants_mod.GITHUB_CA_BUNDLE_ENV
+HANDOFF_DIAGNOSTICS_FILE = desktop_update_constants_mod.HANDOFF_DIAGNOSTICS_FILE
+HANDOFF_PENDING_INSTALL_STATES = desktop_update_constants_mod.HANDOFF_PENDING_INSTALL_STATES
+HANDOFF_REQUEST_FILE = desktop_update_constants_mod.HANDOFF_REQUEST_FILE
+HELPER_DIAGNOSTICS_LOG_FILE = desktop_update_constants_mod.HELPER_DIAGNOSTICS_LOG_FILE
+HELPER_RUNTIME_TMP_ROOT_NAME = desktop_update_constants_mod.HELPER_RUNTIME_TMP_ROOT_NAME
+HELPER_STDERR_LOG_FILE = desktop_update_constants_mod.HELPER_STDERR_LOG_FILE
+HELPER_STDOUT_LOG_FILE = desktop_update_constants_mod.HELPER_STDOUT_LOG_FILE
+INSTALL_PLAN_FILE = desktop_update_constants_mod.INSTALL_PLAN_FILE
+INSTALL_STAGE_LABELS = desktop_update_constants_mod.INSTALL_STAGE_LABELS
+INSTALL_STATES_PRESERVING_DOWNLOADED_ARTIFACT = (
+    desktop_update_constants_mod.INSTALL_STATES_PRESERVING_DOWNLOADED_ARTIFACT
+)
+INSTALL_STATE_FILE = desktop_update_constants_mod.INSTALL_STATE_FILE
+INSTALL_STATE_STAGE_DEFAULTS = desktop_update_constants_mod.INSTALL_STATE_STAGE_DEFAULTS
+MANIFEST_CACHE_FILE = desktop_update_constants_mod.MANIFEST_CACHE_FILE
+SUCCESS_MARKER_FILE = desktop_update_constants_mod.SUCCESS_MARKER_FILE
+USER_AGENT = desktop_update_constants_mod.USER_AGENT
+
 _RUNTIME_SESSION_ROOT_FALLBACK: Path | None = None
 
 desktop_update_shared_mod.root = sys.modules[__name__]
@@ -138,7 +111,6 @@ get_app_version = _get_app_version
 compare_baluffo_versions = _compare_baluffo_versions
 Ed25519PrivateKey = _Ed25519PrivateKey
 Ed25519PublicKey = _Ed25519PublicKey
-GITHUB_CA_BUNDLE_ENV = _GITHUB_CA_BUNDLE_ENV
 build_github_ssl_context = _build_github_ssl_context_impl
 wrap_github_request_error = _wrap_github_request_error
 iso_now = desktop_update_shared_mod.iso_now
