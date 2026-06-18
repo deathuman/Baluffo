@@ -661,7 +661,7 @@ class DesktopUpdateService:
             )
             try:
                 shutil.copy2(helper_source, temp_helper)
-            except Exception as exc:
+            except (OSError, shutil.Error) as exc:
                 return self._install_failure_locked(
                     status=status,
                     error=f"Could not stage the updater helper: {exc}",
