@@ -753,7 +753,7 @@ def compact_registry_journals(data_dir: Path | None = None) -> dict[str, Any]:
                     "byteSizeAfter": compacted_size,
                 }
             )
-        except Exception as exc:
+        except (OSError, TypeError, ValueError) as exc:
             result["ok"] = False
             result["errors"].append(
                 {
