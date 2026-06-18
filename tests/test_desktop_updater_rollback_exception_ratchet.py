@@ -38,6 +38,85 @@ def _write_install_plan(plan_path: Path, install_root: Path, rollback_root: Path
     plan_path.write_text(json.dumps(plan), encoding="utf-8")
 
 
+def _run_install_with_backup_restore_failure(
+    *,
+    tmp: Path,
+    restore_failure: BaseException,
+) -> None:
+    install_root = tmp / "portable"
+    data_dir = install_root / "ship" / "data"
+    paths = du_shared.DesktopUpdatePaths.from_data_dir(data_dir)
+    rollback_root = paths.rollback_root / "1.4.0-20260414-120000"
+    backup_ref = tmp / "data-backup.zip"
+    _write_install_plan(paths.install_plan_path, install_root, rollback_root)
+
+    class _Archive:
+        def __enter__(self) -> "_Archive":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def extractall(self, _target: Path) -> None:
+            return None
+
+    with (
+        mock.patch.object(updater, "root", None),
+        mock.patch.object(
+            updater,
+            "_recover_manifest_for_install",
+            return_value={"migration_plan": ["data-migration"]},
+            create=True,
+        ),
+        mock.patch.object(
+            updater,
+            "_ensure_verified_zip_for_install",
+            return_value=tmp / "update.zip",
+            create=True,
+        ),
+        mock.patch.object(updater, "_recover_interrupted_install", return_value=False),
+        mock.patch.object(updater, "_wait_for_launcher_exit"),
+        mock.patch.object(updater.zipfile, "ZipFile", return_value=_Archive()),
+        mock.patch.object(updater, "_copy_install_snapshot"),
+        mock.patch.object(updater.update_manager, "create_data_backup", return_value=backup_ref),
+        mock.patch.object(
+            updater,
+            "_sync_extract_to_install",
+            side_effect=RuntimeError("install replacement failed"),
+        ),
+        mock.patch.object(
+            updater.update_manager,
+            "restore_data_backup",
+            side_effect=restore_failure,
+        ),
+        mock.patch.object(updater, "_restore_install_snapshot"),
+        mock.patch.object(updater, "_launch_executable"),
+    ):
+        updater.run_install(paths.install_plan_path)
+
+
+def test_run_install_suppresses_expected_data_backup_restore_failures() -> None:
+    with (
+        workspace_tmpdir("desktop-updater") as tmp,
+        pytest.raises(RuntimeError, match="install replacement failed"),
+    ):
+        _run_install_with_backup_restore_failure(
+            tmp=Path(tmp),
+            restore_failure=updater.zipfile.BadZipFile("corrupt backup"),
+        )
+
+
+def test_run_install_does_not_suppress_unexpected_data_backup_restore_failures() -> None:
+    with (
+        workspace_tmpdir("desktop-updater") as tmp,
+        pytest.raises(AssertionError, match="unexpected data backup bug"),
+    ):
+        _run_install_with_backup_restore_failure(
+            tmp=Path(tmp),
+            restore_failure=AssertionError("unexpected data backup bug"),
+        )
+
+
 def test_run_install_suppresses_expected_rollback_snapshot_failures() -> None:
     with workspace_tmpdir("desktop-updater") as tmp:
         install_root = Path(tmp) / "portable"

@@ -486,7 +486,9 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
         module.clear_handoff_request(paths)
         progress.update(module.install_stage_label("installing", "rolling_back"))
         if backup_ref is not None:
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(
+                OSError, module.zipfile.BadZipFile, module.zipfile.LargeZipFile
+            ):
                 module.update_manager.restore_data_backup(
                     module.update_manager.ShipPaths.from_root(ship_root, data_dir=data_dir),
                     backup_ref,
