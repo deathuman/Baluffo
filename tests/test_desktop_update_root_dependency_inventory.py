@@ -39,17 +39,13 @@ def test_current_desktop_update_root_dependency_inventory_is_complete() -> None:
     assert "write_json_atomic" not in by_name
     assert "load_status" not in by_name
     assert "save_status" not in by_name
-    assert by_name["_resolve_runtime_path"].categories == (
+    assert by_name["_RUNTIME_SESSION_ROOT_FALLBACK"].categories == (
+        "mutable-compat-hook",
         "runtime-path",
-        "shared-helper",
     )
     assert by_name["psutil"].categories == (
         "external-adapter",
         "mutable-compat-hook",
-    )
-    assert by_name["urlopen"].categories == (
-        "mutable-compat-hook",
-        "stdlib-binding",
     )
     assert all(row.categories for row in rows)
 

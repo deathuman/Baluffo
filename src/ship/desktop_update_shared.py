@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 from urllib.error import URLError
-from urllib.request import Request
+from urllib.request import Request, urlopen
 
 from src.baluffo_version import compare_baluffo_versions
 from src.shared.github_https import build_github_ssl_context, wrap_github_request_error
@@ -408,18 +408,17 @@ def _json_headers() -> dict[str, str]:
 
 
 def fetch_json(url: str, *, timeout_s: float = 20.0) -> Any:
-    deps = _root()
     request = Request(str(url), headers=_json_headers())
     timeout = max(1.0, float(timeout_s))
     try:
         if _uses_github_https(url):
-            response_ctx = deps.urlopen(
+            response_ctx = urlopen(
                 request,
                 timeout=timeout,
                 context=_build_desktop_update_ssl_context(),
             )
         else:
-            response_ctx = deps.urlopen(request, timeout=timeout)
+            response_ctx = urlopen(request, timeout=timeout)
         with response_ctx as response:
             payload = response.read().decode("utf-8")
     except (ssl.SSLError, URLError) as exc:
@@ -439,7 +438,6 @@ def download_file(
     on_progress: Callable[[int, int], None] | None = None,
     timeout_s: float = 300.0,
 ) -> Path:
-    deps = _root()
     target.parent.mkdir(parents=True, exist_ok=True)
     temp_target = target.with_name(f"{target.name}.{uuid.uuid4().hex}.download")
     request = Request(str(url), headers={"User-Agent": constants_mod.USER_AGENT})
@@ -447,13 +445,13 @@ def download_file(
         timeout = max(5.0, float(timeout_s))
         try:
             if _uses_github_https(url):
-                response_ctx = deps.urlopen(
+                response_ctx = urlopen(
                     request,
                     timeout=timeout,
                     context=_build_desktop_update_ssl_context(),
                 )
             else:
-                response_ctx = deps.urlopen(request, timeout=timeout)
+                response_ctx = urlopen(request, timeout=timeout)
         except (ssl.SSLError, URLError) as exc:
             if _uses_github_https(url):
                 raise wrap_github_request_error(
@@ -509,19 +507,18 @@ class DesktopUpdatePaths:
         install_root: Path | None = None,
         ship_root: Path | None = None,
     ) -> DesktopUpdatePaths:
-        deps = _root()
-        resolved_data = deps._resolve_runtime_path(data_dir)
+        resolved_data = _resolve_runtime_path(data_dir)
         resolved_ship = (
-            deps._resolve_runtime_path(ship_root)
+            _resolve_runtime_path(ship_root)
             if ship_root is not None
             else (
-                deps._resolve_runtime_path(install_root) / "ship"
+                _resolve_runtime_path(install_root) / "ship"
                 if install_root is not None
                 else resolved_data.parent
             )
         )
         resolved_install = (
-            deps._resolve_runtime_path(install_root)
+            _resolve_runtime_path(install_root)
             if install_root is not None
             else (resolved_ship.parent if resolved_ship.name.lower() == "ship" else resolved_ship)
         )

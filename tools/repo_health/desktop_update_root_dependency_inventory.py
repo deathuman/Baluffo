@@ -14,8 +14,8 @@ TRACKED_MODULES = (
     "src/ship/desktop_update_service.py",
 )
 
-EXPECTED_DEPENDENCY_COUNT = 4
-EXPECTED_REFERENCE_COUNT = 14
+EXPECTED_DEPENDENCY_COUNT = 2
+EXPECTED_REFERENCE_COUNT = 6
 
 CATEGORIES = {
     "constant",
@@ -31,13 +31,9 @@ CATEGORIES = {
 
 CONSTANTS: set[str] = set()
 
-STDLIB_BINDINGS = {
-    "urlopen",
-}
+STDLIB_BINDINGS: set[str] = set()
 
-SHARED_HELPERS = {
-    "_resolve_runtime_path",
-}
+SHARED_HELPERS: set[str] = set()
 
 STATE_HELPERS = {}
 
@@ -49,7 +45,6 @@ CRYPTO_BINDINGS: set[str] = set()
 
 RUNTIME_PATH_DEPENDENCIES = {
     "_RUNTIME_SESSION_ROOT_FALLBACK",
-    "_resolve_runtime_path",
 }
 
 MUTABLE_COMPAT_HOOKS = (

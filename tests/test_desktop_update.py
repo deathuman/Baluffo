@@ -579,7 +579,7 @@ def test_download_file_retries_transient_permission_error_on_finalize() -> None:
             return FakeResponse(content)
 
         with (
-            mock.patch.object(du, "urlopen", side_effect=fake_urlopen),
+            mock.patch.object(du_shared, "urlopen", side_effect=fake_urlopen),
             mock.patch.object(du_shared.os, "replace", side_effect=flaky_replace),
         ):
             result = du.download_file("https://example.com/app.zip", target)
@@ -612,7 +612,7 @@ def test_fetch_json_uses_ssl_context_for_default_https_urlopen() -> None:
         seen["context"] = context
         return FakeResponse()
 
-    with mock.patch.object(du, "urlopen", side_effect=fake_urlopen):
+    with mock.patch.object(du_shared, "urlopen", side_effect=fake_urlopen):
         payload = du.fetch_json("https://api.github.com/repos/example/app/releases", timeout_s=12.0)
 
     assert payload == {"ok": True}
@@ -625,7 +625,7 @@ def test_fetch_json_wraps_certificate_verify_failures_for_https() -> None:
         raise URLError(ssl.SSLError("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed"))
 
     with (
-        mock.patch.object(du, "urlopen", side_effect=failing_urlopen),
+        mock.patch.object(du_shared, "urlopen", side_effect=failing_urlopen),
         pytest.raises(
             RuntimeError,
             match="SSL certificate verification failed while connecting to GitHub",
@@ -641,7 +641,7 @@ def test_download_file_wraps_certificate_verify_failures_for_https(tmp_path: Pat
         raise URLError(ssl.SSLError("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed"))
 
     with (
-        mock.patch.object(du, "urlopen", side_effect=failing_urlopen),
+        mock.patch.object(du_shared, "urlopen", side_effect=failing_urlopen),
         pytest.raises(
             RuntimeError,
             match="SSL certificate verification failed while connecting to GitHub",
