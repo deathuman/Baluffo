@@ -22,9 +22,6 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.ship import desktop_update as desktop_update_mod
-from src.ship import desktop_update_shared as desktop_update_shared_mod
-from src.ship import desktop_update_state as desktop_update_state_mod
 from src.ship import desktop_updater_install as desktop_updater_install_mod
 from src.ship import desktop_updater_release as desktop_updater_release_mod
 from src.ship import desktop_updater_ui as desktop_updater_ui_mod
@@ -32,8 +29,6 @@ from src.ship import desktop_updater_ui as desktop_updater_ui_mod
 DESKTOP_UPDATER_NO_DIALOG_ENV = "BALUFFO_DESKTOP_UPDATER_NO_DIALOG"
 DESKTOP_UPDATER_VERIFY_TIMEOUT_ENV = "BALUFFO_DESKTOP_UPDATER_VERIFY_TIMEOUT_S"
 
-desktop_update_shared_mod.root = desktop_update_mod
-desktop_update_state_mod.root = desktop_update_mod
 desktop_updater_ui_mod.root = sys.modules[__name__]
 desktop_updater_release_mod.root = sys.modules[__name__]
 desktop_updater_install_mod.root = sys.modules[__name__]
