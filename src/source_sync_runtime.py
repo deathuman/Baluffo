@@ -6,10 +6,13 @@ import logging
 import os
 import platform
 import threading
+from binascii import Error as BinasciiError
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+
+from cryptography.fernet import InvalidToken
 
 from src.shared.utils import parse_iso as parse_iso_from_utils
 
@@ -351,7 +354,7 @@ def read_local_wrapped_key(root_mod: Any, config_path: Path, fingerprint: str) -
     cache_path = local_key_cache_path(config_path)
     try:
         payload = json.loads(cache_path.read_text(encoding="utf-8"))
-    except Exception:
+    except (OSError, UnicodeError, json.JSONDecodeError):
         return ""
     if not isinstance(payload, dict):
         return ""
@@ -362,7 +365,7 @@ def read_local_wrapped_key(root_mod: Any, config_path: Path, fingerprint: str) -
         return ""
     try:
         return _decrypt_data(root_mod, wrapped).decode("utf-8")
-    except Exception:
+    except (BinasciiError, InvalidToken, OSError, RuntimeError, UnicodeError, ValueError):
         return ""
 
 

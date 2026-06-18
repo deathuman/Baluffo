@@ -143,6 +143,78 @@ def test_local_wrapped_key_cache_handles_invalid_mismatch_and_dpapi_round_trip(
     assert runtime.read_local_wrapped_key(root, config_path, "machine-a") == "private-key"
 
 
+def test_local_wrapped_key_cache_expected_read_failure_returns_empty(tmp_path, monkeypatch) -> None:
+    root = _root()
+    config_path = tmp_path / "sync-config.json"
+    cache_path = runtime.local_key_cache_path(config_path)
+
+    original_read_text = cache_path.read_text
+
+    def read_text(path, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+        if path == cache_path:
+            raise OSError("cache unreadable")
+        return original_read_text(*args, **kwargs)
+
+    monkeypatch.setattr(type(cache_path), "read_text", read_text)
+
+    assert runtime.read_local_wrapped_key(root, config_path, "machine-a") == ""
+
+
+def test_local_wrapped_key_cache_unexpected_read_failure_propagates(tmp_path, monkeypatch) -> None:
+    root = _root()
+    config_path = tmp_path / "sync-config.json"
+    cache_path = runtime.local_key_cache_path(config_path)
+
+    def read_text(path, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+        if path == cache_path:
+            raise AssertionError("cache read bug")
+        return ""
+
+    monkeypatch.setattr(type(cache_path), "read_text", read_text)
+
+    with pytest.raises(AssertionError, match="cache read bug"):
+        runtime.read_local_wrapped_key(root, config_path, "machine-a")
+
+
+def test_local_wrapped_key_cache_expected_decrypt_failure_returns_empty(
+    tmp_path, monkeypatch
+) -> None:
+    root = _root()
+    config_path = tmp_path / "sync-config.json"
+    runtime.local_key_cache_path(config_path).write_text(
+        '{"fingerprint": "machine-a", "wrapped": "wrapped-private-key"}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_decrypt_data",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            UnicodeDecodeError("utf-8", b"\xff", 0, 1, "bad byte")
+        ),
+    )
+
+    assert runtime.read_local_wrapped_key(root, config_path, "machine-a") == ""
+
+
+def test_local_wrapped_key_cache_unexpected_decrypt_failure_propagates(
+    tmp_path, monkeypatch
+) -> None:
+    root = _root()
+    config_path = tmp_path / "sync-config.json"
+    runtime.local_key_cache_path(config_path).write_text(
+        '{"fingerprint": "machine-a", "wrapped": "wrapped-private-key"}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_decrypt_data",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("decrypt bug")),
+    )
+
+    with pytest.raises(AssertionError, match="decrypt bug"):
+        runtime.read_local_wrapped_key(root, config_path, "machine-a")
+
+
 def test_allowlist_error_applies_env_precedence_and_each_guard() -> None:
     root = _root()
     normalized = {
