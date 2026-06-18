@@ -367,3 +367,85 @@ def test_ops_dashboard_health_summary_avoids_history_and_fetch_report(tmp_path) 
     assert payload["kpis"]["pendingApprovalsCount"] == 7
     assert payload["kpis"]["registrySync"]["lastSyncAt"] == "2026-06-05T09:45:00+00:00"
     assert payload["kpis"]["registrySync"]["lastSyncStatus"] == "ok"
+
+
+def test_ops_dashboard_health_summary_registry_fallback_is_expected_failures_only(
+    tmp_path,
+) -> None:
+    api, _calls = _make_ops_api(tmp_path, current_rows=[], recent_rows=[])
+    api._deps = ops_api_module.OpsDeps(
+        **{
+            **api._deps.__dict__,
+            "get_registry_summary_payload": mock.Mock(side_effect=OSError("registry unavailable")),
+        }
+    )
+
+    payload = api.compute_ops_dashboard_health_summary()
+
+    assert payload["summaryView"] is True
+    assert payload["kpis"]["pendingApprovalsCount"] == 0
+
+    api._deps = ops_api_module.OpsDeps(
+        **{
+            **api._deps.__dict__,
+            "get_registry_summary_payload": mock.Mock(side_effect=RuntimeError("programmer bug")),
+        }
+    )
+
+    with pytest.raises(RuntimeError, match="programmer bug"):
+        api.compute_ops_dashboard_health_summary()
+
+
+def test_ops_dashboard_health_summary_sync_fallback_is_expected_failures_only(
+    tmp_path,
+) -> None:
+    api, _calls = _make_ops_api(tmp_path, current_rows=[], recent_rows=[])
+    api._deps = ops_api_module.OpsDeps(
+        **{
+            **api._deps.__dict__,
+            "get_registry_summary_payload": lambda: {"pendingCount": 1},
+            "load_sync_runtime_state": mock.Mock(side_effect=ValueError("bad runtime state")),
+        }
+    )
+
+    payload = api.compute_ops_dashboard_health_summary()
+
+    assert payload["summaryView"] is True
+    assert payload["kpis"]["pendingApprovalsCount"] == 1
+
+    api._deps = ops_api_module.OpsDeps(
+        **{
+            **api._deps.__dict__,
+            "load_sync_runtime_state": mock.Mock(side_effect=RuntimeError("programmer bug")),
+        }
+    )
+
+    with pytest.raises(RuntimeError, match="programmer bug"):
+        api.compute_ops_dashboard_health_summary()
+
+
+def test_ops_fetch_kpis_summary_registry_fallback_is_expected_failures_only(
+    tmp_path,
+) -> None:
+    api, _calls = _make_ops_api(tmp_path, current_rows=[], recent_rows=[])
+    api._deps = ops_api_module.OpsDeps(
+        **{
+            **api._deps.__dict__,
+            "get_registry_summary_payload": mock.Mock(side_effect=TypeError("bad registry")),
+        }
+    )
+
+    payload = api.compute_ops_fetch_kpis_summary()
+
+    assert payload["summaryView"] is True
+    assert "pendingSourcesCount" not in payload["kpis"]
+
+    api._deps = ops_api_module.OpsDeps(
+        **{
+            **api._deps.__dict__,
+            "get_registry_summary_payload": mock.Mock(side_effect=RuntimeError("programmer bug")),
+        }
+    )
+
+    with pytest.raises(RuntimeError, match="programmer bug"):
+        api.compute_ops_fetch_kpis_summary()

@@ -822,7 +822,7 @@ class OpsApi:
             with time_operation("ops.dashboard_health.summary.registry"):
                 try:
                     registry_summary = as_json_object(self._deps.get_registry_summary_payload())
-                except Exception:
+                except (OSError, TypeError, ValueError):
                     registry_summary = {}
             if not _ops_health._has_registry_summary_counts(registry_summary):
                 registry_summary = {}
@@ -832,7 +832,7 @@ class OpsApi:
                         "config": as_json_object(self._deps.sync_config_status()),
                         "runtime": as_json_object(self._deps.load_sync_runtime_state()),
                     }
-                except Exception:
+                except (OSError, TypeError, ValueError):
                     sync_status = {}
             with time_operation("ops.dashboard_health.summary.schedule"):
                 schedule = _ops_health.populate_schedule_next_run(
@@ -925,7 +925,7 @@ class OpsApi:
             with time_operation("ops.fetch_kpis.summary.registry"):
                 try:
                     registry_summary = as_json_object(self._deps.get_registry_summary_payload())
-                except Exception:
+                except (OSError, TypeError, ValueError):
                     registry_summary = {}
             last_success = as_json_object(metrics.get("lastSuccessFetch"))
             latest_fetch = as_json_object(metrics.get("latestFetch"))
