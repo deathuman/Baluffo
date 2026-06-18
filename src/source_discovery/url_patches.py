@@ -244,7 +244,7 @@ async def resolve_url(url: str, timeout: float = 10.0) -> tuple[str, int, list[s
             redirect_chain = [str(r.url) for r in response.history]
             redirect_chain.append(str(response.url))
             return str(response.url), response.status_code, redirect_chain
-    except Exception:
+    except (httpx.HTTPError, ValueError):
         return "", 0, []
 
 

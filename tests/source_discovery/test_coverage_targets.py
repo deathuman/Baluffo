@@ -397,7 +397,7 @@ def test_extract_redirect_failures_and_resolve_url(monkeypatch: pytest.MonkeyPat
 
     class _FailingClient(_FakeClient):
         async def get(self, url: str):
-            raise RuntimeError("boom")
+            raise url_patches.httpx.ConnectError("boom")
 
     monkeypatch.setattr(url_patches.httpx, "AsyncClient", _FailingClient)
     assert asyncio.run(url_patches.resolve_url("https://old.example/jobs")) == ("", 0, [])
