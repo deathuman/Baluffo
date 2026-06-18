@@ -589,7 +589,7 @@ class DesktopUpdateService:
                 self._download_thread = thread
                 thread.start()
                 return {"started": True, "status": state}
-            except Exception as exc:
+            except (OSError, RuntimeError, ValueError) as exc:
                 self._download_thread = None
                 return self._download_failure_locked(
                     status=status,

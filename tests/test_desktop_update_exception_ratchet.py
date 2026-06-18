@@ -232,6 +232,39 @@ def test_run_download_worker_progress_status_bug_marks_download_failed() -> None
         assert status["lastError"] == "unexpected progress bug"
 
 
+def test_download_update_start_does_not_suppress_unexpected_thread_failures() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+        paths = du_shared.DesktopUpdatePaths.from_data_dir(data_dir)
+        service = du_service.DesktopUpdateService(
+            data_dir=data_dir,
+            current_version_getter=lambda: "0.1.0",
+        )
+        update_state.write_json_atomic(
+            paths.manifest_cache_path,
+            {"cachedAt": du_shared.iso_now(), "manifest": _download_manifest(b"portable-zip")},
+        )
+        update_state.save_status(
+            paths,
+            {
+                **update_state.default_status_payload(current_version="0.1.0"),
+                "availability": "available",
+                "updateAvailable": True,
+                "lastCheckedAt": du_shared.iso_now(),
+            },
+        )
+
+        with (
+            mock.patch.object(
+                du_service.threading,
+                "Thread",
+                side_effect=AssertionError("unexpected thread bug"),
+            ),
+            pytest.raises(AssertionError, match="unexpected thread bug"),
+        ):
+            service.download_update()
+
+
 def test_request_install_preflight_returns_structured_expected_failures() -> None:
     with workspace_tmpdir("desktop-update") as tmp:
         _paths, service = _ready_install_service(Path(tmp) / "portable" / "ship" / "data")
