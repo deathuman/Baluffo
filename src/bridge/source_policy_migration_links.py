@@ -37,7 +37,7 @@ def _source_id(api: Any, row: dict[str, Any]) -> str:
             return value
     try:
         return clean_text(api.source_identity(row))
-    except Exception:  # noqa: BLE001
+    except (AttributeError, TypeError, ValueError):
         return ""
 
 
