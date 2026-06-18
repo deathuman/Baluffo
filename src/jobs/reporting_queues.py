@@ -138,7 +138,7 @@ def build_parser_regression_queue(
         if callable(resolve_redirect_url):
             try:
                 resolved = clean_text(resolve_redirect_url(old_url))
-            except Exception:  # noqa: BLE001
+            except (OSError, RuntimeError, TypeError, ValueError):
                 resolved = ""
             if resolved and resolved != old_url:
                 current_url = resolved
