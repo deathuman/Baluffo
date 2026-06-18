@@ -126,8 +126,7 @@ def _write_atomic(path: Path, payload: str) -> None:
 
 
 def write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
-    deps = _root()
-    deps._write_atomic(path, json.dumps(payload, indent=2, ensure_ascii=False))
+    _write_atomic(path, json.dumps(payload, indent=2, ensure_ascii=False))
 
 
 def read_json(path: Path, fallback: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -166,10 +165,9 @@ def _decode_public_keys_payload(payload: Any) -> dict[str, bytes]:
 
 
 def desktop_update_public_key_candidate_paths(ship_root: Path) -> tuple[Path, ...]:
-    deps = _root()
     resolved_ship = Path(ship_root).expanduser().resolve()
     candidates: list[Path] = [resolved_ship / "app" / manifest_mod.PUBLIC_KEYS_FILE]
-    current_version = deps._resolve_ship_current_version(resolved_ship)
+    current_version = _resolve_ship_current_version(resolved_ship)
     if current_version:
         candidates.append(
             resolved_ship
@@ -276,7 +274,7 @@ def resolve_release_repo(*, install_root: Path, ship_root: Path) -> str:
     env_repo = str(deps.os.environ.get("BALUFFO_DESKTOP_UPDATE_REPO") or "").strip()
     if env_repo:
         return env_repo
-    current_version = deps._resolve_ship_current_version(ship_root)
+    current_version = _resolve_ship_current_version(ship_root)
     if current_version:
         packaging_dir = ship_root / "app" / "versions" / current_version / "packaging"
         payload = _as_dict(
@@ -322,7 +320,7 @@ def _resolve_desktop_session_root_fallback(env: dict[str, str] | None = None) ->
         candidates.append((Path.home() / "AppData" / "Local" / "Baluffo").resolve())
     username = str(env_map.get("USERNAME") or env_map.get("USER") or "user").strip() or "user"
     candidates.append((Path(deps.tempfile.gettempdir()) / f"Baluffo-{username}").resolve())
-    candidates.append(deps._runtime_session_root_candidate_fallback())
+    candidates.append(_runtime_session_root_candidate_fallback())
     for candidate in candidates:
         try:
             candidate.mkdir(parents=True, exist_ok=True)
@@ -337,13 +335,12 @@ def _resolve_desktop_session_root_fallback(env: dict[str, str] | None = None) ->
 
 
 def resolve_desktop_session_root(env: dict[str, str] | None = None) -> Path:
-    deps = _root()
     try:
         from src.ship.desktop_app.config import resolve_browser_session_root
     except ModuleNotFoundError as exc:
         if not str(getattr(exc, "name", "") or "").startswith("src.ship.desktop_app"):
             raise
-        return Path(deps._resolve_desktop_session_root_fallback(env))
+        return Path(_resolve_desktop_session_root_fallback(env))
     return Path(resolve_browser_session_root(env))
 
 
@@ -356,7 +353,7 @@ def _resolve_runtime_path(value: Path | str) -> Path:
     deps = _root()
     raw = str(value or "").strip()
     expanded = str(Path(raw).expanduser()) if raw else raw
-    if deps.os.name != "nt" and deps._looks_like_windows_absolute_path(expanded):
+    if deps.os.name != "nt" and _looks_like_windows_absolute_path(expanded):
         return Path(expanded.replace("\\", "/"))
     return Path(expanded).resolve()
 
