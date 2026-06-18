@@ -610,7 +610,7 @@ def test_pooled_redirect_resolver_reuses_cached_resolution_and_headers() -> None
                 {"url": "https://jobs.smartrecruiters.com/Ubisoft2/744000108777145-role"},
             )()
 
-        def close() -> None:
+        def close(self) -> None:
             return None
 
     with mock.patch.object(fake_httpx, "Client", return_value=_FakeClient()) as client_ctor:

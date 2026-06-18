@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import threading
 from collections.abc import Callable
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import suppress
 from typing import Any
 
@@ -28,6 +29,11 @@ DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = community.DEFAULT_GOOGLE_SHEETS_RED
 DEFAULT_HTTP_HEADERS = dict(common_config.DEFAULT_HTTP_HEADERS)
 DEFAULT_REDIRECT_HEADERS = dict(common_config.DEFAULT_REDIRECT_HEADERS)
 SUPPORTED_REDIRECT_HOSTS = common_config.SUPPORTED_REDIRECT_HOSTS
+_EXPECTED_TRANSPORT_CLOSE_EXCEPTIONS = (OSError, RuntimeError, ValueError)
+_EXPECTED_ASYNC_TRANSPORT_CLOSE_EXCEPTIONS = (
+    *(_EXPECTED_TRANSPORT_CLOSE_EXCEPTIONS),
+    FutureTimeoutError,
+)
 httpx: Any | None
 try:
     import httpx as httpx
@@ -252,8 +258,10 @@ class PooledRedirectResolver:
         self._client = None
         if client is None:
             return
-        with suppress(Exception):
+        try:
             client.close()
+        except _EXPECTED_TRANSPORT_CLOSE_EXCEPTIONS:
+            return
 
 
 def build_redirect_resolver(
@@ -329,8 +337,10 @@ class AsyncHttpTextFetcher:
         try:
             self._loop.run_forever()
         finally:
-            with suppress(Exception):
+            try:
                 self._loop.run_until_complete(self._loop.shutdown_asyncgens())
+            except _EXPECTED_TRANSPORT_CLOSE_EXCEPTIONS:
+                pass
             asyncio.set_event_loop(None)
             self._loop.close()
 
@@ -352,11 +362,23 @@ class AsyncHttpTextFetcher:
         if self._closed:
             return
         self._closed = True
-        with suppress(Exception):
-            future = asyncio.run_coroutine_threadsafe(self._aclose(), self._loop)
-            future.result(timeout=5)
-        with suppress(Exception):
+        close_coro = self._aclose()
+        try:
+            future = asyncio.run_coroutine_threadsafe(close_coro, self._loop)
+        except _EXPECTED_ASYNC_TRANSPORT_CLOSE_EXCEPTIONS:
+            close_coro.close()
+        except BaseException:
+            close_coro.close()
+            raise
+        else:
+            try:
+                future.result(timeout=5)
+            except _EXPECTED_ASYNC_TRANSPORT_CLOSE_EXCEPTIONS:
+                pass
+        try:
             self._loop.call_soon_threadsafe(self._loop.stop)
+        except _EXPECTED_TRANSPORT_CLOSE_EXCEPTIONS:
+            pass
         self._thread.join(timeout=2)
 
 

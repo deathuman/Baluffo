@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from src.jobs import transport
 
 
@@ -57,6 +59,53 @@ class _FakeRedirectClient:
         return outcome
 
     def close(self) -> None:
+        return None
+
+
+class _FakeCloseClient:
+    def __init__(self, error: BaseException | None = None) -> None:
+        self.error = error
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
+        if self.error is not None:
+            raise self.error
+
+
+class _FakeFuture:
+    def __init__(self, error: BaseException | None = None) -> None:
+        self.error = error
+
+    def result(self, *, timeout: int | None = None) -> None:
+        if self.error is not None:
+            raise self.error
+
+
+class _FakeLoop:
+    def __init__(self, error: BaseException | None = None) -> None:
+        self.error = error
+        self.stop_called = False
+
+    def call_soon_threadsafe(self, callback: Any) -> None:
+        if self.error is not None:
+            raise self.error
+        self.stop_called = getattr(callback, "__name__", "") == "stop" or self.stop_called
+
+    def stop(self) -> None:
+        self.stop_called = True
+
+
+class _FakeThread:
+    def __init__(self) -> None:
+        self.joined_with: int | None = None
+
+    def join(self, *, timeout: int | None = None) -> None:
+        self.joined_with = timeout
+
+
+class _FakeAsyncClient:
+    async def aclose(self) -> None:
         return None
 
 
@@ -155,3 +204,151 @@ def test_pooled_redirect_resolver_returns_original_url_after_request_failures(
 
     assert resolved == source_url
     assert client.calls == [("HEAD", source_url), ("GET", source_url)]
+
+
+def test_pooled_redirect_resolver_close_suppresses_expected_close_failure() -> None:
+    resolver = object.__new__(transport.PooledRedirectResolver)
+    client = _FakeCloseClient(OSError("socket already closed"))
+    resolver._client = client
+
+    resolver.close()
+
+    assert client.closed is True
+    assert resolver._client is None
+
+
+def test_pooled_redirect_resolver_close_propagates_unexpected_close_failure() -> None:
+    resolver = object.__new__(transport.PooledRedirectResolver)
+    client = _FakeCloseClient(AssertionError("unexpected close bug"))
+    resolver._client = client
+
+    with pytest.raises(AssertionError, match="unexpected close bug"):
+        resolver.close()
+
+    assert client.closed is True
+    assert resolver._client is None
+
+
+def _make_async_fetcher_for_close(
+    *,
+    loop_error: BaseException | None = None,
+) -> tuple[transport.AsyncHttpTextFetcher, _FakeLoop, _FakeThread]:
+    fetcher = object.__new__(transport.AsyncHttpTextFetcher)
+    loop = _FakeLoop(loop_error)
+    thread = _FakeThread()
+    fetcher._closed = False
+    fetcher._loop = loop
+    fetcher._thread = thread
+    fetcher._client = _FakeAsyncClient()
+    return fetcher, loop, thread
+
+
+def test_async_http_text_fetcher_close_suppresses_expected_aclose_failure(
+    monkeypatch,
+) -> None:
+    fetcher, loop, thread = _make_async_fetcher_for_close()
+
+    def _run_coroutine_threadsafe(coro: Any, _loop: Any) -> _FakeFuture:
+        coro.close()
+        return _FakeFuture(RuntimeError("loop closing"))
+
+    monkeypatch.setattr(transport.asyncio, "run_coroutine_threadsafe", _run_coroutine_threadsafe)
+
+    fetcher.close()
+
+    assert fetcher._closed is True
+    assert loop.stop_called is True
+    assert thread.joined_with == 2
+
+
+def test_async_http_text_fetcher_close_suppresses_expected_schedule_failure(
+    monkeypatch,
+) -> None:
+    fetcher, loop, thread = _make_async_fetcher_for_close()
+
+    def _run_coroutine_threadsafe(coro: Any, _loop: Any) -> _FakeFuture:
+        raise RuntimeError("loop already closed")
+
+    monkeypatch.setattr(transport.asyncio, "run_coroutine_threadsafe", _run_coroutine_threadsafe)
+
+    fetcher.close()
+
+    assert fetcher._closed is True
+    assert loop.stop_called is True
+    assert thread.joined_with == 2
+
+
+def test_async_http_text_fetcher_close_propagates_unexpected_schedule_failure(
+    monkeypatch,
+) -> None:
+    fetcher, loop, thread = _make_async_fetcher_for_close()
+
+    def _run_coroutine_threadsafe(coro: Any, _loop: Any) -> _FakeFuture:
+        raise AssertionError("unexpected schedule bug")
+
+    monkeypatch.setattr(transport.asyncio, "run_coroutine_threadsafe", _run_coroutine_threadsafe)
+
+    with pytest.raises(AssertionError, match="unexpected schedule bug"):
+        fetcher.close()
+
+    assert fetcher._closed is True
+    assert loop.stop_called is False
+    assert thread.joined_with is None
+
+
+def test_async_http_text_fetcher_close_propagates_unexpected_aclose_failure(
+    monkeypatch,
+) -> None:
+    fetcher, loop, thread = _make_async_fetcher_for_close()
+
+    def _run_coroutine_threadsafe(coro: Any, _loop: Any) -> _FakeFuture:
+        coro.close()
+        return _FakeFuture(AssertionError("unexpected async close bug"))
+
+    monkeypatch.setattr(transport.asyncio, "run_coroutine_threadsafe", _run_coroutine_threadsafe)
+
+    with pytest.raises(AssertionError, match="unexpected async close bug"):
+        fetcher.close()
+
+    assert fetcher._closed is True
+    assert loop.stop_called is False
+    assert thread.joined_with is None
+
+
+def test_async_http_text_fetcher_close_suppresses_expected_stop_failure(
+    monkeypatch,
+) -> None:
+    fetcher, _loop, thread = _make_async_fetcher_for_close(
+        loop_error=RuntimeError("loop already closed")
+    )
+
+    def _run_coroutine_threadsafe(coro: Any, _loop: Any) -> _FakeFuture:
+        coro.close()
+        return _FakeFuture()
+
+    monkeypatch.setattr(transport.asyncio, "run_coroutine_threadsafe", _run_coroutine_threadsafe)
+
+    fetcher.close()
+
+    assert fetcher._closed is True
+    assert thread.joined_with == 2
+
+
+def test_async_http_text_fetcher_close_propagates_unexpected_stop_failure(
+    monkeypatch,
+) -> None:
+    fetcher, _loop, thread = _make_async_fetcher_for_close(
+        loop_error=AssertionError("unexpected stop bug")
+    )
+
+    def _run_coroutine_threadsafe(coro: Any, _loop: Any) -> _FakeFuture:
+        coro.close()
+        return _FakeFuture()
+
+    monkeypatch.setattr(transport.asyncio, "run_coroutine_threadsafe", _run_coroutine_threadsafe)
+
+    with pytest.raises(AssertionError, match="unexpected stop bug"):
+        fetcher.close()
+
+    assert fetcher._closed is True
+    assert thread.joined_with is None
