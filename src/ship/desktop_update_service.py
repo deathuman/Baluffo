@@ -442,7 +442,7 @@ class DesktopUpdateService:
                         manifest=manifest,
                     )
                 )
-        except Exception as exc:
+        except (OSError, RuntimeError, ValueError) as exc:
             return _as_dict(
                 save_status(
                     self.paths,
