@@ -1257,7 +1257,7 @@ def test_run_download_worker_does_not_abort_when_progress_status_write_fails(mon
             return target
 
         monkeypatch.setattr(du, "save_status", flaky_save_status)
-        monkeypatch.setattr(du, "download_file", fake_download)
+        monkeypatch.setattr(update_service, "download_file", fake_download)
 
         service._run_download_worker(manifest)
 
@@ -1692,7 +1692,7 @@ def test_run_download_worker_failure_clears_install_ready_state_and_bad_zip() ->
             },
         }
 
-        with mock.patch.object(du, "download_file", return_value=target):
+        with mock.patch.object(update_service, "download_file", return_value=target):
             service._run_download_worker(manifest)
 
         status = du.load_status(paths, current_version="0.1.0")

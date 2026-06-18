@@ -13,7 +13,9 @@ from src.app_version import get_app_version
 from src.ship import desktop_update_constants as constants_mod
 from src.ship import desktop_update_manifest as manifest_mod
 from src.ship.desktop_update_shared import (
+    compute_sha256,
     desktop_update_public_key_candidate_paths,
+    download_file,
     fetch_json,
     install_stage_label,
     iso_now,
@@ -489,9 +491,9 @@ class DesktopUpdateService:
                 return
 
         try:
-            deps.download_file(str(artifact.get("url") or ""), target, on_progress=on_progress)
+            download_file(str(artifact.get("url") or ""), target, on_progress=on_progress)
             expected_hash = str(artifact.get("sha256") or "").strip().lower()
-            if expected_hash and deps.compute_sha256(target).lower() != expected_hash:
+            if expected_hash and compute_sha256(target).lower() != expected_hash:
                 raise RuntimeError("Downloaded portable ZIP checksum mismatch.")
             deps.save_status(
                 self.paths,

@@ -14,8 +14,8 @@ TRACKED_MODULES = (
     "src/ship/desktop_update_service.py",
 )
 
-EXPECTED_DEPENDENCY_COUNT = 21
-EXPECTED_REFERENCE_COUNT = 91
+EXPECTED_DEPENDENCY_COUNT = 19
+EXPECTED_REFERENCE_COUNT = 89
 
 CATEGORIES = {
     "constant",
@@ -43,8 +43,6 @@ STDLIB_BINDINGS = {
 SHARED_HELPERS = {
     "DesktopUpdatePaths",
     "_resolve_runtime_path",
-    "compute_sha256",
-    "download_file",
     "pid_is_running",
     "read_desktop_session_state",
     "read_json",
