@@ -95,7 +95,7 @@ def run_static_studio_pages_source(
             from src import jobs_fetcher as jobs_fetcher_pkg
 
             selected_sources = jobs_fetcher_pkg.registry_entries("static", enabled_only=True)
-        except Exception:  # noqa: BLE001
+        except (AttributeError, ImportError):
             selected_sources = registry_entries("static")
 
     for source in selected_sources:
