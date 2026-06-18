@@ -6,6 +6,7 @@ import contextlib
 from pathlib import Path
 from typing import Any
 
+from src.app_version import get_app_version
 from src.ship import desktop_update_constants as constants_mod
 from src.ship.desktop_update_manifest import (
     DESKTOP_UPDATE_CHANNEL,
@@ -50,11 +51,10 @@ def _as_int(value: Any, default: int = 0) -> int:
 
 
 def default_status_payload(*, current_version: str | None = None) -> dict[str, Any]:
-    deps = _root()
     return {
         "schemaVersion": DESKTOP_UPDATE_SCHEMA_VERSION,
         "channel": DESKTOP_UPDATE_CHANNEL,
-        "currentVersion": str(current_version or deps.get_app_version()),
+        "currentVersion": str(current_version or get_app_version()),
         "latestVersion": "",
         "targetVersion": "",
         "updateAvailable": False,
@@ -169,7 +169,7 @@ def load_status(paths: Any, *, current_version: str | None = None) -> dict[str, 
     status = deps.default_status_payload(current_version=current_version)
     status.update(_as_dict(deps.read_json(paths.install_state_path, {})))
     status["currentVersion"] = str(
-        current_version or status.get("currentVersion") or deps.get_app_version()
+        current_version or status.get("currentVersion") or get_app_version()
     )
     status, _credible_handoff_plan, _stale_handoff = deps._reconcile_handoff_status(paths, status)
     status["installStage"] = deps.normalize_install_stage(

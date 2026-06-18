@@ -14,8 +14,8 @@ TRACKED_MODULES = (
     "src/ship/desktop_update_service.py",
 )
 
-EXPECTED_DEPENDENCY_COUNT = 77
-EXPECTED_REFERENCE_COUNT = 206
+EXPECTED_DEPENDENCY_COUNT = 76
+EXPECTED_REFERENCE_COUNT = 202
 
 CATEGORIES = {
     "constant",
@@ -114,7 +114,6 @@ STATE_HELPERS = {
 
 EXTERNAL_ADAPTERS = {
     "build_github_ssl_context",
-    "get_app_version",
     "psutil",
     "wrap_github_request_error",
 }

@@ -6,6 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from src.app_version import get_app_version
 from src.ship import desktop_update_constants as constants_mod
 from src.ship import desktop_update_manifest as manifest_mod
 
@@ -83,14 +84,13 @@ class DesktopUpdateService:
             install_root=install_root or (Path(env_install_root) if env_install_root else None),
             ship_root=ship_root or (Path(env_ship_root) if env_ship_root else None),
         )
-        self._current_version_getter = current_version_getter or deps.get_app_version
+        self._current_version_getter = current_version_getter or get_app_version
         self._lock = deps.threading.RLock()
         self._download_thread: Any | None = None
         self._stable_releases: list[dict[str, Any]] = []
 
     def current_version(self) -> str:
-        deps = self._deps
-        return str(self._current_version_getter() or deps.get_app_version()).strip()
+        return str(self._current_version_getter() or get_app_version()).strip()
 
     def _download_worker_alive_locked(self) -> bool:
         return self._download_thread is not None and self._download_thread.is_alive()

@@ -46,7 +46,7 @@ def test_current_desktop_update_root_dependency_inventory_is_complete() -> None:
         "mutable-compat-hook",
         "stdlib-binding",
     )
-    assert by_name["get_app_version"].categories == (
+    assert by_name["wrap_github_request_error"].categories == (
         "external-adapter",
         "mutable-compat-hook",
     )
