@@ -217,7 +217,7 @@ class BaluffoStore:
                     self._healthy = False
                     break
                 self._sleep_for_retry(attempt)
-            except Exception as exc:
+            except BaseException as exc:
                 self._rollback_after_error()
                 self._healthy = False
                 self._last_write_error = str(exc)
