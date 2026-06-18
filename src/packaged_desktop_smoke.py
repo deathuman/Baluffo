@@ -34,7 +34,7 @@ from src.python_version_guard import ensure_required_python
 from src.shared.process_memory import ProcessMemorySampler as _ProcessMemorySampler
 from src.shared.utils import utc_now_iso as _utc_now_iso
 from src.ship import desktop_app as _desktop_app_mod
-from src.ship import desktop_update as _desktop_update_mod
+from src.ship import desktop_update_shared as _desktop_update_shared_mod
 from src.ship.packaged_smoke import build_env as packaged_smoke_build_env_mod
 from src.ship.packaged_smoke import common as packaged_smoke_common_mod
 from src.ship.packaged_smoke import orchestrator as packaged_smoke_orchestrator_mod
@@ -135,7 +135,6 @@ packaged_smoke_rehearsals_mod.root = sys.modules[__name__]
 packaged_smoke_rehearsal_sync_mod.root = sys.modules[__name__]
 packaged_smoke_rehearsal_update_mod.root = sys.modules[__name__]
 packaged_smoke_rehearsal_browser_mod.root = sys.modules[__name__]
-
 ctypes = _ctypes
 errno = _errno
 os = _os
@@ -150,7 +149,9 @@ LocalDataStore = _LocalDataStore
 ProcessMemorySampler = _ProcessMemorySampler
 utc_now_iso = _utc_now_iso
 desktop_app_mod = _desktop_app_mod
-desktop_update_mod = _desktop_update_mod
+desktop_update_mod = _desktop_update_shared_mod
+desktop_update_mod.PUBLIC_KEYS_FILE = update_manifest_helpers_mod.PUBLIC_KEYS_FILE
+desktop_update_mod.get_app_version = update_manifest_helpers_mod.get_app_version
 DESKTOP_UPDATE_MANIFEST_ASSET = update_manifest_helpers_mod.DESKTOP_UPDATE_MANIFEST_ASSET
 DESKTOP_UPDATE_SCHEMA_VERSION = update_manifest_helpers_mod.DESKTOP_UPDATE_SCHEMA_VERSION
 DESKTOP_UPDATER_VERSION = update_manifest_helpers_mod.DESKTOP_UPDATER_VERSION
@@ -171,7 +172,6 @@ select_startup_probe_browser_policy = _select_startup_probe_browser_policy
 summarize_startup_metrics = _summarize_startup_metrics
 write_startup_summary = _write_startup_summary
 read_startup_metrics_file = _read_startup_metrics_file
-
 slugify_token = packaged_smoke_common_mod.slugify_token
 write_json = packaged_smoke_common_mod.write_json
 remove_tree_or_file = packaged_smoke_common_mod.remove_tree_or_file

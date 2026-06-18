@@ -20,9 +20,8 @@ def test_current_desktop_update_facade_inventory_is_complete() -> None:
 
     assert len(rows) == inventory.EXPECTED_FACADE_IMPORT_COUNT
     assert inventory.check_desktop_update_facade_inventory() == []
-    assert {
-        "src/packaged_desktop_smoke.py",
-    } <= set(by_path)
+    assert all(row.path.startswith("tests/") for row in rows)
+    assert "src/packaged_desktop_smoke.py" not in by_path
     assert "src/admin_bridge.py" not in by_path
     assert "src/ship/desktop_app/__init__.py" not in by_path
     assert "src/ship/desktop_updater.py" not in by_path

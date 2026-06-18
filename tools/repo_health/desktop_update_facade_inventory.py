@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-EXPECTED_FACADE_IMPORT_COUNT = 6
+EXPECTED_FACADE_IMPORT_COUNT = 5
 
 FACADE_MODULES = {
     "src.ship.desktop_update",
@@ -25,16 +25,13 @@ CATEGORIES = {
 }
 
 CLASSIFIED_IMPORTS: dict[str, set[str]] = {
-    "src/packaged_desktop_smoke.py": {"packaged-smoke-runtime"},
     "tests/test_desktop_update.py": {"test-compat"},
     "tests/test_desktop_update_release_notes_history.py": {"test-compat"},
     "tests/test_desktop_updater.py": {"test-compat"},
     "tests/test_desktop_updater_entrypoint.py": {"test-compat"},
 }
 
-LEAF_FACADE_IMPORT_ALLOWLIST = {
-    "src/packaged_desktop_smoke.py",
-}
+LEAF_FACADE_IMPORT_ALLOWLIST: set[str] = set()
 
 
 @dataclass(frozen=True)
