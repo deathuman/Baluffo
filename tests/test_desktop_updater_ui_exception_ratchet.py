@@ -72,14 +72,22 @@ class _FakeRoot(_FakeWidget):
 
 
 class _FakeBar(_FakeWidget):
+    stop_error: Exception | None = None
+
     def start(self, _delay: int) -> None:
         return None
 
     def stop(self) -> None:
+        if self.stop_error is not None:
+            raise self.stop_error
         return None
 
 
-def _fake_tk_modules(*, theme_error: Exception | None = None) -> tuple[object, object]:
+def _fake_tk_modules(
+    *,
+    theme_error: Exception | None = None,
+    bar_stop_error: Exception | None = None,
+) -> tuple[object, object]:
     class FakeStyle:
         def __init__(self, _root) -> None:  # noqa: ANN001
             return None
@@ -91,7 +99,10 @@ def _fake_tk_modules(*, theme_error: Exception | None = None) -> tuple[object, o
         def configure(self, *_args, **_kwargs) -> None:  # noqa: ANN002,ANN003
             return None
 
-    fake_ttk = SimpleNamespace(Style=FakeStyle, Progressbar=_FakeBar)
+    class FakeBar(_FakeBar):
+        stop_error = bar_stop_error
+
+    fake_ttk = SimpleNamespace(Style=FakeStyle, Progressbar=FakeBar)
     fake_tk = SimpleNamespace(
         TclError=_FakeTclError,
         Tk=_FakeRoot,
@@ -182,5 +193,38 @@ def test_helper_progress_window_does_not_suppress_unexpected_theme_failures(
     with (
         _patch_tk_import(fake_tk, fake_ttk),
         pytest.raises(RuntimeError, match="unexpected theme bug"),
+    ):
+        progress.run("Preparing update")
+
+
+def test_helper_progress_window_ignores_expected_progress_stop_failures(
+    monkeypatch,
+) -> None:
+    progress = updater_ui.HelperProgressWindow()
+    progress._queue.put(("close", ""))
+    progress._closed = mock.Mock(wait=mock.Mock(return_value=True), set=mock.Mock())
+    fake_tk, fake_ttk = _fake_tk_modules(bar_stop_error=_FakeTclError("bar gone"))
+
+    monkeypatch.setattr(updater_ui, "root", None)
+    monkeypatch.setattr(updater_ui.os, "name", "nt")
+    with _patch_tk_import(fake_tk, fake_ttk):
+        progress.run("Preparing update")
+
+    assert progress._closed.set.call_count >= 1
+
+
+def test_helper_progress_window_does_not_suppress_unexpected_progress_stop_failures(
+    monkeypatch,
+) -> None:
+    progress = updater_ui.HelperProgressWindow()
+    progress._queue.put(("close", ""))
+    progress._closed = mock.Mock(wait=mock.Mock(return_value=True), set=mock.Mock())
+    fake_tk, fake_ttk = _fake_tk_modules(bar_stop_error=RuntimeError("unexpected bar bug"))
+
+    monkeypatch.setattr(updater_ui, "root", None)
+    monkeypatch.setattr(updater_ui.os, "name", "nt")
+    with (
+        _patch_tk_import(fake_tk, fake_ttk),
+        pytest.raises(RuntimeError, match="unexpected bar bug"),
     ):
         progress.run("Preparing update")

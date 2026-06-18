@@ -213,7 +213,7 @@ class HelperProgressWindow:
 
         def drain() -> None:
             def stop_bar() -> None:
-                with contextlib.suppress(Exception):
+                with contextlib.suppress(tk.TclError, OSError):
                     bar.stop()
 
             should_close = module._drain_helper_queue(
