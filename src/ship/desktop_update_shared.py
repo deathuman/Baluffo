@@ -270,7 +270,7 @@ def _resolve_ship_current_version(ship_root: Path) -> str:
         from src.ship import update_manager
 
         state = update_manager.ensure_state(update_manager.ShipPaths.from_root(ship_root))
-    except Exception:
+    except (OSError, RuntimeError, ValueError):
         return ""
     return str(_as_dict(state).get("current_version") or "").strip()
 

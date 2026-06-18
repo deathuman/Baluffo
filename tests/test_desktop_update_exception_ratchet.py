@@ -6,6 +6,7 @@ import pytest
 from src.ship import desktop_update_constants as update_constants
 from src.ship import desktop_update_shared as du_shared
 from src.ship import desktop_update_state as update_state
+from src.ship import update_manager
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -116,3 +117,30 @@ def test_load_status_does_not_suppress_unexpected_handoff_session_root_failures(
             pytest.raises(AssertionError, match="unexpected"),
         ):
             update_state.load_status(paths, current_version="0.1.0")
+
+
+def test_resolve_ship_current_version_suppresses_expected_update_state_failures() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        ship_root = Path(tmp) / "portable" / "ship"
+
+        with mock.patch.object(
+            update_manager,
+            "ensure_state",
+            side_effect=RuntimeError("missing current pointer"),
+        ):
+            assert du_shared._resolve_ship_current_version(ship_root) == ""
+
+
+def test_resolve_ship_current_version_does_not_suppress_unexpected_failures() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        ship_root = Path(tmp) / "portable" / "ship"
+
+        with (
+            mock.patch.object(
+                update_manager,
+                "ensure_state",
+                side_effect=AssertionError("unexpected"),
+            ),
+            pytest.raises(AssertionError, match="unexpected"),
+        ):
+            du_shared._resolve_ship_current_version(ship_root)
