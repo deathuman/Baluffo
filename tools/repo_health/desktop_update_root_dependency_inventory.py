@@ -14,8 +14,8 @@ TRACKED_MODULES = (
     "src/ship/desktop_update_service.py",
 )
 
-EXPECTED_DEPENDENCY_COUNT = 80
-EXPECTED_REFERENCE_COUNT = 209
+EXPECTED_DEPENDENCY_COUNT = 77
+EXPECTED_REFERENCE_COUNT = 206
 
 CATEGORIES = {
     "constant",
@@ -114,16 +114,12 @@ STATE_HELPERS = {
 
 EXTERNAL_ADAPTERS = {
     "build_github_ssl_context",
-    "compare_baluffo_versions",
     "get_app_version",
     "psutil",
     "wrap_github_request_error",
 }
 
-CRYPTO_BINDINGS = {
-    "Ed25519PrivateKey",
-    "Ed25519PublicKey",
-}
+CRYPTO_BINDINGS: set[str] = set()
 
 RUNTIME_PATH_DEPENDENCIES = {
     "DesktopUpdatePaths",

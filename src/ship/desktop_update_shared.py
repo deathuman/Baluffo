@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from src.baluffo_version import compare_baluffo_versions
 from src.shared.json_io import read_json_object
 from src.shared.utils import now_iso
 from src.ship import desktop_update_constants as constants_mod
@@ -139,8 +140,7 @@ def compute_sha256(path: Path) -> str:
 
 
 def compare_versions(left: str, right: str) -> int:
-    deps = _root()
-    return int(deps.compare_baluffo_versions(left, right))
+    return int(compare_baluffo_versions(left, right))
 
 
 def sort_json(value: Any) -> Any:
@@ -211,16 +211,15 @@ def verify_manifest_signature(
     manifest_mod.verify_manifest_signature(
         manifest,
         public_keys=available,
-        public_key_cls=deps.Ed25519PublicKey,
+        public_key_cls=manifest_mod.Ed25519VerifierClass,
     )
 
 
 def sign_manifest(manifest: dict[str, Any], private_key_bytes: bytes) -> str:
-    deps = _root()
     return manifest_mod.sign_manifest(
         manifest,
         private_key_bytes,
-        private_key_cls=deps.Ed25519PrivateKey,
+        private_key_cls=manifest_mod.Ed25519SigningClass,
     )
 
 
