@@ -92,7 +92,7 @@ class BrowserFallbackCircuitBreaker:
                 self.last_attempt_at = stamp
             try:
                 html, error = try_playwright(url, timeout_s)
-            except Exception as exc:  # noqa: BLE001
+            except (OSError, RuntimeError, ValueError) as exc:
                 html = ""
                 error = str(exc)
             if html and not clean_text(error):

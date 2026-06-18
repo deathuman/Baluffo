@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import src.jobs.state_source_state as jobs_state
 from src.jobs.browser_fallback import (
     BROWSER_FALLBACK_STATE_KEY,
@@ -41,6 +43,32 @@ def test_browser_fallback_state_roundtrip_preserves_cooldown_fields() -> None:
     )
     assert restored.failure_count == 1
     assert restored.disabled_until_at == row["browserFallbackQuarantinedUntilAt"]
+
+
+def test_browser_fallback_wrap_converts_expected_runtime_failure_to_error() -> None:
+    breaker = BrowserFallbackCircuitBreaker(cooldown_minutes=15)
+
+    def fake_try_playwright(_url: str, _timeout_s: int) -> tuple[str, str]:
+        raise RuntimeError("browser fallback unavailable (playwright launch failed)")
+
+    html, error = breaker.wrap(fake_try_playwright)("https://example.com/jobs", 5)
+
+    assert html == ""
+    assert "playwright launch failed" in error
+    assert breaker.failure_count == 1
+    assert breaker.disabled_until_at
+
+
+def test_browser_fallback_wrap_does_not_swallow_unexpected_failure() -> None:
+    breaker = BrowserFallbackCircuitBreaker(cooldown_minutes=15)
+
+    def fake_try_playwright(_url: str, _timeout_s: int) -> tuple[str, str]:
+        raise AssertionError("unexpected browser fallback bug")
+
+    wrapped = breaker.wrap(fake_try_playwright)
+
+    with pytest.raises(AssertionError, match="unexpected browser fallback bug"):
+        wrapped("https://example.com/jobs", 5)
 
 
 def test_browser_escalation_state_roundtrip_preserves_guard_fields() -> None:
