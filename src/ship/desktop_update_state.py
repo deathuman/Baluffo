@@ -144,12 +144,11 @@ def _reconcile_handoff_status(
     paths: Any,
     status: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any], bool]:
-    deps = _root()
     next_status = dict(status or {})
     install_state = str(next_status.get("installState") or "").strip().lower()
-    credible_plan = deps._load_credible_handoff_install_plan(paths)
+    credible_plan = _load_credible_handoff_install_plan(paths)
     if credible_plan:
-        return deps._apply_credible_handoff_status(next_status), credible_plan, False
+        return _apply_credible_handoff_status(next_status), credible_plan, False
     handoff_marker_present = paths.handoff_request_path.exists()
     if (
         install_state not in constants_mod.HANDOFF_PENDING_INSTALL_STATES
@@ -177,7 +176,7 @@ def load_status(paths: Any, *, current_version: str | None = None) -> dict[str, 
     status["currentVersion"] = str(
         current_version or status.get("currentVersion") or get_app_version()
     )
-    status, _credible_handoff_plan, _stale_handoff = deps._reconcile_handoff_status(paths, status)
+    status, _credible_handoff_plan, _stale_handoff = _reconcile_handoff_status(paths, status)
     status["installStage"] = normalize_install_stage(
         status.get("installState"),
         status.get("installStage"),
@@ -199,7 +198,7 @@ def updater_install_requested(data_dir: Path) -> bool:
     deps = _root()
     paths = deps.DesktopUpdatePaths.from_data_dir(Path(data_dir))
     state = deps.load_status(paths)
-    state, credible_handoff_plan, stale_handoff = deps._reconcile_handoff_status(paths, state)
+    state, credible_handoff_plan, stale_handoff = _reconcile_handoff_status(paths, state)
     if stale_handoff:
         deps.clear_handoff_request(paths)
         deps.clear_install_plan(paths)
@@ -207,7 +206,7 @@ def updater_install_requested(data_dir: Path) -> bool:
         return False
     if credible_handoff_plan:
         return True
-    return bool(deps._handoff_status_pending(state))
+    return bool(_handoff_status_pending(state))
 
 
 def clear_success_marker(paths: Any) -> None:
