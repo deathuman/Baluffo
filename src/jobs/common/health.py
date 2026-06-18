@@ -151,6 +151,6 @@ def get_quarantined_sources(
                             "consecutiveZeroKept": state.get("consecutiveZeroKept", 0),
                         }
                     )
-            except Exception:
+            except (AttributeError, TypeError, ValueError):
                 pass
     return quarantined
