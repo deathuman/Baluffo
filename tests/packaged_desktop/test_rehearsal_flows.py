@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 from urllib.request import Request, urlopen
 
@@ -16,6 +17,20 @@ from tests.helpers.temp_paths import workspace_tmpdir
 from ._helpers import _write_packaged_sync_bundle_config
 
 pytestmark = [pytest.mark.packaging, pytest.mark.slow]
+
+
+class _PathReadFailure:
+    def __init__(self, exc: Exception) -> None:
+        self._exc = exc
+
+    def exists(self) -> bool:
+        return True
+
+    def is_file(self) -> bool:
+        return True
+
+    def read_text(self, *args, **kwargs) -> str:  # noqa: ANN002, ANN003
+        raise self._exc
 
 
 def test_run_packaged_smoke_can_run_desktop_update_rehearsal_mode() -> None:
@@ -588,6 +603,107 @@ def test_wait_for_packaged_runtime_with_port_pivot_prefers_env_scoped_session_ro
         assert runtime_state["actualBridgePort"] == 9002
         assert runtime_state["portRetryObserved"] is True
         fetch_mock.assert_any_call("http://127.0.0.1:9002/ops/health", timeout_s=1.0)
+
+
+def test_desktop_update_rehearsal_json_fallbacks_ignore_malformed_payloads() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+        paths = smoke.desktop_update_mod.DesktopUpdatePaths.from_data_dir(data_dir)
+        paths.handoff_request_path.parent.mkdir(parents=True, exist_ok=True)
+        paths.handoff_request_path.write_text("{}", encoding="utf-8")
+        paths.install_state_path.parent.mkdir(parents=True, exist_ok=True)
+        paths.install_state_path.write_text("{", encoding="utf-8")
+        paths.helper_stdout_log_path.parent.mkdir(parents=True, exist_ok=True)
+        paths.helper_stdout_log_path.write_text("{", encoding="utf-8")
+
+        assert (
+            smoke.packaged_smoke_rehearsal_update_mod._confirmed_install_handoff_status(paths) == {}
+        )
+        assert smoke.packaged_smoke_rehearsal_update_mod._read_helper_stdout_payload(paths) == {}
+        assert smoke.packaged_smoke_rehearsal_update_mod._load_update_install_state(paths) == {}
+
+
+def test_desktop_update_rehearsal_json_fallbacks_propagate_unexpected_read_errors() -> None:
+    paths = SimpleNamespace(
+        handoff_request_path=_PathReadFailure(RuntimeError("handoff read bug")),
+        install_state_path=_PathReadFailure(RuntimeError("install read bug")),
+        helper_stdout_log_path=_PathReadFailure(RuntimeError("stdout read bug")),
+    )
+
+    with pytest.raises(RuntimeError, match="install read bug"):
+        smoke.packaged_smoke_rehearsal_update_mod._confirmed_install_handoff_status(paths)
+    with pytest.raises(RuntimeError, match="stdout read bug"):
+        smoke.packaged_smoke_rehearsal_update_mod._read_helper_stdout_payload(paths)
+    with pytest.raises(RuntimeError, match="install read bug"):
+        smoke.packaged_smoke_rehearsal_update_mod._load_update_install_state(paths)
+
+
+def test_wait_for_relaunched_runtime_retries_expected_health_poll_failure() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp)
+        expected_data_dir = root / "data"
+        expected_data_dir.mkdir(parents=True, exist_ok=True)
+        env = {"LOCALAPPDATA": str(root / "localappdata")}
+        session_root = smoke.desktop_update_mod.resolve_desktop_session_root(env)
+        session_root.mkdir(parents=True, exist_ok=True)
+        (session_root / smoke.DESKTOP_SESSION_STATE_FILE).write_text(
+            json.dumps({"bridgePort": 4567, "sitePort": 4568, "dataDir": str(expected_data_dir)}),
+            encoding="utf-8",
+        )
+
+        fetch_results = [
+            OSError("bridge not ready"),
+            {"desktopMode": True, "startupReady": True, "appVersion": "1.2.3"},
+        ]
+
+        def fake_fetch_json(url: str, timeout_s: float = 5.0):  # noqa: ANN001
+            assert url == "http://127.0.0.1:4567/ops/health"
+            result = fetch_results.pop(0)
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+        with (
+            mock.patch.object(smoke, "fetch_json", side_effect=fake_fetch_json) as fetch_mock,
+            mock.patch.object(smoke.time, "sleep", return_value=None),
+        ):
+            relaunched = smoke._wait_for_relaunched_runtime(
+                expected_data_dir=expected_data_dir,
+                expected_version="1.2.3",
+                timeout_s=0.1,
+                env=env,
+            )
+
+        assert relaunched["session"]["bridgePort"] == 4567
+        assert relaunched["health"]["startupReady"] is True
+        assert fetch_mock.call_count == 2
+
+
+def test_wait_for_relaunched_runtime_does_not_swallow_unexpected_health_bug() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp)
+        expected_data_dir = root / "data"
+        expected_data_dir.mkdir(parents=True, exist_ok=True)
+        env = {"LOCALAPPDATA": str(root / "localappdata")}
+        session_root = smoke.desktop_update_mod.resolve_desktop_session_root(env)
+        session_root.mkdir(parents=True, exist_ok=True)
+        (session_root / smoke.DESKTOP_SESSION_STATE_FILE).write_text(
+            json.dumps({"bridgePort": 4567, "sitePort": 4568, "dataDir": str(expected_data_dir)}),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(RuntimeError, match="unexpected health bug"):
+            with mock.patch.object(
+                smoke,
+                "fetch_json",
+                side_effect=RuntimeError("unexpected health bug"),
+            ):
+                smoke._wait_for_relaunched_runtime(
+                    expected_data_dir=expected_data_dir,
+                    expected_version="1.2.3",
+                    timeout_s=0.1,
+                    env=env,
+                )
 
 
 @pytest.mark.windows

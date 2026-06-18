@@ -252,7 +252,7 @@ def _confirmed_install_handoff_status(paths: Any) -> dict[str, Any]:
         return {}
     try:
         status = json.loads(paths.install_state_path.read_text(encoding="utf-8"))
-    except Exception:
+    except (OSError, UnicodeError, json.JSONDecodeError):
         status = {}
     if not isinstance(status, dict):
         return {}
@@ -364,7 +364,7 @@ def _wait_for_relaunched_runtime(
                 f"http://127.0.0.1:{bridge_port}/ops/health",
                 timeout_s=5.0,
             )
-        except Exception:
+        except (OSError, TimeoutError, json.JSONDecodeError):
             last_health = {}
             deps.time.sleep(0.75)
             continue
@@ -408,7 +408,7 @@ def _read_helper_stdout_payload(paths: Any) -> dict[str, Any]:
         return {}
     try:
         payload = json.loads(paths.helper_stdout_log_path.read_text(encoding="utf-8"))
-    except Exception:
+    except (OSError, UnicodeError, json.JSONDecodeError):
         return {}
     return dict(payload) if isinstance(payload, dict) else {}
 
@@ -440,7 +440,7 @@ def _load_update_install_state(paths: Any) -> dict[str, Any]:
         return {}
     try:
         payload = json.loads(paths.install_state_path.read_text(encoding="utf-8"))
-    except Exception:
+    except (OSError, UnicodeError, json.JSONDecodeError):
         return {}
     return dict(payload) if isinstance(payload, dict) else {}
 
@@ -760,7 +760,7 @@ def run_desktop_update_rehearsal(
         if stderr_handle is not None:
             stderr_handle.close()
         if relaunch_launcher_pid > 0:
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(OSError, subprocess.SubprocessError):
                 if deps.os.name == "nt":
                     deps.subprocess.run(
                         ["taskkill", "/PID", str(relaunch_launcher_pid), "/T", "/F"],
