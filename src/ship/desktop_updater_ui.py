@@ -104,7 +104,7 @@ class HelperProgressWindow:
         try:
             import tkinter as tk
             from tkinter import ttk
-        except Exception:  # noqa: BLE001
+        except (ImportError, OSError):
             self._closed.wait()
             return
 
