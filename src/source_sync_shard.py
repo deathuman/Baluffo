@@ -1194,7 +1194,7 @@ def read_sharded_snapshot(
                         ),
                         event_level="success" if completed_count == shard_count else "muted",
                     )
-            except Exception:
+            except BaseException:
                 for future in future_to_index:
                     future.cancel()
                 raise
