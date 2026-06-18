@@ -10,7 +10,6 @@ import re
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import quote
@@ -30,6 +29,7 @@ DEFAULT_MANIFEST_FILE_NAME = "manifest.json"
 DEFAULT_GC_DELETE_LIMIT = 32
 _SAFE_PATH_COMPONENT = re.compile(r"^[A-Za-z0-9._=-]+$")
 _TRUSTED_MANIFEST_PHASES = {"", "committed"}
+_EXPECTED_PROGRESS_CALLBACK_EXCEPTIONS = (OSError, RuntimeError, TypeError, ValueError)
 
 
 class SourceSyncShardError(ValueError):
@@ -574,7 +574,7 @@ def _emit_pull_progress(
 ) -> None:
     if not callable(progress_callback):
         return
-    with suppress(Exception):
+    try:
         progress_callback(
             phase_key="remote_read",
             phase_label=phase_label,
@@ -585,6 +585,8 @@ def _emit_pull_progress(
             event_level=event_level,
             message=message,
         )
+    except _EXPECTED_PROGRESS_CALLBACK_EXCEPTIONS:
+        return
 
 
 def _emit_push_progress(
@@ -598,7 +600,7 @@ def _emit_push_progress(
 ) -> None:
     if not callable(progress_callback):
         return
-    with suppress(Exception):
+    try:
         progress_callback(
             phase_key="remote_write",
             phase_label=phase_label,
@@ -609,6 +611,8 @@ def _emit_push_progress(
             event_level=event_level,
             message=message,
         )
+    except _EXPECTED_PROGRESS_CALLBACK_EXCEPTIONS:
+        return
 
 
 def _push_and_verify_changed_shard(
