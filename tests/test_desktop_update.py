@@ -10,6 +10,7 @@ import pytest
 
 from src import app_version
 from src.ship import desktop_update as du
+from src.ship import desktop_update_service as update_service
 from src.ship import desktop_update_shared as du_shared
 from src.ship.desktop_app import config as desktop_app_config
 from tests.helpers.temp_paths import workspace_tmpdir
@@ -1493,10 +1494,9 @@ def test_request_install_writes_plan_and_launches_helper() -> None:
             mock.patch.object(du, "resolve_desktop_session_root", return_value=session_root),
             mock.patch.object(du.shutil, "disk_usage", return_value=mock.Mock(free=10**9)),
             mock.patch.object(du, "pid_is_running", return_value=True),
-            mock.patch.object(du, "verify_manifest_signature"),
+            mock.patch.object(update_service, "verify_manifest_signature"),
         ):
             result = service.request_install()
-
         assert result["started"] is True
         plan = json.loads(paths.install_plan_path.read_text(encoding="utf-8"))
         assert plan["launcherPid"] == 1234
@@ -1634,7 +1634,7 @@ def test_request_install_returns_handoff_unconfirmed_when_post_write_verificatio
             mock.patch.object(du, "resolve_desktop_session_root", return_value=session_root),
             mock.patch.object(du.shutil, "disk_usage", return_value=mock.Mock(free=10**9)),
             mock.patch.object(du, "pid_is_running", return_value=False),
-            mock.patch.object(du, "verify_manifest_signature"),
+            mock.patch.object(update_service, "verify_manifest_signature"),
         ):
             result = service.request_install()
 

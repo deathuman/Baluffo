@@ -20,6 +20,8 @@ from src.ship.desktop_update_shared import (
     load_desktop_update_public_keys,
     resolve_github_api_base,
     resolve_release_repo,
+    validate_desktop_manifest,
+    verify_manifest_signature,
 )
 from src.ship.desktop_update_state import (
     _cached_release_notes,
@@ -325,7 +327,6 @@ class DesktopUpdateService:
         raise RuntimeError("No stable GitHub release is available.")
 
     def _resolve_manifest_from_release(self, release: dict[str, Any]) -> dict[str, Any]:
-        deps = self._deps
         assets = _as_list(release.get("assets"))
         manifest_asset = next(
             (
@@ -345,8 +346,8 @@ class DesktopUpdateService:
         manifest = fetch_json(manifest_url)
         if not isinstance(manifest, dict):
             raise RuntimeError("Desktop manifest payload is invalid.")
-        deps.validate_desktop_manifest(manifest)
-        deps.verify_manifest_signature(manifest, public_keys=self.load_public_keys())
+        validate_desktop_manifest(manifest)
+        verify_manifest_signature(manifest, public_keys=self.load_public_keys())
         if not str(manifest.get("release_notes_url") or "").strip():
             manifest["release_notes_url"] = str(release.get("html_url") or "").strip()
         return dict(manifest)
