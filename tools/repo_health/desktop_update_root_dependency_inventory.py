@@ -14,8 +14,8 @@ TRACKED_MODULES = (
     "src/ship/desktop_update_service.py",
 )
 
-EXPECTED_DEPENDENCY_COUNT = 76
-EXPECTED_REFERENCE_COUNT = 202
+EXPECTED_DEPENDENCY_COUNT = 74
+EXPECTED_REFERENCE_COUNT = 199
 
 CATEGORIES = {
     "constant",
@@ -113,9 +113,7 @@ STATE_HELPERS = {
 }
 
 EXTERNAL_ADAPTERS = {
-    "build_github_ssl_context",
     "psutil",
-    "wrap_github_request_error",
 }
 
 CRYPTO_BINDINGS: set[str] = set()
@@ -139,7 +137,6 @@ MUTABLE_COMPAT_HOOKS = (
     | {
         "_RUNTIME_SESSION_ROOT_FALLBACK",
         "DesktopUpdatePaths",
-        "build_github_ssl_context",
         "load_status",
         "read_json",
         "save_status",

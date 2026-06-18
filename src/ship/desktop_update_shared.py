@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from src.baluffo_version import compare_baluffo_versions
+from src.shared.github_https import build_github_ssl_context, wrap_github_request_error
 from src.shared.json_io import read_json_object
 from src.shared.utils import now_iso
 from src.ship import desktop_update_constants as constants_mod
@@ -57,11 +58,10 @@ def _uses_github_https(url: str) -> bool:
 
 
 def _build_desktop_update_ssl_context() -> ssl.SSLContext:
-    deps = _root()
     try:
         return cast(
             ssl.SSLContext,
-            deps.build_github_ssl_context(
+            build_github_ssl_context(
                 ca_bundle_envs=(
                     constants_mod.DESKTOP_UPDATE_CA_BUNDLE_ENV,
                     constants_mod.GITHUB_CA_BUNDLE_ENV,
@@ -433,7 +433,7 @@ def fetch_json(url: str, *, timeout_s: float = 20.0) -> Any:
             payload = response.read().decode("utf-8")
     except (deps.ssl.SSLError, deps.URLError) as exc:
         if deps._uses_github_https(url):
-            raise deps.wrap_github_request_error(
+            raise wrap_github_request_error(
                 exc,
                 prefix="Desktop update request failed",
             ) from exc
@@ -465,7 +465,7 @@ def download_file(
                 response_ctx = deps.urlopen(request, timeout=timeout)
         except (deps.ssl.SSLError, deps.URLError) as exc:
             if deps._uses_github_https(url):
-                raise deps.wrap_github_request_error(
+                raise wrap_github_request_error(
                     exc,
                     prefix="Desktop update request failed",
                 ) from exc
