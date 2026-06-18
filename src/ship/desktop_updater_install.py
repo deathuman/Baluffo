@@ -499,7 +499,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
             rollbackPath=str(rollback_root),
             migrationBackupPath=str(backup_ref) if backup_ref is not None else "",
         )
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(OSError, RuntimeError, ValueError, shutil.Error):
             module._restore_install_snapshot(install_root, rollback_root)
         with contextlib.suppress(Exception):
             module._launch_executable(install_root / "Baluffo.exe", data_dir=data_dir)
