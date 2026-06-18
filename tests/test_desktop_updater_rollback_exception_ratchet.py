@@ -41,6 +41,7 @@ def _write_install_plan(plan_path: Path, install_root: Path, rollback_root: Path
 def _run_install_with_backup_restore_failure(
     *,
     tmp: Path,
+    install_failure: BaseException | None = None,
     restore_failure: BaseException | None = None,
     launch_failure: BaseException | None = None,
 ) -> None:
@@ -83,7 +84,7 @@ def _run_install_with_backup_restore_failure(
         mock.patch.object(
             updater,
             "_sync_extract_to_install",
-            side_effect=RuntimeError("install replacement failed"),
+            side_effect=install_failure or RuntimeError("install replacement failed"),
         ),
         mock.patch.object(
             updater.update_manager,
@@ -105,6 +106,22 @@ def test_run_install_suppresses_expected_data_backup_restore_failures() -> None:
             tmp=Path(tmp),
             restore_failure=updater.zipfile.BadZipFile("corrupt backup"),
         )
+
+
+def test_run_install_interrupt_rolls_back_before_propagating() -> None:
+    with workspace_tmpdir("desktop-updater") as tmp:
+        tmp_path = Path(tmp)
+        with pytest.raises(KeyboardInterrupt, match="install interrupted"):
+            _run_install_with_backup_restore_failure(
+                tmp=tmp_path,
+                install_failure=KeyboardInterrupt("install interrupted"),
+            )
+
+        paths = du_shared.DesktopUpdatePaths.from_data_dir(tmp_path / "portable" / "ship" / "data")
+        status = updater.load_status(paths, current_version="0.1.0")
+        assert status["installState"] == "failed"
+        assert status["installStage"] == "failed"
+        assert status["lastError"] == "install interrupted"
 
 
 def test_run_install_does_not_suppress_unexpected_data_backup_restore_failures() -> None:

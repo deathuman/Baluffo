@@ -482,7 +482,8 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
         module._verify_target_startup(plan, timeout_s=module._helper_relaunch_verify_timeout_s())
         module._finalize_success(paths, plan, rollback_root)
         return {"ok": True, "installedVersion": str(plan.get("targetVersion") or "")}
-    except Exception as exc:
+    except BaseException as exc:
+        # Treat install mutation as a transactional cleanup boundary, then re-raise.
         module.clear_handoff_request(paths)
         progress.update(module.install_stage_label("installing", "rolling_back"))
         if backup_ref is not None:

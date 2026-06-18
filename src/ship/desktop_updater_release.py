@@ -182,7 +182,7 @@ def _ensure_verified_zip_for_install(
     return zip_path
 
 
-def _classify_install_failure(exc: Exception) -> str:
+def _classify_install_failure(exc: BaseException) -> str:
     message = str(exc).strip()
     lowered = message.lower()
     if "manifest" in lowered and (
