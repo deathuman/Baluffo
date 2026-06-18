@@ -3,10 +3,13 @@ from __future__ import annotations
 import json
 import os
 import ssl
+from binascii import Error as BinasciiError
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
+
+from cryptography.exceptions import InvalidTag
 
 from src import source_sync_crypto as _source_sync_crypto
 from src.shared.github_https import (
@@ -129,7 +132,7 @@ def _decrypt_embedded_v2_private_key(
                 installation_id=normalized["installationId"],
                 passphrase=passphrase,
             )
-        except Exception:
+        except (BinasciiError, InvalidTag, RuntimeError, UnicodeError, ValueError):
             pass
     return _source_sync_crypto.decrypt_private_key_pem_for_embedded(
         normalized["privateKeyPemEnc"],
@@ -246,7 +249,7 @@ def load_packaged_sync_config(module: Any, *, env: dict[str, str] | None = None)
     if private_key_pem:
         try:
             module._write_local_wrapped_key(config_path, fingerprint, private_key_pem)
-        except Exception:
+        except (OSError, RuntimeError, TypeError, ValueError):
             pass
     return module.PackagedGitHubAppConfig(
         app_id=normalized["appId"],
