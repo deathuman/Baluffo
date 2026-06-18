@@ -14,6 +14,8 @@ from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
+from urllib.error import URLError
+from urllib.request import Request
 
 from src.baluffo_version import compare_baluffo_versions
 from src.shared.github_https import build_github_ssl_context, wrap_github_request_error
@@ -418,7 +420,7 @@ def _json_headers() -> dict[str, str]:
 
 def fetch_json(url: str, *, timeout_s: float = 20.0) -> Any:
     deps = _root()
-    request = deps.Request(str(url), headers=deps._json_headers())
+    request = Request(str(url), headers=deps._json_headers())
     timeout = max(1.0, float(timeout_s))
     try:
         if deps._uses_github_https(url):
@@ -431,7 +433,7 @@ def fetch_json(url: str, *, timeout_s: float = 20.0) -> Any:
             response_ctx = deps.urlopen(request, timeout=timeout)
         with response_ctx as response:
             payload = response.read().decode("utf-8")
-    except (deps.ssl.SSLError, deps.URLError) as exc:
+    except (ssl.SSLError, URLError) as exc:
         if deps._uses_github_https(url):
             raise wrap_github_request_error(
                 exc,
@@ -451,7 +453,7 @@ def download_file(
     deps = _root()
     target.parent.mkdir(parents=True, exist_ok=True)
     temp_target = target.with_name(f"{target.name}.{deps.uuid.uuid4().hex}.download")
-    request = deps.Request(str(url), headers={"User-Agent": constants_mod.USER_AGENT})
+    request = Request(str(url), headers={"User-Agent": constants_mod.USER_AGENT})
     try:
         timeout = max(5.0, float(timeout_s))
         try:
@@ -463,7 +465,7 @@ def download_file(
                 )
             else:
                 response_ctx = deps.urlopen(request, timeout=timeout)
-        except (deps.ssl.SSLError, deps.URLError) as exc:
+        except (ssl.SSLError, URLError) as exc:
             if deps._uses_github_https(url):
                 raise wrap_github_request_error(
                     exc,

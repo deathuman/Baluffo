@@ -14,8 +14,8 @@ TRACKED_MODULES = (
     "src/ship/desktop_update_service.py",
 )
 
-EXPECTED_DEPENDENCY_COUNT = 71
-EXPECTED_REFERENCE_COUNT = 192
+EXPECTED_DEPENDENCY_COUNT = 68
+EXPECTED_REFERENCE_COUNT = 186
 
 CATEGORIES = {
     "constant",
@@ -32,11 +32,8 @@ CATEGORIES = {
 CONSTANTS: set[str] = set()
 
 STDLIB_BINDINGS = {
-    "Request",
-    "URLError",
     "os",
     "shutil",
-    "ssl",
     "subprocess",
     "tempfile",
     "threading",
