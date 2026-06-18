@@ -12,6 +12,19 @@ from typing import Any
 from src.app_version import get_app_version
 from src.ship import desktop_update_constants as constants_mod
 from src.ship import desktop_update_manifest as manifest_mod
+from src.ship.desktop_update_state import (
+    _cached_release_notes,
+    _cached_release_notes_history,
+    _failure_result,
+    _handoff_status_pending,
+    _manifest_to_status,
+    _normalize_installed_status,
+    _portable_artifact_name,
+    _reconcile_downloaded_artifact_status,
+    _reconcile_handoff_status,
+    _retryable_install_status,
+    _stale_download_failed_status,
+)
 
 root: Any | None = None
 
@@ -110,12 +123,12 @@ class DesktopUpdateService:
             else deps.read_cached_manifest(self.paths)
         )
         manifest = _as_dict(cached.get("manifest"))
-        release_notes = deps._cached_release_notes(
+        release_notes = _cached_release_notes(
             cached,
             target_version=str(manifest.get("version") or "").strip(),
             manifest_url=str(manifest.get("release_notes_url") or "").strip(),
         )
-        release_notes_history = deps._cached_release_notes_history(cached)
+        release_notes_history = _cached_release_notes_history(cached)
         return dict(cached), manifest, dict(release_notes), list(release_notes_history)
 
     def _reconcile_status_locked(
@@ -132,7 +145,7 @@ class DesktopUpdateService:
             if isinstance(status, dict)
             else deps.load_status(self.paths, current_version=current_version)
         )
-        existing, _credible_handoff_plan, _stale_handoff = deps._reconcile_handoff_status(
+        existing, _credible_handoff_plan, _stale_handoff = _reconcile_handoff_status(
             self.paths,
             existing,
         )
@@ -147,14 +160,14 @@ class DesktopUpdateService:
         )
         next_status = dict(existing)
         if manifest_payload:
-            next_status = deps._manifest_to_status(
+            next_status = _manifest_to_status(
                 current_version=current_version,
                 manifest=manifest_payload,
                 existing=next_status,
                 release_notes=release_notes,
                 release_notes_history=release_notes_history,
             )
-            next_status = deps._reconcile_downloaded_artifact_status(
+            next_status = _reconcile_downloaded_artifact_status(
                 paths=self.paths,
                 manifest=manifest_payload,
                 status=next_status,
@@ -164,7 +177,7 @@ class DesktopUpdateService:
                 and str(next_status.get("downloadState") or "").strip().lower() != "downloaded"
                 and not self._download_worker_alive_locked()
             ):
-                next_status = deps._stale_download_failed_status(
+                next_status = _stale_download_failed_status(
                     next_status,
                     message="The previous update download stopped before it finished. Download the update again.",
                 )
@@ -172,15 +185,15 @@ class DesktopUpdateService:
             str(existing.get("downloadState") or "").strip().lower() == "downloading"
             and not self._download_worker_alive_locked()
         ):
-            next_status = deps._stale_download_failed_status(
+            next_status = _stale_download_failed_status(
                 next_status,
                 message="The previous update download stopped before it finished. Check for updates and try again.",
             )
-        next_status, _credible_handoff_plan, _stale_handoff = deps._reconcile_handoff_status(
+        next_status, _credible_handoff_plan, _stale_handoff = _reconcile_handoff_status(
             self.paths,
             next_status,
         )
-        next_status = deps._normalize_installed_status(next_status, current_version=current_version)
+        next_status = _normalize_installed_status(next_status, current_version=current_version)
         if not (
             next_status.get("releaseNotesUrl")
             or next_status.get("releaseNotesTitle")
@@ -208,12 +221,10 @@ class DesktopUpdateService:
             next_status = _as_dict(
                 deps.save_status(
                     self.paths,
-                    deps._stale_download_failed_status(next_status, message=error),
+                    _stale_download_failed_status(next_status, message=error),
                 )
             )
-        return _as_dict(
-            deps._failure_result(status=next_status, error=error, error_code=error_code)
-        )
+        return _as_dict(_failure_result(status=next_status, error=error, error_code=error_code))
 
     def _install_failure_locked(
         self,
@@ -232,9 +243,7 @@ class DesktopUpdateService:
                 },
             )
         )
-        return _as_dict(
-            deps._failure_result(status=next_status, error=error, error_code=error_code)
-        )
+        return _as_dict(_failure_result(status=next_status, error=error, error_code=error_code))
 
     def _install_handoff_unconfirmed_locked(
         self,
@@ -253,11 +262,11 @@ class DesktopUpdateService:
         retryable_status = _as_dict(
             deps.save_status(
                 self.paths,
-                deps._retryable_install_status(status, zip_path=zip_path, error=error),
+                _retryable_install_status(status, zip_path=zip_path, error=error),
             )
         )
         return _as_dict(
-            deps._failure_result(
+            _failure_result(
                 status=retryable_status,
                 error=error,
                 error_code="install_handoff_unconfirmed",
@@ -353,7 +362,7 @@ class DesktopUpdateService:
                                 deps.save_status(
                                     self.paths,
                                     self._reconcile_status_locked(
-                                        status=deps._manifest_to_status(
+                                        status=_manifest_to_status(
                                             current_version=current_version,
                                             manifest=manifest,
                                             existing=status,
@@ -406,7 +415,7 @@ class DesktopUpdateService:
                     "releaseNotesHistory": release_notes_history,
                 },
             )
-            next_status = deps._manifest_to_status(
+            next_status = _manifest_to_status(
                 current_version=current_version,
                 manifest=manifest,
                 existing=deps.load_status(self.paths, current_version=current_version),
@@ -438,7 +447,7 @@ class DesktopUpdateService:
     def _run_download_worker(self, manifest: dict[str, Any]) -> None:
         deps = self._deps
         artifact = _as_dict(manifest.get("portable_artifact"))
-        target = self.paths.downloads_dir / deps._portable_artifact_name(manifest)
+        target = self.paths.downloads_dir / _portable_artifact_name(manifest)
         last_reported_percent = -1
 
         def on_progress(downloaded: int, total: int) -> None:
@@ -711,13 +720,11 @@ class DesktopUpdateService:
                 verified_status = deps.load_status(
                     self.paths, current_version=self.current_version()
                 )
-                verified_status, credible_handoff_plan, _stale_handoff = (
-                    deps._reconcile_handoff_status(
-                        self.paths,
-                        verified_status,
-                    )
+                verified_status, credible_handoff_plan, _stale_handoff = _reconcile_handoff_status(
+                    self.paths,
+                    verified_status,
                 )
-                if not credible_handoff_plan or not deps._handoff_status_pending(verified_status):
+                if not credible_handoff_plan or not _handoff_status_pending(verified_status):
                     return self._install_handoff_unconfirmed_locked(
                         status=status,
                         zip_path=zip_path,
