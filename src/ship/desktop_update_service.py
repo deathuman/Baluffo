@@ -14,9 +14,12 @@ from src.ship import desktop_update_constants as constants_mod
 from src.ship import desktop_update_manifest as manifest_mod
 from src.ship.desktop_update_shared import (
     desktop_update_public_key_candidate_paths,
+    fetch_json,
     install_stage_label,
     iso_now,
     load_desktop_update_public_keys,
+    resolve_github_api_base,
+    resolve_release_repo,
 )
 from src.ship.desktop_update_state import (
     _cached_release_notes,
@@ -300,15 +303,14 @@ class DesktopUpdateService:
             return dict(self._reconcile_status_locked())
 
     def _resolve_latest_release(self) -> dict[str, Any]:
-        deps = self._deps
-        repo = deps.resolve_release_repo(
+        repo = resolve_release_repo(
             install_root=self.paths.install_root,
             ship_root=self.paths.ship_root,
         )
         if not repo:
             raise RuntimeError("Desktop update repository is not configured.")
-        url = f"{deps.resolve_github_api_base()}/repos/{repo}/releases?per_page=10"
-        payload = deps.fetch_json(url)
+        url = f"{resolve_github_api_base()}/repos/{repo}/releases?per_page=10"
+        payload = fetch_json(url)
         if not isinstance(payload, list):
             raise RuntimeError("GitHub releases payload was not a list.")
         self._stable_releases = []
@@ -340,7 +342,7 @@ class DesktopUpdateService:
         manifest_url = str(manifest_asset.get("browser_download_url") or "").strip()
         if not manifest_url:
             raise RuntimeError("Desktop manifest asset is missing its download URL.")
-        manifest = deps.fetch_json(manifest_url)
+        manifest = fetch_json(manifest_url)
         if not isinstance(manifest, dict):
             raise RuntimeError("Desktop manifest payload is invalid.")
         deps.validate_desktop_manifest(manifest)

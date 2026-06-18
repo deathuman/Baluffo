@@ -14,8 +14,8 @@ TRACKED_MODULES = (
     "src/ship/desktop_update_service.py",
 )
 
-EXPECTED_DEPENDENCY_COUNT = 26
-EXPECTED_REFERENCE_COUNT = 97
+EXPECTED_DEPENDENCY_COUNT = 23
+EXPECTED_REFERENCE_COUNT = 93
 
 CATEGORIES = {
     "constant",
@@ -45,13 +45,10 @@ SHARED_HELPERS = {
     "_resolve_runtime_path",
     "compute_sha256",
     "download_file",
-    "fetch_json",
     "pid_is_running",
     "read_desktop_session_state",
     "read_json",
     "resolve_desktop_session_root",
-    "resolve_github_api_base",
-    "resolve_release_repo",
     "validate_desktop_manifest",
     "verify_manifest_signature",
     "write_json_atomic",

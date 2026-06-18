@@ -4,6 +4,7 @@ from unittest import mock
 import pytest
 
 from src.ship import desktop_update as du
+from src.ship import desktop_update_service as update_service
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -153,10 +154,12 @@ def test_resolve_latest_release_filters_unstable_releases_and_keeps_history(
         data_dir = Path(tmp) / "portable" / "ship" / "data"
         service = du.DesktopUpdateService(data_dir=data_dir, current_version_getter=lambda: "0.1.0")
 
-        monkeypatch.setattr(du, "resolve_release_repo", lambda **_kw: "owner/repo")
-        monkeypatch.setattr(du, "resolve_github_api_base", lambda: "https://api.example.test")
+        monkeypatch.setattr(update_service, "resolve_release_repo", lambda **_kw: "owner/repo")
         monkeypatch.setattr(
-            du,
+            update_service, "resolve_github_api_base", lambda: "https://api.example.test"
+        )
+        monkeypatch.setattr(
+            update_service,
             "fetch_json",
             lambda _url: [
                 {"id": 125, "tag_name": "v1.6.0", "draft": True},
