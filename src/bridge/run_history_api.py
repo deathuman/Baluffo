@@ -80,7 +80,7 @@ def _safe_parse_iso(
 ) -> datetime | None:
     try:
         return parse_iso(value)
-    except Exception:  # noqa: BLE001
+    except (OverflowError, TypeError, ValueError):
         return None
 
 
