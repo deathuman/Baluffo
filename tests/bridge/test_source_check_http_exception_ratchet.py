@@ -1,3 +1,5 @@
+import builtins
+
 import pytest
 
 from src.bridge import source_check_http
@@ -28,6 +30,39 @@ class _Response:
 class _InvalidCharsetResponse(_Response):
     def get_content_charset(self) -> str:
         return "missing-codec"
+
+
+def test_playwright_import_failure_returns_unavailable(monkeypatch) -> None:
+    real_import = builtins.__import__
+
+    def fail_import(name, globals_=None, locals_=None, fromlist=(), level=0):  # noqa: ANN001
+        if name == "playwright.sync_api":
+            raise ModuleNotFoundError("No module named 'playwright'")
+        return real_import(name, globals_, locals_, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", fail_import)
+
+    assert source_check_http.try_fetch_with_playwright(
+        "https://example.com/careers",
+        timeout_s=5,
+    ) == ("", "browser fallback unavailable (playwright is not installed)")
+
+
+def test_playwright_import_does_not_hide_unexpected_failures(monkeypatch) -> None:
+    real_import = builtins.__import__
+
+    def fail_import(name, globals_=None, locals_=None, fromlist=(), level=0):  # noqa: ANN001
+        if name == "playwright.sync_api":
+            raise RuntimeError("broken import side effect")
+        return real_import(name, globals_, locals_, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", fail_import)
+
+    with pytest.raises(RuntimeError, match="broken import side effect"):
+        source_check_http.try_fetch_with_playwright(
+            "https://example.com/careers",
+            timeout_s=5,
+        )
 
 
 def test_redirect_career_candidates_ignore_expected_probe_failures(monkeypatch) -> None:

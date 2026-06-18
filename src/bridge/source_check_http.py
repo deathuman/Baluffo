@@ -19,7 +19,7 @@ def try_fetch_with_playwright(url: str, timeout_s: int) -> tuple[str, str]:
     """Best-effort browser fallback for anti-bot pages; returns (html, error)."""
     try:
         from playwright.sync_api import sync_playwright
-    except Exception:
+    except ImportError:
         return "", "browser fallback unavailable (playwright is not installed)"
     try:
         with sync_playwright() as p:
