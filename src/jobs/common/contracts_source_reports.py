@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 from src.jobs.common.taxonomy import (
-    ClassificationContext,
     FailureBucket,
     ZeroKeptClassification,
     assess_zero_extract,
@@ -17,6 +16,7 @@ from src.jobs.common.taxonomy import (
 from src.jobs.text_utils import clean_text, norm_text
 from src.shared.fetch_report_normalization import (
     apply_jobs_fetch_report_details,
+    apply_jobs_fetch_report_zero_kept_classification,
     enrich_fetch_report_dead_listing_fields,
     enrich_jobs_fetch_report_dynamic_redundant_provider_fields,
     enrich_jobs_fetch_report_provider_migration_fields,
@@ -29,84 +29,26 @@ from src.shared.fetch_report_normalization import (
 from src.shared.json_shapes import as_json_object
 
 
-def _clean_label(value: Any) -> str:
-    text = clean_text(value)
-    return "" if text.lower() in {"n/a", "na", "none"} else text
-
-
-def _zero_kept_context(
-    normalized: dict[str, Any],
-    src: dict[str, Any],
-    classification: str,
-) -> ClassificationContext:
-    context_src = dict(src)
-    context_src.update(
-        {
-            "status": normalized["status"],
-            "error": normalized["error"],
-            "classification": classification,
-            "fetchedCount": normalized["fetchedCount"],
-        }
-    )
-    return classification_context_from_source_detail(context_src)
-
-
-def _clear_unsupported_empty_evidence_claims(
-    failure_bucket: str,
-    zk_classification: str,
-    context: ClassificationContext,
-) -> tuple[str, str]:
-    has_empty_evidence = has_explicit_empty_evidence(context)
-    if zk_classification == ZeroKeptClassification.LEGIT_EMPTY.value and not has_empty_evidence:
-        zk_classification = ""
-    if failure_bucket == FailureBucket.NO_OPENINGS.value and not has_empty_evidence:
-        failure_bucket = ""
-    return failure_bucket, zk_classification
-
-
-def _infer_zero_kept_failure_bucket(
-    zk_classification: str,
-    context: ClassificationContext,
-) -> str:
-    assessment = assess_zero_extract(context)
-    inferred_bucket = failure_bucket_from_zero_extract_assessment(
-        assessment,
-        ZeroKeptClassification.LEGIT_EMPTY
-        if zk_classification == ZeroKeptClassification.LEGIT_EMPTY.value
-        else None,
-    )
-    if inferred_bucket != FailureBucket.UNKNOWN:
-        return inferred_bucket.value
-    if zk_classification == ZeroKeptClassification.LEGIT_EMPTY.value:
-        return FailureBucket.NO_OPENINGS.value
-    return FailureBucket.NEEDS_REVIEW.value
-
-
 def _apply_zero_kept_classification(
     normalized: dict[str, Any],
     src: dict[str, Any],
 ) -> tuple[str, str, str]:
-    failure_bucket = _clean_label(src.get("failureBucket"))
-    classification = _clean_label(src.get("classification"))
-    zk_classification = _clean_label(src.get("zeroKeptClassification"))
-    if normalized["keptCount"] == 0 and normalized["status"] != "excluded":
-        context = _zero_kept_context(normalized, src, classification)
-        failure_bucket, zk_classification = _clear_unsupported_empty_evidence_claims(
-            failure_bucket,
-            zk_classification,
-            context,
-        )
-        if not zk_classification:
-            zk_classification = classify_zero_kept(context).value
-        if not failure_bucket:
-            failure_bucket = _infer_zero_kept_failure_bucket(zk_classification, context)
-    if failure_bucket:
-        normalized["failureBucket"] = failure_bucket
-    if classification:
-        normalized["classification"] = classification
-    if zk_classification:
-        normalized["zeroKeptClassification"] = zk_classification
-    return failure_bucket, classification, zk_classification
+    return apply_jobs_fetch_report_zero_kept_classification(
+        normalized,
+        src,
+        classification_context_from_source_detail_func=classification_context_from_source_detail,
+        classify_zero_kept_func=classify_zero_kept,
+        assess_zero_extract_func=assess_zero_extract,
+        failure_bucket_from_zero_extract_assessment_func=(
+            failure_bucket_from_zero_extract_assessment
+        ),
+        has_explicit_empty_evidence_func=has_explicit_empty_evidence,
+        legit_empty_classification=ZeroKeptClassification.LEGIT_EMPTY,
+        unknown_failure_bucket=FailureBucket.UNKNOWN,
+        no_openings_failure_bucket=FailureBucket.NO_OPENINGS,
+        needs_review_failure_bucket=FailureBucket.NEEDS_REVIEW,
+        clean_text_func=clean_text,
+    )
 
 
 def _apply_stage_loss_and_exclusion_fields(target: dict[str, Any], src: dict[str, Any]) -> None:

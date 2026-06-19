@@ -55,6 +55,10 @@ def _clean_label(value: Any, *, clean_text_func: Any = _clean_text) -> str:
     return "" if text.lower() in {"n/a", "na", "none"} else text
 
 
+def _enum_value(value: Any) -> str:
+    return str(getattr(value, "value", value) or "")
+
+
 def _clean_pages(pages: Any, *, clean_text_func: Any = _clean_text) -> list[str]:
     return [clean_text_func(page) for page in as_json_list(pages) if clean_text_func(page)]
 
@@ -477,6 +481,76 @@ def enrich_jobs_fetch_report_source_row_fields(
         decision_counts_key="subsourceCacheDecisionCounts",
         clean_text_func=clean_text_func,
     )
+
+
+def apply_jobs_fetch_report_zero_kept_classification(
+    normalized: dict[str, Any],
+    src: dict[str, Any],
+    *,
+    classification_context_from_source_detail_func: Any,
+    classify_zero_kept_func: Any,
+    assess_zero_extract_func: Any,
+    failure_bucket_from_zero_extract_assessment_func: Any,
+    has_explicit_empty_evidence_func: Any,
+    legit_empty_classification: Any,
+    unknown_failure_bucket: Any,
+    no_openings_failure_bucket: Any,
+    needs_review_failure_bucket: Any,
+    clean_text_func: Any = _clean_text,
+) -> tuple[str, str, str]:
+    failure_bucket = _clean_label(src.get("failureBucket"), clean_text_func=clean_text_func)
+    classification = _clean_label(src.get("classification"), clean_text_func=clean_text_func)
+    zero_kept_classification = _clean_label(
+        src.get("zeroKeptClassification"),
+        clean_text_func=clean_text_func,
+    )
+
+    legit_empty_value = _enum_value(legit_empty_classification)
+    unknown_failure_value = _enum_value(unknown_failure_bucket)
+    no_openings_value = _enum_value(no_openings_failure_bucket)
+    needs_review_value = _enum_value(needs_review_failure_bucket)
+
+    if normalized["keptCount"] == 0 and normalized["status"] != "excluded":
+        context_src = dict(src)
+        context_src.update(
+            {
+                "status": normalized["status"],
+                "error": normalized["error"],
+                "classification": classification,
+                "fetchedCount": normalized["fetchedCount"],
+            }
+        )
+        context = classification_context_from_source_detail_func(context_src)
+        has_empty_evidence = has_explicit_empty_evidence_func(context)
+        if zero_kept_classification == legit_empty_value and not has_empty_evidence:
+            zero_kept_classification = ""
+        if failure_bucket == no_openings_value and not has_empty_evidence:
+            failure_bucket = ""
+        if not zero_kept_classification:
+            zero_kept_classification = _enum_value(classify_zero_kept_func(context))
+        if not failure_bucket:
+            assessment = assess_zero_extract_func(context)
+            inferred_bucket = failure_bucket_from_zero_extract_assessment_func(
+                assessment,
+                legit_empty_classification
+                if zero_kept_classification == legit_empty_value
+                else None,
+            )
+            inferred_value = _enum_value(inferred_bucket)
+            if inferred_value and inferred_value != unknown_failure_value:
+                failure_bucket = inferred_value
+            elif zero_kept_classification == legit_empty_value:
+                failure_bucket = no_openings_value
+            else:
+                failure_bucket = needs_review_value
+
+    if failure_bucket:
+        normalized["failureBucket"] = failure_bucket
+    if classification:
+        normalized["classification"] = classification
+    if zero_kept_classification:
+        normalized["zeroKeptClassification"] = zero_kept_classification
+    return failure_bucket, classification, zero_kept_classification
 
 
 def normalize_fetch_report_stage_timings(src: dict[str, Any]) -> dict[str, int]:

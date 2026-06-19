@@ -1,7 +1,17 @@
 from src.jobs.common.contracts_source_reports import normalize_source_report_row
+from src.jobs.common.taxonomy import (
+    FailureBucket,
+    ZeroKeptClassification,
+    assess_zero_extract,
+    classification_context_from_source_detail,
+    classify_zero_kept,
+    failure_bucket_from_zero_extract_assessment,
+    has_explicit_empty_evidence,
+)
 from src.jobs.text_utils import clean_text, norm_text
 from src.shared.fetch_report_normalization import (
     apply_jobs_fetch_report_details,
+    apply_jobs_fetch_report_zero_kept_classification,
     enrich_fetch_report_dead_listing_fields,
     enrich_fetch_report_source_row_metadata,
     enrich_jobs_fetch_report_dynamic_redundant_provider_fields,
@@ -11,6 +21,7 @@ from src.shared.fetch_report_normalization import (
     normalize_fetch_report_loss,
     normalize_fetch_report_stage_timings,
     normalize_jobs_fetch_report_detail_item,
+    normalize_jobs_fetch_report_source_row_base,
 )
 
 
@@ -202,4 +213,53 @@ def test_jobs_source_report_row_uses_shared_field_enrichment() -> None:
     assert normalized["details"][0]["loss"] == normalize_fetch_report_loss(
         row["details"][0]["loss"],
         clean_text_func=clean_text,
+    )
+
+
+def test_jobs_source_report_row_uses_shared_zero_kept_classification() -> None:
+    row = {
+        "name": "Zero Source",
+        "adapter": "static",
+        "status": "OK",
+        "fetchedCount": "10",
+        "keptCount": "0",
+        "classification": "ok_no_jobs",
+        "failureBucket": "no_openings",
+        "zeroKeptClassification": "legit_empty",
+    }
+
+    normalized = normalize_source_report_row(row)
+    shared_normalized = normalize_jobs_fetch_report_source_row_base(
+        row,
+        clean_text_func=clean_text,
+        normalize_text_func=norm_text,
+    )
+    shared_result = apply_jobs_fetch_report_zero_kept_classification(
+        shared_normalized,
+        row,
+        classification_context_from_source_detail_func=classification_context_from_source_detail,
+        classify_zero_kept_func=classify_zero_kept,
+        assess_zero_extract_func=assess_zero_extract,
+        failure_bucket_from_zero_extract_assessment_func=(
+            failure_bucket_from_zero_extract_assessment
+        ),
+        has_explicit_empty_evidence_func=has_explicit_empty_evidence,
+        legit_empty_classification=ZeroKeptClassification.LEGIT_EMPTY,
+        unknown_failure_bucket=FailureBucket.UNKNOWN,
+        no_openings_failure_bucket=FailureBucket.NO_OPENINGS,
+        needs_review_failure_bucket=FailureBucket.NEEDS_REVIEW,
+        clean_text_func=clean_text,
+    )
+
+    assert shared_result == (
+        normalized["failureBucket"],
+        normalized["classification"],
+        normalized["zeroKeptClassification"],
+    )
+    assert shared_normalized["failureBucket"] == normalized["failureBucket"] == "needs_review"
+    assert shared_normalized["classification"] == normalized["classification"] == "ok_no_jobs"
+    assert (
+        shared_normalized["zeroKeptClassification"]
+        == normalized["zeroKeptClassification"]
+        == "needs_review"
     )
