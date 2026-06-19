@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
-from src.bridge.api import BridgeApi
 from src.bridge.registry_conflict_adjudication import overlay_adjudication
 from src.bridge.registry_conflicts import (
     build_registry_conflicts_summary_cache_key,
@@ -26,6 +25,22 @@ from src.bridge.routes.route_payload_helpers import (
 logger = logging.getLogger(__name__)
 
 
+class _RegistryConflictsRouteApi(Protocol):
+    JOBS_FETCH_REPORT_PATH: Path
+
+    def get_registry_auto_heal_report(self) -> dict[str, Any]: ...
+
+    def get_registry_summary_payload(self) -> dict[str, Any]: ...
+
+    def load_json_object(self, path: Path, default: Any = None) -> dict[str, Any]: ...
+
+    def load_registry_conflict_adjudication(self) -> dict[str, Any]: ...
+
+    def load_state(self) -> dict[str, Any]: ...
+
+    def summarize_state(self, state: dict[str, Any]) -> dict[str, Any]: ...
+
+
 def _safe_int(value: Any, default: int = 0) -> int:
     try:
         return int(value or default)
@@ -33,7 +48,9 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return int(default)
 
 
-def registry_conflicts_badge_from_exact_summary(api: BridgeApi) -> dict[str, Any]:
+def registry_conflicts_badge_from_exact_summary(
+    api: _RegistryConflictsRouteApi,
+) -> dict[str, Any]:
     registry_summary = api.get_registry_summary_payload()
     source_state_path = Path(api.JOBS_FETCH_REPORT_PATH).with_name("jobs-source-state.json")
     adjudication = api.load_registry_conflict_adjudication()
@@ -85,7 +102,11 @@ def registry_conflicts_badge_from_exact_summary(api: BridgeApi) -> dict[str, Any
 
 
 def handle_registry_conflict_routes(
-    handler: BridgeResponseWriter, *, api: BridgeApi, path: str, query: dict[str, list[str]]
+    handler: BridgeResponseWriter,
+    *,
+    api: _RegistryConflictsRouteApi,
+    path: str,
+    query: dict[str, list[str]],
 ) -> bool:
     if path == "/registry/conflicts":
         view = str((query.get("view") or [""])[0] or "").strip().lower()
