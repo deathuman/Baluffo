@@ -3,8 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from src.bridge import admin_entrypoint_services as admin_entrypoint_services_mod
-from src.bridge import admin_task_runtime as admin_task_runtime_mod
 from src.bridge import bootstrap as bridge_bootstrap
 from src.bridge import storage_health as storage_health_mod
 from src.bridge.api import BridgeApi
@@ -52,15 +50,21 @@ def build_bridge_api(config: Any, *, root_mod: Any) -> BridgeApi:
         load_registry_conflict_adjudication=root_mod.load_registry_conflict_adjudication,
         load_json_object=root_mod.load_json_object,
         save_json_atomic=root_mod.save_json_atomic,
-        start_jobs_bootstrap_task=admin_task_runtime_mod.start_jobs_bootstrap_task,
+        start_jobs_bootstrap_task=root_mod.start_jobs_bootstrap_task,
         start_fetcher_task=root_mod.start_fetcher_task,
         get_jobs_pipeline_schedule_payload=lambda: (
-            admin_entrypoint_services_mod.get_pipeline_schedule_service().get_payload()
+            root_mod.admin_entrypoint_services_mod.get_pipeline_schedule_service(
+                root_mod=root_mod
+            ).get_payload()
         ),
         update_jobs_pipeline_schedule=lambda payload: (
-            admin_entrypoint_services_mod.get_pipeline_schedule_service().update_config(payload)
+            root_mod.admin_entrypoint_services_mod.get_pipeline_schedule_service(
+                root_mod=root_mod
+            ).update_config(payload)
         ),
-        abort_task=admin_entrypoint_services_mod.get_task_abort_service().abort_task,
+        abort_task=root_mod.admin_entrypoint_services_mod.get_task_abort_service(
+            root_mod=root_mod
+        ).abort_task,
         start_sync_task=root_mod.start_sync_task,
         load_sync_runtime_state=root_mod.load_sync_runtime_state,
         get_discovery_config_payload=root_mod.get_discovery_config_payload,

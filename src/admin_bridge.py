@@ -237,14 +237,16 @@ SYNC_CONFIG: Any = None
 BRIDGE_SERVICES = admin_entrypoint_services_mod.BRIDGE_SERVICES
 
 
-_get_sync_service = admin_entrypoint_services_mod.get_sync_service
-_get_sync_state = admin_entrypoint_services_mod.get_sync_state
-_get_registry_service = admin_entrypoint_services_mod.get_registry_service
-_get_discovery_service = admin_entrypoint_services_mod.get_discovery_service
-_get_task_launch_api = admin_entrypoint_services_mod.get_task_launch_api
-_get_ops_api = admin_entrypoint_services_mod.get_ops_api
-_get_pipeline_service = admin_entrypoint_services_mod.get_pipeline_service
-_get_desktop_update_service = admin_entrypoint_services_mod.get_desktop_update_service
+_get_sync_service = _bind_admin_root(admin_entrypoint_services_mod.get_sync_service)
+_get_sync_state = _bind_admin_root(admin_entrypoint_services_mod.get_sync_state)
+_get_registry_service = _bind_admin_root(admin_entrypoint_services_mod.get_registry_service)
+_get_discovery_service = _bind_admin_root(admin_entrypoint_services_mod.get_discovery_service)
+_get_task_launch_api = _bind_admin_root(admin_entrypoint_services_mod.get_task_launch_api)
+_get_ops_api = _bind_admin_root(admin_entrypoint_services_mod.get_ops_api)
+_get_pipeline_service = _bind_admin_root(admin_entrypoint_services_mod.get_pipeline_service)
+_get_desktop_update_service = _bind_admin_root(
+    admin_entrypoint_services_mod.get_desktop_update_service
+)
 
 RuntimeConfig = bridge_config.RuntimeConfig
 
@@ -263,8 +265,6 @@ RUNTIME_CONFIG = RuntimeConfig(
     started_by="",
     owner_idle_timeout_s=0.0,
 )
-
-admin_entrypoint_services_mod.root = _ADMIN_ROOT
 
 
 def _normalize_log_level(value: Any, default: str = "info") -> str:

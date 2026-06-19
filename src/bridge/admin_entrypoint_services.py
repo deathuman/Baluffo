@@ -13,7 +13,6 @@ from src.bridge.server import runtime_state as bridge_runtime_state
 from src.bridge.task_abort_service import TaskAbortDeps, TaskAbortPaths, TaskAbortService
 from src.source_registry_io import load_runtime_evidence
 
-root: Any | None = None
 BRIDGE_SERVICES = BridgeServices()
 
 JsonObject = dict[str, Any]
@@ -377,14 +376,7 @@ def _build_pipeline_smoke_overrides(root_mod: Any) -> dict[str, Callable[..., An
     }
 
 
-def _require_root() -> Any:
-    if root is None:
-        raise RuntimeError("admin bridge root is not bound")
-    return root
-
-
-def get_sync_service() -> _SyncServiceLike:
-    root_mod = _require_root()
+def get_sync_service(*, root_mod: Any) -> _SyncServiceLike:
     data_dir = Path(root_mod.RUNTIME_CONFIG.data_dir).resolve()
     services = root_mod.BRIDGE_SERVICES
     with services.sync_service_lock:
@@ -407,12 +399,11 @@ def get_sync_service() -> _SyncServiceLike:
         return cast(_SyncServiceLike, services.sync_service)
 
 
-def get_sync_state() -> _SyncStateLike:
-    return cast(_SyncStateLike, get_sync_service()._sync_state)  # noqa: SLF001
+def get_sync_state(*, root_mod: Any) -> _SyncStateLike:
+    return cast(_SyncStateLike, get_sync_service(root_mod=root_mod)._sync_state)  # noqa: SLF001
 
 
-def get_registry_service() -> _RegistryServiceLike:
-    root_mod = _require_root()
+def get_registry_service(*, root_mod: Any) -> _RegistryServiceLike:
     current_paths = (
         Path(root_mod.ACTIVE_PATH),
         Path(root_mod.PENDING_PATH),
@@ -434,8 +425,7 @@ def get_registry_service() -> _RegistryServiceLike:
         return cast(_RegistryServiceLike, services.registry_service)
 
 
-def get_discovery_service() -> _DiscoveryServiceLike:
-    root_mod = _require_root()
+def get_discovery_service(*, root_mod: Any) -> _DiscoveryServiceLike:
     current_paths = (
         Path(root_mod.DISCOVERY_REPORT_PATH),
         Path(root_mod.DISCOVERY_CANDIDATES_PATH),
@@ -501,8 +491,7 @@ def get_discovery_service() -> _DiscoveryServiceLike:
         return cast(_DiscoveryServiceLike, services.discovery_service)
 
 
-def get_task_launch_api() -> _TaskLaunchApiLike:
-    root_mod = _require_root()
+def get_task_launch_api(*, root_mod: Any) -> _TaskLaunchApiLike:
     return cast(
         _TaskLaunchApiLike,
         root_mod._task_launch_api.TaskLaunchApi(
@@ -551,8 +540,7 @@ def get_task_launch_api() -> _TaskLaunchApiLike:
     )
 
 
-def get_ops_api() -> _OpsApiLike:
-    root_mod = _require_root()
+def get_ops_api(*, root_mod: Any) -> _OpsApiLike:
     return cast(
         _OpsApiLike,
         root_mod._ops_api.OpsApi(
@@ -587,12 +575,12 @@ def get_ops_api() -> _OpsApiLike:
                 report_is_stale_in_progress=root_mod.report_is_stale_in_progress,
                 get_active_sync_runs=root_mod.SyncState.get_active_sync_runs,
                 get_sync_status_payload=root_mod.get_sync_status_payload,
-                sync_config_status=get_sync_service().sync_config_status,
+                sync_config_status=get_sync_service(root_mod=root_mod).sync_config_status,
                 load_sync_runtime_state=root_mod.load_sync_runtime_state,
                 get_jobs_pipeline_status_payload=root_mod.get_jobs_pipeline_status_payload,
-                get_jobs_pipeline_schedule_ops_entry=lambda: (
-                    get_pipeline_schedule_service().get_ops_schedule_entry()
-                ),
+                get_jobs_pipeline_schedule_ops_entry=lambda: get_pipeline_schedule_service(
+                    root_mod=root_mod
+                ).get_ops_schedule_entry(),
                 normalize_fetch_report_contract=root_mod.normalize_fetch_report_contract,
                 normalize_discovery_report_contract=root_mod.normalize_discovery_report_contract,
                 desktop_mode=root_mod.RUNTIME_CONFIG.desktop_mode,
@@ -601,9 +589,9 @@ def get_ops_api() -> _OpsApiLike:
                 ),
                 get_owner_state=bridge_runtime_state.get_owner_state,
                 ops_schema_version=root_mod.OPS_SCHEMA_VERSION,
-                get_updater_status_payload=lambda: (
-                    get_desktop_update_service().get_status_payload()
-                ),
+                get_updater_status_payload=lambda: get_desktop_update_service(
+                    root_mod=root_mod
+                ).get_status_payload(),
                 app_version=root_mod.get_app_version(),
                 get_lifecycle_current_runs=root_mod.get_lifecycle_current_runs,
                 get_lifecycle_recent_runs=root_mod.get_lifecycle_recent_runs,
@@ -615,8 +603,7 @@ def get_ops_api() -> _OpsApiLike:
     )
 
 
-def get_pipeline_service() -> _PipelineServiceLike:
-    root_mod = _require_root()
+def get_pipeline_service(*, root_mod: Any) -> _PipelineServiceLike:
     services = root_mod.BRIDGE_SERVICES
     with services.pipeline_service_lock:
         if services.pipeline_service is None:
@@ -719,7 +706,7 @@ def get_pipeline_service() -> _PipelineServiceLike:
             def pipeline_abort_child_run(
                 task_type: str, run_id: str, reason: str
             ) -> dict[str, Any]:
-                _status, result = get_task_abort_service().abort_task(
+                _status, result = get_task_abort_service(root_mod=root_mod).abort_task(
                     {"taskType": task_type, "runId": run_id, "reason": reason}
                 )
                 return result
@@ -763,8 +750,7 @@ def get_pipeline_service() -> _PipelineServiceLike:
         return cast(_PipelineServiceLike, services.pipeline_service)
 
 
-def get_pipeline_schedule_service() -> _PipelineScheduleServiceLike:
-    root_mod = _require_root()
+def get_pipeline_schedule_service(*, root_mod: Any) -> _PipelineScheduleServiceLike:
     current_path = Path(
         getattr(
             root_mod,
@@ -791,8 +777,7 @@ def get_pipeline_schedule_service() -> _PipelineScheduleServiceLike:
         return cast(_PipelineScheduleServiceLike, _PIPELINE_SCHEDULE_SERVICE)
 
 
-def get_task_abort_service() -> Any:
-    root_mod = _require_root()
+def get_task_abort_service(*, root_mod: Any) -> Any:
     data_dir = Path(root_mod.RUNTIME_CONFIG.data_dir).resolve()
     with bridge_runtime_state.TASK_ABORT_SERVICE_LOCK:
         if (
@@ -825,8 +810,7 @@ def get_task_abort_service() -> Any:
         return bridge_runtime_state.TASK_ABORT_SERVICE
 
 
-def get_desktop_update_service() -> _DesktopUpdateServiceLike:
-    root_mod = _require_root()
+def get_desktop_update_service(*, root_mod: Any) -> _DesktopUpdateServiceLike:
     data_dir = Path(root_mod.RUNTIME_CONFIG.data_dir).resolve()
     services = root_mod.BRIDGE_SERVICES
     with services.desktop_update_service_lock:

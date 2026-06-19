@@ -1253,6 +1253,9 @@ def test_admin_bridge_root_stays_thin_entrypoint_surface(repo_root: Path) -> Non
     admin_entrypoint_runtime = (
         repo_root / "src" / "bridge" / "admin_entrypoint_runtime.py"
     ).read_text(encoding="utf-8")
+    admin_entrypoint_services = (
+        repo_root / "src" / "bridge" / "admin_entrypoint_services.py"
+    ).read_text(encoding="utf-8")
     admin_registry_api = (repo_root / "src" / "bridge" / "admin_registry_api.py").read_text(
         encoding="utf-8"
     )
@@ -1270,7 +1273,9 @@ def test_admin_bridge_root_stays_thin_entrypoint_surface(repo_root: Path) -> Non
         "configure_runtime_paths = _bind_admin_root("
         "admin_entrypoint_runtime_mod.configure_runtime_paths" in text
     )
-    assert "admin_entrypoint_services_mod.root = _ADMIN_ROOT" in text
+    assert "admin_entrypoint_services_mod.root =" not in text
+    assert "root: Any" not in admin_entrypoint_services
+    assert "def _require_root(" not in admin_entrypoint_services
     assert "admin_registry_api_mod.root =" not in text
     assert "root: Any" not in admin_registry_api
     assert "def _require_root(" not in admin_registry_api

@@ -221,7 +221,9 @@ def on_bridge_started(*, root_mod: Any) -> JsonObject:
         )
     cleanup = root_mod.cleanup_stale_startup_tasks()
     startup_sync = root_mod.schedule_startup_sync_pull()
-    pipeline_schedule = root_mod.admin_entrypoint_services_mod.get_pipeline_schedule_service().start_background_polling()
+    pipeline_schedule = root_mod.admin_entrypoint_services_mod.get_pipeline_schedule_service(
+        root_mod=root_mod
+    ).start_background_polling()
     return {
         "runtimeEvidenceJournals": runtime_journals,
         "registryJournals": registry_journals,
