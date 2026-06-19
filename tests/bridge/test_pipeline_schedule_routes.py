@@ -1,8 +1,18 @@
 from pathlib import Path
+from typing import Any
 
+from src.bridge.routes.get_pipeline_tasks import handle_pipeline_task_routes
 from src.bridge.routes.get_routes import handle_get
 from src.bridge.routes.post_routes import handle_post
 from tests.helpers.bridge_api import FakeDesktopLocalDataStore, FakeHandler, make_stub_bridge_api
+
+
+class MinimalPipelineTaskApi:
+    def get_jobs_pipeline_schedule_payload(self) -> dict[str, Any]:
+        return {"ok": True, "kind": "schedule"}
+
+    def get_jobs_pipeline_status_payload(self) -> dict[str, Any]:
+        return {"ok": True, "kind": "status"}
 
 
 def test_pipeline_schedule_status(tmp_path: Path) -> None:
@@ -20,6 +30,34 @@ def test_pipeline_schedule_status(tmp_path: Path) -> None:
     assert result is True
     assert handler.sent[-1]["status"] == 200
     assert handler.sent[-1]["payload"]["savedConfig"]["enabled"] is True
+
+
+def test_pipeline_task_get_routes_accept_minimal_capability_object() -> None:
+    api = MinimalPipelineTaskApi()
+
+    schedule_handler = FakeHandler()
+    assert (
+        handle_pipeline_task_routes(
+            schedule_handler,
+            api=api,
+            path="/tasks/jobs-pipeline-schedule",
+            query={},
+        )
+        is True
+    )
+    assert schedule_handler.sent[-1]["payload"] == {"ok": True, "kind": "schedule"}
+
+    status_handler = FakeHandler()
+    assert (
+        handle_pipeline_task_routes(
+            status_handler,
+            api=api,
+            path="/tasks/run-jobs-pipeline-status",
+            query={},
+        )
+        is True
+    )
+    assert status_handler.sent[-1]["payload"] == {"ok": True, "kind": "status"}
 
 
 def test_ops_health_includes_pipeline_schedule_entry(tmp_path: Path) -> None:

@@ -15,7 +15,7 @@ A systematic analysis identified twelve cross-cutting tech debt clusters that im
 
 | Area | Severity | Current status | Footprint / remaining work |
 |------|----------|----------------|----------------------------|
-| BridgeApi god object | P0 | Partial | Current-task default payload builders merged; source-derived field classification guardrail added and hardened for dynamic API lookups. Field deletion/split still open. |
+| BridgeApi god object | P0 | Partial | Current-task default payload builders merged; source-derived field classification guardrail added and hardened for dynamic API lookups; pipeline task GET routes now use a narrow capability protocol instead of the full `BridgeApi` type. Field deletion/split still open. |
 | admin_bridge legacy globals | P0 | Partial | 5-way root injection seam now has explicit coverage. `BridgeServices` holder owns sync, desktop-update, registry, discovery, and pipeline service state while mirroring legacy globals. Broader root-injection cleanup remains open. |
 | get_routes.py monolith | P0 | Done for route-owned behavior | Partial JSON parser, provider-coverage link backfill, registry source table compaction, fetch-report source-run read support, ops diagnostics routes, ops status routes, admin bootstrap route, admin ops-tab counts route, app routes, registry routes, registry-conflicts route, sync status route, pipeline task routes, discovery routes, fetch-report routes, source-policy recommendations route, and desktop local-data GET routes extracted with tests. `handle_get` remains the public delegating entrypoint. |
 | Data model drift (CanonicalJob) | P0 | Done for missing-field slice | `CanonicalJobSchema` now preserves `lifecycleEvent`, `lifecycleReason`, `locations`, and `locationSummary`; `DATA_CONTRACT.md` documents locations fields. `id` consistency remains deferred by strategy. |
@@ -79,6 +79,7 @@ Completed on 2026-06-17:
 - **Build script update-manager facade migration:** `scripts/build_ship_bundle.py` now imports `ShipPaths` and `refresh_runtime_bootstrap` from update-manager leaf modules, and `scripts/build_portable_exe.py` now imports `REQUIRED_VERSION_FILES` from `update_manager_paths` instead of the `src.ship.update_manager` facade.
 - **Server POST handler boundary centralization:** `_handle_post_request` now delegates ordinary HTTP failure conversion to `run_route_boundary`, removing the local broad catch while preserving `http_post_handler_failed` logging, 500 payloads, route timing, and control-flow exception propagation.
 - **Server GET handler boundary centralization:** `_handle_get_request` now delegates ordinary HTTP failure conversion to `run_route_boundary`, removing the local `BLE001` suppression while preserving `http_get_handler_failed` logging, 500 payloads, and route timing.
+- **BridgeApi route capability split groundwork:** `/tasks/jobs-pipeline-schedule` and `/tasks/run-jobs-pipeline-status` GET dispatch now type against a narrow pipeline-task route capability protocol and have direct minimal-object coverage, proving this route leaf no longer needs the full `BridgeApi` bag.
 - **BridgeServices desktop-update holder migration:** `BridgeServices` now owns the desktop-update service instance/data-dir/lock while `admin_bridge` keeps legacy `_DESKTOP_UPDATE_SERVICE*` globals mirrored for compatibility.
 - **BridgeServices registry holder migration:** `BridgeServices` now owns the registry service instance/path tuple/lock while `admin_bridge` keeps legacy `_REGISTRY_SERVICE*` globals mirrored for compatibility.
 - **BridgeServices sync holder migration:** `BridgeServices` now owns the sync service instance/data-dir/lock while `admin_bridge` keeps legacy `_SYNC_SERVICE*` globals mirrored for compatibility.
@@ -136,7 +137,7 @@ A new platform (headless CLI, alternative container runtime, native desktop vari
 1. **Default/stub classification:** Map every BridgeApi field to route-used, service-wired, test-only, or true default. Do not delete a stub from grep evidence alone; many stubs are dataclass default behavior for unsupported routes/platforms. (Guardrail complete; deletion decisions still require field-by-field review.)
 2. **Dedup stub payloads:** Merge `_default_current_task_state_payload` and `_default_current_task_state_summary_payload` into one with an optional `summary` parameter.
 3. **Name cleanup:** Rename confusing stubs (`_noop_desktop_local_data_store` → `_noop`, `_empty_startup_metrics` → `_empty_json_list`, `_not_started_noarg` → `_not_started_result`).
-4. **Route-scoped context:** Add a `RouteContext` frozen dataclass that exposes only the ~20 fields routes actually read. BridgeApi creates it once per request.
+4. **Route-scoped context/capabilities:** Add narrow route capability contracts or a `RouteContext` frozen dataclass that exposes only the fields routes actually read. Pipeline task GET routes now use the first narrow capability protocol.
 5. **Document required vs optional:** Add a comment block or `Protocol` per field category.
 
 ### Verification

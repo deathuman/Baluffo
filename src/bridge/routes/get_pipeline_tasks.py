@@ -2,12 +2,23 @@
 
 from __future__ import annotations
 
-from src.bridge.api import BridgeApi
+from typing import Any, Protocol
+
 from src.bridge.routes.response_writer import BridgeResponseWriter
 
 
+class _PipelineTaskRouteApi(Protocol):
+    def get_jobs_pipeline_schedule_payload(self) -> dict[str, Any]: ...
+
+    def get_jobs_pipeline_status_payload(self) -> dict[str, Any]: ...
+
+
 def handle_pipeline_task_routes(
-    handler: BridgeResponseWriter, *, api: BridgeApi, path: str, query: dict[str, list[str]]
+    handler: BridgeResponseWriter,
+    *,
+    api: _PipelineTaskRouteApi,
+    path: str,
+    query: dict[str, list[str]],
 ) -> bool:
     del query
     if path == "/tasks/jobs-pipeline-schedule":
