@@ -63,6 +63,7 @@ ROOT_DATA_FILE_ALIASES = frozenset(
     }
 )
 ROW_BEARING_JOBS_ARTIFACT_NAMES = frozenset(ROW_BEARING_JOBS_ARTIFACTS)
+_EXPECTED_RUNTIME_LAUNCHER_CLI_EXCEPTIONS = (OSError, RuntimeError, ValueError)
 
 
 def _is_expected_client_disconnect(exc: BaseException) -> bool:
@@ -1056,7 +1057,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     except KeyboardInterrupt:
         return 0
-    except Exception as exc:  # noqa: BLE001
+    except _EXPECTED_RUNTIME_LAUNCHER_CLI_EXCEPTIONS as exc:
         print(json.dumps({"ok": False, "error": str(exc)}))
         return 1
 
