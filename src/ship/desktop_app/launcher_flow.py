@@ -751,7 +751,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 profile_mode="cold",
             )
             api.write_startup_summary(config.data_dir / "startup-probe-summary.json", summary)
-    except Exception as exc:
+    except BaseException as exc:
         api._append_startup_trace(
             config.data_dir,
             "desktop_launch_error",
