@@ -2,16 +2,19 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any
+from typing import Any, Protocol
 
-from src.bridge.api import BridgeApi
+
+class HttpServerApi(Protocol):
+    def bridge_log(self, level: str, event: str, **fields: Any) -> None: ...
+
 
 _EXPECTED_ON_STARTED_EXCEPTIONS = (OSError, RuntimeError, ValueError)
 
 
 def run_http_server(
     *,
-    api: BridgeApi,
+    api: HttpServerApi,
     host: str,
     port: int,
     handler_cls: type[BaseHTTPRequestHandler],

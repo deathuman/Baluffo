@@ -7,7 +7,6 @@ from http.server import BaseHTTPRequestHandler
 from typing import Any, Protocol
 from urllib.parse import parse_qs, urlparse
 
-from src.bridge.api import BridgeApi
 from src.bridge.container_mode import is_container_runtime
 from src.bridge.performance_profile import record_route_duration
 from src.bridge.request_utils import read_json_from_request
@@ -17,6 +16,14 @@ from src.shared.timing_counters import normalize_counter_category, time_block
 
 class StaticGetService(Protocol):
     def handle_get(self, handler: Any, *, path: str) -> bool: ...
+
+
+class ServerHandlerApi(Protocol):
+    runtime_config: Any
+
+    def bridge_log(self, level: str, event: str, **fields: Any) -> None: ...
+
+    def mark_desktop_session_activity(self, path: str) -> None: ...
 
 
 _EXPECTED_HANDLER_ROUTE_PATH_EXCEPTIONS = (AttributeError, TypeError, ValueError)
@@ -57,7 +64,7 @@ def _request_timing_category(handler: BaseHTTPRequestHandler, method: str, path:
 
 def _handle_response_write_exception(
     handler: BaseHTTPRequestHandler,
-    api: BridgeApi,
+    api: ServerHandlerApi,
     exc: BaseException,
     *,
     status: int,
@@ -94,7 +101,7 @@ def _route_query(handler: BaseHTTPRequestHandler) -> dict[str, list[str]]:
     return parse_qs(urlparse(handler.path).query)
 
 
-def _send_cors_headers(handler: BaseHTTPRequestHandler, api: BridgeApi) -> None:
+def _send_cors_headers(handler: BaseHTTPRequestHandler, api: ServerHandlerApi) -> None:
     if is_container_runtime(api):
         return
     handler.send_header("Access-Control-Allow-Origin", "*")
@@ -104,7 +111,7 @@ def _send_cors_headers(handler: BaseHTTPRequestHandler, api: BridgeApi) -> None:
 
 def _send_json_response(
     handler: BaseHTTPRequestHandler,
-    api: BridgeApi,
+    api: ServerHandlerApi,
     payload: Any,
     *,
     status: int = 200,
@@ -135,7 +142,7 @@ def _send_json_response(
 
 def _send_bytes_response(
     handler: BaseHTTPRequestHandler,
-    api: BridgeApi,
+    api: ServerHandlerApi,
     body: bytes,
     *,
     content_type: str,
@@ -175,7 +182,7 @@ def _send_bytes_response(
 
 
 def _log_request_message(
-    handler: BaseHTTPRequestHandler, api: BridgeApi, format: str, args: tuple[Any, ...]
+    handler: BaseHTTPRequestHandler, api: ServerHandlerApi, format: str, args: tuple[Any, ...]
 ) -> None:
     runtime_config = getattr(api, "runtime_config", None)
     if runtime_config is not None and bool(getattr(runtime_config, "quiet_requests", False)):
@@ -195,7 +202,7 @@ def _log_request_message(
 
 def _handle_get_request(
     handler: BaseHTTPRequestHandler,
-    api: BridgeApi,
+    api: ServerHandlerApi,
     static_service: StaticGetService | None,
 ) -> None:
     path = ""
@@ -268,7 +275,7 @@ def _handle_get_request(
             )
 
 
-def _handle_post_request(handler: BaseHTTPRequestHandler, api: BridgeApi) -> None:
+def _handle_post_request(handler: BaseHTTPRequestHandler, api: ServerHandlerApi) -> None:
     path = ""
     started_at = time.perf_counter()
     failed = False
@@ -336,7 +343,7 @@ def _handle_post_request(handler: BaseHTTPRequestHandler, api: BridgeApi) -> Non
             )
 
 
-def _handle_options_request(handler: BaseHTTPRequestHandler, api: BridgeApi) -> None:
+def _handle_options_request(handler: BaseHTTPRequestHandler, api: ServerHandlerApi) -> None:
     path = ""
     started_at = time.perf_counter()
     failed = False
@@ -360,10 +367,10 @@ def _handle_options_request(handler: BaseHTTPRequestHandler, api: BridgeApi) -> 
 
 def make_handler(
     *,
-    api: BridgeApi,
+    api: ServerHandlerApi,
     static_service: StaticGetService | None = None,
 ) -> type[BaseHTTPRequestHandler]:
-    """Create a request handler bound to the active BridgeApi instance."""
+    """Create a request handler bound to the active bridge API instance."""
 
     class Handler(BaseHTTPRequestHandler):
         def _request_timing_category(self, method: str, path: str = "") -> str:

@@ -203,13 +203,11 @@ def check_runtime_facade_usage() -> list[str]:
     return failures
 
 
-def check_bridge_route_bridge_api_imports() -> list[str]:
-    route_root = ROOT / "src" / "bridge" / "routes"
-    if not route_root.is_dir():
-        return [f"bridge route directory is missing: {route_root.relative_to(ROOT)}"]
-
+def _bridge_api_import_failures(
+    paths: Iterable[Path], *, import_scope: str, reference_scope: str
+) -> list[str]:
     failures: list[str] = []
-    for path in sorted(route_root.glob("*.py")):
+    for path in sorted(paths):
         rel_path = path.relative_to(ROOT).as_posix()
 
         text = path.read_text(encoding="utf-8")
@@ -246,15 +244,37 @@ def check_bridge_route_bridge_api_imports() -> list[str]:
         if bridge_api_import_lines:
             failures.append(
                 f"{rel_path} imports BridgeApi at lines {sorted(set(bridge_api_import_lines))}; "
-                "route modules must depend on narrow capability protocols."
+                f"{import_scope} must depend on narrow capability protocols."
             )
         if bridge_api_reference_lines:
             failures.append(
                 f"{rel_path} references BridgeApi at lines "
-                f"{sorted(set(bridge_api_reference_lines))}; route modules must type against "
+                f"{sorted(set(bridge_api_reference_lines))}; {reference_scope} must type against "
                 "narrow capability protocols."
             )
     return failures
+
+
+def check_bridge_route_bridge_api_imports() -> list[str]:
+    route_root = ROOT / "src" / "bridge" / "routes"
+    if not route_root.is_dir():
+        return [f"bridge route directory is missing: {route_root.relative_to(ROOT)}"]
+    return _bridge_api_import_failures(
+        route_root.glob("*.py"),
+        import_scope="route modules",
+        reference_scope="route modules",
+    )
+
+
+def check_bridge_server_bridge_api_imports() -> list[str]:
+    server_root = ROOT / "src" / "bridge" / "server"
+    if not server_root.is_dir():
+        return [f"bridge server directory is missing: {server_root.relative_to(ROOT)}"]
+    return _bridge_api_import_failures(
+        server_root.glob("*.py"),
+        import_scope="bridge server modules",
+        reference_scope="bridge server modules",
+    )
 
 
 def _load_line_budget_baseline() -> dict[str, object]:
@@ -572,6 +592,13 @@ def run_compat_group() -> list[GuardFailure]:
     )
     if bridge_api_failure:
         failures.append(bridge_api_failure)
+    bridge_server_failure = _failure_from_messages(
+        "compat",
+        "check_bridge_server_bridge_api_imports",
+        check_bridge_server_bridge_api_imports(),
+    )
+    if bridge_server_failure:
+        failures.append(bridge_server_failure)
     desktop_update_failure = _failure_from_messages(
         "compat",
         "check_desktop_update_facade_inventory",
