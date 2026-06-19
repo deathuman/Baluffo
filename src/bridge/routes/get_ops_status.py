@@ -2,15 +2,36 @@
 
 from __future__ import annotations
 
-from src.bridge.api import BridgeApi
+from typing import Any, Protocol
+
 from src.bridge.performance_profile import time_operation
 from src.bridge.routes.response_writer import BridgeResponseWriter
+
+
+class _OpsStatusRouteApi(Protocol):
+    def compute_ops_fetch_kpis_summary(self) -> dict[str, Any]: ...
+
+    def compute_ops_health(self) -> dict[str, Any]: ...
+
+    def compute_ops_health_ready(self) -> dict[str, Any]: ...
+
+    def compute_ops_dashboard_health(self) -> dict[str, Any]: ...
+
+    def compute_ops_dashboard_health_summary(self) -> dict[str, Any]: ...
+
+    def get_current_task_state_payload(self) -> dict[str, Any]: ...
+
+    def get_current_task_state_summary_payload(self) -> dict[str, Any]: ...
+
+    def get_lifecycle_run_history_rows(self) -> list[Any]: ...
+
+    def get_task_live_payload(self, task_type: str, *, summary: bool = False) -> dict[str, Any]: ...
 
 
 def _handle_ops_health_route(
     handler: BridgeResponseWriter,
     *,
-    api: BridgeApi,
+    api: _OpsStatusRouteApi,
     query: dict[str, list[str]],
 ) -> bool:
     view = str((query.get("view") or ["full"])[0] or "full").strip().lower()
@@ -30,7 +51,7 @@ def _handle_ops_health_route(
 def _handle_ops_dashboard_health_route(
     handler: BridgeResponseWriter,
     *,
-    api: BridgeApi,
+    api: _OpsStatusRouteApi,
     query: dict[str, list[str]],
 ) -> bool:
     view = str((query.get("view") or ["full"])[0] or "full").strip().lower()
@@ -61,7 +82,7 @@ def _handle_ops_dashboard_health_route(
 def _handle_ops_fetch_kpis_route(
     handler: BridgeResponseWriter,
     *,
-    api: BridgeApi,
+    api: _OpsStatusRouteApi,
     query: dict[str, list[str]],
 ) -> bool:
     view = str((query.get("view") or ["summary"])[0] or "summary").strip().lower()
@@ -80,7 +101,7 @@ def _handle_ops_fetch_kpis_route(
 def _handle_ops_task_live_route(
     handler: BridgeResponseWriter,
     *,
-    api: BridgeApi,
+    api: _OpsStatusRouteApi,
     path: str,
     query: dict[str, list[str]],
 ) -> bool:
@@ -107,7 +128,7 @@ def _handle_ops_task_live_route(
 def handle_ops_status_routes(
     handler: BridgeResponseWriter,
     *,
-    api: BridgeApi,
+    api: _OpsStatusRouteApi,
     path: str,
     query: dict[str, list[str]],
 ) -> bool:

@@ -2,9 +2,123 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
+from src.bridge.routes.get_ops_status import handle_ops_status_routes
 from src.bridge.routes.get_routes import handle_get
 from tests.helpers.bridge_api import FakeDesktopLocalDataStore, FakeHandler, make_stub_bridge_api
+
+
+class MinimalOpsStatusRouteApi:
+    def compute_ops_fetch_kpis_summary(self) -> dict[str, Any]:
+        return {"ok": True, "summaryView": True, "kpis": {"pendingApprovalsCount": 3}}
+
+    def compute_ops_health(self) -> dict[str, Any]:
+        return {"ok": True, "detailLevel": "full"}
+
+    def compute_ops_health_ready(self) -> dict[str, Any]:
+        return {"ok": True, "detailLevel": "ready"}
+
+    def compute_ops_dashboard_health(self) -> dict[str, Any]:
+        return {"ok": True, "dashboard": "full"}
+
+    def compute_ops_dashboard_health_summary(self) -> dict[str, Any]:
+        return {"ok": True, "dashboard": "summary", "summaryView": True}
+
+    def get_current_task_state_payload(self) -> dict[str, Any]:
+        return {"ok": True, "detailLevel": "full-task-state"}
+
+    def get_current_task_state_summary_payload(self) -> dict[str, Any]:
+        return {"ok": True, "detailLevel": "summary-task-state"}
+
+    def get_lifecycle_run_history_rows(self) -> list[Any]:
+        return [{"runId": "old"}, {"runId": "new"}]
+
+    def get_task_live_payload(self, task_type: str, *, summary: bool = False) -> dict[str, Any]:
+        return {"ok": True, "taskType": task_type, "summary": summary}
+
+
+def test_ops_status_routes_accept_minimal_capability_object() -> None:
+    api = MinimalOpsStatusRouteApi()
+
+    health_handler = FakeHandler()
+    assert (
+        handle_ops_status_routes(
+            health_handler,
+            api=api,
+            path="/ops/health",
+            query={"view": ["ready"]},
+        )
+        is True
+    )
+    assert health_handler.sent[-1]["payload"]["detailLevel"] == "ready"
+
+    dashboard_handler = FakeHandler()
+    assert (
+        handle_ops_status_routes(
+            dashboard_handler,
+            api=api,
+            path="/ops/dashboard-health",
+            query={"view": ["summary"]},
+        )
+        is True
+    )
+    assert dashboard_handler.sent[-1]["payload"]["dashboard"] == "summary"
+
+    kpis_handler = FakeHandler()
+    assert (
+        handle_ops_status_routes(
+            kpis_handler,
+            api=api,
+            path="/ops/fetch-kpis",
+            query={"view": ["summary"]},
+        )
+        is True
+    )
+    assert kpis_handler.sent[-1]["payload"]["kpis"]["pendingApprovalsCount"] == 3
+
+    history_handler = FakeHandler()
+    assert (
+        handle_ops_status_routes(
+            history_handler,
+            api=api,
+            path="/ops/history",
+            query={"limit": ["1"]},
+        )
+        is True
+    )
+    assert history_handler.sent[-1]["payload"] == {
+        "runs": [{"runId": "new"}],
+        "count": 2,
+    }
+
+    task_state_handler = FakeHandler()
+    assert (
+        handle_ops_status_routes(
+            task_state_handler,
+            api=api,
+            path="/ops/task-state",
+            query={"view": ["summary"]},
+        )
+        is True
+    )
+    assert task_state_handler.sent[-1]["payload"]["detailLevel"] == "summary-task-state"
+
+    live_handler = FakeHandler()
+    assert (
+        handle_ops_status_routes(
+            live_handler,
+            api=api,
+            path="/ops/task-live/fetch",
+            query={"view": ["summary"]},
+        )
+        is True
+    )
+    assert live_handler.sent[-1]["payload"] == {
+        "ok": True,
+        "taskType": "fetch",
+        "summary": True,
+    }
 
 
 def test_ops_dashboard_health_summary_route_uses_summary_payload(tmp_path: Path) -> None:
