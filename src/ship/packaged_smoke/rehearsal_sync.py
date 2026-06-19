@@ -572,7 +572,7 @@ def run_packaged_sync_rehearsal(
             stderr_path=stderr_path,
             performance_profile_snapshot=performance_profile_snapshot,
         )
-    except Exception as exc:
+    except (OSError, RuntimeError, TimeoutError, ValueError) as exc:
         memory_metrics = _stop_process_memory_sampler(memory_sampler)
         memory_sampler = None
         return _packaged_sync_failure_result(
