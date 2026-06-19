@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
-from src.bridge.api import BridgeApi
 from src.bridge.routes.error_boundary import (
     run_route_boundary,
     safe_bridge_log,
@@ -45,6 +44,16 @@ from src.shared.partial_json import (
 from src.source_registry_io import load_runtime_evidence_array
 
 _DISCOVERY_REPORT_SUMMARY_CACHE: dict[str, Any] = {}
+
+
+class _DiscoveryRouteApi(Protocol):
+    DISCOVERY_CANDIDATES_PATH: Path
+    DISCOVERY_LOG_PATH: Path
+    DISCOVERY_REPORT_PATH: Path
+
+    def bridge_log(self, level: str, event: str, **fields: Any) -> None: ...
+
+    def get_discovery_config_payload(self) -> dict[str, Any]: ...
 
 
 def _discovery_report_summary_payload(report: dict[str, Any]) -> dict[str, Any]:
@@ -184,7 +193,7 @@ def _send_json_bytes(
 def _handle_discovery_report_route(
     handler: BridgeResponseWriter,
     *,
-    api: BridgeApi,
+    api: _DiscoveryRouteApi,
     query: dict[str, list[str]] | None = None,
 ) -> bool:
     # This route must never "silently" drop the connection; the admin UI
@@ -267,7 +276,7 @@ def _handle_discovery_report_route(
 def _handle_discovery_candidates_route(
     handler: BridgeResponseWriter,
     *,
-    api: BridgeApi,
+    api: _DiscoveryRouteApi,
 ) -> bool:
     candidates_path = getattr(api, "DISCOVERY_CANDIDATES_PATH", None)
 
@@ -288,7 +297,7 @@ def _handle_discovery_candidates_route(
 def handle_discovery_routes(
     handler: BridgeResponseWriter,
     *,
-    api: BridgeApi,
+    api: _DiscoveryRouteApi,
     path: str,
     query: dict[str, list[str]],
 ) -> bool:
