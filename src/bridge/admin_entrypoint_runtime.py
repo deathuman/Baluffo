@@ -131,6 +131,7 @@ def configure_runtime_paths(config: Any) -> None:
         root_mod.BRIDGE_SERVICES.reset_sync_service()
         root_mod._SYNC_SERVICE = None
         root_mod._SYNC_SERVICE_DATA_DIR = None
+        root_mod.SYNC_CONFIG = None
     with root_mod._REGISTRY_SERVICE_LOCK:
         root_mod.BRIDGE_SERVICES.reset_registry_service()
         root_mod._REGISTRY_SERVICE = None

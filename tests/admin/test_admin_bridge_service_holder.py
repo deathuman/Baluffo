@@ -311,6 +311,21 @@ def test_sync_service_holder_adopts_legacy_patch_surface(
     assert admin_bridge.BRIDGE_SERVICES.sync_service_data_dir == data_dir.resolve()
 
 
+def test_refresh_sync_config_is_owned_by_bridge_services_holder(monkeypatch) -> None:
+    sync_config = object()
+    service = SimpleNamespace(refresh_sync_config=lambda: sync_config)
+    admin_bridge.BRIDGE_SERVICES.reset_sync_service()
+    monkeypatch.setattr(admin_bridge.BRIDGE_SERVICES, "sync_config", None)
+    monkeypatch.setattr(admin_bridge, "SYNC_CONFIG", None)
+    monkeypatch.setattr(admin_bridge, "_get_sync_service", lambda: service)
+
+    result = admin_bridge.refresh_sync_config()
+
+    assert result is sync_config
+    assert admin_bridge.BRIDGE_SERVICES.sync_config is sync_config
+    assert admin_bridge.SYNC_CONFIG is sync_config
+
+
 def test_runtime_path_reconfiguration_resets_sync_holder(
     admin_bridge_entrypoint_root: Path,
 ) -> None:
@@ -327,8 +342,10 @@ def test_runtime_path_reconfiguration_resets_sync_holder(
 
     assert admin_bridge.BRIDGE_SERVICES.sync_service is None
     assert admin_bridge.BRIDGE_SERVICES.sync_service_data_dir is None
+    assert admin_bridge.BRIDGE_SERVICES.sync_config is None
     assert admin_bridge._SYNC_SERVICE is None
     assert admin_bridge._SYNC_SERVICE_DATA_DIR is None
+    assert admin_bridge.SYNC_CONFIG is None
 
     second_service = admin_bridge._get_sync_service()
     assert second_service is not first_service

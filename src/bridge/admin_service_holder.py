@@ -10,6 +10,7 @@ from typing import Any
 class BridgeServices:
     sync_service: Any | None = None
     sync_service_data_dir: Path | None = None
+    sync_config: Any | None = None
     sync_service_lock: Any = field(default_factory=threading.RLock)
     registry_service: Any | None = None
     registry_service_paths: tuple[Path, Path, Path] | None = None
@@ -26,6 +27,7 @@ class BridgeServices:
     def reset_sync_service(self) -> None:
         self.sync_service = None
         self.sync_service_data_dir = None
+        self.sync_config = None
 
     def reset_desktop_update_service(self) -> None:
         self.desktop_update_service = None
