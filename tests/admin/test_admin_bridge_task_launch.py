@@ -486,7 +486,7 @@ def test_start_fetcher_task_spawn_failure_writes_terminal_error_report():
     with mock.patch.object(
         admin_bridge,
         "run_background_script",
-        side_effect=RuntimeError("spawn denied"),
+        side_effect=OSError("spawn denied"),
     ):
         result = admin_bridge.start_fetcher_task({})
 
@@ -504,6 +504,18 @@ def test_start_fetcher_task_spawn_failure_writes_terminal_error_report():
     assert str(matching[0].get("lifecycleStatus") or "") == "failed"
     assert str((matching[0].get("summary") or {}).get("error") or "") == "spawn denied"
     assert admin_bridge.load_run_history() == []
+
+
+def test_start_fetcher_task_unexpected_spawn_failure_is_not_swallowed():
+    with (
+        mock.patch.object(
+            admin_bridge,
+            "run_background_script",
+            side_effect=AssertionError("spawn shim bug"),
+        ),
+        pytest.raises(AssertionError, match="spawn shim bug"),
+    ):
+        admin_bridge.start_fetcher_task({})
 
 
 def test_start_fetcher_task_rejects_unknown_only_sources_without_live_runtime():

@@ -2350,7 +2350,7 @@ class TaskLaunchApi:
                     task_type="fetch",
                     metadata={"task": "jobs_fetcher", "preset": preset},
                 )
-            except Exception as exc:  # noqa: BLE001
+            except OSError as exc:
                 return self._write_fetch_launch_failure(
                     run_id=run_id,
                     started_at=started_at,
