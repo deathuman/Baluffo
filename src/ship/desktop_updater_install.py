@@ -267,15 +267,14 @@ def _verify_target_startup(plan: dict[str, Any], *, timeout_s: float = 90.0) -> 
 
 
 def _restore_data_backup_if_needed(ship_root: Path, data_dir: Path, status: dict[str, Any]) -> None:
-    module = _module()
     backup_ref_text = str(status.get("migrationBackupPath") or "").strip()
     if not backup_ref_text:
         return
     backup_ref = Path(backup_ref_text).expanduser().resolve()
     if not backup_ref.exists():
         return
-    module.update_manager.restore_data_backup(
-        module.update_manager.ShipPaths.from_root(ship_root, data_dir=data_dir),
+    _restore_data_backup(
+        _ShipPaths.from_root(ship_root, data_dir=data_dir),
         backup_ref,
     )
 
@@ -355,7 +354,6 @@ def _recover_interrupted_install(
 
 
 def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
-    module = _module()
     plan = validate_install_plan(json.loads(plan_path.read_text(encoding="utf-8")))
     install_root = Path(str(plan.get("installRoot") or "")).expanduser().resolve()
     ship_root = install_root / "ship"
@@ -445,9 +443,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
                 install_stage="backup",
                 rollbackPath=str(rollback_root),
             )
-            backup_ref = module.update_manager.create_data_backup(
-                module.update_manager.ShipPaths.from_root(ship_root, data_dir=data_dir)
-            )
+            backup_ref = _create_data_backup(_ShipPaths.from_root(ship_root, data_dir=data_dir))
             _save_install_stage_status(
                 paths,
                 install_state="installing",
@@ -471,8 +467,8 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
                 rollbackPath=str(rollback_root),
                 migrationBackupPath=str(backup_ref),
             )
-            module.update_manager.run_migrations(
-                module.update_manager.ShipPaths.from_root(ship_root, data_dir=data_dir),
+            _run_migrations(
+                _ShipPaths.from_root(ship_root, data_dir=data_dir),
                 migration_plan,
                 backup_ref,
             )
@@ -505,8 +501,8 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
         progress.update(install_stage_label("installing", "rolling_back"))
         if backup_ref is not None:
             with contextlib.suppress(OSError, _zipfile.BadZipFile, _zipfile.LargeZipFile):
-                module.update_manager.restore_data_backup(
-                    module.update_manager.ShipPaths.from_root(ship_root, data_dir=data_dir),
+                _restore_data_backup(
+                    _ShipPaths.from_root(ship_root, data_dir=data_dir),
                     backup_ref,
                 )
         current_status = _save_install_stage_status(

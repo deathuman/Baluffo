@@ -77,12 +77,8 @@ def test_current_desktop_updater_root_dependency_inventory_is_complete() -> None
         "_sync_extract_to_install",
         "_verify_target_startup",
         "_wait_for_launcher_exit",
+        "update_manager",
     }.isdisjoint(by_name)
-    assert by_name["update_manager"].categories == (
-        "facade-monkeypatch-compat",
-        "mutable-compat-hook",
-        "update-manager-compat",
-    )
 
 
 def test_inventory_collects_module_and_getattr_references(

@@ -20,8 +20,8 @@ TRACKED_IMPORT_MODULES = {
     "desktop_updater_install",
 }
 
-EXPECTED_DEPENDENCY_COUNT = 1
-EXPECTED_REFERENCE_COUNT = 8
+EXPECTED_DEPENDENCY_COUNT = 0
+EXPECTED_REFERENCE_COUNT = 0
 
 CATEGORIES = {
     "constant",
@@ -49,7 +49,7 @@ INSTALL_HELPERS: set[str] = set()
 SHARED_HELPERS: set[str] = set()
 STATE_HELPERS: set[str] = set()
 
-UPDATE_MANAGER_COMPAT = {"update_manager"}
+UPDATE_MANAGER_COMPAT: set[str] = set()
 
 MUTABLE_COMPAT_HOOKS = (
     STDLIB_BINDINGS

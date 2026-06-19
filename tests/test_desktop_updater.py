@@ -218,7 +218,7 @@ def test_recover_interrupted_install_restores_runtime_snapshot_and_backup(monkey
             },
         )
         restore_backup = mock.Mock()
-        monkeypatch.setattr(updater.update_manager, "restore_data_backup", restore_backup)
+        monkeypatch.setattr(updater_install, "_restore_data_backup", restore_backup)
 
         completed = updater._recover_interrupted_install(
             {"targetVersion": "1.4.0"},

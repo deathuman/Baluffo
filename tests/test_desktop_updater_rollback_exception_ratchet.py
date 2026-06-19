@@ -80,15 +80,15 @@ def _run_install_with_backup_restore_failure(
         mock.patch.object(updater, "_wait_for_launcher_exit"),
         mock.patch.object(updater.zipfile, "ZipFile", return_value=_Archive()),
         mock.patch.object(updater, "_copy_install_snapshot"),
-        mock.patch.object(updater.update_manager, "create_data_backup", return_value=backup_ref),
+        mock.patch.object(updater, "_create_data_backup", return_value=backup_ref),
         mock.patch.object(
             updater,
             "_sync_extract_to_install",
             side_effect=install_failure or RuntimeError("install replacement failed"),
         ),
         mock.patch.object(
-            updater.update_manager,
-            "restore_data_backup",
+            updater,
+            "_restore_data_backup",
             side_effect=restore_failure,
         ),
         mock.patch.object(updater, "_restore_install_snapshot"),
