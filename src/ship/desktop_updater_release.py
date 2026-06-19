@@ -75,7 +75,7 @@ def _as_list(value: Any) -> list[Any]:
 
 def _find_release_for_target_version(repo: str, target_version: str) -> dict[str, Any]:
     module = _module()
-    url = f"{module.resolve_github_api_base()}/repos/{repo}/releases?per_page=10"
+    url = f"{_resolve_github_api_base()}/repos/{repo}/releases?per_page=10"
     payload = module.fetch_json(url)
     if not isinstance(payload, list):
         raise RuntimeError("GitHub releases payload was not a list.")
@@ -102,7 +102,7 @@ def _recover_manifest_for_install(
     paths,
 ) -> dict[str, Any]:
     module = _module()
-    cached_manifest = module.read_cached_manifest(paths)
+    cached_manifest = _read_cached_manifest(paths)
     manifest = _as_dict(cached_manifest.get("manifest"))
     if manifest:
         return manifest
@@ -111,7 +111,7 @@ def _recover_manifest_for_install(
         raise RuntimeError(
             "Verified manifest cache is unavailable and desktop update repo is not configured."
         )
-    release = module._find_release_for_target_version(repo, str(plan.get("targetVersion") or ""))
+    release = _find_release_for_target_version(repo, str(plan.get("targetVersion") or ""))
     assets = _as_list(release.get("assets"))
     manifest_asset = next(
         (
@@ -134,7 +134,7 @@ def _recover_manifest_for_install(
     module.verify_manifest_signature(
         manifest,
         public_keys=module.load_desktop_update_public_keys(
-            candidate_paths=module.desktop_update_public_key_candidate_paths(ship_root),
+            candidate_paths=_desktop_update_public_key_candidate_paths(ship_root),
         ),
     )
     if str(manifest.get("version") or "").strip() != str(plan.get("targetVersion") or "").strip():
@@ -146,9 +146,7 @@ def _recover_manifest_for_install(
     manifest_hash = str(artifact.get("sha256") or "").strip().lower()
     if expected_hash and manifest_hash and manifest_hash != expected_hash:
         raise RuntimeError("Recovered desktop manifest does not match the expected ZIP checksum.")
-    module.write_json_atomic(
-        paths.manifest_cache_path, {"cachedAt": module.iso_now(), "manifest": manifest}
-    )
+    _write_json_atomic(paths.manifest_cache_path, {"cachedAt": _iso_now(), "manifest": manifest})
     return manifest
 
 

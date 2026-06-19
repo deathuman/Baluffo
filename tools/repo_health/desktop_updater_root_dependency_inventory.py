@@ -14,8 +14,8 @@ TRACKED_MODULES = (
     "src/ship/desktop_updater_install.py",
 )
 
-EXPECTED_DEPENDENCY_COUNT = 30
-EXPECTED_REFERENCE_COUNT = 44
+EXPECTED_DEPENDENCY_COUNT = 24
+EXPECTED_REFERENCE_COUNT = 38
 
 CATEGORIES = {
     "constant",
@@ -46,7 +46,6 @@ UI_HELPERS = {
 RELEASE_HELPERS = {
     "_classify_install_failure",
     "_ensure_verified_zip_for_install",
-    "_find_release_for_target_version",
     "_recover_manifest_for_install",
 }
 
@@ -62,21 +61,14 @@ INSTALL_HELPERS = {
 
 SHARED_HELPERS = {
     "compute_sha256",
-    "desktop_update_public_key_candidate_paths",
     "download_file",
     "fetch_json",
-    "iso_now",
     "load_desktop_update_public_keys",
-    "resolve_github_api_base",
     "resolve_release_repo",
     "validate_desktop_manifest",
     "verify_manifest_signature",
-    "write_json_atomic",
 }
-
-STATE_HELPERS = {
-    "read_cached_manifest",
-}
+STATE_HELPERS: set[str] = set()
 
 UPDATE_MANAGER_COMPAT = {"update_manager"}
 
