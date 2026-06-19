@@ -531,5 +531,5 @@ class BridgeApi:
         self._mark_desktop_session_activity(route_path)
         try:
             self.DESKTOP_SESSION_ACTIVITY_AT = str(self.now_iso() or "")
-        except Exception:  # noqa: BLE001
+        except (AttributeError, OSError, TypeError, ValueError):
             pass
