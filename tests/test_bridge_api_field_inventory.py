@@ -40,6 +40,7 @@ def test_current_bridge_api_inventory_is_complete() -> None:
     assert "helper-used" in by_name["should_exit_for_owner_timeout"].categories
     assert "src/bridge/server/httpd.py" in by_name["should_exit_for_owner_timeout"].references
     assert all(field.categories for field in fields)
+    assert [field.name for field in fields if "default-only" in field.categories] == []
 
 
 def test_inventory_reports_field_count_drift(tmp_path: Path, monkeypatch) -> None:
