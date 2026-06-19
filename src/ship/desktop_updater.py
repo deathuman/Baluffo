@@ -87,6 +87,17 @@ time = desktop_updater_install_mod.time
 update_manager = desktop_updater_install_mod.update_manager
 zipfile = desktop_updater_install_mod.zipfile
 run_install = desktop_updater_install_mod.run_install
+_HELPER_OPERATIONAL_ERRORS = (
+    RuntimeError,
+    OSError,
+    TypeError,
+    ValueError,
+    json.JSONDecodeError,
+    desktop_updater_install_mod.shutil.Error,
+    desktop_updater_install_mod.urllib.error.URLError,
+    zipfile.BadZipFile,
+    zipfile.LargeZipFile,
+)
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -123,7 +134,7 @@ def main(argv: list[str] | None = None) -> int:
                 "helper_worker_succeeded",
                 installedVersion=str(result.get("installedVersion") or ""),
             )
-        except Exception as exc:  # noqa: BLE001
+        except _HELPER_OPERATIONAL_ERRORS as exc:
             error_holder["error"] = str(exc)
             error_holder["traceback"] = traceback.format_exc()
             _append_helper_diagnostics(
@@ -150,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(json.dumps(result, indent=2))
         return 0
-    except Exception as exc:  # noqa: BLE001
+    except _HELPER_OPERATIONAL_ERRORS as exc:
         _append_helper_diagnostics(
             diagnostics_path,
             "helper_main_failed",
