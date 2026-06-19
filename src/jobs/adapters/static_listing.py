@@ -35,6 +35,7 @@ from src.jobs.adapters.static_detail_heuristics import (
 from src.jobs.adapters.static_runtime_support import (
     _as_dict,
     effective_timeout_for_remaining_budget,
+    is_static_fetch_fallback_exception,
     remaining_static_source_budget_s,
     static_source_budget_exhausted,
     update_source_detail_taxonomy,
@@ -57,6 +58,7 @@ from .static_runtime import StaticSourceContext
 _EXTERNAL_DETAIL_FANOUT_HOST_THRESHOLD = 2
 _EXTERNAL_DETAIL_FANOUT_LINK_CAP = 8
 _PLUGIN_STATIC_ARTIFACT_NESTED_DETAIL_LIMIT = 12
+_EXPECTED_STATIC_LISTING_FETCH_FALLBACK_EXCEPTIONS = (HttpStatusError, OSError, RuntimeError)
 
 # (adapter_name, html_substring) pairs for diagnostic warnings
 # when a static source's page HTML contains an ATS signature.
@@ -102,6 +104,10 @@ def _careers_landing_url(url: str) -> bool:
         return False
     text = f"{(parsed.hostname or '').lower()}{(parsed.path or '').lower()}"
     return any(token in text for token in _CAREERS_LANDING_TOKENS)
+
+
+def _is_expected_static_listing_fetch_fallback(exc: Exception) -> bool:
+    return is_static_fetch_fallback_exception(exc)
 
 
 # pure — budget arithmetic + TimeoutError gate
@@ -452,7 +458,7 @@ def _static_plugin_context(ctx: StaticSourceContext) -> AdapterPluginContext | N
         try:
             parsed = urlparse(clean_text(ctx.pages[0]) or "")
             host = (parsed.netloc or "").strip().lower()
-        except Exception:  # noqa: BLE001
+        except ValueError:
             pass
     plugin_identity = host or ctx.source_name
     if host == "jobs.jobvite.com" and ctx.pages:
@@ -522,7 +528,9 @@ def _probe_empty_plugin_listing(ctx: StaticSourceContext, classification: str) -
             probe_page,
             remaining_budget_s=float(ctx.run_deps.timeout_s or 1),
         )
-    except Exception:  # noqa: BLE001
+    except _EXPECTED_STATIC_LISTING_FETCH_FALLBACK_EXCEPTIONS as exc:
+        if not _is_expected_static_listing_fetch_fallback(exc):
+            raise
         probe_html = ""
     if not probe_html:
         return classification
@@ -596,7 +604,9 @@ def _plugin_static_artifact_detail_result(
             default_path_tokens=ctx.runtime_config.default_path_tokens,
             default_query_keys=ctx.runtime_config.default_query_keys,
         )
-    except Exception as exc:  # noqa: BLE001
+    except _EXPECTED_STATIC_LISTING_FETCH_FALLBACK_EXCEPTIONS as exc:
+        if not _is_expected_static_listing_fetch_fallback(exc):
+            raise
         ctx.warnings.append(f"static:{ctx.source_name}:{detail}: artifact repair failed: {exc}")
         return {}
     ctx.stats["detail_pages_visited"] += 1
@@ -2004,7 +2014,9 @@ class StaticFetchRunner:
                 )
                 if dynamic_listing_html and dynamic_listing_html not in listing_htmls:
                     listing_htmls.append(dynamic_listing_html)
-        except Exception as exc:  # noqa: BLE001
+        except _EXPECTED_STATIC_LISTING_FETCH_FALLBACK_EXCEPTIONS as exc:
+            if not _is_expected_static_listing_fetch_fallback(exc):
+                raise
             self.ctx.errors.append(
                 f"static:{self.source_name}:{page_url}: dynamic-listing-fetch failed: {exc}"
             )
