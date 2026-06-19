@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
-from src.bridge.api import BridgeApi
 from src.bridge.performance_profile import time_operation
 from src.bridge.routes.get_registry_conflicts import (
     registry_conflicts_badge_from_exact_summary,
@@ -33,6 +32,31 @@ from src.jobs.common.contracts_source_policy_review_state import (
 )
 
 
+class _AdminOpsTabCountsRouteApi(Protocol):
+    DISCOVERY_REPORT_PATH: Path
+    JOBS_FETCH_REPORT_PATH: Path
+    SOURCE_POLICY_RECOMMENDATIONS_PATH: Path
+    SOURCE_POLICY_REVIEW_STATE_PATH: Path
+
+    def compute_ops_dashboard_health_summary(self) -> dict[str, Any]: ...
+
+    def get_registry_auto_heal_report(self) -> dict[str, Any]: ...
+
+    def get_registry_summary_payload(self) -> dict[str, Any]: ...
+
+    def load_json_object(self, path: Path, default: Any = None) -> dict[str, Any]: ...
+
+    def load_registry_conflict_adjudication(self) -> dict[str, Any]: ...
+
+    def load_state(self) -> dict[str, Any]: ...
+
+    def normalize_discovery_report_contract(self, payload: Any) -> dict[str, Any]: ...
+
+    def now_iso(self) -> str: ...
+
+    def summarize_state(self, state: dict[str, Any]) -> dict[str, Any]: ...
+
+
 def _ops_tab_badge(
     *,
     count: int = 0,
@@ -50,7 +74,7 @@ def _ops_tab_badge(
     }
 
 
-def _source_policy_badge_from_artifacts(api: BridgeApi) -> dict[str, Any]:
+def _source_policy_badge_from_artifacts(api: _AdminOpsTabCountsRouteApi) -> dict[str, Any]:
     recommendations, recommendation_warning = read_source_policy_recommendations_artifact(
         api.SOURCE_POLICY_RECOMMENDATIONS_PATH
     )
@@ -80,7 +104,7 @@ def _source_policy_badge_from_artifacts(api: BridgeApi) -> dict[str, Any]:
     return _ops_tab_badge(count=needs_action, tone=tone, title=title)
 
 
-def _discovery_review_badge_from_report(api: BridgeApi) -> dict[str, Any]:
+def _discovery_review_badge_from_report(api: _AdminOpsTabCountsRouteApi) -> dict[str, Any]:
     report_path = Path(api.DISCOVERY_REPORT_PATH)
     if _path_signature(report_path) is None:
         return _ops_tab_badge(
@@ -121,7 +145,7 @@ def _discovery_review_badge_from_report(api: BridgeApi) -> dict[str, Any]:
     )
 
 
-def _admin_ops_tab_counts_summary(api: BridgeApi) -> dict[str, Any]:
+def _admin_ops_tab_counts_summary(api: _AdminOpsTabCountsRouteApi) -> dict[str, Any]:
     badges: dict[str, dict[str, Any]] = {}
 
     try:
@@ -197,7 +221,11 @@ def _safe_int(value: Any, default: int = 0) -> int:
 
 
 def handle_admin_ops_tab_counts_routes(
-    handler: BridgeResponseWriter, *, api: BridgeApi, path: str, query: dict[str, list[str]]
+    handler: BridgeResponseWriter,
+    *,
+    api: _AdminOpsTabCountsRouteApi,
+    path: str,
+    query: dict[str, list[str]],
 ) -> bool:
     """Handle Admin Ops tab-count GET routes."""
     if path == "/admin/ops-tab-counts":
