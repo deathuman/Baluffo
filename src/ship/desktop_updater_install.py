@@ -284,7 +284,7 @@ def _finalize_success(
         shutil.rmtree(rollback_root)
     module.clear_success_marker(paths)
     return _as_dict(
-        module._save_install_stage_status(
+        _save_install_stage_status(
             paths,
             install_state="installed",
             install_stage="installed",
@@ -331,17 +331,17 @@ def _recover_interrupted_install(
             return True
     if stage not in MUTATING_INSTALL_STAGES:
         return False
-    module._save_install_stage_status(
+    _save_install_stage_status(
         paths,
         install_state="installing",
         install_stage="recovering",
         lastError="",
     )
-    module._restore_data_backup_if_needed(ship_root, paths.data_dir, status)
+    _restore_data_backup_if_needed(ship_root, paths.data_dir, status)
     module._restore_install_snapshot(install_root, rollback_root)
     with contextlib.suppress(OSError):
         shutil.rmtree(rollback_root)
-    module._save_install_stage_status(
+    _save_install_stage_status(
         paths,
         install_state="idle",
         install_stage="idle",
@@ -398,7 +398,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
         )
         if recovered_as_complete:
             return {"ok": True, "installedVersion": str(plan.get("targetVersion") or "")}
-        module._save_install_stage_status(
+        _save_install_stage_status(
             paths,
             install_state="handoff_requested",
             install_stage="preparing",
@@ -406,7 +406,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
             rollbackPath=str(rollback_root),
         )
         progress.update(module.install_stage_label("waiting_for_exit", "waiting_for_exit"))
-        module._save_install_stage_status(
+        _save_install_stage_status(
             paths,
             install_state="waiting_for_exit",
             install_stage="waiting_for_exit",
@@ -417,7 +417,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
         module.clear_handoff_request(paths)
 
         progress.update(module.install_stage_label("installing", "extracting"))
-        module._save_install_stage_status(
+        _save_install_stage_status(
             paths,
             install_state="installing",
             install_stage="extracting",
@@ -428,7 +428,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
             archive.extractall(temp_extract)
         module.clear_success_marker(paths)
         rollback_root.mkdir(parents=True, exist_ok=True)
-        module._save_install_stage_status(
+        _save_install_stage_status(
             paths,
             install_state="installing",
             install_stage="snapshotting",
@@ -437,7 +437,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
         module._copy_install_snapshot(install_root, rollback_root)
         migration_plan = list(manifest.get("migration_plan") or [])
         if migration_plan:
-            module._save_install_stage_status(
+            _save_install_stage_status(
                 paths,
                 install_state="installing",
                 install_stage="backup",
@@ -446,14 +446,14 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
             backup_ref = module.update_manager.create_data_backup(
                 module.update_manager.ShipPaths.from_root(ship_root, data_dir=data_dir)
             )
-            module._save_install_stage_status(
+            _save_install_stage_status(
                 paths,
                 install_state="installing",
                 install_stage="backup",
                 rollbackPath=str(rollback_root),
                 migrationBackupPath=str(backup_ref),
             )
-        module._save_install_stage_status(
+        _save_install_stage_status(
             paths,
             install_state="installing",
             install_stage="replacing",
@@ -462,7 +462,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
         )
         module._sync_extract_to_install(install_root, temp_extract)
         if migration_plan:
-            module._save_install_stage_status(
+            _save_install_stage_status(
                 paths,
                 install_state="installing",
                 install_stage="migrating",
@@ -475,7 +475,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
                 backup_ref,
             )
         progress.update(module.install_stage_label("verifying", "relaunching"))
-        module._save_install_stage_status(
+        _save_install_stage_status(
             paths,
             install_state="verifying",
             install_stage="relaunching",
@@ -487,7 +487,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
             clear_app_version_override=True,
             data_dir=data_dir,
         )
-        module._save_install_stage_status(
+        _save_install_stage_status(
             paths,
             install_state="verifying",
             install_stage="verifying",
@@ -507,7 +507,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
                     module.update_manager.ShipPaths.from_root(ship_root, data_dir=data_dir),
                     backup_ref,
                 )
-        current_status = module._save_install_stage_status(
+        current_status = _save_install_stage_status(
             paths,
             install_state="failed",
             install_stage="rolling_back",
@@ -519,7 +519,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
             module._restore_install_snapshot(install_root, rollback_root)
         with contextlib.suppress(OSError, RuntimeError):
             module._launch_executable(install_root / "Baluffo.exe", data_dir=data_dir)
-        module._save_install_stage_status(
+        _save_install_stage_status(
             paths,
             install_state="failed",
             install_stage="failed",

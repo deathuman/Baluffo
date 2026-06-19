@@ -41,6 +41,8 @@ def test_current_desktop_updater_root_dependency_inventory_is_complete() -> None
         "subprocess",
         "time",
         "zipfile",
+        "_restore_data_backup_if_needed",
+        "_save_install_stage_status",
     }.isdisjoint(by_name)
     assert by_name["update_manager"].categories == (
         "mutable-compat-hook",
@@ -58,10 +60,6 @@ def test_current_desktop_updater_root_dependency_inventory_is_complete() -> None
     )
     assert by_name["_sync_extract_to_install"].categories == (
         "facade-monkeypatch-compat",
-        "install-helper",
-        "mutable-compat-hook",
-    )
-    assert by_name["_save_install_stage_status"].categories == (
         "install-helper",
         "mutable-compat-hook",
     )

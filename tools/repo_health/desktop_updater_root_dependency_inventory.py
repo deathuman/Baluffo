@@ -14,8 +14,8 @@ TRACKED_MODULES = (
     "src/ship/desktop_updater_install.py",
 )
 
-EXPECTED_DEPENDENCY_COUNT = 40
-EXPECTED_REFERENCE_COUNT = 81
+EXPECTED_DEPENDENCY_COUNT = 38
+EXPECTED_REFERENCE_COUNT = 65
 
 CATEGORIES = {
     "constant",
@@ -54,9 +54,7 @@ INSTALL_HELPERS = {
     "_copy_install_snapshot",
     "_finalize_success",
     "_recover_interrupted_install",
-    "_restore_data_backup_if_needed",
     "_restore_install_snapshot",
-    "_save_install_stage_status",
     "_sync_extract_to_install",
     "_verify_target_startup",
     "_wait_for_launcher_exit",
