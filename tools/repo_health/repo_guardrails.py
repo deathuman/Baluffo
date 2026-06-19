@@ -38,6 +38,7 @@ from desktop_update_facade_inventory import check_desktop_update_facade_inventor
 from desktop_update_root_dependency_inventory import (
     check_desktop_update_root_dependency_inventory,
 )
+from update_manager_facade_inventory import check_update_manager_facade_inventory
 from update_manager_runtime_facade_inventory import (
     check_update_manager_runtime_facade_inventory,
 )
@@ -641,6 +642,13 @@ def run_compat_group() -> list[GuardFailure]:
     )
     if desktop_update_root_failure:
         failures.append(desktop_update_root_failure)
+    update_manager_failure = _failure_from_messages(
+        "compat",
+        "check_update_manager_facade_inventory",
+        check_update_manager_facade_inventory(),
+    )
+    if update_manager_failure:
+        failures.append(update_manager_failure)
     update_manager_runtime_failure = _failure_from_messages(
         "compat",
         "check_update_manager_runtime_facade_inventory",
