@@ -8,8 +8,11 @@ from typing import Any
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.static._rendered_cards import extract_rendered_card_jobs
 from src.jobs.adapters.plugins.types import AdapterPluginContext
+from src.jobs.adapters.static_runtime_support import is_static_fetch_fallback_exception
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text
+
+_EXPECTED_ATS_WRAPPER_FETCH_EXCEPTIONS = (OSError, RuntimeError, ValueError)
 
 _HOSTS = frozenset(
     {
@@ -67,7 +70,9 @@ def run(
 
     try:
         html = fetch_text(page_url, timeout_s)
-    except Exception as exc:  # noqa: BLE001
+    except _EXPECTED_ATS_WRAPPER_FETCH_EXCEPTIONS as exc:
+        if not is_static_fetch_fallback_exception(exc):
+            raise
         classification, recommend = _heuristics.classify_fetch_exception(exc)
         source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
             classification,

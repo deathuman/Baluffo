@@ -15,8 +15,11 @@ from src.jobs.adapters.provider_parsers import (
     normalize_location_details,
     parse_generic_location_fields,
 )
+from src.jobs.adapters.static_runtime_support import is_static_fetch_fallback_exception
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, normalize_url
+
+_EXPECTED_FRONTIER_FETCH_EXCEPTIONS = (OSError, RuntimeError, ValueError)
 
 _HOSTS = frozenset({"frontier.co.uk", "www.frontier.co.uk"})
 _IGNORED_TOKENS = frozenset(
@@ -267,7 +270,9 @@ def run(
 
     try:
         html = fetch_text(page_url, timeout_s)
-    except Exception as exc:  # noqa: BLE001
+    except _EXPECTED_FRONTIER_FETCH_EXCEPTIONS as exc:
+        if not is_static_fetch_fallback_exception(exc):
+            raise
         classification, recommend = _heuristics.classify_fetch_exception(exc)
         source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
             classification,

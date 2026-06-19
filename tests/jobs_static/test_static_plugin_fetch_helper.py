@@ -1,4 +1,8 @@
-from ._helpers import jf, sheet_studios
+import pytest
+
+from src.jobs.adapters.plugins.static import nintendo_csod
+
+from ._helpers import ats_wrappers, frontier, jf, sheet_studios
 
 
 def test_sheet_studios_uses_shared_static_fetch_helper_for_listing_and_details() -> None:
@@ -62,3 +66,67 @@ def test_sheet_studios_uses_shared_static_fetch_helper_for_listing_and_details()
         "https://www.tetherstudios.com/careers",
         "https://www.tetherstudios.com/job/tech",
     ]
+
+
+@pytest.mark.parametrize(
+    ("plugin", "page_url", "source_row"),
+    [
+        (
+            ats_wrappers,
+            "https://www.naughtydog.com/careers",
+            {"name": "Naughty Dog", "company": "Naughty Dog", "id": "ats-wrapper"},
+        ),
+        (
+            frontier,
+            "https://www.frontier.co.uk/careers",
+            {"name": "Frontier Developments", "company": "Frontier", "id": "frontier"},
+        ),
+        (
+            nintendo_csod,
+            "https://jobs.nintendo.de/careers",
+            {"name": "Nintendo", "company": "Nintendo", "id": "nintendo"},
+        ),
+    ],
+)
+def test_static_listing_plugin_fetch_fallback_does_not_swallow_unexpected_runtime_bug(
+    plugin, page_url: str, source_row: dict[str, object]
+) -> None:
+    def broken_fetch(_url: str, _timeout_s: int) -> str:
+        raise RuntimeError("unexpected static listing plugin fetch bug")
+
+    with pytest.raises(RuntimeError, match="unexpected static listing plugin fetch bug"):
+        plugin.run(
+            fetch_text=broken_fetch,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0.0,
+            pages=[page_url],
+            source_row=source_row,
+        )
+
+    assert "_staticPluginMeta" not in source_row
+
+
+def test_sheet_studios_fetch_fallback_does_not_swallow_unexpected_runtime_bug() -> None:
+    source_row: dict[str, object] = {
+        "name": "Tether Studios (Sheet)",
+        "studio": "Tether Studios",
+        "company": "Tether Studios",
+        "id": "static:listing_url:https://www.tetherstudios.com/careers",
+    }
+
+    def broken_fetch(_url: str, _timeout_s: int) -> str:
+        raise RuntimeError("unexpected sheet studios fetch bug")
+
+    with pytest.raises(RuntimeError, match="unexpected sheet studios fetch bug"):
+        sheet_studios.run(
+            fetch_text=broken_fetch,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0.0,
+            pages=["https://www.tetherstudios.com/careers"],
+            source_row=source_row,
+            parse_jobpostings_from_html=jf.parse_jobpostings_from_html,
+        )
+
+    assert "_staticPluginMeta" not in source_row
