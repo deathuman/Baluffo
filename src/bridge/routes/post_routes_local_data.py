@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Protocol
 from urllib.parse import urlsplit
 
 from pydantic import ValidationError as PydanticValidationError
 
-from src.bridge.api import BridgeApi
 from src.bridge.container_mode import is_container_runtime, send_container_unavailable
 from src.bridge.performance_profile import time_operation
 from src.bridge.routes.error_boundary import run_route_boundary, send_json_boundary
@@ -29,10 +28,66 @@ def _admin_overview_detail(value: Any) -> str:
     return detail
 
 
+class _DesktopLocalDataPostStore(Protocol):
+    def add_attachment_for_job(
+        self, uid: str, job_key: str, file_meta: dict[str, Any], blob_data_url: str
+    ) -> str: ...
+
+    def delete_attachment_for_job(self, uid: str, job_key: str, attachment_id: str) -> None: ...
+
+    def export_profile_data(self, uid: str, include_files: bool = False) -> dict[str, Any]: ...
+
+    def get_admin_overview(self, *, detail: str = "full") -> dict[str, Any]: ...
+
+    def get_current_user(self) -> dict[str, Any] | None: ...
+
+    def import_profile_data(self, uid: str, payload: dict[str, Any]) -> dict[str, Any]: ...
+
+    def remove_saved_job_for_user(self, uid: str, job_key: str) -> None: ...
+
+    def save_job_for_user(self, uid: str, job: dict[str, Any], options: dict[str, Any]) -> str: ...
+
+    def sign_in(self, name: str) -> dict[str, Any]: ...
+
+    def sign_out(self) -> None: ...
+
+    def update_application_status(
+        self, uid: str, job_key: str, status: str, options: dict[str, Any]
+    ) -> None: ...
+
+    def update_application_tracking(
+        self, uid: str, job_key: str, tracking: dict[str, Any], options: dict[str, Any]
+    ) -> None: ...
+
+    def update_job_notes(
+        self, uid: str, job_key: str, notes: str, options: dict[str, Any]
+    ) -> None: ...
+
+    def wipe_account_admin(self, uid: str) -> None: ...
+
+
+class _LocalDataPostRouteApi(Protocol):
+    runtime_config: Any
+
+    def append_startup_metric(self, event: str, payload: dict[str, Any]) -> None: ...
+
+    def desktop_local_data_store(self) -> _DesktopLocalDataPostStore: ...
+
+    def update_desktop_session_lifecycle(
+        self,
+        *,
+        owner_token: str,
+        session_id: str,
+        page_id: str,
+        state: str,
+        reason: str,
+    ) -> tuple[int, dict[str, Any]]: ...
+
+
 def _handle_saved_job_tracking_post(
     handler: BridgeResponseWriter,
     *,
-    api: BridgeApi,
+    api: _LocalDataPostRouteApi,
     path: str,
     payload_dict: dict[str, Any],
 ) -> bool:
@@ -73,7 +128,7 @@ def _handle_saved_job_tracking_post(
 def _send_admin_overview_post(
     handler: BridgeResponseWriter,
     *,
-    api: BridgeApi,
+    api: _LocalDataPostRouteApi,
     payload_dict: dict[str, Any],
 ) -> bool:
     def _payload() -> dict[str, Any]:
@@ -89,7 +144,7 @@ def _send_admin_overview_post(
 def _send_desktop_session_lifecycle_post(
     handler: BridgeResponseWriter,
     *,
-    api: BridgeApi,
+    api: _LocalDataPostRouteApi,
     payload_dict: dict[str, Any],
 ) -> bool:
     if is_container_runtime(api):
@@ -109,7 +164,7 @@ def _send_desktop_session_lifecycle_post(
 def _send_startup_metric_post(
     handler: BridgeResponseWriter,
     *,
-    api: BridgeApi,
+    api: _LocalDataPostRouteApi,
     payload_dict: dict[str, Any],
 ) -> bool:
     def _payload() -> dict[str, Any]:
@@ -125,7 +180,7 @@ def _send_startup_metric_post(
 def _send_startup_metrics_batch_post(
     handler: BridgeResponseWriter,
     *,
-    api: BridgeApi,
+    api: _LocalDataPostRouteApi,
     payload_dict: dict[str, Any],
 ) -> bool:
     def _payload() -> dict[str, Any]:
@@ -153,7 +208,7 @@ def _send_startup_metrics_batch_post(
 def _send_open_url_post(
     handler: BridgeResponseWriter,
     *,
-    api: BridgeApi,
+    api: _LocalDataPostRouteApi,
     payload_dict: dict[str, Any],
     open_url: Callable[[str], bool],
 ) -> bool:
@@ -182,7 +237,7 @@ def _send_open_url_post(
 def handle_post(
     handler: BridgeResponseWriter,
     *,
-    api: BridgeApi,
+    api: _LocalDataPostRouteApi,
     path: str,
     payload: Any,
     open_url: Callable[[str], bool],
