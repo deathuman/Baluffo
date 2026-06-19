@@ -556,7 +556,7 @@ def run_packaged_browser_job_rehearsal(
                 "startupMetrics": str(metrics_path),
             },
         }
-    except Exception as exc:
+    except (OSError, RuntimeError, TimeoutError, ValueError) as exc:
         return {
             "name": "Packaged browser job rehearsal",
             "slug": "packaged-browser-job-rehearsal",
@@ -879,7 +879,7 @@ def run_packaged_desktop_lifecycle_rehearsal(
             "error": "",
             "details": details,
         }
-    except Exception as exc:
+    except (OSError, RuntimeError, TimeoutError, ValueError) as exc:
         return {
             "name": "Packaged desktop lifecycle rehearsal",
             "slug": "packaged-desktop-lifecycle-rehearsal",
@@ -1070,7 +1070,7 @@ def run_packaged_active_task_close_rehearsal(
             "error": "",
             "details": details,
         }
-    except Exception as exc:
+    except (OSError, RuntimeError, TimeoutError, ValueError) as exc:
         details.update(
             {
                 "requestedSitePort": requested_site_port,
@@ -1302,7 +1302,7 @@ def run_packaged_orphan_reclaim_rehearsal(
                 "staleBridgeStderr": str(stale_bridge_stderr_path),
             },
         }
-    except Exception as exc:
+    except (OSError, RuntimeError, TimeoutError, ValueError) as exc:
         return {
             "name": "Packaged orphan reclaim rehearsal",
             "slug": "packaged-orphan-reclaim-rehearsal",
