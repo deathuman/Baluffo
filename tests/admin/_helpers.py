@@ -124,8 +124,6 @@ def reset_admin_bridge_services(monkeypatch: Any) -> None:
     admin_bridge.BRIDGE_SERVICES.reset_registry_service()
     admin_bridge.BRIDGE_SERVICES.reset_discovery_service()
     admin_bridge.BRIDGE_SERVICES.reset_pipeline_service()
-    monkeypatch.setattr(admin_bridge, "_SYNC_SERVICE", None)
-    monkeypatch.setattr(admin_bridge, "_SYNC_SERVICE_DATA_DIR", None)
 
 
 def write_admin_bridge_packaged_sync_config(paths: AdminBridgeTestPaths) -> None:

@@ -227,9 +227,6 @@ _TASK_LIFECYCLE = AdminTaskLifecycle(
 LOG_LEVEL_ORDER = bridge_config.LOG_LEVEL_ORDER
 SYNC_CONFIG: Any = None
 BRIDGE_SERVICES = admin_entrypoint_services_mod.BRIDGE_SERVICES
-_SYNC_SERVICE: SyncService | None = None
-_SYNC_SERVICE_DATA_DIR: Path | None = None
-_SYNC_SERVICE_LOCK = BRIDGE_SERVICES.sync_service_lock
 
 
 _get_sync_service = admin_entrypoint_services_mod.get_sync_service

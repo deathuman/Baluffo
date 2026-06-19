@@ -279,12 +279,12 @@ def test_sync_service_is_owned_by_bridge_services_holder(
 
     assert admin_bridge.BRIDGE_SERVICES.sync_service is service
     assert admin_bridge.BRIDGE_SERVICES.sync_service_data_dir == data_dir.resolve()
-    assert admin_bridge._SYNC_SERVICE is service
-    assert admin_bridge._SYNC_SERVICE_DATA_DIR == data_dir.resolve()
     assert admin_bridge._get_sync_service() is service
+    assert not hasattr(admin_bridge, "_SYNC_SERVICE")
+    assert not hasattr(admin_bridge, "_SYNC_SERVICE_DATA_DIR")
 
 
-def test_sync_service_holder_adopts_legacy_patch_surface(
+def test_sync_service_holder_reuses_existing_service(
     admin_bridge_entrypoint_root: Path,
 ) -> None:
     data_dir = admin_bridge_entrypoint_root / "data"
@@ -295,8 +295,8 @@ def test_sync_service_holder_adopts_legacy_patch_surface(
         wait_for_sync_tasks=lambda *_args, **_kwargs: None,
     )
     admin_bridge.BRIDGE_SERVICES.reset_sync_service()
-    admin_bridge._SYNC_SERVICE = legacy_service
-    admin_bridge._SYNC_SERVICE_DATA_DIR = data_dir.resolve()
+    admin_bridge.BRIDGE_SERVICES.sync_service = legacy_service
+    admin_bridge.BRIDGE_SERVICES.sync_service_data_dir = data_dir.resolve()
 
     service = admin_bridge._get_sync_service()
 
@@ -345,8 +345,6 @@ def test_runtime_path_reconfiguration_resets_sync_holder(
     assert admin_bridge.BRIDGE_SERVICES.sync_service is None
     assert admin_bridge.BRIDGE_SERVICES.sync_service_data_dir is None
     assert admin_bridge.BRIDGE_SERVICES.sync_config is None
-    assert admin_bridge._SYNC_SERVICE is None
-    assert admin_bridge._SYNC_SERVICE_DATA_DIR is None
     assert admin_bridge.SYNC_CONFIG is None
 
     second_service = admin_bridge._get_sync_service()
