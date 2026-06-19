@@ -11,6 +11,7 @@ from src.bridge.api import BridgeApi
 from src.bridge.container_mode import is_container_runtime
 from src.bridge.performance_profile import record_route_duration
 from src.bridge.request_utils import read_json_from_request
+from src.bridge.routes.error_boundary import run_route_boundary
 from src.shared.timing_counters import normalize_counter_category, time_block
 
 
@@ -200,44 +201,61 @@ def _handle_get_request(
     path = ""
     started_at = time.perf_counter()
     failed = False
+
+    def _run_get_route() -> None:
+        nonlocal path
+        path = _route_path(handler)
+        try:
+            api.mark_desktop_session_activity(path)
+        except _EXPECTED_HANDLER_BOOKKEEPING_EXCEPTIONS:
+            pass
+        query = _route_query(handler)
+        try:
+            api.bridge_log(
+                "info",
+                "http_get_route",
+                rawPath=getattr(handler, "path", ""),
+                routePath=path,
+            )
+        except _EXPECTED_HANDLER_BOOKKEEPING_EXCEPTIONS:
+            pass
+
+        from src.bridge.routes.get_routes import handle_get
+
+        if handle_get(handler, api=api, path=path, query=query):
+            return
+        if static_service is not None and static_service.handle_get(handler, path=path):
+            return
+        handler.send_json({"error": "Not found"}, status=404)
+
+    def _send_get_error(exc: Exception) -> None:
+        nonlocal failed
+        failed = True
+        try:
+            api.bridge_log("error", "http_get_handler_failed", path=path, error=str(exc))
+        except _EXPECTED_HANDLER_BOOKKEEPING_EXCEPTIONS:
+            pass
+        handler.send_json(
+            {
+                "error": "Internal server error",
+                "detail": str(exc),
+                "traceback": traceback.format_exc(),
+            },
+            status=500,
+        )
+
     with time_block(_request_timing_category(handler, "get")):
         try:
-            path = _route_path(handler)
-            try:
-                api.mark_desktop_session_activity(path)
-            except _EXPECTED_HANDLER_BOOKKEEPING_EXCEPTIONS:
-                pass
-            query = _route_query(handler)
-            try:
-                api.bridge_log(
-                    "info",
-                    "http_get_route",
-                    rawPath=getattr(handler, "path", ""),
-                    routePath=path,
-                )
-            except _EXPECTED_HANDLER_BOOKKEEPING_EXCEPTIONS:
-                pass
-
-            from src.bridge.routes.get_routes import handle_get
-
-            if handle_get(handler, api=api, path=path, query=query):
-                return
-            if static_service is not None and static_service.handle_get(handler, path=path):
-                return
-            handler.send_json({"error": "Not found"}, status=404)
-        except Exception as exc:  # noqa: BLE001
-            failed = True
-            try:
-                api.bridge_log("error", "http_get_handler_failed", path=path, error=str(exc))
-            except _EXPECTED_HANDLER_BOOKKEEPING_EXCEPTIONS:
-                pass
-            handler.send_json(
-                {
+            run_route_boundary(
+                handler,
+                _run_get_route,
+                error_status=500,
+                error_payload=lambda exc: {
                     "error": "Internal server error",
                     "detail": str(exc),
                     "traceback": traceback.format_exc(),
                 },
-                status=500,
+                error_sender=_send_get_error,
             )
         finally:
             status = getattr(handler, "_baluffo_last_response_status", 0)
