@@ -21,6 +21,11 @@ DEFERRED_SOURCE_BUDGET_PATH = TOOLS_ROOT / "deferred_source_line_budget.json"
 FRONTEND_GUARDRAILS = TOOLS_ROOT / "frontend_structure_guardrails.mjs"
 FIXTURE_REFERENCE_ALLOWLIST_PATH = TOOLS_ROOT / "fixture_reference_allowlist.json"
 SOURCE_SUPPRESSION_BUDGET_PATH = TOOLS_ROOT / "source_suppression_budget.json"
+BRIDGE_API_COMPOSITION_MODULES = {
+    "src/bridge/admin_entrypoint_api.py",
+    "src/bridge/api.py",
+    "src/bridge/bootstrap.py",
+}
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -274,6 +279,22 @@ def check_bridge_server_bridge_api_imports() -> list[str]:
         server_root.glob("*.py"),
         import_scope="bridge server modules",
         reference_scope="bridge server modules",
+    )
+
+
+def check_bridge_production_bridge_api_imports() -> list[str]:
+    source_root = ROOT / "src"
+    if not source_root.is_dir():
+        return [f"source directory is missing: {source_root.relative_to(ROOT)}"]
+    paths = [
+        path
+        for path in source_root.rglob("*.py")
+        if path.relative_to(ROOT).as_posix() not in BRIDGE_API_COMPOSITION_MODULES
+    ]
+    return _bridge_api_import_failures(
+        paths,
+        import_scope="production modules outside bridge composition",
+        reference_scope="production modules outside bridge composition",
     )
 
 
@@ -592,6 +613,13 @@ def run_compat_group() -> list[GuardFailure]:
     )
     if bridge_api_failure:
         failures.append(bridge_api_failure)
+    bridge_production_failure = _failure_from_messages(
+        "compat",
+        "check_bridge_production_bridge_api_imports",
+        check_bridge_production_bridge_api_imports(),
+    )
+    if bridge_production_failure:
+        failures.append(bridge_production_failure)
     bridge_server_failure = _failure_from_messages(
         "compat",
         "check_bridge_server_bridge_api_imports",

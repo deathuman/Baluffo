@@ -53,7 +53,6 @@ from src.bridge import sync_task_flow as _sync_task_flow_mod
 from src.bridge import task_launch_api as _task_launch_api_mod
 from src.bridge.admin_task_history import AdminTaskHistory
 from src.bridge.admin_task_lifecycle import AdminTaskLifecycle
-from src.bridge.api import BridgeApi
 from src.bridge.discovery_service import (
     DiscoveryDeps as _DiscoveryDeps,
 )
@@ -306,7 +305,7 @@ configure_runtime_paths = admin_entrypoint_runtime_mod.configure_runtime_paths
 startup_banner = admin_entrypoint_runtime_mod.startup_banner
 
 
-def build_bridge_api(config: RuntimeConfig) -> BridgeApi:
+def build_bridge_api(config: RuntimeConfig) -> Any:
     return admin_entrypoint_api_mod.build_bridge_api(config)
 
 
