@@ -22,7 +22,7 @@ def test_current_update_manager_facade_inventory_is_complete() -> None:
     assert inventory.check_update_manager_facade_inventory() == []
     assert all(row.path.startswith("tests/") for row in rows)
     assert "tests/test_ship_update_manager.py" in by_path
-    assert "tests/test_ship_update_manager_apply_exception_ratchet.py" in by_path
+    assert "tests/test_ship_update_manager_apply_exception_ratchet.py" not in by_path
     assert all(row.categories for row in rows)
 
 

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-EXPECTED_FACADE_IMPORT_COUNT = 2
+EXPECTED_FACADE_IMPORT_COUNT = 1
 
 FACADE_MODULE = "src.ship.update_manager"
 
@@ -19,7 +19,6 @@ CATEGORIES = {
 
 CLASSIFIED_IMPORTS: dict[str, set[str]] = {
     "tests/test_ship_update_manager.py": {"test-api"},
-    "tests/test_ship_update_manager_apply_exception_ratchet.py": {"test-api"},
 }
 
 RUNTIME_IMPORT_ALLOWLIST: set[str] = set()
