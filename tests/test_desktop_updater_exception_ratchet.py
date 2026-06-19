@@ -6,10 +6,8 @@ from unittest import mock
 
 import pytest
 
-from tests import test_desktop_updater as updater_tests
-
-updater = updater_tests.updater
-workspace_tmpdir = updater_tests.workspace_tmpdir
+from src.ship import desktop_updater as updater
+from tests.helpers.temp_paths import workspace_tmpdir
 
 
 class ImmediateThread:

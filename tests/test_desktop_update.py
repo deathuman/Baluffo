@@ -9,11 +9,11 @@ from urllib.error import URLError
 import pytest
 
 from src import app_version
-from src.ship import desktop_update as du
 from src.ship import desktop_update_service as du_service
 from src.ship import desktop_update_shared as du_shared
 from src.ship import desktop_update_state as update_state
 from src.ship.desktop_app import config as desktop_app_config
+from tests.helpers.desktop_update_leaf_namespace import du
 from tests.helpers.temp_paths import workspace_tmpdir
 
 

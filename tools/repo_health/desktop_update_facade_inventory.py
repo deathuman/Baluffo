@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-EXPECTED_FACADE_IMPORT_COUNT = 3
+EXPECTED_FACADE_IMPORT_COUNT = 2
 
 FACADE_MODULES = {
     "src.ship.desktop_update",
@@ -25,9 +25,8 @@ CATEGORIES = {
 }
 
 CLASSIFIED_IMPORTS: dict[str, set[str]] = {
-    "tests/test_desktop_update.py": {"test-compat"},
-    "tests/test_desktop_updater.py": {"test-compat"},
     "tests/test_desktop_updater_entrypoint.py": {"test-compat"},
+    "tests/test_desktop_updater_exception_ratchet.py": {"test-compat"},
 }
 
 LEAF_FACADE_IMPORT_ALLOWLIST: set[str] = set()

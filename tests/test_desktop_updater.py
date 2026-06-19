@@ -8,11 +8,29 @@ import pytest
 
 from src.ship import desktop_update_shared as du_shared
 from src.ship import desktop_update_state as update_state
-from src.ship import desktop_updater as updater
 from src.ship import desktop_updater_install as updater_install
 from src.ship import desktop_updater_release as updater_release
+from src.ship import desktop_updater_ui as updater_ui
 from src.ship.desktop_update_constants import MANIFEST_CACHE_FILE
 from tests.helpers.temp_paths import workspace_tmpdir
+
+updater = SimpleNamespace(
+    DESKTOP_UPDATER_NO_DIALOG_ENV=updater_ui.DESKTOP_UPDATER_NO_DIALOG_ENV,
+    DESKTOP_UPDATER_VERIFY_TIMEOUT_ENV=updater_ui.DESKTOP_UPDATER_VERIFY_TIMEOUT_ENV,
+    DESKTOP_UPDATE_MANIFEST_ASSET=updater_release.DESKTOP_UPDATE_MANIFEST_ASSET,
+    HelperProgressWindow=updater_ui.HelperProgressWindow,
+    _drain_helper_queue=updater_ui._drain_helper_queue,
+    _helper_diagnostics_path_for_plan=updater_ui._helper_diagnostics_path_for_plan,
+    _helper_failure_dialog_enabled=updater_ui._helper_failure_dialog_enabled,
+    _helper_relaunch_verify_timeout_s=updater_ui._helper_relaunch_verify_timeout_s,
+    _helper_window_layout=updater_ui._helper_window_layout,
+    _launch_executable=updater_ui._launch_executable,
+    _recover_interrupted_install=updater_install._recover_interrupted_install,
+    _verify_target_startup=updater_install._verify_target_startup,
+    run_install=updater_install.run_install,
+    subprocess=updater_ui.subprocess,
+    time=updater_install.time,
+)
 
 
 def _write_install_plan(
@@ -151,45 +169,6 @@ def test_drain_helper_queue_forwards_messages_and_close() -> None:
     close_window.assert_called_once_with()
     progress._closed.wait.assert_called_once_with(timeout=2.0)
     progress._closed.set.assert_called_once_with()
-
-
-def test_main_failure_path_still_uses_native_error_message(monkeypatch) -> None:
-    with workspace_tmpdir("desktop-updater") as tmp:
-        plan_path = Path(tmp) / "install-plan.json"
-        plan_path.write_text("{}", encoding="utf-8")
-        show_message = mock.Mock()
-
-        class ImmediateThread:
-            def __init__(self, *, target, daemon, name) -> None:
-                self._target = target
-
-            def start(self) -> None:
-                self._target()
-
-            def join(self) -> None:
-                return None
-
-        monkeypatch.setattr(
-            updater,
-            "parse_args",
-            lambda argv=None: SimpleNamespace(install_plan=str(plan_path)),
-        )
-        monkeypatch.setattr(updater, "_show_message", show_message)
-        monkeypatch.setattr(
-            updater,
-            "HelperProgressWindow",
-            mock.Mock(return_value=mock.Mock(run=mock.Mock(), close=mock.Mock())),
-        )
-        monkeypatch.setattr(
-            updater,
-            "run_install",
-            mock.Mock(side_effect=RuntimeError("boom during install")),
-        )
-        monkeypatch.setattr(updater.threading, "Thread", ImmediateThread)
-
-        result = updater.main([])
-        assert result == 1
-        show_message.assert_called_once_with("Baluffo Update Failed", "boom during install")
 
 
 def test_recover_interrupted_install_restores_runtime_snapshot_and_backup(monkeypatch) -> None:
