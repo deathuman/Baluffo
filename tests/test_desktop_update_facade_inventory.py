@@ -179,6 +179,16 @@ def test_repo_guardrails_compat_group_runs_desktop_update_facade_inventory(
         "check_desktop_update_facade_inventory",
         lambda: ["facade drift"],
     )
+    monkeypatch.setattr(
+        repo_guardrails,
+        "check_desktop_update_root_dependency_inventory",
+        lambda: [],
+    )
+    monkeypatch.setattr(
+        repo_guardrails,
+        "check_update_manager_runtime_facade_inventory",
+        lambda: [],
+    )
 
     assert "compat" in repo_guardrails.GROUPS
     assert repo_guardrails.GROUP_RUNNERS["compat"] is repo_guardrails.run_compat_group
