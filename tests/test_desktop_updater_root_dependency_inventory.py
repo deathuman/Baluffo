@@ -46,7 +46,21 @@ def test_current_desktop_updater_root_dependency_inventory_is_complete() -> None
         "mutable-compat-hook",
         "update-manager-compat",
     )
-    assert by_name["fetch_json"].categories == ("mutable-compat-hook", "shared-helper")
+    assert by_name["fetch_json"].categories == (
+        "facade-monkeypatch-compat",
+        "mutable-compat-hook",
+        "shared-helper",
+    )
+    assert by_name["compute_sha256"].categories == (
+        "facade-monkeypatch-compat",
+        "mutable-compat-hook",
+        "shared-helper",
+    )
+    assert by_name["_sync_extract_to_install"].categories == (
+        "facade-monkeypatch-compat",
+        "install-helper",
+        "mutable-compat-hook",
+    )
     assert by_name["_save_install_stage_status"].categories == (
         "install-helper",
         "mutable-compat-hook",
@@ -85,6 +99,80 @@ def test_inventory_collects_module_and_getattr_references(
         ("os", ("src/ship/desktop_updater_ui.py:2",)),
         ("time", ("src/ship/desktop_updater_ui.py:2",)),
     ]
+    assert inventory.check_desktop_updater_root_dependency_inventory(tmp_path) == []
+
+
+def test_inventory_classifies_facade_monkeypatch_compatibility(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_tracked_modules(
+        tmp_path,
+        release="""
+        def path(module):
+            return module.fetch_json("https://example.invalid")
+        """,
+    )
+    _write(
+        tmp_path,
+        "tests/test_desktop_updater.py",
+        """
+        from src.ship import desktop_updater as updater
+
+        def test_patch(monkeypatch):
+            monkeypatch.setattr(updater, "fetch_json", lambda url: {})
+        """,
+    )
+    monkeypatch.setattr(inventory, "EXPECTED_DEPENDENCY_COUNT", 1)
+    monkeypatch.setattr(inventory, "EXPECTED_REFERENCE_COUNT", 1)
+    monkeypatch.setattr(
+        inventory,
+        "DEPENDENCY_CATEGORIES",
+        {"fetch_json": {"shared-helper", "mutable-compat-hook"}},
+    )
+
+    rows = inventory.collect_desktop_updater_root_dependency_inventory(tmp_path)
+
+    assert rows[0].categories == (
+        "facade-monkeypatch-compat",
+        "mutable-compat-hook",
+        "shared-helper",
+    )
+    assert inventory.check_desktop_updater_root_dependency_inventory(tmp_path) == []
+
+
+def test_inventory_ignores_unrelated_updater_monkeypatches(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_tracked_modules(
+        tmp_path,
+        release="""
+        def path(module):
+            return module.fetch_json("https://example.invalid")
+        """,
+    )
+    _write(
+        tmp_path,
+        "tests/test_unrelated.py",
+        """
+        updater = object()
+
+        def test_patch(monkeypatch):
+            monkeypatch.setattr(updater, "fetch_json", lambda url: {})
+        """,
+    )
+    monkeypatch.setattr(inventory, "EXPECTED_DEPENDENCY_COUNT", 1)
+    monkeypatch.setattr(inventory, "EXPECTED_REFERENCE_COUNT", 1)
+    monkeypatch.setattr(
+        inventory,
+        "DEPENDENCY_CATEGORIES",
+        {"fetch_json": {"shared-helper", "mutable-compat-hook"}},
+    )
+
+    rows = inventory.collect_desktop_updater_root_dependency_inventory(tmp_path)
+
+    assert rows[0].categories == ("mutable-compat-hook", "shared-helper")
     assert inventory.check_desktop_updater_root_dependency_inventory(tmp_path) == []
 
 

@@ -27,6 +27,7 @@ CATEGORIES = {
     "state-helper",
     "update-manager-compat",
     "mutable-compat-hook",
+    "facade-monkeypatch-compat",
 }
 
 CONSTANTS: set[str] = set()
@@ -164,6 +165,48 @@ def _iter_dependency_references(path: Path, repo_root: Path) -> list[tuple[str, 
     return sorted(references, key=lambda item: (item[0], item[1]))
 
 
+def _imports_desktop_updater_as_updater(tree: ast.Module) -> bool:
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == "src.ship":
+            for alias in node.names:
+                if alias.name == "desktop_updater" and alias.asname == "updater":
+                    return True
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "src.ship.desktop_updater" and alias.asname == "updater":
+                    return True
+    return False
+
+
+def _iter_facade_monkeypatch_names(repo_root: Path) -> set[str]:
+    tests_root = repo_root / "tests"
+    if not tests_root.is_dir():
+        return set()
+    monkeypatched: set[str] = set()
+    for path in tests_root.rglob("*.py"):
+        try:
+            tree = _parse_python(path)
+        except OSError:
+            continue
+        if not _imports_desktop_updater_as_updater(tree):
+            continue
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "setattr"
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "monkeypatch"
+                and len(node.args) >= 2
+                and isinstance(node.args[0], ast.Name)
+                and node.args[0].id == "updater"
+                and isinstance(node.args[1], ast.Constant)
+                and isinstance(node.args[1].value, str)
+            ):
+                monkeypatched.add(node.args[1].value)
+    return monkeypatched
+
+
 def collect_desktop_updater_root_dependency_inventory(
     repo_root: Path = ROOT,
 ) -> tuple[DesktopUpdaterRootDependency, ...]:
@@ -173,12 +216,16 @@ def collect_desktop_updater_root_dependency_inventory(
         for name, reference in _iter_dependency_references(path, repo_root):
             references_by_name.setdefault(name, []).append(reference)
 
+    facade_monkeypatch_names = _iter_facade_monkeypatch_names(repo_root)
     rows: list[DesktopUpdaterRootDependency] = []
     for name, references in sorted(references_by_name.items()):
+        categories = set(DEPENDENCY_CATEGORIES.get(name, set()))
+        if name in facade_monkeypatch_names:
+            categories.add("facade-monkeypatch-compat")
         rows.append(
             DesktopUpdaterRootDependency(
                 name=name,
-                categories=tuple(sorted(DEPENDENCY_CATEGORIES.get(name, set()))),
+                categories=tuple(sorted(categories)),
                 references=tuple(sorted(references)),
             )
         )
