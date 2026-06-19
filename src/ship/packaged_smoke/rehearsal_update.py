@@ -745,7 +745,7 @@ def run_desktop_update_rehearsal(
                 "sourcePsutilRemoved": source_psutil_removed,
             },
         }
-    except Exception as exc:
+    except (OSError, RuntimeError, TimeoutError, ValueError) as exc:
         return {
             "name": "Packaged desktop updater rehearsal",
             "slug": "desktop-update-rehearsal",
