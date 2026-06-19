@@ -455,13 +455,6 @@ def get_discovery_service() -> _DiscoveryServiceLike:
     )
     services = root_mod.BRIDGE_SERVICES
     with services.discovery_service_lock:
-        if (
-            services.discovery_service is None
-            and root_mod._DISCOVERY_SERVICE is not None
-            and root_mod._DISCOVERY_SERVICE_PATHS == current_paths
-        ):
-            services.discovery_service = root_mod._DISCOVERY_SERVICE
-            services.discovery_service_paths = root_mod._DISCOVERY_SERVICE_PATHS
         if services.discovery_service is None or services.discovery_service_paths != current_paths:
             services.discovery_service_paths = current_paths
             services.discovery_service = root_mod.DiscoveryService(
@@ -516,8 +509,6 @@ def get_discovery_service() -> _DiscoveryServiceLike:
                     ),
                 ),
             )
-        root_mod._DISCOVERY_SERVICE = services.discovery_service
-        root_mod._DISCOVERY_SERVICE_PATHS = services.discovery_service_paths
         return cast(_DiscoveryServiceLike, services.discovery_service)
 
 

@@ -166,12 +166,12 @@ def test_discovery_service_is_owned_by_bridge_services_holder(
 
     assert admin_bridge.BRIDGE_SERVICES.discovery_service is service
     assert admin_bridge.BRIDGE_SERVICES.discovery_service_paths == expected_paths
-    assert admin_bridge._DISCOVERY_SERVICE is service
-    assert admin_bridge._DISCOVERY_SERVICE_PATHS == expected_paths
     assert admin_bridge._get_discovery_service() is service
+    assert not hasattr(admin_bridge, "_DISCOVERY_SERVICE")
+    assert not hasattr(admin_bridge, "_DISCOVERY_SERVICE_PATHS")
 
 
-def test_discovery_service_holder_adopts_legacy_patch_surface(
+def test_discovery_service_holder_reuses_existing_service(
     admin_bridge_entrypoint_root: Path,
 ) -> None:
     data_dir = admin_bridge_entrypoint_root / "data"
@@ -182,15 +182,15 @@ def test_discovery_service_holder_adopts_legacy_patch_surface(
         Path(admin_bridge.PENDING_PATH),
         Path(admin_bridge.DISCOVERY_LOG_PATH),
     )
-    legacy_service = SimpleNamespace(name="legacy-discovery-service")
+    holder_service = SimpleNamespace(name="holder-discovery-service")
     admin_bridge.BRIDGE_SERVICES.reset_discovery_service()
-    admin_bridge._DISCOVERY_SERVICE = legacy_service
-    admin_bridge._DISCOVERY_SERVICE_PATHS = expected_paths
+    admin_bridge.BRIDGE_SERVICES.discovery_service = holder_service
+    admin_bridge.BRIDGE_SERVICES.discovery_service_paths = expected_paths
 
     service = admin_bridge._get_discovery_service()
 
-    assert service is legacy_service
-    assert admin_bridge.BRIDGE_SERVICES.discovery_service is legacy_service
+    assert service is holder_service
+    assert admin_bridge.BRIDGE_SERVICES.discovery_service is holder_service
     assert admin_bridge.BRIDGE_SERVICES.discovery_service_paths == expected_paths
 
 
@@ -210,8 +210,6 @@ def test_runtime_path_reconfiguration_resets_discovery_holder(
 
     assert admin_bridge.BRIDGE_SERVICES.discovery_service is None
     assert admin_bridge.BRIDGE_SERVICES.discovery_service_paths is None
-    assert admin_bridge._DISCOVERY_SERVICE is None
-    assert admin_bridge._DISCOVERY_SERVICE_PATHS is None
 
     second_service = admin_bridge._get_discovery_service()
     assert second_service is not first_service
