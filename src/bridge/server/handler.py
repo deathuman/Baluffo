@@ -269,6 +269,8 @@ def _handle_post_request(handler: BaseHTTPRequestHandler, api: BridgeApi) -> Non
             handler.send_json({"error": "Not found"}, status=404)
         except BaseException as exc:  # noqa: BLE001
             failed = True
+            if not isinstance(exc, Exception):
+                raise
             try:
                 api.bridge_log(
                     "error",

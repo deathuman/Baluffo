@@ -256,6 +256,29 @@ def test_handler_records_post_request_timing_for_not_found(tmp_path: Path) -> No
     assert profile["routeTimings"]["routes"][0]["errorCount"] == 1
 
 
+def test_handler_does_not_swallow_post_keyboard_interrupt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import src.bridge.routes.post_routes as post_routes
+
+    api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    handler_cls = make_handler(api=api)
+    harness = HandlerHarness(handler_cls, method="POST", path="/tasks/run", body=b"{}")
+
+    def interrupting_post(*_args: object, **_kwargs: object) -> bool:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(post_routes, "handle_post", interrupting_post)
+
+    with pytest.raises(KeyboardInterrupt):
+        harness.handler.do_POST()
+
+    profile = snapshot_performance_profile()
+    assert profile["routeTimings"]["routes"][0]["label"] == "POST /tasks/run"
+    assert profile["routeTimings"]["routes"][0]["errorCount"] == 1
+
+
 def test_handler_performance_profile_redacts_query_params(tmp_path: Path) -> None:
     api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
     handler_cls = make_handler(api=api)
