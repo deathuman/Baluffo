@@ -16,8 +16,11 @@ from src.jobs.adapters.plugins.static._runner import (
 )
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.adapters.provider_parsers import parse_generic_location_fields
+from src.jobs.adapters.static_runtime_support import is_static_fetch_fallback_exception
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, normalize_url
+
+_EXPECTED_MILESTONE_IFRAME_FETCH_EXCEPTIONS = (OSError, RuntimeError, ValueError)
 
 
 def can_handle(ctx: AdapterPluginContext) -> bool:
@@ -72,7 +75,9 @@ def run(
         if iframe_url:
             try:
                 iframe_html = fetch_text(iframe_url, timeout_s)
-            except Exception as exc:  # noqa: BLE001
+            except _EXPECTED_MILESTONE_IFRAME_FETCH_EXCEPTIONS as exc:
+                if not is_static_fetch_fallback_exception(exc):
+                    raise
                 iframe_html = ""
                 source_row["_staticPluginMeta"] = {
                     "classification": "fetch_ok_extract_zero",

@@ -178,3 +178,27 @@ def test_rollic_rendered_cards_plugin_uses_browser_after_blocked_http() -> None:
     assert len(rows) == 1
     assert rows[0]["title"] == "Game Designer"
     assert rows[0]["source"] == "Rollic Games (Sheet)"
+
+
+def test_rendered_cards_plugin_fetch_fallback_does_not_swallow_unexpected_runtime_bug() -> None:
+    source_row = {
+        "id": "static:listing_url:https://www.rollicgames.com/jobs",
+        "name": "Rollic Games (Sheet)",
+        "company": "Rollic Games",
+    }
+
+    def broken_fetch(_url: str, _timeout: int) -> str:
+        raise RuntimeError("unexpected rendered-card fetch bug")
+
+    with pytest.raises(RuntimeError, match="unexpected rendered-card fetch bug"):
+        run_rendered_cards_plugin(
+            fetch_text=broken_fetch,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+            pages=["https://www.rollicgames.com/jobs"],
+            source_row=source_row,
+            try_playwright=lambda _url, _timeout: ("<article></article>", ""),
+        )
+
+    assert "_staticPluginMeta" not in source_row

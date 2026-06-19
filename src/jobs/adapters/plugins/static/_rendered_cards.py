@@ -23,9 +23,12 @@ from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.static._runner import static_listing_job_row
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.adapters.provider_parsers import parse_generic_location_fields
+from src.jobs.adapters.static_runtime_support import is_static_fetch_fallback_exception
 from src.jobs.models import RawJob
 from src.jobs.page_gating import classify_job_page
 from src.jobs.text_utils import clean_text, normalize_url
+
+_EXPECTED_RENDERED_CARD_FETCH_EXCEPTIONS = (OSError, RuntimeError, ValueError)
 
 _RENDERED_CARD_HOSTS = frozenset(
     {
@@ -279,7 +282,9 @@ def _fetch_rendered_card_listing_html(
 ) -> str:
     try:
         return fetch_text(page_url, timeout_s)
-    except Exception as exc:  # noqa: BLE001
+    except _EXPECTED_RENDERED_CARD_FETCH_EXCEPTIONS as exc:
+        if not is_static_fetch_fallback_exception(exc):
+            raise
         classification, recommend = _heuristics.classify_fetch_exception(exc)
         if callable(try_playwright) and recommend:
             html, _ = try_playwright(page_url, max(3, min(timeout_s, 25)))
