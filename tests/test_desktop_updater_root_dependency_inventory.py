@@ -43,6 +43,14 @@ def test_current_desktop_updater_root_dependency_inventory_is_complete() -> None
         "zipfile",
         "_restore_data_backup_if_needed",
         "_save_install_stage_status",
+        "DesktopUpdatePaths",
+        "clear_handoff_request",
+        "clear_success_marker",
+        "install_stage_label",
+        "load_status",
+        "pid_is_running",
+        "save_status",
+        "validate_install_plan",
     }.isdisjoint(by_name)
     assert by_name["update_manager"].categories == (
         "mutable-compat-hook",

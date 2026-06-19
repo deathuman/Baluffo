@@ -81,8 +81,7 @@ MUTATING_INSTALL_STAGES = frozenset(
 )
 SUCCESS_RECOVERY_STAGES = frozenset({"relaunching", "verifying"})
 
-# Preserve these names on the module root because the updater flow patches/accesses them through
-# `_module()` indirection rather than direct local references.
+# Preserve these names on the module root for desktop_updater.py facade compatibility.
 time = _time
 zipfile = _zipfile
 update_manager = SimpleNamespace(
@@ -121,28 +120,26 @@ def _save_install_stage_status(
     install_stage: str,
     **extra: Any,
 ) -> dict[str, Any]:
-    module = _module()
-    status = module.load_status(paths)
+    status = load_status(paths)
     status.update(
         {
             "installState": str(install_state or "").strip().lower() or "idle",
             "installStage": str(install_stage or "").strip().lower() or "idle",
-            "installStageLabel": module.install_stage_label(install_state, install_stage),
-            "helperUpdatedAt": module.iso_now(),
+            "installStageLabel": install_stage_label(install_state, install_stage),
+            "helperUpdatedAt": iso_now(),
         }
     )
     status.update(extra)
-    return _as_dict(module.save_status(paths, status))
+    return _as_dict(save_status(paths, status))
 
 
 def _wait_for_launcher_exit(plan: dict[str, Any], *, timeout_s: float = 120.0) -> None:
-    module = _module()
     deadline = _time.monotonic() + max(5.0, float(timeout_s))
     launcher_pid = int(plan.get("launcherPid") or 0)
     session_root = Path(str(plan.get("desktopSessionRoot") or "")).expanduser().resolve()
     session_state_path = session_root / "desktop-session.json"
     while _time.monotonic() < deadline:
-        launcher_alive = module.pid_is_running(launcher_pid)
+        launcher_alive = pid_is_running(launcher_pid)
         if launcher_pid > 0 and launcher_alive:
             _time.sleep(0.5)
             continue
@@ -224,7 +221,7 @@ def _verify_target_startup(plan: dict[str, Any], *, timeout_s: float = 90.0) -> 
     session_state_path = session_root / "desktop-session.json"
     install_root = Path(str(plan.get("installRoot") or "")).expanduser().resolve()
     data_dir = Path(str(plan.get("dataDir") or "")).expanduser().resolve()
-    success_marker = module.DesktopUpdatePaths.from_data_dir(
+    success_marker = DesktopUpdatePaths.from_data_dir(
         data_dir,
         install_root=install_root,
         ship_root=install_root / "ship",
@@ -279,10 +276,9 @@ def _restore_data_backup_if_needed(ship_root: Path, data_dir: Path, status: dict
 def _finalize_success(
     paths: DesktopUpdatePaths, plan: dict[str, Any], rollback_root: Path
 ) -> dict[str, Any]:
-    module = _module()
     with contextlib.suppress(OSError):
         shutil.rmtree(rollback_root)
-    module.clear_success_marker(paths)
+    clear_success_marker(paths)
     return _as_dict(
         _save_install_stage_status(
             paths,
@@ -293,7 +289,7 @@ def _finalize_success(
             totalBytes=0,
             downloadPercent=0,
             lastError="",
-            lastCheckedAt=module.iso_now(),
+            lastCheckedAt=iso_now(),
             migrationBackupPath="",
             rollbackPath="",
             targetVersion=str(plan.get("targetVersion") or ""),
@@ -310,7 +306,7 @@ def _recover_interrupted_install(
     rollback_root: Path,
 ) -> bool:
     module = _module()
-    status = module.load_status(paths)
+    status = load_status(paths)
     stage = str(status.get("installStage") or "").strip().lower()
     if not stage or stage in {
         "idle",
@@ -354,21 +350,21 @@ def _recover_interrupted_install(
 
 def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
     module = _module()
-    plan = module.validate_install_plan(json.loads(plan_path.read_text(encoding="utf-8")))
+    plan = validate_install_plan(json.loads(plan_path.read_text(encoding="utf-8")))
     install_root = Path(str(plan.get("installRoot") or "")).expanduser().resolve()
     ship_root = install_root / "ship"
     data_dir = Path(str(plan.get("dataDir") or "")).expanduser().resolve()
-    paths = module.DesktopUpdatePaths.from_data_dir(
+    paths = DesktopUpdatePaths.from_data_dir(
         data_dir,
         install_root=install_root,
         ship_root=ship_root,
     )
     rollback_root = Path(str(plan.get("rollbackPath") or "")).expanduser().resolve()
-    existing_status = module.load_status(paths)
+    existing_status = load_status(paths)
     progress = progress if progress is not None else module.NullProgressWindow()
     progress.start(
         str(existing_status.get("installStageLabel") or "").strip()
-        or module.install_stage_label("handoff_requested", "preparing")
+        or install_stage_label("handoff_requested", "preparing")
     )
     staging_root = paths.updater_dir / "staging"
     staging_root.mkdir(parents=True, exist_ok=True)
@@ -405,7 +401,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
             lastError="",
             rollbackPath=str(rollback_root),
         )
-        progress.update(module.install_stage_label("waiting_for_exit", "waiting_for_exit"))
+        progress.update(install_stage_label("waiting_for_exit", "waiting_for_exit"))
         _save_install_stage_status(
             paths,
             install_state="waiting_for_exit",
@@ -414,9 +410,9 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
             rollbackPath=str(rollback_root),
         )
         module._wait_for_launcher_exit(plan)
-        module.clear_handoff_request(paths)
+        clear_handoff_request(paths)
 
-        progress.update(module.install_stage_label("installing", "extracting"))
+        progress.update(install_stage_label("installing", "extracting"))
         _save_install_stage_status(
             paths,
             install_state="installing",
@@ -426,7 +422,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
         # extractall is not atomic; rollback snapshot is taken before this call.
         with _zipfile.ZipFile(zip_path, "r") as archive:
             archive.extractall(temp_extract)
-        module.clear_success_marker(paths)
+        clear_success_marker(paths)
         rollback_root.mkdir(parents=True, exist_ok=True)
         _save_install_stage_status(
             paths,
@@ -474,7 +470,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
                 migration_plan,
                 backup_ref,
             )
-        progress.update(module.install_stage_label("verifying", "relaunching"))
+        progress.update(install_stage_label("verifying", "relaunching"))
         _save_install_stage_status(
             paths,
             install_state="verifying",
@@ -499,8 +495,8 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
         return {"ok": True, "installedVersion": str(plan.get("targetVersion") or "")}
     except BaseException as exc:
         # Treat install mutation as a transactional cleanup boundary, then re-raise.
-        module.clear_handoff_request(paths)
-        progress.update(module.install_stage_label("installing", "rolling_back"))
+        clear_handoff_request(paths)
+        progress.update(install_stage_label("installing", "rolling_back"))
         if backup_ref is not None:
             with contextlib.suppress(OSError, _zipfile.BadZipFile, _zipfile.LargeZipFile):
                 module.update_manager.restore_data_backup(
@@ -529,7 +525,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
         )
         raise
     finally:
-        module.clear_handoff_request(paths)
+        clear_handoff_request(paths)
         progress.close()
         with contextlib.suppress(OSError):
             shutil.rmtree(temp_extract)
