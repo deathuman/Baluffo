@@ -1291,6 +1291,9 @@ def test_admin_bridge_root_stays_thin_entrypoint_surface(repo_root: Path) -> Non
     assert "admin_task_runtime_mod.root =" not in text
     assert "root: Any" not in admin_task_runtime
     assert "def _require_root(" not in admin_task_runtime
+    assert "SYNC_CONFIG: Any" not in text
+    assert "sys.modules[__name__].SYNC_CONFIG" not in text
+    assert "root_mod.SYNC_CONFIG = None" not in admin_entrypoint_runtime
     assert "def build_bridge_api(" in text
     assert "return admin_entrypoint_api_mod.build_bridge_api(config, root_mod=_ADMIN_ROOT)" in text
     assert "smoke_runtime: dict[str, Any]" not in text
