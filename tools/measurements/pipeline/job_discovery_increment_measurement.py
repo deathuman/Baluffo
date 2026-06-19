@@ -88,7 +88,7 @@ def run_baseline_pipeline(output_dir: Path, timeout: int = 300) -> dict[str, Any
             "source_count": 0,
             "error_count": 0,
         }
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError, TypeError, ValueError) as e:
         print(f"❌ Error running baseline pipeline: {e}")
         return {
             "success": False,
@@ -187,7 +187,7 @@ def run_social_pipeline(output_dir: Path, timeout: int = 300) -> dict[str, Any]:
             "source_count": 0,
             "error_count": 0,
         }
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError, TypeError, ValueError) as e:
         print(f"❌ Error running social pipeline: {e}")
         return {
             "success": False,
