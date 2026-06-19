@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import binascii
 import json
 import sys
 from pathlib import Path
@@ -81,7 +82,7 @@ def load_private_key_bytes(args: argparse.Namespace) -> bytes:
         )
     try:
         return base64.b64decode(private_key_b64)
-    except Exception as exc:  # noqa: BLE001
+    except (binascii.Error, ValueError) as exc:
         raise RuntimeError(
             "Desktop update private key must be base64-encoded raw Ed25519 bytes."
         ) from exc

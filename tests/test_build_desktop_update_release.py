@@ -2,7 +2,9 @@ import base64
 from pathlib import Path
 from unittest import mock
 
-from scripts.build_desktop_update_release import build_manifest, parse_args
+import pytest
+
+from scripts.build_desktop_update_release import build_manifest, load_private_key_bytes, parse_args
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -95,6 +97,28 @@ def test_build_manifest_requires_portable_release_url_without_repo() -> None:
                 raise AssertionError(
                     "build_manifest should require a portable release URL when no repo is provided."
                 )
+
+
+def test_load_private_key_bytes_reports_malformed_base64() -> None:
+    args = parse_args(["--private-key-b64", "abc", "--key-id", "desktop-ed25519-2026-01"])
+
+    with pytest.raises(RuntimeError, match="base64-encoded raw Ed25519 bytes") as exc_info:
+        load_private_key_bytes(args)
+
+    assert exc_info.value.__cause__ is not None
+
+
+def test_load_private_key_bytes_does_not_hide_unexpected_decoder_failure() -> None:
+    args = parse_args(["--private-key-b64", "abc", "--key-id", "desktop-ed25519-2026-01"])
+
+    with (
+        mock.patch(
+            "scripts.build_desktop_update_release.base64.b64decode",
+            side_effect=AssertionError("unexpected decoder bug"),
+        ),
+        pytest.raises(AssertionError, match="unexpected decoder bug"),
+    ):
+        load_private_key_bytes(args)
 
 
 def test_build_manifest_uses_versioned_default_portable_zip_and_omits_ship_by_default() -> None:
