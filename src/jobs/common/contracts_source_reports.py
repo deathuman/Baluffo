@@ -19,19 +19,12 @@ from src.jobs.text_utils import clean_text, norm_text
 from src.shared.fetch_report_normalization import (
     enrich_fetch_report_source_row_metadata,
     enrich_jobs_fetch_report_source_row_fields,
+    normalize_fetch_report_detail_stats,
+    normalize_fetch_report_loss,
+    normalize_fetch_report_stage_timings,
     normalize_jobs_fetch_report_source_row_base,
 )
 from src.shared.json_shapes import as_json_list, as_json_object
-
-_CANONICAL_DROP_REASON_KEYS = (
-    "missing_title",
-    "missing_company",
-    "missing_job_link",
-    "invalid_url",
-    "invalid_payload",
-    "non_job_static_page",
-    "google_sheets_category_row",
-)
 
 
 def _clean_label(value: Any) -> str:
@@ -54,118 +47,6 @@ def _normalize_dead_listing_fields(target: dict[str, Any], src: dict[str, Any]) 
         ]
         if cleaned_examples:
             target["deadListingPageExamples"] = cleaned_examples[:5]
-
-
-def _normalize_stage_timings(src: dict[str, Any]) -> dict[str, int]:
-    raw_stage_timings = as_json_object(src.get("stageTimingsMs"))
-    return {
-        "fetchAndParse": _clamped_int(raw_stage_timings.get("fetchAndParse"), 0, 0),
-        "listingFetch": _clamped_int(raw_stage_timings.get("listingFetch"), 0, 0),
-        "parseCsv": _clamped_int(raw_stage_timings.get("parseCsv"), 0, 0),
-        "candidateExtraction": _clamped_int(raw_stage_timings.get("candidateExtraction"), 0, 0),
-        "detailFetch": _clamped_int(raw_stage_timings.get("detailFetch"), 0, 0),
-        "redirectResolve": _clamped_int(raw_stage_timings.get("redirectResolve"), 0, 0),
-        "canonicalization": _clamped_int(raw_stage_timings.get("canonicalization"), 0, 0),
-    }
-
-
-def _normalize_loss(loss: Any) -> dict[str, Any]:
-    payload = as_json_object(loss)
-    drop_reasons = as_json_object(payload.get("canonicalDropReasons"))
-    normalized_drop_reasons = {
-        reason: _clamped_int(drop_reasons.get(reason), 0, 0)
-        for reason in _CANONICAL_DROP_REASON_KEYS
-    }
-    for reason, count in sorted(drop_reasons.items()):
-        reason_key = clean_text(reason)
-        if reason_key:
-            normalized_drop_reasons[reason_key] = _clamped_int(count, 0, 0)
-    return {
-        "rawFetched": _clamped_int(payload.get("rawFetched"), 0, 0),
-        "canonicalDropped": _clamped_int(payload.get("canonicalDropped"), 0, 0),
-        "canonicalKept": _clamped_int(payload.get("canonicalKept"), 0, 0),
-        "dedupMerged": _clamped_int(payload.get("dedupMerged"), 0, 0),
-        "finalOutput": _clamped_int(payload.get("finalOutput"), 0, 0),
-        "canonicalDropReasons": normalized_drop_reasons,
-        "scrapyRunnerRejectedValidation": _clamped_int(
-            payload.get("scrapyRunnerRejectedValidation"), 0, 0
-        ),
-        "scrapyParentInvalidPayload": _clamped_int(payload.get("scrapyParentInvalidPayload"), 0, 0),
-        "staticNonJobUrlRejected": _clamped_int(payload.get("staticNonJobUrlRejected"), 0, 0),
-        "staticDuplicateLinkRejected": _clamped_int(
-            payload.get("staticDuplicateLinkRejected"), 0, 0
-        ),
-        "staticDetailParseEmpty": _clamped_int(payload.get("staticDetailParseEmpty"), 0, 0),
-        "staticDeadListingPageRejected": _clamped_int(
-            payload.get("staticDeadListingPageRejected"), 0, 0
-        ),
-        "scrapyDeadListingPageRejected": _clamped_int(
-            payload.get("scrapyDeadListingPageRejected"), 0, 0
-        ),
-    }
-
-
-def _normalize_detail_stats(stats: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "downloader/request_count": _clamped_int(stats.get("downloader/request_count"), 0, 0),
-        "downloader/response_count": _clamped_int(stats.get("downloader/response_count"), 0, 0),
-        "downloader/response_status_count/200": _clamped_int(
-            stats.get("downloader/response_status_count/200"), 0, 0
-        ),
-        "retry/count": _clamped_int(stats.get("retry/count"), 0, 0),
-        "item_scraped_count": _clamped_int(stats.get("item_scraped_count"), 0, 0),
-        "candidate_links_found": _clamped_int(stats.get("candidate_links_found"), 0, 0),
-        "detail_pages_visited": _clamped_int(stats.get("detail_pages_visited"), 0, 0),
-        "jobs_emitted": _clamped_int(stats.get("jobs_emitted"), 0, 0),
-        "fetch_cache_hits": _clamped_int(stats.get("fetch_cache_hits"), 0, 0),
-        "detail_yield_percent": _clamped_int(stats.get("detail_yield_percent"), 0, 0),
-        "domain_gate_wait_ms": _clamped_int(stats.get("domain_gate_wait_ms"), 0, 0),
-        "domain_gate_wait_count": _clamped_int(stats.get("domain_gate_wait_count"), 0, 0),
-        "redirect_candidates": _clamped_int(stats.get("redirect_candidates"), 0, 0),
-        "redirect_resolved": _clamped_int(stats.get("redirect_resolved"), 0, 0),
-        "redirect_cache_hits": _clamped_int(stats.get("redirect_cache_hits"), 0, 0),
-        "title_hydration_candidates": _clamped_int(stats.get("title_hydration_candidates"), 0, 0),
-        "title_hydration_feed_fetches": _clamped_int(
-            stats.get("title_hydration_feed_fetches"), 0, 0
-        ),
-        "title_hydration_cache_hits": _clamped_int(stats.get("title_hydration_cache_hits"), 0, 0),
-        "title_hydration_repaired": _clamped_int(stats.get("title_hydration_repaired"), 0, 0),
-        "title_hydration_missed": _clamped_int(stats.get("title_hydration_missed"), 0, 0),
-        "title_hydration_errors": _clamped_int(stats.get("title_hydration_errors"), 0, 0),
-        "title_hydration_ms": _clamped_int(stats.get("title_hydration_ms"), 0, 0),
-        "category_link_status_candidates": _clamped_int(
-            stats.get("category_link_status_candidates"), 0, 0
-        ),
-        "category_link_status_checked": _clamped_int(
-            stats.get("category_link_status_checked"), 0, 0
-        ),
-        "category_link_status_cache_hits": _clamped_int(
-            stats.get("category_link_status_cache_hits"), 0, 0
-        ),
-        "category_link_status_stale_dropped": _clamped_int(
-            stats.get("category_link_status_stale_dropped"), 0, 0
-        ),
-        "category_link_status_errors": _clamped_int(stats.get("category_link_status_errors"), 0, 0),
-        "category_link_status_ms": _clamped_int(stats.get("category_link_status_ms"), 0, 0),
-        "parse_csv_ms": _clamped_int(stats.get("parse_csv_ms"), 0, 0),
-        "listing_fetch_ms": _clamped_int(stats.get("listing_fetch_ms"), 0, 0),
-        "listing_browser_fallbacks": _clamped_int(stats.get("listing_browser_fallbacks"), 0, 0),
-        "listing_terminal_reason": clean_text(stats.get("listing_terminal_reason")),
-        "listing_batch_count": _clamped_int(stats.get("listing_batch_count"), 0, 0),
-        "candidate_extraction_ms": _clamped_int(stats.get("candidate_extraction_ms"), 0, 0),
-        "detail_fetch_ms": _clamped_int(stats.get("detail_fetch_ms"), 0, 0),
-        "detail_batch_count": _clamped_int(stats.get("detail_batch_count"), 0, 0),
-        "detail_pages_skipped_by_adaptive_stop": _clamped_int(
-            stats.get("detail_pages_skipped_by_adaptive_stop"), 0, 0
-        ),
-        "detail_skipped_by_listing_fingerprint": _clamped_int(
-            stats.get("detail_skipped_by_listing_fingerprint"), 0, 0
-        ),
-        "redirect_resolve_ms": _clamped_int(stats.get("redirect_resolve_ms"), 0, 0),
-        "jobs_rejected_validation": _clamped_int(stats.get("jobs_rejected_validation"), 0, 0),
-        "dead_listing_pages_rejected": _clamped_int(stats.get("dead_listing_pages_rejected"), 0, 0),
-        "finish_reason": clean_text(stats.get("finish_reason")),
-    }
 
 
 def _normalize_detail_item(item: dict[str, Any]) -> dict[str, Any]:
@@ -203,10 +84,13 @@ def _normalize_detail_item(item: dict[str, Any]) -> dict[str, Any]:
 
     stats = as_json_object(item.get("stats"))
     if stats:
-        clean_item["stats"] = _normalize_detail_stats(stats)
+        clean_item["stats"] = normalize_fetch_report_detail_stats(
+            stats,
+            clean_text_func=clean_text,
+        )
     loss = as_json_object(item.get("loss"))
     if loss:
-        clean_item["loss"] = _normalize_loss(loss)
+        clean_item["loss"] = normalize_fetch_report_loss(loss, clean_text_func=clean_text)
 
     source_id = clean_text(item.get("sourceId"))
     if source_id:
@@ -299,7 +183,7 @@ def _apply_zero_kept_classification(
 
 
 def _apply_stage_loss_and_exclusion_fields(target: dict[str, Any], src: dict[str, Any]) -> None:
-    clean_stage_timings = _normalize_stage_timings(src)
+    clean_stage_timings = normalize_fetch_report_stage_timings(src)
     if any(clean_stage_timings.values()):
         target["stageTimingsMs"] = clean_stage_timings
     exclusion_reason = clean_text(src.get("exclusionReason"))
@@ -307,7 +191,7 @@ def _apply_stage_loss_and_exclusion_fields(target: dict[str, Any], src: dict[str
         target["exclusionReason"] = exclusion_reason
     loss = as_json_object(src.get("loss"))
     if loss:
-        target["loss"] = _normalize_loss(loss)
+        target["loss"] = normalize_fetch_report_loss(loss, clean_text_func=clean_text)
 
 
 def _apply_dynamic_redundant_provider_fields(target: dict[str, Any], src: dict[str, Any]) -> None:

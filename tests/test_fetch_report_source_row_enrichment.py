@@ -3,6 +3,9 @@ from src.jobs.text_utils import clean_text
 from src.shared.fetch_report_normalization import (
     enrich_fetch_report_source_row_metadata,
     enrich_jobs_fetch_report_source_row_fields,
+    normalize_fetch_report_detail_stats,
+    normalize_fetch_report_loss,
+    normalize_fetch_report_stage_timings,
 )
 
 
@@ -44,6 +47,24 @@ def test_jobs_source_report_row_uses_shared_field_enrichment() -> None:
         "subsourceCacheDecisionCounts": {"run_now": "2"},
         "subsourceNotModifiedCount": "1",
         "subsourceRefreshedCount": "2",
+        "stageTimingsMs": {
+            "fetchAndParse": "10",
+            "listingFetch": "11",
+            "parseCsv": "12",
+            "candidateExtraction": "13",
+            "detailFetch": "14",
+            "redirectResolve": "15",
+            "canonicalization": "16",
+        },
+        "loss": {
+            "rawFetched": "5",
+            "canonicalDropped": "3",
+            "canonicalKept": "2",
+            "dedupMerged": "1",
+            "finalOutput": "1",
+            "canonicalDropReasons": {"missing_title": "2", "custom_reason": "1"},
+            "staticNonJobUrlRejected": "4",
+        },
         "details": [
             {
                 "name": "detail-a",
@@ -59,6 +80,19 @@ def test_jobs_source_report_row_uses_shared_field_enrichment() -> None:
                 "listingCheckedAt": "2026-06-19T07:00:00+00:00",
                 "listingChanged": True,
                 "detailSkippedByListingFingerprint": False,
+                "stats": {
+                    "redirect_candidates": "7",
+                    "title_hydration_repaired": "3",
+                    "listing_terminal_reason": "browser_fallback_empty",
+                    "detail_batch_count": "2",
+                    "finish_reason": "done",
+                },
+                "loss": {
+                    "rawFetched": "2",
+                    "canonicalDropped": "1",
+                    "canonicalKept": "1",
+                    "canonicalDropReasons": {"missing_job_link": "1"},
+                },
             }
         ],
     }
@@ -82,3 +116,15 @@ def test_jobs_source_report_row_uses_shared_field_enrichment() -> None:
     )
     for key, value in detail_enrichment.items():
         assert normalized["details"][0][key] == value
+    assert normalized["stageTimingsMs"] == normalize_fetch_report_stage_timings(row)
+    assert normalized["loss"] == normalize_fetch_report_loss(
+        row["loss"], clean_text_func=clean_text
+    )
+    assert normalized["details"][0]["stats"] == normalize_fetch_report_detail_stats(
+        row["details"][0]["stats"],
+        clean_text_func=clean_text,
+    )
+    assert normalized["details"][0]["loss"] == normalize_fetch_report_loss(
+        row["details"][0]["loss"],
+        clean_text_func=clean_text,
+    )
