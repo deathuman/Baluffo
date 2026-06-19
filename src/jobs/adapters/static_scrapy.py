@@ -40,6 +40,12 @@ TIMEOUT_BUCKET_SOURCE_NAMES = {
 SCRAPY_STATIC_QUEUE_MAX_WORKERS = 4
 SCRAPY_STATIC_QUEUE_POLL_S = 0.5
 SCRAPY_STATIC_QUEUE_WAIT_PROGRESS_S = 5.0
+_SCRAPY_STATIC_SOURCE_ERRORS = (
+    subprocess.SubprocessError,
+    OSError,
+    TypeError,
+    ValueError,
+)
 SCRAPY_STATS_INT_FIELDS = (
     "downloader/request_count",
     "downloader/response_count",
@@ -486,7 +492,7 @@ def _run_scrapy_static_source_entry(
             error="subprocess timeout",
             classification="browser_timeout",
         )
-    except Exception as exc:  # noqa: BLE001
+    except _SCRAPY_STATIC_SOURCE_ERRORS as exc:
         return _entry_error_result(
             source_detail,
             source_name,
@@ -570,7 +576,7 @@ def _future_scrapy_result(
     source_name = clean_text(source.get("name")) or "unknown"
     try:
         return future.result()
-    except Exception as exc:  # noqa: BLE001
+    except _SCRAPY_STATIC_SOURCE_ERRORS as exc:
         detail = _base_detail(source, signal_quality="weak")
         detail.update(
             {
