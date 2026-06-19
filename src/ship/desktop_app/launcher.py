@@ -23,6 +23,8 @@ __all__ = [
     "parse_args",
 ]
 
+_USER_FACING_DESKTOP_LAUNCH_EXCEPTIONS = (OSError, RuntimeError, ValueError)
+
 
 def ensure_desktop_prerequisites() -> None:
     return None
@@ -121,7 +123,7 @@ def main(argv: list[str] | None = None) -> int:
         api.ensure_desktop_prerequisites()
         launch_desktop_app(config)
         return 0
-    except Exception as exc:  # noqa: BLE001
+    except _USER_FACING_DESKTOP_LAUNCH_EXCEPTIONS as exc:
         message = str(exc).strip() or "The Baluffo desktop app could not start."
         api.show_native_message(WINDOW_TITLE, message)
         return 1

@@ -46,9 +46,8 @@ def _isolate_desktop_startup_side_effects(request, monkeypatch: pytest.MonkeyPat
 def test_main_surfaces_native_error_without_installer_prompt() -> None:
     with (
         mock.patch.object(desktop_app, "create_runtime_config", return_value=object()),
-        mock.patch.object(
-            desktop_app,
-            "launch_desktop_app",
+        mock.patch(
+            "src.ship.desktop_app.launcher.launch_desktop_app",
             side_effect=RuntimeError(
                 "Baluffo could not launch a browser window for the desktop session."
             ),
