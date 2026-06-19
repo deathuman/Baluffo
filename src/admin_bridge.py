@@ -233,7 +233,6 @@ _TASK_LIFECYCLE = AdminTaskLifecycle(
     storage_data_dir=lambda: Path(RUNTIME_CONFIG.data_dir),
 )
 LOG_LEVEL_ORDER = bridge_config.LOG_LEVEL_ORDER
-SYNC_CONFIG: Any = None
 BRIDGE_SERVICES = admin_entrypoint_services_mod.BRIDGE_SERVICES
 
 
@@ -309,7 +308,6 @@ def load_saved_sync_settings() -> dict[str, Any]:
 
 def refresh_sync_config() -> source_sync_module.SyncConfig:
     sync_config = BRIDGE_SERVICES.refresh_sync_config(_get_sync_service().refresh_sync_config)
-    sys.modules[__name__].SYNC_CONFIG = sync_config
     return cast(source_sync_module.SyncConfig, sync_config)
 
 

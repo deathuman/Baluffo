@@ -310,14 +310,13 @@ def test_refresh_sync_config_is_owned_by_bridge_services_holder(monkeypatch) -> 
     service = SimpleNamespace(refresh_sync_config=lambda: sync_config)
     admin_bridge.BRIDGE_SERVICES.reset_sync_service()
     monkeypatch.setattr(admin_bridge.BRIDGE_SERVICES, "sync_config", None)
-    monkeypatch.setattr(admin_bridge, "SYNC_CONFIG", None)
     monkeypatch.setattr(admin_bridge, "_get_sync_service", lambda: service)
 
     result = admin_bridge.refresh_sync_config()
 
     assert result is sync_config
     assert admin_bridge.BRIDGE_SERVICES.sync_config is sync_config
-    assert admin_bridge.SYNC_CONFIG is sync_config
+    assert not hasattr(admin_bridge, "SYNC_CONFIG")
 
 
 def test_sync_config_refresh_avoids_explicit_global_declaration() -> None:
@@ -345,7 +344,7 @@ def test_runtime_path_reconfiguration_resets_sync_holder(
     assert admin_bridge.BRIDGE_SERVICES.sync_service is None
     assert admin_bridge.BRIDGE_SERVICES.sync_service_data_dir is None
     assert admin_bridge.BRIDGE_SERVICES.sync_config is None
-    assert admin_bridge.SYNC_CONFIG is None
+    assert not hasattr(admin_bridge, "SYNC_CONFIG")
 
     second_service = admin_bridge._get_sync_service()
     assert second_service is not first_service

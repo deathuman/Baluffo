@@ -119,7 +119,6 @@ def configure_runtime_paths(config: Any, *, root_mod: Any) -> None:
     )
     with root_mod.BRIDGE_SERVICES.sync_service_lock:
         root_mod.BRIDGE_SERVICES.reset_sync_service()
-        root_mod.SYNC_CONFIG = None
     with root_mod.BRIDGE_SERVICES.registry_service_lock:
         root_mod.BRIDGE_SERVICES.reset_registry_service()
     with root_mod.BRIDGE_SERVICES.discovery_service_lock:
