@@ -166,8 +166,9 @@ unique_sources = _unique_sources
 REGISTRY_REASON_MANUAL_SOURCE = _REGISTRY_REASON_MANUAL_SOURCE
 REGISTRY_REASON_MANUAL_SOURCE_VARIANT = _REGISTRY_REASON_MANUAL_SOURCE_VARIANT
 now_iso = _now_iso
-load_tombstones = admin_registry_api_mod.load_tombstones
-save_tombstones = admin_registry_api_mod.save_tombstones
+_ADMIN_ROOT = sys.modules[__name__]
+load_tombstones = partial(admin_registry_api_mod.load_tombstones, root_mod=_ADMIN_ROOT)
+save_tombstones = partial(admin_registry_api_mod.save_tombstones, root_mod=_ADMIN_ROOT)
 
 OPS_HISTORY_PATH = ROOT / "data" / "admin-run-history.json"
 TASK_LIFECYCLE_PATH = ROOT / "data" / "admin-task-lifecycle.json"
@@ -257,9 +258,7 @@ RUNTIME_CONFIG = RuntimeConfig(
     owner_idle_timeout_s=0.0,
 )
 
-_ADMIN_ROOT = sys.modules[__name__]
 admin_entrypoint_services_mod.root = _ADMIN_ROOT
-admin_registry_api_mod.root = _ADMIN_ROOT
 admin_task_runtime_mod.root = _ADMIN_ROOT
 
 
@@ -313,17 +312,25 @@ def refresh_sync_config() -> source_sync_module.SyncConfig:
     return cast(source_sync_module.SyncConfig, sync_config)
 
 
-normalize_state = admin_registry_api_mod.normalize_state
-load_state = admin_registry_api_mod.load_state
-summarize_state = admin_registry_api_mod.summarize_state
-get_registry_summary_payload = admin_registry_api_mod.get_registry_summary_payload
-get_registry_auto_heal_report = admin_registry_api_mod.get_registry_auto_heal_report
-persist_state = admin_registry_api_mod.persist_state
-persist_state_and_auto_sync = admin_registry_api_mod.persist_state_and_auto_sync
-move_entries = admin_registry_api_mod.move_entries
-build_manual_candidate = admin_registry_api_mod.build_manual_candidate
-add_manual_source = admin_registry_api_mod.add_manual_source
-check_static_source = admin_registry_api_mod.check_static_source
+normalize_state = partial(admin_registry_api_mod.normalize_state, root_mod=_ADMIN_ROOT)
+load_state = partial(admin_registry_api_mod.load_state, root_mod=_ADMIN_ROOT)
+summarize_state = partial(admin_registry_api_mod.summarize_state, root_mod=_ADMIN_ROOT)
+get_registry_summary_payload = partial(
+    admin_registry_api_mod.get_registry_summary_payload, root_mod=_ADMIN_ROOT
+)
+get_registry_auto_heal_report = partial(
+    admin_registry_api_mod.get_registry_auto_heal_report, root_mod=_ADMIN_ROOT
+)
+persist_state = partial(admin_registry_api_mod.persist_state, root_mod=_ADMIN_ROOT)
+persist_state_and_auto_sync = partial(
+    admin_registry_api_mod.persist_state_and_auto_sync, root_mod=_ADMIN_ROOT
+)
+move_entries = partial(admin_registry_api_mod.move_entries, root_mod=_ADMIN_ROOT)
+build_manual_candidate = partial(
+    admin_registry_api_mod.build_manual_candidate, root_mod=_ADMIN_ROOT
+)
+add_manual_source = partial(admin_registry_api_mod.add_manual_source, root_mod=_ADMIN_ROOT)
+check_static_source = partial(admin_registry_api_mod.check_static_source, root_mod=_ADMIN_ROOT)
 
 
 def get_saved_sync_config_payload() -> dict[str, Any]:
@@ -362,12 +369,10 @@ def ensure_active_registry() -> list[dict[str, Any]]:
     return _get_registry_service().ensure_active_registry()
 
 
-def normalize_manual_static_studio_fields(row: dict[str, Any]) -> dict[str, Any]:
-    return admin_registry_api_mod.normalize_manual_static_studio_fields(row)
-
-
-def trigger_source_check(source_id: str, timeout_s: int = 12) -> dict[str, Any]:
-    return admin_registry_api_mod.trigger_source_check(source_id, timeout_s=timeout_s)
+normalize_manual_static_studio_fields = partial(
+    admin_registry_api_mod.normalize_manual_static_studio_fields, root_mod=_ADMIN_ROOT
+)
+trigger_source_check = partial(admin_registry_api_mod.trigger_source_check, root_mod=_ADMIN_ROOT)
 
 
 def check_registry_conflicts(payload: dict[str, Any] | None = None) -> dict[str, Any]:

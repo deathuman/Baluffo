@@ -3,8 +3,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Protocol, cast
 
-root: Any | None = None
-
 JsonObject = dict[str, Any]
 RegistryState = dict[str, list[JsonObject]]
 ExistingStaticMatch = tuple[str, int, JsonObject]
@@ -121,46 +119,42 @@ class _AdminBridgeRoot(Protocol):
     check_static_source: Callable[[JsonObject, int], tuple[bool, int, str, bool, JsonObject]]
 
 
-def _require_root() -> _AdminBridgeRoot:
-    if root is None:
-        raise RuntimeError("admin bridge root is not bound")
-    return cast(_AdminBridgeRoot, root)
+def normalize_state(state: RegistryState, *, root_mod: Any) -> RegistryState:
+    return cast(_AdminBridgeRoot, root_mod)._get_registry_service().normalize_state(state)
 
 
-def normalize_state(state: RegistryState) -> RegistryState:
-    return _require_root()._get_registry_service().normalize_state(state)
+def load_state(*, root_mod: Any) -> RegistryState:
+    return cast(_AdminBridgeRoot, root_mod)._get_registry_service().load_state()
 
 
-def load_state() -> RegistryState:
-    return _require_root()._get_registry_service().load_state()
+def summarize_state(state: RegistryState, *, root_mod: Any) -> dict[str, int]:
+    return cast(_AdminBridgeRoot, root_mod).RegistryService.summarize_state(state)
 
 
-def summarize_state(state: RegistryState) -> dict[str, int]:
-    return _require_root().RegistryService.summarize_state(state)
+def get_registry_summary_payload(*, root_mod: Any) -> JsonObject:
+    return cast(_AdminBridgeRoot, root_mod)._get_registry_service().get_summary_payload()
 
 
-def get_registry_summary_payload() -> JsonObject:
-    return _require_root()._get_registry_service().get_summary_payload()
+def get_registry_auto_heal_report(*, root_mod: Any) -> JsonObject:
+    return cast(_AdminBridgeRoot, root_mod)._get_registry_service().get_auto_heal_report()
 
 
-def get_registry_auto_heal_report() -> JsonObject:
-    return _require_root()._get_registry_service().get_auto_heal_report()
+def load_tombstones(*, root_mod: Any) -> JsonObject:
+    return cast(_AdminBridgeRoot, root_mod)._get_registry_service().load_tombstones()
 
 
-def load_tombstones() -> JsonObject:
-    return _require_root()._get_registry_service().load_tombstones()
+def save_tombstones(tombstones: JsonObject, *, root_mod: Any) -> JsonObject:
+    return cast(_AdminBridgeRoot, root_mod)._get_registry_service().save_tombstones(tombstones)
 
 
-def save_tombstones(tombstones: JsonObject) -> JsonObject:
-    return _require_root()._get_registry_service().save_tombstones(tombstones)
+def persist_state(state: RegistryState, *, root_mod: Any) -> RegistryState:
+    return cast(_AdminBridgeRoot, root_mod)._get_registry_service().persist_state(state)
 
 
-def persist_state(state: RegistryState) -> RegistryState:
-    return _require_root()._get_registry_service().persist_state(state)
-
-
-def persist_state_and_auto_sync(state: RegistryState, *, reason: str) -> RegistryState:
-    root_mod = _require_root()
+def persist_state_and_auto_sync(
+    state: RegistryState, *, reason: str, root_mod: Any
+) -> RegistryState:
+    root_mod = cast(_AdminBridgeRoot, root_mod)
     return root_mod._registry_sync_flow.persist_state_and_auto_sync(
         state,
         reason=reason,
@@ -170,13 +164,13 @@ def persist_state_and_auto_sync(state: RegistryState, *, reason: str) -> Registr
 
 
 def move_entries(
-    pending: list[JsonObject], selected_ids: list[str]
+    pending: list[JsonObject], selected_ids: list[str], *, root_mod: Any
 ) -> tuple[list[JsonObject], list[JsonObject]]:
-    return _require_root().RegistryService.move_entries(pending, selected_ids)
+    return cast(_AdminBridgeRoot, root_mod).RegistryService.move_entries(pending, selected_ids)
 
 
-def build_manual_candidate(normalized_url: str) -> JsonObject | None:
-    root_mod = _require_root()
+def build_manual_candidate(normalized_url: str, *, root_mod: Any) -> JsonObject | None:
+    root_mod = cast(_AdminBridgeRoot, root_mod)
     if not normalized_url:
         return None
     studio = root_mod.infer_studio_name_from_host(normalized_url)
@@ -209,13 +203,13 @@ def build_manual_candidate(normalized_url: str) -> JsonObject | None:
     return row
 
 
-def add_manual_source(raw_url: str) -> JsonObject:
-    root_mod = _require_root()
+def add_manual_source(raw_url: str, *, root_mod: Any) -> JsonObject:
+    root_mod = cast(_AdminBridgeRoot, root_mod)
     normalized_url = root_mod.normalize_source_url(raw_url)
     if not normalized_url:
         return {"status": "invalid", "message": "Invalid URL. Use a full http(s) URL."}
 
-    candidate = build_manual_candidate(normalized_url)
+    candidate = build_manual_candidate(normalized_url, root_mod=root_mod)
     if not candidate:
         return {
             "status": "invalid",
@@ -299,8 +293,10 @@ def add_manual_source(raw_url: str) -> JsonObject:
     }
 
 
-def fetch_html_with_fallback_bound(url: str, timeout_s: int) -> tuple[str, str, bool, bool]:
-    root_mod = _require_root()
+def fetch_html_with_fallback_bound(
+    url: str, timeout_s: int, *, root_mod: Any
+) -> tuple[str, str, bool, bool]:
+    root_mod = cast(_AdminBridgeRoot, root_mod)
     return cast(
         tuple[str, str, bool, bool],
         root_mod._source_check_fetch.fetch_html_with_fallback(
@@ -324,15 +320,17 @@ def fetch_html_with_fallback_bound(url: str, timeout_s: int) -> tuple[str, str, 
 
 
 def fetch_static_page_with_alternates_bound(
-    page_url: str, timeout_s: int
+    page_url: str, timeout_s: int, *, root_mod: Any
 ) -> tuple[str, str, bool, bool, str]:
-    root_mod = _require_root()
+    root_mod = cast(_AdminBridgeRoot, root_mod)
     return cast(
         tuple[str, str, bool, bool, str],
         root_mod._source_check_fetch.fetch_static_page_with_alternates(
             page_url,
             timeout_s,
-            fetch_html_with_fallback_fn=fetch_html_with_fallback_bound,
+            fetch_html_with_fallback_fn=lambda url, timeout_s: fetch_html_with_fallback_bound(
+                url, timeout_s, root_mod=root_mod
+            ),
             suggest_alternate_urls=root_mod._source_check_http.suggest_alternate_career_urls,
             discover_redirect_career_candidates=(
                 root_mod._source_check_http.discover_redirect_career_candidates
@@ -343,16 +341,20 @@ def fetch_static_page_with_alternates_bound(
 
 
 def check_static_source(
-    row: JsonObject, timeout_s: int = 12
+    row: JsonObject, timeout_s: int = 12, *, root_mod: Any
 ) -> tuple[bool, int, str, bool, JsonObject]:
-    root_mod = _require_root()
+    root_mod = cast(_AdminBridgeRoot, root_mod)
     return cast(
         tuple[bool, int, str, bool, JsonObject],
         root_mod._source_checker.check_static_source(
             row,
             timeout_s,
-            fetch_page_with_alternates=fetch_static_page_with_alternates_bound,
-            fetch_page=fetch_html_with_fallback_bound,
+            fetch_page_with_alternates=lambda page_url, timeout_s: (
+                fetch_static_page_with_alternates_bound(page_url, timeout_s, root_mod=root_mod)
+            ),
+            fetch_page=lambda url, timeout_s: fetch_html_with_fallback_bound(
+                url, timeout_s, root_mod=root_mod
+            ),
             fetch_text=lambda url, timeout: root_mod.discovery.fetch_text_with_retry(
                 url,
                 timeout,
@@ -367,8 +369,8 @@ def check_static_source(
     )
 
 
-def normalize_manual_static_studio_fields(row: JsonObject) -> JsonObject:
-    root_mod = _require_root()
+def normalize_manual_static_studio_fields(row: JsonObject, *, root_mod: Any) -> JsonObject:
+    root_mod = cast(_AdminBridgeRoot, root_mod)
     return cast(
         JsonObject,
         root_mod._source_check_api.normalize_manual_static_studio_fields(
@@ -379,8 +381,8 @@ def normalize_manual_static_studio_fields(row: JsonObject) -> JsonObject:
     )
 
 
-def trigger_source_check(source_id: str, timeout_s: int = 12) -> JsonObject:
-    root_mod = _require_root()
+def trigger_source_check(source_id: str, timeout_s: int = 12, *, root_mod: Any) -> JsonObject:
+    root_mod = cast(_AdminBridgeRoot, root_mod)
     return cast(
         JsonObject,
         root_mod._source_check_api.trigger_source_check(

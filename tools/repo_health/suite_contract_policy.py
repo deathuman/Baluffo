@@ -1020,15 +1020,13 @@ def test_admin_bridge_delegates_source_check_orchestration_to_bridge_module(
     tree = _module_tree(target)
     text = target.read_text(encoding="utf-8")
     imported_modules = _imported_modules(tree)
-    trigger_fn = _find_function(tree, "trigger_source_check")
-    normalize_fn = _find_function(tree, "normalize_manual_static_studio_fields")
 
     assert "src.bridge" in imported_modules
     assert "from src.bridge import admin_registry_api as admin_registry_api_mod" in text
-    assert "admin_registry_api_mod.root = _ADMIN_ROOT" in text
-    assert "admin_registry_api_mod.trigger_source_check" in _function_call_names(trigger_fn)
-    assert "admin_registry_api_mod.normalize_manual_static_studio_fields" in _function_call_names(
-        normalize_fn
+    assert "admin_registry_api_mod.root =" not in text
+    assert "admin_registry_api_mod.trigger_source_check, root_mod=_ADMIN_ROOT" in text
+    assert (
+        "admin_registry_api_mod.normalize_manual_static_studio_fields, root_mod=_ADMIN_ROOT" in text
     )
 
 
@@ -1250,6 +1248,9 @@ def test_admin_bridge_root_stays_thin_entrypoint_surface(repo_root: Path) -> Non
     admin_entrypoint_runtime = (
         repo_root / "src" / "bridge" / "admin_entrypoint_runtime.py"
     ).read_text(encoding="utf-8")
+    admin_registry_api = (repo_root / "src" / "bridge" / "admin_registry_api.py").read_text(
+        encoding="utf-8"
+    )
     assert "admin_entrypoint_api_mod.root = sys.modules[__name__]" not in text
     assert "root: Any" not in admin_entrypoint_api
     assert "def _require_root(" not in admin_entrypoint_api
@@ -1262,7 +1263,9 @@ def test_admin_bridge_root_stays_thin_entrypoint_surface(repo_root: Path) -> Non
     )
     assert "admin_entrypoint_runtime_mod.configure_runtime_paths, root_mod=_ADMIN_ROOT" in text
     assert "admin_entrypoint_services_mod.root = _ADMIN_ROOT" in text
-    assert "admin_registry_api_mod.root = _ADMIN_ROOT" in text
+    assert "admin_registry_api_mod.root =" not in text
+    assert "root: Any" not in admin_registry_api
+    assert "def _require_root(" not in admin_registry_api
     assert "admin_task_runtime_mod.root = _ADMIN_ROOT" in text
     assert "def build_bridge_api(" in text
     assert "return admin_entrypoint_api_mod.build_bridge_api(config, root_mod=_ADMIN_ROOT)" in text
