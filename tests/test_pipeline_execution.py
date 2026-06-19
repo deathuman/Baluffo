@@ -820,7 +820,7 @@ def test_admin_bridge_pipeline_service_wires_load_json_object(monkeypatch, tmp_p
 
     monkeypatch.setattr(admin_bridge, "DISCOVERY_REPORT_PATH", tmp_path / "discovery-report.json")
     monkeypatch.setattr(admin_bridge, "JOBS_FETCH_REPORT_PATH", tmp_path / "fetch-report.json")
-    monkeypatch.setattr(admin_bridge, "_PIPELINE_SERVICE", None)
+    admin_bridge.BRIDGE_SERVICES.reset_pipeline_service()
 
     service = admin_bridge._get_pipeline_service()
 
@@ -1608,7 +1608,7 @@ def test_packaged_smoke_pipeline_completes_all_stages_without_journal_shadowing(
 
     # Ensure stub-success mode is active before the pipeline service is built.
     monkeypatch.setenv("BALUFFO_PACKAGED_SMOKE_PIPELINE_MODE", "stub-success")
-    monkeypatch.setattr(admin_bridge, "_PIPELINE_SERVICE", None)
+    admin_bridge.BRIDGE_SERVICES.reset_pipeline_service()
 
     # Use the same test root that the fixture configured.
     data_dir = _Path(admin_bridge_entrypoint_root)
