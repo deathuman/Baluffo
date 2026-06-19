@@ -39,6 +39,11 @@ def _normalize_text(value: Any) -> str:
     return " ".join(_clean_text(value).split()).lower()
 
 
+def _clean_label(value: Any, *, clean_text_func: Any = _clean_text) -> str:
+    text = clean_text_func(value)
+    return "" if text.lower() in {"n/a", "na", "none"} else text
+
+
 @dataclass(frozen=True)
 class _SourceRowBaseOptions:
     clean_text_func: Callable[[Any], str]
@@ -269,6 +274,193 @@ def normalize_jobs_fetch_report_source_row_base(
         health_score_default=100,
         health_score_max=None,
         include_duplicate_rate=True,
+    )
+
+
+def _apply_browser_escalation_fields(
+    target: dict[str, Any],
+    src: dict[str, Any],
+    *,
+    clean_text_func: Any,
+) -> None:
+    for key in ("browserEscalationEligible", "browserEscalationEnabled"):
+        if key in src:
+            target[key] = bool(src.get(key))
+    browser_reason = _clean_label(
+        src.get("browserEscalationEligibilityReason"),
+        clean_text_func=clean_text_func,
+    )
+    if browser_reason:
+        target["browserEscalationEligibilityReason"] = browser_reason
+
+
+def _apply_cache_fields(
+    target: dict[str, Any],
+    src: dict[str, Any],
+    *,
+    clean_text_func: Any,
+) -> None:
+    cache_decision = _clean_label(src.get("cacheDecision"), clean_text_func=clean_text_func)
+    if cache_decision:
+        target["cacheDecision"] = cache_decision
+    cache_reason = _clean_label(src.get("cacheDecisionReason"), clean_text_func=clean_text_func)
+    if cache_reason:
+        target["cacheDecisionReason"] = cache_reason
+
+
+def _apply_http_fields(
+    target: dict[str, Any],
+    src: dict[str, Any],
+    *,
+    clean_text_func: Any,
+) -> None:
+    http_status = _clamped_int(src.get("httpStatus"), 0, 0)
+    if http_status > 0:
+        target["httpStatus"] = http_status
+    http_etag = clean_text_func(src.get("httpEtag"))
+    if http_etag:
+        target["httpEtag"] = http_etag
+    http_last_modified = clean_text_func(src.get("httpLastModified"))
+    if http_last_modified:
+        target["httpLastModified"] = http_last_modified
+
+
+def _apply_listing_fields(
+    target: dict[str, Any],
+    src: dict[str, Any],
+    *,
+    clean_text_func: Any,
+) -> None:
+    listing_fingerprint = clean_text_func(src.get("listingFingerprint"))
+    if listing_fingerprint:
+        target["listingFingerprint"] = listing_fingerprint
+    listing_checked_at = clean_text_func(src.get("listingCheckedAt"))
+    if listing_checked_at:
+        target["listingCheckedAt"] = listing_checked_at
+    if "listingChanged" in src:
+        target["listingChanged"] = bool(src.get("listingChanged"))
+    if "detailSkippedByListingFingerprint" in src:
+        target["detailSkippedByListingFingerprint"] = bool(
+            src.get("detailSkippedByListingFingerprint")
+        )
+
+
+def enrich_fetch_report_source_row_metadata(
+    target: dict[str, Any],
+    src: dict[str, Any],
+    *,
+    clean_text_func: Any = _clean_text,
+) -> None:
+    _apply_browser_escalation_fields(target, src, clean_text_func=clean_text_func)
+    _apply_cache_fields(target, src, clean_text_func=clean_text_func)
+    _apply_http_fields(target, src, clean_text_func=clean_text_func)
+    _apply_listing_fields(target, src, clean_text_func=clean_text_func)
+
+
+def _apply_structured_migration_fields(
+    target: dict[str, Any],
+    src: dict[str, Any],
+    *,
+    clean_text_func: Any,
+) -> None:
+    text_fields = (
+        "structuredMigrationTargetAdapter",
+        "structuredMigrationPromotedAt",
+        "structuredMigrationDemotedAt",
+    )
+    count_fields = (
+        "structuredMigrationShadowRunCount",
+        "structuredMigrationHealthyRunCount",
+        "structuredMigrationLastKeptCount",
+    )
+    for key in text_fields:
+        if key in src:
+            target[key] = clean_text_func(src.get(key))
+    for key in count_fields:
+        if key in src:
+            target[key] = _clamped_int(src.get(key), 0, 0)
+    if "structuredMigrationLastDuplicateRate" in src:
+        target["structuredMigrationLastDuplicateRate"] = _float_or_zero(
+            src.get("structuredMigrationLastDuplicateRate")
+        )
+
+
+def _apply_browser_fallback_fields(
+    target: dict[str, Any],
+    src: dict[str, Any],
+    *,
+    clean_text_func: Any,
+) -> None:
+    text_fields = (
+        "browserFallbackQuarantinedUntilAt",
+        "browserFallbackLastAttemptAt",
+        "browserFallbackLastFailureAt",
+        "browserFallbackLastSuccessAt",
+        "browserFallbackLastError",
+    )
+    for key in text_fields:
+        if key in src:
+            target[key] = clean_text_func(src.get(key))
+    if "browserFallbackFailureCount" in src:
+        target["browserFallbackFailureCount"] = _clamped_int(
+            src.get("browserFallbackFailureCount"), 0, 0
+        )
+
+
+def _apply_group_cache_counts(
+    *,
+    target: dict[str, Any],
+    src: dict[str, Any],
+    prefix: str,
+    count_key: str,
+    decision_counts_key: str,
+    clean_text_func: Any,
+) -> None:
+    count = _clamped_int(src.get(count_key), 0, 0)
+    if count > 0:
+        target[count_key] = count
+    decision_counts = as_json_object(src.get(decision_counts_key))
+    if decision_counts:
+        target[decision_counts_key] = {
+            clean_text_func(key): _clamped_int(value, 0, 0)
+            for key, value in decision_counts.items()
+            if clean_text_func(key)
+        }
+    for suffix in ("SkippedCount", "RevalidatedCount", "NotModifiedCount", "RefreshedCount"):
+        key = f"{prefix}{suffix}"
+        value = _clamped_int(src.get(key), 0, 0)
+        if value > 0:
+            target[key] = value
+
+
+def enrich_jobs_fetch_report_source_row_fields(
+    target: dict[str, Any],
+    src: dict[str, Any],
+    *,
+    clean_text_func: Any = _clean_text,
+) -> None:
+    enrich_fetch_report_source_row_metadata(
+        target,
+        src,
+        clean_text_func=clean_text_func,
+    )
+    _apply_structured_migration_fields(target, src, clean_text_func=clean_text_func)
+    _apply_browser_fallback_fields(target, src, clean_text_func=clean_text_func)
+    _apply_group_cache_counts(
+        target=target,
+        src=src,
+        prefix="board",
+        count_key="boardCount",
+        decision_counts_key="boardCacheDecisionCounts",
+        clean_text_func=clean_text_func,
+    )
+    _apply_group_cache_counts(
+        target=target,
+        src=src,
+        prefix="subsource",
+        count_key="subsourceCount",
+        decision_counts_key="subsourceCacheDecisionCounts",
+        clean_text_func=clean_text_func,
     )
 
 

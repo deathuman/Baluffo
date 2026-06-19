@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.jobs.common.contracts_runtime import _float_or_zero
 from src.jobs.common.numbers import _clamped_int
 from src.jobs.common.taxonomy import (
     ClassificationContext,
@@ -17,7 +16,11 @@ from src.jobs.common.taxonomy import (
     has_explicit_empty_evidence,
 )
 from src.jobs.text_utils import clean_text, norm_text
-from src.shared.fetch_report_normalization import normalize_jobs_fetch_report_source_row_base
+from src.shared.fetch_report_normalization import (
+    enrich_fetch_report_source_row_metadata,
+    enrich_jobs_fetch_report_source_row_fields,
+    normalize_jobs_fetch_report_source_row_base,
+)
 from src.shared.json_shapes import as_json_list, as_json_object
 
 _CANONICAL_DROP_REASON_KEYS = (
@@ -102,51 +105,6 @@ def _normalize_loss(loss: Any) -> dict[str, Any]:
     }
 
 
-def _apply_browser_escalation_fields(target: dict[str, Any], src: dict[str, Any]) -> None:
-    for key in ("browserEscalationEligible", "browserEscalationEnabled"):
-        if key in src:
-            target[key] = bool(src.get(key))
-    browser_reason = _clean_label(src.get("browserEscalationEligibilityReason"))
-    if browser_reason:
-        target["browserEscalationEligibilityReason"] = browser_reason
-
-
-def _apply_cache_fields(target: dict[str, Any], src: dict[str, Any]) -> None:
-    cache_decision = _clean_label(src.get("cacheDecision"))
-    if cache_decision:
-        target["cacheDecision"] = cache_decision
-    cache_reason = _clean_label(src.get("cacheDecisionReason"))
-    if cache_reason:
-        target["cacheDecisionReason"] = cache_reason
-
-
-def _apply_http_fields(target: dict[str, Any], src: dict[str, Any]) -> None:
-    http_status = _clamped_int(src.get("httpStatus"), 0, 0)
-    if http_status > 0:
-        target["httpStatus"] = http_status
-    http_etag = clean_text(src.get("httpEtag"))
-    if http_etag:
-        target["httpEtag"] = http_etag
-    http_last_modified = clean_text(src.get("httpLastModified"))
-    if http_last_modified:
-        target["httpLastModified"] = http_last_modified
-
-
-def _apply_listing_fields(target: dict[str, Any], src: dict[str, Any]) -> None:
-    listing_fingerprint = clean_text(src.get("listingFingerprint"))
-    if listing_fingerprint:
-        target["listingFingerprint"] = listing_fingerprint
-    listing_checked_at = clean_text(src.get("listingCheckedAt"))
-    if listing_checked_at:
-        target["listingCheckedAt"] = listing_checked_at
-    if "listingChanged" in src:
-        target["listingChanged"] = bool(src.get("listingChanged"))
-    if "detailSkippedByListingFingerprint" in src:
-        target["detailSkippedByListingFingerprint"] = bool(
-            src.get("detailSkippedByListingFingerprint")
-        )
-
-
 def _normalize_detail_stats(stats: dict[str, Any]) -> dict[str, Any]:
     return {
         "downloader/request_count": _clamped_int(stats.get("downloader/request_count"), 0, 0),
@@ -225,7 +183,7 @@ def _normalize_detail_item(item: dict[str, Any]) -> dict[str, Any]:
         "classification": clean_text(item.get("classification")) or "",
         "browserFallbackRecommended": bool(item.get("browserFallbackRecommended")),
     }
-    _apply_browser_escalation_fields(clean_item, item)
+    enrich_fetch_report_source_row_metadata(clean_item, item, clean_text_func=clean_text)
 
     item_bucket = _clean_label(item.get("failureBucket"))
     if item_bucket:
@@ -234,9 +192,6 @@ def _normalize_detail_item(item: dict[str, Any]) -> dict[str, Any]:
     if item_zk:
         clean_item["zeroKeptClassification"] = item_zk
 
-    _apply_cache_fields(clean_item, item)
-    _apply_http_fields(clean_item, item)
-    _apply_listing_fields(clean_item, item)
     _apply_provider_migration_fields(clean_item, item)
     _normalize_dead_listing_fields(clean_item, item)
 
@@ -343,71 +298,6 @@ def _apply_zero_kept_classification(
     return failure_bucket, classification, zk_classification
 
 
-def _apply_structured_migration_fields(target: dict[str, Any], src: dict[str, Any]) -> None:
-    text_fields = (
-        "structuredMigrationTargetAdapter",
-        "structuredMigrationPromotedAt",
-        "structuredMigrationDemotedAt",
-    )
-    count_fields = (
-        "structuredMigrationShadowRunCount",
-        "structuredMigrationHealthyRunCount",
-        "structuredMigrationLastKeptCount",
-    )
-    for key in text_fields:
-        if key in src:
-            target[key] = clean_text(src.get(key))
-    for key in count_fields:
-        if key in src:
-            target[key] = _clamped_int(src.get(key), 0, 0)
-    if "structuredMigrationLastDuplicateRate" in src:
-        target["structuredMigrationLastDuplicateRate"] = _float_or_zero(
-            src.get("structuredMigrationLastDuplicateRate")
-        )
-
-
-def _apply_browser_fallback_fields(target: dict[str, Any], src: dict[str, Any]) -> None:
-    text_fields = (
-        "browserFallbackQuarantinedUntilAt",
-        "browserFallbackLastAttemptAt",
-        "browserFallbackLastFailureAt",
-        "browserFallbackLastSuccessAt",
-        "browserFallbackLastError",
-    )
-    for key in text_fields:
-        if key in src:
-            target[key] = clean_text(src.get(key))
-    if "browserFallbackFailureCount" in src:
-        target["browserFallbackFailureCount"] = _clamped_int(
-            src.get("browserFallbackFailureCount"), 0, 0
-        )
-
-
-def _apply_group_cache_counts(
-    *,
-    target: dict[str, Any],
-    src: dict[str, Any],
-    prefix: str,
-    count_key: str,
-    decision_counts_key: str,
-) -> None:
-    count = _clamped_int(src.get(count_key), 0, 0)
-    if count > 0:
-        target[count_key] = count
-    decision_counts = as_json_object(src.get(decision_counts_key))
-    if decision_counts:
-        target[decision_counts_key] = {
-            clean_text(key): _clamped_int(value, 0, 0)
-            for key, value in decision_counts.items()
-            if clean_text(key)
-        }
-    for suffix in ("SkippedCount", "RevalidatedCount", "NotModifiedCount", "RefreshedCount"):
-        key = f"{prefix}{suffix}"
-        value = _clamped_int(src.get(key), 0, 0)
-        if value > 0:
-            target[key] = value
-
-
 def _apply_stage_loss_and_exclusion_fields(target: dict[str, Any], src: dict[str, Any]) -> None:
     clean_stage_timings = _normalize_stage_timings(src)
     if any(clean_stage_timings.values()):
@@ -508,27 +398,11 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
 
     failure_bucket, _, _ = _apply_zero_kept_classification(normalized, src)
 
-    _apply_browser_escalation_fields(normalized, src)
     _normalize_dead_listing_fields(normalized, src)
-    _apply_cache_fields(normalized, src)
-    _apply_http_fields(normalized, src)
-    _apply_listing_fields(normalized, src)
-
-    _apply_structured_migration_fields(normalized, src)
-    _apply_browser_fallback_fields(normalized, src)
-    _apply_group_cache_counts(
-        target=normalized,
-        src=src,
-        prefix="board",
-        count_key="boardCount",
-        decision_counts_key="boardCacheDecisionCounts",
-    )
-    _apply_group_cache_counts(
-        target=normalized,
-        src=src,
-        prefix="subsource",
-        count_key="subsourceCount",
-        decision_counts_key="subsourceCacheDecisionCounts",
+    enrich_jobs_fetch_report_source_row_fields(
+        normalized,
+        src,
+        clean_text_func=clean_text,
     )
     _apply_stage_loss_and_exclusion_fields(normalized, src)
     _apply_dynamic_redundant_provider_fields(normalized, src)
