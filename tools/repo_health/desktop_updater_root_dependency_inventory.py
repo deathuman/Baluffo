@@ -14,8 +14,8 @@ TRACKED_MODULES = (
     "src/ship/desktop_updater_install.py",
 )
 
-EXPECTED_DEPENDENCY_COUNT = 24
-EXPECTED_REFERENCE_COUNT = 38
+EXPECTED_DEPENDENCY_COUNT = 21
+EXPECTED_REFERENCE_COUNT = 35
 
 CATEGORIES = {
     "constant",
@@ -36,10 +36,7 @@ STDLIB_BINDINGS: set[str] = set()
 
 UI_HELPERS = {
     "NullProgressWindow",
-    "_drain_helper_queue",
-    "_helper_failure_dialog_enabled",
     "_helper_relaunch_verify_timeout_s",
-    "_helper_window_layout",
     "_launch_executable",
 }
 

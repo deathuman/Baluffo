@@ -108,8 +108,7 @@ class HelperProgressWindow:
             self._closed.wait()
             return
 
-        module = _module()
-        layout = module._helper_window_layout(initial_message)
+        layout = _helper_window_layout(initial_message)
         tokens = layout["tokens"]
         root_window = tk.Tk()
         root_window.title(HELPER_BRAND_TEXT)
@@ -216,7 +215,7 @@ class HelperProgressWindow:
                 with contextlib.suppress(tk.TclError, OSError):
                     bar.stop()
 
-            should_close = module._drain_helper_queue(
+            should_close = _drain_helper_queue(
                 self,
                 on_message=message_var.set,
                 on_close=stop_bar,
@@ -319,8 +318,7 @@ def _launch_executable(
 
 
 def _show_message(title: str, message: str) -> None:
-    module = _module()
-    if not module._helper_failure_dialog_enabled():
+    if not _helper_failure_dialog_enabled():
         return
     if os.name == "nt":
         import ctypes
