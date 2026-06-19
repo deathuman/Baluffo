@@ -282,7 +282,7 @@ def maybe_fetch_kojima_job_listing_html(
             with urlopen(req, timeout=timeout_s) as response:
                 text = response.read().decode("utf-8", errors="ignore")
             return text if clean_text(text) else ""
-        except Exception as exc:  # noqa: BLE001
+        except (OSError, TimeoutError, ValueError) as exc:
             last_error = exc
             if attempt >= max(0, retries):
                 break

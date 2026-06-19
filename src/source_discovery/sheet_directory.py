@@ -278,16 +278,6 @@ def _append_sheet_entry_candidate(
             }
         )
         return True
-    except Exception as exc:  # noqa: BLE001
-        failures.append(
-            {
-                "name": careers_url or studio or "unknown",
-                "adapter": "sheet_directory",
-                "error": f"unexpected error validating careers url: {exc}",
-                "stage": "directory_detail_parse",
-            }
-        )
-        return True
 
     evidence_types, evidence_score, weak_signal = _sheet_evidence_for_openings_flag(openings_flag)
     row = build_known_directory_entry_candidate(
