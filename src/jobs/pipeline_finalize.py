@@ -93,6 +93,7 @@ from .pipeline_run_setup import canonicalize_existing_output_row
 OUTPUT_FIELDS = common_config.OUTPUT_FIELDS
 LIGHTWEIGHT_OUTPUT_FIELDS = common_config.LIGHTWEIGHT_OUTPUT_FIELDS
 
+_EXPECTED_SOURCE_POLICY_EXPORT_EXCEPTIONS = (OSError, TypeError, ValueError)
 _MISSING_COUNTRY_PLACEHOLDERS = {"", "unknown", "n/a", "na", "none", "null"}
 
 
@@ -753,6 +754,66 @@ def _completed_task_progress(summary: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _export_source_policy_recommendations(
+    *,
+    report_payload: dict[str, Any],
+    source_policy_recommendations_path: Path,
+    source_policy_review_state_path: Path,
+    finished_at: str,
+) -> None:
+    source_policy_recommendation_warning = ""
+    source_policy_review_state_warning = ""
+    updated_recommendation_pair_count = len(
+        json_object_rows(report_payload["redundantStaticProposals"].get("proposals"))
+    )
+    try:
+        prior_recommendations, source_policy_recommendation_warning = (
+            read_source_policy_recommendations_artifact(source_policy_recommendations_path)
+        )
+        source_policy_review_state, source_policy_review_state_warning = (
+            read_source_policy_review_state_artifact(source_policy_review_state_path)
+        )
+        source_policy_recommendations = build_source_policy_recommendations_artifact(
+            prior_artifact=prior_recommendations,
+            redundant_static_proposals=report_payload["redundantStaticProposals"],
+            observed_at=finished_at,
+            review_state=source_policy_review_state,
+        )
+        write_atomic_if_changed(
+            source_policy_recommendations_path,
+            json.dumps(source_policy_recommendations, indent=2, ensure_ascii=False),
+        )
+        review_summary = source_policy_review_state.get("summary", {})
+        report_payload["sourcePolicyRecommendationExport"] = {
+            "status": "ok",
+            "artifactPath": str(source_policy_recommendations_path),
+            "reviewStatePath": str(source_policy_review_state_path),
+            "updatedPairCount": updated_recommendation_pair_count,
+            "reviewStatePairCount": int(review_summary.get("totalPairs") or 0),
+            "manualForcePausedCount": int(review_summary.get("forcePausedCount") or 0),
+            **(
+                {"warning": source_policy_recommendation_warning}
+                if source_policy_recommendation_warning
+                else {}
+            ),
+            **(
+                {"reviewStateWarning": source_policy_review_state_warning}
+                if source_policy_review_state_warning
+                else {}
+            ),
+        }
+    except _EXPECTED_SOURCE_POLICY_EXPORT_EXCEPTIONS as exc:
+        report_payload["sourcePolicyRecommendationExport"] = {
+            "status": "warning",
+            "artifactPath": str(source_policy_recommendations_path),
+            "reviewStatePath": str(source_policy_review_state_path),
+            "updatedPairCount": 0,
+            "reviewStatePairCount": 0,
+            "manualForcePausedCount": 0,
+            "warning": f"source_policy_recommendation_export_failed:{type(exc).__name__}",
+        }
+
+
 def finalize_pipeline_run(
     *,
     paths,
@@ -977,59 +1038,12 @@ def finalize_pipeline_run(
             "artifactPath": str(paths.dedup_review_state_path),
             "reviewedPairCount": int(dedup_review_state.get("summary", {}).get("totalPairs") or 0),
         }
-    source_policy_recommendation_warning = ""
-    source_policy_review_state_warning = ""
-    source_policy_recommendations_path = paths.source_policy_recommendations_path
-    source_policy_review_state_path = paths.source_policy_review_state_path
-    updated_recommendation_pair_count = len(
-        json_object_rows(report_payload["redundantStaticProposals"].get("proposals"))
+    _export_source_policy_recommendations(
+        report_payload=report_payload,
+        source_policy_recommendations_path=paths.source_policy_recommendations_path,
+        source_policy_review_state_path=paths.source_policy_review_state_path,
+        finished_at=finished_at,
     )
-    try:
-        prior_recommendations, source_policy_recommendation_warning = (
-            read_source_policy_recommendations_artifact(source_policy_recommendations_path)
-        )
-        source_policy_review_state, source_policy_review_state_warning = (
-            read_source_policy_review_state_artifact(source_policy_review_state_path)
-        )
-        source_policy_recommendations = build_source_policy_recommendations_artifact(
-            prior_artifact=prior_recommendations,
-            redundant_static_proposals=report_payload["redundantStaticProposals"],
-            observed_at=finished_at,
-            review_state=source_policy_review_state,
-        )
-        write_atomic_if_changed(
-            source_policy_recommendations_path,
-            json.dumps(source_policy_recommendations, indent=2, ensure_ascii=False),
-        )
-        review_summary = source_policy_review_state.get("summary", {})
-        report_payload["sourcePolicyRecommendationExport"] = {
-            "status": "ok",
-            "artifactPath": str(source_policy_recommendations_path),
-            "reviewStatePath": str(source_policy_review_state_path),
-            "updatedPairCount": updated_recommendation_pair_count,
-            "reviewStatePairCount": int(review_summary.get("totalPairs") or 0),
-            "manualForcePausedCount": int(review_summary.get("forcePausedCount") or 0),
-            **(
-                {"warning": source_policy_recommendation_warning}
-                if source_policy_recommendation_warning
-                else {}
-            ),
-            **(
-                {"reviewStateWarning": source_policy_review_state_warning}
-                if source_policy_review_state_warning
-                else {}
-            ),
-        }
-    except Exception as exc:  # noqa: BLE001
-        report_payload["sourcePolicyRecommendationExport"] = {
-            "status": "warning",
-            "artifactPath": str(source_policy_recommendations_path),
-            "reviewStatePath": str(source_policy_review_state_path),
-            "updatedPairCount": 0,
-            "reviewStatePairCount": 0,
-            "manualForcePausedCount": 0,
-            "warning": f"source_policy_recommendation_export_failed:{type(exc).__name__}",
-        }
     report_payload["healthSummary"] = {
         "topFailingDomains": health_module.get_top_failing_sources(source_state_rows, limit=10),
         "topZeroKeptDomains": health_module.get_top_zero_kept_sources(source_state_rows, limit=10),
