@@ -1,4 +1,6 @@
 import builtins
+import sys
+import types
 
 import pytest
 
@@ -32,6 +34,41 @@ class _InvalidCharsetResponse(_Response):
         return "missing-codec"
 
 
+class _FakePlaywrightError(Exception):
+    pass
+
+
+def _install_fake_playwright(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    launch_error: Exception | None = None,
+) -> None:
+    playwright_pkg = types.ModuleType("playwright")
+    sync_api_mod = types.ModuleType("playwright.sync_api")
+
+    class _Chromium:
+        def launch(self, *, headless: bool) -> object:
+            assert headless is True
+            if launch_error is not None:
+                raise launch_error
+            return object()
+
+    class _Playwright:
+        chromium = _Chromium()
+
+    class _SyncPlaywright:
+        def __enter__(self) -> _Playwright:
+            return _Playwright()
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    sync_api_mod.Error = _FakePlaywrightError
+    sync_api_mod.sync_playwright = lambda: _SyncPlaywright()
+    monkeypatch.setitem(sys.modules, "playwright", playwright_pkg)
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", sync_api_mod)
+
+
 def test_playwright_import_failure_returns_unavailable(monkeypatch) -> None:
     real_import = builtins.__import__
 
@@ -59,6 +96,31 @@ def test_playwright_import_does_not_hide_unexpected_failures(monkeypatch) -> Non
     monkeypatch.setattr(builtins, "__import__", fail_import)
 
     with pytest.raises(RuntimeError, match="broken import side effect"):
+        source_check_http.try_fetch_with_playwright(
+            "https://example.com/careers",
+            timeout_s=5,
+        )
+
+
+def test_playwright_runtime_failure_returns_error(monkeypatch) -> None:
+    _install_fake_playwright(
+        monkeypatch,
+        launch_error=_FakePlaywrightError("browser launch failed"),
+    )
+
+    assert source_check_http.try_fetch_with_playwright(
+        "https://example.com/careers",
+        timeout_s=5,
+    ) == ("", "browser launch failed")
+
+
+def test_playwright_runtime_does_not_hide_unexpected_failures(monkeypatch) -> None:
+    _install_fake_playwright(
+        monkeypatch,
+        launch_error=AssertionError("browser helper bug"),
+    )
+
+    with pytest.raises(AssertionError, match="browser helper bug"):
         source_check_http.try_fetch_with_playwright(
             "https://example.com/careers",
             timeout_s=5,

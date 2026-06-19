@@ -18,6 +18,7 @@ from src.source_registry import normalize_source_url
 def try_fetch_with_playwright(url: str, timeout_s: int) -> tuple[str, str]:
     """Best-effort browser fallback for anti-bot pages; returns (html, error)."""
     try:
+        from playwright.sync_api import Error as PlaywrightError
         from playwright.sync_api import sync_playwright
     except ImportError:
         return "", "browser fallback unavailable (playwright is not installed)"
@@ -31,7 +32,7 @@ def try_fetch_with_playwright(url: str, timeout_s: int) -> tuple[str, str]:
             if not html:
                 return "", "browser fallback returned empty content"
             return html, ""
-    except Exception as exc:  # noqa: BLE001
+    except (OSError, PlaywrightError) as exc:
         return "", str(exc)
 
 
