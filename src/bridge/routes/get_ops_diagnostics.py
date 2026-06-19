@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any
+from pathlib import Path
+from typing import Any, Protocol
 
-from src.bridge.api import BridgeApi
 from src.bridge.container_mode import is_container_runtime
 from src.bridge.discovery_audit_artifacts import get_discovery_audit_artifacts_payload
 from src.bridge.performance_profile import snapshot_performance_profile
@@ -15,7 +15,21 @@ from src.shared.timing_counters import snapshot_counters
 from src.storage_metrics import snapshot_storage_metrics
 
 
-def _performance_profile_runtime(api: BridgeApi) -> dict[str, Any]:
+class _OpsDiagnosticsRouteApi(Protocol):
+    DISCOVERY_LOG_PATH: Path
+    DISCOVERY_REPORT_PATH: Path
+    JOBS_FETCH_REPORT_PATH: Path
+    app_version: str
+    runtime_config: Any
+
+    def compute_fetcher_metrics(self, *, window_runs: int = 20) -> dict[str, Any]: ...
+
+    def get_storage_health_payload(self) -> dict[str, Any]: ...
+
+    def load_json_object(self, path: Path, default: Any = None) -> dict[str, Any]: ...
+
+
+def _performance_profile_runtime(api: _OpsDiagnosticsRouteApi) -> dict[str, Any]:
     runtime_config = getattr(api, "runtime_config", None)
     owner_mode = str(getattr(runtime_config, "owner_mode", "") or "")
     if is_container_runtime(api):
@@ -34,7 +48,7 @@ def _performance_profile_runtime(api: BridgeApi) -> dict[str, Any]:
 def handle_ops_diagnostic_routes(
     handler: BridgeResponseWriter,
     *,
-    api: BridgeApi,
+    api: _OpsDiagnosticsRouteApi,
     path: str,
     query: dict[str, list[str]],
 ) -> bool:

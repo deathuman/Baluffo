@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, Protocol
 
-from src.bridge.api import BridgeApi
 from src.storage_metrics import duration_ms, record_storage_read
 
 
-def storage_metrics_data_dir(api: BridgeApi) -> Path:
+class _StorageMetricsApi(Protocol):
+    JOBS_FETCH_REPORT_PATH: Path
+    runtime_config: Any
+
+
+def storage_metrics_data_dir(api: _StorageMetricsApi) -> Path:
     data_dir = getattr(api.runtime_config, "data_dir", None)
     if data_dir:
         return Path(data_dir).expanduser().resolve()
@@ -16,7 +21,7 @@ def storage_metrics_data_dir(api: BridgeApi) -> Path:
 
 
 def record_storage_read_metric(
-    api: BridgeApi,
+    api: _StorageMetricsApi,
     *,
     surface: str,
     artifact: str,
