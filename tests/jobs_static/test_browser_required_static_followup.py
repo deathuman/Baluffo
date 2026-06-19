@@ -1,3 +1,5 @@
+import pytest
+
 from src.jobs.adapters.plugins.static import ncsoft
 from src.jobs.adapters.plugins.static._rendered_cards import (
     can_handle_rendered_cards,
@@ -82,6 +84,54 @@ def test_ncsoft_plugin_uses_browser_listing_before_detail_fetch() -> None:
 
     assert browser_calls == [listing_url]
     assert [row["title"] for row in rows] == ["Public Relations Assistant"]
+
+
+def test_ncsoft_plugin_does_not_swallow_unexpected_listing_fetch_bug() -> None:
+    listing_url = "https://nca.ncsoft.com/en-US/careers"
+
+    def broken_fetch(_url: str, _timeout: int) -> str:
+        raise AssertionError("broken ncsoft listing fetch")
+
+    with pytest.raises(AssertionError, match="broken ncsoft listing fetch"):
+        ncsoft.run(
+            fetch_text=broken_fetch,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+            pages=[listing_url],
+            source_row={
+                "id": "static:listing_url:https://nca.ncsoft.com/en-us/careers",
+                "name": "NCSoft (Sheet)",
+                "company": "NCSoft",
+            },
+        )
+
+
+def test_ncsoft_plugin_does_not_swallow_unexpected_detail_fetch_bug() -> None:
+    listing_url = "https://nca.ncsoft.com/en-US/careers"
+    detail_url = "https://nca.ncsoft.com/en-US/careers/16408"
+    listing_html = '<a href="/en-US/careers/16408">Customer Service Specialist</a>'
+
+    def broken_detail_fetch(url: str, _timeout: int) -> str:
+        if url == listing_url:
+            return listing_html
+        if url == detail_url:
+            raise AssertionError("broken ncsoft detail fetch")
+        raise AssertionError(f"unexpected URL {url}")
+
+    with pytest.raises(AssertionError, match="broken ncsoft detail fetch"):
+        ncsoft.run(
+            fetch_text=broken_detail_fetch,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+            pages=[listing_url],
+            source_row={
+                "id": "static:listing_url:https://nca.ncsoft.com/en-us/careers",
+                "name": "NCSoft (Sheet)",
+                "company": "NCSoft",
+            },
+        )
 
 
 def test_rollic_rendered_cards_plugin_uses_browser_after_blocked_http() -> None:

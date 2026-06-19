@@ -12,8 +12,11 @@ from src.jobs.adapters.html_parsers import strip_html_text
 from src.jobs.adapters.parsers.location import normalize_location_details
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
+from src.jobs.adapters.static_runtime_support import is_static_fetch_fallback_exception
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, normalize_url
+
+_EXPECTED_NCSOFT_FETCH_EXCEPTIONS = (OSError, RuntimeError, ValueError)
 
 _JOB_LINK_RE = re.compile(
     r'(?is)<a[^>]+href=["\']([^"\']*/(?:en-us|en-US)/careers/\d+[^"\']*)["\'][^>]*>(.*?)</a>'
@@ -194,7 +197,9 @@ def _listing_html(
             url=page_url,
             timeout_s=timeout_s,
         )
-    except Exception as exc:  # noqa: BLE001
+    except _EXPECTED_NCSOFT_FETCH_EXCEPTIONS as exc:
+        if not is_static_fetch_fallback_exception(exc):
+            raise
         classification, recommend = _heuristics.classify_fetch_exception(exc)
         if callable(try_playwright) and recommend:
             html, _ = try_playwright(page_url, max(3, min(timeout_s, 25)))
@@ -227,7 +232,9 @@ def _rows_from_links(
                 url=link,
                 timeout_s=timeout_s,
             )
-        except Exception:  # noqa: BLE001
+        except _EXPECTED_NCSOFT_FETCH_EXCEPTIONS as exc:
+            if not is_static_fetch_fallback_exception(exc):
+                raise
             detail_html = ""
         title = _detail_title(detail_html, anchor_text)
         if not title:
