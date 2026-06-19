@@ -22,6 +22,10 @@ from .lifecycle import (
     provider_revalidate_not_modified,
     skip_provider_for_cache,
 )
+from .source_errors import (
+    EXPECTED_PROVIDER_API_SOURCE_EXCEPTIONS,
+    reraise_unexpected_provider_api_source_exception,
+)
 
 ORACLE_HCM_REQUISITIONS_PATH = "/hcmRestApi/resources/11.13.18.05/recruitingCEJobRequisitions"
 ORACLE_HCM_QUERY = {
@@ -196,7 +200,8 @@ def _run_oracle_hcm_registry_source(
             row["adapter"] = "oracle_hcm"
             row["studio"] = studio
         source_jobs.extend(parsed)
-    except Exception as exc:  # noqa: BLE001
+    except EXPECTED_PROVIDER_API_SOURCE_EXCEPTIONS as exc:
+        reraise_unexpected_provider_api_source_exception(exc)
         entry_report["status"] = "error"
         error_text = _record_oracle_error(entry_report, exc)
         entry_report["durationMs"] = _elapsed_ms(source_started)

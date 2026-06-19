@@ -24,6 +24,10 @@ from .lifecycle import (
     provider_revalidate_not_modified,
     skip_provider_for_cache,
 )
+from .source_errors import (
+    EXPECTED_PROVIDER_API_SOURCE_EXCEPTIONS,
+    reraise_unexpected_provider_api_source_exception,
+)
 
 TEAMTAILOR_DETAIL_FETCH_CONCURRENCY = 6
 TEAMTAILOR_SOURCE_FETCH_CONCURRENCY = 4
@@ -102,7 +106,8 @@ def _append_teamtailor_jobs(
             )
             if fallback_row:
                 return [fallback_row], ""
-        except Exception as exc:  # noqa: BLE001
+        except EXPECTED_PROVIDER_API_SOURCE_EXCEPTIONS as exc:
+            reraise_unexpected_provider_api_source_exception(exc)
             return [], f"teamtailor:{source_name}:{job_link}: {exc}"
         return [], ""
 
@@ -217,7 +222,8 @@ def _run_teamtailor_sources(
                 errors=source_errors,
             )
             entry_report["detailFetchMs"] = _elapsed_ms(detail_started)
-        except Exception as exc:  # noqa: BLE001
+        except EXPECTED_PROVIDER_API_SOURCE_EXCEPTIONS as exc:
+            reraise_unexpected_provider_api_source_exception(exc)
             entry_report["status"] = "error"
             entry_report["error"] = str(exc)
             source_errors.append(f"teamtailor:{source_name}:{listing_url}: {exc}")

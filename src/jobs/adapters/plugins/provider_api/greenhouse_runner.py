@@ -22,6 +22,10 @@ from .lifecycle import (
     provider_revalidate_not_modified,
     skip_provider_for_cache,
 )
+from .source_errors import (
+    EXPECTED_PROVIDER_API_SOURCE_EXCEPTIONS,
+    reraise_unexpected_provider_api_source_exception,
+)
 
 GREENHOUSE_BOARD_FETCH_CONCURRENCY = 6
 
@@ -93,7 +97,8 @@ def _run_greenhouse_boards(
             entry_report["fetchedCount"] = len(parsed)
             entry_report["keptCount"] = len(parsed)
             board_jobs.extend(parsed)
-        except Exception as exc:  # noqa: BLE001
+        except EXPECTED_PROVIDER_API_SOURCE_EXCEPTIONS as exc:
+            reraise_unexpected_provider_api_source_exception(exc)
             entry_report["status"] = "error"
             entry_report["error"] = str(exc)
             error_provider_url = url

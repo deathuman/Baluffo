@@ -21,6 +21,10 @@ from .lifecycle import (
     provider_revalidate_not_modified,
     skip_provider_for_cache,
 )
+from .source_errors import (
+    EXPECTED_PROVIDER_API_SOURCE_EXCEPTIONS,
+    reraise_unexpected_provider_api_source_exception,
+)
 
 ParseHtml = Callable[[str, str, str], list[RawJob]]
 BuildUrl = Callable[[dict[str, object]], str]
@@ -85,7 +89,8 @@ def _fetch_board_html(
             False,
             "",
         )
-    except Exception as exc:  # noqa: BLE001
+    except EXPECTED_PROVIDER_API_SOURCE_EXCEPTIONS as exc:
+        reraise_unexpected_provider_api_source_exception(exc)
         error_text = str(exc)
         if (
             not bool(source.get("antiBotBrowserRetry"))
@@ -315,7 +320,8 @@ def _run_html_board_sources(
                 anti_bot_browser_retry=bool(source.get("antiBotBrowserRetry")),
             )
             jobs.extend(parsed)
-        except Exception as exc:  # noqa: BLE001
+        except EXPECTED_PROVIDER_API_SOURCE_EXCEPTIONS as exc:
+            reraise_unexpected_provider_api_source_exception(exc)
             entry_report["status"] = "error"
             entry_report["error"] = str(exc)
             _mark_antibot_retry_error(entry_report, source, str(exc))
