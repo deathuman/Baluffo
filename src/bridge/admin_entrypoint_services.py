@@ -386,11 +386,21 @@ def _require_root() -> Any:
 def get_sync_service() -> _SyncServiceLike:
     root_mod = _require_root()
     data_dir = Path(root_mod.RUNTIME_CONFIG.data_dir).resolve()
-    with root_mod._SYNC_SERVICE_LOCK:
-        if root_mod._SYNC_SERVICE is not None and root_mod._SYNC_SERVICE_DATA_DIR == data_dir:
-            return cast(_SyncServiceLike, root_mod._SYNC_SERVICE)
-        root_mod._SYNC_SERVICE_DATA_DIR = data_dir
-        root_mod._SYNC_SERVICE = root_mod.SyncService(
+    services = root_mod.BRIDGE_SERVICES
+    with services.sync_service_lock:
+        if (
+            services.sync_service is None
+            and root_mod._SYNC_SERVICE is not None
+            and root_mod._SYNC_SERVICE_DATA_DIR == data_dir
+        ):
+            services.sync_service = root_mod._SYNC_SERVICE
+            services.sync_service_data_dir = root_mod._SYNC_SERVICE_DATA_DIR
+        if services.sync_service is not None and services.sync_service_data_dir == data_dir:
+            root_mod._SYNC_SERVICE = services.sync_service
+            root_mod._SYNC_SERVICE_DATA_DIR = services.sync_service_data_dir
+            return cast(_SyncServiceLike, services.sync_service)
+        services.sync_service_data_dir = data_dir
+        services.sync_service = root_mod.SyncService(
             data_dir=data_dir,
             source_sync=root_mod.source_sync_module,
             bridge_log=root_mod.bridge_log,
@@ -403,7 +413,9 @@ def get_sync_service() -> _SyncServiceLike:
             get_registry_auto_heal_report=root_mod.get_registry_auto_heal_report,
             task_lifecycle=root_mod._TASK_LIFECYCLE,
         )
-        return cast(_SyncServiceLike, root_mod._SYNC_SERVICE)
+        root_mod._SYNC_SERVICE = services.sync_service
+        root_mod._SYNC_SERVICE_DATA_DIR = services.sync_service_data_dir
+        return cast(_SyncServiceLike, services.sync_service)
 
 
 def get_sync_state() -> _SyncStateLike:

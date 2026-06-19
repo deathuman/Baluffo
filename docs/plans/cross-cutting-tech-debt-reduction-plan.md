@@ -16,7 +16,7 @@ A systematic analysis identified twelve cross-cutting tech debt clusters that im
 | Area | Severity | Current status | Footprint / remaining work |
 |------|----------|----------------|----------------------------|
 | BridgeApi god object | P0 | Partial | Current-task default payload builders merged; source-derived field classification guardrail added and hardened for dynamic API lookups. Field deletion/split still open. |
-| admin_bridge legacy globals | P0 | Partial | 5-way root injection seam now has explicit coverage. `BridgeServices` holder exists and owns desktop-update and registry service state while mirroring legacy globals. Sync, discovery, and pipeline singleton migration remain open. |
+| admin_bridge legacy globals | P0 | Partial | 5-way root injection seam now has explicit coverage. `BridgeServices` holder exists and owns sync, desktop-update, and registry service state while mirroring legacy globals. Discovery and pipeline singleton migration remain open. |
 | get_routes.py monolith | P0 | Done for route-owned behavior | Partial JSON parser, provider-coverage link backfill, registry source table compaction, fetch-report source-run read support, ops diagnostics routes, ops status routes, admin bootstrap route, admin ops-tab counts route, app routes, registry routes, registry-conflicts route, sync status route, pipeline task routes, discovery routes, fetch-report routes, source-policy recommendations route, and desktop local-data GET routes extracted with tests. `handle_get` remains the public delegating entrypoint. |
 | Data model drift (CanonicalJob) | P0 | Done for missing-field slice | `CanonicalJobSchema` now preserves `lifecycleEvent`, `lifecycleReason`, `locations`, and `locationSummary`; `DATA_CONTRACT.md` documents locations fields. `id` consistency remains deferred by strategy. |
 | Fetch report normalization duplicated | P0 | Partial | Shared-compatible task-progress, socialSummary, timingSummary, and source-row base helpers extracted while preserving bridge/jobs shape differences. Deeper source-row enrichment differences remain open. |
@@ -80,6 +80,7 @@ Completed on 2026-06-17:
 - **Server GET handler boundary centralization:** `_handle_get_request` now delegates ordinary HTTP failure conversion to `run_route_boundary`, removing the local `BLE001` suppression while preserving `http_get_handler_failed` logging, 500 payloads, and route timing.
 - **BridgeServices desktop-update holder migration:** `BridgeServices` now owns the desktop-update service instance/data-dir/lock while `admin_bridge` keeps legacy `_DESKTOP_UPDATE_SERVICE*` globals mirrored for compatibility.
 - **BridgeServices registry holder migration:** `BridgeServices` now owns the registry service instance/path tuple/lock while `admin_bridge` keeps legacy `_REGISTRY_SERVICE*` globals mirrored for compatibility.
+- **BridgeServices sync holder migration:** `BridgeServices` now owns the sync service instance/data-dir/lock while `admin_bridge` keeps legacy `_SYNC_SERVICE*` globals mirrored for compatibility.
 
 Verification evidence for this slice:
 

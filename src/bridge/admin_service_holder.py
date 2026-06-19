@@ -23,6 +23,10 @@ class BridgeServices:
     desktop_update_service_data_dir: Path | None = None
     desktop_update_service_lock: Any = field(default_factory=threading.RLock)
 
+    def reset_sync_service(self) -> None:
+        self.sync_service = None
+        self.sync_service_data_dir = None
+
     def reset_desktop_update_service(self) -> None:
         self.desktop_update_service = None
         self.desktop_update_service_data_dir = None

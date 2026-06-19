@@ -149,3 +149,64 @@ def test_runtime_path_reconfiguration_resets_registry_holder(
         Path(admin_bridge.PENDING_PATH),
         Path(admin_bridge.REJECTED_PATH),
     )
+
+
+def test_sync_service_is_owned_by_bridge_services_holder(
+    admin_bridge_entrypoint_root: Path,
+) -> None:
+    data_dir = admin_bridge_entrypoint_root / "data"
+    admin_bridge.configure_runtime_paths(_runtime_config(admin_bridge_entrypoint_root, data_dir))
+
+    service = admin_bridge._get_sync_service()
+
+    assert admin_bridge.BRIDGE_SERVICES.sync_service is service
+    assert admin_bridge.BRIDGE_SERVICES.sync_service_data_dir == data_dir.resolve()
+    assert admin_bridge._SYNC_SERVICE is service
+    assert admin_bridge._SYNC_SERVICE_DATA_DIR == data_dir.resolve()
+    assert admin_bridge._get_sync_service() is service
+
+
+def test_sync_service_holder_adopts_legacy_patch_surface(
+    admin_bridge_entrypoint_root: Path,
+) -> None:
+    data_dir = admin_bridge_entrypoint_root / "data"
+    admin_bridge.configure_runtime_paths(_runtime_config(admin_bridge_entrypoint_root, data_dir))
+    legacy_service = SimpleNamespace(
+        name="legacy-sync-service",
+        _sync_state=object(),
+        wait_for_sync_tasks=lambda *_args, **_kwargs: None,
+    )
+    admin_bridge.BRIDGE_SERVICES.reset_sync_service()
+    admin_bridge._SYNC_SERVICE = legacy_service
+    admin_bridge._SYNC_SERVICE_DATA_DIR = data_dir.resolve()
+
+    service = admin_bridge._get_sync_service()
+
+    assert service is legacy_service
+    assert admin_bridge.BRIDGE_SERVICES.sync_service is legacy_service
+    assert admin_bridge.BRIDGE_SERVICES.sync_service_data_dir == data_dir.resolve()
+
+
+def test_runtime_path_reconfiguration_resets_sync_holder(
+    admin_bridge_entrypoint_root: Path,
+) -> None:
+    first_data_dir = admin_bridge_entrypoint_root / "data-one"
+    admin_bridge.configure_runtime_paths(
+        _runtime_config(admin_bridge_entrypoint_root, first_data_dir)
+    )
+    first_service = admin_bridge._get_sync_service()
+
+    second_data_dir = admin_bridge_entrypoint_root / "data-two"
+    admin_bridge.configure_runtime_paths(
+        _runtime_config(admin_bridge_entrypoint_root, second_data_dir)
+    )
+
+    assert admin_bridge.BRIDGE_SERVICES.sync_service is None
+    assert admin_bridge.BRIDGE_SERVICES.sync_service_data_dir is None
+    assert admin_bridge._SYNC_SERVICE is None
+    assert admin_bridge._SYNC_SERVICE_DATA_DIR is None
+
+    second_service = admin_bridge._get_sync_service()
+    assert second_service is not first_service
+    assert admin_bridge.BRIDGE_SERVICES.sync_service is second_service
+    assert admin_bridge.BRIDGE_SERVICES.sync_service_data_dir == second_data_dir.resolve()
