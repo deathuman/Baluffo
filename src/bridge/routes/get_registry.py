@@ -5,9 +5,8 @@ from __future__ import annotations
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
-from src.bridge.api import BridgeApi
 from src.bridge.performance_profile import time_operation
 from src.bridge.registry_source_table import compact_registry_source_table_row
 from src.bridge.routes.response_writer import BridgeResponseWriter
@@ -15,6 +14,23 @@ from src.bridge.routes.route_storage_metrics import record_storage_read_metric
 from src.source_registry import is_hidden_from_default
 from src.source_registry_auto_approval import annotate_pending_auto_approval_rows
 from src.source_registry_io import load_runtime_evidence_array
+
+
+class _RegistryRouteApi(Protocol):
+    DISCOVERY_CANDIDATES_PATH: Path
+    DISCOVERY_REPORT_PATH: Path
+    JOBS_FETCH_REPORT_PATH: Path
+    runtime_config: Any
+
+    def get_registry_exact_summary_payload(self) -> dict[str, Any]: ...
+
+    def get_registry_summary_payload(self) -> dict[str, Any]: ...
+
+    def load_json_object(self, path: Path, default: Any = None) -> dict[str, Any]: ...
+
+    def load_state(self) -> dict[str, list[dict[str, Any]]]: ...
+
+    def summarize_state(self, state: dict[str, list[dict[str, Any]]]) -> dict[str, Any]: ...
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -55,14 +71,14 @@ def _source_match_tokens(row: dict[str, Any]) -> set[str]:
     return tokens
 
 
-def _read_discovery_candidate_rows(api: BridgeApi) -> list[dict[str, Any]]:
+def _read_discovery_candidate_rows(api: _RegistryRouteApi) -> list[dict[str, Any]]:
     candidates_path = getattr(api, "DISCOVERY_CANDIDATES_PATH", None)
     if candidates_path is None:
         return []
     return load_runtime_evidence_array(candidates_path, [])
 
 
-def _read_discovery_report_candidate_rows(api: BridgeApi) -> list[dict[str, Any]]:
+def _read_discovery_report_candidate_rows(api: _RegistryRouteApi) -> list[dict[str, Any]]:
     report_path = getattr(api, "DISCOVERY_REPORT_PATH", None)
     if report_path is None:
         return []
@@ -136,13 +152,15 @@ def _include_hidden_registry_rows(query: dict[str, list[str]]) -> bool:
     }
 
 
-def _pending_registry_payload(api: BridgeApi, query: dict[str, list[str]]) -> dict[str, Any]:
+def _pending_registry_payload(
+    api: _RegistryRouteApi, query: dict[str, list[str]]
+) -> dict[str, Any]:
     state = api.load_state()
     return _pending_registry_payload_from_state(api, query, state)
 
 
 def _pending_registry_payload_from_state(
-    api: BridgeApi,
+    api: _RegistryRouteApi,
     query: dict[str, list[str]],
     state: dict[str, list[dict[str, Any]]],
 ) -> dict[str, Any]:
@@ -199,7 +217,7 @@ def _registry_authority_mode_from_summary(summary: dict[str, Any]) -> str:
 
 
 def _registry_summary_route_payload(
-    api: BridgeApi, query: dict[str, list[str]]
+    api: _RegistryRouteApi, query: dict[str, list[str]]
 ) -> tuple[int, dict[str, Any]]:
     view = str((query.get("view") or [""])[0] or "").strip().lower()
     if view not in ("", "cheap", "storage", "exact"):
@@ -238,7 +256,7 @@ def _registry_summary_route_payload(
 
 
 def _registry_sources_payload(
-    api: BridgeApi, query: dict[str, list[str]]
+    api: _RegistryRouteApi, query: dict[str, list[str]]
 ) -> tuple[int, dict[str, Any]]:
     view = str((query.get("view") or ["full"])[0] or "full").strip().lower()
     if view not in {"", "full", "table"}:
@@ -327,7 +345,7 @@ def _registry_sources_payload(
 def handle_registry_routes(
     handler: BridgeResponseWriter,
     *,
-    api: BridgeApi,
+    api: _RegistryRouteApi,
     path: str,
     query: dict[str, list[str]],
 ) -> bool:
