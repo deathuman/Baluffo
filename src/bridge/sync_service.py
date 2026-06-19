@@ -52,6 +52,7 @@ _SYNC_SHARD_FIELD_NAMES = (
     "shardCapBytes",
     "shardHashes",
 )
+_STARTUP_SYNC_ERRORS = (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError)
 
 
 def _sync_shard_fields(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -757,7 +758,7 @@ class SyncService:
                 pending=int(summary.get("pendingCount") or 0),
                 rejected=int(summary.get("rejectedCount") or 0),
             )
-        except Exception as exc:  # noqa: BLE001
+        except _STARTUP_SYNC_ERRORS as exc:
             self.set_sync_status(action="pull", result="error", error=str(exc), pulled=False)
             self._bridge_log("warn", "sync_startup_pull_failed", error=str(exc))
 
@@ -785,7 +786,7 @@ class SyncService:
             }
         try:
             result = self.start_sync_task("pull", reason="startup", automatic=True)
-        except Exception as exc:  # noqa: BLE001
+        except _STARTUP_SYNC_ERRORS as exc:
             self.set_sync_status(action="pull", result="error", error=str(exc), pulled=False)
             self._bridge_log("warn", "sync_startup_schedule_failed", error=str(exc))
             return {
