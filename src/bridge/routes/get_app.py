@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Protocol
 
-from src.bridge.api import BridgeApi
 from src.bridge.container_mode import is_container_runtime, send_container_unavailable
 from src.bridge.performance_profile import time_operation
 from src.bridge.routes.error_boundary import send_json_boundary
 from src.bridge.routes.response_writer import BridgeResponseWriter
+
+
+class _AppRouteApi(Protocol):
+    runtime_config: Any
+
+    def compute_ops_health_ready(self) -> dict[str, Any]: ...
+
+    def get_update_status_payload(self) -> dict[str, Any]: ...
 
 
 def _json_error(exc: Exception) -> dict[str, Any]:
@@ -16,7 +23,7 @@ def _json_error(exc: Exception) -> dict[str, Any]:
 
 
 def handle_app_routes(
-    handler: BridgeResponseWriter, *, api: BridgeApi, path: str, query: dict[str, list[str]]
+    handler: BridgeResponseWriter, *, api: _AppRouteApi, path: str, query: dict[str, list[str]]
 ) -> bool:
     del query
     if path == "/app/ready":
