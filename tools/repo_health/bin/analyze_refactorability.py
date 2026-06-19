@@ -626,7 +626,7 @@ def main() -> int:
 
         return 0
 
-    except Exception as e:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 

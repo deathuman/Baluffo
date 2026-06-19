@@ -251,7 +251,16 @@ class MaturityAnalyzer:
             else:
                 return self.STATE_UNKNOWN
 
-        except Exception:
+        except (
+            AttributeError,
+            OSError,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            re.error,
+            subprocess.SubprocessError,
+            TypeError,
+            ValueError,
+        ):
             # Any error means we can't determine
             return self.STATE_UNKNOWN
 
@@ -465,10 +474,15 @@ def main() -> int:
 
         return 0
 
-    except FileNotFoundError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
-    except Exception as e:
+    except (
+        FileNotFoundError,
+        OSError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        TypeError,
+        ValueError,
+        yaml.YAMLError,
+    ) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
