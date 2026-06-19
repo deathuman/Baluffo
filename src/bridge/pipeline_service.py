@@ -27,6 +27,7 @@ PIPELINE_COMPLETION_NOTIFICATION_MIN_SECONDS = 60.0
 CONTROL_STATUS_HEARTBEAT_MIN_SECONDS = 10.0
 SYNC_REMOTE_CONFLICT_KIND = "recoverable_remote_conflict"
 SYNC_PUSH_WARNING_KIND = "sync_push_failed"
+_EXPECTED_PIPELINE_CHILD_BOUNDARY_EXCEPTIONS = (RuntimeError, OSError, ValueError)
 
 
 @dataclass
@@ -876,7 +877,7 @@ class PipelineService:
             return self.wait_for_report_completion(**kwargs)
         except PipelineAbortRequested:
             raise
-        except Exception as exc:  # noqa: BLE001
+        except _EXPECTED_PIPELINE_CHILD_BOUNDARY_EXCEPTIONS as exc:
             raise RuntimeError(f"{phase}: {exc}") from exc
 
     @staticmethod
@@ -894,7 +895,7 @@ class PipelineService:
     def _wait_for_sync_push_row(self, run_id: str) -> dict[str, Any]:
         try:
             return self._wait_for_sync_completion(run_id, 900.0)
-        except Exception as exc:  # noqa: BLE001
+        except _EXPECTED_PIPELINE_CHILD_BOUNDARY_EXCEPTIONS as exc:
             raise RuntimeError(f"sync_push: {exc}") from exc
 
     def _trigger_discovery_child(self) -> Any:
@@ -903,19 +904,19 @@ class PipelineService:
                 route_name="/tasks/run-jobs-pipeline",
                 enable_auto_sync_watch=False,
             )
-        except Exception as exc:  # noqa: BLE001
+        except _EXPECTED_PIPELINE_CHILD_BOUNDARY_EXCEPTIONS as exc:
             raise RuntimeError(f"discovery_launch: {exc}") from exc
 
     def _start_fetch_child(self) -> dict[str, Any]:
         try:
             return self._start_fetcher_task({"preset": "default"})
-        except Exception as exc:  # noqa: BLE001
+        except _EXPECTED_PIPELINE_CHILD_BOUNDARY_EXCEPTIONS as exc:
             raise RuntimeError(f"fetch_launch: {exc}") from exc
 
     def _start_sync_push_child(self) -> dict[str, Any]:
         try:
             return self._start_sync_task("push", reason="jobs_pipeline", automatic=False)
-        except Exception as exc:  # noqa: BLE001
+        except _EXPECTED_PIPELINE_CHILD_BOUNDARY_EXCEPTIONS as exc:
             raise RuntimeError(f"sync_push: {exc}") from exc
 
     @staticmethod
