@@ -375,7 +375,7 @@ def _load_failure_startup_metrics(
     if not partial_metrics:
         try:
             partial_metrics = deps.fetch_startup_metrics(bridge_base_url, limit=1000)
-        except Exception:  # noqa: BLE001
+        except (OSError, ValueError):
             partial_metrics = []
     if not partial_metrics:
         partial_metrics = deps.read_startup_metrics_file(runtime_data_dir, limit=1000)

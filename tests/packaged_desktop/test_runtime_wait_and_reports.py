@@ -126,6 +126,41 @@ def test_run_packaged_smoke_preserves_failure_metrics_on_runtime_timeout() -> No
     assert saved["startupMetrics"] == rows
 
 
+def test_load_failure_startup_metrics_falls_back_to_file_on_fetch_error() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        runtime_data_dir = Path(tmp) / "runtime-data"
+        file_rows = [{"event": "desktop_launch_start", "fields": {"elapsedMs": 0}}]
+        with (
+            mock.patch.object(smoke, "fetch_startup_metrics", side_effect=OSError("reset")),
+            mock.patch.object(smoke, "read_startup_metrics_file", return_value=file_rows),
+        ):
+            rows = smoke.packaged_smoke_orchestrator_mod._load_failure_startup_metrics(
+                {},
+                runtime_data_dir=runtime_data_dir,
+                bridge_base_url="http://127.0.0.1:8877",
+            )
+
+    assert rows == file_rows
+
+
+def test_load_failure_startup_metrics_does_not_swallow_fetch_bug() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        runtime_data_dir = Path(tmp) / "runtime-data"
+        with (
+            mock.patch.object(
+                smoke,
+                "fetch_startup_metrics",
+                side_effect=RuntimeError("metrics shim bug"),
+            ),
+            pytest.raises(RuntimeError, match="metrics shim bug"),
+        ):
+            smoke.packaged_smoke_orchestrator_mod._load_failure_startup_metrics(
+                {},
+                runtime_data_dir=runtime_data_dir,
+                bridge_base_url="http://127.0.0.1:8877",
+            )
+
+
 def test_wait_for_packaged_runtime_rejects_default_browser_launch_for_startup_probe() -> None:
     process = mock.Mock()
     process.poll.return_value = None
