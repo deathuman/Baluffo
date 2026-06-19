@@ -971,7 +971,7 @@ def test_bridge_api_uses_sync_service_for_sync_status_wiring(repo_root: Path) ->
     bridge_api = (repo_root / "src" / "bridge" / "api.py").read_text(encoding="utf-8")
     sync_service = (repo_root / "src" / "bridge" / "sync_service.py").read_text(encoding="utf-8")
     assert (
-        "return admin_entrypoint_api_mod.build_bridge_api(config, root_mod=sys.modules[__name__])"
+        "return admin_entrypoint_api_mod.build_bridge_api(config, root_mod=_ADMIN_ROOT)"
         in admin_bridge
     )
     assert (
@@ -997,7 +997,7 @@ def test_bridge_api_exposes_route_facing_entrypoints(repo_root: Path) -> None:
     bridge_bootstrap = (repo_root / "src" / "bridge" / "bootstrap.py").read_text(encoding="utf-8")
     bridge_api = (repo_root / "src" / "bridge" / "api.py").read_text(encoding="utf-8")
     assert (
-        "return admin_entrypoint_api_mod.build_bridge_api(config, root_mod=sys.modules[__name__])"
+        "return admin_entrypoint_api_mod.build_bridge_api(config, root_mod=_ADMIN_ROOT)"
         in admin_bridge
     )
     assert (
@@ -1025,7 +1025,7 @@ def test_admin_bridge_delegates_source_check_orchestration_to_bridge_module(
 
     assert "src.bridge" in imported_modules
     assert "from src.bridge import admin_registry_api as admin_registry_api_mod" in text
-    assert "admin_registry_api_mod.root = sys.modules[__name__]" in text
+    assert "admin_registry_api_mod.root = _ADMIN_ROOT" in text
     assert "admin_registry_api_mod.trigger_source_check" in _function_call_names(trigger_fn)
     assert "admin_registry_api_mod.normalize_manual_static_studio_fields" in _function_call_names(
         normalize_fn
@@ -1247,18 +1247,25 @@ def test_admin_bridge_root_stays_thin_entrypoint_surface(repo_root: Path) -> Non
     admin_entrypoint_api = (repo_root / "src" / "bridge" / "admin_entrypoint_api.py").read_text(
         encoding="utf-8"
     )
+    admin_entrypoint_runtime = (
+        repo_root / "src" / "bridge" / "admin_entrypoint_runtime.py"
+    ).read_text(encoding="utf-8")
     assert "admin_entrypoint_api_mod.root = sys.modules[__name__]" not in text
     assert "root: Any" not in admin_entrypoint_api
     assert "def _require_root(" not in admin_entrypoint_api
-    assert "admin_entrypoint_runtime_mod.root = sys.modules[__name__]" in text
-    assert "admin_entrypoint_services_mod.root = sys.modules[__name__]" in text
-    assert "admin_registry_api_mod.root = sys.modules[__name__]" in text
-    assert "admin_task_runtime_mod.root = sys.modules[__name__]" in text
-    assert "def build_bridge_api(" in text
+    assert "admin_entrypoint_runtime_mod.root = sys.modules[__name__]" not in text
+    assert "root: Any" not in admin_entrypoint_runtime
+    assert "def _require_root(" not in admin_entrypoint_runtime
     assert (
-        "return admin_entrypoint_api_mod.build_bridge_api(config, root_mod=sys.modules[__name__])"
+        "_log_enabled = partial(admin_entrypoint_runtime_mod.log_enabled, root_mod=_ADMIN_ROOT)"
         in text
     )
+    assert "admin_entrypoint_runtime_mod.configure_runtime_paths, root_mod=_ADMIN_ROOT" in text
+    assert "admin_entrypoint_services_mod.root = _ADMIN_ROOT" in text
+    assert "admin_registry_api_mod.root = _ADMIN_ROOT" in text
+    assert "admin_task_runtime_mod.root = _ADMIN_ROOT" in text
+    assert "def build_bridge_api(" in text
+    assert "return admin_entrypoint_api_mod.build_bridge_api(config, root_mod=_ADMIN_ROOT)" in text
     assert "smoke_runtime: dict[str, Any]" not in text
     assert "find_existing_static_source_by_studio_domain(" not in text
     assert function_names.isdisjoint(
@@ -1271,17 +1278,9 @@ def test_admin_bridge_root_stays_thin_entrypoint_surface(repo_root: Path) -> Non
             "_get_ops_api",
             "_get_pipeline_service",
             "_get_desktop_update_service",
-            "_log_enabled",
-            "bridge_log",
-            "configure_runtime_paths",
-            "startup_banner",
-            "append_startup_metric",
             "read_startup_metrics",
             "get_desktop_session_payload",
-            "update_desktop_session_lifecycle",
-            "owner_session_should_exit",
             "parse_iso",
-            "pid_is_running",
             "desktop_local_data_store",
             "normalize_state",
             "load_state",

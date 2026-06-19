@@ -10,18 +10,10 @@ from src.bridge.server import runtime_state as bridge_runtime_state
 from src.local_data_store import LocalDataPaths, LocalDataStore
 from src.shared.utils import parse_iso as parse_iso_from_utils
 
-root: Any | None = None
 _PROC_ROOT = Path("/proc")
 
 
-def _require_root() -> Any:
-    if root is None:
-        raise RuntimeError("admin bridge root is not bound")
-    return root
-
-
-def log_enabled(level: str) -> bool:
-    root_mod = _require_root()
+def log_enabled(level: str, *, root_mod: Any) -> bool:
     current = root_mod.LOG_LEVEL_ORDER.get(
         root_mod._normalize_log_level(root_mod.RUNTIME_CONFIG.log_level), 20
     )
@@ -29,8 +21,7 @@ def log_enabled(level: str) -> bool:
     return bool(target >= current)
 
 
-def bridge_log(level: str, message: str, **fields: Any) -> None:
-    root_mod = _require_root()
+def bridge_log(level: str, message: str, *, root_mod: Any, **fields: Any) -> None:
     normalized_level = root_mod._normalize_log_level(level, "info")
     if not root_mod._log_enabled(normalized_level):
         return
@@ -68,8 +59,7 @@ def bridge_log(level: str, message: str, **fields: Any) -> None:
         pass
 
 
-def configure_runtime_paths(config: Any) -> None:
-    root_mod = _require_root()
+def configure_runtime_paths(config: Any, *, root_mod: Any) -> None:
     root_mod.RUNTIME_CONFIG = config
     data_dir = Path(config.data_dir).resolve()
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -140,13 +130,13 @@ def configure_runtime_paths(config: Any) -> None:
         root_mod.BRIDGE_SERVICES.reset_desktop_update_service()
 
 
-def startup_banner(config: Any) -> None:
-    root_mod = _require_root()
+def startup_banner(config: Any, *, root_mod: Any) -> None:
     root_mod.bridge_config.startup_banner(config=config, bridge_log=root_mod.bridge_log)
 
 
-def append_startup_metric(event: str, payload: dict[str, Any] | None = None) -> None:
-    root_mod = _require_root()
+def append_startup_metric(
+    event: str, payload: dict[str, Any] | None = None, *, root_mod: Any
+) -> None:
     bridge_runtime_state.append_startup_metric(event, payload, now_iso=root_mod.now_iso)
 
 
@@ -159,9 +149,14 @@ def get_desktop_session_payload() -> dict[str, Any]:
 
 
 def update_desktop_session_lifecycle(
-    *, owner_token: str, session_id: str, page_id: str, state: str, reason: str = ""
+    *,
+    owner_token: str,
+    session_id: str,
+    page_id: str,
+    state: str,
+    reason: str = "",
+    root_mod: Any,
 ) -> tuple[int, dict[str, Any]]:
-    root_mod = _require_root()
     previous_session = bridge_runtime_state.get_desktop_session_payload()
     previous_shutdown_reason = str(previous_session.get("shutdownReason") or "").strip().lower()
     previous_shutdown_page_id = str(previous_session.get("shutdownPageId") or "").strip()
@@ -190,6 +185,7 @@ def update_desktop_session_lifecycle(
                 "pageId": str(page_id or ""),
                 "reason": bridge_runtime_state.ACTIVE_WORK_CLOSE_ATTEMPT_REASON,
             },
+            root_mod=root_mod,
         )
     if (
         status_code == 200
@@ -223,7 +219,7 @@ def update_desktop_session_lifecycle(
             page_id=payload["pageId"],
             reason=payload["reason"],
         )
-        append_startup_metric(event_name, payload)
+        append_startup_metric(event_name, payload, root_mod=root_mod)
     return status_code, result
 
 
@@ -241,8 +237,7 @@ def _desktop_update_handoff_active(root_mod: Any) -> bool:
     return install_state in {"handoff_requested", "waiting_for_exit", "installing", "verifying"}
 
 
-def owner_session_should_exit() -> bool:
-    root_mod = _require_root()
+def owner_session_should_exit(*, root_mod: Any) -> bool:
     expired = bridge_runtime_state.owner_session_should_exit(
         parse_iso=root_mod.parse_iso,
         now_utc=root_mod.now_utc,
@@ -338,8 +333,7 @@ def _posix_pid_is_zombie(pid: int) -> bool:
     return False
 
 
-def pid_is_running(pid: int) -> bool:
-    root_mod = _require_root()
+def pid_is_running(pid: int, *, root_mod: Any) -> bool:
     if int(pid or 0) <= 0:
         return False
     if sys.platform == "win32":

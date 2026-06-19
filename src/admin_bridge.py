@@ -13,6 +13,7 @@ import threading
 import time as _time
 from collections.abc import Callable
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 from typing import Any, cast
 
@@ -256,10 +257,10 @@ RUNTIME_CONFIG = RuntimeConfig(
     owner_idle_timeout_s=0.0,
 )
 
-admin_entrypoint_runtime_mod.root = sys.modules[__name__]
-admin_entrypoint_services_mod.root = sys.modules[__name__]
-admin_registry_api_mod.root = sys.modules[__name__]
-admin_task_runtime_mod.root = sys.modules[__name__]
+_ADMIN_ROOT = sys.modules[__name__]
+admin_entrypoint_services_mod.root = _ADMIN_ROOT
+admin_registry_api_mod.root = _ADMIN_ROOT
+admin_task_runtime_mod.root = _ADMIN_ROOT
 
 
 def _normalize_log_level(value: Any, default: str = "info") -> str:
@@ -284,17 +285,21 @@ def resolve_runtime_config(
     )
 
 
-_log_enabled = admin_entrypoint_runtime_mod.log_enabled
-bridge_log = admin_entrypoint_runtime_mod.bridge_log
-configure_runtime_paths = admin_entrypoint_runtime_mod.configure_runtime_paths
-startup_banner = admin_entrypoint_runtime_mod.startup_banner
+_log_enabled = partial(admin_entrypoint_runtime_mod.log_enabled, root_mod=_ADMIN_ROOT)
+bridge_log = partial(admin_entrypoint_runtime_mod.bridge_log, root_mod=_ADMIN_ROOT)
+configure_runtime_paths = partial(
+    admin_entrypoint_runtime_mod.configure_runtime_paths, root_mod=_ADMIN_ROOT
+)
+startup_banner = partial(admin_entrypoint_runtime_mod.startup_banner, root_mod=_ADMIN_ROOT)
 
 
 def build_bridge_api(config: RuntimeConfig) -> Any:
-    return admin_entrypoint_api_mod.build_bridge_api(config, root_mod=sys.modules[__name__])
+    return admin_entrypoint_api_mod.build_bridge_api(config, root_mod=_ADMIN_ROOT)
 
 
-append_startup_metric = admin_entrypoint_runtime_mod.append_startup_metric
+append_startup_metric = partial(
+    admin_entrypoint_runtime_mod.append_startup_metric, root_mod=_ADMIN_ROOT
+)
 read_startup_metrics = admin_entrypoint_runtime_mod.read_startup_metrics
 
 
@@ -418,10 +423,14 @@ def mark_desktop_session_activity(path: str) -> None:
 
 
 get_desktop_session_payload = admin_entrypoint_runtime_mod.get_desktop_session_payload
-update_desktop_session_lifecycle = admin_entrypoint_runtime_mod.update_desktop_session_lifecycle
-owner_session_should_exit = admin_entrypoint_runtime_mod.owner_session_should_exit
 parse_iso = admin_entrypoint_runtime_mod.parse_iso
-pid_is_running = admin_entrypoint_runtime_mod.pid_is_running
+update_desktop_session_lifecycle = partial(
+    admin_entrypoint_runtime_mod.update_desktop_session_lifecycle, root_mod=_ADMIN_ROOT
+)
+owner_session_should_exit = partial(
+    admin_entrypoint_runtime_mod.owner_session_should_exit, root_mod=_ADMIN_ROOT
+)
+pid_is_running = partial(admin_entrypoint_runtime_mod.pid_is_running, root_mod=_ADMIN_ROOT)
 
 
 load_run_history = _TASK_HISTORY.load
