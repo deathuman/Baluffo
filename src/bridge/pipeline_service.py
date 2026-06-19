@@ -28,6 +28,7 @@ CONTROL_STATUS_HEARTBEAT_MIN_SECONDS = 10.0
 SYNC_REMOTE_CONFLICT_KIND = "recoverable_remote_conflict"
 SYNC_PUSH_WARNING_KIND = "sync_push_failed"
 _EXPECTED_PIPELINE_CHILD_BOUNDARY_EXCEPTIONS = (RuntimeError, OSError, ValueError)
+_PIPELINE_OPERATIONAL_ERRORS = (RuntimeError, OSError, TypeError, ValueError)
 
 
 @dataclass
@@ -1447,7 +1448,7 @@ class PipelineService:
                 demoted=int(result.get("demoted") or 0),
                 checkedFamilyCount=int(result.get("checkedFamilyCount") or 0),
             )
-        except Exception as exc:  # noqa: BLE001
+        except _PIPELINE_OPERATIONAL_ERRORS as exc:
             self._bridge_log(
                 "warn",
                 "registry_conflict_adjudication_failed",
@@ -1611,7 +1612,7 @@ class PipelineService:
                 status="canceled",
                 final_output_count=self._current_fetch_output_count(),
             )
-        except Exception as exc:  # noqa: BLE001
+        except _PIPELINE_OPERATIONAL_ERRORS as exc:
             self._bridge_log("error", "jobs_pipeline_failed", runId=run_id, error=str(exc))
             self._set_completed(
                 status="error",
