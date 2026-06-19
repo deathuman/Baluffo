@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 
 from src.bridge import run_history_api as _run_history_api
+from src.bridge.admin_service_holder import BridgeServices
 from src.bridge.desktop_attention import notify_pipeline_completion_attention
 from src.bridge.pipeline_schedule_service import PipelineScheduleService
 from src.bridge.server import runtime_state as bridge_runtime_state
@@ -13,6 +14,7 @@ from src.bridge.task_abort_service import TaskAbortDeps, TaskAbortPaths, TaskAbo
 from src.source_registry_io import load_runtime_evidence
 
 root: Any | None = None
+BRIDGE_SERVICES = BridgeServices()
 
 JsonObject = dict[str, Any]
 
@@ -825,15 +827,27 @@ def get_task_abort_service() -> Any:
 def get_desktop_update_service() -> _DesktopUpdateServiceLike:
     root_mod = _require_root()
     data_dir = Path(root_mod.RUNTIME_CONFIG.data_dir).resolve()
-    with root_mod._DESKTOP_UPDATE_SERVICE_LOCK:
+    services = root_mod.BRIDGE_SERVICES
+    with services.desktop_update_service_lock:
         if (
-            root_mod._DESKTOP_UPDATE_SERVICE is not None
+            services.desktop_update_service is None
+            and root_mod._DESKTOP_UPDATE_SERVICE is not None
             and root_mod._DESKTOP_UPDATE_SERVICE_DATA_DIR == data_dir
         ):
-            return cast(_DesktopUpdateServiceLike, root_mod._DESKTOP_UPDATE_SERVICE)
-        root_mod._DESKTOP_UPDATE_SERVICE_DATA_DIR = data_dir
-        root_mod._DESKTOP_UPDATE_SERVICE = root_mod.DesktopUpdateService(
+            services.desktop_update_service = root_mod._DESKTOP_UPDATE_SERVICE
+            services.desktop_update_service_data_dir = root_mod._DESKTOP_UPDATE_SERVICE_DATA_DIR
+        if (
+            services.desktop_update_service is not None
+            and services.desktop_update_service_data_dir == data_dir
+        ):
+            root_mod._DESKTOP_UPDATE_SERVICE = services.desktop_update_service
+            root_mod._DESKTOP_UPDATE_SERVICE_DATA_DIR = services.desktop_update_service_data_dir
+            return cast(_DesktopUpdateServiceLike, services.desktop_update_service)
+        services.desktop_update_service_data_dir = data_dir
+        services.desktop_update_service = root_mod.DesktopUpdateService(
             data_dir=data_dir,
             current_version_getter=root_mod.get_app_version,
         )
-        return cast(_DesktopUpdateServiceLike, root_mod._DESKTOP_UPDATE_SERVICE)
+        root_mod._DESKTOP_UPDATE_SERVICE = services.desktop_update_service
+        root_mod._DESKTOP_UPDATE_SERVICE_DATA_DIR = services.desktop_update_service_data_dir
+        return cast(_DesktopUpdateServiceLike, services.desktop_update_service)

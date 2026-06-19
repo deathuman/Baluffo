@@ -136,6 +136,7 @@ def configure_runtime_paths(config: Any) -> None:
     with root_mod._PIPELINE_SERVICE_LOCK:
         root_mod._PIPELINE_SERVICE = None
     with root_mod._DESKTOP_UPDATE_SERVICE_LOCK:
+        root_mod.BRIDGE_SERVICES.reset_desktop_update_service()
         root_mod._DESKTOP_UPDATE_SERVICE = None
         root_mod._DESKTOP_UPDATE_SERVICE_DATA_DIR = None
 

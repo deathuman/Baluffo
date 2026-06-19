@@ -225,24 +225,23 @@ _TASK_LIFECYCLE = AdminTaskLifecycle(
     parse_iso=lambda value: parse_iso(value),
     storage_data_dir=lambda: Path(RUNTIME_CONFIG.data_dir),
 )
-
-
 LOG_LEVEL_ORDER = bridge_config.LOG_LEVEL_ORDER
 SYNC_CONFIG: Any = None
+BRIDGE_SERVICES = admin_entrypoint_services_mod.BRIDGE_SERVICES
 _SYNC_SERVICE: SyncService | None = None
 _SYNC_SERVICE_DATA_DIR: Path | None = None
-_SYNC_SERVICE_LOCK = threading.RLock()
+_SYNC_SERVICE_LOCK = BRIDGE_SERVICES.sync_service_lock
 _REGISTRY_SERVICE: RegistryService | None = None
 _REGISTRY_SERVICE_PATHS: tuple[Path, Path, Path] | None = None
-_REGISTRY_SERVICE_LOCK = threading.RLock()
+_REGISTRY_SERVICE_LOCK = BRIDGE_SERVICES.registry_service_lock
 _DISCOVERY_SERVICE: DiscoveryService | None = None
 _DISCOVERY_SERVICE_PATHS: tuple[Path, Path, Path, Path] | None = None
-_DISCOVERY_SERVICE_LOCK = threading.RLock()
+_DISCOVERY_SERVICE_LOCK = BRIDGE_SERVICES.discovery_service_lock
 _PIPELINE_SERVICE: PipelineService | None = None
-_PIPELINE_SERVICE_LOCK = threading.RLock()
+_PIPELINE_SERVICE_LOCK = BRIDGE_SERVICES.pipeline_service_lock
 _DESKTOP_UPDATE_SERVICE: DesktopUpdateService | None = None
 _DESKTOP_UPDATE_SERVICE_DATA_DIR: Path | None = None
-_DESKTOP_UPDATE_SERVICE_LOCK = threading.RLock()
+_DESKTOP_UPDATE_SERVICE_LOCK = BRIDGE_SERVICES.desktop_update_service_lock
 
 
 _get_sync_service = admin_entrypoint_services_mod.get_sync_service
@@ -253,7 +252,6 @@ _get_task_launch_api = admin_entrypoint_services_mod.get_task_launch_api
 _get_ops_api = admin_entrypoint_services_mod.get_ops_api
 _get_pipeline_service = admin_entrypoint_services_mod.get_pipeline_service
 _get_desktop_update_service = admin_entrypoint_services_mod.get_desktop_update_service
-
 
 RuntimeConfig = bridge_config.RuntimeConfig
 
