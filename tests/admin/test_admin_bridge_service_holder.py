@@ -327,6 +327,29 @@ def test_sync_config_refresh_avoids_explicit_global_declaration() -> None:
     assert "global SYNC_CONFIG" not in sync_service_source
 
 
+def test_former_admin_entrypoint_modules_do_not_own_root_injection_seams() -> None:
+    admin_bridge_source = Path(admin_bridge.__file__).read_text(encoding="utf-8")
+    former_root_modules = (
+        admin_bridge.admin_entrypoint_api_mod,
+        admin_bridge.admin_entrypoint_runtime_mod,
+        admin_bridge.admin_entrypoint_services_mod,
+        admin_bridge.admin_registry_api_mod,
+        admin_bridge.admin_task_runtime_mod,
+    )
+
+    for module in former_root_modules:
+        module_source = Path(module.__file__).read_text(encoding="utf-8")
+
+        assert not hasattr(module, "root")
+        assert "root: Any" not in module_source
+
+    assert "admin_entrypoint_api_mod.root" not in admin_bridge_source
+    assert "admin_entrypoint_runtime_mod.root" not in admin_bridge_source
+    assert "admin_entrypoint_services_mod.root" not in admin_bridge_source
+    assert "admin_registry_api_mod.root" not in admin_bridge_source
+    assert "admin_task_runtime_mod.root" not in admin_bridge_source
+
+
 def test_runtime_path_reconfiguration_resets_sync_holder(
     admin_bridge_entrypoint_root: Path,
 ) -> None:
