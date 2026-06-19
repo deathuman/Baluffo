@@ -247,3 +247,135 @@ def test_run_http_server_uses_short_idle_poll_for_owner_shutdown(monkeypatch) ->
     assert server.handled == 1
     assert server.closed is True
     assert ("info", "admin_bridge_owner_timeout_shutdown") in api.logs
+
+
+def test_run_http_server_logs_expected_on_started_failure(monkeypatch) -> None:
+    created_servers: list[object] = []
+
+    class FakeServer:
+        def __init__(self, _address, _handler_cls) -> None:
+            self.timeout = 0
+            self.closed = False
+            created_servers.append(self)
+
+        def handle_request(self) -> None:
+            pass
+
+        def server_close(self) -> None:
+            self.closed = True
+
+    class FakeApi:
+        def __init__(self) -> None:
+            self.logs: list[tuple[str, str, dict[str, object]]] = []
+
+        def bridge_log(self, level: str, event: str, **fields: object) -> None:
+            self.logs.append((level, event, fields))
+
+        def should_exit_for_owner_timeout(self) -> bool:
+            return True
+
+    def fail_on_started() -> None:
+        raise OSError("startup maintenance unavailable")
+
+    monkeypatch.setattr(httpd, "ThreadingHTTPServer", FakeServer)
+    api = FakeApi()
+
+    assert (
+        httpd.run_http_server(
+            api=api,
+            host="127.0.0.1",
+            port=0,
+            handler_cls=object,
+            on_started=fail_on_started,
+        )
+        == 0
+    )
+
+    assert created_servers[0].closed is True
+    assert any(
+        level == "warn"
+        and event == "admin_bridge_on_started_failed"
+        and fields["error"] == "startup maintenance unavailable"
+        for level, event, fields in api.logs
+    )
+
+
+def test_run_http_server_propagates_unexpected_on_started_failure(monkeypatch) -> None:
+    created_servers: list[object] = []
+
+    class FakeServer:
+        def __init__(self, _address, _handler_cls) -> None:
+            self.closed = False
+            created_servers.append(self)
+
+        def handle_request(self) -> None:
+            raise AssertionError("server loop should not run")
+
+        def server_close(self) -> None:
+            self.closed = True
+
+    class FakeApi:
+        def __init__(self) -> None:
+            self.logs: list[tuple[str, str]] = []
+
+        def bridge_log(self, level: str, event: str, **_fields: object) -> None:
+            self.logs.append((level, event))
+
+    def fail_on_started() -> None:
+        raise TypeError("unexpected callback bug")
+
+    monkeypatch.setattr(httpd, "ThreadingHTTPServer", FakeServer)
+    api = FakeApi()
+
+    with pytest.raises(TypeError, match="unexpected callback bug"):
+        httpd.run_http_server(
+            api=api,
+            host="127.0.0.1",
+            port=0,
+            handler_cls=object,
+            on_started=fail_on_started,
+        )
+
+    assert created_servers[0].closed is True
+    assert ("info", "admin_bridge_stopped") in api.logs
+
+
+def test_run_http_server_does_not_swallow_setup_keyboard_interrupt(monkeypatch) -> None:
+    created_servers: list[object] = []
+
+    class FakeServer:
+        def __init__(self, _address, _handler_cls) -> None:
+            self.closed = False
+            created_servers.append(self)
+
+        def handle_request(self) -> None:
+            raise AssertionError("server loop should not run")
+
+        def server_close(self) -> None:
+            self.closed = True
+
+    class FakeApi:
+        def __init__(self) -> None:
+            self.logs: list[tuple[str, str]] = []
+
+        def bridge_log(self, level: str, event: str, **_fields: object) -> None:
+            self.logs.append((level, event))
+
+    def interrupt_on_started() -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(httpd, "ThreadingHTTPServer", FakeServer)
+    api = FakeApi()
+
+    with pytest.raises(KeyboardInterrupt):
+        httpd.run_http_server(
+            api=api,
+            host="127.0.0.1",
+            port=0,
+            handler_cls=object,
+            on_started=interrupt_on_started,
+        )
+
+    assert created_servers[0].closed is True
+    assert ("info", "admin_bridge_shutdown_requested") not in api.logs
+    assert ("info", "admin_bridge_stopped") in api.logs
