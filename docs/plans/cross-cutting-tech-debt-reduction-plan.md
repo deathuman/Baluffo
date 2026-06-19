@@ -16,7 +16,7 @@ A systematic analysis identified twelve cross-cutting tech debt clusters that im
 | Area | Severity | Current status | Footprint / remaining work |
 |------|----------|----------------|----------------------------|
 | BridgeApi god object | P0 | Partial | Current-task default payload builders merged; source-derived field classification guardrail added and hardened for dynamic API lookups; admin POST, pipeline task, app, sync GET, admin bootstrap GET, admin ops-tab counts GET, desktop local-data GET/POST, registry GET, ops status GET, ops diagnostics GET, fetch-report GET, registry-conflicts GET, source-policy GET, discovery GET, route diagnostic logging, update POST routes, public GET/POST delegators, bridge server handler/httpd, and the `admin_bridge.py` compatibility entrypoint now avoid full `BridgeApi` typing. Production `BridgeApi` imports are guardrailed to bridge composition modules. Field deletion/split still open. |
-| admin_bridge legacy globals | P0 | Partial | 5-way root injection seam now has explicit coverage. `BridgeServices` holder owns sync config, sync, desktop-update, registry, discovery, and pipeline service state; sync, desktop-update, registry, discovery, and pipeline service root mirrors have been removed. `SYNC_CONFIG` remains an import-compatible public mirror, and explicit `global SYNC_CONFIG` refresh declarations are removed. Broader root-injection cleanup remains open. |
+| admin_bridge legacy globals | P0 | Partial | Root injection seam now has explicit coverage and is reduced from 5 modules to 4 after `admin_entrypoint_api.py` moved to explicit root passing. `BridgeServices` holder owns sync config, sync, desktop-update, registry, discovery, and pipeline service state; sync, desktop-update, registry, discovery, and pipeline service root mirrors have been removed. `SYNC_CONFIG` remains an import-compatible public mirror, and explicit `global SYNC_CONFIG` refresh declarations are removed. Broader root-injection cleanup remains open. |
 | get_routes.py monolith | P0 | Done for route-owned behavior | Partial JSON parser, provider-coverage link backfill, registry source table compaction, fetch-report source-run read support, ops diagnostics routes, ops status routes, admin bootstrap route, admin ops-tab counts route, app routes, registry routes, registry-conflicts route, sync status route, pipeline task routes, discovery routes, fetch-report routes, source-policy recommendations route, and desktop local-data GET routes extracted with tests. `handle_get` remains the public delegating entrypoint. |
 | Data model drift (CanonicalJob) | P0 | Done for missing-field slice | `CanonicalJobSchema` now preserves `lifecycleEvent`, `lifecycleReason`, `locations`, and `locationSummary`; `DATA_CONTRACT.md` documents locations fields. `id` consistency remains deferred by strategy. |
 | Fetch report normalization duplicated | P0 | Done for planned shared-helper slices | Shared-compatible task-progress, socialSummary, timingSummary, bridge source-row enrichment, jobs/bridge source-row base helpers, jobs source-row field enrichment, jobs zero-kept taxonomy orchestration, jobs stage/loss/detail-stat helpers, and jobs detail-list/provider/site-changed/dynamic redundant-provider helpers extracted while preserving intentional bridge/jobs shape differences. |
@@ -109,6 +109,7 @@ Completed on 2026-06-17:
 - **BridgeApi route import guardrail:** repo guardrails now fail when any module under `src/bridge/routes/` imports or types against the full `BridgeApi`.
 - **BridgeApi server capability split:** bridge server handler/httpd modules now type against narrow server capability protocols instead of importing the full `BridgeApi`, with repo guardrails blocking regressions under `src/bridge/server/`.
 - **BridgeApi production import guardrail:** `admin_bridge.py` no longer imports the `BridgeApi` dataclass for its compatibility delegator; repo guardrails now limit production `BridgeApi` imports to bridge composition modules.
+- **Admin entrypoint API root seam reduction:** `admin_entrypoint_api.py` no longer owns a module-level `root`; `admin_bridge.build_bridge_api()` now passes the root explicitly while preserving the public wrapper signature.
 - **Admin pipeline service holder cleanup:** `_PIPELINE_SERVICE` / `_PIPELINE_SERVICE_LOCK` were removed from the `admin_bridge.py` root; pipeline service lifetime is now owned only by `BridgeServices.pipeline_service`, and tests reset the holder directly.
 - **BridgeServices desktop-update holder migration:** `BridgeServices` now owns the desktop-update service instance/data-dir/lock; the legacy `_DESKTOP_UPDATE_SERVICE*` root mirror has been removed.
 - **BridgeServices registry holder migration:** `BridgeServices` now owns the registry service instance/path tuple/lock; the legacy `_REGISTRY_SERVICE*` root mirror has been removed.
@@ -186,7 +187,7 @@ A new platform (headless CLI, alternative container runtime, native desktop vari
 
 `src/admin_bridge.py` is a legacy monolith with:
 - **Service singleton mirrors removed**: `_SYNC_SERVICE*`, `_DESKTOP_UPDATE_SERVICE*`, `_REGISTRY_SERVICE*`, `_DISCOVERY_SERVICE*`, and `_PIPELINE_SERVICE` have been removed from the `admin_bridge.py` root; `SYNC_CONFIG` remains as the public compatibility mirror
-- **5-way root injection seam** (lines 276-280): sets `sys.modules[__name__]` onto `admin_entrypoint_api_mod.root`, `admin_entrypoint_runtime_mod.root`, `admin_entrypoint_services_mod.root`, `admin_registry_api_mod.root`, `admin_task_runtime_mod.root`
+- **4-way root injection seam**: sets `sys.modules[__name__]` onto `admin_entrypoint_runtime_mod.root`, `admin_entrypoint_services_mod.root`, `admin_registry_api_mod.root`, `admin_task_runtime_mod.root`; `admin_entrypoint_api.py` now receives root explicitly
 - **27 path constants** monkeypatched in 54+ test calls in `tests/admin/` + 27 more in `tests/bridge/`
 - **Legacy sync-config mirror**: `SYNC_CONFIG` remains import-compatible, but explicit `global SYNC_CONFIG` refresh declarations have been removed
 - **Root injection seam**: now covered by tests, but still present
@@ -206,7 +207,7 @@ Multi-instance scenarios (multiple bridges, parallel operations) are impossible 
 
 - Move remaining service singleton mirrors into explicit holder objects passed through `BridgeApi` or `RuntimeConfig` (done for `_SYNC_SERVICE*`, `_DESKTOP_UPDATE_SERVICE*`, `_REGISTRY_SERVICE*`, `_DISCOVERY_SERVICE*`, and `_PIPELINE_SERVICE`)
 - Replace `global SYNC_CONFIG` mutation with a method on the sync service holder
-- Replace root injection seam with explicit import or parameter passing
+- Replace remaining root injection seam with explicit import or parameter passing
 - Add test coverage for the seam (assert each `*.root` is set before first use)
 
 ### Out of Scope
@@ -742,7 +743,7 @@ The frontend has a JS build pipeline (esbuild) but **zero CSS processing**:
 |---|--------|------|-------|------|-------------|
 | 16 | Split get_routes.py dispatch into per-domain files | §3 | 5-7 files | Medium | Phase 2 #9, #10 |
 | 17 | Replace remaining high-risk `except Exception` in pipeline_service, ops_api | §4 | 3 files | Done | Current source scan finds no remaining broad catches in `pipeline_service.py` or `ops_api.py`; only the shared HTTP route boundary keeps annotated BLE001. |
-| 18 | Replace root injection seam with explicit dependency passing | §2 | 6 files | High | Phase 2 #12 |
+| 18 | Replace root injection seam with explicit dependency passing | §2 | 6 files | High | Started: `admin_entrypoint_api.py` now receives root explicitly; 4 injected modules remain |
 | 19 | Bridge fetch report normalization: extract shared-compatible task-progress/source-row helpers while preserving bridge output shape | §7B | 2-3 files | Partial | Task-progress/social/timing/base source-row helpers and bridge source-row enrichment helper extracted; deeper jobs/bridge source-row convergence remains |
 | 20 | Remove module-level caches from get_routes.py | §3 | 1 file | Medium | Phase 3 #16 |
 

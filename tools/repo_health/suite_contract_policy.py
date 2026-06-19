@@ -970,7 +970,13 @@ def test_bridge_api_uses_sync_service_for_sync_status_wiring(repo_root: Path) ->
     bridge_bootstrap = (repo_root / "src" / "bridge" / "bootstrap.py").read_text(encoding="utf-8")
     bridge_api = (repo_root / "src" / "bridge" / "api.py").read_text(encoding="utf-8")
     sync_service = (repo_root / "src" / "bridge" / "sync_service.py").read_text(encoding="utf-8")
-    assert "return admin_entrypoint_api_mod.build_bridge_api(config)" in admin_bridge
+    assert (
+        "return admin_entrypoint_api_mod.build_bridge_api(config, root_mod=sys.modules[__name__])"
+        in admin_bridge
+    )
+    assert (
+        "def build_bridge_api(config: Any, *, root_mod: Any) -> BridgeApi:" in admin_entrypoint_api
+    )
     assert "return bridge_bootstrap.build_bridge_api(" in admin_entrypoint_api
     assert (
         "sync_config_status=lambda: source_sync_module.config_status(refresh_sync_config())"
@@ -990,7 +996,13 @@ def test_bridge_api_exposes_route_facing_entrypoints(repo_root: Path) -> None:
     )
     bridge_bootstrap = (repo_root / "src" / "bridge" / "bootstrap.py").read_text(encoding="utf-8")
     bridge_api = (repo_root / "src" / "bridge" / "api.py").read_text(encoding="utf-8")
-    assert "return admin_entrypoint_api_mod.build_bridge_api(config)" in admin_bridge
+    assert (
+        "return admin_entrypoint_api_mod.build_bridge_api(config, root_mod=sys.modules[__name__])"
+        in admin_bridge
+    )
+    assert (
+        "def build_bridge_api(config: Any, *, root_mod: Any) -> BridgeApi:" in admin_entrypoint_api
+    )
     assert "return bridge_bootstrap.build_bridge_api(" in admin_entrypoint_api
     assert "append_startup_metric=append_startup_metric" in bridge_bootstrap
     assert "persist_state_and_auto_sync=persist_state_and_auto_sync" in bridge_bootstrap
@@ -1232,13 +1244,21 @@ def test_admin_bridge_root_stays_thin_entrypoint_surface(repo_root: Path) -> Non
     )
     assert "from src.bridge import admin_registry_api as admin_registry_api_mod" in text
     assert "from src.bridge import admin_task_runtime as admin_task_runtime_mod" in text
-    assert "admin_entrypoint_api_mod.root = sys.modules[__name__]" in text
+    admin_entrypoint_api = (repo_root / "src" / "bridge" / "admin_entrypoint_api.py").read_text(
+        encoding="utf-8"
+    )
+    assert "admin_entrypoint_api_mod.root = sys.modules[__name__]" not in text
+    assert "root: Any" not in admin_entrypoint_api
+    assert "def _require_root(" not in admin_entrypoint_api
     assert "admin_entrypoint_runtime_mod.root = sys.modules[__name__]" in text
     assert "admin_entrypoint_services_mod.root = sys.modules[__name__]" in text
     assert "admin_registry_api_mod.root = sys.modules[__name__]" in text
     assert "admin_task_runtime_mod.root = sys.modules[__name__]" in text
     assert "def build_bridge_api(" in text
-    assert "return admin_entrypoint_api_mod.build_bridge_api(config)" in text
+    assert (
+        "return admin_entrypoint_api_mod.build_bridge_api(config, root_mod=sys.modules[__name__])"
+        in text
+    )
     assert "smoke_runtime: dict[str, Any]" not in text
     assert "find_existing_static_source_by_studio_domain(" not in text
     assert function_names.isdisjoint(

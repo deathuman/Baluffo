@@ -256,7 +256,6 @@ RUNTIME_CONFIG = RuntimeConfig(
     owner_idle_timeout_s=0.0,
 )
 
-admin_entrypoint_api_mod.root = sys.modules[__name__]
 admin_entrypoint_runtime_mod.root = sys.modules[__name__]
 admin_entrypoint_services_mod.root = sys.modules[__name__]
 admin_registry_api_mod.root = sys.modules[__name__]
@@ -292,7 +291,7 @@ startup_banner = admin_entrypoint_runtime_mod.startup_banner
 
 
 def build_bridge_api(config: RuntimeConfig) -> Any:
-    return admin_entrypoint_api_mod.build_bridge_api(config)
+    return admin_entrypoint_api_mod.build_bridge_api(config, root_mod=sys.modules[__name__])
 
 
 append_startup_metric = admin_entrypoint_runtime_mod.append_startup_metric

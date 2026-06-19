@@ -9,17 +9,8 @@ from src.bridge import bootstrap as bridge_bootstrap
 from src.bridge import storage_health as storage_health_mod
 from src.bridge.api import BridgeApi
 
-root: Any | None = None
 
-
-def _require_root() -> Any:
-    if root is None:
-        raise RuntimeError("admin bridge root is not bound")
-    return root
-
-
-def build_bridge_api(config: Any) -> BridgeApi:
-    root_mod = _require_root()
+def build_bridge_api(config: Any, *, root_mod: Any) -> BridgeApi:
     ops_api = root_mod._get_ops_api()
     desktop_update_service = root_mod._get_desktop_update_service()
     return bridge_bootstrap.build_bridge_api(
