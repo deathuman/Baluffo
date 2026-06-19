@@ -166,7 +166,7 @@ def run_embedded_runtime_probe(
             "error": error,
             "startupProfile": summary,
         }
-    except Exception as exc:
+    except (OSError, RuntimeError, TimeoutError, ValueError) as exc:
         return {
             "name": str(probe.get("name") or "Embedded Probe"),
             "slug": slug,
