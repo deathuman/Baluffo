@@ -12,9 +12,9 @@ import urllib.error
 import uuid
 import zipfile as _zipfile
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
-from src.ship import update_manager as _update_manager
 from src.ship.desktop_update_shared import (
     DesktopUpdatePaths,
 )
@@ -57,6 +57,16 @@ from src.ship.desktop_updater_ui import (
 from src.ship.desktop_updater_ui import (
     _launch_executable as _launch_executable_impl,
 )
+from src.ship.update_manager_apply import (
+    create_data_backup as _create_data_backup,
+)
+from src.ship.update_manager_apply import (
+    restore_data_backup as _restore_data_backup,
+)
+from src.ship.update_manager_apply import (
+    run_migrations as _run_migrations,
+)
+from src.ship.update_manager_paths import ShipPaths as _ShipPaths
 
 root: Any | None = None
 
@@ -75,7 +85,12 @@ SUCCESS_RECOVERY_STAGES = frozenset({"relaunching", "verifying"})
 # `_module()` indirection rather than direct local references.
 time = _time
 zipfile = _zipfile
-update_manager = _update_manager
+update_manager = SimpleNamespace(
+    ShipPaths=_ShipPaths,
+    create_data_backup=_create_data_backup,
+    restore_data_backup=_restore_data_backup,
+    run_migrations=_run_migrations,
+)
 fetch_json = _fetch_json
 install_stage_label = _install_stage_label
 iso_now = _iso_now
