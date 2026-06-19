@@ -431,13 +431,6 @@ def get_registry_service() -> _RegistryServiceLike:
     )
     services = root_mod.BRIDGE_SERVICES
     with services.registry_service_lock:
-        if (
-            services.registry_service is None
-            and root_mod._REGISTRY_SERVICE is not None
-            and root_mod._REGISTRY_SERVICE_PATHS == current_paths
-        ):
-            services.registry_service = root_mod._REGISTRY_SERVICE
-            services.registry_service_paths = root_mod._REGISTRY_SERVICE_PATHS
         if services.registry_service is None or services.registry_service_paths != current_paths:
             services.registry_service_paths = current_paths
             services.registry_service = root_mod.RegistryService(
@@ -449,8 +442,6 @@ def get_registry_service() -> _RegistryServiceLike:
                 default_active=[dict(row) for row in root_mod.DEFAULT_STUDIO_SOURCE_REGISTRY],
                 normalize_manual_static=root_mod.normalize_manual_static_studio_fields,
             )
-        root_mod._REGISTRY_SERVICE = services.registry_service
-        root_mod._REGISTRY_SERVICE_PATHS = services.registry_service_paths
         return cast(_RegistryServiceLike, services.registry_service)
 
 

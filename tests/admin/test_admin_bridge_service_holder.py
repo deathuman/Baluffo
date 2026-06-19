@@ -96,12 +96,12 @@ def test_registry_service_is_owned_by_bridge_services_holder(
 
     assert admin_bridge.BRIDGE_SERVICES.registry_service is service
     assert admin_bridge.BRIDGE_SERVICES.registry_service_paths == expected_paths
-    assert admin_bridge._REGISTRY_SERVICE is service
-    assert admin_bridge._REGISTRY_SERVICE_PATHS == expected_paths
     assert admin_bridge._get_registry_service() is service
+    assert not hasattr(admin_bridge, "_REGISTRY_SERVICE")
+    assert not hasattr(admin_bridge, "_REGISTRY_SERVICE_PATHS")
 
 
-def test_registry_service_holder_adopts_legacy_patch_surface(
+def test_registry_service_holder_reuses_existing_service(
     admin_bridge_entrypoint_root: Path,
 ) -> None:
     data_dir = admin_bridge_entrypoint_root / "data"
@@ -111,15 +111,15 @@ def test_registry_service_holder_adopts_legacy_patch_surface(
         Path(admin_bridge.PENDING_PATH),
         Path(admin_bridge.REJECTED_PATH),
     )
-    legacy_service = SimpleNamespace(name="legacy-registry-service")
+    holder_service = SimpleNamespace(name="holder-registry-service")
     admin_bridge.BRIDGE_SERVICES.reset_registry_service()
-    admin_bridge._REGISTRY_SERVICE = legacy_service
-    admin_bridge._REGISTRY_SERVICE_PATHS = expected_paths
+    admin_bridge.BRIDGE_SERVICES.registry_service = holder_service
+    admin_bridge.BRIDGE_SERVICES.registry_service_paths = expected_paths
 
     service = admin_bridge._get_registry_service()
 
-    assert service is legacy_service
-    assert admin_bridge.BRIDGE_SERVICES.registry_service is legacy_service
+    assert service is holder_service
+    assert admin_bridge.BRIDGE_SERVICES.registry_service is holder_service
     assert admin_bridge.BRIDGE_SERVICES.registry_service_paths == expected_paths
 
 
@@ -139,8 +139,6 @@ def test_runtime_path_reconfiguration_resets_registry_holder(
 
     assert admin_bridge.BRIDGE_SERVICES.registry_service is None
     assert admin_bridge.BRIDGE_SERVICES.registry_service_paths is None
-    assert admin_bridge._REGISTRY_SERVICE is None
-    assert admin_bridge._REGISTRY_SERVICE_PATHS is None
 
     second_service = admin_bridge._get_registry_service()
     assert second_service is not first_service
