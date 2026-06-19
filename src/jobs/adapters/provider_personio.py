@@ -9,6 +9,10 @@ from typing import Any
 
 from src.exceptions import AdapterValidationError
 from src.jobs.adapters.parsers.personio import parse_personio_feed_xml
+from src.jobs.adapters.plugins.provider_api.source_errors import (
+    EXPECTED_PROVIDER_API_SOURCE_EXCEPTIONS,
+    reraise_unexpected_provider_api_source_exception,
+)
 from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.registry import registry_entries as jobs_registry_entries
@@ -117,7 +121,8 @@ def _run_personio_registry_source(
             row["adapter"] = "personio"
             row["studio"] = studio
         return parsed, "", entry_report
-    except Exception as exc:  # noqa: BLE001
+    except EXPECTED_PROVIDER_API_SOURCE_EXCEPTIONS as exc:
+        reraise_unexpected_provider_api_source_exception(exc)
         entry_report.update(
             status="error",
             error=str(exc),
