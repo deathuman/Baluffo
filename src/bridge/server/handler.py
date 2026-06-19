@@ -126,7 +126,7 @@ def _send_json_response(
         handler.send_header("Content-Length", str(len(body)))
         handler.end_headers()
         handler.wfile.write(body)
-    except Exception as exc:  # noqa: BLE001
+    except OSError as exc:
         if _handle_response_write_exception(handler, api, exc, status=status):
             return
         raise
@@ -167,7 +167,7 @@ def _send_bytes_response(
             )
         handler.end_headers()
         handler.wfile.write(body)
-    except Exception as exc:  # noqa: BLE001
+    except OSError as exc:
         if _handle_response_write_exception(handler, api, exc, status=status):
             return
         raise

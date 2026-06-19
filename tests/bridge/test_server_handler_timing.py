@@ -75,6 +75,16 @@ class _StatusAssignmentRaisesAssertion(_ResponseWriterHarness):
         raise AssertionError("unexpected status bookkeeping bug")
 
 
+class _WriteRaisesOSError(_ResponseWriterHarness):
+    def write(self, _body: bytes) -> None:
+        raise OSError("socket write failed")
+
+
+class _WriteRaisesRuntimeError(_ResponseWriterHarness):
+    def write(self, _body: bytes) -> None:
+        raise RuntimeError("unexpected writer bug")
+
+
 class _PathRaisesRuntimeError:
     @property
     def path(self) -> str:
@@ -125,6 +135,66 @@ def test_send_json_response_propagates_unexpected_status_bookkeeping_failure(
         server_handler._send_json_response(handler, api, {"ok": True}, status=202)
 
     assert handler.response_status is None
+
+
+def test_send_json_response_logs_and_reraises_non_disconnect_oserror(tmp_path: Path) -> None:
+    api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    logs: list[tuple[str, str, dict[str, Any]]] = []
+    api.bridge_log = lambda level, event, **fields: logs.append((level, event, fields))  # type: ignore[assignment]
+    handler = _WriteRaisesOSError()
+
+    with pytest.raises(OSError, match="socket write failed"):
+        server_handler._send_json_response(handler, api, {"ok": True}, status=202)
+
+    assert logs[-1][0] == "error"
+    assert logs[-1][1] == "http_response_write_failed"
+    assert logs[-1][2]["status"] == 202
+
+
+def test_send_json_response_does_not_route_unexpected_writer_bug_through_oserror_boundary(
+    tmp_path: Path,
+) -> None:
+    api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    handler = _WriteRaisesRuntimeError()
+
+    with pytest.raises(RuntimeError, match="unexpected writer bug"):
+        server_handler._send_json_response(handler, api, {"ok": True}, status=202)
+
+
+def test_send_bytes_response_logs_and_reraises_non_disconnect_oserror(tmp_path: Path) -> None:
+    api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    logs: list[tuple[str, str, dict[str, Any]]] = []
+    api.bridge_log = lambda level, event, **fields: logs.append((level, event, fields))  # type: ignore[assignment]
+    handler = _WriteRaisesOSError()
+
+    with pytest.raises(OSError, match="socket write failed"):
+        server_handler._send_bytes_response(
+            handler,
+            api,
+            b"payload",
+            content_type="application/octet-stream",
+            status=206,
+        )
+
+    assert logs[-1][0] == "error"
+    assert logs[-1][1] == "http_response_write_failed"
+    assert logs[-1][2]["status"] == 206
+
+
+def test_send_bytes_response_does_not_route_unexpected_writer_bug_through_oserror_boundary(
+    tmp_path: Path,
+) -> None:
+    api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    handler = _WriteRaisesRuntimeError()
+
+    with pytest.raises(RuntimeError, match="unexpected writer bug"):
+        server_handler._send_bytes_response(
+            handler,
+            api,
+            b"payload",
+            content_type="application/octet-stream",
+            status=206,
+        )
 
 
 def test_handler_records_get_request_timing(tmp_path: Path) -> None:
