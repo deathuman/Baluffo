@@ -36,6 +36,8 @@ from src.source_registry import (
 )
 
 BridgeLogFunc = Callable[..., None]
+_DISCOVERY_WATCH_ERRORS = (RuntimeError, OSError, TypeError, ValueError)
+_DISCOVERY_LAUNCH_ERRORS = (RuntimeError, OSError, ValueError)
 
 
 @dataclass(frozen=True)
@@ -882,7 +884,7 @@ class DiscoveryService:
                 report=report,
                 summary=summary,
             )
-        except Exception as exc:  # noqa: BLE001
+        except _DISCOVERY_WATCH_ERRORS as exc:
             self._deps.bridge_log(
                 "warn",
                 "sync_auto_push_skipped",
@@ -1025,7 +1027,7 @@ class DiscoveryService:
                     task_type="discovery",
                     metadata={"task": "source_discovery", "preset": preset},
                 )
-            except Exception as exc:  # noqa: BLE001
+            except _DISCOVERY_LAUNCH_ERRORS as exc:
                 failed_at = self._deps.now_iso()
                 self._deps.fail_lifecycle_run(
                     run_id,
