@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import fnmatch
 import importlib
 import inspect
@@ -20,6 +21,10 @@ DEFERRED_SOURCE_BUDGET_PATH = TOOLS_ROOT / "deferred_source_line_budget.json"
 FRONTEND_GUARDRAILS = TOOLS_ROOT / "frontend_structure_guardrails.mjs"
 FIXTURE_REFERENCE_ALLOWLIST_PATH = TOOLS_ROOT / "fixture_reference_allowlist.json"
 SOURCE_SUPPRESSION_BUDGET_PATH = TOOLS_ROOT / "source_suppression_budget.json"
+BRIDGE_ROUTE_BRIDGE_API_DELEGATORS = {
+    "src/bridge/routes/get_routes.py",
+    "src/bridge/routes/post_routes.py",
+}
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -199,6 +204,62 @@ def check_runtime_facade_usage() -> list[str]:
             offenders.append(str(path.relative_to(ROOT)))
     if offenders:
         failures.append("Found retired `_runtime.facade()` usage:\n- " + "\n- ".join(offenders))
+    return failures
+
+
+def check_bridge_route_leaf_bridge_api_imports() -> list[str]:
+    route_root = ROOT / "src" / "bridge" / "routes"
+    if not route_root.is_dir():
+        return [f"bridge route directory is missing: {route_root.relative_to(ROOT)}"]
+
+    failures: list[str] = []
+    for path in sorted(route_root.glob("*.py")):
+        rel_path = path.relative_to(ROOT).as_posix()
+        if rel_path in BRIDGE_ROUTE_BRIDGE_API_DELEGATORS:
+            continue
+
+        text = path.read_text(encoding="utf-8")
+        try:
+            tree = ast.parse(text, filename=rel_path)
+        except SyntaxError as exc:
+            failures.append(f"{rel_path} could not be parsed: {exc}")
+            continue
+
+        bridge_api_import_lines: list[int] = []
+        bridge_api_reference_lines: list[int] = []
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.module == "src.bridge.api"
+                and any(alias.name == "BridgeApi" for alias in node.names)
+            ):
+                bridge_api_import_lines.append(node.lineno)
+            elif isinstance(node, ast.Import) and any(
+                alias.name == "src.bridge.api" for alias in node.names
+            ):
+                bridge_api_import_lines.append(node.lineno)
+            elif (
+                isinstance(node, ast.ImportFrom)
+                and node.module == "src.bridge"
+                and any(alias.name == "api" for alias in node.names)
+            ):
+                bridge_api_import_lines.append(node.lineno)
+            elif isinstance(node, ast.Name) and node.id == "BridgeApi":
+                bridge_api_reference_lines.append(node.lineno)
+            elif isinstance(node, ast.Attribute) and node.attr == "BridgeApi":
+                bridge_api_reference_lines.append(node.lineno)
+
+        if bridge_api_import_lines:
+            failures.append(
+                f"{rel_path} imports BridgeApi at lines {sorted(set(bridge_api_import_lines))}; "
+                "only public route delegators may depend on the full BridgeApi type."
+            )
+        if bridge_api_reference_lines:
+            failures.append(
+                f"{rel_path} references BridgeApi at lines "
+                f"{sorted(set(bridge_api_reference_lines))}; route leaves must type against "
+                "narrow capability protocols."
+            )
     return failures
 
 
@@ -542,10 +603,18 @@ def run_compat_group() -> list[GuardFailure]:
 
 
 def run_routes_group() -> list[GuardFailure]:
-    failure = _failure_from_messages(
-        "routes", "check_bridge_route_inventory", check_bridge_route_inventory()
-    )
-    return [failure] if failure else []
+    failures: list[GuardFailure] = []
+    for name, messages in (
+        ("check_bridge_route_inventory", check_bridge_route_inventory()),
+        (
+            "check_bridge_route_leaf_bridge_api_imports",
+            check_bridge_route_leaf_bridge_api_imports(),
+        ),
+    ):
+        failure = _failure_from_messages("routes", name, messages)
+        if failure:
+            failures.append(failure)
+    return failures
 
 
 def run_frontend_group() -> list[GuardFailure]:

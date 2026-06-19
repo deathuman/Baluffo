@@ -27,6 +27,7 @@ def test_repo_guardrails_group_selection_runs_only_requested_group(monkeypatch) 
 
 def test_routes_group_reports_inventory_failures(monkeypatch) -> None:
     monkeypatch.setattr(repo_guardrails, "check_bridge_route_inventory", lambda: ["route drift"])
+    monkeypatch.setattr(repo_guardrails, "check_bridge_route_leaf_bridge_api_imports", lambda: [])
     assert "routes" in repo_guardrails.GROUPS
     assert repo_guardrails.GROUP_RUNNERS["routes"] is repo_guardrails.run_routes_group
     assert repo_guardrails.run_routes_group() == [
