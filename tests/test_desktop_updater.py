@@ -9,6 +9,7 @@ import pytest
 from src.ship import desktop_update_shared as du_shared
 from src.ship import desktop_update_state as update_state
 from src.ship import desktop_updater as updater
+from src.ship import desktop_updater_release as updater_release
 from src.ship.desktop_update_constants import MANIFEST_CACHE_FILE
 from tests.helpers.temp_paths import workspace_tmpdir
 
@@ -38,6 +39,17 @@ def _write_install_plan(
     plan_path.parent.mkdir(parents=True, exist_ok=True)
     plan_path.write_text(json.dumps(plan), encoding="utf-8")
     return plan
+
+
+def _patch_release_validation(monkeypatch, sha: str = "expected-zip-sha") -> None:
+    monkeypatch.setattr(updater_release, "validate_desktop_manifest", lambda manifest: None)
+    monkeypatch.setattr(
+        updater_release, "load_desktop_update_public_keys", lambda candidate_paths=None: []
+    )
+    monkeypatch.setattr(
+        updater_release, "verify_manifest_signature", lambda manifest, public_keys=None: None
+    )
+    monkeypatch.setattr(updater_release, "compute_sha256", lambda path: sha)
 
 
 def test_launch_executable_uses_install_root_as_cwd_and_can_set_data_dir(
@@ -266,11 +278,7 @@ def test_run_install_finishes_stale_verifying_state_when_target_is_already_healt
             start=mock.Mock(), update=mock.Mock(), close=mock.Mock()
         )
         monkeypatch.setattr(updater, "HelperProgressWindow", progress_cls)
-        monkeypatch.setattr(updater, "validate_desktop_manifest", lambda manifest: None)
-        monkeypatch.setattr(
-            updater, "verify_manifest_signature", lambda manifest, public_keys=None: None
-        )
-        monkeypatch.setattr(updater, "compute_sha256", lambda path: "expected-zip-sha")
+        _patch_release_validation(monkeypatch)
         monkeypatch.setattr(updater, "_verify_target_startup", lambda plan, timeout_s=90.0: None)
         monkeypatch.setattr(updater, "_wait_for_launcher_exit", wait_for_exit)
 
@@ -312,14 +320,7 @@ def test_run_install_uses_env_override_for_relaunch_verification_timeout(monkeyp
         verify_startup = mock.Mock()
 
         monkeypatch.setenv(updater.DESKTOP_UPDATER_VERIFY_TIMEOUT_ENV, "6")
-        monkeypatch.setattr(updater, "validate_desktop_manifest", lambda manifest: None)
-        monkeypatch.setattr(
-            updater, "load_desktop_update_public_keys", lambda candidate_paths=None: []
-        )
-        monkeypatch.setattr(
-            updater, "verify_manifest_signature", lambda manifest, public_keys=None: None
-        )
-        monkeypatch.setattr(updater, "compute_sha256", lambda path: "expected-zip-sha")
+        _patch_release_validation(monkeypatch)
         monkeypatch.setattr(updater, "_recover_interrupted_install", lambda *args, **kwargs: False)
         monkeypatch.setattr(updater, "_wait_for_launcher_exit", lambda plan: None)
         monkeypatch.setattr(updater.zipfile, "ZipFile", mock.Mock(return_value=zip_context))
@@ -384,16 +385,11 @@ def test_run_install_recovers_manifest_cache_from_release_metadata(monkeypatch) 
                 return manifest_payload
             raise AssertionError(url)
 
-        monkeypatch.setattr(updater, "fetch_json", fetch_json)
-        monkeypatch.setattr(updater, "resolve_release_repo", lambda **kwargs: "deathuman/Baluffo")
-        monkeypatch.setattr(updater, "validate_desktop_manifest", lambda manifest: None)
+        monkeypatch.setattr(updater_release, "fetch_json", fetch_json)
         monkeypatch.setattr(
-            updater, "load_desktop_update_public_keys", lambda candidate_paths=None: []
+            updater_release, "resolve_release_repo", lambda **_: "deathuman/Baluffo"
         )
-        monkeypatch.setattr(
-            updater, "verify_manifest_signature", lambda manifest, public_keys=None: None
-        )
-        monkeypatch.setattr(updater, "compute_sha256", lambda path: "expected-zip-sha")
+        _patch_release_validation(monkeypatch)
         monkeypatch.setattr(updater, "_recover_interrupted_install", lambda *args, **kwargs: False)
         monkeypatch.setattr(updater, "_wait_for_launcher_exit", lambda plan: None)
         monkeypatch.setattr(updater.zipfile, "ZipFile", mock.Mock(return_value=zip_context))
@@ -444,15 +440,8 @@ def test_run_install_redownloads_zip_when_cached_artifact_is_missing(monkeypatch
             side_effect=lambda url, destination: destination.write_text("zip", encoding="utf-8")
         )
 
-        monkeypatch.setattr(updater, "validate_desktop_manifest", lambda manifest: None)
-        monkeypatch.setattr(
-            updater, "load_desktop_update_public_keys", lambda candidate_paths=None: []
-        )
-        monkeypatch.setattr(
-            updater, "verify_manifest_signature", lambda manifest, public_keys=None: None
-        )
-        monkeypatch.setattr(updater, "download_file", download_mock)
-        monkeypatch.setattr(updater, "compute_sha256", lambda path: "expected-zip-sha")
+        _patch_release_validation(monkeypatch)
+        monkeypatch.setattr(updater_release, "download_file", download_mock)
         monkeypatch.setattr(updater, "_recover_interrupted_install", lambda *args, **kwargs: False)
         monkeypatch.setattr(updater, "_wait_for_launcher_exit", lambda plan: None)
         monkeypatch.setattr(updater.zipfile, "ZipFile", mock.Mock(return_value=zip_context))
@@ -495,19 +484,12 @@ def test_run_install_records_zip_reverification_failure_after_redownload(monkeyp
             },
         )
 
-        monkeypatch.setattr(updater, "validate_desktop_manifest", lambda manifest: None)
+        _patch_release_validation(monkeypatch, sha="wrong-zip-sha")
         monkeypatch.setattr(
-            updater, "load_desktop_update_public_keys", lambda candidate_paths=None: []
-        )
-        monkeypatch.setattr(
-            updater, "verify_manifest_signature", lambda manifest, public_keys=None: None
-        )
-        monkeypatch.setattr(
-            updater,
+            updater_release,
             "download_file",
             lambda url, destination: destination.write_text("zip", encoding="utf-8"),
         )
-        monkeypatch.setattr(updater, "compute_sha256", lambda path: "wrong-zip-sha")
         monkeypatch.setattr(updater, "_restore_install_snapshot", mock.Mock())
 
         with pytest.raises(RuntimeError, match="Downloaded desktop ZIP failed re-verification."):
@@ -552,14 +534,7 @@ def test_run_install_records_specific_failure_when_relaunch_verification_fails(
         restore_snapshot = mock.Mock()
         launch_executable = mock.Mock()
 
-        monkeypatch.setattr(updater, "validate_desktop_manifest", lambda manifest: None)
-        monkeypatch.setattr(
-            updater, "load_desktop_update_public_keys", lambda candidate_paths=None: []
-        )
-        monkeypatch.setattr(
-            updater, "verify_manifest_signature", lambda manifest, public_keys=None: None
-        )
-        monkeypatch.setattr(updater, "compute_sha256", lambda path: "expected-zip-sha")
+        _patch_release_validation(monkeypatch)
         monkeypatch.setattr(updater, "_recover_interrupted_install", lambda *args, **kwargs: False)
         monkeypatch.setattr(updater, "_wait_for_launcher_exit", lambda plan: None)
         monkeypatch.setattr(updater.zipfile, "ZipFile", mock.Mock(return_value=zip_context))

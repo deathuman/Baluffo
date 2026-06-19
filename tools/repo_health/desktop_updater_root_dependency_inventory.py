@@ -20,8 +20,8 @@ TRACKED_IMPORT_MODULES = {
     "desktop_updater_install",
 }
 
-EXPECTED_DEPENDENCY_COUNT = 18
-EXPECTED_REFERENCE_COUNT = 32
+EXPECTED_DEPENDENCY_COUNT = 12
+EXPECTED_REFERENCE_COUNT = 23
 
 CATEGORIES = {
     "constant",
@@ -60,13 +60,7 @@ INSTALL_HELPERS = {
 }
 
 SHARED_HELPERS = {
-    "compute_sha256",
-    "download_file",
     "fetch_json",
-    "load_desktop_update_public_keys",
-    "resolve_release_repo",
-    "validate_desktop_manifest",
-    "verify_manifest_signature",
 }
 STATE_HELPERS: set[str] = set()
 

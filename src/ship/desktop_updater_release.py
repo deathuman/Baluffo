@@ -74,9 +74,8 @@ def _as_list(value: Any) -> list[Any]:
 
 
 def _find_release_for_target_version(repo: str, target_version: str) -> dict[str, Any]:
-    module = _module()
     url = f"{_resolve_github_api_base()}/repos/{repo}/releases?per_page=10"
-    payload = module.fetch_json(url)
+    payload = fetch_json(url)
     if not isinstance(payload, list):
         raise RuntimeError("GitHub releases payload was not a list.")
     wanted = str(target_version or "").strip()
@@ -101,12 +100,11 @@ def _recover_manifest_for_install(
     ship_root: Path,
     paths,
 ) -> dict[str, Any]:
-    module = _module()
     cached_manifest = _read_cached_manifest(paths)
     manifest = _as_dict(cached_manifest.get("manifest"))
     if manifest:
         return manifest
-    repo = module.resolve_release_repo(install_root=install_root, ship_root=ship_root)
+    repo = resolve_release_repo(install_root=install_root, ship_root=ship_root)
     if not repo:
         raise RuntimeError(
             "Verified manifest cache is unavailable and desktop update repo is not configured."
@@ -127,13 +125,13 @@ def _recover_manifest_for_install(
     manifest_url = str(manifest_asset.get("browser_download_url") or "").strip()
     if not manifest_url:
         raise RuntimeError("Recovered desktop manifest asset is missing its download URL.")
-    manifest = module.fetch_json(manifest_url)
+    manifest = fetch_json(manifest_url)
     if not isinstance(manifest, dict):
         raise RuntimeError("Recovered desktop manifest payload is invalid.")
-    module.validate_desktop_manifest(manifest)
-    module.verify_manifest_signature(
+    validate_desktop_manifest(manifest)
+    verify_manifest_signature(
         manifest,
-        public_keys=module.load_desktop_update_public_keys(
+        public_keys=load_desktop_update_public_keys(
             candidate_paths=_desktop_update_public_key_candidate_paths(ship_root),
         ),
     )
@@ -156,7 +154,6 @@ def _ensure_verified_zip_for_install(
     manifest: dict[str, Any],
     zip_path: Path,
 ) -> Path:
-    module = _module()
     expected_hash = str(plan.get("expectedZipSha256") or "").strip().lower()
     artifact = _as_dict(manifest.get("portable_artifact"))
     manifest_hash = str(artifact.get("sha256") or "").strip().lower()
@@ -166,7 +163,7 @@ def _ensure_verified_zip_for_install(
         if (
             zip_path.is_file()
             and expected_hash
-            and module.compute_sha256(zip_path).lower() == expected_hash
+            and compute_sha256(zip_path).lower() == expected_hash
         ):
             return zip_path
     except OSError:
@@ -174,8 +171,8 @@ def _ensure_verified_zip_for_install(
     if not artifact_url:
         raise RuntimeError("Recovered desktop manifest is missing its portable artifact URL.")
     zip_path.parent.mkdir(parents=True, exist_ok=True)
-    module.download_file(artifact_url, zip_path)
-    if expected_hash and module.compute_sha256(zip_path).lower() != expected_hash:
+    download_file(artifact_url, zip_path)
+    if expected_hash and compute_sha256(zip_path).lower() != expected_hash:
         raise RuntimeError("Downloaded desktop ZIP failed re-verification.")
     return zip_path
 
