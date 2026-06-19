@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
+from pydantic import ValidationError as PydanticValidationError
+
 from src import source_registry as source_registry_module
 from src.bridge.registry_tombstones import filter_tombstoned_rows
 from src.contracts import SCHEMA_VERSION
@@ -408,7 +410,7 @@ def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[st
                 "status": "completed",
             }
             report["runtime"] = runtime_payload
-        except Exception as exc:  # noqa: BLE001
+        except (OSError, TypeError, ValueError, PydanticValidationError) as exc:
             runtime_payload = _as_dict(report.get("runtime"))
             runtime_payload["autoApproval"] = {
                 **_as_dict(runtime_payload.get("autoApproval")),
