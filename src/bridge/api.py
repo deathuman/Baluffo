@@ -437,11 +437,11 @@ class BridgeApi:
     def _field_is_default(self, field_name: str) -> bool:
         try:
             default = type(self).__dataclass_fields__[field_name].default
-        except Exception:  # noqa: BLE001
+        except (AttributeError, KeyError):
             return False
         try:
             current = getattr(self, field_name)
-        except Exception:  # noqa: BLE001
+        except AttributeError:
             return False
         return current is default
 
