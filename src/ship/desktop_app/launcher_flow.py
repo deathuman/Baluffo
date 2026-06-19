@@ -413,7 +413,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                             elapsed_ms=int((api.time.perf_counter() - started_mono) * 1000),
                         )
                 break
-            except Exception as exc:
+            except (OSError, RuntimeError) as exc:
                 retry_ports = (
                     not session_state_written
                     and not port_retry_attempted
