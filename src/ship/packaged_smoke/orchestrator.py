@@ -10,6 +10,13 @@ from pathlib import Path
 from typing import Any
 
 root: Any | None = None
+_EXPECTED_PACKAGED_SMOKE_OPERATIONAL_EXCEPTIONS = (
+    OSError,
+    RuntimeError,
+    TimeoutError,
+    ValueError,
+    subprocess.SubprocessError,
+)
 
 
 def _root() -> Any:
@@ -702,7 +709,7 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
             print("." if str(row.get("status")) == "passed" else "X", end="", flush=True)
 
         report["artifacts"].update(deps.capture_runtime_snapshot(bridge_base_url, artifacts_dir))
-    except Exception as exc:  # noqa: BLE001
+    except _EXPECTED_PACKAGED_SMOKE_OPERATIONAL_EXCEPTIONS as exc:
         if startup_probe:
             _capture_startup_failure_metrics(
                 report,
