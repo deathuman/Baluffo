@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Protocol
 
-from src.bridge.api import BridgeApi
 from src.bridge.performance_profile import time_operation
 from src.bridge.routes.response_writer import BridgeResponseWriter
 from src.bridge.routes.route_payload_helpers import (
@@ -16,6 +15,14 @@ from src.bridge.routes.route_payload_helpers import (
 from src.bridge.routes.route_payload_helpers import (
     clean_text as _clean_text,
 )
+
+
+class _SyncRouteApi(Protocol):
+    def get_sync_status_payload(self) -> dict[str, Any]: ...
+
+    def load_sync_runtime_state(self) -> dict[str, Any]: ...
+
+    def sync_config_status(self) -> dict[str, Any]: ...
 
 
 def _sync_status_summary_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -69,7 +76,7 @@ def _sync_status_summary_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def handle_sync_routes(
-    handler: BridgeResponseWriter, *, api: BridgeApi, path: str, query: dict[str, list[str]]
+    handler: BridgeResponseWriter, *, api: _SyncRouteApi, path: str, query: dict[str, list[str]]
 ) -> bool:
     if path == "/sync/status":
         view = str((query.get("view") or ["full"])[0] or "full").strip().lower()
