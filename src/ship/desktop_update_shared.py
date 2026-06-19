@@ -27,6 +27,8 @@ from src.shared.json_io import read_json_object
 from src.shared.utils import now_iso
 from src.ship import desktop_update_constants as constants_mod
 from src.ship import desktop_update_manifest as manifest_mod
+from src.ship.update_manager_paths import ShipPaths
+from src.ship.update_manager_state import ensure_state as ensure_ship_update_state
 
 try:
     import psutil as _psutil
@@ -267,9 +269,7 @@ def _resolve_ship_current_version(ship_root: Path) -> str:
     if current_version:
         return current_version
     try:
-        from src.ship import update_manager
-
-        state = update_manager.ensure_state(update_manager.ShipPaths.from_root(ship_root))
+        state = ensure_ship_update_state(ShipPaths.from_root(ship_root))
     except (OSError, RuntimeError, ValueError):
         return ""
     return str(_as_dict(state).get("current_version") or "").strip()

@@ -8,7 +8,6 @@ from src.ship import desktop_update_constants as update_constants
 from src.ship import desktop_update_service as du_service
 from src.ship import desktop_update_shared as du_shared
 from src.ship import desktop_update_state as update_state
-from src.ship import update_manager
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -126,8 +125,8 @@ def test_resolve_ship_current_version_suppresses_expected_update_state_failures(
         ship_root = Path(tmp) / "portable" / "ship"
 
         with mock.patch.object(
-            update_manager,
-            "ensure_state",
+            du_shared,
+            "ensure_ship_update_state",
             side_effect=RuntimeError("missing current pointer"),
         ):
             assert du_shared._resolve_ship_current_version(ship_root) == ""
@@ -139,8 +138,8 @@ def test_resolve_ship_current_version_does_not_suppress_unexpected_failures() ->
 
         with (
             mock.patch.object(
-                update_manager,
-                "ensure_state",
+                du_shared,
+                "ensure_ship_update_state",
                 side_effect=AssertionError("unexpected"),
             ),
             pytest.raises(AssertionError, match="unexpected"),
