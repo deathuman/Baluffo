@@ -290,7 +290,7 @@ def test_capture_runtime_snapshot_preserves_versioned_startup_metrics() -> None:
 def test_capture_performance_profile_snapshot_is_non_fatal() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         artifacts_dir = Path(tmp) / "artifacts"
-        with mock.patch.object(smoke, "fetch_json", side_effect=RuntimeError("older bridge")):
+        with mock.patch.object(smoke, "fetch_json", side_effect=OSError("older bridge")):
             snapshots = smoke.capture_performance_profile_snapshot(
                 "http://127.0.0.1:8877",
                 artifacts_dir,
@@ -305,6 +305,19 @@ def test_capture_performance_profile_snapshot_is_non_fatal() -> None:
         )
         assert saved == {"ok": False, "error": "older bridge"}
         assert storage_saved == {"ok": False, "error": "older bridge"}
+
+
+@pytest.mark.parametrize("exc_type", [AssertionError, RuntimeError])
+def test_capture_runtime_snapshot_does_not_swallow_unexpected_fetch_bug(
+    exc_type: type[Exception],
+) -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        artifacts_dir = Path(tmp) / "artifacts"
+        with (
+            mock.patch.object(smoke, "fetch_json", side_effect=exc_type("fetch shim bug")),
+            pytest.raises(exc_type, match="fetch shim bug"),
+        ):
+            smoke.capture_runtime_snapshot("http://127.0.0.1:8877", artifacts_dir)
 
 
 @pytest.mark.windows

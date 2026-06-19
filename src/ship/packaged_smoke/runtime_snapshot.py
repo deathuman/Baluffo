@@ -6,11 +6,13 @@ import time
 from pathlib import Path
 from typing import Any
 
+_EXPECTED_SNAPSHOT_FETCH_EXCEPTIONS = (OSError, ValueError)
+
 
 def _snapshot_json(deps: Any, url: str) -> dict[str, Any]:
     try:
         payload = deps.fetch_json(url)
-    except Exception as exc:  # noqa: BLE001
+    except _EXPECTED_SNAPSHOT_FETCH_EXCEPTIONS as exc:
         return {"ok": False, "error": str(exc)}
     return payload if isinstance(payload, dict) else {"ok": False, "payload": payload}
 
