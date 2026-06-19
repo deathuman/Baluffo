@@ -194,6 +194,18 @@ def _iter_facade_monkeypatch_names(repo_root: Path) -> set[str]:
                 and isinstance(node.args[1].value, str)
             ):
                 monkeypatched.add(node.args[1].value)
+            elif (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "setattr"
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "monkeypatch"
+                and node.args
+                and isinstance(node.args[0], ast.Attribute)
+                and isinstance(node.args[0].value, ast.Name)
+                and node.args[0].value.id == "updater"
+            ):
+                monkeypatched.add(node.args[0].attr)
     return monkeypatched
 
 

@@ -52,10 +52,6 @@ def test_current_desktop_updater_root_dependency_inventory_is_complete() -> None
         "save_status",
         "validate_install_plan",
     }.isdisjoint(by_name)
-    assert by_name["update_manager"].categories == (
-        "mutable-compat-hook",
-        "update-manager-compat",
-    )
     assert by_name["fetch_json"].categories == (
         "facade-monkeypatch-compat",
         "mutable-compat-hook",
@@ -70,6 +66,11 @@ def test_current_desktop_updater_root_dependency_inventory_is_complete() -> None
         "facade-monkeypatch-compat",
         "install-helper",
         "mutable-compat-hook",
+    )
+    assert by_name["update_manager"].categories == (
+        "facade-monkeypatch-compat",
+        "mutable-compat-hook",
+        "update-manager-compat",
     )
     assert by_name["_recover_manifest_for_install"].categories == (
         "mutable-compat-hook",
@@ -179,6 +180,45 @@ def test_inventory_ignores_unrelated_updater_monkeypatches(
     rows = inventory.collect_desktop_updater_root_dependency_inventory(tmp_path)
 
     assert rows[0].categories == ("mutable-compat-hook", "shared-helper")
+    assert inventory.check_desktop_updater_root_dependency_inventory(tmp_path) == []
+
+
+def test_inventory_classifies_nested_facade_monkeypatch_compatibility(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_tracked_modules(
+        tmp_path,
+        install="""
+        def path(module):
+            return module.update_manager.restore_data_backup()
+        """,
+    )
+    _write(
+        tmp_path,
+        "tests/test_desktop_updater.py",
+        """
+        from src.ship import desktop_updater as updater
+
+        def test_patch(monkeypatch):
+            monkeypatch.setattr(updater.update_manager, "restore_data_backup", lambda: None)
+        """,
+    )
+    monkeypatch.setattr(inventory, "EXPECTED_DEPENDENCY_COUNT", 1)
+    monkeypatch.setattr(inventory, "EXPECTED_REFERENCE_COUNT", 1)
+    monkeypatch.setattr(
+        inventory,
+        "DEPENDENCY_CATEGORIES",
+        {"update_manager": {"update-manager-compat", "mutable-compat-hook"}},
+    )
+
+    rows = inventory.collect_desktop_updater_root_dependency_inventory(tmp_path)
+
+    assert rows[0].categories == (
+        "facade-monkeypatch-compat",
+        "mutable-compat-hook",
+        "update-manager-compat",
+    )
     assert inventory.check_desktop_updater_root_dependency_inventory(tmp_path) == []
 
 
