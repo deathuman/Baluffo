@@ -23,6 +23,14 @@ from src.jobs.text_utils import clean_text
 
 from ..common import config as common_config
 
+_SOCIAL_SUBSOURCE_ERRORS = (
+    AdapterValidationError,
+    OSError,
+    RuntimeError,
+    TypeError,
+    ValueError,
+)
+
 
 def _as_dict(value: object) -> dict[str, Any]:
     return cast(dict[str, Any], value) if isinstance(value, dict) else {}
@@ -301,7 +309,7 @@ def run_social_reddit_source(
                 kept_count=len(sub_rows),
             )
             _tick(heartbeat_callback)
-        except Exception as exc:  # noqa: BLE001
+        except _SOCIAL_SUBSOURCE_ERRORS as exc:
             _record_social_subsource_error(entry, errors, error_prefix=f"reddit:{sub}", exc=exc)
             _emit_social_error_progress(
                 progress_callback,
@@ -525,7 +533,7 @@ def run_social_x_source(
                 reject_reasons=reject_reason_counts,
             )
             entry["fetchedCount"] = _x_fetched_count(payload, parsed_rows, low_conf_query)
-        except Exception as exc:  # noqa: BLE001
+        except _SOCIAL_SUBSOURCE_ERRORS as exc:
             _record_social_subsource_error(entry, errors, error_prefix=f"x:{query}", exc=exc)
             _emit_social_error_progress(
                 progress_callback,
@@ -651,7 +659,7 @@ def run_social_mastodon_source(
                     kept_count=len(parsed_rows),
                 )
                 _tick(heartbeat_callback)
-            except Exception as exc:  # noqa: BLE001
+            except _SOCIAL_SUBSOURCE_ERRORS as exc:
                 _record_social_subsource_error(
                     entry,
                     errors,
