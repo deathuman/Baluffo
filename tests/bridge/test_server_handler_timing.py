@@ -256,6 +256,39 @@ def test_handler_records_post_request_timing_for_not_found(tmp_path: Path) -> No
     assert profile["routeTimings"]["routes"][0]["errorCount"] == 1
 
 
+def test_handler_converts_post_route_failure_to_500(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import src.bridge.routes.post_routes as post_routes
+
+    api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    logs: list[tuple[str, str, dict[str, object]]] = []
+    api.bridge_log = lambda level, event, **fields: logs.append((level, event, fields))  # type: ignore[assignment]
+    handler_cls = make_handler(api=api)
+    harness = HandlerHarness(handler_cls, method="POST", path="/tasks/run", body=b"{}")
+
+    def failing_post(*_args: object, **_kwargs: object) -> bool:
+        raise RuntimeError("post route failed")
+
+    monkeypatch.setattr(post_routes, "handle_post", failing_post)
+
+    harness.handler.do_POST()
+
+    profile = snapshot_performance_profile()
+    assert harness.responses[-1]["status"] == 500
+    assert harness.responses[-1]["payload"]["detail"] == "post route failed"
+    assert profile["routeTimings"]["routes"][0]["label"] == "POST /tasks/run"
+    assert profile["routeTimings"]["routes"][0]["errorCount"] == 1
+    assert any(
+        level == "error"
+        and event == "http_post_handler_failed"
+        and fields["path"] == "/tasks/run"
+        and fields["error"] == "post route failed"
+        for level, event, fields in logs
+    )
+
+
 def test_handler_does_not_swallow_post_keyboard_interrupt(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

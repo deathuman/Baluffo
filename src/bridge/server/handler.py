@@ -272,42 +272,59 @@ def _handle_post_request(handler: BaseHTTPRequestHandler, api: BridgeApi) -> Non
     path = ""
     started_at = time.perf_counter()
     failed = False
+
+    def _run_post_route() -> None:
+        nonlocal path
+        path = _route_path(handler)
+        try:
+            api.mark_desktop_session_activity(path)
+        except _EXPECTED_HANDLER_BOOKKEEPING_EXCEPTIONS:
+            pass
+        payload = read_json_from_request(handler)
+        from src.bridge.routes.post_routes import handle_post
+
+        if handle_post(handler, api=api, path=path, payload=payload):
+            return
+        handler.send_json({"error": "Not found"}, status=404)
+
+    def _send_post_error(exc: Exception) -> None:
+        nonlocal failed
+        failed = True
+        try:
+            api.bridge_log(
+                "error",
+                "http_post_handler_failed",
+                path=path,
+                error=str(exc),
+                detail=traceback.format_exc(),
+            )
+        except _EXPECTED_HANDLER_BOOKKEEPING_EXCEPTIONS:
+            pass
+        handler.send_json(
+            {
+                "error": "Internal server error",
+                "detail": str(exc),
+                "traceback": traceback.format_exc(),
+            },
+            status=500,
+        )
+
     with time_block(_request_timing_category(handler, "post")):
         try:
-            path = _route_path(handler)
-            try:
-                api.mark_desktop_session_activity(path)
-            except _EXPECTED_HANDLER_BOOKKEEPING_EXCEPTIONS:
-                pass
-            payload = read_json_from_request(handler)
-            from src.bridge.routes.post_routes import handle_post
-
-            if handle_post(handler, api=api, path=path, payload=payload):
-                return
-            handler.send_json({"error": "Not found"}, status=404)
-        except (KeyboardInterrupt, SystemExit, GeneratorExit):
-            failed = True
-            raise
-        except Exception as exc:
-            failed = True
-            try:
-                api.bridge_log(
-                    "error",
-                    "http_post_handler_failed",
-                    path=path,
-                    error=str(exc),
-                    detail=traceback.format_exc(),
-                )
-            except _EXPECTED_HANDLER_BOOKKEEPING_EXCEPTIONS:
-                pass
-            handler.send_json(
-                {
+            run_route_boundary(
+                handler,
+                _run_post_route,
+                error_status=500,
+                error_payload=lambda exc: {
                     "error": "Internal server error",
                     "detail": str(exc),
                     "traceback": traceback.format_exc(),
                 },
-                status=500,
+                error_sender=_send_post_error,
             )
+        except BaseException:
+            failed = True
+            raise
         finally:
             status = getattr(handler, "_baluffo_last_response_status", 0)
             record_route_duration(
