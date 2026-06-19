@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path, PurePosixPath
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -24,7 +25,6 @@ if str(ROOT) not in sys.path:
 from src.app_version import get_app_version
 from src.baluffo_config import get_bridge_defaults, get_desktop_defaults, get_security_defaults
 from src.shared.json_io import PIPELINE_GZIP_JSON_NAMES, existing_json_candidate
-from src.ship import update_manager
 from src.ship.jobs_first_run_state import (
     ROW_BEARING_JOBS_ARTIFACTS,
     RUNTIME_FEED_ARTIFACTS,
@@ -45,6 +45,18 @@ from src.ship.startup_telemetry import (
 from src.ship.startup_telemetry import (
     wait_for_url as wait_for_url,
 )
+from src.ship.update_manager_bootstrap import (
+    repair_version_from_runtime_bootstrap as _repair_version_from_runtime_bootstrap,
+)
+from src.ship.update_manager_paths import (
+    REQUIRED_VERSION_FILES as _REQUIRED_VERSION_FILES,
+)
+from src.ship.update_manager_paths import (
+    ShipPaths as _ShipPaths,
+)
+from src.ship.update_manager_recovery import startup_check as _startup_check
+from src.ship.update_manager_state import ensure_state as _ensure_state
+from src.ship.update_manager_validation import health_check_version as _health_check_version
 
 BRIDGE_DEFAULTS = get_bridge_defaults()
 DESKTOP_DEFAULTS = get_desktop_defaults()
@@ -64,6 +76,14 @@ ROOT_DATA_FILE_ALIASES = frozenset(
 )
 ROW_BEARING_JOBS_ARTIFACT_NAMES = frozenset(ROW_BEARING_JOBS_ARTIFACTS)
 _EXPECTED_RUNTIME_LAUNCHER_CLI_EXCEPTIONS = (OSError, RuntimeError, ValueError)
+update_manager = SimpleNamespace(
+    ShipPaths=_ShipPaths,
+    REQUIRED_VERSION_FILES=_REQUIRED_VERSION_FILES,
+    ensure_state=_ensure_state,
+    startup_check=_startup_check,
+    repair_version_from_runtime_bootstrap=_repair_version_from_runtime_bootstrap,
+    health_check_version=_health_check_version,
+)
 
 
 def _is_expected_client_disconnect(exc: BaseException) -> bool:
