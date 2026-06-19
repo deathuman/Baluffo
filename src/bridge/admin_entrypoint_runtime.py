@@ -128,6 +128,7 @@ def configure_runtime_paths(config: Any) -> None:
         owner_idle_timeout_s=config.owner_idle_timeout_s,
     )
     with root_mod._REGISTRY_SERVICE_LOCK:
+        root_mod.BRIDGE_SERVICES.reset_registry_service()
         root_mod._REGISTRY_SERVICE = None
         root_mod._REGISTRY_SERVICE_PATHS = None
     with root_mod._DISCOVERY_SERVICE_LOCK:

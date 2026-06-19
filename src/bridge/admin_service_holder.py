@@ -26,3 +26,7 @@ class BridgeServices:
     def reset_desktop_update_service(self) -> None:
         self.desktop_update_service = None
         self.desktop_update_service_data_dir = None
+
+    def reset_registry_service(self) -> None:
+        self.registry_service = None
+        self.registry_service_paths = None

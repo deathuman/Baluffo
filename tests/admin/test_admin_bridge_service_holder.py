@@ -78,3 +78,74 @@ def test_runtime_path_reconfiguration_resets_desktop_update_holder(
     assert second_service is not first_service
     assert admin_bridge.BRIDGE_SERVICES.desktop_update_service is second_service
     assert admin_bridge.BRIDGE_SERVICES.desktop_update_service_data_dir == second_data_dir.resolve()
+
+
+def test_registry_service_is_owned_by_bridge_services_holder(
+    admin_bridge_entrypoint_root: Path,
+) -> None:
+    data_dir = admin_bridge_entrypoint_root / "data"
+    admin_bridge.configure_runtime_paths(_runtime_config(admin_bridge_entrypoint_root, data_dir))
+    expected_paths = (
+        Path(admin_bridge.ACTIVE_PATH),
+        Path(admin_bridge.PENDING_PATH),
+        Path(admin_bridge.REJECTED_PATH),
+    )
+
+    service = admin_bridge._get_registry_service()
+
+    assert admin_bridge.BRIDGE_SERVICES.registry_service is service
+    assert admin_bridge.BRIDGE_SERVICES.registry_service_paths == expected_paths
+    assert admin_bridge._REGISTRY_SERVICE is service
+    assert admin_bridge._REGISTRY_SERVICE_PATHS == expected_paths
+    assert admin_bridge._get_registry_service() is service
+
+
+def test_registry_service_holder_adopts_legacy_patch_surface(
+    admin_bridge_entrypoint_root: Path,
+) -> None:
+    data_dir = admin_bridge_entrypoint_root / "data"
+    admin_bridge.configure_runtime_paths(_runtime_config(admin_bridge_entrypoint_root, data_dir))
+    expected_paths = (
+        Path(admin_bridge.ACTIVE_PATH),
+        Path(admin_bridge.PENDING_PATH),
+        Path(admin_bridge.REJECTED_PATH),
+    )
+    legacy_service = SimpleNamespace(name="legacy-registry-service")
+    admin_bridge.BRIDGE_SERVICES.reset_registry_service()
+    admin_bridge._REGISTRY_SERVICE = legacy_service
+    admin_bridge._REGISTRY_SERVICE_PATHS = expected_paths
+
+    service = admin_bridge._get_registry_service()
+
+    assert service is legacy_service
+    assert admin_bridge.BRIDGE_SERVICES.registry_service is legacy_service
+    assert admin_bridge.BRIDGE_SERVICES.registry_service_paths == expected_paths
+
+
+def test_runtime_path_reconfiguration_resets_registry_holder(
+    admin_bridge_entrypoint_root: Path,
+) -> None:
+    first_data_dir = admin_bridge_entrypoint_root / "data-one"
+    admin_bridge.configure_runtime_paths(
+        _runtime_config(admin_bridge_entrypoint_root, first_data_dir)
+    )
+    first_service = admin_bridge._get_registry_service()
+
+    second_data_dir = admin_bridge_entrypoint_root / "data-two"
+    admin_bridge.configure_runtime_paths(
+        _runtime_config(admin_bridge_entrypoint_root, second_data_dir)
+    )
+
+    assert admin_bridge.BRIDGE_SERVICES.registry_service is None
+    assert admin_bridge.BRIDGE_SERVICES.registry_service_paths is None
+    assert admin_bridge._REGISTRY_SERVICE is None
+    assert admin_bridge._REGISTRY_SERVICE_PATHS is None
+
+    second_service = admin_bridge._get_registry_service()
+    assert second_service is not first_service
+    assert admin_bridge.BRIDGE_SERVICES.registry_service is second_service
+    assert admin_bridge.BRIDGE_SERVICES.registry_service_paths == (
+        Path(admin_bridge.ACTIVE_PATH),
+        Path(admin_bridge.PENDING_PATH),
+        Path(admin_bridge.REJECTED_PATH),
+    )
