@@ -140,6 +140,7 @@ def configure_runtime_paths(config: Any) -> None:
         root_mod._DISCOVERY_SERVICE = None
         root_mod._DISCOVERY_SERVICE_PATHS = None
     with root_mod._PIPELINE_SERVICE_LOCK:
+        root_mod.BRIDGE_SERVICES.reset_pipeline_service()
         root_mod._PIPELINE_SERVICE = None
     with root_mod._DESKTOP_UPDATE_SERVICE_LOCK:
         root_mod.BRIDGE_SERVICES.reset_desktop_update_service()

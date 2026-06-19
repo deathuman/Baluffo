@@ -646,8 +646,11 @@ def get_ops_api() -> _OpsApiLike:
 
 def get_pipeline_service() -> _PipelineServiceLike:
     root_mod = _require_root()
-    with root_mod._PIPELINE_SERVICE_LOCK:
-        if root_mod._PIPELINE_SERVICE is None:
+    services = root_mod.BRIDGE_SERVICES
+    with services.pipeline_service_lock:
+        if services.pipeline_service is None and root_mod._PIPELINE_SERVICE is not None:
+            services.pipeline_service = root_mod._PIPELINE_SERVICE
+        if services.pipeline_service is None:
             smoke_mode = (
                 str(root_mod.os.getenv("BALUFFO_PACKAGED_SMOKE_PIPELINE_MODE") or "")
                 .strip()
@@ -752,7 +755,7 @@ def get_pipeline_service() -> _PipelineServiceLike:
                 )
                 return result
 
-            root_mod._PIPELINE_SERVICE = root_mod.PipelineService(
+            services.pipeline_service = root_mod.PipelineService(
                 pipeline_state_lock=bridge_runtime_state.PIPELINE_STATE_LOCK,
                 pipeline_status=bridge_runtime_state.PIPELINE_STATUS,
                 runtime=bridge_runtime_state.PIPELINE_RUNTIME,
@@ -788,7 +791,8 @@ def get_pipeline_service() -> _PipelineServiceLike:
                 pipeline_completion_notifier=pipeline_completion_notifier,
                 control_data_dir=getattr(root_mod.RUNTIME_CONFIG, "data_dir", None),
             )
-        return cast(_PipelineServiceLike, root_mod._PIPELINE_SERVICE)
+        root_mod._PIPELINE_SERVICE = services.pipeline_service
+        return cast(_PipelineServiceLike, services.pipeline_service)
 
 
 def get_pipeline_schedule_service() -> _PipelineScheduleServiceLike:

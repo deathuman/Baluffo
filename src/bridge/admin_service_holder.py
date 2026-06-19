@@ -38,3 +38,6 @@ class BridgeServices:
     def reset_discovery_service(self) -> None:
         self.discovery_service = None
         self.discovery_service_paths = None
+
+    def reset_pipeline_service(self) -> None:
+        self.pipeline_service = None

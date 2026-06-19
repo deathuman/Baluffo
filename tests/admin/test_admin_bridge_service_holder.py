@@ -225,6 +225,56 @@ def test_runtime_path_reconfiguration_resets_discovery_holder(
     )
 
 
+def test_pipeline_service_is_owned_by_bridge_services_holder(
+    admin_bridge_entrypoint_root: Path,
+) -> None:
+    data_dir = admin_bridge_entrypoint_root / "data"
+    admin_bridge.configure_runtime_paths(_runtime_config(admin_bridge_entrypoint_root, data_dir))
+
+    service = admin_bridge._get_pipeline_service()
+
+    assert admin_bridge.BRIDGE_SERVICES.pipeline_service is service
+    assert admin_bridge._PIPELINE_SERVICE is service
+    assert admin_bridge._get_pipeline_service() is service
+
+
+def test_pipeline_service_holder_adopts_legacy_patch_surface(
+    admin_bridge_entrypoint_root: Path,
+) -> None:
+    data_dir = admin_bridge_entrypoint_root / "data"
+    admin_bridge.configure_runtime_paths(_runtime_config(admin_bridge_entrypoint_root, data_dir))
+    legacy_service = SimpleNamespace(name="legacy-pipeline-service")
+    admin_bridge.BRIDGE_SERVICES.reset_pipeline_service()
+    admin_bridge._PIPELINE_SERVICE = legacy_service
+
+    service = admin_bridge._get_pipeline_service()
+
+    assert service is legacy_service
+    assert admin_bridge.BRIDGE_SERVICES.pipeline_service is legacy_service
+
+
+def test_runtime_path_reconfiguration_resets_pipeline_holder(
+    admin_bridge_entrypoint_root: Path,
+) -> None:
+    first_data_dir = admin_bridge_entrypoint_root / "data-one"
+    admin_bridge.configure_runtime_paths(
+        _runtime_config(admin_bridge_entrypoint_root, first_data_dir)
+    )
+    first_service = admin_bridge._get_pipeline_service()
+
+    second_data_dir = admin_bridge_entrypoint_root / "data-two"
+    admin_bridge.configure_runtime_paths(
+        _runtime_config(admin_bridge_entrypoint_root, second_data_dir)
+    )
+
+    assert admin_bridge.BRIDGE_SERVICES.pipeline_service is None
+    assert admin_bridge._PIPELINE_SERVICE is None
+
+    second_service = admin_bridge._get_pipeline_service()
+    assert second_service is not first_service
+    assert admin_bridge.BRIDGE_SERVICES.pipeline_service is second_service
+
+
 def test_sync_service_is_owned_by_bridge_services_holder(
     admin_bridge_entrypoint_root: Path,
 ) -> None:
