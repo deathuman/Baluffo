@@ -127,7 +127,7 @@ def _emit_envelope(envelope: dict[str, Any]) -> None:
     safe_envelope = _make_json_safe(envelope)
     try:
         payload = json.dumps(safe_envelope, ensure_ascii=False)
-    except Exception as exc:  # noqa: BLE001
+    except (TypeError, ValueError) as exc:
         details = safe_envelope.get("details") if isinstance(safe_envelope, dict) else []
         first_detail = (
             details[0]
@@ -311,7 +311,7 @@ def _run_scrapy(validated: dict[str, Any]) -> dict[str, Any]:
     try:
         from scrapy.crawler import CrawlerProcess
         from scrapy.settings import Settings
-    except Exception as exc:  # noqa: BLE001
+    except ImportError as exc:
         return _json_error_envelope(
             f"Scrapy import failed: {exc}", source_name=source_name, studio=studio
         )
@@ -404,7 +404,7 @@ def main() -> int:
     studio = "unknown"
     try:
         payload = json.load(sys.stdin)
-    except Exception as exc:  # noqa: BLE001
+    except (json.JSONDecodeError, TypeError, UnicodeDecodeError) as exc:
         _emit_envelope(
             _json_error_envelope(
                 f"Failed to parse stdin JSON: {exc}", source_name=source_name, studio=studio
