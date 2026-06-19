@@ -54,13 +54,6 @@ def safe_int(value: Any, default: int, minimum: int, maximum: int) -> int:
     return max(minimum, min(maximum, parsed))
 
 
-def safe_float(value: Any, default: float = 0.0) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return float(default)
-
-
 def safe_schema_version(value: Any) -> int:
     try:
         parsed = int(float(value))
