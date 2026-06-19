@@ -1,5 +1,6 @@
 from src.bridge.report_normalizer import normalize_fetch_report_contract
 from src.jobs.common.contracts_fetch_report import normalize_fetch_report_payload
+from src.shared.fetch_report_normalization import normalize_bridge_fetch_report_source_row
 
 
 def test_bridge_and_jobs_fetch_report_normalizers_share_completed_progress_overlap() -> None:
@@ -146,6 +147,73 @@ def test_bridge_and_jobs_source_row_defaults_remain_compatible_but_distinct() ->
     assert jobs_row["fetchStrategy"] == "auto"
     assert bridge_row["healthScore"] == 0
     assert jobs_row["healthScore"] == 100
+
+
+def test_bridge_fetch_report_source_row_uses_shared_enrichment_helper() -> None:
+    row = {
+        "name": "Source A",
+        "status": "OK",
+        "adapter": "STATIC",
+        "classification": "needs_review",
+        "failureBucket": "zero_kept",
+        "zeroKeptClassification": "stale_source",
+        "browserFallbackRecommended": True,
+        "exclusionReason": "only_sources_filter",
+        "coveredByProviderSourceId": "provider:source-a",
+        "coveredByProviderAdapter": "greenhouse",
+        "providerCoverageStatus": "covered",
+        "providerCoverageConsecutiveSuccesses": "3",
+        "providerCoverageLatestKeptCount": "12",
+        "migrationSourceIdentity": "static:source-a",
+        "cacheDecision": "hit",
+        "cacheDecisionReason": "fresh",
+        "details": [
+            {
+                "name": "Job A",
+                "status": "OK",
+                "adapter": "STATIC",
+                "studio": "Studio A",
+                "fetchedCount": "2",
+                "keptCount": "1",
+                "lowConfidenceDropped": "1",
+                "error": "",
+            },
+            "{'name': 'Job B', 'status': 'OK', 'adapter': 'STATIC', 'studio': 'Studio B'}",
+            "{'name': }",
+        ],
+    }
+
+    bridge_row = normalize_fetch_report_contract({"sources": [row]})["sources"][0]
+    shared_row = normalize_bridge_fetch_report_source_row(row)
+
+    assert shared_row is not None
+    assert bridge_row == shared_row
+    assert bridge_row["adapter"] == "static"
+    assert bridge_row["browserFallbackRecommended"] is True
+    assert bridge_row["providerCoverageConsecutiveSuccesses"] == 3
+    assert bridge_row["providerCoverageLatestKeptCount"] == 12
+    assert bridge_row["details"] == [
+        {
+            "name": "Job A",
+            "status": "ok",
+            "adapter": "static",
+            "studio": "Studio A",
+            "fetchedCount": 2,
+            "keptCount": 1,
+            "lowConfidenceDropped": 1,
+            "error": "",
+        },
+        {
+            "name": "Job B",
+            "status": "ok",
+            "adapter": "static",
+            "studio": "Studio B",
+            "fetchedCount": 0,
+            "keptCount": 0,
+            "lowConfidenceDropped": 0,
+            "error": "",
+        },
+    ]
 
 
 def test_bridge_and_jobs_fetch_report_normalizers_share_social_and_timing_overlap() -> None:

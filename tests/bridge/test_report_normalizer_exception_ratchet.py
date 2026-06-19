@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from src.bridge import report_normalizer
+from src.shared import fetch_report_normalization
 
 
 def test_detail_row_literal_parser_falls_back_for_malformed_literal() -> None:
@@ -15,7 +16,7 @@ def test_detail_row_literal_parser_does_not_swallow_unexpected_failure(
     def fail_unexpected(_raw: str) -> object:
         raise RuntimeError("unexpected literal parser bug")
 
-    monkeypatch.setattr(report_normalizer.ast, "literal_eval", fail_unexpected)
+    monkeypatch.setattr(fetch_report_normalization.ast, "literal_eval", fail_unexpected)
 
     with pytest.raises(RuntimeError, match="unexpected literal parser bug"):
         report_normalizer.coerce_fetch_report_detail_row("{'name': 'Studio'}")

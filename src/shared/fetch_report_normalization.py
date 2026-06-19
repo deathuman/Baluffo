@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ast
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -244,6 +246,83 @@ def normalize_fetch_report_source_row_base(
     if options.include_duplicate_rate:
         payload["duplicateRate"] = _float_or_zero(src.get("duplicateRate"))
     return payload
+
+
+def coerce_fetch_report_detail_row(detail: Any) -> dict[str, Any] | None:
+    candidate: dict[str, Any] | None = None
+    if isinstance(detail, dict):
+        candidate = detail
+    elif isinstance(detail, str):
+        raw = str(detail).strip()
+        if raw.startswith("{") and raw.endswith("}"):
+            parsed: Any = None
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError:
+                try:
+                    parsed = ast.literal_eval(raw)
+                except (SyntaxError, ValueError):
+                    parsed = None
+            if isinstance(parsed, dict):
+                candidate = parsed
+    if not isinstance(candidate, dict):
+        return None
+    return {
+        "name": _clean_text(candidate.get("name")),
+        "status": _clean_text(candidate.get("status")).lower(),
+        "adapter": _clean_text(candidate.get("adapter")).lower(),
+        "studio": _clean_text(candidate.get("studio")),
+        "fetchedCount": _clamped_int(candidate.get("fetchedCount")),
+        "keptCount": _clamped_int(candidate.get("keptCount")),
+        "lowConfidenceDropped": _clamped_int(candidate.get("lowConfidenceDropped")),
+        "error": _clean_text(candidate.get("error")),
+    }
+
+
+def normalize_bridge_fetch_report_source_row(row: Any) -> dict[str, Any] | None:
+    if not isinstance(row, dict):
+        return None
+    normalized_details: list[dict[str, Any]] = []
+    for detail in as_json_list(row.get("details")):
+        parsed_detail = coerce_fetch_report_detail_row(detail)
+        if parsed_detail:
+            normalized_details.append(parsed_detail)
+    normalized_row = normalize_fetch_report_source_row_base(
+        row,
+        lowercase_status=True,
+        lowercase_adapter=True,
+        last_status_fallback_status=True,
+        last_status_lowercase=True,
+        last_checked_fallback_last_seen=True,
+        last_success_fallback_last_successful=True,
+        health_score_default=0,
+        health_score_max=100,
+        count_max=1_000_000,
+        duration_max=86_400_000,
+    )
+    normalized_row.update(
+        {
+            "classification": _clean_text(row.get("classification")),
+            "failureBucket": _clean_text(row.get("failureBucket")),
+            "zeroKeptClassification": _clean_text(row.get("zeroKeptClassification")),
+            "browserFallbackRecommended": bool(row.get("browserFallbackRecommended")),
+            "exclusionReason": _clean_text(row.get("exclusionReason")),
+            "coveredByProviderSourceId": _clean_text(row.get("coveredByProviderSourceId")),
+            "coveredByProviderAdapter": _clean_text(row.get("coveredByProviderAdapter")),
+            "providerCoverageStatus": _clean_text(row.get("providerCoverageStatus")),
+            "providerCoverageConsecutiveSuccesses": _clamped_int(
+                row.get("providerCoverageConsecutiveSuccesses")
+            ),
+            "providerCoverageLatestKeptCount": _clamped_int(
+                row.get("providerCoverageLatestKeptCount")
+            ),
+            "migrationSourceIdentity": _clean_text(row.get("migrationSourceIdentity")),
+            "cacheDecision": _clean_text(row.get("cacheDecision")),
+            "cacheDecisionReason": _clean_text(row.get("cacheDecisionReason")),
+            "details": normalized_details,
+        }
+    )
+    return normalized_row
 
 
 def normalize_fetch_report_social_channel(payload: Any) -> dict[str, Any]:

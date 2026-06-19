@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import ast
-import json
 from collections.abc import Mapping
 from typing import Any
 
@@ -19,8 +17,11 @@ from src.jobs.common.contracts_static_suppression_policy import (
     normalize_static_suppression_policy_payload,
 )
 from src.shared.fetch_report_normalization import (
+    coerce_fetch_report_detail_row as _coerce_fetch_report_detail_row,
+)
+from src.shared.fetch_report_normalization import (
+    normalize_bridge_fetch_report_source_row,
     normalize_fetch_report_social_summary,
-    normalize_fetch_report_source_row_base,
     normalize_fetch_report_timing_summary,
 )
 from src.shared.fetch_report_progress import (
@@ -69,34 +70,7 @@ def safe_schema_version(value: Any) -> int:
 
 
 def coerce_fetch_report_detail_row(detail: Any) -> dict[str, Any] | None:
-    candidate: dict[str, Any] | None = None
-    if isinstance(detail, dict):
-        candidate = detail
-    elif isinstance(detail, str):
-        raw = str(detail).strip()
-        if raw.startswith("{") and raw.endswith("}"):
-            parsed: Any = None
-            try:
-                parsed = json.loads(raw)
-            except json.JSONDecodeError:
-                try:
-                    parsed = ast.literal_eval(raw)
-                except (SyntaxError, ValueError):
-                    parsed = None
-            if isinstance(parsed, dict):
-                candidate = parsed
-    if not isinstance(candidate, dict):
-        return None
-    return {
-        "name": str(candidate.get("name") or "").strip(),
-        "status": str(candidate.get("status") or "").strip().lower(),
-        "adapter": str(candidate.get("adapter") or "").strip().lower(),
-        "studio": str(candidate.get("studio") or "").strip(),
-        "fetchedCount": safe_int(candidate.get("fetchedCount"), 0, 0, 1_000_000),
-        "keptCount": safe_int(candidate.get("keptCount"), 0, 0, 1_000_000),
-        "lowConfidenceDropped": safe_int(candidate.get("lowConfidenceDropped"), 0, 0, 1_000_000),
-        "error": str(candidate.get("error") or "").strip(),
-    }
+    return _coerce_fetch_report_detail_row(detail)
 
 
 def _derive_discovery_task_progress(src: dict[str, Any], summary: dict[str, Any]) -> dict[str, Any]:
@@ -234,57 +208,9 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
     def _normalize_source_rows(rows: list[Any]) -> list[dict[str, Any]]:
         normalized_rows: list[dict[str, Any]] = []
         for row in rows:
-            if not isinstance(row, dict):
-                continue
-            details_raw = row.get("details")
-            details = details_raw if isinstance(details_raw, list) else []
-            normalized_details: list[dict[str, Any]] = []
-            for detail in details:
-                parsed_detail = coerce_fetch_report_detail_row(detail)
-                if parsed_detail:
-                    normalized_details.append(parsed_detail)
-            normalized_row = normalize_fetch_report_source_row_base(
-                row,
-                lowercase_status=True,
-                lowercase_adapter=True,
-                last_status_fallback_status=True,
-                last_status_lowercase=True,
-                last_checked_fallback_last_seen=True,
-                last_success_fallback_last_successful=True,
-                health_score_default=0,
-                health_score_max=100,
-                count_max=1_000_000,
-                duration_max=86_400_000,
-            )
-            normalized_row.update(
-                {
-                    "classification": str(row.get("classification") or "").strip(),
-                    "failureBucket": str(row.get("failureBucket") or "").strip(),
-                    "zeroKeptClassification": str(row.get("zeroKeptClassification") or "").strip(),
-                    "browserFallbackRecommended": bool(row.get("browserFallbackRecommended")),
-                    "exclusionReason": str(row.get("exclusionReason") or "").strip(),
-                    "coveredByProviderSourceId": str(
-                        row.get("coveredByProviderSourceId") or ""
-                    ).strip(),
-                    "coveredByProviderAdapter": str(
-                        row.get("coveredByProviderAdapter") or ""
-                    ).strip(),
-                    "providerCoverageStatus": str(row.get("providerCoverageStatus") or "").strip(),
-                    "providerCoverageConsecutiveSuccesses": safe_int(
-                        row.get("providerCoverageConsecutiveSuccesses"), 0, 0, 1_000_000
-                    ),
-                    "providerCoverageLatestKeptCount": safe_int(
-                        row.get("providerCoverageLatestKeptCount"), 0, 0, 1_000_000
-                    ),
-                    "migrationSourceIdentity": str(
-                        row.get("migrationSourceIdentity") or ""
-                    ).strip(),
-                    "cacheDecision": str(row.get("cacheDecision") or "").strip(),
-                    "cacheDecisionReason": str(row.get("cacheDecisionReason") or "").strip(),
-                    "details": normalized_details,
-                }
-            )
-            normalized_rows.append(normalized_row)
+            normalized_row = normalize_bridge_fetch_report_source_row(row)
+            if normalized_row is not None:
+                normalized_rows.append(normalized_row)
         return normalized_rows
 
     normalized_sources = _normalize_source_rows(sources)
