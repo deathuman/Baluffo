@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from pathlib import Path
+from typing import Any, Protocol
 
-from src.bridge.api import BridgeApi
 from src.bridge.routes.response_writer import BridgeResponseWriter
 from src.bridge.routes.route_payload_helpers import (
     as_dict as _as_dict,
@@ -27,6 +27,16 @@ from src.jobs.common.contracts_source_policy_review_state import (
 )
 
 
+class _SourcePolicyRouteApi(Protocol):
+    JOBS_FETCH_REPORT_PATH: Path
+    SOURCE_POLICY_RECOMMENDATIONS_PATH: Path
+    SOURCE_POLICY_REVIEW_STATE_PATH: Path
+
+    def load_state(self) -> dict[str, Any]: ...
+
+    def source_identity(self, row: dict[str, Any]) -> str: ...
+
+
 def _empty_suppression_eligibility_payload() -> dict[str, Any]:
     return {
         "readyLinkedProviderCount": 0,
@@ -37,7 +47,7 @@ def _empty_suppression_eligibility_payload() -> dict[str, Any]:
     }
 
 
-def _load_suppression_eligibility(api: BridgeApi) -> tuple[dict[str, Any], str]:
+def _load_suppression_eligibility(api: _SourcePolicyRouteApi) -> tuple[dict[str, Any], str]:
     path = source_policy_soak_report_path(api)
     empty_payload = _empty_suppression_eligibility_payload()
     if not path.exists():
@@ -67,7 +77,11 @@ def _load_suppression_eligibility(api: BridgeApi) -> tuple[dict[str, Any], str]:
 
 
 def handle_source_policy_routes(
-    handler: BridgeResponseWriter, *, api: BridgeApi, path: str, query: dict[str, list[str]]
+    handler: BridgeResponseWriter,
+    *,
+    api: _SourcePolicyRouteApi,
+    path: str,
+    query: dict[str, list[str]],
 ) -> bool:
     del query
     if path == "/source-policy/recommendations":
