@@ -21,10 +21,6 @@ DEFERRED_SOURCE_BUDGET_PATH = TOOLS_ROOT / "deferred_source_line_budget.json"
 FRONTEND_GUARDRAILS = TOOLS_ROOT / "frontend_structure_guardrails.mjs"
 FIXTURE_REFERENCE_ALLOWLIST_PATH = TOOLS_ROOT / "fixture_reference_allowlist.json"
 SOURCE_SUPPRESSION_BUDGET_PATH = TOOLS_ROOT / "source_suppression_budget.json"
-BRIDGE_ROUTE_BRIDGE_API_DELEGATORS = {
-    "src/bridge/routes/get_routes.py",
-    "src/bridge/routes/post_routes.py",
-}
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -207,7 +203,7 @@ def check_runtime_facade_usage() -> list[str]:
     return failures
 
 
-def check_bridge_route_leaf_bridge_api_imports() -> list[str]:
+def check_bridge_route_bridge_api_imports() -> list[str]:
     route_root = ROOT / "src" / "bridge" / "routes"
     if not route_root.is_dir():
         return [f"bridge route directory is missing: {route_root.relative_to(ROOT)}"]
@@ -215,8 +211,6 @@ def check_bridge_route_leaf_bridge_api_imports() -> list[str]:
     failures: list[str] = []
     for path in sorted(route_root.glob("*.py")):
         rel_path = path.relative_to(ROOT).as_posix()
-        if rel_path in BRIDGE_ROUTE_BRIDGE_API_DELEGATORS:
-            continue
 
         text = path.read_text(encoding="utf-8")
         try:
@@ -252,12 +246,12 @@ def check_bridge_route_leaf_bridge_api_imports() -> list[str]:
         if bridge_api_import_lines:
             failures.append(
                 f"{rel_path} imports BridgeApi at lines {sorted(set(bridge_api_import_lines))}; "
-                "only public route delegators may depend on the full BridgeApi type."
+                "route modules must depend on narrow capability protocols."
             )
         if bridge_api_reference_lines:
             failures.append(
                 f"{rel_path} references BridgeApi at lines "
-                f"{sorted(set(bridge_api_reference_lines))}; route leaves must type against "
+                f"{sorted(set(bridge_api_reference_lines))}; route modules must type against "
                 "narrow capability protocols."
             )
     return failures
@@ -607,8 +601,8 @@ def run_routes_group() -> list[GuardFailure]:
     for name, messages in (
         ("check_bridge_route_inventory", check_bridge_route_inventory()),
         (
-            "check_bridge_route_leaf_bridge_api_imports",
-            check_bridge_route_leaf_bridge_api_imports(),
+            "check_bridge_route_bridge_api_imports",
+            check_bridge_route_bridge_api_imports(),
         ),
     ):
         failure = _failure_from_messages("routes", name, messages)
