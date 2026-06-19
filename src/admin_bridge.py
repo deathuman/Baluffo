@@ -318,10 +318,9 @@ def load_saved_sync_settings() -> dict[str, Any]:
 
 
 def refresh_sync_config() -> source_sync_module.SyncConfig:
-    global SYNC_CONFIG
-    BRIDGE_SERVICES.sync_config = _get_sync_service().refresh_sync_config()
-    SYNC_CONFIG = BRIDGE_SERVICES.sync_config
-    return cast(source_sync_module.SyncConfig, SYNC_CONFIG)
+    sync_config = BRIDGE_SERVICES.refresh_sync_config(_get_sync_service().refresh_sync_config)
+    sys.modules[__name__].SYNC_CONFIG = sync_config
+    return cast(source_sync_module.SyncConfig, sync_config)
 
 
 normalize_state = admin_registry_api_mod.normalize_state

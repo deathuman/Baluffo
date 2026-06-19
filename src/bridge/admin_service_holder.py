@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,10 @@ class BridgeServices:
         self.sync_service = None
         self.sync_service_data_dir = None
         self.sync_config = None
+
+    def refresh_sync_config(self, refresh: Callable[[], Any]) -> Any:
+        self.sync_config = refresh()
+        return self.sync_config
 
     def reset_desktop_update_service(self) -> None:
         self.desktop_update_service = None

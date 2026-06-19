@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from src import admin_bridge
+from src.bridge import sync_service as sync_service_module
 
 
 def _runtime_config(root: Path, data_dir: Path) -> admin_bridge.RuntimeConfig:
@@ -324,6 +325,14 @@ def test_refresh_sync_config_is_owned_by_bridge_services_holder(monkeypatch) -> 
     assert result is sync_config
     assert admin_bridge.BRIDGE_SERVICES.sync_config is sync_config
     assert admin_bridge.SYNC_CONFIG is sync_config
+
+
+def test_sync_config_refresh_avoids_explicit_global_declaration() -> None:
+    admin_bridge_source = Path(admin_bridge.__file__).read_text(encoding="utf-8")
+    sync_service_source = Path(sync_service_module.__file__).read_text(encoding="utf-8")
+
+    assert "global SYNC_CONFIG" not in admin_bridge_source
+    assert "global SYNC_CONFIG" not in sync_service_source
 
 
 def test_runtime_path_reconfiguration_resets_sync_holder(

@@ -343,7 +343,6 @@ class SyncService:
         Returns:
             The current SyncConfig
         """
-        global SYNC_CONFIG
         with SYNC_CONFIG_LOCK:
             self._sync_config = self._resolve_effective_sync_config()
             import src.bridge.sync_state as state_module
