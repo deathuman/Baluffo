@@ -6,11 +6,13 @@ from typing import Any
 from src.bridge.api import BridgeApi
 from src.bridge.routes.response_writer import BridgeResponseWriter
 
+_EXPECTED_BRIDGE_LOG_EXCEPTIONS = (AttributeError, OSError, TypeError, ValueError)
+
 
 def safe_bridge_log(api: BridgeApi, level: str, event: str, **fields: Any) -> None:
     try:
         api.bridge_log(level, event, **fields)
-    except Exception:  # noqa: BLE001 - bridge diagnostics must not break route responses.
+    except _EXPECTED_BRIDGE_LOG_EXCEPTIONS:
         pass
 
 
