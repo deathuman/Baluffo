@@ -135,7 +135,7 @@ def parse_schedule_metadata(
     }
     try:
         payload = read_tasks_config()
-    except Exception:  # noqa: BLE001
+    except (OSError, TypeError, ValueError):
         return fallback
     tasks = payload.get("tasks")
     if not isinstance(tasks, list):
@@ -666,7 +666,7 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
         with time_operation("ops.dashboard.registry_summary"):
             try:
                 registry_summary = as_json_object(get_registry_summary_payload())
-            except Exception:  # noqa: BLE001
+            except (OSError, TypeError, ValueError):
                 registry_summary = {}
     if not _has_registry_summary_counts(registry_summary):
         registry_summary = {}
@@ -729,12 +729,12 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
     with time_operation("ops.dashboard.tombstones"):
         try:
             tombstones = deps.get_tombstones()
-        except Exception:  # noqa: BLE001
+        except (OSError, TypeError, ValueError):
             tombstones = {}
     with time_operation("ops.dashboard.sync_status"):
         try:
             sync_status = deps.get_sync_status_payload()
-        except Exception:  # noqa: BLE001
+        except (OSError, TypeError, ValueError):
             sync_status = {}
     with time_operation("ops.dashboard.registry_sync_summary"):
         registry_sync = derive_registry_sync_summary(
