@@ -287,27 +287,30 @@ def test_task_state_summary_does_not_hydrate_full_live_reports(tmp_path, monkeyp
     assert payload["tasks"][0]["runId"] == "fetch_active_1"
 
 
-def test_task_state_summary_repairs_stale_terminal_sync_row(tmp_path) -> None:
-    current_rows: list[dict[str, object]] = [
-        {
-            "type": "sync",
-            "taskType": "sync",
-            "runId": "sync_stale_1",
-            "status": "running",
-            "lifecycleStatus": "running",
-            "startedAt": "2026-06-05T09:55:00+00:00",
-            "heartbeatAt": "2026-06-05T09:56:00+00:00",
-            "taskProgress": {"active": False, "phaseKey": "error"},
-            "summary": {"error": "expected one revision but found another"},
-        }
-    ]
-    repaired: list[dict[str, object]] = []
+def _parse_iso_value(value: object):
+    text = str(value or "")
+    if not text:
+        return None
+    return datetime.fromisoformat(text.replace("Z", "+00:00"))
 
-    def parse_iso(value: object):
-        text = str(value or "")
-        if not text:
-            return None
-        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+
+def _stale_terminal_sync_row() -> dict[str, object]:
+    return {
+        "type": "sync",
+        "taskType": "sync",
+        "runId": "sync_stale_1",
+        "status": "running",
+        "lifecycleStatus": "running",
+        "startedAt": "2026-06-05T09:55:00+00:00",
+        "heartbeatAt": "2026-06-05T09:56:00+00:00",
+        "taskProgress": {"active": False, "phaseKey": "error"},
+        "summary": {"error": "expected one revision but found another"},
+    }
+
+
+def test_task_state_summary_repairs_stale_terminal_sync_row(tmp_path) -> None:
+    current_rows: list[dict[str, object]] = [_stale_terminal_sync_row()]
+    repaired: list[dict[str, object]] = []
 
     def orphan_run(run_id: str, task_type: str, **kwargs: object) -> dict[str, object]:
         repaired.append({"runId": run_id, "taskType": task_type, **kwargs})
@@ -318,7 +321,7 @@ def test_task_state_summary_repairs_stale_terminal_sync_row(tmp_path) -> None:
         tmp_path,
         current_rows=current_rows,
         recent_rows=[],
-        parse_iso=parse_iso,
+        parse_iso=_parse_iso_value,
         orphan_lifecycle_run=orphan_run,
     )
 
@@ -332,6 +335,34 @@ def test_task_state_summary_repairs_stale_terminal_sync_row(tmp_path) -> None:
         "error": "expected one revision but found another",
         "repairReason": "stale_terminal_progress",
     }
+
+
+def test_task_state_summary_skips_expected_stale_repair_failures(tmp_path) -> None:
+    api, _calls = _make_ops_api(
+        tmp_path,
+        current_rows=[_stale_terminal_sync_row()],
+        recent_rows=[],
+        parse_iso=_parse_iso_value,
+        orphan_lifecycle_run=mock.Mock(side_effect=OSError("repair storage unavailable")),
+    )
+
+    payload = api.get_current_task_state_summary_payload()
+
+    assert payload["count"] == 1
+    assert payload["tasks"][0]["runId"] == "sync_stale_1"
+
+
+def test_task_state_summary_propagates_unexpected_stale_repair_failures(tmp_path) -> None:
+    api, _calls = _make_ops_api(
+        tmp_path,
+        current_rows=[_stale_terminal_sync_row()],
+        recent_rows=[],
+        parse_iso=_parse_iso_value,
+        orphan_lifecycle_run=mock.Mock(side_effect=RuntimeError("repair bug")),
+    )
+
+    with pytest.raises(RuntimeError, match="repair bug"):
+        api.get_current_task_state_summary_payload()
 
 
 def test_ops_live_task_evidence_fallback_is_expected_failures_only(tmp_path) -> None:

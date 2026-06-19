@@ -615,7 +615,7 @@ class OpsApi:
                         summary=repair_summary,
                         progress=repair_progress,
                     )
-                except Exception:  # noqa: BLE001
+                except (OSError, TypeError, ValueError):
                     continue
                 repaired = True
         if repaired:
