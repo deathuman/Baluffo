@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Protocol
 
-from src.bridge.api import BridgeApi
 from src.bridge.routes.response_writer import BridgeResponseWriter
 
 _EXPECTED_BRIDGE_LOG_EXCEPTIONS = (AttributeError, OSError, TypeError, ValueError)
 
 
-def safe_bridge_log(api: BridgeApi, level: str, event: str, **fields: Any) -> None:
+class _BridgeLogApi(Protocol):
+    def bridge_log(self, level: str, event: str, **fields: Any) -> None: ...
+
+
+def safe_bridge_log(api: _BridgeLogApi, level: str, event: str, **fields: Any) -> None:
     try:
         api.bridge_log(level, event, **fields)
     except _EXPECTED_BRIDGE_LOG_EXCEPTIONS:
