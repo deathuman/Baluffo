@@ -92,6 +92,6 @@ def extract_jobylon_v1_jobs(
             stats["jobs_emitted"] += 1
     except (HTTPError, URLError, TimeoutError, OSError) as exc:
         errors.append(f"{source_name}: jobylon_v1 fetch failed: {exc}")
-    except Exception as exc:  # noqa: BLE001
+    except (TypeError, ValueError, re.error) as exc:
         errors.append(f"{source_name}: jobylon_v1 parse failed: {exc}")
     return jobs, stats, errors, reject_reasons
