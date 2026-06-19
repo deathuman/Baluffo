@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
-from src.bridge.api import BridgeApi
 from src.bridge.registry_conflict_adjudication import start_registry_conflict_adjudication
 from src.bridge.registry_conflicts import (
     SAFE_AUTO_DEMOTE_ACTION,
@@ -52,8 +51,93 @@ from src.source_registry import (
 )
 
 
+class _AdminPostRouteApi(Protocol):
+    APPROVAL_STATE_PATH: Path
+    DEDUP_REVIEW_STATE_PATH: Path
+    JOBS_FETCH_REPORT_PATH: Path
+    SOURCE_POLICY_REVIEW_STATE_PATH: Path
+
+    def abort_task(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]: ...
+
+    def add_manual_source(self, url: str) -> dict[str, Any]: ...
+
+    def bridge_log(self, level: str, event: str, **fields: Any) -> None: ...
+
+    def compute_ops_health(self) -> dict[str, Any]: ...
+
+    def get_discovery_config_payload(self) -> dict[str, Any]: ...
+
+    def get_jobs_pipeline_schedule_payload(self) -> dict[str, Any]: ...
+
+    def get_sync_status_payload(self) -> dict[str, Any]: ...
+
+    def load_alert_state(self) -> dict[str, Any]: ...
+
+    def load_json_object(self, path: Path, default: Any = None) -> dict[str, Any]: ...
+
+    def load_state(self) -> dict[str, list[dict[str, Any]]]: ...
+
+    def load_tombstones(self) -> dict[str, Any]: ...
+
+    def move_entries(
+        self, rows: list[dict[str, Any]], ids: list[str]
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]: ...
+
+    def normalize_source_url(self, url: str) -> str: ...
+
+    def now_iso(self) -> str: ...
+
+    def persist_state_and_auto_sync(
+        self, state: dict[str, list[dict[str, Any]]], *, reason: str
+    ) -> dict[str, list[dict[str, Any]]]: ...
+
+    def save_alert_state(self, state: dict[str, Any]) -> None: ...
+
+    def save_json_atomic(self, path: Path, payload: dict[str, Any]) -> None: ...
+
+    def save_tombstones(self, tombstones: dict[str, Any]) -> None: ...
+
+    def set_sync_status(self, **fields: Any) -> None: ...
+
+    def source_identity(self, row: dict[str, Any]) -> str: ...
+
+    def source_url_fingerprint(self, row: dict[str, Any]) -> str: ...
+
+    def start_fetcher_task(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+
+    def start_jobs_bootstrap_task(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+
+    def start_jobs_pipeline_task(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+
+    def start_sync_task(self, action: str, *, reason: str, automatic: bool) -> dict[str, Any]: ...
+
+    def summarize_state(self, state: dict[str, list[dict[str, Any]]]) -> dict[str, Any]: ...
+
+    def sync_config_status(self) -> dict[str, Any]: ...
+
+    def sync_pull_sources(self) -> dict[str, Any]: ...
+
+    def sync_push_sources(self) -> dict[str, Any]: ...
+
+    def test_sync_config(self) -> dict[str, Any]: ...
+
+    def trigger_discovery_task(
+        self, *, payload: dict[str, Any], route_name: str
+    ) -> tuple[int, dict[str, Any]]: ...
+
+    def trigger_source_check(self, source_id: str) -> dict[str, Any]: ...
+
+    def unique_sources(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]: ...
+
+    def update_jobs_pipeline_schedule(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+
+    def update_saved_discovery_settings(self, payload: dict[str, Any]) -> None: ...
+
+    def update_saved_sync_settings(self, payload: dict[str, Any]) -> None: ...
+
+
 def _transition_registry_row(
-    api: BridgeApi,
+    api: _AdminPostRouteApi,
     row: dict[str, Any],
     *,
     candidate_state: str,
@@ -90,7 +174,11 @@ def _json_error(exc: Exception) -> dict[str, Any]:
 
 
 def _handle_source_policy_post(
-    handler: BridgeResponseWriter, *, api: BridgeApi, path: str, data: dict[str, Any]
+    handler: BridgeResponseWriter,
+    *,
+    api: _AdminPostRouteApi,
+    path: str,
+    data: dict[str, Any],
 ) -> bool:
     if path == "/dedup/review-action":
 
@@ -166,7 +254,9 @@ def _handle_source_policy_post(
     return False
 
 
-def handle_post(handler: BridgeResponseWriter, *, api: BridgeApi, path: str, payload: Any) -> bool:
+def handle_post(
+    handler: BridgeResponseWriter, *, api: _AdminPostRouteApi, path: str, payload: Any
+) -> bool:
     state = api.load_state()
     data = as_json_object(payload)
 
