@@ -151,6 +151,80 @@ def test_runtime_path_reconfiguration_resets_registry_holder(
     )
 
 
+def test_discovery_service_is_owned_by_bridge_services_holder(
+    admin_bridge_entrypoint_root: Path,
+) -> None:
+    data_dir = admin_bridge_entrypoint_root / "data"
+    admin_bridge.configure_runtime_paths(_runtime_config(admin_bridge_entrypoint_root, data_dir))
+    expected_paths = (
+        Path(admin_bridge.DISCOVERY_REPORT_PATH),
+        Path(admin_bridge.DISCOVERY_CANDIDATES_PATH),
+        Path(admin_bridge.PENDING_PATH),
+        Path(admin_bridge.DISCOVERY_LOG_PATH),
+    )
+
+    service = admin_bridge._get_discovery_service()
+
+    assert admin_bridge.BRIDGE_SERVICES.discovery_service is service
+    assert admin_bridge.BRIDGE_SERVICES.discovery_service_paths == expected_paths
+    assert admin_bridge._DISCOVERY_SERVICE is service
+    assert admin_bridge._DISCOVERY_SERVICE_PATHS == expected_paths
+    assert admin_bridge._get_discovery_service() is service
+
+
+def test_discovery_service_holder_adopts_legacy_patch_surface(
+    admin_bridge_entrypoint_root: Path,
+) -> None:
+    data_dir = admin_bridge_entrypoint_root / "data"
+    admin_bridge.configure_runtime_paths(_runtime_config(admin_bridge_entrypoint_root, data_dir))
+    expected_paths = (
+        Path(admin_bridge.DISCOVERY_REPORT_PATH),
+        Path(admin_bridge.DISCOVERY_CANDIDATES_PATH),
+        Path(admin_bridge.PENDING_PATH),
+        Path(admin_bridge.DISCOVERY_LOG_PATH),
+    )
+    legacy_service = SimpleNamespace(name="legacy-discovery-service")
+    admin_bridge.BRIDGE_SERVICES.reset_discovery_service()
+    admin_bridge._DISCOVERY_SERVICE = legacy_service
+    admin_bridge._DISCOVERY_SERVICE_PATHS = expected_paths
+
+    service = admin_bridge._get_discovery_service()
+
+    assert service is legacy_service
+    assert admin_bridge.BRIDGE_SERVICES.discovery_service is legacy_service
+    assert admin_bridge.BRIDGE_SERVICES.discovery_service_paths == expected_paths
+
+
+def test_runtime_path_reconfiguration_resets_discovery_holder(
+    admin_bridge_entrypoint_root: Path,
+) -> None:
+    first_data_dir = admin_bridge_entrypoint_root / "data-one"
+    admin_bridge.configure_runtime_paths(
+        _runtime_config(admin_bridge_entrypoint_root, first_data_dir)
+    )
+    first_service = admin_bridge._get_discovery_service()
+
+    second_data_dir = admin_bridge_entrypoint_root / "data-two"
+    admin_bridge.configure_runtime_paths(
+        _runtime_config(admin_bridge_entrypoint_root, second_data_dir)
+    )
+
+    assert admin_bridge.BRIDGE_SERVICES.discovery_service is None
+    assert admin_bridge.BRIDGE_SERVICES.discovery_service_paths is None
+    assert admin_bridge._DISCOVERY_SERVICE is None
+    assert admin_bridge._DISCOVERY_SERVICE_PATHS is None
+
+    second_service = admin_bridge._get_discovery_service()
+    assert second_service is not first_service
+    assert admin_bridge.BRIDGE_SERVICES.discovery_service is second_service
+    assert admin_bridge.BRIDGE_SERVICES.discovery_service_paths == (
+        Path(admin_bridge.DISCOVERY_REPORT_PATH),
+        Path(admin_bridge.DISCOVERY_CANDIDATES_PATH),
+        Path(admin_bridge.PENDING_PATH),
+        Path(admin_bridge.DISCOVERY_LOG_PATH),
+    )
+
+
 def test_sync_service_is_owned_by_bridge_services_holder(
     admin_bridge_entrypoint_root: Path,
 ) -> None:

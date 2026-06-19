@@ -34,3 +34,7 @@ class BridgeServices:
     def reset_registry_service(self) -> None:
         self.registry_service = None
         self.registry_service_paths = None
+
+    def reset_discovery_service(self) -> None:
+        self.discovery_service = None
+        self.discovery_service_paths = None

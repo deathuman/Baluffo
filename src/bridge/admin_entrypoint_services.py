@@ -462,13 +462,18 @@ def get_discovery_service() -> _DiscoveryServiceLike:
         Path(root_mod.PENDING_PATH),
         Path(root_mod.DISCOVERY_LOG_PATH),
     )
-    with root_mod._DISCOVERY_SERVICE_LOCK:
+    services = root_mod.BRIDGE_SERVICES
+    with services.discovery_service_lock:
         if (
-            root_mod._DISCOVERY_SERVICE is None
-            or root_mod._DISCOVERY_SERVICE_PATHS != current_paths
+            services.discovery_service is None
+            and root_mod._DISCOVERY_SERVICE is not None
+            and root_mod._DISCOVERY_SERVICE_PATHS == current_paths
         ):
-            root_mod._DISCOVERY_SERVICE_PATHS = current_paths
-            root_mod._DISCOVERY_SERVICE = root_mod.DiscoveryService(
+            services.discovery_service = root_mod._DISCOVERY_SERVICE
+            services.discovery_service_paths = root_mod._DISCOVERY_SERVICE_PATHS
+        if services.discovery_service is None or services.discovery_service_paths != current_paths:
+            services.discovery_service_paths = current_paths
+            services.discovery_service = root_mod.DiscoveryService(
                 paths=root_mod.DiscoveryPaths(
                     report=root_mod.DISCOVERY_REPORT_PATH,
                     candidates=root_mod.DISCOVERY_CANDIDATES_PATH,
@@ -520,7 +525,9 @@ def get_discovery_service() -> _DiscoveryServiceLike:
                     ),
                 ),
             )
-        return cast(_DiscoveryServiceLike, root_mod._DISCOVERY_SERVICE)
+        root_mod._DISCOVERY_SERVICE = services.discovery_service
+        root_mod._DISCOVERY_SERVICE_PATHS = services.discovery_service_paths
+        return cast(_DiscoveryServiceLike, services.discovery_service)
 
 
 def get_task_launch_api() -> _TaskLaunchApiLike:

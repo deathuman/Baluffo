@@ -122,6 +122,7 @@ def reset_admin_bridge_services(monkeypatch: Any) -> None:
         ACTIVE_SYNC_THREADS.clear()
     admin_bridge.BRIDGE_SERVICES.reset_sync_service()
     admin_bridge.BRIDGE_SERVICES.reset_registry_service()
+    admin_bridge.BRIDGE_SERVICES.reset_discovery_service()
     monkeypatch.setattr(admin_bridge, "_SYNC_SERVICE", None)
     monkeypatch.setattr(admin_bridge, "_SYNC_SERVICE_DATA_DIR", None)
     monkeypatch.setattr(admin_bridge, "_REGISTRY_SERVICE", None)
