@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 
+import pytest
+
 from src.source_discovery import probe as probe_module
 from src.source_discovery import probe_runtime
 
@@ -292,3 +294,44 @@ def test_async_static_probe_contains_playwright_fallback_exceptions() -> None:
     assert not ok
     assert count == 0
     assert "HTTP Error 403" in error
+
+
+def test_static_probe_fetch_does_not_swallow_unexpected_sync_bug() -> None:
+    def broken_fetch(_url: str, _timeout: int) -> str:
+        raise AssertionError("broken probe fetcher")
+
+    with pytest.raises(AssertionError, match="broken probe fetcher"):
+        probe_module.probe_candidate(
+            _static_candidate(),
+            timeout_s=5,
+            fetcher=broken_fetch,
+        )
+
+
+def test_static_probe_fetch_treats_missing_fixture_url_as_probe_failure() -> None:
+    def missing_fixture_fetch(url: str, _timeout: int) -> str:
+        raise KeyError(url)
+
+    ok, count, error = probe_module.probe_candidate(
+        _static_candidate(),
+        timeout_s=5,
+        fetcher=missing_fixture_fetch,
+    )
+
+    assert (ok, count) == (False, 0)
+    assert "https://studio.example/careers" in error
+
+
+def test_static_probe_fetch_does_not_swallow_unexpected_async_bug() -> None:
+    async def broken_fetch(_url: str, _timeout: int) -> str:
+        raise AssertionError("broken async probe fetcher")
+
+    async def run_probe() -> tuple[bool, int, str]:
+        return await probe_module.async_probe_candidate(
+            _static_candidate(),
+            timeout_s=5,
+            fetcher=broken_fetch,
+        )
+
+    with pytest.raises(AssertionError, match="broken async probe fetcher"):
+        asyncio.run(run_probe())

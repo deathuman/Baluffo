@@ -13,6 +13,8 @@ from typing import Any
 from urllib.parse import parse_qsl, unquote, urljoin, urlparse
 from xml.etree import ElementTree as ET
 
+import httpx
+
 from src.jobs.adapters.html_parsers import parse_jobpostings_from_html
 from src.jobs.adapters.parsers.json_payloads import parse_greenhouse_jobs_payload
 from src.jobs.adapters.parsers.provider_html import parse_jazzhr_jobs_html
@@ -29,6 +31,7 @@ from .web_search import (
 # Optional Playwright fallback: (url, timeout_s) -> (html, error). Used only for static adapter.
 TryPlaywrightFn = Callable[[str, int], tuple[str, str]]
 
+_EXPECTED_PROBE_FETCH_EXCEPTIONS = (OSError, TimeoutError, RuntimeError, KeyError, httpx.HTTPError)
 
 _STATIC_DETAIL_PATH_RE = re.compile(r"(?i)/(?:jobs?|positions?|openings?|vacancies?)/[^/?#]+")
 _ELEVATO_DETAIL_PATH_RE = re.compile(r"(?i)/(?:[a-z]{2}/)?[^/?#]+,j,\d+(?:$|[/?#])")
@@ -498,7 +501,7 @@ def _probe_fetch_urls(
                     _apply_static_probe_evidence(candidate, evidence)
                 return True, max(0, int(evidence.count)), ""
             return True, max(0, int(parse_probe_count(adapter, text, base_url=probe_url))), ""
-        except Exception as exc:  # noqa: BLE001
+        except _EXPECTED_PROBE_FETCH_EXCEPTIONS as exc:
             last_error = f"{probe_url}: {exc}"
     return False, 0, last_error
 
@@ -596,7 +599,7 @@ async def _async_probe_fetch_urls(
                     _apply_static_probe_evidence(candidate, evidence)
                 return True, max(0, int(evidence.count)), ""
             return True, max(0, int(parse_probe_count(adapter, text, base_url=probe_url))), ""
-        except Exception as exc:  # noqa: BLE001
+        except _EXPECTED_PROBE_FETCH_EXCEPTIONS as exc:
             last_error = f"{probe_url}: {exc}"
     return False, 0, last_error
 
