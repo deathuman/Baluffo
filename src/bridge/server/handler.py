@@ -267,10 +267,11 @@ def _handle_post_request(handler: BaseHTTPRequestHandler, api: BridgeApi) -> Non
             if handle_post(handler, api=api, path=path, payload=payload):
                 return
             handler.send_json({"error": "Not found"}, status=404)
-        except BaseException as exc:  # noqa: BLE001
+        except (KeyboardInterrupt, SystemExit, GeneratorExit):
             failed = True
-            if not isinstance(exc, Exception):
-                raise
+            raise
+        except Exception as exc:
+            failed = True
             try:
                 api.bridge_log(
                     "error",
