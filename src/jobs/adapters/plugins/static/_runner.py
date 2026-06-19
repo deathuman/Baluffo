@@ -10,9 +10,12 @@ from urllib.parse import urljoin, urlparse
 from src.jobs.adapters.html_parsers import strip_html_text
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
+from src.jobs.adapters.static_runtime_support import is_static_fetch_fallback_exception
 from src.jobs.models import RawJob
 from src.jobs.page_gating import classify_job_page, dead_listing_page_meta
 from src.jobs.text_utils import clean_text
+
+_EXPECTED_STATIC_PLUGIN_FETCH_EXCEPTIONS = (OSError, RuntimeError, ValueError)
 
 
 @dataclass(frozen=True)
@@ -144,7 +147,9 @@ def fetch_static_plugin_html(
 ) -> str:
     try:
         return fetch_text(page_url, timeout_s)
-    except Exception as exc:  # noqa: BLE001
+    except _EXPECTED_STATIC_PLUGIN_FETCH_EXCEPTIONS as exc:
+        if not is_static_fetch_fallback_exception(exc):
+            raise
         classification, recommend = _heuristics.classify_fetch_exception(exc)
         _meta(
             source_row,
@@ -291,7 +296,9 @@ def _fetch_html(
 ) -> str:
     try:
         html = fetch_text(page_url, timeout_s)
-    except Exception as exc:  # noqa: BLE001
+    except _EXPECTED_STATIC_PLUGIN_FETCH_EXCEPTIONS as exc:
+        if not is_static_fetch_fallback_exception(exc):
+            raise
         if spec.playwright_on_fetch_error and try_playwright:
             html, _ = try_playwright(page_url, max(3, min(timeout_s, 30)))
             if html:

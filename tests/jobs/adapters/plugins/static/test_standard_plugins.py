@@ -7,6 +7,7 @@ import pytest
 
 from src.jobs.adapters.plugins.static import (
     _heuristics,
+    _runner,
     climax,
     embark,
     globalstep,
@@ -150,6 +151,57 @@ def test_standard_static_plugin_fetch_exception_sets_meta(
     assert source_row["_staticPluginMeta"]["browserFallbackRecommended"] is True
     assert source_row["_staticPluginMeta"]["extractorHint"] == "fetch_failed"
     assert "HTTP 403" in source_row["_staticPluginMeta"]["error"]
+
+
+def test_static_plugin_fetch_helper_does_not_swallow_unexpected_bug() -> None:
+    source_row = _source_row("generic")
+
+    def broken_fetch(_url: str, _timeout_s: int) -> str:
+        raise RuntimeError("unexpected static plugin fetch bug")
+
+    with pytest.raises(RuntimeError, match="unexpected static plugin fetch bug"):
+        _runner.fetch_static_plugin_html(
+            fetch_text=broken_fetch,
+            page_url="https://example.com/careers",
+            timeout_s=10,
+            source_row=source_row,
+        )
+
+    assert "_staticPluginMeta" not in source_row
+
+
+def test_simple_static_plugin_fetch_retry_does_not_swallow_unexpected_bug() -> None:
+    source_row = _source_row("simple")
+    browser_calls: list[str] = []
+
+    def broken_fetch(_url: str, _timeout_s: int) -> str:
+        raise RuntimeError("unexpected simple plugin fetch bug")
+
+    def fake_browser(url: str, _timeout_s: int) -> tuple[str, str]:
+        browser_calls.append(url)
+        return "<html><body>Rendered</body></html>", ""
+
+    spec = _runner.SimpleStaticPlugin(
+        source_id="simple",
+        default_company="Simple Studio",
+        playwright_on_fetch_error=True,
+        parser_stale_hint="simple_empty",
+    )
+
+    with pytest.raises(RuntimeError, match="unexpected simple plugin fetch bug"):
+        _runner.run_simple_static_plugin(
+            fetch_text=broken_fetch,
+            timeout_s=10,
+            retries=0,
+            backoff_s=0,
+            pages=["https://example.com/careers"],
+            source_row=source_row,
+            spec=spec,
+            parse_html=lambda _ctx: [],
+            try_playwright=fake_browser,
+        )
+
+    assert browser_calls == []
 
 
 @pytest.mark.parametrize(
