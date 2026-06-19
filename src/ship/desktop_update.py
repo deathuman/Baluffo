@@ -8,7 +8,6 @@ import os as _os
 import shutil as _shutil
 import ssl as _ssl
 import subprocess as _subprocess
-import sys
 import tempfile as _tempfile
 import threading as _threading
 import time as _time
@@ -87,9 +86,6 @@ SUCCESS_MARKER_FILE = desktop_update_constants_mod.SUCCESS_MARKER_FILE
 USER_AGENT = desktop_update_constants_mod.USER_AGENT
 
 _RUNTIME_SESSION_ROOT_FALLBACK: Path | None = None
-
-desktop_update_shared_mod.root = sys.modules[__name__]
-desktop_update_state_mod.root = sys.modules[__name__]
 
 contextlib = _contextlib
 ctypes = _ctypes

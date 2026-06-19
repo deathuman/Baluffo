@@ -30,14 +30,6 @@ from src.ship.desktop_update_shared import (
     write_json_atomic,
 )
 
-root: Any | None = None
-
-
-def _root() -> Any:
-    if root is None:
-        raise RuntimeError("desktop_update_state.root is not configured")
-    return root
-
 
 def _as_dict(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}

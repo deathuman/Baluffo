@@ -37,14 +37,7 @@ except ImportError:
 else:
     psutil = _psutil
 
-root: Any | None = None
 _RUNTIME_SESSION_ROOT_FALLBACK: Path | None = None
-
-
-def _root() -> Any:
-    if root is None:
-        raise RuntimeError("desktop_update_shared.root is not configured")
-    return root
 
 
 def _as_dict(value: Any) -> dict[str, Any]:

@@ -29,6 +29,7 @@ def _write_tracked_modules(
 def test_current_desktop_update_root_dependency_inventory_is_complete() -> None:
     rows = inventory.collect_desktop_update_root_dependency_inventory()
     by_name = {row.name: row for row in rows}
+    repo_root = Path(__file__).resolve().parents[1]
 
     assert len(rows) == inventory.EXPECTED_DEPENDENCY_COUNT
     assert sum(len(row.references) for row in rows) == inventory.EXPECTED_REFERENCE_COUNT
@@ -42,6 +43,15 @@ def test_current_desktop_update_root_dependency_inventory_is_complete() -> None:
     assert "save_status" not in by_name
     assert "_RUNTIME_SESSION_ROOT_FALLBACK" not in by_name
     assert "psutil" not in by_name
+    assert "root: Any | None" not in (
+        repo_root / "src" / "ship" / "desktop_update_shared.py"
+    ).read_text(encoding="utf-8")
+    assert "root: Any | None" not in (
+        repo_root / "src" / "ship" / "desktop_update_state.py"
+    ).read_text(encoding="utf-8")
+    assert ".root = sys.modules[__name__]" not in (
+        repo_root / "src" / "ship" / "desktop_update.py"
+    ).read_text(encoding="utf-8")
 
 
 def test_inventory_collects_direct_deps_attribute_references(
