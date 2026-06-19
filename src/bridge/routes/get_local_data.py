@@ -9,11 +9,10 @@ import re
 import time
 import zipfile
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Protocol
 
 from pydantic import ValidationError as PydanticValidationError
 
-from src.bridge.api import BridgeApi
 from src.bridge.routes.error_boundary import run_route_boundary, send_json_boundary
 from src.bridge.routes.response_writer import BridgeResponseWriter
 from src.core.schemas import LocalSavedJobRowSchema
@@ -25,7 +24,37 @@ def _json_error(exc: Exception) -> dict[str, Any]:
     return {"ok": False, "error": str(exc)}
 
 
-def _handle_session_route(handler: BridgeResponseWriter, *, api: BridgeApi) -> bool:
+class _DesktopLocalDataStore(Protocol):
+    def export_profile_data(self, uid: str, *, include_files: bool = False) -> dict[str, Any]: ...
+
+    def get_attachment_blob(
+        self, uid: str, job_key: str, attachment_id: str
+    ) -> tuple[bytes, str, str]: ...
+
+    def get_current_user(self) -> dict[str, Any] | None: ...
+
+    def get_saved_job_keys(self, uid: str) -> list[str]: ...
+
+    def list_activity_for_user(self, uid: str, limit: int) -> list[dict[str, Any]]: ...
+
+    def list_attachments_for_job(self, uid: str, job_key: str) -> list[dict[str, Any]]: ...
+
+    def list_profiles(self) -> list[dict[str, Any]]: ...
+
+    def list_saved_jobs(self, uid: str) -> list[dict[str, Any]]: ...
+
+
+class _LocalDataGetRouteApi(Protocol):
+    DESKTOP_SESSION_ACTIVITY_AT: str | None
+
+    def desktop_local_data_store(self) -> _DesktopLocalDataStore: ...
+
+    def get_desktop_session_payload(self) -> dict[str, Any]: ...
+
+    def read_startup_metrics(self, limit: int) -> list[dict[str, Any]]: ...
+
+
+def _handle_session_route(handler: BridgeResponseWriter, *, api: _LocalDataGetRouteApi) -> bool:
     def _payload() -> dict[str, Any]:
         route_started_at = time.perf_counter()
         session_started_at = time.perf_counter()
@@ -54,7 +83,7 @@ def _handle_session_route(handler: BridgeResponseWriter, *, api: BridgeApi) -> b
 def _handle_saved_jobs_route(
     handler: BridgeResponseWriter,
     *,
-    api: BridgeApi,
+    api: _LocalDataGetRouteApi,
     query: dict[str, list[str]],
 ) -> bool:
     def _payload() -> dict[str, Any]:
@@ -76,7 +105,7 @@ def _handle_saved_jobs_route(
 def _handle_attachment_content_route(
     handler: BridgeResponseWriter,
     *,
-    api: BridgeApi,
+    api: _LocalDataGetRouteApi,
     query: dict[str, list[str]],
 ) -> bool:
     def _send_attachment() -> None:
@@ -101,7 +130,7 @@ def _handle_attachment_content_route(
 def _handle_backup_export_file_route(
     handler: BridgeResponseWriter,
     *,
-    api: BridgeApi,
+    api: _LocalDataGetRouteApi,
     query: dict[str, list[str]],
 ) -> bool:
     def _send_export_file() -> None:
@@ -140,7 +169,7 @@ def _handle_backup_export_file_route(
     return True
 
 
-def _handle_profiles_route(handler: BridgeResponseWriter, *, api: BridgeApi) -> bool:
+def _handle_profiles_route(handler: BridgeResponseWriter, *, api: _LocalDataGetRouteApi) -> bool:
     send_json_boundary(
         handler,
         lambda: {"ok": True, "profiles": api.desktop_local_data_store().list_profiles()},
@@ -153,7 +182,7 @@ def _handle_profiles_route(handler: BridgeResponseWriter, *, api: BridgeApi) -> 
 def _handle_saved_job_keys_route(
     handler: BridgeResponseWriter,
     *,
-    api: BridgeApi,
+    api: _LocalDataGetRouteApi,
     query: dict[str, list[str]],
 ) -> bool:
     def _payload() -> dict[str, Any]:
@@ -167,7 +196,7 @@ def _handle_saved_job_keys_route(
 def _handle_attachments_route(
     handler: BridgeResponseWriter,
     *,
-    api: BridgeApi,
+    api: _LocalDataGetRouteApi,
     query: dict[str, list[str]],
 ) -> bool:
     def _payload() -> dict[str, Any]:
@@ -185,7 +214,7 @@ def _handle_attachments_route(
 def _handle_activity_route(
     handler: BridgeResponseWriter,
     *,
-    api: BridgeApi,
+    api: _LocalDataGetRouteApi,
     query: dict[str, list[str]],
 ) -> bool:
     def _payload() -> dict[str, Any]:
@@ -203,7 +232,7 @@ def _handle_activity_route(
 def _handle_startup_metrics_route(
     handler: BridgeResponseWriter,
     *,
-    api: BridgeApi,
+    api: _LocalDataGetRouteApi,
     query: dict[str, list[str]],
 ) -> bool:
     def _payload() -> dict[str, Any]:
@@ -221,7 +250,7 @@ def _handle_startup_metrics_route(
 def handle_local_data_get_routes(
     handler: BridgeResponseWriter,
     *,
-    api: BridgeApi,
+    api: _LocalDataGetRouteApi,
     path: str,
     query: dict[str, list[str]],
 ) -> bool:
