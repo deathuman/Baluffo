@@ -14,6 +14,7 @@ from src.source_registry import normalize_source_url
 from src.url_hosts import host_matches_domain
 
 _ELEVATO_DETAIL_PATH_RE = re.compile(r"(?i)/(?:[a-z]{2}/)?[^/?#]+,j,\d+(?:$|[/?#])")
+_EXPECTED_EXTERNAL_SCRIPT_FETCH_ERRORS = (OSError, RuntimeError, TypeError, ValueError)
 
 
 def _is_ignored_job_href(href: str) -> bool:
@@ -358,14 +359,14 @@ def extract_external_job_links_from_scripts(
                         continue
                     seen.add(link)
                     job_links.append(link)
-            except Exception as exc:  # noqa: BLE001
+            except _EXPECTED_EXTERNAL_SCRIPT_FETCH_ERRORS as exc:
                 errors.append(f"{intervieweb_iframe}: {exc}")
             continue
         if not any(token in lower for token in ("career", "job", "vacanc", "recruit", "announc")):
             continue
         try:
             script_text = fetch_text(script_url, timeout_s)
-        except Exception as exc:  # noqa: BLE001
+        except _EXPECTED_EXTERNAL_SCRIPT_FETCH_ERRORS as exc:
             errors.append(f"{script_url}: {exc}")
             continue
         for raw in find_urls_in_text(script_text):
