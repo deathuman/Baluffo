@@ -15,8 +15,6 @@ from typing import Any
 
 from src.ship.desktop_update_shared import iso_now
 
-root: Any | None = None
-
 DESKTOP_UPDATER_NO_DIALOG_ENV = "BALUFFO_DESKTOP_UPDATER_NO_DIALOG"
 DESKTOP_UPDATER_VERIFY_TIMEOUT_ENV = "BALUFFO_DESKTOP_UPDATER_VERIFY_TIMEOUT_S"
 
@@ -36,10 +34,6 @@ HELPER_WINDOW_SIZE = {"width": 420, "height": 188}
 HELPER_BRAND_TEXT = "Baluffo Update"
 HELPER_TITLE_TEXT = "Installing the latest portable build"
 HELPER_SUPPORT_TEXT = "Baluffo can stay closed while the update finishes."
-
-
-def _module() -> Any:
-    return root if root is not None else sys.modules[__name__]
 
 
 def _normalize_helper_message(message: str) -> str:

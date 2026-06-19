@@ -761,9 +761,18 @@ def test_desktop_updater_root_stays_thin_compat_surface(repo_root: Path) -> None
     assert "from src.ship import desktop_updater_ui as desktop_updater_ui_mod" in text
     assert "from src.ship import desktop_updater_release as desktop_updater_release_mod" in text
     assert "from src.ship import desktop_updater_install as desktop_updater_install_mod" in text
-    assert "desktop_updater_ui_mod.root = sys.modules[__name__]" in text
-    assert "desktop_updater_release_mod.root = sys.modules[__name__]" in text
-    assert "desktop_updater_install_mod.root = sys.modules[__name__]" in text
+    assert "desktop_updater_ui_mod.root = sys.modules[__name__]" not in text
+    assert "desktop_updater_release_mod.root = sys.modules[__name__]" not in text
+    assert "desktop_updater_install_mod.root = sys.modules[__name__]" not in text
+    assert "root: Any" not in (repo_root / "src" / "ship" / "desktop_updater_ui.py").read_text(
+        encoding="utf-8"
+    )
+    assert "root: Any" not in (repo_root / "src" / "ship" / "desktop_updater_release.py").read_text(
+        encoding="utf-8"
+    )
+    assert "root: Any" not in (repo_root / "src" / "ship" / "desktop_updater_install.py").read_text(
+        encoding="utf-8"
+    )
     assert "HelperProgressWindow = desktop_updater_ui_mod.HelperProgressWindow" in text
     assert "run_install = desktop_updater_install_mod.run_install" in text
     assert {"parse_args", "main"} <= function_names

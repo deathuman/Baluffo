@@ -182,7 +182,6 @@ def test_helper_progress_window_ignores_expected_theme_failures(monkeypatch) -> 
     progress._closed = mock.Mock(wait=mock.Mock(return_value=True), set=mock.Mock())
     fake_tk, fake_ttk = _fake_tk_modules(theme_error=_FakeTclError("theme unavailable"))
 
-    monkeypatch.setattr(updater_ui, "root", None)
     monkeypatch.setattr(updater_ui.os, "name", "nt")
     with _patch_tk_import(fake_tk, fake_ttk):
         progress.run("Preparing update")
@@ -198,7 +197,6 @@ def test_helper_progress_window_does_not_suppress_unexpected_theme_failures(
     progress._closed = mock.Mock(wait=mock.Mock(return_value=True), set=mock.Mock())
     fake_tk, fake_ttk = _fake_tk_modules(theme_error=RuntimeError("unexpected theme bug"))
 
-    monkeypatch.setattr(updater_ui, "root", None)
     monkeypatch.setattr(updater_ui.os, "name", "nt")
     with (
         _patch_tk_import(fake_tk, fake_ttk),
@@ -215,7 +213,6 @@ def test_helper_progress_window_ignores_expected_progress_stop_failures(
     progress._closed = mock.Mock(wait=mock.Mock(return_value=True), set=mock.Mock())
     fake_tk, fake_ttk = _fake_tk_modules(bar_stop_error=_FakeTclError("bar gone"))
 
-    monkeypatch.setattr(updater_ui, "root", None)
     monkeypatch.setattr(updater_ui.os, "name", "nt")
     with _patch_tk_import(fake_tk, fake_ttk):
         progress.run("Preparing update")
@@ -231,7 +228,6 @@ def test_helper_progress_window_does_not_suppress_unexpected_progress_stop_failu
     progress._closed = mock.Mock(wait=mock.Mock(return_value=True), set=mock.Mock())
     fake_tk, fake_ttk = _fake_tk_modules(bar_stop_error=RuntimeError("unexpected bar bug"))
 
-    monkeypatch.setattr(updater_ui, "root", None)
     monkeypatch.setattr(updater_ui.os, "name", "nt")
     with (
         _patch_tk_import(fake_tk, fake_ttk),
@@ -246,7 +242,6 @@ def test_helper_progress_window_ignores_expected_mainloop_failures(monkeypatch) 
     progress._closed = mock.Mock(wait=mock.Mock(return_value=True), set=mock.Mock())
     fake_tk, fake_ttk = _fake_tk_modules(mainloop_error=_FakeTclError("window closed"))
 
-    monkeypatch.setattr(updater_ui, "root", None)
     monkeypatch.setattr(updater_ui.os, "name", "nt")
     with _patch_tk_import(fake_tk, fake_ttk):
         progress.run("Preparing update")
@@ -262,7 +257,6 @@ def test_helper_progress_window_does_not_suppress_unexpected_mainloop_failures(
     progress._closed = mock.Mock(wait=mock.Mock(return_value=True), set=mock.Mock())
     fake_tk, fake_ttk = _fake_tk_modules(mainloop_error=RuntimeError("unexpected loop bug"))
 
-    monkeypatch.setattr(updater_ui, "root", None)
     monkeypatch.setattr(updater_ui.os, "name", "nt")
     with (
         _patch_tk_import(fake_tk, fake_ttk),

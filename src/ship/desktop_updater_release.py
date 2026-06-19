@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -42,11 +41,9 @@ from src.ship.desktop_update_shared import (
 )
 from src.ship.desktop_update_state import read_cached_manifest as _read_cached_manifest
 
-root: Any | None = None
-
 DESKTOP_UPDATE_MANIFEST_ASSET = "baluffo-desktop-update-manifest.json"
 
-# Preserve module-root helper names for updater code that resolves them through `_module()`.
+# Preserve module-root helper names for updater facade compatibility.
 compute_sha256 = _compute_sha256
 desktop_update_public_key_candidate_paths = _desktop_update_public_key_candidate_paths
 download_file = _download_file
@@ -59,10 +56,6 @@ validate_desktop_manifest = _validate_desktop_manifest
 verify_manifest_signature = _verify_manifest_signature
 write_json_atomic = _write_json_atomic
 read_cached_manifest = _read_cached_manifest
-
-
-def _module() -> Any:
-    return root if root is not None else sys.modules[__name__]
 
 
 def _as_dict(value: Any) -> dict[str, Any]:

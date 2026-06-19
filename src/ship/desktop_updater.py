@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Thin helper executable root for portable desktop in-app updates.
 
-AI boundary: this file owns helper CLI compatibility and root patch seams only.
+AI boundary: this file owns helper CLI compatibility only.
 AI boundary implement in: `desktop_updater_{ui,release,install}.py` leaves.
 AI boundary search before contracts: updater state, release, install, UI callers.
 AI boundary verify: updater rehearsal lane plus `npm run test:refactor:changed`.
@@ -28,10 +28,6 @@ from src.ship import desktop_updater_ui as desktop_updater_ui_mod
 
 DESKTOP_UPDATER_NO_DIALOG_ENV = "BALUFFO_DESKTOP_UPDATER_NO_DIALOG"
 DESKTOP_UPDATER_VERIFY_TIMEOUT_ENV = "BALUFFO_DESKTOP_UPDATER_VERIFY_TIMEOUT_S"
-
-desktop_updater_ui_mod.root = sys.modules[__name__]
-desktop_updater_release_mod.root = sys.modules[__name__]
-desktop_updater_install_mod.root = sys.modules[__name__]
 
 HelperProgressWindow = desktop_updater_ui_mod.HelperProgressWindow
 NullProgressWindow = desktop_updater_ui_mod.NullProgressWindow

@@ -63,7 +63,6 @@ def _run_install_with_backup_restore_failure(
             return None
 
     with (
-        mock.patch.object(updater, "root", None),
         mock.patch.object(
             updater,
             "_recover_manifest_for_install",
@@ -166,7 +165,6 @@ def test_run_install_suppresses_expected_rollback_snapshot_failures() -> None:
         _write_install_plan(paths.install_plan_path, install_root, rollback_root)
 
         with (
-            mock.patch.object(updater, "root", None),
             mock.patch.object(
                 updater,
                 "_recover_manifest_for_install",
@@ -192,7 +190,6 @@ def test_run_install_does_not_suppress_unexpected_rollback_snapshot_failures() -
         _write_install_plan(paths.install_plan_path, install_root, rollback_root)
 
         with (
-            mock.patch.object(updater, "root", None),
             mock.patch.object(
                 updater,
                 "_recover_manifest_for_install",

@@ -40,7 +40,6 @@ def test_recover_interrupted_install_continues_after_expected_startup_failure() 
         install_root, ship_root, paths, rollback_root, plan = _verifying_recovery_context(tmp)
 
         with (
-            mock.patch.object(updater, "root", None),
             mock.patch.object(
                 updater,
                 "_verify_target_startup",
@@ -65,7 +64,6 @@ def test_recover_interrupted_install_does_not_suppress_unexpected_startup_failur
         install_root, ship_root, paths, rollback_root, plan = _verifying_recovery_context(tmp)
 
         with (
-            mock.patch.object(updater, "root", None),
             mock.patch.object(
                 updater,
                 "_verify_target_startup",

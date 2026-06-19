@@ -6,7 +6,6 @@ from __future__ import annotations
 import contextlib
 import json
 import shutil
-import sys
 import time as _time
 import urllib.error
 import uuid
@@ -74,8 +73,6 @@ from src.ship.update_manager_apply import (
 )
 from src.ship.update_manager_paths import ShipPaths as _ShipPaths
 
-root: Any | None = None
-
 MUTATING_INSTALL_STAGES = frozenset(
     {
         "replacing",
@@ -111,10 +108,6 @@ _recover_manifest_for_install = _recover_manifest_for_install_impl
 NullProgressWindow = _NullProgressWindow
 _helper_relaunch_verify_timeout_s = _helper_relaunch_verify_timeout_s_impl
 _launch_executable = _launch_executable_impl
-
-
-def _module() -> Any:
-    return root if root is not None else sys.modules[__name__]
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
