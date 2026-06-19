@@ -18,7 +18,8 @@ if [ -z "$DATA_DIR" ]; then
 fi
 
 echo "[baluffo-ship] Running startup validation..."
-"$PYTHON" -m src.ship.update_manager startup-check --root "$ROOT" --data-dir "$DATA_DIR"
+export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
+"$PYTHON" -m src.ship.update_manager_cli startup-check --root "$ROOT" --data-dir "$DATA_DIR"
 
 export BALUFFO_DATA_DIR="$DATA_DIR"
 echo "[baluffo-ship] Starting admin bridge..."

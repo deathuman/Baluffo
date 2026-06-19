@@ -89,3 +89,7 @@ def main() -> int:
         print(json.dumps({"ok": False, "error": str(exc)}, indent=2))
         return 1
     return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

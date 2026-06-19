@@ -17,9 +17,14 @@ if ([string]::IsNullOrWhiteSpace($SigningKey)) {
   throw "Missing signing key. Set -SigningKey or BALUFFO_UPDATE_SIGNING_KEY."
 }
 
-$manager = Join-Path $Root "src\ship\update_manager.py"
-if (-not (Test-Path $manager)) {
-  throw "Update manager not found: $manager"
+$managerCli = Join-Path $Root "src\ship\update_manager_cli.py"
+if (-not (Test-Path $managerCli)) {
+  throw "Update manager CLI not found: $managerCli"
 }
 
-python $manager apply --root $Root --bundle-zip $BundleZip --manifest $Manifest --signing-key $SigningKey
+Push-Location -LiteralPath $Root
+try {
+  python -m src.ship.update_manager_cli apply --root $Root --bundle-zip $BundleZip --manifest $Manifest --signing-key $SigningKey
+} finally {
+  Pop-Location
+}

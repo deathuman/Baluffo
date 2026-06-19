@@ -13,14 +13,14 @@ if [ -z "$ROOT" ]; then
     fi
 fi
 
-MANAGER="$ROOT/src/ship/update_manager.py"
-if [ ! -f "$MANAGER" ]; then
-    echo "Update manager not found: $MANAGER"
+MANAGER_CLI="$ROOT/src/ship/update_manager_cli.py"
+if [ ! -f "$MANAGER_CLI" ]; then
+    echo "Update manager CLI not found: $MANAGER_CLI"
     exit 1
 fi
 
 if [ -z "$OUTPUT" ]; then
-    exec python3 "$MANAGER" support-bundle --root "$ROOT"
+    exec env PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -m src.ship.update_manager_cli support-bundle --root "$ROOT"
 else
-    exec python3 "$MANAGER" support-bundle --root "$ROOT" --output "$OUTPUT"
+    exec env PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -m src.ship.update_manager_cli support-bundle --root "$ROOT" --output "$OUTPUT"
 fi
