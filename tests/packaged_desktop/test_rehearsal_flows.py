@@ -605,6 +605,47 @@ def test_wait_for_packaged_runtime_with_port_pivot_prefers_env_scoped_session_ro
         fetch_mock.assert_any_call("http://127.0.0.1:9002/ops/health", timeout_s=1.0)
 
 
+def test_wait_for_packaged_runtime_with_port_pivot_tolerates_optional_status_fetch_errors() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp)
+        expected_data_dir = root / "run-data"
+        expected_data_dir.mkdir(parents=True, exist_ok=True)
+        run_env = {"LOCALAPPDATA": str(root / "run-localappdata")}
+        run_session_root = smoke.desktop_update_mod.resolve_desktop_session_root(run_env)
+        run_session_root.mkdir(parents=True, exist_ok=True)
+        (run_session_root / smoke.DESKTOP_SESSION_STATE_FILE).write_text(
+            json.dumps({"sitePort": 9001, "bridgePort": 9002, "dataDir": str(expected_data_dir)}),
+            encoding="utf-8",
+        )
+        process = mock.Mock(spec=subprocess.Popen)
+        process.poll.return_value = None
+        rows = [{"event": "desktop_runtime_port_retry"}]
+
+        with (
+            mock.patch.object(
+                smoke,
+                "fetch_json",
+                side_effect=[OSError("health reset"), ValueError("session malformed")],
+            ),
+            mock.patch.object(smoke, "fetch_startup_metrics", return_value=rows),
+            mock.patch.object(smoke, "_packaged_runtime_page_ready", return_value=True),
+        ):
+            runtime_state = smoke.wait_for_packaged_runtime_with_port_pivot(
+                process,
+                requested_site_port=8080,
+                requested_bridge_port=8877,
+                expected_data_dir=expected_data_dir,
+                timeout_s=0.2,
+                required_events=("desktop_runtime_port_retry",),
+                env=run_env,
+            )
+
+    assert runtime_state["health"] == {}
+    assert runtime_state["session"] == {}
+    assert runtime_state["actualSitePort"] == 9001
+    assert runtime_state["actualBridgePort"] == 9002
+
+
 def test_desktop_update_rehearsal_json_fallbacks_ignore_malformed_payloads() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         data_dir = Path(tmp) / "portable" / "ship" / "data"

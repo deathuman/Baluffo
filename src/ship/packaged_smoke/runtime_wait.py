@@ -8,6 +8,8 @@ import urllib.error
 from pathlib import Path
 from typing import Any
 
+_EXPECTED_OPTIONAL_STATUS_FETCH_EXCEPTIONS = (OSError, ValueError)
+
 
 def as_dict(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
@@ -100,13 +102,13 @@ def wait_for_packaged_runtime(
                 session: dict[str, Any] = {}
                 try:
                     health = deps.fetch_json(f"{bridge_base_url}/ops/health", timeout_s=1.0)
-                except Exception:  # noqa: BLE001
+                except _EXPECTED_OPTIONAL_STATUS_FETCH_EXCEPTIONS:
                     health = {}
                 try:
                     session = deps.fetch_json(
                         f"{bridge_base_url}/desktop-local-data/session", timeout_s=1.0
                     )
-                except Exception:  # noqa: BLE001
+                except _EXPECTED_OPTIONAL_STATUS_FETCH_EXCEPTIONS:
                     session = {}
                 return {
                     "health": health,
@@ -192,13 +194,13 @@ def wait_for_packaged_runtime_with_port_pivot(
                 session: dict[str, Any] = {}
                 try:
                     health = deps.fetch_json(f"{bridge_base_url}/ops/health", timeout_s=1.0)
-                except Exception:  # noqa: BLE001
+                except _EXPECTED_OPTIONAL_STATUS_FETCH_EXCEPTIONS:
                     health = {}
                 try:
                     session = deps.fetch_json(
                         f"{bridge_base_url}/desktop-local-data/session", timeout_s=1.0
                     )
-                except Exception:  # noqa: BLE001
+                except _EXPECTED_OPTIONAL_STATUS_FETCH_EXCEPTIONS:
                     session = {}
                 return {
                     "health": health,

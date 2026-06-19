@@ -186,6 +186,60 @@ def test_wait_for_packaged_runtime_accepts_jobs_metric_as_page_ready() -> None:
     page_ready_mock.assert_not_called()
 
 
+def test_wait_for_packaged_runtime_tolerates_optional_status_fetch_errors() -> None:
+    process = mock.Mock()
+    process.poll.return_value = None
+    rows = [{"event": "jobs_first_render", "payload": {"elapsedMs": 1200}}]
+    with (
+        mock.patch.object(smoke, "fetch_json", side_effect=[OSError("health reset"), {}]),
+        mock.patch.object(smoke, "fetch_startup_metrics", return_value=rows),
+        mock.patch.object(smoke.time, "monotonic", side_effect=[0.0, 0.0]),
+    ):
+        result = smoke.wait_for_packaged_runtime(
+            process,
+            site_base_url="http://127.0.0.1:8080",
+            bridge_base_url="http://127.0.0.1:8877",
+            timeout_s=5.0,
+            open_path="jobs.html",
+            required_events=("jobs_first_render",),
+            require_page_ready=True,
+        )
+
+    assert result["health"] == {}
+    assert result["session"] == {}
+    assert result["startupMetrics"] == rows
+
+
+@pytest.mark.parametrize(
+    "fetch_side_effect",
+    [
+        RuntimeError("health shim bug"),
+        [OSError("health reset"), RuntimeError("session shim bug")],
+    ],
+)
+def test_wait_for_packaged_runtime_does_not_swallow_optional_status_bug(
+    fetch_side_effect: Exception | list[Exception],
+) -> None:
+    process = mock.Mock()
+    process.poll.return_value = None
+    rows = [{"event": "jobs_first_render", "payload": {"elapsedMs": 1200}}]
+    with (
+        mock.patch.object(smoke, "fetch_json", side_effect=fetch_side_effect),
+        mock.patch.object(smoke, "fetch_startup_metrics", return_value=rows),
+        mock.patch.object(smoke.time, "monotonic", side_effect=[0.0, 0.0]),
+        pytest.raises(RuntimeError, match="shim bug"),
+    ):
+        smoke.wait_for_packaged_runtime(
+            process,
+            site_base_url="http://127.0.0.1:8080",
+            bridge_base_url="http://127.0.0.1:8877",
+            timeout_s=5.0,
+            open_path="jobs.html",
+            required_events=("jobs_first_render",),
+            require_page_ready=True,
+        )
+
+
 def test_wait_for_runtime_events_retries_transient_bridge_reset() -> None:
     rows = [
         {"event": "jobs_first_render", "payload": {"elapsedMs": 1200}},
