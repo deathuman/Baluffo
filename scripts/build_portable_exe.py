@@ -240,7 +240,7 @@ if str(ROOT) not in sys.path:
 
 from scripts.build_ship_bundle import DEFAULT_BUNDLE_VERSION, build_bundle
 from src.python_version_guard import ensure_required_python
-from src.ship.update_manager import REQUIRED_VERSION_FILES
+from src.ship.update_manager_paths import REQUIRED_VERSION_FILES
 
 
 def _sha256_bytes(payload: bytes) -> str:

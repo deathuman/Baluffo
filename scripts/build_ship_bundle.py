@@ -35,7 +35,8 @@ from src.shared.json_io import (
     gzip_backed_json_storage_path,
     write_json_text,
 )
-from src.ship.update_manager import ShipPaths, refresh_runtime_bootstrap
+from src.ship.update_manager_bootstrap import refresh_runtime_bootstrap
+from src.ship.update_manager_paths import ShipPaths
 
 DEFAULT_BUNDLE_VERSION = APP_VERSION
 
