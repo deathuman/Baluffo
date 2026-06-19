@@ -12,8 +12,6 @@ from src.source_registry_io import (
     load_runtime_evidence,
 )
 
-root: Any | None = None
-
 JsonObject = dict[str, Any]
 
 
@@ -140,14 +138,8 @@ class _AdminTaskRuntimeRoot(Protocol):
     def _get_task_launch_api(self) -> _TaskLaunchApiLike: ...
 
 
-def _require_root() -> _AdminTaskRuntimeRoot:
-    if root is None:
-        raise RuntimeError("admin bridge root is not bound")
-    return cast(_AdminTaskRuntimeRoot, root)
-
-
-def read_tasks_config() -> JsonObject:
-    root_mod = _require_root()
+def read_tasks_config(*, root_mod: Any) -> JsonObject:
+    root_mod = cast(_AdminTaskRuntimeRoot, root_mod)
     try:
         parsed = json.loads(root_mod.TASKS_CONFIG_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -169,8 +161,9 @@ def set_sync_status(
     error: str = "",
     pulled: bool = False,
     pushed: bool = False,
+    root_mod: Any,
 ) -> None:
-    root_mod = _require_root()
+    root_mod = cast(_AdminTaskRuntimeRoot, root_mod)
     root_mod._get_sync_state().set_sync_status(
         action=action,
         result=result,
@@ -180,32 +173,32 @@ def set_sync_status(
     )
 
 
-def get_sync_status_payload() -> JsonObject:
-    return _require_root()._get_sync_service().get_sync_status_payload()
+def get_sync_status_payload(*, root_mod: Any) -> JsonObject:
+    return cast(_AdminTaskRuntimeRoot, root_mod)._get_sync_service().get_sync_status_payload()
 
 
-def sync_guard() -> JsonObject | None:
-    return _require_root()._get_sync_service()._sync_guard()  # noqa: SLF001
+def sync_guard(*, root_mod: Any) -> JsonObject | None:
+    return cast(_AdminTaskRuntimeRoot, root_mod)._get_sync_service()._sync_guard()  # noqa: SLF001
 
 
-def sync_pull_sources() -> JsonObject:
-    return _require_root()._get_sync_service().sync_pull_sources()
+def sync_pull_sources(*, root_mod: Any) -> JsonObject:
+    return cast(_AdminTaskRuntimeRoot, root_mod)._get_sync_service().sync_pull_sources()
 
 
-def sync_push_sources() -> JsonObject:
-    return _require_root()._get_sync_service().sync_push_sources()
+def sync_push_sources(*, root_mod: Any) -> JsonObject:
+    return cast(_AdminTaskRuntimeRoot, root_mod)._get_sync_service().sync_push_sources()
 
 
-def startup_sync_pull() -> None:
-    _require_root()._get_sync_service().startup_sync_pull()
+def startup_sync_pull(*, root_mod: Any) -> None:
+    cast(_AdminTaskRuntimeRoot, root_mod)._get_sync_service().startup_sync_pull()
 
 
-def schedule_startup_sync_pull() -> JsonObject:
-    return _require_root()._get_sync_service().schedule_startup_sync_pull()
+def schedule_startup_sync_pull(*, root_mod: Any) -> JsonObject:
+    return cast(_AdminTaskRuntimeRoot, root_mod)._get_sync_service().schedule_startup_sync_pull()
 
 
-def on_bridge_started() -> JsonObject:
-    root_mod = _require_root()
+def on_bridge_started(*, root_mod: Any) -> JsonObject:
+    root_mod = cast(_AdminTaskRuntimeRoot, root_mod)
     runtime_journals = cleanup_runtime_evidence_journals(
         Path(root_mod.RUNTIME_CONFIG.data_dir).resolve()
     )
@@ -238,8 +231,8 @@ def on_bridge_started() -> JsonObject:
     }
 
 
-def sync_task_running() -> bool:
-    root_mod = _require_root()
+def sync_task_running(*, root_mod: Any) -> bool:
+    root_mod = cast(_AdminTaskRuntimeRoot, root_mod)
     with root_mod.OPS_STATE_LOCK:
         root_mod._run_history_api.reconcile_sync_history_locked(
             root_mod._run_history_api.SyncHistoryDeps(
@@ -274,20 +267,22 @@ def sync_task_running() -> bool:
     return root_mod._get_sync_service().sync_task_running()
 
 
-def wait_for_sync_tasks(timeout_s: float = 5.0) -> None:
-    _require_root()._get_sync_service().wait_for_sync_tasks(timeout_s=float(timeout_s))
+def wait_for_sync_tasks(timeout_s: float = 5.0, *, root_mod: Any) -> None:
+    cast(_AdminTaskRuntimeRoot, root_mod)._get_sync_service().wait_for_sync_tasks(
+        timeout_s=float(timeout_s)
+    )
 
 
-def mark_discovery_sync_finished(finished_at: str) -> None:
-    root_mod = _require_root()
+def mark_discovery_sync_finished(finished_at: str, *, root_mod: Any) -> None:
+    root_mod = cast(_AdminTaskRuntimeRoot, root_mod)
     with root_mod.SYNC_STATE_LOCK:
         root_mod._get_sync_state().save_sync_runtime_state(
             {"lastDiscoverySyncFinishedAt": str(finished_at or "")}
         )
 
 
-def maybe_trigger_auto_sync_push(reason: str) -> bool:
-    root_mod = _require_root()
+def maybe_trigger_auto_sync_push(reason: str, *, root_mod: Any) -> bool:
+    root_mod = cast(_AdminTaskRuntimeRoot, root_mod)
     return root_mod._registry_sync_flow.maybe_trigger_auto_sync_push(
         reason=reason,
         sync_guard=root_mod._sync_guard,
@@ -296,14 +291,14 @@ def maybe_trigger_auto_sync_push(reason: str) -> bool:
     )
 
 
-def migrate_legacy_task_state_to_lifecycle() -> JsonObject:
+def migrate_legacy_task_state_to_lifecycle(*, root_mod: Any) -> JsonObject:
     """Migration function: import legacy task state/run-history into the lifecycle ledger.
 
     This is an explicit migration function, not a normal lifecycle path.  Call
     it once after upgrading from a version that used admin-task-state.json /
     admin-run-history.json as lifecycle authority.
     """
-    root_mod = _require_root()
+    root_mod = cast(_AdminTaskRuntimeRoot, root_mod)
     history_rows = root_mod.load_run_history()
     task_state = root_mod.load_json_object(root_mod.TASK_STATE_PATH, {})
     rows = root_mod.reconcile_lifecycle_from_legacy(
@@ -320,9 +315,15 @@ def migrate_legacy_task_state_to_lifecycle() -> JsonObject:
 
 
 def run_sync_task_worker(
-    run_id: str, action: str, started_at: str, *, reason: str = "", automatic: bool = False
+    run_id: str,
+    action: str,
+    started_at: str,
+    *,
+    reason: str = "",
+    automatic: bool = False,
+    root_mod: Any,
 ) -> None:
-    root_mod = _require_root()
+    root_mod = cast(_AdminTaskRuntimeRoot, root_mod)
     root_mod._sync_task_flow.run_sync_task_worker(
         run_id=run_id,
         action=action,
@@ -367,8 +368,8 @@ def run_sync_task_worker(
     )
 
 
-def current_fetch_output_count() -> int:
-    root_mod = _require_root()
+def current_fetch_output_count(*, root_mod: Any) -> int:
+    root_mod = cast(_AdminTaskRuntimeRoot, root_mod)
     report = root_mod.normalize_fetch_report_contract(
         load_runtime_evidence(root_mod.JOBS_FETCH_REPORT_PATH, {})
     )
@@ -376,8 +377,8 @@ def current_fetch_output_count() -> int:
     return int(summary.get("outputCount") or 0)
 
 
-def get_jobs_pipeline_status_payload() -> JsonObject:
-    return _require_root()._get_pipeline_service().get_status_payload()
+def get_jobs_pipeline_status_payload(*, root_mod: Any) -> JsonObject:
+    return cast(_AdminTaskRuntimeRoot, root_mod)._get_pipeline_service().get_status_payload()
 
 
 def wait_for_report_completion(
@@ -387,8 +388,9 @@ def wait_for_report_completion(
     timeout_s: float,
     report_name: str,
     fail_on_stale: bool = False,
+    root_mod: Any,
 ) -> JsonObject:
-    root_mod = _require_root()
+    root_mod = cast(_AdminTaskRuntimeRoot, root_mod)
     return root_mod._get_pipeline_service().wait_for_report_completion(
         report_path=report_path,
         started_at=started_at,
@@ -400,8 +402,8 @@ def wait_for_report_completion(
     )
 
 
-def wait_for_sync_completion(run_id: str, timeout_s: float = 900.0) -> JsonObject:
-    root_mod = _require_root()
+def wait_for_sync_completion(run_id: str, timeout_s: float = 900.0, *, root_mod: Any) -> JsonObject:
+    root_mod = cast(_AdminTaskRuntimeRoot, root_mod)
     deadline = datetime.now(UTC) + timedelta(seconds=max(10.0, float(timeout_s)))
     while datetime.now(UTC) < deadline:
         projection = root_mod.get_projected_run_history()
@@ -422,8 +424,8 @@ def wait_for_sync_completion(run_id: str, timeout_s: float = 900.0) -> JsonObjec
     raise TimeoutError("sync task did not finish within timeout")
 
 
-def start_fetcher_task(payload: JsonObject | None = None) -> JsonObject:
-    root_mod = _require_root()
+def start_fetcher_task(payload: JsonObject | None = None, *, root_mod: Any) -> JsonObject:
+    root_mod = cast(_AdminTaskRuntimeRoot, root_mod)
     return root_mod._get_task_launch_api().start_fetcher_task(
         payload,
         append_run_history=root_mod.append_run_history,
@@ -442,8 +444,8 @@ def start_fetcher_task(payload: JsonObject | None = None) -> JsonObject:
     )
 
 
-def start_jobs_bootstrap_task(payload: JsonObject | None = None) -> JsonObject:
-    root_mod = _require_root()
+def start_jobs_bootstrap_task(payload: JsonObject | None = None, *, root_mod: Any) -> JsonObject:
+    root_mod = cast(_AdminTaskRuntimeRoot, root_mod)
     return root_mod._get_task_launch_api().start_jobs_bootstrap_task(
         payload,
         normalize_fetch_report_contract=root_mod.normalize_fetch_report_contract,
@@ -460,5 +462,5 @@ def start_jobs_bootstrap_task(payload: JsonObject | None = None) -> JsonObject:
     )
 
 
-def start_jobs_pipeline_task(payload: JsonObject | None = None) -> JsonObject:
-    return _require_root()._get_pipeline_service().start_task(payload)
+def start_jobs_pipeline_task(payload: JsonObject | None = None, *, root_mod: Any) -> JsonObject:
+    return cast(_AdminTaskRuntimeRoot, root_mod)._get_pipeline_service().start_task(payload)

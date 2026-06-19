@@ -957,7 +957,10 @@ def test_sync_task_worker_logic_is_shared_between_admin_bridge_and_sync_service(
     sync_service = (repo_root / "src" / "bridge" / "sync_service.py").read_text(encoding="utf-8")
     assert "from src.bridge import admin_task_runtime as admin_task_runtime_mod" in admin_bridge
     assert "from src.bridge import sync_task_flow as _sync_task_flow" in sync_service
-    assert "admin_task_runtime_mod.run_sync_task_worker(" in admin_bridge
+    assert (
+        "_run_sync_task_worker = _bind_admin_root(admin_task_runtime_mod.run_sync_task_worker)"
+        in admin_bridge
+    )
     assert "root_mod._sync_task_flow.run_sync_task_worker(" in admin_task_runtime
     assert "_sync_task_flow.run_sync_task_worker(" in sync_service
 
@@ -1024,10 +1027,12 @@ def test_admin_bridge_delegates_source_check_orchestration_to_bridge_module(
     assert "src.bridge" in imported_modules
     assert "from src.bridge import admin_registry_api as admin_registry_api_mod" in text
     assert "admin_registry_api_mod.root =" not in text
-    assert "admin_registry_api_mod.trigger_source_check, root_mod=_ADMIN_ROOT" in text
     assert (
-        "admin_registry_api_mod.normalize_manual_static_studio_fields, root_mod=_ADMIN_ROOT" in text
+        "trigger_source_check = _bind_admin_root(admin_registry_api_mod.trigger_source_check)"
+        in text
     )
+    assert "normalize_manual_static_studio_fields = _bind_admin_root(" in text
+    assert "admin_registry_api_mod.normalize_manual_static_studio_fields" in text
 
 
 def test_desktop_app_package_stays_lazy_compat_facade(repo_root: Path) -> None:
@@ -1251,22 +1256,27 @@ def test_admin_bridge_root_stays_thin_entrypoint_surface(repo_root: Path) -> Non
     admin_registry_api = (repo_root / "src" / "bridge" / "admin_registry_api.py").read_text(
         encoding="utf-8"
     )
+    admin_task_runtime = (repo_root / "src" / "bridge" / "admin_task_runtime.py").read_text(
+        encoding="utf-8"
+    )
     assert "admin_entrypoint_api_mod.root = sys.modules[__name__]" not in text
     assert "root: Any" not in admin_entrypoint_api
     assert "def _require_root(" not in admin_entrypoint_api
     assert "admin_entrypoint_runtime_mod.root = sys.modules[__name__]" not in text
     assert "root: Any" not in admin_entrypoint_runtime
     assert "def _require_root(" not in admin_entrypoint_runtime
+    assert "_log_enabled = _bind_admin_root(admin_entrypoint_runtime_mod.log_enabled)" in text
     assert (
-        "_log_enabled = partial(admin_entrypoint_runtime_mod.log_enabled, root_mod=_ADMIN_ROOT)"
-        in text
+        "configure_runtime_paths = _bind_admin_root("
+        "admin_entrypoint_runtime_mod.configure_runtime_paths" in text
     )
-    assert "admin_entrypoint_runtime_mod.configure_runtime_paths, root_mod=_ADMIN_ROOT" in text
     assert "admin_entrypoint_services_mod.root = _ADMIN_ROOT" in text
     assert "admin_registry_api_mod.root =" not in text
     assert "root: Any" not in admin_registry_api
     assert "def _require_root(" not in admin_registry_api
-    assert "admin_task_runtime_mod.root = _ADMIN_ROOT" in text
+    assert "admin_task_runtime_mod.root =" not in text
+    assert "root: Any" not in admin_task_runtime
+    assert "def _require_root(" not in admin_task_runtime
     assert "def build_bridge_api(" in text
     assert "return admin_entrypoint_api_mod.build_bridge_api(config, root_mod=_ADMIN_ROOT)" in text
     assert "smoke_runtime: dict[str, Any]" not in text

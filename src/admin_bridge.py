@@ -167,8 +167,14 @@ REGISTRY_REASON_MANUAL_SOURCE = _REGISTRY_REASON_MANUAL_SOURCE
 REGISTRY_REASON_MANUAL_SOURCE_VARIANT = _REGISTRY_REASON_MANUAL_SOURCE_VARIANT
 now_iso = _now_iso
 _ADMIN_ROOT = sys.modules[__name__]
-load_tombstones = partial(admin_registry_api_mod.load_tombstones, root_mod=_ADMIN_ROOT)
-save_tombstones = partial(admin_registry_api_mod.save_tombstones, root_mod=_ADMIN_ROOT)
+
+
+def _bind_admin_root(func: Callable[..., Any]) -> Callable[..., Any]:
+    return partial(func, root_mod=_ADMIN_ROOT)
+
+
+load_tombstones = _bind_admin_root(admin_registry_api_mod.load_tombstones)
+save_tombstones = _bind_admin_root(admin_registry_api_mod.save_tombstones)
 
 OPS_HISTORY_PATH = ROOT / "data" / "admin-run-history.json"
 TASK_LIFECYCLE_PATH = ROOT / "data" / "admin-task-lifecycle.json"
@@ -259,7 +265,6 @@ RUNTIME_CONFIG = RuntimeConfig(
 )
 
 admin_entrypoint_services_mod.root = _ADMIN_ROOT
-admin_task_runtime_mod.root = _ADMIN_ROOT
 
 
 def _normalize_log_level(value: Any, default: str = "info") -> str:
@@ -284,21 +289,17 @@ def resolve_runtime_config(
     )
 
 
-_log_enabled = partial(admin_entrypoint_runtime_mod.log_enabled, root_mod=_ADMIN_ROOT)
-bridge_log = partial(admin_entrypoint_runtime_mod.bridge_log, root_mod=_ADMIN_ROOT)
-configure_runtime_paths = partial(
-    admin_entrypoint_runtime_mod.configure_runtime_paths, root_mod=_ADMIN_ROOT
-)
-startup_banner = partial(admin_entrypoint_runtime_mod.startup_banner, root_mod=_ADMIN_ROOT)
+_log_enabled = _bind_admin_root(admin_entrypoint_runtime_mod.log_enabled)
+bridge_log = _bind_admin_root(admin_entrypoint_runtime_mod.bridge_log)
+configure_runtime_paths = _bind_admin_root(admin_entrypoint_runtime_mod.configure_runtime_paths)
+startup_banner = _bind_admin_root(admin_entrypoint_runtime_mod.startup_banner)
 
 
 def build_bridge_api(config: RuntimeConfig) -> Any:
     return admin_entrypoint_api_mod.build_bridge_api(config, root_mod=_ADMIN_ROOT)
 
 
-append_startup_metric = partial(
-    admin_entrypoint_runtime_mod.append_startup_metric, root_mod=_ADMIN_ROOT
-)
+append_startup_metric = _bind_admin_root(admin_entrypoint_runtime_mod.append_startup_metric)
 read_startup_metrics = admin_entrypoint_runtime_mod.read_startup_metrics
 
 
@@ -312,25 +313,19 @@ def refresh_sync_config() -> source_sync_module.SyncConfig:
     return cast(source_sync_module.SyncConfig, sync_config)
 
 
-normalize_state = partial(admin_registry_api_mod.normalize_state, root_mod=_ADMIN_ROOT)
-load_state = partial(admin_registry_api_mod.load_state, root_mod=_ADMIN_ROOT)
-summarize_state = partial(admin_registry_api_mod.summarize_state, root_mod=_ADMIN_ROOT)
-get_registry_summary_payload = partial(
-    admin_registry_api_mod.get_registry_summary_payload, root_mod=_ADMIN_ROOT
+normalize_state = _bind_admin_root(admin_registry_api_mod.normalize_state)
+load_state = _bind_admin_root(admin_registry_api_mod.load_state)
+summarize_state = _bind_admin_root(admin_registry_api_mod.summarize_state)
+get_registry_summary_payload = _bind_admin_root(admin_registry_api_mod.get_registry_summary_payload)
+get_registry_auto_heal_report = _bind_admin_root(
+    admin_registry_api_mod.get_registry_auto_heal_report
 )
-get_registry_auto_heal_report = partial(
-    admin_registry_api_mod.get_registry_auto_heal_report, root_mod=_ADMIN_ROOT
-)
-persist_state = partial(admin_registry_api_mod.persist_state, root_mod=_ADMIN_ROOT)
-persist_state_and_auto_sync = partial(
-    admin_registry_api_mod.persist_state_and_auto_sync, root_mod=_ADMIN_ROOT
-)
-move_entries = partial(admin_registry_api_mod.move_entries, root_mod=_ADMIN_ROOT)
-build_manual_candidate = partial(
-    admin_registry_api_mod.build_manual_candidate, root_mod=_ADMIN_ROOT
-)
-add_manual_source = partial(admin_registry_api_mod.add_manual_source, root_mod=_ADMIN_ROOT)
-check_static_source = partial(admin_registry_api_mod.check_static_source, root_mod=_ADMIN_ROOT)
+persist_state = _bind_admin_root(admin_registry_api_mod.persist_state)
+persist_state_and_auto_sync = _bind_admin_root(admin_registry_api_mod.persist_state_and_auto_sync)
+move_entries = _bind_admin_root(admin_registry_api_mod.move_entries)
+build_manual_candidate = _bind_admin_root(admin_registry_api_mod.build_manual_candidate)
+add_manual_source = _bind_admin_root(admin_registry_api_mod.add_manual_source)
+check_static_source = _bind_admin_root(admin_registry_api_mod.check_static_source)
 
 
 def get_saved_sync_config_payload() -> dict[str, Any]:
@@ -369,10 +364,10 @@ def ensure_active_registry() -> list[dict[str, Any]]:
     return _get_registry_service().ensure_active_registry()
 
 
-normalize_manual_static_studio_fields = partial(
-    admin_registry_api_mod.normalize_manual_static_studio_fields, root_mod=_ADMIN_ROOT
+normalize_manual_static_studio_fields = _bind_admin_root(
+    admin_registry_api_mod.normalize_manual_static_studio_fields
 )
-trigger_source_check = partial(admin_registry_api_mod.trigger_source_check, root_mod=_ADMIN_ROOT)
+trigger_source_check = _bind_admin_root(admin_registry_api_mod.trigger_source_check)
 
 
 def check_registry_conflicts(payload: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -429,13 +424,11 @@ def mark_desktop_session_activity(path: str) -> None:
 
 get_desktop_session_payload = admin_entrypoint_runtime_mod.get_desktop_session_payload
 parse_iso = admin_entrypoint_runtime_mod.parse_iso
-update_desktop_session_lifecycle = partial(
-    admin_entrypoint_runtime_mod.update_desktop_session_lifecycle, root_mod=_ADMIN_ROOT
+update_desktop_session_lifecycle = _bind_admin_root(
+    admin_entrypoint_runtime_mod.update_desktop_session_lifecycle
 )
-owner_session_should_exit = partial(
-    admin_entrypoint_runtime_mod.owner_session_should_exit, root_mod=_ADMIN_ROOT
-)
-pid_is_running = partial(admin_entrypoint_runtime_mod.pid_is_running, root_mod=_ADMIN_ROOT)
+owner_session_should_exit = _bind_admin_root(admin_entrypoint_runtime_mod.owner_session_should_exit)
+pid_is_running = _bind_admin_root(admin_entrypoint_runtime_mod.pid_is_running)
 
 
 load_run_history = _TASK_HISTORY.load
@@ -470,7 +463,7 @@ def upsert_run_history(entry: dict[str, Any], *, dedupe_fields: tuple[str, ...])
     return row
 
 
-_read_tasks_config = admin_task_runtime_mod.read_tasks_config
+_read_tasks_config = _bind_admin_root(admin_task_runtime_mod.read_tasks_config)
 
 
 def load_alert_state() -> dict[str, Any]:
@@ -521,18 +514,22 @@ def compute_fetcher_metrics(window_runs: int = 20) -> dict[str, Any]:
     return _get_ops_api().compute_fetcher_metrics(window_runs=window_runs)
 
 
-_set_sync_status = admin_task_runtime_mod.set_sync_status
-get_sync_status_payload = admin_task_runtime_mod.get_sync_status_payload
-_sync_guard = admin_task_runtime_mod.sync_guard
-sync_pull_sources = admin_task_runtime_mod.sync_pull_sources
-sync_push_sources = admin_task_runtime_mod.sync_push_sources
-startup_sync_pull = admin_task_runtime_mod.startup_sync_pull
-schedule_startup_sync_pull = admin_task_runtime_mod.schedule_startup_sync_pull
-sync_task_running = admin_task_runtime_mod.sync_task_running
-wait_for_sync_tasks = admin_task_runtime_mod.wait_for_sync_tasks
-_mark_discovery_sync_finished = admin_task_runtime_mod.mark_discovery_sync_finished
-_maybe_trigger_auto_sync_push = admin_task_runtime_mod.maybe_trigger_auto_sync_push
-migrate_legacy_task_state_to_lifecycle = (
+_set_sync_status = _bind_admin_root(admin_task_runtime_mod.set_sync_status)
+get_sync_status_payload = _bind_admin_root(admin_task_runtime_mod.get_sync_status_payload)
+_sync_guard = _bind_admin_root(admin_task_runtime_mod.sync_guard)
+sync_pull_sources = _bind_admin_root(admin_task_runtime_mod.sync_pull_sources)
+sync_push_sources = _bind_admin_root(admin_task_runtime_mod.sync_push_sources)
+startup_sync_pull = _bind_admin_root(admin_task_runtime_mod.startup_sync_pull)
+schedule_startup_sync_pull = _bind_admin_root(admin_task_runtime_mod.schedule_startup_sync_pull)
+sync_task_running = _bind_admin_root(admin_task_runtime_mod.sync_task_running)
+wait_for_sync_tasks = _bind_admin_root(admin_task_runtime_mod.wait_for_sync_tasks)
+_mark_discovery_sync_finished = _bind_admin_root(
+    admin_task_runtime_mod.mark_discovery_sync_finished
+)
+_maybe_trigger_auto_sync_push = _bind_admin_root(
+    admin_task_runtime_mod.maybe_trigger_auto_sync_push
+)
+migrate_legacy_task_state_to_lifecycle = _bind_admin_root(
     admin_task_runtime_mod.migrate_legacy_task_state_to_lifecycle
 )
 
@@ -548,19 +545,8 @@ def cleanup_stale_startup_tasks() -> dict[str, Any]:
     )
 
 
-on_bridge_started = admin_task_runtime_mod.on_bridge_started
-
-
-def _run_sync_task_worker(
-    run_id: str, action: str, started_at: str, *, reason: str = "", automatic: bool = False
-) -> None:
-    admin_task_runtime_mod.run_sync_task_worker(
-        run_id,
-        action,
-        started_at,
-        reason=reason,
-        automatic=automatic,
-    )
+on_bridge_started = _bind_admin_root(admin_task_runtime_mod.on_bridge_started)
+_run_sync_task_worker = _bind_admin_root(admin_task_runtime_mod.run_sync_task_worker)
 
 
 def start_sync_task(action: str, *, reason: str = "", automatic: bool = False) -> dict[str, Any]:
@@ -580,31 +566,15 @@ def trigger_discovery_task(
     )
 
 
-_current_fetch_output_count = admin_task_runtime_mod.current_fetch_output_count
-get_jobs_pipeline_status_payload = admin_task_runtime_mod.get_jobs_pipeline_status_payload
-
-
-def _wait_for_report_completion(
-    *,
-    report_path: Path,
-    started_at: str,
-    timeout_s: float,
-    report_name: str,
-    fail_on_stale: bool = False,
-) -> dict[str, Any]:
-    return admin_task_runtime_mod.wait_for_report_completion(
-        report_path=report_path,
-        started_at=started_at,
-        timeout_s=timeout_s,
-        report_name=report_name,
-        fail_on_stale=fail_on_stale,
-    )
-
-
-_wait_for_sync_completion = admin_task_runtime_mod.wait_for_sync_completion
-start_jobs_bootstrap_task = admin_task_runtime_mod.start_jobs_bootstrap_task
-start_fetcher_task = admin_task_runtime_mod.start_fetcher_task
-start_jobs_pipeline_task = admin_task_runtime_mod.start_jobs_pipeline_task
+_current_fetch_output_count = _bind_admin_root(admin_task_runtime_mod.current_fetch_output_count)
+get_jobs_pipeline_status_payload = _bind_admin_root(
+    admin_task_runtime_mod.get_jobs_pipeline_status_payload
+)
+_wait_for_report_completion = _bind_admin_root(admin_task_runtime_mod.wait_for_report_completion)
+_wait_for_sync_completion = _bind_admin_root(admin_task_runtime_mod.wait_for_sync_completion)
+start_jobs_bootstrap_task = _bind_admin_root(admin_task_runtime_mod.start_jobs_bootstrap_task)
+start_fetcher_task = _bind_admin_root(admin_task_runtime_mod.start_fetcher_task)
+start_jobs_pipeline_task = _bind_admin_root(admin_task_runtime_mod.start_jobs_pipeline_task)
 desktop_local_data_store = admin_entrypoint_runtime_mod.desktop_local_data_store
 
 
