@@ -18,7 +18,7 @@ CATEGORIES = {
 }
 
 CLASSIFIED_IMPORTS: dict[str, set[str]] = {
-    "tests/test_ship_update_manager.py": {"test-api"},
+    "tests/test_ship_update_manager_facade.py": {"test-compat"},
 }
 
 RUNTIME_IMPORT_ALLOWLIST: set[str] = set()

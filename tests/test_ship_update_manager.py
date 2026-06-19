@@ -5,7 +5,15 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
 
-from src.ship import update_manager as um
+from src.ship import update_manager_state as update_state
+from src.ship import update_manager_validation as update_validation
+from src.ship.update_manager_apply import apply_update
+from src.ship.update_manager_bootstrap import (
+    refresh_runtime_bootstrap,
+    repair_version_from_runtime_bootstrap,
+)
+from src.ship.update_manager_paths import ShipPaths
+from src.ship.update_manager_recovery import recover_previous, startup_check
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -24,16 +32,14 @@ def _seed_root(root: Path, version: str = "1.0.0") -> None:
                 "previous_version": "",
                 "last_update_status": "ready",
                 "last_error_code": "",
-                "updated_at": um.iso_now(),
+                "updated_at": update_state.iso_now(),
             }
         ),
     )
     (root / "app" / "versions" / version / "src").mkdir(parents=True, exist_ok=True)
     _write(root / "app" / "versions" / version / "src" / "admin_bridge.py", "print('ok')\n")
-    _write(root / "app" / "versions" / version / "index.html", "<html></html>\n")
-    _write(root / "app" / "versions" / version / "jobs.html", "<html></html>\n")
-    _write(root / "app" / "versions" / version / "saved.html", "<html></html>\n")
-    _write(root / "app" / "versions" / version / "admin.html", "<html></html>\n")
+    for name in ("index.html", "jobs.html", "saved.html", "admin.html"):
+        _write(root / "app" / "versions" / version / name, "<html></html>\n")
     (root / "app" / "staging").mkdir(parents=True, exist_ok=True)
     (root / "data" / "backups").mkdir(parents=True, exist_ok=True)
     (root / "data" / "migration-reports").mkdir(parents=True, exist_ok=True)
@@ -43,10 +49,8 @@ def _seed_root(root: Path, version: str = "1.0.0") -> None:
 def _build_update_zip(work: Path, version: str) -> Path:
     source = work / "payload" / "app" / "versions" / version
     _write(source / "src" / "admin_bridge.py", "print('updated')\n")
-    _write(source / "index.html", "<html>new</html>\n")
-    _write(source / "jobs.html", "<html>new</html>\n")
-    _write(source / "saved.html", "<html>new</html>\n")
-    _write(source / "admin.html", "<html>new</html>\n")
+    for name in ("index.html", "jobs.html", "saved.html", "admin.html"):
+        _write(source / name, "<html>new</html>\n")
     bundle = work / f"baluffo-{version}.zip"
     with ZipFile(bundle, "w", compression=ZIP_DEFLATED) as archive:
         for path in source.rglob("*"):
@@ -59,7 +63,7 @@ def test_write_json_atomic_retries_transient_permission_error() -> None:
     with workspace_tmpdir("ship-update") as tmp:
         target = Path(tmp) / "ship" / "app" / "update-state.json"
         calls = {"count": 0}
-        original_replace = um.os.replace
+        original_replace = update_state.os.replace
 
         def flaky_replace(src, dst):  # noqa: ANN001
             calls["count"] += 1
@@ -67,8 +71,8 @@ def test_write_json_atomic_retries_transient_permission_error() -> None:
                 raise PermissionError(32, "sharing violation")
             return original_replace(src, dst)
 
-        with mock.patch.object(um.os, "replace", side_effect=flaky_replace):
-            um.write_json_atomic(target, {"ok": True})
+        with mock.patch.object(update_state.os, "replace", side_effect=flaky_replace):
+            update_state.write_json_atomic(target, {"ok": True})
 
         assert json.loads(target.read_text(encoding="utf-8"))["ok"] is True
         assert calls["count"] == 2
@@ -87,16 +91,16 @@ def test_ensure_state_resyncs_current_version_from_current_txt() -> None:
                     "previous_version": "",
                     "last_update_status": "ready",
                     "last_error_code": "",
-                    "updated_at": um.iso_now(),
+                    "updated_at": update_state.iso_now(),
                 }
             ),
         )
-        paths = um.ShipPaths.from_root(root)
-        state = um.ensure_state(paths)
+        paths = ShipPaths.from_root(root)
+        state = update_state.ensure_state(paths)
         assert state["current_version"] == "1.0.0"
         reparsed = json.loads((root / "app" / "update-state.json").read_text(encoding="utf-8"))
         assert reparsed["current_version"] == "1.0.0"
-        result = um.startup_check(root, root / "data")
+        result = startup_check(root, root / "data")
         assert result["ok"]
 
 
@@ -111,8 +115,8 @@ def test_ensure_state_repairs_missing_or_empty_current_from_state_current(pointe
         else:
             _write(current_path, pointer_payload)
 
-        paths = um.ShipPaths.from_root(root)
-        state = um.ensure_state(paths)
+        paths = ShipPaths.from_root(root)
+        state = update_state.ensure_state(paths)
 
         assert state["current_version"] == "1.0.0"
         assert current_path.read_text(encoding="utf-8").strip() == "1.0.0"
@@ -135,13 +139,13 @@ def test_ensure_state_repairs_missing_current_from_healthy_previous_version() ->
                     "previous_version": "0.9.0",
                     "last_update_status": "ready",
                     "last_error_code": "",
-                    "updated_at": um.iso_now(),
+                    "updated_at": update_state.iso_now(),
                 }
             ),
         )
 
-        paths = um.ShipPaths.from_root(root)
-        state = um.ensure_state(paths)
+        paths = ShipPaths.from_root(root)
+        state = update_state.ensure_state(paths)
 
         assert state["current_version"] == "0.9.0"
         assert state["previous_version"] == ""
@@ -163,13 +167,13 @@ def test_ensure_state_repairs_missing_current_from_highest_healthy_version() -> 
                     "previous_version": "8.8.8",
                     "last_update_status": "ready",
                     "last_error_code": "",
-                    "updated_at": um.iso_now(),
+                    "updated_at": update_state.iso_now(),
                 }
             ),
         )
 
-        paths = um.ShipPaths.from_root(root)
-        state = um.ensure_state(paths)
+        paths = ShipPaths.from_root(root)
+        state = update_state.ensure_state(paths)
 
         assert state["current_version"] == "2.4.0"
         assert (root / "app" / "current.txt").read_text(encoding="utf-8").strip() == "2.4.0"
@@ -190,14 +194,14 @@ def test_ensure_state_raises_when_missing_current_has_no_healthy_recovery() -> N
                     "previous_version": "8.8.8",
                     "last_update_status": "ready",
                     "last_error_code": "",
-                    "updated_at": um.iso_now(),
+                    "updated_at": update_state.iso_now(),
                 }
             ),
         )
 
-        paths = um.ShipPaths.from_root(root)
+        paths = ShipPaths.from_root(root)
         with pytest.raises(RuntimeError, match="missing or empty.*no recoverable healthy version"):
-            um.ensure_state(paths)
+            update_state.ensure_state(paths)
 
 
 def test_startup_check_rejects_data_dir_inside_versions() -> None:
@@ -207,17 +211,15 @@ def test_startup_check_rejects_data_dir_inside_versions() -> None:
         bad_data_dir = root / "app" / "versions" / "1.0.0" / "data"
         bad_data_dir.mkdir(parents=True, exist_ok=True)
         with pytest.raises(ValueError):
-            um.startup_check(root, bad_data_dir)
+            startup_check(root, bad_data_dir)
 
 
 def _seed_full_version(root: Path, version: str) -> None:
     base = root / "app" / "versions" / version
     (base / "src").mkdir(parents=True, exist_ok=True)
     _write(base / "src" / "admin_bridge.py", f"print('{version}')\n")
-    _write(base / "index.html", "<html></html>\n")
-    _write(base / "jobs.html", "<html></html>\n")
-    _write(base / "saved.html", "<html></html>\n")
-    _write(base / "admin.html", "<html></html>\n")
+    for name in ("index.html", "jobs.html", "saved.html", "admin.html"):
+        _write(base / name, "<html></html>\n")
 
 
 def test_startup_check_auto_selects_healthy_version_when_current_broken() -> None:
@@ -239,11 +241,11 @@ def test_startup_check_auto_selects_healthy_version_when_current_broken() -> Non
                     "previous_version": "",
                     "last_update_status": "ready",
                     "last_error_code": "",
-                    "updated_at": um.iso_now(),
+                    "updated_at": update_state.iso_now(),
                 }
             ),
         )
-        result = um.startup_check(root, root / "data")
+        result = startup_check(root, root / "data")
         assert result["ok"] is True
         assert result["current_version"] == "0.9.0"
         assert result.get("repaired_pointer") is True
@@ -271,21 +273,21 @@ def test_startup_check_prefers_highest_healthy_baluffo_version_when_current_brok
                     "previous_version": "",
                     "last_update_status": "ready",
                     "last_error_code": "",
-                    "updated_at": um.iso_now(),
+                    "updated_at": update_state.iso_now(),
                 }
             ),
         )
-        result = um.startup_check(root, root / "data")
+        result = startup_check(root, root / "data")
         assert result["ok"] is True
         assert result["current_version"] == "0.1.31"
 
 
 def test_is_downgrade_uses_baluffo_release_ordering() -> None:
-    assert um.is_downgrade("0.1.3", "0.1.29") is True
-    assert um.is_downgrade("0.1.29", "0.1.3") is False
-    assert um.is_downgrade("0.1.30", "0.1.29") is True
-    assert um.is_downgrade("0.1.31", "0.1.29") is True
-    assert um.is_downgrade("0.1.23", "0.1.31") is False
+    assert update_validation.is_downgrade("0.1.3", "0.1.29") is True
+    assert update_validation.is_downgrade("0.1.29", "0.1.3") is False
+    assert update_validation.is_downgrade("0.1.30", "0.1.29") is True
+    assert update_validation.is_downgrade("0.1.31", "0.1.29") is True
+    assert update_validation.is_downgrade("0.1.23", "0.1.31") is False
 
 
 def test_startup_check_skips_unhealthy_previous_and_scans_versions() -> None:
@@ -311,11 +313,11 @@ def test_startup_check_skips_unhealthy_previous_and_scans_versions() -> None:
                     "previous_version": "8.0.0",
                     "last_update_status": "ready",
                     "last_error_code": "",
-                    "updated_at": um.iso_now(),
+                    "updated_at": update_state.iso_now(),
                 }
             ),
         )
-        result = um.startup_check(root, root / "data")
+        result = startup_check(root, root / "data")
         assert result["ok"] is True
         assert result["current_version"] == "0.8.0"
         assert result.get("repaired_pointer") is True
@@ -325,13 +327,11 @@ def test_bootstrap_repair_is_noop_when_canonical_tag_mismatches_active_version()
     with workspace_tmpdir("ship-update") as tmp:
         root = Path(tmp) / "ship"
         _seed_root(root, version="1.0.0")
-        paths = um.ShipPaths.from_root(root)
-        um.refresh_runtime_bootstrap(
-            paths, root / "app" / "versions" / "1.0.0", version_name="1.0.0"
-        )
+        paths = ShipPaths.from_root(root)
+        refresh_runtime_bootstrap(paths, root / "app" / "versions" / "1.0.0", version_name="1.0.0")
         broken = root / "app" / "versions" / "2.0.0"
         (broken / "src").mkdir(parents=True, exist_ok=True)
-        assert um.repair_version_from_runtime_bootstrap(paths, broken, "2.0.0") == 0
+        assert repair_version_from_runtime_bootstrap(paths, broken, "2.0.0") == 0
 
 
 def test_startup_check_repairs_current_from_runtime_bootstrap() -> None:
@@ -339,14 +339,14 @@ def test_startup_check_repairs_current_from_runtime_bootstrap() -> None:
     with workspace_tmpdir("ship-update") as tmp:
         root = Path(tmp) / "ship"
         _seed_root(root, version="1.0.0")
-        paths = um.ShipPaths.from_root(root)
+        paths = ShipPaths.from_root(root)
         canon = root / "app" / "versions" / "1.0.0"
-        um.refresh_runtime_bootstrap(paths, canon, version_name="1.0.0")
+        refresh_runtime_bootstrap(paths, canon, version_name="1.0.0")
         (canon / "src" / "admin_bridge.py").unlink()
         (canon / "admin.html").unlink()
         assert not (canon / "src" / "admin_bridge.py").exists()
         assert not (canon / "admin.html").exists()
-        result = um.startup_check(root, root / "data")
+        result = startup_check(root, root / "data")
         assert result["ok"] is True
         assert int(result.get("bootstrap_repair") or 0) >= 1
         assert (canon / "src" / "admin_bridge.py").exists()
@@ -358,13 +358,13 @@ def test_apply_update_success_switches_current_version_and_keeps_data() -> None:
         root = Path(tmp) / "ship"
         _seed_root(root, version="1.0.0")
         bundle = _build_update_zip(Path(tmp), "1.1.0")
-        sha256 = um.compute_sha256(bundle)
+        sha256 = update_validation.compute_sha256(bundle)
         key = "test-key"
         manifest = {
             "version": "1.1.0",
             "artifact_url": "file://local",
             "sha256": sha256,
-            "signature": um.sign_manifest("1.1.0", sha256, key),
+            "signature": update_validation.sign_manifest("1.1.0", sha256, key),
             "min_updater_version": "1.0.0",
             "migration_plan": ["noop"],
             "rollback_allowed": False,
@@ -372,7 +372,7 @@ def test_apply_update_success_switches_current_version_and_keeps_data() -> None:
         manifest_path = Path(tmp) / "update-manifest.json"
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
-        result = um.apply_update(root, bundle, manifest_path, key)
+        result = apply_update(root, bundle, manifest_path, key)
         assert result["ok"]
         assert (root / "app" / "current.txt").read_text(encoding="utf-8").strip() == "1.1.0"
         assert (root / "app" / "runtime-bootstrap" / "src" / "admin_bridge.py").is_file()
@@ -392,7 +392,7 @@ def test_apply_update_rejects_checksum_mismatch() -> None:
             "version": "1.1.0",
             "artifact_url": "file://local",
             "sha256": "0" * 64,
-            "signature": um.sign_manifest("1.1.0", "0" * 64, key),
+            "signature": update_validation.sign_manifest("1.1.0", "0" * 64, key),
             "min_updater_version": "1.0.0",
             "migration_plan": [],
             "rollback_allowed": False,
@@ -401,7 +401,7 @@ def test_apply_update_rejects_checksum_mismatch() -> None:
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
         with pytest.raises(ValueError):
-            um.apply_update(root, bundle, manifest_path, key)
+            apply_update(root, bundle, manifest_path, key)
         assert (root / "app" / "current.txt").read_text(encoding="utf-8").strip() == "1.0.0"
 
 
@@ -411,21 +411,19 @@ def test_recover_previous_swaps_versions() -> None:
         _seed_root(root, version="1.1.0")
         (root / "app" / "versions" / "1.0.0" / "src").mkdir(parents=True, exist_ok=True)
         _write(root / "app" / "versions" / "1.0.0" / "src" / "admin_bridge.py", "print('ok')\n")
-        _write(root / "app" / "versions" / "1.0.0" / "index.html", "<html></html>\n")
-        _write(root / "app" / "versions" / "1.0.0" / "jobs.html", "<html></html>\n")
-        _write(root / "app" / "versions" / "1.0.0" / "saved.html", "<html></html>\n")
-        _write(root / "app" / "versions" / "1.0.0" / "admin.html", "<html></html>\n")
+        for name in ("index.html", "jobs.html", "saved.html", "admin.html"):
+            _write(root / "app" / "versions" / "1.0.0" / name, "<html></html>\n")
         state = json.loads((root / "app" / "update-state.json").read_text(encoding="utf-8"))
         state["previous_version"] = "1.0.0"
         (root / "app" / "update-state.json").write_text(json.dumps(state), encoding="utf-8")
 
-        result = um.recover_previous(root)
+        result = recover_previous(root)
         assert result["ok"]
         assert (root / "app" / "current.txt").read_text(encoding="utf-8").strip() == "1.0.0"
 
 
 def test_validate_manifest_uses_numeric_semver_for_min_updater_version() -> None:
-    previous = um.UPDATER_VERSION
+    previous = update_validation.UPDATER_VERSION
     manifest = {
         "version": "2.0.0",
         "artifact_url": "file://local",
@@ -435,8 +433,8 @@ def test_validate_manifest_uses_numeric_semver_for_min_updater_version() -> None
         "migration_plan": [],
         "rollback_allowed": False,
     }
-    um.UPDATER_VERSION = "1.0.12"
+    update_validation.UPDATER_VERSION = "1.0.12"
     try:
-        um.validate_manifest(manifest)
+        update_validation.validate_manifest(manifest)
     finally:
-        um.UPDATER_VERSION = previous
+        update_validation.UPDATER_VERSION = previous
