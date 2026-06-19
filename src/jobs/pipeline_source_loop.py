@@ -39,6 +39,7 @@ class _RootLike(Protocol):
 
 
 root: _RootLike | None = None
+_EXPECTED_PROFILED_SOURCE_FAILURES = (OSError, TimeoutError, ValueError)
 
 
 def _root_module() -> _RootLike:
@@ -200,7 +201,7 @@ def _execute_loader_started(
             guarded_try_playwright=guarded_try_playwright,
             profile_name=f"adapter_{source_name}",
         )
-    except Exception as exc:  # noqa: BLE001
+    except _EXPECTED_PROFILED_SOURCE_FAILURES as exc:
         report = fallback_error_report(source_name, exc)
         canonical_batch = []
     mark_task_finished(

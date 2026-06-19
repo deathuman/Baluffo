@@ -36,6 +36,11 @@ _CANONICAL_DROP_REASON_KEYS = (
     "google_sheets_category_row",
 )
 _GOOGLE_SHEETS_CATEGORY_LINK_STATUS_TIMEOUT_S = 4
+_EXPECTED_SOURCE_OPERATION_EXCEPTIONS = (OSError, RuntimeError, TimeoutError, ValueError)
+
+
+class _SourceExecutionFailure(RuntimeError):
+    """Expected per-source loader/canonicalizer failure safe to report as source error."""
 
 
 def _build_loader_kwargs(
@@ -253,7 +258,10 @@ def _run_loader_and_record_fetch(
         counts={"adapter": clean_text(report.get("adapter")) or "custom"},
         message=f"Loading source {name}.",
     )
-    raw_rows = loader(**accepted_kwargs)
+    try:
+        raw_rows = loader(**accepted_kwargs)
+    except _EXPECTED_SOURCE_OPERATION_EXCEPTIONS as exc:
+        raise _SourceExecutionFailure(str(exc)) from exc
     fetch_and_parse_ms = int((time.perf_counter() - loader_started) * 1000)
     report["fetchedCount"] = len(raw_rows)
     report_loss["rawFetched"] = int(len(raw_rows))
@@ -305,7 +313,10 @@ def _canonicalize_source_rows(
         category_link_status_resolver=category_link_status_resolver,
         progress_callback=progress_callback,
     )
-    canonical_batch = normalizer.process(raw_rows)
+    try:
+        canonical_batch = normalizer.process(raw_rows)
+    except _EXPECTED_SOURCE_OPERATION_EXCEPTIONS as exc:
+        raise _SourceExecutionFailure(str(exc)) from exc
     kept = len(canonical_batch)
     google_sheet_redirect_stats: dict[str, int] = {}
     if name.startswith("google_sheets"):
@@ -754,7 +765,7 @@ def execute_loader(
             detail_rows=detail_rows,
             report_loss=report_loss,
         )
-    except Exception as exc:  # noqa: BLE001
+    except _SourceExecutionFailure as exc:
         report["status"] = "error"
         report["error"] = format_source_error(name, exc)
         diag, detail_rows = _apply_diagnostics(name=name, root_module=root_module, report=report)
