@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.jobs.common.numbers import _clamped_int
 from src.jobs.common.taxonomy import (
     ClassificationContext,
     FailureBucket,
@@ -19,6 +18,7 @@ from src.jobs.text_utils import clean_text, norm_text
 from src.shared.fetch_report_normalization import (
     apply_jobs_fetch_report_details,
     enrich_fetch_report_dead_listing_fields,
+    enrich_jobs_fetch_report_dynamic_redundant_provider_fields,
     enrich_jobs_fetch_report_provider_migration_fields,
     enrich_jobs_fetch_report_site_changed_url_surface,
     enrich_jobs_fetch_report_source_row_fields,
@@ -121,23 +121,6 @@ def _apply_stage_loss_and_exclusion_fields(target: dict[str, Any], src: dict[str
         target["loss"] = normalize_fetch_report_loss(loss, clean_text_func=clean_text)
 
 
-def _apply_dynamic_redundant_provider_fields(target: dict[str, Any], src: dict[str, Any]) -> None:
-    if clean_text(src.get("exclusionReason")) != "dynamic_redundant_provider":
-        return
-    for key in (
-        "coveredByProviderSourceId",
-        "coveredByProviderAdapter",
-        "providerCoverageStatus",
-        "migrationSourceIdentity",
-    ):
-        value = clean_text(src.get(key))
-        if value:
-            target[key] = value
-    for key in ("providerCoverageConsecutiveSuccesses", "providerCoverageLatestKeptCount"):
-        if key in src:
-            target[key] = _clamped_int(src.get(key), 0, 0)
-
-
 def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
     src = as_json_object(row)
     normalized = normalize_jobs_fetch_report_source_row_base(
@@ -155,7 +138,11 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
         clean_text_func=clean_text,
     )
     _apply_stage_loss_and_exclusion_fields(normalized, src)
-    _apply_dynamic_redundant_provider_fields(normalized, src)
+    enrich_jobs_fetch_report_dynamic_redundant_provider_fields(
+        normalized,
+        src,
+        clean_text_func=clean_text,
+    )
     enrich_jobs_fetch_report_provider_migration_fields(
         normalized,
         src,

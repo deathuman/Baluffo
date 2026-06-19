@@ -4,6 +4,7 @@ from src.shared.fetch_report_normalization import (
     apply_jobs_fetch_report_details,
     enrich_fetch_report_dead_listing_fields,
     enrich_fetch_report_source_row_metadata,
+    enrich_jobs_fetch_report_dynamic_redundant_provider_fields,
     enrich_jobs_fetch_report_site_changed_url_surface,
     enrich_jobs_fetch_report_source_row_fields,
     normalize_fetch_report_detail_stats,
@@ -20,6 +21,13 @@ def test_jobs_source_report_row_uses_shared_field_enrichment() -> None:
         "status": "OK",
         "keptCount": 1,
         "failureBucket": "site_changed",
+        "exclusionReason": "dynamic_redundant_provider",
+        "coveredByProviderSourceId": "provider-source-a",
+        "coveredByProviderAdapter": "greenhouse",
+        "providerCoverageStatus": "covered",
+        "migrationSourceIdentity": "dynamic:source-a",
+        "providerCoverageConsecutiveSuccesses": "3",
+        "providerCoverageLatestKeptCount": "12",
         "listingUrl": "https://example.com/jobs",
         "pages": [" https://example.com/jobs/1 ", ""],
         "sourceId": "source-a",
@@ -141,6 +149,15 @@ def test_jobs_source_report_row_uses_shared_field_enrichment() -> None:
         clean_text_func=clean_text,
     )
     for key, value in dead_listing_enrichment.items():
+        assert normalized[key] == value
+
+    dynamic_redundant_enrichment: dict[str, object] = {}
+    enrich_jobs_fetch_report_dynamic_redundant_provider_fields(
+        dynamic_redundant_enrichment,
+        row,
+        clean_text_func=clean_text,
+    )
+    for key, value in dynamic_redundant_enrichment.items():
         assert normalized[key] == value
 
     detail_enrichment: dict[str, object] = {}

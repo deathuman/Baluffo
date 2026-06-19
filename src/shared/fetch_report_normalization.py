@@ -647,6 +647,28 @@ def enrich_jobs_fetch_report_provider_migration_fields(
         ]
 
 
+def enrich_jobs_fetch_report_dynamic_redundant_provider_fields(
+    target: dict[str, Any],
+    src: dict[str, Any],
+    *,
+    clean_text_func: Any = _clean_text,
+) -> None:
+    if clean_text_func(src.get("exclusionReason")) != "dynamic_redundant_provider":
+        return
+    for key in (
+        "coveredByProviderSourceId",
+        "coveredByProviderAdapter",
+        "providerCoverageStatus",
+        "migrationSourceIdentity",
+    ):
+        value = clean_text_func(src.get(key))
+        if value:
+            target[key] = value
+    for key in ("providerCoverageConsecutiveSuccesses", "providerCoverageLatestKeptCount"):
+        if key in src:
+            target[key] = _clamped_int(src.get(key), 0, 0)
+
+
 def enrich_jobs_fetch_report_site_changed_url_surface(
     target: dict[str, Any],
     src: dict[str, Any],
