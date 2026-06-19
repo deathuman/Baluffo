@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import os
 
-from src.bridge.admin_bootstrap import get_admin_bootstrap_payload
-from src.bridge.api import BridgeApi
+from src.bridge.admin_bootstrap import AdminBootstrapApi, get_admin_bootstrap_payload
 from src.bridge.performance_profile import time_operation
 from src.bridge.routes.response_writer import BridgeResponseWriter
 
@@ -26,7 +25,7 @@ def _consume_admin_bootstrap_smoke_fail_once() -> bool:
 
 
 def handle_admin_bootstrap_routes(
-    handler: BridgeResponseWriter, *, api: BridgeApi, path: str, query: dict[str, list[str]]
+    handler: BridgeResponseWriter, *, api: AdminBootstrapApi, path: str, query: dict[str, list[str]]
 ) -> bool:
     """Handle admin bootstrap GET routes."""
     del query

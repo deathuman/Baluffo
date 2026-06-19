@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 from src.bridge import admin_bootstrap
 from src.bridge.routes import get_admin_bootstrap
+from src.bridge.routes.get_admin_bootstrap import handle_admin_bootstrap_routes
 from src.bridge.routes.get_routes import handle_get
 from tests.helpers.bridge_api import FakeDesktopLocalDataStore, FakeHandler, make_stub_bridge_api
 
@@ -23,6 +25,88 @@ def _overview_summary(store: FakeDesktopLocalDataStore, detail: str) -> dict[str
 
 def _raise(exc: BaseException) -> None:
     raise exc
+
+
+class MinimalAdminBootstrapStore:
+    def get_admin_overview(self, *, detail: str = "summary") -> dict[str, Any]:
+        return {
+            "detailLevel": detail,
+            "users": [{"uid": "user-1", "name": "Andrea"}],
+            "totals": {"users": 1},
+        }
+
+    def get_current_user(self) -> dict[str, Any]:
+        return {"uid": "user-1", "name": "Andrea"}
+
+
+class MinimalAdminBootstrapApi:
+    app_version = "1.2.3"
+    runtime_config = SimpleNamespace(desktop_mode=True)
+
+    def __init__(self) -> None:
+        self._store = MinimalAdminBootstrapStore()
+
+    def compute_ops_health_ready(self) -> dict[str, Any]:
+        return {"schedule": {"pipeline": {"enabled": True, "intervalHours": 6}}}
+
+    def desktop_local_data_store(self) -> MinimalAdminBootstrapStore:
+        return self._store
+
+    def get_desktop_session_payload(self) -> dict[str, Any]:
+        return {"startedAt": "2026-06-19T09:00:00Z"}
+
+    def get_jobs_pipeline_schedule_payload(self) -> dict[str, Any]:
+        return {}
+
+    def get_jobs_pipeline_status_payload(self) -> dict[str, Any]:
+        return {"active": False}
+
+    def get_lifecycle_current_runs(self) -> list[Any]:
+        return []
+
+    def get_lifecycle_recent_runs(self) -> list[Any]:
+        return []
+
+    def get_registry_summary_payload(self) -> dict[str, Any]:
+        return {"summary": {"activeCount": 7, "pendingCount": 2}}
+
+    def load_sync_runtime_state(self) -> dict[str, Any]:
+        return {"lastPullAt": "2026-06-19T08:30:00Z", "lastResult": "ok"}
+
+    def now_iso(self) -> str:
+        return "2026-06-19T09:01:00Z"
+
+    def sync_config_status(self) -> dict[str, Any]:
+        return {"ready": True, "enabled": True}
+
+
+def test_admin_bootstrap_route_accepts_minimal_capability_object() -> None:
+    handler = FakeHandler()
+
+    assert (
+        handle_admin_bootstrap_routes(
+            handler,
+            api=MinimalAdminBootstrapApi(),
+            path="/admin/bootstrap",
+            query={"ignored": ["1"]},
+        )
+        is True
+    )
+
+    payload = handler.sent[-1]["payload"]
+    assert handler.sent[-1]["status"] == 200
+    assert payload["ok"] is True
+    assert payload["generatedAt"] == "2026-06-19T09:01:00Z"
+    assert payload["app"] == {
+        "version": "1.2.3",
+        "desktopMode": True,
+        "startupReady": True,
+    }
+    assert payload["session"]["user"]["uid"] == "user-1"
+    assert payload["overview"]["totals"]["users"] == 1
+    assert payload["schedule"]["pipeline"]["intervalHours"] == 6
+    assert payload["registrySummary"]["activeCount"] == 7
+    assert payload["sync"]["runtime"]["lastPullAt"] == "2026-06-19T08:30:00Z"
 
 
 def test_admin_bootstrap_best_effort_suppresses_expected_fallback_failures() -> None:

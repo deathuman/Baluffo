@@ -1,8 +1,39 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Protocol
 
-from src.bridge.api import BridgeApi
+
+class _AdminBootstrapLocalDataStore(Protocol):
+    def get_admin_overview(self, *, detail: str = "summary") -> dict[str, Any]: ...
+
+    def get_current_user(self) -> dict[str, Any] | None: ...
+
+
+class AdminBootstrapApi(Protocol):
+    app_version: str
+    runtime_config: Any
+
+    def compute_ops_health_ready(self) -> dict[str, Any]: ...
+
+    def desktop_local_data_store(self) -> _AdminBootstrapLocalDataStore: ...
+
+    def get_desktop_session_payload(self) -> dict[str, Any]: ...
+
+    def get_jobs_pipeline_schedule_payload(self) -> dict[str, Any]: ...
+
+    def get_jobs_pipeline_status_payload(self) -> dict[str, Any]: ...
+
+    def get_lifecycle_current_runs(self) -> list[Any]: ...
+
+    def get_lifecycle_recent_runs(self) -> list[Any]: ...
+
+    def get_registry_summary_payload(self) -> dict[str, Any]: ...
+
+    def load_sync_runtime_state(self) -> dict[str, Any]: ...
+
+    def now_iso(self) -> str: ...
+
+    def sync_config_status(self) -> dict[str, Any]: ...
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -88,7 +119,7 @@ def _pipeline_task_row(payload: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def _current_task_rows(api: BridgeApi) -> list[dict[str, Any]]:
+def _current_task_rows(api: AdminBootstrapApi) -> list[dict[str, Any]]:
     rows = [
         _compact_task_row(row)
         for row in _as_list(api.get_lifecycle_current_runs())
@@ -113,7 +144,7 @@ def _current_task_rows(api: BridgeApi) -> list[dict[str, Any]]:
     )
 
 
-def _recent_task_rows(api: BridgeApi, *, limit: int = 2) -> list[dict[str, Any]]:
+def _recent_task_rows(api: AdminBootstrapApi, *, limit: int = 2) -> list[dict[str, Any]]:
     rows = [
         _compact_task_row({**row, "active": False})
         for row in _as_list(api.get_lifecycle_recent_runs())
@@ -140,7 +171,7 @@ def _has_active_pipeline_work(rows: list[dict[str, Any]]) -> bool:
     return False
 
 
-def _sync_summary(api: BridgeApi) -> dict[str, Any]:
+def _sync_summary(api: AdminBootstrapApi) -> dict[str, Any]:
     config = _as_dict(_best_effort({"ready": False, "enabled": False}, api.sync_config_status))
     runtime = _as_dict(_best_effort({}, api.load_sync_runtime_state))
     enabled = bool(config.get("enabled"))
@@ -188,7 +219,9 @@ def _current_user_shell(user: Any) -> dict[str, Any]:
     }
 
 
-def _overview_summary(api: BridgeApi, *, session: dict[str, Any] | None = None) -> dict[str, Any]:
+def _overview_summary(
+    api: AdminBootstrapApi, *, session: dict[str, Any] | None = None
+) -> dict[str, Any]:
     overview = _as_dict(
         _best_effort(
             {},
@@ -219,7 +252,7 @@ def _overview_summary(api: BridgeApi, *, session: dict[str, Any] | None = None) 
     return fallback
 
 
-def _session_summary(api: BridgeApi) -> dict[str, Any]:
+def _session_summary(api: AdminBootstrapApi) -> dict[str, Any]:
     desktop_session = _as_dict(_best_effort({}, api.get_desktop_session_payload))
     user = _best_effort(None, lambda: api.desktop_local_data_store().get_current_user())
     return {
@@ -228,7 +261,7 @@ def _session_summary(api: BridgeApi) -> dict[str, Any]:
     }
 
 
-def _schedule_summary(api: BridgeApi) -> dict[str, Any]:
+def _schedule_summary(api: AdminBootstrapApi) -> dict[str, Any]:
     ready = _as_dict(_best_effort({}, api.compute_ops_health_ready))
     schedule = _as_dict(ready.get("schedule"))
     if schedule:
@@ -247,13 +280,13 @@ def _schedule_summary(api: BridgeApi) -> dict[str, Any]:
     }
 
 
-def _registry_summary(api: BridgeApi) -> dict[str, Any]:
+def _registry_summary(api: AdminBootstrapApi) -> dict[str, Any]:
     payload = _as_dict(_best_effort({}, api.get_registry_summary_payload))
     summary = _as_dict(payload.get("summary"))
     return summary or payload
 
 
-def get_admin_bootstrap_payload(api: BridgeApi) -> dict[str, Any]:
+def get_admin_bootstrap_payload(api: AdminBootstrapApi) -> dict[str, Any]:
     current = _current_task_rows(api)
     recent = _recent_task_rows(api, limit=2)
     active_pipeline_work = _has_active_pipeline_work(current)
