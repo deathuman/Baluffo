@@ -118,7 +118,7 @@ def _recover_manifest_for_install(
             asset
             for asset in assets
             if isinstance(asset, dict)
-            and str(asset.get("name") or "").strip() == module.DESKTOP_UPDATE_MANIFEST_ASSET
+            and str(asset.get("name") or "").strip() == DESKTOP_UPDATE_MANIFEST_ASSET
         ),
         None,
     )

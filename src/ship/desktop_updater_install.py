@@ -137,17 +137,17 @@ def _save_install_stage_status(
 
 def _wait_for_launcher_exit(plan: dict[str, Any], *, timeout_s: float = 120.0) -> None:
     module = _module()
-    deadline = module.time.monotonic() + max(5.0, float(timeout_s))
+    deadline = _time.monotonic() + max(5.0, float(timeout_s))
     launcher_pid = int(plan.get("launcherPid") or 0)
     session_root = Path(str(plan.get("desktopSessionRoot") or "")).expanduser().resolve()
     session_state_path = session_root / "desktop-session.json"
-    while module.time.monotonic() < deadline:
+    while _time.monotonic() < deadline:
         launcher_alive = module.pid_is_running(launcher_pid)
         if launcher_pid > 0 and launcher_alive:
-            module.time.sleep(0.5)
+            _time.sleep(0.5)
             continue
         if session_state_path.exists():
-            module.time.sleep(0.5)
+            _time.sleep(0.5)
             continue
         return
     raise RuntimeError("Timed out waiting for the desktop launcher to exit.")
@@ -230,24 +230,24 @@ def _verify_target_startup(plan: dict[str, Any], *, timeout_s: float = 90.0) -> 
         ship_root=install_root / "ship",
     ).success_marker_path
     target_version = str(plan.get("targetVersion") or "").strip()
-    deadline = module.time.monotonic() + max(10.0, float(timeout_s))
-    while module.time.monotonic() < deadline:
+    deadline = _time.monotonic() + max(10.0, float(timeout_s))
+    while _time.monotonic() < deadline:
         if not session_state_path.exists():
-            module.time.sleep(1.0)
+            _time.sleep(1.0)
             continue
         try:
             session_state = _as_dict(json.loads(session_state_path.read_text(encoding="utf-8")))
         except (OSError, json.JSONDecodeError):
-            module.time.sleep(1.0)
+            _time.sleep(1.0)
             continue
         bridge_port = int(session_state.get("bridgePort") or 0)
         if bridge_port <= 0:
-            module.time.sleep(1.0)
+            _time.sleep(1.0)
             continue
         try:
             health = module.fetch_json(f"http://127.0.0.1:{bridge_port}/ops/health", timeout_s=5.0)
         except (OSError, ValueError, urllib.error.URLError, json.JSONDecodeError):
-            module.time.sleep(1.0)
+            _time.sleep(1.0)
             continue
         if (
             isinstance(health, dict)
@@ -258,7 +258,7 @@ def _verify_target_startup(plan: dict[str, Any], *, timeout_s: float = 90.0) -> 
             and success_marker.exists()
         ):
             return
-        module.time.sleep(1.0)
+        _time.sleep(1.0)
     raise RuntimeError("Updated desktop app did not report startup readiness in time.")
 
 
@@ -424,7 +424,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
             rollbackPath=str(rollback_root),
         )
         # extractall is not atomic; rollback snapshot is taken before this call.
-        with module.zipfile.ZipFile(zip_path, "r") as archive:
+        with _zipfile.ZipFile(zip_path, "r") as archive:
             archive.extractall(temp_extract)
         module.clear_success_marker(paths)
         rollback_root.mkdir(parents=True, exist_ok=True)
@@ -502,9 +502,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
         module.clear_handoff_request(paths)
         progress.update(module.install_stage_label("installing", "rolling_back"))
         if backup_ref is not None:
-            with contextlib.suppress(
-                OSError, module.zipfile.BadZipFile, module.zipfile.LargeZipFile
-            ):
+            with contextlib.suppress(OSError, _zipfile.BadZipFile, _zipfile.LargeZipFile):
                 module.update_manager.restore_data_backup(
                     module.update_manager.ShipPaths.from_root(ship_root, data_dir=data_dir),
                     backup_ref,

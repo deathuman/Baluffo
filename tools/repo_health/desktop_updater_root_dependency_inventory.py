@@ -14,8 +14,8 @@ TRACKED_MODULES = (
     "src/ship/desktop_updater_install.py",
 )
 
-EXPECTED_DEPENDENCY_COUNT = 47
-EXPECTED_REFERENCE_COUNT = 103
+EXPECTED_DEPENDENCY_COUNT = 40
+EXPECTED_REFERENCE_COUNT = 81
 
 CATEGORIES = {
     "constant",
@@ -29,18 +29,9 @@ CATEGORIES = {
     "mutable-compat-hook",
 }
 
-CONSTANTS = {
-    "DESKTOP_UPDATE_MANIFEST_ASSET",
-    "DESKTOP_UPDATER_NO_DIALOG_ENV",
-    "DESKTOP_UPDATER_VERIFY_TIMEOUT_ENV",
-}
+CONSTANTS: set[str] = set()
 
-STDLIB_BINDINGS = {
-    "os",
-    "subprocess",
-    "time",
-    "zipfile",
-}
+STDLIB_BINDINGS: set[str] = set()
 
 UI_HELPERS = {
     "NullProgressWindow",

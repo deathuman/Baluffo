@@ -33,12 +33,24 @@ def test_current_desktop_updater_root_dependency_inventory_is_complete() -> None
     assert len(rows) == inventory.EXPECTED_DEPENDENCY_COUNT
     assert sum(len(row.references) for row in rows) == inventory.EXPECTED_REFERENCE_COUNT
     assert inventory.check_desktop_updater_root_dependency_inventory() == []
+    assert {
+        "DESKTOP_UPDATE_MANIFEST_ASSET",
+        "DESKTOP_UPDATER_NO_DIALOG_ENV",
+        "DESKTOP_UPDATER_VERIFY_TIMEOUT_ENV",
+        "os",
+        "subprocess",
+        "time",
+        "zipfile",
+    }.isdisjoint(by_name)
     assert by_name["update_manager"].categories == (
         "mutable-compat-hook",
         "update-manager-compat",
     )
     assert by_name["fetch_json"].categories == ("mutable-compat-hook", "shared-helper")
-    assert by_name["time"].categories == ("mutable-compat-hook", "stdlib-binding")
+    assert by_name["_save_install_stage_status"].categories == (
+        "install-helper",
+        "mutable-compat-hook",
+    )
     assert by_name["_recover_manifest_for_install"].categories == (
         "mutable-compat-hook",
         "release-helper",

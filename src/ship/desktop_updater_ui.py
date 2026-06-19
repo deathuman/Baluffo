@@ -272,18 +272,16 @@ def _helper_diagnostics_path_for_plan(plan_path: Path) -> Path:
 
 
 def _helper_failure_dialog_enabled(*, env: dict[str, str] | None = None) -> bool:
-    module = _module()
-    env_map = env if env is not None else getattr(module, "os", os).environ
-    raw = str(env_map.get(module.DESKTOP_UPDATER_NO_DIALOG_ENV) or "").strip().lower()
+    env_map = env if env is not None else os.environ
+    raw = str(env_map.get(DESKTOP_UPDATER_NO_DIALOG_ENV) or "").strip().lower()
     return raw not in {"1", "true", "yes", "on"}
 
 
 def _helper_relaunch_verify_timeout_s(
     default: float = 90.0, *, env: dict[str, str] | None = None
 ) -> float:
-    module = _module()
-    env_map = env if env is not None else getattr(module, "os", os).environ
-    raw = str(env_map.get(module.DESKTOP_UPDATER_VERIFY_TIMEOUT_ENV) or "").strip()
+    env_map = env if env is not None else os.environ
+    raw = str(env_map.get(DESKTOP_UPDATER_VERIFY_TIMEOUT_ENV) or "").strip()
     if not raw:
         return float(default)
     try:
@@ -300,24 +298,21 @@ def _launch_executable(
 ) -> None:
     if not executable_path.is_file():
         raise RuntimeError(f"Desktop executable not found: {executable_path}")
-    module = _module()
-    subprocess_mod = getattr(module, "subprocess", subprocess)
-    os_mod = getattr(module, "os", os)
     creationflags = (
-        int(getattr(subprocess_mod, "CREATE_NEW_PROCESS_GROUP", 0)) if os_mod.name == "nt" else 0
+        int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)) if os.name == "nt" else 0
     )
     env = None
     if clear_app_version_override or data_dir is not None:
-        env = os_mod.environ.copy()
+        env = os.environ.copy()
     if clear_app_version_override and env is not None:
         env.pop("BALUFFO_APP_VERSION_OVERRIDE", None)
     if data_dir is not None and env is not None:
         env["BALUFFO_DATA_DIR"] = str(Path(data_dir).expanduser().resolve())
-    subprocess_mod.Popen(  # noqa: S603
+    subprocess.Popen(  # noqa: S603
         [str(executable_path)],
         cwd=str(executable_path.parent),
-        stdout=subprocess_mod.DEVNULL,
-        stderr=subprocess_mod.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
         creationflags=creationflags,
         env=env,
     )
@@ -327,8 +322,7 @@ def _show_message(title: str, message: str) -> None:
     module = _module()
     if not module._helper_failure_dialog_enabled():
         return
-    os_mod = getattr(module, "os", os)
-    if os_mod.name == "nt":
+    if os.name == "nt":
         import ctypes
 
         ctypes.windll.user32.MessageBoxW(None, str(message or ""), str(title or "Baluffo"), 0)
