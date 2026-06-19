@@ -11,9 +11,35 @@ from src.source_discovery.provider_inference import infer_web_candidate
 from src.source_registry import normalize_source_url
 from src.url_hosts import host_matches_subdomain
 
+_EXPECTED_EMBEDDED_FETCH_RUNTIME_ERROR_TOKENS = (
+    "HTTP 4",
+    "HTTP 5",
+    "HTTP Error 4",
+    "HTTP Error 5",
+    "Network error",
+    "Too Many Requests",
+    "timed out",
+    "Timeout",
+)
+
 
 def _as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
+
+
+def _is_expected_embedded_fetch_error(exc: Exception) -> bool:
+    if isinstance(exc, OSError):
+        return True
+    if not isinstance(exc, RuntimeError):
+        return False
+    msg = str(exc or "")
+    return any(token in msg for token in _EXPECTED_EMBEDDED_FETCH_RUNTIME_ERROR_TOKENS)
+
+
+def _append_embedded_fetch_error(errors: list[str], label: str, exc: Exception) -> None:
+    if not _is_expected_embedded_fetch_error(exc):
+        raise exc.with_traceback(exc.__traceback__)
+    errors.append(f"{label}: {exc}")
 
 
 def _looks_like_not_found_page(html: str) -> bool:
@@ -163,8 +189,8 @@ def check_static_source(
                     personio_count = html_extractor.parse_personio_search_count(personio_json)
                     for i in range(max(0, personio_count)):
                         weak_links.add(f"signal:personio_search:{embedded_link}:{i}")
-                except Exception as exc:  # noqa: BLE001
-                    errors.append(f"{embedded_link}: {exc}")
+                except (OSError, RuntimeError) as exc:
+                    _append_embedded_fetch_error(errors, embedded_link, exc)
             workable_account = html_extractor.extract_workable_account(embedded_link)
             if workable_account:
                 try:
@@ -175,8 +201,12 @@ def check_static_source(
                     )
                     for i in range(max(0, workable_count)):
                         weak_links.add(f"signal:workable_jobs:{workable_account}:{i}")
-                except Exception as exc:  # noqa: BLE001
-                    errors.append(f"workable:{workable_account}: {exc}")
+                except (OSError, RuntimeError) as exc:
+                    _append_embedded_fetch_error(
+                        errors,
+                        f"workable:{workable_account}",
+                        exc,
+                    )
 
         embedded_structured_links, embedded_weak_signals = (
             html_extractor.extract_embedded_job_filter_signals(html, page_url)
@@ -197,8 +227,8 @@ def check_static_source(
                     jobylon_html, jobylon_link
                 ):
                     weak_links.add(embedded_job_link)
-            except Exception as exc:  # noqa: BLE001
-                errors.append(f"{jobylon_link}: {exc}")
+            except (OSError, RuntimeError) as exc:
+                _append_embedded_fetch_error(errors, jobylon_link, exc)
 
         parsed_rows = parse_jobpostings_from_html(
             html,

@@ -1,10 +1,39 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
+import pytest
+
 import src.admin_bridge as admin_bridge
 from src.bridge import html_extractor, source_checker
 from src.bridge.source_check_api import _reconstruct_probe_candidate
 from src.jobs.adapters.html_parsers import parse_jobpostings_from_html
 from src.source_registry import source_identity
+
+
+def _check_static_source_for_html(
+    html: str,
+    *,
+    fetch_text: Callable[[str, int], str],
+) -> tuple[bool, int, str, bool, dict[str, object]]:
+    return source_checker.check_static_source(
+        {
+            "name": "Example Studio",
+            "studio": "Example Studio",
+            "adapter": "static",
+            "pages": ["https://example.com/careers"],
+            "listing_url": "https://example.com/careers",
+        },
+        12,
+        fetch_page_with_alternates=lambda _url, _timeout_s: (html, "", False, False, ""),
+        fetch_page=lambda _url, _timeout_s: ("", "", False, False),
+        fetch_text=fetch_text,
+        html_extractor=html_extractor,
+        parse_jobpostings_from_html=parse_jobpostings_from_html,
+        normalize_job_url=admin_bridge.normalize_job_url,
+        source_identity=source_identity,
+        suggest_alternate_career_urls=lambda _url: [],
+    )
 
 
 def test_provider_source_check_reconstructs_endpoint_from_compact_source_id() -> None:
@@ -21,6 +50,71 @@ def test_provider_source_check_reconstructs_endpoint_from_compact_source_id() ->
         reconstructed["api_url"]
         == "https://api.smartrecruiters.com/v1/companies/cdprojektred/postings"
     )
+
+
+def test_static_source_check_embedded_fetch_records_expected_network_errors() -> None:
+    html = """
+    <html><body>
+      <a href="https://studio.jobs.personio.de/search.json">Personio</a>
+      <a href="https://apply.workable.com/selfstudio/">Workable</a>
+      <script src="https://cdn.jobylon.com/embedder.js"></script>
+      <script>jbl_company_id = 123; jbl_version = "v2";</script>
+    </body></html>
+    """
+    attempted_urls: list[str] = []
+
+    def fetch_text(url: str, _timeout_s: int) -> str:
+        attempted_urls.append(url)
+        raise RuntimeError(f"Network error for {url}: down")
+
+    ok, jobs_found, error, weak_signal, _meta = _check_static_source_for_html(
+        html,
+        fetch_text=fetch_text,
+    )
+
+    assert ok is True
+    assert jobs_found >= 3
+    assert weak_signal is True
+    assert error == ""
+    assert "https://studio.jobs.personio.de/search.json" in attempted_urls
+    assert "https://apply.workable.com/api/v1/widget/accounts/selfstudio?details=true" in (
+        attempted_urls
+    )
+    assert (
+        "https://cdn.jobylon.com/jobs/companies/123/embed/v2?page_size=30&target=jobylon-jobs-widget"
+        in attempted_urls
+    )
+
+
+@pytest.mark.parametrize(
+    ("html", "expected_url_fragment"),
+    [
+        (
+            '<a href="https://studio.jobs.personio.de/search.json">Personio</a>',
+            "studio.jobs.personio.de/search.json",
+        ),
+        (
+            '<a href="https://apply.workable.com/selfstudio/">Workable</a>',
+            "apply.workable.com/api/v1/widget/accounts/selfstudio",
+        ),
+        (
+            """
+            <script src="https://cdn.jobylon.com/embedder.js"></script>
+            <script>jbl_company_id = 123; jbl_version = "v2";</script>
+            """,
+            "cdn.jobylon.com/jobs/companies/123",
+        ),
+    ],
+)
+def test_static_source_check_embedded_fetch_does_not_hide_unexpected_runtime_errors(
+    html: str,
+    expected_url_fragment: str,
+) -> None:
+    def fetch_text(url: str, _timeout_s: int) -> str:
+        raise RuntimeError(f"Unexpected URL: {url}")
+
+    with pytest.raises(RuntimeError, match=f"Unexpected URL: .*{expected_url_fragment}"):
+        _check_static_source_for_html(html, fetch_text=fetch_text)
 
 
 def test_static_source_check_does_not_count_empty_redirect_alternate_as_job() -> None:
