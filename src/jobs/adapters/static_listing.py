@@ -1705,7 +1705,9 @@ class StaticFetchRunner:
         browser_fallback_error = ""
         try:
             html = self._fetch_listing_html_sync(url, effective_timeout_s=effective_timeout_s)
-        except Exception as exc:  # noqa: BLE001
+        except _EXPECTED_STATIC_LISTING_FETCH_FALLBACK_EXCEPTIONS as exc:
+            if not _is_expected_static_listing_fetch_fallback(exc):
+                raise
             html, browser_fallback_attempted, browser_fallback_error = self._sync_browser_fallback(
                 url, str(exc)
             )
@@ -1775,7 +1777,9 @@ class StaticFetchRunner:
                         redirect_url,
                         effective_timeout_s,
                     )
-        except Exception as exc:  # noqa: BLE001
+        except _EXPECTED_STATIC_LISTING_FETCH_FALLBACK_EXCEPTIONS as exc:
+            if not _is_expected_static_listing_fetch_fallback(exc):
+                raise
             html, browser_fallback_attempted, browser_fallback_error = await asyncio.to_thread(
                 self._sync_browser_fallback, url, str(exc)
             )
@@ -1913,7 +1917,9 @@ class StaticFetchRunner:
                 return
             self._emit_detail_traversal_start(page_url, detail_plan.detail_links)
             self.stop_source = _run_static_detail_traversal(self.ctx, detail_plan)
-        except Exception as exc:  # noqa: BLE001
+        except _EXPECTED_STATIC_LISTING_FETCH_FALLBACK_EXCEPTIONS as exc:
+            if not _is_expected_static_listing_fetch_fallback(exc):
+                raise
             self.ctx.record_static_fetch_failure(target_url=page_url, exc=exc)
             if self.ctx.current_source_kept_count() <= 0 and clean_text(
                 self.stage_state.terminal_reason

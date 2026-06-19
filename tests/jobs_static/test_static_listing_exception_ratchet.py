@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import pytest
@@ -13,7 +14,12 @@ from src.jobs.adapters.static_runtime_support import (
 )
 
 
-def _make_static_context(*, pages: list[str] | None = None) -> StaticSourceContext:
+def _make_static_context(
+    *,
+    pages: list[str] | None = None,
+    listing_async_fetch: Any = None,
+    try_playwright: Any = None,
+) -> StaticSourceContext:
     source_name = "Static Ratchet Studio"
     source = {
         "name": source_name,
@@ -25,6 +31,8 @@ def _make_static_context(*, pages: list[str] | None = None) -> StaticSourceConte
         timeout_s=5,
         retries=0,
         backoff_s=0,
+        listing_async_fetch=listing_async_fetch,
+        try_playwright=try_playwright,
     )
     runtime_config = StaticSourceRuntimeConfig(
         static_profile="standard",
@@ -189,4 +197,122 @@ def test_dynamic_listing_fetch_does_not_swallow_unexpected_runtime_bug(
         runner._prepare_listing_htmls(
             "https://example.com/careers",
             {"text": "<html><body></body></html>"},
+        )
+
+
+def test_sync_listing_fetch_uses_browser_fallback_for_expected_fetch_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ctx = _make_static_context(
+        try_playwright=lambda _url, _timeout: ("<html>browser listing</html>", "")
+    )
+    runner = static_listing.StaticFetchRunner(ctx)
+
+    def fetch_listing_html_sync(*_args: Any, **_kwargs: Any) -> str:
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr(runner, "_fetch_listing_html_sync", fetch_listing_html_sync)
+
+    html = runner._fetch_listing_job({}, "https://example.com/careers", 5)
+
+    assert html == "<html>browser listing</html>"
+    meta = runner.stage_state.batch_meta["https://example.com/careers"]
+    assert meta["browserFallbackUsed"] is True
+    assert meta["browserFallbackError"] == ""
+
+
+def test_sync_listing_fetch_does_not_swallow_unexpected_runtime_bug(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ctx = _make_static_context()
+    runner = static_listing.StaticFetchRunner(ctx)
+
+    def fetch_listing_html_sync(*_args: Any, **_kwargs: Any) -> str:
+        raise RuntimeError("unexpected listing fetch bug")
+
+    monkeypatch.setattr(runner, "_fetch_listing_html_sync", fetch_listing_html_sync)
+
+    with pytest.raises(RuntimeError, match="unexpected listing fetch bug"):
+        runner._fetch_listing_job({}, "https://example.com/careers", 5)
+
+
+def test_async_listing_fetch_uses_browser_fallback_for_expected_fetch_failure() -> None:
+    async def listing_async_fetch(*_args: Any, **_kwargs: Any) -> str:
+        raise TimeoutError("timed out")
+
+    ctx = _make_static_context(
+        listing_async_fetch=listing_async_fetch,
+        try_playwright=lambda _url, _timeout: ("<html>async browser listing</html>", ""),
+    )
+    runner = static_listing.StaticFetchRunner(ctx)
+
+    html = asyncio.run(
+        runner._fetch_listing_job_async(object(), {}, "https://example.com/careers", 5)
+    )
+
+    assert html == "<html>async browser listing</html>"
+    meta = runner.stage_state.batch_meta["https://example.com/careers"]
+    assert meta["browserFallbackUsed"] is True
+    assert meta["browserFallbackError"] == ""
+
+
+def test_async_listing_fetch_does_not_swallow_unexpected_runtime_bug() -> None:
+    async def listing_async_fetch(*_args: Any, **_kwargs: Any) -> str:
+        raise RuntimeError("unexpected async listing bug")
+
+    ctx = _make_static_context(listing_async_fetch=listing_async_fetch)
+    runner = static_listing.StaticFetchRunner(ctx)
+
+    with pytest.raises(RuntimeError, match="unexpected async listing bug"):
+        asyncio.run(runner._fetch_listing_job_async(object(), {}, "https://example.com/careers", 5))
+
+
+def test_listing_result_records_expected_processing_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ctx = _make_static_context()
+    runner = static_listing.StaticFetchRunner(ctx)
+
+    def prepare_listing_htmls(*_args: Any, **_kwargs: Any) -> list[str]:
+        raise RuntimeError("HTTP 500")
+
+    monkeypatch.setattr(runner, "_prepare_listing_htmls", prepare_listing_htmls)
+
+    runner._process_listing_result(
+        {
+            "ok": True,
+            "url": "https://example.com/careers",
+            "payload": {
+                "domainProfile": {},
+                "sourceBudgetS": 30,
+            },
+            "text": "<html></html>",
+        }
+    )
+
+    assert ctx.errors == ["static:Static Ratchet Studio:https://example.com/careers: HTTP 500"]
+
+
+def test_listing_result_does_not_swallow_unexpected_processing_bug(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ctx = _make_static_context()
+    runner = static_listing.StaticFetchRunner(ctx)
+
+    def prepare_listing_htmls(*_args: Any, **_kwargs: Any) -> list[str]:
+        raise RuntimeError("unexpected listing processing bug")
+
+    monkeypatch.setattr(runner, "_prepare_listing_htmls", prepare_listing_htmls)
+
+    with pytest.raises(RuntimeError, match="unexpected listing processing bug"):
+        runner._process_listing_result(
+            {
+                "ok": True,
+                "url": "https://example.com/careers",
+                "payload": {
+                    "domainProfile": {},
+                    "sourceBudgetS": 30,
+                },
+                "text": "<html></html>",
+            }
         )
