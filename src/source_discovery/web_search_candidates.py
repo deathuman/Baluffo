@@ -66,7 +66,7 @@ from .web_search_config import (
     _web_search_recovery_url_limit,
 )
 from .web_search_extract import extract_links_from_html
-from .web_search_fetch import fetch_text
+from .web_search_fetch import fetch_text, is_expected_web_search_fetch_failure
 
 # Map of (adapter_name, html_substring_signature) for detecting
 # ATS providers on custom domains via HTML content inspection.
@@ -799,7 +799,9 @@ def _scan_web_search_candidates(
         _append_bounded_sample(web_query_samples, query_sample)
         try:
             html = fetcher(url, timeout_s)
-        except Exception as exc:  # noqa: BLE001
+        except (OSError, TimeoutError, RuntimeError) as exc:
+            if not is_expected_web_search_fetch_failure(exc):
+                raise
             search_failures += 1
             _append_bounded_sample(
                 web_failure_samples,

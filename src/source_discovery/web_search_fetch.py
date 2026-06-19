@@ -11,6 +11,16 @@ import httpx
 from .config import FETCH_MAX_RETRIES, RETRYABLE_HTTP_CODES
 
 _EXPECTED_FETCH_RETRY_EXCEPTIONS = (OSError, TimeoutError, RuntimeError, httpx.HTTPError)
+_EXPECTED_RUNTIME_FETCH_TOKENS = (
+    "HTTP ",
+    "HTTP Error ",
+    "Network error",
+    "Too Many Requests",
+    "blocked",
+    "temporary failure",
+    "timed out",
+    "timeout",
+)
 
 
 def discovery_request_headers() -> dict[str, str]:
@@ -53,6 +63,15 @@ def _is_retryable_error(exc: Exception) -> bool:
         return True
     message = str(exc).lower()
     return "timed out" in message or "temporary failure" in message
+
+
+def is_expected_web_search_fetch_failure(exc: Exception) -> bool:
+    if isinstance(exc, (OSError, TimeoutError, httpx.HTTPError)):
+        return True
+    if not isinstance(exc, RuntimeError):
+        return False
+    message = str(exc or "")
+    return any(token in message for token in _EXPECTED_RUNTIME_FETCH_TOKENS)
 
 
 def fetch_text_with_retry(url: str, timeout_s: int, *, adapter: str, fetcher=fetch_text) -> str:
