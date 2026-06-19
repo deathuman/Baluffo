@@ -13,6 +13,10 @@ from src.exceptions import AdapterValidationError
 from src.jobs.adapters import provider_parsers as _provider_parsers
 from src.jobs.adapters.html_parsers import parse_jobpostings_from_html, strip_html_text
 from src.jobs.adapters.parsers.location import parse_generic_location_fields
+from src.jobs.adapters.plugins.provider_api.source_errors import (
+    EXPECTED_PROVIDER_API_SOURCE_EXCEPTIONS,
+    reraise_unexpected_provider_api_source_exception,
+)
 from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.registry import registry_entries
@@ -497,7 +501,8 @@ def _structured_detail_rows(
             return parsed_detail_rows
         text_detail_row = _parse_text_detail_location(detail_html, detail_url)
         return [text_detail_row] if text_detail_row else []
-    except Exception as exc:  # noqa: BLE001
+    except EXPECTED_PROVIDER_API_SOURCE_EXCEPTIONS as exc:
+        reraise_unexpected_provider_api_source_exception(exc)
         errors.append(f"{adapter_name}:{source_name}:{detail_url}: {exc}")
         return []
 
@@ -819,7 +824,8 @@ def run_workday_sources_source(
                 backoff_s=backoff_s,
                 errors=errors,
             )
-        except Exception as exc:  # noqa: BLE001
+        except EXPECTED_PROVIDER_API_SOURCE_EXCEPTIONS as exc:
+            reraise_unexpected_provider_api_source_exception(exc)
             entry_report["status"] = "error"
             entry_report["error"] = str(exc)
             errors.append(f"workday:{source_name}: {exc}")

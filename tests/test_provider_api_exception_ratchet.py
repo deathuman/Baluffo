@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 
+from src.jobs.adapters import provider_structured_listing
 from src.jobs.adapters.plugins.provider_api import greenhouse_runner, teamtailor_runner
 from src.jobs.adapters.plugins.provider_api import html_board as html_board_runner
 from src.jobs.adapters.plugins.provider_api import json_feed as json_feed_runner
@@ -148,6 +149,81 @@ def test_teamtailor_detail_boundary_does_not_swallow_unexpected_runtime_bug(
 
     with pytest.raises(RuntimeError, match="unexpected teamtailor detail provider bug"):
         teamtailor_runner._run_teamtailor_sources(
+            fetch_text=lambda _url, _timeout: "",
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+        )
+
+
+def test_structured_detail_boundary_reports_expected_fetch_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fetch_with_retries(*_args: Any, **_kwargs: Any) -> str:
+        raise RuntimeError("HTTP 500")
+
+    monkeypatch.setattr(provider_structured_listing, "fetch_with_retries", fetch_with_retries)
+    errors: list[str] = []
+
+    rows = provider_structured_listing._structured_detail_rows(
+        detail_url="https://example.com/jobs/1",
+        adapter_name="workday",
+        source_name="Expected Failure Studio",
+        studio="Expected Failure Studio",
+        fetch_text=lambda _url, _timeout: "",
+        timeout_s=5,
+        retries=0,
+        backoff_s=0,
+        errors=errors,
+    )
+
+    assert rows == []
+    assert errors == ["workday:Expected Failure Studio:https://example.com/jobs/1: HTTP 500"]
+
+
+def test_structured_detail_boundary_does_not_swallow_unexpected_runtime_bug(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fetch_with_retries(*_args: Any, **_kwargs: Any) -> str:
+        raise RuntimeError("unexpected structured detail bug")
+
+    monkeypatch.setattr(provider_structured_listing, "fetch_with_retries", fetch_with_retries)
+
+    with pytest.raises(RuntimeError, match="unexpected structured detail bug"):
+        provider_structured_listing._structured_detail_rows(
+            detail_url="https://example.com/jobs/1",
+            adapter_name="workday",
+            source_name="Buggy Detail Studio",
+            studio="Buggy Detail Studio",
+            fetch_text=lambda _url, _timeout: "",
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+            errors=[],
+        )
+
+
+def test_workday_source_boundary_does_not_swallow_unexpected_runtime_bug(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        provider_structured_listing,
+        "registry_entries",
+        lambda adapter: [
+            {
+                "name": "Buggy Workday",
+                "listing_url": "https://example.wd5.myworkdayjobs.com/en-US/Careers",
+            }
+        ],
+    )
+
+    def collect_workday_rows(*_args: Any, **_kwargs: Any) -> object:
+        raise RuntimeError("unexpected workday collection bug")
+
+    monkeypatch.setattr(provider_structured_listing, "_collect_workday_rows", collect_workday_rows)
+
+    with pytest.raises(RuntimeError, match="unexpected workday collection bug"):
+        provider_structured_listing.run_workday_sources_source(
             fetch_text=lambda _url, _timeout: "",
             timeout_s=5,
             retries=0,
