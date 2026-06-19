@@ -123,7 +123,7 @@ def test_reddit_adapter_error_handling(
 
     def failing_fetch(url: str, timeout: int) -> str:
         _ = (url, timeout)
-        raise Exception("Network error: Connection refused")
+        raise OSError("Network error: Connection refused")
 
     with pytest.raises(AdapterValidationError):
         _run_reddit(fetch_text=failing_fetch, timeout_s=10, retries=2, backoff_s=1.0)
