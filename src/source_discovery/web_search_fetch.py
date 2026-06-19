@@ -10,6 +10,8 @@ import httpx
 
 from .config import FETCH_MAX_RETRIES, RETRYABLE_HTTP_CODES
 
+_EXPECTED_FETCH_RETRY_EXCEPTIONS = (OSError, TimeoutError, RuntimeError, httpx.HTTPError)
+
 
 def discovery_request_headers() -> dict[str, str]:
     return {
@@ -61,7 +63,7 @@ def fetch_text_with_retry(url: str, timeout_s: int, *, adapter: str, fetcher=fet
     for attempt in range(attempts):
         try:
             return str(fetcher(url, timeout_s))
-        except Exception as exc:  # noqa: BLE001
+        except _EXPECTED_FETCH_RETRY_EXCEPTIONS as exc:
             last_exc = exc
             if attempt >= FETCH_MAX_RETRIES or not _is_retryable_error(exc):
                 break
@@ -85,8 +87,8 @@ async def async_fetch_text_with_retry(
     for attempt in range(attempts):
         try:
             return str(await fetcher(url, timeout_s))
-        except Exception as exc:  # noqa: BLE001
-            last_exc = exc if isinstance(exc, Exception) else Exception(str(exc))
+        except _EXPECTED_FETCH_RETRY_EXCEPTIONS as exc:
+            last_exc = exc
             if attempt >= FETCH_MAX_RETRIES or not _is_retryable_error(last_exc):
                 break
             await asyncio.sleep(1.2 * (attempt + 1))
