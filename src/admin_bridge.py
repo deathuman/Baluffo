@@ -230,9 +230,6 @@ BRIDGE_SERVICES = admin_entrypoint_services_mod.BRIDGE_SERVICES
 _SYNC_SERVICE: SyncService | None = None
 _SYNC_SERVICE_DATA_DIR: Path | None = None
 _SYNC_SERVICE_LOCK = BRIDGE_SERVICES.sync_service_lock
-_DESKTOP_UPDATE_SERVICE: DesktopUpdateService | None = None
-_DESKTOP_UPDATE_SERVICE_DATA_DIR: Path | None = None
-_DESKTOP_UPDATE_SERVICE_LOCK = BRIDGE_SERVICES.desktop_update_service_lock
 
 
 _get_sync_service = admin_entrypoint_services_mod.get_sync_service
