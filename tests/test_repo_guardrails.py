@@ -189,6 +189,7 @@ def test_source_suppression_budget_allows_current_budget(tmp_path: Path, monkeyp
                 "scope": "src",
                 "max_total_comments": 2,
                 "max_by_code": {"BLE001": 1, "SLF001": 1},
+                "allowed_by_code_file": {"BLE001": ["src/owner.py"]},
                 "rationale": "Ratchet suppressions.",
             }
         ),

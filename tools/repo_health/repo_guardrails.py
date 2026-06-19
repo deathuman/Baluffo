@@ -416,17 +416,20 @@ def _suppression_codes(line: str) -> list[str]:
     return []
 
 
-def _count_source_suppressions() -> tuple[int, Counter[str]]:
+def _count_source_suppressions() -> tuple[int, Counter[str], Counter[tuple[str, str]]]:
     total = 0
     by_code: Counter[str] = Counter()
+    by_code_file: Counter[tuple[str, str]] = Counter()
     for path in sorted((ROOT / "src").rglob("*.py")):
+        rel_path = path.relative_to(ROOT).as_posix()
         for line in path.read_text(encoding="utf-8").splitlines():
             codes = _suppression_codes(line)
             if not codes:
                 continue
             total += 1
             by_code.update(codes)
-    return total, by_code
+            by_code_file.update((code, rel_path) for code in codes)
+    return total, by_code, by_code_file
 
 
 def check_source_suppression_budget() -> list[str]:
@@ -455,12 +458,32 @@ def check_source_suppression_budget() -> list[str]:
             failures.append("source suppression budget codes must be non-empty strings.")
         if not isinstance(budget, int) or budget < 0:
             failures.append(f"source suppression budget for {code!r} must be non-negative.")
+    allowed_by_code_file = payload.get("allowed_by_code_file", {})
+    if not isinstance(allowed_by_code_file, dict):
+        failures.append("source suppression budget allowed_by_code_file must be an object.")
+        allowed_by_code_file = {}
+    for code, paths in allowed_by_code_file.items():
+        if not isinstance(code, str) or not code.strip():
+            failures.append(
+                "source suppression budget allowed_by_code_file codes must be non-empty strings."
+            )
+            continue
+        if not isinstance(paths, list) or not paths:
+            failures.append(
+                f"source suppression budget allowed files for {code!r} must be a non-empty list."
+            )
+            continue
+        for path in paths:
+            if not isinstance(path, str) or not path.startswith("src/"):
+                failures.append(
+                    f"source suppression budget allowed file for {code!r} must be a repo-relative src path."
+                )
     if not str(payload.get("rationale") or "").strip():
         failures.append("source suppression budget must include a non-empty rationale.")
     if failures:
         return failures
 
-    total, by_code = _count_source_suppressions()
+    total, by_code, by_code_file = _count_source_suppressions()
     if total > max_total:
         failures.append(f"src has {total} suppression comments; budget is {max_total}.")
     for code, count in sorted(by_code.items()):
@@ -469,6 +492,13 @@ def check_source_suppression_budget() -> list[str]:
             failures.append(f"src has unbudgeted suppression code {code}: {count}.")
         elif count > budget:
             failures.append(f"src has {count} {code} suppressions; budget is {budget}.")
+    for code, paths in sorted(allowed_by_code_file.items()):
+        allowed_paths = set(paths)
+        for observed_code, rel_path in sorted(by_code_file):
+            if observed_code == code and rel_path not in allowed_paths:
+                failures.append(
+                    f"src has {code} suppression in {rel_path}; allowed files are {sorted(allowed_paths)}."
+                )
     return failures
 
 

@@ -8,5 +8,10 @@
     "S603": 1,
     "SLF001": 5
   },
-  "rationale": "Ratchet after the first suppression cleanup tranche. Future suppressions must be removed or this budget must be updated explicitly with the same change."
+  "allowed_by_code_file": {
+    "BLE001": [
+      "src/bridge/routes/error_boundary.py"
+    ]
+  },
+  "rationale": "Ratchet after the source exception cleanup pass. Remaining BLE001 suppressions are intentional HTTP route JSON boundaries only; future suppressions must be removed or this budget must be updated explicitly with the same change."
 }
