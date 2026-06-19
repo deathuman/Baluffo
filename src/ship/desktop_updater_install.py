@@ -361,7 +361,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
     )
     rollback_root = Path(str(plan.get("rollbackPath") or "")).expanduser().resolve()
     existing_status = load_status(paths)
-    progress = progress if progress is not None else module.NullProgressWindow()
+    progress = progress if progress is not None else _NullProgressWindow()
     progress.start(
         str(existing_status.get("installStageLabel") or "").strip()
         or install_stage_label("handoff_requested", "preparing")
@@ -490,7 +490,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
             rollbackPath=str(rollback_root),
             migrationBackupPath=str(backup_ref) if backup_ref is not None else "",
         )
-        module._verify_target_startup(plan, timeout_s=module._helper_relaunch_verify_timeout_s())
+        module._verify_target_startup(plan, timeout_s=_helper_relaunch_verify_timeout_s_impl())
         module._finalize_success(paths, plan, rollback_root)
         return {"ok": True, "installedVersion": str(plan.get("targetVersion") or "")}
     except BaseException as exc:
@@ -507,7 +507,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
             paths,
             install_state="failed",
             install_stage="rolling_back",
-            lastError=module._classify_install_failure(exc),
+            lastError=_classify_install_failure_impl(exc),
             rollbackPath=str(rollback_root),
             migrationBackupPath=str(backup_ref) if backup_ref is not None else "",
         )

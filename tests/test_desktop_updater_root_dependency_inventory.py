@@ -41,9 +41,12 @@ def test_current_desktop_updater_root_dependency_inventory_is_complete() -> None
         "subprocess",
         "time",
         "zipfile",
+        "NullProgressWindow",
+        "_classify_install_failure",
         "_drain_helper_queue",
         "_find_release_for_target_version",
         "_helper_failure_dialog_enabled",
+        "_helper_relaunch_verify_timeout_s",
         "_helper_window_layout",
         "_restore_data_backup_if_needed",
         "_save_install_stage_status",
@@ -81,10 +84,14 @@ def test_current_desktop_updater_root_dependency_inventory_is_complete() -> None
         "mutable-compat-hook",
         "update-manager-compat",
     )
-    assert by_name["_recover_manifest_for_install"].categories == (
+    expected_release_categories = {
+        "facade-monkeypatch-compat",
         "mutable-compat-hook",
         "release-helper",
-    )
+    }
+    assert set(by_name["_recover_manifest_for_install"].categories) == expected_release_categories
+    ensure_categories = set(by_name["_ensure_verified_zip_for_install"].categories)
+    assert ensure_categories == expected_release_categories
 
 
 def test_inventory_collects_module_and_getattr_references(
@@ -192,7 +199,7 @@ def test_inventory_ignores_unrelated_updater_monkeypatches(
     assert inventory.check_desktop_updater_root_dependency_inventory(tmp_path) == []
 
 
-def test_inventory_classifies_nested_facade_monkeypatch_compatibility(
+def test_inventory_classifies_facade_and_helper_monkeypatch_compatibility(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -200,7 +207,8 @@ def test_inventory_classifies_nested_facade_monkeypatch_compatibility(
         tmp_path,
         install="""
         def path(module):
-            return module.update_manager.restore_data_backup()
+            module.update_manager.restore_data_backup()
+            return module._recover_manifest_for_install({})
         """,
     )
     _write(
@@ -213,17 +221,38 @@ def test_inventory_classifies_nested_facade_monkeypatch_compatibility(
             monkeypatch.setattr(updater.update_manager, "restore_data_backup", lambda: None)
         """,
     )
-    monkeypatch.setattr(inventory, "EXPECTED_DEPENDENCY_COUNT", 1)
-    monkeypatch.setattr(inventory, "EXPECTED_REFERENCE_COUNT", 1)
+    _write(
+        tmp_path,
+        "tests/test_desktop_updater_install.py",
+        """
+        from unittest import mock
+        from src.ship import desktop_updater_install as updater
+
+        def test_patch():
+            with mock.patch.object(updater, "_recover_manifest_for_install", return_value={}):
+                pass
+        """,
+    )
+    monkeypatch.setattr(inventory, "EXPECTED_DEPENDENCY_COUNT", 2)
+    monkeypatch.setattr(inventory, "EXPECTED_REFERENCE_COUNT", 2)
     monkeypatch.setattr(
         inventory,
         "DEPENDENCY_CATEGORIES",
-        {"update_manager": {"update-manager-compat", "mutable-compat-hook"}},
+        {
+            "_recover_manifest_for_install": {"release-helper", "mutable-compat-hook"},
+            "update_manager": {"update-manager-compat", "mutable-compat-hook"},
+        },
     )
 
     rows = inventory.collect_desktop_updater_root_dependency_inventory(tmp_path)
+    by_name = {row.name: row for row in rows}
 
-    assert rows[0].categories == (
+    assert by_name["_recover_manifest_for_install"].categories == (
+        "facade-monkeypatch-compat",
+        "mutable-compat-hook",
+        "release-helper",
+    )
+    assert by_name["update_manager"].categories == (
         "facade-monkeypatch-compat",
         "mutable-compat-hook",
         "update-manager-compat",

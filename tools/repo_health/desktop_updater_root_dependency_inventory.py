@@ -13,9 +13,15 @@ TRACKED_MODULES = (
     "src/ship/desktop_updater_release.py",
     "src/ship/desktop_updater_install.py",
 )
+TRACKED_IMPORT_MODULES = {
+    "desktop_updater",
+    "desktop_updater_ui",
+    "desktop_updater_release",
+    "desktop_updater_install",
+}
 
-EXPECTED_DEPENDENCY_COUNT = 21
-EXPECTED_REFERENCE_COUNT = 35
+EXPECTED_DEPENDENCY_COUNT = 18
+EXPECTED_REFERENCE_COUNT = 32
 
 CATEGORIES = {
     "constant",
@@ -35,13 +41,10 @@ CONSTANTS: set[str] = set()
 STDLIB_BINDINGS: set[str] = set()
 
 UI_HELPERS = {
-    "NullProgressWindow",
-    "_helper_relaunch_verify_timeout_s",
     "_launch_executable",
 }
 
 RELEASE_HELPERS = {
-    "_classify_install_failure",
     "_ensure_verified_zip_for_install",
     "_recover_manifest_for_install",
 }
@@ -148,11 +151,14 @@ def _imports_desktop_updater_as_updater(tree: ast.Module) -> bool:
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module == "src.ship":
             for alias in node.names:
-                if alias.name == "desktop_updater" and alias.asname == "updater":
+                if alias.name in TRACKED_IMPORT_MODULES and alias.asname == "updater":
                     return True
         if isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name == "src.ship.desktop_updater" and alias.asname == "updater":
+                if (
+                    alias.name.removeprefix("src.ship.") in TRACKED_IMPORT_MODULES
+                    and alias.asname == "updater"
+                ):
                     return True
     return False
 
@@ -195,6 +201,21 @@ def _iter_facade_monkeypatch_names(repo_root: Path) -> set[str]:
                 and node.args[0].value.id == "updater"
             ):
                 monkeypatched.add(node.args[0].attr)
+            elif (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "object"
+                and isinstance(node.func.value, ast.Attribute)
+                and node.func.value.attr == "patch"
+                and isinstance(node.func.value.value, ast.Name)
+                and node.func.value.value.id == "mock"
+                and len(node.args) >= 2
+                and isinstance(node.args[0], ast.Name)
+                and node.args[0].id == "updater"
+                and isinstance(node.args[1], ast.Constant)
+                and isinstance(node.args[1].value, str)
+            ):
+                monkeypatched.add(node.args[1].value)
     return monkeypatched
 
 
