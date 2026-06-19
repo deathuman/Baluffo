@@ -48,6 +48,12 @@ from src.ship.desktop_update_state import (
 from src.ship.desktop_updater_release import (
     _classify_install_failure as _classify_install_failure_impl,
 )
+from src.ship.desktop_updater_release import (
+    _ensure_verified_zip_for_install as _ensure_verified_zip_for_install_impl,
+)
+from src.ship.desktop_updater_release import (
+    _recover_manifest_for_install as _recover_manifest_for_install_impl,
+)
 from src.ship.desktop_updater_ui import (
     NullProgressWindow as _NullProgressWindow,
 )
@@ -100,6 +106,8 @@ load_status = _load_status
 save_status = _save_status
 validate_install_plan = _validate_install_plan
 _classify_install_failure = _classify_install_failure_impl
+_ensure_verified_zip_for_install = _ensure_verified_zip_for_install_impl
+_recover_manifest_for_install = _recover_manifest_for_install_impl
 NullProgressWindow = _NullProgressWindow
 _helper_relaunch_verify_timeout_s = _helper_relaunch_verify_timeout_s_impl
 _launch_executable = _launch_executable_impl
@@ -304,7 +312,6 @@ def _recover_interrupted_install(
     paths: DesktopUpdatePaths,
     rollback_root: Path,
 ) -> bool:
-    module = _module()
     status = load_status(paths)
     stage = str(status.get("installStage") or "").strip().lower()
     if not stage or stage in {
@@ -318,11 +325,11 @@ def _recover_interrupted_install(
         return False
     if stage in SUCCESS_RECOVERY_STAGES:
         try:
-            module._verify_target_startup(plan, timeout_s=5.0)
+            _verify_target_startup(plan, timeout_s=5.0)
         except (OSError, RuntimeError, ValueError):
             pass
         else:
-            module._finalize_success(paths, plan, rollback_root)
+            _finalize_success(paths, plan, rollback_root)
             return True
     if stage not in MUTATING_INSTALL_STAGES:
         return False
@@ -333,7 +340,7 @@ def _recover_interrupted_install(
         lastError="",
     )
     _restore_data_backup_if_needed(ship_root, paths.data_dir, status)
-    module._restore_install_snapshot(install_root, rollback_root)
+    _restore_install_snapshot(install_root, rollback_root)
     with contextlib.suppress(OSError):
         shutil.rmtree(rollback_root)
     _save_install_stage_status(
@@ -373,18 +380,18 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
     temp_extract.mkdir(parents=True, exist_ok=True)
     backup_ref: Path | None = None
     try:
-        manifest = module._recover_manifest_for_install(
+        manifest = _recover_manifest_for_install(
             plan,
             install_root=install_root,
             ship_root=ship_root,
             paths=paths,
         )
-        zip_path = module._ensure_verified_zip_for_install(
+        zip_path = _ensure_verified_zip_for_install(
             plan,
             manifest=manifest,
             zip_path=Path(str(plan.get("downloadedZipPath") or "")).expanduser().resolve(),
         )
-        recovered_as_complete = module._recover_interrupted_install(
+        recovered_as_complete = _recover_interrupted_install(
             plan,
             install_root=install_root,
             ship_root=ship_root,
@@ -408,7 +415,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
             lastError="",
             rollbackPath=str(rollback_root),
         )
-        module._wait_for_launcher_exit(plan)
+        _wait_for_launcher_exit(plan)
         clear_handoff_request(paths)
 
         progress.update(install_stage_label("installing", "extracting"))
@@ -429,7 +436,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
             install_stage="snapshotting",
             rollbackPath=str(rollback_root),
         )
-        module._copy_install_snapshot(install_root, rollback_root)
+        _copy_install_snapshot(install_root, rollback_root)
         migration_plan = list(manifest.get("migration_plan") or [])
         if migration_plan:
             _save_install_stage_status(
@@ -455,7 +462,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
             rollbackPath=str(rollback_root),
             migrationBackupPath=str(backup_ref) if backup_ref is not None else "",
         )
-        module._sync_extract_to_install(install_root, temp_extract)
+        _sync_extract_to_install(install_root, temp_extract)
         if migration_plan:
             _save_install_stage_status(
                 paths,
@@ -477,7 +484,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
             rollbackPath=str(rollback_root),
             migrationBackupPath=str(backup_ref) if backup_ref is not None else "",
         )
-        module._launch_executable(
+        _launch_executable(
             install_root / "Baluffo.exe",
             clear_app_version_override=True,
             data_dir=data_dir,
@@ -489,8 +496,8 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
             rollbackPath=str(rollback_root),
             migrationBackupPath=str(backup_ref) if backup_ref is not None else "",
         )
-        module._verify_target_startup(plan, timeout_s=_helper_relaunch_verify_timeout_s_impl())
-        module._finalize_success(paths, plan, rollback_root)
+        _verify_target_startup(plan, timeout_s=_helper_relaunch_verify_timeout_s_impl())
+        _finalize_success(paths, plan, rollback_root)
         return {"ok": True, "installedVersion": str(plan.get("targetVersion") or "")}
     except BaseException as exc:
         # Treat install mutation as a transactional cleanup boundary, then re-raise.
@@ -511,9 +518,9 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
             migrationBackupPath=str(backup_ref) if backup_ref is not None else "",
         )
         with contextlib.suppress(OSError, RuntimeError, ValueError, shutil.Error):
-            module._restore_install_snapshot(install_root, rollback_root)
+            _restore_install_snapshot(install_root, rollback_root)
         with contextlib.suppress(OSError, RuntimeError):
-            module._launch_executable(install_root / "Baluffo.exe", data_dir=data_dir)
+            _launch_executable(install_root / "Baluffo.exe", data_dir=data_dir)
         _save_install_stage_status(
             paths,
             install_state="failed",

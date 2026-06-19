@@ -20,8 +20,8 @@ TRACKED_IMPORT_MODULES = {
     "desktop_updater_install",
 }
 
-EXPECTED_DEPENDENCY_COUNT = 11
-EXPECTED_REFERENCE_COUNT = 22
+EXPECTED_DEPENDENCY_COUNT = 1
+EXPECTED_REFERENCE_COUNT = 8
 
 CATEGORIES = {
     "constant",
@@ -40,24 +40,11 @@ CONSTANTS: set[str] = set()
 
 STDLIB_BINDINGS: set[str] = set()
 
-UI_HELPERS = {
-    "_launch_executable",
-}
+UI_HELPERS: set[str] = set()
 
-RELEASE_HELPERS = {
-    "_ensure_verified_zip_for_install",
-    "_recover_manifest_for_install",
-}
+RELEASE_HELPERS: set[str] = set()
 
-INSTALL_HELPERS = {
-    "_copy_install_snapshot",
-    "_finalize_success",
-    "_recover_interrupted_install",
-    "_restore_install_snapshot",
-    "_sync_extract_to_install",
-    "_verify_target_startup",
-    "_wait_for_launcher_exit",
-}
+INSTALL_HELPERS: set[str] = set()
 
 SHARED_HELPERS: set[str] = set()
 STATE_HELPERS: set[str] = set()

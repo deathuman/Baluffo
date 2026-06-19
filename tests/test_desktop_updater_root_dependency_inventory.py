@@ -67,25 +67,22 @@ def test_current_desktop_updater_root_dependency_inventory_is_complete() -> None
         "validate_desktop_manifest",
         "verify_manifest_signature",
         "write_json_atomic",
+        "_copy_install_snapshot",
+        "_ensure_verified_zip_for_install",
+        "_finalize_success",
+        "_launch_executable",
+        "_recover_interrupted_install",
+        "_recover_manifest_for_install",
+        "_restore_install_snapshot",
+        "_sync_extract_to_install",
+        "_verify_target_startup",
+        "_wait_for_launcher_exit",
     }.isdisjoint(by_name)
-    assert by_name["_sync_extract_to_install"].categories == (
-        "facade-monkeypatch-compat",
-        "install-helper",
-        "mutable-compat-hook",
-    )
     assert by_name["update_manager"].categories == (
         "facade-monkeypatch-compat",
         "mutable-compat-hook",
         "update-manager-compat",
     )
-    expected_release_categories = {
-        "facade-monkeypatch-compat",
-        "mutable-compat-hook",
-        "release-helper",
-    }
-    assert set(by_name["_recover_manifest_for_install"].categories) == expected_release_categories
-    ensure_categories = set(by_name["_ensure_verified_zip_for_install"].categories)
-    assert ensure_categories == expected_release_categories
 
 
 def test_inventory_collects_module_and_getattr_references(

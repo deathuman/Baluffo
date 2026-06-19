@@ -280,8 +280,10 @@ def test_run_install_finishes_stale_verifying_state_when_target_is_already_healt
         )
         monkeypatch.setattr(updater, "HelperProgressWindow", progress_cls)
         _patch_release_validation(monkeypatch)
-        monkeypatch.setattr(updater, "_verify_target_startup", lambda plan, timeout_s=90.0: None)
-        monkeypatch.setattr(updater, "_wait_for_launcher_exit", wait_for_exit)
+        monkeypatch.setattr(
+            updater_install, "_verify_target_startup", lambda plan, timeout_s=90.0: None
+        )
+        monkeypatch.setattr(updater_install, "_wait_for_launcher_exit", wait_for_exit)
 
         result = updater.run_install(paths.install_plan_path)
 
@@ -322,15 +324,19 @@ def test_run_install_uses_env_override_for_relaunch_verification_timeout(monkeyp
 
         monkeypatch.setenv(updater.DESKTOP_UPDATER_VERIFY_TIMEOUT_ENV, "6")
         _patch_release_validation(monkeypatch)
-        monkeypatch.setattr(updater, "_recover_interrupted_install", lambda *args, **kwargs: False)
-        monkeypatch.setattr(updater, "_wait_for_launcher_exit", lambda plan: None)
-        monkeypatch.setattr(updater.zipfile, "ZipFile", mock.Mock(return_value=zip_context))
-        monkeypatch.setattr(updater, "_copy_install_snapshot", lambda *args, **kwargs: None)
-        monkeypatch.setattr(updater, "_sync_extract_to_install", lambda *args, **kwargs: None)
+        monkeypatch.setattr(
+            updater_install, "_recover_interrupted_install", lambda *args, **kwargs: False
+        )
+        monkeypatch.setattr(updater_install, "_wait_for_launcher_exit", lambda plan: None)
+        monkeypatch.setattr(updater_install.zipfile, "ZipFile", mock.Mock(return_value=zip_context))
+        monkeypatch.setattr(updater_install, "_copy_install_snapshot", lambda *args, **kwargs: None)
+        monkeypatch.setattr(
+            updater_install, "_sync_extract_to_install", lambda *args, **kwargs: None
+        )
         launch_executable = mock.Mock()
-        monkeypatch.setattr(updater, "_launch_executable", launch_executable)
-        monkeypatch.setattr(updater, "_verify_target_startup", verify_startup)
-        monkeypatch.setattr(updater, "_finalize_success", lambda *args, **kwargs: None)
+        monkeypatch.setattr(updater_install, "_launch_executable", launch_executable)
+        monkeypatch.setattr(updater_install, "_verify_target_startup", verify_startup)
+        monkeypatch.setattr(updater_install, "_finalize_success", lambda *args, **kwargs: None)
 
         result = updater.run_install(paths.install_plan_path)
 
@@ -391,14 +397,20 @@ def test_run_install_recovers_manifest_cache_from_release_metadata(monkeypatch) 
             updater_release, "resolve_release_repo", lambda **_: "deathuman/Baluffo"
         )
         _patch_release_validation(monkeypatch)
-        monkeypatch.setattr(updater, "_recover_interrupted_install", lambda *args, **kwargs: False)
-        monkeypatch.setattr(updater, "_wait_for_launcher_exit", lambda plan: None)
-        monkeypatch.setattr(updater.zipfile, "ZipFile", mock.Mock(return_value=zip_context))
-        monkeypatch.setattr(updater, "_copy_install_snapshot", lambda *args, **kwargs: None)
-        monkeypatch.setattr(updater, "_sync_extract_to_install", lambda *args, **kwargs: None)
-        monkeypatch.setattr(updater, "_launch_executable", lambda *args, **kwargs: None)
-        monkeypatch.setattr(updater, "_verify_target_startup", lambda plan, timeout_s=90.0: None)
-        monkeypatch.setattr(updater, "_finalize_success", lambda *args, **kwargs: None)
+        monkeypatch.setattr(
+            updater_install, "_recover_interrupted_install", lambda *args, **kwargs: False
+        )
+        monkeypatch.setattr(updater_install, "_wait_for_launcher_exit", lambda plan: None)
+        monkeypatch.setattr(updater_install.zipfile, "ZipFile", mock.Mock(return_value=zip_context))
+        monkeypatch.setattr(updater_install, "_copy_install_snapshot", lambda *args, **kwargs: None)
+        monkeypatch.setattr(
+            updater_install, "_sync_extract_to_install", lambda *args, **kwargs: None
+        )
+        monkeypatch.setattr(updater_install, "_launch_executable", lambda *args, **kwargs: None)
+        monkeypatch.setattr(
+            updater_install, "_verify_target_startup", lambda plan, timeout_s=90.0: None
+        )
+        monkeypatch.setattr(updater_install, "_finalize_success", lambda *args, **kwargs: None)
 
         result = updater.run_install(paths.install_plan_path)
 
@@ -443,14 +455,20 @@ def test_run_install_redownloads_zip_when_cached_artifact_is_missing(monkeypatch
 
         _patch_release_validation(monkeypatch)
         monkeypatch.setattr(updater_release, "download_file", download_mock)
-        monkeypatch.setattr(updater, "_recover_interrupted_install", lambda *args, **kwargs: False)
-        monkeypatch.setattr(updater, "_wait_for_launcher_exit", lambda plan: None)
-        monkeypatch.setattr(updater.zipfile, "ZipFile", mock.Mock(return_value=zip_context))
-        monkeypatch.setattr(updater, "_copy_install_snapshot", lambda *args, **kwargs: None)
-        monkeypatch.setattr(updater, "_sync_extract_to_install", lambda *args, **kwargs: None)
-        monkeypatch.setattr(updater, "_launch_executable", lambda *args, **kwargs: None)
-        monkeypatch.setattr(updater, "_verify_target_startup", lambda plan, timeout_s=90.0: None)
-        monkeypatch.setattr(updater, "_finalize_success", lambda *args, **kwargs: None)
+        monkeypatch.setattr(
+            updater_install, "_recover_interrupted_install", lambda *args, **kwargs: False
+        )
+        monkeypatch.setattr(updater_install, "_wait_for_launcher_exit", lambda plan: None)
+        monkeypatch.setattr(updater_install.zipfile, "ZipFile", mock.Mock(return_value=zip_context))
+        monkeypatch.setattr(updater_install, "_copy_install_snapshot", lambda *args, **kwargs: None)
+        monkeypatch.setattr(
+            updater_install, "_sync_extract_to_install", lambda *args, **kwargs: None
+        )
+        monkeypatch.setattr(updater_install, "_launch_executable", lambda *args, **kwargs: None)
+        monkeypatch.setattr(
+            updater_install, "_verify_target_startup", lambda plan, timeout_s=90.0: None
+        )
+        monkeypatch.setattr(updater_install, "_finalize_success", lambda *args, **kwargs: None)
 
         result = updater.run_install(paths.install_plan_path)
 
@@ -491,7 +509,7 @@ def test_run_install_records_zip_reverification_failure_after_redownload(monkeyp
             "download_file",
             lambda url, destination: destination.write_text("zip", encoding="utf-8"),
         )
-        monkeypatch.setattr(updater, "_restore_install_snapshot", mock.Mock())
+        monkeypatch.setattr(updater_install, "_restore_install_snapshot", mock.Mock())
 
         with pytest.raises(RuntimeError, match="Downloaded desktop ZIP failed re-verification."):
             updater.run_install(paths.install_plan_path)
@@ -536,14 +554,18 @@ def test_run_install_records_specific_failure_when_relaunch_verification_fails(
         launch_executable = mock.Mock()
 
         _patch_release_validation(monkeypatch)
-        monkeypatch.setattr(updater, "_recover_interrupted_install", lambda *args, **kwargs: False)
-        monkeypatch.setattr(updater, "_wait_for_launcher_exit", lambda plan: None)
-        monkeypatch.setattr(updater.zipfile, "ZipFile", mock.Mock(return_value=zip_context))
-        monkeypatch.setattr(updater, "_copy_install_snapshot", lambda *args, **kwargs: None)
-        monkeypatch.setattr(updater, "_sync_extract_to_install", lambda *args, **kwargs: None)
-        monkeypatch.setattr(updater, "_launch_executable", launch_executable)
         monkeypatch.setattr(
-            updater,
+            updater_install, "_recover_interrupted_install", lambda *args, **kwargs: False
+        )
+        monkeypatch.setattr(updater_install, "_wait_for_launcher_exit", lambda plan: None)
+        monkeypatch.setattr(updater_install.zipfile, "ZipFile", mock.Mock(return_value=zip_context))
+        monkeypatch.setattr(updater_install, "_copy_install_snapshot", lambda *args, **kwargs: None)
+        monkeypatch.setattr(
+            updater_install, "_sync_extract_to_install", lambda *args, **kwargs: None
+        )
+        monkeypatch.setattr(updater_install, "_launch_executable", launch_executable)
+        monkeypatch.setattr(
+            updater_install,
             "_verify_target_startup",
             mock.Mock(
                 side_effect=RuntimeError(
@@ -551,7 +573,7 @@ def test_run_install_records_specific_failure_when_relaunch_verification_fails(
                 )
             ),
         )
-        monkeypatch.setattr(updater, "_restore_install_snapshot", restore_snapshot)
+        monkeypatch.setattr(updater_install, "_restore_install_snapshot", restore_snapshot)
 
         with pytest.raises(
             RuntimeError, match="Updated desktop app did not report startup readiness in time."
