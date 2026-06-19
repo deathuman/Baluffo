@@ -17,7 +17,7 @@ from src.jobs.common.taxonomy import (
     has_explicit_empty_evidence,
 )
 from src.jobs.text_utils import clean_text, norm_text
-from src.shared.fetch_report_normalization import normalize_fetch_report_source_row_base
+from src.shared.fetch_report_normalization import normalize_jobs_fetch_report_source_row_base
 from src.shared.json_shapes import as_json_list, as_json_object
 
 _CANONICAL_DROP_REASON_KEYS = (
@@ -500,21 +500,10 @@ def _apply_details(target: dict[str, Any], src: dict[str, Any]) -> None:
 
 def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
     src = as_json_object(row)
-    normalized = normalize_fetch_report_source_row_base(
+    normalized = normalize_jobs_fetch_report_source_row_base(
         src,
         clean_text_func=clean_text,
         normalize_text_func=norm_text,
-        lowercase_status=True,
-        status_default="error",
-        adapter_default="custom",
-        fetch_strategy_default="auto",
-        last_seen_fallback_last_run=True,
-        last_jobs_kept_fallback_last_kept=True,
-        failure_count_fallback_consecutive=True,
-        zero_job_streak_fallback_consecutive=True,
-        health_score_default=100,
-        health_score_max=None,
-        include_duplicate_rate=True,
     )
 
     failure_bucket, _, _ = _apply_zero_kept_classification(normalized, src)

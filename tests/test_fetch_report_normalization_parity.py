@@ -1,6 +1,11 @@
 from src.bridge.report_normalizer import normalize_fetch_report_contract
 from src.jobs.common.contracts_fetch_report import normalize_fetch_report_payload
-from src.shared.fetch_report_normalization import normalize_bridge_fetch_report_source_row
+from src.jobs.common.contracts_source_reports import normalize_source_report_row
+from src.jobs.text_utils import clean_text, norm_text
+from src.shared.fetch_report_normalization import (
+    normalize_bridge_fetch_report_source_row,
+    normalize_jobs_fetch_report_source_row_base,
+)
 
 
 def test_bridge_and_jobs_fetch_report_normalizers_share_completed_progress_overlap() -> None:
@@ -147,6 +152,41 @@ def test_bridge_and_jobs_source_row_defaults_remain_compatible_but_distinct() ->
     assert jobs_row["fetchStrategy"] == "auto"
     assert bridge_row["healthScore"] == 0
     assert jobs_row["healthScore"] == 100
+
+
+def test_jobs_source_report_row_uses_shared_base_contract() -> None:
+    row = {
+        "name": "Source A",
+        "status": "OK",
+        "adapter": "",
+        "fetchStrategy": "",
+        "studio": "Studio A",
+        "lastRunAt": "2026-06-18T08:00:00+00:00",
+        "lastKeptCount": "4",
+        "consecutiveFailures": "2",
+        "consecutiveZeroKept": "1",
+        "duplicateRate": "0.25",
+        "healthScore": "",
+    }
+
+    normalized = normalize_source_report_row(row)
+    shared_base = normalize_jobs_fetch_report_source_row_base(
+        row,
+        clean_text_func=clean_text,
+        normalize_text_func=norm_text,
+    )
+
+    for key, value in shared_base.items():
+        assert normalized[key] == value
+    assert normalized["status"] == "ok"
+    assert normalized["adapter"] == "custom"
+    assert normalized["fetchStrategy"] == "auto"
+    assert normalized["lastSeenInFetchAt"] == row["lastRunAt"]
+    assert normalized["lastJobsKept"] == 4
+    assert normalized["failureCount"] == 2
+    assert normalized["zeroJobStreak"] == 1
+    assert normalized["duplicateRate"] == 0.25
+    assert normalized["healthScore"] == 100
 
 
 def test_bridge_fetch_report_source_row_uses_shared_enrichment_helper() -> None:

@@ -248,6 +248,30 @@ def normalize_fetch_report_source_row_base(
     return payload
 
 
+def normalize_jobs_fetch_report_source_row_base(
+    row: Any,
+    *,
+    clean_text_func: Any = _clean_text,
+    normalize_text_func: Any | None = _normalize_text,
+) -> dict[str, Any]:
+    return normalize_fetch_report_source_row_base(
+        row,
+        clean_text_func=clean_text_func,
+        normalize_text_func=normalize_text_func,
+        lowercase_status=True,
+        status_default="error",
+        adapter_default="custom",
+        fetch_strategy_default="auto",
+        last_seen_fallback_last_run=True,
+        last_jobs_kept_fallback_last_kept=True,
+        failure_count_fallback_consecutive=True,
+        zero_job_streak_fallback_consecutive=True,
+        health_score_default=100,
+        health_score_max=None,
+        include_duplicate_rate=True,
+    )
+
+
 def coerce_fetch_report_detail_row(detail: Any) -> dict[str, Any] | None:
     candidate: dict[str, Any] | None = None
     if isinstance(detail, dict):
