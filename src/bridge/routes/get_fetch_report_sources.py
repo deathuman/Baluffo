@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import time
-from typing import Any
+from pathlib import Path
+from typing import Any, Protocol
 
-from src.bridge.api import BridgeApi
 from src.bridge.fetch_report_review_state import load_fetch_report_with_dedup_review_state
 from src.bridge.routes.route_storage_metrics import (
     record_storage_read_metric,
@@ -13,6 +13,14 @@ from src.bridge.routes.route_storage_metrics import (
 )
 from src.bridge.storage_health import get_storage_store, record_storage_diagnostic
 from src.storage import SourceRuntimeStore
+
+
+class FetchReportRouteApi(Protocol):
+    DEDUP_REVIEW_STATE_PATH: Path
+    JOBS_FETCH_REPORT_PATH: Path
+    runtime_config: Any
+
+    def normalize_fetch_report_contract(self, payload: Any) -> dict[str, Any]: ...
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -35,7 +43,7 @@ def _safe_int(value: Any, default: int = 0) -> int:
 
 
 def _record_source_run_diagnostic(
-    api: BridgeApi,
+    api: FetchReportRouteApi,
     *,
     code: str,
     ok: bool,
@@ -52,7 +60,9 @@ def _record_source_run_diagnostic(
     )
 
 
-def _source_runtime_store(api: BridgeApi, *, row_limit: int = 500) -> SourceRuntimeStore | None:
+def _source_runtime_store(
+    api: FetchReportRouteApi, *, row_limit: int = 500
+) -> SourceRuntimeStore | None:
     try:
         return SourceRuntimeStore(
             get_storage_store(storage_metrics_data_dir(api)),
@@ -77,7 +87,7 @@ def _source_runs_mode(runtime_store: SourceRuntimeStore) -> str:
 
 
 def _rollback_source_runs_to_json(
-    api: BridgeApi,
+    api: FetchReportRouteApi,
     runtime_store: SourceRuntimeStore,
     *,
     code: str,
@@ -123,7 +133,7 @@ def _fetch_report_source_count(payload: dict[str, Any]) -> int:
 
 
 def hydrate_fetch_report_sources_from_sqlite(
-    api: BridgeApi,
+    api: FetchReportRouteApi,
     payload: dict[str, Any],
 ) -> dict[str, Any]:
     run_id = _clean_text(payload.get("runId"))
@@ -167,7 +177,7 @@ def hydrate_fetch_report_sources_from_sqlite(
 
 
 def fetch_report_sources_payload(
-    api: BridgeApi,
+    api: FetchReportRouteApi,
     query: dict[str, list[str]],
 ) -> dict[str, Any]:
     started_at = time.perf_counter()

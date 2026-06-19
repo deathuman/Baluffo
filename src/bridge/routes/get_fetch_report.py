@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
-from src.bridge.api import BridgeApi
 from src.bridge.fetch_report_review_state import load_fetch_report_with_dedup_review_state
 from src.bridge.routes.get_fetch_report_sources import (
+    FetchReportRouteApi,
     fetch_report_sources_payload,
     hydrate_fetch_report_sources_from_sqlite,
 )
@@ -43,6 +43,10 @@ from src.shared.partial_json import (
 
 _FETCH_REPORT_SUMMARY_CACHE: dict[str, Any] = {}
 _FETCH_REPORT_SUMMARY_SCAN_MAX_BYTES = 16 * 1024 * 1024
+
+
+class _FetchReportRouteApi(FetchReportRouteApi, Protocol):
+    FETCHER_LOG_PATH: Path
 
 
 def _fetch_report_summary_payload_from_file(path: Any) -> dict[str, Any]:
@@ -113,7 +117,7 @@ def _compact_live_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any
 def _handle_fetch_report_route(
     handler: BridgeResponseWriter,
     *,
-    api: BridgeApi,
+    api: _FetchReportRouteApi,
     query: dict[str, list[str]],
 ) -> bool:
     view = str((query.get("view") or [""])[0] or "").strip().lower()
@@ -171,7 +175,7 @@ def _handle_fetch_report_route(
 def handle_fetch_report_routes(
     handler: BridgeResponseWriter,
     *,
-    api: BridgeApi,
+    api: _FetchReportRouteApi,
     path: str,
     query: dict[str, list[str]],
 ) -> bool:
