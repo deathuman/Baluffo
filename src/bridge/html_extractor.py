@@ -155,7 +155,7 @@ def extract_job_like_links(html: str, base_url: str) -> list[str]:
             continue
         try:
             absolute = urljoin(base_url, raw_href)
-        except Exception:  # noqa: BLE001
+        except (TypeError, ValueError):
             absolute = raw_href
         parsed = urlparse(absolute)
         path = (parsed.path or "").lower()
