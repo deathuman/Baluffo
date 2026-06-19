@@ -55,6 +55,10 @@ def _clean_label(value: Any, *, clean_text_func: Any = _clean_text) -> str:
     return "" if text.lower() in {"n/a", "na", "none"} else text
 
 
+def _clean_pages(pages: Any, *, clean_text_func: Any = _clean_text) -> list[str]:
+    return [clean_text_func(page) for page in as_json_list(pages) if clean_text_func(page)]
+
+
 @dataclass(frozen=True)
 class _SourceRowBaseOptions:
     clean_text_func: Callable[[Any], str]
@@ -593,6 +597,190 @@ def normalize_fetch_report_detail_stats(
         "dead_listing_pages_rejected": _clamped_int(stats.get("dead_listing_pages_rejected"), 0, 0),
         "finish_reason": clean_text_func(stats.get("finish_reason")),
     }
+
+
+def enrich_fetch_report_dead_listing_fields(
+    target: dict[str, Any],
+    src: dict[str, Any],
+    *,
+    clean_text_func: Any = _clean_text,
+) -> None:
+    dead_listing_page_count = _clamped_int(src.get("deadListingPageCount"), 0, 0)
+    if dead_listing_page_count > 0:
+        target["deadListingPageCount"] = dead_listing_page_count
+    dead_listing_page_examples = as_json_list(src.get("deadListingPageExamples"))
+    if dead_listing_page_examples:
+        cleaned_examples = [
+            clean_text_func(item) for item in dead_listing_page_examples if clean_text_func(item)
+        ]
+        if cleaned_examples:
+            target["deadListingPageExamples"] = cleaned_examples[:5]
+
+
+def enrich_jobs_fetch_report_provider_migration_fields(
+    target: dict[str, Any],
+    src: dict[str, Any],
+    *,
+    clean_text_func: Any = _clean_text,
+    normalize_text_func: Any | None = _normalize_text,
+) -> None:
+    normalize = normalize_text_func or clean_text_func
+    if normalize(src.get("adapter")) in {"static", "scrapy_static", "social", "csv", "html"}:
+        return
+    for key in (
+        "migrationSourceIdentity",
+        "detectedProviderFamily",
+        "detectedProviderUrl",
+        "detectedProviderId",
+    ):
+        value = clean_text_func(src.get(key))
+        if value:
+            target[key] = value
+    if "createdFromAdvisory" in src:
+        target["createdFromAdvisory"] = bool(src.get("createdFromAdvisory"))
+    if "migrationConfidence" in src:
+        target["migrationConfidence"] = _clamped_int(src.get("migrationConfidence"), 0, 0)
+    reasons = as_json_list(src.get("migrationReasons"))
+    if reasons:
+        target["migrationReasons"] = [
+            clean_text_func(item) for item in reasons if clean_text_func(item)
+        ]
+
+
+def enrich_jobs_fetch_report_site_changed_url_surface(
+    target: dict[str, Any],
+    src: dict[str, Any],
+    *,
+    failure_bucket: str,
+    clean_text_func: Any = _clean_text,
+    normalize_text_func: Any | None = _normalize_text,
+) -> None:
+    normalize = normalize_text_func or clean_text_func
+    if normalize(src.get("adapter")) == "static" and failure_bucket == "site_changed":
+        listing_url = clean_text_func(src.get("listingUrl"))
+        if listing_url:
+            target["listingUrl"] = listing_url
+        clean_pages = _clean_pages(src.get("pages"), clean_text_func=clean_text_func)
+        if clean_pages:
+            target["pages"] = clean_pages
+        source_id = clean_text_func(src.get("sourceId"))
+        if source_id:
+            target["sourceId"] = source_id
+    if (
+        clean_text_func(src.get("name")) in {"greenhouse_boards", "workable_sources"}
+        and failure_bucket == "site_changed"
+    ):
+        provider_url = clean_text_func(src.get("providerUrl"))
+        if provider_url:
+            target["providerUrl"] = provider_url
+
+
+def normalize_jobs_fetch_report_detail_item(
+    item: dict[str, Any],
+    *,
+    clean_text_func: Any = _clean_text,
+    normalize_text_func: Any | None = _normalize_text,
+) -> dict[str, Any]:
+    normalize = normalize_text_func or clean_text_func
+    clean_item: dict[str, Any] = {
+        "adapter": clean_text_func(item.get("adapter")),
+        "studio": clean_text_func(item.get("studio")),
+        "name": clean_text_func(item.get("name")),
+        "status": normalize(item.get("status")) or "error",
+        "fetchedCount": _clamped_int(item.get("fetchedCount"), 0, 0),
+        "keptCount": _clamped_int(item.get("keptCount"), 0, 0),
+        "durationMs": _clamped_int(item.get("durationMs"), 0, 0),
+        "fetchMs": _clamped_int(item.get("fetchMs"), 0, 0),
+        "parseMs": _clamped_int(item.get("parseMs"), 0, 0),
+        "error": clean_text_func(item.get("error")),
+        "classification": clean_text_func(item.get("classification")) or "",
+        "browserFallbackRecommended": bool(item.get("browserFallbackRecommended")),
+    }
+    enrich_fetch_report_source_row_metadata(
+        clean_item,
+        item,
+        clean_text_func=clean_text_func,
+    )
+
+    item_bucket = _clean_label(item.get("failureBucket"), clean_text_func=clean_text_func)
+    if item_bucket:
+        clean_item["failureBucket"] = item_bucket
+    item_zk = _clean_label(item.get("zeroKeptClassification"), clean_text_func=clean_text_func)
+    if item_zk:
+        clean_item["zeroKeptClassification"] = item_zk
+
+    enrich_jobs_fetch_report_provider_migration_fields(
+        clean_item,
+        item,
+        clean_text_func=clean_text_func,
+        normalize_text_func=normalize_text_func,
+    )
+    enrich_fetch_report_dead_listing_fields(
+        clean_item,
+        item,
+        clean_text_func=clean_text_func,
+    )
+
+    top_reject_reasons = as_json_list(item.get("top_reject_reasons"))
+    if top_reject_reasons:
+        clean_item["top_reject_reasons"] = [
+            clean_text_func(reason) for reason in top_reject_reasons if clean_text_func(reason)
+        ][:5]
+
+    stats = as_json_object(item.get("stats"))
+    if stats:
+        clean_item["stats"] = normalize_fetch_report_detail_stats(
+            stats,
+            clean_text_func=clean_text_func,
+        )
+    loss = as_json_object(item.get("loss"))
+    if loss:
+        clean_item["loss"] = normalize_fetch_report_loss(
+            loss,
+            clean_text_func=clean_text_func,
+        )
+
+    source_id = clean_text_func(item.get("sourceId"))
+    if source_id:
+        clean_item["sourceId"] = source_id
+    slug = clean_text_func(item.get("slug"))
+    if slug:
+        clean_item["slug"] = slug
+    provider_url = clean_text_func(item.get("providerUrl"))
+    if provider_url:
+        clean_item["providerUrl"] = provider_url
+    clean_pages = _clean_pages(item.get("pages"), clean_text_func=clean_text_func)
+    if clean_pages:
+        clean_item["pages"] = clean_pages
+    return clean_item
+
+
+def apply_jobs_fetch_report_details(
+    target: dict[str, Any],
+    src: dict[str, Any],
+    *,
+    clean_text_func: Any = _clean_text,
+    normalize_text_func: Any | None = _normalize_text,
+) -> None:
+    details = as_json_list(src.get("details"))
+    if not details:
+        return
+    clean_details: list[Any] = []
+    for item in details:
+        if isinstance(item, dict):
+            clean_details.append(
+                normalize_jobs_fetch_report_detail_item(
+                    item,
+                    clean_text_func=clean_text_func,
+                    normalize_text_func=normalize_text_func,
+                )
+            )
+            continue
+        text = clean_text_func(item)
+        if text:
+            clean_details.append(text)
+    if clean_details:
+        target["details"] = clean_details
 
 
 def coerce_fetch_report_detail_row(detail: Any) -> dict[str, Any] | None:

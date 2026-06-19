@@ -1,19 +1,29 @@
 from src.jobs.common.contracts_source_reports import normalize_source_report_row
-from src.jobs.text_utils import clean_text
+from src.jobs.text_utils import clean_text, norm_text
 from src.shared.fetch_report_normalization import (
+    apply_jobs_fetch_report_details,
+    enrich_fetch_report_dead_listing_fields,
     enrich_fetch_report_source_row_metadata,
+    enrich_jobs_fetch_report_site_changed_url_surface,
     enrich_jobs_fetch_report_source_row_fields,
     normalize_fetch_report_detail_stats,
     normalize_fetch_report_loss,
     normalize_fetch_report_stage_timings,
+    normalize_jobs_fetch_report_detail_item,
 )
 
 
 def test_jobs_source_report_row_uses_shared_field_enrichment() -> None:
     row = {
         "name": "Source A",
+        "adapter": "static",
         "status": "OK",
         "keptCount": 1,
+        "failureBucket": "site_changed",
+        "listingUrl": "https://example.com/jobs",
+        "pages": [" https://example.com/jobs/1 ", ""],
+        "sourceId": "source-a",
+        "providerUrl": "https://provider.example/source-a",
         "browserEscalationEligible": True,
         "browserEscalationEnabled": False,
         "browserEscalationEligibilityReason": "js_required",
@@ -47,6 +57,8 @@ def test_jobs_source_report_row_uses_shared_field_enrichment() -> None:
         "subsourceCacheDecisionCounts": {"run_now": "2"},
         "subsourceNotModifiedCount": "1",
         "subsourceRefreshedCount": "2",
+        "deadListingPageCount": "2",
+        "deadListingPageExamples": [" https://example.com/dead ", ""],
         "stageTimingsMs": {
             "fetchAndParse": "10",
             "listingFetch": "11",
@@ -68,7 +80,22 @@ def test_jobs_source_report_row_uses_shared_field_enrichment() -> None:
         "details": [
             {
                 "name": "detail-a",
+                "adapter": "greenhouse",
                 "status": "OK",
+                "migrationSourceIdentity": "greenhouse:123",
+                "detectedProviderFamily": "greenhouse",
+                "detectedProviderUrl": "https://boards.greenhouse.io/source-a",
+                "detectedProviderId": "123",
+                "createdFromAdvisory": True,
+                "migrationConfidence": "91",
+                "migrationReasons": [" provider_match ", ""],
+                "top_reject_reasons": ["missing_title:2", ""],
+                "sourceId": "detail-source-a",
+                "slug": "detail-a",
+                "providerUrl": "https://provider.example/detail-a",
+                "pages": [" https://example.com/detail-a ", ""],
+                "deadListingPageCount": "1",
+                "deadListingPageExamples": [" https://example.com/dead-detail "],
                 "browserEscalationEligible": True,
                 "browserEscalationEligibilityReason": "js_required",
                 "cacheDecision": "skip_fresh",
@@ -107,6 +134,14 @@ def test_jobs_source_report_row_uses_shared_field_enrichment() -> None:
 
     for key, value in shared_enrichment.items():
         assert normalized[key] == value
+    dead_listing_enrichment: dict[str, object] = {}
+    enrich_fetch_report_dead_listing_fields(
+        dead_listing_enrichment,
+        row,
+        clean_text_func=clean_text,
+    )
+    for key, value in dead_listing_enrichment.items():
+        assert normalized[key] == value
 
     detail_enrichment: dict[str, object] = {}
     enrich_fetch_report_source_row_metadata(
@@ -116,6 +151,29 @@ def test_jobs_source_report_row_uses_shared_field_enrichment() -> None:
     )
     for key, value in detail_enrichment.items():
         assert normalized["details"][0][key] == value
+    shared_details: dict[str, object] = {}
+    apply_jobs_fetch_report_details(
+        shared_details,
+        row,
+        clean_text_func=clean_text,
+        normalize_text_func=norm_text,
+    )
+    assert normalized["details"] == shared_details["details"]
+    assert normalized["details"][0] == normalize_jobs_fetch_report_detail_item(
+        row["details"][0],
+        clean_text_func=clean_text,
+        normalize_text_func=norm_text,
+    )
+    site_changed_enrichment: dict[str, object] = {}
+    enrich_jobs_fetch_report_site_changed_url_surface(
+        site_changed_enrichment,
+        row,
+        failure_bucket="site_changed",
+        clean_text_func=clean_text,
+        normalize_text_func=norm_text,
+    )
+    for key, value in site_changed_enrichment.items():
+        assert normalized[key] == value
     assert normalized["stageTimingsMs"] == normalize_fetch_report_stage_timings(row)
     assert normalized["loss"] == normalize_fetch_report_loss(
         row["loss"], clean_text_func=clean_text

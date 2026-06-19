@@ -17,94 +17,21 @@ from src.jobs.common.taxonomy import (
 )
 from src.jobs.text_utils import clean_text, norm_text
 from src.shared.fetch_report_normalization import (
-    enrich_fetch_report_source_row_metadata,
+    apply_jobs_fetch_report_details,
+    enrich_fetch_report_dead_listing_fields,
+    enrich_jobs_fetch_report_provider_migration_fields,
+    enrich_jobs_fetch_report_site_changed_url_surface,
     enrich_jobs_fetch_report_source_row_fields,
-    normalize_fetch_report_detail_stats,
     normalize_fetch_report_loss,
     normalize_fetch_report_stage_timings,
     normalize_jobs_fetch_report_source_row_base,
 )
-from src.shared.json_shapes import as_json_list, as_json_object
+from src.shared.json_shapes import as_json_object
 
 
 def _clean_label(value: Any) -> str:
     text = clean_text(value)
     return "" if text.lower() in {"n/a", "na", "none"} else text
-
-
-def _clean_pages(pages: Any) -> list[str]:
-    return [clean_text(page) for page in as_json_list(pages) if clean_text(page)]
-
-
-def _normalize_dead_listing_fields(target: dict[str, Any], src: dict[str, Any]) -> None:
-    dead_listing_page_count = _clamped_int(src.get("deadListingPageCount"), 0, 0)
-    if dead_listing_page_count > 0:
-        target["deadListingPageCount"] = dead_listing_page_count
-    dead_listing_page_examples = as_json_list(src.get("deadListingPageExamples"))
-    if dead_listing_page_examples:
-        cleaned_examples = [
-            clean_text(item) for item in dead_listing_page_examples if clean_text(item)
-        ]
-        if cleaned_examples:
-            target["deadListingPageExamples"] = cleaned_examples[:5]
-
-
-def _normalize_detail_item(item: dict[str, Any]) -> dict[str, Any]:
-    clean_item: dict[str, Any] = {
-        "adapter": clean_text(item.get("adapter")),
-        "studio": clean_text(item.get("studio")),
-        "name": clean_text(item.get("name")),
-        "status": norm_text(item.get("status")) or "error",
-        "fetchedCount": _clamped_int(item.get("fetchedCount"), 0, 0),
-        "keptCount": _clamped_int(item.get("keptCount"), 0, 0),
-        "durationMs": _clamped_int(item.get("durationMs"), 0, 0),
-        "fetchMs": _clamped_int(item.get("fetchMs"), 0, 0),
-        "parseMs": _clamped_int(item.get("parseMs"), 0, 0),
-        "error": clean_text(item.get("error")),
-        "classification": clean_text(item.get("classification")) or "",
-        "browserFallbackRecommended": bool(item.get("browserFallbackRecommended")),
-    }
-    enrich_fetch_report_source_row_metadata(clean_item, item, clean_text_func=clean_text)
-
-    item_bucket = _clean_label(item.get("failureBucket"))
-    if item_bucket:
-        clean_item["failureBucket"] = item_bucket
-    item_zk = _clean_label(item.get("zeroKeptClassification"))
-    if item_zk:
-        clean_item["zeroKeptClassification"] = item_zk
-
-    _apply_provider_migration_fields(clean_item, item)
-    _normalize_dead_listing_fields(clean_item, item)
-
-    top_reject_reasons = as_json_list(item.get("top_reject_reasons"))
-    if top_reject_reasons:
-        clean_item["top_reject_reasons"] = [
-            clean_text(reason) for reason in top_reject_reasons if clean_text(reason)
-        ][:5]
-
-    stats = as_json_object(item.get("stats"))
-    if stats:
-        clean_item["stats"] = normalize_fetch_report_detail_stats(
-            stats,
-            clean_text_func=clean_text,
-        )
-    loss = as_json_object(item.get("loss"))
-    if loss:
-        clean_item["loss"] = normalize_fetch_report_loss(loss, clean_text_func=clean_text)
-
-    source_id = clean_text(item.get("sourceId"))
-    if source_id:
-        clean_item["sourceId"] = source_id
-    slug = clean_text(item.get("slug"))
-    if slug:
-        clean_item["slug"] = slug
-    provider_url = clean_text(item.get("providerUrl"))
-    if provider_url:
-        clean_item["providerUrl"] = provider_url
-    clean_pages = _clean_pages(item.get("pages"))
-    if clean_pages:
-        clean_item["pages"] = clean_pages
-    return clean_item
 
 
 def _zero_kept_context(
@@ -211,67 +138,6 @@ def _apply_dynamic_redundant_provider_fields(target: dict[str, Any], src: dict[s
             target[key] = _clamped_int(src.get(key), 0, 0)
 
 
-def _apply_provider_migration_fields(target: dict[str, Any], src: dict[str, Any]) -> None:
-    if norm_text(src.get("adapter")) in {"static", "scrapy_static", "social", "csv", "html"}:
-        return
-    for key in (
-        "migrationSourceIdentity",
-        "detectedProviderFamily",
-        "detectedProviderUrl",
-        "detectedProviderId",
-    ):
-        value = clean_text(src.get(key))
-        if value:
-            target[key] = value
-    if "createdFromAdvisory" in src:
-        target["createdFromAdvisory"] = bool(src.get("createdFromAdvisory"))
-    if "migrationConfidence" in src:
-        target["migrationConfidence"] = _clamped_int(src.get("migrationConfidence"), 0, 0)
-    reasons = as_json_list(src.get("migrationReasons"))
-    if reasons:
-        target["migrationReasons"] = [clean_text(item) for item in reasons if clean_text(item)]
-
-
-def _apply_site_changed_url_surface(
-    target: dict[str, Any],
-    src: dict[str, Any],
-    failure_bucket: str,
-) -> None:
-    if norm_text(src.get("adapter")) == "static" and failure_bucket == "site_changed":
-        listing_url = clean_text(src.get("listingUrl"))
-        if listing_url:
-            target["listingUrl"] = listing_url
-        clean_pages = _clean_pages(src.get("pages"))
-        if clean_pages:
-            target["pages"] = clean_pages
-        source_id = clean_text(src.get("sourceId"))
-        if source_id:
-            target["sourceId"] = source_id
-    if (
-        clean_text(src.get("name")) in {"greenhouse_boards", "workable_sources"}
-        and failure_bucket == "site_changed"
-    ):
-        provider_url = clean_text(src.get("providerUrl"))
-        if provider_url:
-            target["providerUrl"] = provider_url
-
-
-def _apply_details(target: dict[str, Any], src: dict[str, Any]) -> None:
-    details = as_json_list(src.get("details"))
-    if not details:
-        return
-    clean_details: list[Any] = []
-    for item in details:
-        if isinstance(item, dict):
-            clean_details.append(_normalize_detail_item(item))
-            continue
-        text = clean_text(item)
-        if text:
-            clean_details.append(text)
-    if clean_details:
-        target["details"] = clean_details
-
-
 def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
     src = as_json_object(row)
     normalized = normalize_jobs_fetch_report_source_row_base(
@@ -282,7 +148,7 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
 
     failure_bucket, _, _ = _apply_zero_kept_classification(normalized, src)
 
-    _normalize_dead_listing_fields(normalized, src)
+    enrich_fetch_report_dead_listing_fields(normalized, src, clean_text_func=clean_text)
     enrich_jobs_fetch_report_source_row_fields(
         normalized,
         src,
@@ -290,8 +156,24 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
     )
     _apply_stage_loss_and_exclusion_fields(normalized, src)
     _apply_dynamic_redundant_provider_fields(normalized, src)
-    _apply_provider_migration_fields(normalized, src)
-    _apply_site_changed_url_surface(normalized, src, failure_bucket)
-    _apply_details(normalized, src)
+    enrich_jobs_fetch_report_provider_migration_fields(
+        normalized,
+        src,
+        clean_text_func=clean_text,
+        normalize_text_func=norm_text,
+    )
+    enrich_jobs_fetch_report_site_changed_url_surface(
+        normalized,
+        src,
+        failure_bucket=failure_bucket,
+        clean_text_func=clean_text,
+        normalize_text_func=norm_text,
+    )
+    apply_jobs_fetch_report_details(
+        normalized,
+        src,
+        clean_text_func=clean_text,
+        normalize_text_func=norm_text,
+    )
 
     return normalized
