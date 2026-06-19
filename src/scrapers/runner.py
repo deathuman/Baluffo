@@ -27,6 +27,8 @@ from src.scrapers.providers.jobylon_v1 import extract_jobylon_v1_jobs
 from src.scrapers.settings import SCRAPY_PLAYWRIGHT_SETTINGS, SCRAPY_SETTINGS_DEFAULTS
 from src.scrapers.spiders.generic_careers import GenericCareersSpider
 
+_EXPECTED_CRAWL_EXCEPTIONS = (OSError, RuntimeError, TimeoutError, ValueError)
+
 
 def _source_id(name: str, studio: str, pages: list[str]) -> str:
     seed = "|".join([_clean_text(name), _clean_text(studio), *[_clean_text(p) for p in pages]])
@@ -349,7 +351,7 @@ def _run_scrapy(validated: dict[str, Any]) -> dict[str, Any]:
             use_browser=use_browser,
         )
         crawler_process.start(stop_after_crawl=True)
-    except Exception as exc:  # noqa: BLE001
+    except _EXPECTED_CRAWL_EXCEPTIONS as exc:
         ok = False
         error_text = f"{source_name}: crawl failed: {exc}"
         partial_errors.append(error_text)
