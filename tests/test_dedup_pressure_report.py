@@ -336,6 +336,32 @@ def test_dedup_pressure_report_fails_cleanly_without_fetch_report(tmp_path: Path
         dedup_pressure_report.build_dedup_pressure_summary(repo_root=tmp_path)
 
 
+def test_dedup_pressure_report_main_reports_expected_artifact_failures(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    exit_code = dedup_pressure_report.main(["--repo-root", str(tmp_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "jobs-fetch-report.json" in captured.err
+
+
+def test_dedup_pressure_report_main_does_not_hide_programming_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _raise_unexpected_failure(**_kwargs: object) -> dict[str, object]:
+        raise AssertionError("unexpected dedup report bug")
+
+    monkeypatch.setattr(
+        dedup_pressure_report,
+        "build_dedup_pressure_summary",
+        _raise_unexpected_failure,
+    )
+
+    with pytest.raises(AssertionError, match="unexpected dedup report bug"):
+        dedup_pressure_report.main(["--repo-root", str(tmp_path)])
+
+
 def test_dedup_pressure_report_json_output(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

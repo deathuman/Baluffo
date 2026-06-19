@@ -20,6 +20,7 @@ if str(REPO_ROOT) not in sys.path:
 from src.url_hosts import url_host_matches_domain
 
 FETCH_REPORT_NAME = "jobs-fetch-report.json"
+_EXPECTED_CLI_FAILURES = (OSError, TypeError, ValueError)
 PARSER_DIRECTORY_CAUSES = {
     "parser_or_directory_text_pollution",
     "category_or_department_bucket",
@@ -497,7 +498,7 @@ def main(argv: list[str] | None = None) -> int:
             repo_root=Path(str(args.repo_root)),
             limit=int(args.limit),
         )
-    except Exception as exc:  # noqa: BLE001
+    except _EXPECTED_CLI_FAILURES as exc:
         print(str(exc), file=sys.stderr)
         return 1
     if args.json:

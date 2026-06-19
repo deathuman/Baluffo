@@ -26,6 +26,7 @@ FETCH_REPORT_NAME = "jobs-fetch-report.json"
 JOBS_UNIFIED_NAME = "jobs-unified.json"
 PARSER_REGRESSION_QUEUE_NAME = "jobs-parser-regression-queue.json"
 BROWSER_FALLBACK_QUEUE_NAME = "jobs-browser-fallback-queue.json"
+_EXPECTED_CLI_FAILURES = (OSError, TypeError, ValueError)
 
 
 def _read_json(path: Path) -> Any:
@@ -352,7 +353,7 @@ def main(argv: list[str] | None = None) -> int:
         summary = build_latest_run_summary(
             repo_root=Path(str(args.repo_root)), limit=int(args.limit)
         )
-    except Exception as exc:  # noqa: BLE001
+    except _EXPECTED_CLI_FAILURES as exc:
         print(str(exc), file=sys.stderr)
         return 1
     if args.json:

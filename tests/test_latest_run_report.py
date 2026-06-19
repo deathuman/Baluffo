@@ -273,6 +273,32 @@ def test_latest_run_report_fails_cleanly_without_fetch_report(tmp_path: Path) ->
         latest_run_report.build_latest_run_summary(repo_root=tmp_path)
 
 
+def test_latest_run_report_main_reports_expected_artifact_failures(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    exit_code = latest_run_report.main(["--repo-root", str(tmp_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "jobs-fetch-report.json" in captured.err
+
+
+def test_latest_run_report_main_does_not_hide_programming_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _raise_unexpected_failure(**_kwargs: object) -> dict[str, object]:
+        raise AssertionError("unexpected latest-run report bug")
+
+    monkeypatch.setattr(
+        latest_run_report,
+        "build_latest_run_summary",
+        _raise_unexpected_failure,
+    )
+
+    with pytest.raises(AssertionError, match="unexpected latest-run report bug"):
+        latest_run_report.main(["--repo-root", str(tmp_path)])
+
+
 def test_latest_run_report_json_output(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     root = tmp_path / "data"
     _write_report_bundle(

@@ -483,6 +483,31 @@ def enrich_jobs_fetch_report_source_row_fields(
     )
 
 
+def _infer_zero_kept_failure_bucket(
+    context: Any,
+    *,
+    zero_kept_classification: str,
+    assess_zero_extract_func: Any,
+    failure_bucket_from_zero_extract_assessment_func: Any,
+    legit_empty_classification: Any,
+    unknown_failure_value: str,
+    no_openings_value: str,
+    needs_review_value: str,
+) -> str:
+    legit_empty_value = _enum_value(legit_empty_classification)
+    assessment = assess_zero_extract_func(context)
+    inferred_bucket = failure_bucket_from_zero_extract_assessment_func(
+        assessment,
+        legit_empty_classification if zero_kept_classification == legit_empty_value else None,
+    )
+    inferred_value = _enum_value(inferred_bucket)
+    if inferred_value and inferred_value != unknown_failure_value:
+        return inferred_value
+    if zero_kept_classification == legit_empty_value:
+        return no_openings_value
+    return needs_review_value
+
+
 def apply_jobs_fetch_report_zero_kept_classification(
     normalized: dict[str, Any],
     src: dict[str, Any],
@@ -529,20 +554,18 @@ def apply_jobs_fetch_report_zero_kept_classification(
         if not zero_kept_classification:
             zero_kept_classification = _enum_value(classify_zero_kept_func(context))
         if not failure_bucket:
-            assessment = assess_zero_extract_func(context)
-            inferred_bucket = failure_bucket_from_zero_extract_assessment_func(
-                assessment,
-                legit_empty_classification
-                if zero_kept_classification == legit_empty_value
-                else None,
+            failure_bucket = _infer_zero_kept_failure_bucket(
+                context,
+                zero_kept_classification=zero_kept_classification,
+                assess_zero_extract_func=assess_zero_extract_func,
+                failure_bucket_from_zero_extract_assessment_func=(
+                    failure_bucket_from_zero_extract_assessment_func
+                ),
+                legit_empty_classification=legit_empty_classification,
+                unknown_failure_value=unknown_failure_value,
+                no_openings_value=no_openings_value,
+                needs_review_value=needs_review_value,
             )
-            inferred_value = _enum_value(inferred_bucket)
-            if inferred_value and inferred_value != unknown_failure_value:
-                failure_bucket = inferred_value
-            elif zero_kept_classification == legit_empty_value:
-                failure_bucket = no_openings_value
-            else:
-                failure_bucket = needs_review_value
 
     if failure_bucket:
         normalized["failureBucket"] = failure_bucket
