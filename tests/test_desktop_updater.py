@@ -9,6 +9,7 @@ import pytest
 from src.ship import desktop_update_shared as du_shared
 from src.ship import desktop_update_state as update_state
 from src.ship import desktop_updater as updater
+from src.ship import desktop_updater_install as updater_install
 from src.ship import desktop_updater_release as updater_release
 from src.ship.desktop_update_constants import MANIFEST_CACHE_FILE
 from tests.helpers.temp_paths import workspace_tmpdir
@@ -606,7 +607,7 @@ def test_verify_target_startup_retries_after_transient_bridge_refusal(monkeypatc
             ]
         )
         monotonic_values = iter((0.0, 0.0, 1.0))
-        monkeypatch.setattr(updater, "fetch_json", health_calls)
+        monkeypatch.setattr(updater_install, "fetch_json", health_calls)
         monkeypatch.setattr(updater.time, "monotonic", lambda: next(monotonic_values))
         monkeypatch.setattr(updater.time, "sleep", lambda _seconds: None)
 

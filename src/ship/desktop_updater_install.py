@@ -216,7 +216,6 @@ def _sync_extract_to_install(install_root: Path, extracted_root: Path) -> None:
 
 
 def _verify_target_startup(plan: dict[str, Any], *, timeout_s: float = 90.0) -> None:
-    module = _module()
     session_root = Path(str(plan.get("desktopSessionRoot") or "")).expanduser().resolve()
     session_state_path = session_root / "desktop-session.json"
     install_root = Path(str(plan.get("installRoot") or "")).expanduser().resolve()
@@ -242,7 +241,7 @@ def _verify_target_startup(plan: dict[str, Any], *, timeout_s: float = 90.0) -> 
             _time.sleep(1.0)
             continue
         try:
-            health = module.fetch_json(f"http://127.0.0.1:{bridge_port}/ops/health", timeout_s=5.0)
+            health = fetch_json(f"http://127.0.0.1:{bridge_port}/ops/health", timeout_s=5.0)
         except (OSError, ValueError, urllib.error.URLError, json.JSONDecodeError):
             _time.sleep(1.0)
             continue

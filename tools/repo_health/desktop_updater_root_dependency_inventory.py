@@ -20,8 +20,8 @@ TRACKED_IMPORT_MODULES = {
     "desktop_updater_install",
 }
 
-EXPECTED_DEPENDENCY_COUNT = 12
-EXPECTED_REFERENCE_COUNT = 23
+EXPECTED_DEPENDENCY_COUNT = 11
+EXPECTED_REFERENCE_COUNT = 22
 
 CATEGORIES = {
     "constant",
@@ -59,9 +59,7 @@ INSTALL_HELPERS = {
     "_wait_for_launcher_exit",
 }
 
-SHARED_HELPERS = {
-    "fetch_json",
-}
+SHARED_HELPERS: set[str] = set()
 STATE_HELPERS: set[str] = set()
 
 UPDATE_MANAGER_COMPAT = {"update_manager"}

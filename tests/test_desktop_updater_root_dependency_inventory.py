@@ -53,6 +53,7 @@ def test_current_desktop_updater_root_dependency_inventory_is_complete() -> None
         "compute_sha256",
         "desktop_update_public_key_candidate_paths",
         "download_file",
+        "fetch_json",
         "install_stage_label",
         "iso_now",
         "load_desktop_update_public_keys",
@@ -67,11 +68,6 @@ def test_current_desktop_updater_root_dependency_inventory_is_complete() -> None
         "verify_manifest_signature",
         "write_json_atomic",
     }.isdisjoint(by_name)
-    assert by_name["fetch_json"].categories == (
-        "facade-monkeypatch-compat",
-        "mutable-compat-hook",
-        "shared-helper",
-    )
     assert by_name["_sync_extract_to_install"].categories == (
         "facade-monkeypatch-compat",
         "install-helper",
