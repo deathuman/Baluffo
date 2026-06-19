@@ -28,6 +28,7 @@ BridgeLogFunc = Callable[..., None]
 SaveJsonAtomicFunc = Callable[[Path, Any], None]
 RecordTaskEventFunc = Callable[[dict[str, Any]], None]
 UpsertSyncRunFunc = Callable[[dict[str, Any]], None]
+_EXPECTED_SYNC_TASK_FAILURE_EXCEPTIONS = (OSError, RuntimeError, ValueError)
 
 
 class PruneStartedRowsFunc(Protocol):
@@ -335,7 +336,7 @@ def run_sync_task_worker(
                 run_sync_push, progress_callback=progress_callback
             )
             status = _apply_push_result_summary(result, summary)
-    except Exception as exc:  # noqa: BLE001
+    except _EXPECTED_SYNC_TASK_FAILURE_EXCEPTIONS as exc:
         status = "error"
         summary["error"] = str(exc)
         error_code = str(getattr(exc, "code", "") or "").strip()
