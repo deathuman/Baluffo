@@ -82,8 +82,8 @@ from src.pipeline_io import (
     write_hot_text_if_changed,
     write_text_if_changed,
 )
-from src.shared.json_shapes import json_object_rows
-from src.shared.utils import _as_list, now_iso
+from src.shared.json_shapes import as_json_list, json_object_rows
+from src.shared.utils import now_iso
 
 from .common import config as common_config
 from .common import health as health_module
@@ -592,7 +592,7 @@ def _load_social_review_rows(social_review_path) -> list[Any]:
         return []
     if not isinstance(loaded_review, dict):
         return []
-    return _as_list(loaded_review.get("rows"))
+    return as_json_list(loaded_review.get("rows"))
 
 
 def _merge_social_review_rows(

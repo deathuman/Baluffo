@@ -21,7 +21,7 @@ from src.jobs.common.taxonomy import (
 from src.jobs.models import CanonicalJob
 from src.jobs.text_utils import clean_text, norm_text
 from src.jobs_fetcher_registry import SOURCE_REPORT_META
-from src.shared.utils import _as_dict, _as_dict_rows, _as_list
+from src.shared.json_shapes import as_json_list, as_json_object, json_object_rows
 
 from .reporting_summary import format_source_error
 from .state_source_records import source_rows_fingerprint
@@ -371,7 +371,7 @@ def _apply_diagnostics(
     root_module: _PipelineSourceResultsRoot,
     report: dict[str, Any],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    diag = _as_dict(root_module.SOURCE_DIAGNOSTICS.get(name))
+    diag = as_json_object(root_module.SOURCE_DIAGNOSTICS.get(name))
     if clean_text(diag.get("adapter")):
         report["adapter"] = clean_text(diag.get("adapter"))
     if clean_text(diag.get("studio")):
@@ -382,7 +382,7 @@ def _apply_diagnostics(
     details = diag.get("details")
     if isinstance(details, list) and details:
         report["details"] = details
-    return diag, _as_dict_rows(details)
+    return diag, json_object_rows(details)
 
 
 def _apply_detail_cache_counts(
@@ -451,7 +451,7 @@ def _static_detail_stats(detail_rows: list[dict[str, Any]]) -> dict[str, int]:
         "detail_pages_skipped_by_adaptive_stop": 0,
     }
     for detail in detail_rows:
-        stats = _as_dict(detail.get("stats"))
+        stats = as_json_object(detail.get("stats"))
         for key in totals:
             totals[key] += int(stats.get(key) or 0)
     return totals
@@ -474,7 +474,7 @@ def _apply_static_stage_timings(
         }
     )
     for detail in detail_rows:
-        stats = _as_dict(detail.get("stats"))
+        stats = as_json_object(detail.get("stats"))
         stats["domain_gate_wait_ms"] = int(totals["domain_gate_wait_ms"])
         stats["domain_gate_wait_count"] = int(totals["domain_gate_wait_count"])
         stats["listing_batch_count"] = int(totals["listing_batch_count"])
@@ -491,7 +491,7 @@ def _apply_static_stage_timings(
             gate_wait_ms = 0
             gate_wait_count = 0
     if detail_rows:
-        first_stats = _as_dict(detail_rows[0].get("stats"))
+        first_stats = as_json_object(detail_rows[0].get("stats"))
         first_stats["domain_gate_wait_ms"] = int(gate_wait_ms)
         first_stats["domain_gate_wait_count"] = int(gate_wait_count)
         first_stats["listing_batch_count"] = int(totals["listing_batch_count"])
@@ -509,7 +509,7 @@ def _apply_csv_stage_timings(
 ) -> None:
     parse_csv_ms = 0
     for detail in detail_rows:
-        stats = _as_dict(detail.get("stats"))
+        stats = as_json_object(detail.get("stats"))
         parse_csv_ms += int(stats.get("parse_csv_ms") or 0)
         if google_sheet_redirect_stats:
             stats["redirect_candidates"] = int(
@@ -564,7 +564,7 @@ def _apply_stage_timings(
     canonicalization_ms: int,
     google_sheet_redirect_stats: dict[str, int],
 ) -> None:
-    stage_timings = _as_dict(report.get("stageTimingsMs"))
+    stage_timings = as_json_object(report.get("stageTimingsMs"))
     stage_timings["fetchAndParse"] = int(fetch_and_parse_ms)
     if adapter_name == "static":
         _apply_static_stage_timings(
@@ -592,7 +592,7 @@ def _apply_partial_errors_and_low_confidence(
     report: dict[str, Any],
 ) -> None:
     partial_errors = [
-        clean_text(err) for err in _as_list(diag.get("partialErrors")) if clean_text(err)
+        clean_text(err) for err in as_json_list(diag.get("partialErrors")) if clean_text(err)
     ]
     if partial_errors:
         report["error"] = "; ".join(format_source_error(name, err) for err in partial_errors[:6])
@@ -603,9 +603,9 @@ def _apply_scrapy_loss(detail_rows: list[dict[str, Any]], report_loss: dict[str,
     runner_rejected = 0
     parent_invalid = 0
     for detail in detail_rows:
-        stats = _as_dict(detail.get("stats"))
+        stats = as_json_object(detail.get("stats"))
         runner_rejected += int(stats.get("jobs_rejected_validation") or 0)
-        loss_detail = _as_dict(detail.get("loss"))
+        loss_detail = as_json_object(detail.get("loss"))
         parent_invalid += int(loss_detail.get("scrapyParentInvalidPayload") or 0)
     report_loss["scrapyRunnerRejectedValidation"] = int(runner_rejected)
     report_loss["scrapyParentInvalidPayload"] = int(parent_invalid)
@@ -616,7 +616,7 @@ def _apply_static_loss(detail_rows: list[dict[str, Any]], report_loss: dict[str,
     static_dup = 0
     static_empty = 0
     for detail in detail_rows:
-        loss_detail = _as_dict(detail.get("loss"))
+        loss_detail = as_json_object(detail.get("loss"))
         static_non_job += int(loss_detail.get("staticNonJobUrlRejected") or 0)
         static_dup += int(loss_detail.get("staticDuplicateLinkRejected") or 0)
         static_empty += int(loss_detail.get("staticDetailParseEmpty") or 0)
@@ -681,9 +681,9 @@ def execute_loader(
 ) -> tuple[dict[str, Any], list[CanonicalJob]]:
     root_module = _require_root()
     source_started = time.perf_counter()
-    base_meta = _as_dict(SOURCE_REPORT_META.get(name))
+    base_meta = as_json_object(SOURCE_REPORT_META.get(name))
     report = _build_initial_report(name=name, base_meta=base_meta, root_module=root_module)
-    report_loss = _as_dict(report.get("loss"))
+    report_loss = as_json_object(report.get("loss"))
     adapter_name = norm_text(report.get("adapter"))
     canonical_batch: list[CanonicalJob] = []
     heartbeat_callback, progress_callback = _build_loader_callbacks(

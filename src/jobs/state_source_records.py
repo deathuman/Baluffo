@@ -21,7 +21,8 @@ from src.jobs.text_utils import clean_text, norm_text, normalize_url
 from src.jobs_fetcher_registry import EXCLUDED_DEFAULT_SOURCES, SOURCE_REPORT_META
 from src.pipeline_io import write_atomic_if_changed, write_text_if_changed
 from src.shared.json_io import read_json_object
-from src.shared.utils import _as_dict, _as_dict_rows, _as_list, now_iso
+from src.shared.json_shapes import as_json_list, as_json_object, json_object_rows
+from src.shared.utils import now_iso
 
 from . import state_incremental as _state_incremental
 from .common import url as common_url
@@ -254,7 +255,7 @@ def _source_health_int(*values: Any) -> int:
 
 
 def derive_source_health_fields(row: dict[str, Any]) -> dict[str, Any]:
-    src = _as_dict(row)
+    src = as_json_object(row)
     last_status = norm_text(src.get("lastStatus")) or norm_text(src.get("status")) or ""
     if last_status == "active":
         last_status = "ok"
@@ -320,12 +321,12 @@ def source_rows_fingerprint(rows: Sequence[dict[str, Any]]) -> str:
 def normalize_source_state_payload(
     payload: dict[str, Any], *, updated_at: str = ""
 ) -> dict[str, Any]:
-    src = _as_dict(payload)
-    rows = _as_dict(src.get("sources"))
+    src = as_json_object(payload)
+    rows = as_json_object(src.get("sources"))
     out_rows: dict[str, dict[str, Any]] = {}
     for raw_name, raw_entry in rows.items():
         name = clean_text(raw_name)
-        entry_src = _as_dict(raw_entry)
+        entry_src = as_json_object(raw_entry)
         if not name or not entry_src:
             continue
         entry = {
@@ -466,13 +467,13 @@ def normalize_source_state_payload(
             "detectedProviderId": clean_text(entry_src.get("detectedProviderId")),
         }
         entry.update(derive_source_health_fields(entry))
-        raw_latencies = _as_list(entry_src.get("recentLatencies"))
+        raw_latencies = as_json_list(entry_src.get("recentLatencies"))
         clean_latencies = [
             _clamped_int(x, 0, 2**31 - 1) for x in raw_latencies if isinstance(x, (int, float))
         ]
         if clean_latencies:
             entry["recentLatencies"] = clean_latencies
-        raw_stage_timings = _as_dict(entry_src.get("lastStageTimingsMs"))
+        raw_stage_timings = as_json_object(entry_src.get("lastStageTimingsMs"))
         clean_stage_timings = {
             "listingFetch": _clamped_int(raw_stage_timings.get("listingFetch"), 0, 0),
             "parseCsv": _clamped_int(raw_stage_timings.get("parseCsv"), 0, 0),
@@ -582,9 +583,9 @@ def snapshot_prior_source_state(entry: dict[str, Any]) -> dict[str, Any]:
 def apply_static_detail_stats(
     entry: dict[str, Any], report: dict[str, Any]
 ) -> list[dict[str, Any]]:
-    details = _as_dict_rows(report.get("details"))
+    details = json_object_rows(report.get("details"))
     static_detail = details[0] if len(details) == 1 else {}
-    static_stats = _as_dict(static_detail.get("stats"))
+    static_stats = as_json_object(static_detail.get("stats"))
     entry["lastCandidateLinksFound"] = int(static_stats.get("candidate_links_found") or 0)
     entry["lastDetailPagesVisited"] = int(static_stats.get("detail_pages_visited") or 0)
     entry["lastDetailYieldPct"] = int(static_stats.get("detail_yield_percent") or 0)
@@ -683,7 +684,7 @@ def apply_provider_coverage_state(
 
 
 def apply_stage_timings(entry: dict[str, Any], report: dict[str, Any]) -> None:
-    stage_timings = _as_dict(report.get("stageTimingsMs"))
+    stage_timings = as_json_object(report.get("stageTimingsMs"))
     clean_stage_timings = {
         "listingFetch": int(stage_timings.get("listingFetch") or 0),
         "parseCsv": int(stage_timings.get("parseCsv") or 0),

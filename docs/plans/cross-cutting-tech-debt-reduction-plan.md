@@ -5,7 +5,7 @@
 > - **Canonical for:** the June 2026 cross-cutting tech debt inventory: BridgeApi god object, admin_bridge legacy globals, get_routes.py decomposition, bare except Exception, _as_dict/_as_list proliferation, test-time sleep/port coupling, data model and contract drift, desktop/ship update-system complexity, deferred macOS platform gap, shared-layer isolation violations, and CSS/build infrastructure gaps
 > - **Not canonical for:** jobs/fetcher-specific refactoring (see [`initial_findings.md`](initial_findings.md)), source-discovery decomposition, adapter plugin internals, or individual component tests
 > - **Then inspect:** [`../architecture-ai-map.md`](../architecture-ai-map.md), [`refactor-charter-template.md`](refactor-charter-template.md), [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md), bridge service leaf modules, and component-specific test coverage
-> - **Last updated:** 2026-06-20 — validated against current source; multiple P0 implementation slices completed; admin bootstrap, admin ops-tab counts, app, registry, registry-conflicts, sync status, pipeline task, discovery, fetch-report, source-policy recommendations, and desktop local-data GET routes extracted from GET routes; GET/POST route delegators now type against composed route capability protocols instead of `BridgeApi`, repo guardrails block any route module from reintroducing full `BridgeApi` imports, bridge server handler/httpd now type against narrow server capabilities instead of `BridgeApi`, production `BridgeApi` imports are limited to bridge composition modules, and the BridgeApi field inventory now proves 90/90 fields classified with zero `default-only` deletion candidates; jobs source-row base, field enrichment, zero-kept taxonomy orchestration, stage timing, loss, detail-stat, detail-list, provider-migration, site-changed URL, and dynamic redundant-provider source-policy normalization are owned by the shared fetch-report normalization helper; updater facade consumer/root-dependency inventories added, update-manager facade consumer inventory added, production updater facade imports removed, release-builder facade import removed, desktop-app/helper/admin updater imports moved to leaves, packaged update rehearsal manifest constants/helpers moved to pure leaves, update-manager behavior tests moved to leaves, updater behavior tests moved to leaf namespaces, and updater leaf root lookups removed through pure desktop update constants/crypto/version/app-version/HTTPS/timestamp/context/network-stdlib/temp-name/state/shared-self/private-state/service-private/release-note/state-local/shared-private/service-state/service-shared/service-release-lookup/service-manifest-validation/service-download-hash/state-request/state-handoff-io/service-session-write/service-status-persistence/service-stdlib/state-launch/shared-stdlib-json/shared-network-path/shared-final-root slices; macOS platform work deferred by product priority; stale footprint counts and unsafe acceptance criteria corrected; _as_dict/_as_list remains P3 (4 callers, contained refactor)
+> - **Last updated:** 2026-06-20 — validated against current source; multiple P0 implementation slices completed; admin bootstrap, admin ops-tab counts, app, registry, registry-conflicts, sync status, pipeline task, discovery, fetch-report, source-policy recommendations, and desktop local-data GET routes extracted from GET routes; GET/POST route delegators now type against composed route capability protocols instead of `BridgeApi`, repo guardrails block any route module from reintroducing full `BridgeApi` imports, bridge server handler/httpd now type against narrow server capabilities instead of `BridgeApi`, production `BridgeApi` imports are limited to bridge composition modules, and the BridgeApi field inventory now proves 90/90 fields classified with zero `default-only` deletion candidates; jobs source-row base, field enrichment, zero-kept taxonomy orchestration, stage timing, loss, detail-stat, detail-list, provider-migration, site-changed URL, and dynamic redundant-provider source-policy normalization are owned by the shared fetch-report normalization helper; updater facade consumer/root-dependency inventories added, update-manager facade consumer inventory added, production updater facade imports removed, release-builder facade import removed, desktop-app/helper/admin updater imports moved to leaves, packaged update rehearsal manifest constants/helpers moved to pure leaves, update-manager behavior tests moved to leaves, updater behavior tests moved to leaf namespaces, and updater leaf root lookups removed through pure desktop update constants/crypto/version/app-version/HTTPS/timestamp/context/network-stdlib/temp-name/state/shared-self/private-state/service-private/release-note/state-local/shared-private/service-state/service-shared/service-release-lookup/service-manifest-validation/service-download-hash/state-request/state-handoff-io/service-session-write/service-status-persistence/service-stdlib/state-launch/shared-stdlib-json/shared-network-path/shared-final-root slices; macOS platform work deferred by product priority; stale footprint counts and unsafe acceptance criteria corrected; private shared `_as_dict`/`_as_list`/`_as_dict_rows` helpers removed after the four jobs callers moved to `json_shapes.py`
 
 ## Summary
 
@@ -27,7 +27,7 @@ A systematic analysis identified twelve cross-cutting tech debt clusters that im
 | Test time/port coupling | P1 | Open | 23 `time.sleep()`, 39 hardcoded port 8877 references, 81 monkeypatches on admin_bridge internals. |
 | `parse_iso` proliferation | P2 | Mostly done | Bridge, storage, and source-discovery helper parsers now delegate to `src.shared.utils.parse_iso`; remaining inline datetime parsing is mostly domain-specific jobs/source-policy handling. |
 | CSS/build pipeline gaps | P2 | Partially open | Quick fixes applied for fetch-progress theme color and redirect-page theme initialization; full CSS bundling/minification/hashing and broader gradient/cache-busting cleanup remain open. |
-| `_as_dict`/`_as_list` proliferation | P3 (demoted) | Open | 42+28 definitions but only 4 callers of the `utils.py` private versions; contained refactor. |
+| `_as_dict`/`_as_list` proliferation | P3 (demoted) | Done for shared private helpers | The four jobs callers now use `json_shapes.py` public helpers, and the private trio was removed from `src/shared/utils.py`; local shape guards remain intentionally scoped. |
 
 Historical implementation estimate: ~9-13 engineering days across all phases. The original P0 scope is now complete or closed by evidence; remaining rows are lower-priority follow-ups unless explicitly reprioritized.
 
@@ -370,7 +370,7 @@ Bare `except Exception` masked every class of bug — `KeyError`, `TypeError`, `
 
 ## 5. `_as_dict` / `_as_list` Proliferation (Demoted to P3)
 
-**2026-06-16 correction:** Initial analysis overstated severity. The `utils.py` private versions (`_as_list`/`_as_dict`) have only **4 callers** (all in `src/jobs/*`). The canonical public versions in `json_shapes.py` (`as_json_list`/`as_json_object`) already serve 44+ files. This is a contained 5-file refactor, not a 45-file problem. The remaining 40+ duplicates use variants (copy, cast, Mapping+stringify, delegation) that are inconsistent by design and cannot all be blindly replaced.
+**2026-06-20 status:** Done for the shared private helpers. The four jobs callers now import `as_json_list`, `as_json_object`, and `json_object_rows` from `json_shapes.py`; `_as_list`, `_as_dict`, and `_as_dict_rows` have been removed from `src/shared/utils.py`. The remaining local definitions use variants (copy, cast, Mapping+stringify, delegation) that are inconsistent by design and should not be blindly replaced.
 
 ### Problem
 
@@ -384,21 +384,21 @@ Bare `except Exception` masked every class of bug — `KeyError`, `TypeError`, `
 | **Mapping+stringify** | `isinstance(value, Mapping) ... str(key): value` | 1 (`report_normalizer.py`) | Accepts any Mapping (not just dict). Stringifies all keys. **Cannot be replaced.** |
 | **Delegation** | `return runtime_wait.as_dict(value)` | 1 (packaged_smoke) | Delegates to another module. Must verify identical semantics. |
 
-Canonical shared version lives in `src/shared/utils.py:94-99` and `src/shared/json_shapes.py:9-26` (public variants `as_json_object`/`as_json_list`/`json_object_rows`).
+Canonical public shape helpers live in `src/shared/json_shapes.py` (`as_json_object`/`as_json_list`/`json_object_rows`).
 
-**Constrained scope:** The `utils.py` private trio (`_as_list`/`_as_dict`/`_as_dict_rows`) is imported by only 4 files: `jobs/pipeline_cli.py`, `jobs/pipeline_finalize.py`, `jobs/pipeline_source_results.py`, `jobs/state_source_records.py`. These should migrate to the `json_shapes.py` public equivalents. The remaining 40+ private definitions are inconsistent-by-design and better left alone.
+**Constrained scope completed:** The former `utils.py` private trio was used by only 4 files: `jobs/pipeline_cli.py`, `jobs/pipeline_finalize.py`, `jobs/pipeline_source_results.py`, `jobs/state_source_records.py`. Those files now use the `json_shapes.py` public equivalents. The remaining 40+ private definitions are inconsistent-by-design and better left alone.
 
 ### Target Boundary
 
 - **Primary subsystem:** `src/jobs/` (4 pipeline files) + `src/shared/utils.py` + `src/shared/json_shapes.py`
 - **Entry file(s):** 4 pipeline files that import `utils.py`'s `_as_list`/`_as_dict`/`_as_dict_rows`
-- **Ownership boundary being clarified:** The `json_shapes.py` public variants are canonical. The `utils.py` private trio is removed.
+- **Ownership boundary clarified:** The `json_shapes.py` public variants are canonical. The `utils.py` private trio is removed.
 - **What becomes easier:** One less source of confusion for new modules; 5 files touched, no risk.
 
 ### In Scope
 
-- Migrate the 4 pipeline files from `utils.py._as_list`/`_as_dict`/`_as_dict_rows` to `json_shapes.py.as_json_list`/`as_json_object`/`json_object_rows`
-- Remove the private trio from `utils.py` (lines 93-103)
+- Keep jobs callers on `json_shapes.py.as_json_list`/`as_json_object`/`json_object_rows`
+- Leave local shape guards alone unless a module-specific cleanup proves equivalent semantics
 - Verify no other `src/jobs/` modules import them (the 4 files are the sole callers)
 
 ### Out of Scope
@@ -409,9 +409,9 @@ Canonical shared version lives in `src/shared/utils.py:94-99` and `src/shared/js
 
 ### Implementation Shape
 
-1. **Update 4 callers:** Replace `from src.shared.utils import _as_list, _as_dict` with `from src.shared.json_shapes import as_json_list, as_json_object` (and `json_object_rows` for `_as_dict_rows`)
-2. **Remove from utils.py:** Delete lines 93-103 (the `_as_list`/`_as_dict`/`_as_dict_rows` definitions)
-3. **Grep for remaining imports:** Confirm no other module imports these names from `utils.py`
+1. **Update 4 callers:** Done.
+2. **Remove from utils.py:** Done.
+3. **Grep for remaining imports:** Done; no module imports these names from `utils.py`.
 
 ### Verification
 
@@ -705,7 +705,7 @@ The frontend has a JS build pipeline (esbuild) but **zero CSS processing**:
 | 1 | Fix `parse_iso` in bridge/storage/source-discovery helpers: replace with `shared/utils.py` canonical version | §7C | 8 files | Done | Completed after P0; remaining inline datetime parsing is domain-specific and lower priority |
 | 2 | Fix `json_io.py` layer violation: move storage_metrics calls to callers | §9A | 2-3 files | Done | Completed after P0: shared JSON helpers use explicit write callbacks, and metrics live in `src/storage_json_metrics.py` |
 | 3 | Fix hardcoded box-shadow CSS bug + deduplicate theme init | §9B | 2 files | Partial | Fetch-progress glow now uses `--accent`; `theme.js` respects an early `data-theme` from inline boot scripts. Full theme/cache-busting cleanup remains under §9B. |
-| 4 | Migrate 4 pipeline files from `utils.py._as_list`/`_as_dict` to `json_shapes.py` public variants; remove private trio from `utils.py` | §5 | 5 files | Low | None |
+| 4 | Migrate 4 pipeline files from `utils.py._as_list`/`_as_dict` to `json_shapes.py` public variants; remove private trio from `utils.py` | §5 | 5 files | Done | Completed after P0; local shape guards remain intentionally module-scoped |
 | 5 | Add BridgeApi field classification guardrail before dead-stub removal | §1 | 3 files | Done | Completed 2026-06-17 |
 | 5A | Remove dead stub functions from BridgeApi after classification evidence | §1 | 1 file | Done | Closed by evidence: current inventory has 0 `default-only` fields, and tests now assert that remains true before future deletion attempts |
 | 6 | Merge `_default_current_task_state_payload` / `_default_current_task_state_summary_payload` | §1 | 1 file | Done | Completed |
@@ -790,7 +790,7 @@ No compatibility facade deletion is assumed. New files are expected only for ext
 | Deferred macOS work is accidentally mixed into current P0 cleanup | Medium | Medium | Keep `_darwin.py` and macOS session/browser work out of this pass unless explicitly reprioritized |
 | Desktop update facade removal breaks an import outside `src/ship/` | Low | Medium | Grep for imports from `desktop_updater` / `desktop_update` before removing; fix any external references |
 | `parse_iso` swap (naive → tz-aware) changes time comparison behavior | Medium | Medium | Before/after: capture return values for same input; verify all callers that compare datetimes still produce same ordering |
-| Copy-semantics `_as_dict` callers break when switched to identity | Low | Medium | Now P3 — 4 callers only, already using identity variant. Risk near-zero. |
+| Copy-semantics `_as_dict` callers break when switched to identity | Low | Medium | Closed for shared private helpers; local copy/cast variants were intentionally left untouched. |
 | `except Exception` replacement misses an edge case | Medium | Medium | Pair each replacement with a grep for what `raise`s in the protected block |
 | get_routes.py split misses a route path | Low | High | Run route inventory before/after; compare all paths |
 | admin_bridge service holder changes service init order | Low | High | Run full test suite; verify `main()` boot sequence |

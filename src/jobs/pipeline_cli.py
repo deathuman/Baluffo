@@ -19,7 +19,7 @@ from src.jobs.state_source_state import (
 )
 from src.jobs.text_utils import clean_text
 from src.jobs_fetcher_registry import SOURCE_REPORT_META
-from src.shared.utils import _as_dict, _as_list
+from src.shared.json_shapes import as_json_list, as_json_object
 
 DEFAULT_SOCIAL_LOOKBACK_MINUTES = common_config.DEFAULT_SOCIAL_LOOKBACK_MINUTES
 load_social_config = common_social.load_social_config
@@ -208,13 +208,13 @@ def _print_timing_summary(label: str, rows: list[Any], value_key: str = "duratio
 
 
 def _print_pipeline_summary(report: dict[str, Any]) -> int:
-    summary = _as_dict(report.get("summary"))
+    summary = as_json_object(report.get("summary"))
     output_count = int(summary.get("outputCount") or 0)
     failed_sources = int(summary.get("failedSources") or 0)
-    runtime = _as_dict(report.get("runtime"))
-    timing_summary = _as_dict(runtime.get("timingSummary"))
-    stage_top = _as_list(timing_summary.get("stageTop"))
-    slowest_sources = _as_list(runtime.get("slowestSources"))
+    runtime = as_json_object(report.get("runtime"))
+    timing_summary = as_json_object(runtime.get("timingSummary"))
+    stage_top = as_json_list(timing_summary.get("stageTop"))
+    slowest_sources = as_json_list(runtime.get("slowestSources"))
     print(
         f"Jobs fetch completed. Output jobs: {output_count}. "
         f"Failed sources: {failed_sources}. Report: {report['outputs']['report']}"
