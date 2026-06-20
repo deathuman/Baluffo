@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from src.app_version import get_app_version
+from src.shared.utils import parse_iso
 from src.ship import desktop_update_constants as constants_mod
 from src.ship import desktop_update_manifest as manifest_mod
 from src.ship.desktop_update_shared import (
@@ -356,10 +357,7 @@ class DesktopUpdateService:
             status = self._reconcile_status_locked()
             last_checked_at = str(status.get("lastCheckedAt") or "").strip()
             if not force and last_checked_at and self.paths.manifest_cache_path.exists():
-                try:
-                    last_checked = datetime.fromisoformat(last_checked_at.replace("Z", "+00:00"))
-                except ValueError:
-                    last_checked = None
+                last_checked = parse_iso(last_checked_at)
                 if last_checked is not None:
                     age = (datetime.now(UTC) - last_checked).total_seconds()
                     if age < constants_mod.DEFAULT_RELEASE_CHECK_THROTTLE_SECONDS:

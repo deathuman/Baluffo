@@ -1,7 +1,7 @@
 # Cross-Cutting Tech Debt Follow-Up Tracker
 
-> - **Status:** Active follow-up tracker
-> - **Use this when:** choosing the next small cross-cutting cleanup after the June 2026 P0 refactor pass
+> - **Status:** Complete for the current cleanup tranche
+> - **Use this when:** checking what closed after the June 2026 P0 refactor pass
 > - **Canonical for:** current cleanup priorities and explicit non-goals after the P0 work closed
 > - **Not canonical for:** detailed P0 implementation history, API contracts, route ownership, or release behavior
 > - **Then inspect:** [`../architecture-ai-map.md`](../architecture-ai-map.md), [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md), [`../testing.md`](../testing.md), [`../DOCS_WORKFLOW.md`](../DOCS_WORKFLOW.md)
@@ -9,7 +9,7 @@
 
 ## Current State
 
-The original P0 cross-cutting refactor is closed or closed by evidence. This file now tracks only follow-up cleanup that still has practical value. Detailed slice history intentionally stays in git history per [`../DOCS_WORKFLOW.md`](../DOCS_WORKFLOW.md).
+The original P0 cross-cutting refactor is closed or closed by evidence. The follow-up cleanup tranche tracked here is also complete for the current scope. Detailed slice history intentionally stays in git history per [`../DOCS_WORKFLOW.md`](../DOCS_WORKFLOW.md).
 
 Closed context worth remembering:
 
@@ -22,17 +22,15 @@ Closed context worth remembering:
 - Test sleep cleanup is done; keep `rg -n "time\\.sleep\\(" tests` empty when adding or changing tests.
 - Targeted `admin_bridge` test seam cleanup is done for the shared fixture, source-policy setup, and task-launch setup; remaining direct internals are compatibility or service-holder tests.
 - Port-8877 coupling cleanup is done for live/config-style test defaults; remaining literals are contract URLs, persisted payload examples, or expected assertions.
+- Shared/contract-facing datetime parsing cleanup is done for local data, source-policy review timestamps, Personio source-state timestamps, and desktop update check throttling. The remaining source-health quarantine inline parser intentionally preserves exception-ratchet behavior for unexpected non-string state values.
 - macOS platform work remains deferred by product priority.
 
 ## Active Work Queue
 
-1. **Normalize remaining datetime parsing only where behavior can drift**
-   - Public bridge/source-sync `parse_iso` wrappers already delegate to `src.shared.utils.parse_iso`.
-   - Only clean inline `datetime.fromisoformat(...replace("Z", "+00:00"))` variants when they affect shared behavior or contract-facing code.
+No required follow-up items remain in this tracker.
 
-2. **CSS cleanup stays optional**
-   - Quick fixes already landed for fetch-progress theme color and redirect-page theme initialization.
-   - Full CSS bundling/minification/hashing is useful only if frontend deploy/cache pain becomes active.
+- Quick CSS fixes already landed for fetch-progress theme color and redirect-page theme initialization.
+- Full CSS bundling/minification/hashing is intentionally out of scope for this cleanup goal and should only be reopened if frontend deploy/cache pain becomes active.
 
 ## Do Not Pursue Now
 

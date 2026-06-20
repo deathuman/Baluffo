@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from src.jobs.text_utils import clean_text, norm_text
 from src.shared.json_shapes import as_json_object
+from src.shared.utils import parse_iso
 
 SOURCE_POLICY_REVIEW_STATE_SCHEMA_VERSION = "1.0"
 SOURCE_POLICY_REVIEW_STATES = frozenset({"new", "acknowledged", "reviewed", "snoozed"})
@@ -46,13 +46,7 @@ def _bounded_text(value: Any, limit: int) -> str:
 
 def _parseable_iso(value: str) -> bool:
     text = clean_text(value)
-    if not text:
-        return False
-    try:
-        datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError:
-        return False
-    return True
+    return parse_iso(text) is not None
 
 
 def normalize_source_policy_review_pair(payload: Any) -> dict[str, Any]:

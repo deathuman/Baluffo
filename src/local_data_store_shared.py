@@ -12,9 +12,10 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from src.shared.utils import parse_iso
 
 LOCK = threading.RLock()
 
@@ -102,13 +103,10 @@ def normalize_sector_value(sector: str, company_type: str = "") -> str:
 
 
 def _normalize_iso(value: Any, fallback: str = "") -> str:
-    text = str(value or "").strip()
-    if not text:
+    parsed = parse_iso(value)
+    if parsed is None:
         return fallback
-    try:
-        return datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(UTC).isoformat()
-    except ValueError:
-        return fallback
+    return parsed.isoformat()
 
 
 def _data_url_to_bytes(data_url: str) -> tuple[str, bytes]:

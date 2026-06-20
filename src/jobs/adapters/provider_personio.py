@@ -17,6 +17,7 @@ from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.registry import registry_entries as jobs_registry_entries
 from src.jobs.text_utils import clean_text
+from src.shared.utils import parse_iso
 
 RawJob = dict[str, Any]
 
@@ -28,12 +29,7 @@ def _personio_classification_from_error(error_text: str) -> str:
 
 def _parse_state_timestamp(value: object) -> datetime | None:
     text = clean_text(value)
-    if not text:
-        return None
-    try:
-        return datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(UTC)
-    except ValueError:
-        return None
+    return parse_iso(text)
 
 
 def _personio_rate_limit_cutoff() -> datetime:
