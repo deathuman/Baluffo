@@ -5,6 +5,7 @@ from unittest import mock
 from src import admin_bridge
 from src.bridge.api import BridgeApi
 from tests.helpers.bridge_api import BridgeRuntimeConfigStub
+from tests.helpers.ports import ADMIN_BRIDGE_TEST_PORT
 
 
 def test_desktop_owner_session_stays_alive_when_lifecycle_refreshes_activity(
@@ -14,7 +15,7 @@ def test_desktop_owner_session_stays_alive_when_lifecycle_refreshes_activity(
         root=admin_bridge_entrypoint_root,
         data_dir=admin_bridge_entrypoint_root,
         host="127.0.0.1",
-        port=8877,
+        port=ADMIN_BRIDGE_TEST_PORT,
         log_format="human",
         log_level="info",
         quiet_requests=False,
@@ -80,7 +81,7 @@ def test_lightweight_ops_health_exposes_desktop_owner_identity(
         root=admin_bridge_entrypoint_root,
         data_dir=admin_bridge_entrypoint_root,
         host="127.0.0.1",
-        port=8877,
+        port=ADMIN_BRIDGE_TEST_PORT,
         log_format="human",
         log_level="info",
         quiet_requests=False,
@@ -162,7 +163,7 @@ def test_desktop_owner_route_activity_prevents_false_idle_exit_after_closing_sig
         root=admin_bridge_entrypoint_root,
         data_dir=admin_bridge_entrypoint_root,
         host="127.0.0.1",
-        port=8877,
+        port=ADMIN_BRIDGE_TEST_PORT,
         log_format="human",
         log_level="info",
         quiet_requests=False,

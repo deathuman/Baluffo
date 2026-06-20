@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from unittest import mock
 
 from src import admin_bridge
+from tests.helpers.ports import ADMIN_BRIDGE_TEST_PORT
 
 
 def _configure_desktop_owner(root):
@@ -11,7 +12,7 @@ def _configure_desktop_owner(root):
         root=root,
         data_dir=root,
         host="127.0.0.1",
-        port=8877,
+        port=ADMIN_BRIDGE_TEST_PORT,
         log_format="human",
         log_level="info",
         quiet_requests=False,

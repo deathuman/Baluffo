@@ -8,6 +8,7 @@ from typing import Any
 from src import admin_bridge
 from src.bridge import ACTIVE_SYNC_RUNS, ACTIVE_SYNC_THREADS, SYNC_STATE_LOCK
 from src.bridge.storage_health import close_storage_stores
+from tests.helpers.ports import ADMIN_BRIDGE_TEST_PORT
 
 _ADMIN_BRIDGE_RUNTIME_ATTRS = (
     "RUNTIME_CONFIG",
@@ -110,7 +111,7 @@ def _runtime_config_for_test_root(root: Path) -> admin_bridge.RuntimeConfig:
         root=root,
         data_dir=root,
         host="127.0.0.1",
-        port=8877,
+        port=ADMIN_BRIDGE_TEST_PORT,
         log_format="human",
         log_level="info",
         quiet_requests=False,

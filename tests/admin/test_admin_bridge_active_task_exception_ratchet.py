@@ -6,6 +6,7 @@ from unittest import mock
 import pytest
 
 from src import admin_bridge
+from tests.helpers.ports import ADMIN_BRIDGE_TEST_PORT
 
 
 def _configure_expired_regular_close(admin_bridge_entrypoint_root) -> None:
@@ -13,7 +14,7 @@ def _configure_expired_regular_close(admin_bridge_entrypoint_root) -> None:
         root=admin_bridge_entrypoint_root,
         data_dir=admin_bridge_entrypoint_root,
         host="127.0.0.1",
-        port=8877,
+        port=ADMIN_BRIDGE_TEST_PORT,
         log_format="human",
         log_level="info",
         quiet_requests=False,

@@ -26,8 +26,10 @@ Closed context worth remembering:
 ## Active Work Queue
 
 1. **Tighten port-8877 test coupling**
+   - Admin `RuntimeConfig(port=8877)` test defaults now use `tests.helpers.ports.ADMIN_BRIDGE_TEST_PORT`.
    - Replace live-bind/config defaults with named fixtures or dynamic ports where tests start real servers.
    - Leave examples, expected payload URLs, and documentation-style literals alone when the literal is part of the contract being asserted.
+   - Next target: desktop/packaged runtime helper defaults; avoid URL/assertion literals that intentionally prove `8877`.
    - Avoid a broad mechanical replacement.
 
 2. **Normalize remaining datetime parsing only where behavior can drift**

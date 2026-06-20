@@ -7,6 +7,7 @@ import pytest
 
 from src import admin_bridge
 from src.source_registry import save_json_atomic
+from tests.helpers.ports import ADMIN_BRIDGE_TEST_PORT
 
 pytestmark = pytest.mark.usefixtures("admin_bridge_entrypoint_root")
 
@@ -205,7 +206,7 @@ def _configure_background_script_runtime(
         root=admin_bridge_entrypoint_root,
         data_dir=admin_bridge_entrypoint_root,
         host="127.0.0.1",
-        port=8877,
+        port=ADMIN_BRIDGE_TEST_PORT,
         log_format="human",
         log_level="info",
         quiet_requests=True,

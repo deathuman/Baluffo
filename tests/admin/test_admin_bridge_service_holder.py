@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from src import admin_bridge
 from src.bridge import sync_service as sync_service_module
+from tests.helpers.ports import ADMIN_BRIDGE_TEST_PORT
 
 
 def _runtime_config(root: Path, data_dir: Path) -> admin_bridge.RuntimeConfig:
@@ -12,7 +13,7 @@ def _runtime_config(root: Path, data_dir: Path) -> admin_bridge.RuntimeConfig:
         root=root,
         data_dir=data_dir,
         host="127.0.0.1",
-        port=8877,
+        port=ADMIN_BRIDGE_TEST_PORT,
         log_format="human",
         log_level="info",
         quiet_requests=False,
