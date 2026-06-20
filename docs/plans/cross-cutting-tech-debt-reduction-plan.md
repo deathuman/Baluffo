@@ -19,32 +19,26 @@ Closed context worth remembering:
 - Source broad catches are narrowed to the intentional HTTP route JSON boundary budget.
 - Update and updater root/facade risks are closed by inventories and direct leaf imports; remaining facades are compatibility surfaces.
 - CanonicalJob missing lifecycle/location fields, shared private shape helpers, shared JSON/storage-metrics isolation, and quick CSS theme fixes are done.
+- Test sleep cleanup is done; keep `rg -n "time\\.sleep\\(" tests` empty when adding or changing tests.
 - macOS platform work remains deferred by product priority.
 
 ## Active Work Queue
 
-1. **Finish test sleep cleanup**
-   - Current state: 4 `time.sleep()` calls remain in tests.
-   - Target next: batch by behavior, not by mechanical replacement.
-   - Best next slices:
-     - static-source cache/time-budget/poll sleeps in `tests/jobs_static/`
-   - Keep tests deterministic with `threading.Event`, `Condition`, fake clocks, explicit callbacks, or existing `tests.helpers.concurrency.BlockingActiveCounter`.
-
-2. **Reduce `admin_bridge` legacy test seams**
+1. **Reduce `admin_bridge` legacy test seams**
    - Highest leverage target remains `tests/admin/_helpers.py::patch_admin_bridge_paths`.
    - Prefer `RuntimeConfig`, `BridgeServices`, route fixtures, or service-level fixtures over patching root compatibility globals.
    - Keep `src/admin_bridge.py` import-compatible.
 
-3. **Tighten port-8877 test coupling**
+2. **Tighten port-8877 test coupling**
    - Replace live-bind/config defaults with named fixtures or dynamic ports where tests start real servers.
    - Leave examples, expected payload URLs, and documentation-style literals alone when the literal is part of the contract being asserted.
    - Avoid a broad mechanical replacement.
 
-4. **Normalize remaining datetime parsing only where behavior can drift**
+3. **Normalize remaining datetime parsing only where behavior can drift**
    - Public bridge/source-sync `parse_iso` wrappers already delegate to `src.shared.utils.parse_iso`.
    - Only clean inline `datetime.fromisoformat(...replace("Z", "+00:00"))` variants when they affect shared behavior or contract-facing code.
 
-5. **CSS cleanup stays optional**
+4. **CSS cleanup stays optional**
    - Quick fixes already landed for fetch-progress theme color and redirect-page theme initialization.
    - Full CSS bundling/minification/hashing is useful only if frontend deploy/cache pain becomes active.
 

@@ -2,7 +2,6 @@
 import json
 import subprocess
 import threading
-import time
 from unittest import mock
 
 from tests.helpers.concurrency import BlockingActiveCounter
@@ -308,6 +307,7 @@ def test_run_scrapy_static_source_emits_heartbeat_while_waiting_for_queue_child(
     jf.STUDIO_SOURCE_REGISTRY = [source]
     release_runner = threading.Event()
     runner_started = threading.Event()
+    heartbeat_seen = threading.Event()
     heartbeat_calls: list[str] = []
     errors: list[BaseException] = []
     try:
@@ -328,6 +328,10 @@ def test_run_scrapy_static_source_emits_heartbeat_while_waiting_for_queue_child(
             release_runner.wait(timeout=2.0)
             return result
 
+        def heartbeat_callback() -> None:
+            heartbeat_calls.append("tick")
+            heartbeat_seen.set()
+
         def target() -> None:
             try:
                 jf.run_scrapy_static_source(
@@ -336,7 +340,7 @@ def test_run_scrapy_static_source_emits_heartbeat_while_waiting_for_queue_child(
                     retries=0,
                     backoff_s=0.0,
                     max_workers=1,
-                    heartbeat_callback=lambda: heartbeat_calls.append("tick"),
+                    heartbeat_callback=heartbeat_callback,
                 )
             except BaseException as exc:  # noqa: BLE001
                 errors.append(exc)
@@ -348,7 +352,7 @@ def test_run_scrapy_static_source_emits_heartbeat_while_waiting_for_queue_child(
             thread = threading.Thread(target=target)
             thread.start()
             assert runner_started.wait(timeout=1.0)
-            time.sleep(static_scrapy.SCRAPY_STATIC_QUEUE_POLL_S * 2 + 0.2)
+            assert heartbeat_seen.wait(timeout=2.0)
             release_runner.set()
             thread.join(timeout=2.0)
 

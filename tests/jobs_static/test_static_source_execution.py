@@ -214,13 +214,11 @@ def test_run_static_studio_pages_source_flattens_slow_tail_with_history() -> Non
             return listing_html
         if url.startswith("https://example.net/job/"):
             detail_calls["count"] += 1
-            time.sleep(0.01)
             return detail_html
         raise RuntimeError(f"Unexpected URL: {url}")
 
-    def run_once(source_state_rows: dict[str, dict[str, object]]) -> tuple[float, int, int]:
+    def run_once(source_state_rows: dict[str, dict[str, object]]) -> tuple[int, int]:
         jf.SOURCE_DIAGNOSTICS.clear()
-        start = time.perf_counter()
         rows = jf.run_static_studio_pages_source(
             fetch_text=fake_fetch,
             timeout_s=5,
@@ -230,14 +228,13 @@ def test_run_static_studio_pages_source_flattens_slow_tail_with_history() -> Non
             diagnostics_name="Tail Test Studio",
             source_state_rows=source_state_rows,
         )
-        elapsed = time.perf_counter() - start
         diag = (jf.SOURCE_DIAGNOSTICS.get("Tail Test Studio") or {}).get("details") or []
         stats = (diag[0] if diag else {}).get("stats") or {}
-        return elapsed, int(stats.get("detail_pages_visited") or 0), len(rows)
+        return int(stats.get("detail_pages_visited") or 0), len(rows)
 
     try:
-        control_elapsed, control_detail_pages, control_rows = run_once({})
-        tail_elapsed, tail_detail_pages, tail_rows = run_once(tail_state)
+        control_detail_pages, control_rows = run_once({})
+        tail_detail_pages, tail_rows = run_once(tail_state)
 
         assert control_rows >= 1
         assert tail_rows >= 1
@@ -436,6 +433,12 @@ def test_run_static_studio_pages_source_enforces_hard_budget_and_preserves_parti
     )
     monkeypatch.setenv("BALUFFO_STATIC_SOURCE_TIME_BUDGET_S", "5")
     fetched_detail_urls: list[str] = []
+    clock = {"now": time.perf_counter()}
+
+    def fake_perf_counter() -> float:
+        return clock["now"]
+
+    monkeypatch.setattr(time, "perf_counter", fake_perf_counter)
 
     try:
 
@@ -444,7 +447,7 @@ def test_run_static_studio_pages_source_enforces_hard_budget_and_preserves_parti
                 return listing_html
             if url.startswith("https://example.net/job/"):
                 fetched_detail_urls.append(url)
-                time.sleep(2.2)
+                clock["now"] += 2.2
                 title = url.rsplit("/", 1)[-1].upper()
                 return f"<html><body><h1>{title} Engineer</h1></body></html>"
             raise RuntimeError(f"Unexpected URL: {url}")
@@ -766,7 +769,6 @@ def test_run_static_studio_pages_source_keeps_post_listing_detail_tail() -> None
             return listing_html
         if url.startswith("https://example.net/job/"):
             fetched_detail_urls.append(url)
-            time.sleep(1.2)
             title = url.rsplit("/", 1)[-1].upper()
             return f"<html><body><h1>{title} Engineer</h1></body></html>"
         raise RuntimeError(f"Unexpected URL: {url}")
