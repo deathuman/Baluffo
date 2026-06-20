@@ -9,6 +9,46 @@ from src import admin_bridge
 from src.bridge import ACTIVE_SYNC_RUNS, ACTIVE_SYNC_THREADS, SYNC_STATE_LOCK
 from src.bridge.storage_health import close_storage_stores
 
+_ADMIN_BRIDGE_RUNTIME_ATTRS = (
+    "RUNTIME_CONFIG",
+    "OPS_HISTORY_PATH",
+    "TASK_LIFECYCLE_PATH",
+    "OPS_ALERT_STATE_PATH",
+    "JOBS_FETCH_REPORT_PATH",
+    "ADMIN_ACTIVE_TASK_SNAPSHOT_PATH",
+    "JOBS_FETCH_TASKS_PATH",
+    "DISCOVERY_REPORT_PATH",
+    "DISCOVERY_CANDIDATES_PATH",
+    "SOURCE_POLICY_RECOMMENDATIONS_PATH",
+    "SOURCE_POLICY_REVIEW_STATE_PATH",
+    "DEDUP_REVIEW_STATE_PATH",
+    "APPROVAL_STATE_PATH",
+    "ACTIVE_PATH",
+    "PENDING_PATH",
+    "REJECTED_PATH",
+    "TOMBSTONES_PATH",
+    "TASKS_CONFIG_PATH",
+    "TASK_STATE_PATH",
+    "SYNC_LIVE_TASK_PATH",
+    "SYNC_CONFIG_PATH",
+    "SYNC_RUNTIME_PATH",
+    "MAX_HISTORY_ROWS",
+)
+
+_SOURCE_REGISTRY_RUNTIME_ATTRS = (
+    "DATA_DIR",
+    "DEFAULTS_DIR",
+    "ACTIVE_PATH",
+    "PENDING_PATH",
+    "ACTIVE_SEED_PATH",
+    "PENDING_SEED_PATH",
+    "REJECTED_PATH",
+    "TOMBSTONES_PATH",
+    "DISCOVERY_REPORT_PATH",
+    "DISCOVERY_CANDIDATES_PATH",
+    "APPROVAL_STATE_PATH",
+)
+
 
 @dataclass(frozen=True)
 class AdminBridgeTestPaths:
@@ -56,7 +96,7 @@ def admin_bridge_test_paths(root: Path) -> AdminBridgeTestPaths:
         pending_registry=root / "source-registry-pending.json",
         rejected_registry=root / "source-registry-rejected.json",
         tombstones=root / "source-registry-tombstones.json",
-        tasks_config=root / "tasks.json",
+        tasks_config=root / ".vscode" / "tasks.json",
         task_state=root / "admin-task-state.json",
         sync_live_task=root / "sync-live-task.json",
         sync_config=root / "source-sync-config.json",
@@ -65,50 +105,38 @@ def admin_bridge_test_paths(root: Path) -> AdminBridgeTestPaths:
     )
 
 
+def _runtime_config_for_test_root(root: Path) -> admin_bridge.RuntimeConfig:
+    return admin_bridge.RuntimeConfig(
+        root=root,
+        data_dir=root,
+        host="127.0.0.1",
+        port=8877,
+        log_format="human",
+        log_level="info",
+        quiet_requests=False,
+    )
+
+
+def _preserve_admin_bridge_runtime_attrs(monkeypatch: Any) -> None:
+    for attr in _ADMIN_BRIDGE_RUNTIME_ATTRS:
+        monkeypatch.setattr(admin_bridge, attr, getattr(admin_bridge, attr, None), raising=False)
+    for attr in _SOURCE_REGISTRY_RUNTIME_ATTRS:
+        monkeypatch.setattr(
+            admin_bridge.source_registry_module,
+            attr,
+            getattr(admin_bridge.source_registry_module, attr),
+            raising=False,
+        )
+
+
 def patch_admin_bridge_paths(monkeypatch: Any, paths: AdminBridgeTestPaths) -> None:
-    monkeypatch.setattr(admin_bridge, "OPS_HISTORY_PATH", paths.ops_history)
-    monkeypatch.setattr(admin_bridge, "TASK_LIFECYCLE_PATH", paths.task_lifecycle)
-    monkeypatch.setattr(admin_bridge, "OPS_ALERT_STATE_PATH", paths.ops_alert_state)
-    monkeypatch.setattr(admin_bridge, "JOBS_FETCH_REPORT_PATH", paths.jobs_fetch_report)
-    monkeypatch.setattr(
-        admin_bridge,
-        "ADMIN_ACTIVE_TASK_SNAPSHOT_PATH",
-        paths.active_task_snapshot,
-        raising=False,
-    )
-    monkeypatch.setattr(admin_bridge, "JOBS_FETCH_TASKS_PATH", paths.jobs_fetch_tasks)
-    monkeypatch.setattr(admin_bridge, "DISCOVERY_REPORT_PATH", paths.discovery_report)
-    monkeypatch.setattr(admin_bridge, "DISCOVERY_CANDIDATES_PATH", paths.discovery_candidates)
-    monkeypatch.setattr(
-        admin_bridge, "SOURCE_POLICY_RECOMMENDATIONS_PATH", paths.source_policy_recommendations
-    )
-    monkeypatch.setattr(
-        admin_bridge, "SOURCE_POLICY_REVIEW_STATE_PATH", paths.source_policy_review_state
-    )
-    monkeypatch.setattr(admin_bridge, "DEDUP_REVIEW_STATE_PATH", paths.dedup_review_state)
-    monkeypatch.setattr(admin_bridge, "APPROVAL_STATE_PATH", paths.approval_state)
-    monkeypatch.setattr(
-        admin_bridge.source_registry_module,
-        "DISCOVERY_CANDIDATES_PATH",
-        paths.discovery_candidates,
-    )
-    monkeypatch.setattr(
-        admin_bridge.source_registry_module, "APPROVAL_STATE_PATH", paths.approval_state
-    )
-    monkeypatch.setattr(admin_bridge, "ACTIVE_PATH", paths.active_registry)
-    monkeypatch.setattr(admin_bridge, "PENDING_PATH", paths.pending_registry)
-    monkeypatch.setattr(admin_bridge, "REJECTED_PATH", paths.rejected_registry)
-    monkeypatch.setattr(admin_bridge, "TOMBSTONES_PATH", paths.tombstones)
-    monkeypatch.setattr(admin_bridge, "TASKS_CONFIG_PATH", paths.tasks_config)
-    monkeypatch.setattr(admin_bridge, "TASK_STATE_PATH", paths.task_state)
-    monkeypatch.setattr(admin_bridge, "SYNC_LIVE_TASK_PATH", paths.sync_live_task)
-    monkeypatch.setattr(admin_bridge, "SYNC_CONFIG_PATH", paths.sync_config)
-    monkeypatch.setattr(admin_bridge, "SYNC_RUNTIME_PATH", paths.sync_runtime)
+    _preserve_admin_bridge_runtime_attrs(monkeypatch)
+    admin_bridge.configure_runtime_paths(_runtime_config_for_test_root(paths.root))
     monkeypatch.setattr(admin_bridge, "MAX_HISTORY_ROWS", 5)
-    monkeypatch.setattr(admin_bridge.RUNTIME_CONFIG, "data_dir", paths.root)
 
 
 def seed_admin_bridge_state(paths: AdminBridgeTestPaths) -> None:
+    paths.tasks_config.parent.mkdir(parents=True, exist_ok=True)
     admin_bridge.save_json_atomic(paths.active_registry, [])
     admin_bridge.save_json_atomic(paths.pending_registry, [])
     admin_bridge.save_json_atomic(paths.rejected_registry, [])
