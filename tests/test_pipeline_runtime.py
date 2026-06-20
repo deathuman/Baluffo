@@ -22,6 +22,7 @@ from src.jobs.pipeline_runtime_writers import (
     write_progress_report,
 )
 from src.pipeline_io import write_atomic_if_changed, write_hot_text_if_changed
+from tests.helpers.concurrency import BlockingActiveCounter
 
 
 def _task_row() -> dict[str, object]:
@@ -46,24 +47,21 @@ def test_make_fetch_text_limited_static_host_gate_caps_same_host_concurrency_and
         thread_local=threading.local(),
         show_progress=False,
     )
-    observed = {"active": 0, "peak": 0}
-    observed_lock = threading.Lock()
-    snapshots: list[str] = []
+    observed = BlockingActiveCounter()
+    wait_reason_seen = threading.Event()
 
     def fetch_text_impl(_url: str, _timeout: int) -> str:
-        with observed_lock:
-            observed["active"] += 1
-            observed["peak"] = max(observed["peak"], observed["active"])
+        observed.enter()
         try:
-            time.sleep(0.05)
+            observed.wait_released()
             return "<html></html>"
         finally:
-            with observed_lock:
-                observed["active"] -= 1
+            observed.exit()
 
     def write_task_state(**_kwargs) -> None:
         progress = runtime.task_rows["static_source"].get("progress") or {}
-        snapshots.append(str(progress.get("waitReason") or ""))
+        if str(progress.get("waitReason") or "") == "domain_gate":
+            wait_reason_seen.set()
 
     limited = make_fetch_text_limited(
         runtime=runtime,
@@ -81,11 +79,15 @@ def test_make_fetch_text_limited_static_host_gate_caps_same_host_concurrency_and
 
     with ThreadPoolExecutor(max_workers=8) as executor:
         futures = [executor.submit(call_once, index) for index in range(8)]
+        observed.wait_until_peak(6)
+        assert wait_reason_seen.wait(timeout=2.0)
+        threading.Event().wait(timeout=0.01)
+        observed.release()
         for future in futures:
             assert future.result() == "<html></html>"
 
-    assert observed["peak"] == 6
-    assert "domain_gate" in snapshots
+    assert observed.peak == 6
+    assert wait_reason_seen.is_set()
     gate_stats = limited._baluffo_gate_wait_stats("static_source")
     assert int(gate_stats["domainGateWaitMs"]) > 0
     assert int(gate_stats["domainGateWaitCount"]) > 0
@@ -97,19 +99,15 @@ def test_make_fetch_text_limited_default_host_gate_keeps_generic_limit() -> None
         thread_local=threading.local(),
         show_progress=False,
     )
-    observed = {"active": 0, "peak": 0}
-    observed_lock = threading.Lock()
+    observed = BlockingActiveCounter()
 
     def fetch_text_impl(_url: str, _timeout: int) -> str:
-        with observed_lock:
-            observed["active"] += 1
-            observed["peak"] = max(observed["peak"], observed["active"])
+        observed.enter()
         try:
-            time.sleep(0.05)
+            observed.wait_released()
             return "ok"
         finally:
-            with observed_lock:
-                observed["active"] -= 1
+            observed.exit()
 
     limited = make_fetch_text_limited(
         runtime=runtime,
@@ -124,10 +122,12 @@ def test_make_fetch_text_limited_default_host_gate_keeps_generic_limit() -> None
 
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = [executor.submit(call_once, index) for index in range(5)]
+        observed.wait_until_peak(3)
+        observed.release()
         for future in futures:
             assert future.result() == "ok"
 
-    assert observed["peak"] == 3
+    assert observed.peak == 3
 
 
 def test_write_progress_report_keeps_in_progress_fetch_report_valid_json(tmp_path: Path) -> None:
@@ -290,18 +290,14 @@ def test_write_progress_report_serializes_concurrent_writes(tmp_path: Path) -> N
         task_rows={"source_a": {"id": "source_a", "name": "source_a", **_task_row()}},
         recent_events=[],
     )
-    active_writes = 0
-    max_active_writes = 0
-    write_lock = threading.Lock()
+    writes = BlockingActiveCounter()
 
     def fake_write(_path: Path, _text: str) -> bool:
-        nonlocal active_writes, max_active_writes
-        with write_lock:
-            active_writes += 1
-            max_active_writes = max(max_active_writes, active_writes)
-        time.sleep(0.02)
-        with write_lock:
-            active_writes -= 1
+        writes.enter()
+        try:
+            writes.wait_released()
+        finally:
+            writes.exit()
         return True
 
     def call_once() -> None:
@@ -330,19 +326,23 @@ def test_write_progress_report_serializes_concurrent_writes(tmp_path: Path) -> N
     threads = [threading.Thread(target=call_once) for _ in range(6)]
     for thread in threads:
         thread.start()
+    writes.wait_until_peak(1)
+    writes.release()
     for thread in threads:
         thread.join(timeout=2)
 
     assert all(not thread.is_alive() for thread in threads)
-    assert max_active_writes == 1
+    assert writes.peak == 1
 
 
 def test_progress_report_dispatcher_coalesces_non_force_requests() -> None:
     runtime = PipelineTaskRuntime(task_rows={"source_a": {"id": "source_a", "name": "source_a"}})
     calls: list[bool] = []
+    report_written = threading.Event()
 
     def fake_write_progress_report(*, force: bool = False) -> None:
         calls.append(bool(force))
+        report_written.set()
 
     request_progress_report, stop_progress_reporter = make_progress_report_dispatcher(
         runtime=runtime,
@@ -353,7 +353,7 @@ def test_progress_report_dispatcher_coalesces_non_force_requests() -> None:
         request_progress_report()
         request_progress_report()
         request_progress_report()
-        time.sleep(0.15)
+        assert report_written.wait(timeout=2.0)
     finally:
         stop_progress_reporter()
 

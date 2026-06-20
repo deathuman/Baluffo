@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 import threading
-import time
 from concurrent.futures import ThreadPoolExecutor
 
 from src.jobs import pipeline_stage_source_execution as stage_mod
@@ -11,6 +10,7 @@ from src.jobs.pipeline_stage_source_execution import (
     SourceExecutionStageConfig,
     run_source_execution_stage,
 )
+from tests.helpers.concurrency import BlockingActiveCounter
 
 
 class _ThreadLocal:
@@ -172,16 +172,14 @@ def test_stage_enables_browser_for_static_sources_and_not_non_static_sources(mon
 
 
 def test_stage_caps_browser_fallback_concurrency_to_max_workers(monkeypatch) -> None:
-    observed: dict[str, int] = {"active": 0, "peak": 0}
-    observed_lock = threading.Lock()
+    observed = BlockingActiveCounter(auto_release_at=2)
 
     def fake_try_playwright(_url: str, _timeout: int) -> tuple[str, str]:
-        with observed_lock:
-            observed["active"] += 1
-            observed["peak"] = max(observed["peak"], observed["active"])
-        time.sleep(0.05)
-        with observed_lock:
-            observed["active"] -= 1
+        observed.enter()
+        try:
+            observed.wait_released()
+        finally:
+            observed.exit()
         return "", ""
 
     monkeypatch.setattr(stage_mod, "_default_adapter_for_loader", lambda _name, _meta: "static")
@@ -255,7 +253,7 @@ def test_stage_caps_browser_fallback_concurrency_to_max_workers(monkeypatch) -> 
         source_reports=[],
     )
 
-    assert observed["peak"] == 2
+    assert observed.peak == 2
 
 
 def test_stage_persists_browser_fallback_circuit_breaker_state(monkeypatch) -> None:
@@ -354,8 +352,7 @@ def test_stage_keeps_sources_queued_until_worker_threads_start(monkeypatch) -> N
             started_counter["count"] += 1
             if started_counter["count"] >= 2:
                 release_event.set()
-        release_event.wait(timeout=1.0)
-        time.sleep(0.02)
+        assert release_event.wait(timeout=1.0)
         return []
 
     task_rows = {

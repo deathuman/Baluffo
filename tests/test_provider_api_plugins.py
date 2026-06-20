@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import threading
-import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -15,6 +13,7 @@ from src.jobs.adapters.plugins.provider_api import html_board as html_board_runn
 from src.jobs.adapters.plugins.provider_api import json_feed as json_feed_runner
 from src.jobs.adapters.plugins.provider_api import oracle_hcm as oracle_hcm_runner
 from src.jobs.common.config import GREENHOUSE_JOBS_URL_TEMPLATE
+from tests.helpers.concurrency import BlockingActiveCounter
 from tests.helpers.job_fixtures import _fixture
 
 
@@ -415,9 +414,7 @@ def test_greenhouse_boards_fetch_in_parallel_preserving_output_order(
             },
         )
 
-    active_fetches = 0
-    max_active_fetches = 0
-    lock = threading.Lock()
+    fetches = BlockingActiveCounter(auto_release_at=2)
 
     def delayed_fetch_with_retries(
         url: str,
@@ -426,16 +423,12 @@ def test_greenhouse_boards_fetch_in_parallel_preserving_output_order(
         retries: int,
         backoff_s: float,
     ) -> str:
-        nonlocal active_fetches, max_active_fetches
-        with lock:
-            active_fetches += 1
-            max_active_fetches = max(max_active_fetches, active_fetches)
+        fetches.enter()
         try:
-            time.sleep(0.02)
+            fetches.wait_released()
             return fake_deps.fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
         finally:
-            with lock:
-                active_fetches -= 1
+            fetches.exit()
 
     monkeypatch.setattr(greenhouse_runner, "fetch_with_retries", delayed_fetch_with_retries)
 
@@ -446,7 +439,7 @@ def test_greenhouse_boards_fetch_in_parallel_preserving_output_order(
         backoff_s=0.0,
     )
 
-    assert max_active_fetches > 1
+    assert fetches.peak > 1
     assert [row["studio"] for row in rows] == ["Studio A", "Studio B", "Studio C"]
     details = fake_deps.SOURCE_DIAGNOSTICS["greenhouse_boards"]["details"]
     assert [detail["slug"] for detail in details] == ["studio-a", "studio-b", "studio-c"]
@@ -482,9 +475,7 @@ def test_lever_json_feed_sources_fetch_in_parallel_preserving_output_order(
             ],
         )
 
-    active_fetches = 0
-    max_active_fetches = 0
-    lock = threading.Lock()
+    fetches = BlockingActiveCounter(auto_release_at=2)
 
     def delayed_fetch_with_retries(
         url: str,
@@ -493,16 +484,12 @@ def test_lever_json_feed_sources_fetch_in_parallel_preserving_output_order(
         retries: int,
         backoff_s: float,
     ) -> str:
-        nonlocal active_fetches, max_active_fetches
-        with lock:
-            active_fetches += 1
-            max_active_fetches = max(max_active_fetches, active_fetches)
+        fetches.enter()
         try:
-            time.sleep(0.02)
+            fetches.wait_released()
             return fake_deps.fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
         finally:
-            with lock:
-                active_fetches -= 1
+            fetches.exit()
 
     monkeypatch.setattr(json_feed_runner, "fetch_with_retries", delayed_fetch_with_retries)
 
@@ -513,7 +500,7 @@ def test_lever_json_feed_sources_fetch_in_parallel_preserving_output_order(
         backoff_s=0.0,
     )
 
-    assert max_active_fetches > 1
+    assert fetches.peak > 1
     assert [row["studio"] for row in rows] == ["Studio A", "Studio B", "Studio C"]
     details = fake_deps.SOURCE_DIAGNOSTICS["lever_sources"]["details"]
     assert [detail["name"] for detail in details] == ["Studio A", "Studio B", "Studio C"]

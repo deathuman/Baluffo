@@ -1,6 +1,5 @@
 import json
 import threading
-import time
 from pathlib import Path
 from unittest import mock
 
@@ -14,6 +13,7 @@ from src.jobs.pipeline_runtime_writers import make_task_state_writer
 from src.jobs.pipeline_source_results import _classify_report_outcome
 from src.jobs.pipeline_stage_source_execution import _failure_bucket_from_zero_extract_context
 from src.shared.json_io import read_json
+from tests.helpers.concurrency import BlockingActiveCounter
 from tests.helpers.job_fixtures import _fixture, _fixture_json
 from tests.helpers.temp_paths import workspace_tmpdir
 
@@ -157,22 +157,21 @@ def test_task_state_writer_serializes_concurrent_writes() -> None:
         show_progress=False,
     )
     write_calls = 0
-    active_writes = 0
-    max_active_writes = 0
     write_guard = threading.Lock()
+    writes = BlockingActiveCounter()
 
     def normalize_task_state_payload(payload, **_kwargs):
         return payload
 
     def fake_write_text_if_changed(_path, _text):
-        nonlocal write_calls, active_writes, max_active_writes
+        nonlocal write_calls
         with write_guard:
             write_calls += 1
-            active_writes += 1
-            max_active_writes = max(max_active_writes, active_writes)
-        time.sleep(0.02)
-        with write_guard:
-            active_writes -= 1
+        writes.enter()
+        try:
+            writes.wait_released()
+        finally:
+            writes.exit()
         return True
 
     write_task_state = make_task_state_writer(
@@ -188,12 +187,14 @@ def test_task_state_writer_serializes_concurrent_writes() -> None:
     threads = [threading.Thread(target=write_task_state, kwargs={"force": True}) for _ in range(6)]
     for thread in threads:
         thread.start()
+    writes.wait_until_peak(1)
+    writes.release()
     for thread in threads:
         thread.join(timeout=2)
 
     assert all(not thread.is_alive() for thread in threads)
     assert write_calls == 6
-    assert max_active_writes == 1
+    assert writes.peak == 1
 
 
 def test_normalize_source_report_row_preserves_static_stage_timings() -> None:
@@ -1671,9 +1672,7 @@ def test_teamtailor_sources_fetch_detail_pages_with_bounded_concurrency() -> Non
 def test_teamtailor_sources_fetch_sources_with_bounded_concurrency() -> None:
     from src.jobs.adapters.plugins.provider_api import teamtailor_runner as teamtailor_module
 
-    active_fetches = 0
-    max_active_fetches = 0
-    lock = threading.Lock()
+    fetches = BlockingActiveCounter(auto_release_at=2)
     captured: dict[str, object] = {}
 
     def _registry_entries(adapter: str) -> list[dict[str, object]]:
@@ -1695,17 +1694,13 @@ def test_teamtailor_sources_fetch_sources_with_bounded_concurrency() -> None:
         retries: int,
         backoff_s: float,
     ) -> str:
-        nonlocal active_fetches, max_active_fetches
         _ = fetch_text, timeout_s, retries, backoff_s
-        with lock:
-            active_fetches += 1
-            max_active_fetches = max(max_active_fetches, active_fetches)
+        fetches.enter()
         try:
-            time.sleep(0.02)
+            fetches.wait_released()
             return "<html>listing</html>" if url.endswith("/jobs") else "<html>detail</html>"
         finally:
-            with lock:
-                active_fetches -= 1
+            fetches.exit()
 
     def _parse_listing_links(listing_html: str, *, base_url: str) -> list[str]:
         _ = listing_html
@@ -1778,7 +1773,7 @@ def test_teamtailor_sources_fetch_sources_with_bounded_concurrency() -> None:
             backoff_s=0,
         )
 
-    assert max_active_fetches > 1
+    assert fetches.peak > 1
     assert [row["studio"] for row in rows] == [
         "Concurrent Studio 1",
         "Concurrent Studio 2",
