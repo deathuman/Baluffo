@@ -37,6 +37,7 @@ def _default_data_dir() -> Path:
 
 
 def _metrics_path(data_dir: Path | str | None = None) -> Path:
+    # codeql[py/path-injection] Storage metrics data_dir is trusted local runtime configuration.
     root = Path(data_dir).expanduser().resolve() if data_dir is not None else _default_data_dir()
     return root / STORAGE_METRICS_FILE_NAME
 

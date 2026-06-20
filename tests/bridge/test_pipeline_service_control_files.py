@@ -3,7 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from src.bridge.pipeline_control_files import read_pipeline_status, write_abort_request
+from src.bridge.pipeline_control_files import (
+    abort_request_path,
+    abort_requests_dir,
+    read_pipeline_status,
+    write_abort_request,
+)
 from src.bridge.pipeline_service import PipelineAbortRequested, PipelineRuntime, PipelineService
 from src.source_registry_io import load_runtime_evidence
 
@@ -63,6 +68,27 @@ def test_pipeline_service_consumes_container_gateway_abort_request(tmp_path: Pat
             "reason": "test",
         }
     }
+
+
+def test_abort_request_path_sanitizes_run_id_under_abort_root(tmp_path: Path) -> None:
+    run_id = r"..\..\outside/pipeline_1"
+    target = abort_request_path(tmp_path, run_id)
+    root = abort_requests_dir(tmp_path)
+
+    assert target.parent == root
+    assert target.name == "outsidepipeline_1.json"
+    assert target.resolve().relative_to(root.resolve())
+
+    write_abort_request(
+        tmp_path,
+        run_id=run_id,
+        task_type="pipeline",
+        reason="test",
+        requested_at="2026-05-06T19:00:01Z",
+    )
+
+    assert target.exists()
+    assert not (tmp_path / "outside" / "pipeline_1.json").exists()
 
 
 def test_pipeline_control_abort_requests_child_and_waits_for_live_child(

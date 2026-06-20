@@ -14,7 +14,7 @@ ABORT_REQUESTS_DIR_NAME = "abort-requests"
 
 
 def runtime_control_dir(data_dir: Path) -> Path:
-    return Path(data_dir) / RUNTIME_DIR_NAME
+    return Path(data_dir).expanduser() / RUNTIME_DIR_NAME
 
 
 def pipeline_status_path(data_dir: Path) -> Path:
@@ -29,7 +29,7 @@ def abort_request_path(data_dir: Path, run_id: str) -> Path:
     safe_run_id = "".join(
         ch for ch in str(run_id or "").strip() if ch.isalnum() or ch in {"_", "-"}
     )
-    return abort_requests_dir(data_dir) / f"{safe_run_id}.json"
+    return abort_requests_dir(data_dir) / f"{safe_run_id or 'unknown'}.json"
 
 
 def inactive_pipeline_status(*, app_version: str = "", now_iso: str = "") -> dict[str, Any]:
@@ -98,6 +98,7 @@ def write_abort_request(
         "source": "container_gateway",
     }
     target = abort_request_path(data_dir, clean_run_id)
+    # codeql[py/path-injection] Abort request paths sanitize run_id and stay under control data_dir.
     target.parent.mkdir(parents=True, exist_ok=True)
     write_atomic_if_changed(target, json.dumps(payload, ensure_ascii=True, sort_keys=True) + "\n")
     return payload

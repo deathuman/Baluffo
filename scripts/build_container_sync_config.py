@@ -135,7 +135,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if output is None:
         print("Container source sync config not generated; build secrets were not provided.")
     else:
-        print(str(output))
+        print("Container source sync config generated.")
     return 0
 
 

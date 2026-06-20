@@ -111,3 +111,34 @@ def test_container_sync_config_cli_runs_from_repo_root_without_secrets(
 
     assert "build secrets were not provided" in completed.stdout
     assert not output.exists()
+
+
+def test_container_sync_config_cli_success_does_not_print_output_path(
+    repo_root: Path, tmp_path: Path
+) -> None:
+    secret_dir = tmp_path / "secrets"
+    output = tmp_path / "packaging" / "github-app-sync-config.json"
+    _write_secret(secret_dir, "BALUFFO_SYNC_BUILD_APP_ID", "123456")
+    _write_secret(secret_dir, "BALUFFO_SYNC_BUILD_INSTALLATION_ID", "999999")
+    _write_secret(secret_dir, "BALUFFO_SYNC_BUILD_REPO", "owner/repo")
+    _write_secret(secret_dir, "BALUFFO_SYNC_BUILD_PRIVATE_KEY_PEM", _PRIVATE_KEY)
+
+    completed = subprocess.run(  # noqa: S603
+        [
+            sys.executable,
+            "scripts/build_container_sync_config.py",
+            "--secret-dir",
+            str(secret_dir),
+            "--output",
+            str(output),
+            "--require",
+        ],
+        cwd=repo_root,
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+
+    assert "Container source sync config generated." in completed.stdout
+    assert str(output) not in completed.stdout
+    assert output.exists()

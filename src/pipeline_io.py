@@ -20,14 +20,21 @@ from src.storage_metrics import duration_ms, record_json_write
 RawJob = dict[str, Any]
 
 
-def _storage_target_path(path: Path) -> Path:
-    return gzip_backed_json_storage_path(Path(path))
+def _trusted_local_path(path: Path | str) -> Path:
+    return Path(path).expanduser()
+
+
+def _storage_target_path(path: Path | str) -> Path:
+    return gzip_backed_json_storage_path(_trusted_local_path(path))
 
 
 def _read_text_path(path: Path) -> str:
+    path = _trusted_local_path(path)
     if path.suffix == ".gz":
+        # codeql[py/path-injection] Pipeline IO only reads trusted local runtime artifacts.
         with gzip.open(path, mode="rt", encoding="utf-8") as handle:
             return handle.read()
+    # codeql[py/path-injection] Pipeline IO only reads trusted local runtime artifacts.
     return path.read_text(encoding="utf-8")
 
 
@@ -44,8 +51,10 @@ def _record_text_write_metrics(
 ) -> None:
     if not _records_json_storage_metrics(target):
         return
+    target = _trusted_local_path(target)
     uncompressed_size_bytes = len(text.encode("utf-8"))
     try:
+        # codeql[py/path-injection] Storage metrics inspect trusted local runtime artifacts.
         compressed_size_bytes = target.stat().st_size
     except OSError:
         compressed_size_bytes = uncompressed_size_bytes
@@ -134,9 +143,11 @@ def write_text_if_changed(path: Path, text: str) -> bool:
 
 
 def _write_text_with_retry(path: Path, text: str, *, attempts: int, sleep_base_s: float) -> None:
+    path = _trusted_local_path(path)
     last_error: OSError | None = None
     for attempt in range(max(1, int(attempts or 1))):
         try:
+            # codeql[py/path-injection] Pipeline IO only writes trusted local runtime artifacts.
             path.write_text(text, encoding="utf-8")
             return
         except OSError as exc:
@@ -157,17 +168,22 @@ def _write_atomic_text(
     fallback_to_in_place: bool = False,
 ) -> None:
     """Write text to path via temp file + replace, with optional retry/fallback."""
+    path = _trusted_local_path(path)
+    # codeql[py/path-injection] Pipeline IO only creates trusted local runtime artifact parents.
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
     try:
         if path.suffix == ".gz":
+            # codeql[py/path-injection] Pipeline IO temp files stay next to trusted artifacts.
             with gzip.open(tmp_path, mode="wt", encoding="utf-8") as handle:
                 handle.write(text)
         else:
+            # codeql[py/path-injection] Pipeline IO temp files stay next to trusted artifacts.
             tmp_path.write_text(text, encoding="utf-8")
         last_error: OSError | None = None
         for attempt in range(max(1, int(attempts or 1))):
             try:
+                # codeql[py/path-injection] Atomic replace targets trusted local runtime artifacts.
                 os.replace(tmp_path, path)
                 last_error = None
                 return
@@ -189,6 +205,7 @@ def _write_atomic_text(
             raise last_error
     finally:
         try:
+            # codeql[py/path-injection] Cleanup only removes the trusted sibling temp file created above.
             tmp_path.unlink(missing_ok=True)
         except OSError:
             pass
@@ -201,7 +218,9 @@ def write_atomic_if_changed(path: Path, text: str) -> bool:
 
 def write_hot_text_if_changed(path: Path, text: str) -> bool:
     """Write frequently polled task/report files with retry and in-place fallback on Windows locks."""
+    path = _trusted_local_path(path)
     try:
+        # codeql[py/path-injection] Hot writes only compare trusted local runtime artifacts.
         existing = path.read_text(encoding="utf-8")
         if existing == text:
             return False

@@ -21,7 +21,7 @@ function slugify(value) {
 }
 
 function timestampSlug() {
-  return new Date().toISOString().replace(/[:.]/g, "").replace("T", "-").replace("Z", "Z");
+  return new Date().toISOString().replace(/[:.]/g, "").replace("T", "-");
 }
 
 function normalizeBaseUrl(value, fallback) {
