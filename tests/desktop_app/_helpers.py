@@ -5,6 +5,7 @@ from unittest import mock
 
 from src.ship import desktop_app
 from src.ship.desktop_app import _windows as windows_desktop_app
+from tests.helpers.ports import ADMIN_BRIDGE_TEST_PORT
 
 
 def desktop_runtime_config(**overrides: object) -> desktop_app.DesktopRuntimeConfig:
@@ -12,7 +13,7 @@ def desktop_runtime_config(**overrides: object) -> desktop_app.DesktopRuntimeCon
     values = {
         "ship_root": ship_root,
         "site_port": 8080,
-        "bridge_port": 8877,
+        "bridge_port": ADMIN_BRIDGE_TEST_PORT,
         "bridge_host": "127.0.0.1",
         "data_dir": ship_root / "data",
         "open_path": "jobs.html",
@@ -27,7 +28,7 @@ def launcher_session(**overrides: object) -> dict[str, object]:
     values: dict[str, object] = {
         "launcherPid": 1234,
         "launcherToken": "existing-launcher-token",
-        "bridgePort": 8877,
+        "bridgePort": ADMIN_BRIDGE_TEST_PORT,
         "url": "http://127.0.0.1:8080/jobs.html?desktop=1",
         "browserPath": "C:/Edge/msedge.exe",
     }
@@ -43,7 +44,7 @@ def stale_launcher_session(**overrides: object) -> dict[str, object]:
         "desktopOwnerToken": "stale-owner",
         "launcherStartedAt": "2026-04-20T05:00:00+00:00",
         "sitePort": 8080,
-        "bridgePort": 8877,
+        "bridgePort": ADMIN_BRIDGE_TEST_PORT,
         "bridgeHost": "127.0.0.1",
         "exePath": "C:/tmp/Baluffo.exe",
         "dataDir": "C:/tmp/baluffo-ship/data",

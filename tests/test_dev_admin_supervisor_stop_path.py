@@ -7,6 +7,7 @@ from unittest import mock
 import pytest
 
 from src import dev_admin_supervisor as supervisor
+from tests.helpers.ports import ADMIN_BRIDGE_TEST_PORT
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -38,7 +39,7 @@ def test_run_supervised_admin_session_disables_bridge_owner_timeout() -> None:
             root=Path(tmp),
             data_dir=data_dir,
             site_port=8080,
-            bridge_port=8877,
+            bridge_port=ADMIN_BRIDGE_TEST_PORT,
             bridge_host="127.0.0.1",
             open_path="jobs.html",
             owner_idle_timeout_s=30.0,

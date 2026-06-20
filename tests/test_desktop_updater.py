@@ -12,6 +12,7 @@ from src.ship import desktop_updater_install as updater_install
 from src.ship import desktop_updater_release as updater_release
 from src.ship import desktop_updater_ui as updater_ui
 from src.ship.desktop_update_constants import MANIFEST_CACHE_FILE
+from tests.helpers.ports import ADMIN_BRIDGE_TEST_PORT
 from tests.helpers.temp_paths import workspace_tmpdir
 
 updater = SimpleNamespace(
@@ -593,7 +594,7 @@ def test_verify_target_startup_retries_after_transient_bridge_refusal(monkeypatc
         update_state.write_success_marker(
             paths,
             app_version="1.4.0",
-            bridge_port=8877,
+            bridge_port=ADMIN_BRIDGE_TEST_PORT,
             launcher_token="token-1",
         )
         health_calls = mock.Mock(

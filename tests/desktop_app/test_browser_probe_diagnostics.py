@@ -3,6 +3,7 @@ from pathlib import Path
 from unittest import mock
 
 from src.ship import desktop_app
+from tests.helpers.ports import ADMIN_BRIDGE_TEST_PORT
 
 
 def test_resolve_chromium_browser_candidates_prefers_explicit_browser_path() -> None:
@@ -71,7 +72,7 @@ def test_watch_browser_session_reports_early_browser_exit_details() -> None:
         result = desktop_app.watch_browser_session(
             Path("C:/tmp"),
             5.0,
-            bridge_port=8877,
+            bridge_port=ADMIN_BRIDGE_TEST_PORT,
             bridge_process=bridge_process,
             browser_process=browser_process,
             browser_pid=9091,

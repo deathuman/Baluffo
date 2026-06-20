@@ -9,6 +9,7 @@ import pytest
 from src.app_version import APP_VERSION
 from src.ship import desktop_app
 from tests.desktop_app._helpers import desktop_runtime_config
+from tests.helpers.ports import ADMIN_BRIDGE_TEST_PORT
 
 
 def _patch_desktop_launch(config, *, launch_result, watch_result="heartbeat_timeout"):
@@ -86,7 +87,7 @@ def test_launch_desktop_app_saves_attention_window_identity_and_session_root() -
     watch_mock.assert_called_once_with(
         config.data_dir,
         mock.ANY,
-        bridge_port=8877,
+        bridge_port=ADMIN_BRIDGE_TEST_PORT,
         bridge_process=mock.ANY,
         browser_process=browser_process,
         browser_pid=303,

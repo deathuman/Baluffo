@@ -21,22 +21,16 @@ Closed context worth remembering:
 - CanonicalJob missing lifecycle/location fields, shared private shape helpers, shared JSON/storage-metrics isolation, and quick CSS theme fixes are done.
 - Test sleep cleanup is done; keep `rg -n "time\\.sleep\\(" tests` empty when adding or changing tests.
 - Targeted `admin_bridge` test seam cleanup is done for the shared fixture, source-policy setup, and task-launch setup; remaining direct internals are compatibility or service-holder tests.
+- Port-8877 coupling cleanup is done for live/config-style test defaults; remaining literals are contract URLs, persisted payload examples, or expected assertions.
 - macOS platform work remains deferred by product priority.
 
 ## Active Work Queue
 
-1. **Tighten port-8877 test coupling**
-   - Admin `RuntimeConfig(port=8877)` test defaults now use `tests.helpers.ports.ADMIN_BRIDGE_TEST_PORT`.
-   - Replace live-bind/config defaults with named fixtures or dynamic ports where tests start real servers.
-   - Leave examples, expected payload URLs, and documentation-style literals alone when the literal is part of the contract being asserted.
-   - Next target: desktop/packaged runtime helper defaults; avoid URL/assertion literals that intentionally prove `8877`.
-   - Avoid a broad mechanical replacement.
-
-2. **Normalize remaining datetime parsing only where behavior can drift**
+1. **Normalize remaining datetime parsing only where behavior can drift**
    - Public bridge/source-sync `parse_iso` wrappers already delegate to `src.shared.utils.parse_iso`.
    - Only clean inline `datetime.fromisoformat(...replace("Z", "+00:00"))` variants when they affect shared behavior or contract-facing code.
 
-3. **CSS cleanup stays optional**
+2. **CSS cleanup stays optional**
    - Quick fixes already landed for fetch-progress theme color and redirect-page theme initialization.
    - Full CSS bundling/minification/hashing is useful only if frontend deploy/cache pain becomes active.
 

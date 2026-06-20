@@ -6,6 +6,7 @@ from pathlib import Path
 from urllib.request import urlopen
 
 from src.ship import runtime_launcher as rl
+from tests.helpers.ports import ADMIN_BRIDGE_TEST_PORT
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -76,7 +77,7 @@ def test_frontend_runtime_config_flips_jobs_cold_start_after_feed_recovery() -> 
             static_data_dir=data_dir,
             startup_probe=False,
             desktop_bridge_host="127.0.0.1",
-            desktop_bridge_port=8877,
+            desktop_bridge_port=ADMIN_BRIDGE_TEST_PORT,
             jobs_cold_start=rl.jobs_cold_start_required(data_dir),
         )
         with _site_server(handler) as base_url:
@@ -116,7 +117,7 @@ def test_frontend_runtime_config_skips_cold_start_when_feed_survives_failed_repo
             static_data_dir=data_dir,
             startup_probe=False,
             desktop_bridge_host="127.0.0.1",
-            desktop_bridge_port=8877,
+            desktop_bridge_port=ADMIN_BRIDGE_TEST_PORT,
             jobs_cold_start=rl.jobs_cold_start_required(data_dir),
         )
         with _site_server(handler) as base_url:

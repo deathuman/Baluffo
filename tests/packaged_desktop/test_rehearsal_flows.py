@@ -12,6 +12,7 @@ import pytest
 from src import packaged_desktop_smoke as smoke
 from src import source_sync
 from src.ship.packaged_smoke import runtime_process
+from tests.helpers.ports import ADMIN_BRIDGE_TEST_PORT
 from tests.helpers.temp_paths import workspace_tmpdir
 
 from ._helpers import _write_packaged_sync_bundle_config
@@ -461,7 +462,7 @@ def test_launch_packaged_desktop_child_uses_ship_root_layout() -> None:
             smoke.launch_packaged_desktop_child(
                 exe_path,
                 mode="bridge",
-                port=8877,
+                port=ADMIN_BRIDGE_TEST_PORT,
                 owner_token="owner-token",
                 desktop_session_id="desktop-session",
                 stdout_path=portable_root / "bridge.stdout.log",
@@ -487,7 +488,7 @@ def test_launch_packaged_exe_can_pass_owner_idle_timeout_override() -> None:
             returned_process, stdout_handle, stderr_handle = runtime_process.launch_packaged_exe(
                 exe_path,
                 site_port=8080,
-                bridge_port=8877,
+                bridge_port=ADMIN_BRIDGE_TEST_PORT,
                 data_dir=root / "data",
                 stdout_path=root / "stdout.log",
                 stderr_path=root / "stderr.log",
@@ -593,7 +594,7 @@ def test_wait_for_packaged_runtime_with_port_pivot_prefers_env_scoped_session_ro
             runtime_state = smoke.wait_for_packaged_runtime_with_port_pivot(
                 process,
                 requested_site_port=8080,
-                requested_bridge_port=8877,
+                requested_bridge_port=ADMIN_BRIDGE_TEST_PORT,
                 expected_data_dir=expected_data_dir,
                 timeout_s=0.2,
                 env=run_env,
@@ -633,7 +634,7 @@ def test_wait_for_packaged_runtime_with_port_pivot_tolerates_optional_status_fet
             runtime_state = smoke.wait_for_packaged_runtime_with_port_pivot(
                 process,
                 requested_site_port=8080,
-                requested_bridge_port=8877,
+                requested_bridge_port=ADMIN_BRIDGE_TEST_PORT,
                 expected_data_dir=expected_data_dir,
                 timeout_s=0.2,
                 required_events=("desktop_runtime_port_retry",),

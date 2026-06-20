@@ -14,6 +14,7 @@ from tests.desktop_app._helpers import (
     launcher_session,
     stale_launcher_session,
 )
+from tests.helpers.ports import ADMIN_BRIDGE_TEST_PORT
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -276,7 +277,7 @@ def test_launch_desktop_app_starts_children_saves_session_and_watches_browser() 
     watch_mock.assert_called_once_with(
         data_dir,
         mock.ANY,
-        bridge_port=8877,
+        bridge_port=ADMIN_BRIDGE_TEST_PORT,
         bridge_process=mock.ANY,
         browser_process=fake_browser_process,
         browser_pid=0,
@@ -874,7 +875,7 @@ def test_launch_desktop_app_can_skip_browser_launch_for_packaged_rehearsal() -> 
     watch_mock.assert_called_once_with(
         data_dir,
         mock.ANY,
-        bridge_port=8877,
+        bridge_port=ADMIN_BRIDGE_TEST_PORT,
         bridge_process=mock.ANY,
         browser_process=None,
         browser_pid=0,
@@ -1108,7 +1109,7 @@ def test_launch_desktop_app_does_not_recover_to_default_browser_after_process_ex
     watch_mock.assert_called_once_with(
         data_dir,
         mock.ANY,
-        bridge_port=8877,
+        bridge_port=ADMIN_BRIDGE_TEST_PORT,
         bridge_process=mock.ANY,
         browser_process=fake_browser_process,
         browser_pid=0,
@@ -1617,7 +1618,7 @@ def test_launch_desktop_app_keeps_runtime_alive_when_browser_launch_fails() -> N
     watch_mock.assert_called_once_with(
         data_dir,
         mock.ANY,
-        bridge_port=8877,
+        bridge_port=ADMIN_BRIDGE_TEST_PORT,
         bridge_process=mock.ANY,
         browser_process=None,
         browser_pid=0,
@@ -1733,7 +1734,7 @@ def test_launch_desktop_app_recovers_when_initial_browser_attach_fails() -> None
     watch_mock.assert_called_once_with(
         data_dir,
         mock.ANY,
-        bridge_port=8877,
+        bridge_port=ADMIN_BRIDGE_TEST_PORT,
         bridge_process=mock.ANY,
         browser_process=None,
         browser_pid=0,

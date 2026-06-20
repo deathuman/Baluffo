@@ -4,6 +4,7 @@ from unittest import mock
 
 from src.ship import desktop_app
 from src.ship.desktop_app import session as desktop_session
+from tests.helpers.ports import ADMIN_BRIDGE_TEST_PORT
 
 
 def test_watch_browser_session_uses_heartbeat_when_no_browser_process() -> None:
@@ -21,7 +22,7 @@ def test_watch_browser_session_uses_heartbeat_when_no_browser_process() -> None:
         result = desktop_app.watch_browser_session(
             Path("C:/tmp"),
             5.0,
-            bridge_port=8877,
+            bridge_port=ADMIN_BRIDGE_TEST_PORT,
             browser_process=None,
             heartbeat_idle_timeout_s=30.0,
         )
@@ -29,9 +30,7 @@ def test_watch_browser_session_uses_heartbeat_when_no_browser_process() -> None:
     assert result == "heartbeat_timeout"
 
 
-def test_watch_browser_session_prefers_bridge_exit_when_authoritative_process_is_available() -> (
-    None
-):
+def test_watch_browser_session_prefers_bridge_exit_when_authoritative_process_is_available():
     bridge_process = mock.Mock(spec=subprocess.Popen)
     bridge_process.poll.side_effect = [None, 0]
     browser_process = mock.Mock(spec=subprocess.Popen)
@@ -44,7 +43,7 @@ def test_watch_browser_session_prefers_bridge_exit_when_authoritative_process_is
         result = desktop_app.watch_browser_session(
             Path("C:/tmp"),
             5.0,
-            bridge_port=8877,
+            bridge_port=ADMIN_BRIDGE_TEST_PORT,
             bridge_process=bridge_process,
             browser_process=browser_process,
         )
@@ -75,7 +74,7 @@ def test_watch_browser_session_times_out_missing_window_with_bridge_authoritativ
         result = desktop_app.watch_browser_session(
             Path("C:/tmp"),
             5.0,
-            bridge_port=8877,
+            bridge_port=ADMIN_BRIDGE_TEST_PORT,
             bridge_process=bridge_process,
             browser_process=None,
             browser_pid=6060,
@@ -111,7 +110,7 @@ def test_watch_browser_session_bridge_authoritative_missing_window_still_prefers
         result = desktop_app.watch_browser_session(
             Path("C:/tmp"),
             5.0,
-            bridge_port=8877,
+            bridge_port=ADMIN_BRIDGE_TEST_PORT,
             bridge_process=bridge_process,
             browser_process=None,
             browser_pid=6061,
@@ -141,7 +140,7 @@ def test_watch_browser_session_detects_window_close_in_detached_mode() -> None:
         result = desktop_app.watch_browser_session(
             Path("C:/tmp"),
             5.0,
-            bridge_port=8877,
+            bridge_port=ADMIN_BRIDGE_TEST_PORT,
             browser_process=None,
             browser_pid=4040,
         )
@@ -167,7 +166,7 @@ def test_watch_browser_session_keeps_detached_launcher_alive_when_heartbeat_exis
         result = desktop_app.watch_browser_session(
             Path("C:/tmp"),
             5.0,
-            bridge_port=8877,
+            bridge_port=ADMIN_BRIDGE_TEST_PORT,
             browser_process=None,
             browser_pid=5050,
             heartbeat_idle_timeout_s=30.0,
@@ -190,7 +189,7 @@ def test_watch_browser_session_ignores_missing_window_in_no_browser_mode() -> No
         result = desktop_app.watch_browser_session(
             Path("C:/tmp"),
             5.0,
-            bridge_port=8877,
+            bridge_port=ADMIN_BRIDGE_TEST_PORT,
             browser_process=None,
             heartbeat_idle_timeout_s=30.0,
             require_window=False,
@@ -228,7 +227,7 @@ def test_watch_browser_session_background_recovery_waits_for_active_work_to_fini
         result = desktop_app.watch_browser_session(
             Path("C:/tmp"),
             5.0,
-            bridge_port=8877,
+            bridge_port=ADMIN_BRIDGE_TEST_PORT,
             bridge_process=bridge_process,
             browser_process=None,
             require_window=False,
@@ -259,7 +258,7 @@ def test_load_active_critical_desktop_tasks_uses_summary_route() -> None:
     with mock.patch.object(desktop_session, "_fetch_json", side_effect=fake_fetch_json):
         active_tasks = desktop_app._load_active_critical_desktop_tasks(
             Path("C:/tmp"),
-            bridge_port=8877,
+            bridge_port=ADMIN_BRIDGE_TEST_PORT,
             allow_disk_fallback=False,
         )
 
@@ -281,7 +280,7 @@ def test_watch_browser_session_background_recovery_exits_when_bridge_is_unavaila
         result = desktop_app.watch_browser_session(
             Path("C:/tmp"),
             5.0,
-            bridge_port=8877,
+            bridge_port=ADMIN_BRIDGE_TEST_PORT,
             bridge_process=bridge_process,
             browser_process=None,
             require_window=False,
@@ -323,7 +322,7 @@ def test_watch_browser_session_confirms_handoff_after_accepted_process_exit_when
         result = desktop_app.watch_browser_session(
             Path("C:/tmp"),
             5.0,
-            bridge_port=8877,
+            bridge_port=ADMIN_BRIDGE_TEST_PORT,
             bridge_process=bridge_process,
             browser_process=browser_process,
             browser_pid=9090,
@@ -367,7 +366,7 @@ def test_watch_browser_session_returns_handoff_failed_when_signal_never_arrives(
         result = desktop_app.watch_browser_session(
             Path("C:/tmp"),
             5.0,
-            bridge_port=8877,
+            bridge_port=ADMIN_BRIDGE_TEST_PORT,
             bridge_process=bridge_process,
             browser_process=browser_process,
             browser_pid=9091,
@@ -413,7 +412,7 @@ def test_watch_browser_session_times_out_missing_handoff_window_stale_activity()
         result = desktop_app.watch_browser_session(
             Path("C:/tmp"),
             5.0,
-            bridge_port=8877,
+            bridge_port=ADMIN_BRIDGE_TEST_PORT,
             bridge_process=bridge_process,
             browser_process=browser_process,
             browser_pid=9092,

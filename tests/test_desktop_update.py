@@ -14,6 +14,7 @@ from src.ship import desktop_update_shared as du_shared
 from src.ship import desktop_update_state as update_state
 from src.ship.desktop_app import config as desktop_app_config
 from tests.helpers.desktop_update_leaf_namespace import du
+from tests.helpers.ports import ADMIN_BRIDGE_TEST_PORT
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -480,7 +481,7 @@ def test_load_desktop_update_public_keys_reads_packaged_fallback() -> None:
         assert keys["desktop-ed25519-2026-01"] == b"p" * 32
 
 
-def test_load_desktop_update_public_keys_repairs_missing_current_pointer() -> None:
+def test_load_desktop_update_public_keys_repairs_missing_current_pointer():
     with workspace_tmpdir("desktop-update") as tmp:
         ship_root = Path(tmp) / "portable" / "ship"
         app_dir = ship_root / "app"
@@ -670,7 +671,6 @@ def test_resolve_release_repo_prefers_packaged_desktop_update_config() -> None:
             json.dumps({"repo": "owner/sync-backup"}),
             encoding="utf-8",
         )
-
         repo = du.resolve_release_repo(
             install_root=ship_root.parent,
             ship_root=ship_root,
@@ -1486,7 +1486,7 @@ def test_request_install_writes_plan_and_launches_helper() -> None:
         du.write_success_marker(
             paths,
             app_version="0.1.0",
-            bridge_port=8877,
+            bridge_port=ADMIN_BRIDGE_TEST_PORT,
             launcher_token="stale-token",
         )
 

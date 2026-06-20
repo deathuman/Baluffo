@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest import mock
 
 from src import dev_admin_supervisor as supervisor
+from tests.helpers.ports import ADMIN_BRIDGE_TEST_PORT
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -13,7 +14,7 @@ def test_build_bridge_command_includes_owner_metadata() -> None:
         root=Path("C:/repo"),
         data_dir=Path("C:/repo/data"),
         site_port=8080,
-        bridge_port=8877,
+        bridge_port=ADMIN_BRIDGE_TEST_PORT,
         bridge_host="127.0.0.1",
         open_path="jobs.html",
         owner_idle_timeout_s=30.0,
@@ -105,7 +106,7 @@ def test_run_supervised_admin_session_terminates_owned_children_on_exit() -> Non
             root=Path(tmp),
             data_dir=data_dir,
             site_port=8080,
-            bridge_port=8877,
+            bridge_port=ADMIN_BRIDGE_TEST_PORT,
             bridge_host="127.0.0.1",
             open_path="jobs.html",
             owner_idle_timeout_s=30.0,
@@ -152,7 +153,7 @@ def test_run_supervised_admin_session_keeps_children_alive_when_browser_detaches
             root=Path(tmp),
             data_dir=data_dir,
             site_port=8080,
-            bridge_port=8877,
+            bridge_port=ADMIN_BRIDGE_TEST_PORT,
             bridge_host="127.0.0.1",
             open_path="jobs.html",
             owner_idle_timeout_s=30.0,

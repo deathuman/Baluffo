@@ -7,6 +7,7 @@ import pytest
 
 from src.ship import desktop_app, windows_user_paths
 from src.ship.desktop_app import config as config_mod
+from tests.helpers.ports import ADMIN_BRIDGE_TEST_PORT
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -349,7 +350,7 @@ def test_build_open_url_marks_desktop_mode() -> None:
     config = desktop_app.DesktopRuntimeConfig(
         ship_root=Path("C:/tmp/baluffo-ship"),
         site_port=8080,
-        bridge_port=8877,
+        bridge_port=ADMIN_BRIDGE_TEST_PORT,
         bridge_host="127.0.0.1",
         data_dir=Path("C:/tmp/baluffo-ship/data"),
         open_path="jobs.html",
@@ -366,7 +367,7 @@ def test_build_open_url_marks_startup_probe_when_enabled() -> None:
     config = desktop_app.DesktopRuntimeConfig(
         ship_root=Path("C:/tmp/baluffo-ship"),
         site_port=8080,
-        bridge_port=8877,
+        bridge_port=ADMIN_BRIDGE_TEST_PORT,
         bridge_host="127.0.0.1",
         data_dir=Path("C:/tmp/baluffo-ship/data"),
         open_path="jobs.html",
@@ -383,7 +384,7 @@ def test_build_open_url_marks_jobs_cold_start_when_enabled() -> None:
     config = desktop_app.DesktopRuntimeConfig(
         ship_root=Path("C:/tmp/baluffo-ship"),
         site_port=8080,
-        bridge_port=8877,
+        bridge_port=ADMIN_BRIDGE_TEST_PORT,
         bridge_host="127.0.0.1",
         data_dir=Path("C:/tmp/baluffo-ship/data"),
         open_path="jobs.html",
@@ -401,7 +402,7 @@ def test_build_open_url_does_not_mark_jobs_cold_start_for_non_jobs_entry() -> No
     config = desktop_app.DesktopRuntimeConfig(
         ship_root=Path("C:/tmp/baluffo-ship"),
         site_port=8080,
-        bridge_port=8877,
+        bridge_port=ADMIN_BRIDGE_TEST_PORT,
         bridge_host="127.0.0.1",
         data_dir=Path("C:/tmp/baluffo-ship/data"),
         open_path="admin.html",
@@ -419,7 +420,7 @@ def test_resolve_runtime_ports_falls_back_to_free_ports_for_defaults() -> None:
     config = desktop_app.DesktopRuntimeConfig(
         ship_root=Path("C:/tmp/baluffo-ship"),
         site_port=8080,
-        bridge_port=8877,
+        bridge_port=ADMIN_BRIDGE_TEST_PORT,
         bridge_host="127.0.0.1",
         data_dir=Path("C:/tmp/baluffo-ship/data"),
         open_path="jobs.html",
@@ -450,7 +451,7 @@ def test_resolve_runtime_ports_keeps_explicit_port_fail_fast() -> None:
     config = desktop_app.DesktopRuntimeConfig(
         ship_root=Path("C:/tmp/baluffo-ship"),
         site_port=8080,
-        bridge_port=8877,
+        bridge_port=ADMIN_BRIDGE_TEST_PORT,
         bridge_host="127.0.0.1",
         data_dir=Path("C:/tmp/baluffo-ship/data"),
         open_path="jobs.html",

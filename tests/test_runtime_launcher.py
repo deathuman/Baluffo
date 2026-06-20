@@ -15,6 +15,7 @@ import pytest
 from src.app_version import APP_VERSION
 from src.ship import runtime_launcher as rl
 from src.ship import startup_telemetry as telemetry
+from tests.helpers.ports import ADMIN_BRIDGE_TEST_PORT
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -890,7 +891,7 @@ def test_run_bridge_server_forwards_desktop_owner_arguments() -> None:
                 rl.run_bridge_server(
                     root,
                     bind_host="127.0.0.1",
-                    port=8877,
+                    port=ADMIN_BRIDGE_TEST_PORT,
                     data_dir=root / "data",
                     desktop_mode=True,
                     owner_mode="desktop-window",
@@ -936,7 +937,7 @@ def test_run_bridge_server_continues_when_jobs_quarantine_raises() -> None:
                 rl.run_bridge_server(
                     root,
                     bind_host="127.0.0.1",
-                    port=8877,
+                    port=ADMIN_BRIDGE_TEST_PORT,
                     data_dir=root / "data",
                 )
 
@@ -974,7 +975,7 @@ def test_run_bridge_server_uses_current_version_repaired_by_startup_check() -> N
                 rl.run_bridge_server(
                     root,
                     bind_host="127.0.0.1",
-                    port=8877,
+                    port=ADMIN_BRIDGE_TEST_PORT,
                     data_dir=root / "data",
                 )
 
@@ -1009,7 +1010,7 @@ def test_run_bridge_server_emits_bootstrap_trace_events_for_startup_probe() -> N
                 rl.run_bridge_server(
                     root,
                     bind_host="127.0.0.1",
-                    port=8877,
+                    port=ADMIN_BRIDGE_TEST_PORT,
                     data_dir=data_dir,
                     desktop_mode=True,
                     owner_mode="desktop-window",
