@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 
 from src import admin_bridge
@@ -16,11 +15,32 @@ def _api():
 
 def _write_json(path: Path, payload) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    admin_bridge.save_json_atomic(path, payload)
 
 
 def _soak_report_path(data_root: Path) -> Path:
     return data_root.parent / "_out" / "source-policy-soak-report.json"
+
+
+def _active_registry_path(data_root: Path) -> Path:
+    return data_root / "source-registry-active.json"
+
+
+def _source_policy_recommendations_path(data_root: Path) -> Path:
+    return data_root / "source-policy-recommendations.json"
+
+
+def _source_policy_review_state_path(data_root: Path) -> Path:
+    return data_root / "source-policy-review-state.json"
+
+
+def _write_active_registry(data_root: Path, rows: list[dict]) -> None:
+    _write_json(_active_registry_path(data_root), rows)
+
+
+def _write_empty_source_policy_state(data_root: Path) -> None:
+    _write_json(_source_policy_recommendations_path(data_root), {"schemaVersion": 1, "pairs": []})
+    _write_json(_source_policy_review_state_path(data_root), {"schemaVersion": 1, "pairs": {}})
 
 
 def _get_recommendations_payload() -> dict:
@@ -39,8 +59,8 @@ def _get_recommendations_payload() -> dict:
 def test_source_policy_recommendations_includes_link_review_candidates(
     admin_bridge_entrypoint_root,
 ) -> None:
-    admin_bridge.save_json_atomic(
-        admin_bridge.ACTIVE_PATH,
+    _write_active_registry(
+        admin_bridge_entrypoint_root,
         [
             {
                 "id": PROVIDER_ID,
@@ -58,11 +78,7 @@ def test_source_policy_recommendations_includes_link_review_candidates(
             },
         ],
     )
-    _write_json(
-        admin_bridge.SOURCE_POLICY_RECOMMENDATIONS_PATH,
-        {"schemaVersion": 1, "pairs": []},
-    )
-    _write_json(admin_bridge.SOURCE_POLICY_REVIEW_STATE_PATH, {"schemaVersion": 1, "pairs": {}})
+    _write_empty_source_policy_state(admin_bridge_entrypoint_root)
     _write_json(
         _soak_report_path(admin_bridge_entrypoint_root),
         {
@@ -209,11 +225,7 @@ def test_source_policy_recommendations_includes_link_review_candidates(
 def test_source_policy_recommendations_tolerates_missing_and_malformed_soak_report(
     admin_bridge_entrypoint_root,
 ) -> None:
-    _write_json(
-        admin_bridge.SOURCE_POLICY_RECOMMENDATIONS_PATH,
-        {"schemaVersion": 1, "pairs": []},
-    )
-    _write_json(admin_bridge.SOURCE_POLICY_REVIEW_STATE_PATH, {"schemaVersion": 1, "pairs": {}})
+    _write_empty_source_policy_state(admin_bridge_entrypoint_root)
     path = _soak_report_path(admin_bridge_entrypoint_root)
     if path.exists():
         path.unlink()
@@ -242,11 +254,7 @@ def test_source_policy_recommendations_tolerates_missing_and_malformed_soak_repo
 def test_source_policy_recommendations_includes_suppression_eligibility(
     admin_bridge_entrypoint_root,
 ) -> None:
-    _write_json(
-        admin_bridge.SOURCE_POLICY_RECOMMENDATIONS_PATH,
-        {"schemaVersion": 1, "pairs": []},
-    )
-    _write_json(admin_bridge.SOURCE_POLICY_REVIEW_STATE_PATH, {"schemaVersion": 1, "pairs": {}})
+    _write_empty_source_policy_state(admin_bridge_entrypoint_root)
     _write_json(
         _soak_report_path(admin_bridge_entrypoint_root),
         {
@@ -317,8 +325,8 @@ def test_source_policy_recommendations_includes_suppression_eligibility(
 def test_source_policy_recommendations_includes_admin_owned_registry_link_without_soak(
     admin_bridge_entrypoint_root,
 ) -> None:
-    admin_bridge.save_json_atomic(
-        admin_bridge.ACTIVE_PATH,
+    _write_active_registry(
+        admin_bridge_entrypoint_root,
         [
             {
                 "id": PROVIDER_ID,
@@ -337,11 +345,7 @@ def test_source_policy_recommendations_includes_admin_owned_registry_link_withou
             },
         ],
     )
-    _write_json(
-        admin_bridge.SOURCE_POLICY_RECOMMENDATIONS_PATH,
-        {"schemaVersion": 1, "pairs": []},
-    )
-    _write_json(admin_bridge.SOURCE_POLICY_REVIEW_STATE_PATH, {"schemaVersion": 1, "pairs": {}})
+    _write_empty_source_policy_state(admin_bridge_entrypoint_root)
     path = _soak_report_path(admin_bridge_entrypoint_root)
     if path.exists():
         path.unlink()
@@ -359,8 +363,8 @@ def test_source_policy_recommendations_includes_admin_owned_registry_link_withou
 def test_source_policy_recommendations_includes_soak_already_linked_rows(
     admin_bridge_entrypoint_root,
 ) -> None:
-    admin_bridge.save_json_atomic(
-        admin_bridge.ACTIVE_PATH,
+    _write_active_registry(
+        admin_bridge_entrypoint_root,
         [
             {
                 "id": PROVIDER_ID,
@@ -370,11 +374,7 @@ def test_source_policy_recommendations_includes_soak_already_linked_rows(
             }
         ],
     )
-    _write_json(
-        admin_bridge.SOURCE_POLICY_RECOMMENDATIONS_PATH,
-        {"schemaVersion": 1, "pairs": []},
-    )
-    _write_json(admin_bridge.SOURCE_POLICY_REVIEW_STATE_PATH, {"schemaVersion": 1, "pairs": {}})
+    _write_empty_source_policy_state(admin_bridge_entrypoint_root)
     _write_json(
         _soak_report_path(admin_bridge_entrypoint_root),
         {
@@ -407,8 +407,8 @@ def test_source_policy_recommendations_includes_soak_already_linked_rows(
 def test_source_policy_recommendations_marks_non_admin_owned_links_not_clearable(
     admin_bridge_entrypoint_root,
 ) -> None:
-    admin_bridge.save_json_atomic(
-        admin_bridge.ACTIVE_PATH,
+    _write_active_registry(
+        admin_bridge_entrypoint_root,
         [
             {
                 "id": PROVIDER_ID,
@@ -421,11 +421,7 @@ def test_source_policy_recommendations_marks_non_admin_owned_links_not_clearable
             }
         ],
     )
-    _write_json(
-        admin_bridge.SOURCE_POLICY_RECOMMENDATIONS_PATH,
-        {"schemaVersion": 1, "pairs": []},
-    )
-    _write_json(admin_bridge.SOURCE_POLICY_REVIEW_STATE_PATH, {"schemaVersion": 1, "pairs": {}})
+    _write_empty_source_policy_state(admin_bridge_entrypoint_root)
 
     payload = _get_recommendations_payload()
 

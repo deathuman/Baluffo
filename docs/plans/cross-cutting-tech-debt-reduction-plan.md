@@ -26,8 +26,9 @@ Closed context worth remembering:
 
 1. **Reduce `admin_bridge` legacy test seams**
    - First cleanup is done: `tests/admin/_helpers.py::patch_admin_bridge_paths` now delegates runtime-owned path wiring to `configure_runtime_paths`.
+   - Source-policy link-review setup now uses fixture-root path helpers instead of `admin_bridge` registry/review-state path globals.
    - Prefer `RuntimeConfig`, `BridgeServices`, route fixtures, or service-level fixtures over patching root compatibility globals.
-   - Next target: reduce direct `admin_bridge` internals in high-churn tests, especially task launch and source-policy setup.
+   - Next target: reduce direct `admin_bridge` internals in high-churn task-launch setup.
    - Keep `src/admin_bridge.py` import-compatible.
 
 2. **Tighten port-8877 test coupling**
