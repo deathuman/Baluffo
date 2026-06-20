@@ -102,3 +102,37 @@ test("deriveAdminRunsModel keeps inactive task-state rows out of current runs", 
   assert.deepEqual(model.currentRows.map(row => row.type), ["discovery"]);
   assert.deepEqual(model.visibleCompletedRows.map(row => row.type), ["fetch"]);
 });
+
+test("deriveAdminRunsModel expands pipeline activeChildren into current child rows", () => {
+  const model = deriveAdminRunsModel({
+    taskState: {
+      tasks: [
+        {
+          taskType: "pipeline",
+          type: "pipeline",
+          runId: "pipeline_live_1",
+          active: true,
+          startedAt: "2026-03-08T10:00:00.000Z",
+          activeChildren: [
+            {
+              taskType: "discovery",
+              type: "discovery",
+              runId: "discovery_child_1",
+              active: true,
+              taskProgress: {
+                active: true,
+                phaseLabel: "Probing candidates"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    historyRuns: []
+  }, Date.parse("2026-03-08T10:01:00.000Z"));
+
+  assert.deepEqual(model.currentRows.map(row => row.type), ["pipeline", "discovery"]);
+  assert.equal(model.currentRows[0].pipelineChildren[0].runId, "discovery_child_1");
+  assert.equal(model.currentRows[1].parentTaskType, "pipeline");
+  assert.equal(model.currentRows[1].parentRunId, "pipeline_live_1");
+});

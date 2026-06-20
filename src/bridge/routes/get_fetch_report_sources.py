@@ -1,4 +1,10 @@
-"""Fetch-report source-run helpers for GET routes."""
+"""Fetch-report source-run helpers for GET routes.
+
+AI boundary owns: fetch-report source-run payload hydration helpers.
+AI boundary implement in: source runtime storage and fetch-report contract helpers.
+AI boundary search before contracts: fetch-report route callers, source runtime storage, API docs.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused route helper tests.
+"""
 
 from __future__ import annotations
 
@@ -12,7 +18,7 @@ from src.bridge.routes.route_storage_metrics import (
     storage_metrics_data_dir,
 )
 from src.bridge.storage_health import get_storage_store, record_storage_diagnostic
-from src.storage import SourceRuntimeStore
+from src.storage.source_runtime import SourceRuntimeStore
 
 
 class FetchReportRouteApi(Protocol):

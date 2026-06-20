@@ -31,7 +31,16 @@ from .web_search import (
 # Optional Playwright fallback: (url, timeout_s) -> (html, error). Used only for static adapter.
 TryPlaywrightFn = Callable[[str, int], tuple[str, str]]
 
-_EXPECTED_PROBE_FETCH_EXCEPTIONS = (OSError, TimeoutError, RuntimeError, KeyError, httpx.HTTPError)
+_EXPECTED_PROBE_FETCH_EXCEPTIONS = (
+    OSError,
+    TimeoutError,
+    RuntimeError,
+    KeyError,
+    ValueError,
+    json.JSONDecodeError,
+    ET.ParseError,
+    httpx.HTTPError,
+)
 
 _STATIC_DETAIL_PATH_RE = re.compile(r"(?i)/(?:jobs?|positions?|openings?|vacancies?)/[^/?#]+")
 _ELEVATO_DETAIL_PATH_RE = re.compile(r"(?i)/(?:[a-z]{2}/)?[^/?#]+,j,\d+(?:$|[/?#])")
@@ -459,7 +468,10 @@ def parse_probe_count(adapter: str, text: str, *, base_url: str = "") -> int:
         return provider_count
     if adapter == "personio":
         if text.lstrip().startswith("<"):
-            return len(ET.fromstring(text).findall(".//position"))
+            try:
+                return len(ET.fromstring(text).findall(".//position"))
+            except ET.ParseError as exc:
+                raise ValueError(f"invalid personio XML: {exc}") from exc
         return 0
     if adapter == "ashby":
         return len(set(re.findall(r'(?is)<a[^>]+href=["\']([^"\']+/job/[^"\']+)["\']', text)))

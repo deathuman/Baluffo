@@ -1,3 +1,11 @@
+"""Shared exception boundaries for bridge route handlers.
+
+AI boundary owns: route exception-to-JSON boundaries and safe bridge logging.
+AI boundary implement in: route leaves and bridge logging/runtime helpers.
+AI boundary search before contracts: route callers, error payload tests, API docs.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused route helper tests.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Callable

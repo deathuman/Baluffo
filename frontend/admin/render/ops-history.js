@@ -400,11 +400,6 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
     historyFullLoaded,
     currentRows: currentViews.map(row => [
       row.key,
-      row.statusText,
-      row.durationText,
-      row.outputOrQueuedText,
-      row.failedText,
-      row.finishedText,
       row.abortable ? "abortable" : ""
     ]),
     completedRows: visibleCompletedViews.map(row => [

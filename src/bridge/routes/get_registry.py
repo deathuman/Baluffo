@@ -1,4 +1,10 @@
-"""Registry GET route handlers."""
+"""Registry GET route handlers.
+
+AI boundary owns: registry summary/source/pending GET route response wiring only.
+AI boundary implement in: registry services, discovery overlays, and source-state helpers.
+AI boundary search before contracts: frontend callers, bridge route inventory, API docs.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused GET route tests.
+"""
 
 from __future__ import annotations
 

@@ -75,9 +75,15 @@ def test_hot_snapshot_state_and_live_payloads_use_pipeline_fallback() -> None:
     )
     assert state_payload is not None
     assert state_payload["source"] == "hot-active-snapshot"
-    assert state_payload["tasks"][0]["taskType"] == "pipeline"
-    assert state_payload["tasks"][0]["runId"] == "pipeline_hot"
-    assert state_payload["diagnostics"][0]["code"] == "hot_snapshot_pipeline_child_missing"
+    rows_by_type = {row["taskType"]: row for row in state_payload["tasks"]}
+    assert set(rows_by_type) == {"fetch", "pipeline"}
+    assert rows_by_type["fetch"]["runId"] == "fetch_pipeline_control"
+    assert rows_by_type["fetch"]["parentRunId"] == "pipeline_hot"
+    assert rows_by_type["pipeline"]["runId"] == "pipeline_hot"
+    assert (
+        state_payload["diagnostics"][0]["code"]
+        == "hot_snapshot_child_synthetic_from_pipeline_status"
+    )
 
     live_payload = active_task_snapshot.live_summary_from_snapshot(
         stale_snapshot,

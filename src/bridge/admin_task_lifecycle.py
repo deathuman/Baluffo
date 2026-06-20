@@ -10,7 +10,7 @@ from typing import Any
 
 from src.bridge import storage_health as storage_health_mod
 from src.bridge.task_lifecycle import TaskLifecycleService
-from src.storage import TaskRuntimeStore
+from src.storage.task_runtime import TaskRuntimeStore
 
 
 class AdminTaskLifecycle:

@@ -1,4 +1,10 @@
-"""Registry-conflict GET route handlers."""
+"""Registry-conflict GET route handlers.
+
+AI boundary owns: `/registry/conflicts` GET route response wiring only.
+AI boundary implement in: registry conflict summaries, adjudication, and source-state helpers.
+AI boundary search before contracts: frontend callers, bridge route inventory, API docs.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused GET route tests.
+"""
 
 from __future__ import annotations
 

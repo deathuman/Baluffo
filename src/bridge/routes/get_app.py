@@ -1,4 +1,10 @@
-"""App GET route handlers."""
+"""App GET route handlers.
+
+AI boundary owns: `/app/ready` and `/app/update-status` GET route response wiring only.
+AI boundary implement in: ops health readiness and desktop update service leaves.
+AI boundary search before contracts: frontend callers, bridge route inventory, API docs.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused GET route tests.
+"""
 
 from __future__ import annotations
 

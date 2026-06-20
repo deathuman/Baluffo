@@ -300,6 +300,8 @@ async def async_fetch_text_httpx(
         code = int(getattr(exc.response, "status_code", 0) or 0)
         location = str(exc.response.headers.get("Location") or "")
         raise HttpStatusError(code, url, location=location) from exc
+    except httpx.InvalidURL as exc:
+        raise RuntimeError(f"Network error for {url}: {exc}") from exc
     except httpx.HTTPError as exc:
         raise RuntimeError(f"Network error for {url}: {exc}") from exc
 

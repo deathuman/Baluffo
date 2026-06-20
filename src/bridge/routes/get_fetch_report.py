@@ -1,4 +1,10 @@
-"""Fetch-report GET route handlers."""
+"""Fetch-report GET route handlers.
+
+AI boundary owns: fetch-report and ops fetch-report GET route response wiring only.
+AI boundary implement in: report normalization, jobs report contracts, and source-run helpers.
+AI boundary search before contracts: frontend callers, bridge route inventory, API docs.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused GET route tests.
+"""
 
 from __future__ import annotations
 

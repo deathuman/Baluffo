@@ -105,6 +105,7 @@ MALFORMED_DETAIL_URL_TOKENS = (
     "cvdhreftext",
     "company.website",
 )
+MAX_DETAIL_URL_LENGTH = 4096
 
 
 def is_known_non_job_detail_url(url: str) -> bool:
@@ -132,12 +133,15 @@ def is_malformed_or_self_detail_url(url: str, *, page_url: str = "") -> bool:
     if not candidate:
         return True
     lowered = candidate.lower()
-    if lowered.startswith(("javascript:", "mailto:", "tel:")):
+    raw_parsed = urlparse(candidate)
+    if raw_parsed.scheme and raw_parsed.scheme not in {"http", "https"}:
         return True
     if any(token in lowered for token in MALFORMED_DETAIL_URL_TOKENS):
         return True
     absolute = normalize_url(urljoin(page_url, candidate)) if page_url else normalize_url(candidate)
     if not absolute:
+        return True
+    if len(absolute) > MAX_DETAIL_URL_LENGTH:
         return True
     parsed = urlparse(absolute)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:

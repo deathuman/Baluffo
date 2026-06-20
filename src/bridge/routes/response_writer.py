@@ -1,3 +1,11 @@
+"""Bridge response writer protocol for route modules.
+
+AI boundary owns: the minimal response-writing protocol consumed by route leaves.
+AI boundary implement in: bridge server handlers and route response adapters.
+AI boundary search before contracts: route callers, handler implementations, API docs.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused route helper tests.
+"""
+
 from __future__ import annotations
 
 from typing import Any, Protocol

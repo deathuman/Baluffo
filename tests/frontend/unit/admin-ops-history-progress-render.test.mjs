@@ -11,6 +11,28 @@ function makeEl() {
   };
 }
 
+function makePatchableEl() {
+  let innerHTML = "";
+  return {
+    dataset: {},
+    textContent: "",
+    writes: 0,
+    get innerHTML() {
+      return innerHTML;
+    },
+    set innerHTML(value) {
+      this.writes += 1;
+      innerHTML = String(value || "");
+    },
+    querySelector() {
+      return null;
+    },
+    querySelectorAll() {
+      return [];
+    }
+  };
+}
+
 test("admin ops history: current rows show live discovery and pipeline child progress", () => {
   const historyEl = makeEl();
   renderAdminOpsHistory(historyEl, {
@@ -78,6 +100,60 @@ test("admin ops history: current rows show live discovery and pipeline child pro
   assert.match(historyEl.innerHTML, /homepage fetch 553\/1[,.]000 pages/);
   assert.match(historyEl.innerHTML, /stage 7\/11/);
   assert.match(historyEl.innerHTML, /Discovery: Scanning GameDevMap directory/);
+});
+
+test("admin ops history patches live metric changes without rebuilding rows", () => {
+  const historyEl = makePatchableEl();
+  const baseRow = {
+    type: "pipeline",
+    runId: "pipeline_live_1",
+    active: true,
+    isLive: true,
+    startedAt: "2026-03-08T10:00:00.000Z",
+    summary: {
+      finalOutputCount: 10,
+      baselineOutputCount: 0
+    },
+    taskProgress: {
+      active: true,
+      phaseLabel: "Discovery running",
+      counts: {
+        currentStep: 1,
+        totalSteps: 3,
+        finalOutputCount: 10,
+        baselineOutputCount: 0
+      }
+    }
+  };
+
+  renderAdminOpsHistory(historyEl, {
+    currentRows: [baseRow],
+    visibleCompletedRows: [],
+    olderCompletedRows: []
+  });
+  renderAdminOpsHistory(historyEl, {
+    currentRows: [{
+      ...baseRow,
+      elapsedMs: 2000,
+      summary: {
+        finalOutputCount: 20,
+        baselineOutputCount: 0
+      },
+      taskProgress: {
+        ...baseRow.taskProgress,
+        counts: {
+          currentStep: 1,
+          totalSteps: 3,
+          finalOutputCount: 20,
+          baselineOutputCount: 0
+        }
+      }
+    }],
+    visibleCompletedRows: [],
+    olderCompletedRows: []
+  });
+
+  assert.equal(historyEl.writes, 1);
 });
 
 test("admin ops history: current discovery rows show active audit URL progress", () => {

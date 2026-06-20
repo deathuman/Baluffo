@@ -2572,7 +2572,6 @@ export function createOpsHealthController({
       pipelineKnownIdle
       && taskStateLoaded
       && !hasActiveTaskRows
-      && !hasPendingOpsAbortRequests()
     );
     const degradedActive = Boolean(
       !positiveIdle

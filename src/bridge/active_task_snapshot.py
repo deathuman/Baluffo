@@ -402,6 +402,15 @@ def task_state_summary_from_snapshot(
                 for row in rows
             )
             if not has_child:
+                selected_child, child_diagnostics = _pipeline_live_child_fallback(
+                    expected_type,
+                    pipeline_status,
+                )
+                if selected_child is not None:
+                    rows.append(selected_child)
+                    has_child = True
+                route_diagnostics.extend(child_diagnostics)
+            if not has_child:
                 route_diagnostics.append(
                     {
                         "code": "hot_snapshot_pipeline_child_missing",

@@ -1,4 +1,10 @@
-"""Pipeline task GET route handlers."""
+"""Pipeline task GET route handlers.
+
+AI boundary owns: pipeline task schedule/status GET route response wiring only.
+AI boundary implement in: pipeline schedule and pipeline status services.
+AI boundary search before contracts: frontend callers, bridge route inventory, API docs.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused GET route tests.
+"""
 
 from __future__ import annotations
 

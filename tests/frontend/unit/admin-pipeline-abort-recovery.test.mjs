@@ -188,6 +188,83 @@ test("admin ops abort acceptance renders aborting row and keeps polling compact"
   }
 });
 
+test("admin ops abort clears pending abort when compact status proves idle", async () => {
+  const state = createOpsState();
+  const refs = createOpsRefs();
+  const calls = [];
+  const scheduled = [];
+  const previousConfirm = globalThis.confirm;
+  const previousSetTimeout = globalThis.setTimeout;
+  const previousClearTimeout = globalThis.clearTimeout;
+  globalThis.confirm = () => true;
+  globalThis.setTimeout = (callback, delay = 0) => {
+    scheduled.push({ callback, delay: Number(delay) || 0 });
+    return scheduled.length;
+  };
+  globalThis.clearTimeout = () => {};
+  let abortHandler = null;
+  const controller = createOpsController({
+    state,
+    refs,
+    getBridge: async path => {
+      calls.push(String(path));
+      if (path === "/tasks/run-jobs-pipeline-status") return { active: false, stage: "idle" };
+      if (path === "/ops/task-state?view=summary") return { tasks: [], count: 0, summary: true };
+      if (path === "/ops/fetch-kpis?view=summary") return { ok: true, summaryView: true, kpis: {} };
+      if (path === "/ops/dashboard-health?view=summary") return { alerts: [], kpis: {}, schedule: {}, status: "healthy", summaryView: true };
+      if (path === "/registry/conflicts?view=summary") return { summary: { conflictCount: 0 }, conflicts: [], summaryView: true };
+      if (path === "/admin/ops-tab-counts?view=summary") return { ok: true, summaryView: true, badges: {} };
+      throw new Error(`unexpected path ${path}`);
+    },
+    postBridge: async () => {
+      calls.push("/tasks/abort");
+      return { abortAccepted: true, gatewayAccepted: true };
+    },
+    renderAdminOpsHistory(_el, _runModel, options) {
+      abortHandler = options.onAbortRun;
+    }
+  });
+
+  try {
+    controller.applyBootstrapPayload({
+      tasks: {
+        current: [{
+          taskType: "pipeline",
+          type: "pipeline",
+          runId: "pipeline_abort_1",
+          active: true,
+          startedAt: "2026-06-06T09:00:00.000Z"
+        }],
+        recent: []
+      },
+      registrySummary: {},
+      schedule: {},
+      app: { version: "0.2.81" }
+    });
+
+    await abortHandler({ taskType: "pipeline", runId: "pipeline_abort_1" });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.equal(Object.keys(state.adminOpsAbortRequests || {}).length, 0);
+    assert.equal(state.opsActiveAdminWorkLastActive, false);
+    assert.equal(state.opsActivePipelineOrFetchLastActive, false);
+    assert.equal(
+      calls.filter(path => path === "/tasks/run-jobs-pipeline-status").length <= 2,
+      true
+    );
+    assert.equal(
+      scheduled.filter(item => item.delay === 0).length <= 1,
+      true
+    );
+  } finally {
+    controller.stopOpsHealthPolling();
+    globalThis.confirm = previousConfirm;
+    globalThis.setTimeout = previousSetTimeout;
+    globalThis.clearTimeout = previousClearTimeout;
+  }
+});
+
 test("admin fetcher controller backs off task-live timeouts without clearing progress", async () => {
   const scheduled = [];
   const previousSetTimeout = global.setTimeout;

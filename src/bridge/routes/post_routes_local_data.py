@@ -1,3 +1,11 @@
+"""Desktop local-data POST route handlers.
+
+AI boundary owns: desktop local-data POST route response wiring only.
+AI boundary implement in: local data store leaves and desktop local-data services.
+AI boundary search before contracts: frontend builders, bridge route inventory, API docs.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused POST route tests.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Callable

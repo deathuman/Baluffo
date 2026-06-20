@@ -89,6 +89,48 @@ function attachPipelineChildren(rows, sourceRows, nowMs) {
   });
 }
 
+function expandPipelineActiveChildren(rows) {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  const existingKeys = new Set(
+    sourceRows
+      .map(row => {
+        const type = String(row?.taskType || row?.type || "").trim().toLowerCase();
+        const runId = String(row?.runId || row?.id || "").trim();
+        return type && runId ? `${type}|${runId}` : "";
+      })
+      .filter(Boolean)
+  );
+  const expanded = [];
+  sourceRows.forEach(row => {
+    expanded.push(row);
+    const type = String(row?.taskType || row?.type || "").trim().toLowerCase();
+    if (type !== "pipeline") return;
+    const parentRunId = String(row?.runId || row?.id || "").trim();
+    const children = Array.isArray(row?.activeChildren) ? row.activeChildren : [];
+    children.forEach(child => {
+      if (!child || typeof child !== "object" || Array.isArray(child)) return;
+      const childType = String(child.taskType || child.type || "").trim().toLowerCase();
+      const childRunId = String(child.runId || child.id || "").trim();
+      if (!childType || !childRunId || existingKeys.has(`${childType}|${childRunId}`)) return;
+      existingKeys.add(`${childType}|${childRunId}`);
+      expanded.push({
+        ...child,
+        type: childType,
+        taskType: childType,
+        runId: childRunId,
+        id: childRunId,
+        active: child.active !== false,
+        status: String(child.status || "running").trim() || "running",
+        startedAt: String(child.startedAt || row.startedAt || "").trim(),
+        finishedAt: "",
+        parentTaskType: "pipeline",
+        parentRunId
+      });
+    });
+  });
+  return expanded;
+}
+
 function normalizeCurrentTaskStateRow(row, nowMs = Date.now()) {
   if (!row || typeof row !== "object" || Array.isArray(row)) return null;
   const taskType = String(row.taskType || row.type || "").trim().toLowerCase();
@@ -212,7 +254,7 @@ export function deriveAdminRunsModel(
   } = {},
   nowMs = Date.now()
 ) {
-  const taskRows = getTaskStateRows(taskState);
+  const taskRows = expandPipelineActiveChildren(getTaskStateRows(taskState));
   const normalizedCurrentRows = taskRows
     .map(row => normalizeCurrentTaskStateRow(row, nowMs))
     .filter(row => row && row.isLive);

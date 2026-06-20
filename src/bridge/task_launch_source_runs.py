@@ -14,7 +14,8 @@ from pathlib import Path
 from typing import Any
 
 from src.bridge import storage_health as storage_health_mod
-from src.storage import EvidenceArchiveStore, SourceRuntimeStore
+from src.storage.evidence_archive import EvidenceArchiveStore
+from src.storage.source_runtime import SourceRuntimeStore
 
 
 @dataclass(frozen=True)

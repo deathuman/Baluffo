@@ -1,3 +1,11 @@
+"""Admin POST route handlers.
+
+AI boundary owns: admin POST route response wiring only.
+AI boundary implement in: registry, source-policy, sync, pipeline, and task services.
+AI boundary search before contracts: frontend builders, bridge route inventory, API docs.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused POST route tests.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

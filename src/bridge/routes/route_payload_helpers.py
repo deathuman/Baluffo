@@ -1,4 +1,10 @@
-"""Shared helpers for bridge route payload construction."""
+"""Shared helpers for bridge route payload construction.
+
+AI boundary owns: small route payload formatting and log helper utilities.
+AI boundary implement in: route leaves or domain services when behavior is domain-specific.
+AI boundary search before contracts: route callers, payload contract tests, API docs.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused route helper tests.
+"""
 
 from __future__ import annotations
 

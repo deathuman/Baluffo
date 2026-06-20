@@ -1,4 +1,10 @@
-"""Ops status GET route handlers."""
+"""Ops status GET route handlers.
+
+AI boundary owns: ops status and health GET route response wiring only.
+AI boundary implement in: ops health, task live summary, and pipeline KPI helpers.
+AI boundary search before contracts: frontend callers, bridge route inventory, API docs.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused GET route tests.
+"""
 
 from __future__ import annotations
 

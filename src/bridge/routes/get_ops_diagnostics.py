@@ -1,4 +1,10 @@
-"""Ops diagnostics GET route handlers."""
+"""Ops diagnostics GET route handlers.
+
+AI boundary owns: ops diagnostic GET route response wiring only.
+AI boundary implement in: metrics, logs, diagnostics, and performance-profile helpers.
+AI boundary search before contracts: frontend callers, bridge route inventory, API docs.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused GET route tests.
+"""
 
 from __future__ import annotations
 

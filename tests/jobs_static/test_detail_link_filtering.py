@@ -9,6 +9,8 @@ from ._helpers import Counter, process_detail_link, static_helpers
         "https://www.comeet.com/jobs/ludeo/{{company.website}}",
         "https://careers.beenox.com/us/en/cvdHrefText",
         "javascript:void(0)",
+        "data:image/png;base64,AA==",
+        "blob:https://example.com/asset",
         "https://example.com/careers",
     ],
 )
@@ -24,6 +26,30 @@ def test_add_detail_link_rejects_template_and_self_links_before_fetch(candidate_
         seen_links,
         link_rejections,
         candidate_url=candidate_url,
+        anchor_text="Senior Artist",
+        enforce_heuristics=False,
+        page_url="https://example.com/careers",
+        source={"company": "Example"},
+        default_path_tokens=[],
+        default_query_keys=[],
+    )
+
+    assert detail_links == []
+    assert link_rejections["dead_listing_page"] == 1
+
+
+def test_add_detail_link_rejects_extreme_detail_urls_before_fetch() -> None:
+    detail_links: list[tuple[str, str]] = []
+    detail_seen: set[str] = set()
+    seen_links: set[str] = set()
+    link_rejections: Counter[str] = Counter()
+
+    static_helpers.add_detail_link(
+        detail_links,
+        detail_seen,
+        seen_links,
+        link_rejections,
+        candidate_url=f"https://example.com/jobs?payload={'a' * 5000}",
         anchor_text="Senior Artist",
         enforce_heuristics=False,
         page_url="https://example.com/careers",

@@ -1,4 +1,10 @@
-"""Storage metric helpers shared by GET route modules."""
+"""Storage metric helpers shared by GET route modules.
+
+AI boundary owns: storage read metric recording for route modules.
+AI boundary implement in: storage metrics and route leaves that own the read operation.
+AI boundary search before contracts: route callers, storage metrics tests, API docs.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused route helper tests.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,10 @@
-"""Discovery GET route handlers."""
+"""Discovery GET route handlers.
+
+AI boundary owns: `/discovery/*` GET route response wiring only.
+AI boundary implement in: discovery services, reports, and candidate helpers.
+AI boundary search before contracts: frontend callers, bridge route inventory, API docs.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused GET route tests.
+"""
 
 from __future__ import annotations
 

@@ -1,3 +1,11 @@
+"""Desktop update POST route handlers.
+
+AI boundary owns: desktop update POST route response wiring only.
+AI boundary implement in: desktop update service and update handoff leaves.
+AI boundary search before contracts: frontend builders, bridge route inventory, API docs.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused POST route tests.
+"""
+
 from __future__ import annotations
 
 from typing import Any, Protocol

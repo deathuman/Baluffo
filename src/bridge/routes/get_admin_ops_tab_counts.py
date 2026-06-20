@@ -1,4 +1,10 @@
-"""Admin Ops tab-count GET route wiring."""
+"""Admin Ops tab-count GET route wiring.
+
+AI boundary owns: `/admin/ops-tab-counts` GET route response wiring only.
+AI boundary implement in: source-policy, discovery, and registry artifact helpers.
+AI boundary search before contracts: frontend callers, bridge route inventory, API docs.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused GET route tests.
+"""
 
 from __future__ import annotations
 

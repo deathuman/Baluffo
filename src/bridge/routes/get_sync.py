@@ -1,4 +1,10 @@
-"""Sync GET route handlers."""
+"""Sync GET route handlers.
+
+AI boundary owns: `/sync/status` GET route response wiring only.
+AI boundary implement in: sync service, sync runtime state, and sync config helpers.
+AI boundary search before contracts: frontend callers, bridge route inventory, API docs.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused GET route tests.
+"""
 
 from __future__ import annotations
 

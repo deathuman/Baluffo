@@ -40,7 +40,7 @@ from src.shared.json_shapes import as_json_object
 from src.shared.profile_utils import run_profiled
 from src.shared.utils import parse_iso as parse_iso_from_utils
 from src.source_registry import load_json_object, save_json_atomic
-from src.storage import TaskRuntimeStore
+from src.storage.task_runtime import TaskRuntimeStore
 
 _SYNC_SHARD_FIELD_NAMES = (
     "snapshotFormat",

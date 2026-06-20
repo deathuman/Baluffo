@@ -20,8 +20,7 @@ from src.pipeline_io import (
     write_atomic_if_changed,
 )
 from src.shared.json_io import existing_json_candidate, read_json
-from src.storage import JobRuntimeStore
-from src.storage.job_runtime import jobs_feed_rows_hash
+from src.storage.job_runtime import JobRuntimeStore, jobs_feed_rows_hash
 
 STARTUP_FEED_EXPORT_LIMIT = 10
 

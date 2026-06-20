@@ -1,4 +1,10 @@
-"""Admin bootstrap GET route wiring."""
+"""Admin bootstrap GET route wiring.
+
+AI boundary owns: `/admin/bootstrap` GET route response wiring only.
+AI boundary implement in: `src.bridge.admin_bootstrap` and admin startup helpers.
+AI boundary search before contracts: frontend callers, bridge route inventory, API docs.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused GET route tests.
+"""
 
 from __future__ import annotations
 
