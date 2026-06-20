@@ -1,9 +1,12 @@
+import json
 from dataclasses import dataclass
+from pathlib import Path
 from unittest import mock
 
 import pytest
 
 from src import admin_bridge
+from src.source_registry import save_json_atomic
 
 pytestmark = pytest.mark.usefixtures("admin_bridge_entrypoint_root")
 
@@ -19,12 +22,24 @@ class _FetcherArgsCase:
     expected_values: tuple[tuple[str, str], ...] = ()
 
 
-def _run_fetcher_args_case(case: _FetcherArgsCase) -> None:
+def _jobs_fetch_report_path(data_root: Path) -> Path:
+    return data_root / "jobs-fetch-report.json"
+
+
+def _task_state_path(data_root: Path) -> Path:
+    return data_root / "admin-task-state.json"
+
+
+def _load_json_object(path: Path, default: dict[str, object] | None = None) -> dict[str, object]:
+    if not path.exists():
+        return {} if default is None else default
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return payload if isinstance(payload, dict) else ({} if default is None else default)
+
+
+def _run_fetcher_args_case(case: _FetcherArgsCase, data_root: Path) -> None:
     if case.report_payload is not None:
-        admin_bridge.save_json_atomic(
-            admin_bridge.JOBS_FETCH_REPORT_PATH,
-            case.report_payload,
-        )
+        save_json_atomic(_jobs_fetch_report_path(data_root), case.report_payload)
     args, preset = admin_bridge.build_fetcher_args_from_payload(case.payload)
     assert preset == case.expected_preset
     for option in case.expected_present:
@@ -177,8 +192,10 @@ FETCHER_ARGS_CASES = [
 
 
 @pytest.mark.parametrize("case", FETCHER_ARGS_CASES, ids=lambda case: case.name)
-def test_build_fetcher_args_matrix(case: _FetcherArgsCase) -> None:
-    _run_fetcher_args_case(case)
+def test_build_fetcher_args_matrix(
+    case: _FetcherArgsCase, admin_bridge_entrypoint_root: Path
+) -> None:
+    _run_fetcher_args_case(case, admin_bridge_entrypoint_root)
 
 
 def _configure_background_script_runtime(
@@ -376,7 +393,7 @@ def test_run_background_script_does_not_write_legacy_task_state(admin_bridge_ent
                 "BALUFFO_FETCH_STARTED_AT": "2026-03-27T14:00:00+00:00",
             },
         )
-    assert admin_bridge.load_json_object(admin_bridge.TASK_STATE_PATH, {}) == {}
+    assert _load_json_object(_task_state_path(admin_bridge_entrypoint_root), {}) == {}
 
 
 def test_run_background_script_sets_container_runtime_mode_env(admin_bridge_entrypoint_root):
@@ -398,7 +415,9 @@ def test_run_background_script_sets_container_runtime_mode_env(admin_bridge_entr
     assert env["BALUFFO_DATA_DIR"] == str(admin_bridge_entrypoint_root)
 
 
-def test_start_fetcher_task_writes_report_shell_with_run_id():
+def test_start_fetcher_task_writes_report_shell_with_run_id(
+    admin_bridge_entrypoint_root: Path,
+) -> None:
     with (
         mock.patch.object(admin_bridge, "pid_is_running", return_value=True),
         mock.patch.object(admin_bridge, "run_background_script", return_value=24680),
@@ -409,7 +428,7 @@ def test_start_fetcher_task_writes_report_shell_with_run_id():
     run_id = str(result.get("runId") or "")
     assert run_id.startswith("fetch_")
 
-    report = admin_bridge.load_json_object(admin_bridge.JOBS_FETCH_REPORT_PATH, {})
+    report = _load_json_object(_jobs_fetch_report_path(admin_bridge_entrypoint_root), {})
     assert str(report.get("runId") or "") == run_id
     assert str(report.get("startedAt") or "") == str(result.get("startedAt") or "")
     assert str(report.get("finishedAt") or "") == ""
@@ -422,12 +441,14 @@ def test_start_fetcher_task_writes_report_shell_with_run_id():
     assert admin_bridge.load_run_history() == []
 
 
-def test_start_fetcher_task_does_not_overwrite_fast_terminal_report():
+def test_start_fetcher_task_does_not_overwrite_fast_terminal_report(
+    admin_bridge_entrypoint_root: Path,
+) -> None:
     def fast_child_write(_script, _args, *, extra_env):
         run_id = str(extra_env.get("BALUFFO_FETCH_RUN_ID") or "")
         started_at = str(extra_env.get("BALUFFO_FETCH_STARTED_AT") or "")
-        admin_bridge.save_json_atomic(
-            admin_bridge.JOBS_FETCH_REPORT_PATH,
+        save_json_atomic(
+            _jobs_fetch_report_path(admin_bridge_entrypoint_root),
             {
                 "runId": run_id,
                 "startedAt": started_at,
@@ -441,7 +462,7 @@ def test_start_fetcher_task_does_not_overwrite_fast_terminal_report():
         result = admin_bridge.start_fetcher_task({})
 
     assert result["started"] is True
-    report = admin_bridge.load_json_object(admin_bridge.JOBS_FETCH_REPORT_PATH, {})
+    report = _load_json_object(_jobs_fetch_report_path(admin_bridge_entrypoint_root), {})
     assert str(report.get("runId") or "") == str(result.get("runId") or "")
     assert str(report.get("finishedAt") or "") == "2026-03-27T14:00:02+00:00"
     assert int((report.get("summary") or {}).get("outputCount") or 0) == 7
@@ -482,7 +503,9 @@ def test_fetch_lifecycle_terminal_report_with_failed_sources_still_succeeds():
     ]
 
 
-def test_start_fetcher_task_spawn_failure_writes_terminal_error_report():
+def test_start_fetcher_task_spawn_failure_writes_terminal_error_report(
+    admin_bridge_entrypoint_root: Path,
+) -> None:
     with mock.patch.object(
         admin_bridge,
         "run_background_script",
@@ -493,7 +516,7 @@ def test_start_fetcher_task_spawn_failure_writes_terminal_error_report():
     assert result["started"] is False
     assert str(result.get("error") or "") == "spawn denied"
     run_id = str(result.get("runId") or "")
-    report = admin_bridge.load_json_object(admin_bridge.JOBS_FETCH_REPORT_PATH, {})
+    report = _load_json_object(_jobs_fetch_report_path(admin_bridge_entrypoint_root), {})
     assert str(report.get("runId") or "") == run_id
     assert str(report.get("finishedAt") or "")
     assert str((report.get("summary") or {}).get("error") or "") == "spawn denied"
@@ -518,7 +541,9 @@ def test_start_fetcher_task_unexpected_spawn_failure_is_not_swallowed():
         admin_bridge.start_fetcher_task({})
 
 
-def test_start_fetcher_task_rejects_unknown_only_sources_without_live_runtime():
+def test_start_fetcher_task_rejects_unknown_only_sources_without_live_runtime(
+    admin_bridge_entrypoint_root: Path,
+) -> None:
     with (
         mock.patch.object(
             admin_bridge,
@@ -536,7 +561,7 @@ def test_start_fetcher_task_rejects_unknown_only_sources_without_live_runtime():
     assert "No requested onlySources matched available loaders" in str(result.get("error") or "")
     spawn.assert_not_called()
     assert admin_bridge.get_lifecycle_current_runs() == []
-    assert not admin_bridge.JOBS_FETCH_REPORT_PATH.exists()
+    assert not _jobs_fetch_report_path(admin_bridge_entrypoint_root).exists()
 
 
 def test_start_fetcher_task_sets_uncapped_static_budget_env():
@@ -566,7 +591,9 @@ def test_start_fetcher_task_default_preset_omits_static_budget_env():
     assert "BALUFFO_STATIC_SOURCE_TIME_BUDGET_S" not in kwargs["extra_env"]
 
 
-def test_start_fetcher_task_returns_conflict_for_active_fetch():
+def test_start_fetcher_task_returns_conflict_for_active_fetch(
+    admin_bridge_entrypoint_root: Path,
+) -> None:
     started_at = "2026-03-27T14:00:00+00:00"
     admin_bridge.start_lifecycle_run(
         run_id="fetch_live_1",
@@ -594,7 +621,7 @@ def test_start_fetcher_task_returns_conflict_for_active_fetch():
     }
     spawn.assert_not_called()
     assert admin_bridge.load_run_history() == []
-    assert not admin_bridge.JOBS_FETCH_REPORT_PATH.exists()
+    assert not _jobs_fetch_report_path(admin_bridge_entrypoint_root).exists()
 
 
 def test_ops_routes_show_completed_for_fetch_with_failed_sources():
