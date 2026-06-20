@@ -1,4 +1,3 @@
-import time
 from datetime import UTC, datetime
 from unittest import mock
 
@@ -216,13 +215,15 @@ def test_ops_api_lifecycle_cache_returns_copied_rows(tmp_path) -> None:
 
 
 def test_ops_api_lifecycle_cache_expires_quickly(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(ops_api_module, "_LIFECYCLE_ROW_CACHE_TTL_SECONDS", 0.001)
+    now = 100.0
+    monkeypatch.setattr(ops_api_module.time, "monotonic", lambda: now)
+    monkeypatch.setattr(ops_api_module, "_LIFECYCLE_ROW_CACHE_TTL_SECONDS", 0.5)
     current_rows: list[dict[str, object]] = [{"type": "fetch", "runId": "fetch_active_old"}]
     api, calls = _make_ops_api(tmp_path, current_rows=current_rows, recent_rows=[])
 
     assert [row["runId"] for row in api.get_projected_run_history().rows] == ["fetch_active_old"]
     current_rows[:] = [{"type": "fetch", "runId": "fetch_active_new"}]
-    time.sleep(0.02)
+    now = 101.0
 
     assert [row["runId"] for row in api.get_projected_run_history().rows] == ["fetch_active_new"]
     assert calls == {"current": 2, "recent": 2, "schedule": 0}

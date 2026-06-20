@@ -24,11 +24,10 @@ Closed context worth remembering:
 ## Active Work Queue
 
 1. **Finish test sleep cleanup**
-   - Current state: 7 `time.sleep()` calls remain in tests.
+   - Current state: 6 `time.sleep()` calls remain in tests.
    - Target next: batch by behavior, not by mechanical replacement.
    - Best next slices:
      - static-source cache/time-budget/poll sleeps in `tests/jobs_static/`
-     - admin lifecycle-cache TTL test
      - runtime-launcher file-poll wait
      - source-sync sharded push serialization timing
    - Keep tests deterministic with `threading.Event`, `Condition`, fake clocks, explicit callbacks, or existing `tests.helpers.concurrency.BlockingActiveCounter`.
