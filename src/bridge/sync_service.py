@@ -38,6 +38,7 @@ from src.bridge.sync_timing import (
 )
 from src.shared.json_shapes import as_json_object
 from src.shared.profile_utils import run_profiled
+from src.shared.utils import parse_iso as parse_iso_from_utils
 from src.source_registry import load_json_object, save_json_atomic
 from src.storage import TaskRuntimeStore
 
@@ -999,21 +1000,7 @@ class SyncService:
 
     @staticmethod
     def _parse_iso(value: Any) -> datetime | None:
-        """Parse ISO timestamp to datetime.
-
-        Args:
-            value: ISO timestamp string
-
-        Returns:
-            datetime or None if parsing fails
-        """
-        text = str(value or "").strip()
-        if not text:
-            return None
-        try:
-            return datetime.fromisoformat(text.replace("Z", "+00:00"))
-        except ValueError:
-            return None
+        return parse_iso_from_utils(value)
 
 
 __all__ = [

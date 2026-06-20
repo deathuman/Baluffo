@@ -102,8 +102,8 @@ npm run dev:pipeline
 |- src/
 |  |- jobs_fetcher.py         # Build unified jobs feed
 |  |- source_discovery.py     # CLI entrypoint for source discovery
-|  |- admin_bridge.py         # Local admin HTTP API entrypoint
-|  |- bridge/                 # Bridge service modules (server/, api.py, ops_api.py, etc.)
+|  |- admin_bridge.py         # Stable local bridge entrypoint and compatibility exports
+|  |- bridge/                 # Bridge services, server, route leaves, api.py, ops_api.py
 |  |- source_discovery/       # Source discovery package (orchestrator, probe, web_search, etc.)
 |  |- jobs/                   # Job pipeline and adapters
 |  |  |- adapters/            # Source adapters (static, provider, social)

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from src.bridge.task_abort_evidence import ABORT_TERMINAL_REASON, row_abort_requested
 from src.contracts import SCHEMA_VERSION
+from src.shared.utils import parse_iso as parse_iso_from_utils
 
 
 def _write_json(path: Path, payload: Any) -> None:
@@ -35,12 +35,7 @@ def _load_history(path: Path) -> list[dict[str, Any]]:
 
 
 def _parse_iso(text: str):
-    if not text:
-        return None
-    try:
-        return datetime.fromisoformat(str(text).replace("Z", "+00:00"))
-    except ValueError:
-        return None
+    return parse_iso_from_utils(text)
 
 
 def _normalize_history_duration(row: dict[str, Any]) -> dict[str, Any]:

@@ -14,6 +14,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from src.shared.utils import parse_iso as parse_iso_from_utils
+
 MANIFEST_NAME = "evidence-archive-manifest.json"
 DEFAULT_TOTAL_BUDGET_BYTES = 500 * 1024 * 1024
 DEFAULT_PER_RUN_WARNING_BYTES = 25 * 1024 * 1024
@@ -37,16 +39,7 @@ def _safe_segment(value: Any, *, fallback: str) -> str:
 
 
 def _parse_iso(value: Any) -> datetime | None:
-    text = _clean_text(value)
-    if not text:
-        return None
-    try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
+    return parse_iso_from_utils(value)
 
 
 def _json_dumps(payload: Any) -> str:

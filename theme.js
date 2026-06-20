@@ -24,6 +24,8 @@
   }
 
   function getInitialTheme() {
+    const existing = document.documentElement.getAttribute("data-theme");
+    if (existing === THEMES.DARK || existing === THEMES.LIGHT) return existing;
     return getStoredTheme() || getSystemTheme();
   }
 

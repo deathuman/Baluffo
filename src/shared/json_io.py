@@ -5,10 +5,9 @@ import json
 import re
 import shutil
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
-
-from src.storage_metrics import duration_ms, record_json_write
 
 PIPELINE_GZIP_JSON_NAMES = {
     "jobs-lifecycle-state.json",
@@ -18,6 +17,7 @@ PIPELINE_GZIP_JSON_NAMES = {
 }
 
 _PIPELINE_GZIP_ARCHIVE_NAME = re.compile(r"^jobs-lifecycle-archive-\d{4}\.json$")
+JsonWriteCallback = Callable[..., None]
 
 
 def is_gzip_backed_json_name(name: str) -> bool:
@@ -64,7 +64,12 @@ def read_json_text(path: Path) -> str:
     return Path(path).read_text(encoding="utf-8")
 
 
-def write_json_text(path: Path, text: str) -> Path:
+def write_json_text(
+    path: Path,
+    text: str,
+    *,
+    on_write: JsonWriteCallback | None = None,
+) -> Path:
     target = gzip_backed_json_storage_path(Path(path))
     target.parent.mkdir(parents=True, exist_ok=True)
     write_started_at = time.perf_counter()
@@ -73,33 +78,24 @@ def write_json_text(path: Path, text: str) -> Path:
             handle.write(text)
     else:
         target.write_text(text, encoding="utf-8")
-    uncompressed_size_bytes = len(text.encode("utf-8"))
-    try:
-        compressed_size_bytes = target.stat().st_size
-    except OSError:
-        compressed_size_bytes = uncompressed_size_bytes
-    record_json_write(
-        path=path,
-        target=target,
-        storage_kind="gzip" if target.suffix == ".gz" else "json",
-        serialization_duration_ms=0,
-        atomic_replace_duration_ms=duration_ms(write_started_at),
-        compressed_size_bytes=compressed_size_bytes,
-        uncompressed_size_bytes=uncompressed_size_bytes,
-        replaced=True,
-        data_dir=target.parent,
-    )
+    if on_write is not None:
+        on_write(path=path, target=target, text=text, write_started_at=write_started_at)
     return target
 
 
-def copy_json_file_to_storage(source: Path, target: Path) -> Path:
+def copy_json_file_to_storage(
+    source: Path,
+    target: Path,
+    *,
+    on_write: JsonWriteCallback | None = None,
+) -> Path:
     source = Path(source)
     resolved_target = gzip_backed_json_storage_path(Path(target))
     resolved_target.parent.mkdir(parents=True, exist_ok=True)
     if source.suffix == resolved_target.suffix:
         shutil.copy2(source, resolved_target)
         return resolved_target
-    write_json_text(resolved_target, read_json_text(source))
+    write_json_text(resolved_target, read_json_text(source), on_write=on_write)
     return resolved_target
 
 

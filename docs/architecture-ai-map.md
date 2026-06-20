@@ -5,7 +5,7 @@
 > - **Canonical for:** system boundaries, task routing, compatibility-surface detail, and the expanded verification matrix
 > - **Not canonical for:** endpoint payloads or data schema details
 > - **Then inspect:** the minimal source files listed in the task table, plus the matching contract doc if shape changes are involved
-> - **Last updated:** 2026-06-16
+> - **Last updated:** 2026-06-20
 >
 > Start with [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) first. Retired boundary-charter detail now lives in git history; this map is the current routing source.
 > For any file described below as a stable thin surface, compatibility surface, or monkeypatch surface, preserve the root-level exported names that tests or leaf modules patch through that root unless the matching contract tests and docs are updated in the same change.
@@ -39,7 +39,7 @@ src/container_gateway.py (container public same-origin gateway)
 src/container_server.py (container internal bridge worker)
   -> src/bridge/server/handler.py + src/bridge/server/static_files.py
   -> src/runtime_seed.py
-  -> same BridgeApi route surface with container-only desktop route suppression
+  -> same bridge route surface with container-only desktop route suppression
 
 src/jobs_fetcher.py (stable thin CLI facade)
   -> src/jobs/ (pipeline, adapters, dedup)
@@ -104,7 +104,7 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 | Admin registry | `frontend/admin/app/registry/{ui,load,mutations}.js` | `frontend/admin/app/registry.js` only for stable controller/export changes |
 | Admin ops | `frontend/admin/app/ops/{format,task-state,health,bridge-status}.js`, `frontend/admin/app/{auth,fetcher,discovery,sync}.js` | `frontend/admin/app/ops.js` only for stable controller/export changes |
 | Admin/Umbrel active-run route slowness or stale progress | `src/bridge/active_task_snapshot.py`, `src/bridge/ops_api.py`, `src/container_gateway.py`, `src/jobs/pipeline_runtime_writers.py`, `src/bridge/{discovery_service,sync_task_flow}.py` | Full history/detail projection modules only after active summary routes and the hot snapshot path are ruled out |
-| Bridge API | `src/bridge/*.py` | `src/bridge/routes/{get_routes,post_routes,post_routes_admin,post_routes_local_data,post_routes_update}.py` |
+| Bridge API | `src/bridge/*.py`, `src/bridge/routes/get_*.py` | `src/bridge/routes/{get_routes,post_routes}.py` only for public delegator/registration compatibility |
 | Admin bridge entrypoint/runtime wiring | `src/bridge/admin_entrypoint_{runtime,services,api,registry_api,task_runtime}.py` | `src/admin_bridge.py` only for root-surface compatibility work |
 | Container / Umbrel runtime | `src/container_gateway.py`, `src/container_entrypoint.py`, `src/container_server.py`, `src/bridge/server/{handler,static_files}.py`, `src/bridge/container_mode.py`, `src/runtime_seed.py`, `Dockerfile`, `deathuman-baluffo/*` | `src/admin_bridge.py` only for shared BridgeApi assembly compatibility work |
 | Discovery behavior | `src/source_discovery/orchestrator.py`, `orchestrator_{runtime,generation,probe,finalize}.py`, `runtime_metrics.py`, `stage_control.py`, `reporting_{progress,candidates,backlog}.py`, `gamesmap_{cache,parsing,candidates}.py`, `web_search_{fetch,extract,candidates}.py` | `src/source_discovery.py` only for CLI compatibility, and `gamesmap.py`, `reporting.py`, or `web_search.py` only for stable import-surface compatibility work |
@@ -148,7 +148,8 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 - `registry_tombstones.py` - local delete ledger and restore helpers
 - `discovery_service.py` - discovery task orchestration
 - `pipeline_service.py` - jobs pipeline task
-- `routes/get_routes.py`, `routes/post_routes.py` - GET handlers plus the thin POST registration root
+- `routes/get_routes.py`, `routes/post_routes.py` - public GET/POST delegators only; route-owned behavior lives in narrow `get_*.py` and `post_routes_*` leaves
+- `routes/get_{admin_bootstrap,admin_ops_tab_counts,app,discovery,fetch_report,local_data,ops_diagnostics,ops_status,pipeline_tasks,registry,registry_conflicts,source_policy,sync}.py` - GET route-family ownership behind the thin public delegator
 - `routes/post_routes_{admin,local_data,update}.py` - POST route-family ownership behind the thin registration root
 - `container_mode.py` - container-only desktop route suppression helpers
 - `server/handler.py`, `server/static_files.py` - shared HTTP handler and container static/runtime-data serving
@@ -156,7 +157,7 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 - `active_task_snapshot.py` - hot active-run summary artifact for bounded `/ops/task-state?view=summary` and `/ops/task-live/<task>?view=summary` during fetch/discovery/sync
 - `source_check_api.py` - source probe/check helpers
 
-**Still in `admin_bridge.py`:** bridge startup entrypoint, one-line `build_bridge_api(...)` wrapper, stable compatibility exports, and root monkeypatch seams
+**Still in `admin_bridge.py`:** bridge startup entrypoint, one-line `build_bridge_api(...)` wrapper, stable compatibility exports, and root-surface monkeypatch compatibility. Service lifetime now lives in `BridgeServices`, and former admin entrypoint helper modules receive root explicitly instead of owning module-level `root`.
 
 **Admin bridge entrypoint helpers:**
 - `admin_entrypoint_runtime.py` - bridge log emission, runtime-path rebinding, startup metrics, owner-session lifecycle helpers
@@ -212,6 +213,7 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 - `desktop_updater_ui.py` - helper window, diagnostics, and native error-dialog helpers
 - `desktop_updater_release.py` - release lookup, manifest recovery, ZIP re-verification, and failure classification
 - `desktop_updater_install.py` - install handoff, rollback snapshot, relaunch verification, and success finalization
+- `desktop_update.py`, `desktop_updater.py`, and `update_manager.py` are import-compatible facades. Production runtime/build consumers use leaf modules directly; guardrail inventories block new runtime facade imports or root-dependency drift.
 
 ---
 
@@ -270,7 +272,7 @@ See [`testing.md`](testing.md) for more commands.
 
 - `src/packaged_desktop_smoke.py` - stable packaged smoke entrypoint and test patch surface; keep implementation in `src/ship/packaged_smoke/{common,startup_metrics,orchestrator,build_env,runtime,rehearsals,rehearsal_*}.py`
 - `src/ship/desktop_update.py` - stable updater surface; keep implementation in `src/ship/desktop_update_{shared,state,service}.py`
-- `src/ship/desktop_updater.py` - stable updater helper executable and test patch surface; keep implementation in `src/ship/desktop_updater_{ui,release,install}.py`
+- `src/ship/desktop_updater.py` - stable updater helper executable and test patch surface; keep implementation in `src/ship/desktop_updater_{ui,release,install}.py`; helper root injection has been removed from the leaves
 - `src/admin_bridge.py` - stable thin entrypoint; add new bridge logic to `src/bridge/*.py` or `src/bridge/admin_entrypoint_{runtime,services,api,registry_api,task_runtime}.py`
 - `src/source_discovery.py` - stable thin CLI entrypoint; add discovery logic to `src/source_discovery/*.py`
 - `src/jobs_fetcher.py` - current CLI/task facade; preserve user-facing launch behavior, but lazy export routing and root-backed wrapper seams are internal simplification candidates
@@ -279,6 +281,7 @@ See [`testing.md`](testing.md) for more commands.
 - `src/jobs/adapters/static.py` - current static adapter entrypoint; generic listing/detail/runtime modules may be collapsed when the replacement is simpler and covered by adapter tests
 - `src/jobs/state.py` - removable jobs source-state facade over current leaf implementations; preserve persisted source-state meaning when removing it, not the facade/leaf split
 - `src/bridge/routes/post_routes.py` - stable POST registration surface; keep route-family logic in `src/bridge/routes/post_routes_{admin,local_data,update}.py`
+- `src/bridge/routes/get_routes.py` - stable GET delegator surface; keep GET route-family logic in `src/bridge/routes/get_*.py`
 - `frontend/jobs/domain.js` - stable Jobs domain export surface; keep query/feed/view ownership in `frontend/jobs/domain/{query,feed,view}.js`
 - `src/source_sync.py` - permanent thin sync integration surface; keep new sync logic in `src/source_sync_{config,runtime,snapshot,crypto}.py`
 - `src/local_data_store.py` - stable local-data store surface; keep implementation in `src/local_data_store_{shared,profiles,saved_jobs,attachments,backup}.py`

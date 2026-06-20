@@ -3,9 +3,10 @@ from __future__ import annotations
 """Discovery candidate scoring, ranking, and normalization."""
 
 import os
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
+from src.shared.utils import parse_iso as parse_iso_from_utils
 from src.source_registry import source_identity
 
 from .config import DISCOVERY_STAGES, FOCUS_KEYWORDS
@@ -17,17 +18,7 @@ STRUCTURED_BATCH_ADAPTERS = frozenset({"greenhouse", "lever", "ashby"})
 
 
 def _parse_iso_datetime(value: Any) -> datetime | None:
-    text = str(value or "").strip()
-    if not text:
-        return None
-    normalized = text.replace("Z", "+00:00")
-    try:
-        parsed = datetime.fromisoformat(normalized)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
+    return parse_iso_from_utils(value)
 
 
 def classify_probe_failure_stage(error: str) -> str:

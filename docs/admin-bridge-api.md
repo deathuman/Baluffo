@@ -4,12 +4,13 @@
 > - **Use this when:** editing frontend bridge consumers, route handlers, or task launch/status flows
 > - **Canonical for:** endpoint surface, route naming, and high-level request intent
 > - **Not canonical for:** backend business logic internals or service ownership
-> - **Then inspect:** `src/bridge/routes/{get_routes,post_routes,post_routes_admin,post_routes_local_data,post_routes_update}.py`, `src/bridge/*.py`, `frontend/*/services.js`
-> - **Last updated:** 2026-06-14
+> - **Then inspect:** `src/bridge/routes/get_*.py`, `src/bridge/routes/post_routes_{admin,local_data,update}.py`, `src/bridge/*.py`, `frontend/*/services.js`
+> - **Last updated:** 2026-06-20
 > - **Ownership note:** ops/task-state internals now compose through `src/bridge/ops_api.py`, `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, `src/bridge/ops_task_{fetch_live,discovery_live,projection}.py`, and `src/bridge/ops_live_payload.py`
 > - **Local-data ownership note:** desktop local-data storage now routes through `src/local_data_store.py` as a thin facade over `src/local_data_store_{shared,profiles,saved_jobs,attachments,backup}.py`, while the shared desktop runtime stays rooted at `frontend/shared/local-data/desktop-client.js` over `frontend/shared/local-data/desktop/{api,lifecycle,navigation,state}.js`
 > - **Desktop update ownership note:** the helper executable stays rooted at `src/ship/desktop_updater.py` over `src/ship/desktop_updater_{ui,release,install}.py`, while the Jobs desktop update UI stays rooted at `frontend/jobs/app/desktop-update.js` over `frontend/jobs/app/desktop-update-{model,dom,controller}.js`
 > - **POST-route ownership note:** `src/bridge/routes/post_routes.py` is now the thin registration surface over `src/bridge/routes/post_routes_{admin,local_data,update}.py`
+> - **GET-route ownership note:** `src/bridge/routes/get_routes.py` is now the thin public delegator. Route behavior belongs in the domain leaves `get_admin_bootstrap.py`, `get_admin_ops_tab_counts.py`, `get_app.py`, `get_discovery.py`, `get_fetch_report.py`, `get_fetch_report_sources.py`, `get_local_data.py`, `get_ops_diagnostics.py`, `get_ops_status.py`, `get_pipeline_tasks.py`, `get_registry.py`, `get_registry_conflicts.py`, `get_source_policy.py`, and `get_sync.py`.
 
 Compact reference for AI coders. Desktop endpoints are local-only on localhost; container deployments serve the same API paths same-origin behind the combined UI/API HTTP service.
 

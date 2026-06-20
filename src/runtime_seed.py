@@ -12,6 +12,7 @@ from src.shared.json_io import (
     write_json_text,
 )
 from src.source_discovery.config import DEFAULT_DISCOVERY_CONFIG
+from src.storage_json_metrics import record_json_text_write
 
 APP_VERSION_CONTRACT_FILES = (
     "contracts/country_acceptance.json",
@@ -54,7 +55,7 @@ def _write_json_if_allowed(
     if not overwrite and (gzip_backed_json_storage_path(target).exists() or target.exists()):
         return None
     text = json.dumps(payload, indent=2, ensure_ascii=False)
-    return write_json_text(target, text)
+    return write_json_text(target, text, on_write=record_json_text_write)
 
 
 def seed_runtime_data(
@@ -78,7 +79,11 @@ def seed_runtime_data(
         if not overwrite and (gzip_backed_json_storage_path(target).exists() or target.exists()):
             skipped.append(name)
             continue
-        copied_path = copy_json_file_to_storage(source, target)
+        copied_path = copy_json_file_to_storage(
+            source,
+            target,
+            on_write=record_json_text_write,
+        )
         copied.append(str(copied_path.relative_to(data_path)))
 
     payloads: dict[str, Any] = {

@@ -94,6 +94,7 @@ def test_bundle_contains_python_import_closure_modules() -> None:
             "src/source_registry_io.py",
             "src/source_registry_policy.py",
             "src/source_registry_state.py",
+            "src/storage_json_metrics.py",
             "src/storage_metrics.py",
             "src/ship/desktop_update_constants.py",
             "src/ship/desktop_update_manifest.py",

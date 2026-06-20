@@ -13,6 +13,7 @@ from typing import Any
 
 from src.bridge.ops_live_payload import build_pipeline_task_progress
 from src.bridge.ops_task_live_summary import compact_live_task_payload
+from src.shared.utils import parse_iso as parse_iso_from_utils
 from src.source_registry_io import load_runtime_evidence, save_json_atomic
 
 SNAPSHOT_FILE_NAME = "admin-active-task-snapshot.json"
@@ -89,16 +90,7 @@ def _run_id(row: dict[str, Any]) -> str:
 
 
 def _parse_datetime(value: Any) -> datetime | None:
-    text = _text(value)
-    if not text:
-        return None
-    try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
+    return parse_iso_from_utils(value)
 
 
 def _now_utc() -> datetime:

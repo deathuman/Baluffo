@@ -5,7 +5,7 @@
 > - **Canonical for:** task routing, minimal read order, common repo misconceptions, and AI editing rules
 > - **Not canonical for:** data contracts, endpoint payloads, or deep subsystem ownership detail
 > - **Then inspect:** [`architecture-ai-map.md`](architecture-ai-map.md) for task-to-files routing, plus one matching contract or workflow doc
-> - **Last updated:** 2026-06-04
+> - **Last updated:** 2026-06-20
 
 Read this first. Then load only the smallest additional docs needed.
 
@@ -51,6 +51,8 @@ After a long live-hotfix or release patch cycle, pause before continuing direct 
 |------------------|---------|
 | Frontend is React/Vue | Vanilla ES modules, no framework |
 | `src/admin_bridge.py` is the place for new logic | Prefer `src/bridge/*.py`; `src/admin_bridge.py` stays a thin compatibility surface |
+| `src/bridge/routes/get_routes.py` owns GET route behavior | It is now a thin public delegator; add or change GET route behavior in the matching `src/bridge/routes/get_*.py` leaf |
+| Bridge route leaves should type against `BridgeApi` | Route leaves use narrow capability protocols; repo guardrails block reintroducing full `BridgeApi` imports in route/server modules |
 | `src/source_discovery.py` owns discovery implementation | It is a thin CLI surface over `src/source_discovery/*` |
 | `src/jobs_fetcher.py` is where new pipeline logic belongs | Treat it as a thin CLI facade; new pipeline logic belongs in `src/jobs/*` |
 | Desktop local data uses browser `localStorage` directly | Desktop mode uses the bridge-backed file store under `data/local-user-data/` |
@@ -65,7 +67,7 @@ After a long live-hotfix or release patch cycle, pause before continuing direct 
 | Change area | Fastest check |
 |-------------|----------------|
 | Frontend syntax/wiring | `node --check frontend/jobs/app.js` |
-| Bridge changes | `python -m pytest tests/admin/ -q` |
+| Bridge changes | Start with the focused route/service tests, then `python -m pytest tests/admin/ -q`; run route inventory/guardrails when route ownership moves |
 | Container / Umbrel changes | `python -m pytest tests/bridge/test_container_runtime.py -q` plus targeted frontend unit checks from [`testing.md`](testing.md) |
 | Pipeline/fetcher | `python -m pytest tests/test_jobs_fetcher_*.py -q` |
 | Jobs helper consolidation | For `_as_list`, `_as_dict`, and `_as_dict_rows`, first verify the jobs copies still share identical list/dict/drop-non-dicts semantics; bridge `_as_dict` helpers are not identical |

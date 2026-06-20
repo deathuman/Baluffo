@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from src.shared.live_task import normalize_live_task_event
+from src.shared.utils import parse_iso as parse_iso_from_utils
 from src.storage.baluffo_store import BaluffoStore
 
 TASK_SCHEMA_VERSION = 1
@@ -57,16 +58,7 @@ def _json_loads_object(value: Any) -> dict[str, Any]:
 
 
 def _parse_iso(value: Any) -> datetime | None:
-    text = _clean_text(value)
-    if not text:
-        return None
-    try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
+    return parse_iso_from_utils(value)
 
 
 def _duration_ms(started_at: Any, finished_at: Any) -> int:

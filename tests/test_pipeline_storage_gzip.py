@@ -24,12 +24,21 @@ from src.shared.json_io import (
     write_json_text,
 )
 from src.ship import runtime_launcher as rl
+from src.storage_json_metrics import record_json_text_write
 from src.storage_metrics import reset_storage_metrics, snapshot_storage_metrics
 from tests.helpers.temp_paths import workspace_tmpdir
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _gzip_path(path: Path) -> Path:
     return path.with_name(path.name + ".gz")
+
+
+def test_shared_json_io_does_not_import_storage_metrics() -> None:
+    source = (REPO_ROOT / "src" / "shared" / "json_io.py").read_text(encoding="utf-8")
+
+    assert "src.storage_metrics" not in source
 
 
 def test_pipeline_json_reader_prefers_gzip_over_legacy_plain_file() -> None:
@@ -101,12 +110,16 @@ def test_shared_json_write_helper_leaves_non_policy_json_plain() -> None:
         assert path.read_text(encoding="utf-8") == '{"ok":true}'
 
 
-def test_shared_json_write_helper_records_storage_metrics() -> None:
+def test_shared_json_write_helper_records_storage_metrics_when_callback_provided() -> None:
     with workspace_tmpdir("shared-json-write-metrics") as tmp:
         reset_storage_metrics(data_dir=tmp, remove_file=True)
         path = Path(tmp) / "jobs-unified.json"
 
-        written = write_json_text(path, '[{"ok":true}]')
+        written = write_json_text(
+            path,
+            '[{"ok":true}]',
+            on_write=record_json_text_write,
+        )
         metrics = snapshot_storage_metrics(tmp)
 
         assert written == _gzip_path(path)

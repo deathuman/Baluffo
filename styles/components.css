@@ -2122,7 +2122,7 @@ h1 {
   left: 0;
   height: 3px;
   background: linear-gradient(to right, var(--accent), var(--accent-hover), var(--accent));
-  box-shadow: 0 0 10px rgba(187, 134, 252, 0.8);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 80%, transparent);
   border-radius: 2px;
   animation: progressPulse 2s ease-in-out infinite;
   width: 100%;

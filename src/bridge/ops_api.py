@@ -27,6 +27,7 @@ from src.bridge.performance_profile import time_operation
 from src.bridge.task_abort_evidence import row_abort_requested
 from src.shared.json_shapes import as_json_object
 from src.shared.live_task import LiveTaskPayload, TaskStatePayload, TaskStateRow
+from src.shared.utils import parse_iso as parse_iso_from_utils
 from src.source_registry_io import load_runtime_evidence
 from src.storage_metrics import duration_ms, record_storage_read
 
@@ -135,16 +136,7 @@ def _run_id(row: dict[str, Any]) -> str:
 
 
 def _parse_route_time(value: Any) -> datetime | None:
-    text = str(value or "").strip()
-    if not text:
-        return None
-    try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
+    return parse_iso_from_utils(value)
 
 
 def _latest_time_text(*values: Any) -> str:

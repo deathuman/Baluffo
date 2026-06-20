@@ -9,14 +9,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from src.shared.utils import parse_iso as parse_iso_from_utils
+
 
 def _parse_iso(text: str) -> datetime | None:
-    if not text:
-        return None
-    try:
-        return datetime.fromisoformat(str(text).replace("Z", "+00:00"))
-    except ValueError:
-        return None
+    return parse_iso_from_utils(text)
 
 
 class TaskHistoryManager:

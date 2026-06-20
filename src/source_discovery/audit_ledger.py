@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from src import source_registry as source_registry_module
+from src.shared.utils import parse_iso as parse_iso_from_utils
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -112,14 +113,7 @@ def save_artifact_atomic(artifact: dict[str, Any], output_path: Path) -> None:
 
 
 def parse_artifact_time(value: Any) -> datetime | None:
-    raw = str(value or "").strip()
-    if not raw:
-        return None
-    try:
-        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    return parse_iso_from_utils(value)
 
 
 def artifact_signature_matches(
