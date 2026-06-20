@@ -24,7 +24,7 @@ A systematic analysis identified twelve cross-cutting tech debt clusters that im
 | Update subsystem over-engineering | P0 | Done for root/facade risks | 17 files across two parallel subsystems, root-injection/re-export facades, and runtime `update_manager` coupling inside `src/ship/`. Import-compatible facades are preserved for external/entrypoint compatibility; desktop facade and update-manager facade consumer inventories guard import expansion, root-dependency inventories guard updater leaf root-binding drift, production updater imports use leaves directly, packaged update rehearsal manifest constants/signing helpers no longer read through the facade, release-notes history and updater behavior tests now use desktop update/updater leaf modules directly, `desktop_update_shared.py`, `desktop_updater_install.py`, and `runtime_launcher.py` resolve update-manager behavior through leaves, updater shared/state/service leaves no longer require root-bound `deps.<name>` lookups, and desktop update shared/state leaves no longer expose or receive facade `root` bindings. Python runtime `update_manager` facade imports inside `src/ship` are gone and guardrailed; build/portable scripts now import update-manager leaves directly; ship shell/PowerShell update entrypoints invoke the `update_manager_cli` leaf directly; update-manager behavior tests import leaves directly; the update-manager facade now directly re-exports leaf APIs without sync wrappers; desktop updater helper root dependencies are source-derived and guardrailed, with private install helpers, install-time update-manager calls, and release manifest/hash/download helpers now using leaf-local bindings; facade inventory is down to two helper-entrypoint compatibility tests. The `desktop_updater.py` helper root-injection seam is removed; `desktop_updater_install.update_manager` remains as a compatibility namespace only, not an internal root dependency. |
 | Bare `except Exception` | P0 | Done for source | All source broad catches have been narrowed except the two intentional HTTP route JSON boundaries in `src/bridge/routes/error_boundary.py`. `tools/repo_health/source_suppression_budget.json` budgets BLE001 at 2 and now pins BLE001 to that boundary file, so new source broad catches or suppressions fail repo guardrails. |
 | `json_io.py` shared-layer violation | P1 | Done | `src/shared/json_io.py` no longer imports `src.storage_metrics`; storage metric recording now lives behind explicit caller-provided callbacks backed by `src/storage_json_metrics.py`. |
-| Test time/port coupling | P1 | Partial | First low-risk pipeline/provider concurrency sleep batch removed; 13 `time.sleep()` calls remain in deferred categories, plus 39 hardcoded port 8877 references and 81 monkeypatches on admin_bridge internals. |
+| Test time/port coupling | P1 | Partial | First two low-risk concurrency sleep batches removed; 10 `time.sleep()` calls remain in deferred categories, plus 39 hardcoded port 8877 references and 81 monkeypatches on admin_bridge internals. |
 | `parse_iso` proliferation | P2 | Mostly done | Bridge, storage, and source-discovery helper parsers now delegate to `src.shared.utils.parse_iso`; remaining inline datetime parsing is mostly domain-specific jobs/source-policy handling. |
 | CSS/build pipeline gaps | P2 | Partially open | Quick fixes applied for fetch-progress theme color and redirect-page theme initialization; full CSS bundling/minification/hashing and broader gradient/cache-busting cleanup remain open. |
 | `_as_dict`/`_as_list` proliferation | P3 (demoted) | Done for shared private helpers | The four jobs callers now use `json_shapes.py` public helpers, and the private trio was removed from `src/shared/utils.py`; local shape guards remain intentionally scoped. |
@@ -427,7 +427,7 @@ Canonical public shape helpers live in `src/shared/json_shapes.py` (`as_json_obj
 
 The test suite has coupling patterns that cause flakiness on loaded CI runners:
 
-- **13 `time.sleep()` calls** remain across 8 test files after the low-risk pipeline/provider concurrency batch was replaced with `threading.Event` / `threading.Condition` synchronization — worst: 2.2s and 1.2s in `test_static_source_execution.py`
+- **10 `time.sleep()` calls** remain across 5 test files after the low-risk pipeline/provider and shared HTTP/source-discovery concurrency batches were replaced with `threading.Event` / `threading.Condition` synchronization — worst: 2.2s and 1.2s in `test_static_source_execution.py`
 - **39 hardcoded port 8877 references** — risk of port conflict on parallel CI
 - **81 `monkeypatch.setattr` calls** on `admin_bridge.py` internal constants (54 in `tests/admin/`, 27 in `tests/bridge/`)
 - **7 `_helpers.py` files** across test subdirectories with overlapping patterns
@@ -440,7 +440,7 @@ Flaky tests erode confidence during rapid platform iteration. Hardcoded ports pr
 ### Target Boundary
 
 - **Primary subsystem:** `tests/` (all subdirectories)
-- **Entry file(s):** 8 files with remaining `time.sleep()`, all files referencing port 8877, `tests/admin/_helpers.py`
+- **Entry file(s):** 5 files with remaining `time.sleep()`, all files referencing port 8877, `tests/admin/_helpers.py`
 - **Ownership boundary being clarified:** Tests rely on dependency injection and synchronization primitives, not wall-clock time. Ports are dynamically assigned.
 - **What becomes easier:** CI reliability, parallel test execution, refactoring confidence
 
@@ -709,7 +709,7 @@ The frontend has a JS build pipeline (esbuild) but **zero CSS processing**:
 | 5 | Add BridgeApi field classification guardrail before dead-stub removal | §1 | 3 files | Done | Completed 2026-06-17 |
 | 5A | Remove dead stub functions from BridgeApi after classification evidence | §1 | 1 file | Done | Closed by evidence: current inventory has 0 `default-only` fields, and tests now assert that remains true before future deletion attempts |
 | 6 | Merge `_default_current_task_state_payload` / `_default_current_task_state_summary_payload` | §1 | 1 file | Done | Completed |
-| 7 | Replace `time.sleep(N)` in tests (tiny delays) with `threading.Event` | §6 | ~8 files | Partial | First pipeline/provider concurrency batch completed; deferred sleeps remain in admin TTL, static-source retry/poll, source-discovery delay, shared HTTP batch, source-sync delay, and runtime-launcher file-poll tests |
+| 7 | Replace `time.sleep(N)` in tests (tiny delays) with `threading.Event` | §6 | ~8 files | Partial | Pipeline/provider and shared HTTP/source-discovery concurrency batches completed; deferred sleeps remain in admin TTL, static-source retry/poll, source-sync delay, and runtime-launcher file-poll tests |
 | 8 | Parameterize port 8877 with conftest fixture | §6 | ~15 test files | Low | None |
 
 ### Phase 2: Medium Effort (~3 days)

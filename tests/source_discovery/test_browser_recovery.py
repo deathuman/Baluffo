@@ -5,6 +5,7 @@ import builtins
 import time
 
 from src.source_discovery import browser_recovery
+from tests.helpers.concurrency import BlockingActiveCounter
 
 
 def test_default_browser_fetcher_returns_fallback_when_bridge_unavailable(monkeypatch) -> None:
@@ -250,16 +251,15 @@ def test_select_unprocessed_candidates_skips_processed_and_respects_limit() -> N
 
 
 def test_browser_fetch_pages_async_honors_concurrency_and_durations() -> None:
-    active = 0
-    max_active = 0
+    fetches = BlockingActiveCounter(auto_release_at=2)
 
     def fake_browser(url: str, _timeout_s: int) -> tuple[str, str]:
-        nonlocal active, max_active
-        active += 1
-        max_active = max(max_active, active)
-        time.sleep(0.01)
-        active -= 1
-        return f"<html>{url}</html>", ""
+        fetches.enter()
+        try:
+            fetches.wait_released()
+            return f"<html>{url}</html>", ""
+        finally:
+            fetches.exit()
 
     results = asyncio.run(
         browser_recovery.fetch_browser_recovery_pages_async(
@@ -271,7 +271,7 @@ def test_browser_fetch_pages_async_honors_concurrency_and_durations() -> None:
     )
 
     assert len(results) == 4
-    assert max_active <= 2
+    assert fetches.peak <= 2
     assert all(duration_ms >= 0 for _row, _html, _error, duration_ms in results)
 
 

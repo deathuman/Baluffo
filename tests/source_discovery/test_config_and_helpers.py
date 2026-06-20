@@ -1,4 +1,6 @@
 # ruff: noqa: F401
+from tests.helpers.concurrency import BlockingActiveCounter
+
 from ._helpers import (
     FIXTURES_DIR,
     DiscoveryReportSummarySchema,
@@ -311,17 +313,12 @@ def test_fetch_directory_pages_preserves_order_and_respects_concurrency_limits()
             "failureStage": "homepage_fetch",
         },
     ]
-    delays = {
-        "https://a.example/slow": 0.08,
-        "https://a.example/fast": 0.01,
-        "https://b.example/fast": 0.02,
-        "https://c.example/fail": 0.02,
-    }
     lock = threading.Lock()
     active = 0
     max_active = 0
     host_active: dict[str, int] = {}
     host_max: dict[str, int] = {}
+    fetches = BlockingActiveCounter(auto_release_at=2)
 
     def fake_fetch(url: str, _: int) -> str:
         nonlocal active, max_active
@@ -331,12 +328,14 @@ def test_fetch_directory_pages_preserves_order_and_respects_concurrency_limits()
             max_active = max(max_active, active)
             host_active[host] = host_active.get(host, 0) + 1
             host_max[host] = max(host_max.get(host, 0), host_active[host])
+        fetches.enter()
         try:
-            time.sleep(delays[url])
+            fetches.wait_released()
             if url.endswith("/fail"):
                 raise RuntimeError("boom")
             return f"<html>{url}</html>"
         finally:
+            fetches.exit()
             with lock:
                 active -= 1
                 host_active[host] = max(0, host_active.get(host, 1) - 1)

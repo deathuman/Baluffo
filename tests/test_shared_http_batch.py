@@ -1,11 +1,11 @@
 import builtins
 import importlib
 import threading
-import time
 
 import pytest
 
 from src.shared import http_batch
+from tests.helpers.concurrency import BlockingActiveCounter
 
 fetch_pages_batched = http_batch.fetch_pages_batched
 
@@ -52,18 +52,13 @@ def test_fetch_pages_batched_preserves_order_and_respects_limits_on_sync_path() 
         {"url": "https://b.example/fast", "payload": {"id": "b-fast"}},
         {"url": "https://c.example/fail", "payload": {"id": "c-fail"}},
     ]
-    delays = {
-        "https://a.example/slow": 0.08,
-        "https://a.example/fast": 0.01,
-        "https://b.example/fast": 0.02,
-        "https://c.example/fail": 0.02,
-    }
     progress_calls: list[tuple[int, int]] = []
     lock = threading.Lock()
     active = 0
     max_active = 0
     host_active: dict[str, int] = {}
     host_max: dict[str, int] = {}
+    fetches = BlockingActiveCounter(auto_release_at=2)
 
     def fake_fetch(job: dict[str, object], url: str, _: int) -> str:
         nonlocal active, max_active
@@ -74,12 +69,14 @@ def test_fetch_pages_batched_preserves_order_and_respects_limits_on_sync_path() 
             max_active = max(max_active, active)
             host_active[host] = host_active.get(host, 0) + 1
             host_max[host] = max(host_max.get(host, 0), host_active[host])
+        fetches.enter()
         try:
-            time.sleep(delays[url])
+            fetches.wait_released()
             if url.endswith("/fail"):
                 raise RuntimeError("boom")
             return f"<html>{url}</html>"
         finally:
+            fetches.exit()
             with lock:
                 active -= 1
                 host_active[host] = max(0, host_active.get(host, 1) - 1)
