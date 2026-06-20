@@ -97,7 +97,7 @@ def test_container_frontend_bundle_script_uses_esbuild_dev_dependency() -> None:
     script = _read("scripts/build_container_frontend.mjs")
 
     assert '"build:container-frontend": "node scripts/build_container_frontend.mjs"' in package_json
-    assert '"esbuild": "^0.28.0"' in package_json
+    assert '"esbuild": "^0.28.1"' in package_json
     assert '"node_modules/esbuild"' in package_lock
     assert "strip-import-query" in script
     assert "admin.html" in script
