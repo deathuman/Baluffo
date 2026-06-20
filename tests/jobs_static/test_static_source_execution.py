@@ -1,7 +1,6 @@
 # ruff: noqa: F401
 import json
 import subprocess
-import threading
 import time
 from unittest import mock
 
@@ -10,6 +9,7 @@ import pytest
 from src.exceptions import AdapterValidationError
 from src.jobs.browser_fallback import BrowserFallbackCircuitBreaker
 from src.jobs.common.http import HttpStatusError
+from tests.helpers.concurrency import BlockingActiveCounter
 
 from ._helpers import (
     FIXTURES_DIR,
@@ -379,14 +379,11 @@ def test_run_static_studio_pages_source_parallelizes_detail_fetches() -> None:
         '<a href="/job/c">Role C</a>'
         "</body></html>"
     )
-    active = 0
-    peak = 0
-    active_lock = threading.Lock()
+    fetches = BlockingActiveCounter(auto_release_at=2)
 
     try:
 
         def fake_fetch(url: str, _: int) -> str:
-            nonlocal active, peak
             if url == "https://example.net/careers":
                 return listing
             if url in {
@@ -394,12 +391,11 @@ def test_run_static_studio_pages_source_parallelizes_detail_fetches() -> None:
                 "https://example.net/job/b",
                 "https://example.net/job/c",
             }:
-                with active_lock:
-                    active += 1
-                    peak = max(peak, active)
-                time.sleep(0.05)
-                with active_lock:
-                    active -= 1
+                fetches.enter()
+                try:
+                    fetches.wait_released()
+                finally:
+                    fetches.exit()
                 title = url.rsplit("/", 1)[-1].upper()
                 return f"<html><body><h1>{title}</h1></body></html>"
             raise RuntimeError(f"Unexpected URL: {url}")
@@ -412,7 +408,7 @@ def test_run_static_studio_pages_source_parallelizes_detail_fetches() -> None:
             static_detail_concurrency=3,
         )
         assert len(rows) == 3
-        assert peak >= 2
+        assert fetches.peak >= 2
     finally:
         jf.STUDIO_SOURCE_REGISTRY = prev
 
@@ -512,21 +508,15 @@ def test_run_static_studio_pages_source_parallelizes_listing_fetches() -> None:
             </script></head><body></body></html>
         """,
     }
-    active = 0
-    peak = 0
-    active_lock = threading.Lock()
+    fetches = BlockingActiveCounter(auto_release_at=2)
 
     def fake_fetch(url: str, _: int) -> str:
-        nonlocal active, peak
-        with active_lock:
-            active += 1
-            peak = max(peak, active)
+        fetches.enter()
         try:
-            time.sleep(0.05)
+            fetches.wait_released()
             return page_html[url]
         finally:
-            with active_lock:
-                active -= 1
+            fetches.exit()
 
     rows = jf.run_static_studio_pages_source(
         fetch_text=fake_fetch,
@@ -537,7 +527,7 @@ def test_run_static_studio_pages_source_parallelizes_listing_fetches() -> None:
     )
 
     assert len(rows) == 3
-    assert peak >= 2
+    assert fetches.peak >= 2
 
 
 def test_run_static_studio_pages_source_uses_async_listing_fetch_when_provided() -> None:

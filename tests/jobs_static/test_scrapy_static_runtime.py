@@ -5,6 +5,8 @@ import threading
 import time
 from unittest import mock
 
+from tests.helpers.concurrency import BlockingActiveCounter
+
 from ._helpers import (
     Path,
     jf,
@@ -228,22 +230,17 @@ def test_run_scrapy_static_source_processes_queue_with_bounded_parallelism() -> 
         },
     ]
     jf.STUDIO_SOURCE_REGISTRY = sources
-    active = 0
-    max_active = 0
-    active_lock = threading.Lock()
+    runners = BlockingActiveCounter(auto_release_at=2)
     progress_events: list[dict[str, object]] = []
     try:
         jf.SOURCE_DIAGNOSTICS.clear()
 
         def fake_run(_command, **kwargs):  # noqa: ANN001, ANN202
-            nonlocal active, max_active
             payload = json.loads(kwargs["input"].decode("utf-8"))
             source_name = str(((payload.get("source") or {}).get("name")) or "")
-            with active_lock:
-                active += 1
-                max_active = max(max_active, active)
+            runners.enter()
             try:
-                time.sleep(0.05)
+                runners.wait_released()
                 if source_name == "Tequilaworks (Manual Website)":
                     raise subprocess.TimeoutExpired(cmd="runner", timeout=20)
                 result = mock.Mock()
@@ -259,8 +256,7 @@ def test_run_scrapy_static_source_processes_queue_with_bounded_parallelism() -> 
                 result.returncode = 0
                 return result
             finally:
-                with active_lock:
-                    active -= 1
+                runners.exit()
 
         with (
             mock.patch("subprocess.run", side_effect=fake_run),
@@ -281,7 +277,7 @@ def test_run_scrapy_static_source_processes_queue_with_bounded_parallelism() -> 
             )
 
         assert rows == []
-        assert max_active == 2
+        assert runners.peak == 2
         assert diag_mock.call_count == len(sources)
         details = (jf.SOURCE_DIAGNOSTICS.get("scrapy_static_sources") or {}).get("details") or []
         assert len(details) == len(sources)
