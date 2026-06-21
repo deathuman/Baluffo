@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -52,6 +53,58 @@ def test_source_policy_export_reports_expected_write_failure(
         "manualForcePausedCount": 0,
         "warning": "source_policy_recommendation_export_failed:OSError",
     }
+
+
+def test_source_policy_export_writes_success_artifact(tmp_path: Path) -> None:
+    report_payload = _report_payload()
+    recommendations_path = tmp_path / "source-policy-recommendations.json"
+    review_state_path = tmp_path / "source-policy-review-state.json"
+    recommendations_path.write_text(
+        json.dumps({"schemaVersion": "1.0", "updatedAt": "", "pairs": []}),
+        encoding="utf-8",
+    )
+    review_state_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": "1.0",
+                "updatedAt": "2026-06-19T11:00:00+00:00",
+                "pairs": {
+                    "static:listing_url:https://studio.example/jobs||greenhouse:studio": {
+                        "staticSourceId": "static:listing_url:https://studio.example/jobs",
+                        "staticSourceName": (
+                            "static_source::static:listing_url:https://studio.example/jobs"
+                        ),
+                        "providerSourceId": "greenhouse:studio",
+                        "providerSourceName": "Studio Greenhouse",
+                        "reviewState": "reviewed",
+                        "manualSuppressionOverride": "force_pause",
+                        "updatedAt": "2026-06-19T11:00:00+00:00",
+                        "updatedBy": "admin",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    pipeline_finalize._export_source_policy_recommendations(
+        report_payload=report_payload,
+        source_policy_recommendations_path=recommendations_path,
+        source_policy_review_state_path=review_state_path,
+        finished_at="2026-06-19T12:00:00+00:00",
+    )
+
+    export = report_payload["sourcePolicyRecommendationExport"]
+    assert export == {
+        "status": "ok",
+        "artifactPath": str(recommendations_path),
+        "reviewStatePath": str(review_state_path),
+        "updatedPairCount": 1,
+        "reviewStatePairCount": 1,
+        "manualForcePausedCount": 1,
+    }
+    artifact = recommendations_path.read_text(encoding="utf-8")
+    assert "safe_redundant_static" in artifact
 
 
 def test_source_policy_export_does_not_swallow_unexpected_build_failure(

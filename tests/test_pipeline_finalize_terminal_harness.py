@@ -38,10 +38,13 @@ def _install_terminal_harness(
     *,
     deduped_rows: list[_FakeJob] | None = None,
     dedup_stats: dict[str, Any] | None = None,
+    detailed_source_rows: list[dict[str, Any]] | None = None,
     preserved_previous: bool = False,
     sector_gate_dropped: int = 0,
     dedup_warning: str = "",
     redirect_cache: dict[str, str] | None = None,
+    updated_source_state_rows: dict[str, dict[str, Any]] | None = None,
+    provider_static_overlap_summary: Any | None = None,
 ) -> dict[str, Any]:
     calls: dict[str, Any] = {
         "progress_reports": [],
@@ -108,7 +111,9 @@ def _install_terminal_harness(
         pipeline_finalize,
         "_update_runtime_timing_payload",
         lambda **kwargs: (
-            [
+            list(detailed_source_rows)
+            if detailed_source_rows is not None
+            else [
                 {
                     "name": "source_1",
                     "status": "ok",
@@ -172,13 +177,17 @@ def _install_terminal_harness(
     monkeypatch.setattr(
         pipeline_finalize,
         "update_source_state_rows",
-        lambda **_kwargs: {
-            "source_1": {
-                "name": "source_1",
-                "provider": "greenhouse",
-                "lastKeptCount": len(rows),
+        lambda **_kwargs: (
+            dict(updated_source_state_rows)
+            if updated_source_state_rows is not None
+            else {
+                "source_1": {
+                    "name": "source_1",
+                    "provider": "greenhouse",
+                    "lastKeptCount": len(rows),
+                }
             }
-        },
+        ),
     )
     monkeypatch.setattr(
         pipeline_finalize,
@@ -195,7 +204,7 @@ def _install_terminal_harness(
     monkeypatch.setattr(
         pipeline_finalize,
         "build_provider_static_overlap_summary",
-        lambda **_kwargs: {"overlapCount": 0},
+        provider_static_overlap_summary or (lambda **_kwargs: {"overlapCount": 0}),
     )
     monkeypatch.setattr(
         pipeline_finalize,
@@ -287,6 +296,9 @@ def _install_terminal_harness(
 def _run_finalize(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    *,
+    source_reports: list[dict[str, Any]] | None = None,
+    source_state_rows: dict[str, Any] | None = None,
     **harness_options: Any,
 ) -> tuple[dict[str, Any], dict[str, Any], Any, dict[str, str]]:
     calls = _install_terminal_harness(monkeypatch, **harness_options)
@@ -305,7 +317,9 @@ def _run_finalize(
 
     report = pipeline_finalize.finalize_pipeline_run(
         paths=paths,
-        source_reports=[
+        source_reports=source_reports
+        if source_reports is not None
+        else [
             {
                 "name": "source_1",
                 "keptCount": 1,
@@ -317,7 +331,7 @@ def _run_finalize(
         selected_loaders=[("source_1", object())],
         effective_seed_from_existing_output=False,
         preserve_previous_on_empty=False,
-        source_state_rows={},
+        source_state_rows=source_state_rows or {},
         lifecycle_rows={},
         runtime_payload={"existing": "runtime"},
         redirect_resolver=calls["redirect_resolver"],
@@ -477,3 +491,62 @@ def test_finalize_pipeline_run_persists_google_sheets_redirect_cache(
         "https://docs.google.com/sheet": "https://studio.example/jobs"
     }
     assert report["providerCoverage"] == {"providerCount": 1}
+
+
+def test_finalize_pipeline_run_restores_prior_provider_overlap_state_for_dynamic_redundant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def overlap_spy(**kwargs: Any) -> dict[str, Any]:
+        captured["source_rows"] = kwargs["source_rows"]
+        captured["source_state_rows"] = kwargs["source_state_rows"]
+        return {"overlapCount": 1}
+
+    report, _calls, _paths, _progress_phase = _run_finalize(
+        tmp_path,
+        monkeypatch,
+        source_reports=[
+            {
+                "name": "dynamic_provider",
+                "status": "excluded",
+                "exclusionReason": "dynamic_redundant_provider",
+                "keptCount": 0,
+                "loss": {"canonicalKept": 0},
+            }
+        ],
+        source_state_rows={
+            "dynamic_provider": {
+                "name": "dynamic_provider",
+                "provider": "greenhouse",
+                "lastKeptCount": 12,
+                "prior": True,
+            }
+        },
+        detailed_source_rows=[
+            {
+                "name": "dynamic_provider",
+                "status": "excluded",
+                "exclusionReason": "dynamic_redundant_provider",
+                "keptCount": 0,
+            }
+        ],
+        updated_source_state_rows={
+            "dynamic_provider": {
+                "name": "dynamic_provider",
+                "provider": "greenhouse",
+                "lastKeptCount": 0,
+                "prior": False,
+            }
+        },
+        provider_static_overlap_summary=overlap_spy,
+    )
+
+    assert report["providerStaticOverlap"] == {"overlapCount": 1}
+    assert captured["source_rows"][0]["name"] == "dynamic_provider"
+    assert captured["source_state_rows"]["dynamic_provider"] == {
+        "name": "dynamic_provider",
+        "provider": "greenhouse",
+        "lastKeptCount": 12,
+        "prior": True,
+    }
