@@ -30,7 +30,6 @@
     "tests/bridge/test_routes_smoke.py": 413,
     "tests/desktop_app/test_browser_launch_and_reclaim.py": 1338,
     "tests/desktop_app/test_browser_session_watch.py": 436,
-    "tests/desktop_app/test_launcher_orchestration.py": 1827,
     "tests/frontend/unit/admin-discovery-controller.test.mjs": 1237,
     "tests/frontend/unit/admin-domain.test.mjs": 766,
     "tests/frontend/unit/admin-fetcher-controller.test.mjs": 1317,
