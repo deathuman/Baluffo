@@ -121,3 +121,79 @@ def test_required_checkpoint_failure_marks_store_unhealthy() -> None:
             health = store.health()
             assert health["healthy"] is False
             assert health["lastWriteError"].startswith("SQLite WAL checkpoint busy")
+
+
+def test_write_reraises_non_busy_operational_error_without_retry() -> None:
+    with workspace_tmpdir("baluffo-store-non-busy") as data_dir:
+        with BaluffoStore(data_dir, busy_retry_attempts=3) as store:
+            attempts = 0
+
+            def fail(conn: sqlite3.Connection) -> None:
+                nonlocal attempts
+                attempts += 1
+                raise sqlite3.OperationalError("syntax exploded")
+
+            with pytest.raises(sqlite3.OperationalError, match="syntax exploded"):
+                store.write(fail)
+
+            assert attempts == 1
+            health = store.health()
+            assert health["healthy"] is False
+            assert health["lastWriteError"] == "syntax exploded"
+
+
+def test_write_busy_retry_exhaustion_marks_store_unhealthy() -> None:
+    with workspace_tmpdir("baluffo-store-busy-exhaustion") as data_dir:
+        with BaluffoStore(
+            data_dir,
+            busy_retry_attempts=2,
+            busy_retry_base_ms=1,
+            busy_retry_max_ms=1,
+        ) as store:
+            store._sleep_for_retry = lambda _attempt: None  # type: ignore[method-assign]
+
+            with pytest.raises(BaluffoStoreError, match="busy retry attempts"):
+                store.write(
+                    lambda _conn: (_ for _ in ()).throw(
+                        sqlite3.OperationalError("database is locked")
+                    )
+                )
+
+            health = store.health()
+            assert health["healthy"] is False
+            assert health["busyCount"] == 2
+            assert health["lastWriteError"] == "database is locked"
+
+
+def test_checkpoint_validation_and_non_busy_error_paths() -> None:
+    with workspace_tmpdir("baluffo-store-checkpoint-errors") as data_dir:
+        with BaluffoStore(data_dir, busy_retry_attempts=2) as store:
+            with pytest.raises(ValueError, match="Unsupported SQLite checkpoint mode"):
+                store.checkpoint_required(mode="invalid")
+
+            store._execute_checkpoint = lambda _mode: (_ for _ in ()).throw(  # type: ignore[method-assign]
+                sqlite3.OperationalError("checkpoint syntax exploded")
+            )
+
+            with pytest.raises(sqlite3.OperationalError, match="checkpoint syntax exploded"):
+                store.checkpoint_required(mode="PASSIVE")
+
+            assert store.health()["healthy"] is False
+            assert store.health()["lastWriteError"] == "checkpoint syntax exploded"
+
+
+def test_backup_and_restore_validation_errors() -> None:
+    with workspace_tmpdir("baluffo-store-backup-errors") as data_dir:
+        with BaluffoStore(data_dir / "source") as store:
+            store.quick_check = lambda: "corrupt"  # type: ignore[method-assign]
+
+            with pytest.raises(BaluffoStoreError, match="quick_check failed before backup"):
+                store.backup_to(data_dir / "backup.db")
+
+        with pytest.raises(BaluffoStoreError, match="backup file not found"):
+            BaluffoStore.restore_backup(data_dir / "missing.db", data_dir / "restore")
+
+        invalid = data_dir / "invalid.db"
+        invalid.write_text("not sqlite", encoding="utf-8")
+        with pytest.raises(sqlite3.DatabaseError):
+            BaluffoStore.restore_backup(invalid, data_dir / "restore-invalid")
