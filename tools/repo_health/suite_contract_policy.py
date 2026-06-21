@@ -1238,7 +1238,10 @@ def test_sharded_python_test_families_do_not_use_star_helper_imports(repo_root: 
         "tests/source_discovery/test_run_discovery_flow_runtime.py",
         "tests/jobs_static/test_browser_and_regression_queues.py",
         "tests/jobs_static/test_detail_fallback.py",
-        "tests/jobs_static/test_rendered_cards_and_plugins.py",
+        "tests/jobs_static/test_rendered_cards_extraction.py",
+        "tests/jobs_static/test_rendered_cards_sheet_studios.py",
+        "tests/jobs_static/test_rendered_cards_static_plugins_core.py",
+        "tests/jobs_static/test_rendered_cards_static_plugins_more.py",
         "tests/jobs_static/test_scrapy_static_runtime.py",
         "tests/jobs_static/test_static_source_execution.py",
     ):
