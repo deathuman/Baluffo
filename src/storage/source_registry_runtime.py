@@ -1,4 +1,10 @@
-"""SQLite source-registry runtime storage APIs."""
+"""SQLite source-registry runtime storage APIs.
+
+AI boundary owns: persisted source registry snapshots, bucket rows, link identity, and registry generations.
+AI boundary implement in: this file for registry storage operations; registry policy and route payloads stay outside storage.
+AI boundary search before contracts: source registry identity, bridge registry routes, migrations, and registry storage tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused source registry storage tests.
+"""
 
 from __future__ import annotations
 

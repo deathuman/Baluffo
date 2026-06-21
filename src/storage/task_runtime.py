@@ -1,4 +1,10 @@
-"""SQLite task lifecycle, live-event, and sync-run storage APIs."""
+"""SQLite task lifecycle, live-event, and sync-run storage APIs.
+
+AI boundary owns: task rows, live events, task summaries, and sync-run persistence.
+AI boundary implement in: this file for task storage operations; task orchestration and route payloads stay outside storage.
+AI boundary search before contracts: live task helpers, bridge task routes, migrations, and task runtime tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused task runtime storage tests.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,10 @@
-"""Filesystem-backed compressed evidence archive manifest helpers."""
+"""Filesystem-backed compressed evidence archive manifest helpers.
+
+AI boundary owns: compressed evidence archive files, retention manifests, and archive budget enforcement.
+AI boundary implement in: this file for evidence archive persistence; callers own evidence collection semantics.
+AI boundary search before contracts: source run storage, evidence consumers, and archive retention tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused evidence archive tests.
+"""
 
 from __future__ import annotations
 

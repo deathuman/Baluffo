@@ -1,4 +1,10 @@
-"""SQLite/WAL runtime storage skeleton for bridge-owned hot state."""
+"""SQLite/WAL runtime storage skeleton for bridge-owned hot state.
+
+AI boundary owns: SQLite connection, migration, WAL, transaction, and batch helpers for runtime storage.
+AI boundary implement in: this file for store primitives; domain row APIs stay in sibling storage modules.
+AI boundary search before contracts: storage domain modules, migrations, and runtime storage tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused storage runtime tests.
+"""
 
 from __future__ import annotations
 

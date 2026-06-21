@@ -1,4 +1,10 @@
-"""SQLite per-source fetch run storage APIs."""
+"""SQLite per-source fetch run storage APIs.
+
+AI boundary owns: per-source fetch run rows, source summaries, and persisted fetch-run evidence.
+AI boundary implement in: this file for source run storage operations; fetch execution and route payloads stay outside storage.
+AI boundary search before contracts: fetch report normalization, source run routes, migrations, and source runtime tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused source runtime storage tests.
+"""
 
 from __future__ import annotations
 

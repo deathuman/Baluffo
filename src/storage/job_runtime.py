@@ -1,4 +1,10 @@
-"""SQLite jobs feed storage APIs."""
+"""SQLite jobs feed storage APIs.
+
+AI boundary owns: jobs feed generation rows, job snapshots, and feed storage schema adapters.
+AI boundary implement in: this file for persisted jobs feed operations; job normalization stays in src.jobs.
+AI boundary search before contracts: jobs contracts, feed consumers, migrations, and storage tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused jobs feed storage tests.
+"""
 
 from __future__ import annotations
 
