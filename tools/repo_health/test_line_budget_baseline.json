@@ -57,7 +57,6 @@
     "tests/source_discovery/test_coverage_targets.py": 403,
     "tests/source_discovery/test_active_audit_runtime.py": 964,
     "tests/source_discovery/test_directory_sources.py": 798,
-    "tests/source_discovery/test_run_discovery_flow.py": 1434,
     "tests/test_build_ship_bundle.py": 574,
     "tests/test_desktop_updater.py": 640,
     "tests/test_jobs_fetcher_google_sheets.py": 474,
