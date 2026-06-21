@@ -1,11 +1,11 @@
 """Bridge modules for Baluffo admin operations.
 
-This package contains modular components extracted from admin_bridge.py
-to improve maintainability and reduce the "God Object" complexity.
+This package contains modular components extracted from admin_bridge.py to improve maintainability and reduce the compatibility root surface.
 
-Modules:
-    sync_state: State management for sync operations
-    sync_service: Core sync business logic
+AI boundary owns: bridge package re-exports for sync service and state compatibility.
+AI boundary implement in: this file for package surface changes; bridge behavior stays in bridge service leaves.
+AI boundary search before contracts: admin_bridge compatibility root, sync service/state modules, and bridge package tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused bridge package tests.
 """
 
 from src.bridge.sync_service import (

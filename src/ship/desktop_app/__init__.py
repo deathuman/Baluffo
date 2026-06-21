@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Stable desktop runtime facade. AI boundary: compat facade / __getattr__ proxy / _COMPAT_MODULES ordering only. AI boundary implement in: desktop_app leaf modules (config, process, session, browser, startup, launcher, etc.). AI boundary verify: matching packaged rehearsal lane."""
+"""Stable desktop runtime facade.
+
+AI boundary owns: desktop app compatibility facade, dynamic re-exports, and _COMPAT_MODULES ordering.
+AI boundary implement in: this file for facade surface changes; desktop behavior stays in desktop_app leaf modules.
+AI boundary search before contracts: launcher flow, platform helpers, packaged smoke, and desktop app import-closure tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused packaged desktop rehearsal tests.
+"""
 
 from __future__ import annotations
 

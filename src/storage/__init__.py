@@ -1,4 +1,10 @@
-"""Runtime storage layer primitives."""
+"""Runtime storage layer primitives.
+
+AI boundary owns: storage package re-exports, lazy store loading, and runtime storage public surface.
+AI boundary implement in: this file for package surface changes; storage behavior stays in storage runtime modules.
+AI boundary search before contracts: storage store modules, migrations, bridge storage callers, and storage tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused storage runtime tests.
+"""
 
 from __future__ import annotations
 

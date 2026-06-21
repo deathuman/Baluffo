@@ -1,4 +1,10 @@
-"""Adapter registry accessors for the jobs package."""
+"""Adapter registry accessors for the jobs package.
+
+AI boundary owns: jobs adapter package surface, default source loader assembly, and adapter registry exports.
+AI boundary implement in: this file for adapter package wiring; loader behavior stays in adapter leaf modules.
+AI boundary search before contracts: provider/static/social adapter packages, source loader registry, and adapter tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused jobs adapter registry tests.
+"""
 
 from __future__ import annotations
 

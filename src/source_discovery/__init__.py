@@ -1,3 +1,11 @@
+"""Public source-discovery package surface and compatibility exports.
+
+AI boundary owns: source-discovery re-exports, compatibility shims, and package-level helper entrypoints.
+AI boundary implement in: this file for package surface changes; discovery behavior stays in source_discovery leaf modules.
+AI boundary search before contracts: discovery config, orchestration leaves, source policy callers, and discovery tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused source-discovery package tests.
+"""
+
 from __future__ import annotations
 
 from . import config as _config

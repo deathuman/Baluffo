@@ -1,4 +1,10 @@
-"""Community and special-case adapters extracted from the legacy fetcher."""
+"""Community and special-case adapters extracted from the legacy fetcher.
+
+AI boundary owns: community adapter compatibility exports and legacy special-case source loaders.
+AI boundary implement in: this file for community adapter surface changes; parser details stay in community leaf modules.
+AI boundary search before contracts: Google Sheets adapter leaves, community parser tests, and jobs fetcher compatibility tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused community adapter tests.
+"""
 
 from __future__ import annotations
 
