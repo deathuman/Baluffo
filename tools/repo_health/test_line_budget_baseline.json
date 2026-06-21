@@ -49,7 +49,6 @@
     "tests/jobs/adapters/parsers/test_location.py": 471,
     "tests/jobs_static/test_detail_fallback.py": 927,
     "tests/jobs_static/test_scrapy_static_runtime.py": 429,
-    "tests/jobs_static/test_static_source_execution.py": 1221,
     "tests/source_discovery/test_candidate_generation.py": 807,
     "tests/source_discovery/test_config_and_helpers.py": 562,
     "tests/source_discovery/test_coverage_targets.py": 403,

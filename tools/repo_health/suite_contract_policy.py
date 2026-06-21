@@ -1245,7 +1245,9 @@ def test_sharded_python_test_families_do_not_use_star_helper_imports(repo_root: 
         "tests/jobs_static/test_rendered_cards_static_plugins_core.py",
         "tests/jobs_static/test_rendered_cards_static_plugins_more.py",
         "tests/jobs_static/test_scrapy_static_runtime.py",
-        "tests/jobs_static/test_static_source_execution.py",
+        "tests/jobs_static/test_static_source_execution_core.py",
+        "tests/jobs_static/test_static_source_execution_edges.py",
+        "tests/jobs_static/test_static_source_execution_fixtures.py",
     ):
         text = (repo_root / relative_path).read_text(encoding="utf-8")
         assert "from ._helpers import *" not in text
