@@ -55,7 +55,6 @@
     "tests/test_desktop_updater.py": 640,
     "tests/test_jobs_fetcher_google_sheets.py": 474,
     "tests/test_jobs_fetcher_parsing.py": 784,
-    "tests/test_fetch_incremental_sanity_benchmark.py": 1141,
     "tests/test_jobs_package.py": 223,
     "tests/test_perf_complete.py": 493,
     "tests/test_pipeline_runtime.py": 406,
