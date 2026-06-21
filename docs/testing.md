@@ -464,7 +464,7 @@ Use the narrowest check that matches the risky path:
 - Packaged Admin startup, overview, or heavy ops-payload loading changes: `npm run test:frontend:packaged:admin-startup`
 - Packaged updater, desktop handoff, Windows packaged data-root migration, or release-manifest changes: `npm run test:frontend:packaged:update-rehearsal`
 - Packaged Jobs startup threshold changes: `npm run probe:desktop:startup:jobs:cold`
-- Bridge route wiring or task-launch signature changes: focused `tests/bridge/...` plus `tests/test_pipeline_execution.py` for worker-path coverage
+- Bridge route wiring or task-launch signature changes: focused `tests/bridge/...` plus `tests/test_pipeline_execution_*.py` for worker-path coverage
 - Admin task buttons, presets, or busy-state changes: focused frontend unit tests plus the nearest admin bridge payload test
 - Contamination or location-quality regressions: targeted fetcher/unit checks around sanitization, canonicalization, or audit helpers
 
@@ -472,7 +472,7 @@ Use the narrowest check that matches the risky path:
 
 | Area | Test path |
 |------|-----------|
-| Jobs pipeline / jobs_fetcher | `tests/test_jobs_fetcher.py` (integration shim), `tests/test_jobs_fetcher_google_sheets.py`, `tests/test_jobs_fetcher_parsing.py`, `tests/test_jobs_fetcher_providers.py`, `tests/jobs_static/`, `tests/test_jobs_fetcher_pipeline.py`, `tests/test_jobs_fetcher_quality.py` |
+| Jobs pipeline / jobs_fetcher | `tests/test_jobs_fetcher.py` (integration shim), `tests/test_jobs_fetcher_google_sheets.py`, `tests/test_jobs_fetcher_parsing.py`, `tests/test_jobs_fetcher_provider*.py`, `tests/jobs_static/`, `tests/test_jobs_fetcher_pipeline_*.py`, `tests/test_jobs_fetcher_quality_*.py` |
 | Source discovery | `tests/source_discovery/` |
 | Admin bridge (registry, runtime, static fallback, sync) | `tests/admin/test_admin_bridge_ops_*.py` |
 | Desktop app / launcher | `tests/desktop_app/` |
