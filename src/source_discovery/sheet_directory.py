@@ -1,3 +1,11 @@
+"""Google Sheets directory discovery helpers.
+
+AI boundary owns: sheet directory row loading, candidate extraction, and directory source evidence.
+AI boundary implement in: this file for sheet-directory discovery; global candidate orchestration stays in orchestrator_generation.
+AI boundary search before contracts: candidate collections, source registry rows, and sheet directory tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused sheet directory tests.
+"""
+
 from __future__ import annotations
 
 import csv

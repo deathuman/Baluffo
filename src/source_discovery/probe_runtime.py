@@ -1,6 +1,14 @@
-from __future__ import annotations
+"""Source discovery probe runtime helpers.
 
-"""Shared probe mechanics for source-discovery audit and recovery paths."""
+Shared probe mechanics for source-discovery audit and recovery paths.
+
+AI boundary owns: probe runtime batching, result envelopes, and probe execution support.
+AI boundary implement in: this file for probe runtime mechanics; candidate validation/parsing stays in probe.py.
+AI boundary search before contracts: orchestrator probe, runtime metrics, and probe runtime tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused probe runtime tests.
+"""
+
+from __future__ import annotations
 
 import asyncio
 import json

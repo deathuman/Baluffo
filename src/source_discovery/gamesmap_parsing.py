@@ -1,3 +1,11 @@
+"""GamesMap parsing helpers.
+
+AI boundary owns: GamesMap HTML/text parsing and studio/source extraction primitives.
+AI boundary implement in: this file for GamesMap parsing primitives; candidate scoring and orchestration stay in sibling leaves.
+AI boundary search before contracts: GamesMap candidate helpers, gamesmap tests, and discovery generation tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused GamesMap parsing tests.
+"""
+
 from __future__ import annotations
 
 import json

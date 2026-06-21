@@ -1,3 +1,11 @@
+"""Source discovery orchestrator runtime helpers.
+
+AI boundary owns: runtime setup, run context, and shared orchestration dependencies.
+AI boundary implement in: this file for orchestration runtime plumbing; candidate generation and probes stay in sibling leaves.
+AI boundary search before contracts: orchestrator entrypoints, config, runtime metrics, and discovery flow tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused source discovery runtime tests.
+"""
+
 from __future__ import annotations
 
 import time

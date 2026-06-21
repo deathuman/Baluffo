@@ -1,6 +1,6 @@
-from __future__ import annotations
+"""Source discovery orchestrator entry helpers.
 
-"""End-to-end discovery orchestration (CLI + core flow).
+End-to-end discovery orchestration (CLI + core flow).
 
 Phases:
 1. Candidate generation (curated seeds, sheet directory, provider patterns, Gamesmap, web search)
@@ -8,7 +8,14 @@ Phases:
 3. Probe (HTTP checks) with concurrency limits
 4. Queue balancing (caps by adapter/domain, top-N)
 5. Summary + report writing
+
+AI boundary owns: source discovery orchestration entrypoints and high-level run coordination.
+AI boundary implement in: this file for orchestration wiring; stage-specific generation/probe/finalize behavior stays in sibling leaves.
+AI boundary search before contracts: source_discovery CLI, bridge discovery service, and discovery flow tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused source discovery tests.
 """
+
+from __future__ import annotations
 
 import argparse
 import os

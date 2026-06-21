@@ -1,3 +1,11 @@
+"""Provider pattern discovery helpers.
+
+AI boundary owns: provider pattern matching, source URL inference, and provider candidate hints.
+AI boundary implement in: this file for provider pattern inference; migration advisory and policy contracts stay elsewhere.
+AI boundary search before contracts: provider inference filters, source-policy advisory, and provider pattern tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused provider pattern tests.
+"""
+
 from __future__ import annotations
 
 from typing import Any

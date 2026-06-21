@@ -1,12 +1,19 @@
-from __future__ import annotations
+"""GameProg directory discovery helpers.
 
-"""Gameprog.it directory parsing and candidate extraction.
+Gameprog.it directory parsing and candidate extraction.
 
 Responsibilities:
 - Fetch and parse gameprog.it teams.json into studio entries
 - For each studio website, fetch and infer careers URL
 - Emit provider/static candidates (similar to gamesmap pattern)
+
+AI boundary owns: GameProg directory fetch/parsing, candidate extraction, and discovery evidence.
+AI boundary implement in: this file for GameProg-specific discovery; generic directory orchestration stays in generation leaves.
+AI boundary search before contracts: orchestrator generation, directory adapters, and GameProg tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused GameProg discovery tests.
 """
+
+from __future__ import annotations
 
 import json
 import time

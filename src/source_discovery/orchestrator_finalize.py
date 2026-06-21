@@ -1,3 +1,11 @@
+"""Source discovery finalization helpers.
+
+AI boundary owns: discovery report finalization, artifact writes, and output summaries.
+AI boundary implement in: this file for run finalization; generation/probe stage behavior stays in sibling leaves.
+AI boundary search before contracts: orchestrator runtime, reporting modules, and discovery flow tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused discovery finalization tests.
+"""
+
 from __future__ import annotations
 
 from collections import Counter

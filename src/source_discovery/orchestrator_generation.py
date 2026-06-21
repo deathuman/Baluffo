@@ -1,3 +1,11 @@
+"""Source discovery candidate generation orchestration.
+
+AI boundary owns: candidate generation stage coordination across directories, providers, and web search.
+AI boundary implement in: this file for generation-stage orchestration; individual source collectors stay in their own leaves.
+AI boundary search before contracts: orchestrator runtime, candidate collections, directory/web-search modules, and generation tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused candidate generation tests.
+"""
+
 from __future__ import annotations
 
 import time

@@ -1,3 +1,11 @@
+"""Web-search candidate generation helpers.
+
+AI boundary owns: web-search result normalization, candidate extraction, and evidence shaping.
+AI boundary implement in: this file for web-search candidate generation; fetch/extract primitives stay in web_search_* leaves.
+AI boundary search before contracts: web search config/fetch/extract modules, orchestrator generation, and web search tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused web-search discovery tests.
+"""
+
 from __future__ import annotations
 
 import hashlib

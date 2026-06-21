@@ -1,6 +1,14 @@
-from __future__ import annotations
+"""Active audit runtime helpers for source discovery.
 
-"""Shared runtime mechanics for active-source audit batches."""
+Shared runtime mechanics for active-source audit batches.
+
+AI boundary owns: active-audit task runtime, batching, evidence rows, and audit progress state.
+AI boundary implement in: this file for active audit execution; GameDevMap-specific dry-run behavior stays in its leaf.
+AI boundary search before contracts: gamedevmap active dry run, audit reports, and active audit tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused active audit tests.
+"""
+
+from __future__ import annotations
 
 import time
 from collections import Counter

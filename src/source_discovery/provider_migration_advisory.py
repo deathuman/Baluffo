@@ -1,3 +1,11 @@
+"""Provider migration advisory helpers.
+
+AI boundary owns: provider migration readiness, advisory rows, and source replacement evidence.
+AI boundary implement in: this file for advisory derivation; provider inference and source-policy contracts stay elsewhere.
+AI boundary search before contracts: provider inference, source-policy recommendations, and migration advisory tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused provider advisory tests.
+"""
+
 from __future__ import annotations
 
 from collections import Counter

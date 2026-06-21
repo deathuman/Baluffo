@@ -1,4 +1,10 @@
-"""Probe discovery candidates (validate, fetch, parse job count)."""
+"""Probe discovery candidates (validate, fetch, parse job count).
+
+AI boundary owns: candidate validation, probe fetching, and provider/static job count parsing.
+AI boundary implement in: this file for probe behavior; orchestration and runtime batching stay in orchestrator_probe/probe_runtime.
+AI boundary search before contracts: source discovery orchestrator, jobs HTML parsers, provider configs, and probe tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused discovery probe tests.
+"""
 
 from __future__ import annotations
 

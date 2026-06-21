@@ -1,3 +1,11 @@
+"""Discovery reporting backlog helpers.
+
+AI boundary owns: discovery backlog reporting, queue summaries, and candidate follow-up evidence.
+AI boundary implement in: this file for backlog report shape; core reporting and runtime metrics stay in sibling leaves.
+AI boundary search before contracts: reporting modules, orchestrator finalize, and discovery report tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused discovery reporting tests.
+"""
+
 from __future__ import annotations
 
 from collections import Counter

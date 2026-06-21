@@ -1,6 +1,14 @@
-from __future__ import annotations
+"""Directory page recovery helpers.
 
-"""Shared HTTP-only careers recovery for directory-audit homepage misses."""
+Shared HTTP-only careers recovery for directory-audit homepage misses.
+
+AI boundary owns: directory page recovery candidates, fallback URL planning, and recovery evidence.
+AI boundary implement in: this file for directory page recovery; directory fetch/index collection stays in sibling leaves.
+AI boundary search before contracts: directory audit/fetch modules, recovery URL planner, and directory recovery tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused directory recovery tests.
+"""
+
+from __future__ import annotations
 
 import re
 import time

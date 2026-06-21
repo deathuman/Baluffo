@@ -1,3 +1,11 @@
+"""Source discovery probe orchestration helpers.
+
+AI boundary owns: probe-stage coordination, queued candidate probing, and probe result aggregation.
+AI boundary implement in: this file for probe orchestration; adapter-specific probe parsing stays in probe/probe_runtime.
+AI boundary search before contracts: orchestrator runtime, probe helpers, and discovery probe tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused discovery probe tests.
+"""
+
 from __future__ import annotations
 
 import asyncio

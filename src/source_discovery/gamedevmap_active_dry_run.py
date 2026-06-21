@@ -1,6 +1,14 @@
-from __future__ import annotations
+"""GameDevMap active dry-run audit helpers.
 
-"""Resumable GameDevMap active-source dry-run reporting."""
+Resumable GameDevMap active-source dry-run reporting.
+
+AI boundary owns: GameDevMap active audit dry-run execution, homepage checks, and candidate evidence.
+AI boundary implement in: this file for GameDevMap active audit specifics; generic audit runtime stays in active_audit_runtime.
+AI boundary search before contracts: GameDevMap parsing/candidates, active audit runtime, and GameDevMap tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused GameDevMap active audit tests.
+"""
+
+from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable

@@ -1,12 +1,19 @@
-from __future__ import annotations
+"""Source discovery configuration helpers.
 
-"""Configuration and static defaults for source discovery.
+Configuration and static defaults for source discovery.
 
 This module owns:
 - paths (seed catalog, discovery config/log files)
 - global discovery constants (stages, thresholds, adapter caps)
 - default studio seeds and discovery config payload
+
+AI boundary owns: discovery config defaults, provider toggles, and saved discovery settings shape.
+AI boundary implement in: this file for discovery config shape; stage execution belongs in orchestrator/stage leaves.
+AI boundary search before contracts: bridge discovery service, stage control, and discovery config tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused discovery config tests.
 """
+
+from __future__ import annotations
 
 import json
 import os

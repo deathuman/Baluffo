@@ -1,3 +1,11 @@
+"""Source discovery runtime metrics helpers.
+
+AI boundary owns: runtime metric row normalization and discovery execution metric snapshots.
+AI boundary implement in: this file for discovery metrics shape; performance/profile routes stay in bridge/shared helpers.
+AI boundary search before contracts: orchestrator runtime, reporting progress, and runtime metrics tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused runtime metrics tests.
+"""
+
 from __future__ import annotations
 
 import time

@@ -1,3 +1,11 @@
+"""GamesMap candidate extraction helpers.
+
+AI boundary owns: GamesMap candidate row extraction, normalization, and discovery evidence.
+AI boundary implement in: this file for GamesMap candidate shaping; parsing primitives stay in gamesmap_parsing.
+AI boundary search before contracts: GamesMap parsing/cache modules, orchestrator generation, and GamesMap tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused GamesMap candidate tests.
+"""
+
 from __future__ import annotations
 
 import time
