@@ -1,4 +1,10 @@
-"""Advisory contracts for read-only dedup evidence payloads."""
+"""Advisory contracts for read-only dedup evidence payloads.
+
+AI boundary owns: dedup evidence payload contract normalization and advisory row shape helpers.
+AI boundary implement in: this file for payload contracts only; evidence computation stays in dedup_evidence_* and reporting leaves.
+AI boundary search before contracts: DATA_CONTRACT.md, fetch-report contracts, bridge report normalization, and dedup evidence tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused jobs contract tests.
+"""
 
 from __future__ import annotations
 

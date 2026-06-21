@@ -1,3 +1,11 @@
+"""Source-state record persistence helpers.
+
+AI boundary owns: source-state record loading, normalization, archival, and source runtime rows.
+AI boundary implement in: this file for persisted source-state records; health/report contract derivation stays in contracts/reporting leaves.
+AI boundary search before contracts: pipeline source results, source-state contracts, and source evidence tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused source-state record tests.
+"""
+
 from __future__ import annotations
 
 import hashlib

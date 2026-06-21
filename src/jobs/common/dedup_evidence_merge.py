@@ -1,6 +1,11 @@
 """Merge example and non-primary merge gate helpers for dedup evidence.
 
 Extracted from reporting_dedup_evidence.py as part of the dedup evidence split.
+
+AI boundary owns: dedup merge examples, non-primary merge gates, and evidence row helpers.
+AI boundary implement in: this file for merge evidence helpers; core identity and dedup decisions stay in src.jobs.dedup.
+AI boundary search before contracts: dedup evidence bundle, reporting_dedup_evidence, and merge evidence tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused dedup merge evidence tests.
 """
 
 from __future__ import annotations

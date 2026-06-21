@@ -1,4 +1,10 @@
-"""Provider migration coverage summary helpers."""
+"""Provider migration coverage summary helpers.
+
+AI boundary owns: provider coverage contract rows and summary normalization for migration evidence.
+AI boundary implement in: this file for provider coverage contract shape; migration link actions stay in bridge/source-policy leaves.
+AI boundary search before contracts: source-policy recommendations, provider coverage tests, and bridge backfill helpers.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused provider coverage tests.
+"""
 
 from __future__ import annotations
 

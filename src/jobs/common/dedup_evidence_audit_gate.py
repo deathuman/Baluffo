@@ -1,6 +1,11 @@
 """Audit gate detail assembly helpers for dedup evidence.
 
 Extracted from reporting_dedup_evidence.py as part of the dedup evidence split.
+
+AI boundary owns: dedup audit-gate detail rows and decision support payloads.
+AI boundary implement in: this file for audit-gate evidence assembly; public report presentation stays in reporting_dedup_evidence.
+AI boundary search before contracts: dedup evidence bundle, provider/static evidence, and audit-gate tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused dedup evidence tests.
 """
 
 from __future__ import annotations

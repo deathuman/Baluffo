@@ -1,4 +1,10 @@
-"""Runtime payload normalization helpers for jobs fetch reports."""
+"""Runtime payload normalization helpers for jobs fetch reports.
+
+AI boundary owns: runtime fetch-report payload normalization for pipeline progress and compatibility outputs.
+AI boundary implement in: this file for runtime contract shape; route polling and bridge live summaries stay in bridge leaves.
+AI boundary search before contracts: DATA_CONTRACT.md, fetcher runtime contracts, and runtime contract tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused runtime contract tests.
+"""
 
 from __future__ import annotations
 

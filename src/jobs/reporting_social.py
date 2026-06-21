@@ -1,4 +1,10 @@
-"""Social experiment reporting helpers for jobs pipeline output."""
+"""Social experiment reporting helpers for jobs pipeline output.
+
+AI boundary owns: social source experiment summaries and reporting rows.
+AI boundary implement in: this file for social reporting output; social parsers and source execution stay in adapter/source leaves.
+AI boundary search before contracts: pipeline finalization, social parsers, and social reporting tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused social reporting tests.
+"""
 
 from __future__ import annotations
 

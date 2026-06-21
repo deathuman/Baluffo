@@ -1,4 +1,10 @@
-"""Lifecycle-state helpers for the jobs pipeline."""
+"""Lifecycle-state helpers for the jobs pipeline.
+
+AI boundary owns: jobs lifecycle state rows, terminal events, and lifecycle archive helpers.
+AI boundary implement in: this file for lifecycle persistence semantics; bridge task lifecycle stays in bridge modules.
+AI boundary search before contracts: pipeline finalization, runtime writers, DATA_CONTRACT.md, and lifecycle tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused lifecycle state tests.
+"""
 
 from __future__ import annotations
 

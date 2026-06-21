@@ -1,4 +1,10 @@
-"""Source report normalization helpers for jobs fetch reporting."""
+"""Source report normalization helpers for jobs fetch reporting.
+
+AI boundary owns: source report contract normalization for fetch report source rows.
+AI boundary implement in: this file for source report shape; state persistence and bridge hydration stay in other leaves.
+AI boundary search before contracts: DATA_CONTRACT.md, pipeline source results, and source report tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused source report tests.
+"""
 
 from __future__ import annotations
 

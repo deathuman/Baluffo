@@ -1,4 +1,10 @@
-"""Queue/report helper builders for jobs pipeline reporting output."""
+"""Queue/report helper builders for jobs pipeline reporting output.
+
+AI boundary owns: report queue rows and helper payloads for jobs pipeline outputs.
+AI boundary implement in: this file for queue reporting shape; pipeline writes and contracts stay in sibling leaves.
+AI boundary search before contracts: pipeline finalization, reporting summary, and fetch-report tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused reporting queue tests.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,10 @@
-"""Summary helpers for jobs pipeline reporting output."""
+"""Summary helpers for jobs pipeline reporting output.
+
+AI boundary owns: jobs pipeline summary rows, totals, and report-level summary shaping.
+AI boundary implement in: this file for reporting summaries; source row contracts and final writes stay in sibling leaves.
+AI boundary search before contracts: pipeline finalization, fetch-report contracts, and reporting summary tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused reporting summary tests.
+"""
 
 from __future__ import annotations
 

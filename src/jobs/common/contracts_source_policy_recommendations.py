@@ -1,4 +1,10 @@
-"""Generated source-policy recommendation artifact helpers."""
+"""Generated source-policy recommendation artifact helpers.
+
+AI boundary owns: source-policy recommendation contract rows, summaries, and warning payloads.
+AI boundary implement in: this file for recommendation artifact shape; review state and bridge route envelopes stay in sibling leaves.
+AI boundary search before contracts: source-policy routes, review-state contracts, provider coverage, and recommendation tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused source-policy recommendation tests.
+"""
 
 from __future__ import annotations
 

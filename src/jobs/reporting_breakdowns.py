@@ -1,4 +1,10 @@
-"""Breakdown helpers for static-source reporting summaries."""
+"""Breakdown helpers for static-source reporting summaries.
+
+AI boundary owns: static-source reporting breakdowns and grouped summary payloads.
+AI boundary implement in: this file for reporting breakdown assembly; source execution and contracts stay in their own leaves.
+AI boundary search before contracts: pipeline finalization, reporting summary helpers, and jobs reporting tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused jobs reporting tests.
+"""
 
 from __future__ import annotations
 

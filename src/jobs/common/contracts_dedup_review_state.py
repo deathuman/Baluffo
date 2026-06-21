@@ -1,4 +1,10 @@
-"""Local dedup disagreement review state helpers."""
+"""Local dedup disagreement review state helpers.
+
+AI boundary owns: dedup review-state contract loading, merging, and local override shape helpers.
+AI boundary implement in: this file for review-state contract semantics; UI routing and fetch-report envelope stay outside.
+AI boundary search before contracts: dedup evidence contracts, bridge fetch-report review state, and review-state tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused dedup review-state tests.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,10 @@
-"""Derived source-health triage contract for jobs fetch reports."""
+"""Derived source-health triage contract for jobs fetch reports.
+
+AI boundary owns: source-health contract rows, warning buckets, and triage normalization.
+AI boundary implement in: this file for source-health contract output; source-state persistence stays in state_source_* leaves.
+AI boundary search before contracts: bridge source health callers, fetch-report normalization, and source-health tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused source-health contract tests.
+"""
 
 from __future__ import annotations
 

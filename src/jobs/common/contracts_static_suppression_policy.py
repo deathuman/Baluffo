@@ -1,4 +1,10 @@
-"""Runtime static suppression safety policy contract helpers."""
+"""Runtime static suppression safety policy contract helpers.
+
+AI boundary owns: static suppression policy contract rows, eligibility, and safety rationales.
+AI boundary implement in: this file for suppression policy contract shape; bridge/admin actions stay in route/service leaves.
+AI boundary search before contracts: source-policy recommendations, redundant static proposals, and suppression policy tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused static suppression policy tests.
+"""
 
 from __future__ import annotations
 

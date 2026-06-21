@@ -1,4 +1,10 @@
-"""Read-only redundant static proposal contract helpers."""
+"""Read-only redundant static proposal contract helpers.
+
+AI boundary owns: redundant static proposal payload contracts and recommendation rows.
+AI boundary implement in: this file for proposal contract shape; suppression policy and UI decisions stay in sibling leaves/callers.
+AI boundary search before contracts: static suppression policy, source-policy recommendations, and proposal tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused redundant static proposal tests.
+"""
 
 from __future__ import annotations
 

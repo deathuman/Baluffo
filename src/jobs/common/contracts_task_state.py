@@ -1,4 +1,10 @@
-"""Task-state normalization helpers for jobs fetch progress payloads."""
+"""Task-state normalization helpers for jobs fetch progress payloads.
+
+AI boundary owns: task-state progress contract normalization for jobs runtime payloads.
+AI boundary implement in: this file for task-state contract fields; live route summaries stay in bridge/shared live-task helpers.
+AI boundary search before contracts: fetcher runtime contracts, pipeline progress, and task-state tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused task-state contract tests.
+"""
 
 from __future__ import annotations
 

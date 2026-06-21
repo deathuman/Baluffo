@@ -1,4 +1,10 @@
-"""Source-state helpers for the jobs pipeline."""
+"""Source-state helpers for the jobs pipeline.
+
+AI boundary owns: source-state row updates, status normalization, and per-source runtime state helpers.
+AI boundary implement in: this file for source-state mutation semantics; final report shaping stays in pipeline/reporting leaves.
+AI boundary search before contracts: pipeline source results, source-state records, and source lifecycle tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused source-state tests.
+"""
 
 from __future__ import annotations
 

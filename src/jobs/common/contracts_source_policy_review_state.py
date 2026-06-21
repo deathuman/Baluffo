@@ -1,4 +1,10 @@
-"""Local source-policy review/override state helpers."""
+"""Local source-policy review/override state helpers.
+
+AI boundary owns: source-policy review-state contract loading, merging, and override rows.
+AI boundary implement in: this file for review-state semantics; recommendation generation and bridge actions stay elsewhere.
+AI boundary search before contracts: source-policy routes, migration links, recommendation contracts, and review-state tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused source-policy review-state tests.
+"""
 
 from __future__ import annotations
 

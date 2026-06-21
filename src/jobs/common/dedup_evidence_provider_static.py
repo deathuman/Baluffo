@@ -1,6 +1,11 @@
 """Provider/static disagreement helpers for dedup evidence.
 
 Extracted from reporting_dedup_evidence.py as part of the dedup evidence split.
+
+AI boundary owns: provider/static disagreement evidence, overlap rows, and candidate comparison helpers.
+AI boundary implement in: this file for provider/static evidence; contract shape stays in contracts_provider_static_overlap.
+AI boundary search before contracts: dedup evidence bundle, provider coverage contracts, and provider/static tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused provider/static evidence tests.
 """
 
 from __future__ import annotations

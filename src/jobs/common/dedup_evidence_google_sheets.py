@@ -1,6 +1,11 @@
 """Google Sheets role-bucket audit helpers for dedup evidence.
 
 Extracted from reporting_dedup_evidence.py as part of the dedup evidence split.
+
+AI boundary owns: Google Sheets dedup evidence buckets, examples, and audit support rows.
+AI boundary implement in: this file for Google Sheets evidence only; generic dedup policy stays in dedup/canonicalize.
+AI boundary search before contracts: dedup evidence bundle, Google Sheets fetcher tests, and quality audits.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused Google Sheets evidence tests.
 """
 
 from __future__ import annotations

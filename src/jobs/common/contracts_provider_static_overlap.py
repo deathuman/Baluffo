@@ -1,4 +1,10 @@
-"""Provider/static overlap audit contract helpers."""
+"""Provider/static overlap audit contract helpers.
+
+AI boundary owns: provider/static overlap audit payload shape and candidate normalization.
+AI boundary implement in: this file for overlap contract output; evidence collection stays in source/reporting leaves.
+AI boundary search before contracts: source-policy recommendation contracts, redundant static proposals, and overlap tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused provider/static overlap tests.
+"""
 
 from __future__ import annotations
 

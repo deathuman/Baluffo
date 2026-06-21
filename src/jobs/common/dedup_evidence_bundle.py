@@ -2,6 +2,11 @@
 
 Pure functions used by multiple dedup evidence modules.
 No side effects; no imports from reporting_dedup_evidence.
+
+AI boundary owns: shared dedup evidence bundle computation and row aggregation helpers.
+AI boundary implement in: this file for reusable evidence computations; report contracts and UI-facing rows stay in contract/reporting leaves.
+AI boundary search before contracts: dedup evidence provider/static helpers, audit gate helpers, and evidence tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused dedup evidence tests.
 """
 
 from __future__ import annotations

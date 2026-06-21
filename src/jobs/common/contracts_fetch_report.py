@@ -1,4 +1,10 @@
-"""Fetch report normalization helpers for jobs pipeline outputs."""
+"""Fetch report normalization helpers for jobs pipeline outputs.
+
+AI boundary owns: jobs fetch-report contract normalization for source rows, summaries, and task payloads.
+AI boundary implement in: this file for jobs-side fetch-report shape; bridge compatibility normalization stays in bridge/shared normalizers.
+AI boundary search before contracts: DATA_CONTRACT.md, bridge fetch-report routes, and fetch-report parity tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused fetch-report contract tests.
+"""
 
 from __future__ import annotations
 

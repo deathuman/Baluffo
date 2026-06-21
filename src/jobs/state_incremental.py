@@ -1,4 +1,10 @@
-"""Incremental fetch TTL, cadence, and cache-decision helpers."""
+"""Incremental fetch TTL, cadence, and cache-decision helpers.
+
+AI boundary owns: incremental fetch cache decisions, TTL/cadence policy, and source freshness helpers.
+AI boundary implement in: this file for incremental decision policy; persisted source-state rows stay in state_source_* leaves.
+AI boundary search before contracts: pipeline source execution, source state records, and incremental fetch tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused incremental state tests.
+"""
 
 from __future__ import annotations
 
