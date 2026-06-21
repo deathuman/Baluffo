@@ -1,4 +1,10 @@
-"""Shared provider-board lifecycle helpers."""
+"""Shared provider-board lifecycle helpers.
+
+AI boundary owns: provider-board lifecycle metadata, source diagnostics, and run result helpers.
+AI boundary implement in: this file for provider lifecycle shape; concrete fetch/parsing stays in runner/parser leaves.
+AI boundary search before contracts: provider API runners, source error helpers, and provider lifecycle tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused provider lifecycle tests.
+"""
 
 from __future__ import annotations
 

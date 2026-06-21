@@ -1,4 +1,10 @@
-"""JSON feed factory and runner for provider APIs (lever, workable, smartrecruiters, recruitee, pinpoint)."""
+"""JSON feed factory and runner for provider APIs (lever, workable, smartrecruiters, recruitee, pinpoint).
+
+AI boundary owns: JSON-feed provider runner factory, request handling, and parser handoff.
+AI boundary implement in: this file for JSON-feed runner behavior; payload parsing stays in parser leaves.
+AI boundary search before contracts: JSON payload parsers, lifecycle helpers, and provider API tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused JSON-feed provider tests.
+"""
 
 from __future__ import annotations
 

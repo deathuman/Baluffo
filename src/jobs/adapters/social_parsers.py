@@ -1,4 +1,10 @@
-"""Compatibility exports for Reddit, X, and Mastodon social parsers."""
+"""Compatibility exports for Reddit, X, and Mastodon social parsers.
+
+AI boundary owns: social parser compatibility exports for legacy callers.
+AI boundary implement in: this file for import compatibility only; parser behavior belongs in social_parser leaves.
+AI boundary search before contracts: social adapter, social parser modules, and compatibility tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused social parser tests.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,10 @@
-"""HTML board factory and runner for provider APIs (breezy, jazzhr, ashby)."""
+"""HTML board factory and runner for provider APIs (breezy, jazzhr, ashby).
+
+AI boundary owns: HTML-board provider runner factory and board-specific extraction handoff.
+AI boundary implement in: this file for generic HTML-board provider runner behavior; parser rules stay in parser leaves.
+AI boundary search before contracts: provider HTML parser, lifecycle helpers, and provider API tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused HTML-board provider tests.
+"""
 
 from __future__ import annotations
 

@@ -1,3 +1,11 @@
+"""Static source execution helpers.
+
+AI boundary owns: static source row execution, source-specific options, and static adapter result shaping.
+AI boundary implement in: this file for static source execution; plugin infrastructure and listing heuristics stay in sibling leaves.
+AI boundary search before contracts: static runtime, source registry configs, and static source tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused static source tests.
+"""
+
 from __future__ import annotations
 
 import hashlib

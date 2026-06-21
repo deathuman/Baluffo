@@ -1,4 +1,10 @@
-"""Scrapy-only path for static adapter: runner invocation, envelope handling, result parsing."""
+"""Scrapy-only path for static adapter: runner invocation, envelope handling, result parsing.
+
+AI boundary owns: Scrapy static adapter execution path, envelope parsing, and fallback integration.
+AI boundary implement in: this file for Scrapy static execution only; generic static runtime stays in static_runtime/support leaves.
+AI boundary search before contracts: static adapter entrypoint, Scrapy runtime tests, and packaged import closure.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused static Scrapy tests.
+"""
 
 from __future__ import annotations
 

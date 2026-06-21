@@ -3,6 +3,11 @@
 Canonical location: src.jobs.adapters.parsers
 This module re-exports everything from the new package to preserve
 existing import paths across the codebase.
+
+AI boundary owns: compatibility exports for provider parser helpers.
+AI boundary implement in: this file for stable import compatibility only; parser behavior belongs in adapters/parsers leaves.
+AI boundary search before contracts: provider adapter callers, parser modules, and compatibility tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused provider parser tests.
 """
 
 from __future__ import annotations

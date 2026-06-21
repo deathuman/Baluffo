@@ -1,3 +1,11 @@
+"""Static adapter runtime orchestration helpers.
+
+AI boundary owns: static adapter run orchestration, fetch strategy selection, and result envelope handling.
+AI boundary implement in: this file for static runtime flow; support utilities and plugin behavior stay in sibling leaves.
+AI boundary search before contracts: static adapter entrypoint, static runtime support, and jobs_static tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused static runtime tests.
+"""
+
 from __future__ import annotations
 
 import json

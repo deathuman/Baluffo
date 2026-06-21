@@ -1,4 +1,10 @@
-"""Shared Personio execution logic for provider dispatch and legacy compat."""
+"""Shared Personio execution logic for provider dispatch and legacy compat.
+
+AI boundary owns: Personio provider execution compatibility helpers and feed parsing handoff.
+AI boundary implement in: this file for Personio provider dispatch; XML parsing belongs in parser leaves.
+AI boundary search before contracts: provider dispatch, Personio parser, and provider tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused Personio provider tests.
+"""
 
 from __future__ import annotations
 

@@ -1,3 +1,11 @@
+"""Static listing extraction helpers.
+
+AI boundary owns: static listing page extraction, candidate link discovery, and listing payload shaping.
+AI boundary implement in: this file for static listing extraction; detail heuristics and plugin-specific logic stay in sibling leaves.
+AI boundary search before contracts: static runtime, page gating, HTML parsers, and jobs_static tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused static listing tests.
+"""
+
 from __future__ import annotations
 
 import asyncio

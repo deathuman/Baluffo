@@ -1,3 +1,11 @@
+"""Jobs adapter plugin registry helpers.
+
+AI boundary owns: plugin registration, lookup, and source adapter metadata wiring.
+AI boundary implement in: this file for registry mechanics; plugin behavior stays in provider/static/social leaves.
+AI boundary search before contracts: plugin types, provider/static register modules, and adapter registry tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused plugin registry tests.
+"""
+
 from __future__ import annotations
 
 import logging

@@ -1,6 +1,12 @@
-from __future__ import annotations
+"""X social parser helpers.
 
-"""X/Twitter JSON and RSS parser leaves."""
+AI boundary owns: X post parsing and social job signal extraction.
+AI boundary implement in: this file for X-specific parsing; shared signal scoring stays in signals.py.
+AI boundary search before contracts: social adapter, reporting social helpers, and X parser tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused X parser tests.
+"""
+
+from __future__ import annotations
 
 import hashlib
 import re

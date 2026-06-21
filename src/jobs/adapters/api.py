@@ -3,6 +3,11 @@
 This module exists to reduce AI coder context switching by providing a single,
 explicit import path for the adapter registry/selectors that are meant to be
 "public" within the jobs package.
+
+AI boundary owns: public adapter exports for jobs source execution.
+AI boundary implement in: this file for adapter package surface only; implementation belongs in provider/static/social leaves.
+AI boundary search before contracts: jobs adapter callers, plugin registry, and source execution tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused adapter tests.
 """
 
 from __future__ import annotations

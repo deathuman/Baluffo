@@ -1,4 +1,10 @@
-"""Oracle HCM Candidate Experience provider runner."""
+"""Oracle HCM Candidate Experience provider runner.
+
+AI boundary owns: Oracle HCM provider execution, pagination, and job row extraction.
+AI boundary implement in: this file for Oracle HCM runner behavior; shared provider lifecycle stays in provider_api helpers.
+AI boundary search before contracts: provider plugin register, structured parsers, and Oracle provider tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused Oracle provider tests.
+"""
 
 from __future__ import annotations
 

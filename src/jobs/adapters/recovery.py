@@ -1,3 +1,11 @@
+"""Adapter recovery helpers.
+
+AI boundary owns: small adapter recovery result helpers and compatibility utilities.
+AI boundary implement in: this file for adapter recovery primitives; source-specific recovery stays in adapter leaves.
+AI boundary search before contracts: static/provider adapters, source execution, and adapter recovery tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused adapter recovery tests.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Callable

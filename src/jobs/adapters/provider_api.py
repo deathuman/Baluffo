@@ -2,6 +2,11 @@
 
 This module is a compatibility entrypoint. Provider-specific logic is being
 migrated behind the adapter plugin framework incrementally.
+
+AI boundary owns: provider-backed adapter dispatch and compatibility-facing provider execution helpers.
+AI boundary implement in: this file for provider adapter orchestration; provider-specific parsing belongs in parser/plugin leaves.
+AI boundary search before contracts: provider plugin runners, source registry configs, and provider fetcher tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused provider adapter tests.
 """
 
 from __future__ import annotations

@@ -1,4 +1,10 @@
-"""Personio XML feed parser."""
+"""Personio XML feed parser.
+
+AI boundary owns: Personio XML feed parsing and raw job row extraction.
+AI boundary implement in: this file for Personio XML parsing only; provider dispatch stays in provider_personio/provider runners.
+AI boundary search before contracts: Personio provider execution, source discovery probes, and parser tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused Personio parser tests.
+"""
 
 from __future__ import annotations
 

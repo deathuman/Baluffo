@@ -1,6 +1,12 @@
-from __future__ import annotations
+"""Reddit social parser helpers.
 
-"""Reddit JSON, HTML, and RSS parser leaves."""
+AI boundary owns: Reddit post parsing and social job signal extraction.
+AI boundary implement in: this file for Reddit-specific parsing; shared signal scoring stays in signals.py.
+AI boundary search before contracts: social adapter, reporting social helpers, and Reddit parser tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused Reddit parser tests.
+"""
+
+from __future__ import annotations
 
 import hashlib
 import re

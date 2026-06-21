@@ -1,4 +1,10 @@
-"""Static and scrapy adapters."""
+"""Static and scrapy adapters.
+
+AI boundary owns: stable static adapter entrypoint over static runtime, listing, detail, and Scrapy paths.
+AI boundary implement in: this file for adapter surface compatibility; implementation belongs in static_* leaves.
+AI boundary search before contracts: static runtime/listing/detail modules, jobs_static tests, and architecture map.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused static adapter tests.
+"""
 
 from __future__ import annotations
 

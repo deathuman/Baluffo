@@ -5,6 +5,11 @@ All runner logic has been extracted into focused modules:
 - teamtailor_runner.py
 - json_feed.py
 - html_board.py
+
+AI boundary owns: provider API plugin registration and adapter ID wiring.
+AI boundary implement in: this file for provider plugin registration only; runner behavior stays in provider_api leaves.
+AI boundary search before contracts: plugin registry, provider runners, and adapter registration tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused provider registration tests.
 """
 
 from __future__ import annotations

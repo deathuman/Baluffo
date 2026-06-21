@@ -1,6 +1,12 @@
-from __future__ import annotations
+"""Mastodon social parser helpers.
 
-"""Mastodon parser leaf."""
+AI boundary owns: Mastodon post parsing and social job signal extraction.
+AI boundary implement in: this file for Mastodon-specific parsing; shared signal scoring stays in signals.py.
+AI boundary search before contracts: social adapter, reporting social helpers, and Mastodon parser tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused Mastodon parser tests.
+"""
+
+from __future__ import annotations
 
 import hashlib
 from html import unescape

@@ -1,3 +1,11 @@
+"""Jobs adapter plugin version helpers.
+
+AI boundary owns: plugin version constants and compatibility metadata helpers.
+AI boundary implement in: this file for version metadata only; plugin execution belongs in runner leaves.
+AI boundary search before contracts: plugin registry, adapter tests, and release compatibility checks.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused plugin version tests.
+"""
+
 from __future__ import annotations
 
 from typing import Any

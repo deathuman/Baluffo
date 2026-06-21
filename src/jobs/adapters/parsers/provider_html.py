@@ -1,4 +1,10 @@
-"""HTML-based parsers for ATS provider boards."""
+"""HTML-based parsers for ATS provider boards.
+
+AI boundary owns: ATS HTML board parsing for provider-backed job rows.
+AI boundary implement in: this file for provider HTML extraction; shared HTML primitives stay in html_parsers.
+AI boundary search before contracts: provider API HTML runners, page gating, and parser tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused provider HTML parser tests.
+"""
 
 from __future__ import annotations
 

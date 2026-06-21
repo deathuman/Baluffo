@@ -1,4 +1,10 @@
-"""Social-source adapters extracted from the legacy fetcher."""
+"""Social-source adapters extracted from the legacy fetcher.
+
+AI boundary owns: social source adapter execution and parser dispatch for Reddit, X, and Mastodon.
+AI boundary implement in: this file for social adapter orchestration; parser details stay in social_parser leaves.
+AI boundary search before contracts: social parser modules, pipeline source execution, and social reporting tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused social adapter tests.
+"""
 
 from __future__ import annotations
 

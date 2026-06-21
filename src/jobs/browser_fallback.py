@@ -1,3 +1,11 @@
+"""Browser fallback circuit-breaker helpers for jobs adapters.
+
+AI boundary owns: browser fallback circuit-breaker state and adapter fallback gating.
+AI boundary implement in: this file for fallback circuit policy; browser execution lives in adapter/runtime callers.
+AI boundary search before contracts: static runtime support, source execution loop, and browser fallback tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused browser fallback tests.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Callable

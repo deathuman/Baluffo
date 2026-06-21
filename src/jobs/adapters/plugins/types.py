@@ -1,3 +1,11 @@
+"""Jobs adapter plugin protocol types.
+
+AI boundary owns: plugin protocol, runner type aliases, and adapter capability metadata.
+AI boundary implement in: this file for types only; implementation belongs in concrete plugin modules.
+AI boundary search before contracts: plugin registry, provider/static runners, and type/compat tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused plugin type tests.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence

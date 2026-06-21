@@ -1,4 +1,10 @@
-"""JSON payload parsers for ATS provider APIs."""
+"""JSON payload parsers for ATS provider APIs.
+
+AI boundary owns: ATS JSON payload parsing and provider-specific job row extraction.
+AI boundary implement in: this file for JSON provider payload parsing; transport and lifecycle behavior stay in provider runner leaves.
+AI boundary search before contracts: provider API runners, CanonicalJob contracts, and parser tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused JSON payload parser tests.
+"""
 
 from __future__ import annotations
 

@@ -1,3 +1,11 @@
+"""Static detail-page heuristic helpers.
+
+AI boundary owns: static detail URL filtering, detail-page scoring, and non-job page rejection heuristics.
+AI boundary implement in: this file for static detail heuristics; transport and rendered-card parsing stay in sibling leaves.
+AI boundary search before contracts: static listing/runtime, page gating, and detail heuristic tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused static detail tests.
+"""
+
 from __future__ import annotations
 
 import hashlib

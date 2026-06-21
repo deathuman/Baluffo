@@ -1,4 +1,10 @@
-"""Greenhouse provider runner."""
+"""Greenhouse provider runner.
+
+AI boundary owns: Greenhouse provider API execution and job row retrieval.
+AI boundary implement in: this file for Greenhouse runner behavior; generic provider lifecycle stays in sibling provider_api helpers.
+AI boundary search before contracts: provider plugin register, JSON/HTML parsers, and provider API tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused Greenhouse provider tests.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,10 @@
-"""Provider API source-error classification helpers."""
+"""Provider API source-error classification helpers.
+
+AI boundary owns: provider API source error classification and diagnostic reason mapping.
+AI boundary implement in: this file for provider source-error mapping; runner retry/transport behavior stays elsewhere.
+AI boundary search before contracts: provider lifecycle helpers, runner diagnostics, and source error tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused provider source-error tests.
+"""
 
 from __future__ import annotations
 

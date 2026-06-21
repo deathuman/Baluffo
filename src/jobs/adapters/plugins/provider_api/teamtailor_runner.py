@@ -1,4 +1,10 @@
-"""Teamtailor provider runner."""
+"""Teamtailor provider runner.
+
+AI boundary owns: Teamtailor provider API execution and job row extraction.
+AI boundary implement in: this file for Teamtailor runner behavior; shared provider lifecycle stays in provider_api helpers.
+AI boundary search before contracts: provider plugin register, JSON parsers, and Teamtailor provider tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused Teamtailor provider tests.
+"""
 
 from __future__ import annotations
 

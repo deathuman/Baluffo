@@ -1,4 +1,10 @@
-"""Structured listing page parser for BambooHR and Workday."""
+"""Structured listing page parser for BambooHR and Workday.
+
+AI boundary owns: structured listing page parsing and embedded job payload extraction.
+AI boundary implement in: this file for structured listing parsing; provider execution stays in provider_structured_listing.
+AI boundary search before contracts: structured provider adapter, HTML parsers, and parser tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused structured listing parser tests.
+"""
 
 from __future__ import annotations
 

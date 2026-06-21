@@ -1,6 +1,12 @@
-from __future__ import annotations
+"""Social parser signal extraction helpers.
 
-"""Shared signal helpers for social job-post parsers."""
+AI boundary owns: social post signal extraction, job-intent scoring, and social row shaping helpers.
+AI boundary implement in: this file for shared social parser signals; platform-specific parsing stays in parser leaves.
+AI boundary search before contracts: Reddit/X/Mastodon parsers, social adapter, and social parser tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused social signal tests.
+"""
+
+from __future__ import annotations
 
 import re
 from typing import Any

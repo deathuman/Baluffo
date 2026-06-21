@@ -1,3 +1,11 @@
+"""Structured listing provider execution helpers.
+
+AI boundary owns: BambooHR/Workday-style structured listing provider execution and extraction helpers.
+AI boundary implement in: this file for structured provider execution; generic structured parsing belongs in parser leaves.
+AI boundary search before contracts: structured listing parser, provider API callers, and provider tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused structured provider tests.
+"""
+
 from __future__ import annotations
 
 import hashlib

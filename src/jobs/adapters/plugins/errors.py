@@ -1,3 +1,11 @@
+"""Jobs adapter plugin error types.
+
+AI boundary owns: shared plugin exception classes and error compatibility surface.
+AI boundary implement in: this file for plugin error types only; classification belongs in source_error/provider leaves.
+AI boundary search before contracts: plugin runners, source error handling, and adapter tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused plugin error tests.
+"""
+
 from __future__ import annotations
 
 
