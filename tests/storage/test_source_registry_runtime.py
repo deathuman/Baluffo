@@ -3,6 +3,8 @@ from __future__ import annotations
 from src.storage.baluffo_store import BaluffoStore
 from src.storage.source_registry_runtime import (
     SourceRegistryRuntimeStore,
+    _row_identity,
+    _tombstone_key,
     source_registry_state_hash,
     source_registry_tombstone_hash,
 )
@@ -105,3 +107,116 @@ def test_source_registry_cleanup_deletes_only_old_generations() -> None:
             assert runtime.current_generation() == "three"
             assert runtime.current_state()["active"] == [{"id": "three"}]
             assert runtime.current_tombstones() == {"three": {"id": "three"}}
+
+
+def test_source_registry_identity_fallbacks_are_stable() -> None:
+    assert _row_identity({}, "active", 3) == _row_identity({}, "pending", 99)
+    assert _row_identity({}, "active", 3).startswith(":unknown:")
+    assert _tombstone_key({}, "", 4) == "tombstone:4"
+    assert _tombstone_key({"sourceId": "src-1"}, "fallback", 4) == "src-1"
+    assert _tombstone_key({"id": "dead"}, "fallback", 4) == "dead"
+
+
+def test_source_registry_empty_state_summary_and_publish_guard() -> None:
+    with workspace_tmpdir("source-registry-runtime-empty") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            runtime = SourceRegistryRuntimeStore(store)
+
+            assert runtime.current_generation() == ""
+            assert runtime.current_state() == {"active": [], "pending": [], "rejected": []}
+            assert runtime.current_tombstones() == {}
+            assert runtime.state_for_generation("") == {
+                "active": [],
+                "pending": [],
+                "rejected": [],
+            }
+            assert runtime.tombstones_for_generation("") == {}
+            assert runtime.current_summary() == {
+                "generation": "",
+                "reason": "",
+                "activeCount": 0,
+                "pendingCount": 0,
+                "rejectedCount": 0,
+                "tombstoneCount": 0,
+                "stateHash": "",
+                "tombstoneHash": "",
+                "publishedAt": "",
+                "updatedAt": "",
+            }
+
+            try:
+                runtime.publish_generation("")
+            except ValueError as exc:
+                assert "requires a generation" in str(exc)
+            else:  # pragma: no cover - defensive assertion branch
+                raise AssertionError("publish_generation accepted a blank generation")
+
+
+def test_source_registry_publish_hash_guards_and_parity_hash() -> None:
+    with workspace_tmpdir("source-registry-runtime-hash-guards") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            runtime = SourceRegistryRuntimeStore(store)
+            staged = runtime.stage_state(
+                state={"active": [{"id": "a"}], "pending": [], "rejected": []},
+                tombstones={"dead": {"id": "dead"}},
+                generation="staged",
+            )
+
+            try:
+                runtime.publish_generation("staged", expected_state_hash="wrong")
+            except ValueError as exc:
+                assert "state hash mismatch" in str(exc)
+            else:  # pragma: no cover - defensive assertion branch
+                raise AssertionError("publish_generation accepted a wrong state hash")
+
+            try:
+                runtime.publish_generation(
+                    "staged",
+                    expected_state_hash=staged.state_hash,
+                    expected_tombstone_hash="wrong",
+                )
+            except ValueError as exc:
+                assert "tombstone hash mismatch" in str(exc)
+            else:  # pragma: no cover - defensive assertion branch
+                raise AssertionError("publish_generation accepted a wrong tombstone hash")
+
+            runtime.publish_generation(
+                "staged",
+                expected_state_hash=staged.state_hash,
+                expected_tombstone_hash=staged.tombstone_hash,
+            )
+
+            assert runtime.parity_hash() == {
+                "stateHash": staged.state_hash,
+                "tombstoneHash": staged.tombstone_hash,
+            }
+            assert runtime.parity_hash(
+                state={"active": [], "pending": [], "rejected": []},
+                tombstones={},
+            ) == {
+                "stateHash": source_registry_state_hash(
+                    {"active": [], "pending": [], "rejected": []}
+                ),
+                "tombstoneHash": source_registry_tombstone_hash({}),
+            }
+
+
+def test_source_registry_stage_normalizes_partial_state_and_cleanup_cap_zero() -> None:
+    with workspace_tmpdir("source-registry-runtime-partial-state") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            runtime = SourceRegistryRuntimeStore(store)
+            first = runtime.replace_state(
+                state={"active": [{"id": "first"}]},
+                tombstones={"": {"ignored": True}, "plain": "deleted"},
+                generation="first",
+            )
+            runtime.replace_state(
+                state={"active": [{"id": "second"}]},
+                tombstones={},
+                generation="second",
+            )
+
+            assert first.tombstone_count == 1
+            assert runtime.tombstones_for_generation("first") == {"plain": {"value": "deleted"}}
+            assert runtime.cleanup_old_generations(delete_cap=0) == 0
+            assert runtime.state_for_generation("first")["active"] == [{"id": "first"}]
