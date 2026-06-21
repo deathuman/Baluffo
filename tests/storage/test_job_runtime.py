@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from src.storage import BaluffoStore, JobRuntimeStore
-from src.storage.job_runtime import jobs_feed_rows_hash
+from src.storage.job_runtime import _base_job_key, _source_identity, jobs_feed_rows_hash
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -105,3 +105,83 @@ def test_cleanup_old_generations_keeps_current_generation() -> None:
             assert runtime.current_summary()["generation"] == current.generation
             assert runtime.rows_for_generation(current.generation) == [_row(2)]
             assert runtime.rows_for_generation(old.generation) == []
+
+
+def test_job_identity_fallbacks_are_stable_for_sparse_rows() -> None:
+    assert _base_job_key({"dedupKey": "dedup-a", "jobLink": "https://example.test/1"}, 0) == (
+        _base_job_key({"dedupKey": "dedup-a"}, 99)
+    )
+    assert _base_job_key({"jobLink": "https://example.test/1"}, 0) == _base_job_key(
+        {"jobLink": "https://example.test/1", "id": "ignored"},
+        99,
+    )
+    assert _base_job_key({"source": "Source", "sourceJobId": "job-1"}, 0) == _base_job_key(
+        {"source": "Source", "sourceJobId": "job-1"},
+        99,
+    )
+    assert _base_job_key({}, 0) != _base_job_key({}, 1)
+    assert _source_identity({}, 4) == "source:4"
+
+
+def test_stage_feed_normalizes_source_bundle_json_and_empty_inputs() -> None:
+    with workspace_tmpdir("job-runtime-source-bundle-json") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            runtime = JobRuntimeStore(store, now_iso=lambda: "2026-05-12T10:00:00Z")
+
+            empty = runtime.stage_feed(run_id="fetch_empty", rows=[])
+            assert empty.row_count == 0
+            assert empty.source_count == 0
+            assert runtime.current_rows() == []
+
+            summary = runtime.stage_feed(
+                run_id="fetch_json_bundle",
+                rows=[
+                    {
+                        **_row(3),
+                        "sourceBundle": '[{"source": "Fallback", "sourceJobId": "fallback-1"}]',
+                    }
+                ],
+            )
+
+            rows = runtime.rows_for_generation(summary.generation)
+            assert summary.source_count == 1
+            assert rows[0]["sourceBundle"] == [{"source": "Fallback", "sourceJobId": "fallback-1"}]
+
+
+def test_job_runtime_empty_summary_and_publish_guards() -> None:
+    with workspace_tmpdir("job-runtime-empty-summary") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            runtime = JobRuntimeStore(store, now_iso=lambda: "2026-05-12T10:00:00Z")
+
+            assert runtime.current_generation() == ""
+            assert runtime.current_rows() == []
+            assert runtime.current_summary() == {
+                "generation": "",
+                "runId": "",
+                "rowCount": 0,
+                "rowHash": "",
+                "sourceCount": 0,
+                "sourceHash": "",
+                "publishedAt": "",
+                "updatedAt": "",
+            }
+            assert runtime.rows_for_generation("") == []
+            assert runtime.parity_hash() == jobs_feed_rows_hash([])
+
+            with pytest.raises(ValueError, match="requires a generation"):
+                runtime.publish_generation("")
+
+
+def test_publish_rejects_row_count_mismatch_and_cleanup_respects_delete_cap() -> None:
+    with workspace_tmpdir("job-runtime-count-mismatch") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            runtime = JobRuntimeStore(store, now_iso=lambda: "2026-05-12T10:00:00Z")
+            old = runtime.replace_feed(run_id="fetch_old", rows=[_row(1)])
+            staged = runtime.stage_feed(run_id="fetch_second", rows=[_row(2)])
+
+            with pytest.raises(ValueError, match="row count mismatch"):
+                runtime.publish_generation(staged.generation, expected_row_count=2)
+
+            assert runtime.cleanup_old_generations(delete_cap=0) == 0
+            assert runtime.rows_for_generation(old.generation) == [_row(1)]
+            assert runtime.parity_hash([_row(2)]) == jobs_feed_rows_hash([_row(2)])
