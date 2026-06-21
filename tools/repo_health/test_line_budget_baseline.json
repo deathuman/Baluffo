@@ -67,7 +67,6 @@
     "tests/test_fetch_incremental_sanity_benchmark.py": 1141,
     "tests/test_jobs_fetcher_pipeline.py": 2431,
     "tests/test_jobs_fetcher_providers.py": 1488,
-    "tests/test_jobs_fetcher_quality.py": 1284,
     "tests/test_jobs_package.py": 223,
     "tests/test_perf_complete.py": 493,
     "tests/test_pipeline_execution.py": 1688,
