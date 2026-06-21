@@ -10,6 +10,11 @@ State Variables:
     SYNC_STATUS: Dict with sync status info
     SYNC_CONFIG: Current sync configuration
     SYNC_CONFIG_LOCK: Lock for sync config
+
+AI boundary owns: sync runtime state, active run tracking, and persisted sync status helpers.
+AI boundary implement in: this file for sync state primitives; route/status payload orchestration stays in sync_service.
+AI boundary search before contracts: sync routes, sync task flow, source sync, and sync state tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused sync state tests.
 """
 
 from __future__ import annotations

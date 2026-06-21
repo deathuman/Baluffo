@@ -1,3 +1,11 @@
+"""Fetch-report review-state merge helpers.
+
+AI boundary owns: dedup review-state hydration into fetch-report payloads.
+AI boundary implement in: this file for review-state merging only; report normalization stays in shared/bridge normalizers.
+AI boundary search before contracts: fetch-report routes, jobs review-state contracts, and source health tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused fetch-report review-state tests.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Callable

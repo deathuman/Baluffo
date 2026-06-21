@@ -1,3 +1,11 @@
+"""Ops live-task service facade.
+
+AI boundary owns: task live payload service coordination across fetch, discovery, pipeline, and sync tasks.
+AI boundary implement in: this file for service-level coordination; task-specific projection stays in ops_task_* leaves.
+AI boundary search before contracts: ops status routes, active task snapshot, and admin live-task tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused ops live-task tests.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

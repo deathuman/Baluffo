@@ -8,6 +8,11 @@ The SyncService class provides:
 - Status tracking (get sync status payload)
 - Sync operations (pull, push sources)
 - Task management (start sync tasks, wait for completion)
+
+AI boundary owns: sync configuration, status payloads, push/pull orchestration, and sync task launch behavior.
+AI boundary implement in: this file for bridge sync orchestration; low-level sync state and source sync IO stay in dedicated leaves.
+AI boundary search before contracts: sync routes, post admin routes, sync state helpers, and frontend sync callers.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused sync service tests.
 """
 
 from __future__ import annotations

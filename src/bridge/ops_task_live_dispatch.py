@@ -1,3 +1,11 @@
+"""Ops task live dispatch helpers.
+
+AI boundary owns: task-type dispatch for live payload and history fallback projections.
+AI boundary implement in: this file for dispatch selection only; payload shaping stays in task-specific helpers.
+AI boundary search before contracts: ops_task_live service, ops status routes, and task live payload tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused task live dispatch tests.
+"""
+
 from __future__ import annotations
 
 from typing import Any

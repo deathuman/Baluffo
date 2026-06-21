@@ -1,3 +1,11 @@
+"""Shared live task payload normalization helpers.
+
+AI boundary owns: cross-surface live task payload normalization and compact progress fields.
+AI boundary implement in: this file for generic live-task normalization; bridge leaves own route-specific summaries.
+AI boundary search before contracts: ops live payload helpers, active task snapshot, and frontend task-run view models.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused live-task tests.
+"""
+
 from __future__ import annotations
 
 from typing import Any, TypedDict, cast

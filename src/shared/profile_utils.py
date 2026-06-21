@@ -1,3 +1,11 @@
+"""Shared cProfile capture and stats helpers.
+
+AI boundary owns: profile capture, stats formatting, and profile file naming helpers.
+AI boundary implement in: this file for profiler utilities; callers own when profiling is enabled.
+AI boundary search before contracts: performance-profile bridge helpers and profiling tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused profiling tests.
+"""
+
 from __future__ import annotations
 
 import cProfile

@@ -1,6 +1,11 @@
 """Sync task flow for sync worker logic.
 
 This module provides shared worker logic for sync tasks.
+
+AI boundary owns: shared sync worker execution flow for push, pull, and sync status updates.
+AI boundary implement in: this file for sync worker mechanics; admission and route actions stay in sync_service/post routes.
+AI boundary search before contracts: sync service, source sync implementation, and sync task tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused sync task-flow tests.
 """
 
 from __future__ import annotations

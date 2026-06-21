@@ -1,6 +1,11 @@
 """Summary and cache payload assembly for registry conflicts.
 
 Extracted from registry_conflicts.py as part of the conflict split.
+
+AI boundary owns: registry conflict summary, cache payload, and queue count assembly.
+AI boundary implement in: this file for summary payloads; row construction and mutations stay in sibling conflict leaves.
+AI boundary search before contracts: registry conflict routes, admin ops tab counts, and summary tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused registry conflict summary tests.
 """
 
 from __future__ import annotations

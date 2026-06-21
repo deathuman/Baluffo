@@ -1,3 +1,11 @@
+"""Source-policy migration link action helpers.
+
+AI boundary owns: source-policy provider/static migration link action application and row matching.
+AI boundary implement in: this file for migration link actions; recommendation payload assembly stays in contracts/backfill helpers.
+AI boundary search before contracts: post admin routes, source-policy recommendation contracts, and migration link tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused source-policy migration tests.
+"""
+
 from __future__ import annotations
 
 from typing import Any

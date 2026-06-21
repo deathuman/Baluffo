@@ -1,6 +1,12 @@
-from __future__ import annotations
+"""Leaf bounded-concurrency page fetch helpers shared across stacks.
 
-"""Leaf bounded-concurrency page fetch helpers shared across stacks."""
+AI boundary owns: bounded concurrent HTTP fetch orchestration and per-request result shaping.
+AI boundary implement in: this file for batch fetch behavior; callers own source-specific parsing and retries.
+AI boundary search before contracts: source discovery fetchers, static-source adapters, and shared HTTP batch tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused shared HTTP batch tests.
+"""
+
+from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable

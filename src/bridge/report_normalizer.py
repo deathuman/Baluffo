@@ -1,4 +1,10 @@
-"""Normalize fetch and discovery report payloads for bridge/ops. Pure functions; callers load and pass dicts."""
+"""Normalize fetch and discovery report payloads for bridge/ops. Pure functions; callers load and pass dicts.
+
+AI boundary owns: bridge-facing report payload normalization over jobs/shared report contract helpers.
+AI boundary implement in: this file for bridge report shape compatibility; canonical shared normalization stays in src.shared.
+AI boundary search before contracts: fetch-report routes, jobs report contracts, and admin source health callers.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused report normalizer tests.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,10 @@
-"""Small bounded helpers for reading selected top-level JSON fields."""
+"""Small bounded helpers for reading selected top-level JSON fields.
+
+AI boundary owns: partial top-level JSON parsing for route/storage fast paths.
+AI boundary implement in: this file for parser mechanics; callers own field names and payload contracts.
+AI boundary search before contracts: fetch-report routes, discovery routes, and partial JSON parser tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused partial JSON tests.
+"""
 
 from __future__ import annotations
 

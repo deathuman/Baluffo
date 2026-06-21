@@ -3,6 +3,11 @@
 The snapshot is intentionally narrower than task lifecycle/history data. It is
 for active operator polling only, so it keeps route latency independent from
 SQLite lifecycle projections and full report hydration during long fetches.
+
+AI boundary owns: compact active task snapshot rows for low-latency admin polling.
+AI boundary implement in: this file for snapshot shape and fallback rows; lifecycle/history truth stays in task services.
+AI boundary search before contracts: ops status routes, task lifecycle services, and frontend admin live-task callers.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused active-task snapshot tests.
 """
 
 from __future__ import annotations

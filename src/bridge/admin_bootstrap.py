@@ -1,3 +1,11 @@
+"""Admin bootstrap payload assembly helpers.
+
+AI boundary owns: bounded admin bootstrap payload construction for startup/readiness views.
+AI boundary implement in: this file for bootstrap payload shape; route timeout/smoke behavior stays in get_admin_bootstrap.py.
+AI boundary search before contracts: admin bootstrap route, local data store, ops health, and frontend admin startup callers.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused admin bootstrap tests.
+"""
+
 from __future__ import annotations
 
 from typing import Any, Protocol

@@ -1,3 +1,11 @@
+"""Compact ops live-task summary helpers.
+
+AI boundary owns: compact current-task payload summaries for low-cost admin polling.
+AI boundary implement in: this file for compact summary trimming; full payload assembly stays in ops live helpers.
+AI boundary search before contracts: ops status summary routes, active task snapshot, and frontend polling tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused live-task summary tests.
+"""
+
 from __future__ import annotations
 
 from typing import Any

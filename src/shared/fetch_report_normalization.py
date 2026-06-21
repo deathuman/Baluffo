@@ -1,4 +1,10 @@
-"""Shared fetch-report normalization helpers for bridge and jobs contracts."""
+"""Shared fetch-report normalization helpers for bridge and jobs contracts.
+
+AI boundary owns: shared fetch-report normalization across bridge and jobs report contracts.
+AI boundary implement in: this file for normalization rules; callers own storage and route response wiring.
+AI boundary search before contracts: fetch-report route leaves, jobs report contracts, and DATA_CONTRACT.md.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused fetch-report normalization tests.
+"""
 
 from __future__ import annotations
 

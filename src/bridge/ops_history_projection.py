@@ -1,3 +1,11 @@
+"""Ops history projection helpers.
+
+AI boundary owns: sync and task history projection dependency wiring for admin ops views.
+AI boundary implement in: this file for history projection assembly; runtime writes stay in run history and task lifecycle modules.
+AI boundary search before contracts: ops API, run history API, and frontend admin ops history render tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused ops history tests.
+"""
+
 from __future__ import annotations
 
 from typing import Any

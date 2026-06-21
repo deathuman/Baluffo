@@ -2,6 +2,11 @@
 
 This module provides DiscoveryService for managing source discovery
 tasks and auto-sync watch functionality.
+
+AI boundary owns: bridge-owned discovery task launch, config persistence, and auto-sync watch behavior.
+AI boundary implement in: this file for bridge discovery orchestration; source discovery implementation stays in src.source_discovery.
+AI boundary search before contracts: discovery routes, task launch API, source discovery config, and admin discovery frontend callers.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused discovery service tests.
 """
 
 from __future__ import annotations

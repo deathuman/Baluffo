@@ -1,3 +1,11 @@
+"""Ops task history projection helpers.
+
+AI boundary owns: history-row to live-task projection for completed or fallback task views.
+AI boundary implement in: this file for projection from persisted history; active runtime collection stays in task live helpers.
+AI boundary search before contracts: run history API, ops task live dispatch, and admin ops history tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused task projection tests.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Callable

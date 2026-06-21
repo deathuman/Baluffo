@@ -1,3 +1,11 @@
+"""Discovery audit artifact payload helpers.
+
+AI boundary owns: admin-facing discovery audit artifact summaries and bounded artifact reads.
+AI boundary implement in: this file for artifact payloads; discovery execution stays in source_discovery and DiscoveryService.
+AI boundary search before contracts: ops diagnostics routes, discovery service, and source-discovery artifact tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused discovery artifact tests.
+"""
+
 from __future__ import annotations
 
 import hashlib

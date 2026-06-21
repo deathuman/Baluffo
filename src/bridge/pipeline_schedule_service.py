@@ -1,4 +1,10 @@
-"""Bridge-owned recurring scheduler for the Jobs pipeline."""
+"""Bridge-owned recurring scheduler for the Jobs pipeline.
+
+AI boundary owns: jobs pipeline schedule persistence, evaluation, and background trigger coordination.
+AI boundary implement in: this file for scheduling policy; manual task launch stays in task_launch_api and pipeline_service.
+AI boundary search before contracts: pipeline task routes, pipeline service, and frontend schedule callers.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused pipeline schedule tests.
+"""
 
 from __future__ import annotations
 

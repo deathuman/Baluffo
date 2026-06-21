@@ -2,6 +2,11 @@
 
 This module provides the OpsApi class for health checks,
 startup metrics, and operational status endpoints.
+
+AI boundary owns: ops health, dashboard, metrics, startup, and status payload methods exposed through BridgeApi.
+AI boundary implement in: this file for ops API aggregation; leaf calculations stay in ops_* helpers and services.
+AI boundary search before contracts: ops route leaves, frontend admin ops callers, and admin-bridge API docs.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused ops API tests.
 """
 
 from __future__ import annotations

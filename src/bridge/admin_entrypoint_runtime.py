@@ -1,3 +1,11 @@
+"""Admin bridge runtime helpers.
+
+AI boundary owns: bridge runtime logging, diagnostics, paths, and process/session helpers.
+AI boundary implement in: this file for entrypoint runtime plumbing; service behavior belongs in bridge service leaves.
+AI boundary search before contracts: admin_bridge compatibility root, packaged desktop smoke, and runtime config tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused admin runtime tests.
+"""
+
 from __future__ import annotations
 
 import json

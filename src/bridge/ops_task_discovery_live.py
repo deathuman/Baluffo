@@ -1,3 +1,11 @@
+"""Discovery live-task payload helpers.
+
+AI boundary owns: discovery-specific live task payload collection and summary shaping.
+AI boundary implement in: this file for discovery live rows; generic live normalization stays in shared.live_task and ops_live_payload.
+AI boundary search before contracts: ops task live dispatch, discovery service, and admin discovery progress tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused discovery live-task tests.
+"""
+
 from __future__ import annotations
 
 from typing import Any

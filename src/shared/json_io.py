@@ -1,3 +1,11 @@
+"""Shared JSON file IO helpers.
+
+AI boundary owns: gzip-aware JSON file read/write helpers and atomic text serialization boundaries.
+AI boundary implement in: this file for low-level JSON IO only; callers own metrics and domain validation.
+AI boundary search before contracts: pipeline storage callers, shared json-shape helpers, and storage metrics boundaries.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused JSON IO/storage tests.
+"""
+
 from __future__ import annotations
 
 import gzip

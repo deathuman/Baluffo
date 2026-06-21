@@ -2,6 +2,11 @@
 
 This module provides RegistryService for managing active/pending/rejected
 source registry state.
+
+AI boundary owns: bridge-owned source registry state operations, summaries, and auto-sync coordination.
+AI boundary implement in: this file for registry service orchestration; row/table formatting stays in route/source-table helpers.
+AI boundary search before contracts: registry routes, post admin routes, source registry IO, and frontend registry callers.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused registry service tests.
 """
 
 from __future__ import annotations

@@ -1,3 +1,11 @@
+"""Admin bridge service wiring helpers.
+
+AI boundary owns: BridgeServices construction and injected service-holder compatibility wiring.
+AI boundary implement in: this file for service composition only; domain behavior belongs in the injected service modules.
+AI boundary search before contracts: admin_bridge compatibility root, BridgeApi field inventory, and admin runtime tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused admin service wiring tests.
+"""
+
 from __future__ import annotations
 
 import threading

@@ -1,3 +1,11 @@
+"""Shared HTTPS context helpers for GitHub and update checks.
+
+AI boundary owns: GitHub HTTPS context construction and optional certifi handling.
+AI boundary implement in: this file for SSL context behavior; callers own request/retry policy.
+AI boundary search before contracts: desktop update helpers, GitHub release fetchers, and certificate fallback tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused GitHub HTTPS tests.
+"""
+
 from __future__ import annotations
 
 import os

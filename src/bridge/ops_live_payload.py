@@ -1,4 +1,10 @@
-"""Helpers for ops live-payload normalization and progress synthesis."""
+"""Helpers for ops live-payload normalization and progress synthesis.
+
+AI boundary owns: live task payload normalization, progress synthesis, and stale/active status decoration.
+AI boundary implement in: this file for generic ops live payload shaping; task-specific collection stays in ops_task_* leaves.
+AI boundary search before contracts: active task snapshot, ops status routes, and frontend task-run view models.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused ops live payload tests.
+"""
 
 from __future__ import annotations
 

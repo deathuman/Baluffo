@@ -1,3 +1,11 @@
+"""Shared in-process timing counter helpers.
+
+AI boundary owns: timing counter capture, aggregation, and snapshot utilities.
+AI boundary implement in: this file for generic counters; callers own operation names and route labels.
+AI boundary search before contracts: performance profile helpers, ops diagnostics routes, and timing tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused timing counter tests.
+"""
+
 from __future__ import annotations
 
 import re

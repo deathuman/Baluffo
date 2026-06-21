@@ -1,4 +1,10 @@
-"""Bridge diagnostics for the SQLite runtime storage layer."""
+"""Bridge diagnostics for the SQLite runtime storage layer.
+
+AI boundary owns: storage health diagnostics, store lifecycle helpers, and storage error recording.
+AI boundary implement in: this file for bridge storage diagnostics; domain storage behavior stays in src.storage leaves.
+AI boundary search before contracts: ops diagnostics routes, fetch-report source helpers, and storage health tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused storage health tests.
+"""
 
 from __future__ import annotations
 

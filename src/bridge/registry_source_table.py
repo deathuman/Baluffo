@@ -1,4 +1,10 @@
-"""Compact registry source rows for Admin table views."""
+"""Compact registry source rows for Admin table views.
+
+AI boundary owns: registry source table row compaction and scalar field selection.
+AI boundary implement in: this file for compact table row shape; source state authority stays in registry services.
+AI boundary search before contracts: registry routes, source-state payloads, and frontend registry table tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused registry source table tests.
+"""
 
 from __future__ import annotations
 

@@ -1,3 +1,11 @@
+"""Shared JSON shape coercion helpers.
+
+AI boundary owns: public dict/list coercion helpers for untrusted JSON-like payloads.
+AI boundary implement in: this file for shape coercion only; callers own domain schema defaults.
+AI boundary search before contracts: jobs reporting callers, bridge route leaves, and DATA_CONTRACT.md.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused JSON shape tests.
+"""
+
 from __future__ import annotations
 
 from typing import Any, cast

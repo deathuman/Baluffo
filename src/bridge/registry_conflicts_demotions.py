@@ -1,6 +1,11 @@
 """Safe demotion application helpers for registry conflicts.
 
 Extracted from registry_conflicts.py as part of the conflict split.
+
+AI boundary owns: registry conflict demotion application and safe state mutation helpers.
+AI boundary implement in: this file for demotion mutation mechanics; eligibility stays in automation/adjudication leaves.
+AI boundary search before contracts: registry_conflicts coordinator, source registry IO, and demotion tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused registry demotion tests.
 """
 
 from __future__ import annotations

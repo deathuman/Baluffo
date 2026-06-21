@@ -1,4 +1,10 @@
-"""Ops health, alerts, schedule, and report summarization for the bridge. Uses injected deps (paths, loaders)."""
+"""Ops health, alerts, schedule, and report summarization for the bridge. Uses injected deps (paths, loaders).
+
+AI boundary owns: ops health readiness, alert evaluation, schedule summaries, and report health rollups.
+AI boundary implement in: this file for health policy; route response wiring stays in ops route leaves.
+AI boundary search before contracts: ops status routes, pipeline service, sync service, and frontend admin health callers.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused ops health tests.
+"""
 
 from __future__ import annotations
 

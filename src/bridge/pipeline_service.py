@@ -1,4 +1,10 @@
-"""Jobs pipeline orchestration service used by the admin bridge."""
+"""Jobs pipeline orchestration service used by the admin bridge.
+
+AI boundary owns: bridge-managed jobs pipeline lifecycle, status payloads, and worker coordination.
+AI boundary implement in: this file for bridge pipeline orchestration; job fetching stages stay in src.jobs leaves.
+AI boundary search before contracts: pipeline task routes, task launch API, pipeline control files, and admin pipeline frontend callers.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused pipeline service tests.
+"""
 
 from __future__ import annotations
 

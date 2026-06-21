@@ -1,4 +1,10 @@
-"""Shared regex patterns (stdlib-only)."""
+"""Shared regex patterns (stdlib-only).
+
+AI boundary owns: cross-package regex constants that have stable extraction semantics.
+AI boundary implement in: this file for reusable regex definitions only; callers own context-specific filtering.
+AI boundary search before contracts: URL extraction callers, text normalization helpers, and parser tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused parser/text tests.
+"""
 
 from __future__ import annotations
 

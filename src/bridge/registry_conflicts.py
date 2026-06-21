@@ -6,6 +6,11 @@ summary → registry_conflicts_summary.py.
 
 This file is the coordinator — it imports leaf modules and re-exports the public
 API surface for external callers.
+
+AI boundary owns: public registry conflict coordinator and compatibility surface over conflict leaves.
+AI boundary implement in: leaf modules for row, summary, automation, and demotion behavior; keep this coordinator stable.
+AI boundary search before contracts: registry conflict routes, post admin routes, source registry policy, and conflict tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused registry conflict tests.
 """
 
 from __future__ import annotations

@@ -1,3 +1,11 @@
+"""Bridge performance profiling helpers.
+
+AI boundary owns: operation timing, profiling snapshots, and lightweight performance counters.
+AI boundary implement in: this file for profile mechanics; callers own operation names and thresholds.
+AI boundary search before contracts: ops diagnostics routes, timing counters, and performance profile tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused performance profile tests.
+"""
+
 from __future__ import annotations
 
 import re

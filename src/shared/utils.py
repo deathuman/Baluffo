@@ -1,4 +1,10 @@
-"""Shared utilities used across Baluffo (no imports from jobs/bridge/admin_bridge)."""
+"""Shared utilities used across Baluffo (no imports from jobs/bridge/admin_bridge).
+
+AI boundary owns: stdlib-only shared utilities, ISO timestamp helpers, and small path/text helpers.
+AI boundary implement in: this file only when behavior is dependency-light and cross-package; domain helpers stay in domain leaves.
+AI boundary search before contracts: json-shape helpers, jobs text utilities, bridge callers, and DATA_CONTRACT.md for timestamp contracts.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused shared utility tests.
+"""
 
 from __future__ import annotations
 

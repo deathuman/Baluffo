@@ -1,4 +1,10 @@
-"""Small file-backed control-plane artifacts for container pipeline status."""
+"""Small file-backed control-plane artifacts for container pipeline status.
+
+AI boundary owns: pipeline abort/status control-file pathing and runtime artifact IO.
+AI boundary implement in: this file for control-file boundaries; pipeline execution stays in pipeline services.
+AI boundary search before contracts: container gateway, pipeline service, and control-file path tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused pipeline control-file tests.
+"""
 
 from __future__ import annotations
 

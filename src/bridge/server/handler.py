@@ -1,3 +1,11 @@
+"""Bridge HTTP request handler.
+
+AI boundary owns: HTTP method dispatch, static serving handoff, and route entrypoint integration.
+AI boundary implement in: this file for request handler plumbing only; route behavior belongs in route leaves and services.
+AI boundary search before contracts: bridge route inventory, static file server, container runtime, and admin bridge API docs.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused bridge handler/route tests.
+"""
+
 from __future__ import annotations
 
 import json

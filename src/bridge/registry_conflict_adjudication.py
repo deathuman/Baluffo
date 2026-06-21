@@ -1,3 +1,11 @@
+"""Registry conflict adjudication task helpers.
+
+AI boundary owns: background adjudication launch, progress, and conflict decision plumbing.
+AI boundary implement in: this file for adjudication task flow; conflict row derivation stays in registry conflict leaves.
+AI boundary search before contracts: registry conflict routes, post admin routes, and adjudication tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused registry adjudication tests.
+"""
+
 from __future__ import annotations
 
 import json

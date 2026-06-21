@@ -1,6 +1,11 @@
 """Safe automation eligibility analysis for registry conflicts.
 
 Extracted from registry_conflicts.py as part of the conflict split.
+
+AI boundary owns: registry conflict automation eligibility and blocker classification.
+AI boundary implement in: this file for automation eligibility only; route response shape stays in registry conflict routes.
+AI boundary search before contracts: registry_conflicts coordinator, registry policy helpers, and automation tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused registry conflict tests.
 """
 
 from __future__ import annotations

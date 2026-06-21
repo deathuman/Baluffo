@@ -1,4 +1,10 @@
-"""Task launch helpers for bridge-managed background work."""
+"""Task launch helpers for bridge-managed background work.
+
+AI boundary owns: admin bridge task admission, launch orchestration, abort wiring, and task start payloads.
+AI boundary implement in: this file for bridge task launch coordination; task-specific workers stay in pipeline/fetch/discovery services.
+AI boundary search before contracts: post admin routes, task lifecycle services, pipeline service, and frontend task-start callers.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused task launch tests.
+"""
 
 from __future__ import annotations
 

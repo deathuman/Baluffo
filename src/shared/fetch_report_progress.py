@@ -1,4 +1,10 @@
-"""Shared fetch-report task progress helpers."""
+"""Shared fetch-report task progress helpers.
+
+AI boundary owns: shared task-progress extraction and normalization for fetch-report payloads.
+AI boundary implement in: this file for cross-surface progress helpers; callers own bridge-specific payload shape.
+AI boundary search before contracts: fetch-report route leaves, jobs report contracts, and live-task helpers.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused fetch-report progress tests.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,10 @@
-"""Provider-coverage link backfill helpers for source-policy recommendations."""
+"""Provider-coverage link backfill helpers for source-policy recommendations.
+
+AI boundary owns: provider-coverage link backfill derivation and current link-state enrichment.
+AI boundary implement in: this file for source-policy link backfill only; route response envelope stays in get_source_policy.py.
+AI boundary search before contracts: source-policy routes, registry state, soak reports, and source-policy backfill tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused source-policy backfill tests.
+"""
 
 from __future__ import annotations
 

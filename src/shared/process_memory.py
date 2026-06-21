@@ -1,4 +1,10 @@
-"""Best-effort process-tree memory sampling without third-party dependencies."""
+"""Best-effort process-tree memory sampling without third-party dependencies.
+
+AI boundary owns: process-tree memory sampling and platform-specific memory probes.
+AI boundary implement in: this file for sampling primitives; callers own smoke/report thresholds.
+AI boundary search before contracts: packaged desktop smoke, performance profiling, and process memory tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused process memory tests.
+"""
 
 from __future__ import annotations
 

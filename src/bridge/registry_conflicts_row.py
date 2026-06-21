@@ -1,3 +1,11 @@
+"""Registry conflict row construction helpers.
+
+AI boundary owns: admin-facing registry conflict row derivation, diff fields, and action labels.
+AI boundary implement in: this file for row shape; queue summary and mutation behavior stay in sibling conflict leaves.
+AI boundary search before contracts: registry conflict routes, registry_conflicts coordinator, and frontend registry conflict callers.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused registry conflict row tests.
+"""
+
 from __future__ import annotations
 
 import json
