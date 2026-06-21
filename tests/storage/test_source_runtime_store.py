@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import gzip
 import json
+from pathlib import Path
+
+import pytest
 
 from src.storage import BaluffoStore, EvidenceArchiveStore, SourceRuntimeStore
 from src.storage import evidence_archive as evidence_archive_mod
@@ -113,3 +116,107 @@ def test_evidence_archive_atomic_write_retries_permission_error(monkeypatch) -> 
         assert (data_dir / entry["path"]).exists()
         assert archive.manifest_path.exists()
         assert list(data_dir.glob("*.tmp")) == []
+
+
+def test_source_runtime_store_validation_fallbacks_filters_and_offsets() -> None:
+    with workspace_tmpdir("source-runtime-store-edges") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            runtime = SourceRuntimeStore(
+                store,
+                now_iso=lambda: "2026-05-12T12:00:00+00:00",
+                row_limit=2,
+            )
+
+            with pytest.raises(ValueError, match="source runs require runId"):
+                runtime.upsert_source_runs(run_id="", rows=[])
+
+            count = runtime.upsert_source_runs(
+                run_id="fetch_edges",
+                rows=[
+                    {"name": "Studio A", "status": "ok", "keptCount": "2"},
+                    {"id": "Source Id", "status": "excluded", "lowConfidenceDropped": "3"},
+                    {"status": "", "error": "missing name"},
+                    object(),
+                ],
+                evidence_ref={"path": "artifact.json"},
+            )
+
+            assert count == 3
+            first_page = runtime.source_runs(run_id="fetch_edges", limit=2)
+            second_page = runtime.source_runs(run_id="fetch_edges", offset=2)
+            assert [row["sourceKey"] for row in first_page] == ["studio_a", "source_id"]
+            assert second_page[0]["sourceKey"] == "source_3"
+            assert second_page[0]["name"] == "source_3"
+            assert second_page[0]["status"] == "error"
+            assert second_page[0]["failedCount"] == 1
+            assert (
+                runtime.source_runs(run_id="fetch_edges", status="excluded")[0][
+                    "lowConfidenceDropped"
+                ]
+                == 3
+            )
+            assert runtime.source_run_summary(run_id="fetch_edges")["statusCounts"] == {
+                "error": 1,
+                "excluded": 1,
+                "ok": 1,
+            }
+
+
+def test_evidence_archive_manifest_fallback_active_retention_and_path_safety() -> None:
+    with workspace_tmpdir("evidence-archive-edges") as data_dir:
+        archive = EvidenceArchiveStore(
+            data_dir,
+            now_iso=lambda: "2026-05-12T12:00:00+00:00",
+            total_budget_bytes=1,
+            retention_days=1,
+        )
+        archive.manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        archive.manifest_path.write_text("{not-json", encoding="utf-8")
+
+        assert archive.load_manifest() == {
+            "schemaVersion": 1,
+            "updatedAt": "",
+            "archives": [],
+        }
+
+        active = archive.write_archive(
+            run_id="fetch/active",
+            kind="source details",
+            payload={"rows": ["active"]},
+            active_run_ids=("fetch/active",),
+        )
+        pinned = archive.write_archive(
+            run_id="fetch_old",
+            kind="source-details",
+            payload={"rows": ["pinned"]},
+            pinned=True,
+        )
+        archive.manifest_path.write_text(
+            json.dumps(
+                {
+                    "schemaVersion": 1,
+                    "archives": [
+                        {
+                            **active,
+                            "createdAt": "2026-05-12T12:00:00+00:00",
+                        },
+                        {
+                            **pinned,
+                            "createdAt": "2026-05-10T12:00:00+00:00",
+                        },
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = archive.enforce_retention(active_run_ids=("fetch/active",))
+        retained = {row["runId"] for row in archive.load_manifest()["archives"]}
+        assert result["deletedCount"] == 0
+        assert retained == {"fetch/active", "fetch_old"}
+        assert active["path"] == "artifacts/fetch/fetch_active/source_details.json.gz"
+
+        with pytest.raises(ValueError, match="must be relative"):
+            archive._resolve_archive_path(Path(data_dir / "absolute.json.gz"))
+        with pytest.raises(ValueError, match="escapes data dir"):
+            archive._resolve_archive_path(Path("..") / "escape.json.gz")
