@@ -28,7 +28,6 @@
     "tests/bridge/test_routes_get.py": 655,
     "tests/bridge/test_routes_post.py": 793,
     "tests/bridge/test_routes_smoke.py": 413,
-    "tests/desktop_app/test_browser_launch_and_reclaim.py": 1338,
     "tests/desktop_app/test_browser_session_watch.py": 436,
     "tests/frontend/unit/admin-discovery-controller.test.mjs": 1237,
     "tests/frontend/unit/admin-domain.test.mjs": 766,
