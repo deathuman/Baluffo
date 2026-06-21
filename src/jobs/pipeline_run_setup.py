@@ -1,4 +1,10 @@
-"""Pipeline runtime setup helpers for the package-owned pipeline entrypoint."""
+"""Pipeline runtime setup helpers for the package-owned pipeline entrypoint.
+
+AI boundary owns: jobs pipeline setup, runtime dependency assembly, source selection, and output path preparation.
+AI boundary implement in: this file for pipeline setup; execution loop and finalization stay in pipeline sibling modules.
+AI boundary search before contracts: pipeline entrypoints, source execution, pipeline runtime writers, and pipeline setup tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused jobs pipeline tests.
+"""
 
 from __future__ import annotations
 

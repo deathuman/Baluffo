@@ -1,3 +1,11 @@
+"""Exact category-title detection for jobs normalization.
+
+AI boundary owns: category-title dictionaries, exact title matching, and canonical title noise classification.
+AI boundary implement in: this file for category title policy; broader title normalization stays in jobs text and canonicalization modules.
+AI boundary search before contracts: jobs canonicalization, taxonomy helpers, adapter parsers, and title quality tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused jobs title normalization tests.
+"""
+
 from __future__ import annotations
 
 import re

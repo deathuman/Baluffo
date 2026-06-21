@@ -1,3 +1,11 @@
+"""Source-sync snapshot normalization and GitHub transport helpers.
+
+AI boundary owns: source-sync snapshot parsing, validation, remote metadata, and transport error mapping.
+AI boundary implement in: this file for snapshot semantics; shard construction and runtime state stay in sibling source-sync modules.
+AI boundary search before contracts: source sync facade, registry IO, shard helpers, and snapshot tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused source-sync snapshot tests.
+"""
+
 from __future__ import annotations
 
 import base64

@@ -1,4 +1,10 @@
-"""Persisted admin task lifecycle ledger."""
+"""Persisted admin task lifecycle ledger.
+
+AI boundary owns: admin task lifecycle persistence, run state transitions, event rows, and task status recovery.
+AI boundary implement in: this file for lifecycle storage behavior; route payloads and task orchestration stay in bridge leaves.
+AI boundary search before contracts: task runtime storage, run history API, lifecycle cleanup, and task lifecycle tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused bridge task lifecycle tests.
+"""
 
 from __future__ import annotations
 

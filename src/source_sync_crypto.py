@@ -1,3 +1,11 @@
+"""Source-sync encryption, signing, and token primitives.
+
+AI boundary owns: source-sync cryptographic helpers, key derivation, JWT signing, and encrypted payload handling.
+AI boundary implement in: this file for crypto primitives; runtime state and GitHub configuration stay in sibling source-sync modules.
+AI boundary search before contracts: source sync runtime, config loading, GitHub sync tests, and security guardrails.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused source-sync crypto tests.
+"""
+
 from __future__ import annotations
 
 import base64

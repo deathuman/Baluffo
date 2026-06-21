@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Install, recovery, and startup verification helpers. Side effects: install mutation, rollback snapshot, relaunch verification. Verify: npm run test:frontend:packaged:update-rehearsal."""
+"""Install, recovery, and startup verification helpers.
+
+Side effects: install mutation, rollback snapshot, relaunch verification.
+
+AI boundary owns: desktop updater install, rollback, marker handling, and post-install startup verification.
+AI boundary implement in: this file for install mutation; update service state and helper launch stay in desktop update siblings.
+AI boundary search before contracts: desktop update service, updater entrypoint, packaged update rehearsal, and installer tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused desktop updater install tests.
+"""
 
 from __future__ import annotations
 

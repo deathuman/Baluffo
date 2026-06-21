@@ -1,3 +1,11 @@
+"""Source probe evidence collection and scoring helpers.
+
+AI boundary owns: source probe request evidence, HTML/feed parsing hints, score summaries, and probe diagnostics.
+AI boundary implement in: this file for probe evidence; discovery orchestration and source policy routing stay outside this module.
+AI boundary search before contracts: source discovery probes, source policy backfill, registry routes, and probe evidence tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused source probe evidence tests.
+"""
+
 from __future__ import annotations
 
 import json

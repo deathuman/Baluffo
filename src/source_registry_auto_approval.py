@@ -1,4 +1,10 @@
-"""Discovery auto-approval policy for source registry candidates."""
+"""Discovery auto-approval policy for source registry candidates.
+
+AI boundary owns: source discovery auto-approval decisions, candidate merging, link hints, and approval evidence.
+AI boundary implement in: this file for auto-approval policy; registry persistence and discovery crawling stay in sibling modules.
+AI boundary search before contracts: source registry policy, discovery reports, source policy routes, and auto-approval tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused source registry auto-approval tests.
+"""
 
 from __future__ import annotations
 

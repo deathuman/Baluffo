@@ -1,3 +1,11 @@
+"""GitHub source-sync configuration and request helpers.
+
+AI boundary owns: source-sync GitHub configuration, app credential loading, HTTPS setup, and sync request wrappers.
+AI boundary implement in: this file for sync configuration; runtime secrets and snapshot payloads stay in sibling source-sync modules.
+AI boundary search before contracts: source sync facade, crypto/runtime helpers, bridge sync setup, and config tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused source-sync config tests.
+"""
+
 from __future__ import annotations
 
 import json

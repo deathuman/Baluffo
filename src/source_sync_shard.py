@@ -1,4 +1,10 @@
-"""Deterministic source-sync shard construction."""
+"""Deterministic source-sync shard construction.
+
+AI boundary owns: source-sync shard payload assembly, compression, fingerprinting, and chunk metadata.
+AI boundary implement in: this file for shard construction; registry IO and sync transport stay in sibling source-sync modules.
+AI boundary search before contracts: source sync facade, snapshot normalization, registry persistence, and shard tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused source-sync shard tests.
+"""
 
 from __future__ import annotations
 

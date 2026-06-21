@@ -1,4 +1,10 @@
-"""JSON IO and path defaults for source registry files."""
+"""JSON IO and path defaults for source registry files.
+
+AI boundary owns: source registry file locations, JSON/JSONL persistence, backups, and storage metric recording.
+AI boundary implement in: this file for registry persistence; registry policy and identity semantics stay in sibling modules.
+AI boundary search before contracts: source registry policy, source sync modules, bridge registry routes, and registry IO tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused source registry IO tests.
+"""
 
 from __future__ import annotations
 

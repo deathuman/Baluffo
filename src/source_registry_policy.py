@@ -1,4 +1,10 @@
-"""Duplicate and pending-noise policies for source registry rows."""
+"""Duplicate and pending-noise policies for source registry rows.
+
+AI boundary owns: source registry duplicate detection, pending-noise classification, and registry cleanup policy.
+AI boundary implement in: this file for policy decisions; persistence and identity primitives stay in sibling registry modules.
+AI boundary search before contracts: source registry identity, auto-approval, source policy routes, and registry policy tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused source registry policy tests.
+"""
 
 from __future__ import annotations
 

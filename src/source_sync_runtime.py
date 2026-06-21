@@ -1,3 +1,11 @@
+"""Source-sync runtime state and local credential helpers.
+
+AI boundary owns: source-sync runtime files, credential encryption, embedded key handling, and state timestamps.
+AI boundary implement in: this file for runtime state; crypto primitives and GitHub transport stay in sibling source-sync modules.
+AI boundary search before contracts: source sync facade, sync configuration, bridge sync routes, and runtime tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused source-sync runtime tests.
+"""
+
 from __future__ import annotations
 
 import ctypes

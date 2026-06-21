@@ -1,4 +1,10 @@
-"""Explicit cleanup utilities for admin task lifecycle artifacts."""
+"""Explicit cleanup utilities for admin task lifecycle artifacts.
+
+AI boundary owns: task lifecycle cleanup, stale artifact pruning, and cleanup result summaries.
+AI boundary implement in: this file for cleanup operations; lifecycle persistence and route payloads stay in sibling modules.
+AI boundary search before contracts: task lifecycle, run history API, task abort evidence, and lifecycle cleanup tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused lifecycle cleanup tests.
+"""
 
 from __future__ import annotations
 

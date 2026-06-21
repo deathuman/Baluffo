@@ -1,4 +1,10 @@
-"""Run-history projection helpers for admin task lifecycle state."""
+"""Run-history projection helpers for admin task lifecycle state.
+
+AI boundary owns: run-history projections, orphan classification, lifecycle summaries, and admin history payload shaping.
+AI boundary implement in: this file for run-history views; task lifecycle persistence and route dispatch stay outside this module.
+AI boundary search before contracts: task lifecycle, lifecycle cleanup, admin ops callers, and run-history tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused run-history tests.
+"""
 
 from __future__ import annotations
 

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """GitHub App-backed source registry sync compatibility surface.
 
-AI boundary: this file owns stable sync constants, exports, and patch seams.
-AI boundary implement in: `src.source_sync_{config,runtime,snapshot,crypto}.py`.
-AI boundary search before contracts: bridge sync callers and frontend sync clients.
-AI boundary verify: focused source-sync tests plus `npm run test:refactor:changed`.
+AI boundary owns: stable source-sync constants, facade exports, and compatibility patch seams.
+AI boundary implement in: src.source_sync_config, src.source_sync_runtime, src.source_sync_snapshot, src.source_sync_shard, and src.source_sync_crypto.
+AI boundary search before contracts: bridge sync callers, frontend sync clients, and source-sync tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused source-sync tests.
 """
 
 from __future__ import annotations

@@ -1,7 +1,11 @@
 """Bridge API composition object for admin bridge.
 
-This module provides the BridgeApi composition object that wires
-all bridge services together for use by HTTP routes.
+This module provides the BridgeApi composition object that wires all bridge services together for use by HTTP routes.
+
+AI boundary owns: BridgeApi service wiring, compatibility defaults, and dataclass field composition.
+AI boundary implement in: this file for field wiring; production construction stays in src.bridge.bootstrap and src.bridge.admin_entrypoint_api.
+AI boundary search before contracts: BridgeApi field inventory, bootstrap wiring, admin entrypoint API, and route guardrails.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused BridgeApi inventory and route tests.
 """
 
 from __future__ import annotations
