@@ -1228,7 +1228,9 @@ def test_source_discovery_compatibility_surfaces_export_required_names() -> None
 def test_sharded_python_test_families_do_not_use_star_helper_imports(repo_root: Path) -> None:
     for relative_path in (
         "tests/admin/test_admin_bridge_report_history.py",
-        "tests/admin/test_admin_bridge_live_payloads.py",
+        "tests/admin/test_admin_bridge_live_current_task.py",
+        "tests/admin/test_admin_bridge_live_discovery_sync_payloads.py",
+        "tests/admin/test_admin_bridge_live_fetch_payloads.py",
         "tests/source_discovery/test_candidate_generation.py",
         "tests/source_discovery/test_config_and_helpers.py",
         "tests/source_discovery/test_directory_sources.py",
@@ -1472,7 +1474,9 @@ def test_admin_runtime_megatest_stays_split(repo_root: Path) -> None:
         "tests/admin/test_admin_bridge_ops_health.py",
         "tests/admin/test_admin_bridge_report_history.py",
         "tests/admin/test_admin_bridge_task_launch.py",
-        "tests/admin/test_admin_bridge_live_payloads.py",
+        "tests/admin/test_admin_bridge_live_current_task.py",
+        "tests/admin/test_admin_bridge_live_discovery_sync_payloads.py",
+        "tests/admin/test_admin_bridge_live_fetch_payloads.py",
     ):
         assert (repo_root / relative_path).exists()
 

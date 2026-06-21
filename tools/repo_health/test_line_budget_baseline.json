@@ -19,7 +19,6 @@
     "tests/test_source_sync.py"
   ],
   "files": {
-    "tests/admin/test_admin_bridge_live_payloads.py": 1237,
     "tests/admin/test_admin_bridge_ops_static_fallback.py": 728,
     "tests/admin/test_admin_bridge_report_history.py": 673,
     "tests/admin/test_admin_bridge_runtime_config.py": 728,
