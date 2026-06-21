@@ -1,3 +1,11 @@
+"""Static plugin rendered-card extraction helpers.
+
+AI boundary owns: rendered HTML card extraction, title/link/location hydration, and static plugin fallback parsing.
+AI boundary implement in: this file for generic rendered-card parsing; studio-specific selectors stay in plugin modules.
+AI boundary search before contracts: static plugin runner, HTML parsers, static detail heuristics, and rendered-card tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused rendered-card tests.
+"""
+
 from __future__ import annotations
 
 import re

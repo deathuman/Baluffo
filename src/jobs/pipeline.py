@@ -1,4 +1,10 @@
-"""Package-owned pipeline entrypoints."""
+"""Package-owned pipeline entrypoints.
+
+AI boundary owns: jobs pipeline package entrypoints over setup, execution, finalization, and CLI flow.
+AI boundary implement in: this file for package-level pipeline coordination; stage behavior belongs in pipeline_* leaves.
+AI boundary search before contracts: jobs_fetcher facade, bridge task launch callers, fetcher runtime contracts, and pipeline tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused pipeline/fetcher tests.
+"""
 
 from __future__ import annotations
 

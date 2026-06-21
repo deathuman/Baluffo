@@ -1,3 +1,11 @@
+"""Jobs pipeline source execution loop helpers.
+
+AI boundary owns: concurrent per-source execution loop, browser fallback coordination, and source runner dispatch.
+AI boundary implement in: this file for source loop mechanics; result normalization and progress reporting stay in sibling leaves.
+AI boundary search before contracts: pipeline stage source execution, source result helpers, adapter runners, and pipeline tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused pipeline source-loop tests.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Callable

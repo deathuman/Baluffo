@@ -1,4 +1,10 @@
-"""Deduplication helpers for canonical jobs."""
+"""Deduplication helpers for canonical jobs.
+
+AI boundary owns: canonical job identity, duplicate grouping, and deduplication decisions.
+AI boundary implement in: this file for duplicate policy; reporting evidence and fetch-report presentation stay in reporting leaves.
+AI boundary search before contracts: CanonicalJob contracts, reporting dedup evidence, and dedup tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused dedup tests.
+"""
 
 from __future__ import annotations
 

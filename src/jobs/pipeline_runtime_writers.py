@@ -1,3 +1,11 @@
+"""Jobs pipeline runtime artifact writers.
+
+AI boundary owns: runtime report, active snapshot, and source-state write helpers for running jobs pipeline tasks.
+AI boundary implement in: this file for runtime artifact writes; final artifact closeout stays in pipeline_finalize.
+AI boundary search before contracts: bridge active task snapshot, shared JSON IO, fetcher runtime contracts, and pipeline runtime tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused pipeline runtime writer tests.
+"""
+
 from __future__ import annotations
 
 import json

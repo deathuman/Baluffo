@@ -1,11 +1,15 @@
-from __future__ import annotations
-
-"""
-Source execution stage for `src.jobs.pipeline`.
+"""Source execution stage for `src.jobs.pipeline`.
 
 This module stays the stable owner of the patch-sensitive execution helpers while delegating the
 actual source loop, report assembly, and progress plumbing into focused leaves.
+
+AI boundary owns: stable patch-sensitive source execution stage wiring for jobs pipeline runs.
+AI boundary implement in: this file for source stage orchestration only; source loop, progress, and result assembly stay in focused leaves.
+AI boundary search before contracts: jobs_fetcher compatibility seams, pipeline source leaves, and source execution tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused source execution tests.
 """
+
+from __future__ import annotations
 
 import sys
 from collections.abc import Callable

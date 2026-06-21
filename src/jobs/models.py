@@ -1,4 +1,10 @@
-"""Data-only models for the jobs pipeline package."""
+"""Data-only models for the jobs pipeline package.
+
+AI boundary owns: jobs pipeline dataclasses, typed dicts, and CanonicalJob wire-model fields.
+AI boundary implement in: this file for data models only; normalization and validation belong in contracts/canonicalization leaves.
+AI boundary search before contracts: DATA_CONTRACT.md, core schemas/contracts, jobs contracts, and frontend job consumers.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused jobs contract tests.
+"""
 
 from __future__ import annotations
 

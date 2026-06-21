@@ -2,6 +2,11 @@
 
 Extracted from jobs/common; used by static adapter, plugins, community adapter,
 and bridge source_check. Re-exported via jobs.parsers for backward compatibility.
+
+AI boundary owns: shared HTML extraction, structured data parsing, and job posting candidate helpers.
+AI boundary implement in: this file for generic HTML parsing; provider/static-specific policy stays in adapter leaves.
+AI boundary search before contracts: static adapter runtime, provider parsers, source discovery probe, and parser tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused HTML parser tests.
 """
 
 from __future__ import annotations

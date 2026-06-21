@@ -1,4 +1,10 @@
-"""Text and URL normalization utilities (extracted from common)."""
+"""Text and URL normalization utilities (extracted from common).
+
+AI boundary owns: jobs-specific text, URL, location-noise, and normalization primitives.
+AI boundary implement in: this file for jobs-domain normalization helpers; shared stdlib-only helpers stay in src.shared.text_utils.
+AI boundary search before contracts: canonicalization, parsers, adapters, and data contract tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused jobs text/quality tests.
+"""
 
 from __future__ import annotations
 

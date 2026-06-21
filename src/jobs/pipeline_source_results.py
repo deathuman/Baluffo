@@ -1,3 +1,11 @@
+"""Jobs pipeline source result assembly helpers.
+
+AI boundary owns: per-source result records, diagnostics aggregation, and source-state report rows.
+AI boundary implement in: this file for source result shaping; execution loop and final report writes stay in sibling leaves.
+AI boundary search before contracts: pipeline source loop, source reports contracts, fetch-report normalization, and source-state tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused source result tests.
+"""
+
 from __future__ import annotations
 
 import inspect

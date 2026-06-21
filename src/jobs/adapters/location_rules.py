@@ -1,4 +1,10 @@
-"""Shared location plausibility helpers for parser-layer extraction."""
+"""Shared location plausibility helpers for parser-layer extraction.
+
+AI boundary owns: location plausibility, city/country acceptance, and parser-layer noise filtering.
+AI boundary implement in: this file for adapter location rules; generic text cleanup stays in jobs text_utils.
+AI boundary search before contracts: location parsers, canonicalization, data quality audits, and location tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused location rule tests.
+"""
 
 from __future__ import annotations
 

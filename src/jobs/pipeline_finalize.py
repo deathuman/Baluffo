@@ -1,3 +1,11 @@
+"""Jobs pipeline finalization helpers.
+
+AI boundary owns: pipeline output finalization, report assembly, lifecycle closeout, and artifact writes.
+AI boundary implement in: this file for terminal pipeline artifacts; source execution and runtime writers stay in sibling leaves.
+AI boundary search before contracts: fetcher runtime contracts, report contracts, bridge fetch-report routes, and pipeline finalization tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused pipeline finalization tests.
+"""
+
 from __future__ import annotations
 
 import json

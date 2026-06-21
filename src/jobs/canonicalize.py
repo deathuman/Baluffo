@@ -1,4 +1,10 @@
-"""Canonicalization and typed boundary helpers."""
+"""Canonicalization and typed boundary helpers.
+
+AI boundary owns: raw job to CanonicalJob conversion, field cleanup, contract shaping, and quality drop reasons.
+AI boundary implement in: this file for canonical job normalization; adapter extraction and dedup decisions stay in their own leaves.
+AI boundary search before contracts: DATA_CONTRACT.md, CanonicalJob models, adapter parsers, and jobs quality tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused canonicalization/quality tests.
+"""
 
 from __future__ import annotations
 

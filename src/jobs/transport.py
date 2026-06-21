@@ -1,4 +1,10 @@
-"""Centralized transport helpers for jobs fetching."""
+"""Centralized transport helpers for jobs fetching.
+
+AI boundary owns: jobs HTTP transport, conditional revalidation, redirect resolution, and async fetch helpers.
+AI boundary implement in: this file for transport behavior; source-specific retry/report policy stays in adapters/pipeline leaves.
+AI boundary search before contracts: adapter runners, static runtime, source execution, and transport tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused jobs transport tests.
+"""
 
 from __future__ import annotations
 

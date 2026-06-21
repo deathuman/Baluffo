@@ -1,4 +1,10 @@
-"""Location parsing utilities shared across provider parsers."""
+"""Location parsing utilities shared across provider parsers.
+
+AI boundary owns: provider-parser location extraction, normalization, and structured location detail shaping.
+AI boundary implement in: this file for parser-layer location details; global location plausibility belongs in location_rules/text_utils.
+AI boundary search before contracts: provider parsers, location rules, CanonicalJob location contract, and parser location tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused location parser tests.
+"""
 
 from __future__ import annotations
 

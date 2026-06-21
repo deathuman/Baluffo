@@ -1,3 +1,11 @@
+"""Static plugin runner infrastructure.
+
+AI boundary owns: shared static plugin run orchestration, detail fetching, card parsing, and diagnostics.
+AI boundary implement in: this file for generic static plugin execution; individual studio extraction stays in plugin modules.
+AI boundary search before contracts: static rendered-card helpers, plugin types, static runtime support, and jobs_static tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused static plugin runner tests.
+"""
+
 from __future__ import annotations
 
 import hashlib

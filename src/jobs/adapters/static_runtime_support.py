@@ -1,3 +1,11 @@
+"""Static adapter runtime support helpers.
+
+AI boundary owns: static adapter runtime counters, browser fallback support, and fetch execution utilities.
+AI boundary implement in: this file for shared static runtime support; site-specific plugins stay in plugins/static leaves.
+AI boundary search before contracts: static runtime/listing/detail modules, static plugin runner, and jobs_static tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused static runtime tests.
+"""
+
 from __future__ import annotations
 
 import math

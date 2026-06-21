@@ -1,3 +1,11 @@
+"""Jobs page gating and detail-page classification helpers.
+
+AI boundary owns: job/detail page classification, non-job page filtering, and content gating heuristics.
+AI boundary implement in: this file for page-level gating policy; URL/detail extraction stays in adapter/static leaves.
+AI boundary search before contracts: static adapter heuristics, HTML parsers, source quality tests, and page gating tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused page gating tests.
+"""
+
 from __future__ import annotations
 
 import json

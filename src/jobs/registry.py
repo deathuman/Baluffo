@@ -1,4 +1,10 @@
-"""Registry and default configuration access for jobs sources."""
+"""Registry and default configuration access for jobs sources.
+
+AI boundary owns: jobs source registry loading, default source config, and source identity helpers.
+AI boundary implement in: this file for jobs registry access; bridge source registry state stays in bridge/source registry modules.
+AI boundary search before contracts: source registry docs, source configs, pipeline source selection, and registry tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused jobs registry tests.
+"""
 
 from __future__ import annotations
 
