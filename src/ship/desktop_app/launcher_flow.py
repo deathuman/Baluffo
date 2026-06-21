@@ -1,4 +1,10 @@
-"""Side effects: desktop launch orchestration, job object lifecycle, update handoff. Verify: npm run test:frontend:packaged:desktop-lifecycle-rehearsal."""
+"""Side effects: desktop launch orchestration, job object lifecycle, update handoff. Verify: npm run test:frontend:packaged:desktop-lifecycle-rehearsal.
+
+AI boundary owns: desktop launch orchestration, process lifecycle, browser handoff, and update handoff.
+AI boundary implement in: this file for launch flow; platform primitives and session state stay in sibling leaves.
+AI boundary search before contracts: runtime launcher, browser/session helpers, and packaged desktop smoke tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused launcher flow tests.
+"""
 
 from __future__ import annotations
 

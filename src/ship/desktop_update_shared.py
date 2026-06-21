@@ -1,4 +1,10 @@
-"""Shared desktop-update helpers. Side effects: manifest verification, file downloads, process liveness checks. Verify: npm run test:frontend:packaged:update-rehearsal."""
+"""Shared desktop-update helpers. Side effects: manifest verification, file downloads, process liveness checks. Verify: npm run test:frontend:packaged:update-rehearsal.
+
+AI boundary owns: desktop update manifest, release metadata, hashing, downloads, and process liveness helpers.
+AI boundary implement in: this file for shared update utilities; service state machine stays in desktop_update_service.
+AI boundary search before contracts: desktop update service, build release script, updater helper, and update tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused desktop update tests.
+"""
 
 from __future__ import annotations
 

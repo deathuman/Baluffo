@@ -1,4 +1,10 @@
-"""Compatibility shim over packaged smoke rehearsal leaves."""
+"""Compatibility shim over packaged smoke rehearsal leaves.
+
+AI boundary owns: packaged smoke rehearsal compatibility exports and scenario grouping.
+AI boundary implement in: this file for rehearsal import surface only; scenario behavior stays in rehearsal_* leaves.
+AI boundary search before contracts: packaged smoke root, rehearsal modules, and packaged smoke tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused packaged rehearsal tests.
+"""
 
 from __future__ import annotations
 

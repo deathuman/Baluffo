@@ -1,4 +1,10 @@
-"""Startup metric helpers behind the packaged smoke root facade."""
+"""Startup metric helpers behind the packaged smoke root facade.
+
+AI boundary owns: packaged smoke startup metric parsing, snapshots, and metric assertions.
+AI boundary implement in: this file for startup metric evidence; smoke orchestration stays in orchestrator/runtime.
+AI boundary search before contracts: packaged smoke runtime, startup profile, and startup metric tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused startup metric tests.
+"""
 
 from __future__ import annotations
 

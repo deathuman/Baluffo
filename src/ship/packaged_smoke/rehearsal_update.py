@@ -1,4 +1,10 @@
-"""Packaged desktop update rehearsal helpers behind the root smoke facade."""
+"""Packaged desktop update rehearsal helpers behind the root smoke facade.
+
+AI boundary owns: packaged update rehearsal manifests, helper launch, install handoff, and marker verification.
+AI boundary implement in: this file for update rehearsal scenarios; update service implementation stays in src.ship.desktop_update_*.
+AI boundary search before contracts: desktop update service, updater helper, and packaged update rehearsal tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused packaged update rehearsal tests.
+"""
 
 from __future__ import annotations
 

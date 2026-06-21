@@ -1,4 +1,10 @@
-"""Side effects: Chromium browser launch, registry reads, profile cache clearing. Verify: npm run test:frontend:packaged:browser-job-rehearsal."""
+"""Side effects: Chromium browser launch, registry reads, profile cache clearing. Verify: npm run test:frontend:packaged:browser-job-rehearsal.
+
+AI boundary owns: managed browser launch, profile cache handling, and browser supervision setup.
+AI boundary implement in: this file for browser launch behavior; platform process ownership stays in _windows/_linux.
+AI boundary search before contracts: launcher flow, packaged browser smoke, and browser launch tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused browser launch tests.
+"""
 
 from __future__ import annotations
 

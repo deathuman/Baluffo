@@ -1,3 +1,11 @@
+"""Desktop app launcher diagnostics helpers.
+
+AI boundary owns: desktop launcher diagnostics, startup evidence, and failure payload shaping.
+AI boundary implement in: this file for launch diagnostics; recovery and platform cleanup stay in sibling leaves.
+AI boundary search before contracts: launcher flow, startup profile, and desktop diagnostics tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused launcher diagnostics tests.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

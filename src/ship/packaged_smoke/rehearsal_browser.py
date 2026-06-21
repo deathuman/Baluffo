@@ -1,4 +1,10 @@
-"""Packaged browser and orphan-reclaim rehearsal helpers behind the root facade."""
+"""Packaged browser and orphan-reclaim rehearsal helpers behind the root facade.
+
+AI boundary owns: browser supervision, orphan reclaim, lifecycle shutdown, and active-task close rehearsals.
+AI boundary implement in: this file for browser/lifecycle rehearsal scenarios; shared orchestration stays in orchestrator.
+AI boundary search before contracts: packaged smoke orchestrator, desktop app browser/session helpers, and rehearsal tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused packaged browser rehearsal tests.
+"""
 
 from __future__ import annotations
 

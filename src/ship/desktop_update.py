@@ -1,4 +1,10 @@
-"""Desktop update service and helper facade. AI boundary: compat proxy / re-export only. AI boundary implement in: desktop_update_shared, desktop_updater_release, desktop_updater_install, desktop_updater_ui. AI boundary verify: npm run test:frontend:packaged:update-rehearsal."""
+"""Desktop update service and helper facade. AI boundary: compat proxy / re-export only. AI boundary implement in: desktop_update_shared, desktop_updater_release, desktop_updater_install, desktop_updater_ui. AI boundary verify: npm run test:frontend:packaged:update-rehearsal.
+
+AI boundary owns: desktop update compatibility facade and stable re-export surface.
+AI boundary implement in: this file for compatibility proxy/re-export only; implementation belongs in desktop_update_* leaves.
+AI boundary search before contracts: facade inventory, admin_bridge root bindings, and desktop update tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused updater facade tests.
+"""
 
 from __future__ import annotations
 

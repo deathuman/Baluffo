@@ -1,3 +1,11 @@
+"""Desktop startup watchdog helpers.
+
+AI boundary owns: startup watchdog loop, heartbeat monitoring, and process readiness supervision.
+AI boundary implement in: this file for watchdog behavior; readiness probes and launch flow stay in sibling leaves.
+AI boundary search before contracts: startup readiness helpers, launcher flow, and packaged startup tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused startup watchdog tests.
+"""
+
 from __future__ import annotations
 
 import subprocess

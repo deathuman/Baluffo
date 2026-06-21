@@ -5,6 +5,11 @@ AI boundary: this file owns helper CLI compatibility only.
 AI boundary implement in: `desktop_updater_{ui,release,install}.py` leaves.
 AI boundary search before contracts: updater state, release, install, UI callers.
 AI boundary verify: updater rehearsal lane plus `npm run test:refactor:changed`.
+
+AI boundary owns: desktop updater helper entrypoint and stable monkeypatch surface.
+AI boundary implement in: this file for helper executable compatibility; implementation belongs in desktop_updater_* leaves.
+AI boundary search before contracts: updater helper tests, packaged update rehearsal, and facade inventories.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused desktop updater tests.
 """
 
 from __future__ import annotations

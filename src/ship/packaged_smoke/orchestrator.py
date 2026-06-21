@@ -1,4 +1,10 @@
-"""Packaged smoke orchestration behind the root facade."""
+"""Packaged smoke orchestration behind the root facade.
+
+AI boundary owns: packaged smoke scenario orchestration, artifact collection, and report assembly.
+AI boundary implement in: this file for packaged smoke orchestration; scenario-specific rehearsals stay in rehearsal leaves.
+AI boundary search before contracts: packaged_desktop_smoke root, rehearsal modules, and packaged smoke tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused packaged smoke tests.
+"""
 
 from __future__ import annotations
 

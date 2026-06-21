@@ -1,4 +1,10 @@
-"""Side effects: instance locking, bridge health checks, stale runtime reclaim. Verify: npm run test:frontend:packaged:desktop-lifecycle-rehearsal."""
+"""Side effects: instance locking, bridge health checks, stale runtime reclaim. Verify: npm run test:frontend:packaged:desktop-lifecycle-rehearsal.
+
+AI boundary owns: desktop session roots, instance locking, bridge health checks, and stale runtime reclaim.
+AI boundary implement in: this file for session state and ownership; platform primitives stay in _windows/_linux.
+AI boundary search before contracts: launcher recovery, runtime launcher, and desktop session tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused desktop session tests.
+"""
 
 from __future__ import annotations
 

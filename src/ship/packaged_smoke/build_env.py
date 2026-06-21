@@ -1,4 +1,10 @@
-"""Portable build and environment helpers behind the root smoke facade."""
+"""Portable build and environment helpers behind the root smoke facade.
+
+AI boundary owns: portable build freshness checks, environment setup, and smoke build metadata helpers.
+AI boundary implement in: this file for smoke/build environment evidence; release build behavior stays in build scripts.
+AI boundary search before contracts: packaged smoke orchestrator, portable build script, and build env tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused packaged build-env tests.
+"""
 
 from __future__ import annotations
 

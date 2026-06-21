@@ -1,4 +1,10 @@
-"""State and handoff helpers behind the root desktop-update facade."""
+"""State and handoff helpers behind the root desktop-update facade.
+
+AI boundary owns: desktop update state persistence, handoff markers, and post-install status helpers.
+AI boundary implement in: this file for update state/handoff data; network/release behavior stays in update service/shared leaves.
+AI boundary search before contracts: desktop update service, updater helper, and update state tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused desktop update state tests.
+"""
 
 from __future__ import annotations
 

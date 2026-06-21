@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Platform-neutral runtime launcher for Baluffo ship bundles."""
+"""Platform-neutral runtime launcher for Baluffo ship bundles.
+
+AI boundary owns: desktop runtime process launch, port/session setup, and packaged/runtime handoff.
+AI boundary implement in: this file for launcher script coordination; desktop app internals stay in src.ship.desktop_app leaves.
+AI boundary search before contracts: desktop app launcher flow, packaged smoke, and runtime launcher tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused desktop runtime tests.
+"""
 
 from __future__ import annotations
 

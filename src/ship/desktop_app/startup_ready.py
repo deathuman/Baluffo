@@ -1,4 +1,10 @@
-"""Side effects: startup readiness proof, bridge health polling. Verify: npm run test:frontend:packaged:admin-startup."""
+"""Side effects: startup readiness proof, bridge health polling. Verify: npm run test:frontend:packaged:admin-startup.
+
+AI boundary owns: startup readiness proof, bridge health polling, and startup evidence collection.
+AI boundary implement in: this file for readiness checks; watchdog loop stays in startup_watchdog.
+AI boundary search before contracts: launcher flow, bridge startup routes, and packaged startup tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused startup readiness tests.
+"""
 
 from __future__ import annotations
 

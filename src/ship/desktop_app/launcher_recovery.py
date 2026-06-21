@@ -1,4 +1,10 @@
-"""Side effects: instance lock acquisition, stale session reconciliation, runtime cleanup. Verify: npm run test:frontend:packaged:orphan-reclaim-rehearsal."""
+"""Side effects: instance lock acquisition, stale session reconciliation, runtime cleanup. Verify: npm run test:frontend:packaged:orphan-reclaim-rehearsal.
+
+AI boundary owns: instance lock acquisition, stale session reconciliation, and runtime cleanup.
+AI boundary implement in: this file for launch recovery decisions; platform process primitives stay in _windows/_linux.
+AI boundary search before contracts: launcher flow, session helpers, and packaged recovery smoke tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused launcher recovery tests.
+"""
 
 from __future__ import annotations
 

@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Helpers for summarizing Baluffo desktop startup traces."""
+"""Helpers for summarizing Baluffo desktop startup traces.
+
+AI boundary owns: desktop startup profile collection, probe orchestration, and startup timing artifacts.
+AI boundary implement in: this file for profiling script behavior; runtime launch behavior stays in desktop_app leaves.
+AI boundary search before contracts: packaged startup probes, performance profile docs, and startup profile tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused startup profile tests.
+"""
 
 from __future__ import annotations
 

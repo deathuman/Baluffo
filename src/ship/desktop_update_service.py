@@ -1,4 +1,10 @@
-"""Desktop update service implementation behind the root compatibility facade."""
+"""Desktop update service implementation behind the root compatibility facade.
+
+AI boundary owns: desktop update service state machine, release checks, download, and install handoff orchestration.
+AI boundary implement in: this file for update service behavior; manifest helpers and state persistence stay in sibling leaves.
+AI boundary search before contracts: desktop update facade, updater helper, packaged update rehearsal, and update tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused desktop update tests.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,10 @@
-"""Runtime smoke helpers behind the root packaged-smoke facade."""
+"""Runtime smoke helpers behind the root packaged-smoke facade.
+
+AI boundary owns: packaged smoke runtime process launch, bridge/site readiness, and cleanup helpers.
+AI boundary implement in: this file for smoke runtime mechanics; scenario orchestration stays in orchestrator/rehearsals.
+AI boundary search before contracts: packaged smoke orchestrator, startup metrics, and packaged runtime tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused packaged runtime tests.
+"""
 
 from __future__ import annotations
 

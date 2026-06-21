@@ -1,3 +1,11 @@
+"""Desktop app launcher package surface.
+
+AI boundary owns: desktop app launcher compatibility surface over launch flow, diagnostics, and recovery leaves.
+AI boundary implement in: this file for package-private launcher surface; flow behavior stays in launcher_* leaves.
+AI boundary search before contracts: runtime launcher, packaged smoke, and desktop launcher tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused desktop launcher tests.
+"""
+
 from __future__ import annotations
 
 import argparse

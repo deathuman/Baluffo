@@ -1,4 +1,10 @@
-"""Side effects: process ownership, stale runtime reclaim, Windows API abstraction. Verify: npm run test:frontend:packaged:orphan-reclaim-rehearsal."""
+"""Side effects: process ownership, stale runtime reclaim, Windows API abstraction. Verify: npm run test:frontend:packaged:orphan-reclaim-rehearsal.
+
+AI boundary owns: Windows process ownership, stale runtime reclaim, and Win32 abstraction helpers.
+AI boundary implement in: this file for Windows platform primitives; shared desktop flow stays in launcher/session leaves.
+AI boundary search before contracts: desktop app launcher/session helpers and Windows desktop tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused Windows desktop tests.
+"""
 
 from __future__ import annotations
 

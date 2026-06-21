@@ -1,3 +1,11 @@
+"""Desktop startup readiness package surface.
+
+AI boundary owns: startup readiness compatibility surface over ready and watchdog leaves.
+AI boundary implement in: this file for startup surface wiring; readiness/watchdog behavior stays in startup_* leaves.
+AI boundary search before contracts: launcher flow, startup readiness tests, and packaged admin startup smoke.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused startup tests.
+"""
+
 from __future__ import annotations
 
 from .startup_ready import (

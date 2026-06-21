@@ -1,4 +1,10 @@
-"""Side effects: process ownership, stale runtime reclaim, Linux API abstraction. Verify: npm run test:frontend:packaged:orphan-reclaim-rehearsal."""
+"""Side effects: process ownership, stale runtime reclaim, Linux API abstraction. Verify: npm run test:frontend:packaged:orphan-reclaim-rehearsal.
+
+AI boundary owns: Linux process ownership, stale runtime reclaim, and platform abstraction helpers.
+AI boundary implement in: this file for Linux platform primitives; shared desktop flow stays in launcher/session leaves.
+AI boundary search before contracts: desktop app launcher/session helpers and Linux desktop tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused Linux desktop tests.
+"""
 
 from __future__ import annotations
 

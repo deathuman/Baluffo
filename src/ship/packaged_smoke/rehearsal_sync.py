@@ -1,4 +1,10 @@
-"""Packaged sync rehearsal helpers behind the root smoke facade."""
+"""Packaged sync rehearsal helpers behind the root smoke facade.
+
+AI boundary owns: packaged sync rehearsal setup, push/pull evidence, and smoke assertions.
+AI boundary implement in: this file for sync rehearsal scenarios; sync service behavior stays in bridge/source sync leaves.
+AI boundary search before contracts: packaged smoke orchestrator, sync service, and packaged sync tests.
+AI boundary verify: `npm run lint:repo-guardrails` plus focused packaged sync rehearsal tests.
+"""
 
 from __future__ import annotations
 
