@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import random
 import time
 import urllib.error
 import urllib.request
@@ -24,6 +25,9 @@ from ._compat import desktop_api
 from .config import ACTIVE_WORK_TASK_TYPES, INSTANCE_CONFLICT_RETRY_S, INSTANCE_LOCK_WAIT_S
 
 _EXPECTED_RECLAIM_CALLBACK_EXCEPTIONS = (OSError, RuntimeError, TypeError, ValueError)
+_LOCK_INVALID_PAYLOAD_GRACE_S = 1.0
+_LOCK_BACKOFF_BASE_S = 0.05
+_LOCK_BACKOFF_MAX_S = 0.25
 
 
 @dataclass(frozen=True)
@@ -32,6 +36,71 @@ class InstanceLock:
     handle: int
     launcher_token: str = ""
     created_at: str = ""
+
+
+def _os_error_trace_fields(exc: OSError) -> dict[str, object]:
+    fields: dict[str, object] = {
+        "error": str(exc),
+        "errno": int(exc.errno or 0),
+    }
+    winerror = getattr(exc, "winerror", None)
+    if winerror is not None:
+        fields["winerror"] = int(winerror or 0)
+    return fields
+
+
+def _append_startup_trace_from_env(
+    env: dict[str, str] | None,
+    event: str,
+    **fields: object,
+) -> None:
+    env_map = env if env is not None else os.environ
+    data_dir = str(env_map.get("BALUFFO_DATA_DIR") or "").strip()
+    if not data_dir:
+        return
+    with contextlib.suppress(Exception):
+        desktop_api()._append_startup_trace(Path(data_dir), event, **fields)
+
+
+def _write_text_atomic(path: Path, text: str) -> None:
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_name(f"{target.name}.{os.getpid()}.{time.time_ns()}.tmp")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, target)
+    finally:
+        with contextlib.suppress(OSError):
+            if tmp.exists():
+                tmp.unlink()
+
+
+def _lock_path_is_recent(path: Path, *, grace_s: float = _LOCK_INVALID_PAYLOAD_GRACE_S) -> bool:
+    try:
+        age_s = time.time() - path.stat().st_mtime
+    except OSError:
+        return False
+    return 0.0 <= age_s <= max(0.0, float(grace_s))
+
+
+def _lock_path_may_still_be_initializing(path: Path) -> bool:
+    try:
+        return path.stat().st_size == 0
+    except OSError:
+        return False
+
+
+def _lock_backoff_delay(attempt: int) -> float:
+    delay = min(_LOCK_BACKOFF_MAX_S, _LOCK_BACKOFF_BASE_S * (2 ** max(0, int(attempt))))
+    jitter = random.uniform(0.0, delay * 0.25)
+    return min(_LOCK_BACKOFF_MAX_S, delay + jitter)
+
+
+def _sleep_for_lock_retry(attempt: int, deadline: float) -> None:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return
+    time.sleep(min(_lock_backoff_delay(attempt), remaining))
 
 
 def _as_dict(value: object) -> dict[str, object]:
@@ -70,8 +139,16 @@ def load_session_state(env: dict[str, str] | None = None) -> dict[str, object]:
 def save_session_state(payload: dict[str, object], env: dict[str, str] | None = None) -> Path:
     api = desktop_api()
     path = Path(api.resolve_session_state_path(env))
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        _write_text_atomic(path, json.dumps(payload, ensure_ascii=False, indent=2))
+    except OSError as exc:
+        _append_startup_trace_from_env(
+            env,
+            "desktop_session_state_write_failed",
+            path=str(path),
+            **_os_error_trace_fields(exc),
+        )
+        raise
     return path
 
 
@@ -174,29 +251,64 @@ def acquire_instance_lock(
     session_root.mkdir(parents=True, exist_ok=True)
     token = str(launcher_token or uuid.uuid4().hex)
     deadline = time.monotonic() + max(0.2, float(timeout_s))
+    sleep_attempt = 0
     while time.monotonic() < deadline:
         try:
             # O_CREAT|O_EXCL|O_RDWR provides atomic cross-process file-based locking.
             handle = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_RDWR)
         except FileExistsError:
             lock_payload = api._read_instance_lock_payload(path)
+            if (
+                not lock_payload
+                and api._lock_path_may_still_be_initializing(path)
+                and api._lock_path_is_recent(path)
+            ):
+                api._sleep_for_lock_retry(sleep_attempt, deadline)
+                sleep_attempt += 1
+                continue
             if not api._process_identity_matches(lock_payload):
-                with contextlib.suppress(OSError):
+                try:
                     path.unlink()
+                except OSError as exc:
+                    api._append_startup_trace_from_env(
+                        env,
+                        "desktop_lock_reclaim_unlink_failed",
+                        path=str(path),
+                        **api._os_error_trace_fields(exc),
+                    )
+                    api._sleep_for_lock_retry(sleep_attempt, deadline)
+                    sleep_attempt += 1
+                    continue
                 if callable(on_reclaim):
                     with contextlib.suppress(*_EXPECTED_RECLAIM_CALLBACK_EXCEPTIONS):
                         on_reclaim("stale_lock_owner")
                 continue
-            time.sleep(0.2)
+            api._sleep_for_lock_retry(sleep_attempt, deadline)
+            sleep_attempt += 1
             continue
         except OSError:
-            time.sleep(0.2)
+            api._sleep_for_lock_retry(sleep_attempt, deadline)
+            sleep_attempt += 1
             continue
         payload = api._make_lock_payload(
             launcher_token=token, state="launching", session_root=session_root
         )
-        with contextlib.suppress(OSError):
+        try:
             api._write_lock_payload_to_handle(handle, payload)
+        except OSError as exc:
+            api._append_startup_trace_from_env(
+                env,
+                "desktop_lock_payload_write_failed",
+                path=str(path),
+                **api._os_error_trace_fields(exc),
+            )
+            with contextlib.suppress(OSError):
+                os.close(handle)
+            with contextlib.suppress(OSError):
+                path.unlink()
+            api._sleep_for_lock_retry(sleep_attempt, deadline)
+            sleep_attempt += 1
+            continue
         return InstanceLock(
             path=path,
             handle=handle,
@@ -481,6 +593,7 @@ def diagnose_instance_conflict(
     api = desktop_api()
     api._append_startup_trace(data_dir, "desktop_lock_contended")
     deadline = time.monotonic() + max(0.5, float(timeout_s))
+    sleep_attempt = 0
     while time.monotonic() < deadline:
         lock_path = api.resolve_instance_lock_path(env)
         lock_payload = api._read_instance_lock_payload(lock_path)
@@ -558,7 +671,8 @@ def diagnose_instance_conflict(
                 reason="invalid_session_state",
             )
             return {"action": "reclaimed", "reason": "invalid_session_state"}
-        time.sleep(0.25)
+        api._sleep_for_lock_retry(sleep_attempt, deadline)
+        sleep_attempt += 1
     api._append_startup_trace(
         data_dir,
         "desktop_lock_reclaim_failed",
