@@ -263,7 +263,6 @@ test("admin source tables preserve rendered rows while active refresh is delayed
     options: {
       getBridge: async path => {
         calls.push(String(path));
-        if (String(path).startsWith("/registry/sources")) throw new Error("Bridge error (HTTP 504)");
         throw new Error(`unexpected path ${path}`);
       }
     }
@@ -275,8 +274,9 @@ test("admin source tables preserve rendered rows while active refresh is delayed
 
   const result = await controller.loadDiscoveryData({ background: false });
 
-  assert.equal(result?.partialLoadFailed, true);
-  assert.ok(calls.some(path => path.startsWith("/registry/sources?view=table")));
+  assert.equal(result?.skipped, true);
+  assert.equal(result?.sourceTablesDelayed, true);
+  assert.ok(!calls.some(path => path.startsWith("/registry/sources")));
   assert.ok(!calls.includes("/discovery/report"));
   assert.ok(!calls.includes("/discovery/candidates"));
   assert.equal(fixture.state.sourceTablesDelayedDuringActiveRun, true);

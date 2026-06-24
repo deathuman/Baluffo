@@ -173,7 +173,7 @@ test("admin registry controller loads filtered discovery state and dispatches re
   assert.deepEqual(busyTransitions, ["discoveryLoad:true", "discoveryLoad:false"]);
 });
 
-test("admin registry controller defers heavy discovery loads while loading source tables during discovery", async () => {
+test("admin registry controller defers discovery and source-table loads during discovery", async () => {
   const calls = [];
   const fixture = createRegistryControllerFixture({
     state: {
@@ -186,13 +186,6 @@ test("admin registry controller defers heavy discovery loads while loading sourc
         if (path === "/tasks/run-jobs-pipeline-status") {
           return { active: true, stage: "discovery" };
         }
-        if (String(path).startsWith("/registry/sources")) {
-          return {
-            ok: true,
-            sources: { pending: [], active: [], rejected: [] },
-            summary: { pendingCount: 0, activeCount: 0, rejectedCount: 0, hiddenPendingCount: 0 }
-          };
-        }
         throw new Error(`unexpected path ${path}`);
       }
     }
@@ -201,23 +194,21 @@ test("admin registry controller defers heavy discovery loads while loading sourc
 
   const result = await controller.loadDiscoveryData();
 
-  assert.equal(result?.skipped, undefined);
-  assert.equal(result?.partialLoadFailed, false);
+  assert.equal(result?.skipped, true);
+  assert.equal(result?.sourceTablesDelayed, true);
   assert.ok(calls.includes("/tasks/run-jobs-pipeline-status"));
-  assert.ok(calls.some(path => String(path).startsWith("/registry/sources?view=table")));
+  assert.ok(!calls.some(path => String(path).startsWith("/registry/sources")));
   assert.ok(!calls.includes("/discovery/report"));
   assert.ok(!calls.includes("/discovery/candidates"));
   assert.ok(!calls.includes("fetchReport"));
   assert.deepEqual(fixture.busyTransitions, [
     "livePipelineRunning:true",
     "liveFetchRunning:false",
-    "discoveryLoad:true",
-    "discoveryLoad:false"
   ]);
-  assert.ok(fixture.logs.some(line => /source registry tables loaded/i.test(line)));
+  assert.ok(fixture.logs.some(line => /source tables delayed while job update is running/i.test(line)));
 });
 
-test("admin registry controller allows completion refresh while discovery watch is still active", async () => {
+test("admin registry controller delays completion refresh while discovery watch is still active", async () => {
   const state = {
     activeSourceFilter: "all",
     latestFetcherReportCache: null,
@@ -272,14 +263,13 @@ test("admin registry controller allows completion refresh while discovery watch 
 
   const result = await controller.loadDiscoveryData({ background: true, completionRefresh: true });
 
-  assert.equal(result?.skipped, undefined);
+  assert.equal(result?.skipped, true);
+  assert.equal(result?.sourceTablesDelayed, true);
   assert.ok(calls.some(call => call.path === "/tasks/run-jobs-pipeline-status"));
   assert.ok(!calls.some(call => call.path === "/discovery/report"));
   assert.ok(!calls.some(call => call.path === "/discovery/candidates"));
   assert.ok(!calls.some(call => call.path === "/registry/summary"));
-  const sourcesIndex = calls.findIndex(call => String(call.path).startsWith("/registry/sources"));
-  assert.ok(sourcesIndex >= 0);
-  assert.equal(calls[sourcesIndex].requestOptions.timeoutMs, 10000);
+  assert.ok(!calls.some(call => String(call.path).startsWith("/registry/sources")));
 });
 
 test("admin registry controller treats background registry source timeout as delayed partial load", async () => {

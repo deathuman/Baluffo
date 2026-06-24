@@ -10,6 +10,17 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.83] - 2026-06-24
+
+### Fixed
+- Admin now truly defers registry source-table loading while a job update or discovery pipeline is active, avoiding repeated `/registry/sources` and `/registry/summary` bridge pressure that could surface as Umbrel `HTTP 504` errors.
+- Source tables still recover after the active run returns idle, preserving the delayed-state copy during active work and the existing registry/source-table payload contracts after recovery.
+
+### Notes
+- This is a forward shared desktop and Umbrel patch after `0.2.82`; no existing release tags are moved or recreated.
+- Container/Umbrel compatibility from the current public release line remains intact: same-origin Linux container mode, Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, avoidance of wildcard browser CORS allow headers, and desktop localhost bridge compatibility are all preserved.
+- Route payloads, SQLite schema, persisted JSON contracts, Umbrel metadata shape, and public CLI surfaces remain compatible.
+
 ## [0.2.82] - 2026-06-24
 
 ### Fixed

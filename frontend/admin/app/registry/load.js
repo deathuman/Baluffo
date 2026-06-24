@@ -389,12 +389,8 @@ export function createRegistryLoadController({
       force: Boolean(options?.forcePipelinePreflight)
     });
     const activeContext = sourceTablesActiveContext({ livePipelineOrFetchRunning });
-    const activeCompactSourceTables = Boolean(
-      activeContext.active
-      && activeContext.canLoadCompact
-      && !options?.forceFullDiscoveryDuringActiveRun
-    );
-    if (activeContext.active && !activeContext.canLoadCompact) {
+    const activeCompactSourceTables = false;
+    if (activeContext.active && !options?.forceFullDiscoveryDuringActiveRun) {
       const background = Boolean(options?.background);
       if (options?.suppressPlaceholders !== true) {
         markSourceTablesDelayedForActiveWork(activeContext.reason, { onlyIfPlaceholder: true });
