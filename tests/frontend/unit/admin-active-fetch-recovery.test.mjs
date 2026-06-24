@@ -80,8 +80,19 @@ function activeOpsState(extra = {}) {
   };
 }
 
-test("admin active fetch renders loaded KPI values instead of delayed copy", async () => {
-  const state = activeOpsState();
+test("admin active fetch defers KPI route while compact task state is active", async () => {
+  const state = activeOpsState({
+    latestOpsHealthCache: {
+      fetchKpisLoaded: true,
+      kpis: {
+        lastSuccessfulFetchAge: "1h",
+        sevenDayFetchSuccessRate: 0.5,
+        avgFetchDurationMs7d: 5220000,
+        failedSourceRatioLatest: 0.25,
+        pendingApprovalsCount: 813
+      }
+    }
+  });
   const refs = createOpsRefs();
   const calls = [];
   const controller = createOpsController({
@@ -99,16 +110,6 @@ test("admin active fetch renders loaded KPI values instead of delayed copy", asy
           ],
           count: 2,
           summary: true
-        };
-      }
-      if (path === "/ops/fetch-kpis?view=summary") {
-        return {
-          ok: true,
-          summaryView: true,
-          status: "warning",
-          alertsEvaluated: true,
-          alerts: [{ id: "fetch_never_run", severity: "warning", message: "No successful fetch has run yet." }],
-          kpis: { sevenDayFetchSuccessRate: 0, avgFetchDurationMs7d: 5220280, pendingApprovalsCount: 813 }
         };
       }
       throw new Error(`unexpected path ${path}`);
@@ -130,13 +131,10 @@ test("admin active fetch renders loaded KPI values instead of delayed copy", asy
   await flushMicrotasks();
 
   assert.ok(calls.includes("/ops/task-state?view=summary"));
-  assert.ok(calls.includes("/ops/fetch-kpis?view=summary"));
-  assert.match(refs.adminOpsKpisEl.innerHTML, /No successful fetch yet/);
-  assert.match(refs.adminOpsKpisEl.innerHTML, /0\.0%/);
-  assert.match(refs.adminOpsKpisEl.innerHTML, /87\.0m/);
-  assert.match(refs.adminOpsKpisEl.innerHTML, /813/);
-  assert.match(refs.adminOpsKpisEl.innerHTML, /Not available/);
-  assert.doesNotMatch(refs.adminOpsKpisEl.innerHTML, /Delayed while job update is running\./);
+  assert.equal(calls.includes("/ops/fetch-kpis?view=summary"), false);
+  assert.match(refs.adminOpsKpisEl.innerHTML, /Delayed while job update is running\./);
+  assert.doesNotMatch(refs.adminOpsKpisEl.innerHTML, /50\.0%/);
+  assert.doesNotMatch(refs.adminOpsKpisEl.innerHTML, /813/);
   assert.doesNotMatch(refs.adminOpsKpisEl.innerHTML, /Loading latest fetch KPI/);
   controller.stopOpsHealthPolling();
 });
@@ -186,7 +184,6 @@ test("admin active poll keeps refreshing compact state when richer rows are pres
             summary: true
           };
         }
-        if (path === "/ops/fetch-kpis?view=summary") return { ok: true, kpis: { pendingApprovalsCount: 813 }, summaryView: true };
         throw new Error(`unexpected path ${path}`);
       }
     });
@@ -200,7 +197,7 @@ test("admin active poll keeps refreshing compact state when richer rows are pres
 
     assert.equal(calls.filter(path => path === "/tasks/run-jobs-pipeline-status").length, 2);
     assert.equal(calls.filter(path => path === "/ops/task-state?view=summary").length, 1);
-    assert.equal(calls.filter(path => path === "/ops/fetch-kpis?view=summary").length, 1);
+    assert.equal(calls.filter(path => path === "/ops/fetch-kpis?view=summary").length, 0);
     assert.equal(state.latestOpsTaskStatePayload.tasks[0].taskProgress.ratio, 0.2);
     assert.ok(state.pipelineStatusPollTimer);
     controller.stopOpsHealthPolling();
@@ -222,7 +219,6 @@ test("admin active poll notifies source tables when pipeline transitions idle", 
         calls.push(path);
         if (path === "/tasks/run-jobs-pipeline-status") return { active: false, stage: "idle" };
         if (path === "/ops/task-state?view=summary") return { tasks: [], count: 0, summary: true };
-        if (path === "/ops/fetch-kpis?view=summary") return { ok: true, kpis: { pendingApprovalsCount: 813 }, summaryView: true };
         if (path === "/ops/dashboard-health?view=summary") return { alerts: [], kpis: {}, schedule: {}, status: "healthy", summaryView: true };
         if (path === "/registry/conflicts?view=summary") return { summary: { conflictCount: 0 }, conflicts: [], summaryView: true };
         throw new Error(`unexpected path ${path}`);
@@ -249,7 +245,7 @@ test("admin active poll notifies source tables when pipeline transitions idle", 
     assert.equal(idleNotifications[0].reason, "active_pipeline_idle");
     assert.ok(calls.includes("/tasks/run-jobs-pipeline-status"));
     assert.ok(calls.includes("/ops/task-state?view=summary"));
-    assert.ok(calls.includes("/ops/fetch-kpis?view=summary"));
+    assert.equal(calls.includes("/ops/fetch-kpis?view=summary"), false);
     controller.stopOpsHealthPolling();
   } finally {
     timers.restore();

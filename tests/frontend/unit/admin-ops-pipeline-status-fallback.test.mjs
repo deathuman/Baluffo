@@ -107,17 +107,6 @@ test("admin ops controller renders active pipeline from status when dashboard he
       if (path === "/registry/conflicts?view=summary") {
         return { summary: { conflictCount: 0 }, conflicts: [], summaryView: true };
       }
-      if (path === "/ops/fetch-kpis?view=summary") {
-        return {
-          ok: true,
-          kpis: {
-            sevenDayFetchSuccessRate: 0,
-            avgFetchDurationMs7d: 5220280,
-            pendingApprovalsCount: 813
-          },
-          summaryView: true
-        };
-      }
       if (path === "/admin/ops-tab-counts?view=summary") return { ok: true, summaryView: true, badges: {} };
       throw new Error(`unexpected path ${path}`);
     },
@@ -187,9 +176,9 @@ test("admin ops controller renders active pipeline from status when dashboard he
   assert.equal(state.adminBusyState.liveFetchRunning, true);
   assert.ok(calls.includes("/ops/task-state?view=summary"));
   assert.equal(renderedCurrentRows.at(-1)?.[0]?.runId, "fetch_live_1");
-  assert.ok(calls.includes("/ops/fetch-kpis?view=summary"));
+  assert.equal(calls.includes("/ops/fetch-kpis?view=summary"), false);
   assert.equal(calls.includes("/admin/ops-tab-counts?view=summary"), false);
-  assert.equal(renderedKpis.at(-1)?.fetchKpiPendingLabel, "Not available");
+  assert.equal(renderedKpis.at(-1)?.fetchKpiPendingLabel, "Delayed while job update is running.");
   assert.deepEqual(watcherCalls, ["attach-fetch", "load-fetch-summary"]);
 
   await loadPromise;

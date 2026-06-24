@@ -1905,6 +1905,16 @@ export function createOpsHealthController({
     const fetchKpisDelayed = Boolean(health?.fetchKpisDelayedDuringActiveRun);
     const fetchNeverRun = Array.isArray(health?.alerts)
       && health.alerts.some(alert => String(alert?.id || "") === "fetch_never_run");
+    if (fetchKpisDelayed) {
+      return {
+        default: ACTIVE_PIPELINE_KPI_DELAYED_LABEL,
+        lastSuccessfulFetchAge: ACTIVE_PIPELINE_KPI_DELAYED_LABEL,
+        lastSuccessfulFetchAt: ACTIVE_PIPELINE_KPI_DELAYED_LABEL,
+        sevenDayFetchSuccessRate: ACTIVE_PIPELINE_KPI_DELAYED_LABEL,
+        avgFetchDurationMs7d: ACTIVE_PIPELINE_KPI_DELAYED_LABEL,
+        failedSourceRatioLatest: ACTIVE_PIPELINE_KPI_DELAYED_LABEL
+      };
+    }
     if (fetchKpisLoaded) {
       const generic = FETCH_KPI_UNAVAILABLE_LABEL;
       return {
@@ -1916,10 +1926,41 @@ export function createOpsHealthController({
         failedSourceRatioLatest: generic
       };
     }
-    const pending = fetchKpisDelayed && activePipelineOrFetch
+    const pending = fetchKpisDelayed
       ? ACTIVE_PIPELINE_KPI_DELAYED_LABEL
       : FETCH_KPI_LOADING_LABEL;
     return { default: pending };
+  }
+
+  function maskDeferredFetchKpisForRender(kpis = {}, health = {}) {
+    if (!health?.fetchKpisDelayedDuringActiveRun || !isPlainObject(kpis)) {
+      return kpis || {};
+    }
+    const masked = { ...kpis };
+    [
+      "lastSuccessfulFetchAge",
+      "lastSuccessfulFetchAt",
+      "sevenDayFetchSuccessRate",
+      "avgFetchDurationMs7d",
+      "failedSourceRatioLatest",
+      "pendingSourcesCount",
+      "pendingApprovalsCount"
+    ].forEach(key => {
+      delete masked[key];
+    });
+    return masked;
+  }
+
+  function markFetchKpisDeferredDuringActiveRun() {
+    state.latestOpsHealthCache = mergeOpsHealth(
+      state.latestOpsHealthCache || {},
+      {
+        fetchKpisDelayedDuringActiveRun: true,
+        fetchKpisLoaded: false,
+        summaryView: true
+      },
+      { summary: true }
+    );
   }
 
   function notifyActiveAdminWorkIdleIfNeeded(wasActive, isActive, { wasPipelineOrFetchActive = false, pipelineOrFetchActive = false } = {}) {
@@ -1996,6 +2037,10 @@ export function createOpsHealthController({
     }
     const fetchKpiPendingLabels = buildFetchKpiPendingLabels(health, activePipelineOrFetch);
     const fetchKpiPendingLabel = String(fetchKpiPendingLabels.default || FETCH_KPI_LOADING_LABEL);
+    const renderKpis = maskDeferredFetchKpisForRender(
+      health?.kpis || {},
+      health || {}
+    );
 
     renderAdminOpsAlertsImpl(refs.adminOpsAlertsEl, health?.alerts || [], {
       onAck: async alertId => {
@@ -2010,7 +2055,7 @@ export function createOpsHealthController({
     });
     renderAdminOpsKpisImpl(
       refs.adminOpsKpisEl,
-      health?.kpis || {},
+      renderKpis,
       String(health?.status || "healthy"),
       { fetchKpiPendingLabel, fetchKpiPendingLabels }
     );
@@ -2148,6 +2193,9 @@ export function createOpsHealthController({
     state.taskStateUnavailable = false;
     state.opsHistoryLoaded = true;
     state.opsHistoryFullLoaded = false;
+    if (hasActivePipelineOrFetchRows(taskStatePayload)) {
+      markFetchKpisDeferredDuringActiveRun();
+    }
     renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || health, {
       taskStatePayload,
       registryConflictsPayload: getCachedRegistryConflictsPayload(),
@@ -2346,6 +2394,19 @@ export function createOpsHealthController({
   }
 
   async function loadFetchKpisSummaryData(renderToken = opsRenderToken, options = {}) {
+    if (!options?.force && hasPossibleActiveRunEvidence({ includeRecent: false })) {
+      markFetchKpisDeferredDuringActiveRun();
+      if (renderToken === opsRenderToken) {
+        renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || {}, {
+          taskStatePayload: getCachedTaskStatePayload(),
+          registryConflictsPayload: getCachedRegistryConflictsPayload(),
+          renderDeferredPanels: false,
+          renderActivityPanel: false,
+          schedulePolling: false
+        });
+      }
+      return state.latestOpsHealthCache || null;
+    }
     if (!fetchKpisLoad) {
       fetchKpisLoad = measuredGetBridge(
         OPS_FETCH_KPIS_SUMMARY_PATH,
@@ -2360,14 +2421,7 @@ export function createOpsHealthController({
       payload = await fetchKpisLoad;
     } catch (err) {
       if (renderToken === opsRenderToken && hasPossibleActiveRunEvidence()) {
-        state.latestOpsHealthCache = mergeOpsHealth(
-          state.latestOpsHealthCache || {},
-          {
-            fetchKpisDelayedDuringActiveRun: true,
-            summaryView: true
-          },
-          { summary: true }
-        );
+        markFetchKpisDeferredDuringActiveRun();
         renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || {}, {
           taskStatePayload: getCachedTaskStatePayload(),
           registryConflictsPayload: getCachedRegistryConflictsPayload(),
@@ -2407,6 +2461,9 @@ export function createOpsHealthController({
   }
 
   async function loadDashboardHealthSummaryData(renderToken = opsRenderToken, options = {}) {
+    if (!options?.force && hasPossibleActiveRunEvidence({ includeRecent: false })) {
+      return state.latestOpsHealthCache || null;
+    }
     if (isOpsRouteBackedOff(OPS_HEAVY_ROUTE_DASHBOARD)) {
       return state.latestOpsHealthCache || null;
     }
@@ -2490,6 +2547,9 @@ export function createOpsHealthController({
       state.latestOpsTaskStatePayload = taskStatePayload;
       state.taskStateUnavailable = false;
       state.waitingForTaskState = false;
+      if (hasActivePipelineOrFetchRows(taskStatePayload)) {
+        markFetchKpisDeferredDuringActiveRun();
+      }
       renderOpsHealthSnapshot(activeRenderToken, state.latestOpsHealthCache || {}, {
         taskStatePayload,
         registryConflictsPayload: getCachedRegistryConflictsPayload(),
@@ -2520,11 +2580,7 @@ export function createOpsHealthController({
       summary: true,
       schedulePolling: false
     }).then(value => ({ loaded: Boolean(value), payload: value || null })).catch(() => ({ loaded: false, payload: null }));
-    const fetchKpisPromise = loadFetchKpisSummaryData(renderToken, {
-      fromPoll: true,
-      silent: true
-    }).catch(() => null);
-    const [taskStateResult] = await Promise.allSettled([taskStatePromise, fetchKpisPromise]);
+    const [taskStateResult] = await Promise.allSettled([taskStatePromise]);
     if (taskStateResult.status === "fulfilled" && taskStateResult.value?.payload) {
       return options?.returnMeta
         ? {

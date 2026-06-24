@@ -84,7 +84,15 @@ async function flushAdminOpsBackground() {
 }
 
 test("admin ops controller replaces stale pipeline child rows from fresher pipeline status", async () => {
-  const state = createOpsState();
+  const state = createOpsState({
+    adminBusyState: {
+      opsLoad: false,
+      liveFetchRunning: true,
+      liveDiscoveryRunning: false,
+      liveSyncRunning: false,
+      livePipelineRunning: true
+    }
+  });
   const refs = createOpsRefs();
   const renderedCurrentRows = [];
   const controller = createOpsController({
@@ -142,7 +150,7 @@ test("admin ops controller replaces stale pipeline child rows from fresher pipel
   controller.stopOpsHealthPolling();
 });
 
-test("admin ops fetch KPI success replaces missing optional fields with terminal copy", async () => {
+test("admin ops active pipeline defers fetch KPI route", async () => {
   const state = createOpsState();
   const refs = createOpsRefs();
   const calls = [];
@@ -151,25 +159,11 @@ test("admin ops fetch KPI success replaces missing optional fields with terminal
     refs,
     getBridge: async path => {
       calls.push(path);
+      if (path === "/tasks/run-jobs-pipeline-status") {
+        return { active: true, runId: "pipeline_live_1", stage: "fetch" };
+      }
       if (path === "/ops/dashboard-health?view=summary") {
         return { alerts: [], kpis: {}, schedule: {}, status: "healthy", summaryView: true };
-      }
-      if (path === "/ops/fetch-kpis?view=summary") {
-        return {
-          ok: true,
-          summaryView: true,
-          status: "warning",
-          alertsEvaluated: true,
-          alertBasis: "history",
-          alerts: [
-            { id: "fetch_never_run", severity: "warning", message: "No successful fetch has run yet.", dismissible: false }
-          ],
-          kpis: {
-            sevenDayFetchSuccessRate: 0,
-            avgFetchDurationMs7d: 5220280,
-            pendingApprovalsCount: 813
-          }
-        };
       }
       if (path === "/ops/task-state?view=summary") return { tasks: [], count: 0, summary: true };
       if (path === "/registry/conflicts?view=summary") return { summary: { conflictCount: 0 }, conflicts: [], summaryView: true };
@@ -188,11 +182,9 @@ test("admin ops fetch KPI success replaces missing optional fields with terminal
   await flushAdminOpsBackground();
   controller.stopOpsHealthPolling();
 
-  assert.ok(calls.includes("/ops/fetch-kpis?view=summary"));
+  assert.equal(calls.includes("/ops/fetch-kpis?view=summary"), false);
   assert.doesNotMatch(refs.adminOpsKpisEl.innerHTML, /Loading latest fetch KPI/);
-  assert.match(refs.adminOpsKpisEl.innerHTML, /No successful fetch yet/);
-  assert.match(refs.adminOpsKpisEl.innerHTML, /0\.0%/);
-  assert.match(refs.adminOpsKpisEl.innerHTML, /813/);
+  assert.match(refs.adminOpsKpisEl.innerHTML, /Delayed while job update is running\./);
 });
 
 test("admin registry controller delays source tables while pipeline fetch is active", async () => {

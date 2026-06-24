@@ -6,7 +6,7 @@ import {
   JOBS_UPDATE_COPY,
   scheduleJobsPipelineStatusPoll as scheduleJobsPipelineStatusPollFromModule,
   updateJobsPipelineUi as updateJobsPipelineUiFromModule
-} from "../pipeline.js?v=10";
+} from "../pipeline.js?v=11";
 import { isActiveTaskStateRow } from "../../../shared/live-task.js";
 
 const BLOCKING_TASK_TYPES = new Set(["pipeline", "fetch", "discovery", "sync"]);
@@ -285,6 +285,15 @@ export function createJobsPipelineController({
     jobsPipelineUiState.abortRequestErrorAt = 0;
   }
 
+  function abortWarningsNeedVerification(warnings) {
+    if (!Array.isArray(warnings)) return "";
+    const risky = warnings
+      .map(warning => String(warning || "").trim())
+      .filter(Boolean)
+      .filter(warning => /child_abort|process_not_registered|process_registry_unavailable|process_identity_not_verified/i.test(warning));
+    return risky.join("; ");
+  }
+
   function syncJobsPipelineAbortButton() {
     const abortButton = refs.jobsPipelineRunBtn?.parentElement?.querySelector?.('[data-ui="jobs-pipeline-abort"]');
     if (!abortButton) return;
@@ -383,6 +392,11 @@ export function createJobsPipelineController({
       });
       if (!result?.ok && !result?.abortAccepted) {
         throw new Error(String(result?.error || "abort failed"));
+      }
+      const warningMessage = abortWarningsNeedVerification(result?.warnings);
+      if (warningMessage) {
+        jobsPipelineUiState.abortRequestError = warningMessage;
+        jobsPipelineUiState.abortRequestErrorAt = Date.now();
       }
       showToast("Job update abort requested.", "success");
       scheduleJobsPipelineStatusPoll(250);

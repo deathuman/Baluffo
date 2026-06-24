@@ -350,7 +350,13 @@ test("failed abort request only shows an error after the target remains active",
     restoreTimers();
   }
 });
-
+test("accepted abort with child warning shows an error after the target remains active", async () => {
+  const restoreTimers = installFakeTimers(), originalConfirm = globalThis.confirm, button = createButtonMock(), uiState = createJobsPipelineUiState(), toasts = []; globalThis.confirm = () => true; try {
+    const callJobsBridge = async path => path === "/tasks/run-jobs-pipeline-status" ? { active: true, runId: "pipeline_1", stage: "aborting", startedAt: "2026-03-12T12:00:00.000Z" } : path === "/ops/task-state?view=summary" ? { tasks: [{ taskType: "pipeline", runId: "pipeline_1", active: true, startedAt: "2026-03-12T12:00:00.000Z" }] } : path === "/tasks/abort" ? { ok: true, abortAccepted: true, warnings: ["process_not_registered"] } : Promise.reject(new Error(`Unexpected bridge path: ${path}`)), controller = createJobsPipelineController({ refs: { jobsPipelineRunBtn: button }, jobsPipelineUiState: uiState, callJobsBridge, getAllJobs: () => [], showToast: (message, type) => toasts.push({ message, type }), setRefreshJobsNeedsAttention: () => {}, isErrorStage: payload => Boolean(payload?.error), pollDelayMs: 25, idlePollDelayMs: 50 });
+    await controller.pollJobsPipelineStatus(); await controller.triggerJobsPipelineRun(); assert.equal(toasts.some(toast => toast.type === "error"), false);
+    uiState.abortRequestErrorAt = Date.now() - 6000; await controller.pollJobsPipelineStatus(); assert.equal(uiState.abortRequested, false); assert.equal(toasts.some(toast => String(toast.message).includes("Could not abort job update")), true);
+  } finally { globalThis.confirm = originalConfirm; restoreTimers(); }
+});
 test("abort hover data preserves the latest live progress label", () => {
   const button = createButtonMock();
   const uiState = createJobsPipelineUiState();

@@ -177,7 +177,7 @@ test("admin ops abort acceptance renders aborting row and keeps polling compact"
     assert.equal(calls.filter(path => path === "/tasks/abort").length, 1);
     assert.ok(calls.includes("/tasks/run-jobs-pipeline-status"));
     assert.ok(calls.includes("/ops/task-state?view=summary"));
-    assert.ok(calls.includes("/ops/fetch-kpis?view=summary"));
+    assert.equal(calls.includes("/ops/fetch-kpis?view=summary"), false);
     assert.equal(calls.includes("/admin/ops-tab-counts?view=summary"), false);
     assert.equal(calls.includes("/ops/dashboard-health?view=summary"), false);
     assert.equal(state.latestOpsTaskStatePayload.tasks[0].stage, "aborting");

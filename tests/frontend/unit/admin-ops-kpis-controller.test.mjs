@@ -346,9 +346,6 @@ test("admin bootstrap active rows start task-state polling without manual ops re
           summary: true
         };
       }
-      if (path === "/ops/fetch-kpis?view=summary") {
-        return { ok: true, kpis: { pendingApprovalsCount: 813 }, summaryView: true };
-      }
       throw new Error(`unexpected path ${path}`);
     },
     deriveAdminRunsModel: () => ({
@@ -374,7 +371,7 @@ test("admin bootstrap active rows start task-state polling without manual ops re
 
   assert.ok(state.pipelineStatusPollTimer);
   assert.ok(calls.includes("/ops/task-state?view=summary"));
-  assert.ok(calls.includes("/ops/fetch-kpis?view=summary"));
+  assert.equal(calls.includes("/ops/fetch-kpis?view=summary"), false);
   assert.equal(state.adminBusyState.livePipelineRunning, true);
   controller.stopOpsHealthPolling();
 });

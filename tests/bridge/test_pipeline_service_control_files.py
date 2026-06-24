@@ -142,6 +142,80 @@ def test_pipeline_control_abort_requests_child_and_waits_for_live_child(
     assert status["stage"] == "canceled"
 
 
+def test_pipeline_control_retries_child_abort_while_child_remains_live(
+    tmp_path: Path,
+) -> None:
+    runtime = PipelineRuntime(
+        abort_requests={
+            "pipeline_1": {
+                "requestedAt": "2026-05-06T19:00:03Z",
+                "reason": "gateway_abort",
+            }
+        }
+    )
+    child_abort_requests: list[tuple[str, str, str]] = []
+    status: dict[str, Any] = {"active": True, "runId": "pipeline_1", "stage": "fetch"}
+    service = _make_pipeline_service(
+        pipeline_status=status,
+        runtime=runtime,
+        control_data_dir=tmp_path,
+        child_run_is_live=lambda _task_type, run_id: run_id == "fetch_1",
+        abort_child_run=lambda task_type, run_id, reason: (
+            child_abort_requests.append((task_type, run_id, reason))
+            or {"ok": True, "warnings": ["process_not_registered"]}
+        ),
+    )
+    service._attach_lifecycle_child_row(  # noqa: SLF001
+        run_id="pipeline_1",
+        task_type="fetch",
+        child_run_id="fetch_1",
+        child_started_at="2026-05-06T19:00:02Z",
+    )
+
+    service._check_abort("pipeline_1")  # noqa: SLF001
+    service._check_abort("pipeline_1")  # noqa: SLF001
+
+    assert child_abort_requests == [
+        ("fetch", "fetch_1", "gateway_abort"),
+        ("fetch", "fetch_1", "gateway_abort"),
+    ]
+    assert status["active"] is True
+    assert status["stage"] == "aborting"
+    assert status["warnings"] == ["process_not_registered"]
+
+
+def test_pipeline_control_records_warning_when_child_abort_unavailable(
+    tmp_path: Path,
+) -> None:
+    runtime = PipelineRuntime(
+        abort_requests={
+            "pipeline_1": {
+                "requestedAt": "2026-05-06T19:00:03Z",
+                "reason": "gateway_abort",
+            }
+        }
+    )
+    status: dict[str, Any] = {"active": True, "runId": "pipeline_1", "stage": "fetch"}
+    service = _make_pipeline_service(
+        pipeline_status=status,
+        runtime=runtime,
+        control_data_dir=tmp_path,
+        child_run_is_live=lambda _task_type, run_id: run_id == "fetch_1",
+    )
+    service._attach_lifecycle_child_row(  # noqa: SLF001
+        run_id="pipeline_1",
+        task_type="fetch",
+        child_run_id="fetch_1",
+        child_started_at="2026-05-06T19:00:02Z",
+    )
+
+    service._check_abort("pipeline_1")  # noqa: SLF001
+
+    assert status["active"] is True
+    assert status["stage"] == "aborting"
+    assert status["warnings"] == ["child_abort_unavailable:fetch:fetch_1"]
+
+
 def test_pipeline_service_writes_active_child_control_snapshot(tmp_path: Path) -> None:
     service = _make_pipeline_service(
         pipeline_status={"active": True, "runId": "pipeline_1", "stage": "fetch"},

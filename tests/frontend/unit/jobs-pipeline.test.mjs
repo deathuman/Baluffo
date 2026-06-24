@@ -144,6 +144,16 @@ test("pipeline label works without startedAt", () => {
   assert.equal(label, "Fetching job listings...");
 });
 
+test("pipeline label uses server snapshot when browser clock is behind", () => {
+  const browserNow = Date.parse("2026-03-12T12:00:00.000Z");
+  const label = getPipelineRunningLabel({
+    stage: "discovery",
+    startedAt: "2026-03-12T12:00:40.000Z",
+    snapshotAt: "2026-03-12T12:01:06.000Z"
+  }, browserNow);
+  assert.equal(label, "Checking sources... 26s");
+});
+
 test("pipeline label maps starting pipeline copy to user-facing update copy", () => {
   const now = Date.parse("2026-03-12T12:00:08.000Z");
   const label = getPipelineRunningLabel({

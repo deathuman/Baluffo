@@ -232,7 +232,8 @@ export function createActionCenterController({
   postBridge,
   showToast,
   logAdminError,
-  onSyncStatus
+  onSyncStatus,
+  shouldDeferStorageHealth = () => false
 }) {
   let pollTimer = null;
   let fullPollTimer = null;
@@ -458,7 +459,7 @@ export function createActionCenterController({
 
   async function pollActionCenter(options = {}) {
     try {
-      const includeStorage = options?.includeStorage !== false;
+      const includeStorage = options?.includeStorage !== false && !shouldDeferStorageHealth();
       const [health, sync, storage] = await Promise.all([
         getBridge("/ops/health?view=ready", { timeoutMs: 5000 }).catch(() => null),
         getBridge("/sync/status?view=summary", { timeoutMs: 5000 }).catch(() => null),

@@ -127,7 +127,36 @@ def _pipeline_task_row(payload: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def _current_task_rows(api: AdminBootstrapApi) -> list[dict[str, Any]]:
+def _pipeline_active_task_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    if not bool(payload.get("active")):
+        return []
+    by_key: dict[tuple[str, str], dict[str, Any]] = {}
+    for child in _as_list(payload.get("activeChildren")):
+        if not isinstance(child, dict):
+            continue
+        row = _compact_task_row(child)
+        if not _text(row.get("taskType")) or not _text(row.get("runId")):
+            continue
+        if not _text(row.get("parentRunId")):
+            row["parentRunId"] = _text(payload.get("runId"))
+        if not _text(row.get("parentTaskType")):
+            row["parentTaskType"] = "pipeline"
+        by_key[(_text(row.get("taskType")), _text(row.get("runId")))] = row
+    pipeline_row = _pipeline_task_row(payload)
+    if pipeline_row:
+        by_key[(_text(pipeline_row.get("taskType")), _text(pipeline_row.get("runId")))] = (
+            pipeline_row
+        )
+    return sorted(
+        by_key.values(),
+        key=lambda row: _text(row.get("startedAt") or row.get("heartbeatAt")),
+        reverse=True,
+    )
+
+
+def _current_task_rows(
+    api: AdminBootstrapApi, *, pipeline_status: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
     rows = [
         _compact_task_row(row)
         for row in _as_list(api.get_lifecycle_current_runs())
@@ -139,7 +168,9 @@ def _current_task_rows(api: AdminBootstrapApi) -> list[dict[str, Any]]:
         if _text(row.get("taskType")) and _text(row.get("runId"))
     }
     pipeline_row = _pipeline_task_row(
-        _as_dict(_best_effort({}, api.get_jobs_pipeline_status_payload))
+        _as_dict(pipeline_status)
+        if pipeline_status is not None
+        else _as_dict(_best_effort({}, api.get_jobs_pipeline_status_payload))
     )
     if pipeline_row:
         by_key[(_text(pipeline_row.get("taskType")), _text(pipeline_row.get("runId")))] = (
@@ -295,9 +326,15 @@ def _registry_summary(api: AdminBootstrapApi) -> dict[str, Any]:
 
 
 def get_admin_bootstrap_payload(api: AdminBootstrapApi) -> dict[str, Any]:
-    current = _current_task_rows(api)
-    recent = _recent_task_rows(api, limit=2)
-    active_pipeline_work = _has_active_pipeline_work(current)
+    pipeline_status = _as_dict(_best_effort({}, api.get_jobs_pipeline_status_payload))
+    pipeline_active = bool(pipeline_status.get("active"))
+    current = (
+        _pipeline_active_task_rows(pipeline_status)
+        if pipeline_active
+        else _current_task_rows(api, pipeline_status=pipeline_status)
+    )
+    recent = [] if pipeline_active else _recent_task_rows(api, limit=2)
+    active_pipeline_work = pipeline_active or _has_active_pipeline_work(current)
     session = _session_summary(api)
     runtime_config = getattr(api, "runtime_config", None)
     desktop_mode = bool(getattr(runtime_config, "desktop_mode", False))

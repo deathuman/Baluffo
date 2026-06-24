@@ -12,7 +12,7 @@ import { createJobsEventsController } from "./events.js";
 import { createJobsFeedController } from "./feed-controller.js";
 import { createJobsFiltersController } from "./filters-ui.js?v=8";
 import { setupJobsListDelegation as setupJobsListDelegationFromEvents } from "./jobs-list-events.js";
-import { createJobsPipelineController } from "./pipeline-controller.js?v=12";
+import { createJobsPipelineController } from "./pipeline-controller.js?v=13";
 import { createJobsStartupPreviewController } from "./startup-preview.js";
 import { createJobsStartupMetrics } from "./effects.js";
 import { createJobsRuntimeState } from "./state.js?v=2";

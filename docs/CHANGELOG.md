@@ -10,6 +10,19 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.84] - 2026-06-24
+
+### Fixed
+- Jobs pipeline progress labels now tolerate browser/server clock skew by using the live server snapshot timestamp when it is newer than the browser clock, preventing active updates from appearing stuck at `Checking sources... 0s`.
+- The Jobs update button continues to show the current pipeline stage from `/tasks/run-jobs-pipeline-status`, so active Discovery, Fetch, and Sync work remain visibly distinct while elapsed time advances correctly.
+- Aborting a Jobs pipeline now keeps issuing abort requests to the active fetch/discovery child while it remains live, surfaces child abort warnings, and clears or fails the `Aborting...` state after verification instead of leaving the UI stuck.
+- Admin active-run polling now defers heavy fetch KPI, dashboard, storage-health, registry-summary, and bootstrap lifecycle reads when compact pipeline/task-state evidence is available, preventing repeated Umbrel `HTTP 504` timeouts during broad job updates.
+
+### Notes
+- This is a forward shared desktop and Umbrel patch after `0.2.83`; no existing release tags are moved or recreated.
+- Container/Umbrel compatibility from the current public release line remains intact: same-origin Linux container mode, Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, avoidance of wildcard browser CORS allow headers, and desktop localhost bridge compatibility are all preserved.
+- Route payloads, SQLite schema, persisted JSON contracts, Umbrel metadata shape, and public CLI surfaces remain compatible.
+
 ## [0.2.83] - 2026-06-24
 
 ### Fixed

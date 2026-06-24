@@ -170,10 +170,20 @@ function buildPipelineFillState(payload, { running = false } = {}) {
   };
 }
 
-export function formatPipelineElapsed(startedAt, nowMs = Date.now()) {
+function resolvePipelineElapsedReferenceMs(nowMs, referenceAt = "") {
+  const clientNowMs = Number(nowMs);
+  const referenceMs = Date.parse(String(referenceAt || ""));
+  if (Number.isFinite(referenceMs) && (!Number.isFinite(clientNowMs) || referenceMs > clientNowMs)) {
+    return referenceMs;
+  }
+  return clientNowMs;
+}
+
+export function formatPipelineElapsed(startedAt, nowMs = Date.now(), referenceAt = "") {
   const startedMs = Date.parse(String(startedAt || ""));
   if (!Number.isFinite(startedMs)) return "";
-  const elapsedSeconds = Math.max(0, Math.floor((Number(nowMs) - startedMs) / 1000));
+  const referenceMs = resolvePipelineElapsedReferenceMs(nowMs, referenceAt);
+  const elapsedSeconds = Math.max(0, Math.floor((referenceMs - startedMs) / 1000));
   if (elapsedSeconds < 60) return `${elapsedSeconds}s`;
   const minutes = Math.floor(elapsedSeconds / 60);
   const seconds = elapsedSeconds % 60;
@@ -182,7 +192,7 @@ export function formatPipelineElapsed(startedAt, nowMs = Date.now()) {
 
 export function getPipelineRunningLabel(payload, nowMs = Date.now()) {
   const stage = normalizePipelineStage(payload);
-  const elapsed = formatPipelineElapsed(payload?.startedAt, nowMs);
+  const elapsed = formatPipelineElapsed(payload?.startedAt, nowMs, payload?.snapshotAt);
   return elapsed ? `${stage}... ${elapsed}` : `${stage}...`;
 }
 

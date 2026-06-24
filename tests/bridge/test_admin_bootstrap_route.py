@@ -245,6 +245,47 @@ def test_admin_bootstrap_includes_registry_summary_when_idle(tmp_path: Path) -> 
     assert "deferredDuringActiveRun" not in payload["registrySummary"]
 
 
+def test_admin_bootstrap_uses_pipeline_status_fast_path_during_active_run(tmp_path: Path) -> None:
+    store = FakeDesktopLocalDataStore()
+    store.sign_in("Andrea")
+    store.get_admin_overview = lambda *, detail="full": _overview_summary(store, detail)  # type: ignore[attr-defined]
+    api = make_stub_bridge_api(tmp_path, store)
+    api.get_jobs_pipeline_status_payload = lambda: {
+        "active": True,
+        "runId": "pipeline_live",
+        "stage": "fetch",
+        "startedAt": "2026-06-24T18:00:00Z",
+        "activeChildren": [
+            {
+                "taskType": "fetch",
+                "runId": "fetch_live",
+                "active": True,
+                "startedAt": "2026-06-24T18:01:00Z",
+                "taskProgress": {"phaseLabel": "Executing sources"},
+            }
+        ],
+    }
+
+    def forbidden(*_args: object, **_kwargs: object) -> Any:
+        raise AssertionError("active bootstrap must not project lifecycle or registry state")
+
+    api.get_lifecycle_current_runs = forbidden
+    api.get_lifecycle_recent_runs = forbidden
+    api.get_registry_summary_payload = forbidden
+
+    handler = FakeHandler()
+    result = handle_get(handler, api=api, path="/admin/bootstrap", query={})
+
+    assert result is True
+    payload = handler.sent[-1]["payload"]
+    assert [row["runId"] for row in payload["tasks"]["current"]] == [
+        "fetch_live",
+        "pipeline_live",
+    ]
+    assert payload["tasks"]["recent"] == []
+    assert payload["registrySummary"]["deferredDuringActiveRun"] is True
+
+
 def test_admin_bootstrap_smoke_fail_once_is_guarded_and_single_use(
     monkeypatch, tmp_path: Path
 ) -> None:

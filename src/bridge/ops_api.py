@@ -812,8 +812,89 @@ class OpsApi:
         with time_operation("ops.dashboard_health.total"):
             return _ops_health.compute_ops_health(self.build_ops_health_deps())
 
+    def _active_pipeline_status_payload(self) -> dict[str, Any]:
+        try:
+            payload = self._deps.get_jobs_pipeline_status_payload()
+        except (OSError, TypeError, ValueError):
+            return {}
+        return as_json_object(payload)
+
+    def _active_pipeline_or_fetch_summary(self) -> dict[str, Any]:
+        payload = self._active_pipeline_status_payload()
+        if not bool(payload.get("active")):
+            return {}
+        return {
+            "active": True,
+            "runId": str(payload.get("runId") or "").strip(),
+            "stage": str(payload.get("stage") or "").strip(),
+            "activeChildTaskType": str(payload.get("activeChildTaskType") or "").strip(),
+            "activeChildRunId": str(payload.get("activeChildRunId") or "").strip(),
+        }
+
+    def _active_run_deferred_dashboard_summary(
+        self, active_summary: dict[str, Any]
+    ) -> dict[str, Any]:
+        owner_state = dict(self._deps.get_owner_state() or {})
+        startup_ready = (
+            True if not bool(self._deps.desktop_mode) else bool(owner_state.get("startedAt"))
+        )
+        return {
+            "service": "baluffo-bridge",
+            "desktopMode": bool(self._deps.desktop_mode),
+            "appVersion": str(self._deps.app_version or ""),
+            "startupReady": startup_ready,
+            "generatedAt": self._deps.now_iso(),
+            "desktopLastActivityAt": str(self._deps.get_desktop_last_activity_at() or ""),
+            "owner": {
+                "mode": str(owner_state.get("ownerMode") or ""),
+                "token": str(owner_state.get("ownerToken") or ""),
+                "sessionId": str(owner_state.get("sessionId") or ""),
+                "startedBy": str(owner_state.get("startedBy") or ""),
+                "startedAt": str(owner_state.get("startedAt") or ""),
+                "lastActivityAt": str(owner_state.get("lastActivityAt") or ""),
+                "idleTimeoutSeconds": float(owner_state.get("idleTimeoutSeconds") or 0.0),
+            },
+            "status": "healthy",
+            "summaryView": True,
+            "detailLevel": "summary",
+            "deferredDuringActiveRun": True,
+            "activePipelineOrFetchRunning": True,
+            "activePipeline": active_summary,
+            "fetchKpisDelayedDuringActiveRun": True,
+            "alertsEvaluated": False,
+            "alertBasis": "active-run-deferred",
+            "kpis": {},
+            "schedule": {},
+            "alerts": [],
+            "suppressedAlertsCount": 0,
+            "historyCount": 0,
+        }
+
+    def _active_run_deferred_fetch_kpis_summary(
+        self, active_summary: dict[str, Any]
+    ) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "summaryView": True,
+            "detailLevel": "summary",
+            "generatedAt": self._deps.now_iso(),
+            "status": "healthy",
+            "deferredDuringActiveRun": True,
+            "activePipelineOrFetchRunning": True,
+            "activePipeline": active_summary,
+            "fetchKpisDelayedDuringActiveRun": True,
+            "alerts": [],
+            "suppressedAlertsCount": 0,
+            "alertsEvaluated": False,
+            "alertBasis": "active-run-deferred",
+            "kpis": {},
+        }
+
     def compute_ops_dashboard_health_summary(self) -> dict[str, Any]:
         with time_operation("ops.dashboard_health.summary.total"):
+            active_summary = self._active_pipeline_or_fetch_summary()
+            if active_summary:
+                return self._active_run_deferred_dashboard_summary(active_summary)
             with time_operation("ops.dashboard_health.summary.history"):
                 history = list(self.get_projected_run_history().rows or [])
             with time_operation("ops.dashboard_health.summary.registry"):
@@ -912,6 +993,9 @@ class OpsApi:
 
     def compute_ops_fetch_kpis_summary(self) -> dict[str, Any]:
         with time_operation("ops.fetch_kpis.summary.total"):
+            active_summary = self._active_pipeline_or_fetch_summary()
+            if active_summary:
+                return self._active_run_deferred_fetch_kpis_summary(active_summary)
             with time_operation("ops.fetch_kpis.summary.history"):
                 history = list(self.get_projected_run_history().rows or [])
                 metrics = _ops_health.collect_fetch_history_metrics(

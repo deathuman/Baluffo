@@ -11,7 +11,7 @@ from __future__ import annotations
 import threading
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -426,25 +426,53 @@ class PipelineService:
                 self._append_abortable_child_row(rows, seen, row)
         return rows
 
-    def _request_active_child_aborts(self, run_id: str) -> None:
+    @staticmethod
+    def _append_unique_warning(warnings: list[str], warning: str) -> None:
+        text = str(warning or "").strip()
+        if text and text not in warnings:
+            warnings.append(text)
+
+    @staticmethod
+    def _child_abort_result_warnings(result: Any, task_type: str, child_run_id: str) -> list[str]:
+        if not isinstance(result, Mapping):
+            return []
+        warnings = [
+            str(item).strip() for item in result.get("warnings", []) if str(item or "").strip()
+        ]
+        if not bool(result.get("abortAccepted") or result.get("ok")):
+            detail = str(result.get("error") or result.get("warning") or "not_accepted").strip()
+            warnings.append(f"child_abort_not_accepted:{task_type}:{child_run_id}:{detail}")
+        return warnings
+
+    def _request_active_child_aborts(self, run_id: str) -> list[str]:
         clean_run_id = str(run_id or "").strip()
         if not clean_run_id:
-            return
+            return []
         reason = str(self._abort_metadata(clean_run_id).get("reason") or "pipeline_abort").strip()
+        warnings: list[str] = []
         for child in self._active_abortable_child_rows(clean_run_id):
             task_type = str(child.get("taskType") or "").strip().lower()
             child_run_id = str(child.get("runId") or "").strip()
-            if (
-                not task_type
-                or not child_run_id
-                or self._child_abort_requested(task_type, child_run_id)
-            ):
+            if not task_type or not child_run_id:
                 continue
             if not callable(self._abort_child_run):
+                warning = f"child_abort_unavailable:{task_type}:{child_run_id}"
+                self._append_unique_warning(warnings, warning)
+                self._bridge_log(
+                    "warn",
+                    "jobs_pipeline_child_abort_unavailable",
+                    runId=clean_run_id,
+                    childTask=task_type,
+                    childRunId=child_run_id,
+                )
                 continue
             try:
-                self._abort_child_run(task_type, child_run_id, reason)
+                result = self._abort_child_run(task_type, child_run_id, reason)
             except (RuntimeError, TypeError, ValueError, OSError) as exc:
+                warning = (
+                    f"child_abort_request_failed:{task_type}:{child_run_id}:{type(exc).__name__}"
+                )
+                self._append_unique_warning(warnings, warning)
                 self._bridge_log(
                     "warn",
                     "jobs_pipeline_child_abort_request_failed",
@@ -453,6 +481,19 @@ class PipelineService:
                     childRunId=child_run_id,
                     error=str(exc),
                 )
+                continue
+            result_warnings = self._child_abort_result_warnings(result, task_type, child_run_id)
+            for warning in result_warnings:
+                self._append_unique_warning(warnings, warning)
+            self._bridge_log(
+                "info",
+                "jobs_pipeline_child_abort_requested",
+                runId=clean_run_id,
+                childTask=task_type,
+                childRunId=child_run_id,
+                warnings=result_warnings,
+            )
+        return warnings
 
     def _has_live_abortable_child(self, run_id: str) -> bool:
         for child in self._active_abortable_child_rows(run_id):
@@ -462,7 +503,13 @@ class PipelineService:
                 return True
         return False
 
-    def _mark_abort_pending(self, run_id: str, *, defer_sync: bool = False) -> None:
+    def _mark_abort_pending(
+        self,
+        run_id: str,
+        *,
+        defer_sync: bool = False,
+        warnings: Sequence[str] | None = None,
+    ) -> None:
         clean_run_id = str(run_id or "").strip()
         if not clean_run_id:
             return
@@ -481,20 +528,30 @@ class PipelineService:
                 3,
                 "Abort after sync..." if defer_sync else "Aborting...",
             )
+            current_warnings = list(self._status.get("warnings") or [])
+            for warning in warnings or ():
+                text = str(warning or "").strip()
+                if text and text not in current_warnings:
+                    current_warnings.append(text)
+            if current_warnings:
+                self._status["warnings"] = current_warnings
             progress = self._pipeline_lifecycle_progress(dict(self._status))
             status_snapshot = dict(self._status)
         self._write_control_status(status_snapshot)
         if callable(self._heartbeat_lifecycle_run):
+            summary = {
+                "stage": next_stage,
+                "abortRequestedAt": requested_at,
+                "abortReason": reason,
+            }
+            if current_warnings:
+                summary["warnings"] = list(current_warnings)
             self._heartbeat_lifecycle_run(
                 clean_run_id,
                 "pipeline",
                 stage=next_stage,
                 progress=progress,
-                summary={
-                    "stage": next_stage,
-                    "abortRequestedAt": requested_at,
-                    "abortReason": reason,
-                },
+                summary=summary,
             )
 
     def _check_abort(self, run_id: str, *, defer_sync: bool = False) -> None:
@@ -506,8 +563,8 @@ class PipelineService:
         if defer_sync and stage in {"sync_push", "abort_pending_sync"}:
             self._mark_abort_pending(clean_run_id, defer_sync=True)
             return
-        self._mark_abort_pending(clean_run_id)
-        self._request_active_child_aborts(clean_run_id)
+        warnings = self._request_active_child_aborts(clean_run_id)
+        self._mark_abort_pending(clean_run_id, warnings=warnings)
         if self._has_live_abortable_child(clean_run_id):
             return
         raise PipelineAbortRequested("pipeline abort requested")

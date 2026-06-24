@@ -20,7 +20,8 @@ function cleanStoragePayload() {
 
 function createFixture({
   getBridge,
-  onSyncStatus
+  onSyncStatus,
+  shouldDeferStorageHealth
 } = {}) {
   const refs = {
     actionCenterItemsEl: createElement(),
@@ -45,7 +46,8 @@ function createFixture({
     postBridge: async () => ({}),
     showToast() {},
     logAdminError() {},
-    onSyncStatus
+    onSyncStatus,
+    shouldDeferStorageHealth
   });
   return { refs, calls, controller };
 }
@@ -67,6 +69,17 @@ test("action center renders healthy only after storage is checked", async () => 
 
   assert.deepEqual(calls, ["/ops/health?view=ready", "/sync/status?view=summary", "/ops/storage-health"]);
   assert.match(refs.actionCenterItemsEl.innerHTML, /All systems operational/);
+});
+
+test("action center defers storage health while active work is known", async () => {
+  const { refs, calls, controller } = createFixture({
+    shouldDeferStorageHealth: () => true
+  });
+
+  await controller.pollActionCenter({ includeStorage: true });
+
+  assert.deepEqual(calls, ["/ops/health?view=ready", "/sync/status?view=summary"]);
+  assert.match(refs.actionCenterItemsEl.innerHTML, /No immediate action from core signals\. Storage check pending\./);
 });
 
 test("action center renders unavailable state when signal routes fail", async () => {

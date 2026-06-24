@@ -516,3 +516,55 @@ def test_ops_fetch_kpis_summary_registry_fallback_is_expected_failures_only(
 
     with pytest.raises(RuntimeError, match="programmer bug"):
         api.compute_ops_fetch_kpis_summary()
+
+
+def test_ops_dashboard_health_summary_defers_during_active_pipeline(tmp_path) -> None:
+    api, _calls = _make_ops_api(tmp_path, current_rows=[], recent_rows=[])
+    api._deps = ops_api_module.OpsDeps(
+        **{
+            **api._deps.__dict__,
+            "get_jobs_pipeline_status_payload": lambda: {
+                "active": True,
+                "runId": "pipeline_live",
+                "stage": "fetch",
+            },
+            "load_run_history": mock.Mock(side_effect=AssertionError("history should not load")),
+            "get_registry_summary_payload": mock.Mock(
+                side_effect=AssertionError("registry should not load")
+            ),
+        }
+    )
+
+    payload = api.compute_ops_dashboard_health_summary()
+
+    assert payload["summaryView"] is True
+    assert payload["deferredDuringActiveRun"] is True
+    assert payload["fetchKpisDelayedDuringActiveRun"] is True
+    assert payload["activePipeline"]["runId"] == "pipeline_live"
+    assert payload["historyCount"] == 0
+
+
+def test_ops_fetch_kpis_summary_defers_during_active_pipeline(tmp_path) -> None:
+    api, _calls = _make_ops_api(tmp_path, current_rows=[], recent_rows=[])
+    api._deps = ops_api_module.OpsDeps(
+        **{
+            **api._deps.__dict__,
+            "get_jobs_pipeline_status_payload": lambda: {
+                "active": True,
+                "runId": "pipeline_live",
+                "stage": "fetch",
+            },
+            "load_run_history": mock.Mock(side_effect=AssertionError("history should not load")),
+            "get_registry_summary_payload": mock.Mock(
+                side_effect=AssertionError("registry should not load")
+            ),
+        }
+    )
+
+    payload = api.compute_ops_fetch_kpis_summary()
+
+    assert payload["summaryView"] is True
+    assert payload["deferredDuringActiveRun"] is True
+    assert payload["fetchKpisDelayedDuringActiveRun"] is True
+    assert payload["activePipeline"]["stage"] == "fetch"
+    assert payload["kpis"] == {}

@@ -23,11 +23,11 @@ import {
   createAdminFetcherController
 } from "../fetcher.js?v=14";
 import { createRestoreActiveRunWatches } from "../live-task.js";
-import { createAdminOpsController, formatBytes } from "../ops.js?v=24";
+import { createAdminOpsController, formatBytes } from "../ops.js?v=25";
 import { createAdminRegistryController } from "../registry.js?v=18";
 import { createAdminSyncController } from "../sync.js?v=13";
 import { createAdminOverviewController } from "./overview.js?v=14";
-import { createActionCenterController } from "../action-center.js";
+import { createActionCenterController } from "../action-center.js?v=1";
 import { createAdminInspectorController } from "../inspector.js";
 import { activeSummaryIndicatesAdminWork } from "../active-work-policy.js";
 
@@ -215,6 +215,13 @@ export function composeAdminControllers({
     postBridge,
     showToast,
     logAdminError,
+    shouldDeferStorageHealth: () => Boolean(
+      state.opsActiveAdminWorkLastActive
+      || state.opsActivePipelineOrFetchLastActive
+      || state.adminBusyState?.livePipelineRunning
+      || state.adminBusyState?.liveFetchRunning
+      || state.adminBusyState?.liveDiscoveryRunning
+    ),
     onSyncStatus: payload => {
       state.latestSyncStatusCache = payload || null;
       syncController.renderSyncStatus(payload || {});

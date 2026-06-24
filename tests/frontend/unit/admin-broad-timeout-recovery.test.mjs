@@ -103,7 +103,6 @@ test("admin degraded active skips heavy summaries when control plane times out",
       calls.push(String(path));
       if (path === "/tasks/run-jobs-pipeline-status") throw new Error("Bridge error (HTTP 504)");
       if (path === "/ops/task-state?view=summary") throw new Error("Bridge error (HTTP 504)");
-      if (path === "/ops/fetch-kpis?view=summary") return { ok: true, summaryView: true, kpis: {} };
       throw new Error(`unexpected heavy path ${path}`);
     }
   });
@@ -113,7 +112,7 @@ test("admin degraded active skips heavy summaries when control plane times out",
 
   assert.ok(calls.includes("/tasks/run-jobs-pipeline-status"));
   assert.ok(calls.includes("/ops/task-state?view=summary"));
-  assert.ok(calls.includes("/ops/fetch-kpis?view=summary"));
+  assert.equal(calls.includes("/ops/fetch-kpis?view=summary"), false);
   assert.equal(calls.includes("/ops/dashboard-health?view=summary"), false);
   assert.equal(calls.includes("/registry/conflicts?view=summary"), false);
   assert.equal(calls.includes("/admin/ops-tab-counts?view=summary"), false);
