@@ -25,6 +25,47 @@ def test_fetch_text_with_retry_retries_expected_runtime_fetch_failure() -> None:
     assert calls == ["https://studio.example/jobs", "https://studio.example/jobs"]
 
 
+def test_fetch_text_with_retry_uses_adapter_delay_and_jittered_retry_delay() -> None:
+    calls = 0
+    sleeps: list[float] = []
+
+    def fetcher(_url: str, _timeout_s: int) -> str:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("timed out")
+        return "ok"
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(web_search_fetch.random, "uniform", lambda _low, _high: 0.3)
+        monkeypatch.setattr(web_search_fetch.time, "sleep", sleeps.append)
+        result = web_search_fetch.fetch_text_with_retry(
+            "https://studio.example/jobs",
+            5,
+            adapter="workable",
+            fetcher=fetcher,
+        )
+
+    assert result == "ok"
+    assert sleeps == [0.18, 1.5]
+
+
+def test_fetch_text_with_retry_skips_adapter_delay_for_regular_adapters() -> None:
+    sleeps: list[float] = []
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(web_search_fetch.time, "sleep", sleeps.append)
+        result = web_search_fetch.fetch_text_with_retry(
+            "https://studio.example/jobs",
+            5,
+            adapter="static",
+            fetcher=lambda _url, _timeout_s: "ok",
+        )
+
+    assert result == "ok"
+    assert sleeps == []
+
+
 def test_fetch_text_with_retry_does_not_swallow_unexpected_bug() -> None:
     def fetcher(_url: str, _timeout_s: int) -> str:
         raise AssertionError("fetch shim bug")
@@ -58,6 +99,36 @@ def test_async_fetch_text_with_retry_retries_expected_runtime_fetch_failure() ->
 
     assert result == "ok"
     assert calls == ["https://studio.example/jobs", "https://studio.example/jobs"]
+
+
+def test_async_fetch_text_with_retry_matches_sync_retry_delays() -> None:
+    calls = 0
+    sleeps: list[float] = []
+
+    async def fetcher(_url: str, _timeout_s: int) -> str:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("temporary failure")
+        return "ok"
+
+    async def fake_sleep(delay_s: float) -> None:
+        sleeps.append(delay_s)
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(web_search_fetch.random, "uniform", lambda _low, _high: 0.3)
+        monkeypatch.setattr(web_search_fetch.asyncio, "sleep", fake_sleep)
+        result = asyncio.run(
+            web_search_fetch.async_fetch_text_with_retry(
+                "https://studio.example/jobs",
+                5,
+                adapter="workable",
+                fetcher=fetcher,
+            )
+        )
+
+    assert result == "ok"
+    assert sleeps == [0.18, 1.5]
 
 
 def test_async_fetch_text_with_retry_does_not_swallow_unexpected_bug() -> None:

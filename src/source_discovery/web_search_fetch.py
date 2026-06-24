@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import random
 import re
 import time
 from urllib.error import HTTPError
@@ -8,7 +9,15 @@ from urllib.request import Request, urlopen
 
 import httpx
 
-from .config import FETCH_MAX_RETRIES, RETRYABLE_HTTP_CODES
+from .config import (
+    FETCH_ADAPTER_INITIAL_DELAY_S,
+    FETCH_INITIAL_DELAY_ADAPTERS,
+    FETCH_MAX_RETRIES,
+    FETCH_RETRY_BASE_DELAY_S,
+    FETCH_RETRY_JITTER_RATIO,
+    FETCH_RETRY_MAX_DELAY_S,
+    RETRYABLE_HTTP_CODES,
+)
 
 _EXPECTED_FETCH_RETRY_EXCEPTIONS = (OSError, TimeoutError, RuntimeError, httpx.HTTPError)
 _EXPECTED_RUNTIME_FETCH_TOKENS = (
@@ -65,6 +74,33 @@ def _is_retryable_error(exc: Exception) -> bool:
     return "timed out" in message or "temporary failure" in message
 
 
+def _adapter_initial_delay_s(adapter: str) -> float:
+    if str(adapter or "").strip().lower() in FETCH_INITIAL_DELAY_ADAPTERS:
+        return float(FETCH_ADAPTER_INITIAL_DELAY_S)
+    return 0.0
+
+
+def _retry_delay_s(attempt: int) -> float:
+    base_delay = min(
+        float(FETCH_RETRY_MAX_DELAY_S),
+        float(FETCH_RETRY_BASE_DELAY_S) * (2 ** max(0, int(attempt))),
+    )
+    jitter = random.uniform(0.0, base_delay * float(FETCH_RETRY_JITTER_RATIO))
+    return min(float(FETCH_RETRY_MAX_DELAY_S), base_delay + jitter)
+
+
+def _sleep_adapter_initial_delay(adapter: str) -> None:
+    delay_s = _adapter_initial_delay_s(adapter)
+    if delay_s > 0:
+        time.sleep(delay_s)
+
+
+async def _async_sleep_adapter_initial_delay(adapter: str) -> None:
+    delay_s = _adapter_initial_delay_s(adapter)
+    if delay_s > 0:
+        await asyncio.sleep(delay_s)
+
+
 def is_expected_web_search_fetch_failure(exc: Exception) -> bool:
     if isinstance(exc, (OSError, TimeoutError, httpx.HTTPError)):
         return True
@@ -75,8 +111,7 @@ def is_expected_web_search_fetch_failure(exc: Exception) -> bool:
 
 
 def fetch_text_with_retry(url: str, timeout_s: int, *, adapter: str, fetcher=fetch_text) -> str:
-    if adapter in {"workable", "personio", "ashby", "recruitee", "pinpoint"}:
-        time.sleep(0.18)
+    _sleep_adapter_initial_delay(adapter)
     attempts = FETCH_MAX_RETRIES + 1
     last_exc: Exception | None = None
     for attempt in range(attempts):
@@ -86,7 +121,7 @@ def fetch_text_with_retry(url: str, timeout_s: int, *, adapter: str, fetcher=fet
             last_exc = exc
             if attempt >= FETCH_MAX_RETRIES or not _is_retryable_error(exc):
                 break
-            time.sleep(1.2 * (attempt + 1))
+            time.sleep(_retry_delay_s(attempt))
     if last_exc:
         raise last_exc
     raise RuntimeError("fetch failed without an explicit error")
@@ -99,8 +134,7 @@ async def async_fetch_text_with_retry(
     adapter: str,
     fetcher,
 ) -> str:
-    if adapter in {"workable", "personio", "ashby", "recruitee", "pinpoint"}:
-        await asyncio.sleep(0.18)
+    await _async_sleep_adapter_initial_delay(adapter)
     attempts = FETCH_MAX_RETRIES + 1
     last_exc: Exception | None = None
     for attempt in range(attempts):
@@ -110,7 +144,7 @@ async def async_fetch_text_with_retry(
             last_exc = exc
             if attempt >= FETCH_MAX_RETRIES or not _is_retryable_error(last_exc):
                 break
-            await asyncio.sleep(1.2 * (attempt + 1))
+            await asyncio.sleep(_retry_delay_s(attempt))
     if last_exc:
         raise last_exc
     raise RuntimeError("fetch failed without an explicit error")
