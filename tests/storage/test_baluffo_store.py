@@ -197,3 +197,91 @@ def test_backup_and_restore_validation_errors() -> None:
         invalid.write_text("not sqlite", encoding="utf-8")
         with pytest.raises(sqlite3.DatabaseError):
             BaluffoStore.restore_backup(invalid, data_dir / "restore-invalid")
+
+
+def test_execute_read_and_scalar_reuse_cached_read_connection() -> None:
+    with workspace_tmpdir("baluffo-store-read-cache") as data_dir:
+        store = BaluffoStore(data_dir)
+        try:
+            store.execute_read("SELECT 1 AS value")
+            reader = store._reader
+
+            assert reader is not None
+            assert store.execute_scalar("SELECT 2") == 2
+            assert store._reader is reader
+        finally:
+            store.close()
+
+        assert store._reader is None
+
+
+def test_execute_read_retries_transient_busy_error() -> None:
+    with workspace_tmpdir("baluffo-store-read-busy") as data_dir:
+        with BaluffoStore(
+            data_dir,
+            busy_retry_attempts=3,
+            busy_retry_base_ms=1,
+            busy_retry_max_ms=1,
+        ) as store:
+            store._sleep_for_retry = lambda _attempt: None  # type: ignore[method-assign]
+            real_fetchall = store._execute_read_fetchall
+            attempts = 0
+
+            def flaky_fetchall(conn, sql, parameters):  # noqa: ANN001
+                nonlocal attempts
+                attempts += 1
+                if attempts == 1:
+                    raise sqlite3.OperationalError("database is locked")
+                return real_fetchall(conn, sql, parameters)
+
+            store._execute_read_fetchall = flaky_fetchall  # type: ignore[method-assign]
+
+            assert store.execute_read("SELECT 1 AS value") == [{"value": 1}]
+            assert attempts == 2
+            health = store.health()
+            assert health["busyCount"] >= 1
+            assert health["lastWriteError"] == ""
+
+
+def test_execute_read_busy_retry_exhaustion_marks_store_unhealthy() -> None:
+    with workspace_tmpdir("baluffo-store-read-busy-exhaustion") as data_dir:
+        with BaluffoStore(
+            data_dir,
+            busy_retry_attempts=2,
+            busy_retry_base_ms=1,
+            busy_retry_max_ms=1,
+        ) as store:
+            store._sleep_for_retry = lambda _attempt: None  # type: ignore[method-assign]
+            real_fetchall = store._execute_read_fetchall
+
+            def locked_fetchall(_conn, _sql, _parameters):  # noqa: ANN001
+                raise sqlite3.OperationalError("database is locked")
+
+            store._execute_read_fetchall = locked_fetchall  # type: ignore[method-assign]
+
+            with pytest.raises(BaluffoStoreError, match="SQLite read failed"):
+                store.execute_read("SELECT 1 AS value")
+
+            store._execute_read_fetchall = real_fetchall  # type: ignore[method-assign]
+            health = store.health()
+            assert health["healthy"] is False
+            assert health["busyCount"] >= 2
+            assert health["lastWriteError"] == "database is locked"
+
+
+def test_execute_read_reraises_non_busy_operational_error_without_retry() -> None:
+    with workspace_tmpdir("baluffo-store-read-non-busy") as data_dir:
+        with BaluffoStore(data_dir, busy_retry_attempts=3) as store:
+            attempts = 0
+
+            def broken_fetchall(_conn, _sql, _parameters):  # noqa: ANN001
+                nonlocal attempts
+                attempts += 1
+                raise sqlite3.OperationalError("read syntax exploded")
+
+            store._execute_read_fetchall = broken_fetchall  # type: ignore[method-assign]
+
+            with pytest.raises(sqlite3.OperationalError, match="read syntax exploded"):
+                store.execute_read("SELECT 1 AS value")
+
+            assert attempts == 1

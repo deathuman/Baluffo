@@ -10,6 +10,27 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.82] - 2026-06-24
+
+### Fixed
+- Shared desktop and Umbrel rollup from the post-`v0.2.43` release line, including the Admin/Umbrel active-work responsiveness fixes, bounded task/status routes, compact source-table loading, and Jobs feed refresh recovery.
+- Desktop packaged startup and session reliability are hardened: corrupted session JSON no longer breaks active-session recovery, recent invalid lock files are no longer reclaimed too aggressively, lock contention uses bounded backoff, and lock/session failures emit better startup diagnostics.
+- Runtime SQLite storage is more resilient under contention: bridge-owned stores can configure busy timeout/retry settings through environment variables, reads reuse a cached connection, and transient read-side busy errors retry before surfacing failure.
+- Source discovery fetch retries now use one shared sync/async timing policy with capped exponential backoff and jitter, while preserving existing retry counts, HTTP retry codes, and unexpected-exception propagation.
+- Source discovery configuration drift is reduced by centralizing adapter scoring sets and env integer parsing without changing confidence values, concurrency defaults, or compatibility exports.
+- Jobs and Admin continue to recover from active pipeline/fetch pressure using hot task snapshots, lightweight task-live summaries, and gateway control-plane fallbacks instead of loading large reports during active work.
+- QLOC/Elevato recovery from the Umbrel patch series is included: Elevato boards and comma-style job URLs are parsed, stale Google Sheets evidence is replaced, and runtime registry-backed sources are selected by normal Jobs updates.
+- Container/Umbrel compatibility from the current public release line remains intact: same-origin Linux container mode, Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, avoidance of wildcard browser CORS allow headers, and desktop localhost bridge compatibility are all preserved.
+
+### Changed
+- Desktop, bridge, updater, source-discovery, storage, and jobs internals have been split into narrower leaves with stronger guardrails and exception-ratchet coverage, reducing broad fallback behavior without changing public API or persisted data contracts.
+- Release and packaged smoke coverage now exercises storage health, source-run/job-feed/source-registry SQLite authority, updater handoff/recovery paths, desktop lifecycle behavior, and active-task close/abort scheduling.
+
+### Notes
+- This is the next shared desktop and Umbrel release after the long container/Umbrel patch series. `v0.2.43` remains the previous public desktop baseline.
+- No existing release tags are moved or recreated for this rollup.
+- Route payloads, SQLite schema, persisted JSON contracts, Umbrel metadata shape, and public CLI surfaces remain compatible.
+
 ## [0.2.81] - 2026-06-16
 
 ### Fixed

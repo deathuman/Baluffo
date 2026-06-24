@@ -2,26 +2,18 @@ from __future__ import annotations
 
 """Shared bounded-concurrency fetch helpers for directory adapters."""
 
-import os
 from typing import Any
 
 from src.shared.http_batch import fetch_pages_batched
 
+from .config import env_int
 from .web_search_fetch import async_fetch_text_httpx, fetch_text
-
-
-def _env_int(name: str, default: int) -> int:
-    raw = str(os.getenv(name) or "").strip()
-    try:
-        return max(1, int(raw)) if raw else int(default)
-    except ValueError:
-        return int(default)
 
 
 def directory_fetch_concurrency_defaults() -> dict[str, int]:
     return {
-        "total": _env_int("BALUFFO_DISCOVERY_DIRECTORY_FETCH_CONCURRENCY_TOTAL", 16),
-        "perHost": _env_int("BALUFFO_DISCOVERY_DIRECTORY_FETCH_CONCURRENCY_PER_HOST", 2),
+        "total": env_int("BALUFFO_DISCOVERY_DIRECTORY_FETCH_CONCURRENCY_TOTAL", 16),
+        "perHost": env_int("BALUFFO_DISCOVERY_DIRECTORY_FETCH_CONCURRENCY_PER_HOST", 2),
     }
 
 

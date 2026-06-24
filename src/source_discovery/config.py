@@ -27,6 +27,15 @@ ROOT = Path(__file__).resolve().parents[1]
 _REPO_ROOT = ROOT.parent
 _STORAGE_DEFAULTS = get_storage_defaults()
 
+
+def env_int(name: str, default: int) -> int:
+    raw = str(os.getenv(name) or "").strip()
+    try:
+        return max(1, int(raw)) if raw else int(default)
+    except ValueError:
+        return int(default)
+
+
 SEED_CATALOG_PATH = _REPO_ROOT / "src" / "discovery_seed_catalog.json"
 DISCOVERY_STAGES: tuple[str, ...] = (
     "curated_seed",
@@ -117,6 +126,20 @@ SUPPORTED_PROVIDERS: tuple[str, ...] = (
     "recruitee",
     "pinpoint",
     "personio",
+)
+STRUCTURED_BATCH_ADAPTERS = frozenset({"greenhouse", "lever", "ashby"})
+ZERO_JOB_CONFIDENCE_ADAPTERS = frozenset(
+    {
+        "lever",
+        "greenhouse",
+        "smartrecruiters",
+        "workable",
+        "teamtailor",
+        "ashby",
+        "recruitee",
+        "pinpoint",
+        "personio",
+    }
 )
 DISCOVERY_CONFIG_PATH = Path(str(_STORAGE_DEFAULTS["source_discovery_config_path"]))
 CAREERS_URL_HINTS: tuple[str, ...] = (

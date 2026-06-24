@@ -8,12 +8,19 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused storage health t
 
 from __future__ import annotations
 
+import os
 import sqlite3
 import threading
 from pathlib import Path
 from typing import Any
 
 from src.storage import BaluffoStore, BaluffoStoreError
+from src.storage.baluffo_store import (
+    DEFAULT_BUSY_RETRY_ATTEMPTS,
+    DEFAULT_BUSY_RETRY_BASE_MS,
+    DEFAULT_BUSY_RETRY_MAX_MS,
+    DEFAULT_BUSY_TIMEOUT_MS,
+)
 
 _STORE_LOCK = threading.RLock()
 _STORES_BY_DATA_DIR: dict[Path, BaluffoStore] = {}
@@ -25,12 +32,35 @@ def _resolve_data_dir(data_dir: Path | str) -> Path:
     return Path(data_dir).expanduser().resolve()
 
 
+def _env_int(name: str, default: int) -> int:
+    raw = str(os.getenv(name) or "").strip()
+    try:
+        return max(1, int(raw)) if raw else int(default)
+    except ValueError:
+        return int(default)
+
+
+def _storage_busy_config() -> dict[str, int]:
+    return {
+        "busy_timeout_ms": _env_int("BALUFFO_STORAGE_BUSY_TIMEOUT_MS", DEFAULT_BUSY_TIMEOUT_MS),
+        "busy_retry_attempts": _env_int(
+            "BALUFFO_STORAGE_BUSY_RETRY_ATTEMPTS", DEFAULT_BUSY_RETRY_ATTEMPTS
+        ),
+        "busy_retry_base_ms": _env_int(
+            "BALUFFO_STORAGE_BUSY_RETRY_BASE_MS", DEFAULT_BUSY_RETRY_BASE_MS
+        ),
+        "busy_retry_max_ms": _env_int(
+            "BALUFFO_STORAGE_BUSY_RETRY_MAX_MS", DEFAULT_BUSY_RETRY_MAX_MS
+        ),
+    }
+
+
 def get_storage_store(data_dir: Path | str) -> BaluffoStore:
     resolved = _resolve_data_dir(data_dir)
     with _STORE_LOCK:
         store = _STORES_BY_DATA_DIR.get(resolved)
         if store is None:
-            store = BaluffoStore(resolved)
+            store = BaluffoStore(resolved, **_storage_busy_config())
             _STORES_BY_DATA_DIR[resolved] = store
         return store
 

@@ -6,6 +6,7 @@ from src.bridge.routes.get_routes import handle_get
 from src.bridge.storage_health import (
     close_storage_stores,
     get_storage_health_payload,
+    get_storage_store,
     record_storage_diagnostic,
 )
 from tests.helpers.bridge_api import (
@@ -74,3 +75,37 @@ def test_storage_health_payload_includes_storage_diagnostics(tmp_path: Path) -> 
         "message": "",
         "details": {"rowCount": 1},
     }
+
+
+def test_get_storage_store_uses_storage_busy_env_config(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("BALUFFO_STORAGE_BUSY_TIMEOUT_MS", "1234")
+    monkeypatch.setenv("BALUFFO_STORAGE_BUSY_RETRY_ATTEMPTS", "7")
+    monkeypatch.setenv("BALUFFO_STORAGE_BUSY_RETRY_BASE_MS", "12")
+    monkeypatch.setenv("BALUFFO_STORAGE_BUSY_RETRY_MAX_MS", "99")
+    try:
+        store = get_storage_store(tmp_path)
+
+        assert store.busy_timeout_ms == 1234
+        assert store.busy_retry_attempts == 7
+        assert store.busy_retry_base_ms == 12
+        assert store.busy_retry_max_ms == 99
+    finally:
+        close_storage_stores()
+
+
+def test_get_storage_store_clamps_invalid_storage_busy_env_config(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("BALUFFO_STORAGE_BUSY_TIMEOUT_MS", "0")
+    monkeypatch.setenv("BALUFFO_STORAGE_BUSY_RETRY_ATTEMPTS", "")
+    monkeypatch.setenv("BALUFFO_STORAGE_BUSY_RETRY_BASE_MS", "invalid")
+    monkeypatch.setenv("BALUFFO_STORAGE_BUSY_RETRY_MAX_MS", "-5")
+    try:
+        store = get_storage_store(tmp_path)
+
+        assert store.busy_timeout_ms == 1
+        assert store.busy_retry_attempts == 10
+        assert store.busy_retry_base_ms == 10
+        assert store.busy_retry_max_ms == 10
+    finally:
+        close_storage_stores()

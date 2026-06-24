@@ -162,7 +162,9 @@ export async function waitForBridgeTasksIdleWithBootstrapCleanup(apiRequest, tim
       const activeBootstrapFetches = activeTasks.filter(row => (
         rowTaskType(row) === "fetch" && /^jobs_bootstrap_[a-f0-9]{10}$/i.test(rowRunId(row))
       ));
-      if (activeBootstrapFetches.length === 0) throw error;
+      if (activeBootstrapFetches.length === 0) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
     }
   }
   throw lastError || new Error("Bridge tasks did not become idle after bootstrap cleanup.");

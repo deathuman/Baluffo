@@ -92,6 +92,8 @@ class BaluffoStore:
         self._write_transactions = 0
         self._healthy = True
         self._write_lock = threading.RLock()
+        self._read_lock = threading.RLock()
+        self._reader: sqlite3.Connection | None = None
 
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self._writer = self._connect()
@@ -105,6 +107,10 @@ class BaluffoStore:
             raise BaluffoStoreError(f"SQLite quick_check failed at startup: {quick_check}")
 
     def close(self) -> None:
+        with self._read_lock:
+            if self._reader is not None:
+                self._reader.close()
+                self._reader = None
         self._writer.close()
 
     def __enter__(self) -> BaluffoStore:
@@ -137,6 +143,12 @@ class BaluffoStore:
         if foreign_keys != 1:
             self._healthy = False
             raise BaluffoStoreError("Unable to enable SQLite foreign key enforcement")
+
+    def _read_connection(self) -> sqlite3.Connection:
+        with self._read_lock:
+            if self._reader is None:
+                self._reader = self._connect()
+            return self._reader
 
     def _ensure_migration_table(self) -> None:
         self.write(
@@ -242,23 +254,56 @@ class BaluffoStore:
         delay_ms = min(self.busy_retry_max_ms, self.busy_retry_base_ms * (2**attempt))
         time.sleep(delay_ms / 1000)
 
+    def _read_with_retry(self, callback: Callable[[sqlite3.Connection], _T]) -> _T:
+        last_busy_error: sqlite3.OperationalError | None = None
+        for attempt in range(self.busy_retry_attempts):
+            try:
+                with self._read_lock:
+                    result = callback(self._read_connection())
+                if last_busy_error is not None:
+                    self._last_write_error = ""
+                return result
+            except sqlite3.OperationalError as exc:
+                if not _is_busy_error(exc):
+                    raise
+                last_busy_error = exc
+                self._busy_count += 1
+                self._last_write_error = str(exc)
+                if attempt + 1 >= self.busy_retry_attempts:
+                    self._healthy = False
+                    break
+                self._sleep_for_retry(attempt)
+        message = f"SQLite read failed after busy retry attempts: {last_busy_error}"
+        LOGGER.error(message)
+        raise BaluffoStoreError(message)
+
+    def _execute_read_fetchall(
+        self,
+        conn: sqlite3.Connection,
+        sql: str,
+        parameters: Sequence[Any] | dict[str, Any],
+    ) -> list[sqlite3.Row]:
+        return conn.execute(sql, parameters).fetchall()
+
+    def _execute_read_fetchone(
+        self,
+        conn: sqlite3.Connection,
+        sql: str,
+        parameters: Sequence[Any] | dict[str, Any],
+    ) -> sqlite3.Row | None:
+        return conn.execute(sql, parameters).fetchone()
+
     def execute_read(
         self, sql: str, parameters: Sequence[Any] | dict[str, Any] = ()
     ) -> list[dict[str, Any]]:
-        conn = self._connect()
-        try:
-            rows = conn.execute(sql, parameters).fetchall()
-            return [dict(row) for row in rows]
-        finally:
-            conn.close()
+        rows = self._read_with_retry(
+            lambda conn: self._execute_read_fetchall(conn, sql, parameters)
+        )
+        return [dict(row) for row in rows]
 
     def execute_scalar(self, sql: str, parameters: Sequence[Any] | dict[str, Any] = ()) -> Any:
-        conn = self._connect()
-        try:
-            row = conn.execute(sql, parameters).fetchone()
-            return None if row is None else row[0]
-        finally:
-            conn.close()
+        row = self._read_with_retry(lambda conn: self._execute_read_fetchone(conn, sql, parameters))
+        return None if row is None else row[0]
 
     def bulk_execute(
         self,

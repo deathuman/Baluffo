@@ -2,19 +2,22 @@ from __future__ import annotations
 
 """Discovery candidate scoring, ranking, and normalization."""
 
-import os
 from datetime import datetime
 from typing import Any
 
 from src.shared.utils import parse_iso as parse_iso_from_utils
 from src.source_registry import source_identity
 
-from .config import DISCOVERY_STAGES, FOCUS_KEYWORDS
+from .config import (
+    DISCOVERY_STAGES,
+    FOCUS_KEYWORDS,
+    STRUCTURED_BATCH_ADAPTERS,
+    ZERO_JOB_CONFIDENCE_ADAPTERS,
+    env_int,
+)
 from .core_identity import queue_family_key
 from .io_runtime import endpoint_url
 from .scoring import unique_string_list
-
-STRUCTURED_BATCH_ADAPTERS = frozenset({"greenhouse", "lever", "ashby"})
 
 
 def _parse_iso_datetime(value: Any) -> datetime | None:
@@ -175,17 +178,7 @@ def compute_confidence(candidate: dict[str, Any], jobs_found: int) -> str:
         return "high"
     if jobs_found >= 1:
         return "medium"
-    if adapter in {
-        "lever",
-        "greenhouse",
-        "smartrecruiters",
-        "workable",
-        "teamtailor",
-        "ashby",
-        "recruitee",
-        "pinpoint",
-        "personio",
-    }:
+    if adapter in ZERO_JOB_CONFIDENCE_ADAPTERS:
         return "low" if evidence < 40 else "medium"
     return "low"
 
@@ -232,18 +225,11 @@ def normalize_candidate(
 
 
 def probe_concurrency_defaults() -> dict[str, int]:
-    def _env_int(name: str, default: int) -> int:
-        raw = str(os.getenv(name) or "").strip()
-        try:
-            return max(1, int(raw)) if raw else int(default)
-        except ValueError:
-            return int(default)
-
     return {
-        "total": _env_int("BALUFFO_DISCOVERY_PROBE_CONCURRENCY_TOTAL", 40),
-        "static": _env_int("BALUFFO_DISCOVERY_PROBE_CONCURRENCY_STATIC", 16),
-        "provider": _env_int("BALUFFO_DISCOVERY_PROBE_CONCURRENCY_PROVIDER", 40),
-        "teamtailor": _env_int("BALUFFO_DISCOVERY_PROBE_CONCURRENCY_TEAMTAILOR", 15),
+        "total": env_int("BALUFFO_DISCOVERY_PROBE_CONCURRENCY_TOTAL", 40),
+        "static": env_int("BALUFFO_DISCOVERY_PROBE_CONCURRENCY_STATIC", 16),
+        "provider": env_int("BALUFFO_DISCOVERY_PROBE_CONCURRENCY_PROVIDER", 40),
+        "teamtailor": env_int("BALUFFO_DISCOVERY_PROBE_CONCURRENCY_TEAMTAILOR", 15),
     }
 
 
