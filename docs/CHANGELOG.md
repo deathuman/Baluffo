@@ -10,6 +10,14 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.86] - 2026-06-25
+
+### Fixed
+- Bounded fetcher and discovery log reads now preserve existing UTF-8 cursor behavior when a log ends with an incomplete multi-byte sequence, keeping `nextOffset` aligned with consumed text instead of raw partial bytes.
+
+### Notes
+- This remains on the current shared release line covering the same-origin Linux container, Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.85] - 2026-06-25
 
 ### Fixed

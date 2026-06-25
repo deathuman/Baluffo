@@ -62,29 +62,30 @@ def cached_summary_payload(
     return payload
 
 
-def _decode_utf8_log_bytes(raw: bytes) -> str:
+def _decode_utf8_log_bytes(raw: bytes) -> tuple[str, int]:
     if not raw:
-        return ""
+        return "", 0
     try:
-        return raw.decode("utf-8")
+        return raw.decode("utf-8"), len(raw)
     except UnicodeDecodeError as exc:
         if exc.end == len(raw) and exc.reason == "unexpected end of data":
-            return raw[: exc.start].decode("utf-8")
-        return raw.decode("utf-8", errors="replace")
+            return raw[: exc.start].decode("utf-8"), exc.start
+        return raw.decode("utf-8", errors="replace"), len(raw)
 
 
-def _read_utf8_log_slice(path: Path, offset: int, limit: int) -> tuple[str, int]:
+def _read_utf8_log_slice(path: Path, offset: int, limit: int) -> tuple[str, int, int]:
     bounded_offset = max(0, int(offset or 0))
     bounded_limit = max(0, int(limit or 0))
     if bounded_limit <= 0:
-        return "", bounded_offset
+        return "", bounded_offset, bounded_offset
     try:
         with path.open("rb") as handle:
             handle.seek(bounded_offset)
             raw = handle.read(bounded_limit)
     except OSError:
-        return "", 0
-    return _decode_utf8_log_bytes(raw), bounded_offset + len(raw)
+        return "", 0, 0
+    text, consumed_bytes = _decode_utf8_log_bytes(raw)
+    return text, bounded_offset + consumed_bytes, bounded_offset + len(raw)
 
 
 def safe_query_int(
@@ -128,12 +129,12 @@ def log_chunk_payload_from_path(
             minimum=4096,
             maximum=default_offset_limit_bytes,
         )
-        text, next_offset = _read_utf8_log_slice(path, bounded_offset, limit)
+        text, next_offset, read_end = _read_utf8_log_slice(path, bounded_offset, limit)
         return {
             "text": text,
             "offset": bounded_offset,
             "nextOffset": next_offset,
-            "hasMore": next_offset < size,
+            "hasMore": next_offset < size and read_end < size,
         }, 200
     if view == "tail":
         limit_chars = safe_query_int(
@@ -144,12 +145,12 @@ def log_chunk_payload_from_path(
             maximum=131072,
         )
         offset = max(0, size - limit_chars)
-        text, next_offset = _read_utf8_log_slice(path, offset, limit_chars)
+        text, next_offset, read_end = _read_utf8_log_slice(path, offset, limit_chars)
         return {
             "text": text,
             "offset": offset,
             "nextOffset": next_offset,
-            "hasMore": offset > 0,
+            "hasMore": offset > 0 or read_end < size,
         }, 200
     return {
         "ok": False,
