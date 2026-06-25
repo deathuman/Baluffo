@@ -10,6 +10,7 @@ import {
 
 const FETCHER_LOG_POLL_TIMEOUT_MS = 3500;
 const FETCHER_LOG_POLL_BACKOFF_MAX_MS = 5000;
+const FETCHER_LOG_POLL_TAIL_LIMIT_CHARS = 8192;
 
 export function createAdminFetcherLogController({
   state,
@@ -144,6 +145,8 @@ export function createAdminFetcherLogController({
       task: () => runGuardedLiveTaskPoll(
         logPollGuard,
         () => loadFetcherLogChunk({
+          view: "tail",
+          limitChars: FETCHER_LOG_POLL_TAIL_LIMIT_CHARS,
           requestOptions: { timeoutMs: FETCHER_LOG_POLL_TIMEOUT_MS }
         })
       ).finally(() => {

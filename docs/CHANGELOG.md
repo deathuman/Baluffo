@@ -10,6 +10,16 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.85] - 2026-06-25
+
+### Fixed
+- Admin live fetch and discovery log polling now uses bounded log slices instead of unbounded offset reads, preventing large active logs from triggering Umbrel gateway timeouts while preserving the existing log payload shape.
+- Fetcher and discovery log routes now enforce bounded offset and tail reads server-side, so stale cursors cannot return multi-megabyte responses.
+- The Admin Action Center now delays health, sync, and storage probes while active job updates are known, relying on compact task-status routes until active work returns idle.
+
+### Notes
+- This remains on the current shared release line covering the same-origin Linux container, Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.84] - 2026-06-24
 
 ### Fixed

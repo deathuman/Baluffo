@@ -20,7 +20,7 @@ test("admin discovery controller stores optimistic run metadata while discovery 
     });
     fixture.options.getBridge = async path => {
       fixture.calls.push(path);
-        if (String(path).startsWith("/discovery/log?offset=")) {
+        if ((String(path).startsWith("/discovery/log?offset=") || String(path).startsWith("/discovery/log?view=tail"))) {
           return { text: "", nextOffset: 0 };
         }
         throw new Error(`unexpected path ${path}`);
@@ -105,7 +105,7 @@ test("admin discovery controller attaches to an already-running bridge task on c
       refs,
       getBridge: async path => {
         calls.push(path);
-        if (String(path).startsWith("/discovery/log?offset=")) {
+        if ((String(path).startsWith("/discovery/log?offset=") || String(path).startsWith("/discovery/log?view=tail"))) {
           return { text: "", nextOffset: 0 };
         }
         return {};
@@ -253,7 +253,7 @@ test("admin discovery controller emits summary-first live progress and updates p
             ]
           };
         }
-        if (String(path).startsWith("/discovery/log?offset=")) {
+        if ((String(path).startsWith("/discovery/log?offset=") || String(path).startsWith("/discovery/log?view=tail"))) {
           return {
             text: "[2026-03-08T10:01:01.000Z] Scanning known careers pages from the seed catalog.\n[2026-03-08T10:01:02.000Z] found 12 candidates, probed 5, queued 3\n[2026-03-08T10:01:03.000Z] timeout while probing\n",
             nextOffset: 99
@@ -397,7 +397,7 @@ test("admin discovery controller applies live progress when runId matches despit
             failures: [{ stage: "timeout", error: "request timed out" }]
           };
         }
-        if (String(path).startsWith("/discovery/log?offset=")) {
+        if ((String(path).startsWith("/discovery/log?offset=") || String(path).startsWith("/discovery/log?view=tail"))) {
           return { text: "", nextOffset: 0 };
         }
         throw new Error(`unexpected path ${path}`);
@@ -495,7 +495,7 @@ test("admin discovery controller syncs source tables once after completion", asy
             }
           };
         }
-        if (String(path).startsWith("/discovery/log?offset=")) {
+        if ((String(path).startsWith("/discovery/log?offset=") || String(path).startsWith("/discovery/log?view=tail"))) {
           return { text: "", nextOffset: 0 };
         }
         throw new Error(`unexpected path ${path}`);
@@ -563,7 +563,7 @@ test("admin discovery controller waits for registry finalization before source t
               summary: { foundEndpointCount: 1, probedCandidateCount: 1, failedProbeCount: 0 }
             };
           }
-          if (String(path).startsWith("/discovery/log?offset=")) return { text: "", nextOffset: 0 };
+          if ((String(path).startsWith("/discovery/log?offset=") || String(path).startsWith("/discovery/log?view=tail"))) return { text: "", nextOffset: 0 };
           throw new Error(`unexpected path ${path}`);
         },
         syncSourceTablesAfterTaskCompletion: async payload => {
@@ -613,7 +613,7 @@ test("admin discovery controller completes when finalization is terminal and aut
               summary: { foundEndpointCount: 1, probedCandidateCount: 1, failedProbeCount: 0 }
             };
           }
-          if (String(path).startsWith("/discovery/log?offset=")) return { text: "", nextOffset: 0 };
+          if ((String(path).startsWith("/discovery/log?offset=") || String(path).startsWith("/discovery/log?view=tail"))) return { text: "", nextOffset: 0 };
           throw new Error(`unexpected path ${path}`);
         },
         syncSourceTablesAfterTaskCompletion: async payload => {
@@ -659,7 +659,7 @@ test("admin discovery controller forwards uncapped preset payload", async () => 
     state,
     refs,
     getBridge: async path => {
-      if (String(path).startsWith("/discovery/log?offset=")) {
+      if ((String(path).startsWith("/discovery/log?offset=") || String(path).startsWith("/discovery/log?view=tail"))) {
         return { text: "", nextOffset: 0 };
       }
       return {};
@@ -834,7 +834,7 @@ test("admin discovery controller recovers when launch response is lost but repor
             failures: []
           };
         }
-        if (String(path).startsWith("/discovery/log?offset=")) {
+        if ((String(path).startsWith("/discovery/log?offset=") || String(path).startsWith("/discovery/log?view=tail"))) {
           return { text: "", nextOffset: 0 };
         }
         throw new Error(`unexpected path ${path}`);
@@ -915,7 +915,7 @@ test("admin discovery controller still shows error when launch recovery finds no
           failures: []
         };
       }
-      if (String(path).startsWith("/discovery/log?offset=")) {
+      if ((String(path).startsWith("/discovery/log?offset=") || String(path).startsWith("/discovery/log?view=tail"))) {
         return { text: "", nextOffset: 0 };
       }
       throw new Error(`unexpected path ${path}`);
@@ -987,7 +987,7 @@ test("admin discovery controller does not reattach when the fresh report is a la
           ]
         };
       }
-      if (String(path).startsWith("/discovery/log?offset=")) {
+      if ((String(path).startsWith("/discovery/log?offset=") || String(path).startsWith("/discovery/log?view=tail"))) {
         return { text: "[2026-03-08T10:01:01.000Z] Launch failed: [WinError 233] No process is on the other end of the pipe\n", nextOffset: 99 };
       }
       throw new Error(`unexpected path ${path}`);
@@ -1116,7 +1116,7 @@ test("admin discovery controller hydrates progress from the report when live pay
             failures: []
           };
         }
-        if (String(path).startsWith("/discovery/log?offset=")) {
+        if ((String(path).startsWith("/discovery/log?offset=") || String(path).startsWith("/discovery/log?view=tail"))) {
           return { text: "", nextOffset: 0 };
         }
         throw new Error(`unexpected path ${path}`);
@@ -1163,7 +1163,7 @@ test("admin discovery controller skips overlapping live and log polls", async ()
           resolveLive = resolve;
         });
       }
-      if (String(path).startsWith("/discovery/log?offset=")) {
+      if ((String(path).startsWith("/discovery/log?offset=") || String(path).startsWith("/discovery/log?view=tail"))) {
         logCalls += 1;
         return new Promise(resolve => {
           resolveLog = resolve;
@@ -1212,7 +1212,7 @@ test("admin discovery controller backs off after transport failures and resets a
         if (failLive) throw new Error("Network error: bridge unreachable");
         return {};
       }
-      if (String(path).startsWith("/discovery/log?offset=")) {
+      if ((String(path).startsWith("/discovery/log?offset=") || String(path).startsWith("/discovery/log?view=tail"))) {
         return { text: "", nextOffset: 0 };
       }
       if (path === "/discovery/report") return {};

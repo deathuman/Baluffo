@@ -20,6 +20,7 @@ import { deriveDiscoveryQueuedCount } from "../../domain/progress.js";
 
 const DISCOVERY_LIVE_POLL_TIMEOUT_MS = 3500;
 const DISCOVERY_LIVE_POLL_BACKOFF_MAX_MS = 5000;
+const DISCOVERY_LIVE_LOG_TAIL_LIMIT_CHARS = 8192;
 const TERMINAL_FINALIZATION_STATUSES = new Set([
   "completed",
   "failed",
@@ -203,6 +204,8 @@ export function createAdminDiscoveryWatchController({
       onStart: announceStart ? () => appendDiscoveryLog("Discovery started. Watching live progress...", "info") : null,
       loadInitialLogChunk: () => loadDiscoveryLogChunk({
         reset: true,
+        view: "tail",
+        limitChars: DISCOVERY_LIVE_LOG_TAIL_LIMIT_CHARS,
         requestOptions: { timeoutMs: DISCOVERY_LIVE_POLL_TIMEOUT_MS }
       }).catch(() => {}),
       scheduleCompletionPoll: () => scheduleDiscoveryCompletionPoll(0)
@@ -243,6 +246,8 @@ export function createAdminDiscoveryWatchController({
         })
       ),
       loadDiscoveryLogChunk({
+        view: "tail",
+        limitChars: DISCOVERY_LIVE_LOG_TAIL_LIMIT_CHARS,
         requestOptions: { timeoutMs: DISCOVERY_LIVE_POLL_TIMEOUT_MS }
       }).catch(() => null)
     ]);

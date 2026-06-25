@@ -32,14 +32,9 @@ from src.bridge.routes.route_payload_helpers import (
     clean_text as _clean_text,
 )
 from src.bridge.routes.route_payload_helpers import (
-    log_chunk_payload as _log_chunk_payload,
+    log_chunk_payload_from_path as _log_chunk_payload_from_path,
 )
-from src.bridge.routes.route_payload_helpers import (
-    path_signature as _path_signature,
-)
-from src.bridge.routes.route_payload_helpers import (
-    read_utf8_log_text as _read_utf8_log_text,
-)
+from src.bridge.routes.route_payload_helpers import path_signature as _path_signature
 from src.bridge.routes.route_storage_metrics import record_storage_read_metric
 from src.shared.partial_json import (
     decode_json_span,
@@ -186,8 +181,7 @@ def handle_fetch_report_routes(
     query: dict[str, list[str]],
 ) -> bool:
     if path == "/fetcher/log":
-        text = _read_utf8_log_text(api.FETCHER_LOG_PATH)
-        payload, status = _log_chunk_payload(text, query)
+        payload, status = _log_chunk_payload_from_path(api.FETCHER_LOG_PATH, query)
         handler.send_json(payload, status=status)
         return True
 

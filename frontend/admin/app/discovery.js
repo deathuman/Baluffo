@@ -1,6 +1,6 @@
-import { createAdminDiscoveryLogController } from "./discovery/logs.js";
+import { createAdminDiscoveryLogController } from "./discovery/logs.js?v=1";
 import { createAdminDiscoveryProgressController } from "./discovery/progress.js";
-import { createAdminDiscoveryWatchController } from "./discovery/watch.js?v=1";
+import { createAdminDiscoveryWatchController } from "./discovery/watch.js?v=2";
 
 export {
   isDiscoveryMobileViewport,

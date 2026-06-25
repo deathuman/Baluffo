@@ -18,16 +18,16 @@ import {
 } from "../../render.js?v=20";
 import { adminService } from "../../services.js";
 import { createAdminAuthController } from "../auth.js?v=6";
-import { createAdminDiscoveryController } from "../discovery.js?v=1";
+import { createAdminDiscoveryController } from "../discovery.js?v=2";
 import {
   createAdminFetcherController
-} from "../fetcher.js?v=14";
+} from "../fetcher.js?v=15";
 import { createRestoreActiveRunWatches } from "../live-task.js";
 import { createAdminOpsController, formatBytes } from "../ops.js?v=25";
 import { createAdminRegistryController } from "../registry.js?v=18";
 import { createAdminSyncController } from "../sync.js?v=13";
 import { createAdminOverviewController } from "./overview.js?v=14";
-import { createActionCenterController } from "../action-center.js?v=1";
+import { createActionCenterController } from "../action-center.js?v=2";
 import { createAdminInspectorController } from "../inspector.js";
 import { activeSummaryIndicatesAdminWork } from "../active-work-policy.js";
 
@@ -215,6 +215,13 @@ export function composeAdminControllers({
     postBridge,
     showToast,
     logAdminError,
+    shouldDeferCoreSignals: () => Boolean(
+      state.opsActiveAdminWorkLastActive
+      || state.opsActivePipelineOrFetchLastActive
+      || state.adminBusyState?.livePipelineRunning
+      || state.adminBusyState?.liveFetchRunning
+      || state.adminBusyState?.liveDiscoveryRunning
+    ),
     shouldDeferStorageHealth: () => Boolean(
       state.opsActiveAdminWorkLastActive
       || state.opsActivePipelineOrFetchLastActive

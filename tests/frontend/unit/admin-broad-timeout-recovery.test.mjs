@@ -194,6 +194,13 @@ test("fetcher log offset polling backs off after timeouts and preserves visible 
 
     assert.equal(calls.length, 2);
     assert.deepEqual(calls.map(call => call.timeoutMs), [3500, 3500]);
+    assert.deepEqual(
+      calls.map(call => call.path),
+      [
+        "/fetcher/log?view=tail&limitChars=8192",
+        "/fetcher/log?view=tail&limitChars=8192"
+      ]
+    );
     assert.equal(scheduled.at(-1).delay, 1000);
     assert.equal(refs.adminFetcherLogEl.textContent, "Fetching source 42");
     assert.equal(refs.adminFetcherProgressLabelEl.textContent, "10/551 sources resolved");

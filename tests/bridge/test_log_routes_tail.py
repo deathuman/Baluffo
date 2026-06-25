@@ -39,6 +39,61 @@ def test_log_routes_support_bounded_tail_view(tmp_path: Path) -> None:
         assert payload["hasMore"] is True
 
 
+def test_log_routes_bound_large_offset_reads(tmp_path: Path) -> None:
+    content = "a" * (192 * 1024)
+    cases = [
+        ("discovery-offset", "DISCOVERY_LOG_PATH", "/discovery/log"),
+        ("fetcher-offset", "FETCHER_LOG_PATH", "/fetcher/log"),
+    ]
+
+    for case_id, path_attr, route_path in cases:
+        store = FakeDesktopLocalDataStore()
+        api = make_stub_bridge_api(tmp_path / case_id, store)
+        log_path = getattr(api, path_attr)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text(content, encoding="utf-8", newline="\n")
+
+        handler = FakeHandler()
+        result = handle_get(
+            handler,
+            api=api,
+            path=route_path,
+            query={"offset": ["0"]},
+        )
+
+        payload = handler.sent[-1]["payload"]
+        assert result is True, case_id
+        assert handler.sent[-1]["status"] == 200
+        assert len(payload["text"]) == 128 * 1024
+        assert payload["offset"] == 0
+        assert payload["nextOffset"] == 128 * 1024
+        assert payload["hasMore"] is True
+
+
+def test_log_routes_bound_stale_offset_reads(tmp_path: Path) -> None:
+    content = "a" * 4096 + "b" * (192 * 1024)
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
+    api.FETCHER_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    api.FETCHER_LOG_PATH.write_text(content, encoding="utf-8", newline="\n")
+
+    handler = FakeHandler()
+    result = handle_get(
+        handler,
+        api=api,
+        path="/fetcher/log",
+        query={"offset": ["4096"]},
+    )
+
+    payload = handler.sent[-1]["payload"]
+    assert result is True
+    assert handler.sent[-1]["status"] == 200
+    assert payload["text"] == "b" * (128 * 1024)
+    assert payload["offset"] == 4096
+    assert payload["nextOffset"] == 4096 + (128 * 1024)
+    assert payload["hasMore"] is True
+
+
 def test_log_routes_reject_unknown_view(tmp_path: Path) -> None:
     store = FakeDesktopLocalDataStore()
     api = make_stub_bridge_api(tmp_path, store)

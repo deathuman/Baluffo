@@ -6,6 +6,7 @@ const DISMISS_KEY_PREFIX = "baluffo_action_dismissed_";
 const MAX_ITEMS = 3;
 const CHECKING_SUMMARY = "Checking operational signals...";
 const PARTIAL_SUMMARY = "No immediate action from core signals. Storage check pending.";
+const ACTIVE_WORK_SUMMARY = "Operational checks delayed while job update is running.";
 const UNAVAILABLE_SUMMARY = "Operational signals unavailable. Retry or copy diagnostics for details.";
 
 const SIGNAL_ORDER = [
@@ -233,6 +234,7 @@ export function createActionCenterController({
   showToast,
   logAdminError,
   onSyncStatus,
+  shouldDeferCoreSignals = () => false,
   shouldDeferStorageHealth = () => false
 }) {
   let pollTimer = null;
@@ -330,6 +332,15 @@ export function createActionCenterController({
     });
   }
 
+  function renderActiveWorkState() {
+    return renderStatusState({
+      className: "action-center-item-neutral",
+      state: "active-work-delayed",
+      icon: "i",
+      summary: ACTIVE_WORK_SUMMARY
+    });
+  }
+
   function renderUnavailableState() {
     return renderStatusState({
       className: "action-center-item-warning",
@@ -361,7 +372,9 @@ export function createActionCenterController({
 
     let html = "";
     if (visible.length === 0) {
-      if (pollMeta.allRequiredChecked) {
+      if (pollMeta.activeWorkDeferred) {
+        html = renderActiveWorkState();
+      } else if (pollMeta.allRequiredChecked) {
         html = renderHealthyState();
       } else if (pollMeta.coreChecked && pollMeta.storagePending) {
         html = renderPartialState();
@@ -459,19 +472,24 @@ export function createActionCenterController({
 
   async function pollActionCenter(options = {}) {
     try {
-      const includeStorage = options?.includeStorage !== false && !shouldDeferStorageHealth();
-      const [health, sync, storage] = await Promise.all([
-        getBridge("/ops/health?view=ready", { timeoutMs: 5000 }).catch(() => null),
-        getBridge("/sync/status?view=summary", { timeoutMs: 5000 }).catch(() => null),
-        includeStorage
-          ? getBridge("/ops/storage-health", { timeoutMs: 5000 }).catch(() => null)
-          : Promise.resolve(pollCache.storage || null)
-      ]);
+      const deferCore = Boolean(shouldDeferCoreSignals());
+      const includeStorage = options?.includeStorage !== false
+        && !deferCore
+        && !shouldDeferStorageHealth();
+      const [health, sync, storage] = deferCore
+        ? [pollCache.health || null, pollCache.sync || null, pollCache.storage || null]
+        : await Promise.all([
+          getBridge("/ops/health?view=ready", { timeoutMs: 5000 }).catch(() => null),
+          getBridge("/sync/status?view=summary", { timeoutMs: 5000 }).catch(() => null),
+          includeStorage
+            ? getBridge("/ops/storage-health", { timeoutMs: 5000 }).catch(() => null)
+            : Promise.resolve(pollCache.storage || null)
+        ]);
       const storagePayload = includeStorage ? storage : pollCache.storage || null;
-      pollCache.health = health;
-      pollCache.sync = sync;
+      if (!deferCore || hasPayload(health)) pollCache.health = health;
+      if (!deferCore || hasPayload(sync)) pollCache.sync = sync;
       pollCache.storage = storagePayload;
-      if (hasPayload(sync) && typeof onSyncStatus === "function") {
+      if (!deferCore && hasPayload(sync) && typeof onSyncStatus === "function") {
         onSyncStatus(sync);
       }
       const healthChecked = hasPayload(health);
@@ -481,6 +499,7 @@ export function createActionCenterController({
         anyChecked: healthChecked || syncChecked || storageChecked,
         coreChecked: healthChecked && syncChecked,
         storagePending: !storageChecked && includeStorage === false,
+        activeWorkDeferred: deferCore,
         allRequiredChecked: healthChecked && syncChecked && storageChecked
       };
       const signals = evaluateAll(health, sync, storagePayload);
