@@ -10,6 +10,15 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.87] - 2026-06-25
+
+### Fixed
+- The Umbrel container gateway now returns bounded degraded-idle payloads for Admin bootstrap, task-state summary, task-live summary, dashboard summary, and pipeline schedule reads when the internal bridge is slow, preventing idle Admin boot from collapsing into repeated `HTTP 504` errors.
+- Admin now treats recent bridge-heavy read timeouts as a degraded-idle state, keeps the shell usable, and delays registry source-table reads with explicit retry placeholders instead of immediately reloading `/registry/summary` and `/registry/sources?view=table`.
+
+### Notes
+- This remains on the current shared release line covering the same-origin Linux container, Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.86] - 2026-06-25
 
 ### Fixed

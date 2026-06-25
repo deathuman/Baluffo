@@ -15,8 +15,10 @@ const PIPELINE_STATUS_PREFLIGHT_TIMEOUT_MS = 3000;
 const REGISTRY_REFRESH_RETRY_DELAY_MS = 5000;
 const REGISTRY_REFRESH_RETRY_MAX_DELAY_MS = 30000;
 const ACTIVE_PIPELINE_SOURCE_TABLES_DELAYED_LABEL = "Source tables delayed while job update is running.";
+const BRIDGE_DEGRADED_SOURCE_TABLES_DELAYED_LABEL = "Source tables delayed while Admin data is retrying.";
+const BRIDGE_DEGRADED_SOURCE_TABLES_BACKOFF_MS = 30000;
 const JOBS_PIPELINE_STATUS_PATH = "/tasks/run-jobs-pipeline-status";
-const SOURCE_TABLE_RECOVERY_STATES = new Set(["delayed-active", "retrying-active", "recovering-idle", "unavailable"]);
+const SOURCE_TABLE_RECOVERY_STATES = new Set(["delayed-active", "delayed-bridge", "retrying-active", "recovering-idle", "unavailable"]);
 
 function getDiscoveryCandidatesRows(payload) {
   return Array.isArray(payload?.candidates) ? payload.candidates : [];
@@ -165,7 +167,10 @@ export function createRegistryLoadController({
 
   function setSourceTableDelayedPlaceholder(container) {
     if (!container) return;
-    container.innerHTML = `<div class="muted">${ACTIVE_PIPELINE_SOURCE_TABLES_DELAYED_LABEL}</div>`;
+    const label = state.sourceTablesBridgeDegraded
+      ? BRIDGE_DEGRADED_SOURCE_TABLES_DELAYED_LABEL
+      : ACTIVE_PIPELINE_SOURCE_TABLES_DELAYED_LABEL;
+    container.innerHTML = `<div class="muted">${label}</div>`;
   }
 
   function setSourceTableUnavailablePlaceholder(container, bucketLabel) {
@@ -188,7 +193,8 @@ export function createRegistryLoadController({
     const currentText = String(container.textContent || container.innerHTML || "").trim();
     return !currentText
       || /Loading (pending|active|rejected) sources/i.test(currentText)
-      || currentText.includes(ACTIVE_PIPELINE_SOURCE_TABLES_DELAYED_LABEL);
+      || currentText.includes(ACTIVE_PIPELINE_SOURCE_TABLES_DELAYED_LABEL)
+      || currentText.includes(BRIDGE_DEGRADED_SOURCE_TABLES_DELAYED_LABEL);
   }
 
   function activeDiscoveryRunning() {
@@ -274,8 +280,21 @@ export function createRegistryLoadController({
 
   function markSourceTablesDelayedForActiveWork(reason = "active_admin_work", options = {}) {
     state.sourceTablesDelayedDuringActiveRun = true;
+    state.sourceTablesBridgeDegraded = reason === "bridge_degraded";
     setSourceTablesLoadState("delayed-active", reason);
     renderSourceTablesDelayed({ onlyIfPlaceholder: options?.onlyIfPlaceholder !== false });
+  }
+
+  function markSourceTablesDelayedForBridgeDegraded(options = {}) {
+    state.sourceTablesBridgeDegraded = true;
+    state.sourceTablesDelayedDuringActiveRun = true;
+    state.adminBridgeHeavyRouteDegradedUntilMs = Date.now() + BRIDGE_DEGRADED_SOURCE_TABLES_BACKOFF_MS;
+    setSourceTablesLoadState("delayed-bridge", "bridge_degraded");
+    renderSourceTablesDelayed({ onlyIfPlaceholder: options?.onlyIfPlaceholder !== false });
+  }
+
+  function bridgeHeavyRoutesRecentlyDegraded() {
+    return Date.now() < Number(state.adminBridgeHeavyRouteDegradedUntilMs || 0);
   }
 
   function scheduleDeferredRender(callback) {
@@ -301,9 +320,17 @@ export function createRegistryLoadController({
         )
         && /(timed out|timeout|HTTP 504|\b504\b)/i.test(message)
       );
+      const registryRefreshDelayedByBridgeDegraded = Boolean(
+        options?.registryRefresh
+        && !registryRefreshDelayedByActiveWork
+        && /(timed out|timeout|HTTP 504|\b504\b|bridge_degraded)/i.test(message)
+      );
       if (registryRefreshDelayedByActiveWork) {
         markSourceTablesDelayedForActiveWork("active_registry_timeout", { onlyIfPlaceholder: true });
         appendDiscoveryLog(ACTIVE_PIPELINE_SOURCE_TABLES_DELAYED_LABEL, "warn");
+      } else if (registryRefreshDelayedByBridgeDegraded) {
+        markSourceTablesDelayedForBridgeDegraded({ onlyIfPlaceholder: true });
+        appendDiscoveryLog(BRIDGE_DEGRADED_SOURCE_TABLES_DELAYED_LABEL, "warn");
       } else if (options?.registryRefresh && options?.background && /timed out/i.test(message)) {
         appendDiscoveryLog("Source table refresh delayed; retrying.", "warn");
       } else {
@@ -312,7 +339,7 @@ export function createRegistryLoadController({
       return {
         ...(fallback && typeof fallback === "object" && !Array.isArray(fallback) ? fallback : {}),
         __loadFailed: true,
-        __delayedDuringActiveRun: registryRefreshDelayedByActiveWork
+        __delayedDuringActiveRun: registryRefreshDelayedByActiveWork || registryRefreshDelayedByBridgeDegraded
       };
     }
   }
@@ -415,6 +442,32 @@ export function createRegistryLoadController({
         partialLoadFailed: false
       };
     }
+    if (bridgeHeavyRoutesRecentlyDegraded() && !options?.forceFullDiscoveryDuringActiveRun) {
+      const background = Boolean(options?.background);
+      if (options?.suppressPlaceholders !== true) {
+        markSourceTablesDelayedForBridgeDegraded({ onlyIfPlaceholder: true });
+      } else {
+        state.sourceTablesBridgeDegraded = true;
+        state.sourceTablesDelayedDuringActiveRun = true;
+        setSourceTablesLoadState("delayed-bridge", "bridge_degraded");
+      }
+      const lastNoticeAtMs = Number(state.discoveryBridgeDegradedDeferredLoadNoticeAtMs || 0);
+      if (!background && nowMs - lastNoticeAtMs > 5000) {
+        state.discoveryBridgeDegradedDeferredLoadNoticeAtMs = nowMs;
+        appendDiscoveryLog(BRIDGE_DEGRADED_SOURCE_TABLES_DELAYED_LABEL, "warn");
+      }
+      scheduleRegistryRefreshRetry({ forcePipelinePreflight: true });
+      return {
+        skipped: true,
+        reason: "bridge_degraded",
+        sourceTablesDelayed: true,
+        report: state.latestDiscoveryReportCache || null,
+        pendingRows: [],
+        activeRows: [],
+        rejectedRows: [],
+        partialLoadFailed: false
+      };
+    }
     if (activeCompactSourceTables && options?.suppressPlaceholders !== true) {
       markSourceTablesDelayedForActiveWork(activeContext.reason, { onlyIfPlaceholder: true });
     }
@@ -491,6 +544,12 @@ export function createRegistryLoadController({
             },
             { registryRefresh: true, background }
           ));
+        registrySourcesPromise.then(payload => {
+          if (!payload?.__loadFailed) {
+            state.sourceTablesBridgeDegraded = false;
+            state.adminBridgeHeavyRouteDegradedUntilMs = 0;
+          }
+        }).catch(() => {});
 
         const pendingRowsPromise = Promise.all([registrySourcesPromise, discoveryCandidatesPromise, latestFetchReportPromise])
           .then(([registrySources, discoveryCandidates, latestFetchReport]) => {

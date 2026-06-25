@@ -306,7 +306,7 @@ test("admin registry controller treats background registry source timeout as del
   assert.equal(result.partialLoadFailed, true);
   assert.match(
     logs.join("\n"),
-    /Source table refresh delayed; retrying/
+    /Source tables delayed while Admin data is retrying/
   );
   assert.doesNotMatch(
     logs.join("\n"),
@@ -317,6 +317,21 @@ test("admin registry controller treats background registry source timeout as del
     /Source discovery bridge unavailable/
   );
   assert.equal(fixture.refs.adminPendingSourcesEl.innerHTML, "Existing pending rows");
+});
+
+test("admin registry controller skips source tables during degraded bridge backoff", async () => {
+  const calls = [];
+  const fixture = createRegistryControllerFixture({
+    state: { adminBusyState: { discoveryLoad: false }, adminBridgeHeavyRouteDegradedUntilMs: Date.now() + 30000 },
+    options: {
+      getBridge: async path => {
+        calls.push(String(path));
+        return { active: false, stage: "idle" };
+      }
+    }
+  });
+  const result = await createAdminRegistryController(fixture.options).loadDiscoveryData({ background: true }); fixture.renderScheduler.flush();
+  assert.deepEqual({ result: [result?.skipped, result?.reason, result?.sourceTablesDelayed], heavy: calls.some(path => path === "/registry/summary" || String(path).startsWith("/registry/sources")), placeholder: /Source tables delayed while Admin data is retrying/.test(fixture.refs.adminPendingSourcesEl.innerHTML) }, { result: [true, "bridge_degraded", true], heavy: false, placeholder: true });
 });
 
 test("admin registry controller explains hidden zero-job pending rows", async () => {

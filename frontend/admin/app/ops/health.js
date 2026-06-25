@@ -2862,9 +2862,20 @@ export function createOpsHealthController({
               { enabled: !options?.fromPoll }
             );
       } catch (err) {
-        if (!state.latestOpsHealthCache) throw err;
         markOpsRouteFailure(OPS_HEAVY_ROUTE_DASHBOARD);
-        health = state.latestOpsHealthCache;
+        health = state.latestOpsHealthCache || {
+          ok: true,
+          status: "degraded",
+          summaryView: true,
+          degraded: true,
+          alerts: [],
+          alertsEvaluated: false,
+          alertBasis: "bridge-degraded",
+          suppressedAlertsCount: 0,
+          kpis: {},
+          schedule: {},
+          message: `Admin data delayed; retrying: ${getErrorMessage(err)}`
+        };
       }
       if (renderToken !== opsRenderToken) return;
       if (health && typeof health === "object" && !Array.isArray(health)) {

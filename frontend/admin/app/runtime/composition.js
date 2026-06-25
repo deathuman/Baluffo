@@ -23,8 +23,8 @@ import {
   createAdminFetcherController
 } from "../fetcher.js?v=15";
 import { createRestoreActiveRunWatches } from "../live-task.js";
-import { createAdminOpsController, formatBytes } from "../ops.js?v=25";
-import { createAdminRegistryController } from "../registry.js?v=18";
+import { createAdminOpsController, formatBytes } from "../ops.js?v=26";
+import { createAdminRegistryController } from "../registry.js?v=19";
 import { createAdminSyncController } from "../sync.js?v=13";
 import { createAdminOverviewController } from "./overview.js?v=14";
 import { createActionCenterController } from "../action-center.js?v=2";
@@ -313,7 +313,50 @@ export function composeAdminControllers({
   }
 
   async function loadAdminBootstrap() {
-    const payload = await getBridge("/admin/bootstrap", { timeoutMs: 10000 });
+    let payload;
+    try {
+      payload = await getBridge("/admin/bootstrap", { timeoutMs: 10000 });
+    } catch (err) {
+      state.adminBridgeHeavyRouteDegradedUntilMs = Date.now() + 30000;
+      logAdminError("Admin bootstrap delayed; using compact fallback.", err);
+      const appReady = await getBridge("/app/ready", { timeoutMs: 3500 }).catch(() => ({}));
+      const pipeline = await getBridge("/tasks/run-jobs-pipeline-status", { timeoutMs: 3500 })
+        .catch(() => ({ active: false, stage: "idle" }));
+      payload = {
+        ok: true,
+        degraded: true,
+        summaryView: true,
+        source: "frontend-bootstrap-fallback",
+        app: appReady || {},
+        overview: {},
+        ops: {
+          ok: true,
+          status: "degraded",
+          summaryView: true,
+          degraded: true,
+          alerts: [],
+          kpis: {},
+          schedule: {},
+          message: "Admin data delayed; retrying."
+        },
+        tasks: {
+          current: [],
+          recent: [],
+          summary: true,
+          pipeline
+        },
+        sync: {},
+        registrySummary: {
+          ok: true,
+          summary: {},
+          summaryStatus: "unavailable",
+          degraded: true
+        },
+        schedule: {},
+        pipeline,
+        message: "Admin data delayed; retrying."
+      };
+    }
     overviewController.renderOverview(payload?.overview || {});
     opsController.applyBootstrapPayload(payload || {});
     state.latestSyncStatusCache = payload?.sync || null;

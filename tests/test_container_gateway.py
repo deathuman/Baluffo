@@ -267,6 +267,53 @@ def test_gateway_serves_task_live_summary_from_pipeline_control_fallback(
     assert payload["diagnostics"][0]["code"] == "hot_snapshot_child_synthetic_from_pipeline_status"
 
 
+def test_gateway_serves_idle_task_summaries_without_bridge(tmp_path: Path) -> None:
+    server, base_url = _serve_gateway(tmp_path, bridge_process=_FakeBridgeProcess())
+    try:
+        task_state = _get_json(base_url, "/ops/task-state?view=summary")
+        task_live = _get_json(base_url, "/ops/task-live/fetch?view=summary")
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert task_state["source"] == "container-gateway-idle"
+    assert task_state["tasks"] == []
+    assert task_state["count"] == 0
+    assert task_state["summary"] is True
+    assert task_live["source"] == "container-gateway-idle"
+    assert task_live["taskType"] == "fetch"
+    assert task_live["active"] is False
+    assert task_live["workItems"] == []
+
+
+def test_gateway_serves_admin_degraded_fallbacks_when_bridge_unreachable(
+    tmp_path: Path,
+) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "jobs-pipeline-schedule-config.json").write_text(
+        json.dumps({"enabled": True, "intervalHours": 12}),
+        encoding="utf-8",
+    )
+    server, base_url = _serve_gateway(tmp_path, bridge_process=_FakeBridgeProcess())
+    try:
+        schedule = _get_json(base_url, "/tasks/jobs-pipeline-schedule")
+        dashboard = _get_json(base_url, "/ops/dashboard-health?view=summary")
+        bootstrap = _get_json(base_url, "/admin/bootstrap")
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert schedule["source"] == "container-gateway-fallback"
+    assert schedule["savedConfig"] == {"enabled": True, "intervalHours": 12}
+    assert dashboard["source"] == "container-gateway-fallback"
+    assert dashboard["status"] == "degraded"
+    assert dashboard["alerts"] == []
+    assert bootstrap["source"] == "container-gateway-fallback"
+    assert bootstrap["tasks"]["current"] == []
+    assert bootstrap["ops"]["status"] == "degraded"
+
+
 def test_gateway_does_not_static_fallback_admin_api_paths(tmp_path: Path) -> None:
     internal_server, internal_base_url = _serve_internal_bridge()
     gateway_server, base_url = _serve_gateway_with_internal(tmp_path, internal_base_url)

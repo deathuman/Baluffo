@@ -158,15 +158,130 @@ class _GatewayState:
         pipeline_status = self.pipeline_status_payload()
         snapshot = self._fresh_active_snapshot()
         if not self._hot_snapshot_is_active(snapshot, pipeline_status):
-            return None
+            return {
+                "tasks": [],
+                "count": 0,
+                "summary": True,
+                "summaryView": True,
+                "source": "container-gateway-idle",
+                "gatewayReady": True,
+                "bridgeAlive": self.bridge_alive(),
+                "bridgeListening": self.bridge_listening(),
+                "pipeline": pipeline_status,
+            }
         return task_state_summary_from_snapshot(snapshot, pipeline_status=pipeline_status)
 
     def task_live_summary_payload(self, task_type: str) -> dict[str, Any] | None:
         pipeline_status = self.pipeline_status_payload()
         snapshot = self._fresh_active_snapshot()
         if not self._hot_snapshot_is_active(snapshot, pipeline_status):
-            return None
+            normalized_task_type = str(task_type or "").strip().lower()
+            return {
+                "ok": True,
+                "summaryView": True,
+                "taskType": normalized_task_type,
+                "active": False,
+                "status": "idle",
+                "tasks": [],
+                "workItems": [],
+                "recentEvents": [],
+                "source": "container-gateway-idle",
+                "gatewayReady": True,
+                "bridgeAlive": self.bridge_alive(),
+                "bridgeListening": self.bridge_listening(),
+                "pipeline": pipeline_status,
+            }
         return live_summary_from_snapshot(snapshot, task_type, pipeline_status=pipeline_status)
+
+    def pipeline_schedule_payload(self) -> dict[str, Any]:
+        path = self.data_dir / "jobs-pipeline-schedule-config.json"
+        saved_config: dict[str, Any] = {}
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                saved_config = raw
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            saved_config = {}
+        enabled = bool(saved_config.get("enabled", False))
+        interval_hours = saved_config.get("intervalHours")
+        schedule: dict[str, Any] = {"enabled": enabled}
+        if isinstance(interval_hours, int | float) and interval_hours > 0:
+            schedule["intervalHours"] = int(interval_hours)
+        status = {
+            "enabled": enabled,
+            "pending": False,
+            "due": False,
+            "nextRunAt": "",
+            "lastPipelineFinishedAt": "",
+            "lastTriggerRunId": "",
+            "lastTriggerError": "",
+            "pipeline": self.pipeline_status_payload(),
+        }
+        return {
+            "ok": True,
+            "summaryView": True,
+            "degraded": True,
+            "source": "container-gateway-fallback",
+            "savedConfig": schedule,
+            "status": status,
+            "schedule": {"pipeline": {**status, **schedule}},
+            "gatewayReady": True,
+            "bridgeAlive": self.bridge_alive(),
+            "bridgeListening": self.bridge_listening(),
+        }
+
+    def dashboard_health_summary_payload(self) -> dict[str, Any]:
+        schedule_payload = self.pipeline_schedule_payload()
+        return {
+            "ok": True,
+            "status": "degraded",
+            "summaryView": True,
+            "detailLevel": "summary",
+            "degraded": True,
+            "source": "container-gateway-fallback",
+            "alerts": [],
+            "alertsEvaluated": False,
+            "alertBasis": "gateway-degraded",
+            "suppressedAlertsCount": 0,
+            "kpis": {},
+            "schedule": schedule_payload.get("schedule") or {},
+            "gatewayReady": True,
+            "bridgeAlive": self.bridge_alive(),
+            "bridgeListening": self.bridge_listening(),
+            "message": "Admin data delayed; retrying.",
+        }
+
+    def admin_bootstrap_payload(self) -> dict[str, Any]:
+        task_state = self.task_state_summary_payload() or {}
+        schedule_payload = self.pipeline_schedule_payload()
+        return {
+            "ok": True,
+            "summaryView": True,
+            "degraded": True,
+            "source": "container-gateway-fallback",
+            "app": self.ready_payload(),
+            "overview": {},
+            "ops": self.dashboard_health_summary_payload(),
+            "tasks": {
+                "current": task_state.get("tasks") or [],
+                "recent": [],
+                "summary": True,
+                "source": task_state.get("source") or "container-gateway-fallback",
+            },
+            "sync": {"ok": True, "summaryView": True, "degraded": True},
+            "registrySummary": {
+                "ok": True,
+                "summary": {},
+                "summaryStatus": "unavailable",
+                "degraded": True,
+            },
+            "schedule": schedule_payload.get("schedule") or {},
+            "pipeline": self.pipeline_status_payload(),
+            "gatewayReady": True,
+            "bridgeAlive": self.bridge_alive(),
+            "bridgeListening": self.bridge_listening(),
+            "message": "Admin data delayed; retrying.",
+        }
 
 
 class _GatewayHandler(BaseHTTPRequestHandler):
@@ -257,6 +372,39 @@ class _GatewayHandler(BaseHTTPRequestHandler):
                 status=504,
             )
 
+    def _proxy_or_fallback(
+        self,
+        fallback_payload: Any,
+        *,
+        timeout: float = 0.75,
+    ) -> None:
+        state = self._state()
+        if not state.bridge_alive() or not state.bridge_listening(timeout=0.05):
+            self.send_json(fallback_payload() if callable(fallback_payload) else fallback_payload)
+            return
+        target = f"{state.internal_base_url}{self.path}"
+        request = Request(
+            target,
+            method=self.command.upper(),
+            headers=_forwardable_headers(self.headers),
+        )
+        try:
+            with urlopen(request, timeout=float(timeout)) as response:
+                self._send_proxied_response(
+                    int(response.status or 200),
+                    response.headers,
+                    response.read(),
+                )
+        except HTTPError as exc:
+            if int(exc.code or 0) == 504:
+                self.send_json(
+                    fallback_payload() if callable(fallback_payload) else fallback_payload
+                )
+                return
+            self._send_proxied_response(int(exc.code or 500), exc.headers, exc.read())
+        except (OSError, TimeoutError, URLError):
+            self.send_json(fallback_payload() if callable(fallback_payload) else fallback_payload)
+
     def _send_proxied_response(self, status: int, headers: Any, body: bytes) -> None:
         self.send_response(int(status or 200))
         blocked = {"connection", "content-length", "transfer-encoding", "server", "date"}
@@ -314,6 +462,19 @@ class _GatewayHandler(BaseHTTPRequestHandler):
                 return
         self._proxy(timeout=DEFAULT_PROXY_TIMEOUT_SECONDS)
 
+    def _handle_gateway_control_get(self, path: str, view: str) -> bool:
+        state = self._state()
+        if path == "/tasks/jobs-pipeline-schedule":
+            self._proxy_or_fallback(state.pipeline_schedule_payload)
+            return True
+        if path == "/ops/dashboard-health" and view == "summary":
+            self._proxy_or_fallback(state.dashboard_health_summary_payload)
+            return True
+        if path == "/admin/bootstrap":
+            self._proxy_or_fallback(state.admin_bootstrap_payload)
+            return True
+        return False
+
     def do_GET(self) -> None:
         state = self._state()
         path = _route_path(self.path)
@@ -336,6 +497,8 @@ class _GatewayHandler(BaseHTTPRequestHandler):
             if payload is not None:
                 self.send_json(payload)
                 return
+        if self._handle_gateway_control_get(path, view):
+            return
         if state.static_service.handle_get(self, path=path):
             return
         self._proxy()

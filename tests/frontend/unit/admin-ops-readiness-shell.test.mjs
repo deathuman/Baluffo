@@ -128,11 +128,13 @@ test("admin ops first dashboard health wait shows neutral shell then real data",
   assert.equal(refs.adminOpsTrendsEl.textContent, "trends:0");
 });
 
-test("admin ops first dashboard health failure renders explicit unavailable state", async () => {
+test("admin ops first dashboard health failure renders degraded shell", async () => {
   const { controller, refs } = createFixture({
     getBridge: path => {
       if (path === "/tasks/run-jobs-pipeline-status") return { active: false, stage: "idle" };
       if (path === "/ops/dashboard-health") throw new Error("Bridge request timed out");
+      if (path === "/ops/task-state?view=summary") throw new Error("Bridge request timed out");
+      if (path === "/registry/conflicts?view=summary") throw new Error("Bridge request timed out");
       throw new Error(`unexpected path ${path}`);
     }
   });
@@ -140,8 +142,9 @@ test("admin ops first dashboard health failure renders explicit unavailable stat
   await controller.loadOpsHealthData();
   controller.stopOpsHealthPolling();
 
-  assert.equal(refs.adminOpsTrendsEl.textContent, "Ops health unavailable: Bridge request timed out");
-  assert.match(refs.adminOpsAlertsEl.innerHTML, /Ops health unavailable: Bridge request timed out/);
+  assert.equal(refs.adminOpsTrendsEl.textContent, "trends:0");
+  assert.equal(refs.adminOpsKpisEl.innerHTML, "kpis:degraded");
+  assert.doesNotMatch(refs.adminOpsAlertsEl.innerHTML, /Ops health unavailable/);
 });
 
 test("admin ops poll refresh with cache does not regress to loading placeholder", async () => {
