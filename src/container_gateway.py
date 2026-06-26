@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 from contextlib import suppress
+from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -207,16 +208,24 @@ class _GatewayState:
         schedule: dict[str, Any] = {"enabled": enabled}
         if isinstance(interval_hours, int | float) and interval_hours > 0:
             schedule["intervalHours"] = int(interval_hours)
+        pipeline_status = self.pipeline_status_payload()
+        computed = self._pipeline_schedule_status_fallback(
+            enabled=enabled,
+            interval_hours=int(schedule.get("intervalHours") or 0),
+            pipeline_status=pipeline_status,
+        )
         status = {
             "enabled": enabled,
-            "pending": False,
-            "due": False,
-            "nextRunAt": "",
-            "lastPipelineFinishedAt": "",
+            "pending": bool(computed.get("pending")),
+            "due": bool(computed.get("due")),
+            "nextRunAt": str(computed.get("nextRunAt") or ""),
+            "lastPipelineFinishedAt": str(computed.get("lastPipelineFinishedAt") or ""),
             "lastTriggerRunId": "",
             "lastTriggerError": "",
-            "pipeline": self.pipeline_status_payload(),
+            "pipeline": pipeline_status,
         }
+        if computed.get("nextAfterCurrentCompletes"):
+            status["nextAfterCurrentCompletes"] = True
         return {
             "ok": True,
             "summaryView": True,
@@ -228,6 +237,83 @@ class _GatewayState:
             "gatewayReady": True,
             "bridgeAlive": self.bridge_alive(),
             "bridgeListening": self.bridge_listening(),
+        }
+
+    @staticmethod
+    def _parse_iso_datetime(value: Any) -> datetime | None:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        if text.endswith("Z"):
+            text = f"{text[:-1]}+00:00"
+        try:
+            return datetime.fromisoformat(text)
+        except ValueError:
+            return None
+
+    def _lifecycle_rows(self) -> list[dict[str, Any]]:
+        path = self.data_dir / "jobs-lifecycle-state.json"
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            return []
+        rows = raw.get("rows") if isinstance(raw, dict) else []
+        if not isinstance(rows, list):
+            return []
+        return [dict(row) for row in rows if isinstance(row, dict)]
+
+    def _latest_terminal_pipeline_row(self) -> dict[str, Any] | None:
+        candidates: list[tuple[datetime, int, dict[str, Any]]] = []
+        for index, row in enumerate(self._lifecycle_rows()):
+            task_type = str(row.get("taskType") or row.get("type") or "").strip().lower()
+            if task_type != "pipeline":
+                continue
+            finished_at = str(row.get("finishedAt") or "").strip()
+            parsed = self._parse_iso_datetime(finished_at)
+            if parsed is None:
+                continue
+            candidates.append((parsed, index, dict(row)))
+        if not candidates:
+            return None
+        return max(candidates, key=lambda item: (item[0], item[1]))[2]
+
+    def _pipeline_schedule_status_fallback(
+        self,
+        *,
+        enabled: bool,
+        interval_hours: int,
+        pipeline_status: dict[str, Any],
+    ) -> dict[str, Any]:
+        active = bool(pipeline_status.get("active") or pipeline_status.get("running"))
+        if not enabled:
+            return {
+                "pending": False,
+                "due": False,
+                "nextRunAt": "",
+                "lastPipelineFinishedAt": "",
+            }
+        last_row = self._latest_terminal_pipeline_row()
+        last_finished_at = str((last_row or {}).get("finishedAt") or "").strip()
+        last_finished = self._parse_iso_datetime(last_finished_at)
+        if last_finished is not None and interval_hours > 0:
+            next_run_at = last_finished + timedelta(hours=interval_hours)
+            now = (
+                datetime.now(next_run_at.tzinfo)
+                if next_run_at.tzinfo is not None
+                else datetime.now()
+            )
+            return {
+                "pending": False,
+                "due": now >= next_run_at,
+                "nextRunAt": next_run_at.isoformat(),
+                "lastPipelineFinishedAt": last_finished_at,
+            }
+        return {
+            "pending": False,
+            "due": not active,
+            "nextRunAt": "",
+            "lastPipelineFinishedAt": last_finished_at,
+            **({"nextAfterCurrentCompletes": True} if active else {}),
         }
 
     def dashboard_health_summary_payload(self) -> dict[str, Any]:

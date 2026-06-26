@@ -118,6 +118,38 @@ test("admin render: pipeline schedule state text covers key states", () => {
         nextRunAt: "2026-03-09T10:00:00.000Z"
       },
       /every 12h, next/i
+    ],
+    [
+      {
+        enabled: true,
+        intervalHours: 12,
+        pending: false,
+        due: false,
+        nextRunAt: ""
+      },
+      /Pipeline<\/strong>: every 12h/i
+    ],
+    [
+      {
+        enabled: true,
+        intervalHours: 12,
+        pending: false,
+        due: false,
+        nextRunAt: "not-a-date"
+      },
+      /Pipeline<\/strong>: every 12h/i
+    ],
+    [
+      {
+        enabled: true,
+        intervalHours: 12,
+        pending: false,
+        due: false,
+        nextRunAt: "",
+        nextAfterCurrentCompletes: true,
+        pipeline: { active: true, stage: "fetch" }
+      },
+      /every 12h, next after current pipeline completes/i
     ]
   ];
 
@@ -125,6 +157,7 @@ test("admin render: pipeline schedule state text covers key states", () => {
     const scheduleEl = makeEl();
     renderAdminOpsSchedule(scheduleEl, { pipeline }, {});
     assert.match(scheduleEl.innerHTML, expectedText);
+    assert.doesNotMatch(scheduleEl.innerHTML, /next unknown/i);
   }
 });
 

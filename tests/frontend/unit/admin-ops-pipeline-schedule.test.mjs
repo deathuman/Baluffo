@@ -233,3 +233,94 @@ test("admin ops hydrates pipeline schedule fallback and preserves it across empt
   assert.equal(renderedSchedules.at(-1).pipeline.enabled, true);
   assert.equal(renderedSchedules.at(-1).pipeline.intervalHours, 12);
 });
+
+test("admin ops hydrates degraded active schedule fallback without next unknown", async () => {
+  const refs = {
+    adminOpsScheduleEl: createElement({
+      addEventListener() {},
+      querySelector() {
+        return null;
+      }
+    }),
+    adminOpsAlertsEl: createElement(),
+    adminOpsKpisEl: createElement(),
+    adminOpsTrendsEl: createElement(),
+    adminOpsHistoryEl: createElement(),
+    adminOpsFetcherMetricsEl: createElement(),
+    adminOpsDedupListsEl: createElement()
+  };
+  const state = { adminBusyState: {} };
+  const renderedSchedules = [];
+  const controller = createOpsHealthController({
+    state,
+    refs,
+    getBridge: async path => {
+      if (path === "/tasks/jobs-pipeline-schedule") {
+        return {
+          ok: true,
+          degraded: true,
+          savedConfig: { enabled: true, intervalHours: 12 },
+          status: {
+            enabled: true,
+            pending: false,
+            due: false,
+            nextRunAt: "",
+            nextAfterCurrentCompletes: true,
+            pipeline: { active: true, stage: "fetch" }
+          }
+        };
+      }
+      throw new Error(`unexpected path ${path}`);
+    },
+    postBridge: async () => ({}),
+    deriveAdminRunsModel: () => ({
+      historyRuns: [],
+      currentRows: [],
+      visibleCompletedRows: [],
+      olderCompletedRows: [],
+      liveTypes: new Set()
+    }),
+    getOpsPollIntervalMs: () => 1000,
+    renderAdminOpsAlerts() {},
+    renderAdminOpsKpis() {},
+    renderAdminOpsSchedule(_el, schedule) {
+      renderedSchedules.push(schedule);
+    },
+    renderAdminOpsDedupLists() {},
+    renderAdminOpsFetcherMetrics() {},
+    renderAdminOpsTrends() {},
+    renderAdminOpsHistory() {},
+    setBusyFlag(key, value) {
+      state.adminBusyState[key] = value;
+    },
+    showToast() {},
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    adminDispatch: { dispatch() {} },
+    adminActions: { OPS_REFRESHED: "ops/refreshed" },
+    escapeHtml: value => String(value || ""),
+    idlePollIntervalMs: 1000,
+    taskStateController: {
+      getActiveTaskRows() {
+        return [];
+      },
+      getTaskType() {
+        return "";
+      },
+      syncLiveBusyFlags() {},
+      maybeAttachLiveTaskRows() {},
+      resolveTaskStatePayload() {
+        return { tasks: [] };
+      },
+      resetLifecycleTaskState() {}
+    },
+    getBridgeStatus: () => "online",
+    awaitBridgeReady: async () => true,
+    renderScheduler: createDeferredRenderScheduler()
+  });
+
+  const schedule = await controller.loadPipelineScheduleData({ force: true, silent: true });
+
+  assert.equal(schedule.pipeline.intervalHours, 12);
+  assert.equal(schedule.pipeline.nextAfterCurrentCompletes, true);
+  assert.equal(renderedSchedules.at(-1).pipeline.nextAfterCurrentCompletes, true);
+});

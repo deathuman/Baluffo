@@ -10,6 +10,16 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.90] - 2026-06-26
+
+### Fixed
+- Umbrel Admin schedule fallback now computes the next scheduled pipeline time from the latest terminal pipeline row when the bridge is degraded, so active fetches do not show `next unknown`.
+- Admin schedule rendering now avoids `next unknown`; if an exact timestamp is unavailable while a pipeline is active, it states that the next run is after the current pipeline completes.
+- Bumped the Admin cache chain so existing Umbrel browser sessions load the 0.2.90 schedule display fix.
+
+### Notes
+- This remains on the current shared release line covering the same-origin Linux container, Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.89] - 2026-06-26
 
 ### Fixed

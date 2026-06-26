@@ -6,7 +6,7 @@ import { emitStartupMetric, logError, markFirstInteractive } from "../../shared/
 import { createPerfMarks } from "../../shared/perf-marks.js";
 import {
   appendAdminLogRow
-} from "../render.js?v=20";
+} from "../render.js?v=21";
 import {
   getErrorMessage as getErrorMessageFromDomain,
   normalizeLogLevel as normalizeLogLevelFromDomain,
