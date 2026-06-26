@@ -134,6 +134,43 @@ test("admin overview empty refresh preserves known signed-in user shell", async 
   assert.equal(fixture.statuses.at(-1), "Loaded 1 user account(s).");
 });
 
+test("admin overview degraded bootstrap renders delayed state instead of false empty", () => {
+  const fixture = createOverviewControllerFixture();
+
+  fixture.controller.renderOverview({}, { degraded: true });
+
+  assert.equal(fixture.refs.adminUsersListEl.innerHTML, "Stored profile overview delayed; retrying.");
+  assert.equal(fixture.statuses.at(-1), "Stored profile overview delayed; retrying.");
+});
+
+test("admin overview explicit empty local-data response remains authoritative empty", () => {
+  const fixture = createOverviewControllerFixture();
+
+  fixture.controller.renderOverview({ users: [], totals: {}, detailLevel: "summary" });
+
+  assert.equal(fixture.refs.adminUsersListEl.innerHTML, "No local users found.");
+  assert.equal(fixture.statuses.at(-1), "Loaded 0 user account(s).");
+});
+
+test("admin overview delayed bootstrap is replaced by summary refresh user data", async () => {
+  const fixture = createOverviewControllerFixture({
+    getAdminOverview: async () => ({
+      ok: true,
+      data: {
+        users: [{ uid: "local_andrea", name: "Andrea" }],
+        totals: { usersCount: 1, savedJobsCount: 3 },
+        detailLevel: "summary"
+      }
+    })
+  });
+
+  fixture.controller.renderOverview({}, { degraded: true });
+  await fixture.controller.refreshOverview({ detail: "summary", scheduleFullRefresh: false });
+
+  assert.equal(fixture.refs.adminUsersListEl.innerHTML, "local_andrea");
+  assert.equal(fixture.statuses.at(-1), "Loaded 1 user account(s).");
+});
+
 test("admin overview timeout produces scoped unavailable state", async () => {
   const fixture = createOverviewControllerFixture({
     overviewTimeoutMs: 1,

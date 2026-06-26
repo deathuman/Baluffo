@@ -10,6 +10,15 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.89] - 2026-06-26
+
+### Fixed
+- Admin no longer renders a false-empty Stored Profile Overview from degraded Umbrel bootstrap data; missing overview data now appears as delayed and retries the fast local-data overview before reporting an authoritative empty profile list.
+- Bumped the Admin cache chain so existing Umbrel browser sessions load the 0.2.89 overview fix.
+
+### Notes
+- This remains on the current shared release line covering the same-origin Linux container, Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.88] - 2026-06-26
 
 ### Fixed

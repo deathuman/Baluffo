@@ -45,6 +45,15 @@ test("admin bootstrap schedules source table loading without report diagnostics"
   assert.match(bootstrapMatch[1], /scheduleBootstrapSourceTablesLoad\(\)/);
 });
 
+test("admin degraded bootstrap refreshes overview instead of rendering false empty", () => {
+  const bootstrapMatch = compositionSource.match(/async function loadAdminBootstrap\(\) \{([\s\S]*?)\n  \}/);
+  assert.ok(bootstrapMatch, "expected bootstrap loader");
+  const body = bootstrapMatch[1];
+  assert.match(body, /bootstrapDegraded/);
+  assert.match(body, /renderOverview\(payload\?\.overview \|\| \{\}, \{ degraded: bootstrapDegraded \}\)/);
+  assert.match(body, /refreshOverview\(\{\s*detail: "summary",\s*scheduleFullRefresh: true,\s*timeoutMs: 5000,\s*background: true/s);
+});
+
 test("admin critical bootstrap fallback gates source tables behind compact active summary", () => {
   const match = compositionSource.match(/async function loadCriticalBootstrapFallbacks\(\) \{([\s\S]*?)\n  \}/);
   assert.ok(match, "expected critical bootstrap fallback helper");

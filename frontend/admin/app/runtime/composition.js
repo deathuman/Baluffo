@@ -26,7 +26,7 @@ import { createRestoreActiveRunWatches } from "../live-task.js";
 import { createAdminOpsController, formatBytes } from "../ops.js?v=26";
 import { createAdminRegistryController } from "../registry.js?v=20";
 import { createAdminSyncController } from "../sync.js?v=13";
-import { createAdminOverviewController } from "./overview.js?v=14";
+import { createAdminOverviewController } from "./overview.js?v=15";
 import { createActionCenterController } from "../action-center.js?v=2";
 import { createAdminInspectorController } from "../inspector.js";
 import { activeSummaryIndicatesAdminWork } from "../active-work-policy.js";
@@ -357,7 +357,18 @@ export function composeAdminControllers({
         message: "Admin data delayed; retrying."
       };
     }
-    overviewController.renderOverview(payload?.overview || {});
+    const bootstrapDegraded = payload?.degraded === true || payload?.overview?.degraded === true;
+    overviewController.renderOverview(payload?.overview || {}, { degraded: bootstrapDegraded });
+    if (bootstrapDegraded) {
+      overviewController.refreshOverview({
+        detail: "summary",
+        scheduleFullRefresh: true,
+        timeoutMs: 5000,
+        background: true
+      }).catch(err => {
+        logAdminError("Admin overview fallback refresh delayed.", err);
+      });
+    }
     opsController.applyBootstrapPayload(payload || {});
     state.latestSyncStatusCache = payload?.sync || null;
     syncController.renderSyncStatus(payload?.sync || {}, { forceForm: true });

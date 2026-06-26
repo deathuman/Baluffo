@@ -115,6 +115,10 @@ export function createAdminOverviewController({
       : {};
   }
 
+  function overviewHasAuthoritativeUsers(payload) {
+    return payload && typeof payload === "object" && Array.isArray(payload.users);
+  }
+
   function mergeOverviewState(payload) {
     const incomingUsers = normalizeUsers(payload?.users);
     const incomingTotals = normalizeTotals(payload?.totals);
@@ -140,15 +144,22 @@ export function createAdminOverviewController({
     const payload = overview && typeof overview === "object" && !Array.isArray(overview)
       ? overview
       : {};
+    const hasAuthoritativeUsers = overviewHasAuthoritativeUsers(payload);
     const { users, totals } = mergeOverviewState(payload);
     renderTotals(totals);
     if (users.length) {
       renderUsers(users);
+    } else if (!hasAuthoritativeUsers || options?.degraded === true || payload?.degraded === true) {
+      renderUsersEmpty("Stored profile overview delayed; retrying.");
     } else {
       renderUsersEmpty("No local users found.");
     }
     if (options?.updateStatus !== false) {
-      setSourceStatus(`Loaded ${users.length} user account(s).`);
+      setSourceStatus(
+        users.length || hasAuthoritativeUsers
+          ? `Loaded ${users.length} user account(s).`
+          : "Stored profile overview delayed; retrying."
+      );
     }
     adminDispatch.dispatch({ type: adminActions.OVERVIEW_REFRESHED, payload: { at: new Date().toISOString() } });
     return { ...payload, users, totals };
