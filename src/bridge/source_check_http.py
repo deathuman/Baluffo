@@ -24,16 +24,48 @@ def try_fetch_with_playwright(url: str, timeout_s: int) -> tuple[str, str]:
         return "", "browser fallback unavailable (playwright is not installed)"
     try:
         with sync_playwright() as p:
+            browser = None
+            page = None
+            cleanup_error = ""
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()
             page.goto(url, wait_until="domcontentloaded", timeout=max(1, int(timeout_s)) * 1000)
             html = page.content() or ""
-            browser.close()
+            for closer in (getattr(page, "close", None), getattr(browser, "close", None)):
+                if not callable(closer):
+                    continue
+                try:
+                    closer()
+                except (OSError, PlaywrightError) as exc:
+                    cleanup_error = cleanup_error or str(exc)
             if not html:
-                return "", "browser fallback returned empty content"
+                return "", (
+                    normalize_browser_fallback_error(cleanup_error)
+                    if cleanup_error
+                    else "browser fallback returned empty content"
+                )
             return html, ""
     except (OSError, PlaywrightError) as exc:
-        return "", str(exc)
+        return "", normalize_browser_fallback_error(str(exc))
+
+
+def normalize_browser_fallback_error(error_text: str) -> str:
+    text = str(error_text or "").strip()
+    lowered = text.lower()
+    if any(
+        token in lowered
+        for token in (
+            "write epipe",
+            "broken pipe",
+            "pipetransport",
+            "target closed",
+            "transport closed",
+            "connection closed",
+            "browser has been closed",
+        )
+    ):
+        return "browser fallback unavailable (playwright transport closed)"
+    return text
 
 
 def is_browser_fallback_environment_error(error_text: str) -> bool:
@@ -54,6 +86,13 @@ def is_browser_fallback_environment_error(error_text: str) -> bool:
         "executable doesn't exist",
         "executable does not exist",
         "worker spawn blocked",
+        "write epipe",
+        "broken pipe",
+        "pipetransport",
+        "target closed",
+        "transport closed",
+        "connection closed",
+        "browser has been closed",
     )
     return any(token in text for token in tokens)
 

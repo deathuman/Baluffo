@@ -42,6 +42,13 @@ def is_browser_fallback_environment_error(error_text: str) -> bool:
         "executable doesn't exist",
         "executable does not exist",
         "worker spawn blocked",
+        "write epipe",
+        "broken pipe",
+        "pipetransport",
+        "target closed",
+        "transport closed",
+        "connection closed",
+        "browser has been closed",
     )
     return any(token in text for token in tokens)
 

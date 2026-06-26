@@ -3,6 +3,12 @@ from __future__ import annotations
 import pytest
 
 import src.jobs.state_source_state as jobs_state
+from src.bridge.source_check_http import (
+    is_browser_fallback_environment_error as bridge_browser_environment_error,
+)
+from src.bridge.source_check_http import (
+    normalize_browser_fallback_error,
+)
 from src.jobs.browser_fallback import (
     BROWSER_FALLBACK_STATE_KEY,
     BrowserFallbackCircuitBreaker,
@@ -55,6 +61,36 @@ def test_browser_fallback_wrap_converts_expected_runtime_failure_to_error() -> N
 
     assert html == ""
     assert "playwright launch failed" in error
+    assert breaker.failure_count == 1
+    assert breaker.disabled_until_at
+
+
+def test_browser_fallback_normalizes_playwright_epipe_transport_failure() -> None:
+    raw_error = """
+    Error: write EPIPE
+      at PipeTransport.send (/playwright/driver/package/lib/server/utils/pipeTransport.js:52:21)
+    """
+
+    assert (
+        normalize_browser_fallback_error(raw_error)
+        == "browser fallback unavailable (playwright transport closed)"
+    )
+    assert bridge_browser_environment_error(raw_error) is True
+
+
+def test_browser_fallback_circuit_breaker_quarantines_playwright_transport_failure() -> None:
+    breaker = BrowserFallbackCircuitBreaker(cooldown_minutes=15)
+
+    def fake_try_playwright(_url: str, _timeout_s: int) -> tuple[str, str]:
+        return (
+            "",
+            "Error: write EPIPE at PipeTransport.send (/playwright/driver/package/lib/server/utils/pipeTransport.js:52:21)",
+        )
+
+    html, error = breaker.wrap(fake_try_playwright)("https://example.com/jobs", 5)
+
+    assert html == ""
+    assert "write EPIPE" in error
     assert breaker.failure_count == 1
     assert breaker.disabled_until_at
 

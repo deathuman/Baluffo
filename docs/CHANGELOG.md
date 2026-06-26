@@ -10,6 +10,15 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.91] - 2026-06-27
+
+### Fixed
+- Browser fallback now classifies Playwright `EPIPE` and transport-closed failures as recoverable browser-environment failures, triggering the existing fallback cooldown instead of treating them like source/parser failures.
+- Playwright page/browser cleanup is now best-effort so transport-close noise is contained by the fallback path.
+
+### Notes
+- This remains on the current shared release line covering the same-origin Linux container, Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.90] - 2026-06-26
 
 ### Fixed
