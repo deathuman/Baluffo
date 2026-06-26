@@ -11,6 +11,7 @@ const ADMIN_SHOW_ZERO_JOBS_KEY = "baluffo_admin_show_zero_jobs_sources";
 const CAP_DEFER_REASONS = new Set(["adapter_cap", "domain_cap", "top_n_cap"]);
 const FULL_REGISTRY_LOAD_TIMEOUT_MS = 60000;
 const ACTIVE_REGISTRY_LOAD_TIMEOUT_MS = 10000;
+const ADMIN_REGISTRY_TABLE_LIMIT_PER_BUCKET = 250;
 const PIPELINE_STATUS_PREFLIGHT_TIMEOUT_MS = 3000;
 const REGISTRY_REFRESH_RETRY_DELAY_MS = 5000;
 const REGISTRY_REFRESH_RETRY_MAX_DELAY_MS = 30000;
@@ -529,7 +530,7 @@ export function createRegistryLoadController({
             resolveLatestFetchReport(options),
             state.latestFetcherReportCache || {}
           );
-        const registrySourcesPath = `/registry/sources?view=table&buckets=pending,active,rejected&includeHiddenPending=${filterState.showZeroJobs ? "1" : "0"}`;
+        const registrySourcesPath = `/registry/sources?view=table&buckets=pending,active,rejected&includeHiddenPending=${filterState.showZeroJobs ? "1" : "0"}&limitPerBucket=${ADMIN_REGISTRY_TABLE_LIMIT_PER_BUCKET}`;
         const registrySourcesTimeoutMs = activeCompactSourceTables
           ? ACTIVE_REGISTRY_LOAD_TIMEOUT_MS
           : FULL_REGISTRY_LOAD_TIMEOUT_MS;

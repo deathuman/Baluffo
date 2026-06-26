@@ -10,6 +10,15 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.88] - 2026-06-26
+
+### Fixed
+- Admin source-table startup now requests bounded registry table rows with `limitPerBucket`, reducing idle Umbrel registry payload pressure while keeping the existing full `/registry/sources` compatibility route available.
+- The registry table view now supports an additive `limitPerBucket` query for bounded Admin loads and reports truncation metadata in the existing summary envelope.
+
+### Notes
+- This remains on the current shared release line covering the same-origin Linux container, Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.87] - 2026-06-25
 
 ### Fixed

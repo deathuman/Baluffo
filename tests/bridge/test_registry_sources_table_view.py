@@ -350,6 +350,33 @@ def test_registry_sources_table_view_keeps_large_payload_bounded(tmp_path: Path)
     assert encoded_size < 128 * 1024
 
 
+def test_registry_sources_table_view_limits_rows_per_bucket(tmp_path: Path) -> None:
+    api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    api.load_state = lambda: {  # type: ignore[assignment]
+        "active": [{"id": f"active_{index}", "name": f"Active {index}"} for index in range(4)],
+        "pending": [{"id": f"pending_{index}", "name": f"Pending {index}"} for index in range(3)],
+        "rejected": [],
+    }
+    _install_empty_discovery_candidates(api, tmp_path)
+
+    handler = FakeHandler()
+    assert handle_get(
+        handler,
+        api=api,
+        path="/registry/sources",
+        query={"view": ["table"], "buckets": ["pending,active"], "limitPerBucket": ["2"]},
+    )
+
+    payload = handler.sent[-1]["payload"]
+    assert [row["id"] for row in payload["sources"]["active"]] == ["active_0", "active_1"]
+    assert [row["id"] for row in payload["sources"]["pending"]] == ["pending_0", "pending_1"]
+    assert payload["summary"]["tableLimitPerBucket"] == 2
+    assert payload["summary"]["tableTruncatedBuckets"] == {
+        "active": {"returned": 2, "total": 4},
+        "pending": {"returned": 2, "total": 3},
+    }
+
+
 def test_registry_sources_rejects_unknown_view(tmp_path: Path) -> None:
     api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
     api.load_state = lambda: (_ for _ in ()).throw(AssertionError("load_state not expected"))  # type: ignore[assignment]

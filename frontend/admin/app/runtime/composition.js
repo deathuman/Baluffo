@@ -24,7 +24,7 @@ import {
 } from "../fetcher.js?v=15";
 import { createRestoreActiveRunWatches } from "../live-task.js";
 import { createAdminOpsController, formatBytes } from "../ops.js?v=26";
-import { createAdminRegistryController } from "../registry.js?v=19";
+import { createAdminRegistryController } from "../registry.js?v=20";
 import { createAdminSyncController } from "../sync.js?v=13";
 import { createAdminOverviewController } from "./overview.js?v=14";
 import { createActionCenterController } from "../action-center.js?v=2";

@@ -208,6 +208,34 @@ def _requested_registry_source_buckets(query: dict[str, list[str]]) -> tuple[lis
     return deduped, ""
 
 
+def _registry_table_limit_per_bucket(query: dict[str, list[str]]) -> int:
+    raw = str((query.get("limitPerBucket") or query.get("limit") or [""])[0] or "").strip()
+    if not raw:
+        return 0
+    try:
+        value = int(raw)
+    except ValueError:
+        return 0
+    if value <= 0:
+        return 0
+    return min(value, 500)
+
+
+def _apply_registry_table_limit(
+    sources: dict[str, list[dict[str, Any]]],
+    limit_per_bucket: int,
+) -> dict[str, dict[str, int]]:
+    if limit_per_bucket <= 0:
+        return {}
+    truncated_buckets: dict[str, dict[str, int]] = {}
+    for bucket, rows in list(sources.items()):
+        total = len(rows)
+        if total > limit_per_bucket:
+            sources[bucket] = rows[:limit_per_bucket]
+            truncated_buckets[bucket] = {"returned": limit_per_bucket, "total": total}
+    return truncated_buckets
+
+
 def _registry_authority_mode_from_summary(summary: dict[str, Any]) -> str:
     explicit = str(summary.get("authorityMode") or "").strip().lower()
     if explicit:
@@ -273,6 +301,7 @@ def _registry_sources_payload(
             "allowedViews": ["full", "table"],
         }
     table_view = view == "table"
+    table_limit_per_bucket = _registry_table_limit_per_bucket(query) if table_view else 0
     buckets, invalid = _requested_registry_source_buckets(query)
     if invalid:
         return 400, {
@@ -313,6 +342,10 @@ def _registry_sources_payload(
                 dict(row) for row in state.get("rejected") or [] if isinstance(row, dict)
             ]
         if table_view:
+            if table_limit_per_bucket:
+                truncated_buckets = _apply_registry_table_limit(sources, table_limit_per_bucket)
+                summary["tableLimitPerBucket"] = table_limit_per_bucket
+                summary["tableTruncatedBuckets"] = truncated_buckets
             if "pending" in sources:
                 annotated_pending, pending_approval_summary = annotate_pending_auto_approval_rows(
                     sources.get("pending") or [],
