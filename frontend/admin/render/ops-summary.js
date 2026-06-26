@@ -90,11 +90,14 @@ function formatPipelineScheduleStatus(entry) {
   const nextRaw = String(entry?.nextRunAt || "").trim();
   const next = formatDateTime(nextRaw);
   const hasNext = Boolean(nextRaw) && next !== "unknown";
+  const nextMs = Date.parse(nextRaw);
+  const hasFutureNext = hasNext && Number.isFinite(nextMs) && nextMs > Date.now();
   const error = String(entry?.lastTriggerError || "").trim();
   if (!entry || Object.keys(entry).length === 0) return "loading";
   if (!entry.enabled) return "disabled";
   if (error) return `needs attention: ${error}`;
   if (entry.pending) return "pending; waiting for idle";
+  if (interval > 0 && hasFutureNext) return `every ${interval}h, next ${next}`;
   if (entry.due) return "due now";
   if (interval > 0 && hasNext) return `every ${interval}h, next ${next}`;
   if (interval > 0 && entry.nextAfterCurrentCompletes) {

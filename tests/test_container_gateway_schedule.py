@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import src.container_gateway as container_gateway
 from src.bridge.pipeline_control_files import write_pipeline_status
 from src.container_gateway import _GatewayState
 
@@ -10,6 +11,11 @@ from src.container_gateway import _GatewayState
 class _FakeBridgeProcess:
     def poll(self) -> int | None:
         return 1
+
+
+class _AliveBridgeProcess:
+    def poll(self) -> int | None:
+        return None
 
 
 def _state(tmp_path: Path) -> _GatewayState:
@@ -35,6 +41,26 @@ def _write_lifecycle_rows(data_dir: Path, rows: list[dict]) -> None:
         json.dumps({"rows": rows}),
         encoding="utf-8",
     )
+
+
+class _FakeHeaders:
+    def get_content_charset(self) -> str:
+        return "utf-8"
+
+
+class _FakeResponse:
+    def __init__(self, payload: dict) -> None:
+        self.headers = _FakeHeaders()
+        self._body = json.dumps(payload).encode("utf-8")
+
+    def __enter__(self) -> _FakeResponse:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return self._body
 
 
 def test_gateway_schedule_fallback_computes_next_run_from_terminal_pipeline_row(
@@ -117,3 +143,53 @@ def test_gateway_schedule_fallback_marks_next_after_current_when_no_terminal_row
     assert payload["status"]["pending"] is False
     assert payload["status"]["nextAfterCurrentCompletes"] is True
     assert payload["schedule"]["pipeline"]["nextAfterCurrentCompletes"] is True
+
+
+def test_gateway_degraded_admin_prefers_bridge_schedule_payload(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    state = _GatewayState(
+        data_dir=data_dir,
+        static_root=Path(__file__).resolve().parents[1],
+        internal_base_url="http://127.0.0.1:9",
+        bridge_process=_AliveBridgeProcess(),
+    )
+    _write_schedule(state.data_dir)
+    next_run_at = "2099-06-27T09:12:02+00:00"
+    bridge_schedule_payload = {
+        "ok": True,
+        "savedConfig": {"enabled": True, "intervalHours": 11},
+        "status": {
+            "enabled": True,
+            "pending": False,
+            "due": False,
+            "nextRunAt": next_run_at,
+            "lastPipelineFinishedAt": "2099-06-26T22:12:02+00:00",
+            "lastTriggerRunId": "",
+            "lastTriggerError": "",
+        },
+    }
+
+    def fake_urlopen(request, timeout=0):
+        assert str(request.full_url).endswith("/tasks/jobs-pipeline-schedule")
+        assert timeout <= 0.5
+        return _FakeResponse(bridge_schedule_payload)
+
+    monkeypatch.setattr(container_gateway, "urlopen", fake_urlopen)
+    monkeypatch.setattr(state, "bridge_listening", lambda timeout=0.15: True)
+
+    local_payload = state.pipeline_schedule_payload()
+    dashboard = state.dashboard_health_summary_payload()
+    bootstrap = state.admin_bootstrap_payload()
+
+    assert local_payload["status"]["due"] is True
+    assert local_payload["status"]["nextRunAt"] == ""
+    assert dashboard["schedule"]["pipeline"]["intervalHours"] == 11
+    assert dashboard["schedule"]["pipeline"]["due"] is False
+    assert dashboard["schedule"]["pipeline"]["nextRunAt"] == next_run_at
+    assert bootstrap["schedule"]["pipeline"]["intervalHours"] == 11
+    assert bootstrap["schedule"]["pipeline"]["due"] is False
+    assert bootstrap["schedule"]["pipeline"]["nextRunAt"] == next_run_at

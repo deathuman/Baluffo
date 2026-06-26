@@ -239,6 +239,70 @@ class _GatewayState:
             "bridgeListening": self.bridge_listening(),
         }
 
+    def _bridge_json_payload(self, path: str, *, timeout: float = 0.5) -> dict[str, Any] | None:
+        if not self.bridge_alive() or not self.bridge_listening(timeout=0.05):
+            return None
+        target = f"{self.internal_base_url}{path}"
+        request = Request(target, method="GET", headers={"Accept": "application/json"})
+        try:
+            with urlopen(request, timeout=max(0.1, float(timeout))) as response:
+                body = response.read()
+                charset = response.headers.get_content_charset() or "utf-8"
+            payload = json.loads(body.decode(charset, errors="replace") or "{}")
+        except (
+            HTTPError,
+            OSError,
+            TimeoutError,
+            URLError,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            ValueError,
+        ):
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    @staticmethod
+    def _schedule_from_pipeline_schedule_payload(
+        payload: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if not isinstance(payload, dict):
+            return None
+        schedule = payload.get("schedule")
+        if isinstance(schedule, dict) and isinstance(schedule.get("pipeline"), dict):
+            return schedule
+        status = payload.get("status")
+        if not isinstance(status, dict):
+            return None
+        saved_config = payload.get("savedConfig")
+        saved = saved_config if isinstance(saved_config, dict) else {}
+        pipeline = dict(status)
+        if "enabled" not in pipeline and "enabled" in saved:
+            pipeline["enabled"] = bool(saved.get("enabled"))
+        if "intervalHours" not in pipeline:
+            try:
+                interval_hours = int(saved.get("intervalHours") or 0)
+            except (TypeError, ValueError):
+                interval_hours = 0
+            if interval_hours > 0:
+                pipeline["intervalHours"] = interval_hours
+        return {"pipeline": pipeline}
+
+    def _admin_schedule_payload(self) -> dict[str, Any]:
+        bridge_payload = self._bridge_json_payload("/tasks/jobs-pipeline-schedule")
+        bridge_schedule = self._schedule_from_pipeline_schedule_payload(bridge_payload)
+        if bridge_schedule is not None:
+            return {
+                "ok": True,
+                "summaryView": True,
+                "degraded": True,
+                "source": "container-gateway-bridge-schedule",
+                "schedule": bridge_schedule,
+                "gatewayReady": True,
+                "bridgeAlive": self.bridge_alive(),
+                "bridgeListening": self.bridge_listening(),
+            }
+        return self.pipeline_schedule_payload()
+
     @staticmethod
     def _parse_iso_datetime(value: Any) -> datetime | None:
         text = str(value or "").strip()
@@ -316,8 +380,9 @@ class _GatewayState:
             **({"nextAfterCurrentCompletes": True} if active else {}),
         }
 
-    def dashboard_health_summary_payload(self) -> dict[str, Any]:
-        schedule_payload = self.pipeline_schedule_payload()
+    def _dashboard_health_summary_payload_with_schedule(
+        self, schedule_payload: dict[str, Any]
+    ) -> dict[str, Any]:
         return {
             "ok": True,
             "status": "degraded",
@@ -337,9 +402,13 @@ class _GatewayState:
             "message": "Admin data delayed; retrying.",
         }
 
+    def dashboard_health_summary_payload(self) -> dict[str, Any]:
+        schedule_payload = self._admin_schedule_payload()
+        return self._dashboard_health_summary_payload_with_schedule(schedule_payload)
+
     def admin_bootstrap_payload(self) -> dict[str, Any]:
         task_state = self.task_state_summary_payload() or {}
-        schedule_payload = self.pipeline_schedule_payload()
+        schedule_payload = self._admin_schedule_payload()
         return {
             "ok": True,
             "summaryView": True,
@@ -347,7 +416,7 @@ class _GatewayState:
             "source": "container-gateway-fallback",
             "app": self.ready_payload(),
             "overview": {},
-            "ops": self.dashboard_health_summary_payload(),
+            "ops": self._dashboard_health_summary_payload_with_schedule(schedule_payload),
             "tasks": {
                 "current": task_state.get("tasks") or [],
                 "recent": [],

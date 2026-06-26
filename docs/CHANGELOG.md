@@ -10,6 +10,16 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.92] - 2026-06-27
+
+### Fixed
+- Umbrel Admin degraded dashboard/bootstrap payloads now prefer the bridge pipeline schedule service when it is available, preventing incomplete fallback evidence from replacing a valid next scheduled fetch with `due now`.
+- Admin schedule rendering now prefers a concrete future `nextRunAt` over a stale `due` flag, so enabled schedules show the next date when that date is known.
+- Bumped the Admin cache chain so existing Umbrel browser sessions load the 0.2.92 schedule display fix.
+
+### Notes
+- This remains on the current shared release line covering the same-origin Linux container, Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.91] - 2026-06-27
 
 ### Fixed

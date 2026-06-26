@@ -122,6 +122,16 @@ test("admin render: pipeline schedule state text covers key states", () => {
     [
       {
         enabled: true,
+        intervalHours: 11,
+        pending: false,
+        due: true,
+        nextRunAt: "2099-03-09T10:00:00.000Z"
+      },
+      /every 11h, next/i
+    ],
+    [
+      {
+        enabled: true,
         intervalHours: 12,
         pending: false,
         due: false,
