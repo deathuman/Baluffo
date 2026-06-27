@@ -370,6 +370,14 @@ export function composeAdminControllers({
       });
     }
     opsController.applyBootstrapPayload(payload || {});
+    if (bootstrapDegraded) {
+      opsController.loadPipelineScheduleData({
+        silent: true,
+        force: true
+      }).catch(err => {
+        logAdminError("Admin pipeline schedule fallback refresh delayed.", err);
+      });
+    }
     state.latestSyncStatusCache = payload?.sync || null;
     syncController.renderSyncStatus(payload?.sync || {}, { forceForm: true });
     scheduleBootstrapSourceTablesLoad();
