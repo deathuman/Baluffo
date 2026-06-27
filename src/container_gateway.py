@@ -11,7 +11,7 @@ import sys
 import threading
 import time
 from contextlib import suppress
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -205,13 +205,17 @@ class _GatewayState:
             saved_config = {}
         enabled = bool(saved_config.get("enabled", False))
         interval_hours = saved_config.get("intervalHours")
+        configured_at = str(saved_config.get("configuredAt") or "").strip()
         schedule: dict[str, Any] = {"enabled": enabled}
         if isinstance(interval_hours, int | float) and interval_hours > 0:
             schedule["intervalHours"] = int(interval_hours)
+        if enabled and configured_at:
+            schedule["configuredAt"] = configured_at
         pipeline_status = self.pipeline_status_payload()
         computed = self._pipeline_schedule_status_fallback(
             enabled=enabled,
             interval_hours=int(schedule.get("intervalHours") or 0),
+            configured_at=configured_at,
             pipeline_status=pipeline_status,
         )
         status = {
@@ -346,6 +350,7 @@ class _GatewayState:
         *,
         enabled: bool,
         interval_hours: int,
+        configured_at: str,
         pipeline_status: dict[str, Any],
     ) -> dict[str, Any]:
         active = bool(pipeline_status.get("active") or pipeline_status.get("running"))
@@ -372,6 +377,20 @@ class _GatewayState:
                 "nextRunAt": next_run_at.isoformat(),
                 "lastPipelineFinishedAt": last_finished_at,
             }
+        if interval_hours > 0:
+            anchor = self._pipeline_schedule_anchor_datetime(configured_at)
+            next_run_at = anchor + timedelta(hours=interval_hours)
+            now = (
+                datetime.now(next_run_at.tzinfo)
+                if next_run_at.tzinfo is not None
+                else datetime.now()
+            )
+            return {
+                "pending": False,
+                "due": now >= next_run_at,
+                "nextRunAt": next_run_at.isoformat(),
+                "lastPipelineFinishedAt": last_finished_at,
+            }
         return {
             "pending": False,
             "due": not active,
@@ -379,6 +398,16 @@ class _GatewayState:
             "lastPipelineFinishedAt": last_finished_at,
             **({"nextAfterCurrentCompletes": True} if active else {}),
         }
+
+    def _pipeline_schedule_anchor_datetime(self, configured_at: str) -> datetime:
+        parsed = self._parse_iso_datetime(configured_at)
+        if parsed is not None:
+            return parsed
+        try:
+            mtime = (self.data_dir / "jobs-pipeline-schedule-config.json").stat().st_mtime
+            return datetime.fromtimestamp(mtime, tz=UTC)
+        except OSError:
+            return datetime.now(UTC)
 
     def _dashboard_health_summary_payload_with_schedule(
         self, schedule_payload: dict[str, Any]

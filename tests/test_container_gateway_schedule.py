@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+from datetime import UTC, datetime
 from pathlib import Path
 
 import src.container_gateway as container_gateway
@@ -29,9 +31,12 @@ def _state(tmp_path: Path) -> _GatewayState:
     )
 
 
-def _write_schedule(data_dir: Path) -> None:
+def _write_schedule(data_dir: Path, *, interval_hours: int = 12, configured_at: str = "") -> None:
+    payload = {"enabled": True, "intervalHours": interval_hours}
+    if configured_at:
+        payload["configuredAt"] = configured_at
     (data_dir / "jobs-pipeline-schedule-config.json").write_text(
-        json.dumps({"enabled": True, "intervalHours": 12}),
+        json.dumps(payload),
         encoding="utf-8",
     )
 
@@ -126,11 +131,14 @@ def test_gateway_schedule_fallback_preserves_next_run_during_active_pipeline(
     assert "nextAfterCurrentCompletes" not in payload["status"]
 
 
-def test_gateway_schedule_fallback_marks_next_after_current_when_no_terminal_row(
+def test_gateway_schedule_fallback_uses_configured_anchor_without_terminal_row(
     tmp_path: Path,
 ) -> None:
     state = _state(tmp_path)
-    _write_schedule(state.data_dir)
+    _write_schedule(
+        state.data_dir,
+        configured_at="2099-06-26T09:00:00+00:00",
+    )
     write_pipeline_status(
         state.data_dir,
         {"active": True, "runId": "pipeline_active", "stage": "fetch"},
@@ -139,10 +147,30 @@ def test_gateway_schedule_fallback_marks_next_after_current_when_no_terminal_row
 
     payload = state.pipeline_schedule_payload()
 
-    assert payload["status"]["nextRunAt"] == ""
+    assert payload["status"]["nextRunAt"] == "2099-06-26T21:00:00+00:00"
     assert payload["status"]["pending"] is False
-    assert payload["status"]["nextAfterCurrentCompletes"] is True
-    assert payload["schedule"]["pipeline"]["nextAfterCurrentCompletes"] is True
+    assert payload["status"]["due"] is False
+    assert "nextAfterCurrentCompletes" not in payload["status"]
+    assert payload["schedule"]["pipeline"]["configuredAt"] == "2099-06-26T09:00:00+00:00"
+
+
+def test_gateway_schedule_fallback_uses_config_mtime_without_terminal_row(
+    tmp_path: Path,
+) -> None:
+    state = _state(tmp_path)
+    _write_schedule(state.data_dir, interval_hours=2)
+    mtime = datetime(2099, 6, 26, 9, 0, 0, tzinfo=UTC)
+    schedule_path = state.data_dir / "jobs-pipeline-schedule-config.json"
+    os.utime(schedule_path, (mtime.timestamp(), mtime.timestamp()))
+
+    payload = state.pipeline_schedule_payload()
+    dashboard = state.dashboard_health_summary_payload()
+    bootstrap = state.admin_bootstrap_payload()
+
+    assert payload["status"]["nextRunAt"] == "2099-06-26T11:00:00+00:00"
+    assert payload["status"]["due"] is False
+    assert dashboard["schedule"]["pipeline"]["nextRunAt"] == "2099-06-26T11:00:00+00:00"
+    assert bootstrap["schedule"]["pipeline"]["nextRunAt"] == "2099-06-26T11:00:00+00:00"
 
 
 def test_gateway_degraded_admin_prefers_bridge_schedule_payload(
@@ -185,8 +213,7 @@ def test_gateway_degraded_admin_prefers_bridge_schedule_payload(
     dashboard = state.dashboard_health_summary_payload()
     bootstrap = state.admin_bootstrap_payload()
 
-    assert local_payload["status"]["due"] is True
-    assert local_payload["status"]["nextRunAt"] == ""
+    assert local_payload["schedule"]["pipeline"]["intervalHours"] == 12
     assert dashboard["schedule"]["pipeline"]["intervalHours"] == 11
     assert dashboard["schedule"]["pipeline"]["due"] is False
     assert dashboard["schedule"]["pipeline"]["nextRunAt"] == next_run_at

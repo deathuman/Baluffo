@@ -10,6 +10,15 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.93] - 2026-06-27
+
+### Fixed
+- Pipeline schedules with no prior terminal pipeline run now anchor the next run to the schedule save time plus the configured interval instead of immediately showing `due now`.
+- The Umbrel container gateway schedule fallback now uses the same no-history anchor policy as the bridge scheduler, including compatibility fallback to the existing schedule file modification time.
+
+### Notes
+- This remains on the current shared release line covering the same-origin Linux container, Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.92] - 2026-06-27
 
 ### Fixed

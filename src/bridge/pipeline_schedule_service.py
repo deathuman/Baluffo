@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -93,11 +93,15 @@ class PipelineScheduleService:
         data = payload if isinstance(payload, dict) else {}
         default = PipelineScheduleService.default_config()
         interval_source = data.get("intervalHours", default["intervalHours"])
-        return {
+        normalized = {
             "schemaVersion": SCHEMA_VERSION,
             "enabled": _is_truthy(data.get("enabled", default["enabled"])),
             "intervalHours": _parse_interval_hours(interval_source),
         }
+        configured_at = _clean_text(data.get("configuredAt"))
+        if normalized["enabled"] and configured_at:
+            normalized["configuredAt"] = configured_at
+        return normalized
 
     def load_config(self) -> dict[str, Any]:
         raw = self._load_json_object(self._config_path, {})
@@ -110,6 +114,10 @@ class PipelineScheduleService:
 
     def update_config(self, payload: dict[str, Any] | None) -> dict[str, Any]:
         normalized = self.normalize_config(payload)
+        if normalized["enabled"]:
+            normalized["configuredAt"] = self._now_iso()
+        else:
+            normalized.pop("configuredAt", None)
         with self._lock:
             if not normalized["enabled"]:
                 self._pending = False
@@ -202,7 +210,15 @@ class PipelineScheduleService:
         due = False
         if bool(config.get("enabled")):
             if not last_finished_at:
-                due = True
+                anchor = self._schedule_anchor_datetime(config)
+                if anchor is not None:
+                    next_dt = anchor + timedelta(
+                        hours=int(config.get("intervalHours") or DEFAULT_INTERVAL_HOURS)
+                    )
+                    next_run_at = next_dt.isoformat()
+                    now = self._parse_iso(self._now_iso())
+                    if now is not None:
+                        due = now >= next_dt
             else:
                 last_finished = self._parse_iso(last_finished_at)
                 now = self._parse_iso(self._now_iso())
@@ -218,6 +234,18 @@ class PipelineScheduleService:
             "nextRunAt": next_run_at,
             "lastPipelineFinishedAt": last_finished_at,
         }
+
+    def _schedule_anchor_datetime(self, config: dict[str, Any]) -> datetime | None:
+        configured_at = _clean_text(config.get("configuredAt"))
+        parsed = self._parse_iso(configured_at)
+        if parsed is not None:
+            return parsed
+        try:
+            mtime = self._config_path.stat().st_mtime
+            return datetime.fromtimestamp(mtime, tz=UTC)
+        except OSError:
+            pass
+        return self._parse_iso(self._now_iso())
 
     def _latest_terminal_pipeline_row(self) -> dict[str, Any] | None:
         candidates: list[tuple[datetime, int, dict[str, Any]]] = []
