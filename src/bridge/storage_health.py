@@ -20,6 +20,7 @@ from src.storage.baluffo_store import (
     DEFAULT_BUSY_RETRY_BASE_MS,
     DEFAULT_BUSY_RETRY_MAX_MS,
     DEFAULT_BUSY_TIMEOUT_MS,
+    DEFAULT_DB_NAME,
 )
 
 _STORE_LOCK = threading.RLock()
@@ -55,6 +56,22 @@ def _storage_busy_config() -> dict[str, int]:
     }
 
 
+def _path_size(path: Path) -> int:
+    try:
+        return max(0, int(path.stat().st_size))
+    except OSError:
+        return 0
+
+
+def _runtime_db_file_sizes(data_dir: Path) -> dict[str, int]:
+    db_path = data_dir / DEFAULT_DB_NAME
+    return {
+        "databaseBytes": _path_size(db_path),
+        "walBytes": _path_size(db_path.with_name(f"{db_path.name}-wal")),
+        "shmBytes": _path_size(db_path.with_name(f"{db_path.name}-shm")),
+    }
+
+
 def get_storage_store(data_dir: Path | str) -> BaluffoStore:
     resolved = _resolve_data_dir(data_dir)
     with _STORE_LOCK:
@@ -76,6 +93,7 @@ def get_storage_health_payload(data_dir: Path | str) -> dict[str, Any]:
                 "healthy": False,
                 "error": str(exc),
                 "dataDir": str(resolved),
+                **_runtime_db_file_sizes(resolved),
                 "diagnostics": list(_DIAGNOSTICS_BY_DATA_DIR.get(resolved, [])),
             },
         }

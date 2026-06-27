@@ -15,6 +15,8 @@ STORAGE_METRICS_SCHEMA_VERSION = 1
 DEFAULT_COMPACT_THRESHOLD_BYTES = 1_048_576
 MAX_IN_MEMORY_EVENTS = 2_000
 MAX_EVENT_READ_ROWS = 5_000
+MAX_EVENT_READ_BYTES = 2 * 1024 * 1024
+MAX_METRICS_FILE_BYTES = 32 * 1024 * 1024
 REGISTRY_JOURNAL_NAMES = (
     "source-registry-active.jsonl",
     "source-registry-pending.jsonl",
@@ -71,11 +73,28 @@ def _append_event(event: dict[str, Any], *, data_dir: Path | str | None = None) 
     try:
         path = _metrics_path(data_dir)
         path.parent.mkdir(parents=True, exist_ok=True)
+        _rotate_metrics_file_if_needed(path)
         with path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n")
     except OSError:
         # Diagnostics must never break runtime writes.
         return
+
+
+def _rotate_metrics_file_if_needed(path: Path, *, max_bytes: int | None = None) -> bool:
+    limit = MAX_METRICS_FILE_BYTES if max_bytes is None else max(1, int(max_bytes))
+    try:
+        if path.stat().st_size < limit:
+            return False
+    except OSError:
+        return False
+    rotated = path.with_name(f"{path.name}.1")
+    try:
+        rotated.unlink(missing_ok=True)
+        path.replace(rotated)
+        return True
+    except OSError:
+        return False
 
 
 def record_json_write(
@@ -193,7 +212,13 @@ def _read_metric_events(data_dir: Path | str | None = None) -> list[dict[str, An
     events: list[dict[str, Any]] = []
     path = _metrics_path(data_dir)
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        size = path.stat().st_size
+        with path.open("rb") as handle:
+            if size > MAX_EVENT_READ_BYTES:
+                handle.seek(-MAX_EVENT_READ_BYTES, os.SEEK_END)
+                handle.readline()
+            chunk = handle.read(MAX_EVENT_READ_BYTES)
+        lines = chunk.decode("utf-8", errors="ignore").splitlines()
     except OSError:
         lines = []
     for line in lines[-MAX_EVENT_READ_ROWS:]:
@@ -493,13 +518,27 @@ def registry_journal_telemetry(
 def snapshot_storage_metrics(data_dir: Path | str | None = None) -> dict[str, Any]:
     root = Path(data_dir).expanduser().resolve() if data_dir is not None else _default_data_dir()
     events = _read_metric_events(root)
+    metrics_file = _metrics_path(root)
     return {
         "schemaVersion": STORAGE_METRICS_SCHEMA_VERSION,
         "generatedAt": _now_iso(),
         "dataDir": str(root),
         "eventCount": len(events),
+        "metricsFile": {
+            "path": str(metrics_file),
+            "byteSize": _file_size(metrics_file),
+            "maxBytes": MAX_METRICS_FILE_BYTES,
+            "tailReadBytes": MAX_EVENT_READ_BYTES,
+        },
         "writes": _summarize_write_events(events),
         "reads": _summarize_read_events(events),
         "registryJournals": registry_journal_telemetry(root),
         "sourceSyncSnapshots": _summarize_source_sync(events),
     }
+
+
+def _file_size(path: Path) -> int:
+    try:
+        return max(0, int(path.stat().st_size))
+    except OSError:
+        return 0

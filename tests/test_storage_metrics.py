@@ -4,8 +4,10 @@ import json
 from pathlib import Path
 
 from src import source_registry_io as registry_io
+from src import storage_metrics as storage_metrics_mod
 from src.storage_metrics import (
     record_json_write,
+    record_jsonl_write,
     record_source_sync_snapshot,
     record_storage_read,
     registry_journal_telemetry,
@@ -48,6 +50,61 @@ def test_storage_metrics_records_json_write_stats(tmp_path: Path) -> None:
     assert writes["totals"]["compressedSizeBytes"]["max"] == 300
     assert writes["artifacts"][0]["artifact"] == "jobs-fetch-report.json"
     assert (tmp_path / "storage-metrics.jsonl").exists()
+
+
+def test_storage_metrics_jsonl_rotates_when_file_is_oversized(tmp_path: Path, monkeypatch) -> None:
+    reset_storage_metrics(data_dir=tmp_path, remove_file=True)
+    monkeypatch.setattr(storage_metrics_mod, "MAX_METRICS_FILE_BYTES", 128)
+    path = tmp_path / "storage-metrics.jsonl"
+    path.write_text("x" * 256, encoding="utf-8")
+
+    record_jsonl_write(
+        path=tmp_path / "jobs-fetch-report.jsonl",
+        operation="append",
+        bytes_written=10,
+        duration_ms=1,
+        data_dir=tmp_path,
+    )
+
+    assert (tmp_path / "storage-metrics.jsonl.1").exists()
+    assert (tmp_path / "storage-metrics.jsonl.1").stat().st_size == 256
+    assert not path.read_text(encoding="utf-8").startswith("x")
+
+
+def test_storage_metrics_snapshot_reads_only_tail_bytes(tmp_path: Path, monkeypatch) -> None:
+    reset_storage_metrics(data_dir=tmp_path, remove_file=True)
+    monkeypatch.setattr(storage_metrics_mod, "MAX_EVENT_READ_BYTES", 256)
+    path = tmp_path / "storage-metrics.jsonl"
+    old_rows = [
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "eventId": f"old-{idx}",
+                "type": "jsonWrite",
+                "artifact": f"old-{idx}.json",
+                "padding": "x" * 256,
+                "writeCount": 1,
+            }
+        )
+        for idx in range(100)
+    ]
+    tail_row = json.dumps(
+        {
+            "schemaVersion": 1,
+            "eventId": "tail",
+            "type": "jsonWrite",
+            "artifact": "tail.json",
+            "writeCount": 1,
+        }
+    )
+    path.write_text("\n".join(old_rows + [tail_row]) + "\n", encoding="utf-8")
+
+    metrics = snapshot_storage_metrics(tmp_path)
+    artifact_names = {str(row.get("artifact") or "") for row in metrics["writes"]["artifacts"]}
+
+    assert "tail.json" in artifact_names
+    assert "old-0.json" not in artifact_names
+    assert metrics["metricsFile"]["tailReadBytes"] == 256
 
 
 def test_storage_metrics_records_bounded_read_stats(tmp_path: Path) -> None:

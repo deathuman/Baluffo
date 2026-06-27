@@ -45,6 +45,10 @@ def test_storage_health_payload_initializes_sqlite_store(tmp_path: Path) -> None
     assert storage["migrationVersion"] == "008"
     assert storage["walMode"] == "wal"
     assert storage["quickCheck"] == "ok"
+    assert storage["quickCheckScope"] == "limited"
+    assert storage["databaseBytes"] > 0
+    assert storage["walBytes"] >= 0
+    assert storage["walMaintenance"]["status"] in {"not-run", "scheduled", "ok"}
     assert storage["authorityModes"]["taskRuns"] == "sqlite"
     assert storage["authorityModes"]["taskEvents"] == "sqlite"
     assert storage["authorityModes"]["syncRuns"] == "sqlite"
@@ -52,6 +56,29 @@ def test_storage_health_payload_initializes_sqlite_store(tmp_path: Path) -> None
     assert storage["authorityModes"]["jobsFeed"] == "sqlite"
     assert Path(str(storage["databasePath"])).parent == tmp_path.resolve()
     assert (tmp_path / "baluffo-runtime.db").exists()
+
+
+def test_storage_health_failure_payload_includes_runtime_db_file_sizes(
+    tmp_path: Path, monkeypatch
+) -> None:
+    db_path = tmp_path / "baluffo-runtime.db"
+    wal_path = tmp_path / "baluffo-runtime.db-wal"
+    shm_path = tmp_path / "baluffo-runtime.db-shm"
+    db_path.write_bytes(b"db")
+    wal_path.write_bytes(b"wal")
+    shm_path.write_bytes(b"shm")
+
+    def fail_store(*_args, **_kwargs):
+        raise ValueError("boom")
+
+    monkeypatch.setattr("src.bridge.storage_health.get_storage_store", fail_store)
+
+    payload = get_storage_health_payload(tmp_path)
+
+    assert payload["ok"] is False
+    assert payload["storage"]["databaseBytes"] == 2
+    assert payload["storage"]["walBytes"] == 3
+    assert payload["storage"]["shmBytes"] == 3
 
 
 def test_storage_health_payload_includes_storage_diagnostics(tmp_path: Path) -> None:

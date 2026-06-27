@@ -27,6 +27,10 @@ DEFAULT_BUSY_RETRY_ATTEMPTS = 10
 DEFAULT_BUSY_RETRY_BASE_MS = 10
 DEFAULT_BUSY_RETRY_MAX_MS = 5_000
 DEFAULT_BATCH_SIZE = 500
+DEFAULT_WAL_CHECKPOINT_THRESHOLD_BYTES = 64 * 1024 * 1024
+DEFAULT_WAL_TRUNCATE_THRESHOLD_BYTES = 256 * 1024 * 1024
+DEFAULT_WAL_JOURNAL_SIZE_LIMIT_BYTES = DEFAULT_WAL_CHECKPOINT_THRESHOLD_BYTES
+DEFAULT_QUICK_CHECK_MAX_DATABASE_BYTES = 64 * 1024 * 1024
 MIGRATIONS_PACKAGE = "src.storage.migrations"
 STORAGE_SCHEMA_VERSION = 1
 
@@ -78,6 +82,9 @@ class BaluffoStore:
         busy_retry_attempts: int = DEFAULT_BUSY_RETRY_ATTEMPTS,
         busy_retry_base_ms: int = DEFAULT_BUSY_RETRY_BASE_MS,
         busy_retry_max_ms: int = DEFAULT_BUSY_RETRY_MAX_MS,
+        wal_checkpoint_threshold_bytes: int = DEFAULT_WAL_CHECKPOINT_THRESHOLD_BYTES,
+        wal_truncate_threshold_bytes: int = DEFAULT_WAL_TRUNCATE_THRESHOLD_BYTES,
+        quick_check_max_database_bytes: int = DEFAULT_QUICK_CHECK_MAX_DATABASE_BYTES,
     ) -> None:
         self.data_dir = Path(data_dir).expanduser().resolve()
         self.db_name = str(db_name or DEFAULT_DB_NAME)
@@ -86,13 +93,27 @@ class BaluffoStore:
         self.busy_retry_attempts = max(1, int(busy_retry_attempts))
         self.busy_retry_base_ms = max(1, int(busy_retry_base_ms))
         self.busy_retry_max_ms = max(self.busy_retry_base_ms, int(busy_retry_max_ms))
+        self.wal_checkpoint_threshold_bytes = max(1, int(wal_checkpoint_threshold_bytes))
+        self.wal_truncate_threshold_bytes = max(
+            self.wal_checkpoint_threshold_bytes, int(wal_truncate_threshold_bytes)
+        )
+        self.quick_check_max_database_bytes = max(1, int(quick_check_max_database_bytes))
         self._last_write_error = ""
         self._busy_count = 0
         self._write_attempts = 0
         self._write_transactions = 0
         self._healthy = True
+        self._last_checkpoint: dict[str, Any] = {
+            "status": "not-run",
+            "reason": "",
+            "mode": "",
+            "durationMs": 0,
+            "error": "",
+        }
+        self._maintenance_thread: threading.Thread | None = None
         self._write_lock = threading.RLock()
         self._read_lock = threading.RLock()
+        self._maintenance_lock = threading.RLock()
         self._reader: sqlite3.Connection | None = None
 
         self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -101,12 +122,14 @@ class BaluffoStore:
         self._ensure_migration_table()
         self.run_migrations()
         self._seed_authority_modes()
-        quick_check = self.quick_check()
-        if quick_check != "ok":
+        startup_check = self.startup_probe()
+        if startup_check != "ok":
             self._healthy = False
-            raise BaluffoStoreError(f"SQLite quick_check failed at startup: {quick_check}")
+            raise BaluffoStoreError(f"SQLite startup probe failed: {startup_check}")
+        self.schedule_wal_maintenance_if_needed(reason="startup")
 
     def close(self) -> None:
+        self._checkpoint_if_needed(reason="close", mode="PASSIVE")
         with self._read_lock:
             if self._reader is not None:
                 self._reader.close()
@@ -139,6 +162,8 @@ class BaluffoStore:
         self._writer.execute("PRAGMA synchronous=NORMAL")
         self._writer.execute(f"PRAGMA busy_timeout={self.busy_timeout_ms}")
         self._writer.execute("PRAGMA foreign_keys=ON")
+        self._writer.execute("PRAGMA wal_autocheckpoint=1000")
+        self._writer.execute(f"PRAGMA journal_size_limit={DEFAULT_WAL_JOURNAL_SIZE_LIMIT_BYTES}")
         foreign_keys = int(self._writer.execute("PRAGMA foreign_keys").fetchone()[0] or 0)
         if foreign_keys != 1:
             self._healthy = False
@@ -221,6 +246,7 @@ class BaluffoStore:
                     self._writer.commit()
                 self._last_write_error = ""
                 self._write_transactions += 1
+                self.schedule_wal_maintenance_if_needed(reason="write")
                 return result
             except sqlite3.OperationalError as exc:
                 self._rollback_after_error()
@@ -371,9 +397,26 @@ class BaluffoStore:
             )
         )
 
-    def quick_check(self) -> str:
-        result = str(self.execute_scalar("PRAGMA quick_check") or "")
+    def quick_check(self, *, limit: int | None = None) -> str:
+        if limit is None:
+            sql = "PRAGMA quick_check"
+        else:
+            sql = f"PRAGMA quick_check({max(1, int(limit))})"
+        result = str(self.execute_scalar(sql) or "")
         return result or "unknown"
+
+    def startup_probe(self) -> str:
+        try:
+            self.execute_scalar("PRAGMA schema_version")
+        except (BaluffoStoreError, sqlite3.Error) as exc:
+            return str(exc) or "failed"
+        return "ok"
+
+    def quick_check_for_health(self) -> tuple[str, bool]:
+        sizes = self.file_sizes()
+        if int(sizes.get("databaseBytes") or 0) > self.quick_check_max_database_bytes:
+            return "deferred-large-database", True
+        return self.quick_check(limit=1), False
 
     def wal_mode(self) -> str:
         with self._write_lock:
@@ -419,6 +462,102 @@ class BaluffoStore:
     def _execute_checkpoint(self, mode: str) -> sqlite3.Row:
         with self._write_lock:
             return self._writer.execute(f"PRAGMA wal_checkpoint({mode})").fetchone()
+
+    @staticmethod
+    def _path_size(path: Path) -> int:
+        try:
+            return max(0, int(path.stat().st_size))
+        except OSError:
+            return 0
+
+    def file_sizes(self) -> dict[str, int]:
+        return {
+            "databaseBytes": self._path_size(self.db_path),
+            "walBytes": self._path_size(self.db_path.with_name(f"{self.db_path.name}-wal")),
+            "shmBytes": self._path_size(self.db_path.with_name(f"{self.db_path.name}-shm")),
+        }
+
+    def wal_maintenance_status(self) -> dict[str, Any]:
+        with self._maintenance_lock:
+            running = self._maintenance_thread is not None and self._maintenance_thread.is_alive()
+            return {
+                **self._last_checkpoint,
+                "running": running,
+                "checkpointThresholdBytes": self.wal_checkpoint_threshold_bytes,
+                "truncateThresholdBytes": self.wal_truncate_threshold_bytes,
+            }
+
+    def schedule_wal_maintenance_if_needed(self, *, reason: str = "") -> bool:
+        sizes = self.file_sizes()
+        wal_bytes = int(sizes.get("walBytes") or 0)
+        if wal_bytes < self.wal_checkpoint_threshold_bytes:
+            return False
+        with self._maintenance_lock:
+            if self._maintenance_thread is not None and self._maintenance_thread.is_alive():
+                self._last_checkpoint = {
+                    **self._last_checkpoint,
+                    "status": "already-running",
+                    "reason": str(reason or ""),
+                    "walBytes": wal_bytes,
+                }
+                return False
+            mode = "TRUNCATE" if wal_bytes >= self.wal_truncate_threshold_bytes else "PASSIVE"
+            self._last_checkpoint = {
+                "status": "scheduled",
+                "reason": str(reason or ""),
+                "mode": mode,
+                "durationMs": 0,
+                "error": "",
+                **sizes,
+            }
+            thread = threading.Thread(
+                target=self._run_wal_maintenance,
+                kwargs={"reason": str(reason or ""), "mode": mode},
+                name="baluffo-sqlite-wal-maintenance",
+                daemon=True,
+            )
+            self._maintenance_thread = thread
+            thread.start()
+            return True
+
+    def _checkpoint_if_needed(self, *, reason: str, mode: str) -> bool:
+        sizes = self.file_sizes()
+        wal_bytes = int(sizes.get("walBytes") or 0)
+        if wal_bytes < self.wal_checkpoint_threshold_bytes:
+            return False
+        self._run_wal_maintenance(reason=reason, mode=mode)
+        return True
+
+    def _run_wal_maintenance(self, *, reason: str, mode: str) -> None:
+        started = time.perf_counter()
+        before = self.file_sizes()
+        checkpoint_mode = str(mode or "PASSIVE").upper()
+        try:
+            result = self.checkpoint_required(mode=checkpoint_mode)
+            after = self.file_sizes()
+            status = {
+                "status": "ok",
+                "reason": str(reason or ""),
+                "mode": checkpoint_mode,
+                "durationMs": int(round((time.perf_counter() - started) * 1000)),
+                "error": "",
+                **before,
+                "afterDatabaseBytes": int(after.get("databaseBytes") or 0),
+                "afterWalBytes": int(after.get("walBytes") or 0),
+                "afterShmBytes": int(after.get("shmBytes") or 0),
+                **result,
+            }
+        except (BaluffoStoreError, sqlite3.Error, OSError, ValueError) as exc:
+            status = {
+                "status": "failed",
+                "reason": str(reason or ""),
+                "mode": checkpoint_mode,
+                "durationMs": int(round((time.perf_counter() - started) * 1000)),
+                "error": str(exc),
+                **before,
+            }
+        with self._maintenance_lock:
+            self._last_checkpoint = status
 
     def backup_to(self, target_path: Path | str) -> Path:
         quick_check = self.quick_check()
@@ -473,22 +612,29 @@ class BaluffoStore:
             raise BaluffoStoreError(f"SQLite quick_check failed for {path}: {result}")
 
     def health(self) -> dict[str, Any]:
-        quick_check = self.quick_check()
+        quick_check, quick_check_deferred = self.quick_check_for_health()
         migration_version = self.migration_version()
         busy_rate = self._busy_count / max(1, self._write_attempts)
+        sizes = self.file_sizes()
+        quick_check_ok = quick_check == "ok" or quick_check_deferred
         return {
             "schemaVersion": STORAGE_SCHEMA_VERSION,
             "databasePath": str(self.db_path),
+            **sizes,
             "migrationVersion": migration_version,
             "walMode": self.wal_mode(),
             "foreignKeys": self._foreign_keys_enabled(),
             "quickCheck": quick_check,
-            "healthy": bool(self._healthy and quick_check == "ok"),
+            "quickCheckScope": "deferred" if quick_check_deferred else "limited",
+            "quickCheckDeferred": quick_check_deferred,
+            "quickCheckMaxDatabaseBytes": self.quick_check_max_database_bytes,
+            "healthy": bool(self._healthy and quick_check_ok),
             "lastWriteError": self._last_write_error,
             "busyCount": self._busy_count,
             "busyRate": busy_rate,
             "writeAttempts": self._write_attempts,
             "writeTransactions": self._write_transactions,
+            "walMaintenance": self.wal_maintenance_status(),
             "authorityModes": self.get_authority_modes(),
         }
 

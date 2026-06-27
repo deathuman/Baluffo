@@ -10,6 +10,17 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.95] - 2026-06-27
+
+### Fixed
+- Runtime SQLite startup now avoids quick-check scans entirely, and storage-health quick-checks are deferred for oversized runtime databases so large Umbrel data stores cannot wedge app readiness.
+- Runtime SQLite WAL files now trigger size-based background checkpoint maintenance, and storage health reports database, WAL, SHM, and checkpoint status for diagnosis.
+- `storage-metrics.jsonl` now rotates at a bounded size and `/ops/storage-metrics` reads only a tail window, preventing diagnostics growth from becoming a startup or Admin I/O hazard.
+
+### Notes
+- This remains an Umbrel/live-stability test build on the current release line; no public tag is created until live stability is proven.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.94] - 2026-06-27
 
 ### Fixed
