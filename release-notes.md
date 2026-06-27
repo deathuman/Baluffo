@@ -1,3 +1,12 @@
+## [0.2.98] - 2026-06-27
+
+### Fixed
+- Umbrel Admin bootstrap now treats missing schedule data as incomplete even when the shell route succeeds, and waits for the authoritative pipeline schedule route before leaving the first useful render.
+
+### Notes
+- This remains an Umbrel/live-stability test build on the current release line; no public tag is created until live stability is proven.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.97] - 2026-06-27
 
 ### Fixed

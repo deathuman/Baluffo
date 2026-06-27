@@ -50,9 +50,10 @@ test("admin degraded bootstrap refreshes overview instead of rendering false emp
   assert.ok(bootstrapMatch, "expected bootstrap loader");
   const body = bootstrapMatch[1];
   assert.match(body, /bootstrapDegraded/);
+  assert.match(body, /bootstrapScheduleNeedsRefresh/);
   assert.match(body, /renderOverview\(payload\?\.overview \|\| \{\}, \{ degraded: bootstrapDegraded \}\)/);
   assert.match(body, /refreshOverview\(\{\s*detail: "summary",\s*scheduleFullRefresh: true,\s*timeoutMs: 5000,\s*background: true/s);
-  assert.match(body, /loadPipelineScheduleData\(\{\s*silent: true,\s*force: true/s);
+  assert.match(body, /await opsController\.loadPipelineScheduleData\(\{\s*silent: true,\s*force: true/s);
 });
 
 test("admin critical bootstrap fallback gates source tables behind compact active summary", () => {

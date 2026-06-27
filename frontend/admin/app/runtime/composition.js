@@ -358,6 +358,13 @@ export function composeAdminControllers({
       };
     }
     const bootstrapDegraded = payload?.degraded === true || payload?.overview?.degraded === true;
+    const bootstrapScheduleNeedsRefresh = Boolean(
+      bootstrapDegraded
+      || !payload?.schedule
+      || !payload?.schedule?.pipeline
+      || payload?.ops?.scheduleDelayed === true
+      || payload?.scheduleDelayed === true
+    );
     overviewController.renderOverview(payload?.overview || {}, { degraded: bootstrapDegraded });
     if (bootstrapDegraded) {
       overviewController.refreshOverview({
@@ -370,8 +377,8 @@ export function composeAdminControllers({
       });
     }
     opsController.applyBootstrapPayload(payload || {});
-    if (bootstrapDegraded) {
-      opsController.loadPipelineScheduleData({
+    if (bootstrapScheduleNeedsRefresh) {
+      await opsController.loadPipelineScheduleData({
         silent: true,
         force: true
       }).catch(err => {
