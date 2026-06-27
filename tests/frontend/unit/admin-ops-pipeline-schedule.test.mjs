@@ -224,14 +224,25 @@ test("admin ops hydrates pipeline schedule fallback and preserves it across empt
   assert.equal(renderedSchedules.at(-1).pipeline.intervalHours, 12);
 
   controller.applyBootstrapPayload({
+    ok: true,
+    degraded: true,
+    source: "container-gateway-fallback",
     tasks: { current: [], recent: [] },
-    schedule: {},
-    registrySummary: {},
+    schedule: {
+      pipeline: {
+        enabled: true,
+        intervalHours: 11,
+        due: true,
+        nextRunAt: "2026-06-27T09:14:44+00:00"
+      }
+    },
+    registrySummary: { degraded: true, delayed: true },
     app: { version: "9.9.9" }
   });
 
   assert.equal(renderedSchedules.at(-1).pipeline.enabled, true);
   assert.equal(renderedSchedules.at(-1).pipeline.intervalHours, 12);
+  assert.notEqual(renderedSchedules.at(-1).pipeline.due, true);
 });
 
 test("admin ops hydrates degraded active schedule fallback without next unknown", async () => {

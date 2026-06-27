@@ -100,9 +100,8 @@ function formatPipelineScheduleStatus(entry) {
     return `every ${interval}h, running now; next after this pipeline finishes`;
   }
   if (entry.pending) return "pending; waiting for idle";
-  if (interval > 0 && hasFutureNext) return `every ${interval}h, next ${next}`;
-  if (entry.due) return "due now";
   if (interval > 0 && hasNext) return `every ${interval}h, next ${next}`;
+  if (entry.due) return "due now";
   if (interval > 0) return `every ${interval}h`;
   return "enabled";
 }

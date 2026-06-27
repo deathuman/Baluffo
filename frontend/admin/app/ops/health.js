@@ -546,8 +546,24 @@ export function createOpsHealthController({
     return merged;
   }
 
+  function isDegradedControlFallbackPayload(payload = {}) {
+    const source = String(payload?.source || "").toLowerCase();
+    return Boolean(
+      payload?.degraded === true
+      && (
+        source === "container-gateway-fallback"
+        || source === "frontend-bootstrap-fallback"
+        || source === "gateway-degraded"
+      )
+    );
+  }
+
   function normalizePipelineSchedulePayload(payload = {}) {
-    if (isPlainObject(payload?.schedule) && isPlainObject(payload.schedule.pipeline)) {
+    if (
+      isPlainObject(payload?.schedule)
+      && isPlainObject(payload.schedule.pipeline)
+      && !isDegradedControlFallbackPayload(payload)
+    ) {
       return payload.schedule;
     }
     if (isPlainObject(payload?.pipeline)) {
@@ -578,6 +594,8 @@ export function createOpsHealthController({
       isPlainObject(schedule)
       && isPlainObject(schedule.pipeline)
       && Object.keys(schedule.pipeline).length > 0
+      && schedule.pipeline.scheduleAuthority !== "degraded"
+      && schedule.pipeline.scheduleDelayed !== true
     );
   }
 
@@ -2190,7 +2208,9 @@ export function createOpsHealthController({
       summaryView: true,
       alerts: [],
       kpis,
-      schedule: payload?.schedule && typeof payload.schedule === "object" ? payload.schedule : {},
+      schedule: isDegradedControlFallbackPayload(payload)
+        ? {}
+        : (payload?.schedule && typeof payload.schedule === "object" ? payload.schedule : {}),
       appVersion: String(payload?.app?.version || "")
     };
     state.latestOpsHealthCache = mergeOpsHealth(state.latestOpsHealthCache || {}, health, { summary: true });
@@ -2287,7 +2307,7 @@ export function createOpsHealthController({
   }
 
   function ensurePipelineScheduleLoaded(options = {}) {
-    if (hasKnownPipelineSchedule()) return Promise.resolve(state.latestOpsHealthCache?.schedule || {});
+    if (!options?.force && hasKnownPipelineSchedule()) return Promise.resolve(state.latestOpsHealthCache?.schedule || {});
     return loadPipelineScheduleData({ silent: true, ...options });
   }
 
@@ -2887,14 +2907,18 @@ export function createOpsHealthController({
           suppressedAlertsCount: 0,
           kpis: {},
           schedule: {},
+          scheduleDelayed: true,
           message: `Admin data delayed; retrying: ${getErrorMessage(err)}`
         };
       }
       if (renderToken !== opsRenderToken) return;
       if (health && typeof health === "object" && !Array.isArray(health)) {
+        const healthForCache = isDegradedControlFallbackPayload(health)
+          ? { ...health, schedule: {}, kpis: {} }
+          : health;
         state.latestOpsHealthCache = mergeOpsHealth(
           state.latestOpsHealthCache || {},
-          health || {},
+          healthForCache || {},
           { summary: useSummaryView }
         );
       }

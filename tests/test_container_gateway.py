@@ -308,10 +308,16 @@ def test_gateway_serves_admin_degraded_fallbacks_when_bridge_unreachable(
     assert schedule["savedConfig"] == {"enabled": True, "intervalHours": 12}
     assert dashboard["source"] == "container-gateway-fallback"
     assert dashboard["status"] == "degraded"
-    assert dashboard["alerts"] == []
+    assert dashboard["kpis"] == {}
+    assert dashboard["schedule"] == {}
     assert bootstrap["source"] == "container-gateway-fallback"
+    assert bootstrap["overview"]["delayed"] is True
     assert bootstrap["tasks"]["current"] == []
     assert bootstrap["ops"]["status"] == "degraded"
+    assert bootstrap["ops"]["kpis"] == {}
+    assert bootstrap["ops"]["schedule"] == {}
+    assert "summary" not in bootstrap["registrySummary"]
+    assert bootstrap["schedule"] == {}
 
 
 def test_gateway_does_not_static_fallback_admin_api_paths(tmp_path: Path) -> None:

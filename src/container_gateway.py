@@ -218,18 +218,29 @@ class _GatewayState:
             configured_at=configured_at,
             pipeline_status=pipeline_status,
         )
+        last_pipeline_finished_at = str(computed.get("lastPipelineFinishedAt") or "")
+        next_run_at = str(computed.get("nextRunAt") or "")
+        due = bool(computed.get("due"))
+        schedule_delayed = False
+        if due and not last_pipeline_finished_at:
+            due = False
+            next_run_at = ""
+            schedule_delayed = True
         status = {
             "enabled": enabled,
             "pending": bool(computed.get("pending")),
-            "due": bool(computed.get("due")),
-            "nextRunAt": str(computed.get("nextRunAt") or ""),
-            "lastPipelineFinishedAt": str(computed.get("lastPipelineFinishedAt") or ""),
+            "due": due,
+            "nextRunAt": next_run_at,
+            "lastPipelineFinishedAt": last_pipeline_finished_at,
             "lastTriggerRunId": "",
             "lastTriggerError": "",
             "pipeline": pipeline_status,
         }
         if computed.get("nextAfterCurrentCompletes"):
             status["nextAfterCurrentCompletes"] = True
+        if schedule_delayed:
+            status["scheduleDelayed"] = True
+            status["scheduleAuthority"] = "degraded"
         return {
             "ok": True,
             "summaryView": True,
@@ -305,7 +316,18 @@ class _GatewayState:
                 "bridgeAlive": self.bridge_alive(),
                 "bridgeListening": self.bridge_listening(),
             }
-        return self.pipeline_schedule_payload()
+        return {
+            "ok": True,
+            "summaryView": True,
+            "degraded": True,
+            "source": "container-gateway-fallback",
+            "schedule": {},
+            "scheduleDelayed": True,
+            "message": "Pipeline schedule delayed; retrying authoritative schedule route.",
+            "gatewayReady": True,
+            "bridgeAlive": self.bridge_alive(),
+            "bridgeListening": self.bridge_listening(),
+        }
 
     @staticmethod
     def _parse_iso_datetime(value: Any) -> datetime | None:
@@ -446,7 +468,9 @@ class _GatewayState:
             "alertBasis": "gateway-degraded",
             "suppressedAlertsCount": 0,
             "kpis": {},
+            "kpisDelayed": True,
             "schedule": schedule_payload.get("schedule") or {},
+            "scheduleDelayed": bool(schedule_payload.get("scheduleDelayed")),
             "gatewayReady": True,
             "bridgeAlive": self.bridge_alive(),
             "bridgeListening": self.bridge_listening(),
@@ -466,7 +490,7 @@ class _GatewayState:
             "degraded": True,
             "source": "container-gateway-fallback",
             "app": self.ready_payload(),
-            "overview": {},
+            "overview": {"degraded": True, "delayed": True},
             "ops": self._dashboard_health_summary_payload_with_schedule(schedule_payload),
             "tasks": {
                 "current": task_state.get("tasks") or [],
@@ -474,12 +498,12 @@ class _GatewayState:
                 "summary": True,
                 "source": task_state.get("source") or "container-gateway-fallback",
             },
-            "sync": {"ok": True, "summaryView": True, "degraded": True},
+            "sync": {"ok": True, "summaryView": True, "degraded": True, "delayed": True},
             "registrySummary": {
                 "ok": True,
-                "summary": {},
                 "summaryStatus": "unavailable",
                 "degraded": True,
+                "delayed": True,
             },
             "schedule": schedule_payload.get("schedule") or {},
             "pipeline": self.pipeline_status_payload(),

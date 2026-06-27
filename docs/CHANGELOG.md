@@ -10,6 +10,16 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.96] - 2026-06-27
+
+### Fixed
+- Umbrel Admin degraded bootstrap and dashboard fallbacks no longer publish factual schedule, KPI, registry, sync, or profile data; they now keep the shell usable while authoritative routes refresh the real values.
+- Pipeline schedule rendering now ignores stale degraded fallback state, so a valid next scheduled fetch from `/tasks/jobs-pipeline-schedule` cannot be overwritten by `due now`.
+
+### Notes
+- This remains an Umbrel/live-stability test build on the current release line; no public tag is created until live stability is proven.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.95] - 2026-06-27
 
 ### Fixed

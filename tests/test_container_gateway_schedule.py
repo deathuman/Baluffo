@@ -98,8 +98,11 @@ def test_gateway_schedule_fallback_computes_next_run_from_terminal_pipeline_row(
     assert payload["status"]["lastPipelineFinishedAt"] == "2026-06-26T08:00:00+00:00"
     assert payload["status"]["nextRunAt"] == "2026-06-26T20:00:00+00:00"
     assert payload["schedule"]["pipeline"]["nextRunAt"] == "2026-06-26T20:00:00+00:00"
-    assert dashboard["schedule"]["pipeline"]["nextRunAt"] == "2026-06-26T20:00:00+00:00"
-    assert bootstrap["schedule"]["pipeline"]["nextRunAt"] == "2026-06-26T20:00:00+00:00"
+    assert dashboard["schedule"] == {}
+    assert dashboard["scheduleDelayed"] is True
+    assert bootstrap["schedule"] == {}
+    assert bootstrap["ops"]["schedule"] == {}
+    assert bootstrap["ops"]["scheduleDelayed"] is True
 
 
 def test_gateway_schedule_fallback_preserves_next_run_during_active_pipeline(
@@ -148,10 +151,11 @@ def test_gateway_schedule_fallback_active_due_waits_for_current_pipeline(
 
     assert payload["status"]["due"] is False
     assert payload["status"]["nextAfterCurrentCompletes"] is True
-    assert dashboard["schedule"]["pipeline"]["due"] is False
-    assert dashboard["schedule"]["pipeline"]["nextAfterCurrentCompletes"] is True
-    assert bootstrap["schedule"]["pipeline"]["due"] is False
-    assert bootstrap["schedule"]["pipeline"]["nextAfterCurrentCompletes"] is True
+    assert dashboard["schedule"] == {}
+    assert dashboard["scheduleDelayed"] is True
+    assert bootstrap["schedule"] == {}
+    assert bootstrap["ops"]["schedule"] == {}
+    assert bootstrap["ops"]["scheduleDelayed"] is True
 
 
 def test_gateway_schedule_fallback_uses_configured_anchor_without_terminal_row(
@@ -192,8 +196,28 @@ def test_gateway_schedule_fallback_uses_config_mtime_without_terminal_row(
 
     assert payload["status"]["nextRunAt"] == "2099-06-26T11:00:00+00:00"
     assert payload["status"]["due"] is False
-    assert dashboard["schedule"]["pipeline"]["nextRunAt"] == "2099-06-26T11:00:00+00:00"
-    assert bootstrap["schedule"]["pipeline"]["nextRunAt"] == "2099-06-26T11:00:00+00:00"
+    assert dashboard["schedule"] == {}
+    assert dashboard["scheduleDelayed"] is True
+    assert bootstrap["schedule"] == {}
+    assert bootstrap["ops"]["schedule"] == {}
+    assert bootstrap["ops"]["scheduleDelayed"] is True
+
+
+def test_gateway_schedule_fallback_does_not_synthesize_due_without_terminal_evidence(
+    tmp_path: Path,
+) -> None:
+    state = _state(tmp_path)
+    _write_schedule(state.data_dir, interval_hours=2)
+    mtime = datetime(2026, 6, 26, 9, 0, 0, tzinfo=UTC)
+    schedule_path = state.data_dir / "jobs-pipeline-schedule-config.json"
+    os.utime(schedule_path, (mtime.timestamp(), mtime.timestamp()))
+
+    payload = state.pipeline_schedule_payload()
+
+    assert payload["status"]["due"] is False
+    assert payload["status"]["nextRunAt"] == ""
+    assert payload["status"]["scheduleDelayed"] is True
+    assert payload["schedule"]["pipeline"]["scheduleAuthority"] == "degraded"
 
 
 def test_gateway_degraded_admin_prefers_bridge_schedule_payload(
