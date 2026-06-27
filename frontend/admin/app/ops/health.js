@@ -8,7 +8,7 @@ import {
   renderAdminOpsSchedule,
   renderAdminOpsTrends,
   renderDiscoveryCandidateReviewHtml
-} from "../../render.js?v=21";
+} from "../../render.js?v=22";
 import {
   filterSourcePolicyReviewPairs,
   getMigrationLinkLinkedActions,
@@ -589,14 +589,53 @@ export function createOpsHealthController({
     };
   }
 
-  function hasKnownPipelineSchedule(schedule = state.latestOpsHealthCache?.schedule) {
+  function hasKnownPipelineSchedule(schedule = state.pipelineScheduleModel) {
     return Boolean(
       isPlainObject(schedule)
       && isPlainObject(schedule.pipeline)
       && Object.keys(schedule.pipeline).length > 0
+      && schedule.pipeline.scheduleLoading !== true
       && schedule.pipeline.scheduleAuthority !== "degraded"
       && schedule.pipeline.scheduleDelayed !== true
     );
+  }
+
+  function getPipelineScheduleRenderModel() {
+    if (hasKnownPipelineSchedule(state.pipelineScheduleModel)) {
+      return state.pipelineScheduleModel;
+    }
+    return {
+      pipeline: {
+        scheduleLoading: true,
+        scheduleRetrying: Boolean(state.pipelineScheduleLastError)
+      }
+    };
+  }
+
+  function renderPipelineScheduleModel() {
+    renderAdminOpsScheduleImpl(
+      refs.adminOpsScheduleEl,
+      getPipelineScheduleRenderModel(),
+      state.latestOpsHealthCache
+    );
+  }
+
+  function rememberPipelineSchedule(schedule) {
+    if (!hasKnownPipelineSchedule(schedule)) return false;
+    state.pipelineScheduleModel = schedule;
+    state.pipelineScheduleLastError = "";
+    state.pipelineScheduleFailureCount = 0;
+    return true;
+  }
+
+  function schedulePipelineScheduleRetry() {
+    if (state.pipelineScheduleRetryTimer) return;
+    const failures = Math.max(1, Number(state.pipelineScheduleFailureCount || 1));
+    const delayMs = Math.min(30000, 3000 * (2 ** Math.min(3, failures - 1)));
+    state.pipelineScheduleRetryTimer = maybeUnrefTimer(setTimeout(() => {
+      state.pipelineScheduleRetryTimer = null;
+      loadPipelineScheduleData({ force: true, silent: true }).catch(() => {});
+    }, delayMs));
   }
 
   function getOpsTabPanels() {
@@ -668,6 +707,8 @@ export function createOpsHealthController({
       if (result?.ok === false) {
         throw new Error(String(result?.error || "schedule save failed"));
       }
+      rememberPipelineSchedule(normalizePipelineSchedulePayload(result));
+      renderPipelineScheduleModel();
       showToast("Pipeline schedule saved.", "success");
       await loadOpsHealthData();
     } catch (err) {
@@ -2083,14 +2124,7 @@ export function createOpsHealthController({
       String(health?.status || "healthy"),
       { fetchKpiPendingLabel, fetchKpiPendingLabels }
     );
-    const scheduleForRender = hasKnownPipelineSchedule(health?.schedule)
-      ? health.schedule
-      : (
-          hasKnownPipelineSchedule(state.latestOpsHealthCache?.schedule)
-            ? state.latestOpsHealthCache.schedule
-            : (health?.schedule || {})
-        );
-    renderAdminOpsScheduleImpl(refs.adminOpsScheduleEl, scheduleForRender, state.latestOpsHealthCache);
+    renderPipelineScheduleModel();
     renderOpsTabBadges(refs, {
       health,
       discoveryReport: state.latestDiscoveryReportCache || {},
@@ -2208,9 +2242,6 @@ export function createOpsHealthController({
       summaryView: true,
       alerts: [],
       kpis,
-      schedule: isDegradedControlFallbackPayload(payload)
-        ? {}
-        : (payload?.schedule && typeof payload.schedule === "object" ? payload.schedule : {}),
       appVersion: String(payload?.app?.version || "")
     };
     state.latestOpsHealthCache = mergeOpsHealth(state.latestOpsHealthCache || {}, health, { summary: true });
@@ -2258,12 +2289,8 @@ export function createOpsHealthController({
 
   async function loadPipelineScheduleData(options = {}) {
     if (!options?.force && hasKnownPipelineSchedule()) {
-      renderAdminOpsScheduleImpl(
-        refs.adminOpsScheduleEl,
-        state.latestOpsHealthCache?.schedule || {},
-        state.latestOpsHealthCache
-      );
-      return state.latestOpsHealthCache?.schedule || {};
+      renderPipelineScheduleModel();
+      return state.pipelineScheduleModel || {};
     }
     if (pipelineScheduleLoad) return pipelineScheduleLoad;
     pipelineScheduleLoad = measuredGetBridge(
@@ -2273,28 +2300,17 @@ export function createOpsHealthController({
     )
       .then(payload => {
         const schedule = normalizePipelineSchedulePayload(payload);
-        if (hasKnownPipelineSchedule(schedule)) {
-          state.latestOpsHealthCache = mergeOpsHealth(
-            state.latestOpsHealthCache || {},
-            { schedule, summaryView: true },
-            { summary: true }
-          );
-        }
-        renderAdminOpsScheduleImpl(
-          refs.adminOpsScheduleEl,
-          hasKnownPipelineSchedule(state.latestOpsHealthCache?.schedule)
-            ? state.latestOpsHealthCache.schedule
-            : schedule,
-          state.latestOpsHealthCache
-        );
-        return hasKnownPipelineSchedule(state.latestOpsHealthCache?.schedule)
-          ? state.latestOpsHealthCache.schedule
+        rememberPipelineSchedule(schedule);
+        renderPipelineScheduleModel();
+        return hasKnownPipelineSchedule(state.pipelineScheduleModel)
+          ? state.pipelineScheduleModel
           : schedule;
       })
       .catch(err => {
-        if (!hasKnownPipelineSchedule()) {
-          renderAdminOpsScheduleImpl(refs.adminOpsScheduleEl, {}, state.latestOpsHealthCache);
-        }
+        state.pipelineScheduleLastError = getErrorMessage(err);
+        state.pipelineScheduleFailureCount = Math.max(1, Number(state.pipelineScheduleFailureCount || 0) + 1);
+        renderPipelineScheduleModel();
+        schedulePipelineScheduleRetry();
         if (!options?.silent) {
           showToast(`Could not load pipeline schedule: ${getErrorMessage(err)}`, "error");
         }

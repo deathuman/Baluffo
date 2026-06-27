@@ -1,5 +1,5 @@
 import { createOpsBridgeStatusController } from "./ops/bridge-status.js?v=14";
-import { createOpsHealthController } from "./ops/health.js?v=27";
+import { createOpsHealthController } from "./ops/health.js?v=28";
 import { scheduleAdminRender } from "./ops/render-scheduler.js";
 import { createOpsTaskStateController } from "./ops/task-state.js";
 

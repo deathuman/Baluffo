@@ -112,6 +112,9 @@ test("admin auth controller initializes the composed admin view immediately", as
       calls.push("loadAdminBootstrap");
       return { ok: true };
     },
+    loadPipelineScheduleData: async options => {
+      calls.push(`loadPipelineScheduleData:${String(Boolean(options?.force))}:${String(Boolean(options?.silent))}`);
+    },
     loadDiscoveryConfig: async options => {
       calls.push(`loadDiscoveryConfig:${String(Boolean(options?.silent))}:${String(Boolean(options?.forceForm))}`);
     },
@@ -145,6 +148,7 @@ test("admin auth controller initializes the composed admin view immediately", as
   assert.equal(calls.includes("loadOpsHealthData:true"), false);
   assert.ok(calls.includes("loadAdminBootstrap"));
   assert.ok(calls.includes("loadPipelineStatusFallbackData"));
+  assert.ok(calls.includes("loadPipelineScheduleData:true:true"));
   assert.equal(calls.filter(item => item === "opsReadinessShell").length, 2);
   assert.equal(calls.includes("opsPlaceholder:Loading operations health..."), false);
   assert.equal(calls.some(item => item.startsWith("loadDiscoveryConfig:")), false);

@@ -1,3 +1,13 @@
+## [0.2.99] - 2026-06-27
+
+### Fixed
+- Umbrel Admin pipeline schedule rendering now uses a dedicated authoritative schedule model hydrated only from `/tasks/jobs-pipeline-schedule` or a successful schedule save, so degraded bootstrap/dashboard payloads cannot reset the row to unchecked `24h` defaults.
+- Unknown schedule state now renders disabled loading/retrying controls instead of editable false defaults.
+
+### Notes
+- This remains an Umbrel/live-stability test build on the current release line; no public tag is created until live stability is proven.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.98] - 2026-06-27
 
 ### Fixed

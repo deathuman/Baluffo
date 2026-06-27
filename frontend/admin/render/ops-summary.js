@@ -93,7 +93,9 @@ function formatPipelineScheduleStatus(entry) {
   const nextMs = Date.parse(nextRaw);
   const hasFutureNext = hasNext && Number.isFinite(nextMs) && nextMs > Date.now();
   const error = String(entry?.lastTriggerError || "").trim();
-  if (!entry || Object.keys(entry).length === 0) return "loading";
+  if (!entry || Object.keys(entry).length === 0 || entry.scheduleLoading) {
+    return entry?.scheduleRetrying ? "schedule delayed; retrying" : "loading schedule...";
+  }
   if (!entry.enabled) return "disabled";
   if (error) return `needs attention: ${error}`;
   if (interval > 0 && entry.nextAfterCurrentCompletes) {
@@ -154,11 +156,13 @@ function formatOptionalText(object, key, { pending = "Not loaded yet", formatter
 }
 
 function renderPipelineScheduleControls(pipeline) {
-  const interval = Number(pipeline?.intervalHours || 24);
+  const loading = Boolean(!pipeline || Object.keys(pipeline).length === 0 || pipeline.scheduleLoading);
+  const interval = Number(loading ? Number.NaN : (pipeline?.intervalHours || 24));
   const safeInterval = Number.isFinite(interval)
     ? Math.max(1, Math.min(168, Math.trunc(interval)))
-    : 24;
-  const enabled = Boolean(pipeline?.enabled);
+    : "";
+  const enabled = !loading && Boolean(pipeline?.enabled);
+  const disabled = loading ? "disabled" : "";
   return `
     <div class="admin-ops-schedule-item admin-ops-pipeline-schedule admin-ops-full-row">
       <div class="admin-ops-pipeline-schedule-summary">
@@ -166,15 +170,15 @@ function renderPipelineScheduleControls(pipeline) {
       </div>
       <div class="admin-ops-pipeline-schedule-controls" data-ui="admin-pipeline-schedule-controls">
         <label class="admin-ops-pipeline-schedule-toggle">
-          <input type="checkbox" data-ui="admin-pipeline-schedule-enabled" ${enabled ? "checked" : ""}>
+          <input type="checkbox" data-ui="admin-pipeline-schedule-enabled" ${enabled ? "checked" : ""} ${disabled}>
           <span>Enable</span>
         </label>
         <label class="admin-ops-pipeline-schedule-interval">
           <span>Every</span>
-          <input type="number" min="1" max="168" step="1" value="${safeInterval}" data-ui="admin-pipeline-schedule-interval">
+          <input type="number" min="1" max="168" step="1" value="${safeInterval}" data-ui="admin-pipeline-schedule-interval" ${disabled}>
           <span>h</span>
         </label>
-        <button type="button" class="btn clear-filters-btn" data-action="save-pipeline-schedule">Save</button>
+        <button type="button" class="btn clear-filters-btn" data-action="save-pipeline-schedule" ${disabled}>Save</button>
       </div>
     </div>
   `;

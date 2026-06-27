@@ -23,7 +23,7 @@ import {
   createAdminFetcherController
 } from "../fetcher.js?v=15";
 import { createRestoreActiveRunWatches } from "../live-task.js";
-import { createAdminOpsController, formatBytes } from "../ops.js?v=28";
+import { createAdminOpsController, formatBytes } from "../ops.js?v=29";
 import { createAdminRegistryController } from "../registry.js?v=21";
 import { createAdminSyncController } from "../sync.js?v=13";
 import { createAdminOverviewController } from "./overview.js?v=15";
@@ -420,6 +420,7 @@ export function composeAdminControllers({
     loadDiscoveryData: (...args) => registryController.loadDiscoveryData(...args),
     loadDiscoveryConfig: (...args) => discoveryController.loadDiscoveryConfig(...args),
     loadPipelineStatusFallbackData: (...args) => opsController.loadPipelineStatusFallbackData(...args),
+    loadPipelineScheduleData: (...args) => opsController.loadPipelineScheduleData(...args),
     loadOpsHealthData: (...args) => opsController.loadOpsHealthData(...args),
     loadSyncStatus: (...args) => syncController.loadSyncStatus(...args),
     loadAdminBootstrap,
