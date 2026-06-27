@@ -121,5 +121,5 @@ test("admin ops tab badges render delayed markers while active pipeline suppress
   for (const key of keys) {
     assert.equal(badges[key].textContent, "-");
   }
-  assert.equal(badges.discovery.attributes["data-tooltip"], "Delayed while job update is running.");
+  assert.equal(badges.discovery.attributes["data-tooltip"], "Updating while job is running.");
 });

@@ -77,7 +77,7 @@ async function flushBackground() {
   await Promise.resolve();
 }
 
-test("admin degraded active skips heavy summaries when control plane times out", async () => {
+test("admin degraded active skips heavy summaries while allowing KPI hydration", async () => {
   const state = createOpsState({
     latestOpsHealthCache: { ok: true, summaryView: true, kpis: { pendingApprovalsCount: 3 } },
     latestOpsTaskStatePayload: {
@@ -103,6 +103,7 @@ test("admin degraded active skips heavy summaries when control plane times out",
       calls.push(String(path));
       if (path === "/tasks/run-jobs-pipeline-status") throw new Error("Bridge error (HTTP 504)");
       if (path === "/ops/task-state?view=summary") throw new Error("Bridge error (HTTP 504)");
+      if (path === "/ops/fetch-kpis?view=summary") return { ok: true, summaryView: true, kpis: {} };
       throw new Error(`unexpected heavy path ${path}`);
     }
   });
@@ -112,7 +113,7 @@ test("admin degraded active skips heavy summaries when control plane times out",
 
   assert.ok(calls.includes("/tasks/run-jobs-pipeline-status"));
   assert.ok(calls.includes("/ops/task-state?view=summary"));
-  assert.equal(calls.includes("/ops/fetch-kpis?view=summary"), false);
+  assert.equal(calls.includes("/ops/fetch-kpis?view=summary"), true);
   assert.equal(calls.includes("/ops/dashboard-health?view=summary"), false);
   assert.equal(calls.includes("/registry/conflicts?view=summary"), false);
   assert.equal(calls.includes("/admin/ops-tab-counts?view=summary"), false);
