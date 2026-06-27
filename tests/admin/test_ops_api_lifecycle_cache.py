@@ -544,7 +544,7 @@ def test_ops_dashboard_health_summary_defers_during_active_pipeline(tmp_path) ->
     assert payload["historyCount"] == 0
 
 
-def test_ops_fetch_kpis_summary_defers_during_active_pipeline(tmp_path) -> None:
+def test_ops_fetch_kpis_summary_uses_history_during_active_pipeline(tmp_path) -> None:
     api, _calls = _make_ops_api(tmp_path, current_rows=[], recent_rows=[])
     api._deps = ops_api_module.OpsDeps(
         **{
@@ -554,17 +554,15 @@ def test_ops_fetch_kpis_summary_defers_during_active_pipeline(tmp_path) -> None:
                 "runId": "pipeline_live",
                 "stage": "fetch",
             },
-            "load_run_history": mock.Mock(side_effect=AssertionError("history should not load")),
-            "get_registry_summary_payload": mock.Mock(
-                side_effect=AssertionError("registry should not load")
-            ),
+            "get_registry_summary_payload": mock.Mock(return_value={"pendingCount": 3}),
         }
     )
 
     payload = api.compute_ops_fetch_kpis_summary()
 
     assert payload["summaryView"] is True
-    assert payload["deferredDuringActiveRun"] is True
-    assert payload["fetchKpisDelayedDuringActiveRun"] is True
+    assert payload["activePipelineOrFetchRunning"] is True
+    assert payload["fetchKpisStaleDuringActiveRun"] is True
     assert payload["activePipeline"]["stage"] == "fetch"
-    assert payload["kpis"] == {}
+    assert "sevenDayFetchSuccessRate" in payload["kpis"]
+    assert payload["kpis"]["pendingSourcesCount"] == 3

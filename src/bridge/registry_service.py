@@ -711,6 +711,101 @@ class RegistryService:
             "authorityMode": mode,
         }
 
+    def get_compact_table_payload(
+        self,
+        *,
+        buckets: list[str],
+        limit_per_bucket: int,
+        include_hidden_pending: bool = False,
+    ) -> dict[str, Any]:
+        mode = self._authority_mode()
+        selected = [bucket for bucket in buckets if bucket in {"pending", "active", "rejected"}]
+        limit = max(1, int(limit_per_bucket or 1))
+        if mode != "sqlite":
+            summary = self._cheap_json_summary_payload(reason=f"{mode}_compact_summary")
+            return {
+                "ok": True,
+                "summaryView": True,
+                "detailLevel": "table",
+                "activeCompact": True,
+                "degraded": True,
+                "source": "registry-json-compact-fallback",
+                "sources": {bucket: [] for bucket in selected},
+                "summary": {
+                    **summary,
+                    "tableLimitPerBucket": limit,
+                    "tableTruncatedBuckets": {},
+                },
+            }
+        try:
+            summary = {
+                **self._runtime_store().current_summary(),
+                "authorityMode": mode,
+                "summaryExact": True,
+                "countBasis": "storage",
+            }
+        except _STORAGE_OPERATION_ERRORS:
+            summary = {
+                **self._cheap_json_summary_payload(reason="sqlite_compact_summary_failed"),
+                "authorityMode": mode,
+            }
+            return {
+                "ok": True,
+                "summaryView": True,
+                "detailLevel": "table",
+                "activeCompact": True,
+                "degraded": True,
+                "source": "registry-sqlite-compact-fallback",
+                "sources": {bucket: [] for bucket in selected},
+                "summary": {
+                    **summary,
+                    "tableLimitPerBucket": limit,
+                    "tableTruncatedBuckets": {},
+                },
+            }
+        query_limit = limit
+        if "pending" in selected and not include_hidden_pending:
+            query_limit = max(limit, limit * 3)
+        try:
+            rows = self._runtime_store().table_rows_for_current_generation(
+                buckets=selected,
+                limit_per_bucket=query_limit,
+            )
+        except _STORAGE_OPERATION_ERRORS:
+            return {
+                "ok": True,
+                "summaryView": True,
+                "detailLevel": "table",
+                "activeCompact": True,
+                "degraded": True,
+                "source": "registry-sqlite-compact-fallback",
+                "sources": {bucket: [] for bucket in selected},
+                "summary": {
+                    **summary,
+                    "tableLimitPerBucket": limit,
+                    "tableTruncatedBuckets": {},
+                },
+            }
+        if "pending" in rows and not include_hidden_pending:
+            rows["pending"] = [
+                row for row in rows["pending"] if not self._pending_is_hidden_for_summary(row)
+            ][:limit]
+        for bucket in list(rows):
+            rows[bucket] = rows[bucket][:limit]
+        return {
+            "ok": True,
+            "summaryView": True,
+            "detailLevel": "table",
+            "activeCompact": True,
+            "source": "registry-sqlite-compact",
+            "sources": rows,
+            "summary": {
+                **summary,
+                "tableLimitPerBucket": limit,
+                "tableTruncatedBuckets": {},
+            },
+        }
+
     def persist_state(
         self, state: dict[str, list[dict[str, Any]]]
     ) -> dict[str, list[dict[str, Any]]]:

@@ -8,7 +8,7 @@ import {
   renderAdminOpsSchedule,
   renderAdminOpsTrends,
   renderDiscoveryCandidateReviewHtml
-} from "../../render.js?v=20";
+} from "../../render.js?v=21";
 import {
   filterSourcePolicyReviewPairs,
   getMigrationLinkLinkedActions,
@@ -38,7 +38,7 @@ const OPS_PERFORMANCE_PROFILE_PATH = "/ops/performance-profile";
 const SOURCE_POLICY_DETAIL_PATH = "/source-policy/recommendations";
 const REGISTRY_CONFLICTS_SUMMARY_PATH = "/registry/conflicts?view=summary";
 const REGISTRY_CONFLICTS_DETAIL_PATH = "/registry/conflicts";
-const ACTIVE_PIPELINE_KPI_DELAYED_LABEL = "Delayed while job update is running.";
+const ACTIVE_PIPELINE_KPI_DELAYED_LABEL = "Updating while job is running.";
 const FETCH_KPI_LOADING_LABEL = "Loading latest fetch KPI...";
 const FETCH_KPI_UNAVAILABLE_LABEL = "Not available";
 const FETCH_KPI_NO_SUCCESS_LABEL = "No successful fetch yet";
@@ -1906,6 +1906,9 @@ export function createOpsHealthController({
     const fetchNeverRun = Array.isArray(health?.alerts)
       && health.alerts.some(alert => String(alert?.id || "") === "fetch_never_run");
     if (fetchKpisDelayed) {
+      if (hasFetchKpiValues(health?.kpis || {})) {
+        return { default: ACTIVE_PIPELINE_KPI_DELAYED_LABEL };
+      }
       return {
         default: ACTIVE_PIPELINE_KPI_DELAYED_LABEL,
         lastSuccessfulFetchAge: ACTIVE_PIPELINE_KPI_DELAYED_LABEL,
@@ -1934,6 +1937,9 @@ export function createOpsHealthController({
 
   function maskDeferredFetchKpisForRender(kpis = {}, health = {}) {
     if (!health?.fetchKpisDelayedDuringActiveRun || !isPlainObject(kpis)) {
+      return kpis || {};
+    }
+    if (hasFetchKpiValues(kpis)) {
       return kpis || {};
     }
     const masked = { ...kpis };
@@ -2804,7 +2810,14 @@ export function createOpsHealthController({
     if (pipelinePayload?.active) {
       state.opsActiveAdminWorkLastActive = true;
       state.opsActivePipelineOrFetchLastActive = true;
-      ensurePipelineScheduleLoaded({ silent: true }).catch(() => {});
+      loadPipelineScheduleData({ force: true, silent: true }).catch(() => {});
+      if (!hasFetchKpiValues(state.latestOpsHealthCache?.kpis || {})) {
+        loadFetchKpisSummaryData(renderToken, {
+          force: true,
+          silent: true,
+          fromPoll: Boolean(options?.fromPoll)
+        }).catch(() => {});
+      }
       if (measureFirstRender) {
         markStep("admin_ops_health_first_render_done", { ok: true, source: "pipeline-status" });
         measureStep(

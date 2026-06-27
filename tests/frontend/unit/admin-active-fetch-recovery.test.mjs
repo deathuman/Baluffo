@@ -80,7 +80,7 @@ function activeOpsState(extra = {}) {
   };
 }
 
-test("admin active fetch defers KPI route while compact task state is active", async () => {
+test("admin active fetch renders updating KPI state while compact task state is active", async () => {
   const state = activeOpsState({
     latestOpsHealthCache: {
       fetchKpisLoaded: true,
@@ -132,9 +132,8 @@ test("admin active fetch defers KPI route while compact task state is active", a
 
   assert.ok(calls.includes("/ops/task-state?view=summary"));
   assert.equal(calls.includes("/ops/fetch-kpis?view=summary"), false);
-  assert.match(refs.adminOpsKpisEl.innerHTML, /Delayed while job update is running\./);
-  assert.doesNotMatch(refs.adminOpsKpisEl.innerHTML, /50\.0%/);
-  assert.doesNotMatch(refs.adminOpsKpisEl.innerHTML, /813/);
+  assert.match(refs.adminOpsKpisEl.innerHTML, /50\.0%/);
+  assert.match(refs.adminOpsKpisEl.innerHTML, /813/);
   assert.doesNotMatch(refs.adminOpsKpisEl.innerHTML, /Loading latest fetch KPI/);
   controller.stopOpsHealthPolling();
 });
@@ -259,6 +258,14 @@ test("admin source tables preserve rendered rows while active refresh is delayed
     options: {
       getBridge: async path => {
         calls.push(String(path));
+        if (String(path).startsWith("/registry/sources")) {
+          return {
+            ok: true,
+            activeCompact: true,
+            sources: { pending: [], active: [], rejected: [] },
+            summary: {}
+          };
+        }
         throw new Error(`unexpected path ${path}`);
       }
     }
@@ -270,16 +277,15 @@ test("admin source tables preserve rendered rows while active refresh is delayed
 
   const result = await controller.loadDiscoveryData({ background: false });
 
-  assert.equal(result?.skipped, true);
-  assert.equal(result?.sourceTablesDelayed, true);
-  assert.ok(!calls.some(path => path.startsWith("/registry/sources")));
+  assert.notEqual(result?.skipped, true);
+  assert.notEqual(result?.sourceTablesDelayed, true);
+  assert.ok(calls.some(path => path.startsWith("/registry/sources") && path.includes("activeCompact=1")));
   assert.ok(!calls.includes("/discovery/report"));
   assert.ok(!calls.includes("/discovery/candidates"));
-  assert.equal(fixture.state.sourceTablesDelayedDuringActiveRun, true);
-  assert.equal(fixture.state.sourceTablesLoadState, "delayed-active");
+  assert.equal(fixture.state.sourceTablesDelayedDuringActiveRun, false);
+  assert.equal(fixture.state.sourceTablesLoadState, "loaded");
   assert.match(fixture.refs.adminPendingSourcesEl.innerHTML, /Existing Pending Studio/);
   assert.match(fixture.refs.adminActiveSourcesEl.innerHTML, /Existing Active Studio/);
-  assert.match(fixture.refs.adminRejectedSourcesEl.innerHTML, /Source tables delayed while job update is running/);
 });
 
 test("admin source tables refresh after active pipeline becomes idle", async () => {

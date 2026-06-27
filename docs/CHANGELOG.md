@@ -10,6 +10,14 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.94] - 2026-06-27
+
+### Fixed
+- Admin no longer renders an active scheduled pipeline as `due now`; running pipelines now state that the next scheduled run follows the current pipeline completion when no exact next timestamp is available.
+- Admin source tables now use an active-safe compact registry path during running fetch/pipeline work instead of waiting for the entire job or calling the full registry table route.
+- Admin KPI cards preserve or lazily hydrate historical values during active jobs instead of remaining indefinitely delayed.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.93] - 2026-06-27
 
 ### Fixed

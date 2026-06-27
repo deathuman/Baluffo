@@ -35,7 +35,7 @@
     "tests/frontend/packaged-desktop-smoke.mjs": 468,
     "tests/frontend/unit/admin-ops-controller.test.mjs": 988,
     "tests/frontend/unit/admin-ops-history-render.test.mjs": 534,
-    "tests/frontend/unit/admin-registry-controller.test.mjs": 827,
+    "tests/frontend/unit/admin-registry-controller.test.mjs": 832,
     "tests/frontend/unit/desktop-local-data-navigation.test.mjs": 702,
     "tests/frontend/unit/jobs-desktop-update.test.mjs": 898,
     "tests/frontend/unit/jobs-domain.test.mjs": 389,

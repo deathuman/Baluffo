@@ -54,6 +54,27 @@ def test_source_registry_replace_state_round_trips_rows_and_tombstones() -> None
             assert runtime.current_summary()["reason"] == "unit-test"
 
 
+def test_source_registry_current_table_rows_are_limited_by_bucket() -> None:
+    with workspace_tmpdir("source-registry-runtime-table-rows") as data_dir:
+        with BaluffoStore(data_dir) as store:
+            runtime = SourceRegistryRuntimeStore(store)
+            state = {
+                "active": [{"id": f"a{index}", "name": f"Active {index}"} for index in range(4)],
+                "pending": [{"id": f"p{index}", "name": f"Pending {index}"} for index in range(3)],
+                "rejected": [{"id": "r0", "name": "Rejected 0"}],
+            }
+            runtime.replace_state(state=state, tombstones={}, generation="registry-table-test")
+
+            rows = runtime.table_rows_for_current_generation(
+                buckets=["active", "pending"],
+                limit_per_bucket=2,
+            )
+
+            assert [row["id"] for row in rows["active"]] == ["a0", "a1"]
+            assert [row["id"] for row in rows["pending"]] == ["p0", "p1"]
+            assert "rejected" not in rows
+
+
 def test_source_registry_stage_is_invisible_until_publish() -> None:
     with workspace_tmpdir("source-registry-runtime-stage") as data_dir:
         with BaluffoStore(data_dir) as store:

@@ -371,9 +371,20 @@ class _GatewayState:
                 if next_run_at.tzinfo is not None
                 else datetime.now()
             )
+            due = now >= next_run_at
+            if active and due:
+                return {
+                    "pending": False,
+                    "due": False,
+                    "nextRunAt": next_run_at.isoformat(),
+                    "lastPipelineFinishedAt": last_finished_at,
+                    "blockedByActiveRun": True,
+                    "activeScheduledRun": True,
+                    "nextAfterCurrentCompletes": True,
+                }
             return {
                 "pending": False,
-                "due": now >= next_run_at,
+                "due": due,
                 "nextRunAt": next_run_at.isoformat(),
                 "lastPipelineFinishedAt": last_finished_at,
             }
@@ -385,9 +396,20 @@ class _GatewayState:
                 if next_run_at.tzinfo is not None
                 else datetime.now()
             )
+            due = now >= next_run_at
+            if active and due:
+                return {
+                    "pending": False,
+                    "due": False,
+                    "nextRunAt": next_run_at.isoformat(),
+                    "lastPipelineFinishedAt": last_finished_at,
+                    "blockedByActiveRun": True,
+                    "activeScheduledRun": True,
+                    "nextAfterCurrentCompletes": True,
+                }
             return {
                 "pending": False,
-                "due": now >= next_run_at,
+                "due": due,
                 "nextRunAt": next_run_at.isoformat(),
                 "lastPipelineFinishedAt": last_finished_at,
             }

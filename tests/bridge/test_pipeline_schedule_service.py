@@ -185,6 +185,48 @@ def test_pipeline_schedule_defers_once_while_any_lifecycle_task_is_active(
     assert len(harness.started_payloads) == 1
 
 
+def test_pipeline_schedule_active_pipeline_due_is_next_after_current_completes(
+    tmp_path: Path,
+) -> None:
+    harness = _Harness(tmp_path)
+    harness.saved = {"schemaVersion": 1, "enabled": True, "intervalHours": 24}
+    harness.recent_runs = [
+        {
+            "taskType": "pipeline",
+            "runId": "older_pipeline",
+            "status": "ok",
+            "finishedAt": "2026-05-30T08:00:00+00:00",
+        }
+    ]
+    harness.now = "2026-06-01T10:00:00+00:00"
+    harness.pipeline_status = {
+        "active": True,
+        "runId": "pipeline_live",
+        "stage": "fetch",
+        "activeChildRunId": "fetch_live",
+    }
+    harness.current_runs = [
+        {
+            "taskType": "pipeline",
+            "runId": "pipeline_live",
+            "active": True,
+            "lifecycleStatus": "running",
+        }
+    ]
+
+    result = harness.service.evaluate_due(reason="test")
+    status = harness.service.get_status()
+
+    assert result["due"] is False
+    assert result["nextAfterCurrentCompletes"] is True
+    assert status["due"] is False
+    assert status["pending"] is False
+    assert status["blockedByActiveRun"] is True
+    assert status["nextAfterCurrentCompletes"] is True
+    assert status["activeRunId"] == "pipeline_live"
+    assert harness.started_payloads == []
+
+
 def test_pipeline_schedule_manual_terminal_row_clears_obsolete_pending_run(
     tmp_path: Path,
 ) -> None:

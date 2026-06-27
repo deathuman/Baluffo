@@ -161,6 +161,17 @@ def _empty_registry_summary_payload() -> JsonObject:
     }
 
 
+def _empty_registry_compact_table_payload(**_kwargs: Any) -> JsonObject:
+    return {
+        "ok": True,
+        "summaryView": True,
+        "detailLevel": "table",
+        "activeCompact": True,
+        "sources": {"pending": [], "active": [], "rejected": []},
+        "summary": _empty_registry_summary_payload(),
+    }
+
+
 def _empty_registry_auto_heal_report() -> JsonObject:
     return {
         "autoHealed": False,
@@ -364,6 +375,9 @@ class BridgeApi:
     summarize_state: SummarizeStateFunc = _empty_state_summary
     get_registry_summary_payload: Callable[[], JsonObject] = _empty_registry_summary_payload
     get_registry_exact_summary_payload: Callable[[], JsonObject] = _empty_registry_summary_payload
+    get_registry_compact_table_payload: Callable[..., JsonObject] = (
+        _empty_registry_compact_table_payload
+    )
     get_registry_auto_heal_report: Callable[[], JsonObject] = _empty_registry_auto_heal_report
     persist_state_and_auto_sync: Callable[..., RegistryState] = _identity_registry_state
     load_tombstones: LoadTombstonesFunc = _empty_tombstones
@@ -464,6 +478,14 @@ class BridgeApi:
                 getattr(
                     self.registry,
                     "get_exact_summary_payload",
+                    _empty_registry_summary_payload,
+                ),
+            ),
+            (
+                "get_registry_compact_table_payload",
+                getattr(
+                    self.registry,
+                    "get_compact_table_payload",
                     _empty_registry_summary_payload,
                 ),
             ),

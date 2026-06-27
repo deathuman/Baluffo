@@ -31,6 +31,7 @@ class _RegistryRouteApi(Protocol):
     def get_registry_exact_summary_payload(self) -> dict[str, Any]: ...
 
     def get_registry_summary_payload(self) -> dict[str, Any]: ...
+    def get_registry_compact_table_payload(self, **kwargs: Any) -> dict[str, Any]: ...
 
     def load_json_object(self, path: Path, default: Any = None) -> dict[str, Any]: ...
 
@@ -221,6 +222,11 @@ def _registry_table_limit_per_bucket(query: dict[str, list[str]]) -> int:
     return min(value, 500)
 
 
+def _active_compact_registry_sources(query: dict[str, list[str]]) -> bool:
+    raw = str((query.get("activeCompact") or query.get("compactActive") or [""])[0] or "")
+    return raw.strip().lower() in {"1", "true", "yes"}
+
+
 def _apply_registry_table_limit(
     sources: dict[str, list[dict[str, Any]]],
     limit_per_bucket: int,
@@ -309,6 +315,13 @@ def _registry_sources_payload(
             "error": "invalid registry bucket",
             "invalidBuckets": invalid,
         }
+    if table_view and _active_compact_registry_sources(query):
+        return _active_compact_registry_sources_payload(
+            api,
+            query=query,
+            buckets=buckets,
+            limit_per_bucket=table_limit_per_bucket or 25,
+        )
     started_at = time.perf_counter()
     failed = True
     row_count = 0
@@ -342,25 +355,13 @@ def _registry_sources_payload(
                 dict(row) for row in state.get("rejected") or [] if isinstance(row, dict)
             ]
         if table_view:
-            if table_limit_per_bucket:
-                truncated_buckets = _apply_registry_table_limit(sources, table_limit_per_bucket)
-                summary["tableLimitPerBucket"] = table_limit_per_bucket
-                summary["tableTruncatedBuckets"] = truncated_buckets
-            if "pending" in sources:
-                annotated_pending, pending_approval_summary = annotate_pending_auto_approval_rows(
-                    sources.get("pending") or [],
-                    active_rows=[row for row in state.get("active") or [] if isinstance(row, dict)],
-                    report_candidates=_read_discovery_report_candidate_rows(api),
-                )
-                sources["pending"] = annotated_pending
-                summary["pendingApproval"] = pending_approval_summary
-                summary["pendingAutoApprovalEligibleCount"] = int(
-                    pending_approval_summary.get("autoApprovalEligibleCount") or 0
-                )
-            sources = {
-                bucket: [compact_registry_source_table_row(row) for row in rows]
-                for bucket, rows in sources.items()
-            }
+            sources, summary = _registry_sources_table_view_parts(
+                api,
+                state=state,
+                sources=sources,
+                summary=summary,
+                limit_per_bucket=table_limit_per_bucket,
+            )
         row_count = sum(len(rows) for rows in sources.values())
         storage_kind = str(summary.get("authorityMode") or "normalized")
         payload = {"ok": True, "sources": sources, "summary": summary}
@@ -379,6 +380,68 @@ def _registry_sources_payload(
             row_count=row_count,
             failed=failed,
         )
+
+
+def _active_compact_registry_sources_payload(
+    api: _RegistryRouteApi,
+    *,
+    query: dict[str, list[str]],
+    buckets: list[str],
+    limit_per_bucket: int,
+) -> tuple[int, dict[str, Any]]:
+    payload = _as_dict(
+        api.get_registry_compact_table_payload(
+            buckets=buckets,
+            limit_per_bucket=limit_per_bucket,
+            include_hidden_pending=_include_hidden_pending_registry_rows(query),
+        )
+    )
+    source_payload = _as_dict(payload.get("sources"))
+    sources = {
+        bucket: [
+            compact_registry_source_table_row(dict(row))
+            for row in _as_list(source_payload.get(bucket))
+            if isinstance(row, dict)
+        ]
+        for bucket in buckets
+    }
+    return 200, {
+        **payload,
+        "ok": True,
+        "sources": sources,
+        "detailLevel": "table",
+        "summaryView": True,
+        "activeCompact": True,
+    }
+
+
+def _registry_sources_table_view_parts(
+    api: _RegistryRouteApi,
+    *,
+    state: dict[str, list[dict[str, Any]]],
+    sources: dict[str, list[dict[str, Any]]],
+    summary: dict[str, Any],
+    limit_per_bucket: int,
+) -> tuple[dict[str, list[dict[str, Any]]], dict[str, Any]]:
+    if limit_per_bucket:
+        truncated_buckets = _apply_registry_table_limit(sources, limit_per_bucket)
+        summary["tableLimitPerBucket"] = limit_per_bucket
+        summary["tableTruncatedBuckets"] = truncated_buckets
+    if "pending" in sources:
+        annotated_pending, pending_approval_summary = annotate_pending_auto_approval_rows(
+            sources.get("pending") or [],
+            active_rows=[row for row in state.get("active") or [] if isinstance(row, dict)],
+            report_candidates=_read_discovery_report_candidate_rows(api),
+        )
+        sources["pending"] = annotated_pending
+        summary["pendingApproval"] = pending_approval_summary
+        summary["pendingAutoApprovalEligibleCount"] = int(
+            pending_approval_summary.get("autoApprovalEligibleCount") or 0
+        )
+    return {
+        bucket: [compact_registry_source_table_row(row) for row in rows]
+        for bucket, rows in sources.items()
+    }, summary
 
 
 def handle_registry_routes(

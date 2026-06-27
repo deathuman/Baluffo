@@ -112,6 +112,18 @@ test("admin render: pipeline schedule state text covers key states", () => {
     [
       {
         enabled: true,
+        intervalHours: 11,
+        pending: false,
+        due: true,
+        nextRunAt: "2026-03-09T09:00:00.000Z",
+        nextAfterCurrentCompletes: true,
+        pipeline: { active: true, stage: "fetch" }
+      },
+      /every 11h, running now; next after this pipeline finishes/i
+    ],
+    [
+      {
+        enabled: true,
         intervalHours: 12,
         pending: false,
         due: false,
@@ -159,7 +171,7 @@ test("admin render: pipeline schedule state text covers key states", () => {
         nextAfterCurrentCompletes: true,
         pipeline: { active: true, stage: "fetch" }
       },
-      /every 12h, next after current pipeline completes/i
+      /every 12h, running now; next after this pipeline finishes/i
     ]
   ];
 

@@ -376,6 +376,32 @@ class SourceRegistryRuntimeStore:
                 state[bucket].append(_json_loads_object(row.get("payload_json")))
         return state
 
+    def table_rows_for_current_generation(
+        self,
+        *,
+        buckets: Sequence[str],
+        limit_per_bucket: int,
+    ) -> dict[str, list[dict[str, Any]]]:
+        generation = self.current_generation()
+        selected = [bucket for bucket in buckets if bucket in SOURCE_REGISTRY_BUCKETS]
+        limit = max(1, int(limit_per_bucket or 1))
+        rows_by_bucket = {bucket: [] for bucket in selected}
+        if not generation or not selected:
+            return rows_by_bucket
+        for bucket in selected:
+            rows = self.store.execute_read(
+                """
+                SELECT payload_json
+                FROM source_registry_rows
+                WHERE registry_generation = ? AND bucket = ?
+                ORDER BY row_ordinal ASC
+                LIMIT ?
+                """,
+                (generation, bucket, limit),
+            )
+            rows_by_bucket[bucket] = [_json_loads_object(row.get("payload_json")) for row in rows]
+        return rows_by_bucket
+
     def tombstones_for_generation(self, generation: str) -> dict[str, dict[str, Any]]:
         registry_generation = _clean_text(generation)
         if not registry_generation:

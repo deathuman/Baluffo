@@ -132,6 +132,41 @@ def test_registry_sources_table_view_returns_compact_rows(tmp_path: Path) -> Non
     assert encoded_size < 5_000
 
 
+def test_registry_sources_active_compact_view_does_not_load_full_state(tmp_path: Path) -> None:
+    api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    api.load_state = lambda: (_ for _ in ()).throw(AssertionError("load_state must not run"))  # type: ignore[assignment]
+    api.get_registry_compact_table_payload = lambda **kwargs: {  # type: ignore[attr-defined]
+        "ok": True,
+        "activeCompact": True,
+        "sources": {
+            "active": [{"id": "active_1", "name": "Active", "rawLargePayload": "x" * 1000}],
+            "pending": [{"id": "pending_1", "name": "Pending"}],
+            "rejected": [],
+        },
+        "summary": {"activeCount": 1, "pendingCount": 1, "rejectedCount": 0},
+    }
+
+    handler = FakeHandler()
+    result = handle_get(
+        handler,
+        api=api,
+        path="/registry/sources",
+        query={
+            "view": ["table"],
+            "activeCompact": ["1"],
+            "buckets": ["pending,active,rejected"],
+            "limitPerBucket": ["5"],
+        },
+    )
+
+    payload = handler.sent[-1]["payload"]
+    assert result is True
+    assert handler.sent[-1]["status"] == 200
+    assert payload["activeCompact"] is True
+    assert payload["sources"]["active"][0]["id"] == "active_1"
+    assert "rawLargePayload" not in payload["sources"]["active"][0]
+
+
 def test_registry_sources_table_view_explains_pending_auto_approval_blockers(
     tmp_path: Path,
 ) -> None:

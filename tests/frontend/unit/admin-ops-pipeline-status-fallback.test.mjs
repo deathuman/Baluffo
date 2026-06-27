@@ -176,9 +176,9 @@ test("admin ops controller renders active pipeline from status when dashboard he
   assert.equal(state.adminBusyState.liveFetchRunning, true);
   assert.ok(calls.includes("/ops/task-state?view=summary"));
   assert.equal(renderedCurrentRows.at(-1)?.[0]?.runId, "fetch_live_1");
-  assert.equal(calls.includes("/ops/fetch-kpis?view=summary"), false);
+  assert.equal(calls.includes("/ops/fetch-kpis?view=summary"), true);
   assert.equal(calls.includes("/admin/ops-tab-counts?view=summary"), false);
-  assert.equal(renderedKpis.at(-1)?.fetchKpiPendingLabel, "Delayed while job update is running.");
+  assert.equal(renderedKpis.at(-1)?.fetchKpiPendingLabel, "Updating while job is running.");
   assert.deepEqual(watcherCalls, ["attach-fetch", "load-fetch-summary"]);
 
   await loadPromise;

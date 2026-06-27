@@ -870,26 +870,6 @@ class OpsApi:
             "historyCount": 0,
         }
 
-    def _active_run_deferred_fetch_kpis_summary(
-        self, active_summary: dict[str, Any]
-    ) -> dict[str, Any]:
-        return {
-            "ok": True,
-            "summaryView": True,
-            "detailLevel": "summary",
-            "generatedAt": self._deps.now_iso(),
-            "status": "healthy",
-            "deferredDuringActiveRun": True,
-            "activePipelineOrFetchRunning": True,
-            "activePipeline": active_summary,
-            "fetchKpisDelayedDuringActiveRun": True,
-            "alerts": [],
-            "suppressedAlertsCount": 0,
-            "alertsEvaluated": False,
-            "alertBasis": "active-run-deferred",
-            "kpis": {},
-        }
-
     def compute_ops_dashboard_health_summary(self) -> dict[str, Any]:
         with time_operation("ops.dashboard_health.summary.total"):
             active_summary = self._active_pipeline_or_fetch_summary()
@@ -994,8 +974,6 @@ class OpsApi:
     def compute_ops_fetch_kpis_summary(self) -> dict[str, Any]:
         with time_operation("ops.fetch_kpis.summary.total"):
             active_summary = self._active_pipeline_or_fetch_summary()
-            if active_summary:
-                return self._active_run_deferred_fetch_kpis_summary(active_summary)
             with time_operation("ops.fetch_kpis.summary.history"):
                 history = list(self.get_projected_run_history().rows or [])
                 metrics = _ops_health.collect_fetch_history_metrics(
@@ -1052,7 +1030,16 @@ class OpsApi:
                 "alerts": alerts,
                 "suppressedAlertsCount": int(alert_result.get("suppressedCount") or 0),
                 "alertsEvaluated": True,
-                "alertBasis": "history",
+                "alertBasis": "history-active-run" if active_summary else "history",
+                **(
+                    {
+                        "activePipelineOrFetchRunning": True,
+                        "activePipeline": active_summary,
+                        "fetchKpisStaleDuringActiveRun": True,
+                    }
+                    if active_summary
+                    else {}
+                ),
                 "kpis": kpis,
             }
 

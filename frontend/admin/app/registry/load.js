@@ -1,5 +1,5 @@
 import { deriveDiscoveryLifecycleCounts, deriveDiscoveryQueuedCount } from "../../domain.js";
-import { renderDiscoveryCandidateReviewHtml } from "../../render.js?v=20";
+import { renderDiscoveryCandidateReviewHtml } from "../../render.js?v=21";
 import {
   deriveAdminActiveWorkContext,
   pipelineStatusIndicatesActive,
@@ -12,6 +12,7 @@ const CAP_DEFER_REASONS = new Set(["adapter_cap", "domain_cap", "top_n_cap"]);
 const FULL_REGISTRY_LOAD_TIMEOUT_MS = 60000;
 const ACTIVE_REGISTRY_LOAD_TIMEOUT_MS = 10000;
 const ADMIN_REGISTRY_TABLE_LIMIT_PER_BUCKET = 250;
+const ACTIVE_ADMIN_REGISTRY_TABLE_LIMIT_PER_BUCKET = 25;
 const PIPELINE_STATUS_PREFLIGHT_TIMEOUT_MS = 3000;
 const REGISTRY_REFRESH_RETRY_DELAY_MS = 5000;
 const REGISTRY_REFRESH_RETRY_MAX_DELAY_MS = 30000;
@@ -417,8 +418,8 @@ export function createRegistryLoadController({
       force: Boolean(options?.forcePipelinePreflight)
     });
     const activeContext = sourceTablesActiveContext({ livePipelineOrFetchRunning });
-    const activeCompactSourceTables = false;
-    if (activeContext.active && !options?.forceFullDiscoveryDuringActiveRun) {
+    const activeCompactSourceTables = Boolean(activeContext.active && activeContext.canLoadCompact);
+    if (activeContext.active && !activeContext.canLoadCompact && !options?.forceFullDiscoveryDuringActiveRun) {
       const background = Boolean(options?.background);
       if (options?.suppressPlaceholders !== true) {
         markSourceTablesDelayedForActiveWork(activeContext.reason, { onlyIfPlaceholder: true });
@@ -530,7 +531,10 @@ export function createRegistryLoadController({
             resolveLatestFetchReport(options),
             state.latestFetcherReportCache || {}
           );
-        const registrySourcesPath = `/registry/sources?view=table&buckets=pending,active,rejected&includeHiddenPending=${filterState.showZeroJobs ? "1" : "0"}&limitPerBucket=${ADMIN_REGISTRY_TABLE_LIMIT_PER_BUCKET}`;
+        const registryLimitPerBucket = activeCompactSourceTables
+          ? ACTIVE_ADMIN_REGISTRY_TABLE_LIMIT_PER_BUCKET
+          : ADMIN_REGISTRY_TABLE_LIMIT_PER_BUCKET;
+        const registrySourcesPath = `/registry/sources?view=table&buckets=pending,active,rejected&includeHiddenPending=${filterState.showZeroJobs ? "1" : "0"}&limitPerBucket=${registryLimitPerBucket}${activeCompactSourceTables ? "&activeCompact=1" : ""}`;
         const registrySourcesTimeoutMs = activeCompactSourceTables
           ? ACTIVE_REGISTRY_LOAD_TIMEOUT_MS
           : FULL_REGISTRY_LOAD_TIMEOUT_MS;

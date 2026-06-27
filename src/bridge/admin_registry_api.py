@@ -13,6 +13,13 @@ class _RegistryServiceLike(Protocol):
     def load_state(self) -> RegistryState: ...
     def persist_state(self, state: RegistryState) -> RegistryState: ...
     def get_summary_payload(self) -> JsonObject: ...
+    def get_compact_table_payload(
+        self,
+        *,
+        buckets: list[str],
+        limit_per_bucket: int,
+        include_hidden_pending: bool = False,
+    ) -> JsonObject: ...
     def get_auto_heal_report(self) -> JsonObject: ...
     def load_tombstones(self) -> JsonObject: ...
     def save_tombstones(self, tombstones: JsonObject) -> JsonObject: ...
@@ -133,6 +140,24 @@ def summarize_state(state: RegistryState, *, root_mod: Any) -> dict[str, int]:
 
 def get_registry_summary_payload(*, root_mod: Any) -> JsonObject:
     return cast(_AdminBridgeRoot, root_mod)._get_registry_service().get_summary_payload()
+
+
+def get_registry_compact_table_payload(
+    *,
+    root_mod: Any,
+    buckets: list[str],
+    limit_per_bucket: int,
+    include_hidden_pending: bool = False,
+) -> JsonObject:
+    return (
+        cast(_AdminBridgeRoot, root_mod)
+        ._get_registry_service()
+        .get_compact_table_payload(
+            buckets=buckets,
+            limit_per_bucket=limit_per_bucket,
+            include_hidden_pending=include_hidden_pending,
+        )
+    )
 
 
 def get_registry_auto_heal_report(*, root_mod: Any) -> JsonObject:

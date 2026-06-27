@@ -136,20 +136,37 @@ class PipelineScheduleService:
     def get_status(self, config: dict[str, Any] | None = None) -> dict[str, Any]:
         cfg = config if isinstance(config, dict) else self.load_config()
         schedule = self._schedule_state(cfg)
+        active_pipeline = self._active_pipeline_context()
         with self._lock:
             if not bool(schedule["due"]):
                 self._pending = False
             pending = bool(self._pending)
             last_trigger_run_id = self._last_trigger_run_id
             last_trigger_error = self._last_trigger_error
+        active_run_id = _clean_text(active_pipeline.get("runId"))
+        active_schedule_due = bool(schedule["due"] and active_pipeline.get("active"))
+        if active_schedule_due:
+            pending = False
         return {
             "enabled": bool(cfg.get("enabled")),
             "pending": pending,
-            "due": bool(schedule["due"]),
+            "due": False if active_schedule_due else bool(schedule["due"]),
             "nextRunAt": str(schedule["nextRunAt"]),
             "lastPipelineFinishedAt": str(schedule["lastPipelineFinishedAt"]),
             "lastTriggerRunId": last_trigger_run_id,
             "lastTriggerError": last_trigger_error,
+            **(
+                {
+                    "activeScheduledRun": bool(
+                        active_run_id and active_run_id == _clean_text(last_trigger_run_id)
+                    ),
+                    "blockedByActiveRun": True,
+                    "nextAfterCurrentCompletes": True,
+                    "activeRunId": active_run_id,
+                }
+                if active_schedule_due
+                else {}
+            ),
         }
 
     def get_ops_schedule_entry(self) -> dict[str, Any]:
@@ -190,16 +207,33 @@ class PipelineScheduleService:
             }
 
         if not self._is_idle():
+            active_pipeline = self._active_pipeline_context()
             with self._lock:
-                self._pending = True
+                self._pending = not bool(active_pipeline.get("active"))
                 self._last_trigger_error = ""
             self._bridge_log(
                 "info",
                 "jobs_pipeline_schedule_deferred",
                 reason=reason,
                 nextRunAt=str(schedule["nextRunAt"]),
+                activeRunId=_clean_text(active_pipeline.get("runId")),
             )
-            return {"started": False, "enabled": True, "pending": True, "due": True}
+            return {
+                "started": False,
+                "enabled": True,
+                "pending": not bool(active_pipeline.get("active")),
+                "due": False if active_pipeline.get("active") else True,
+                "nextRunAt": str(schedule["nextRunAt"]),
+                **(
+                    {
+                        "blockedByActiveRun": True,
+                        "nextAfterCurrentCompletes": True,
+                        "activeRunId": _clean_text(active_pipeline.get("runId")),
+                    }
+                    if active_pipeline.get("active")
+                    else {}
+                ),
+            }
 
         return self._start_scheduled_pipeline(reason=reason)
 
@@ -246,6 +280,22 @@ class PipelineScheduleService:
         except OSError:
             pass
         return self._parse_iso(self._now_iso())
+
+    def _active_pipeline_context(self) -> dict[str, Any]:
+        payload = self._get_jobs_pipeline_status_payload() or {}
+        if not isinstance(payload, dict):
+            return {"active": False, "runId": ""}
+        active = bool(
+            payload.get("active")
+            or payload.get("running")
+            or payload.get("activeChildRunId")
+            or payload.get("activeChildren")
+        )
+        return {
+            "active": active,
+            "runId": _clean_text(payload.get("runId")),
+            "activeChildRunId": _clean_text(payload.get("activeChildRunId")),
+        }
 
     def _latest_terminal_pipeline_row(self) -> dict[str, Any] | None:
         candidates: list[tuple[datetime, int, dict[str, Any]]] = []

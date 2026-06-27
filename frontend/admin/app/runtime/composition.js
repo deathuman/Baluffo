@@ -15,7 +15,7 @@ import {
   renderTotalsHtml,
   renderUsersEmptyHtml,
   renderUsersTableHtml
-} from "../../render.js?v=20";
+} from "../../render.js?v=21";
 import { adminService } from "../../services.js";
 import { createAdminAuthController } from "../auth.js?v=6";
 import { createAdminDiscoveryController } from "../discovery.js?v=2";
@@ -23,8 +23,8 @@ import {
   createAdminFetcherController
 } from "../fetcher.js?v=15";
 import { createRestoreActiveRunWatches } from "../live-task.js";
-import { createAdminOpsController, formatBytes } from "../ops.js?v=26";
-import { createAdminRegistryController } from "../registry.js?v=20";
+import { createAdminOpsController, formatBytes } from "../ops.js?v=27";
+import { createAdminRegistryController } from "../registry.js?v=21";
 import { createAdminSyncController } from "../sync.js?v=13";
 import { createAdminOverviewController } from "./overview.js?v=15";
 import { createActionCenterController } from "../action-center.js?v=2";

@@ -150,7 +150,7 @@ test("admin ops controller replaces stale pipeline child rows from fresher pipel
   controller.stopOpsHealthPolling();
 });
 
-test("admin ops active pipeline defers fetch KPI route", async () => {
+test("admin ops active pipeline lazily requests fetch KPI summary", async () => {
   const state = createOpsState();
   const refs = createOpsRefs();
   const calls = [];
@@ -182,9 +182,9 @@ test("admin ops active pipeline defers fetch KPI route", async () => {
   await flushAdminOpsBackground();
   controller.stopOpsHealthPolling();
 
-  assert.equal(calls.includes("/ops/fetch-kpis?view=summary"), false);
+  assert.equal(calls.includes("/ops/fetch-kpis?view=summary"), true);
   assert.doesNotMatch(refs.adminOpsKpisEl.innerHTML, /Loading latest fetch KPI/);
-  assert.match(refs.adminOpsKpisEl.innerHTML, /Delayed while job update is running\./);
+  assert.match(refs.adminOpsKpisEl.innerHTML, /Updating while job is running\./);
 });
 
 test("admin registry controller delays source tables while pipeline fetch is active", async () => {
@@ -194,6 +194,14 @@ test("admin registry controller delays source tables while pipeline fetch is act
     options: {
       getBridge: async (path, requestOptions = {}) => {
         calls.push({ path: String(path), requestOptions });
+        if (String(path).startsWith("/registry/sources")) {
+          return {
+            ok: true,
+            activeCompact: true,
+            sources: { pending: [], active: [], rejected: [] },
+            summary: {}
+          };
+        }
         throw new Error(`unexpected path ${path}`);
       }
     }
@@ -206,14 +214,12 @@ test("admin registry controller delays source tables while pipeline fetch is act
   const result = await controller.loadDiscoveryData({ background: true });
   fixture.renderScheduler.flush();
 
-  assert.equal(result?.skipped, true);
-  assert.equal(result?.sourceTablesDelayed, true);
-  assert.ok(!calls.some(call => call.path.startsWith("/registry/sources")));
+  assert.notEqual(result?.skipped, true);
+  assert.notEqual(result?.sourceTablesDelayed, true);
+  assert.ok(calls.some(call => call.path.startsWith("/registry/sources") && call.path.includes("activeCompact=1")));
   assert.ok(!calls.some(call => call.path === "/discovery/report"));
   assert.ok(!calls.some(call => call.path === "/discovery/candidates"));
-  assert.equal(fixture.state.sourceTablesLoadState, "delayed-active");
-  assert.match(fixture.refs.adminPendingSourcesEl.innerHTML, /Source tables delayed while job update is running/);
-  assert.match(fixture.refs.adminActiveSourcesEl.innerHTML, /Source tables delayed while job update is running/);
+  assert.equal(fixture.state.sourceTablesLoadState, "loaded");
 });
 
 test("admin registry controller preflights pipeline status before source tables", async () => {
@@ -245,6 +251,14 @@ test("admin registry controller preflights pipeline status before source tables"
             ]
           };
         }
+        if (String(path).startsWith("/registry/sources")) {
+          return {
+            ok: true,
+            activeCompact: true,
+            sources: { pending: [], active: [], rejected: [] },
+            summary: {}
+          };
+        }
         throw new Error(`unexpected path ${path}`);
       }
     }
@@ -257,20 +271,19 @@ test("admin registry controller preflights pipeline status before source tables"
   const result = await controller.loadDiscoveryData({ background: true });
   fixture.renderScheduler.flush();
 
-  assert.equal(result?.skipped, true);
-  assert.equal(result?.sourceTablesDelayed, true);
+  assert.notEqual(result?.skipped, true);
+  assert.notEqual(result?.sourceTablesDelayed, true);
   assert.ok(calls.includes("/tasks/run-jobs-pipeline-status"));
-  assert.ok(!calls.some(path => path.startsWith("/registry/sources")));
+  assert.ok(calls.some(path => path.startsWith("/registry/sources") && path.includes("activeCompact=1")));
   assert.ok(!calls.includes("/discovery/report"));
   assert.ok(!calls.includes("/discovery/candidates"));
   assert.equal(fixture.state.adminBusyState.livePipelineRunning, true);
   assert.equal(fixture.state.adminBusyState.liveFetchRunning, true);
   assert.equal(fixture.state.latestOpsTaskStatePayload.sentinel, "keep");
   assert.equal(fixture.state.latestOpsTaskStatePayload.tasks.length, 0);
-  assert.match(fixture.refs.adminPendingSourcesEl.innerHTML, /Source tables delayed while job update is running/);
 });
 
-test("admin registry controller avoids registry source calls during active pipeline", async () => {
+test("admin registry controller uses active-safe compact source calls during active pipeline", async () => {
   const calls = [];
   let fixture;
   fixture = createRegistryControllerFixture({
@@ -278,6 +291,18 @@ test("admin registry controller avoids registry source calls during active pipel
     options: {
       getBridge: async path => {
         calls.push(String(path));
+        if (String(path).startsWith("/registry/sources")) {
+          return {
+            ok: true,
+            activeCompact: true,
+            sources: {
+              pending: [{ id: "pending_1", name: "Pending Studio" }],
+              active: [{ id: "active_1", name: "Active Studio" }],
+              rejected: []
+            },
+            summary: {}
+          };
+        }
         throw new Error(`unexpected path ${path}`);
       },
       fetchJobsFetchReportJson: async () => ({ sources: [] })
@@ -295,11 +320,10 @@ test("admin registry controller avoids registry source calls during active pipel
   const result = await controller.loadDiscoveryData({ background: true });
   fixture.renderScheduler.flush();
 
-  assert.equal(result.skipped, true);
-  assert.equal(result.sourceTablesDelayed, true);
-  assert.ok(!calls.some(path => path.startsWith("/registry/sources")));
+  assert.equal(result.skipped, undefined);
+  assert.equal(result.sourceTablesDelayed, undefined);
+  assert.ok(calls.some(path => path.includes("/registry/sources?") && path.includes("activeCompact=1")));
   assert.doesNotMatch(logs.join("\n"), /Could not load Admin registry source tables/);
-  assert.match(fixture.refs.adminPendingSourcesEl.innerHTML, /Source tables delayed while job update is running/);
-  assert.match(fixture.refs.adminActiveSourcesEl.innerHTML, /Source tables delayed while job update is running/);
-  assert.match(fixture.refs.adminRejectedSourcesEl.innerHTML, /Source tables delayed while job update is running/);
+  assert.match(fixture.refs.adminPendingSourcesEl.innerHTML, /Pending Studio/);
+  assert.match(fixture.refs.adminActiveSourcesEl.innerHTML, /Active Studio/);
 });

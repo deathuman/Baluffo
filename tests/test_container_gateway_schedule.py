@@ -114,7 +114,7 @@ def test_gateway_schedule_fallback_preserves_next_run_during_active_pipeline(
                 "taskType": "pipeline",
                 "runId": "pipeline_latest",
                 "status": "succeeded",
-                "finishedAt": "2026-06-26T08:00:00+00:00",
+                "finishedAt": "2099-06-26T08:00:00+00:00",
             }
         ],
     )
@@ -127,8 +127,31 @@ def test_gateway_schedule_fallback_preserves_next_run_during_active_pipeline(
     payload = state.pipeline_schedule_payload()
 
     assert payload["status"]["pipeline"]["active"] is True
-    assert payload["status"]["nextRunAt"] == "2026-06-26T20:00:00+00:00"
+    assert payload["status"]["nextRunAt"] == "2099-06-26T20:00:00+00:00"
     assert "nextAfterCurrentCompletes" not in payload["status"]
+
+
+def test_gateway_schedule_fallback_active_due_waits_for_current_pipeline(
+    tmp_path: Path,
+) -> None:
+    state = _state(tmp_path)
+    _write_schedule(state.data_dir, interval_hours=11, configured_at="2026-06-26T09:00:00+00:00")
+    write_pipeline_status(
+        state.data_dir,
+        {"active": True, "runId": "pipeline_active", "stage": "fetch"},
+        now_iso="2026-06-27T09:00:00Z",
+    )
+
+    payload = state.pipeline_schedule_payload()
+    dashboard = state.dashboard_health_summary_payload()
+    bootstrap = state.admin_bootstrap_payload()
+
+    assert payload["status"]["due"] is False
+    assert payload["status"]["nextAfterCurrentCompletes"] is True
+    assert dashboard["schedule"]["pipeline"]["due"] is False
+    assert dashboard["schedule"]["pipeline"]["nextAfterCurrentCompletes"] is True
+    assert bootstrap["schedule"]["pipeline"]["due"] is False
+    assert bootstrap["schedule"]["pipeline"]["nextAfterCurrentCompletes"] is True
 
 
 def test_gateway_schedule_fallback_uses_configured_anchor_without_terminal_row(
