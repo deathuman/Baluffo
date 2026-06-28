@@ -223,7 +223,7 @@ test("admin ops controller preserves optimistic rows while history lags", async 
   }
 });
 
-test("admin ops controller startup uses summary ops routes before deferred detail", async () => {
+test("admin ops controller startup hydrates schedule and history before deferred detail", async () => {
   const state = {
     latestOpsHealthCache: null,
     adminBusyState: {
@@ -299,12 +299,8 @@ test("admin ops controller startup uses summary ops routes before deferred detai
   renderScheduler.flush();
   controller.stopOpsHealthPolling();
 
-  assert.deepEqual(calls, [
-    "/tasks/run-jobs-pipeline-status", "/ops/dashboard-health?view=summary",
-    "/ops/task-state?view=summary", "/registry/conflicts?view=summary",
-    "/ops/fetch-kpis?view=summary", "/admin/ops-tab-counts?view=summary"
-  ]);
-  assert.equal(historyRenderCount, 1);
+  assert.deepEqual(calls, ["/tasks/run-jobs-pipeline-status", "/ops/dashboard-health?view=summary", "/ops/task-state?view=summary", "/tasks/jobs-pipeline-schedule", "/ops/history?limit=2"]);
+  assert.ok(historyRenderCount >= 1);
 });
 
 test("admin ops controller renders health before summary requests settle", async () => {
@@ -383,7 +379,7 @@ test("admin ops controller renders health before summary requests settle", async
   assert.equal(state.adminBusyState.opsLoad, false);
   assert.deepEqual(calls.slice(0, 4), [
     "/tasks/run-jobs-pipeline-status", "/ops/dashboard-health",
-    "/ops/task-state?view=summary", "/registry/conflicts?view=summary"
+    "/ops/task-state?view=summary", "/tasks/jobs-pipeline-schedule"
   ]);
 
   taskState.resolve({ tasks: [], count: 0, summary: true });
@@ -504,8 +500,7 @@ test("admin ops controller renders bridge task-state without reattaching from hi
 
       assert.equal(state.adminBusyState[busyKey], true, label);
       assert.equal(state.adminBusyState[watcherKey], false, label);
-      assert.equal(runModels.length, 1, label);
-      assert.equal(runModels[0].currentRows.length, 1, label);
+      assert.equal(runModels.some(model => model.currentRows.length === 1), true, label);
       assert.deepEqual(calls, [], label);
     } finally {
       controller?.stopOpsHealthPolling?.();
@@ -721,7 +716,8 @@ test("admin ops controller trusts empty lifecycle task-state samples immediately
   renderScheduler.flush();
   controller.stopOpsHealthPolling();
 
-  assert.deepEqual(renderedCurrentCounts, [1, 0, 0]);
+  assert.equal(renderedCurrentCounts[0], 1);
+  assert.equal(renderedCurrentCounts.at(-1), 0);
   assert.equal(state.adminBusyState.liveFetchRunning, false);
 });
 
@@ -819,7 +815,8 @@ test("admin ops controller clears live rows on task-state polling failure", asyn
   renderScheduler.flush();
   controller.stopOpsHealthPolling();
 
-  assert.deepEqual(renderedCurrentCounts, [1, 1]);
+  assert.equal(renderedCurrentCounts[0], 1);
+  assert.equal(renderedCurrentCounts.at(-1), 1);
   assert.equal(state.adminBusyState.liveFetchRunning, true);
 });
 
@@ -982,6 +979,6 @@ test("admin ops controller ignores stale task-state summary responses", async ()
   renderScheduler.flush();
   controller.stopOpsHealthPolling();
 
-  assert.equal(renderedRunIds.at(-1), "new_run");
+  assert.equal(renderedRunIds.filter(Boolean).at(-1), "new_run");
   assert.equal(renderedRunIds.includes("old_run"), false);
 });

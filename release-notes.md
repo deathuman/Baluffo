@@ -1,3 +1,16 @@
+## [0.2.101] - 2026-06-28
+
+### Fixed
+- Umbrel Admin schedule/history hydration now renders from current authoritative route state instead of stale startup render tokens.
+- Heavy Admin detail routes are deferred out of the first startup hydration window to reduce 504 pressure.
+
+### Tests
+- Admin hydration smoke now exercises the hashed container bundle and fails on heavy startup route calls.
+
+### Notes
+- This supersedes the failed `0.2.100` Umbrel test image; no public tag is created until live stability is proven.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.100] - 2026-06-28
 
 ### Fixed

@@ -4,9 +4,14 @@ import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { chromium } from "@playwright/test";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+const CONTAINER_SMOKE_ROOT = path.join(REPO_ROOT, "_out", "container-hydration-smoke");
+const execFileAsync = promisify(execFile);
+let containerBundleBuild = null;
 
 function jsonResponse(res, payload, status = 200) {
   const body = `${JSON.stringify(payload)}\n`;
@@ -34,14 +39,23 @@ function contentTypeFor(filePath) {
   return "application/octet-stream";
 }
 
-async function serveStatic(req, res, url) {
-  const pathname = decodeURIComponent(url.pathname === "/" ? "/admin.html" : url.pathname);
-  const safeRelative = pathname.replace(/^\/+/, "");
-  const filePath = path.resolve(REPO_ROOT, safeRelative);
-  if (!filePath.startsWith(REPO_ROOT)) {
+async function buildContainerBundle() {
+  if (!containerBundleBuild) {
+    containerBundleBuild = execFileAsync(
+      process.execPath,
+      [path.join(REPO_ROOT, "scripts", "build_container_frontend.mjs"), "--out-dir", CONTAINER_SMOKE_ROOT],
+      { cwd: REPO_ROOT }
+    );
+  }
+  await containerBundleBuild;
+}
+
+async function serveFile(root, relativePath, res) {
+  const filePath = path.resolve(root, relativePath);
+  if (!filePath.startsWith(root)) {
     res.writeHead(403);
     res.end("forbidden");
-    return;
+    return true;
   }
   try {
     const body = await fs.readFile(filePath);
@@ -50,10 +64,24 @@ async function serveStatic(req, res, url) {
       "cache-control": "no-store"
     });
     res.end(body);
+    return true;
   } catch {
-    res.writeHead(404);
-    res.end("not found");
+    return false;
   }
+}
+
+async function serveStatic(req, res, url) {
+  const pathname = decodeURIComponent(url.pathname === "/" ? "/admin.html" : url.pathname);
+  const safeRelative = pathname.replace(/^\/+/, "");
+  if (safeRelative.startsWith("container-assets/")) {
+    if (await serveFile(CONTAINER_SMOKE_ROOT, safeRelative.slice("container-assets/".length), res)) return;
+  }
+  if (safeRelative === "admin.html" && await serveFile(CONTAINER_SMOKE_ROOT, safeRelative, res)) {
+    return;
+  }
+  if (await serveFile(REPO_ROOT, safeRelative, res)) return;
+  res.writeHead(404);
+  res.end("not found");
 }
 
 function createHydrationSmokeServer({ failAuthority = false } = {}) {
@@ -62,7 +90,7 @@ function createHydrationSmokeServer({ failAuthority = false } = {}) {
     const url = new URL(req.url || "/", "http://127.0.0.1");
     requests.push(`${req.method || "GET"} ${url.pathname}${url.search}`);
     if (url.pathname === "/frontend-runtime-config.js") {
-      jsResponse(res, "globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG = Object.freeze({ bridge: { host: '127.0.0.1', port: 0 }, security: { github_app_enabled_default: true } });\n");
+      jsResponse(res, "globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG = Object.freeze({ bridge: { sameOrigin: true }, runtime: { mode: 'container', localDataMode: 'bridge' }, security: { github_app_enabled_default: true } });\n");
       return;
     }
     if (url.pathname === "/tasks/jobs-pipeline-schedule") {
@@ -216,13 +244,13 @@ function createHydrationSmokeServer({ failAuthority = false } = {}) {
 }
 
 async function withSmokePage(options, callback) {
+  await buildContainerBundle();
   const server = createHydrationSmokeServer(options);
   const baseUrl = await server.start();
-  const port = new URL(baseUrl).port;
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
   try {
-    await page.goto(`${baseUrl}/admin.html?desktop=1&bridgeHost=127.0.0.1&bridgePort=${encodeURIComponent(port)}&hydrationSmoke=1`);
+    await page.goto(`${baseUrl}/admin.html?hydrationSmoke=1`);
     await callback({ page, requests: server.requests });
   } finally {
     await browser.close();
@@ -252,6 +280,10 @@ test("admin hydration smoke renders authoritative schedule and activity despite 
     assert.match(String(historyText || ""), /Pipeline/);
     assert.ok(requests.some(request => request.includes("GET /tasks/jobs-pipeline-schedule")));
     assert.ok(requests.some(request => request.includes("GET /ops/history?limit=2")));
+    assert.deepEqual(
+      requests.filter(request => /GET \/(ops\/fetch-kpis|admin\/ops-tab-counts|registry\/sources|registry\/summary)/.test(request)),
+      []
+    );
   });
 });
 

@@ -10,6 +10,19 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.101] - 2026-06-28
+
+### Fixed
+- Umbrel Admin now lets authoritative schedule/history hydration render against the current visible Ops shell instead of stale startup render tokens, preventing successful lightweight route responses from leaving schedule or activity stuck loading.
+- Idle Admin startup now defers heavy KPI, tab-count, registry-conflict, and source-table hydration until after schedule/history authority has loaded, reducing browser-visible 504 pressure during first render.
+
+### Tests
+- The Admin hydration smoke now builds and serves the hashed container frontend bundle used by Umbrel, and fails if heavy Admin routes are requested during the startup hydration window.
+
+### Notes
+- This supersedes the failed `0.2.100` Umbrel test image; no public tag is created until live stability is proven.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.100] - 2026-06-28
 
 ### Fixed

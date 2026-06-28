@@ -34,6 +34,7 @@ const OPS_HISTORY_DETAIL_PATH = "/ops/history?limit=80";
 const OPS_AUTHORITY_FETCH_TIMEOUT_MS = 5000;
 const OPS_AUTHORITY_RETRY_BASE_MS = 3000;
 const OPS_AUTHORITY_RETRY_MAX_MS = 30000;
+const OPS_IDLE_HEAVY_HYDRATION_DELAY_MS = 15000;
 const OPS_FETCHER_METRICS_DETAIL_PATH = "/ops/fetcher-metrics?windowRuns=80";
 const OPS_DISCOVERY_AUDIT_ARTIFACTS_PATH = "/ops/discovery-audit-artifacts";
 const OPS_TASK_FAILURE_ATTEMPTS_PATH = "/ops/task-failure-attempts";
@@ -384,6 +385,7 @@ export function createOpsHealthController({
   let opsTabCountsLoad = null;
   let opsHistoryLoad = null;
   let opsHistoryLoadLimit = 0;
+  let opsIdleHeavyHydrationTimer = null;
   let sourcePolicyDetailLoad = null;
   let registryConflictsDetailLoad = null;
   let dedupListsDetailLoad = null;
@@ -825,6 +827,22 @@ export function createOpsHealthController({
     state.opsHealthPollTimer = maybeUnrefTimer(setTimeout(() => {
       loadOpsHealthData({ fromPoll: true, summary: true }).catch(() => {});
     }, waitMs));
+  }
+
+  function scheduleIdleOpsHeavyHydration(renderToken, options = {}) {
+    if (options?.fromPoll || opsIdleHeavyHydrationTimer) return;
+    opsIdleHeavyHydrationTimer = maybeUnrefTimer(setTimeout(() => {
+      opsIdleHeavyHydrationTimer = null;
+      if (renderToken !== opsRenderToken || hasPossibleActiveRunEvidence()) return;
+      loadRegistryConflictsSummaryData(renderToken, { silent: true }).catch(() => {});
+      if (!hasFetchKpiValues(state.latestOpsHealthCache?.kpis || {})) {
+        loadFetchKpisSummaryData(renderToken, { silent: true }).catch(() => {});
+      }
+      loadOpsTabCountsSummaryData(renderToken, {
+        silent: true,
+        force: Boolean(state.opsTabCountsDelayedDuringActiveRun)
+      }).catch(() => {});
+    }, OPS_IDLE_HEAVY_HYDRATION_DELAY_MS));
   }
 
   function buildSourcePolicyActionPayload(row, action) {
@@ -1359,8 +1377,8 @@ export function createOpsHealthController({
     });
   }
 
-  function renderDeferredHistoryDetails(renderToken = opsRenderToken) {
-    if (renderToken !== opsRenderToken) return;
+  function renderDeferredHistoryDetails(renderToken = null) {
+    if (renderToken !== null && renderToken !== opsRenderToken) return;
     const historyPayload = getCachedHistoryPayload();
     const historyRuns = Array.isArray(historyPayload?.runs) ? historyPayload.runs : [];
     const taskStatePayload = state.latestOpsTaskStatePayload || { tasks: [] };
@@ -1372,7 +1390,7 @@ export function createOpsHealthController({
       Date.now()
     );
     getRenderScheduler()(() => {
-      if (renderToken !== opsRenderToken) return;
+      if (renderToken !== null && renderToken !== opsRenderToken) return;
       renderAdminOpsHistoryImpl(getHistoryElement(), runModel, {
         onCopyRunDiagnostics: handleCopyRunDiagnostics,
         onAbortRun: handleAbortRun,
@@ -1390,7 +1408,9 @@ export function createOpsHealthController({
   }
 
   function loadOpsHistoryData(options = {}) {
-    const renderToken = Number(options?.renderToken) || opsRenderToken;
+    const renderToken = Object.prototype.hasOwnProperty.call(options, "renderToken")
+      ? Number(options?.renderToken)
+      : null;
     const requestedLimit = Math.max(1, Math.min(80, Number(options?.limit) || 2));
     if (opsHistoryLoad) {
       if (requestedLimit <= opsHistoryLoadLimit) return opsHistoryLoad;
@@ -2351,12 +2371,6 @@ export function createOpsHealthController({
           schedulePipelineStatusPolling(getOpsPollIntervalMs(true));
         }
       }).catch(() => {});
-    } else {
-      loadFetchKpisSummaryData(renderToken, { silent: true }).catch(() => {});
-      loadOpsTabCountsSummaryData(renderToken, {
-        silent: true,
-        force: Boolean(state.opsTabCountsDelayedDuringActiveRun)
-      }).catch(() => {});
     }
     return { taskStatePayload, historyPayload };
   }
@@ -2792,9 +2806,11 @@ export function createOpsHealthController({
       state.opsActiveAdminWorkLastActive = false;
       state.opsActivePipelineOrFetchLastActive = false;
       stopPipelineStatusPolling();
-      maybeUnrefTimer(setTimeout(() => {
-        loadOpsHealthData({ summary: true }).catch(() => {});
-      }, 0));
+      if (!options?.summaryOnly) {
+        maybeUnrefTimer(setTimeout(() => {
+          loadOpsHealthData({ summary: true }).catch(() => {});
+        }, 0));
+      }
     }
     if (options?.returnMeta) {
       return {
@@ -3044,14 +3060,11 @@ export function createOpsHealthController({
         );
       }
       loadTaskStateSummaryData(renderToken, options).catch(() => {});
-      loadRegistryConflictsSummaryData(renderToken, options).catch(() => {});
-      if (!hasFetchKpiValues(state.latestOpsHealthCache?.kpis || {})) {
-        loadFetchKpisSummaryData(renderToken, { silent: Boolean(options?.fromPoll) }).catch(() => {});
-      }
-      loadOpsTabCountsSummaryData(renderToken, {
-        silent: Boolean(options?.fromPoll),
-        force: Boolean(state.opsTabCountsDelayedDuringActiveRun)
-      }).catch(() => {});
+      await Promise.allSettled([
+        loadPipelineScheduleData({ force: true, silent: true }),
+        loadOpsHistoryData({ force: true, silent: true })
+      ]);
+      scheduleIdleOpsHeavyHydration(renderToken, options);
     } catch (err) {
       if (measureFirstRender) {
         markStep("admin_ops_health_first_render_done", {

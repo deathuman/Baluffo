@@ -23,7 +23,7 @@ import {
   createAdminFetcherController
 } from "../fetcher.js?v=15";
 import { createRestoreActiveRunWatches } from "../live-task.js";
-import { createAdminOpsController, formatBytes } from "../ops.js?v=30";
+import { createAdminOpsController, formatBytes } from "../ops.js?v=31";
 import { createAdminRegistryController } from "../registry.js?v=21";
 import { createAdminSyncController } from "../sync.js?v=13";
 import { createAdminOverviewController } from "./overview.js?v=15";
@@ -252,6 +252,7 @@ export function composeAdminControllers({
       ? await opsController.loadActiveOpsSummaryData({
         fromPoll: false,
         returnMeta: true,
+        summaryOnly: true,
         silent: true
       }).catch(() => null)
       : null;
@@ -278,18 +279,12 @@ export function composeAdminControllers({
       opsController.loadOpsHistoryData({
         silent: true,
         force: true
-      }),
-      activeAdminWork
-        ? Promise.resolve({ skipped: true, reason: "active_admin_work" })
-        : registryController.loadDiscoveryData({
-          sourceTablesOnly: true,
-          logChanges: false
-        })
+      })
     ];
     const results = await Promise.allSettled(tasks);
     results.forEach((result, index) => {
       if (result.status === "rejected") {
-        const labels = ["Admin overview fallback", "Sync status fallback", "Pipeline schedule fallback", "Operations activity fallback", "Source table fallback"];
+        const labels = ["Admin overview fallback", "Sync status fallback", "Pipeline schedule fallback", "Operations activity fallback"];
         logAdminError(labels[index] || "Admin bootstrap fallback", result.reason);
       }
     });
@@ -308,11 +303,7 @@ export function composeAdminControllers({
         logAdminError("Failed to load Admin source tables after bootstrap", err);
       });
     };
-    if (typeof globalThis.requestIdleCallback === "function") {
-      globalThis.requestIdleCallback(loadSourceTables, { timeout: 1500 });
-      return;
-    }
-    const timer = globalThis.setTimeout(loadSourceTables, 0);
+    const timer = globalThis.setTimeout(loadSourceTables, 15000);
     timer?.unref?.();
   }
 
