@@ -8,4 +8,4 @@ export {
 export {
   renderAdminOpsHistory,
   renderAdminOpsTrends
-} from "./ops-history.js?v=14";
+} from "./ops-history.js?v=15";

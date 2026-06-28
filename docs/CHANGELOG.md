@@ -10,6 +10,19 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.100] - 2026-06-28
+
+### Fixed
+- Umbrel Admin pipeline schedule and Operations Activity now hydrate from their authoritative lightweight routes during startup, so degraded bootstrap/dashboard payloads cannot leave schedule stuck loading or activity falsely empty.
+- Admin now preserves authoritative schedule/activity state across shell refreshes and rebinds replaced DOM targets before rendering.
+
+### Tests
+- Added a browser-based Admin hydration smoke that stubs degraded bootstrap/dashboard payloads plus authoritative schedule/history routes, catching false loading/default/empty states before Umbrel test images are pushed.
+
+### Notes
+- This remains an Umbrel/live-stability test build on the current release line; no public tag is created until live stability is proven.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.99] - 2026-06-27
 
 ### Fixed

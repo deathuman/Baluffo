@@ -15,15 +15,15 @@ import {
   renderTotalsHtml,
   renderUsersEmptyHtml,
   renderUsersTableHtml
-} from "../../render.js?v=22";
+} from "../../render.js?v=23";
 import { adminService } from "../../services.js";
-import { createAdminAuthController } from "../auth.js?v=6";
+import { createAdminAuthController } from "../auth.js?v=7";
 import { createAdminDiscoveryController } from "../discovery.js?v=2";
 import {
   createAdminFetcherController
 } from "../fetcher.js?v=15";
 import { createRestoreActiveRunWatches } from "../live-task.js";
-import { createAdminOpsController, formatBytes } from "../ops.js?v=29";
+import { createAdminOpsController, formatBytes } from "../ops.js?v=30";
 import { createAdminRegistryController } from "../registry.js?v=21";
 import { createAdminSyncController } from "../sync.js?v=13";
 import { createAdminOverviewController } from "./overview.js?v=15";
@@ -275,6 +275,10 @@ export function composeAdminControllers({
         silent: true,
         force: true
       }),
+      opsController.loadOpsHistoryData({
+        silent: true,
+        force: true
+      }),
       activeAdminWork
         ? Promise.resolve({ skipped: true, reason: "active_admin_work" })
         : registryController.loadDiscoveryData({
@@ -285,7 +289,7 @@ export function composeAdminControllers({
     const results = await Promise.allSettled(tasks);
     results.forEach((result, index) => {
       if (result.status === "rejected") {
-        const labels = ["Admin overview fallback", "Sync status fallback", "Pipeline schedule fallback", "Source table fallback"];
+        const labels = ["Admin overview fallback", "Sync status fallback", "Pipeline schedule fallback", "Operations activity fallback", "Source table fallback"];
         logAdminError(labels[index] || "Admin bootstrap fallback", result.reason);
       }
     });
@@ -385,6 +389,12 @@ export function composeAdminControllers({
         logAdminError("Admin pipeline schedule fallback refresh delayed.", err);
       });
     }
+    await opsController.loadOpsHistoryData({
+      silent: true,
+      force: true
+    }).catch(err => {
+      logAdminError("Admin operations activity fallback refresh delayed.", err);
+    });
     state.latestSyncStatusCache = payload?.sync || null;
     syncController.renderSyncStatus(payload?.sync || {}, { forceForm: true });
     scheduleBootstrapSourceTablesLoad();
@@ -421,6 +431,7 @@ export function composeAdminControllers({
     loadDiscoveryConfig: (...args) => discoveryController.loadDiscoveryConfig(...args),
     loadPipelineStatusFallbackData: (...args) => opsController.loadPipelineStatusFallbackData(...args),
     loadPipelineScheduleData: (...args) => opsController.loadPipelineScheduleData(...args),
+    loadOpsHistoryData: (...args) => opsController.loadOpsHistoryData(...args),
     loadOpsHealthData: (...args) => opsController.loadOpsHealthData(...args),
     loadSyncStatus: (...args) => syncController.loadSyncStatus(...args),
     loadAdminBootstrap,

@@ -187,6 +187,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
   const taskStateUnavailable = Boolean(options?.taskStateUnavailable);
   const historyPending = Boolean(options?.historyPending);
   const historyLoaded = options?.historyLoaded !== false;
+  const historyError = String(options?.historyError || "").trim();
   const historyFullLoaded = Boolean(options?.historyFullLoaded);
   const canPatchInPlace = Boolean(
     historyEl
@@ -200,6 +201,17 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
       : taskStateUnavailable
         ? '<div class="admin-ops-loading">Task state unavailable. Current runs may be stale.</div>'
       : '<div class="no-results">No run history yet.</div>';
+    if (canPatchInPlace) {
+      delete historyEl.dataset.opsStructureSig;
+    }
+    return;
+  }
+  if (!currentRows.length && !visibleCompletedRows.length && !olderCompletedRows.length && !historyLoaded) {
+    historyEl.innerHTML = historyPending
+      ? '<div class="admin-ops-loading admin-section-loading">Loading recent activity...</div>'
+      : historyError
+        ? '<div class="admin-ops-loading admin-section-loading">Activity delayed; retrying.</div>'
+        : '<div class="admin-ops-loading admin-section-loading">Loading recent activity...</div>';
     if (canPatchInPlace) {
       delete historyEl.dataset.opsStructureSig;
     }

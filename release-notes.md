@@ -1,3 +1,17 @@
+## [0.2.100] - 2026-06-28
+
+### Fixed
+- Umbrel Admin pipeline schedule and Operations Activity now hydrate from their authoritative lightweight routes during startup.
+- Degraded bootstrap/dashboard payloads can no longer leave schedule stuck loading or activity falsely empty.
+- Admin preserves authoritative schedule/activity state across shell refreshes and rebinds replaced DOM targets before rendering.
+
+### Tests
+- Added a browser-based Admin hydration smoke for degraded bootstrap plus authoritative schedule/history route rendering.
+
+### Notes
+- This remains an Umbrel/live-stability test build on the current release line; no public tag is created until live stability is proven.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.99] - 2026-06-27
 
 ### Fixed

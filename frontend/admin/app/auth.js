@@ -25,6 +25,7 @@ export function createAdminAuthController({
   loadOpsHealthData,
   loadPipelineStatusFallbackData,
   loadPipelineScheduleData,
+  loadOpsHistoryData,
   loadSyncStatus,
   loadAdminBootstrap,
   loadCriticalBootstrapFallbacks,
@@ -134,6 +135,13 @@ export function createAdminAuthController({
         .then(() => loadPipelineScheduleData({ force: true, silent: true }))
         .catch(err => {
           logAdminError("Failed to load pipeline schedule during startup", err);
+        });
+    }
+    if (typeof loadOpsHistoryData === "function") {
+      Promise.resolve()
+        .then(() => loadOpsHistoryData({ force: true, silent: true }))
+        .catch(err => {
+          logAdminError("Failed to load operations activity during startup", err);
         });
     }
     runInitialTask({

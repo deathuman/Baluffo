@@ -95,6 +95,130 @@ test("admin recent history loader defaults to two completed runs", async () => {
   assert.deepEqual(calls, ["/ops/history?limit=2"]);
 });
 
+test("admin activity startup renders loading until authoritative history succeeds", async () => {
+  const calls = [];
+  const history = createDeferred();
+  const state = { adminBusyState: {} };
+  const historyEl = createElement({ dataset: {} });
+  const controller = createAdminOpsController({
+    state,
+    refs: {
+      adminBridgeStatusBadgeEl: createElement({ classList: createClassList() }),
+      adminOpsHistoryEl: historyEl,
+      adminOpsTrendsEl: createElement()
+    },
+    getBridge: async path => {
+      calls.push(path);
+      if (path === "/ops/history?limit=2") return history.promise;
+      throw new Error(`unexpected path ${path}`);
+    },
+    postBridge: async () => ({}),
+    deriveAdminRunsModel: ({ historyRuns }) => ({
+      currentRows: [],
+      visibleCompletedRows: Array.isArray(historyRuns) ? historyRuns : [],
+      olderCompletedRows: [],
+      hasLiveRuns: false,
+      liveTypes: []
+    }),
+    getOpsPollIntervalMs: () => 5000,
+    renderAdminOpsAlerts() {},
+    renderAdminOpsKpis() {},
+    renderAdminOpsSchedule() {},
+    renderAdminOpsFetcherMetrics() {},
+    renderAdminOpsTrends() {},
+    setBusyFlag() {},
+    showToast() {},
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    adminDispatch: { dispatch() {} },
+    adminActions: { OPS_REFRESHED: "ops/refreshed" },
+    escapeHtml: value => String(value || ""),
+    idlePollIntervalMs: 1000,
+    awaitBridgeReady: async () => true,
+    renderScheduler: task => task()
+  });
+
+  const load = controller.loadOpsHistoryData({ force: true, silent: true });
+  await Promise.resolve();
+
+  assert.deepEqual(calls, ["/ops/history?limit=2"]);
+  assert.match(historyEl.innerHTML, /Loading recent activity/);
+  history.resolve({ runs: [{ runId: "pipeline_recent", type: "pipeline", status: "completed" }] });
+  await load;
+
+  assert.match(historyEl.innerHTML, /Pipeline/);
+  assert.doesNotMatch(historyEl.innerHTML, /No run history yet/);
+});
+
+test("admin activity does not treat degraded bootstrap empty recent rows as loaded history", async () => {
+  let renderedOptions = null;
+  let renderedModel = null;
+  const controller = createController({
+    getBridge: async path => {
+      throw new Error(`unexpected path ${path}`);
+    },
+    onHistory(_el, model, options) {
+      renderedModel = model;
+      renderedOptions = options;
+    }
+  });
+
+  controller.applyBootstrapPayload({
+    ok: true,
+    degraded: true,
+    source: "container-gateway-fallback",
+    tasks: { current: [], recent: [] },
+    ops: { degraded: true, schedule: {} }
+  });
+
+  assert.equal(renderedModel.visibleCompletedRows.length, 0);
+  assert.equal(renderedOptions.historyLoaded, false);
+});
+
+test("admin activity route failure renders retrying instead of no history", async () => {
+  const refsHistoryEl = createElement({ dataset: {} });
+  const state = { adminBusyState: {} };
+  const controller = createAdminOpsController({
+    state,
+    refs: {
+      adminBridgeStatusBadgeEl: createElement({ classList: createClassList() }),
+      adminOpsHistoryEl: refsHistoryEl,
+      adminOpsTrendsEl: createElement()
+    },
+    getBridge: async path => {
+      if (path === "/ops/history?limit=2") throw new Error("history timeout");
+      throw new Error(`unexpected path ${path}`);
+    },
+    postBridge: async () => ({}),
+    deriveAdminRunsModel: ({ historyRuns }) => ({
+      currentRows: [],
+      visibleCompletedRows: Array.isArray(historyRuns) ? historyRuns : [],
+      olderCompletedRows: [],
+      hasLiveRuns: false,
+      liveTypes: []
+    }),
+    getOpsPollIntervalMs: () => 5000,
+    renderAdminOpsAlerts() {},
+    renderAdminOpsKpis() {},
+    renderAdminOpsSchedule() {},
+    renderAdminOpsFetcherMetrics() {},
+    renderAdminOpsTrends() {},
+    setBusyFlag() {},
+    showToast() {},
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    adminDispatch: { dispatch() {} },
+    adminActions: { OPS_REFRESHED: "ops/refreshed" },
+    escapeHtml: value => String(value || ""),
+    idlePollIntervalMs: 1000,
+    awaitBridgeReady: async () => true,
+    renderScheduler: task => task()
+  });
+
+  await controller.loadOpsHistoryData({ force: true, silent: true });
+
+  assert.match(refsHistoryEl.innerHTML, /Activity delayed; retrying/);
+  assert.doesNotMatch(refsHistoryEl.innerHTML, /No run history yet/);
+});
+
 test("admin older history request waits for smaller in-flight recent request", async () => {
   const calls = [];
   const recent = createDeferred();

@@ -8,7 +8,7 @@ import {
   renderAdminOpsSchedule,
   renderAdminOpsTrends,
   renderDiscoveryCandidateReviewHtml
-} from "../../render.js?v=22";
+} from "../../render.js?v=23";
 import {
   filterSourcePolicyReviewPairs,
   getMigrationLinkLinkedActions,
@@ -31,6 +31,9 @@ const OPS_FETCH_KPIS_SUMMARY_PATH = "/ops/fetch-kpis?view=summary";
 const OPS_TAB_COUNTS_SUMMARY_PATH = "/admin/ops-tab-counts?view=summary";
 const OPS_HISTORY_STARTUP_PATH = "/ops/history?limit=2";
 const OPS_HISTORY_DETAIL_PATH = "/ops/history?limit=80";
+const OPS_AUTHORITY_FETCH_TIMEOUT_MS = 5000;
+const OPS_AUTHORITY_RETRY_BASE_MS = 3000;
+const OPS_AUTHORITY_RETRY_MAX_MS = 30000;
 const OPS_FETCHER_METRICS_DETAIL_PATH = "/ops/fetcher-metrics?windowRuns=80";
 const OPS_DISCOVERY_AUDIT_ARTIFACTS_PATH = "/ops/discovery-audit-artifacts";
 const OPS_TASK_FAILURE_ATTEMPTS_PATH = "/ops/task-failure-attempts";
@@ -427,12 +430,12 @@ export function createOpsHealthController({
     if (typeof measureAdminStep === "function") measureAdminStep(name, startMark, endMark, payload);
   }
 
-  async function measuredGetBridge(path, metricName, { enabled = true } = {}) {
+  async function measuredGetBridge(path, metricName, { enabled = true, requestOptions = {} } = {}) {
     const startMark = `${metricName}_start`;
     const endMark = `${metricName}_done`;
     if (enabled) markStep(startMark);
     try {
-      const payload = await getBridge(path);
+      const payload = await getBridge(path, requestOptions);
       if (enabled) {
         markStep(endMark, { ok: true });
         measureStep(metricName, startMark, endMark, { ok: true });
@@ -449,6 +452,36 @@ export function createOpsHealthController({
 
   function isPlainObject(value) {
     return value && typeof value === "object" && !Array.isArray(value);
+  }
+
+  function resolveLiveRef(refName, selector, diagnosticName) {
+    const current = refs?.[refName] || null;
+    const currentConnected = Boolean(
+      current
+      && (
+        typeof current.isConnected !== "boolean"
+        || current.isConnected
+      )
+    );
+    if (currentConnected) return current;
+    const next = globalThis.document?.querySelector?.(selector) || current;
+    if (next && next !== current) {
+      refs[refName] = next;
+      markStep(`admin_${diagnosticName}_render_target_rebound`);
+      return next;
+    }
+    if (!next) {
+      markStep(`admin_${diagnosticName}_render_target_missing`);
+    }
+    return next;
+  }
+
+  function getScheduleElement() {
+    return resolveLiveRef("adminOpsScheduleEl", '[data-ui="admin-ops-schedule"]', "pipeline_schedule");
+  }
+
+  function getHistoryElement() {
+    return resolveLiveRef("adminOpsHistoryEl", '[data-ui="admin-ops-history"]', "ops_history");
   }
 
   function hasUsefulValue(value) {
@@ -614,7 +647,7 @@ export function createOpsHealthController({
 
   function renderPipelineScheduleModel() {
     renderAdminOpsScheduleImpl(
-      refs.adminOpsScheduleEl,
+      getScheduleElement(),
       getPipelineScheduleRenderModel(),
       state.latestOpsHealthCache
     );
@@ -625,13 +658,18 @@ export function createOpsHealthController({
     state.pipelineScheduleModel = schedule;
     state.pipelineScheduleLastError = "";
     state.pipelineScheduleFailureCount = 0;
+    markStep("admin_pipeline_schedule_model_loaded", {
+      enabled: Boolean(schedule?.pipeline?.enabled),
+      intervalHours: Number(schedule?.pipeline?.intervalHours || 0),
+      nextRunAt: String(schedule?.pipeline?.nextRunAt || "")
+    });
     return true;
   }
 
   function schedulePipelineScheduleRetry() {
     if (state.pipelineScheduleRetryTimer) return;
     const failures = Math.max(1, Number(state.pipelineScheduleFailureCount || 1));
-    const delayMs = Math.min(30000, 3000 * (2 ** Math.min(3, failures - 1)));
+    const delayMs = Math.min(OPS_AUTHORITY_RETRY_MAX_MS, OPS_AUTHORITY_RETRY_BASE_MS * (2 ** Math.min(3, failures - 1)));
     state.pipelineScheduleRetryTimer = maybeUnrefTimer(setTimeout(() => {
       state.pipelineScheduleRetryTimer = null;
       loadPipelineScheduleData({ force: true, silent: true }).catch(() => {});
@@ -745,16 +783,13 @@ export function createOpsHealthController({
       refs.adminOpsAlertsEl.innerHTML = `<div class="muted">${escapeHtml(message)}</div>`;
     }
     if (refs.adminOpsKpisEl) refs.adminOpsKpisEl.innerHTML = "";
-    if (refs.adminOpsScheduleEl) refs.adminOpsScheduleEl.innerHTML = "";
+    renderPipelineScheduleModel();
     if (refs.adminSourcePolicyReviewEl) {
       refs.adminSourcePolicyReviewEl.innerHTML = `<div class="muted">${escapeHtml(message)}</div>`;
     }
     if (refs.adminOpsFetcherMetricsEl) refs.adminOpsFetcherMetricsEl.innerHTML = "";
     if (refs.adminOpsDedupListsEl) refs.adminOpsDedupListsEl.innerHTML = "";
     if (refs.adminOpsTrendsEl) refs.adminOpsTrendsEl.textContent = message;
-    if (refs.adminOpsHistoryEl) {
-      refs.adminOpsHistoryEl.innerHTML = `<div class="no-results">${escapeHtml(message)}</div>`;
-    }
     renderOpsTabBadges(refs, {
       health: { alerts: [] },
       discoveryReport: {},
@@ -1136,14 +1171,13 @@ export function createOpsHealthController({
   function setOpsReadinessShell() {
     if (refs.adminOpsAlertsEl) refs.adminOpsAlertsEl.innerHTML = "";
     if (refs.adminOpsKpisEl) refs.adminOpsKpisEl.innerHTML = "";
-    if (refs.adminOpsScheduleEl) refs.adminOpsScheduleEl.innerHTML = "";
+    renderPipelineScheduleModel();
     if (refs.adminSourcePolicyReviewEl) refs.adminSourcePolicyReviewEl.innerHTML = "";
     if (refs.adminOpsFetcherMetricsEl) refs.adminOpsFetcherMetricsEl.innerHTML = "";
     if (refs.adminOpsDedupListsEl) refs.adminOpsDedupListsEl.innerHTML = "";
     if (refs.adminOpsTrendsEl) {
       refs.adminOpsTrendsEl.textContent = "No run trend data yet.";
     }
-    if (refs.adminOpsHistoryEl) refs.adminOpsHistoryEl.innerHTML = "";
     renderOpsTabBadges(refs, {
       health: { alerts: [] },
       discoveryReport: state.latestDiscoveryReportCache || {},
@@ -1169,6 +1203,16 @@ export function createOpsHealthController({
       && !Array.isArray(state.latestOpsHistoryPayload)
       ? state.latestOpsHistoryPayload
       : { runs: [] };
+  }
+
+  function scheduleOpsHistoryRetry() {
+    if (state.opsHistoryRetryTimer) return;
+    const failures = Math.max(1, Number(state.opsHistoryFailureCount || 1));
+    const delayMs = Math.min(OPS_AUTHORITY_RETRY_MAX_MS, OPS_AUTHORITY_RETRY_BASE_MS * (2 ** Math.min(3, failures - 1)));
+    state.opsHistoryRetryTimer = maybeUnrefTimer(setTimeout(() => {
+      state.opsHistoryRetryTimer = null;
+      loadOpsHistoryData({ force: true, silent: true }).catch(() => {});
+    }, delayMs));
   }
 
   function getCachedSourcePolicyPayload() {
@@ -1299,16 +1343,19 @@ export function createOpsHealthController({
       renderAdminOpsDedupListsImpl(refs.adminOpsDedupListsEl, fetcherMetricsPayload, {
         onDedupReviewAction: handleDedupReviewAction
       });
-      renderAdminOpsHistoryImpl(refs.adminOpsHistoryEl, runModel, {
+      renderAdminOpsHistoryImpl(getHistoryElement(), runModel, {
         onCopyRunDiagnostics: handleCopyRunDiagnostics,
         onAbortRun: handleAbortRun,
         waitingForTaskState: Boolean(state.waitingForTaskState),
         taskStateUnavailable: Boolean(state.taskStateUnavailable),
         historyPending: Boolean(state.opsHistoryLoadPending),
         historyLoaded: Boolean(state.opsHistoryLoaded),
+        historyError: state.opsHistoryLastError,
         historyFullLoaded: Boolean(state.opsHistoryFullLoaded)
       });
-      renderAdminOpsTrendsImpl(refs.adminOpsTrendsEl, historyRuns);
+      if (state.opsHistoryLoaded) {
+        renderAdminOpsTrendsImpl(refs.adminOpsTrendsEl, historyRuns);
+      }
     });
   }
 
@@ -1326,16 +1373,19 @@ export function createOpsHealthController({
     );
     getRenderScheduler()(() => {
       if (renderToken !== opsRenderToken) return;
-      renderAdminOpsHistoryImpl(refs.adminOpsHistoryEl, runModel, {
+      renderAdminOpsHistoryImpl(getHistoryElement(), runModel, {
         onCopyRunDiagnostics: handleCopyRunDiagnostics,
         onAbortRun: handleAbortRun,
         waitingForTaskState: Boolean(state.waitingForTaskState),
         taskStateUnavailable: Boolean(state.taskStateUnavailable),
         historyPending: Boolean(state.opsHistoryLoadPending),
         historyLoaded: Boolean(state.opsHistoryLoaded),
+        historyError: state.opsHistoryLastError,
         historyFullLoaded: Boolean(state.opsHistoryFullLoaded)
       });
-      renderAdminOpsTrendsImpl(refs.adminOpsTrendsEl, historyRuns);
+      if (state.opsHistoryLoaded) {
+        renderAdminOpsTrendsImpl(refs.adminOpsTrendsEl, historyRuns);
+      }
     });
   }
 
@@ -1351,20 +1401,46 @@ export function createOpsHealthController({
       : `/ops/history?limit=${encodeURIComponent(String(requestedLimit))}`;
     opsHistoryLoadLimit = requestedLimit;
     state.opsHistoryLoadPending = true;
+    state.opsHistoryLastError = "";
+    markStep("admin_ops_history_model_fetch_start", {
+      limit: requestedLimit
+    });
     renderDeferredHistoryDetails(renderToken);
     opsHistoryLoad = measuredGetBridge(
       path,
       "admin_ops_history_fetch",
-      { enabled: !options?.silent }
+      {
+        enabled: !options?.silent,
+        requestOptions: { timeoutMs: OPS_AUTHORITY_FETCH_TIMEOUT_MS }
+      }
     )
       .then(payload => {
         if (payload && typeof payload === "object" && !Array.isArray(payload)) {
           state.latestOpsHistoryPayload = payload;
           state.opsHistoryLoaded = true;
           if (requestedLimit >= 80) state.opsHistoryFullLoaded = true;
+          state.opsHistoryLastError = "";
+          state.opsHistoryFailureCount = 0;
+          markStep("admin_ops_history_model_fetch_done", {
+            ok: true,
+            limit: requestedLimit,
+            runCount: Array.isArray(payload?.runs) ? payload.runs.length : 0
+          });
           renderDeferredHistoryDetails(renderToken);
         }
         return payload || null;
+      })
+      .catch(err => {
+        state.opsHistoryLastError = getErrorMessage(err);
+        state.opsHistoryFailureCount = Math.max(1, Number(state.opsHistoryFailureCount || 0) + 1);
+        markStep("admin_ops_history_model_fetch_done", {
+          ok: false,
+          limit: requestedLimit,
+          error: String(state.opsHistoryLastError || "unknown error")
+        });
+        renderDeferredHistoryDetails(renderToken);
+        scheduleOpsHistoryRetry();
+        return null;
       })
       .finally(() => {
         state.opsHistoryLoadPending = false;
@@ -2143,10 +2219,11 @@ export function createOpsHealthController({
       taskStateUnavailable: Boolean(state.taskStateUnavailable),
       historyPending: Boolean(state.opsHistoryLoadPending),
       historyLoaded: Boolean(state.opsHistoryLoaded),
+      historyError: state.opsHistoryLastError,
       historyFullLoaded: Boolean(state.opsHistoryFullLoaded)
     };
     if (renderActivityPanel) {
-      renderAdminOpsHistoryImpl(refs.adminOpsHistoryEl, runModel, historyRenderOptions);
+      renderAdminOpsHistoryImpl(getHistoryElement(), runModel, historyRenderOptions);
     }
     if (renderDeferredPanels) {
       getRenderScheduler()(() => {
@@ -2172,7 +2249,7 @@ export function createOpsHealthController({
         renderAdminOpsDedupListsImpl(refs.adminOpsDedupListsEl, fetcherMetricsPayload, {
           onDedupReviewAction: handleDedupReviewAction
         });
-        renderAdminOpsHistoryImpl(refs.adminOpsHistoryEl, runModel, {
+        renderAdminOpsHistoryImpl(getHistoryElement(), runModel, {
           ...historyRenderOptions
         });
       });
@@ -2246,10 +2323,7 @@ export function createOpsHealthController({
     };
     state.latestOpsHealthCache = mergeOpsHealth(state.latestOpsHealthCache || {}, health, { summary: true });
     state.latestOpsTaskStatePayload = taskStatePayload;
-    state.latestOpsHistoryPayload = historyPayload;
     state.taskStateUnavailable = false;
-    state.opsHistoryLoaded = true;
-    state.opsHistoryFullLoaded = false;
     if (hasActivePipelineOrFetchRows(taskStatePayload)) {
       markFetchKpisDeferredDuringActiveRun();
     }
@@ -2293,14 +2367,24 @@ export function createOpsHealthController({
       return state.pipelineScheduleModel || {};
     }
     if (pipelineScheduleLoad) return pipelineScheduleLoad;
+    markStep("admin_pipeline_schedule_model_fetch_start");
     pipelineScheduleLoad = measuredGetBridge(
       JOBS_PIPELINE_SCHEDULE_PATH,
       "admin_pipeline_schedule_fetch",
-      { enabled: !options?.silent }
+      {
+        enabled: !options?.silent,
+        requestOptions: { timeoutMs: OPS_AUTHORITY_FETCH_TIMEOUT_MS }
+      }
     )
       .then(payload => {
         const schedule = normalizePipelineSchedulePayload(payload);
-        rememberPipelineSchedule(schedule);
+        const accepted = rememberPipelineSchedule(schedule);
+        markStep("admin_pipeline_schedule_model_fetch_done", {
+          ok: Boolean(accepted),
+          enabled: Boolean(schedule?.pipeline?.enabled),
+          intervalHours: Number(schedule?.pipeline?.intervalHours || 0),
+          nextRunAt: String(schedule?.pipeline?.nextRunAt || "")
+        });
         renderPipelineScheduleModel();
         return hasKnownPipelineSchedule(state.pipelineScheduleModel)
           ? state.pipelineScheduleModel
@@ -2309,6 +2393,10 @@ export function createOpsHealthController({
       .catch(err => {
         state.pipelineScheduleLastError = getErrorMessage(err);
         state.pipelineScheduleFailureCount = Math.max(1, Number(state.pipelineScheduleFailureCount || 0) + 1);
+        markStep("admin_pipeline_schedule_model_fetch_done", {
+          ok: false,
+          error: String(state.pipelineScheduleLastError || "unknown error")
+        });
         renderPipelineScheduleModel();
         schedulePipelineScheduleRetry();
         if (!options?.silent) {
