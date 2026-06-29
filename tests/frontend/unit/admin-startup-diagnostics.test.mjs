@@ -34,8 +34,13 @@ test("admin bootstrap schedules source table loading without report diagnostics"
   const schedulerMatch = compositionSource.match(/function scheduleBootstrapSourceTablesLoad\(\) \{([\s\S]*?)\n  \}/);
   assert.ok(schedulerMatch, "expected bootstrap source table scheduler");
   const schedulerBody = schedulerMatch[1];
+  assert.match(schedulerBody, /markSourceTablesLoadingForBootstrap/);
   assert.match(schedulerBody, /sourceTablesOnly:\s*true/);
   assert.match(schedulerBody, /logChanges:\s*false/);
+  assert.match(schedulerBody, /suppressRegistryRetry:\s*true/);
+  assert.match(schedulerBody, /queueMicrotask|setTimeout\(loadSourceTables,\s*0\)/);
+  assert.doesNotMatch(schedulerBody, /setTimeout\(loadSourceTables,\s*[1-9]\d{2,}\)/);
+  assert.doesNotMatch(schedulerBody, /60000/);
   assert.doesNotMatch(schedulerBody, /loadLatestFetcherReport/);
   assert.doesNotMatch(schedulerBody, /loadDiscoveryLogChunk/);
   assert.doesNotMatch(schedulerBody, /getBridge\(/);
@@ -72,8 +77,11 @@ test("admin critical bootstrap fallback hydrates summaries before delayed source
   const schedulerMatch = compositionSource.match(/function scheduleBootstrapSourceTablesLoad\(\) \{([\s\S]*?)\n  \}/);
   assert.ok(schedulerMatch, "expected bootstrap source table scheduler");
   const schedulerBody = schedulerMatch[1];
+  assert.match(schedulerBody, /markSourceTablesLoadingForBootstrap/);
   assert.match(schedulerBody, /sourceTablesOnly:\s*true/);
   assert.match(schedulerBody, /skipIfFreshMs:\s*10000/);
+  assert.match(schedulerBody, /suppressRegistryRetry:\s*true/);
+  assert.doesNotMatch(schedulerBody, /60000/);
 });
 
 test("admin ops controller forwards compact active summary loader to composition", () => {

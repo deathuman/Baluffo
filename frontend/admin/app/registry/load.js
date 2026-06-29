@@ -310,6 +310,13 @@ export function createRegistryLoadController({
     }
   }
 
+  function markSourceTablesLoadingForBootstrap() {
+    setSourceTablesLoadState("loading", "bootstrap");
+    setSourceTablePlaceholder(refs.adminPendingSourcesEl, "pending");
+    setSourceTablePlaceholder(refs.adminActiveSourcesEl, "active");
+    setSourceTablePlaceholder(refs.adminRejectedSourcesEl, "rejected");
+  }
+
   function markSourceTablesDelayedForActiveWork(reason = "active_admin_work", options = {}) {
     state.sourceTablesDelayedDuringActiveRun = true;
     state.sourceTablesBridgeDegraded = reason === "bridge_degraded";
@@ -432,7 +439,9 @@ export function createRegistryLoadController({
         state.discoveryPipelineDeferredLoadNoticeAtMs = nowMs;
         appendDiscoveryLog(ACTIVE_PIPELINE_SOURCE_TABLES_DELAYED_LABEL, "warn");
       }
-      scheduleRegistryRefreshRetry({ forcePipelinePreflight: true });
+      if (options?.suppressRegistryRetry !== true) {
+        scheduleRegistryRefreshRetry({ forcePipelinePreflight: true });
+      }
       return {
         skipped: true,
         reason: "sync_running",
@@ -462,7 +471,9 @@ export function createRegistryLoadController({
         state.discoveryPipelineDeferredLoadNoticeAtMs = nowMs;
         appendDiscoveryLog(ACTIVE_PIPELINE_SOURCE_TABLES_DELAYED_LABEL, "warn");
       }
-      scheduleRegistryRefreshRetry({ forcePipelinePreflight: true });
+      if (options?.suppressRegistryRetry !== true) {
+        scheduleRegistryRefreshRetry({ forcePipelinePreflight: true });
+      }
       return {
         skipped: true,
         reason: activeContext.reason,
@@ -488,7 +499,9 @@ export function createRegistryLoadController({
         state.discoveryBridgeDegradedDeferredLoadNoticeAtMs = nowMs;
         appendDiscoveryLog(BRIDGE_DEGRADED_SOURCE_TABLES_DELAYED_LABEL, "warn");
       }
-      scheduleRegistryRefreshRetry({ forcePipelinePreflight: true });
+      if (options?.suppressRegistryRetry !== true) {
+        scheduleRegistryRefreshRetry({ forcePipelinePreflight: true });
+      }
       return {
         skipped: true,
         reason: "bridge_degraded",
@@ -860,7 +873,9 @@ export function createRegistryLoadController({
           resetRegistryRefreshRetryDelay();
         } else if (registryDelayedDuringActiveRun) {
           markSourceTablesDelayedForActiveWork("active_registry_timeout", { onlyIfPlaceholder: true });
-          scheduleRegistryRefreshRetry({ forcePipelinePreflight: true, fetchReport: options?.fetchReport || null });
+          if (options?.suppressRegistryRetry !== true) {
+            scheduleRegistryRefreshRetry({ forcePipelinePreflight: true, fetchReport: options?.fetchReport || null });
+          }
         } else {
           setSourceTablesLoadState("unavailable", activeContext.reason);
         }
@@ -960,6 +975,7 @@ export function createRegistryLoadController({
     syncSourceTablesAfterTaskCompletion,
     refreshSourceTablesAfterActiveRunIdle,
     renderSourceTablesDelayed,
+    markSourceTablesLoadingForBootstrap,
     markSourceTablesDelayedForActiveWork
   };
 }

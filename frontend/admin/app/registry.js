@@ -82,6 +82,7 @@ export function createAdminRegistryController({
     syncSourceTablesAfterTaskCompletion: loadController.syncSourceTablesAfterTaskCompletion,
     refreshSourceTablesAfterActiveRunIdle: loadController.refreshSourceTablesAfterActiveRunIdle,
     renderSourceTablesDelayed: loadController.renderSourceTablesDelayed,
+    markSourceTablesLoadingForBootstrap: loadController.markSourceTablesLoadingForBootstrap,
     markSourceTablesDelayedForActiveWork: loadController.markSourceTablesDelayedForActiveWork,
     addManualSource: mutationController.addManualSource,
     approveSelectedSources: mutationController.approveSelectedSources,

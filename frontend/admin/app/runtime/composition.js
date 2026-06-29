@@ -294,16 +294,22 @@ export function composeAdminControllers({
   function scheduleBootstrapSourceTablesLoad() {
     if (bootstrapSourceTablesLoadScheduled) return;
     bootstrapSourceTablesLoadScheduled = true;
+    registryController.markSourceTablesLoadingForBootstrap?.();
     const loadSourceTables = () => {
       registryController.loadDiscoveryData({
         sourceTablesOnly: true,
         logChanges: false,
-        skipIfFreshMs: 10000
+        skipIfFreshMs: 10000,
+        suppressRegistryRetry: true
       }).catch(err => {
         logAdminError("Failed to load Admin source tables after bootstrap", err);
       });
     };
-    const timer = globalThis.setTimeout(loadSourceTables, 60000);
+    if (typeof globalThis.queueMicrotask === "function") {
+      globalThis.queueMicrotask(loadSourceTables);
+      return;
+    }
+    const timer = globalThis.setTimeout(loadSourceTables, 0);
     timer?.unref?.();
   }
 

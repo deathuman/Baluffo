@@ -89,6 +89,11 @@ test("admin registry controller can refresh source tables without full discovery
     renderScheduler: renderScheduler.schedule
   });
 
+  controller.markSourceTablesLoadingForBootstrap();
+  assert.match(refs.adminPendingSourcesEl.innerHTML, /Loading pending sources/);
+  assert.match(refs.adminActiveSourcesEl.innerHTML, /Loading active sources/);
+  assert.match(refs.adminRejectedSourcesEl.innerHTML, /Loading rejected sources/);
+
   await controller.loadDiscoveryData({
     background: true,
     sourceTablesOnly: true,
@@ -105,4 +110,14 @@ test("admin registry controller can refresh source tables without full discovery
   assert.equal(refs.adminActiveSourcesEl.innerHTML, "Active");
   assert.equal(refs.adminDiscoveryReviewEl.innerHTML, "keep review");
   assert.equal(refs.adminDiscoverySummaryEl.textContent, "Discovery report not loaded yet.");
+
+  await controller.loadDiscoveryData({
+    background: true,
+    sourceTablesOnly: true,
+    suppressPlaceholders: true,
+    logChanges: false,
+    skipIfFreshMs: 10000
+  });
+
+  assert.equal(calls.filter(path => String(path).startsWith("/registry/sources")).length, 1);
 });

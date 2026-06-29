@@ -154,13 +154,19 @@ function createServer() {
       return;
     }
     if (url.pathname === "/registry/sources" || url.pathname === "/registry/summary") {
+      if (url.pathname === "/registry/sources") {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
       json(res, {
         ok: true,
-        activeCompact: true,
-        degraded: true,
-        source: "registry-json-compact-fallback",
-        sources: { pending: [], active: [], rejected: [] },
-        summary: { pendingCount: 813, activeCount: 2312, rejectedCount: 0 }
+        activeCompact: false,
+        source: "registry-json-table",
+        sources: {
+          pending: [{ id: "pending-seeded", name: "Pending Seeded Studio", jobsFound: 2, status: "healthy", sourceUrl: "https://example.test/pending" }],
+          active: [{ id: "active-seeded", name: "Active Seeded Studio", jobsFound: 3, status: "healthy", sourceUrl: "https://example.test/active" }],
+          rejected: [{ id: "rejected-seeded", name: "Rejected Seeded Studio", jobsFound: 0, status: "rejected", sourceUrl: "https://example.test/rejected" }]
+        },
+        summary: { pendingCount: 1, activeCount: 1, rejectedCount: 1, hiddenPendingCount: 0, summaryExact: true, countBasis: "normalized" }
       });
       return;
     }
@@ -217,7 +223,12 @@ test("admin schedule smoke renders saved config while next-run details refresh",
   try {
     await page.goto(`${baseUrl}/admin.html?partialScheduleSmoke=1`);
     await page.locator("#admin-content").waitFor({ state: "visible", timeout: 15000 });
-    await page.waitForFunction(() => /schedule details refreshing/i.test(document.querySelector('[data-ui="admin-ops-schedule"]')?.textContent || ""), null, { timeout: 10000 });
+    await page.waitForFunction(() => (
+      /Loading pending sources/i.test(document.querySelector('[data-ui="admin-pending-sources"]')?.textContent || "")
+      && /Loading active sources/i.test(document.querySelector('[data-ui="admin-active-sources"]')?.textContent || "")
+      && /Loading rejected sources/i.test(document.querySelector('[data-ui="admin-rejected-sources"]')?.textContent || "")
+    ), null, { timeout: 1500 });
+    await page.waitForFunction(() => /schedule details refreshing|Pipeline:\s*every 11h, next/i.test(document.querySelector('[data-ui="admin-ops-schedule"]')?.textContent || ""), null, { timeout: 10000 });
     let state = await textState(page);
     assert.equal(state.enabled.checked, true, evidence(harness.events, harness.metrics));
     assert.equal(state.enabled.disabled, false);
@@ -236,7 +247,16 @@ test("admin schedule smoke renders saved config while next-run details refresh",
     assert.doesNotMatch(state.kpis, /Loading latest fetch KPI/i);
     assert.doesNotMatch(state.tabs, /\.\.\./);
     assert.doesNotMatch(state.history, /No run history yet/i);
-    assert.deepEqual(harness.requests.filter(request => /GET \/(registry\/sources|registry\/summary)/.test(request)), []);
+    await page.waitForFunction(() => (
+      /Pending Seeded Studio/i.test(document.querySelector('[data-ui="admin-pending-sources"]')?.textContent || "")
+      && /Active Seeded Studio/i.test(document.querySelector('[data-ui="admin-active-sources"]')?.textContent || "")
+      && /Rejected Seeded Studio/i.test(document.querySelector('[data-ui="admin-rejected-sources"]')?.textContent || "")
+    ), null, { timeout: 7000 });
+    assert.equal(
+      harness.requests.filter(request => /GET \/registry\/sources\?view=table/.test(request) && /limitPerBucket=250/.test(request)).length,
+      1
+    );
+    assert.deepEqual(harness.requests.filter(request => /GET \/registry\/summary/.test(request)), []);
     assert.deepEqual(harness.metrics.filter(row => row?.event === "admin_pipeline_schedule_model_fetch_done" && row?.payload?.ok === false), []);
     const loaded = harness.metrics.filter(row => row?.event === "admin_pipeline_schedule_model_loaded");
     let sawNext = false;

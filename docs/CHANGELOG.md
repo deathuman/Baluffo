@@ -10,6 +10,19 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.106] - 2026-06-29
+
+### Fixed
+- Umbrel Admin source tables now render loading placeholders immediately after bootstrap and start the compact `sourceTablesOnly` refresh without the arbitrary 60-second delay from `0.2.105`.
+- Admin startup still protects Umbrel by allowing only the bounded `/registry/sources?view=table&limitPerBucket=250` source-table request on idle startup, while keeping full registry, discovery, fetch, and log diagnostics out of the boot path.
+
+### Tests
+- Admin startup and hydration smoke coverage now fails on blank source containers, multi-second source-table startup timers, repeated startup source-table requests, or full diagnostics during initial Admin boot.
+
+### Notes
+- This supersedes `0.2.105`, which restored green CI/release hygiene but introduced unacceptable blank and delayed Admin source-table hydration. No public desktop tag is created.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.105] - 2026-06-29
 
 ### Fixed

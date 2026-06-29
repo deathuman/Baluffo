@@ -12,7 +12,6 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
 const CONTAINER_SMOKE_ROOT = path.join(REPO_ROOT, "_out", "container-hydration-smoke");
 const execFileAsync = promisify(execFile);
 let containerBundleBuild = null;
-
 function jsonResponse(res, payload, status = 200) {
   const body = `${JSON.stringify(payload)}\n`;
   res.writeHead(status, {
@@ -21,7 +20,6 @@ function jsonResponse(res, payload, status = 200) {
   });
   res.end(body);
 }
-
 function jsResponse(res, body) {
   res.writeHead(200, {
     "content-type": "application/javascript; charset=utf-8",
@@ -29,7 +27,6 @@ function jsResponse(res, body) {
   });
   res.end(body);
 }
-
 function contentTypeFor(filePath) {
   if (filePath.endsWith(".html")) return "text/html; charset=utf-8";
   if (filePath.endsWith(".js") || filePath.endsWith(".mjs")) return "application/javascript; charset=utf-8";
@@ -353,7 +350,8 @@ test("admin hydration smoke renders authoritative schedule and activity despite 
     assert.match(String(historyText || ""), /Pipeline/);
     assert.ok(requests.some(request => request.includes("GET /tasks/jobs-pipeline-schedule")));
     assert.ok(requests.some(request => request.includes("GET /ops/history?limit=2")));
-    assert.deepEqual(requests.filter(request => /GET \/(registry\/sources|registry\/summary)/.test(request)), []);
+    assert.ok(requests.filter(request => /GET \/registry\/sources\?view=table/.test(request)).length <= 1);
+    assert.deepEqual(requests.filter(request => /GET \/(registry\/summary|discovery\/report|discovery\/candidates|ops\/fetch-report|fetcher\/log|discovery\/log)/.test(request)), []);
   });
 });
 
@@ -375,7 +373,8 @@ test("admin hydration smoke resolves live-like degraded Ops Overview from author
     assert.match(overviewState.kpisText, /812/);
     assert.doesNotMatch(overviewState.tabText, /\.\.\./);
     assert.doesNotMatch(overviewState.historyText, /No run history yet/i);
-    assert.deepEqual(requests.filter(request => /GET \/(registry\/sources|registry\/summary)/.test(request)), []);
+    assert.ok(requests.filter(request => /GET \/registry\/sources\?view=table/.test(request)).length <= 1);
+    assert.deepEqual(requests.filter(request => /GET \/(registry\/summary|discovery\/report|discovery\/candidates|ops\/fetch-report|fetcher\/log|discovery\/log)/.test(request)), []);
   });
 });
 
