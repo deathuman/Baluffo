@@ -56,15 +56,24 @@ test("admin degraded bootstrap refreshes overview instead of rendering false emp
   assert.match(body, /await opsController\.loadPipelineScheduleData\(\{\s*silent: true,\s*force: true/s);
 });
 
-test("admin critical bootstrap fallback gates source tables behind compact active summary", () => {
+test("admin critical bootstrap fallback hydrates summaries before delayed source tables", () => {
   const match = compositionSource.match(/async function loadCriticalBootstrapFallbacks\(\) \{([\s\S]*?)\n  \}/);
   assert.ok(match, "expected critical bootstrap fallback helper");
   const body = match[1];
   assert.match(body, /loadActiveOpsSummaryData/);
   assert.match(body, /returnMeta:\s*true/);
   assert.match(body, /markSourceTablesDelayedForActiveWork/);
-  assert.match(body, /activeAdminWork\s*\?\s*Promise\.resolve/);
-  assert.match(body, /sourceTablesOnly:\s*true/);
+  assert.match(body, /overviewController\.refreshOverview\(\{/);
+  assert.match(body, /syncController\.loadSyncStatus\(\{/);
+  assert.match(body, /opsController\.loadPipelineScheduleData\(\{/);
+  assert.match(body, /opsController\.loadOpsHistoryData\(\{/);
+  assert.doesNotMatch(body, /registryController\.loadDiscoveryData/);
+
+  const schedulerMatch = compositionSource.match(/function scheduleBootstrapSourceTablesLoad\(\) \{([\s\S]*?)\n  \}/);
+  assert.ok(schedulerMatch, "expected bootstrap source table scheduler");
+  const schedulerBody = schedulerMatch[1];
+  assert.match(schedulerBody, /sourceTablesOnly:\s*true/);
+  assert.match(schedulerBody, /skipIfFreshMs:\s*10000/);
 });
 
 test("admin ops controller forwards compact active summary loader to composition", () => {

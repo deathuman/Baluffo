@@ -38,6 +38,7 @@ test("admin ops controller copies run diagnostics through renderer callback", as
     value: { clipboard: { writeText: async text => copied.push(text) } }
   });
   let copyPromise = Promise.resolve();
+  let copyRunDiagnostics = null;
   const renderScheduler = createDeferredRenderScheduler();
   const controller = createAdminOpsController({
     state,
@@ -66,12 +67,7 @@ test("admin ops controller copies run diagnostics through renderer callback", as
     renderAdminOpsFetcherMetrics() {},
     renderAdminOpsTrends() {},
     renderAdminOpsHistory(_el, _runModel, options) {
-      copyPromise = options.onCopyRunDiagnostics({
-        kind: "admin_run_diagnostics",
-        title: "Fetcher",
-        taskType: "fetch",
-        runId: "fetch_live_1"
-      });
+      copyRunDiagnostics = options.onCopyRunDiagnostics;
     },
     loadSyncStatus: async () => {},
     setBusyFlag(key, value) {
@@ -96,6 +92,13 @@ test("admin ops controller copies run diagnostics through renderer callback", as
     await Promise.resolve();
     await Promise.resolve();
     renderScheduler.flush();
+    assert.equal(typeof copyRunDiagnostics, "function");
+    copyPromise = copyRunDiagnostics({
+      kind: "admin_run_diagnostics",
+      title: "Fetcher",
+      taskType: "fetch",
+      runId: "fetch_live_1"
+    });
     await copyPromise;
     controller.stopOpsHealthPolling();
   } finally {

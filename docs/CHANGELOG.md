@@ -10,6 +10,19 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.105] - 2026-06-29
+
+### Fixed
+- Umbrel `0.2.105` preserves the live-healthy Admin fallback hydration behavior from `0.2.104` while restoring green frontend unit-test evidence for the container release commit.
+
+### Tests
+- Admin startup diagnostics coverage now matches the current fallback flow: core summary routes hydrate first, and source-table loading remains delayed with `sourceTablesOnly`.
+- Admin run-diagnostics coverage now invokes the copy callback once explicitly instead of making each history render simulate a user copy.
+
+### Notes
+- This supersedes the live-validated but CI-incomplete `0.2.104` Umbrel image; no public desktop tag is created.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.104] - 2026-06-29
 
 ### Fixed
