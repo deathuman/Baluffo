@@ -93,6 +93,17 @@ function createServer() {
         });
         return;
       }
+      if (scheduleCalls >= 3) {
+        json(res, {
+          ok: true,
+          summaryView: true,
+          degraded: true,
+          source: "container-gateway-fallback",
+          savedConfig: { schemaVersion: 1, enabled: true, intervalHours: 11 },
+          status: { enabled: true, pending: false, due: false, scheduleDelayed: true, scheduleAuthority: "degraded", nextRunAt: "" }
+        });
+        return;
+      }
       await new Promise(resolve => setTimeout(resolve, 1200));
       json(res, {
         ok: true,
@@ -143,7 +154,14 @@ function createServer() {
       return;
     }
     if (url.pathname === "/registry/sources" || url.pathname === "/registry/summary") {
-      json(res, { ok: true });
+      json(res, {
+        ok: true,
+        activeCompact: true,
+        degraded: true,
+        source: "registry-json-compact-fallback",
+        sources: { pending: [], active: [], rejected: [] },
+        summary: { pendingCount: 813, activeCount: 2312, rejectedCount: 0 }
+      });
       return;
     }
     const safe = decodeURIComponent(url.pathname === "/" ? "/admin.html" : url.pathname).replace(/^\/+/, "");
@@ -179,6 +197,16 @@ function evidence(events, metrics) {
   ].join("\n");
 }
 
+async function waitForScheduleCalls(events, count, timeoutMs = 20000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const scheduleCalls = events.filter(row => row.path.startsWith("/tasks/jobs-pipeline-schedule") && row.status >= 200 && row.status < 300).length;
+    if (scheduleCalls >= count) return;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  assert.fail(`Timed out waiting for ${count} schedule calls.\n${evidence(events, [])}`);
+}
+
 test("admin schedule smoke renders saved config while next-run details refresh", async () => {
   await buildBundle();
   const harness = createServer();
@@ -200,12 +228,23 @@ test("admin schedule smoke renders saved config while next-run details refresh",
     await page.waitForFunction(() => /Pipeline:\s*every 11h, next/i.test(document.querySelector('[data-ui="admin-ops-schedule"]')?.textContent || ""), null, { timeout: 20000 });
     state = await textState(page);
     assert.match(state.schedule, /Pipeline:\s*every 11h, next/i);
+    await waitForScheduleCalls(harness.events, 3);
+    await page.waitForTimeout(250);
+    state = await textState(page);
+    assert.match(state.schedule, /Pipeline:\s*every 11h, next/i, evidence(harness.events, harness.metrics));
     assert.match(state.kpis, /Pending Sources\s*812/i);
     assert.doesNotMatch(state.kpis, /Loading latest fetch KPI/i);
     assert.doesNotMatch(state.tabs, /\.\.\./);
     assert.doesNotMatch(state.history, /No run history yet/i);
     assert.deepEqual(harness.requests.filter(request => /GET \/(registry\/sources|registry\/summary)/.test(request)), []);
     assert.deepEqual(harness.metrics.filter(row => row?.event === "admin_pipeline_schedule_model_fetch_done" && row?.payload?.ok === false), []);
+    const loaded = harness.metrics.filter(row => row?.event === "admin_pipeline_schedule_model_loaded");
+    let sawNext = false;
+    for (const row of loaded) {
+      const next = String(row?.payload?.nextRunAt || "");
+      if (next) sawNext = true;
+      assert.equal(sawNext && !next, false, `Schedule model regressed after loading nextRunAt.\n${evidence(harness.events, harness.metrics)}`);
+    }
   } finally {
     await browser.close();
     await new Promise(resolve => harness.server.close(resolve));

@@ -175,6 +175,18 @@ export function createRegistryLoadController({
     container.innerHTML = `<div class="muted">${label}</div>`;
   }
 
+  function formatSourceTablesSummaryCounts(summary = {}) {
+    const pending = Number(summary?.pendingCount || 0);
+    const active = Number(summary?.activeCount || 0);
+    const rejected = Number(summary?.rejectedCount || 0);
+    return `pending ${pending.toLocaleString()}, active ${active.toLocaleString()}, rejected ${rejected.toLocaleString()}`;
+  }
+
+  function setSourceTableRefreshingPlaceholder(container, summary = {}) {
+    if (!container) return;
+    container.innerHTML = `<div class="muted">Source tables refreshing; ${formatSourceTablesSummaryCounts(summary)}.</div>`;
+  }
+
   function setSourceTableUnavailablePlaceholder(container, bucketLabel) {
     if (!container) return;
     container.innerHTML = `<div class="no-results">Could not load ${bucketLabel} sources. Retry after the running job update finishes.</div>`;
@@ -197,6 +209,24 @@ export function createRegistryLoadController({
       || /Loading (pending|active|rejected) sources/i.test(currentText)
       || currentText.includes(ACTIVE_PIPELINE_SOURCE_TABLES_DELAYED_LABEL)
       || currentText.includes(BRIDGE_DEGRADED_SOURCE_TABLES_DELAYED_LABEL);
+  }
+
+  function sourcePayloadRowsAreEmpty(sources = {}) {
+    return ["pending", "active", "rejected"].every(bucket => (
+      !Array.isArray(sources?.[bucket]) || sources[bucket].length === 0
+    ));
+  }
+
+  function sourcePayloadSummaryHasRows(summary = {}) {
+    return ["pendingCount", "activeCount", "rejectedCount"].some(key => Number(summary?.[key] || 0) > 0);
+  }
+
+  function sourcePayloadIsDegradedEmpty(payload = {}) {
+    return Boolean(
+      payload?.degraded === true
+      && sourcePayloadRowsAreEmpty(payload?.sources || {})
+      && sourcePayloadSummaryHasRows(payload?.summary || {})
+    );
   }
 
   function activeDiscoveryRunning() {
@@ -550,7 +580,7 @@ export function createRegistryLoadController({
             { registryRefresh: true, background }
           ));
         registrySourcesPromise.then(payload => {
-          if (!payload?.__loadFailed) {
+          if (!payload?.__loadFailed && !sourcePayloadIsDegradedEmpty(payload)) {
             state.sourceTablesBridgeDegraded = false;
             state.adminBridgeHeavyRouteDegradedUntilMs = 0;
           }
@@ -566,7 +596,8 @@ export function createRegistryLoadController({
               __loadFailed: Boolean(registrySources?.__loadFailed),
               __delayedDuringActiveRun: Boolean(registrySources?.__delayedDuringActiveRun)
             };
-            const loadFailed = Boolean(pending?.__loadFailed);
+            const degradedEmpty = sourcePayloadIsDegradedEmpty(registrySources);
+            const loadFailed = Boolean(pending?.__loadFailed || degradedEmpty);
             const rows = mergeSourceStatusFromReport(
               mergeSourceDiscoveryCandidates(Array.isArray(pending?.sources) ? pending.sources : [], discoveryCandidates),
               latestFetchReport,
@@ -582,7 +613,9 @@ export function createRegistryLoadController({
             scheduleDeferredRender(() => {
               if (background || renderToken !== registryRenderToken) return;
               if (loadFailed) {
-                if (pending.__delayedDuringActiveRun) {
+                if (degradedEmpty) {
+                  setSourceTableRefreshingPlaceholder(refs.adminPendingSourcesEl, pending.summary);
+                } else if (pending.__delayedDuringActiveRun) {
                   renderSourceTablesDelayed({ onlyIfPlaceholder: true });
                 } else {
                   setSourceTableUnavailablePlaceholder(refs.adminPendingSourcesEl, "pending");
@@ -605,7 +638,7 @@ export function createRegistryLoadController({
               hiddenZeroJobsCount,
               visibleRows,
               loadFailed,
-              delayedDuringActiveRun: Boolean(pending?.__delayedDuringActiveRun)
+              delayedDuringActiveRun: Boolean(pending?.__delayedDuringActiveRun || degradedEmpty)
             };
           });
         const activeRowsPromise = Promise.all([registrySourcesPromise, discoveryCandidatesPromise, latestFetchReportPromise])
@@ -618,7 +651,8 @@ export function createRegistryLoadController({
               __loadFailed: Boolean(registrySources?.__loadFailed),
               __delayedDuringActiveRun: Boolean(registrySources?.__delayedDuringActiveRun)
             };
-            const loadFailed = Boolean(active?.__loadFailed);
+            const degradedEmpty = sourcePayloadIsDegradedEmpty(registrySources);
+            const loadFailed = Boolean(active?.__loadFailed || degradedEmpty);
             const rows = mergeSourceStatusFromReport(
               mergeSourceDiscoveryCandidates(Array.isArray(active?.sources) ? active.sources : [], discoveryCandidates),
               latestFetchReport,
@@ -628,7 +662,9 @@ export function createRegistryLoadController({
             scheduleDeferredRender(() => {
               if (background || renderToken !== registryRenderToken) return;
               if (loadFailed) {
-                if (active.__delayedDuringActiveRun) {
+                if (degradedEmpty) {
+                  setSourceTableRefreshingPlaceholder(refs.adminActiveSourcesEl, active.summary);
+                } else if (active.__delayedDuringActiveRun) {
                   renderSourceTablesDelayed({ onlyIfPlaceholder: true });
                 } else {
                   setSourceTableUnavailablePlaceholder(refs.adminActiveSourcesEl, "active");
@@ -642,7 +678,7 @@ export function createRegistryLoadController({
               rows,
               visibleRows,
               loadFailed,
-              delayedDuringActiveRun: Boolean(active?.__delayedDuringActiveRun)
+              delayedDuringActiveRun: Boolean(active?.__delayedDuringActiveRun || degradedEmpty)
             };
           });
         const rejectedRowsPromise = Promise.all([registrySourcesPromise, discoveryCandidatesPromise, latestFetchReportPromise])
@@ -655,7 +691,8 @@ export function createRegistryLoadController({
               __loadFailed: Boolean(registrySources?.__loadFailed),
               __delayedDuringActiveRun: Boolean(registrySources?.__delayedDuringActiveRun)
             };
-            const loadFailed = Boolean(rejected?.__loadFailed);
+            const degradedEmpty = sourcePayloadIsDegradedEmpty(registrySources);
+            const loadFailed = Boolean(rejected?.__loadFailed || degradedEmpty);
             const rows = mergeSourceStatusFromReport(
               mergeSourceDiscoveryCandidates(Array.isArray(rejected?.sources) ? rejected.sources : [], discoveryCandidates),
               latestFetchReport,
@@ -665,7 +702,9 @@ export function createRegistryLoadController({
             scheduleDeferredRender(() => {
               if (background || renderToken !== registryRenderToken) return;
               if (loadFailed) {
-                if (rejected.__delayedDuringActiveRun) {
+                if (degradedEmpty) {
+                  setSourceTableRefreshingPlaceholder(refs.adminRejectedSourcesEl, rejected.summary);
+                } else if (rejected.__delayedDuringActiveRun) {
                   renderSourceTablesDelayed({ onlyIfPlaceholder: true });
                 } else {
                   setSourceTableUnavailablePlaceholder(refs.adminRejectedSourcesEl, "rejected");
@@ -679,7 +718,7 @@ export function createRegistryLoadController({
               rows,
               visibleRows,
               loadFailed,
-              delayedDuringActiveRun: Boolean(rejected?.__delayedDuringActiveRun)
+              delayedDuringActiveRun: Boolean(rejected?.__delayedDuringActiveRun || degradedEmpty)
             };
           });
         const [report, discoveryCandidates, pendingResult, activeResult, rejectedResult] = await Promise.all([
@@ -727,6 +766,7 @@ export function createRegistryLoadController({
           pending?.__delayedDuringActiveRun
           || active?.__delayedDuringActiveRun
           || rejected?.__delayedDuringActiveRun
+          || pendingResult.delayedDuringActiveRun
           || activeResult.delayedDuringActiveRun
           || rejectedResult.delayedDuringActiveRun
         );

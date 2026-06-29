@@ -8,7 +8,7 @@ import {
   renderAdminOpsSchedule,
   renderAdminOpsTrends,
   renderDiscoveryCandidateReviewHtml
-} from "../../render.js?v=24";
+} from "../../render.js?v=25";
 import {
   filterSourcePolicyReviewPairs,
   getMigrationLinkLinkedActions,
@@ -646,6 +646,10 @@ export function createOpsHealthController({
     );
   }
 
+  function hasPipelineScheduleNextRun(schedule = state.pipelineScheduleModel) {
+    return Boolean(String(schedule?.pipeline?.nextRunAt || "").trim());
+  }
+
   function getPipelineScheduleRenderModel() {
     if (hasKnownPipelineSchedule(state.pipelineScheduleModel)) {
       return state.pipelineScheduleModel;
@@ -668,15 +672,35 @@ export function createOpsHealthController({
 
   function rememberPipelineSchedule(schedule) {
     if (!hasKnownPipelineSchedule(schedule)) return false;
-    state.pipelineScheduleModel = schedule;
+    const existingPipeline = isPlainObject(state.pipelineScheduleModel?.pipeline)
+      ? state.pipelineScheduleModel.pipeline
+      : {};
+    const incomingPipeline = isPlainObject(schedule?.pipeline) ? schedule.pipeline : {};
+    const incomingNextRunAt = String(incomingPipeline.nextRunAt || "").trim();
+    const existingNextRunAt = String(existingPipeline.nextRunAt || "").trim();
+    const preserveExistingNextRun = Boolean(
+      !incomingNextRunAt
+      && existingNextRunAt
+      && incomingPipeline.scheduleStatusRefreshing === true
+    );
+    const mergedPipeline = preserveExistingNextRun
+      ? {
+          ...incomingPipeline,
+          nextRunAt: existingPipeline.nextRunAt,
+          lastPipelineFinishedAt: incomingPipeline.lastPipelineFinishedAt || existingPipeline.lastPipelineFinishedAt || "",
+          scheduleStatusRefreshing: false
+        }
+      : incomingPipeline;
+    const acceptedSchedule = { ...schedule, pipeline: mergedPipeline };
+    state.pipelineScheduleModel = acceptedSchedule;
     state.pipelineScheduleLastError = "";
-    state.pipelineScheduleFailureCount = schedule?.pipeline?.scheduleStatusRefreshing
+    state.pipelineScheduleFailureCount = acceptedSchedule?.pipeline?.scheduleStatusRefreshing
       ? Math.max(1, Number(state.pipelineScheduleFailureCount || 0))
       : 0;
     markStep("admin_pipeline_schedule_model_loaded", {
-      enabled: Boolean(schedule?.pipeline?.enabled),
-      intervalHours: Number(schedule?.pipeline?.intervalHours || 0),
-      nextRunAt: String(schedule?.pipeline?.nextRunAt || "")
+      enabled: Boolean(acceptedSchedule?.pipeline?.enabled),
+      intervalHours: Number(acceptedSchedule?.pipeline?.intervalHours || 0),
+      nextRunAt: String(acceptedSchedule?.pipeline?.nextRunAt || "")
     });
     return true;
   }
@@ -2430,7 +2454,7 @@ export function createOpsHealthController({
           nextRunAt: String(schedule?.pipeline?.nextRunAt || "")
         });
         renderPipelineScheduleModel();
-        if (schedule?.pipeline?.scheduleStatusRefreshing) {
+        if (schedule?.pipeline?.scheduleStatusRefreshing && !hasPipelineScheduleNextRun()) {
           state.pipelineScheduleFailureCount = Math.max(1, Number(state.pipelineScheduleFailureCount || 0) + 1);
           schedulePipelineScheduleRetry();
         }

@@ -1,3 +1,16 @@
+## [0.2.104] - 2026-06-29
+
+### Fixed
+- Umbrel Admin pipeline schedule now preserves the last valid next-run date through degraded schedule fallback responses.
+- Source tables now show refreshing placeholders with known counts when compact registry fallback has counts but no rows, instead of appearing empty.
+
+### Tests
+- Admin smoke and registry controller tests now cover schedule fallback regression and degraded-empty source table payloads.
+
+### Notes
+- This supersedes the failed `0.2.103` Umbrel test image; no public tag is created until live stability is proven.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.103] - 2026-06-29
 
 ### Fixed

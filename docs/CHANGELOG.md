@@ -10,6 +10,19 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.104] - 2026-06-29
+
+### Fixed
+- Umbrel Admin pipeline schedule now preserves the last valid next-run date when a later degraded schedule fallback lacks `nextRunAt`, preventing the row from flickering back to `schedule details refreshing`.
+- Admin source tables now treat degraded empty compact registry payloads as refreshing count placeholders instead of authoritative empty source lists.
+
+### Tests
+- Admin smoke and registry controller coverage now catch schedule fallback/date regression and degraded-empty source table payloads before Umbrel test builds are accepted.
+
+### Notes
+- This supersedes the failed `0.2.103` Umbrel test image; no public tag is created until live stability is proven.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.103] - 2026-06-29
 
 ### Fixed
