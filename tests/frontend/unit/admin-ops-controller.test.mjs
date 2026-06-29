@@ -299,7 +299,10 @@ test("admin ops controller startup hydrates schedule and history before deferred
   renderScheduler.flush();
   controller.stopOpsHealthPolling();
 
-  assert.deepEqual(calls, ["/tasks/run-jobs-pipeline-status", "/ops/dashboard-health?view=summary", "/ops/task-state?view=summary", "/tasks/jobs-pipeline-schedule", "/ops/history?limit=2"]);
+  assert.deepEqual(calls, [
+    "/tasks/run-jobs-pipeline-status", "/ops/dashboard-health?view=summary", "/ops/task-state?view=summary", "/tasks/jobs-pipeline-schedule",
+    "/ops/history?limit=2", "/registry/conflicts?view=summary", "/ops/fetch-kpis?view=summary", "/admin/ops-tab-counts?view=summary"
+  ]);
   assert.ok(historyRenderCount >= 1);
 });
 

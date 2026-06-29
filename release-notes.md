@@ -1,3 +1,16 @@
+## [0.2.102] - 2026-06-29
+
+### Fixed
+- Umbrel Admin Ops Overview now hydrates fetch KPI cards and Ops tab badges after schedule/history authority loads, preventing stuck loading placeholders when the backend routes are healthy.
+- Admin source-table hydration is moved out of the startup window to avoid racing first-render authority hydration.
+
+### Tests
+- Bundled Admin smoke now covers the live-like degraded Ops Overview, including schedule controls, KPI cards, pending-source count, tab badges, and route evidence.
+
+### Notes
+- This supersedes the failed `0.2.101` Umbrel test image; no public tag is created until live stability is proven.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.101] - 2026-06-28
 
 ### Fixed

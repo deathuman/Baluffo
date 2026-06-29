@@ -10,6 +10,19 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.102] - 2026-06-29
+
+### Fixed
+- Umbrel Admin degraded startup now hydrates fetch KPI cards and Ops tab badges shortly after authoritative schedule/history load, so the Ops Overview does not remain stuck on loading placeholders when backend authority routes are healthy.
+- Admin source-table hydration is moved out of the startup window so it cannot race ahead of schedule/KPI/tab-count authority and recreate first-render timeout pressure.
+
+### Tests
+- The bundled Admin hydration smoke now reproduces the live-like degraded Ops Overview and fails when schedule, KPI cards, pending-source count, or tab badges remain stuck after their authoritative routes return.
+
+### Notes
+- This supersedes the failed `0.2.101` Umbrel test image; no public tag is created until live stability is proven.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.101] - 2026-06-28
 
 ### Fixed

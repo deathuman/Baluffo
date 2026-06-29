@@ -34,7 +34,7 @@ const OPS_HISTORY_DETAIL_PATH = "/ops/history?limit=80";
 const OPS_AUTHORITY_FETCH_TIMEOUT_MS = 5000;
 const OPS_AUTHORITY_RETRY_BASE_MS = 3000;
 const OPS_AUTHORITY_RETRY_MAX_MS = 30000;
-const OPS_IDLE_HEAVY_HYDRATION_DELAY_MS = 15000;
+const OPS_IDLE_HEAVY_HYDRATION_DELAY_MS = 0;
 const OPS_FETCHER_METRICS_DETAIL_PATH = "/ops/fetcher-metrics?windowRuns=80";
 const OPS_DISCOVERY_AUDIT_ARTIFACTS_PATH = "/ops/discovery-audit-artifacts";
 const OPS_TASK_FAILURE_ATTEMPTS_PATH = "/ops/task-failure-attempts";
@@ -386,6 +386,7 @@ export function createOpsHealthController({
   let opsHistoryLoad = null;
   let opsHistoryLoadLimit = 0;
   let opsIdleHeavyHydrationTimer = null;
+  let opsIdleHeavyHydrationInFlight = false;
   let sourcePolicyDetailLoad = null;
   let registryConflictsDetailLoad = null;
   let dedupListsDetailLoad = null;
@@ -831,18 +832,35 @@ export function createOpsHealthController({
 
   function scheduleIdleOpsHeavyHydration(renderToken, options = {}) {
     if (options?.fromPoll || opsIdleHeavyHydrationTimer) return;
-    opsIdleHeavyHydrationTimer = maybeUnrefTimer(setTimeout(() => {
+    const hydrate = () => {
       opsIdleHeavyHydrationTimer = null;
-      if (renderToken !== opsRenderToken || hasPossibleActiveRunEvidence()) return;
-      loadRegistryConflictsSummaryData(renderToken, { silent: true }).catch(() => {});
-      if (!hasFetchKpiValues(state.latestOpsHealthCache?.kpis || {})) {
-        loadFetchKpisSummaryData(renderToken, { silent: true }).catch(() => {});
+      if (opsIdleHeavyHydrationInFlight || hasPossibleActiveRunEvidence()) return;
+      const hydrationRenderToken = opsRenderToken;
+      const hydrationTasks = [];
+      if (!state.latestRegistryConflictsPayload) {
+        hydrationTasks.push(loadRegistryConflictsSummaryData(hydrationRenderToken, { silent: true }).catch(() => {}));
       }
-      loadOpsTabCountsSummaryData(renderToken, {
-        silent: true,
-        force: Boolean(state.opsTabCountsDelayedDuringActiveRun)
-      }).catch(() => {});
-    }, OPS_IDLE_HEAVY_HYDRATION_DELAY_MS));
+      if (!hasFetchKpiValues(state.latestOpsHealthCache?.kpis || {})) {
+        hydrationTasks.push(loadFetchKpisSummaryData(hydrationRenderToken, { silent: true, renderWithCurrentToken: true }).catch(() => {}));
+      }
+      if (!state.latestOpsTabCountsPayload || state.opsTabCountsDelayedDuringActiveRun) {
+        hydrationTasks.push(loadOpsTabCountsSummaryData(hydrationRenderToken, {
+          silent: true,
+          renderWithCurrentToken: true,
+          force: Boolean(state.opsTabCountsDelayedDuringActiveRun)
+        }).catch(() => {}));
+      }
+      if (!hydrationTasks.length) return;
+      opsIdleHeavyHydrationInFlight = true;
+      Promise.allSettled(hydrationTasks).finally(() => {
+        opsIdleHeavyHydrationInFlight = false;
+      });
+    };
+    if (OPS_IDLE_HEAVY_HYDRATION_DELAY_MS <= 0) {
+      hydrate();
+      return;
+    }
+    opsIdleHeavyHydrationTimer = maybeUnrefTimer(setTimeout(hydrate, OPS_IDLE_HEAVY_HYDRATION_DELAY_MS));
   }
 
   function buildSourcePolicyActionPayload(row, action) {
@@ -2400,6 +2418,7 @@ export function createOpsHealthController({
           nextRunAt: String(schedule?.pipeline?.nextRunAt || "")
         });
         renderPipelineScheduleModel();
+        scheduleIdleOpsHeavyHydration(opsRenderToken, { silent: true });
         return hasKnownPipelineSchedule(state.pipelineScheduleModel)
           ? state.pipelineScheduleModel
           : schedule;
@@ -2576,7 +2595,8 @@ export function createOpsHealthController({
       }
       throw err;
     }
-    if (renderToken !== opsRenderToken) return payload || null;
+    const targetRenderToken = options?.renderWithCurrentToken ? opsRenderToken : renderToken;
+    if (targetRenderToken !== opsRenderToken) return payload || null;
     if (payload && typeof payload === "object" && !Array.isArray(payload)) {
       state.latestOpsHealthCache = mergeOpsHealth(
         state.latestOpsHealthCache || {},
@@ -2593,7 +2613,7 @@ export function createOpsHealthController({
         },
         { summary: true }
       );
-      renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || {}, {
+      renderOpsHealthSnapshot(targetRenderToken, state.latestOpsHealthCache || {}, {
         taskStatePayload: getCachedTaskStatePayload(),
         registryConflictsPayload: getCachedRegistryConflictsPayload(),
         renderDeferredPanels: false,
@@ -2915,7 +2935,8 @@ export function createOpsHealthController({
       }
       throw err;
     }
-    if (renderToken !== opsRenderToken) return payload || null;
+    const targetRenderToken = options?.renderWithCurrentToken ? opsRenderToken : renderToken;
+    if (targetRenderToken !== opsRenderToken) return payload || null;
     if (payload && typeof payload === "object" && !Array.isArray(payload)) {
       clearOpsRouteFailure(OPS_HEAVY_ROUTE_TAB_COUNTS);
       state.opsTabCountsDelayedDuringActiveRun = false;

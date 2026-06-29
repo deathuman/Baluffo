@@ -86,9 +86,17 @@ async function serveStatic(req, res, url) {
 
 function createHydrationSmokeServer({ failAuthority = false } = {}) {
   const requests = [];
+  const requestEvents = [];
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || "/", "http://127.0.0.1");
-    requests.push(`${req.method || "GET"} ${url.pathname}${url.search}`);
+    const startedAt = Date.now();
+    const requestEntry = { method: req.method || "GET", path: `${url.pathname}${url.search}`, status: 0, elapsedMs: 0 };
+    requestEvents.push(requestEntry);
+    requests.push(`${requestEntry.method} ${requestEntry.path}`);
+    res.once("finish", () => {
+      requestEntry.status = Number(res.statusCode || 0);
+      requestEntry.elapsedMs = Date.now() - startedAt;
+    });
     if (url.pathname === "/frontend-runtime-config.js") {
       jsResponse(res, "globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG = Object.freeze({ bridge: { sameOrigin: true }, runtime: { mode: 'container', localDataMode: 'bridge' }, security: { github_app_enabled_default: true } });\n");
       return;
@@ -209,11 +217,24 @@ function createHydrationSmokeServer({ failAuthority = false } = {}) {
       return;
     }
     if (url.pathname === "/ops/fetch-kpis") {
-      jsonResponse(res, { ok: true, summaryView: true, kpis: { pendingSourcesCount: 812 } });
+      jsonResponse(res, {
+        ok: true,
+        summaryView: true,
+        status: "healthy",
+        kpis: { sevenDayFetchSuccessRate: 0.91, avgFetchDurationMs7d: 123456, lastSuccessfulFetchAge: "6h", failedSourceRatioLatest: 0.12, pendingSourcesCount: 812 }
+      });
       return;
     }
     if (url.pathname === "/admin/ops-tab-counts") {
-      jsonResponse(res, { ok: true, summaryView: true, badges: {} });
+      jsonResponse(res, {
+        ok: true,
+        summaryView: true,
+        badges: {
+          overview: { count: 0, tone: "neutral", title: "No active alerts", loaded: true }, discovery: { count: 41, tone: "warning", title: "41 discovery review items", loaded: true },
+          "source-policy": { count: 2, tone: "warning", title: "2 source policy review items", loaded: true }, "registry-conflicts": { count: 0, tone: "neutral", title: "No registry conflicts", loaded: true },
+          dedup: { count: 3, tone: "warning", title: "3 dedup review items", loaded: true }
+        }
+      });
       return;
     }
     if (url.pathname === "/registry/sources") {
@@ -232,6 +253,7 @@ function createHydrationSmokeServer({ failAuthority = false } = {}) {
   });
   return {
     requests,
+    requestEvents,
     async start() {
       await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
       const address = server.address();
@@ -251,11 +273,62 @@ async function withSmokePage(options, callback) {
   const page = await browser.newPage();
   try {
     await page.goto(`${baseUrl}/admin.html?hydrationSmoke=1`);
-    await callback({ page, requests: server.requests });
+    await callback({ page, requests: server.requests, requestEvents: server.requestEvents });
   } finally {
     await browser.close();
     await server.stop();
   }
+}
+
+function hasSuccessfulRoute(requestEvents, routePrefix) {
+  return requestEvents.some(entry => entry.path.startsWith(routePrefix) && entry.status >= 200 && entry.status < 300);
+}
+
+async function waitForSuccessfulRoutes(requestEvents, routePrefixes, timeoutMs = 25000) {
+  const deadline = Date.now() + timeoutMs;
+  let missing = [];
+  while (Date.now() < deadline) {
+    missing = routePrefixes.filter(route => !hasSuccessfulRoute(requestEvents, route));
+    if (!missing.length) return;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  const evidence = requestEvents.map(entry => `${entry.method} ${entry.path} status=${entry.status} elapsedMs=${entry.elapsedMs}`);
+  assert.fail(`Timed out waiting for authoritative Admin routes. Missing: ${missing.join(", ")}\n${evidence.join("\n")}`);
+}
+
+async function readOpsOverviewState(page) {
+  return page.evaluate(() => {
+    const text = selector => document.querySelector(selector)?.textContent?.replace(/\s+/g, " ").trim() || "";
+    const intervalEl = document.querySelector('[data-ui="admin-pipeline-schedule-interval"]');
+    const enabledEl = document.querySelector('[data-ui="admin-pipeline-schedule-enabled"]');
+    return {
+      scheduleText: text('[data-ui="admin-ops-schedule"]'),
+      kpisText: text('[data-ui="admin-ops-kpis"]'),
+      historyText: text('[data-ui="admin-ops-history"]'),
+      tabText: text(".admin-ops-tabs"),
+      interval: intervalEl ? { value: intervalEl.value, disabled: Boolean(intervalEl.disabled) } : null,
+      enabled: enabledEl ? { checked: Boolean(enabledEl.checked), disabled: Boolean(enabledEl.disabled) } : null
+    };
+  });
+}
+
+async function waitForResponsiveOpsOverview(page, timeoutMs = 25000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastState = null;
+  while (Date.now() < deadline) {
+    lastState = await readOpsOverviewState(page);
+    const resolved = /Pipeline:\s*every 11h, next/i.test(lastState.scheduleText)
+      && /812/.test(lastState.kpisText)
+      && !/Loading latest fetch KPI/i.test(lastState.kpisText)
+      && !/\.\.\./.test(lastState.tabText)
+      && lastState.enabled?.checked === true
+      && lastState.enabled?.disabled === false
+      && lastState.interval?.value === "11"
+      && lastState.interval?.disabled === false;
+    if (resolved) return lastState;
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+  assert.fail(`Ops Overview did not hydrate from authoritative routes.\n${JSON.stringify(lastState, null, 2)}`);
 }
 
 test("admin hydration smoke renders authoritative schedule and activity despite degraded bootstrap", async () => {
@@ -280,10 +353,28 @@ test("admin hydration smoke renders authoritative schedule and activity despite 
     assert.match(String(historyText || ""), /Pipeline/);
     assert.ok(requests.some(request => request.includes("GET /tasks/jobs-pipeline-schedule")));
     assert.ok(requests.some(request => request.includes("GET /ops/history?limit=2")));
-    assert.deepEqual(
-      requests.filter(request => /GET \/(ops\/fetch-kpis|admin\/ops-tab-counts|registry\/sources|registry\/summary)/.test(request)),
-      []
-    );
+    assert.deepEqual(requests.filter(request => /GET \/(registry\/sources|registry\/summary)/.test(request)), []);
+  });
+});
+
+test("admin hydration smoke resolves live-like degraded Ops Overview from authoritative routes", async () => {
+  await withSmokePage({}, async ({ page, requests, requestEvents }) => {
+    await page.locator("#admin-content").waitFor({ state: "visible", timeout: 15000 });
+    await waitForSuccessfulRoutes(requestEvents, [
+      "/tasks/jobs-pipeline-schedule", "/ops/history", "/ops/fetch-kpis", "/admin/ops-tab-counts"
+    ]);
+    const overviewState = await waitForResponsiveOpsOverview(page);
+
+    assert.match(overviewState.scheduleText, /Pipeline:\s*every 11h, next/i);
+    assert.equal(overviewState.enabled.checked, true);
+    assert.equal(overviewState.interval.value, "11");
+    assert.equal(overviewState.enabled.disabled, false);
+    assert.equal(overviewState.interval.disabled, false);
+    assert.doesNotMatch(overviewState.scheduleText, /loading schedule|due now/i);
+    assert.doesNotMatch(overviewState.kpisText, /Loading latest fetch KPI/i);
+    assert.match(overviewState.kpisText, /812/);
+    assert.doesNotMatch(overviewState.tabText, /\.\.\./);
+    assert.deepEqual(requests.filter(request => /GET \/(registry\/sources|registry\/summary)/.test(request)), []);
   });
 });
 

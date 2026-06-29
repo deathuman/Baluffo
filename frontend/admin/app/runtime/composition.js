@@ -23,7 +23,7 @@ import {
   createAdminFetcherController
 } from "../fetcher.js?v=15";
 import { createRestoreActiveRunWatches } from "../live-task.js";
-import { createAdminOpsController, formatBytes } from "../ops.js?v=31";
+import { createAdminOpsController, formatBytes } from "../ops.js?v=32";
 import { createAdminRegistryController } from "../registry.js?v=21";
 import { createAdminSyncController } from "../sync.js?v=13";
 import { createAdminOverviewController } from "./overview.js?v=15";
@@ -303,7 +303,7 @@ export function composeAdminControllers({
         logAdminError("Failed to load Admin source tables after bootstrap", err);
       });
     };
-    const timer = globalThis.setTimeout(loadSourceTables, 15000);
+    const timer = globalThis.setTimeout(loadSourceTables, 60000);
     timer?.unref?.();
   }
 
