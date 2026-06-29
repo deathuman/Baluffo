@@ -1,3 +1,16 @@
+## [0.2.103] - 2026-06-29
+
+### Fixed
+- Umbrel Admin pipeline schedule now keeps the saved enabled state and interval visible while next-run details are refreshing.
+- Delayed next-run schedule details now retry without leaving the row stuck on loading controls.
+
+### Tests
+- Bundled Admin smoke now covers transient schedule authority responses plus Ops Overview hydration for KPI cards, pending-source count, tab badges, and activity history.
+
+### Notes
+- This supersedes the failed `0.2.102` Umbrel test image; no public tag is created until live stability is proven.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.102] - 2026-06-29
 
 ### Fixed

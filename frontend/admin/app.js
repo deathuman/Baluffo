@@ -1,2 +1,2 @@
-export { boot } from "./app/runtime.js?v=43";
+export { boot } from "./app/runtime.js?v=44";
 export { applyAdminAdvancedBulkLayout } from "./app/bulk-actions.js";

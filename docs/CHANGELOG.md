@@ -10,6 +10,19 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.103] - 2026-06-29
+
+### Fixed
+- Umbrel Admin pipeline schedule now keeps the saved enabled state and interval visible while next-run details are refreshing, preventing transient schedule responses from leaving the row stuck on loading controls.
+- Admin schedule rendering now retries delayed next-run status without treating known saved schedule config as a failed authority response.
+
+### Tests
+- Bundled Admin smoke now covers transient schedule authority responses, pending-source KPI hydration, Ops tab badges, Operations Activity, and startup route evidence before Umbrel test builds are accepted.
+
+### Notes
+- This supersedes the failed `0.2.102` Umbrel test image; no public tag is created until live stability is proven.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.102] - 2026-06-29
 
 ### Fixed

@@ -374,6 +374,7 @@ test("admin hydration smoke resolves live-like degraded Ops Overview from author
     assert.doesNotMatch(overviewState.kpisText, /Loading latest fetch KPI/i);
     assert.match(overviewState.kpisText, /812/);
     assert.doesNotMatch(overviewState.tabText, /\.\.\./);
+    assert.doesNotMatch(overviewState.historyText, /No run history yet/i);
     assert.deepEqual(requests.filter(request => /GET \/(registry\/sources|registry\/summary)/.test(request)), []);
   });
 });

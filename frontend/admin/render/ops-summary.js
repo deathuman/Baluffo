@@ -101,6 +101,9 @@ function formatPipelineScheduleStatus(entry) {
   if (interval > 0 && entry.nextAfterCurrentCompletes) {
     return `every ${interval}h, running now; next after this pipeline finishes`;
   }
+  if (interval > 0 && entry.scheduleStatusRefreshing) {
+    return "schedule details refreshing";
+  }
   if (entry.pending) return "pending; waiting for idle";
   if (interval > 0 && hasNext) return `every ${interval}h, next ${next}`;
   if (entry.due) return "due now";

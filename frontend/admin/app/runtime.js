@@ -6,7 +6,7 @@ import { emitStartupMetric, logError, markFirstInteractive } from "../../shared/
 import { createPerfMarks } from "../../shared/perf-marks.js";
 import {
   appendAdminLogRow
-} from "../render.js?v=26";
+} from "../render.js?v=27";
 import {
   getErrorMessage as getErrorMessageFromDomain,
   normalizeLogLevel as normalizeLogLevelFromDomain,
@@ -50,7 +50,7 @@ import {
   FETCHER_PRESET_META
 } from "./fetcher.js?v=15";
 import { createAdminRuntimeState } from "./runtime/state.js";
-import { composeAdminControllers } from "./runtime/composition.js?v=40";
+import { composeAdminControllers } from "./runtime/composition.js?v=41";
 import { createAdminStartupMetrics } from "./runtime/effects.js";
 import { createBridgeCaller } from "./runtime/actions.js";
 import { resolveAdminBridgeBase } from "./runtime/bridge-base.js";

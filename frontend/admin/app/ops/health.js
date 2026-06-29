@@ -8,7 +8,7 @@ import {
   renderAdminOpsSchedule,
   renderAdminOpsTrends,
   renderDiscoveryCandidateReviewHtml
-} from "../../render.js?v=23";
+} from "../../render.js?v=24";
 import {
   filterSourcePolicyReviewPairs,
   getMigrationLinkLinkedActions,
@@ -608,6 +608,11 @@ export function createOpsHealthController({
     const saved = isPlainObject(payload?.savedConfig) ? payload.savedConfig : {};
     const status = isPlainObject(payload?.status) ? payload.status : {};
     if (!Object.keys(saved).length && !Object.keys(status).length) return {};
+    const {
+      scheduleDelayed: statusScheduleDelayed,
+      scheduleAuthority: statusScheduleAuthority,
+      ...statusFields
+    } = status;
     const enabled = Object.prototype.hasOwnProperty.call(saved, "enabled")
       ? Boolean(saved.enabled)
       : Boolean(status.enabled);
@@ -616,11 +621,16 @@ export function createOpsHealthController({
         ? saved.intervalHours
         : status.intervalHours
     );
+    const statusDelayed = Boolean(
+      statusScheduleDelayed === true
+      || String(statusScheduleAuthority || "").toLowerCase() === "degraded"
+    );
     return {
       pipeline: {
-        ...status,
+        ...statusFields,
         enabled,
-        ...(Number.isFinite(intervalHours) && intervalHours > 0 ? { intervalHours } : {})
+        ...(Number.isFinite(intervalHours) && intervalHours > 0 ? { intervalHours } : {}),
+        ...(statusDelayed ? { scheduleStatusRefreshing: true } : {})
       }
     };
   }
@@ -660,7 +670,9 @@ export function createOpsHealthController({
     if (!hasKnownPipelineSchedule(schedule)) return false;
     state.pipelineScheduleModel = schedule;
     state.pipelineScheduleLastError = "";
-    state.pipelineScheduleFailureCount = 0;
+    state.pipelineScheduleFailureCount = schedule?.pipeline?.scheduleStatusRefreshing
+      ? Math.max(1, Number(state.pipelineScheduleFailureCount || 0))
+      : 0;
     markStep("admin_pipeline_schedule_model_loaded", {
       enabled: Boolean(schedule?.pipeline?.enabled),
       intervalHours: Number(schedule?.pipeline?.intervalHours || 0),
@@ -2418,6 +2430,10 @@ export function createOpsHealthController({
           nextRunAt: String(schedule?.pipeline?.nextRunAt || "")
         });
         renderPipelineScheduleModel();
+        if (schedule?.pipeline?.scheduleStatusRefreshing) {
+          state.pipelineScheduleFailureCount = Math.max(1, Number(state.pipelineScheduleFailureCount || 0) + 1);
+          schedulePipelineScheduleRetry();
+        }
         scheduleIdleOpsHeavyHydration(opsRenderToken, { silent: true });
         return hasKnownPipelineSchedule(state.pipelineScheduleModel)
           ? state.pipelineScheduleModel
