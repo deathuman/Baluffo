@@ -304,20 +304,20 @@ def test_gateway_serves_admin_degraded_fallbacks_when_bridge_unreachable(
         server.shutdown()
         server.server_close()
 
-    assert schedule["source"] == "container-gateway-fallback"
+    fallback_source = "container-gateway-fallback"
+    assert schedule["source"] == dashboard["source"] == bootstrap["source"] == fallback_source
     assert schedule["savedConfig"] == {"enabled": True, "intervalHours": 12}
-    assert dashboard["source"] == "container-gateway-fallback"
-    assert dashboard["status"] == "degraded"
-    assert dashboard["kpis"] == {}
-    assert dashboard["schedule"] == {}
-    assert bootstrap["source"] == "container-gateway-fallback"
-    assert bootstrap["overview"]["delayed"] is True
-    assert bootstrap["tasks"]["current"] == []
-    assert bootstrap["ops"]["status"] == "degraded"
-    assert bootstrap["ops"]["kpis"] == {}
-    assert bootstrap["ops"]["schedule"] == {}
+    assert dashboard["status"] == bootstrap["ops"]["status"] == "degraded"
+    assert dashboard["kpis"] == bootstrap["ops"]["kpis"] == {}
+    assert (dashboard["scheduleDelayed"], bootstrap["ops"]["scheduleDelayed"]) == (True, True)
+    assert bootstrap["overview"]["delayed"] is True and bootstrap["tasks"]["current"] == []
+    dashboard_schedule = dashboard["schedule"]["pipeline"]
+    assert dashboard_schedule["enabled"] is True
+    assert dashboard_schedule["intervalHours"] == 12
+    assert dashboard_schedule["nextRunAt"]
+    assert bootstrap["ops"]["schedule"]["pipeline"]["intervalHours"] == 12
+    assert bootstrap["schedule"]["pipeline"]["intervalHours"] == 12
     assert "summary" not in bootstrap["registrySummary"]
-    assert bootstrap["schedule"] == {}
 
 
 def test_gateway_does_not_static_fallback_admin_api_paths(tmp_path: Path) -> None:
