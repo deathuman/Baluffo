@@ -10,6 +10,20 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.107] - 2026-06-30
+
+### Fixed
+- Umbrel Admin startup now queues the compact source-table hydration before fallback schedule/history refreshes, so Pending, Active, and Rejected source containers render visible loading states and start the bounded table request without waiting behind slower Ops routes.
+- Admin startup heavy reads now run through a single sequential startup lane: the source-table request completes before registry conflict counts, fetch KPIs, and Ops tab counts hydrate, preventing the concurrent bridge fan-out that could produce Umbrel 504s for `/registry/sources` and `/admin/ops-tab-counts`.
+- Action Center storage diagnostics no longer run in the first startup window or while Admin startup bridge work is active; storage health remains available on the normal later poll/manual diagnostics path without adding startup pressure.
+
+### Tests
+- Admin startup diagnostics and browser hydration smoke now assert source placeholders, single-owner schedule/history fallback loading, no startup storage-health probe, one compact source-table request, and no overlap between source, KPI, tab-count, and registry-conflict startup routes.
+
+### Notes
+- This supersedes `0.2.106`, which removed the arbitrary 60-second source-table delay from `0.2.105` but still allowed startup fan-out and late source scheduling under real Umbrel browser timing. No public desktop tag is created.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.106] - 2026-06-29
 
 ### Fixed

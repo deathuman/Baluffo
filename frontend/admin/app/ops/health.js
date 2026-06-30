@@ -866,34 +866,57 @@ export function createOpsHealthController({
     }, waitMs));
   }
 
-  function scheduleIdleOpsHeavyHydration(renderToken, options = {}) {
-    if (options?.fromPoll || opsIdleHeavyHydrationTimer) return;
-    const hydrate = () => {
-      opsIdleHeavyHydrationTimer = null;
-      if (opsIdleHeavyHydrationInFlight || hasPossibleActiveRunEvidence()) return;
-      const hydrationRenderToken = opsRenderToken;
-      const hydrationTasks = [];
-      if (!state.latestRegistryConflictsPayload) {
-        hydrationTasks.push(loadRegistryConflictsSummaryData(hydrationRenderToken, { silent: true }).catch(() => {}));
+  function shouldDeferIdleOpsHeavyHydration(options = {}) {
+    return Boolean(
+      (!options?.allowStartupBridgeLane && state.adminStartupBridgeHydrationInFlight)
+      || state.adminBusyState?.discoveryLoad
+      || hasPossibleActiveRunEvidence()
+    );
+  }
+
+  async function loadIdleOpsHeavyHydration(renderToken = opsRenderToken, options = {}) {
+    if (options?.fromPoll || opsIdleHeavyHydrationInFlight || shouldDeferIdleOpsHeavyHydration(options)) return null;
+    const hydrationRenderToken = options?.renderWithCurrentToken ? opsRenderToken : renderToken;
+    const shouldLoadRegistryConflicts = !state.latestRegistryConflictsPayload;
+    const shouldLoadFetchKpis = !hasFetchKpiValues(state.latestOpsHealthCache?.kpis || {});
+    const shouldLoadOpsTabCounts = !state.latestOpsTabCountsPayload || state.opsTabCountsDelayedDuringActiveRun;
+    if (!shouldLoadRegistryConflicts && !shouldLoadFetchKpis && !shouldLoadOpsTabCounts) return null;
+    opsIdleHeavyHydrationInFlight = true;
+    try {
+      if (shouldLoadRegistryConflicts) {
+        await loadRegistryConflictsSummaryData(hydrationRenderToken, { silent: true }).catch(() => {});
       }
-      if (!hasFetchKpiValues(state.latestOpsHealthCache?.kpis || {})) {
-        hydrationTasks.push(loadFetchKpisSummaryData(hydrationRenderToken, { silent: true, renderWithCurrentToken: true }).catch(() => {}));
+      if (shouldLoadFetchKpis) {
+        await loadFetchKpisSummaryData(hydrationRenderToken, {
+          silent: true,
+          renderWithCurrentToken: true
+        }).catch(() => {});
       }
-      if (!state.latestOpsTabCountsPayload || state.opsTabCountsDelayedDuringActiveRun) {
-        hydrationTasks.push(loadOpsTabCountsSummaryData(hydrationRenderToken, {
+      if (shouldLoadOpsTabCounts) {
+        await loadOpsTabCountsSummaryData(hydrationRenderToken, {
           silent: true,
           renderWithCurrentToken: true,
           force: Boolean(state.opsTabCountsDelayedDuringActiveRun)
-        }).catch(() => {}));
+        }).catch(() => {});
       }
-      if (!hydrationTasks.length) return;
-      opsIdleHeavyHydrationInFlight = true;
-      Promise.allSettled(hydrationTasks).finally(() => {
-        opsIdleHeavyHydrationInFlight = false;
-      });
+    } finally {
+      opsIdleHeavyHydrationInFlight = false;
+    }
+    return {
+      registryConflicts: state.latestRegistryConflictsPayload || null,
+      opsHealth: state.latestOpsHealthCache || null,
+      tabCounts: state.latestOpsTabCountsPayload || null
+    };
+  }
+
+  function scheduleIdleOpsHeavyHydration(renderToken, options = {}) {
+    if (options?.fromPoll || opsIdleHeavyHydrationTimer || opsIdleHeavyHydrationInFlight) return;
+    const hydrate = () => {
+      opsIdleHeavyHydrationTimer = null;
+      loadIdleOpsHeavyHydration(renderToken, options).catch(() => {});
     };
     if (OPS_IDLE_HEAVY_HYDRATION_DELAY_MS <= 0) {
-      hydrate();
+      Promise.resolve().then(hydrate);
       return;
     }
     opsIdleHeavyHydrationTimer = maybeUnrefTimer(setTimeout(hydrate, OPS_IDLE_HEAVY_HYDRATION_DELAY_MS));
@@ -2458,7 +2481,9 @@ export function createOpsHealthController({
           state.pipelineScheduleFailureCount = Math.max(1, Number(state.pipelineScheduleFailureCount || 0) + 1);
           schedulePipelineScheduleRetry();
         }
-        scheduleIdleOpsHeavyHydration(opsRenderToken, { silent: true });
+        if (!options?.deferIdleHydration) {
+          scheduleIdleOpsHeavyHydration(opsRenderToken, { silent: true });
+        }
         return hasKnownPipelineSchedule(state.pipelineScheduleModel)
           ? state.pipelineScheduleModel
           : schedule;
@@ -3169,6 +3194,7 @@ export function createOpsHealthController({
     loadPipelineStatusFallbackData,
     loadActiveOpsSummaryData: options => loadActiveOpsSummaryData(opsRenderToken, options || {}),
     loadOpsHealthData,
+    loadIdleOpsHeavyHydration: options => loadIdleOpsHeavyHydration(opsRenderToken, options || {}),
     loadOpsHistoryData,
     loadOpsOverviewDetailData,
     loadRegistrySyncDiagnosticsData,

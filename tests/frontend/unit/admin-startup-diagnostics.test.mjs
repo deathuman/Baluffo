@@ -10,6 +10,14 @@ const opsSource = readFileSync(
   new URL("../../../frontend/admin/app/ops.js", import.meta.url),
   "utf8"
 );
+const opsHealthSource = readFileSync(
+  new URL("../../../frontend/admin/app/ops/health.js", import.meta.url),
+  "utf8"
+);
+const authSource = readFileSync(
+  new URL("../../../frontend/admin/app/auth.js", import.meta.url),
+  "utf8"
+);
 const activeFetchProofSource = readFileSync(
   new URL("../../../scripts/admin_active_fetch_browser_proof.mjs", import.meta.url),
   "utf8"
@@ -38,8 +46,8 @@ test("admin bootstrap schedules source table loading without report diagnostics"
   assert.match(schedulerBody, /sourceTablesOnly:\s*true/);
   assert.match(schedulerBody, /logChanges:\s*false/);
   assert.match(schedulerBody, /suppressRegistryRetry:\s*true/);
-  assert.match(schedulerBody, /queueMicrotask|setTimeout\(loadSourceTables,\s*0\)/);
-  assert.doesNotMatch(schedulerBody, /setTimeout\(loadSourceTables,\s*[1-9]\d{2,}\)/);
+  assert.match(schedulerBody, /enqueueAdminStartupBridgeTask/);
+  assert.doesNotMatch(schedulerBody, /setTimeout/);
   assert.doesNotMatch(schedulerBody, /60000/);
   assert.doesNotMatch(schedulerBody, /loadLatestFetcherReport/);
   assert.doesNotMatch(schedulerBody, /loadDiscoveryLogChunk/);
@@ -48,6 +56,14 @@ test("admin bootstrap schedules source table loading without report diagnostics"
   const bootstrapMatch = compositionSource.match(/async function loadAdminBootstrap\(\) \{([\s\S]*?)\n  \}/);
   assert.ok(bootstrapMatch, "expected bootstrap loader");
   assert.match(bootstrapMatch[1], /scheduleBootstrapSourceTablesLoad\(\)/);
+  assert.match(bootstrapMatch[1], /scheduleBootstrapOpsFallbackHydration\(\{ bootstrapScheduleNeedsRefresh \}\)/);
+  assert.ok(
+    bootstrapMatch[1].indexOf("scheduleBootstrapSourceTablesLoad()")
+      < bootstrapMatch[1].indexOf("scheduleBootstrapOpsFallbackHydration"),
+    "source table load must be queued before fallback Ops hydration"
+  );
+  assert.doesNotMatch(bootstrapMatch[1], /await opsController\.loadPipelineScheduleData/);
+  assert.doesNotMatch(bootstrapMatch[1], /await opsController\.loadOpsHistoryData/);
 });
 
 test("admin degraded bootstrap refreshes overview instead of rendering false empty", () => {
@@ -58,7 +74,42 @@ test("admin degraded bootstrap refreshes overview instead of rendering false emp
   assert.match(body, /bootstrapScheduleNeedsRefresh/);
   assert.match(body, /renderOverview\(payload\?\.overview \|\| \{\}, \{ degraded: bootstrapDegraded \}\)/);
   assert.match(body, /refreshOverview\(\{\s*detail: "summary",\s*scheduleFullRefresh: true,\s*timeoutMs: 5000,\s*background: true/s);
-  assert.match(body, /await opsController\.loadPipelineScheduleData\(\{\s*silent: true,\s*force: true/s);
+  assert.match(body, /scheduleBootstrapSourceTablesLoad\(\)/);
+  assert.match(body, /scheduleBootstrapOpsFallbackHydration\(\{ bootstrapScheduleNeedsRefresh \}\)/);
+});
+
+test("admin auth leaves first fallback schedule and history ownership to bootstrap", () => {
+  const initMatch = authSource.match(/function initAdminPage\(\) \{([\s\S]*?)\n  \}/);
+  assert.ok(initMatch, "expected auth init");
+  const body = initMatch[1];
+  assert.match(body, /loadPipelineStatusFallbackData/);
+  assert.match(body, /loadAdminBootstrap/);
+  assert.doesNotMatch(body, /loadPipelineScheduleData\(\{ force: true, silent: true \}\)/);
+  assert.doesNotMatch(body, /loadOpsHistoryData\(\{ force: true, silent: true \}\)/);
+});
+
+test("admin startup heavy hydration is sequential and defers while source load is busy", () => {
+  const deferMatch = opsHealthSource.match(/function shouldDeferIdleOpsHeavyHydration\(options = \{\}\) \{([\s\S]*?)\n  \}/);
+  assert.ok(deferMatch, "expected idle hydration deferral helper");
+  assert.match(deferMatch[1], /adminStartupBridgeHydrationInFlight/);
+  assert.match(deferMatch[1], /adminBusyState\?\.discoveryLoad/);
+  assert.match(deferMatch[1], /allowStartupBridgeLane/);
+
+  const loaderMatch = opsHealthSource.match(/async function loadIdleOpsHeavyHydration\(renderToken = opsRenderToken, options = \{\}\) \{([\s\S]*?)\n  \}/);
+  assert.ok(loaderMatch, "expected idle hydration loader");
+  const body = loaderMatch[1];
+  assert.doesNotMatch(body, /Promise\.allSettled/);
+  assert.ok(
+    body.indexOf("await loadRegistryConflictsSummaryData") < body.indexOf("await loadFetchKpisSummaryData"),
+    "registry conflicts summary should run before fetch KPIs"
+  );
+  assert.ok(
+    body.indexOf("await loadFetchKpisSummaryData") < body.indexOf("await loadOpsTabCountsSummaryData"),
+    "fetch KPIs should run before tab counts"
+  );
+  assert.match(body, /shouldDeferIdleOpsHeavyHydration\(options\)/);
+  assert.match(compositionSource, /allowStartupBridgeLane:\s*true/);
+  assert.match(opsHealthSource, /deferIdleHydration/);
 });
 
 test("admin critical bootstrap fallback hydrates summaries before delayed source tables", () => {

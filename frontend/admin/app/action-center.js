@@ -1,7 +1,7 @@
 const STALE_FETCH_HOURS = 12;
 const DISMISS_TTL_HOURS = 4;
 const POLL_INTERVAL_MS = 30000;
-const INITIAL_FULL_POLL_DELAY_MS = 10000;
+const INITIAL_FULL_POLL_DELAY_MS = POLL_INTERVAL_MS;
 const DISMISS_KEY_PREFIX = "baluffo_action_dismissed_";
 const MAX_ITEMS = 3;
 const CHECKING_SUMMARY = "Checking operational signals...";

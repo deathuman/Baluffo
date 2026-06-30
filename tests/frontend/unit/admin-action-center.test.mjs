@@ -155,7 +155,7 @@ test("action center startPolling runs first lightweight poll immediately", async
     await new Promise(resolve => setImmediate(resolve));
 
     assert.deepEqual(calls, ["/ops/health?view=ready", "/sync/status?view=summary"]);
-    assert.equal(scheduledTimeouts[0]?.delayMs, 10000);
+    assert.equal(scheduledTimeouts[0]?.delayMs, 30000);
     assert.match(refs.actionCenterItemsEl.innerHTML, /No immediate action from core signals\. Storage check pending\./);
   } finally {
     controller.stopPolling();

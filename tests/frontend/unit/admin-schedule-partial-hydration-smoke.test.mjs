@@ -12,6 +12,12 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
 const OUT_ROOT = path.join(REPO_ROOT, "_out", "container-hydration-smoke");
 const execFileAsync = promisify(execFile);
 let bundleBuild = null;
+const STARTUP_HEAVY_ROUTES = [
+  "/registry/sources",
+  "/registry/conflicts",
+  "/ops/fetch-kpis",
+  "/admin/ops-tab-counts"
+];
 
 async function buildBundle() {
   if (!bundleBuild) {
@@ -27,6 +33,10 @@ async function buildBundle() {
 function json(res, payload, status = 200) {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
   res.end(`${JSON.stringify(payload)}\n`);
+}
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function contentType(filePath) {
@@ -67,15 +77,22 @@ function createServer() {
   const requests = [];
   const events = [];
   const metrics = [];
-  let scheduleCalls = 0;
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || "/", "http://127.0.0.1");
     const started = Date.now();
-    const event = { method: req.method || "GET", path: `${url.pathname}${url.search}`, status: 0, elapsedMs: 0 };
+    const event = {
+      method: req.method || "GET",
+      path: `${url.pathname}${url.search}`,
+      status: 0,
+      startedAt: started,
+      finishedAt: 0,
+      elapsedMs: 0
+    };
     events.push(event);
     requests.push(`${event.method} ${event.path}`);
     res.once("finish", () => {
       event.status = Number(res.statusCode || 0);
+      event.finishedAt = Date.now();
       event.elapsedMs = Date.now() - started;
     });
     if (url.pathname === "/frontend-runtime-config.js") {
@@ -84,27 +101,7 @@ function createServer() {
       return;
     }
     if (url.pathname === "/tasks/jobs-pipeline-schedule") {
-      scheduleCalls += 1;
-      if (scheduleCalls === 1) {
-        json(res, {
-          ok: true,
-          savedConfig: { schemaVersion: 1, enabled: true, intervalHours: 11 },
-          status: { enabled: true, pending: false, due: false, scheduleDelayed: true, nextRunAt: "" }
-        });
-        return;
-      }
-      if (scheduleCalls >= 3) {
-        json(res, {
-          ok: true,
-          summaryView: true,
-          degraded: true,
-          source: "container-gateway-fallback",
-          savedConfig: { schemaVersion: 1, enabled: true, intervalHours: 11 },
-          status: { enabled: true, pending: false, due: false, scheduleDelayed: true, scheduleAuthority: "degraded", nextRunAt: "" }
-        });
-        return;
-      }
-      await new Promise(resolve => setTimeout(resolve, 1200));
+      await delay(350);
       json(res, {
         ok: true,
         savedConfig: { schemaVersion: 1, enabled: true, intervalHours: 11 },
@@ -130,18 +127,30 @@ function createServer() {
       return;
     }
     if (url.pathname === "/ops/history") {
+      await delay(350);
       json(res, { runs: [{ runId: "pipeline_seeded", taskType: "pipeline", lifecycleStatus: "succeeded", finishedAt: "2026-06-28T01:30:00Z", durationMs: 1800000 }] });
       return;
     }
     if (url.pathname === "/ops/fetch-kpis") {
+      await delay(600);
       json(res, { ok: true, summaryView: true, kpis: { lastSuccessfulFetchAge: "6h", sevenDayFetchSuccessRate: 0.91, avgFetchDurationMs7d: 123456, failedSourceRatioLatest: 0.12, pendingSourcesCount: 812 } });
       return;
     }
     if (url.pathname === "/admin/ops-tab-counts") {
+      await delay(600);
       json(res, { ok: true, summaryView: true, badges: { overview: { count: 0, loaded: true }, discovery: { count: 41, loaded: true }, "source-policy": { count: 2, loaded: true }, "registry-conflicts": { count: 0, loaded: true }, dedup: { count: 3, loaded: true } } });
       return;
     }
-    if (["/app/ready", "/ops/health", "/sync/status", "/registry/conflicts", "/discovery/report", "/tasks/run-jobs-pipeline-status", "/ops/task-state"].includes(url.pathname)) {
+    if (url.pathname === "/registry/conflicts") {
+      await delay(500);
+      json(res, { ok: true, summaryView: true, summaryStatus: "unavailable", summary: {}, conflicts: [] });
+      return;
+    }
+    if (url.pathname === "/ops/storage-health") {
+      json(res, { ok: true, storage: { healthy: true } });
+      return;
+    }
+    if (["/app/ready", "/ops/health", "/sync/status", "/discovery/report", "/tasks/run-jobs-pipeline-status", "/ops/task-state"].includes(url.pathname)) {
       json(res, { ok: true, status: "healthy", active: false, tasks: [], summary: true });
       return;
     }
@@ -155,7 +164,7 @@ function createServer() {
     }
     if (url.pathname === "/registry/sources" || url.pathname === "/registry/summary") {
       if (url.pathname === "/registry/sources") {
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await delay(700);
       }
       json(res, {
         ok: true,
@@ -203,14 +212,35 @@ function evidence(events, metrics) {
   ].join("\n");
 }
 
-async function waitForScheduleCalls(events, count, timeoutMs = 20000) {
+async function waitForRouteCount(events, routePrefix, count, timeoutMs = 20000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const scheduleCalls = events.filter(row => row.path.startsWith("/tasks/jobs-pipeline-schedule") && row.status >= 200 && row.status < 300).length;
-    if (scheduleCalls >= count) return;
+    const routeCalls = events.filter(row => row.path.startsWith(routePrefix) && row.status >= 200 && row.status < 300).length;
+    if (routeCalls >= count) return;
     await new Promise(resolve => setTimeout(resolve, 100));
   }
-  assert.fail(`Timed out waiting for ${count} schedule calls.\n${evidence(events, [])}`);
+  assert.fail(`Timed out waiting for ${count} ${routePrefix} calls.\n${evidence(events, [])}`);
+}
+
+function assertNoStartupHeavyOverlap(events) {
+  const heavyEvents = events.filter(row => (
+    row.method === "GET"
+    && STARTUP_HEAVY_ROUTES.some(route => row.path.startsWith(route))
+    && row.startedAt
+    && row.finishedAt
+  ));
+  for (let i = 0; i < heavyEvents.length; i += 1) {
+    for (let j = i + 1; j < heavyEvents.length; j += 1) {
+      const left = heavyEvents[i];
+      const right = heavyEvents[j];
+      const overlaps = left.startedAt < right.finishedAt && right.startedAt < left.finishedAt;
+      assert.equal(
+        overlaps,
+        false,
+        `Startup heavy routes overlapped: ${left.path} and ${right.path}\n${evidence(events, [])}`
+      );
+    }
+  }
 }
 
 test("admin schedule smoke renders saved config while next-run details refresh", async () => {
@@ -239,7 +269,9 @@ test("admin schedule smoke renders saved config while next-run details refresh",
     await page.waitForFunction(() => /Pipeline:\s*every 11h, next/i.test(document.querySelector('[data-ui="admin-ops-schedule"]')?.textContent || ""), null, { timeout: 20000 });
     state = await textState(page);
     assert.match(state.schedule, /Pipeline:\s*every 11h, next/i);
-    await waitForScheduleCalls(harness.events, 3);
+    await waitForRouteCount(harness.events, "/tasks/jobs-pipeline-schedule", 1);
+    await waitForRouteCount(harness.events, "/ops/fetch-kpis", 1);
+    await waitForRouteCount(harness.events, "/admin/ops-tab-counts", 1);
     await page.waitForTimeout(250);
     state = await textState(page);
     assert.match(state.schedule, /Pipeline:\s*every 11h, next/i, evidence(harness.events, harness.metrics));
@@ -256,7 +288,19 @@ test("admin schedule smoke renders saved config while next-run details refresh",
       harness.requests.filter(request => /GET \/registry\/sources\?view=table/.test(request) && /limitPerBucket=250/.test(request)).length,
       1
     );
+    assert.equal(
+      harness.requests.filter(request => /GET \/tasks\/jobs-pipeline-schedule/.test(request)).length,
+      1,
+      evidence(harness.events, harness.metrics)
+    );
+    assert.equal(
+      harness.requests.filter(request => /GET \/ops\/history\?limit=2/.test(request)).length,
+      1,
+      evidence(harness.events, harness.metrics)
+    );
+    assert.deepEqual(harness.requests.filter(request => /GET \/ops\/storage-health/.test(request)), []);
     assert.deepEqual(harness.requests.filter(request => /GET \/registry\/summary/.test(request)), []);
+    assertNoStartupHeavyOverlap(harness.events);
     assert.deepEqual(harness.metrics.filter(row => row?.event === "admin_pipeline_schedule_model_fetch_done" && row?.payload?.ok === false), []);
     const loaded = harness.metrics.filter(row => row?.event === "admin_pipeline_schedule_model_loaded");
     let sawNext = false;

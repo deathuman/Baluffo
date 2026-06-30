@@ -17,17 +17,17 @@ import {
   renderUsersTableHtml
 } from "../../render.js?v=25";
 import { adminService } from "../../services.js";
-import { createAdminAuthController } from "../auth.js?v=7";
+import { createAdminAuthController } from "../auth.js?v=8";
 import { createAdminDiscoveryController } from "../discovery.js?v=2";
 import {
   createAdminFetcherController
 } from "../fetcher.js?v=15";
 import { createRestoreActiveRunWatches } from "../live-task.js";
-import { createAdminOpsController, formatBytes } from "../ops.js?v=34";
+import { createAdminOpsController, formatBytes } from "../ops.js?v=35";
 import { createAdminRegistryController } from "../registry.js?v=22";
 import { createAdminSyncController } from "../sync.js?v=13";
 import { createAdminOverviewController } from "./overview.js?v=15";
-import { createActionCenterController } from "../action-center.js?v=2";
+import { createActionCenterController } from "../action-center.js?v=3";
 import { createAdminInspectorController } from "../inspector.js";
 import { activeSummaryIndicatesAdminWork } from "../active-work-policy.js";
 
@@ -70,11 +70,15 @@ export function composeAdminControllers({
   const adminDispatch = createAdminDispatcher();
   let authController;
   let bootstrapSourceTablesLoadScheduled = false;
+  let adminStartupBridgeLane = Promise.resolve();
+  let adminStartupBridgeLanePending = 0;
+  let adminStartupBootstrapSettled = false;
   let syncController;
   let opsController;
   let fetcherController;
   let discoveryController;
   let registryController;
+  state.adminStartupBridgeHydrationInFlight = true;
 
   const overviewController = createAdminOverviewController({
     refs,
@@ -223,7 +227,9 @@ export function composeAdminControllers({
       || state.adminBusyState?.liveDiscoveryRunning
     ),
     shouldDeferStorageHealth: () => Boolean(
-      state.opsActiveAdminWorkLastActive
+      state.adminStartupBridgeHydrationInFlight
+      || state.adminBusyState?.discoveryLoad
+      || state.opsActiveAdminWorkLastActive
       || state.opsActivePipelineOrFetchLastActive
       || state.adminBusyState?.livePipelineRunning
       || state.adminBusyState?.liveFetchRunning
@@ -245,6 +251,33 @@ export function composeAdminControllers({
 
   async function loadPostInteractiveDiagnostics() {
     return null;
+  }
+
+  function refreshAdminStartupBridgeHydrationState() {
+    state.adminStartupBridgeHydrationInFlight = Boolean(
+      !adminStartupBootstrapSettled
+      || adminStartupBridgeLanePending > 0
+    );
+  }
+
+  function markAdminStartupBootstrapSettled() {
+    adminStartupBootstrapSettled = true;
+    refreshAdminStartupBridgeHydrationState();
+  }
+
+  function enqueueAdminStartupBridgeTask(task) {
+    adminStartupBridgeLanePending += 1;
+    refreshAdminStartupBridgeHydrationState();
+    const taskPromise = adminStartupBridgeLane.catch(() => {}).then(async () => {
+      try {
+        return await task();
+      } finally {
+        adminStartupBridgeLanePending = Math.max(0, adminStartupBridgeLanePending - 1);
+        refreshAdminStartupBridgeHydrationState();
+      }
+    });
+    adminStartupBridgeLane = taskPromise.catch(() => {});
+    return taskPromise;
   }
 
   async function loadCriticalBootstrapFallbacks() {
@@ -295,22 +328,41 @@ export function composeAdminControllers({
     if (bootstrapSourceTablesLoadScheduled) return;
     bootstrapSourceTablesLoadScheduled = true;
     registryController.markSourceTablesLoadingForBootstrap?.();
-    const loadSourceTables = () => {
+    enqueueAdminStartupBridgeTask(() => (
       registryController.loadDiscoveryData({
         sourceTablesOnly: true,
         logChanges: false,
         skipIfFreshMs: 10000,
         suppressRegistryRetry: true
-      }).catch(err => {
+      })
+    )).catch(err => {
         logAdminError("Failed to load Admin source tables after bootstrap", err);
       });
-    };
-    if (typeof globalThis.queueMicrotask === "function") {
-      globalThis.queueMicrotask(loadSourceTables);
-      return;
+  }
+
+  function scheduleBootstrapOpsFallbackHydration({ bootstrapScheduleNeedsRefresh = false } = {}) {
+    if (bootstrapScheduleNeedsRefresh) {
+      enqueueAdminStartupBridgeTask(() => opsController.loadPipelineScheduleData({
+        silent: true,
+        force: true,
+        deferIdleHydration: true
+      })).catch(err => {
+        logAdminError("Admin pipeline schedule fallback refresh delayed.", err);
+      });
     }
-    const timer = globalThis.setTimeout(loadSourceTables, 0);
-    timer?.unref?.();
+    enqueueAdminStartupBridgeTask(() => opsController.loadOpsHistoryData({
+      silent: true,
+      force: true
+    })).catch(err => {
+      logAdminError("Admin operations activity fallback refresh delayed.", err);
+    });
+    enqueueAdminStartupBridgeTask(() => opsController.loadIdleOpsHeavyHydration({
+      silent: true,
+      renderWithCurrentToken: true,
+      allowStartupBridgeLane: true
+    })).catch(err => {
+      logAdminError("Admin idle summary hydration delayed.", err);
+    });
   }
 
   async function loadAdminBootstrap() {
@@ -378,23 +430,11 @@ export function composeAdminControllers({
       });
     }
     opsController.applyBootstrapPayload(payload || {});
-    if (bootstrapScheduleNeedsRefresh) {
-      await opsController.loadPipelineScheduleData({
-        silent: true,
-        force: true
-      }).catch(err => {
-        logAdminError("Admin pipeline schedule fallback refresh delayed.", err);
-      });
-    }
-    await opsController.loadOpsHistoryData({
-      silent: true,
-      force: true
-    }).catch(err => {
-      logAdminError("Admin operations activity fallback refresh delayed.", err);
-    });
     state.latestSyncStatusCache = payload?.sync || null;
     syncController.renderSyncStatus(payload?.sync || {}, { forceForm: true });
     scheduleBootstrapSourceTablesLoad();
+    scheduleBootstrapOpsFallbackHydration({ bootstrapScheduleNeedsRefresh });
+    markAdminStartupBootstrapSettled();
     return payload || null;
   }
 

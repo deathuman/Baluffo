@@ -8,8 +8,8 @@ import {
 } from "./helpers/admin-controller-test-helpers.mjs";
 
 async function flushAdminOpsBackground() {
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let index = 0; index < 8; index += 1) await Promise.resolve();
+  await new Promise(resolve => setImmediate(resolve));
 }
 function createDeferred() {
   let resolve;
