@@ -315,3 +315,39 @@ test("admin sync status renders misconfigured packaged config as needs attention
   assert.match(refs.adminSyncStatusEl.innerHTML, /Missing: packaged_github_app_config/);
   assert.doesNotMatch(refs.adminSyncStatusEl.innerHTML, /Connected to unknown and ready/);
 });
+
+test("admin sync status renders degraded bootstrap stub as delayed, not disabled", () => {
+  const state = { syncConfigDirty: false, latestSyncStatusCache: null };
+  const refs = {
+    adminSyncEnabledEl: createElement({ checked: true }),
+    adminSyncStatusEl: createElement(),
+    adminSyncConfigHintEl: createElement()
+  };
+  const controller = createAdminSyncController({
+    state,
+    refs,
+    getBridge: async () => ({}),
+    postBridge: async () => ({}),
+    isSyncBusy: () => false,
+    setBusyFlag() {},
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    showToast() {},
+    toLocalTime: value => value.toISOString(),
+    loadOpsHealthData: async () => {},
+    scheduleOpsHealthPolling() {},
+    escapeHtml: value => String(value)
+  });
+
+  controller.renderSyncStatus({
+    ok: true,
+    summaryView: true,
+    degraded: true,
+    delayed: true
+  }, { forceForm: true });
+
+  assert.equal(refs.adminSyncEnabledEl.checked, true);
+  assert.match(refs.adminSyncStatusEl.innerHTML, /Loading/);
+  assert.match(refs.adminSyncStatusEl.innerHTML, /Sync status delayed/);
+  assert.doesNotMatch(refs.adminSyncStatusEl.innerHTML, /Disabled/);
+  assert.doesNotMatch(refs.adminSyncStatusEl.innerHTML, /Local sync disabled/);
+});

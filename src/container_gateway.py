@@ -39,6 +39,7 @@ from src.runtime_seed import seed_runtime_data
 DEFAULT_INTERNAL_BRIDGE_PORT = 18080
 DEFAULT_PROXY_TIMEOUT_SECONDS = 8.0
 CONTROL_PROXY_TIMEOUT_SECONDS = 1.0
+SCHEDULE_BRIDGE_TIMEOUT_SECONDS = 2.5
 
 
 def _coerce_port(value: Any, default: int) -> int:
@@ -303,7 +304,10 @@ class _GatewayState:
         return {"pipeline": pipeline}
 
     def _admin_schedule_payload(self) -> dict[str, Any]:
-        bridge_payload = self._bridge_json_payload("/tasks/jobs-pipeline-schedule")
+        bridge_payload = self._bridge_json_payload(
+            "/tasks/jobs-pipeline-schedule",
+            timeout=SCHEDULE_BRIDGE_TIMEOUT_SECONDS,
+        )
         bridge_schedule = self._schedule_from_pipeline_schedule_payload(bridge_payload)
         if bridge_schedule is not None:
             return {
@@ -316,12 +320,15 @@ class _GatewayState:
                 "bridgeAlive": self.bridge_alive(),
                 "bridgeListening": self.bridge_listening(),
             }
+        fallback = self.pipeline_schedule_payload()
         return {
             "ok": True,
             "summaryView": True,
             "degraded": True,
             "source": "container-gateway-fallback",
-            "schedule": {},
+            "schedule": fallback.get("schedule") or {},
+            "savedConfig": fallback.get("savedConfig") or {},
+            "status": fallback.get("status") or {},
             "scheduleDelayed": True,
             "message": "Pipeline schedule delayed; retrying authoritative schedule route.",
             "gatewayReady": True,

@@ -98,10 +98,10 @@ def test_gateway_schedule_fallback_computes_next_run_from_terminal_pipeline_row(
     assert payload["status"]["lastPipelineFinishedAt"] == "2026-06-26T08:00:00+00:00"
     assert payload["status"]["nextRunAt"] == "2026-06-26T20:00:00+00:00"
     assert payload["schedule"]["pipeline"]["nextRunAt"] == "2026-06-26T20:00:00+00:00"
-    assert dashboard["schedule"] == {}
+    assert dashboard["schedule"]["pipeline"]["nextRunAt"] == "2026-06-26T20:00:00+00:00"
     assert dashboard["scheduleDelayed"] is True
-    assert bootstrap["schedule"] == {}
-    assert bootstrap["ops"]["schedule"] == {}
+    assert bootstrap["schedule"]["pipeline"]["nextRunAt"] == "2026-06-26T20:00:00+00:00"
+    assert bootstrap["ops"]["schedule"]["pipeline"]["nextRunAt"] == "2026-06-26T20:00:00+00:00"
     assert bootstrap["ops"]["scheduleDelayed"] is True
 
 
@@ -151,10 +151,10 @@ def test_gateway_schedule_fallback_active_due_waits_for_current_pipeline(
 
     assert payload["status"]["due"] is False
     assert payload["status"]["nextAfterCurrentCompletes"] is True
-    assert dashboard["schedule"] == {}
+    assert dashboard["schedule"]["pipeline"]["nextAfterCurrentCompletes"] is True
     assert dashboard["scheduleDelayed"] is True
-    assert bootstrap["schedule"] == {}
-    assert bootstrap["ops"]["schedule"] == {}
+    assert bootstrap["schedule"]["pipeline"]["nextAfterCurrentCompletes"] is True
+    assert bootstrap["ops"]["schedule"]["pipeline"]["nextAfterCurrentCompletes"] is True
     assert bootstrap["ops"]["scheduleDelayed"] is True
 
 
@@ -196,10 +196,10 @@ def test_gateway_schedule_fallback_uses_config_mtime_without_terminal_row(
 
     assert payload["status"]["nextRunAt"] == "2099-06-26T11:00:00+00:00"
     assert payload["status"]["due"] is False
-    assert dashboard["schedule"] == {}
+    assert dashboard["schedule"]["pipeline"]["nextRunAt"] == "2099-06-26T11:00:00+00:00"
     assert dashboard["scheduleDelayed"] is True
-    assert bootstrap["schedule"] == {}
-    assert bootstrap["ops"]["schedule"] == {}
+    assert bootstrap["schedule"]["pipeline"]["nextRunAt"] == "2099-06-26T11:00:00+00:00"
+    assert bootstrap["ops"]["schedule"]["pipeline"]["nextRunAt"] == "2099-06-26T11:00:00+00:00"
     assert bootstrap["ops"]["scheduleDelayed"] is True
 
 
@@ -250,7 +250,7 @@ def test_gateway_degraded_admin_prefers_bridge_schedule_payload(
 
     def fake_urlopen(request, timeout=0):
         assert str(request.full_url).endswith("/tasks/jobs-pipeline-schedule")
-        assert timeout <= 0.5
+        assert timeout <= container_gateway.SCHEDULE_BRIDGE_TIMEOUT_SECONDS
         return _FakeResponse(bridge_schedule_payload)
 
     monkeypatch.setattr(container_gateway, "urlopen", fake_urlopen)
@@ -267,3 +267,46 @@ def test_gateway_degraded_admin_prefers_bridge_schedule_payload(
     assert bootstrap["schedule"]["pipeline"]["intervalHours"] == 11
     assert bootstrap["schedule"]["pipeline"]["due"] is False
     assert bootstrap["schedule"]["pipeline"]["nextRunAt"] == next_run_at
+
+
+def test_gateway_degraded_admin_fallback_keeps_computed_pipeline_schedule(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    state = _GatewayState(
+        data_dir=data_dir,
+        static_root=Path(__file__).resolve().parents[1],
+        internal_base_url="http://127.0.0.1:9",
+        bridge_process=_AliveBridgeProcess(),
+    )
+    _write_schedule(state.data_dir, interval_hours=11)
+    finished_at = "2099-06-30T20:54:55+00:00"
+    _write_lifecycle_rows(
+        state.data_dir,
+        [
+            {
+                "taskType": "pipeline",
+                "status": "completed",
+                "finishedAt": finished_at,
+                "runId": "pipeline_done_1",
+            }
+        ],
+    )
+
+    def fake_urlopen(request, timeout=0):
+        assert str(request.full_url).endswith("/tasks/jobs-pipeline-schedule")
+        raise TimeoutError("slow schedule route")
+
+    monkeypatch.setattr(container_gateway, "urlopen", fake_urlopen)
+    monkeypatch.setattr(state, "bridge_listening", lambda timeout=0.15: True)
+
+    dashboard = state.dashboard_health_summary_payload()
+    bootstrap = state.admin_bootstrap_payload()
+
+    assert dashboard["scheduleDelayed"] is True
+    assert dashboard["schedule"]["pipeline"]["intervalHours"] == 11
+    assert dashboard["schedule"]["pipeline"]["lastPipelineFinishedAt"] == finished_at
+    assert dashboard["schedule"]["pipeline"]["nextRunAt"] == "2099-07-01T07:54:55+00:00"
+    assert bootstrap["schedule"]["pipeline"]["nextRunAt"] == "2099-07-01T07:54:55+00:00"

@@ -56,7 +56,7 @@ test("admin bootstrap schedules source table loading without report diagnostics"
   const bootstrapMatch = compositionSource.match(/async function loadAdminBootstrap\(\) \{([\s\S]*?)\n  \}/);
   assert.ok(bootstrapMatch, "expected bootstrap loader");
   assert.match(bootstrapMatch[1], /scheduleBootstrapSourceTablesLoad\(\)/);
-  assert.match(bootstrapMatch[1], /scheduleBootstrapOpsFallbackHydration\(\{ bootstrapScheduleNeedsRefresh \}\)/);
+  assert.match(bootstrapMatch[1], /scheduleBootstrapOpsFallbackHydration\(\{ bootstrapScheduleNeedsRefresh, bootstrapSyncNeedsRefresh \}\)/);
   assert.ok(
     bootstrapMatch[1].indexOf("scheduleBootstrapSourceTablesLoad()")
       < bootstrapMatch[1].indexOf("scheduleBootstrapOpsFallbackHydration"),
@@ -75,7 +75,8 @@ test("admin degraded bootstrap refreshes overview instead of rendering false emp
   assert.match(body, /renderOverview\(payload\?\.overview \|\| \{\}, \{ degraded: bootstrapDegraded \}\)/);
   assert.match(body, /refreshOverview\(\{\s*detail: "summary",\s*scheduleFullRefresh: true,\s*timeoutMs: 5000,\s*background: true/s);
   assert.match(body, /scheduleBootstrapSourceTablesLoad\(\)/);
-  assert.match(body, /scheduleBootstrapOpsFallbackHydration\(\{ bootstrapScheduleNeedsRefresh \}\)/);
+  assert.match(body, /bootstrapSyncNeedsRefresh/);
+  assert.match(body, /scheduleBootstrapOpsFallbackHydration\(\{ bootstrapScheduleNeedsRefresh, bootstrapSyncNeedsRefresh \}\)/);
 });
 
 test("admin auth leaves first fallback schedule and history ownership to bootstrap", () => {
@@ -137,6 +138,56 @@ test("admin critical bootstrap fallback hydrates summaries before delayed source
 
 test("admin ops controller forwards compact active summary loader to composition", () => {
   assert.match(opsSource, /loadActiveOpsSummaryData:\s*healthController\.loadActiveOpsSummaryData/);
+});
+
+test("admin active idle recovery refreshes final state before source tables", () => {
+  const match = compositionSource.match(/function runActivePipelineIdleRecovery\(meta = \{\}\) \{([\s\S]*?)\n  \}/);
+  assert.ok(match, "expected active idle recovery helper");
+  const body = match[1];
+  assert.match(body, /activeIdleRecoveryInFlight/);
+  assert.match(body, /loadActiveIdleOpsSummary\(\)/);
+  assert.match(body, /opsController\.loadPipelineScheduleData\(\{/);
+  assert.match(body, /opsController\.loadOpsHistoryData\(\{/);
+  assert.match(body, /syncController\.loadSyncStatus\(\{/);
+  assert.match(body, /opsController\.loadIdleOpsHeavyHydration\(\{/);
+  assert.match(body, /registryController\?\.refreshSourceTablesAfterActiveRunIdle\?\.\(meta\)/);
+  assert.ok(
+    body.indexOf("loadActiveIdleOpsSummary()") < body.indexOf("opsController.loadPipelineScheduleData"),
+    "final task state should refresh before schedule"
+  );
+  assert.ok(
+    body.indexOf("opsController.loadPipelineScheduleData") < body.indexOf("opsController.loadOpsHistoryData"),
+    "schedule should refresh before history"
+  );
+  assert.ok(
+    body.indexOf("opsController.loadOpsHistoryData") < body.indexOf("syncController.loadSyncStatus"),
+    "history should refresh before sync"
+  );
+  assert.ok(
+    body.indexOf("syncController.loadSyncStatus") < body.indexOf("opsController.loadIdleOpsHeavyHydration"),
+    "sync should refresh before heavy ops summaries"
+  );
+  assert.ok(
+    body.indexOf("opsController.loadIdleOpsHeavyHydration") < body.indexOf("refreshSourceTablesAfterActiveRunIdle"),
+    "source tables should refresh last"
+  );
+  assert.doesNotMatch(body, /Promise\.all/);
+  assert.doesNotMatch(body, /setTimeout/);
+});
+
+test("admin degraded bootstrap sync is not rendered as disabled", () => {
+  assert.match(compositionSource, /function isAuthoritativeSyncPayload\(payload\)/);
+  assert.match(compositionSource, /bootstrapSyncNeedsRefresh = !isAuthoritativeSyncPayload/);
+  assert.match(compositionSource, /syncController\.loadSyncStatus\(\{\s*silent: true,\s*forceForm: false,\s*includeLive: false,\s*summary: true/s);
+  const match = compositionSource.match(/function renderBootstrapSyncPayload\(syncPayload\) \{([\s\S]*?)\n  \}/);
+  assert.ok(match, "expected bootstrap sync renderer");
+  const body = match[1];
+  assert.match(body, /isAuthoritativeSyncPayload\(syncPayload\)/);
+  assert.match(body, /state\.latestSyncStatusCache = syncPayload \|\| null/);
+  assert.match(body, /syncController\.renderSyncStatus\(state\.latestSyncStatusCache \|\| \{\}\)/);
+  assert.match(body, /degraded:\s*true/);
+  assert.match(body, /delayed:\s*true/);
+  assert.doesNotMatch(body, /state\.latestSyncStatusCache = payload\?\.sync \|\| null/);
 });
 
 test("admin active-fetch browser proof treats full fetch report as heavy", () => {

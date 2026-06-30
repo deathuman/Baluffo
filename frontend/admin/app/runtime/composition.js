@@ -25,7 +25,7 @@ import {
 import { createRestoreActiveRunWatches } from "../live-task.js";
 import { createAdminOpsController, formatBytes } from "../ops.js?v=35";
 import { createAdminRegistryController } from "../registry.js?v=22";
-import { createAdminSyncController } from "../sync.js?v=13";
+import { createAdminSyncController } from "../sync.js?v=14";
 import { createAdminOverviewController } from "./overview.js?v=15";
 import { createActionCenterController } from "../action-center.js?v=3";
 import { createAdminInspectorController } from "../inspector.js";
@@ -73,6 +73,8 @@ export function composeAdminControllers({
   let adminStartupBridgeLane = Promise.resolve();
   let adminStartupBridgeLanePending = 0;
   let adminStartupBootstrapSettled = false;
+  let activeIdleRecoveryLane = Promise.resolve();
+  let activeIdleRecoveryInFlight = false;
   let syncController;
   let opsController;
   let fetcherController;
@@ -111,7 +113,7 @@ export function composeAdminControllers({
     escapeHtml,
     onBridgeStatusChange: () => {},
     loadDiscoveryData: (...args) => registryController.loadDiscoveryData(...args),
-    onActivePipelineIdle: (...args) => registryController?.refreshSourceTablesAfterActiveRunIdle?.(...args),
+    onActivePipelineIdle: (...args) => runActivePipelineIdleRecovery(...args),
     attachToActiveFetchRun: (...args) => fetcherController?.attachToActiveFetchRun?.(...args),
     loadLatestFetcherSummary: options => fetcherController?.loadLatestFetcherSummary?.(options),
     loadLatestFetcherReport: options => fetcherController?.loadLatestFetcherReport?.(options),
@@ -280,6 +282,93 @@ export function composeAdminControllers({
     return taskPromise;
   }
 
+  function isAuthoritativeSyncPayload(payload) {
+    return Boolean(
+      payload
+      && typeof payload === "object"
+      && !Array.isArray(payload)
+      && payload.degraded !== true
+      && payload.delayed !== true
+      && payload.config
+      && typeof payload.config === "object"
+      && !Array.isArray(payload.config)
+    );
+  }
+
+  function renderBootstrapSyncPayload(syncPayload) {
+    if (isAuthoritativeSyncPayload(syncPayload)) {
+      state.latestSyncStatusCache = syncPayload || null;
+      syncController.renderSyncStatus(syncPayload || {}, { forceForm: true });
+      return;
+    }
+    if (state.latestSyncStatusCache) {
+      syncController.renderSyncStatus(state.latestSyncStatusCache || {});
+      return;
+    }
+    syncController.renderSyncStatus({
+      ok: true,
+      summaryView: true,
+      degraded: true,
+      delayed: true
+    });
+  }
+
+  function loadActiveIdleOpsSummary() {
+    return typeof opsController.loadActiveOpsSummaryData === "function"
+      ? opsController.loadActiveOpsSummaryData({
+        fromPoll: false,
+        returnMeta: true,
+        summaryOnly: true,
+        silent: true
+      })
+      : Promise.resolve(null);
+  }
+
+  function runActivePipelineIdleRecovery(meta = {}) {
+    if (activeIdleRecoveryInFlight) {
+      return activeIdleRecoveryLane;
+    }
+    activeIdleRecoveryInFlight = true;
+    activeIdleRecoveryLane = activeIdleRecoveryLane.catch(() => {}).then(async () => {
+      try {
+        await loadActiveIdleOpsSummary().catch(err => {
+          logAdminError("Admin active idle final task-state refresh delayed.", err);
+        });
+        await opsController.loadPipelineScheduleData({
+          silent: true,
+          force: true,
+          deferIdleHydration: true
+        }).catch(err => {
+          logAdminError("Admin active idle schedule refresh delayed.", err);
+        });
+        await opsController.loadOpsHistoryData({
+          silent: true,
+          force: true
+        }).catch(err => {
+          logAdminError("Admin active idle operations activity refresh delayed.", err);
+        });
+        await syncController.loadSyncStatus({
+          silent: true,
+          forceForm: false,
+          includeLive: false,
+          summary: true
+        }).catch(err => {
+          logAdminError("Admin active idle sync refresh delayed.", err);
+        });
+        await opsController.loadIdleOpsHeavyHydration({
+          silent: true,
+          renderWithCurrentToken: true
+        }).catch(err => {
+          logAdminError("Admin active idle summary refresh delayed.", err);
+        });
+        return await registryController?.refreshSourceTablesAfterActiveRunIdle?.(meta);
+      } finally {
+        activeIdleRecoveryInFlight = false;
+      }
+    });
+    return activeIdleRecoveryLane;
+  }
+
   async function loadCriticalBootstrapFallbacks() {
     const activeSummary = typeof opsController.loadActiveOpsSummaryData === "function"
       ? await opsController.loadActiveOpsSummaryData({
@@ -340,7 +429,20 @@ export function composeAdminControllers({
       });
   }
 
-  function scheduleBootstrapOpsFallbackHydration({ bootstrapScheduleNeedsRefresh = false } = {}) {
+  function scheduleBootstrapOpsFallbackHydration({
+    bootstrapScheduleNeedsRefresh = false,
+    bootstrapSyncNeedsRefresh = false
+  } = {}) {
+    if (bootstrapSyncNeedsRefresh) {
+      enqueueAdminStartupBridgeTask(() => syncController.loadSyncStatus({
+        silent: true,
+        forceForm: false,
+        includeLive: false,
+        summary: true
+      })).catch(err => {
+        logAdminError("Admin sync status fallback refresh delayed.", err);
+      });
+    }
     if (bootstrapScheduleNeedsRefresh) {
       enqueueAdminStartupBridgeTask(() => opsController.loadPipelineScheduleData({
         silent: true,
@@ -418,6 +520,7 @@ export function composeAdminControllers({
       || payload?.ops?.scheduleDelayed === true
       || payload?.scheduleDelayed === true
     );
+    const bootstrapSyncNeedsRefresh = !isAuthoritativeSyncPayload(payload?.sync || null);
     overviewController.renderOverview(payload?.overview || {}, { degraded: bootstrapDegraded });
     if (bootstrapDegraded) {
       overviewController.refreshOverview({
@@ -430,10 +533,9 @@ export function composeAdminControllers({
       });
     }
     opsController.applyBootstrapPayload(payload || {});
-    state.latestSyncStatusCache = payload?.sync || null;
-    syncController.renderSyncStatus(payload?.sync || {}, { forceForm: true });
+    renderBootstrapSyncPayload(payload?.sync || null);
     scheduleBootstrapSourceTablesLoad();
-    scheduleBootstrapOpsFallbackHydration({ bootstrapScheduleNeedsRefresh });
+    scheduleBootstrapOpsFallbackHydration({ bootstrapScheduleNeedsRefresh, bootstrapSyncNeedsRefresh });
     markAdminStartupBootstrapSettled();
     return payload || null;
   }

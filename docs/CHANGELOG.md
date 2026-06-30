@@ -10,6 +10,21 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.108] - 2026-06-30
+
+### Fixed
+- Umbrel Admin now runs a bounded active-idle recovery pass after pipeline/fetch work settles, refreshing final task state, schedule, recent activity, sync summary, and Ops badges before attempting source-table lazy hydration.
+- Degraded Admin bootstrap sync stubs no longer overwrite an authoritative ready sync state with disabled/unknown UI; Admin now shows an explicit delayed sync state until the compact sync summary refresh completes.
+- Container gateway schedule fallback now waits long enough for the bounded bridge schedule route and preserves computed recurring pipeline schedule data when the bridge route is delayed, so degraded fallback cannot blank the next trigger date.
+
+### Tests
+- Added regressions for active-idle Admin recovery sequencing, degraded sync bootstrap rendering, non-empty schedule fallback data, and source-table refresh remaining last and non-blocking.
+
+### Notes
+- This supersedes `0.2.107`, which fixed idle startup fan-out but still allowed degraded bootstrap/schedule/sync/control-panel state to win around active pipeline work. No public desktop tag is created.
+- Source-table loading may remain visibly delayed while a pipeline is active, but schedule, sync, control-panel final state, and pipeline completion state have their own bounded recovery path.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.107] - 2026-06-30
 
 ### Fixed

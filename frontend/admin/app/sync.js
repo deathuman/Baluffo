@@ -44,6 +44,26 @@ export function createAdminSyncController({
 
   function renderSyncStatus(statusPayload, options = {}) {
     if (!refs.adminSyncStatusEl) return;
+    const hasConfig = Boolean(
+      statusPayload?.config
+      && typeof statusPayload.config === "object"
+      && !Array.isArray(statusPayload.config)
+    );
+    const isDelayed = Boolean(statusPayload?.degraded || statusPayload?.delayed) && !hasConfig;
+    if (isDelayed) {
+      if (refs.adminSyncConfigHintEl) {
+        refs.adminSyncConfigHintEl.textContent = "GitHub App credentials are packaged with the app.";
+        setTooltip(refs.adminSyncConfigHintEl, "");
+      }
+      refs.adminSyncStatusEl.innerHTML = `
+        <div class="admin-sync-status-head">
+          <span class="admin-sync-badge pending">Loading</span>
+          <span class="admin-sync-inline-note">Sync status delayed</span>
+        </div>
+        <p class="admin-sync-summary">Source sync status is loading. Admin will refresh the compact sync summary after active work settles.</p>
+      `;
+      return;
+    }
     populateSyncConfigForm(statusPayload?.savedConfig || {}, { force: Boolean(options.forceForm) });
     const config = statusPayload?.config || {};
     const runtime = statusPayload?.runtime || {};
