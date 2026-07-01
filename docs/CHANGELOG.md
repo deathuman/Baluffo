@@ -10,6 +10,15 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.109] - 2026-07-01
+
+### Fixed
+- Umbrel container schedule fallback now derives `nextRunAt` from the completed pipeline status control file when lifecycle rows are unavailable, so a degraded `/tasks/jobs-pipeline-schedule` response cannot blank the next trigger after a real pipeline completion.
+- This supersedes `0.2.108`, which repaired Admin active-idle recovery but still allowed the container gateway schedule fallback to emit degraded empty schedule data on live Umbrel installs missing a terminal lifecycle row.
+
+### Notes
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.108] - 2026-06-30
 
 ### Fixed

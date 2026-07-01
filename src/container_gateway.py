@@ -392,6 +392,27 @@ class _GatewayState:
             }
         last_row = self._latest_terminal_pipeline_row()
         last_finished_at = str((last_row or {}).get("finishedAt") or "").strip()
+        if not last_finished_at:
+            status_stage = (
+                str(pipeline_status.get("stage") or pipeline_status.get("status") or "")
+                .strip()
+                .lower()
+            )
+            pipeline_finished_at = str(pipeline_status.get("finishedAt") or "").strip()
+            if (
+                pipeline_finished_at
+                and not active
+                and status_stage
+                in {
+                    "completed",
+                    "succeeded",
+                    "failed",
+                    "canceled",
+                    "cancelled",
+                    "aborted",
+                }
+            ):
+                last_finished_at = pipeline_finished_at
         last_finished = self._parse_iso_datetime(last_finished_at)
         if last_finished is not None and interval_hours > 0:
             next_run_at = last_finished + timedelta(hours=interval_hours)

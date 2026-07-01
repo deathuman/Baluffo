@@ -105,6 +105,33 @@ def test_gateway_schedule_fallback_computes_next_run_from_terminal_pipeline_row(
     assert bootstrap["ops"]["scheduleDelayed"] is True
 
 
+def test_gateway_schedule_fallback_uses_completed_pipeline_status_without_lifecycle_row(
+    tmp_path: Path,
+) -> None:
+    state = _state(tmp_path)
+    _write_schedule(state.data_dir, interval_hours=11)
+    write_pipeline_status(
+        state.data_dir,
+        {
+            "active": False,
+            "runId": "pipeline_completed",
+            "stage": "completed",
+            "finishedAt": "2099-06-30T20:54:55+00:00",
+        },
+        now_iso="2099-06-30T20:55:00Z",
+    )
+
+    payload = state.pipeline_schedule_payload()
+    dashboard = state.dashboard_health_summary_payload()
+    bootstrap = state.admin_bootstrap_payload()
+
+    assert payload["status"]["lastPipelineFinishedAt"] == "2099-06-30T20:54:55+00:00"
+    assert payload["status"]["nextRunAt"] == "2099-07-01T07:54:55+00:00"
+    assert payload["schedule"]["pipeline"]["nextRunAt"] == "2099-07-01T07:54:55+00:00"
+    assert dashboard["schedule"]["pipeline"]["nextRunAt"] == "2099-07-01T07:54:55+00:00"
+    assert bootstrap["schedule"]["pipeline"]["nextRunAt"] == "2099-07-01T07:54:55+00:00"
+
+
 def test_gateway_schedule_fallback_preserves_next_run_during_active_pipeline(
     tmp_path: Path,
 ) -> None:
