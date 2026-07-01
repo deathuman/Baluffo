@@ -10,6 +10,15 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.110] - 2026-07-01
+
+### Fixed
+- Umbrel container `/tasks/jobs-pipeline-schedule` now uses the same schedule-specific bounded bridge timeout as Admin bootstrap/dashboard schedule hydration, so the canonical schedule route does not fall back blank while the bridge can still answer within the allowed schedule window.
+- This supersedes `0.2.109`, which fixed one fallback anchor path but still let the direct schedule route use the generic short gateway timeout under live Umbrel load.
+
+### Notes
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.109] - 2026-07-01
 
 ### Fixed

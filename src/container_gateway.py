@@ -723,7 +723,10 @@ class _GatewayHandler(BaseHTTPRequestHandler):
     def _handle_gateway_control_get(self, path: str, view: str) -> bool:
         state = self._state()
         if path == "/tasks/jobs-pipeline-schedule":
-            self._proxy_or_fallback(state.pipeline_schedule_payload)
+            self._proxy_or_fallback(
+                state.pipeline_schedule_payload,
+                timeout=SCHEDULE_BRIDGE_TIMEOUT_SECONDS,
+            )
             return True
         if path == "/ops/dashboard-health" and view == "summary":
             self._proxy_or_fallback(state.dashboard_health_summary_payload)

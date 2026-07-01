@@ -296,6 +296,29 @@ def test_gateway_degraded_admin_prefers_bridge_schedule_payload(
     assert bootstrap["schedule"]["pipeline"]["nextRunAt"] == next_run_at
 
 
+def test_gateway_direct_schedule_route_uses_schedule_timeout(tmp_path: Path) -> None:
+    state = _state(tmp_path)
+    captured: dict[str, object] = {}
+
+    class _DummyHandler:
+        def _state(self) -> _GatewayState:
+            return state
+
+        def _proxy_or_fallback(self, fallback_payload, *, timeout: float = 0.75) -> None:
+            captured["fallback_payload"] = fallback_payload
+            captured["timeout"] = timeout
+
+    handled = container_gateway._GatewayHandler._handle_gateway_control_get(
+        _DummyHandler(),
+        "/tasks/jobs-pipeline-schedule",
+        "",
+    )
+
+    assert handled is True
+    assert captured["fallback_payload"] == state.pipeline_schedule_payload
+    assert captured["timeout"] == container_gateway.SCHEDULE_BRIDGE_TIMEOUT_SECONDS
+
+
 def test_gateway_degraded_admin_fallback_keeps_computed_pipeline_schedule(
     tmp_path: Path,
     monkeypatch,
