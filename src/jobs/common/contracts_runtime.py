@@ -59,6 +59,51 @@ def _normalize_named_duration_rows(
     return normalized_rows
 
 
+def _normalize_setup_phase_timings(payload: dict[str, Any]) -> dict[str, int]:
+    phase_timings: dict[str, int] = {}
+    for key, value in as_json_object(payload).items():
+        phase_key = clean_text(key)
+        if phase_key:
+            phase_timings[phase_key] = _clamped_int(value, 0, 0)
+    return phase_timings
+
+
+def _normalize_setup_counts(payload: dict[str, Any]) -> dict[str, Any]:
+    counts: dict[str, Any] = {}
+    for key, value in list(as_json_object(payload).items())[:32]:
+        clean_key = clean_text(key)
+        if not clean_key:
+            continue
+        if isinstance(value, bool):
+            counts[clean_key] = bool(value)
+        elif isinstance(value, (int, float)):
+            counts[clean_key] = _clamped_int(value, 0, 0)
+        elif clean_value := clean_text(value):
+            counts[clean_key] = clean_value
+    return counts
+
+
+def _normalize_setup_timing(payload: dict[str, Any]) -> dict[str, Any]:
+    src = as_json_object(payload)
+    phase_timings = _normalize_setup_phase_timings(src.get("phaseTimingsMs"))
+    phase_order = [
+        phase_key
+        for phase_key in [clean_text(item) for item in as_json_list(src.get("phaseOrder"))]
+        if phase_key
+    ][:12]
+    counts = _normalize_setup_counts(src.get("counts"))
+    result: dict[str, Any] = {
+        "totalSetupMs": _clamped_int(src.get("totalSetupMs"), 0, 0),
+    }
+    if phase_timings:
+        result["phaseTimingsMs"] = phase_timings
+    if phase_order:
+        result["phaseOrder"] = phase_order
+    if counts:
+        result["counts"] = counts
+    return result
+
+
 def normalize_runtime_payload(
     runtime: dict[str, Any], *, selected_source_count: int
 ) -> dict[str, Any]:
@@ -140,4 +185,7 @@ def normalize_runtime_payload(
     timing_summary_raw = as_json_object(src.get("timingSummary"))
     if timing_summary_raw:
         payload["timingSummary"] = normalize_fetch_report_timing_summary(timing_summary_raw)
+    setup_timing_raw = as_json_object(src.get("setupTiming"))
+    if setup_timing_raw:
+        payload["setupTiming"] = _normalize_setup_timing(setup_timing_raw)
     return payload

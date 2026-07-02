@@ -5,7 +5,7 @@
 > - **Canonical for:** endpoint surface, route naming, and high-level request intent
 > - **Not canonical for:** backend business logic internals or service ownership
 > - **Then inspect:** `src/bridge/routes/get_*.py`, `src/bridge/routes/post_routes_{admin,local_data,update}.py`, `src/bridge/*.py`, `frontend/*/services.js`
-> - **Last updated:** 2026-06-20
+> - **Last updated:** 2026-07-02
 > - **Ownership note:** ops/task-state internals now compose through `src/bridge/ops_api.py`, `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, `src/bridge/ops_task_{fetch_live,discovery_live,projection}.py`, and `src/bridge/ops_live_payload.py`
 > - **Local-data ownership note:** desktop local-data storage now routes through `src/local_data_store.py` as a thin facade over `src/local_data_store_{shared,profiles,saved_jobs,attachments,backup}.py`, while the shared desktop runtime stays rooted at `frontend/shared/local-data/desktop-client.js` over `frontend/shared/local-data/desktop/{api,lifecycle,navigation,state}.js`
 > - **Desktop update ownership note:** the helper executable stays rooted at `src/ship/desktop_updater.py` over `src/ship/desktop_updater_{ui,release,install}.py`, while the Jobs desktop update UI stays rooted at `frontend/jobs/app/desktop-update.js` over `frontend/jobs/app/desktop-update-{model,dom,controller}.js`
@@ -205,6 +205,8 @@ Known sensitive field names such as tokens, passwords, secrets, API keys, and au
 - `/app/update-status` is the desktop source of truth for installed app version and updater state. Jobs/Saved/Admin desktop chrome reads `currentVersion` from this payload.
 - `/ops/alerts/ack` does not persist acknowledgement for active non-dismissible alerts. The first-run `fetch_never_run` guidance remains visible until a successful fetch clears the condition; `pipeline_never_run` remains visible until a successful full Jobs pipeline lifecycle row exists, including after sheet bootstrap.
 - `/ops/task-live/<taskType>` is the detailed live surface for fetch/discovery/sync. It emits `workItems`, `recentEvents`, `taskProgress`, and lifecycle fields; it does not emit a detailed `tasks` alias anymore. Active Admin and Jobs polling should use `/ops/task-live/<taskType>?view=summary`; the summary view preserves the live task envelope, `taskProgress`, `summary`, identity, status, timestamps, and bounded recent events, and omits full `workItems` while exposing `workItemCount`/`workItemsTruncated`.
+- Fetch may emit pre-source setup progress on the same live task contract before work items exist. Valid setup `taskProgress.phaseKey` values include `loading_state`, `seeding_existing_output`, `selecting_sources`, `applying_exclusions`, and `initializing_runtime`; counts are bounded setup diagnostics, not source-row progress.
+- During active fetch or pipeline fetch, Admin must not add storage-health polling, full fetch-report diagnostics, or hidden retry storms to explain startup. Hot progress comes from `/ops/task-live/fetch?view=summary`, `jobs-fetch-tasks.json`, and the active-task snapshot; `admin-task-lifecycle.json` is for run identity, coarse phase heartbeat, and terminal state.
 - `recentEvents` rows on `/ops/task-live/<taskType>` are normalized by `src/shared/live_task.py` and use the shared live task event envelope:
   - `schemaVersion`: currently `1`.
   - `event`: stable event token, preferring an explicit `event`, then `phaseKey`, then `live_task_event`.

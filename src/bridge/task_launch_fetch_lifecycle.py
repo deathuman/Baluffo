@@ -27,6 +27,8 @@ from src.bridge.task_admission import (
     get_active_lifecycle_task_metadata,
 )
 
+FETCH_LIFECYCLE_HEARTBEAT_MIN_INTERVAL_S = 30.0
+
 
 @dataclass(frozen=True)
 class FetchLifecycleContext:
@@ -191,6 +193,8 @@ def heartbeat_fetch_lifecycle_from_tasks(
     ctx: FetchLifecycleContext,
     *,
     run_id: str,
+    heartbeat_gate: dict[str, Any] | None = None,
+    min_interval_s: float = FETCH_LIFECYCLE_HEARTBEAT_MIN_INTERVAL_S,
 ) -> None:
     if not callable(ctx.heartbeat_lifecycle_run):
         return
@@ -209,11 +213,20 @@ def heartbeat_fetch_lifecycle_from_tasks(
     progress_payload = dict(progress) if isinstance(progress, dict) else {}
     summary_payload = dict(summary) if isinstance(summary, dict) else {}
     phase = str(progress_payload.get("phaseKey") or progress_payload.get("phase") or "")
+    stage = phase.strip() or "running"
+    if heartbeat_gate is not None:
+        now_mono = time.monotonic()
+        last_stage = str(heartbeat_gate.get("stage") or "")
+        last_mono = float(heartbeat_gate.get("monotonic") or 0.0)
+        if last_stage == stage and (now_mono - last_mono) < max(1.0, float(min_interval_s or 0.0)):
+            return
+        heartbeat_gate["stage"] = stage
+        heartbeat_gate["monotonic"] = now_mono
     ctx.heartbeat_lifecycle_run(
         run_id,
         "fetch",
         heartbeat_at=str(tasks.get("heartbeatAt") or ctx.now_iso()),
-        stage=phase.strip() or "running",
+        stage=stage,
         progress=progress_payload or None,
         summary=summary_payload or None,
     )
@@ -225,12 +238,17 @@ def watch_fetch_lifecycle(
     run_id: str,
     pid: int,
 ) -> None:
+    heartbeat_gate: dict[str, Any] = {}
     while True:
         lifecycle_row = ctx.get_lifecycle_row(run_id, "fetch")
         if close_fetch_lifecycle_from_report(ctx, run_id=run_id):
             return
         if ctx.pid_is_running(int(pid)):
-            heartbeat_fetch_lifecycle_from_tasks(ctx, run_id=run_id)
+            heartbeat_fetch_lifecycle_from_tasks(
+                ctx,
+                run_id=run_id,
+                heartbeat_gate=heartbeat_gate,
+            )
             time.sleep(2.0)
             continue
         if row_abort_requested(lifecycle_row):

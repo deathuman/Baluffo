@@ -10,6 +10,22 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.111] - 2026-07-02
+
+### Fixed
+- Umbrel fetch startup now emits bounded preparation progress before source execution begins, so Admin shows phases for loading fetch state, seeding existing output, selecting sources, applying exclusions, and initializing runtime instead of leaving a child fetch stuck on generic `starting`.
+- Fetch preparation progress uses the existing `/ops/task-live/fetch?view=summary`, `jobs-fetch-tasks.json`, and active-task snapshot contracts with compact additive `taskProgress` phase/count/timing fields; no new route, JSONL stream, per-row progress stream, storage-health polling, or full diagnostics path is added.
+- Fetch lifecycle heartbeats no longer rewrite `admin-task-lifecycle.json` every hot progress tick; lifecycle remains for run identity, terminal state, and bounded coarse phase heartbeats while live UI state stays on `jobs-fetch-tasks.json` and the active snapshot.
+
+### Tests
+- Added focused backend coverage for compact fetch-prep task-state writes, setup timing persistence, rate-limited same-phase prep updates, and lifecycle heartbeat throttling.
+- Added frontend coverage that active fetch preparation renders phase/count text without regressing into misleading `0 sources resolved` execution progress.
+
+### Notes
+- This supersedes `0.2.110`, which fixed active schedule behavior but left fetch preparation silent and allowed avoidable lifecycle write pressure during the pre-source setup window. No public desktop tag is created.
+- The existing-output fast path is intentionally not shipped in `0.2.111`; live and synthetic equivalence checks showed canonical payload differences, so the release keeps current canonicalization and ships visibility, timing, and disk-pressure safeguards first.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.110] - 2026-07-01
 
 ### Fixed

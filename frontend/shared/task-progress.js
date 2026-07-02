@@ -46,6 +46,20 @@ const GAMEDEVMAP_ACTIVE_AUDIT_FETCH_PHASE_LABELS = {
   recovery_wave2_fetch: "recovery wave 2 fetch"
 };
 
+const FETCH_PREP_PHASE_KEYS = new Set([
+  "loading_state",
+  "seeding_existing_output",
+  "selecting_sources",
+  "applying_exclusions",
+  "initializing_runtime"
+]);
+
+function formatElapsedSeconds(ms) {
+  const value = Math.max(0, Number(ms || 0));
+  if (!Number.isFinite(value) || value <= 0) return "";
+  return `${compactCount(Math.max(1, Math.round(value / 1000)))}s`;
+}
+
 export function formatDiscoverySubtaskProgress(counts) {
   const subtaskKey = String(counts?.subtaskKey || "").trim();
   if (subtaskKey !== "gamedevmap_active_audit") return "";
@@ -90,6 +104,39 @@ export function formatScrapyStaticSourcesTailBadge(workItems) {
 }
 
 function formatFetcherCounts(counts, progress) {
+  const phaseKey = String(progress?.phaseKey || "").trim();
+  const isPrepPhase = FETCH_PREP_PHASE_KEYS.has(phaseKey);
+  const hasPrepCounts = [
+    "sourceStateRows",
+    "lifecycleRows",
+    "seededOutputRows",
+    "selectedSourceCount",
+    "excludedSourceCount",
+    "setupElapsedMs"
+  ].some(key => Object.prototype.hasOwnProperty.call(counts || {}, key));
+  if (isPrepPhase || hasPrepCounts) {
+    const setupElapsed = formatElapsedSeconds(counts?.setupElapsedMs);
+    const parts = [
+      Object.prototype.hasOwnProperty.call(counts || {}, "sourceStateRows")
+        ? `state rows ${compactCount(counts?.sourceStateRows)}`
+        : "",
+      Object.prototype.hasOwnProperty.call(counts || {}, "lifecycleRows")
+        ? `lifecycle rows ${compactCount(counts?.lifecycleRows)}`
+        : "",
+      Object.prototype.hasOwnProperty.call(counts || {}, "seededOutputRows")
+        ? `seeded ${compactCount(counts?.seededOutputRows)} jobs`
+        : "",
+      Object.prototype.hasOwnProperty.call(counts || {}, "selectedSourceCount")
+        ? `selected ${compactCount(counts?.selectedSourceCount)} sources`
+        : "",
+      Object.prototype.hasOwnProperty.call(counts || {}, "excludedSourceCount")
+        ? `excluded ${compactCount(counts?.excludedSourceCount)}`
+        : "",
+      setupElapsed ? `setup ${setupElapsed}` : ""
+    ];
+    const label = parts.filter(Boolean).join(" | ");
+    if (label) return label;
+  }
   const resolved = Math.max(0, Number(counts?.resolvedSources || 0));
   const total = Math.max(0, Number(counts?.sourceCount || 0));
   const running = Math.max(0, Number(counts?.runningTasks || counts?.running || 0));

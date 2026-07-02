@@ -47,6 +47,7 @@ from src.jobs.pipeline_loader_selection import (
 )
 from src.jobs.pipeline_runtime_summary import PipelineTaskRuntime
 from src.jobs.pipeline_runtime_writers import (
+    FetchPrepProgressWriter,
     initialize_task_runtime,
     make_fetch_text_limited,
     make_progress_report_dispatcher,
@@ -254,6 +255,21 @@ def prepare_pipeline_run(
     reset_sector_quality_audit()
 
     started_at = clean_text(started_at_override) or now_iso()
+    prep_progress = FetchPrepProgressWriter(
+        run_id=run_id,
+        started_at=started_at,
+        report_path=str(paths.report_path),
+        task_state_path=paths.task_state_path,
+        active_snapshot_path=paths.active_task_snapshot_path,
+        normalize_task_state_payload=normalize_task_state_payload,
+        write_text_if_changed=write_hot_text_if_changed,
+    )
+    prep_progress.emit(
+        "loading_state",
+        "Loading fetch state",
+        counts={"setupStep": 1},
+        force=True,
+    )
     source_reports = [row for row in (selection_exclusions or []) if isinstance(row, dict)]
     canonical_rows: list[CanonicalJob] = []
 
@@ -285,6 +301,15 @@ def prepare_pipeline_run(
         source_state_rows=source_state_rows,
     )
     lifecycle_rows = read_job_lifecycle_state(paths.lifecycle_state_path)
+    prep_progress.emit(
+        "loading_state",
+        "Loading fetch state",
+        counts={
+            "setupStep": 1,
+            "sourceStateRows": len(source_state_rows),
+            "lifecycleRows": len(lifecycle_rows),
+        },
+    )
 
     seed_existing_output_override = env_flag("BALUFFO_FETCH_SEED_EXISTING_OUTPUT", False)
     incremental_cache_enabled = bool(
@@ -292,6 +317,15 @@ def prepare_pipeline_run(
     )
     effective_seed_from_existing_output = bool(
         seed_from_existing_output or incremental_cache_enabled or seed_existing_output_override
+    )
+    prep_progress.emit(
+        "seeding_existing_output",
+        "Seeding existing output",
+        counts={
+            "setupStep": 2,
+            "seedExistingOutput": effective_seed_from_existing_output,
+            "incrementalCacheEnabled": incremental_cache_enabled,
+        },
     )
     if effective_seed_from_existing_output:
         seeded_rows = read_existing_output(
@@ -301,12 +335,26 @@ def prepare_pipeline_run(
             clean_text=clean_text,
         )
         canonical_rows.extend(CanonicalJob.from_mapping(row) for row in seeded_rows)
+    prep_progress.emit(
+        "seeding_existing_output",
+        "Seeding existing output",
+        counts={
+            "setupStep": 2,
+            "seedExistingOutput": effective_seed_from_existing_output,
+            "seededOutputRows": len(canonical_rows),
+        },
+    )
     published_source_names = _published_source_names_from_rows(canonical_rows)
 
     effective_social_config_path = (
         Path(social_config_path)
         if social_config_path
         else (output_dir / "social-sources-config.json")
+    )
+    prep_progress.emit(
+        "selecting_sources",
+        "Selecting sources",
+        counts={"setupStep": 3, "seededOutputRows": len(canonical_rows)},
     )
     social_config = common_social.load_social_config(
         config_path=effective_social_config_path,
@@ -329,6 +377,20 @@ def prepare_pipeline_run(
         enabled=include_linked_static_validation,
         using_default_loaders=using_default_loaders,
         source_state_rows=source_state_rows,
+    )
+    prep_progress.emit(
+        "selecting_sources",
+        "Selecting sources",
+        counts={
+            "setupStep": 3,
+            "selectedSourceCount": len(selected_loaders),
+            "usingDefaultLoaders": using_default_loaders,
+        },
+    )
+    prep_progress.emit(
+        "applying_exclusions",
+        "Applying source policy",
+        counts={"setupStep": 4, "selectedSourceCount": len(selected_loaders)},
     )
     dynamic_static_suppression_policy: dict[str, Any] = {
         "eligibleCount": 0,
@@ -363,6 +425,11 @@ def prepare_pipeline_run(
             source_policy_review_state=source_policy_review_state,
         )
         source_reports.extend(dynamic_redundant_static)
+    dynamic_excluded_count = max(
+        0,
+        int(dynamic_static_suppression_policy.get("suppressedCount") or 0)
+        + int(dynamic_static_suppression_policy.get("pausedCount") or 0),
+    )
 
     browser_fallback_enabled = resolve_fetch_browser_fallback_helper() is not None
     browser_fallback_cap = max_workers if browser_fallback_enabled else 0
@@ -445,6 +512,29 @@ def prepare_pipeline_run(
         ignore_circuit_breaker=ignore_circuit_breaker,
     )
     source_reports.extend(excluded_by_circuit)
+    prep_progress.emit(
+        "applying_exclusions",
+        "Applying source policy",
+        counts={
+            "setupStep": 4,
+            "selectedSourceCount": len(selected_loaders),
+            "dynamicExcludedSources": dynamic_excluded_count,
+            "incrementalSkippedSources": len(incremental_skipped),
+            "cadenceSkippedSources": len(cadence_skipped),
+            "circuitBreakerExcludedSources": len(excluded_by_circuit),
+            "excludedSourceCount": len(source_reports),
+        },
+    )
+    prep_progress.emit(
+        "initializing_runtime",
+        "Initializing fetch runtime",
+        counts={
+            "setupStep": 5,
+            "selectedSourceCount": len(selected_loaders),
+            "seededOutputRows": len(canonical_rows),
+            "excludedSourceCount": len(source_reports),
+        },
+    )
 
     task_runtime = initialize_task_runtime(
         selected_loaders,
@@ -508,6 +598,7 @@ def prepare_pipeline_run(
         runtime=task_runtime,
         write_progress_report=write_progress_report_sync,
     )
+    runtime_payload["setupTiming"] = prep_progress.timing_payload()
     write_progress_report(force=True)
 
     stage_config = SourceExecutionStageConfig(

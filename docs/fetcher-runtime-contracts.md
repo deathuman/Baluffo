@@ -5,7 +5,7 @@
 > - **Canonical for:** fetcher runtime options, admin preset wiring, and fetch-run artifacts consumed by admin flows
 > - **Not canonical for:** full jobs pipeline ownership or broad testing strategy
 > - **Then inspect:** `src/jobs_fetcher.py`, `src/jobs/fetcher_compat_{exports,runtime}.py`, `src/jobs/pipeline*.py`, `src/jobs/state*.py`, and [`testing.md`](testing.md)
-> - **Last updated:** 2026-05-17
+> - **Last updated:** 2026-07-02
 
 ## CLI runtime options
 
@@ -80,6 +80,7 @@ Optional overrides:
 - `data/jobs-fetch-report.json`
   - contract keys: `runtime`, `summary`, `sources`.
   - includes output file paths under `outputs`.
+  - `runtime.setupTiming` is an additive compact diagnostic for the pre-source setup window. It includes `totalSetupMs`, `phaseTimingsMs`, `phaseOrder`, and bounded scalar `counts` such as seeded output rows, selected sources, exclusions, and setup elapsed time. It exists to explain fetch preparation latency without adding full diagnostics or extra polling.
   - `summary.okCleanSources` and `summary.okWithWarningSources` are additive success diagnostics; source rows still use `status: "ok"` for both.
   - `summary.needsReviewBreakdown` includes both shaped static diagnostic counts and raw comparison counters: `rawMarkerCount` and `includedCount`.
   - `summary.sizeGuardrails` reports per-artifact byte counts and limits for `json`, `lightJson`, and `csv`; `summary.sizeGuardrailExceeded` remains the aggregate compatibility flag.
@@ -115,6 +116,9 @@ Optional overrides:
   - live task/heartbeat state for source execution lifecycle.
   - includes task `status`, `startedAt`, `finishedAt`, `heartbeatAt`, and summary counters.
   - remains the active-run progress surface after M4; source-run bulk insert is terminal postprocessing, not streaming live progress.
+  - before source execution creates work items, fetch setup writes bounded phase-level progress with `taskProgress.phaseKey` values `loading_state`, `seeding_existing_output`, `selecting_sources`, `applying_exclusions`, and `initializing_runtime`.
+  - setup progress is intentionally compact: no per-row progress, no JSONL prep stream, no repeated full fetch-report rewrites, and no storage-health or heavy diagnostic route reads during active fetch. Writes are limited to phase changes plus a small minimum interval.
+  - `admin-task-lifecycle.json` must not mirror every hot fetch-progress tick. It stores run identity, terminal state, and bounded coarse heartbeats; active Admin UI should read hot progress from `jobs-fetch-tasks.json`, `/ops/task-live/fetch?view=summary`, or the active-task snapshot.
 
 ## Source-state and circuit-breaker lifecycle
 

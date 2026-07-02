@@ -20,7 +20,11 @@ from src.jobs.models import CanonicalJob
 from src.jobs.pipeline_bootstrap import PipelinePaths
 from src.jobs.text_utils import clean_text
 from src.shared.json_shapes import as_json_object
-from src.shared.live_task import append_live_task_event
+from src.shared.live_task import (
+    append_live_task_event,
+    build_live_task_payload,
+    build_live_task_progress_payload,
+)
 from src.shared.utils import now_iso
 
 from .pipeline_runtime_summary import (
@@ -39,6 +43,149 @@ class FetchTextLimited(Protocol):
     _baluffo_gate_wait_stats: Callable[[str], dict[str, int]]
 
     def __call__(self, url: str, timeout: int) -> str: ...
+
+
+class FetchPrepProgressWriter:
+    """Bounded writer for fetch setup phases before source rows exist."""
+
+    def __init__(
+        self,
+        *,
+        run_id: str,
+        started_at: str,
+        report_path: str,
+        task_state_path: Any,
+        active_snapshot_path: Any | None,
+        normalize_task_state_payload: Callable[..., dict[str, Any]],
+        write_text_if_changed: Callable[[Any, str], Any],
+        min_interval_s: float = 0.75,
+    ) -> None:
+        self.run_id = clean_text(run_id)
+        self.started_at = clean_text(started_at)
+        self.report_path = clean_text(report_path)
+        self.task_state_path = task_state_path
+        self.active_snapshot_path = active_snapshot_path
+        self.normalize_task_state_payload = normalize_task_state_payload
+        self.write_text_if_changed = write_text_if_changed
+        self.min_interval_s = max(0.0, float(min_interval_s or 0.0))
+        self.started_mono = time.perf_counter()
+        self.phase_started_mono = self.started_mono
+        self.last_write_mono = 0.0
+        self.last_phase_key = ""
+        self.phase_timings_ms: dict[str, int] = {}
+        self.phase_order: list[str] = []
+        self.latest_counts: dict[str, Any] = {}
+
+    def _record_previous_phase(self, now_mono: float) -> None:
+        if not self.last_phase_key:
+            return
+        elapsed_ms = max(0, int((now_mono - self.phase_started_mono) * 1000))
+        self.phase_timings_ms[self.last_phase_key] = (
+            int(self.phase_timings_ms.get(self.last_phase_key) or 0) + elapsed_ms
+        )
+
+    def emit(
+        self,
+        phase_key: str,
+        phase_label: str,
+        *,
+        counts: dict[str, Any] | None = None,
+        force: bool = False,
+    ) -> None:
+        clean_phase_key = clean_text(phase_key)
+        clean_phase_label = clean_text(phase_label) or clean_phase_key
+        if not clean_phase_key:
+            return
+        now_mono = time.perf_counter()
+        phase_changed = clean_phase_key != self.last_phase_key
+        if (
+            not force
+            and not phase_changed
+            and (now_mono - self.last_write_mono) < self.min_interval_s
+        ):
+            if isinstance(counts, dict):
+                self.latest_counts = {
+                    **dict(self.latest_counts),
+                    **dict(counts),
+                    "setupElapsedMs": max(0, int((now_mono - self.started_mono) * 1000)),
+                    "phaseElapsedMs": max(
+                        0,
+                        int((now_mono - self.phase_started_mono) * 1000),
+                    ),
+                }
+            return
+        if phase_changed:
+            self._record_previous_phase(now_mono)
+            self.phase_started_mono = now_mono
+            self.last_phase_key = clean_phase_key
+            if clean_phase_key not in self.phase_order:
+                self.phase_order.append(clean_phase_key)
+        self.last_write_mono = now_mono
+        merged_counts = {
+            **dict(self.latest_counts),
+            **(dict(counts) if isinstance(counts, dict) else {}),
+            "setupElapsedMs": max(0, int((now_mono - self.started_mono) * 1000)),
+            "phaseElapsedMs": max(0, int((now_mono - self.phase_started_mono) * 1000)),
+        }
+        self.latest_counts = dict(merged_counts)
+        heartbeat_at = now_iso()
+        progress = build_live_task_progress_payload(
+            active=True,
+            phase_key=clean_phase_key,
+            phase_label=clean_phase_label,
+            mode="indeterminate",
+            ratio=0.0,
+            counts=merged_counts,
+            updated_at=heartbeat_at,
+        )
+        live_payload = build_live_task_payload(
+            task_type="fetch",
+            active=True,
+            run_id=self.run_id,
+            started_at=self.started_at,
+            heartbeat_at=heartbeat_at,
+            status="running",
+            task_progress=progress,
+            summary={"queued": 0, "running": 0, "ok": 0, "error": 0, "excluded": 0},
+            work_items=[],
+            recent_events=[
+                {
+                    "timestamp": heartbeat_at,
+                    "level": "info",
+                    "taskType": "fetch",
+                    "runId": self.run_id,
+                    "phaseKey": clean_phase_key,
+                    "message": clean_phase_label,
+                }
+            ],
+            outputs={"report": self.report_path},
+        )
+        payload = self.normalize_task_state_payload(
+            live_payload,
+            run_id=self.run_id,
+            started_at=self.started_at,
+            report_path=self.report_path,
+        )
+        self.write_text_if_changed(
+            self.task_state_path,
+            json.dumps(payload, indent=2, ensure_ascii=False),
+        )
+        if self.active_snapshot_path is not None:
+            upsert_snapshot_rows(self.active_snapshot_path, [payload], snapshot_at=heartbeat_at)
+
+    def timing_payload(self) -> dict[str, Any]:
+        now_mono = time.perf_counter()
+        phase_timings = dict(self.phase_timings_ms)
+        if self.last_phase_key:
+            phase_timings[self.last_phase_key] = int(
+                phase_timings.get(self.last_phase_key) or 0
+            ) + max(0, int((now_mono - self.phase_started_mono) * 1000))
+        return {
+            "totalSetupMs": max(0, int((now_mono - self.started_mono) * 1000)),
+            "phaseTimingsMs": phase_timings,
+            "phaseOrder": list(self.phase_order),
+            "counts": dict(self.latest_counts),
+        }
 
 
 class _FetchTextLimiter:

@@ -81,6 +81,25 @@ test("formatTaskProgressCounts renders pipeline step and output counts", () => {
   );
 });
 
+test("formatTaskProgressDetail renders fetch preparation counts", () => {
+  const label = formatTaskProgressDetail("fetch", {
+    active: true,
+    phaseKey: "seeding_existing_output",
+    phaseLabel: "Seeding existing output",
+    counts: {
+      seededOutputRows: 47388,
+      selectedSourceCount: 333,
+      setupElapsedMs: 4500
+    }
+  });
+
+  assert.equal(
+    label,
+    "Seeding existing output | seeded 47,388 jobs | selected 333 sources | setup 5s"
+  );
+  assert.doesNotMatch(label, /0 sources resolved/i);
+});
+
 test("formatTaskProgressCounts does not invent zero pipeline counts", () => {
   assert.equal(formatTaskProgressCounts("pipeline", {}), "");
   assert.equal(
