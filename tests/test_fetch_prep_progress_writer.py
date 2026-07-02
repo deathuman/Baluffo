@@ -45,14 +45,19 @@ def test_fetch_prep_progress_writer_emits_compact_task_state_before_source_rows(
     snapshot = json.loads(paths.active_task_snapshot_path.read_text(encoding="utf-8"))
     assert snapshot["count"] == 1
     assert snapshot["tasks"][0]["taskProgress"]["phaseKey"] == "loading_state"
+    summary_sidecar = json.loads(
+        paths.report_path.with_name("jobs-fetch-report-summary.json").read_text(encoding="utf-8")
+    )
+    assert summary_sidecar["taskProgress"]["phaseKey"] == "loading_state"
+    assert "sources" not in summary_sidecar
 
 
 def test_fetch_prep_progress_writer_bounds_same_phase_writes(tmp_path: Path) -> None:
     paths = build_pipeline_paths(tmp_path)
-    writes: list[str] = []
+    writes: list[tuple[Path, str]] = []
 
-    def record_write(_path: Path, text: str) -> bool:
-        writes.append(text)
+    def record_write(path: Path, text: str) -> bool:
+        writes.append((path, text))
         return True
 
     writer = FetchPrepProgressWriter(
@@ -70,9 +75,15 @@ def test_fetch_prep_progress_writer_bounds_same_phase_writes(tmp_path: Path) -> 
     writer.emit("seeding_existing_output", "Seeding existing output", counts={"rows": 10})
     writer.emit("selecting_sources", "Selecting sources", counts={"selectedSourceCount": 3})
 
-    assert len(writes) == 2
-    first_payload = json.loads(writes[0])
-    second_payload = json.loads(writes[1])
+    assert len(writes) == 4
+    assert [path.name for path, _text in writes] == [
+        "jobs-fetch-tasks.json",
+        "jobs-fetch-report-summary.json",
+        "jobs-fetch-tasks.json",
+        "jobs-fetch-report-summary.json",
+    ]
+    first_payload = json.loads(writes[0][1])
+    second_payload = json.loads(writes[2][1])
     assert first_payload["taskProgress"]["phaseKey"] == "seeding_existing_output"
     assert second_payload["taskProgress"]["phaseKey"] == "selecting_sources"
     timing = writer.timing_payload()

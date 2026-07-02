@@ -359,7 +359,10 @@ def test_finalize_pipeline_run_writes_terminal_outputs_and_report_shape(
     assert calls["progress_reports"] == [
         {"force": True, "phase": {"key": "writing_outputs", "label": "Writing outputs"}}
     ]
-    assert calls["task_states"] == [{"finished_at": "2026-06-21T10:00:00+00:00", "force": True}]
+    assert calls["task_states"] == [
+        {"finished_at": "", "force": True},
+        {"finished_at": "2026-06-21T10:00:00+00:00", "force": True},
+    ]
 
     assert report["outputs"]["json"] == str(paths.json_path)
     assert report["outputs"]["csv"] == str(paths.csv_path)
@@ -378,6 +381,11 @@ def test_finalize_pipeline_run_writes_terminal_outputs_and_report_shape(
     assert report["workItems"] == [{"id": "task-1"}]
     assert report["recentEvents"] == [{"event": "source_progress"}]
     assert report["sources"][0]["name"] == "source_1"
+    sidecar = json.loads(
+        paths.report_path.with_name("jobs-fetch-report-summary.json").read_text(encoding="utf-8")
+    )
+    assert sidecar["taskProgress"]["phaseKey"] == "completed"
+    assert sidecar["sources"][0]["name"] == "source_1"
     assert report["sourceFamilies"][0]["loss"]["finalOutput"] == 1
     assert report["sourceFamilies"][0]["loss"]["dedupMerged"] == 0
     assert report["outputs"]["changed"] == {"json": True, "csv": True, "lightJson": True}

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
+from src.bridge.routes import get_fetch_report as get_fetch_report_route
 from src.bridge.routes.get_routes import handle_get
 from tests.helpers.bridge_api import FakeDesktopLocalDataStore, FakeHandler, make_stub_bridge_api
 
@@ -103,6 +105,106 @@ def test_fetch_report_summary_returns_bounded_payload(tmp_path: Path) -> None:
     assert payload["summary"]["keptCount"] == 250
     assert payload["summary"]["failedSources"] == 2
     assert "sources" not in payload
+
+
+def test_fetch_report_summary_uses_bounded_task_artifact_before_large_report(
+    tmp_path: Path,
+) -> None:
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
+    api.JOBS_FETCH_REPORT_PATH.write_text(
+        '{"runId":"fetch_large","sources":[' + ('{"details":"' + ("x" * 1024) + '"},' * 2048),
+        encoding="utf-8",
+    )
+    (tmp_path / "jobs-fetch-tasks.json").write_text(
+        json.dumps(
+            {
+                "runId": "fetch_large",
+                "startedAt": "2026-07-02T10:00:00Z",
+                "finishedAt": "",
+                "active": True,
+                "summary": {"outputCount": 42, "failedSources": 3, "sourceCount": 336},
+                "taskProgress": {
+                    "active": True,
+                    "phaseKey": "writing_outputs",
+                    "phaseLabel": "Writing outputs",
+                    "counts": {
+                        "resolvedSources": 336,
+                        "sourceCount": 336,
+                        "outputCount": 42,
+                        "failedSources": 3,
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    handler = FakeHandler()
+    with mock.patch.object(
+        get_fetch_report_route,
+        "read_json_prefix",
+        side_effect=AssertionError("large fetch report must not be scanned for summary"),
+    ):
+        result = handle_get(handler, api=api, path="/ops/fetch-report", query={"view": ["summary"]})
+
+    assert result is True
+    payload = handler.sent[-1]["payload"]
+    assert handler.sent[-1]["status"] == 200
+    assert payload["runId"] == "fetch_large"
+    assert payload["summaryView"] is True
+    assert payload["detailLevel"] == "summary"
+    assert payload["taskProgress"]["phaseKey"] == "writing_outputs"
+    assert payload["summary"]["outputCount"] == 42
+    assert "sources" not in payload
+
+
+def test_fetch_report_live_view_uses_summary_sidecar_and_caps_sources(tmp_path: Path) -> None:
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
+    (tmp_path / "jobs-fetch-report-summary.json").write_text(
+        json.dumps(
+            {
+                "ok": True,
+                "runId": "fetch_terminal",
+                "startedAt": "2026-07-02T10:00:00Z",
+                "finishedAt": "2026-07-02T10:05:00Z",
+                "summary": {"outputCount": 85, "failedSources": 4, "sourceCount": 500},
+                "taskProgress": {
+                    "active": False,
+                    "phaseKey": "completed",
+                    "phaseLabel": "Completed",
+                    "counts": {"sourceCount": 500, "resolvedSources": 500, "outputCount": 85},
+                },
+                "sources": [
+                    {"name": f"source_{index}", "status": "ok", "details": [{"large": "no"}]}
+                    for index in range(40)
+                ],
+                "sourceCount": 500,
+            }
+        ),
+        encoding="utf-8",
+    )
+    api.JOBS_FETCH_REPORT_PATH.write_text("not scanned", encoding="utf-8")
+
+    handler = FakeHandler()
+    with mock.patch.object(
+        get_fetch_report_route,
+        "load_fetch_report_with_dedup_review_state",
+        side_effect=AssertionError("live view must not load full fetch report"),
+    ):
+        result = handle_get(handler, api=api, path="/ops/fetch-report", query={"view": ["live"]})
+
+    assert result is True
+    payload = handler.sent[-1]["payload"]
+    assert handler.sent[-1]["status"] == 200
+    assert payload["runId"] == "fetch_terminal"
+    assert payload["detailLevel"] == "live"
+    assert payload["summary"]["outputCount"] == 85
+    assert payload["sourceCount"] == 500
+    assert payload["sourcesTruncated"] is True
+    assert len(payload["sources"]) <= 25
+    assert all("details" not in row for row in payload["sources"])
 
 
 def test_discovery_report_rejects_unknown_view(tmp_path: Path) -> None:

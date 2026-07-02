@@ -1146,6 +1146,7 @@ test("admin fetcher controller syncs source tables once after completion", async
   global.clearTimeout = () => {};
 
   let manualReportLoads = 0;
+  let summaryLoads = 0;
   let controller;
   try {
     controller = createAdminFetcherController({
@@ -1170,6 +1171,7 @@ test("admin fetcher controller syncs source tables once after completion", async
             }
           };
         }
+        if (path === "/ops/fetch-report?view=summary") { summaryLoads += 1; return { runId: "fetch_done_1", startedAt: "2026-03-08T10:00:00.000Z", finishedAt: "2026-03-08T10:05:00.000Z", summary: { outputCount: 12, failedSources: 0, excludedSources: 0, sourceCount: 8 }, taskProgress: { active: false, phaseKey: "completed", phaseLabel: "Completed", mode: "determinate", ratio: 1, counts: { resolvedSources: 8, sourceCount: 8, outputCount: 12 } } }; }
         return {};
       },
       postBridge: async () => ({}),
@@ -1231,7 +1233,8 @@ test("admin fetcher controller syncs source tables once after completion", async
     controller.startFetcherCompletionWatch();
     await scheduled[scheduled.length - 1]();
 
-    assert.equal(manualReportLoads, 1);
+    assert.equal(manualReportLoads, 0);
+    assert.equal(summaryLoads, 1);
     assert.equal(syncCalls.length, 1);
     assert.equal(syncCalls[0].taskType, "fetch");
     assert.equal(syncCalls[0].completionSignature, "fetch_done_1|2026-03-08T10:05:00.000Z");

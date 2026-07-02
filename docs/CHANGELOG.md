@@ -10,6 +10,23 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.112] - 2026-07-02
+
+### Fixed
+- Umbrel active/final fetch state no longer depends on request-time full fetch-report hydration. Fetch finalization writes a bounded `jobs-fetch-report-summary.json` sidecar on phase changes and terminal closeout, and compact Admin polling surfaces use that sidecar, `jobs-fetch-tasks.json`, and the active snapshot before any full report path.
+- `/ops/fetch-report?view=summary` and `/ops/fetch-report?view=live` now return bounded payloads for large reports; live view caps source samples and points detail callers to `/ops/fetch-report/sources`.
+- Fetch finalization publishes `writing_outputs` to hot task state before heavy output/report writes, so `/ops/task-live/fetch?view=summary` and `/ops/task-state?view=summary` cannot remain stuck on source execution while terminal report closeout is still in progress.
+- The container gateway now gives `/sync/status?view=summary` a bounded summary fallback/cache and rejects active schedule payloads whose `nextRunAt` is already past, preventing 504s, false disabled sync config, and stale schedule triggers during active work.
+- Admin fetch completion polling now uses the compact fetch summary route instead of the full `/ops/fetch-report` body.
+
+### Tests
+- Added focused regressions for oversized fetch summary/live routes, compact completion polling, `writing_outputs` hot-state propagation, gateway sync timeout fallback/cache, active schedule stale-date rejection, and bounded task-state summary sidecar recovery.
+
+### Notes
+- This supersedes `0.2.111`, which exposed fetch preparation phases but still let compact Admin final-state routes depend on full fetch-report hydration and slow gateway paths on real Umbrel reports. No public desktop tag is created.
+- Source tables may remain visibly delayed during active fetch, but pipeline final state, schedule, sync readiness, and control-panel state now use bounded hot summaries and gateway fallbacks.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.111] - 2026-07-02
 
 ### Fixed

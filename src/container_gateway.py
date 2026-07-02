@@ -40,6 +40,7 @@ DEFAULT_INTERNAL_BRIDGE_PORT = 18080
 DEFAULT_PROXY_TIMEOUT_SECONDS = 8.0
 CONTROL_PROXY_TIMEOUT_SECONDS = 1.0
 SCHEDULE_BRIDGE_TIMEOUT_SECONDS = 2.5
+SYNC_SUMMARY_BRIDGE_TIMEOUT_SECONDS = 1.5
 
 
 def _coerce_port(value: Any, default: int) -> int:
@@ -56,6 +57,22 @@ def _now_iso() -> str:
 
 def _json_bytes(payload: Any) -> bytes:
     return json.dumps(payload, ensure_ascii=True, separators=(",", ":")).encode("utf-8")
+
+
+def _read_json_file(path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _write_json_file(path: Path, payload: dict[str, Any]) -> None:
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_suffix(f"{target.suffix}.tmp")
+    tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(target)
 
 
 def _route_path(raw_path: str) -> str:
@@ -146,6 +163,54 @@ class _GatewayState:
 
     def _fresh_active_snapshot(self) -> dict[str, Any] | None:
         return load_fresh_snapshot(snapshot_path(self.data_dir))
+
+    def _sync_summary_cache_path(self) -> Path:
+        return self.data_dir / "sync-status-summary-cache.json"
+
+    def _schedule_cache_path(self) -> Path:
+        return self.data_dir / "jobs-pipeline-schedule-cache.json"
+
+    def _cache_sync_summary(self, payload: dict[str, Any]) -> None:
+        config = payload.get("config")
+        if not isinstance(config, dict):
+            return
+        if str(config.get("state") or "").strip().lower() == "disabled" and not config.get("ready"):
+            return
+        _write_json_file(self._sync_summary_cache_path(), dict(payload))
+
+    def sync_status_summary_payload(self) -> dict[str, Any]:
+        bridge_payload = self._bridge_json_payload(
+            "/sync/status?view=summary",
+            timeout=SYNC_SUMMARY_BRIDGE_TIMEOUT_SECONDS,
+        )
+        if bridge_payload:
+            self._cache_sync_summary(bridge_payload)
+            return bridge_payload
+        cached = _read_json_file(self._sync_summary_cache_path())
+        if cached:
+            return {
+                **cached,
+                "ok": True,
+                "summaryView": True,
+                "degraded": True,
+                "delayed": True,
+                "source": "container-gateway-sync-cache",
+                "gatewayReady": True,
+                "bridgeAlive": self.bridge_alive(),
+                "bridgeListening": self.bridge_listening(),
+            }
+        return {
+            "ok": True,
+            "summaryView": True,
+            "detailLevel": "summary",
+            "degraded": True,
+            "delayed": True,
+            "source": "container-gateway-sync-delayed",
+            "runtime": {"state": "delayed", "message": "Sync status delayed."},
+            "gatewayReady": True,
+            "bridgeAlive": self.bridge_alive(),
+            "bridgeListening": self.bridge_listening(),
+        }
 
     def _hot_snapshot_is_active(
         self,
@@ -255,6 +320,58 @@ class _GatewayState:
             "bridgeListening": self.bridge_listening(),
         }
 
+    def _datetime_is_past_or_due(self, value: Any) -> bool:
+        parsed = self._parse_iso_datetime(value)
+        if parsed is None:
+            return False
+        now = datetime.now(parsed.tzinfo) if parsed.tzinfo is not None else datetime.now()
+        return now >= parsed
+
+    def _schedule_payload_has_active_past_next_run(self, payload: dict[str, Any] | None) -> bool:
+        if not isinstance(payload, dict):
+            return False
+        status = payload.get("status")
+        if not isinstance(status, dict):
+            schedule = payload.get("schedule")
+            if isinstance(schedule, dict):
+                status = schedule.get("pipeline")
+        if not isinstance(status, dict):
+            return False
+        pipeline = status.get("pipeline")
+        active = bool(isinstance(pipeline, dict) and pipeline.get("active"))
+        if not active:
+            active = bool(self.pipeline_status_payload().get("active"))
+        return bool(active and self._datetime_is_past_or_due(status.get("nextRunAt")))
+
+    def _cache_schedule_payload(self, payload: dict[str, Any]) -> None:
+        if self._schedule_payload_has_active_past_next_run(payload):
+            return
+        status = payload.get("status")
+        if isinstance(status, dict) and self._datetime_is_past_or_due(status.get("nextRunAt")):
+            return
+        _write_json_file(self._schedule_cache_path(), dict(payload))
+
+    def jobs_pipeline_schedule_payload(self) -> dict[str, Any]:
+        bridge_payload = self._bridge_json_payload(
+            "/tasks/jobs-pipeline-schedule",
+            timeout=SCHEDULE_BRIDGE_TIMEOUT_SECONDS,
+        )
+        if bridge_payload and not self._schedule_payload_has_active_past_next_run(bridge_payload):
+            self._cache_schedule_payload(bridge_payload)
+            return bridge_payload
+        cached = _read_json_file(self._schedule_cache_path())
+        if cached and not self._schedule_payload_has_active_past_next_run(cached):
+            return {
+                **cached,
+                "degraded": True,
+                "delayed": True,
+                "source": "container-gateway-schedule-cache",
+                "gatewayReady": True,
+                "bridgeAlive": self.bridge_alive(),
+                "bridgeListening": self.bridge_listening(),
+            }
+        return self.pipeline_schedule_payload()
+
     def _bridge_json_payload(self, path: str, *, timeout: float = 0.5) -> dict[str, Any] | None:
         if not self.bridge_alive() or not self.bridge_listening(timeout=0.05):
             return None
@@ -304,18 +421,24 @@ class _GatewayState:
         return {"pipeline": pipeline}
 
     def _admin_schedule_payload(self) -> dict[str, Any]:
-        bridge_payload = self._bridge_json_payload(
-            "/tasks/jobs-pipeline-schedule",
-            timeout=SCHEDULE_BRIDGE_TIMEOUT_SECONDS,
-        )
+        bridge_payload = self.jobs_pipeline_schedule_payload()
         bridge_schedule = self._schedule_from_pipeline_schedule_payload(bridge_payload)
         if bridge_schedule is not None:
+            source = str(bridge_payload.get("source") or "container-gateway-bridge-schedule")
+            schedule_delayed = bool(
+                bridge_payload.get("scheduleDelayed")
+                or bridge_payload.get("delayed")
+                or source in {"container-gateway-fallback", "container-gateway-schedule-cache"}
+            )
             return {
                 "ok": True,
                 "summaryView": True,
                 "degraded": True,
-                "source": "container-gateway-bridge-schedule",
+                "source": source,
                 "schedule": bridge_schedule,
+                "savedConfig": bridge_payload.get("savedConfig") or {},
+                "status": bridge_payload.get("status") or {},
+                "scheduleDelayed": schedule_delayed,
                 "gatewayReady": True,
                 "bridgeAlive": self.bridge_alive(),
                 "bridgeListening": self.bridge_listening(),
@@ -426,7 +549,7 @@ class _GatewayState:
                 return {
                     "pending": False,
                     "due": False,
-                    "nextRunAt": next_run_at.isoformat(),
+                    "nextRunAt": "",
                     "lastPipelineFinishedAt": last_finished_at,
                     "blockedByActiveRun": True,
                     "activeScheduledRun": True,
@@ -451,7 +574,7 @@ class _GatewayState:
                 return {
                     "pending": False,
                     "due": False,
-                    "nextRunAt": next_run_at.isoformat(),
+                    "nextRunAt": "",
                     "lastPipelineFinishedAt": last_finished_at,
                     "blockedByActiveRun": True,
                     "activeScheduledRun": True,
@@ -723,10 +846,7 @@ class _GatewayHandler(BaseHTTPRequestHandler):
     def _handle_gateway_control_get(self, path: str, view: str) -> bool:
         state = self._state()
         if path == "/tasks/jobs-pipeline-schedule":
-            self._proxy_or_fallback(
-                state.pipeline_schedule_payload,
-                timeout=SCHEDULE_BRIDGE_TIMEOUT_SECONDS,
-            )
+            self.send_json(state.jobs_pipeline_schedule_payload())
             return True
         if path == "/ops/dashboard-health" and view == "summary":
             self._proxy_or_fallback(state.dashboard_health_summary_payload)
@@ -758,6 +878,9 @@ class _GatewayHandler(BaseHTTPRequestHandler):
             if payload is not None:
                 self.send_json(payload)
                 return
+        if path == "/sync/status" and view == "summary":
+            self.send_json(state.sync_status_summary_payload())
+            return
         if self._handle_gateway_control_get(path, view):
             return
         if state.static_service.handle_get(self, path=path):

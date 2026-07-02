@@ -16,6 +16,7 @@ from typing import Any, Protocol, cast
 from urllib.parse import urlparse
 
 from src.bridge.active_task_snapshot import upsert_snapshot_rows
+from src.bridge.fetch_report_summary import write_fetch_report_summary_artifact
 from src.jobs.models import CanonicalJob
 from src.jobs.pipeline_bootstrap import PipelinePaths
 from src.jobs.text_utils import clean_text
@@ -169,6 +170,12 @@ class FetchPrepProgressWriter:
         self.write_text_if_changed(
             self.task_state_path,
             json.dumps(payload, indent=2, ensure_ascii=False),
+        )
+        write_fetch_report_summary_artifact(
+            self.report_path,
+            payload,
+            write_text_if_changed=self.write_text_if_changed,
+            include_sources=False,
         )
         if self.active_snapshot_path is not None:
             upsert_snapshot_rows(self.active_snapshot_path, [payload], snapshot_at=heartbeat_at)
@@ -536,6 +543,13 @@ def write_progress_report(
         write_text_if_changed(
             paths.report_path, json.dumps(progress_payload, indent=2, ensure_ascii=False)
         )
+        if force or phase_changed:
+            write_fetch_report_summary_artifact(
+                paths.report_path,
+                progress_payload,
+                write_text_if_changed=write_text_if_changed,
+                include_sources=True,
+            )
 
 
 def make_task_state_writer(
@@ -569,6 +583,13 @@ def make_task_state_writer(
             write_text_if_changed(
                 task_state_path, json.dumps(payload, indent=2, ensure_ascii=False)
             )
+            if force or finished_at:
+                write_fetch_report_summary_artifact(
+                    report_path,
+                    payload,
+                    write_text_if_changed=write_text_if_changed,
+                    include_sources=False,
+                )
             if active_snapshot_path is not None:
                 upsert_snapshot_rows(
                     active_snapshot_path,

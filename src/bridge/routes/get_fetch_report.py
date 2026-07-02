@@ -13,6 +13,11 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from src.bridge.fetch_report_review_state import load_fetch_report_with_dedup_review_state
+from src.bridge.fetch_report_summary import (
+    compact_fetch_report_summary_payload,
+    load_fetch_report_summary_artifact,
+    load_fetch_task_summary_artifact,
+)
 from src.bridge.routes.get_fetch_report_sources import (
     FetchReportRouteApi,
     fetch_report_sources_payload,
@@ -29,9 +34,6 @@ from src.bridge.routes.route_payload_helpers import (
     cached_summary_payload as _cached_summary_payload,
 )
 from src.bridge.routes.route_payload_helpers import (
-    clean_text as _clean_text,
-)
-from src.bridge.routes.route_payload_helpers import (
     log_chunk_payload_from_path as _log_chunk_payload_from_path,
 )
 from src.bridge.routes.route_payload_helpers import path_signature as _path_signature
@@ -43,7 +45,7 @@ from src.shared.partial_json import (
 )
 
 _FETCH_REPORT_SUMMARY_CACHE: dict[str, Any] = {}
-_FETCH_REPORT_SUMMARY_SCAN_MAX_BYTES = 16 * 1024 * 1024
+_FETCH_REPORT_SUMMARY_SCAN_MAX_BYTES = 1024 * 1024
 
 
 class _FetchReportRouteApi(FetchReportRouteApi, Protocol):
@@ -52,11 +54,31 @@ class _FetchReportRouteApi(FetchReportRouteApi, Protocol):
 
 def _fetch_report_summary_payload_from_file(path: Any) -> dict[str, Any]:
     report_path = Path(path) if path else None
-    signature = _path_signature(report_path)
-    if not report_path or signature is None:
+    if not report_path:
+        return {"ok": True, "summaryView": True, "detailLevel": "summary", "summary": {}}
+    signature = (
+        _path_signature(report_path),
+        _path_signature(report_path.with_name("jobs-fetch-report-summary.json")),
+        _path_signature(report_path.with_name("jobs-fetch-tasks.json")),
+    )
+    if signature[0] is None and signature[1] is None and signature[2] is None:
         return {"ok": True, "summaryView": True, "detailLevel": "summary", "summary": {}}
 
     def _build() -> dict[str, Any]:
+        sidecar = load_fetch_report_summary_artifact(report_path)
+        if sidecar:
+            return compact_fetch_report_summary_payload(
+                sidecar,
+                detail_level="summary",
+                source="fetch-report-summary-artifact",
+            )
+        task_summary = load_fetch_task_summary_artifact(report_path)
+        if task_summary:
+            return compact_fetch_report_summary_payload(
+                task_summary,
+                detail_level="summary",
+                source="jobs-fetch-tasks",
+            )
         text = read_json_prefix(
             report_path,
             max_bytes=_FETCH_REPORT_SUMMARY_SCAN_MAX_BYTES,
@@ -68,51 +90,56 @@ def _fetch_report_summary_payload_from_file(path: Any) -> dict[str, Any]:
         task_progress = _as_dict(decode_json_span(text, spans, "taskProgress", {}))
         timing = _as_dict(decode_json_span(text, spans, "timing", {}, max_bytes=64 * 1024))
         return {
-            "ok": True,
-            "summaryView": True,
-            "detailLevel": "summary",
-            "runId": _clean_text(decode_json_span(text, spans, "runId", "")),
-            "status": _clean_text(decode_json_span(text, spans, "status", "")),
-            "startedAt": _clean_text(decode_json_span(text, spans, "startedAt", "")),
-            "finishedAt": _clean_text(decode_json_span(text, spans, "finishedAt", "")),
-            "summary": {
-                key: summary.get(key)
-                for key in (
-                    "outputCount",
-                    "keptCount",
-                    "fetchedCount",
-                    "failedSources",
-                    "totalSources",
-                    "successfulSources",
-                    "excludedSources",
-                    "durationMs",
-                )
-                if key in summary
-            },
-            "taskProgress": {
-                "active": bool(task_progress.get("active")),
-                "phase": _clean_text(task_progress.get("phase")),
-                "label": _clean_text(task_progress.get("label") or task_progress.get("phaseLabel")),
-                "percent": task_progress.get("percent", 0),
-            },
-            "timing": {
-                "durationMs": timing.get("durationMs"),
-                "fetchAndParseMs": timing.get("fetchAndParseMs"),
-            },
+            **compact_fetch_report_summary_payload(
+                {
+                    "runId": decode_json_span(text, spans, "runId", ""),
+                    "status": decode_json_span(text, spans, "status", ""),
+                    "startedAt": decode_json_span(text, spans, "startedAt", ""),
+                    "finishedAt": decode_json_span(text, spans, "finishedAt", ""),
+                    "summary": summary,
+                    "taskProgress": task_progress,
+                    "timing": timing,
+                },
+                detail_level="summary",
+                source="fetch-report-prefix",
+            ),
         }
 
     return _cached_summary_payload(_FETCH_REPORT_SUMMARY_CACHE, signature, _build)
 
 
-def _compact_live_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    compact_payload = dict(payload or {})
-    sources = _as_list(payload.get("sources"))
-    compact_payload["sources"] = [
-        {key: value for key, value in row.items() if key != "details"}
-        for row in sources
-        if isinstance(row, dict)
-    ]
-    return compact_payload
+def _fetch_report_live_payload_from_file(path: Any) -> dict[str, Any]:
+    report_path = Path(path) if path else None
+    if not report_path:
+        return {
+            "ok": True,
+            "summaryView": True,
+            "detailLevel": "live",
+            "summary": {},
+            "sources": [],
+        }
+    sidecar = load_fetch_report_summary_artifact(report_path)
+    if sidecar:
+        return compact_fetch_report_summary_payload(
+            sidecar,
+            detail_level="live",
+            source="fetch-report-summary-artifact",
+            include_sources=True,
+        )
+    task_summary = load_fetch_task_summary_artifact(report_path)
+    if task_summary:
+        return compact_fetch_report_summary_payload(
+            task_summary,
+            detail_level="live",
+            source="jobs-fetch-tasks",
+            include_sources=True,
+        )
+    return {
+        **_fetch_report_summary_payload_from_file(report_path),
+        "detailLevel": "live",
+        "sources": [],
+        "sourcesTruncated": False,
+    }
 
 
 def _handle_fetch_report_route(
@@ -139,6 +166,23 @@ def _handle_fetch_report_route(
                 failed=failed,
             )
         return True
+    if view == "live":
+        started_at = time.perf_counter()
+        failed = True
+        try:
+            handler.send_json(_fetch_report_live_payload_from_file(api.JOBS_FETCH_REPORT_PATH))
+            failed = False
+        finally:
+            record_storage_read_metric(
+                api,
+                surface="sourceRuns.reportLiveSummary",
+                artifact="jobs-fetch-report-summary.json",
+                storage_kind="json",
+                started_at=started_at,
+                row_count=0,
+                failed=failed,
+            )
+        return True
     started_at = time.perf_counter()
     source = "json"
     source_count = 0
@@ -154,8 +198,6 @@ def _handle_fetch_report_route(
         if view != "live" and isinstance(payload, dict):
             payload = hydrate_fetch_report_sources_from_sqlite(api, payload)
             source = "sqlite" if _as_list(payload.get("sources")) else "json"
-        if view == "live" and isinstance(payload, dict):
-            payload = _compact_live_fetch_report_payload(payload)
         if isinstance(payload, dict):
             source_count = len(_as_list(payload.get("sources")))
         handler.send_json(payload)

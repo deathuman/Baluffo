@@ -80,6 +80,7 @@ Optional overrides:
 - `data/jobs-fetch-report.json`
   - contract keys: `runtime`, `summary`, `sources`.
   - includes output file paths under `outputs`.
+  - `data/jobs-fetch-report-summary.json` is the bounded hot-summary sidecar for Admin active/final polling. It is written on phase changes that already update hot task state and once at terminal closeout, and it must stay compact enough for `/ops/fetch-report?view=summary`, `/ops/fetch-report?view=live`, `/ops/task-live/fetch?view=summary`, and `/ops/task-state?view=summary` to avoid request-time parsing of a multi-MiB full report.
   - `runtime.setupTiming` is an additive compact diagnostic for the pre-source setup window. It includes `totalSetupMs`, `phaseTimingsMs`, `phaseOrder`, and bounded scalar `counts` such as seeded output rows, selected sources, exclusions, and setup elapsed time. It exists to explain fetch preparation latency without adding full diagnostics or extra polling.
   - `summary.okCleanSources` and `summary.okWithWarningSources` are additive success diagnostics; source rows still use `status: "ok"` for both.
   - `summary.needsReviewBreakdown` includes both shaped static diagnostic counts and raw comparison counters: `rawMarkerCount` and `includedCount`.
@@ -88,6 +89,7 @@ Optional overrides:
 - `GET /ops/fetch-report`
   - keeps the current payload shape.
   - when `sourceRuns=sqlite`, terminal source rows are hydrated from SQLite/archive; `?view=live` remains compact and omits bulky `details`.
+  - `GET /ops/fetch-report?view=summary` and `GET /ops/fetch-report?view=live` are hot-path compact views. They must use `jobs-fetch-report-summary.json`, `jobs-fetch-tasks.json`, or another bounded artifact before considering the full report, and `view=live` must cap source samples with truncation metadata.
 - `GET /ops/fetch-report/sources`
   - additive bounded terminal-source query with `runId`, `limit`, `offset`, and optional `status`.
   - falls back to `jobs-fetch-report.json` rows when `sourceRuns` is not authoritative.

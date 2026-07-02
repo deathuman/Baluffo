@@ -117,6 +117,49 @@ def test_task_state_summary_uses_fresh_hot_snapshot_without_lifecycle_rows(tmp_p
     assert payload["tasks"][0]["workItemCount"] == 1
 
 
+def test_task_state_summary_prefers_fetch_writing_outputs_sidecar(tmp_path) -> None:
+    run_id = "fetch_writing_outputs_1"
+    api, calls = _make_ops_api(
+        tmp_path,
+        current_rows=[
+            {
+                "taskType": "fetch",
+                "runId": run_id,
+                "status": "running",
+                "startedAt": "2026-06-05T09:00:00+00:00",
+            }
+        ],
+        recent_rows=[],
+    )
+    (tmp_path / "jobs-fetch-report-summary.json").write_text(
+        """{
+  "ok": true,
+  "summaryView": true,
+  "detailLevel": "summary",
+  "runId": "fetch_writing_outputs_1",
+  "status": "running",
+  "startedAt": "2026-06-05T09:00:00+00:00",
+  "summary": {"outputCount": 25, "sourceCount": 4},
+  "taskProgress": {
+    "active": true,
+    "phaseKey": "writing_outputs",
+    "phaseLabel": "Writing outputs",
+    "counts": {"outputCount": 25, "sourceCount": 4}
+  }
+}""",
+        encoding="utf-8",
+    )
+
+    payload = api.get_current_task_state_summary_payload()
+
+    assert calls["current"] == 1
+    row = payload["tasks"][0]
+    assert row["runId"] == run_id
+    assert row["taskProgress"]["phaseKey"] == "writing_outputs"
+    assert row["taskProgress"]["phaseLabel"] == "Writing outputs"
+    assert row["summary"]["outputCount"] == 25
+
+
 def test_task_live_summary_uses_fresh_hot_snapshot_without_projection(tmp_path) -> None:
     api, calls = _make_ops_api(
         tmp_path,

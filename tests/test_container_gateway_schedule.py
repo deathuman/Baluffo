@@ -177,6 +177,7 @@ def test_gateway_schedule_fallback_active_due_waits_for_current_pipeline(
     bootstrap = state.admin_bootstrap_payload()
 
     assert payload["status"]["due"] is False
+    assert payload["status"]["nextRunAt"] == ""
     assert payload["status"]["nextAfterCurrentCompletes"] is True
     assert dashboard["schedule"]["pipeline"]["nextAfterCurrentCompletes"] is True
     assert dashboard["scheduleDelayed"] is True
@@ -304,9 +305,8 @@ def test_gateway_direct_schedule_route_uses_schedule_timeout(tmp_path: Path) -> 
         def _state(self) -> _GatewayState:
             return state
 
-        def _proxy_or_fallback(self, fallback_payload, *, timeout: float = 0.75) -> None:
-            captured["fallback_payload"] = fallback_payload
-            captured["timeout"] = timeout
+        def send_json(self, payload) -> None:
+            captured["payload"] = payload
 
     handled = container_gateway._GatewayHandler._handle_gateway_control_get(
         _DummyHandler(),
@@ -315,8 +315,7 @@ def test_gateway_direct_schedule_route_uses_schedule_timeout(tmp_path: Path) -> 
     )
 
     assert handled is True
-    assert captured["fallback_payload"] == state.pipeline_schedule_payload
-    assert captured["timeout"] == container_gateway.SCHEDULE_BRIDGE_TIMEOUT_SECONDS
+    assert captured["payload"] == state.pipeline_schedule_payload()
 
 
 def test_gateway_degraded_admin_fallback_keeps_computed_pipeline_schedule(

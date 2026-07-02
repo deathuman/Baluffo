@@ -5,7 +5,7 @@
 > - **Canonical for:** target storage authority boundaries, SQLite connection and transaction discipline, migration safety, export and rollback behavior, and hot-path size budgets
 > - **Not canonical for:** current endpoint payload fields, current JSON artifact schemas, source-sync v2 schema details, or Jobs frontend row fields
 > - **Then inspect:** [`sync-contract.md`](sync-contract.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`admin-bridge-api.md`](admin-bridge-api.md), [`fetcher-runtime-contracts.md`](fetcher-runtime-contracts.md), [`LOCAL_SETUP.md`](LOCAL_SETUP.md), and archived rollout history in [`archive/runtime-storage-and-sync-architecture-plan.md`](archive/runtime-storage-and-sync-architecture-plan.md) only when historical provenance is needed
-> - **Last updated:** 2026-06-01
+> - **Last updated:** 2026-07-02
 
 This document defines the current runtime storage contract. The archived rollout plan records sequencing and closeout evidence; this active contract owns the invariants future code must preserve.
 
@@ -180,12 +180,13 @@ Hot-path payload growth must be impossible by test.
 | live task summary | 256 KiB |
 | compact fetch report | 1 MiB |
 | `/ops/task-state?view=summary` response | 256 KiB |
+| `/ops/fetch-report?view=summary` and `/ops/fetch-report?view=live` response | 64 KiB |
 | `/registry/conflicts?view=summary` response | 256 KiB |
 | `/ops/task-live/fetch` response | 1 MiB unless paginated |
 | per sync shard | 5-10 MiB |
 | compressed debug archive | warning at 25 MiB |
 
-Summary-route budgets cover compute time as well as response size. Admin startup routes must avoid full registry normalization, JSON parity checks, work-item expansion, and full conflict-card/evidence construction. This applies while `sourceRegistry=sqlite` and after rollback to `sourceRegistry=json`; JSON-mode summaries may use lightweight artifact counts/fingerprints instead of exact normalized registry state. `/registry/conflicts?view=summary` may return `summaryStatus: "pending"` when exact conflict counts are not already cached.
+Summary-route budgets cover compute time as well as response size. Admin startup and active/final-state routes must avoid full registry normalization, JSON parity checks, work-item expansion, full fetch-report parsing, and full conflict-card/evidence construction. This applies while `sourceRegistry=sqlite` and after rollback to `sourceRegistry=json`; JSON-mode summaries may use lightweight artifact counts/fingerprints instead of exact normalized registry state. `/registry/conflicts?view=summary` may return `summaryStatus: "pending"` when exact conflict counts are not already cached.
 
 ## Benchmark Contract
 

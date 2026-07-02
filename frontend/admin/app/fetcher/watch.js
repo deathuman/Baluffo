@@ -189,7 +189,7 @@ export function createAdminFetcherWatchController({
 
     const finishedMs = parseReportTimestampMs(terminalPayload?.finishedAt);
     if (finishedMs >= (state.fetcherLaunchAtMs - 1000)) {
-      const finalReport = await fetchJobsFetchReportJson().catch(() => null);
+      const finalReport = await getBridge("/ops/fetch-report?view=summary", { timeoutMs: 5000 }).catch(() => null);
       const completedPayload = finalReport || terminalPayload;
       state.latestFetcherReportCache = completedPayload || state.latestFetcherReportCache;
       updateFetcherProgressFromReport(completedPayload, { running: false });

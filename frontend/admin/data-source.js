@@ -42,6 +42,7 @@ const LIGHTWEIGHT_GET_DEDUPE_PATHS = new Set([
   "/admin/ops-tab-counts?view=summary",
   "/ops/health?view=ready",
   "/ops/dashboard-health?view=summary",
+  "/ops/fetch-report?view=summary",
   "/ops/fetch-kpis?view=summary",
   "/ops/task-state?view=summary",
   "/sync/status?view=summary",

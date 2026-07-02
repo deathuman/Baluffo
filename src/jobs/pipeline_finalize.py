@@ -14,6 +14,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from src.bridge.fetch_report_summary import write_fetch_report_summary_artifact
 from src.contracts import SCHEMA_VERSION
 from src.core.contracts import validate_canonical_jobs_payload
 from src.jobs.canonicalize import snapshot_sector_quality_audit
@@ -44,6 +45,7 @@ from src.jobs.models import CanonicalJob
 from src.jobs.pipeline_runtime_summary import (
     build_detailed_source_rows,
     snapshot_task_rows,
+    update_fetch_runtime_phase,
 )
 from src.jobs.pipeline_timing import build_runtime_timing_summary, percentile_ms
 from src.jobs.registry import STUDIO_SOURCE_REGISTRY
@@ -883,6 +885,14 @@ def finalize_pipeline_run(
 
     progress_phase["key"] = "writing_outputs"
     progress_phase["label"] = "Writing outputs"
+    if hasattr(task_runtime, "task_lock"):
+        update_fetch_runtime_phase(
+            task_runtime,
+            phase_key="writing_outputs",
+            phase_label="Writing outputs",
+            output_count=len(canonical_rows),
+        )
+    write_task_state(finished_at="", force=True)
     write_progress_report(force=True)
     wrote_json, wrote_csv, wrote_light_json = _write_output_rows(paths, deduped_payload_rows)
     json_bytes, csv_bytes, light_json_bytes = _output_sizes(paths)
@@ -1065,6 +1075,12 @@ def finalize_pipeline_run(
         paths.report_path, json.dumps(report_payload, indent=2, ensure_ascii=False)
     )
     write_task_state(finished_at=finished_at, force=True)
+    write_fetch_report_summary_artifact(
+        paths.report_path,
+        report_payload,
+        write_text_if_changed=write_hot_text_if_changed,
+        include_sources=True,
+    )
     write_success_cache(paths.success_cache_path, source_reports)
     write_source_state(paths.source_state_path, source_state_rows)
     write_job_lifecycle_state(paths.lifecycle_state_path, lifecycle_rows)

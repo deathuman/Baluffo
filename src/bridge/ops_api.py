@@ -28,6 +28,10 @@ from src.bridge import ops_task_live as _ops_task_live
 from src.bridge import report_normalizer
 from src.bridge import run_history_api as _run_history_api
 from src.bridge.fetch_report_review_state import load_fetch_report_with_dedup_review_state
+from src.bridge.fetch_report_summary import (
+    load_fetch_report_summary_artifact,
+    load_fetch_task_summary_artifact,
+)
 from src.bridge.performance_profile import time_operation
 from src.bridge.task_abort_evidence import row_abort_requested
 from src.shared.json_shapes import as_json_object
@@ -440,6 +444,54 @@ def _compact_task_state_payload(payload: dict[str, Any]) -> TaskStatePayload:
         "tasks": tasks,
         "count": len(tasks),
         "summary": True,
+    }
+
+
+def _bounded_fetch_summary_for_run(paths: OpsPaths, run_id: str) -> dict[str, Any]:
+    clean_run_id = str(run_id or "").strip()
+    if not clean_run_id:
+        return {}
+    for payload in (
+        load_fetch_report_summary_artifact(paths.jobs_fetch_report),
+        load_fetch_task_summary_artifact(paths.jobs_fetch_report),
+    ):
+        if not isinstance(payload, dict):
+            continue
+        if str(payload.get("runId") or "").strip() == clean_run_id:
+            return payload
+    return {}
+
+
+def _merge_bounded_fetch_summary_for_task_state_row(
+    route_row: dict[str, Any],
+    *,
+    paths: OpsPaths,
+    task_type: str,
+    run_id: str,
+    lifecycle_row: dict[str, Any],
+) -> dict[str, Any]:
+    if task_type != "fetch":
+        return route_row
+    fetch_summary = _bounded_fetch_summary_for_run(paths, run_id)
+    if not fetch_summary:
+        return route_row
+    return {
+        **route_row,
+        **fetch_summary,
+        "id": run_id,
+        "runId": run_id,
+        "type": task_type,
+        "taskType": task_type,
+        "active": True,
+        "finishedAt": "",
+        "lifecycleStatus": str(
+            lifecycle_row.get("lifecycleStatus") or lifecycle_row.get("status") or ""
+        ).strip(),
+        "parentRunId": str(lifecycle_row.get("parentRunId") or "").strip(),
+        "parentTaskType": str(lifecycle_row.get("parentTaskType") or "").strip().lower(),
+        "ownerKind": str(lifecycle_row.get("ownerKind") or "").strip().lower(),
+        "ownerPid": lifecycle_row.get("ownerPid"),
+        "stage": str(lifecycle_row.get("stage") or "").strip(),
     }
 
 
@@ -1366,6 +1418,13 @@ class OpsApi:
                 "active": True,
                 "finishedAt": "",
             }
+            route_row = _merge_bounded_fetch_summary_for_task_state_row(
+                route_row,
+                paths=self._paths,
+                task_type=task_type,
+                run_id=run_id,
+                lifecycle_row=row,
+            )
             task_by_key[(task_type, run_id)] = _compact_task_state_row(route_row)
         if pipeline_row and pipeline_run_id:
             key = ("pipeline", pipeline_run_id)

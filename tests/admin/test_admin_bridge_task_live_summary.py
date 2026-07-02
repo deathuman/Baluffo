@@ -119,3 +119,73 @@ def test_get_task_live_payload_fetch_summary_stays_bounded_without_report_detail
     assert payload.get("recentEventCount") == 12
     assert len(payload.get("recentEvents") or []) == 5
     assert len(json.dumps(payload).encode("utf-8")) < 64 * 1024
+
+
+def test_get_task_live_payload_prefers_writing_outputs_summary_sidecar() -> None:
+    run_id = "fetch_live_summary_writing_outputs"
+    started_at = "2026-03-08T10:00:00.000Z"
+    stale_progress = active_progress(
+        "execute_sources",
+        "Executing sources",
+        {
+            "resolvedSources": 10,
+            "sourceCount": 10,
+            "runningTasks": 0,
+            "queuedTasks": 0,
+            "outputCount": 100,
+            "failedSources": 0,
+            "completedTasks": 10,
+        },
+    )
+    summary = {
+        "successfulSources": 10,
+        "failedSources": 0,
+        "excludedSources": 0,
+        "outputCount": 100,
+        "sourceCount": 10,
+    }
+    _start_fetch_lifecycle(
+        run_id=run_id,
+        started_at=started_at,
+        progress=stale_progress,
+        summary=summary,
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_TASKS_PATH,
+        {
+            "taskType": "fetch",
+            "runId": run_id,
+            "startedAt": started_at,
+            "status": "running",
+            "active": True,
+            "taskProgress": stale_progress,
+            "workItems": [],
+            "recentEvents": [],
+        },
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_REPORT_PATH.with_name("jobs-fetch-report-summary.json"),
+        {
+            "ok": True,
+            "summaryView": True,
+            "detailLevel": "summary",
+            "runId": run_id,
+            "status": "running",
+            "startedAt": started_at,
+            "summary": summary,
+            "taskProgress": {
+                "active": True,
+                "phaseKey": "writing_outputs",
+                "phaseLabel": "Writing outputs",
+                "mode": "indeterminate",
+                "counts": {"outputCount": 100, "sourceCount": 10, "completedTasks": 10},
+            },
+        },
+    )
+
+    payload = task_live_payload("fetch", summary=True)
+
+    progress = payload.get("taskProgress") or {}
+    assert progress.get("phaseKey") == "writing_outputs"
+    assert progress.get("phaseLabel") == "Writing outputs"
+    assert (progress.get("counts") or {}).get("outputCount") == 100

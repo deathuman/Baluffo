@@ -12,6 +12,7 @@ from typing import Any
 
 from src.bridge import ops_live_payload as _ops_live_payload
 from src.bridge import run_history_api as _run_history_api
+from src.bridge.fetch_report_summary import load_fetch_report_summary_artifact
 from src.shared.json_shapes import as_json_object, copy_json_object, json_object_rows
 from src.shared.live_task import (
     append_live_task_event,
@@ -247,6 +248,32 @@ def _synthetic_summary_event(
     }
 
 
+def _phase_priority(progress: dict[str, Any]) -> int:
+    phase = str(progress.get("phaseKey") or progress.get("phase") or "").strip().lower()
+    order = {
+        "loading_state": 10,
+        "seeding_existing_output": 20,
+        "selecting_sources": 30,
+        "applying_exclusions": 40,
+        "initializing_runtime": 50,
+        "execute_sources": 60,
+        "executing_sources": 60,
+        "merging_results": 70,
+        "writing_outputs": 80,
+        "finalizing_fetch": 90,
+        "completed": 100,
+    }
+    return order.get(phase, 0)
+
+
+def _prefer_later_progress(current: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
+    if not candidate:
+        return current
+    if _phase_priority(candidate) > _phase_priority(current):
+        return candidate
+    return current
+
+
 def build_fetch_live_summary_payload(
     context: Any,
     *,
@@ -264,6 +291,9 @@ def build_fetch_live_summary_payload(
     fetch_tasks = normalize_live_task_payload(
         as_json_object(load_runtime_evidence(context.paths.jobs_fetch_tasks, {})),
         task_type="fetch",
+    )
+    summary_artifact = as_json_object(
+        load_fetch_report_summary_artifact(context.paths.jobs_fetch_report)
     )
     task_artifact_current = _active_task_artifact_matches_current(
         context,
@@ -298,6 +328,8 @@ def build_fetch_live_summary_payload(
         **(dict(fetch_snapshot.summary) if fetch_snapshot is not None else {}),
         **as_json_object(live_source.get("summary")),
     }
+    if run_id and str(summary_artifact.get("runId") or "").strip() == run_id:
+        summary = {**summary, **as_json_object(summary_artifact.get("summary"))}
     progress_source = (
         as_json_object(live_source.get("taskProgress"))
         if live_source.get("taskProgress")
@@ -307,6 +339,11 @@ def build_fetch_live_summary_payload(
             else as_json_object(fetch_state.get("taskProgress"))
         )
     )
+    if run_id and str(summary_artifact.get("runId") or "").strip() == run_id:
+        progress_source = _prefer_later_progress(
+            as_json_object(progress_source),
+            as_json_object(summary_artifact.get("taskProgress")),
+        )
     progress = normalize_live_task_progress(progress_source)
     counts = _merged_summary_counts(progress, summary)
     if active:
