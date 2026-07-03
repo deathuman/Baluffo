@@ -10,6 +10,18 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.113] - 2026-07-03
+
+### Fixed
+- Umbrel fetch-report live fallback metadata now makes omitted source samples explicit when no compact sidecar is available: `/ops/fetch-report?view=live` returns `sources: []`, preserves `sourceCount`, sets `sourcesTruncated: true`, and points detail callers to `/ops/fetch-report/sources` without parsing the full report body.
+
+### Tests
+- Restored green Python CI evidence by aligning the bounded fetch-report route tests with the compact live-report contract and by checking task-state writes separately from the new compact summary sidecar writes.
+
+### Notes
+- This supersedes `0.2.112` because the CI repair was first built under the existing `0.2.112` image tag, which leaves Umbrel with no reliable new-version signal. `0.2.113` is the deterministic forward Umbrel/container identity for the same bounded fetch-report recovery line. No public desktop tag is created.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.112] - 2026-07-02
 
 ### Fixed
