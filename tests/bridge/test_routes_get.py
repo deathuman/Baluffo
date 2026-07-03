@@ -617,8 +617,8 @@ def test_ops_fetch_report_live_view_omits_source_details(tmp_path: Path) -> None
     payload = handler.sent[-1]["payload"]
     assert payload["summary"]["outputCount"] == 12
     assert payload["taskProgress"]["counts"]["resolvedSources"] == 1
-    assert payload["sources"][0]["durationMs"] == 1234
-    assert "details" not in payload["sources"][0]
+    assert [payload[k] for k in ("sourceCount", "sources", "sourcesTruncated")] == [1, [], True]
+    assert payload["sourceDetailPath"] == "/ops/fetch-report/sources"
 
 
 def test_sync_status(tmp_path: Path) -> None:

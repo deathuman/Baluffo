@@ -154,17 +154,16 @@ def test_task_state_writer_serializes_concurrent_writes() -> None:
         domain_gates={},
         show_progress=False,
     )
-    write_calls = 0
+    write_paths: list[str] = []
     write_guard = threading.Lock()
     writes = BlockingActiveCounter()
 
     def normalize_task_state_payload(payload, **_kwargs):
         return payload
 
-    def fake_write_text_if_changed(_path, _text):
-        nonlocal write_calls
+    def fake_write_text_if_changed(path, _text):
         with write_guard:
-            write_calls += 1
+            write_paths.append(Path(path).name)
         writes.enter()
         try:
             writes.wait_released()
@@ -191,7 +190,9 @@ def test_task_state_writer_serializes_concurrent_writes() -> None:
         thread.join(timeout=2)
 
     assert all(not thread.is_alive() for thread in threads)
-    assert write_calls == 6
+    assert len(write_paths) == 12
+    assert write_paths.count("jobs-fetch-tasks.json") == 6
+    assert write_paths.count("jobs-fetch-report-summary.json") == 6
     assert writes.peak == 1
 
 

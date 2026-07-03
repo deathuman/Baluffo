@@ -134,12 +134,21 @@ def _fetch_report_live_payload_from_file(path: Any) -> dict[str, Any]:
             source="jobs-fetch-tasks",
             include_sources=True,
         )
-    return {
-        **_fetch_report_summary_payload_from_file(report_path),
+    payload = _fetch_report_summary_payload_from_file(report_path)
+    summary = _as_dict(payload.get("summary"))
+    try:
+        source_count = max(0, int(payload.get("sourceCount") or summary.get("sourceCount") or 0))
+    except (TypeError, ValueError):
+        source_count = 0
+    result = {
+        **payload,
         "detailLevel": "live",
         "sources": [],
-        "sourcesTruncated": False,
+        "sourcesTruncated": source_count > 0,
     }
+    if source_count:
+        result["sourceDetailPath"] = "/ops/fetch-report/sources"
+    return result
 
 
 def _handle_fetch_report_route(
