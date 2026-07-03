@@ -86,6 +86,49 @@ For future Umbrel/container patches, use [`../RELEASE.md`](../RELEASE.md) as the
 - Jobs data feed count, plus manual or scheduled pipeline terminal status and `/ops/task-state?view=summary.count == 0`.
 - GHCR tag, multi-arch digest/platforms, GitHub workflow run ids, and residual risk.
 
+## Reachability Incident Triage
+
+When `http://192.168.50.61/` or `http://192.168.50.61:8877/` cannot be reached, classify the failure before changing Baluffo. A missing ARP MAC or unreachable neighbor entry is a host, NIC, DHCP, switch/AP, or power/network-stack issue until proven otherwise.
+
+Use the lightweight external probe from the repo root:
+
+```powershell
+python scripts/umbrel_reachability_probe.py --samples 5 --interval 60
+```
+
+The normal probe records only ARP/neighbor state, one ping, TCP checks for ports `80` and `8877`, and compact Baluffo routes: `/app/ready`, `/tasks/run-jobs-pipeline-status`, `/ops/task-state?view=summary`, `/sync/status?view=summary`, and `/tasks/jobs-pipeline-schedule`. It writes JSONL evidence under `_out/umbrel-reachability/<timestamp>/`.
+
+Do not include `/ops/health`, `/ops/storage-metrics`, `/ops/storage-health`, full diagnostics, fetch reports, registry summaries, source-table loads, or discovery/fetch detail routes in the normal monitor loop. `/ops/health` is allowed only as a one-shot diagnostic burst after three consecutive failures or when ARP loses the host MAC, because it can take multiple seconds on live Umbrel.
+
+Classification rules:
+
+- No ARP MAC plus failed ping/TCP means host or network reachability. Check router/DHCP lease history for `192.168.50.61` and MAC `98-F2-B3-E7-C9-5A`, duplicate IP warnings, switch/AP port events, power events, and NIC link flaps.
+- Host seen but port `80` down means Umbrel host/proxy reachability. Inspect Umbrel services, Docker, and app proxy state.
+- Port `80` up but port `8877` down means the Baluffo app proxy/container exposure is down. Inspect Umbrel app proxy and Baluffo container state before route-level debugging.
+- Ports up but compact routes return `504`, time out, or fail means Baluffo/container-gateway route pressure. Capture route timings and open a separate Baluffo route fix with evidence.
+- Disk full, inode exhaustion, OOM killer events, I/O errors, Docker restarts, DHCP renewals, or NIC carrier down/up entries become the primary root-cause branch when present.
+
+On the Umbrel host, collect non-mutating shell evidence from the current and previous boot before rebooting again if possible:
+
+```bash
+uptime
+date -Is
+hostname -I
+ip addr
+ip route
+ip neigh
+journalctl -b -1 --no-pager | egrep -i 'carrier|dhcp|link is|oom|killed process|docker|ext4|i/o error|thermal|watchdog'
+journalctl -b --no-pager | egrep -i 'carrier|dhcp|link is|oom|killed process|docker|ext4|i/o error|thermal|watchdog'
+dmesg -T | egrep -i 'eth|enp|carrier|link|oom|ext4|i/o error|watchdog|thermal|reset'
+df -h
+df -ih
+free -h
+docker ps
+docker system df
+```
+
+Prefer `networkctl status` or `nmcli device status` when available for the host network manager. If Docker and the network are healthy but Baluffo compact routes fail, collect recent app proxy and Baluffo container logs without running storage-health, full diagnostics, or full fetch-report routes.
+
 ## Assumptions
 
 - Raw LAN access is intentional and accepted.
