@@ -160,7 +160,10 @@ export function composeJobsRuntime(deps) {
     isErrorStage: payload => Boolean(payload?.error) || normalizeToken(payload?.stage) === "error",
     pollDelayMs: deps.pipelineStatusPollMs,
     idlePollDelayMs: deps.pipelineStatusIdlePollMs,
-    isContainerRuntimeMode: () => Boolean(deps.isContainerRuntimeMode?.())
+    isContainerRuntimeMode: () => Boolean(deps.isContainerRuntimeMode?.()),
+    fetchJobsTaskLive: options => callJobsBridge("/ops/task-live/fetch?view=summary", {
+      timeoutMs: Number(options?.timeoutMs) > 0 ? Number(options.timeoutMs) : 1500
+    })
   });
 
   const startupPreviewController = createJobsStartupPreviewController({

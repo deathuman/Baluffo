@@ -50,7 +50,8 @@ Bridge defaults:
   - `--adapter-http-concurrency 16`
   - `--static-detail-concurrency 4`
 - Container/Umbrel pipeline-launched fetch is a separate bounded throughput profile for the full Jobs pipeline only:
-  - `BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS` defaults to `6` and is clamped to `1..8`
+  - `BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS` defaults to `10` and is clamped to `1..12`
+  - `BALUFFO_CONTAINER_PIPELINE_BROWSER_FALLBACK_MAX_WORKERS` defaults to `4` and is clamped to `0..6`; `0` disables Playwright browser fallback for this container pipeline fetch profile.
   - `--max-per-domain 2`
   - `--adapter-http-concurrency min(maxWorkers * 4, 24)`
   - `--static-detail-concurrency 4`
@@ -126,7 +127,7 @@ Optional overrides:
   - remains the active-run progress surface after M4; source-run bulk insert is terminal postprocessing, not streaming live progress.
   - before source execution creates work items, fetch setup writes bounded phase-level progress with `taskProgress.phaseKey` values `loading_state`, `seeding_existing_output`, `selecting_sources`, `applying_exclusions`, and `initializing_runtime`.
   - setup and source-execution progress are intentionally compact: no per-row progress stream, no JSONL prep stream, no repeated full fetch-report rewrites, and no storage-health or heavy diagnostic route reads during active fetch. Hot task-state and summary-sidecar writes happen at phase/terminal boundaries and otherwise no faster than a `5s` source-execution cadence.
-  - `taskProgress.counts` may include bounded active execution diagnostics such as `executionElapsedMs`, `completedSourcesPerMinute`, `estimatedRemainingMs`, and capped `runningSourceNames`.
+  - `taskProgress.counts` may include bounded active execution diagnostics such as `executionElapsedMs`, `completedSourcesPerMinute`, `estimatedRemainingMs`, and capped `runningSourceNames`. `runningSourceNames` is the only count value that may remain a bounded `string[]`; other count fields stay scalar compatibility values.
   - `admin-task-lifecycle.json` must not mirror every hot fetch-progress tick. It stores run identity, terminal state, bounded coarse heartbeats, scalar summaries, and capped active-source names; active Admin UI should read hot progress from `jobs-fetch-tasks.json`, `/ops/task-live/fetch?view=summary`, or the active-task snapshot.
 
 ## Source-state and circuit-breaker lifecycle

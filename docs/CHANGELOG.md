@@ -10,6 +10,22 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.115] - 2026-07-04
+
+### Fixed
+- Active fetch progress preserves `taskProgress.counts.runningSourceNames` as a bounded `string[]` across hot summaries, task-state, and `/ops/task-live/fetch?view=summary`. Other count fields remain scalar compatibility values.
+- Admin/JOBS active fetch rendering now uses bounded hot summaries to show completed/total source counts, running/queued counts, rate, ETA, and capped current source names without calling full fetch-report routes.
+- Umbrel pipeline-launched fetch now uses the higher bounded container-only throughput profile: `BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS` defaults to `10`, clamps to `1..12`, keeps `maxPerDomain=2`, keeps static detail concurrency at `4`, and caps adapter HTTP concurrency at `24`. Manual fetch and desktop defaults are unchanged.
+- Container pipeline fetch adds `BALUFFO_CONTAINER_PIPELINE_BROWSER_FALLBACK_MAX_WORKERS`, defaulting to `4` and clamped to `0..6`, so increased source-worker throughput does not create unbounded Playwright fallback pressure.
+- Active schedule fallback now preserves the "after current run completes" shape where Admin can render it, instead of falling back to a blank/loading schedule while a due pipeline is active.
+
+### Tests
+- Added regressions for the active fetch progress array contract, Jobs active progress rendering, pipeline-only container profile defaults and clamps, dedicated browser fallback caps, active schedule fallback preservation, and bounded source-execution write behavior.
+
+### Notes
+- This supersedes `0.2.114`, which restored compact route stability and bounded write pressure but still left active fetch throughput and Jobs/schedule progress contract gaps. No public desktop tag is created.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.114] - 2026-07-04
 
 ### Fixed

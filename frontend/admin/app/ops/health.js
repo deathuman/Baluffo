@@ -594,6 +594,18 @@ export function createOpsHealthController({
     );
   }
 
+  function hasActionablePipelineSchedule(payload = {}) {
+    const pipeline = isPlainObject(payload?.schedule?.pipeline)
+      ? payload.schedule.pipeline
+      : {};
+    return Boolean(
+      pipeline.nextAfterCurrentCompletes === true
+      || String(pipeline.nextRunAt || "").trim()
+      || pipeline.pending === true
+      || pipeline.due === true
+    );
+  }
+
   function normalizePipelineSchedulePayload(payload = {}) {
     if (
       isPlainObject(payload?.schedule)
@@ -3120,7 +3132,7 @@ export function createOpsHealthController({
       if (renderToken !== opsRenderToken) return;
       if (health && typeof health === "object" && !Array.isArray(health)) {
         const healthForCache = isDegradedControlFallbackPayload(health)
-          ? { ...health, schedule: {}, kpis: {} }
+          ? { ...health, schedule: hasActionablePipelineSchedule(health) ? health.schedule : {}, kpis: {} }
           : health;
         state.latestOpsHealthCache = mergeOpsHealth(
           state.latestOpsHealthCache || {},

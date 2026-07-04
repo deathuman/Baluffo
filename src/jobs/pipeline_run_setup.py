@@ -231,6 +231,7 @@ def prepare_pipeline_run(
     circuit_breaker_failures: int = 3,
     circuit_breaker_cooldown_minutes: int = 180,
     browser_fallback_cooldown_minutes: int = 30,
+    browser_fallback_max_workers: int = -1,
     ignore_circuit_breaker: bool = False,
     social_enabled: bool = False,
     social_config_path: Path | None = None,
@@ -431,8 +432,21 @@ def prepare_pipeline_run(
         + int(dynamic_static_suppression_policy.get("pausedCount") or 0),
     )
 
-    browser_fallback_enabled = resolve_fetch_browser_fallback_helper() is not None
-    browser_fallback_cap = max_workers if browser_fallback_enabled else 0
+    requested_browser_fallback_workers = int(browser_fallback_max_workers)
+    effective_browser_fallback_workers = max_workers
+    if requested_browser_fallback_workers >= 0:
+        effective_browser_fallback_workers = max(
+            0, min(requested_browser_fallback_workers, max_workers)
+        )
+    browser_fallback_enabled = (
+        resolve_fetch_browser_fallback_helper() is not None
+        and effective_browser_fallback_workers > 0
+    )
+    browser_fallback_cap = (
+        effective_browser_fallback_workers
+        if browser_fallback_enabled and effective_browser_fallback_workers > 0
+        else 0
+    )
     runtime_payload = build_pipeline_runtime_payload(
         selected_loaders=selected_loaders,
         max_workers=max_workers,
@@ -612,6 +626,7 @@ def prepare_pipeline_run(
         show_progress=show_progress,
         force_refresh_all=force_refresh_all,
         browser_fallback_cooldown_minutes=browser_fallback_cooldown_minutes,
+        browser_fallback_max_workers=effective_browser_fallback_workers,
     )
     return PipelineRunSetup(
         paths=paths,

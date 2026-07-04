@@ -20,6 +20,8 @@ from src.shared.text_utils import clean_text, norm_text
 
 LIVE_TASK_EVENT_SCHEMA_VERSION = 1
 LIVE_TASK_EVENT_DEFAULT_NAME = "live_task_event"
+LIVE_TASK_RUNNING_SOURCE_NAME_LIMIT = 5
+LIVE_TASK_ARRAY_COUNT_KEYS = {"runningSourceNames"}
 
 
 class LiveTaskProgress(TypedDict, total=False):
@@ -108,6 +110,19 @@ def _clamped_int(value: Any, default: int = 0) -> int:
         return int(default)
 
 
+def _normalize_progress_count_array(key: str, value: Any) -> list[str] | None:
+    if key not in LIVE_TASK_ARRAY_COUNT_KEYS or not isinstance(value, list):
+        return None
+    names: list[str] = []
+    for item in value:
+        text = clean_text(item)
+        if text:
+            names.append(text)
+        if len(names) >= LIVE_TASK_RUNNING_SOURCE_NAME_LIMIT:
+            break
+    return names
+
+
 def normalize_live_task_progress(payload: dict[str, Any] | None) -> LiveTaskProgress:
     src = as_json_object(payload)
     mode = clean_text(src.get("mode")).lower()
@@ -121,6 +136,10 @@ def normalize_live_task_progress(payload: dict[str, Any] | None) -> LiveTaskProg
     for key, value in counts_src.items():
         clean_key = clean_text(key)
         if not clean_key:
+            continue
+        array_value = _normalize_progress_count_array(clean_key, value)
+        if array_value is not None:
+            counts[clean_key] = array_value
             continue
         if isinstance(value, bool):
             counts[clean_key] = bool(value)

@@ -52,10 +52,11 @@ def test_pipeline_fetch_child_uses_bounded_container_profile(monkeypatch) -> Non
 
     assert payloads[-1] == {
         "preset": "default",
-        "maxWorkers": 6,
+        "maxWorkers": 10,
         "maxPerDomain": 2,
         "adapterHttpConcurrency": 24,
         "staticDetailConcurrency": 4,
+        "browserFallbackMaxWorkers": 4,
     }
 
 
@@ -67,14 +68,18 @@ def test_pipeline_fetch_child_clamps_container_profile_env(monkeypatch) -> None:
     )
 
     monkeypatch.setenv("BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS", "99")
+    monkeypatch.setenv("BALUFFO_CONTAINER_PIPELINE_BROWSER_FALLBACK_MAX_WORKERS", "99")
     service._start_fetch_child()
     monkeypatch.setenv("BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS", "bad")
+    monkeypatch.setenv("BALUFFO_CONTAINER_PIPELINE_BROWSER_FALLBACK_MAX_WORKERS", "bad")
     service._start_fetch_child()
 
-    assert payloads[0]["maxWorkers"] == 8
+    assert payloads[0]["maxWorkers"] == 12
     assert payloads[0]["adapterHttpConcurrency"] == 24
-    assert payloads[1]["maxWorkers"] == 6
+    assert payloads[0]["browserFallbackMaxWorkers"] == 6
+    assert payloads[1]["maxWorkers"] == 10
     assert payloads[1]["adapterHttpConcurrency"] == 24
+    assert payloads[1]["browserFallbackMaxWorkers"] == 4
 
 
 def test_pipeline_fetch_child_keeps_desktop_fetch_defaults_unmodified() -> None:

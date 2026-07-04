@@ -92,6 +92,7 @@ def run_source_execution_stage(
         source_state_rows,
         cooldown_minutes=config.browser_fallback_cooldown_minutes,
         max_workers=config.max_workers,
+        browser_fallback_max_workers=getattr(config, "browser_fallback_max_workers", -1),
     )
     _emit_browser_fallback_status(bool(config.show_progress), guarded_try_playwright, config)
 
@@ -133,6 +134,7 @@ def _browser_fallback_runtime(
     *,
     cooldown_minutes: int,
     max_workers: int,
+    browser_fallback_max_workers: int = -1,
 ) -> tuple[BrowserFallbackCircuitBreaker, Callable[[str, int], tuple[str, str]] | None]:
     try_playwright = root_mod.resolve_fetch_browser_fallback_helper()
     browser_fallback_guard = BrowserFallbackCircuitBreaker.from_state(
@@ -141,9 +143,14 @@ def _browser_fallback_runtime(
     )
     if try_playwright is None:
         return browser_fallback_guard, None
+    fallback_cap = int(browser_fallback_max_workers or 0)
+    if browser_fallback_max_workers == 0:
+        return browser_fallback_guard, None
+    if fallback_cap < 0:
+        fallback_cap = int(max_workers or 1)
     capped_try_playwright = root_mod._build_capped_try_playwright(
         try_playwright,
-        max_concurrent=max_workers,
+        max_concurrent=max(1, min(fallback_cap, int(max_workers or 1))),
     )
     return browser_fallback_guard, browser_fallback_guard.wrap(capped_try_playwright)
 
@@ -156,8 +163,11 @@ def _emit_browser_fallback_status(
     if not show_progress:
         return
     if guarded_try_playwright is not None:
+        fallback_cap = int(getattr(config, "browser_fallback_max_workers", -1))
+        if fallback_cap < 0:
+            fallback_cap = int(config.max_workers or 1)
         emit_progress_line(
-            f"[jobs_fetcher] INFO browserFallbackEnabled=true browserFallbackCap={max(1, int(config.max_workers or 1))}"
+            f"[jobs_fetcher] INFO browserFallbackEnabled=true browserFallbackCap={max(1, fallback_cap)}"
         )
         return
     emit_progress_line("[jobs_fetcher] INFO browserFallbackEnabled=false")

@@ -733,6 +733,8 @@ Sync `taskProgress.counts` may include additive sharded-push diagnostics while `
 | `ratio` | `number` | `0..1` progress ratio when `mode` is `determinate`; ignored otherwise. |
 | `counts` | `object` | Display-only task metrics used to enrich the label, not to redefine primary progress semantics. |
 
+Fetch `taskProgress.counts.runningSourceNames` is the only count value that may remain an array. It is a bounded `string[]` of current source names for Admin/JOBS active fetch rendering; all other count fields stay scalar compatibility values.
+
 ### Frontend contract
 
 - Controllers consume `taskProgress` and pass raw report state plus optional log-derived phase hints into the domain layer.

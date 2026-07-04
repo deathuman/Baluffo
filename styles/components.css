@@ -1532,8 +1532,9 @@ h1 {
 
 .jobs-pipeline-btn {
   display: inline-flex;
-  align-items: center;
-  min-height: 0;
+  flex-direction: column;
+  align-items: stretch;
+  min-height: 2.35rem;
   font-weight: 700;
   white-space: nowrap;
   position: relative;
@@ -1568,6 +1569,24 @@ h1 {
   position: relative;
   z-index: 1;
   letter-spacing: 0.01em;
+}
+
+.jobs-pipeline-btn-progress {
+  position: relative;
+  z-index: 1;
+  display: block;
+  max-inline-size: 100%;
+  overflow: hidden;
+  color: var(--text-subtle);
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jobs-pipeline-btn-progress[hidden] {
+  display: none;
 }
 
 .jobs-pipeline-btn-fill {

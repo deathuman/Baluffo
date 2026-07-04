@@ -35,8 +35,13 @@ CONTROL_STATUS_HEARTBEAT_MIN_SECONDS = 10.0
 SYNC_REMOTE_CONFLICT_KIND = "recoverable_remote_conflict"
 SYNC_PUSH_WARNING_KIND = "sync_push_failed"
 PIPELINE_CONTAINER_FETCH_MAX_WORKERS_ENV = "BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS"
-PIPELINE_CONTAINER_FETCH_DEFAULT_MAX_WORKERS = 6
-PIPELINE_CONTAINER_FETCH_MAX_WORKERS_CAP = 8
+PIPELINE_CONTAINER_BROWSER_FALLBACK_MAX_WORKERS_ENV = (
+    "BALUFFO_CONTAINER_PIPELINE_BROWSER_FALLBACK_MAX_WORKERS"
+)
+PIPELINE_CONTAINER_FETCH_DEFAULT_MAX_WORKERS = 10
+PIPELINE_CONTAINER_FETCH_MAX_WORKERS_CAP = 12
+PIPELINE_CONTAINER_BROWSER_FALLBACK_DEFAULT_MAX_WORKERS = 4
+PIPELINE_CONTAINER_BROWSER_FALLBACK_MAX_WORKERS_CAP = 6
 PIPELINE_CONTAINER_FETCH_MAX_PER_DOMAIN = 2
 PIPELINE_CONTAINER_FETCH_STATIC_DETAIL_CONCURRENCY = 4
 PIPELINE_CONTAINER_FETCH_ADAPTER_CONCURRENCY_CAP = 24
@@ -989,11 +994,21 @@ class PipelineService:
             parsed = PIPELINE_CONTAINER_FETCH_DEFAULT_MAX_WORKERS
         return max(1, min(PIPELINE_CONTAINER_FETCH_MAX_WORKERS_CAP, parsed))
 
+    @staticmethod
+    def _pipeline_container_browser_fallback_max_workers() -> int:
+        raw_value = os.environ.get(PIPELINE_CONTAINER_BROWSER_FALLBACK_MAX_WORKERS_ENV)
+        try:
+            parsed = int(str(raw_value or "").strip())
+        except (TypeError, ValueError):
+            parsed = PIPELINE_CONTAINER_BROWSER_FALLBACK_DEFAULT_MAX_WORKERS
+        return max(0, min(PIPELINE_CONTAINER_BROWSER_FALLBACK_MAX_WORKERS_CAP, parsed))
+
     def _fetch_child_payload(self) -> dict[str, Any]:
         payload: dict[str, Any] = {"preset": "default"}
         if not self._container_mode:
             return payload
         max_workers = self._pipeline_container_fetch_max_workers()
+        browser_fallback_max_workers = self._pipeline_container_browser_fallback_max_workers()
         payload.update(
             {
                 "maxWorkers": max_workers,
@@ -1003,6 +1018,7 @@ class PipelineService:
                     max(1, int(max_workers or 1)) * 4,
                 ),
                 "staticDetailConcurrency": PIPELINE_CONTAINER_FETCH_STATIC_DETAIL_CONCURRENCY,
+                "browserFallbackMaxWorkers": browser_fallback_max_workers,
             }
         )
         return payload

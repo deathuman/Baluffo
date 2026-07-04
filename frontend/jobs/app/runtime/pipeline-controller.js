@@ -238,7 +238,8 @@ export function createJobsPipelineController({
   isErrorStage,
   pollDelayMs,
   idlePollDelayMs,
-  isContainerRuntimeMode = () => false
+  isContainerRuntimeMode = () => false,
+  fetchJobsTaskLive = null
 }) {
   function updateJobsPipelineUi({
     pipelinePayload = null,
@@ -434,7 +435,33 @@ export function createJobsPipelineController({
     );
   }
 
-  function attachActivePipelinePayload(payload, { toastMessage = "" } = {}) {
+  function activeFetchTaskFromLivePayload(payload) {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+    const progress = payload.taskProgress && typeof payload.taskProgress === "object"
+      ? payload.taskProgress
+      : {};
+    const active = Boolean(payload.active || progress.active);
+    if (!active) return null;
+    return {
+      ...payload,
+      taskType: "fetch",
+      type: "fetch",
+      active: true,
+      taskProgress: progress,
+      summary: payload.summary && typeof payload.summary === "object" ? payload.summary : {}
+    };
+  }
+
+  async function loadContainerFetchLiveTask() {
+    if (typeof fetchJobsTaskLive !== "function") return null;
+    try {
+      return activeFetchTaskFromLivePayload(await fetchJobsTaskLive({ timeoutMs: 1500 }));
+    } catch {
+      return null;
+    }
+  }
+
+  function attachActivePipelinePayload(payload, { toastMessage = "", blockingTask = null } = {}) {
     const runId = String(payload?.runId || jobsPipelineUiState.runId || "");
     const startedAt = String(payload?.startedAt || jobsPipelineUiState.startedAt || "");
     const activePayload = { ...payload, active: true, runId, startedAt };
@@ -447,6 +474,29 @@ export function createJobsPipelineController({
     jobsPipelineUiState.runId = runId;
     jobsPipelineUiState.startedAt = startedAt;
     rememberActivePipelinePayload(jobsPipelineUiState, activePayload);
+    const childTaskType = normalizeTaskType(blockingTask);
+    if (blockingTask && childTaskType && childTaskType !== "pipeline") {
+      const firstRunBootstrapActive = isFirstRunBootstrapTask(blockingTask);
+      jobsPipelineUiState.updateTooltipFirstRunBootstrapActive = firstRunBootstrapActive;
+      const blockingPayload = buildBlockingTaskPayload(blockingTask);
+      const blockingProgressLabel = formatBlockingTaskProgressLabel(blockingTask);
+      updateJobsPipelineUi({
+        running: true,
+        disabled: true,
+        buttonLabel: getPipelineRunningLabel(blockingPayload),
+        progressLabel: blockingProgressLabel || String(blockingTask?.taskProgress?.phaseLabel || "").trim(),
+        firstRunBootstrapActive,
+        pipelinePayload: blockingPayload,
+        abortTask: isAbortableTask(blockingTask) ? blockingTask : {
+          active: true,
+          taskType: "pipeline",
+          runId
+        }
+      });
+      if (toastMessage) showToast(toastMessage, "info");
+      scheduleJobsPipelineStatusPoll(pollDelayMs);
+      return;
+    }
     updateJobsPipelineUi({
       running: true,
       disabled: true,
@@ -561,7 +611,10 @@ export function createJobsPipelineController({
       const blockingTask = getBlockingTask(taskStatePayload, trackedRunId);
       reconcileAbortRequest({ pipelinePayload: payload, taskStatePayload, taskStateKnown });
       if (active) {
-        attachActivePipelinePayload(payload);
+        const liveFetchTask = blockingTask || (isContainerRuntimeMode?.()
+          ? await loadContainerFetchLiveTask()
+          : null);
+        attachActivePipelinePayload(payload, { blockingTask: liveFetchTask });
         return;
       }
 

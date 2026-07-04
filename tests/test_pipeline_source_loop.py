@@ -42,10 +42,35 @@ def test_browser_fallback_runtime_returns_no_helper_when_root_has_none() -> None
         source_state_rows={},
         cooldown_minutes=30,
         max_workers=4,
+        browser_fallback_max_workers=2,
     )
 
     assert guard is not None
     assert guarded_try_playwright is None
+
+
+def test_browser_fallback_runtime_uses_dedicated_cap_when_helper_exists() -> None:
+    calls: dict[str, Any] = {}
+
+    class RootWithBrowserFallback:
+        def resolve_fetch_browser_fallback_helper(self):
+            return lambda _url, _timeout: ("", "")
+
+        def _build_capped_try_playwright(self, try_playwright, *, max_concurrent: int):
+            calls["try_playwright"] = try_playwright
+            calls["max_concurrent"] = max_concurrent
+            return try_playwright
+
+    _guard, guarded_try_playwright = pipeline_source_loop._browser_fallback_runtime(
+        RootWithBrowserFallback(),
+        source_state_rows={},
+        cooldown_minutes=30,
+        max_workers=10,
+        browser_fallback_max_workers=4,
+    )
+
+    assert guarded_try_playwright is not None
+    assert calls["max_concurrent"] == 4
 
 
 @pytest.mark.parametrize("exc", [OSError("disk"), TimeoutError("slow"), ValueError("bad row")])

@@ -28,6 +28,7 @@ class RunFetcherRequest(TypedDict, total=False):
     fetchStrategy: str
     adapterHttpConcurrency: int
     staticDetailConcurrency: int
+    browserFallbackMaxWorkers: int
     sourceTtlMinutes: int
     hotSourceCadenceMinutes: int
     coldSourceCadenceMinutes: int
@@ -82,6 +83,7 @@ def _apply_fetcher_shared_runtime_args(
     circuit_failures: int,
     circuit_cooldown: int,
     browser_fallback_cooldown: int,
+    browser_fallback_max_workers: int | None,
 ) -> None:
     args.extend(["--max-workers", str(max_workers), "--max-per-domain", str(max_per_domain)])
     args.extend(
@@ -97,6 +99,8 @@ def _apply_fetcher_shared_runtime_args(
     args.extend(["--circuit-breaker-failures", str(circuit_failures)])
     args.extend(["--circuit-breaker-cooldown-minutes", str(circuit_cooldown)])
     args.extend(["--browser-fallback-cooldown-minutes", str(browser_fallback_cooldown)])
+    if browser_fallback_max_workers is not None:
+        args.extend(["--browser-fallback-max-workers", str(browser_fallback_max_workers)])
     args.extend(
         [
             "--hot-source-cadence-minutes",
@@ -267,6 +271,11 @@ def build_fetcher_args_from_payload(
     circuit_failures = safe_int(data.get("circuitBreakerFailures"), 3, 0, 20)
     circuit_cooldown = safe_int(data.get("circuitBreakerCooldownMinutes"), 180, 0, 24 * 60)
     browser_fallback_cooldown = safe_int(data.get("browserFallbackCooldownMinutes"), 30, 0, 24 * 60)
+    browser_fallback_max_workers = (
+        safe_int(data.get("browserFallbackMaxWorkers"), 0, 0, 16)
+        if "browserFallbackMaxWorkers" in data
+        else None
+    )
 
     _apply_fetcher_shared_runtime_args(
         args,
@@ -280,6 +289,7 @@ def build_fetcher_args_from_payload(
         circuit_failures=circuit_failures,
         circuit_cooldown=circuit_cooldown,
         browser_fallback_cooldown=browser_fallback_cooldown,
+        browser_fallback_max_workers=browser_fallback_max_workers,
     )
 
     preset = _apply_fetcher_preset_args(

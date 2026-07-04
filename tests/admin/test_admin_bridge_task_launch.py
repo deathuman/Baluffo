@@ -246,6 +246,7 @@ def test_container_fetcher_defaults_keep_explicit_overrides(admin_bridge_entrypo
             "maxPerDomain": 3,
             "adapterHttpConcurrency": 24,
             "staticDetailConcurrency": 8,
+            "browserFallbackMaxWorkers": 4,
         }
     )
 
@@ -254,6 +255,7 @@ def test_container_fetcher_defaults_keep_explicit_overrides(admin_bridge_entrypo
     assert args[args.index("--max-per-domain") + 1] == "3"
     assert args[args.index("--adapter-http-concurrency") + 1] == "24"
     assert args[args.index("--static-detail-concurrency") + 1] == "8"
+    assert args[args.index("--browser-fallback-max-workers") + 1] == "4"
 
 
 def test_container_uncapped_fetcher_remains_intentionally_aggressive(

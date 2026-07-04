@@ -140,6 +140,7 @@ class SourceExecutionStageConfig:
     show_progress: bool
     force_refresh_all: bool
     browser_fallback_cooldown_minutes: int
+    browser_fallback_max_workers: int = -1
 
 
 run_source_execution_stage = pipeline_source_loop_mod.run_source_execution_stage

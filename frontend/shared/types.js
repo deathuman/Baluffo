@@ -114,7 +114,7 @@
  * @property {string} [phaseLabel]
  * @property {"determinate"|"indeterminate"|string} [mode]
  * @property {number} [ratio]
- * @property {Object<string, string|number|boolean>} [counts]
+ * @property {Object<string, string|number|boolean|Array<string>>} [counts]
  * @property {string} [targetLabel]
  * @property {string} [targetUrl]
  * @property {string} [waitReason]

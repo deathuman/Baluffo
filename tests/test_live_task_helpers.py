@@ -6,6 +6,7 @@ from src.shared.live_task import (
     build_live_task_progress_payload,
     normalize_live_task_event,
     normalize_live_task_payload,
+    normalize_live_task_progress,
 )
 
 
@@ -60,6 +61,39 @@ def test_build_live_task_progress_payload_preserves_wait_reason() -> None:
     )
 
     assert payload["waitReason"] == "domain_gate"
+
+
+def test_normalize_live_task_progress_preserves_bounded_running_source_names() -> None:
+    progress = normalize_live_task_progress(
+        {
+            "active": True,
+            "phaseKey": "executing_sources",
+            "counts": {
+                "runningSourceNames": [
+                    "Studio A",
+                    "",
+                    "Studio B",
+                    "Studio C",
+                    "Studio D",
+                    "Studio E",
+                    "Studio F",
+                ],
+                "runningSourceNamesTruncated": True,
+                "unexpectedArray": ["must", "stay", "scalar"],
+            },
+        }
+    )
+
+    counts = progress["counts"]
+    assert counts["runningSourceNames"] == [
+        "Studio A",
+        "Studio B",
+        "Studio C",
+        "Studio D",
+        "Studio E",
+    ]
+    assert counts["runningSourceNamesTruncated"] is True
+    assert counts["unexpectedArray"] == "['must', 'stay', 'scalar']"
 
 
 def test_normalize_live_task_payload_accepts_legacy_tasks_input() -> None:

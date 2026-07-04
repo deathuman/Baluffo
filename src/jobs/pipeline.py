@@ -109,6 +109,7 @@ def run_pipeline(
     circuit_breaker_failures: int = 3,
     circuit_breaker_cooldown_minutes: int = 180,
     browser_fallback_cooldown_minutes: int = 30,
+    browser_fallback_max_workers: int = -1,
     circuit_breaker_zero_kept: int = 3,
     ignore_circuit_breaker: bool = False,
     social_enabled: bool = False,
@@ -154,6 +155,7 @@ def run_pipeline(
             circuit_breaker_failures=circuit_breaker_failures,
             circuit_breaker_cooldown_minutes=circuit_breaker_cooldown_minutes,
             browser_fallback_cooldown_minutes=browser_fallback_cooldown_minutes,
+            browser_fallback_max_workers=browser_fallback_max_workers,
             ignore_circuit_breaker=ignore_circuit_breaker,
             social_enabled=social_enabled,
             social_config_path=social_config_path,
@@ -341,6 +343,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=30,
         help="Minutes to disable browser fallback after an environment-level Playwright failure.",
+    )
+    parser.add_argument(
+        "--browser-fallback-max-workers",
+        type=int,
+        default=-1,
+        help="Optional max concurrent browser fallback workers; defaults to --max-workers when omitted.",
     )
     parser.add_argument(
         "--circuit-breaker-zero-kept",

@@ -102,8 +102,11 @@ function ensureJobsPipelineButtonChrome(button, idleLabel) {
   const existingLabel = typeof button.querySelector === "function"
     ? button.querySelector('[data-ui="jobs-pipeline-label"]')
     : null;
-  if (existingFill && existingLabel) {
-    return { fillEl: existingFill, labelEl: existingLabel };
+  const existingProgress = typeof button.querySelector === "function"
+    ? button.querySelector('[data-ui="jobs-pipeline-progress"]')
+    : null;
+  if (existingFill && existingLabel && existingProgress) {
+    return { fillEl: existingFill, labelEl: existingLabel, progressEl: existingProgress };
   }
 
   const ownerDocument = button.ownerDocument || (typeof document !== "undefined" ? document : null);
@@ -121,8 +124,13 @@ function ensureJobsPipelineButtonChrome(button, idleLabel) {
   labelEl.dataset.ui = "jobs-pipeline-label";
   labelEl.textContent = String(button.textContent || idleLabel || JOBS_UPDATE_COPY.idleLabel);
 
-  button.replaceChildren(fillEl, labelEl);
-  return { fillEl, labelEl };
+  const progressEl = ownerDocument.createElement("span");
+  progressEl.className = "jobs-pipeline-btn-progress";
+  progressEl.dataset.ui = "jobs-pipeline-progress";
+  progressEl.hidden = true;
+
+  button.replaceChildren(fillEl, labelEl, progressEl);
+  return { fillEl, labelEl, progressEl };
 }
 
 function ensureJobsPipelineAbortButton(button) {
@@ -205,20 +213,6 @@ export function formatBlockingTaskProgressLabel(task) {
   );
 }
 
-function getPipelineProgressLabel(payload) {
-  const progress = payload?.progress;
-  if (progress && typeof progress === "object") {
-    const label = String(progress.label || "").trim();
-    if (label) return label;
-    const current = Number(progress.currentStep || 0);
-    const total = Number(progress.totalSteps || 0);
-    if (current > 0 && total > 0) return `Step ${current}/${total}`;
-  }
-  const stage = String(payload?.stage || "").trim();
-  if (stage) return `Stage: ${stage}`;
-  return JOBS_UPDATE_COPY.updatingLabel;
-}
-
 export function buildJobsPipelineButtonView(
   payload,
   {
@@ -257,7 +251,7 @@ export function buildJobsPipelineButtonView(
     isError: Boolean(isError),
     label: label || (active ? JOBS_UPDATE_COPY.updatingLabel : JOBS_UPDATE_COPY.idleLabel),
     tooltip: String(buttonTooltip || JOBS_UPDATE_COPY.tooltipDefault).trim(),
-    progressLabel: String(progressLabel || getPipelineProgressLabel(payload)).trim(),
+    progressLabel: String(progressLabel || "").trim(),
     progressMode: fillState.mode,
     progressFill: fillState.fill
   };
@@ -288,6 +282,7 @@ export function updateJobsPipelineUi(
   const abortButton = ensureJobsPipelineAbortButton(jobsPipelineRunBtn);
   const fillEl = chrome?.fillEl || null;
   const labelEl = chrome?.labelEl || null;
+  const progressEl = chrome?.progressEl || null;
   const view = buildJobsPipelineButtonView(pipelinePayload, {
     running,
     disabled,
@@ -304,6 +299,11 @@ export function updateJobsPipelineUi(
     labelEl.textContent = nextLabel;
   } else {
     jobsPipelineRunBtn.textContent = nextLabel;
+  }
+  if (progressEl) {
+    const progressText = view.active ? String(view.progressLabel || "").trim() : "";
+    progressEl.textContent = progressText;
+    progressEl.hidden = !progressText;
   }
   jobsPipelineRunBtn.disabled = Boolean(view.disabled);
   jobsPipelineRunBtn.setAttribute("aria-disabled", jobsPipelineRunBtn.disabled ? "true" : "false");

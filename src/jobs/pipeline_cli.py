@@ -173,6 +173,7 @@ def _run_pipeline_from_args(
         circuit_breaker_failures=args.circuit_breaker_failures,
         circuit_breaker_cooldown_minutes=args.circuit_breaker_cooldown_minutes,
         browser_fallback_cooldown_minutes=args.browser_fallback_cooldown_minutes,
+        browser_fallback_max_workers=getattr(args, "browser_fallback_max_workers", -1),
         circuit_breaker_zero_kept=args.circuit_breaker_zero_kept,
         respect_source_cadence=bool(args.respect_source_cadence),
         hot_source_cadence_minutes=args.hot_source_cadence_minutes,

@@ -258,13 +258,15 @@ test("updateJobsPipelineUi updates button background progress", () => {
   assert.equal(button.dataset.progressMode, "determinate");
   assert.equal(button.dataset.progressFill, "67");
   assert.equal(button.style.getPropertyValue("--jobs-pipeline-fill"), "67%");
-  assert.equal(button.children.length, 2);
+  assert.equal(button.children.length, 3);
   assert.equal(button.children[0].dataset.ui, "jobs-pipeline-fill");
   assert.equal(button.children[0].dataset.progressMode, "determinate");
   assert.equal(button.children[0].style.width, "67%");
   assert.equal(button.children[0].style.opacity, "1");
   assert.equal(button.children[1].dataset.ui, "jobs-pipeline-label");
   assert.equal(button.children[1].textContent, "Fetching job listings... 7m 27s");
+  assert.equal(button.children[2].dataset.ui, "jobs-pipeline-progress");
+  assert.equal(button.children[2].hidden, true);
 });
 
 test("jobs pipeline abort affordance keeps the live progress label in button text", () => {
