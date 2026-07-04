@@ -727,7 +727,7 @@ Sync `taskProgress.counts` may include additive sharded-push diagnostics while `
 | Field | Type | Description |
 |---|---|---|
 | `active` | `boolean` | True while the task should render as in progress. |
-| `phaseKey` | `string` | Stable machine-readable phase token such as `executing_sources` or `probing_candidates`. |
+| `phaseKey` | `string` | Stable machine-readable phase token such as `executing_sources`, `finalizing_sources`, or `probing_candidates`. |
 | `phaseLabel` | `string` | Human-readable phase label shown in the admin UI. |
 | `mode` | `string` | Either `indeterminate` or `determinate`. |
 | `ratio` | `number` | `0..1` progress ratio when `mode` is `determinate`; ignored otherwise. |

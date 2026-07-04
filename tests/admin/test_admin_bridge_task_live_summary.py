@@ -189,3 +189,84 @@ def test_get_task_live_payload_prefers_writing_outputs_summary_sidecar() -> None
     assert progress.get("phaseKey") == "writing_outputs"
     assert progress.get("phaseLabel") == "Writing outputs"
     assert (progress.get("counts") or {}).get("outputCount") == 100
+
+
+def test_get_task_live_payload_prefers_finalizing_sources_summary_sidecar() -> None:
+    run_id = "fetch_live_summary_finalizing_sources"
+    started_at = "2026-03-08T10:00:00.000Z"
+    stale_progress = active_progress(
+        "executing_sources",
+        "Executing sources",
+        {
+            "resolvedSources": 10,
+            "sourceCount": 10,
+            "runningTasks": 0,
+            "queuedTasks": 0,
+            "outputCount": 100,
+            "failedSources": 0,
+            "completedTasks": 10,
+        },
+    )
+    summary = {
+        "successfulSources": 10,
+        "failedSources": 0,
+        "excludedSources": 0,
+        "outputCount": 100,
+        "sourceCount": 10,
+    }
+    _start_fetch_lifecycle(
+        run_id=run_id,
+        started_at=started_at,
+        progress=stale_progress,
+        summary=summary,
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_TASKS_PATH,
+        {
+            "taskType": "fetch",
+            "runId": run_id,
+            "startedAt": started_at,
+            "status": "running",
+            "active": True,
+            "taskProgress": stale_progress,
+            "workItems": [],
+            "recentEvents": [],
+        },
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_REPORT_PATH.with_name("jobs-fetch-report-summary.json"),
+        {
+            "ok": True,
+            "summaryView": True,
+            "detailLevel": "summary",
+            "runId": run_id,
+            "status": "running",
+            "startedAt": started_at,
+            "summary": summary,
+            "taskProgress": {
+                "active": True,
+                "phaseKey": "finalizing_sources",
+                "phaseLabel": "Finalizing source results",
+                "mode": "determinate",
+                "ratio": 1,
+                "counts": {
+                    "sourceCount": 10,
+                    "completedTasks": 10,
+                    "resolvedSources": 10,
+                    "runningTasks": 0,
+                    "queuedTasks": 0,
+                    "outputCount": 100,
+                },
+            },
+        },
+    )
+
+    payload = task_live_payload("fetch", summary=True)
+
+    progress = payload.get("taskProgress") or {}
+    counts = progress.get("counts") or {}
+    assert progress.get("phaseKey") == "finalizing_sources"
+    assert progress.get("phaseLabel") == "Finalizing source results"
+    assert counts.get("completedTasks") == 10
+    assert counts.get("runningTasks") == 0
+    assert counts.get("queuedTasks") == 0

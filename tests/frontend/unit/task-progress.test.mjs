@@ -128,6 +128,31 @@ test("formatTaskProgressDetail renders active fetch rate ETA and running sources
   assert.match(label, /current Studio A, Studio B, Studio C, \+more/i);
 });
 
+test("formatTaskProgressDetail renders finalizing sources without fake ETA", () => {
+  const label = formatTaskProgressDetail("fetch", {
+    active: true,
+    phaseKey: "finalizing_sources",
+    phaseLabel: "Finalizing source results",
+    mode: "determinate",
+    ratio: 1,
+    counts: {
+      resolvedSources: 333,
+      sourceCount: 333,
+      runningTasks: 0,
+      queuedTasks: 0,
+      outputCount: 86149,
+      failedSources: 308,
+      excludedSources: 0
+    }
+  });
+
+  assert.match(label, /Finalizing source results/i);
+  assert.match(label, /333\/333 sources resolved/i);
+  assert.match(label, /running 0/i);
+  assert.match(label, /queued 0/i);
+  assert.doesNotMatch(label, /ETA/i);
+});
+
 test("formatTaskProgressDetail renders aggregate fetch tail progress and ETA", () => {
   const label = formatTaskProgressDetail("fetch", {
     active: true,

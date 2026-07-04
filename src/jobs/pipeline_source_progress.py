@@ -13,6 +13,7 @@ from src.jobs.common.taxonomy import (
 from src.jobs.pipeline_runtime_summary import (
     PipelineTaskRuntime,
     record_completed_source_report,
+    update_fetch_runtime_phase,
     update_fetch_work_item_progress,
 )
 from src.jobs.text_utils import clean_text
@@ -37,6 +38,14 @@ def _require_root() -> _PipelineSourceProgressRoot:
     if root is None:
         raise RuntimeError("jobs.pipeline_source_progress root is not bound")
     return root
+
+
+def _all_source_rows_terminal(task_rows: dict[str, dict[str, Any]]) -> bool:
+    terminal_statuses = {"ok", "error", "excluded"}
+    rows = [row for row in task_rows.values() if isinstance(row, dict)]
+    return bool(rows) and all(
+        str(row.get("status") or "").strip().lower() in terminal_statuses for row in rows
+    )
 
 
 def console_safe_text(value: Any) -> str:
@@ -184,6 +193,14 @@ def mark_task_finished(
             f"kept={int(report.get('keptCount') or 0)}."
         ),
     )
+    with task_lock:
+        all_sources_terminal = _all_source_rows_terminal(task_rows)
+    if all_sources_terminal and task_runtime.current_phase_key == "executing_sources":
+        update_fetch_runtime_phase(
+            task_runtime,
+            phase_key="finalizing_sources",
+            phase_label="Finalizing source results",
+        )
     write_progress_report()
     write_task_state()
     if show_progress:

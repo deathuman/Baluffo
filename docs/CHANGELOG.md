@@ -10,6 +10,20 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.117] - 2026-07-04
+
+### Fixed
+- Active fetch hot summaries now publish `finalizing_sources` as soon as all source rows are terminal and output writing has not started yet, so Admin/JOBS no longer remain stuck on `executing_sources` after the source queue is drained.
+- Fetch progress for the drained-source finalization phase keeps complete source counts and running/queued `0` visible without exposing a misleading source-count ETA.
+- `writing_outputs` remains the separate output/report write phase and still wins once final output files begin writing.
+
+### Tests
+- Added regressions for drained-source finalization phase publication, no fake ETA during finalization, frontend progress rendering, and compact lifecycle payload preservation.
+
+### Notes
+- This supersedes `0.2.116`, which fixed aggregate ETA and compact route stability but still left drained-source finalization hidden behind `executing_sources` for several minutes on live Umbrel. No public desktop tag is created.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.116] - 2026-07-04
 
 ### Fixed

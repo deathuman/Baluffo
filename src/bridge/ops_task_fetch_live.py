@@ -258,6 +258,7 @@ def _phase_priority(progress: dict[str, Any]) -> int:
         "initializing_runtime": 50,
         "execute_sources": 60,
         "executing_sources": 60,
+        "finalizing_sources": 65,
         "merging_results": 70,
         "writing_outputs": 80,
         "finalizing_fetch": 90,

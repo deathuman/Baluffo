@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from src.jobs import pipeline_source_progress
-from src.jobs.pipeline_runtime_summary import PipelineTaskRuntime
+from src.jobs.pipeline_runtime_summary import PipelineTaskRuntime, build_fetch_task_progress_payload
 from src.jobs.pipeline_source_progress import mark_task_finished, mark_task_started
 
 
@@ -106,3 +106,93 @@ def test_source_progress_callbacks_do_not_force_hot_task_state_writes() -> None:
 
     assert task_state_calls == [{}, {}]
     assert progress_calls == [{}]
+    assert runtime.current_phase_key == "finalizing_sources"
+    assert runtime.current_phase_label == "Finalizing source results"
+
+
+def test_last_terminal_source_publishes_finalizing_sources_once() -> None:
+    runtime = _runtime()
+    runtime.task_rows["source_b"] = {
+        "id": "source_b",
+        "name": "source_b",
+        "status": "running",
+        "startedAt": "2026-04-19T00:00:00Z",
+        "finishedAt": "",
+        "durationMs": 0,
+        "heartbeatAt": "2026-04-19T00:00:00Z",
+        "error": "",
+        "progress": {},
+    }
+    runtime.task_rows["source_a"]["status"] = "running"
+    phase_after_each_finish: list[str] = []
+
+    def record_progress_write(**_kwargs: Any) -> None:
+        phase_after_each_finish.append(runtime.current_phase_key)
+
+    mark_task_finished(
+        source_name="source_a",
+        report={"name": "source_a", "status": "ok", "fetchedCount": 1, "keptCount": 1},
+        task_runtime=runtime,
+        task_rows=runtime.task_rows,
+        task_lock=runtime.task_lock,
+        write_progress_report=record_progress_write,
+        write_task_state=lambda **_kwargs: None,
+        show_progress=False,
+    )
+    mark_task_finished(
+        source_name="source_b",
+        report={"name": "source_b", "status": "error", "error": "boom"},
+        task_runtime=runtime,
+        task_rows=runtime.task_rows,
+        task_lock=runtime.task_lock,
+        write_progress_report=record_progress_write,
+        write_task_state=lambda **_kwargs: None,
+        show_progress=False,
+    )
+
+    assert phase_after_each_finish == ["executing_sources", "finalizing_sources"]
+    assert runtime.current_phase_key == "finalizing_sources"
+
+
+def test_finalizing_sources_progress_has_complete_counts_without_fake_eta() -> None:
+    rows = {
+        "source_a": {
+            "id": "source_a",
+            "name": "Studio A",
+            "status": "ok",
+            "startedAt": "2026-04-19T00:00:00Z",
+            "finishedAt": "2026-04-19T00:01:00Z",
+            "heartbeatAt": "2026-04-19T00:01:00Z",
+            "durationMs": 60_000,
+            "error": "",
+            "_startedMonotonic": 100.0,
+        },
+        "source_b": {
+            "id": "source_b",
+            "name": "Studio B",
+            "status": "error",
+            "startedAt": "2026-04-19T00:00:00Z",
+            "finishedAt": "2026-04-19T00:01:00Z",
+            "heartbeatAt": "2026-04-19T00:01:00Z",
+            "durationMs": 60_000,
+            "error": "boom",
+            "_startedMonotonic": 100.0,
+        },
+    }
+
+    progress = build_fetch_task_progress_payload(
+        phase_key="finalizing_sources",
+        phase_label="Finalizing source results",
+        task_rows=rows,
+        output_count=42,
+    )
+    counts = progress["counts"]
+
+    assert progress["phaseKey"] == "finalizing_sources"
+    assert progress["phaseLabel"] == "Finalizing source results"
+    assert progress["ratio"] == 1.0
+    assert counts["completedTasks"] == 2
+    assert counts["runningTasks"] == 0
+    assert counts["queuedTasks"] == 0
+    assert "estimatedRemainingMs" not in counts
+    assert "etaBasis" not in counts

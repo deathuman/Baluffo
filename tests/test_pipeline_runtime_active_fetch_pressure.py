@@ -101,6 +101,59 @@ def test_write_progress_report_skips_full_report_during_same_source_execution_ph
     assert write_paths == []
 
 
+def test_write_progress_report_writes_finalizing_sources_once_per_phase(tmp_path: Path) -> None:
+    paths = build_pipeline_paths(tmp_path)
+    runtime = PipelineTaskRuntime(
+        run_id="run-finalizing-sources",
+        started_at="2026-04-19T00:00:00Z",
+        current_phase_key="finalizing_sources",
+        current_phase_label="Finalizing source results",
+        last_report_phase_key="executing_sources",
+        last_report_write_monotonic=time.perf_counter(),
+        task_rows={
+            "source_a": {
+                "id": "source_a",
+                "name": "source_a",
+                "status": "ok",
+                "startedAt": "2026-04-19T00:00:00Z",
+                "finishedAt": "2026-04-19T00:01:00Z",
+                "heartbeatAt": "2026-04-19T00:01:00Z",
+                "durationMs": 60_000,
+                "error": "",
+            }
+        },
+    )
+    write_paths: list[str] = []
+
+    def write_once() -> None:
+        write_progress_report(
+            runtime=runtime,
+            canonical_rows=[],
+            lifecycle_rows={},
+            source_reports=[],
+            runtime_payload={"maxWorkers": 6},
+            started_at="2026-04-19T00:00:00Z",
+            paths=paths,
+            schema_version=SCHEMA_VERSION,
+            studio_source_registry=[],
+            load_registry_from_file=lambda *_args, **_kwargs: [],
+            read_approved_since_last_run=lambda *_args, **_kwargs: 0,
+            lifecycle_counts=lambda *_args, **_kwargs: {},
+            build_pipeline_summary=lambda *_args, **_kwargs: {"outputCount": 0},
+            normalize_fetch_report_payload=lambda payload: payload,
+            write_text_if_changed=lambda path, _text: write_paths.append(Path(path).name) or True,
+            phase_key="finalizing_sources",
+            phase_label="Finalizing source results",
+            run_id="run-finalizing-sources",
+            force=False,
+        )
+
+    write_once()
+    write_once()
+
+    assert write_paths == ["jobs-fetch-report.json", "jobs-fetch-report-summary.json"]
+
+
 def test_fetch_progress_counts_include_rate_eta_and_running_source_names() -> None:
     started_mono = time.perf_counter() - 60.0
     rows = {
