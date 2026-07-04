@@ -37,6 +37,7 @@ _LARGE_LIFECYCLE_PAYLOAD_KEYS = {
     "candidates",
     "failures",
     "dedupEvidence",
+    "diagnostics",
     "contaminationAudit",
     "cityGarbageAudit",
     "locationQualityAudit",
@@ -176,6 +177,29 @@ def _compact_string_list(value: list[Any], *, max_items: int = 8) -> list[str]:
     return [_clean_text(item) for item in value if _clean_text(item)][:max_items]
 
 
+def _compact_nested_scalar_dict(
+    value: dict[str, Any],
+    *,
+    max_items: int = 40,
+    nested_max_items: int = 20,
+) -> dict[str, Any]:
+    compact: dict[str, Any] = {}
+    for key, item in value.items():
+        if len(compact) >= max_items:
+            break
+        clean_key = _clean_text(key)
+        if not clean_key:
+            continue
+        if _is_scalar(item):
+            compact[clean_key] = item
+            continue
+        if isinstance(item, dict):
+            nested = _compact_scalar_dict(item, max_items=nested_max_items)
+            if nested:
+                compact[clean_key] = nested
+    return compact
+
+
 def _compact_fetch_progress(progress: dict[str, Any]) -> dict[str, Any]:
     compact = {key: progress.get(key) for key in _FETCH_PROGRESS_KEYS if key in progress}
     counts = progress.get("counts")
@@ -224,21 +248,50 @@ def _compact_fetch_summary(summary: dict[str, Any]) -> dict[str, Any]:
 def _compact_lifecycle_progress(task_type: str, progress: dict[str, Any]) -> dict[str, Any]:
     if _clean_text(task_type).lower() == "fetch":
         return _compact_fetch_progress(progress)
-    return {
-        key: value
+    compact = {
+        _clean_text(key): value
         for key, value in progress.items()
-        if _clean_text(key) not in _LARGE_LIFECYCLE_PAYLOAD_KEYS
+        if _clean_text(key)
+        and _clean_text(key) not in _LARGE_LIFECYCLE_PAYLOAD_KEYS
+        and _is_scalar(value)
     }
+    counts = progress.get("counts")
+    if isinstance(counts, dict):
+        compact_counts = _compact_scalar_dict(counts)
+        if compact_counts:
+            compact["counts"] = compact_counts
+    return compact
 
 
 def _compact_lifecycle_summary(task_type: str, summary: dict[str, Any]) -> dict[str, Any]:
     if _clean_text(task_type).lower() == "fetch":
         return _compact_fetch_summary(summary)
-    return {
-        key: value
-        for key, value in summary.items()
-        if _clean_text(key) not in _LARGE_LIFECYCLE_PAYLOAD_KEYS
-    }
+    compact: dict[str, Any] = {}
+    for key, value in summary.items():
+        clean_key = _clean_text(key)
+        if not clean_key or clean_key in _LARGE_LIFECYCLE_PAYLOAD_KEYS:
+            continue
+        if _is_scalar(value):
+            compact[clean_key] = value
+            continue
+        if isinstance(value, dict) and clean_key in {
+            "outputs",
+            "changed",
+            "cacheDecisionCounts",
+            "sizeGuardrails",
+            "timing",
+            "detailTiming",
+            "remoteTiming",
+        }:
+            nested = _compact_nested_scalar_dict(value)
+            if nested:
+                compact[clean_key] = nested
+            continue
+        if isinstance(value, list) and clean_key in {"warnings", "errors", "partialErrors"}:
+            nested_list = _compact_string_list(value)
+            if nested_list:
+                compact[clean_key] = nested_list
+    return compact
 
 
 def _legacy_state_by_key(state: dict[str, Any]) -> dict[tuple[str, str], dict[str, Any]]:

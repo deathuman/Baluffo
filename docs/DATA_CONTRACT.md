@@ -709,7 +709,7 @@ Lifecycle invariants:
 
 - `queued` and `running` rows must have empty `finishedAt`.
 - `succeeded`, `failed`, `canceled`, and `orphaned` rows must have non-empty `finishedAt`.
-- Reports may enrich `progress` and `summary`, but `admin-task-lifecycle.json` owns active-vs-terminal state.
+- Reports may enrich `progress` and `summary`, but `admin-task-lifecycle.json` owns active-vs-terminal state. Lifecycle writes compact retained rows so historical hot payload collections do not remain in the ledger; read-only lifecycle access does not rewrite existing files.
 - `admin-task-state.json` and `admin-run-history.json` are legacy compatibility/migration artifacts and must not be treated as lifecycle authority.
 - Production bridge startup must not import lifecycle rows from legacy history/state files. Legacy lifecycle reconciliation is reserved for explicit migration or test tooling.
 - Terminal report evidence with `finishedAt` wins over stale active progress, task-state heartbeat, or copied live metadata during lifecycle projection.

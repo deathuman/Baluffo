@@ -10,6 +10,21 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.118] - 2026-07-04
+
+### Fixed
+- Task lifecycle writes now compact every retained `admin-task-lifecycle.json` row, so historical hot fetch/discovery payload bloat is cleaned on the next lifecycle mutation while preserving run identity, terminal state, scalar summaries, output paths, and bounded warnings/errors.
+- Generic non-fetch lifecycle rows now drop stale nested source, candidate, diagnostic, job, and work-item payloads from `progress` and `summary`; lifecycle remains a shared desktop/container authority for liveness and terminal state, not a hot progress mirror.
+- Recent Umbrel active-fetch recovery contracts are now shared desktop package validation requirements: bounded fetch-report summary/live views, visible fetch prep/finalization phases, write coalescing, and active-run route-budget discipline.
+
+### Tests
+- Added regressions for next-write historical lifecycle compaction, generic nested payload trimming, read-only no-rewrite behavior, retention at 240 lifecycle rows, and compact SQLite shadow projection parity.
+
+### Notes
+- This supersedes `0.2.117`, which fixed drained-source finalization visibility but left old lifecycle rows able to keep historical payload bloat on disk. The desktop package is validated locally for this shared runtime fix, but no public desktop tag or GitHub desktop release is created.
+- Container-only pipeline throughput knobs remain container-only; desktop fetch worker defaults are unchanged.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.117] - 2026-07-04
 
 ### Fixed
