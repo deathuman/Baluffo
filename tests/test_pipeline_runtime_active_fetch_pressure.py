@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 
 from src.contracts import SCHEMA_VERSION
+from src.jobs import pipeline_runtime_summary
 from src.jobs.pipeline_bootstrap import build_pipeline_paths
 from src.jobs.pipeline_runtime_summary import PipelineTaskRuntime, build_fetch_task_progress_payload
 from src.jobs.pipeline_runtime_writers import make_task_state_writer, write_progress_report
@@ -152,8 +153,9 @@ def test_fetch_progress_counts_include_rate_eta_and_running_source_names() -> No
     assert counts["runningSourceNames"] == ["Studio A", "Studio B"]
 
 
-def test_aggregate_source_progress_overrides_misleading_source_eta() -> None:
-    started_mono = time.perf_counter() - 600.0
+def test_aggregate_source_progress_overrides_misleading_source_eta(monkeypatch) -> None:
+    monkeypatch.setattr(pipeline_runtime_summary.time, "perf_counter", lambda: 700.0)
+    started_mono = 100.0
     rows = {
         f"source_{index}": {
             "id": f"source_{index}",
@@ -215,8 +217,9 @@ def test_aggregate_source_progress_overrides_misleading_source_eta() -> None:
     assert counts["estimatedRemainingMs"] == counts["activeAggregateEstimatedRemainingMs"]
 
 
-def test_aggregate_source_progress_omits_eta_when_rate_is_not_reliable() -> None:
-    started_mono = time.perf_counter() - 600.0
+def test_aggregate_source_progress_omits_eta_when_rate_is_not_reliable(monkeypatch) -> None:
+    monkeypatch.setattr(pipeline_runtime_summary.time, "perf_counter", lambda: 700.0)
+    started_mono = 100.0
     rows = {
         f"source_{index}": {
             "id": f"source_{index}",
