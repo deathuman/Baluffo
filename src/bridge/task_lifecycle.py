@@ -279,6 +279,7 @@ def _compact_lifecycle_summary(task_type: str, summary: dict[str, Any]) -> dict[
             "changed",
             "cacheDecisionCounts",
             "sizeGuardrails",
+            "shardHashes",
             "timing",
             "detailTiming",
             "remoteTiming",

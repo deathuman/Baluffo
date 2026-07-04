@@ -150,6 +150,7 @@ def test_lifecycle_generic_rows_drop_nested_hot_payloads_but_keep_scalar_evidenc
                                 "report": "C:/data/source-discovery-report.json",
                                 "candidates": [{"name": "drop"}],
                             },
+                            "shardHashes": {"shard-path": "sha"},
                             "candidates": [{"name": "drop"}],
                             "diagnostics": {"nested": {"drop": True}},
                         },
@@ -176,6 +177,7 @@ def test_lifecycle_generic_rows_drop_nested_hot_payloads_but_keep_scalar_evidenc
         "error": "network timeout",
         "warnings": ["kept warning"],
         "outputs": {"report": "C:/data/source-discovery-report.json"},
+        "shardHashes": {"shard-path": "sha"},
     }
     assert row["progress"] == {
         "active": False,
