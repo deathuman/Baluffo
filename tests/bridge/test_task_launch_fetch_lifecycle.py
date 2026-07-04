@@ -65,6 +65,70 @@ def _write_task_state(tmp_path: Path, *, phase_key: str, heartbeat_at: str) -> N
     )
 
 
+def test_fetch_lifecycle_heartbeat_compacts_hot_progress_payload(
+    tmp_path: Path,
+) -> None:
+    heartbeats: list[dict[str, Any]] = []
+    ctx = _ctx(tmp_path, heartbeats)
+    _save_json(
+        tmp_path / "jobs-fetch-tasks.json",
+        {
+            "runId": "fetch_1",
+            "startedAt": "2026-07-02T09:59:00+00:00",
+            "finishedAt": "",
+            "heartbeatAt": "2026-07-02T10:00:00+00:00",
+            "taskProgress": {
+                "active": True,
+                "phaseKey": "executing_sources",
+                "phaseLabel": "Executing sources",
+                "mode": "determinate",
+                "ratio": 0.5,
+                "counts": {
+                    "sourceCount": 100,
+                    "resolvedSources": 50,
+                    "runningTasks": 6,
+                    "runningSourceNames": [f"Studio {index}" for index in range(10)],
+                    "workItems": [{"name": "do not persist"}],
+                    "sources": [{"name": "do not persist"}],
+                },
+                "workItems": [{"name": "do not persist"}],
+            },
+            "summary": {
+                "outputCount": 200,
+                "failedSources": 3,
+                "reportPath": "C:/data/jobs-fetch-report.json",
+                "outputs": {
+                    "report": "C:/data/jobs-fetch-report.json",
+                    "rows": [{"name": "do not persist"}],
+                },
+                "sources": [{"name": "do not persist"}],
+                "workItems": [{"name": "do not persist"}],
+                "error": "kept as terminal/operator signal",
+            },
+        },
+    )
+
+    heartbeat_fetch_lifecycle_from_tasks(ctx, run_id="fetch_1")
+
+    heartbeat = heartbeats[-1]
+    progress = heartbeat["progress"]
+    counts = progress["counts"]
+    summary = heartbeat["summary"]
+    assert progress["phaseKey"] == "executing_sources"
+    assert "workItems" not in progress
+    assert "workItems" not in counts
+    assert "sources" not in counts
+    assert counts["runningSourceNames"] == ["Studio 0", "Studio 1", "Studio 2"]
+    assert counts["runningSourceNamesTruncated"] is True
+    assert summary == {
+        "outputCount": 200,
+        "failedSources": 3,
+        "reportPath": "C:/data/jobs-fetch-report.json",
+        "outputs": {"report": "C:/data/jobs-fetch-report.json"},
+        "error": "kept as terminal/operator signal",
+    }
+
+
 def test_fetch_lifecycle_heartbeat_gate_suppresses_same_phase_rewrites(
     tmp_path: Path,
 ) -> None:

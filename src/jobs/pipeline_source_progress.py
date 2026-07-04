@@ -126,7 +126,7 @@ def mark_task_started(
         event_level="info",
         event_message=f"Started source {source_name}.",
     )
-    write_task_state(force=True)
+    write_task_state()
     if show_progress:
         emit_progress_line(f"[jobs_fetcher] START source={source_name}")
 
@@ -185,7 +185,7 @@ def mark_task_finished(
         ),
     )
     write_progress_report()
-    write_task_state(force=True)
+    write_task_state()
     if show_progress:
         error_text = clean_text(report.get("error"))
         if report.get("status") == "error" and error_text:

@@ -60,6 +60,22 @@ function formatElapsedSeconds(ms) {
   return `${compactCount(Math.max(1, Math.round(value / 1000)))}s`;
 }
 
+function formatDurationShort(ms) {
+  const value = Math.max(0, Number(ms || 0));
+  if (!Number.isFinite(value) || value <= 0) return "";
+  if (value < 90_000) return `${compactCount(Math.max(1, Math.round(value / 1000)))}s`;
+  if (value < 3_600_000) return `${compactCount(Math.max(1, Math.round(value / 60_000)))}m`;
+  return `${compactCount(Math.max(1, Math.round(value / 3_600_000)))}h`;
+}
+
+function formatRatePerMinute(value) {
+  const rate = Number(value || 0);
+  if (!Number.isFinite(rate) || rate <= 0) return "";
+  return Number.isInteger(rate)
+    ? compactCount(rate)
+    : rate.toLocaleString("en-US", { maximumFractionDigits: 1 });
+}
+
 export function formatDiscoverySubtaskProgress(counts) {
   const subtaskKey = String(counts?.subtaskKey || "").trim();
   if (subtaskKey !== "gamedevmap_active_audit") return "";
@@ -150,7 +166,15 @@ function formatFetcherCounts(counts, progress) {
     ? `${compactCount(resolved)}/${compactCount(total)} sources resolved`
     : `${compactCount(resolved)} sources resolved`;
   const warningLabel = okWarnings > 0 ? ` | ok warnings ${compactCount(okWarnings)}` : "";
-  return `${resolvedLabel} | running ${compactCount(running)} | queued ${compactCount(queued)} | output ${compactCount(output)} | failed ${compactCount(failed)} | excluded ${compactCount(excluded)}${warningLabel}`;
+  const rateLabel = formatRatePerMinute(counts?.completedSourcesPerMinute);
+  const etaLabel = formatDurationShort(counts?.estimatedRemainingMs);
+  const runningNames = Array.isArray(counts?.runningSourceNames)
+    ? counts.runningSourceNames.map(item => String(item || "").trim()).filter(Boolean)
+    : [];
+  const runningNamesLabel = runningNames.length
+    ? ` | current ${runningNames.join(", ")}${counts?.runningSourceNamesTruncated ? ", +more" : ""}`
+    : "";
+  return `${resolvedLabel} | running ${compactCount(running)} | queued ${compactCount(queued)} | output ${compactCount(output)} | failed ${compactCount(failed)} | excluded ${compactCount(excluded)}${warningLabel}${rateLabel ? ` | rate ${rateLabel}/min` : ""}${etaLabel ? ` | ETA ${etaLabel}` : ""}${runningNamesLabel}`;
 }
 
 function formatDiscoveryCounts(counts, progress) {

@@ -49,9 +49,15 @@ Bridge defaults:
   - `--max-per-domain 2`
   - `--adapter-http-concurrency 16`
   - `--static-detail-concurrency 4`
+- Container/Umbrel pipeline-launched fetch is a separate bounded throughput profile for the full Jobs pipeline only:
+  - `BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS` defaults to `6` and is clamped to `1..8`
+  - `--max-per-domain 2`
+  - `--adapter-http-concurrency min(maxWorkers * 4, 24)`
+  - `--static-detail-concurrency 4`
+  - manual fetch defaults and desktop defaults are not changed by this pipeline profile.
 - The `uncapped` preset remains intentionally aggressive in container mode (`--max-workers 50`, `--max-per-domain 5`, `--adapter-http-concurrency 48`, and default static detail concurrency).
 - Bridge-started fetch runs include `--social-enabled` by default unless `socialEnabled: false` is passed.
-- Jobs page `Run Discovery + Fetch + Sync` and Admin `Run Jobs Fetcher` share this same bridge-default behavior.
+- Jobs page `Run Discovery + Fetch + Sync` uses the pipeline profile in container mode; Admin `Run Jobs Fetcher` uses the regular bridge defaults unless the request payload overrides them.
 - `POST /tasks/run-jobs-bootstrap` is not a normal fetch preset. It is a first-run/retry bootstrap route that runs only `google_sheets`, `google_sheets_1er2oaxo`, and `google_sheets_1mvqhxat` into a private staging directory with no existing-output seed, no preserve-on-empty, forced refresh, circuit breaker ignored, and social disabled. It promotes `jobs-unified.json`, `jobs-unified-light.json`, `jobs-unified.csv`, and the report only when at least one sheet succeeds and output count is non-zero.
 
 Optional overrides:
@@ -119,8 +125,9 @@ Optional overrides:
   - includes task `status`, `startedAt`, `finishedAt`, `heartbeatAt`, and summary counters.
   - remains the active-run progress surface after M4; source-run bulk insert is terminal postprocessing, not streaming live progress.
   - before source execution creates work items, fetch setup writes bounded phase-level progress with `taskProgress.phaseKey` values `loading_state`, `seeding_existing_output`, `selecting_sources`, `applying_exclusions`, and `initializing_runtime`.
-  - setup progress is intentionally compact: no per-row progress, no JSONL prep stream, no repeated full fetch-report rewrites, and no storage-health or heavy diagnostic route reads during active fetch. Writes are limited to phase changes plus a small minimum interval.
-  - `admin-task-lifecycle.json` must not mirror every hot fetch-progress tick. It stores run identity, terminal state, and bounded coarse heartbeats; active Admin UI should read hot progress from `jobs-fetch-tasks.json`, `/ops/task-live/fetch?view=summary`, or the active-task snapshot.
+  - setup and source-execution progress are intentionally compact: no per-row progress stream, no JSONL prep stream, no repeated full fetch-report rewrites, and no storage-health or heavy diagnostic route reads during active fetch. Hot task-state and summary-sidecar writes happen at phase/terminal boundaries and otherwise no faster than a `5s` source-execution cadence.
+  - `taskProgress.counts` may include bounded active execution diagnostics such as `executionElapsedMs`, `completedSourcesPerMinute`, `estimatedRemainingMs`, and capped `runningSourceNames`.
+  - `admin-task-lifecycle.json` must not mirror every hot fetch-progress tick. It stores run identity, terminal state, bounded coarse heartbeats, scalar summaries, and capped active-source names; active Admin UI should read hot progress from `jobs-fetch-tasks.json`, `/ops/task-live/fetch?view=summary`, or the active-task snapshot.
 
 ## Source-state and circuit-breaker lifecycle
 

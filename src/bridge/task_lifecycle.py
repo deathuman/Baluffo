@@ -26,6 +26,61 @@ ACTIVE_STATUSES = {"queued", "running"}
 TERMINAL_STATUSES = {"succeeded", "failed", "canceled", "orphaned"}
 ALLOWED_STATUSES = ACTIVE_STATUSES | TERMINAL_STATUSES
 
+_LARGE_LIFECYCLE_PAYLOAD_KEYS = {
+    "sources",
+    "sourceFamilies",
+    "workItems",
+    "recentEvents",
+    "details",
+    "jobs",
+    "rows",
+    "candidates",
+    "failures",
+    "dedupEvidence",
+    "contaminationAudit",
+    "cityGarbageAudit",
+    "locationQualityAudit",
+    "sectorQualityAudit",
+    "providerCoverage",
+    "providerStaticOverlap",
+    "staticSuppressionPolicy",
+    "redundantStaticProposals",
+}
+
+_FETCH_PROGRESS_KEYS = {
+    "active",
+    "phaseKey",
+    "phaseLabel",
+    "phase",
+    "label",
+    "mode",
+    "ratio",
+    "percent",
+    "updatedAt",
+}
+
+_FETCH_PROGRESS_COUNT_KEYS = {
+    "sourceCount",
+    "totalTasks",
+    "queuedTasks",
+    "runningTasks",
+    "completedTasks",
+    "resolvedSources",
+    "outputCount",
+    "failedSources",
+    "excludedSources",
+    "executionElapsedMs",
+    "completedSourcesPerMinute",
+    "estimatedRemainingMs",
+    "setupElapsedMs",
+    "phaseElapsedMs",
+    "sourceStateRows",
+    "lifecycleRows",
+    "seededOutputRows",
+    "selectedSourceCount",
+    "excludedSourceCount",
+}
+
 
 def _clean_text(value: Any) -> str:
     return str(value or "").strip()
@@ -90,6 +145,89 @@ def _legacy_summary(entry: dict[str, Any]) -> dict[str, Any]:
 def _legacy_progress(entry: dict[str, Any]) -> dict[str, Any]:
     progress = entry.get("progress") or entry.get("taskProgress")
     return dict(progress) if isinstance(progress, dict) else {}
+
+
+def _is_scalar(value: Any) -> bool:
+    return value is None or isinstance(value, str | int | float | bool)
+
+
+def _compact_scalar_dict(value: dict[str, Any], *, max_items: int = 40) -> dict[str, Any]:
+    compact: dict[str, Any] = {}
+    for key, item in value.items():
+        if len(compact) >= max_items:
+            break
+        if _is_scalar(item):
+            compact[_clean_text(key)] = item
+    return {key: item for key, item in compact.items() if key}
+
+
+def _compact_string_list(value: list[Any], *, max_items: int = 8) -> list[str]:
+    return [_clean_text(item) for item in value if _clean_text(item)][:max_items]
+
+
+def _compact_fetch_progress(progress: dict[str, Any]) -> dict[str, Any]:
+    compact = {key: progress.get(key) for key in _FETCH_PROGRESS_KEYS if key in progress}
+    counts = progress.get("counts")
+    if isinstance(counts, dict):
+        compact_counts = {
+            key: counts.get(key) for key in _FETCH_PROGRESS_COUNT_KEYS if key in counts
+        }
+        running_names = counts.get("runningSourceNames")
+        if isinstance(running_names, list):
+            names = _compact_string_list(running_names, max_items=3)
+            if names:
+                compact_counts["runningSourceNames"] = names
+                compact_counts["runningSourceNamesTruncated"] = (
+                    bool(counts.get("runningSourceNamesTruncated")) or len(running_names) > 3
+                )
+        compact["counts"] = compact_counts
+    return compact
+
+
+def _compact_fetch_summary(summary: dict[str, Any]) -> dict[str, Any]:
+    compact: dict[str, Any] = {}
+    for key, value in summary.items():
+        clean_key = _clean_text(key)
+        if not clean_key or clean_key in _LARGE_LIFECYCLE_PAYLOAD_KEYS:
+            continue
+        if _is_scalar(value):
+            compact[clean_key] = value
+            continue
+        if isinstance(value, dict) and clean_key in {
+            "outputs",
+            "changed",
+            "cacheDecisionCounts",
+            "sizeGuardrails",
+        }:
+            nested = _compact_scalar_dict(value)
+            if nested:
+                compact[clean_key] = nested
+            continue
+        if isinstance(value, list) and clean_key in {"warnings", "errors", "partialErrors"}:
+            nested_list = _compact_string_list(value)
+            if nested_list:
+                compact[clean_key] = nested_list
+    return compact
+
+
+def _compact_lifecycle_progress(task_type: str, progress: dict[str, Any]) -> dict[str, Any]:
+    if _clean_text(task_type).lower() == "fetch":
+        return _compact_fetch_progress(progress)
+    return {
+        key: value
+        for key, value in progress.items()
+        if _clean_text(key) not in _LARGE_LIFECYCLE_PAYLOAD_KEYS
+    }
+
+
+def _compact_lifecycle_summary(task_type: str, summary: dict[str, Any]) -> dict[str, Any]:
+    if _clean_text(task_type).lower() == "fetch":
+        return _compact_fetch_summary(summary)
+    return {
+        key: value
+        for key, value in summary.items()
+        if _clean_text(key) not in _LARGE_LIFECYCLE_PAYLOAD_KEYS
+    }
 
 
 def _legacy_state_by_key(state: dict[str, Any]) -> dict[tuple[str, str], dict[str, Any]]:
@@ -362,12 +500,15 @@ class TaskLifecycleService:
         elif not finished_at:
             finished_at = self._now_iso()
 
+        task_type = _clean_text(row.get("taskType") or row.get("type")).lower()
         summary = row.get("summary")
         progress = row.get("progress") or row.get("taskProgress")
+        summary_payload = dict(summary) if isinstance(summary, dict) else {}
+        progress_payload = dict(progress) if isinstance(progress, dict) else {}
         return {
             "schemaVersion": SCHEMA_VERSION,
             "runId": _clean_text(row.get("runId") or row.get("id")),
-            "taskType": _clean_text(row.get("taskType") or row.get("type")).lower(),
+            "taskType": task_type,
             "parentRunId": _clean_text(row.get("parentRunId")),
             "parentTaskType": _clean_text(row.get("parentTaskType")).lower(),
             "status": status,
@@ -378,8 +519,8 @@ class TaskLifecycleService:
             "terminalReason": _clean_text(row.get("terminalReason")),
             "ownerKind": _clean_text(row.get("ownerKind")),
             "ownerPid": int(row.get("ownerPid") or 0),
-            "progress": dict(progress) if isinstance(progress, dict) else {},
-            "summary": dict(summary) if isinstance(summary, dict) else {},
+            "progress": _compact_lifecycle_progress(task_type, progress_payload),
+            "summary": _compact_lifecycle_summary(task_type, summary_payload),
         }
 
     def _upsert_locked(self, entry: dict[str, Any]) -> dict[str, Any]:

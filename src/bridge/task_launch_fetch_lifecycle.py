@@ -28,6 +28,65 @@ from src.bridge.task_admission import (
 )
 
 FETCH_LIFECYCLE_HEARTBEAT_MIN_INTERVAL_S = 30.0
+FETCH_LIFECYCLE_RUNNING_SOURCE_NAME_LIMIT = 3
+
+_FETCH_LIFECYCLE_PROGRESS_KEYS = {
+    "active",
+    "phaseKey",
+    "phaseLabel",
+    "phase",
+    "label",
+    "mode",
+    "ratio",
+    "percent",
+    "updatedAt",
+}
+
+_FETCH_LIFECYCLE_COUNT_KEYS = {
+    "sourceCount",
+    "totalTasks",
+    "queuedTasks",
+    "runningTasks",
+    "completedTasks",
+    "resolvedSources",
+    "outputCount",
+    "failedSources",
+    "excludedSources",
+    "executionElapsedMs",
+    "completedSourcesPerMinute",
+    "estimatedRemainingMs",
+    "setupElapsedMs",
+    "phaseElapsedMs",
+    "sourceStateRows",
+    "lifecycleRows",
+    "seededOutputRows",
+    "selectedSourceCount",
+    "excludedSourceCount",
+}
+
+_FETCH_LIFECYCLE_SUMMARY_KEYS = {
+    "outputs",
+    "reportPath",
+    "outputPath",
+    "lightOutputPath",
+    "csvPath",
+    "outputCount",
+    "keptCount",
+    "fetchedCount",
+    "failedSources",
+    "totalSources",
+    "sourceCount",
+    "successfulSources",
+    "excludedSources",
+    "durationMs",
+    "queued",
+    "running",
+    "ok",
+    "error",
+    "excluded",
+    "status",
+    "terminalReason",
+}
 
 
 @dataclass(frozen=True)
@@ -62,6 +121,48 @@ class FetchLifecycleContext:
 def fetch_summary_is_failed(summary: dict[str, Any]) -> bool:
     status = str(summary.get("status") or "").strip().lower()
     return bool(status in {"error", "failed", "failure"} or str(summary.get("error") or "").strip())
+
+
+def _compact_fetch_lifecycle_counts(counts: dict[str, Any]) -> dict[str, Any]:
+    compact = {key: counts.get(key) for key in _FETCH_LIFECYCLE_COUNT_KEYS if key in counts}
+    running_names = counts.get("runningSourceNames")
+    if isinstance(running_names, list):
+        names = [str(item or "").strip() for item in running_names if str(item or "").strip()]
+        if names:
+            compact["runningSourceNames"] = names[:FETCH_LIFECYCLE_RUNNING_SOURCE_NAME_LIMIT]
+            compact["runningSourceNamesTruncated"] = (
+                bool(counts.get("runningSourceNamesTruncated"))
+                or len(names) > FETCH_LIFECYCLE_RUNNING_SOURCE_NAME_LIMIT
+            )
+    return compact
+
+
+def _compact_fetch_lifecycle_progress(progress: dict[str, Any]) -> dict[str, Any]:
+    compact = {key: progress.get(key) for key in _FETCH_LIFECYCLE_PROGRESS_KEYS if key in progress}
+    counts = progress.get("counts")
+    if isinstance(counts, dict):
+        compact["counts"] = _compact_fetch_lifecycle_counts(dict(counts))
+    return compact
+
+
+def _compact_fetch_lifecycle_summary(summary: dict[str, Any]) -> dict[str, Any]:
+    compact: dict[str, Any] = {}
+    for key in _FETCH_LIFECYCLE_SUMMARY_KEYS:
+        if key not in summary:
+            continue
+        value = summary.get(key)
+        if isinstance(value, dict) and key == "outputs":
+            outputs = {
+                str(output_key or "").strip(): output_value
+                for output_key, output_value in value.items()
+                if str(output_key or "").strip()
+                and (output_value is None or isinstance(output_value, str | int | float | bool))
+            }
+            if outputs:
+                compact[key] = outputs
+            continue
+        compact[key] = value
+    return compact
 
 
 # ── report shell ────────────────────────────────────────────────────
@@ -210,8 +311,12 @@ def heartbeat_fetch_lifecycle_from_tasks(
         return
     progress = tasks.get("taskProgress")
     summary = tasks.get("summary")
-    progress_payload = dict(progress) if isinstance(progress, dict) else {}
-    summary_payload = dict(summary) if isinstance(summary, dict) else {}
+    progress_payload = (
+        _compact_fetch_lifecycle_progress(dict(progress)) if isinstance(progress, dict) else {}
+    )
+    summary_payload = (
+        _compact_fetch_lifecycle_summary(dict(summary)) if isinstance(summary, dict) else {}
+    )
     phase = str(progress_payload.get("phaseKey") or progress_payload.get("phase") or "")
     stage = phase.strip() or "running"
     if heartbeat_gate is not None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from dataclasses import dataclass, field
 from typing import Any, cast
 
@@ -17,6 +18,70 @@ from src.shared.utils import now_iso
 
 def _runtime_non_negative_int(runtime: Any, attr_name: str) -> int:
     return max(0, int(getattr(runtime, attr_name, 0) or 0))
+
+
+RUNNING_SOURCE_NAME_LIMIT = 5
+
+
+def _task_status(row: dict[str, Any]) -> str:
+    return str(row.get("status") or "").strip().lower()
+
+
+def _source_execution_row_stats(rows: list[dict[str, Any]]) -> tuple[list[float], list[str]]:
+    started_monotonic: list[float] = []
+    running_names: list[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            started = float(row.get("_startedMonotonic") or 0.0)
+        except (TypeError, ValueError):
+            started = 0.0
+        if started > 0:
+            started_monotonic.append(started)
+        if _task_status(row) == "running":
+            name = clean_text(row.get("name") or row.get("id"))
+            if name:
+                running_names.append(name)
+    return started_monotonic, running_names
+
+
+def _source_execution_timing_stats(
+    started_monotonic: list[float],
+    *,
+    total_tasks: int,
+    completed_tasks: int,
+) -> dict[str, Any]:
+    if not started_monotonic:
+        return {}
+    elapsed_ms = max(0, int((time.perf_counter() - min(started_monotonic)) * 1000))
+    stats: dict[str, Any] = {"executionElapsedMs": elapsed_ms}
+    if completed_tasks <= 0 or elapsed_ms <= 0:
+        return stats
+    per_minute = (completed_tasks * 60000.0) / max(1.0, float(elapsed_ms))
+    stats["completedSourcesPerMinute"] = round(per_minute, 1)
+    remaining = max(0, int(total_tasks or 0) - int(completed_tasks or 0))
+    if remaining > 0 and per_minute > 0:
+        stats["estimatedRemainingMs"] = int((remaining / per_minute) * 60000.0)
+    return stats
+
+
+def _source_execution_stats(
+    rows: list[dict[str, Any]],
+    *,
+    total_tasks: int,
+    completed_tasks: int,
+) -> dict[str, Any]:
+    started_monotonic, running_names = _source_execution_row_stats(rows)
+    stats = _source_execution_timing_stats(
+        started_monotonic,
+        total_tasks=total_tasks,
+        completed_tasks=completed_tasks,
+    )
+    if running_names:
+        stats["runningSourceNames"] = running_names[:RUNNING_SOURCE_NAME_LIMIT]
+        stats["runningSourceNamesTruncated"] = len(running_names) > RUNNING_SOURCE_NAME_LIMIT
+    return stats
 
 
 @dataclass
@@ -61,17 +126,11 @@ def build_fetch_task_progress_payload(
     rows = [row for row in task_rows.values() if isinstance(row, dict)]
     total_tasks = len(rows)
     source_count = total_tasks
-    queued_tasks = sum(
-        1 for row in rows if str(row.get("status") or "").strip().lower() == "queued"
-    )
-    running_tasks = sum(
-        1 for row in rows if str(row.get("status") or "").strip().lower() == "running"
-    )
-    ok_tasks = sum(1 for row in rows if str(row.get("status") or "").strip().lower() == "ok")
-    error_tasks = sum(1 for row in rows if str(row.get("status") or "").strip().lower() == "error")
-    excluded_tasks = sum(
-        1 for row in rows if str(row.get("status") or "").strip().lower() == "excluded"
-    )
+    queued_tasks = sum(1 for row in rows if _task_status(row) == "queued")
+    running_tasks = sum(1 for row in rows if _task_status(row) == "running")
+    ok_tasks = sum(1 for row in rows if _task_status(row) == "ok")
+    error_tasks = sum(1 for row in rows if _task_status(row) == "error")
+    excluded_tasks = sum(1 for row in rows if _task_status(row) == "excluded")
     completed_tasks = ok_tasks + error_tasks + excluded_tasks
     failed_sources = error_tasks
     excluded_sources = excluded_tasks
@@ -89,23 +148,33 @@ def build_fetch_task_progress_payload(
         mode = "determinate"
         ratio = 1.0
 
+    counts = {
+        "sourceCount": source_count,
+        "totalTasks": total_tasks,
+        "queuedTasks": queued_tasks,
+        "runningTasks": running_tasks,
+        "completedTasks": completed_tasks,
+        "resolvedSources": resolved_sources,
+        "outputCount": max(0, int(output_count or 0)),
+        "failedSources": failed_sources,
+        "excludedSources": excluded_sources,
+    }
+    if phase_key == "executing_sources":
+        counts.update(
+            _source_execution_stats(
+                rows,
+                total_tasks=total_tasks,
+                completed_tasks=completed_tasks,
+            )
+        )
+
     return {
         "active": not bool(finished),
         "phaseKey": str(phase_key or "").strip(),
         "phaseLabel": str(phase_label or "").strip(),
         "mode": mode,
         "ratio": max(0.0, min(1.0, ratio)),
-        "counts": {
-            "sourceCount": source_count,
-            "totalTasks": total_tasks,
-            "queuedTasks": queued_tasks,
-            "runningTasks": running_tasks,
-            "completedTasks": completed_tasks,
-            "resolvedSources": resolved_sources,
-            "outputCount": max(0, int(output_count or 0)),
-            "failedSources": failed_sources,
-            "excludedSources": excluded_sources,
-        },
+        "counts": counts,
     }
 
 

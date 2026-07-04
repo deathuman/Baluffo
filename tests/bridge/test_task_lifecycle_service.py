@@ -85,6 +85,74 @@ def test_lifecycle_terminal_rows_emit_finished_at_and_route_status(tmp_path: Pat
     assert recent[0]["summary"]["queuedCandidateCount"] == 3
 
 
+def test_fetch_lifecycle_normalization_compacts_oversized_hot_payloads(tmp_path: Path) -> None:
+    lifecycle_path = tmp_path / "admin-task-lifecycle.json"
+    lifecycle_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "updatedAt": "2026-05-06T18:00:00+00:00",
+                "rows": [
+                    {
+                        "runId": "fetch_oversized",
+                        "taskType": "fetch",
+                        "status": "running",
+                        "stage": "executing_sources",
+                        "startedAt": "2026-05-06T18:00:00+00:00",
+                        "heartbeatAt": "2026-05-06T18:00:00+00:00",
+                        "progress": {
+                            "active": True,
+                            "phaseKey": "executing_sources",
+                            "phaseLabel": "Executing sources",
+                            "counts": {
+                                "sourceCount": 100,
+                                "resolvedSources": 40,
+                                "runningSourceNames": [f"Studio {index}" for index in range(10)],
+                                "workItems": [{"name": "drop"}],
+                            },
+                            "workItems": [{"name": "drop"}],
+                        },
+                        "summary": {
+                            "outputCount": 200,
+                            "failedSources": 3,
+                            "reportPath": "C:/data/jobs-fetch-report.json",
+                            "outputs": {
+                                "report": "C:/data/jobs-fetch-report.json",
+                                "rows": [{"name": "drop"}],
+                            },
+                            "sources": [{"name": "drop"}],
+                            "workItems": [{"name": "drop"}],
+                            "error": "kept",
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    service = _service(tmp_path)
+
+    service.heartbeat_run(
+        "fetch_oversized",
+        "fetch",
+        heartbeat_at="2026-05-06T18:01:00+00:00",
+        stage="executing_sources",
+    )
+
+    row = json.loads(lifecycle_path.read_text(encoding="utf-8"))["rows"][0]
+    assert "workItems" not in row["progress"]
+    assert "workItems" not in row["progress"]["counts"]
+    assert row["progress"]["counts"]["runningSourceNames"] == ["Studio 0", "Studio 1", "Studio 2"]
+    assert row["progress"]["counts"]["runningSourceNamesTruncated"] is True
+    assert row["summary"] == {
+        "outputCount": 200,
+        "failedSources": 3,
+        "reportPath": "C:/data/jobs-fetch-report.json",
+        "outputs": {"report": "C:/data/jobs-fetch-report.json"},
+        "error": "kept",
+    }
+
+
 def test_lifecycle_parent_child_attachment_persists_owner(tmp_path: Path) -> None:
     service = _service(tmp_path)
 

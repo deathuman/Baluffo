@@ -39,6 +39,9 @@ from .pipeline_runtime_summary import (
     update_fetch_work_item_progress,
 )
 
+ACTIVE_FETCH_TASK_STATE_MIN_INTERVAL_S = 5.0
+ACTIVE_FETCH_REPORT_MIN_INTERVAL_S = 5.0
+
 
 class FetchTextLimited(Protocol):
     _baluffo_gate_wait_stats: Callable[[str], dict[str, int]]
@@ -399,7 +402,7 @@ def make_progress_report_dispatcher(
     *,
     runtime: PipelineTaskRuntime,
     write_progress_report: Callable[..., None],
-    coalesce_seconds: float = 0.25,
+    coalesce_seconds: float = ACTIVE_FETCH_REPORT_MIN_INTERVAL_S,
 ) -> tuple[Callable[..., None], Callable[[], None]]:
     def reporter_loop() -> None:
         while True:
@@ -482,15 +485,19 @@ def write_progress_report(
 ) -> None:
     with runtime.report_lock:
         now_mono = time.perf_counter()
-        phase_changed = str(phase_key or "").strip() != runtime.last_report_phase_key
+        current_phase = str(phase_key or "").strip()
+        phase_changed = current_phase != runtime.last_report_phase_key
+        if not force and not phase_changed and current_phase == "executing_sources":
+            return
         if (
             not force
             and not phase_changed
-            and (now_mono - runtime.last_report_write_monotonic) < 0.75
+            and (now_mono - runtime.last_report_write_monotonic)
+            < ACTIVE_FETCH_REPORT_MIN_INTERVAL_S
         ):
             return
         runtime.last_report_write_monotonic = now_mono
-        runtime.last_report_phase_key = str(phase_key or "").strip()
+        runtime.last_report_phase_key = current_phase
         update_fetch_runtime_phase(
             runtime,
             phase_key=phase_key,
@@ -562,11 +569,17 @@ def make_task_state_writer(
     active_snapshot_path: Any | None = None,
     normalize_task_state_payload: Callable[..., dict[str, Any]],
     write_text_if_changed: Callable[[Any, str], Any],
+    min_interval_s: float = ACTIVE_FETCH_TASK_STATE_MIN_INTERVAL_S,
 ) -> Callable[..., None]:
     def write_task_state(finished_at: str = "", *, force: bool = False) -> None:
         with runtime.task_lock:
             now_mono = time.perf_counter()
-            if not force and (now_mono - runtime.last_task_write_monotonic) < 0.9:
+            if (
+                not force
+                and not finished_at
+                and (now_mono - runtime.last_task_write_monotonic)
+                < max(0.0, float(min_interval_s or 0.0))
+            ):
                 return
             runtime.last_task_write_monotonic = now_mono
             payload = normalize_task_state_payload(
@@ -583,13 +596,12 @@ def make_task_state_writer(
             write_text_if_changed(
                 task_state_path, json.dumps(payload, indent=2, ensure_ascii=False)
             )
-            if force or finished_at:
-                write_fetch_report_summary_artifact(
-                    report_path,
-                    payload,
-                    write_text_if_changed=write_text_if_changed,
-                    include_sources=False,
-                )
+            write_fetch_report_summary_artifact(
+                report_path,
+                payload,
+                write_text_if_changed=write_text_if_changed,
+                include_sources=False,
+            )
             if active_snapshot_path is not None:
                 upsert_snapshot_rows(
                     active_snapshot_path,

@@ -10,6 +10,21 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.114] - 2026-07-04
+
+### Fixed
+- Umbrel pipeline-launched fetch now uses a bounded container-only throughput profile: `BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS` defaults to `6`, clamps to `1..8`, keeps `maxPerDomain=2`, keeps static detail concurrency at `4`, and caps adapter HTTP concurrency at `24`. Manual fetch and desktop defaults are unchanged.
+- Active fetch hot summaries now include bounded execution timing, completion rate, coarse ETA, and capped running source names so Admin/JOBS can show real source execution progress during long fetches.
+- Active source execution no longer forces `jobs-fetch-tasks.json`, `jobs-fetch-report-summary.json`, the active snapshot, or full `jobs-fetch-report.json` writes per source start/finish. Hot task state and summary sidecars update at phase/terminal boundaries and otherwise no faster than a `5s` cadence, while same-phase source execution skips full-report rewrites.
+- Fetch lifecycle rows now stay compact: active heartbeats carry only run identity, coarse phase/progress counts, summary scalars, and capped running-source names, and stale oversized fetch lifecycle rows are compacted on the next lifecycle save.
+
+### Tests
+- Added regressions for active execution write coalescing, sparse full-report writes, lifecycle compaction, pipeline-only container fetch profile clamping, active fetch rate/ETA payloads, and frontend progress rendering.
+
+### Notes
+- This supersedes `0.2.113`, which restored compact route stability under active fetch but still left long-running full pipeline fetches bottlenecked by conservative container throughput and unnecessary active-run artifact write pressure. No public desktop tag is created.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.113] - 2026-07-03
 
 ### Fixed

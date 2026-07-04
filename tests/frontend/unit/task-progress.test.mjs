@@ -100,6 +100,34 @@ test("formatTaskProgressDetail renders fetch preparation counts", () => {
   assert.doesNotMatch(label, /0 sources resolved/i);
 });
 
+test("formatTaskProgressDetail renders active fetch rate ETA and running sources", () => {
+  const label = formatTaskProgressDetail("fetch", {
+    active: true,
+    phaseKey: "executing_sources",
+    phaseLabel: "Executing sources",
+    mode: "determinate",
+    ratio: 0.5,
+    counts: {
+      resolvedSources: 50,
+      sourceCount: 100,
+      runningTasks: 6,
+      queuedTasks: 44,
+      outputCount: 1234,
+      failedSources: 3,
+      excludedSources: 2,
+      completedSourcesPerMinute: 12.4,
+      estimatedRemainingMs: 245000,
+      runningSourceNames: ["Studio A", "Studio B", "Studio C"],
+      runningSourceNamesTruncated: true
+    }
+  });
+
+  assert.match(label, /50\/100 sources resolved/i);
+  assert.match(label, /rate 12\.4\/min/i);
+  assert.match(label, /ETA 4m/i);
+  assert.match(label, /current Studio A, Studio B, Studio C, \+more/i);
+});
+
 test("formatTaskProgressCounts does not invent zero pipeline counts", () => {
   assert.equal(formatTaskProgressCounts("pipeline", {}), "");
   assert.equal(

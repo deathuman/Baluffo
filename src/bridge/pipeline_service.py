@@ -8,6 +8,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused pipeline service
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 import uuid
@@ -33,6 +34,12 @@ PIPELINE_COMPLETION_NOTIFICATION_MIN_SECONDS = 60.0
 CONTROL_STATUS_HEARTBEAT_MIN_SECONDS = 10.0
 SYNC_REMOTE_CONFLICT_KIND = "recoverable_remote_conflict"
 SYNC_PUSH_WARNING_KIND = "sync_push_failed"
+PIPELINE_CONTAINER_FETCH_MAX_WORKERS_ENV = "BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS"
+PIPELINE_CONTAINER_FETCH_DEFAULT_MAX_WORKERS = 6
+PIPELINE_CONTAINER_FETCH_MAX_WORKERS_CAP = 8
+PIPELINE_CONTAINER_FETCH_MAX_PER_DOMAIN = 2
+PIPELINE_CONTAINER_FETCH_STATIC_DETAIL_CONCURRENCY = 4
+PIPELINE_CONTAINER_FETCH_ADAPTER_CONCURRENCY_CAP = 24
 _EXPECTED_PIPELINE_CHILD_BOUNDARY_EXCEPTIONS = (RuntimeError, OSError, ValueError)
 _PIPELINE_OPERATIONAL_ERRORS = (RuntimeError, OSError, TypeError, ValueError)
 
@@ -87,6 +94,7 @@ class PipelineService:
         clear_task_state: Callable[[str], None] | None = None,
         pipeline_completion_notifier: Callable[[dict[str, Any]], Any] | None = None,
         control_data_dir: Path | None = None,
+        container_mode: bool = False,
     ) -> None:
         self._lock = pipeline_state_lock
         self._status = pipeline_status
@@ -122,6 +130,7 @@ class PipelineService:
         self._pipeline_completion_notifier = pipeline_completion_notifier
         self._completion_notification_run_id = ""
         self._control_data_dir = Path(control_data_dir) if control_data_dir is not None else None
+        self._container_mode = bool(container_mode)
         self._control_status_last_write_monotonic = 0.0
         if self._runtime.abort_requests is None:
             self._runtime.abort_requests = {}
@@ -971,9 +980,36 @@ class PipelineService:
         except _EXPECTED_PIPELINE_CHILD_BOUNDARY_EXCEPTIONS as exc:
             raise RuntimeError(f"discovery_launch: {exc}") from exc
 
+    @staticmethod
+    def _pipeline_container_fetch_max_workers() -> int:
+        raw_value = os.environ.get(PIPELINE_CONTAINER_FETCH_MAX_WORKERS_ENV)
+        try:
+            parsed = int(str(raw_value or "").strip())
+        except (TypeError, ValueError):
+            parsed = PIPELINE_CONTAINER_FETCH_DEFAULT_MAX_WORKERS
+        return max(1, min(PIPELINE_CONTAINER_FETCH_MAX_WORKERS_CAP, parsed))
+
+    def _fetch_child_payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {"preset": "default"}
+        if not self._container_mode:
+            return payload
+        max_workers = self._pipeline_container_fetch_max_workers()
+        payload.update(
+            {
+                "maxWorkers": max_workers,
+                "maxPerDomain": PIPELINE_CONTAINER_FETCH_MAX_PER_DOMAIN,
+                "adapterHttpConcurrency": min(
+                    PIPELINE_CONTAINER_FETCH_ADAPTER_CONCURRENCY_CAP,
+                    max(1, int(max_workers or 1)) * 4,
+                ),
+                "staticDetailConcurrency": PIPELINE_CONTAINER_FETCH_STATIC_DETAIL_CONCURRENCY,
+            }
+        )
+        return payload
+
     def _start_fetch_child(self) -> dict[str, Any]:
         try:
-            return self._start_fetcher_task({"preset": "default"})
+            return self._start_fetcher_task(self._fetch_child_payload())
         except _EXPECTED_PIPELINE_CHILD_BOUNDARY_EXCEPTIONS as exc:
             raise RuntimeError(f"fetch_launch: {exc}") from exc
 
