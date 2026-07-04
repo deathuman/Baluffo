@@ -23,6 +23,13 @@ def _runtime_non_negative_int(runtime: Any, attr_name: str) -> int:
 RUNNING_SOURCE_NAME_LIMIT = 5
 
 
+def _safe_non_negative_int(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def _task_status(row: dict[str, Any]) -> str:
     return str(row.get("status") or "").strip().lower()
 
@@ -66,6 +73,64 @@ def _source_execution_timing_stats(
     return stats
 
 
+def _aggregate_progress_timing_stats(
+    row: dict[str, Any],
+    *,
+    completed: int,
+    total: int,
+) -> dict[str, Any]:
+    try:
+        started = float(row.get("_startedMonotonic") or 0.0)
+    except (TypeError, ValueError):
+        started = 0.0
+    if started <= 0 or completed <= 0:
+        return {}
+    elapsed_ms = max(0, int((time.perf_counter() - started) * 1000))
+    if elapsed_ms <= 0:
+        return {}
+    per_minute = (completed * 60000.0) / max(1.0, float(elapsed_ms))
+    if per_minute <= 0:
+        return {}
+    stats: dict[str, Any] = {"activeAggregateRatePerMinute": round(per_minute, 1)}
+    remaining = max(0, int(total or 0) - int(completed or 0))
+    if remaining > 0:
+        stats["activeAggregateEstimatedRemainingMs"] = int((remaining / per_minute) * 60000.0)
+    return stats
+
+
+def _running_aggregate_progress_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    for row in rows:
+        if not isinstance(row, dict) or _task_status(row) != "running":
+            continue
+        progress = as_json_object(row.get("progress"))
+        counts = as_json_object(progress.get("counts"))
+        total = _safe_non_negative_int(counts.get("totalSources"))
+        completed = _safe_non_negative_int(counts.get("completedSources"))
+        if total <= 0 or completed >= total:
+            continue
+        source_name = clean_text(row.get("name") or row.get("id"))
+        stats: dict[str, Any] = {
+            "etaBasis": "aggregate",
+            "activeAggregateSourceName": source_name,
+            "activeAggregatePhaseLabel": clean_text(progress.get("phaseLabel")),
+            "activeAggregateTargetLabel": clean_text(progress.get("targetLabel")),
+            "activeAggregateCompleted": completed,
+            "activeAggregateTotal": total,
+            "activeAggregateRunning": _safe_non_negative_int(counts.get("runningSources")),
+            "activeAggregateQueued": _safe_non_negative_int(counts.get("queuedSources")),
+            "activeAggregateError": _safe_non_negative_int(counts.get("errorSources")),
+        }
+        stats.update(
+            _aggregate_progress_timing_stats(
+                row,
+                completed=completed,
+                total=total,
+            )
+        )
+        return stats
+    return {}
+
+
 def _source_execution_stats(
     rows: list[dict[str, Any]],
     *,
@@ -81,6 +146,15 @@ def _source_execution_stats(
     if running_names:
         stats["runningSourceNames"] = running_names[:RUNNING_SOURCE_NAME_LIMIT]
         stats["runningSourceNamesTruncated"] = len(running_names) > RUNNING_SOURCE_NAME_LIMIT
+    aggregate_stats = _running_aggregate_progress_stats(rows)
+    if aggregate_stats:
+        stats.update(aggregate_stats)
+        if "activeAggregateEstimatedRemainingMs" in aggregate_stats:
+            stats["estimatedRemainingMs"] = aggregate_stats["activeAggregateEstimatedRemainingMs"]
+        else:
+            stats.pop("estimatedRemainingMs", None)
+    elif "estimatedRemainingMs" in stats:
+        stats["etaBasis"] = "sources"
     return stats
 
 

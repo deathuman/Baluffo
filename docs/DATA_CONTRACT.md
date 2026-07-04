@@ -733,7 +733,7 @@ Sync `taskProgress.counts` may include additive sharded-push diagnostics while `
 | `ratio` | `number` | `0..1` progress ratio when `mode` is `determinate`; ignored otherwise. |
 | `counts` | `object` | Display-only task metrics used to enrich the label, not to redefine primary progress semantics. |
 
-Fetch `taskProgress.counts.runningSourceNames` is the only count value that may remain an array. It is a bounded `string[]` of current source names for Admin/JOBS active fetch rendering; all other count fields stay scalar compatibility values.
+Fetch `taskProgress.counts.runningSourceNames` is the only count value that may remain an array. It is a bounded `string[]` of current source names for Admin/JOBS active fetch rendering; all other count fields stay scalar compatibility values. Running aggregate sources may also expose scalar aggregate-tail fields such as `etaBasis`, `activeAggregateSourceName`, `activeAggregateCompleted`, `activeAggregateTotal`, `activeAggregateRunning`, `activeAggregateQueued`, `activeAggregateError`, `activeAggregateRatePerMinute`, and `activeAggregateEstimatedRemainingMs`; when `etaBasis` is `aggregate`, `estimatedRemainingMs` is based on aggregate progress rather than top-level source count.
 
 ### Frontend contract
 

@@ -150,3 +150,120 @@ def test_fetch_progress_counts_include_rate_eta_and_running_source_names() -> No
     assert counts["completedSourcesPerMinute"] >= 1
     assert counts["estimatedRemainingMs"] > 0
     assert counts["runningSourceNames"] == ["Studio A", "Studio B"]
+
+
+def test_aggregate_source_progress_overrides_misleading_source_eta() -> None:
+    started_mono = time.perf_counter() - 600.0
+    rows = {
+        f"source_{index}": {
+            "id": f"source_{index}",
+            "name": f"Studio {index}",
+            "status": "ok",
+            "startedAt": "2026-04-19T00:00:00Z",
+            "finishedAt": "2026-04-19T00:01:00Z",
+            "heartbeatAt": "2026-04-19T00:01:00Z",
+            "durationMs": 60_000,
+            "error": "",
+            "_startedMonotonic": started_mono,
+        }
+        for index in range(333)
+    }
+    rows["scrapy_static_sources"] = {
+        "id": "scrapy_static_sources",
+        "name": "scrapy_static_sources",
+        "status": "running",
+        "startedAt": "2026-04-19T00:00:00Z",
+        "finishedAt": "",
+        "heartbeatAt": "2026-04-19T00:10:00Z",
+        "durationMs": 0,
+        "error": "",
+        "_startedMonotonic": started_mono,
+        "progress": {
+            "phaseKey": "loading_source",
+            "phaseLabel": "Processing browser fallback queue",
+            "targetLabel": "Studio Tail",
+            "counts": {
+                "totalSources": 551,
+                "completedSources": 200,
+                "runningSources": 4,
+                "queuedSources": 347,
+                "errorSources": 3,
+            },
+        },
+    }
+
+    progress = build_fetch_task_progress_payload(
+        phase_key="executing_sources",
+        phase_label="Executing sources",
+        task_rows=rows,
+        output_count=86_151,
+    )
+    counts = progress["counts"]
+
+    assert counts["sourceCount"] == 334
+    assert counts["completedTasks"] == 333
+    assert counts["etaBasis"] == "aggregate"
+    assert counts["activeAggregateSourceName"] == "scrapy_static_sources"
+    assert counts["activeAggregatePhaseLabel"] == "Processing browser fallback queue"
+    assert counts["activeAggregateTargetLabel"] == "Studio Tail"
+    assert counts["activeAggregateCompleted"] == 200
+    assert counts["activeAggregateTotal"] == 551
+    assert counts["activeAggregateRunning"] == 4
+    assert counts["activeAggregateQueued"] == 347
+    assert counts["activeAggregateError"] == 3
+    assert counts["activeAggregateEstimatedRemainingMs"] > 1_000_000
+    assert counts["estimatedRemainingMs"] == counts["activeAggregateEstimatedRemainingMs"]
+
+
+def test_aggregate_source_progress_omits_eta_when_rate_is_not_reliable() -> None:
+    started_mono = time.perf_counter() - 600.0
+    rows = {
+        f"source_{index}": {
+            "id": f"source_{index}",
+            "name": f"Studio {index}",
+            "status": "ok",
+            "startedAt": "2026-04-19T00:00:00Z",
+            "finishedAt": "2026-04-19T00:01:00Z",
+            "heartbeatAt": "2026-04-19T00:01:00Z",
+            "durationMs": 60_000,
+            "error": "",
+            "_startedMonotonic": started_mono,
+        }
+        for index in range(333)
+    }
+    rows["scrapy_static_sources"] = {
+        "id": "scrapy_static_sources",
+        "name": "scrapy_static_sources",
+        "status": "running",
+        "startedAt": "2026-04-19T00:00:00Z",
+        "finishedAt": "",
+        "heartbeatAt": "2026-04-19T00:10:00Z",
+        "durationMs": 0,
+        "error": "",
+        "_startedMonotonic": started_mono,
+        "progress": {
+            "phaseKey": "loading_source",
+            "phaseLabel": "Processing browser fallback queue",
+            "counts": {
+                "totalSources": 551,
+                "completedSources": 0,
+                "runningSources": 4,
+                "queuedSources": 547,
+                "errorSources": 0,
+            },
+        },
+    }
+
+    progress = build_fetch_task_progress_payload(
+        phase_key="executing_sources",
+        phase_label="Executing sources",
+        task_rows=rows,
+        output_count=47_741,
+    )
+    counts = progress["counts"]
+
+    assert counts["etaBasis"] == "aggregate"
+    assert counts["activeAggregateCompleted"] == 0
+    assert counts["activeAggregateTotal"] == 551
+    assert "activeAggregateEstimatedRemainingMs" not in counts
+    assert "estimatedRemainingMs" not in counts

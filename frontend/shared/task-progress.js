@@ -76,6 +76,24 @@ function formatRatePerMinute(value) {
     : rate.toLocaleString("en-US", { maximumFractionDigits: 1 });
 }
 
+function formatFetchAggregateProgress(counts) {
+  const total = Math.max(0, Number(counts?.activeAggregateTotal || 0));
+  const completed = Math.max(0, Number(counts?.activeAggregateCompleted || 0));
+  if (!Number.isFinite(total) || total <= 0 || completed >= total) return "";
+  const running = Math.max(0, Number(counts?.activeAggregateRunning || 0));
+  const queued = Math.max(0, Number(counts?.activeAggregateQueued || 0));
+  const errors = Math.max(0, Number(counts?.activeAggregateError || 0));
+  const target = String(counts?.activeAggregateTargetLabel || "").trim();
+  const parts = [
+    `fallback ${compactCount(completed)}/${compactCount(total)}`,
+    running > 0 ? `fallback running ${compactCount(running)}` : "",
+    queued > 0 ? `fallback queued ${compactCount(queued)}` : "",
+    errors > 0 ? `fallback errors ${compactCount(errors)}` : "",
+    target ? `target ${target}` : ""
+  ];
+  return parts.filter(Boolean).join(" | ");
+}
+
 export function formatDiscoverySubtaskProgress(counts) {
   const subtaskKey = String(counts?.subtaskKey || "").trim();
   if (subtaskKey !== "gamedevmap_active_audit") return "";
@@ -166,7 +184,13 @@ function formatFetcherCounts(counts, progress) {
     ? `${compactCount(resolved)}/${compactCount(total)} sources resolved`
     : `${compactCount(resolved)} sources resolved`;
   const warningLabel = okWarnings > 0 ? ` | ok warnings ${compactCount(okWarnings)}` : "";
-  const rateLabel = formatRatePerMinute(counts?.completedSourcesPerMinute);
+  const aggregateLabel = formatFetchAggregateProgress(counts);
+  const aggregateRate = String(counts?.etaBasis || "").trim() === "aggregate"
+    ? formatRatePerMinute(counts?.activeAggregateRatePerMinute)
+    : "";
+  const sourceRate = aggregateRate ? "" : formatRatePerMinute(counts?.completedSourcesPerMinute);
+  const rateLabel = aggregateRate || sourceRate;
+  const ratePrefix = aggregateRate ? "fallback rate" : "rate";
   const etaLabel = formatDurationShort(counts?.estimatedRemainingMs);
   const runningNames = Array.isArray(counts?.runningSourceNames)
     ? counts.runningSourceNames.map(item => String(item || "").trim()).filter(Boolean)
@@ -174,7 +198,8 @@ function formatFetcherCounts(counts, progress) {
   const runningNamesLabel = runningNames.length
     ? ` | current ${runningNames.join(", ")}${counts?.runningSourceNamesTruncated ? ", +more" : ""}`
     : "";
-  return `${resolvedLabel} | running ${compactCount(running)} | queued ${compactCount(queued)} | output ${compactCount(output)} | failed ${compactCount(failed)} | excluded ${compactCount(excluded)}${warningLabel}${rateLabel ? ` | rate ${rateLabel}/min` : ""}${etaLabel ? ` | ETA ${etaLabel}` : ""}${runningNamesLabel}`;
+  const aggregateProgressLabel = aggregateLabel ? ` | ${aggregateLabel}` : "";
+  return `${resolvedLabel} | running ${compactCount(running)} | queued ${compactCount(queued)} | output ${compactCount(output)} | failed ${compactCount(failed)} | excluded ${compactCount(excluded)}${warningLabel}${aggregateProgressLabel}${rateLabel ? ` | ${ratePrefix} ${rateLabel}/min` : ""}${etaLabel ? ` | ETA ${etaLabel}` : ""}${runningNamesLabel}`;
 }
 
 function formatDiscoveryCounts(counts, progress) {

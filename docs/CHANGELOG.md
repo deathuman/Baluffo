@@ -10,6 +10,20 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.116] - 2026-07-04
+
+### Fixed
+- Active fetch hot summaries now promote bounded aggregate progress from running sources such as `scrapy_static_sources` into scalar `taskProgress.counts` fields, including aggregate completed/total/running/queued/error counts and aggregate ETA basis.
+- Admin/JOBS active fetch rendering now shows aggregate browser-fallback tail progress and uses aggregate ETA when source-count ETA would be misleading.
+- Active fetch ETA now omits `estimatedRemainingMs` when aggregate progress exists but no reliable aggregate rate can be computed, avoiding fake near-zero completion estimates.
+
+### Tests
+- Added regressions for aggregate-tail ETA selection, unreliable aggregate ETA suppression, existing non-aggregate source ETA behavior, Jobs active aggregate progress rendering, and bounded active fetch write cadence preservation.
+
+### Notes
+- This supersedes `0.2.115`, which restored compact route stability, final recovery, and throughput but still left aggregate-tail fetch progress with misleading source-count ETA during `scrapy_static_sources`. No public desktop tag is created.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.115] - 2026-07-04
 
 ### Fixed

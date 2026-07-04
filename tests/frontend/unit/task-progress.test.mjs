@@ -128,6 +128,49 @@ test("formatTaskProgressDetail renders active fetch rate ETA and running sources
   assert.match(label, /current Studio A, Studio B, Studio C, \+more/i);
 });
 
+test("formatTaskProgressDetail renders aggregate fetch tail progress and ETA", () => {
+  const label = formatTaskProgressDetail("fetch", {
+    active: true,
+    phaseKey: "executing_sources",
+    phaseLabel: "Executing sources",
+    mode: "determinate",
+    ratio: 333 / 334,
+    counts: {
+      etaBasis: "aggregate",
+      resolvedSources: 333,
+      sourceCount: 334,
+      runningTasks: 1,
+      queuedTasks: 0,
+      outputCount: 86151,
+      failedSources: 308,
+      excludedSources: 0,
+      completedSourcesPerMinute: 16,
+      estimatedRemainingMs: 1080000,
+      runningSourceNames: ["scrapy_static_sources"],
+      activeAggregateSourceName: "scrapy_static_sources",
+      activeAggregatePhaseLabel: "Processing browser fallback queue",
+      activeAggregateTargetLabel: "Studio Tail",
+      activeAggregateCompleted: 212,
+      activeAggregateTotal: 551,
+      activeAggregateRunning: 4,
+      activeAggregateQueued: 335,
+      activeAggregateError: 3,
+      activeAggregateRatePerMinute: 18,
+      activeAggregateEstimatedRemainingMs: 1080000
+    }
+  });
+
+  assert.match(label, /333\/334 sources resolved/i);
+  assert.match(label, /fallback 212\/551/i);
+  assert.match(label, /fallback running 4/i);
+  assert.match(label, /fallback queued 335/i);
+  assert.match(label, /fallback errors 3/i);
+  assert.match(label, /fallback rate 18\/min/i);
+  assert.match(label, /ETA 18m/i);
+  assert.match(label, /target Studio Tail/i);
+  assert.doesNotMatch(label, /rate 16\/min/i);
+});
+
 test("formatTaskProgressCounts does not invent zero pipeline counts", () => {
   assert.equal(formatTaskProgressCounts("pipeline", {}), "");
   assert.equal(
