@@ -171,8 +171,8 @@ export function deriveAdminActiveWorkContext({
     syncActive,
     pipelineOrFetchActive,
     registryMutationActive,
-    canLoadCompactSourceTables: Boolean(isActive && !syncActive),
-    sourceTablesCanLoadCompact: Boolean(isActive && !syncActive),
+    canLoadCompactSourceTables: false,
+    sourceTablesCanLoadCompact: false,
     sourceMutationsAllowed: Boolean(!isActive && !registryMutationActive),
     reason,
     taskType

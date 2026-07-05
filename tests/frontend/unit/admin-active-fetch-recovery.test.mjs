@@ -258,14 +258,6 @@ test("admin source tables preserve rendered rows while active refresh is delayed
     options: {
       getBridge: async path => {
         calls.push(String(path));
-        if (String(path).startsWith("/registry/sources")) {
-          return {
-            ok: true,
-            activeCompact: true,
-            sources: { pending: [], active: [], rejected: [] },
-            summary: {}
-          };
-        }
         throw new Error(`unexpected path ${path}`);
       }
     }
@@ -277,13 +269,13 @@ test("admin source tables preserve rendered rows while active refresh is delayed
 
   const result = await controller.loadDiscoveryData({ background: false });
 
-  assert.notEqual(result?.skipped, true);
-  assert.notEqual(result?.sourceTablesDelayed, true);
-  assert.ok(calls.some(path => path.startsWith("/registry/sources") && path.includes("activeCompact=1")));
+  assert.equal(result?.skipped, true);
+  assert.equal(result?.sourceTablesDelayed, true);
+  assert.ok(!calls.some(path => path.startsWith("/registry/sources")));
   assert.ok(!calls.includes("/discovery/report"));
   assert.ok(!calls.includes("/discovery/candidates"));
-  assert.equal(fixture.state.sourceTablesDelayedDuringActiveRun, false);
-  assert.equal(fixture.state.sourceTablesLoadState, "loaded");
+  assert.equal(fixture.state.sourceTablesDelayedDuringActiveRun, true);
+  assert.equal(fixture.state.sourceTablesLoadState, "delayed-active");
   assert.match(fixture.refs.adminPendingSourcesEl.innerHTML, /Existing Pending Studio/);
   assert.match(fixture.refs.adminActiveSourcesEl.innerHTML, /Existing Active Studio/);
 });

@@ -9,7 +9,7 @@ import {
   pipelineStatusIndicatesFetch
 } from "../../../frontend/admin/app/active-work-policy.js";
 
-test("admin active-work policy classifies fetch as compact-loadable but mutation-blocking", () => {
+test("admin active-work policy classifies fetch as source-table-delayed and mutation-blocking", () => {
   const context = deriveAdminActiveWorkContext({
     busyState: {
       liveFetchRunning: true,
@@ -21,7 +21,7 @@ test("admin active-work policy classifies fetch as compact-loadable but mutation
 
   assert.equal(context.isActive, true);
   assert.equal(context.fetchActive, true);
-  assert.equal(context.sourceTablesCanLoadCompact, true);
+  assert.equal(context.sourceTablesCanLoadCompact, false);
   assert.equal(context.sourceMutationsAllowed, false);
   assert.equal(context.reason, "fetch_running");
 });
@@ -88,6 +88,6 @@ test("admin active-work policy reads pipeline progress phase as stage", () => {
 
   assert.equal(pipelineStatusIndicatesFetch(pipelineStatusPayload), true);
   assert.equal(context.fetchActive, true);
-  assert.equal(context.sourceTablesCanLoadCompact, true);
+  assert.equal(context.sourceTablesCanLoadCompact, false);
   assert.equal(context.reason, "fetch_running");
 });

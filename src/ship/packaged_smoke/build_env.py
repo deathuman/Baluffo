@@ -476,10 +476,12 @@ def packaged_fetch_evidence_smoke_mode(
 def packaged_bootstrap_smoke_mode(node_smoke_script: Path) -> str:
     deps = _root()
     resolved = Path(node_smoke_script).expanduser().resolve()
+    admin_active_run_script = deps.SMOKE_DIR / "packaged-desktop-smoke.admin-active-run.mjs"
     if resolved in {
         deps.FIRST_RUN_JOBS_NODE_SMOKE_SCRIPT.resolve(),
         deps.ACTIVE_TASK_CLOSE_NODE_SMOKE_SCRIPT.resolve(),
         deps.TASK_ABORT_SCHEDULE_NODE_SMOKE_SCRIPT.resolve(),
+        admin_active_run_script.resolve(),
     }:
         return "controlled-heartbeat-success"
     return ""

@@ -17,6 +17,8 @@ def test_release_workflow_uses_canonical_test_entrypoints() -> None:
         "npm run test:frontend:unit",
         "npm run test:py:extended",
         "npm run test:frontend:packaged",
+        "npm run test:frontend:packaged:admin-startup",
+        "npm run test:frontend:packaged:admin-active-run",
         "npm run test:frontend:packaged:sync-rehearsal",
         "npm run test:frontend:packaged:update-rehearsal",
         "npm run test:frontend:packaged:orphan-reclaim-rehearsal",
@@ -294,6 +296,9 @@ def test_package_json_packaged_smoke_scripts_use_direct_dist_by_default(repo_roo
     )
     assert scripts["test:frontend:packaged:jobs-pipeline"] == (
         "npm run check:python-version && python src/packaged_desktop_smoke.py --node-smoke-script tests/frontend/packaged-desktop-smoke.jobs-pipeline.mjs --playwright-timeout 300"
+    )
+    assert scripts["test:frontend:packaged:admin-active-run"] == (
+        "npm run check:python-version && python src/packaged_desktop_smoke.py --open-path admin.html --node-smoke-script tests/frontend/packaged-desktop-smoke.admin-active-run.mjs --runtime-timeout 60 --playwright-timeout 180"
     )
     assert scripts["test:frontend:packaged:orchestrated"] == (
         "npm run check:python-version && python src/packaged_desktop_smoke.py --exe-path _out/latest/build/portable/Baluffo.exe"

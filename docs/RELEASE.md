@@ -386,6 +386,7 @@ Before any release:
    - `npm run test:frontend:packaged:active-task-close-rehearsal`
    - `npm run test:frontend:packaged:task-abort-schedule-rehearsal`
    - `npm run test:frontend:packaged:first-run`
+   - `npm run test:frontend:packaged:admin-active-run`
    - `npm run test:frontend:packaged:jobs-pipeline`
     - `npm run probe:desktop:startup:jobs:cold`
     - Linux lanes:
@@ -450,6 +451,7 @@ npm run test:frontend:packaged:desktop-lifecycle-rehearsal
 npm run test:frontend:packaged:active-task-close-rehearsal
 npm run test:frontend:packaged:task-abort-schedule-rehearsal
 npm run test:frontend:packaged:first-run
+npm run test:frontend:packaged:admin-active-run
 npm run test:frontend:packaged:jobs-pipeline
 npm run test:frontend:packaged:update-rehearsal
 npm run probe:desktop:startup:jobs:cold

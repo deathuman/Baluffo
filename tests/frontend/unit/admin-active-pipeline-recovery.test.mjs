@@ -194,14 +194,6 @@ test("admin registry controller delays source tables while pipeline fetch is act
     options: {
       getBridge: async (path, requestOptions = {}) => {
         calls.push({ path: String(path), requestOptions });
-        if (String(path).startsWith("/registry/sources")) {
-          return {
-            ok: true,
-            activeCompact: true,
-            sources: { pending: [], active: [], rejected: [] },
-            summary: {}
-          };
-        }
         throw new Error(`unexpected path ${path}`);
       }
     }
@@ -214,12 +206,12 @@ test("admin registry controller delays source tables while pipeline fetch is act
   const result = await controller.loadDiscoveryData({ background: true });
   fixture.renderScheduler.flush();
 
-  assert.notEqual(result?.skipped, true);
-  assert.notEqual(result?.sourceTablesDelayed, true);
-  assert.ok(calls.some(call => call.path.startsWith("/registry/sources") && call.path.includes("activeCompact=1")));
+  assert.equal(result?.skipped, true);
+  assert.equal(result?.sourceTablesDelayed, true);
+  assert.ok(!calls.some(call => call.path.startsWith("/registry/sources")));
   assert.ok(!calls.some(call => call.path === "/discovery/report"));
   assert.ok(!calls.some(call => call.path === "/discovery/candidates"));
-  assert.equal(fixture.state.sourceTablesLoadState, "loaded");
+  assert.equal(fixture.state.sourceTablesLoadState, "delayed-active");
 });
 
 test("admin registry controller preflights pipeline status before source tables", async () => {
@@ -251,14 +243,6 @@ test("admin registry controller preflights pipeline status before source tables"
             ]
           };
         }
-        if (String(path).startsWith("/registry/sources")) {
-          return {
-            ok: true,
-            activeCompact: true,
-            sources: { pending: [], active: [], rejected: [] },
-            summary: {}
-          };
-        }
         throw new Error(`unexpected path ${path}`);
       }
     }
@@ -271,10 +255,10 @@ test("admin registry controller preflights pipeline status before source tables"
   const result = await controller.loadDiscoveryData({ background: true });
   fixture.renderScheduler.flush();
 
-  assert.notEqual(result?.skipped, true);
-  assert.notEqual(result?.sourceTablesDelayed, true);
+  assert.equal(result?.skipped, true);
+  assert.equal(result?.sourceTablesDelayed, true);
   assert.ok(calls.includes("/tasks/run-jobs-pipeline-status"));
-  assert.ok(calls.some(path => path.startsWith("/registry/sources") && path.includes("activeCompact=1")));
+  assert.ok(!calls.some(path => path.startsWith("/registry/sources")));
   assert.ok(!calls.includes("/discovery/report"));
   assert.ok(!calls.includes("/discovery/candidates"));
   assert.equal(fixture.state.adminBusyState.livePipelineRunning, true);
@@ -283,7 +267,7 @@ test("admin registry controller preflights pipeline status before source tables"
   assert.equal(fixture.state.latestOpsTaskStatePayload.tasks.length, 0);
 });
 
-test("admin registry controller uses active-safe compact source calls during active pipeline", async () => {
+test("admin registry controller delays source tables during active pipeline", async () => {
   const calls = [];
   let fixture;
   fixture = createRegistryControllerFixture({
@@ -291,18 +275,6 @@ test("admin registry controller uses active-safe compact source calls during act
     options: {
       getBridge: async path => {
         calls.push(String(path));
-        if (String(path).startsWith("/registry/sources")) {
-          return {
-            ok: true,
-            activeCompact: true,
-            sources: {
-              pending: [{ id: "pending_1", name: "Pending Studio" }],
-              active: [{ id: "active_1", name: "Active Studio" }],
-              rejected: []
-            },
-            summary: {}
-          };
-        }
         throw new Error(`unexpected path ${path}`);
       },
       fetchJobsFetchReportJson: async () => ({ sources: [] })
@@ -320,10 +292,10 @@ test("admin registry controller uses active-safe compact source calls during act
   const result = await controller.loadDiscoveryData({ background: true });
   fixture.renderScheduler.flush();
 
-  assert.equal(result.skipped, undefined);
-  assert.equal(result.sourceTablesDelayed, undefined);
-  assert.ok(calls.some(path => path.includes("/registry/sources?") && path.includes("activeCompact=1")));
+  assert.equal(result.skipped, true);
+  assert.equal(result.sourceTablesDelayed, true);
+  assert.ok(!calls.some(path => path.includes("/registry/sources?")));
   assert.doesNotMatch(logs.join("\n"), /Could not load Admin registry source tables/);
-  assert.match(fixture.refs.adminPendingSourcesEl.innerHTML, /Pending Studio/);
-  assert.match(fixture.refs.adminActiveSourcesEl.innerHTML, /Active Studio/);
+  assert.match(fixture.refs.adminPendingSourcesEl.innerHTML, /Source tables delayed while job update is running/);
+  assert.match(fixture.refs.adminActiveSourcesEl.innerHTML, /Source tables delayed while job update is running/);
 });
