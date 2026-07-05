@@ -65,7 +65,8 @@ export function composeAdminControllers({
   jobsFetcherCommand,
   jobsFetcherTaskLabel,
   requestConfirmationDialog,
-  awaitBridgeReady = async () => true
+  awaitBridgeReady = async () => true,
+  activeHydrationPolicy = "protected"
 }) {
   const adminDispatch = createAdminDispatcher();
   let authController;
@@ -119,6 +120,7 @@ export function composeAdminControllers({
     loadLatestFetcherReport: options => fetcherController?.loadLatestFetcherReport?.(options),
     attachToActiveDiscoveryRun: (...args) => discoveryController?.attachToActiveDiscoveryRun?.(...args),
     loadLatestDiscoveryReport: options => discoveryController?.loadLatestDiscoveryReport?.(options),
+    activeHydrationPolicy,
     bridgeStatusPollIntervalMs,
     idlePollIntervalMs: opsPollIdleIntervalMs,
     markAdminStep,

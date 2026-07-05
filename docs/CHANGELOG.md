@@ -10,6 +10,20 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.119] - 2026-07-05
+
+### Fixed
+- Desktop Admin now hydrates compact active-run KPI and schedule summaries while a pipeline is running, so the overview cards and schedule controls do not stay in Umbrel-style protected placeholders.
+- Active pipeline abort recovery now single-flights pipeline-status and task-state summary polling, preventing repeated request storms after a canceled run reports idle.
+- Umbrel/container active-run protection remains intact: storage health, full fetch reports, registry summaries/source-table fan-out, and full diagnostics stay out of active polling.
+
+### Tests
+- Added desktop active-run Admin regressions for KPI/schedule hydration and abort-shaped request-budget coverage for pipeline-status and task-state polling.
+
+### Notes
+- This supersedes `0.2.118`, which shared the Umbrel active-run route budget with desktop validation but left desktop Admin too conservative during local active pipeline runs.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.118] - 2026-07-04
 
 ### Fixed

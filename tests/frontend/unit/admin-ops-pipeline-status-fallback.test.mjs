@@ -290,6 +290,8 @@ test("admin ops controller does not let delayed pipeline status replace richer t
 
   await controller.loadOpsHealthData({ summary: true });
   await flushAdminOpsBackground();
+  await flushAdminOpsBackground();
+  await new Promise(resolve => setImmediate(resolve));
   renderScheduler.flush();
   assert.equal(renderedCurrentRows.at(-1)?.[0]?.taskType, "fetch");
 

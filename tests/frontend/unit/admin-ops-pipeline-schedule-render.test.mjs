@@ -23,6 +23,25 @@ test("admin ops schedule unknown state renders disabled controls instead of edit
   assert.doesNotMatch(scheduleEl.innerHTML, /value="24"/);
 });
 
+test("admin ops schedule active refreshing config stays editable", () => {
+  const scheduleEl = createElement({ dataset: {} });
+
+  renderAdminOpsSchedule(scheduleEl, {
+    pipeline: {
+      enabled: true,
+      intervalHours: 12,
+      nextAfterCurrentCompletes: true,
+      scheduleStatusRefreshing: true
+    }
+  });
+
+  assert.match(scheduleEl.innerHTML, /Pipeline<\/strong>: every 12h, running now; next after this pipeline finishes/);
+  assert.match(scheduleEl.innerHTML, /data-ui="admin-pipeline-schedule-enabled"[^>]*checked/);
+  assert.match(scheduleEl.innerHTML, /value="12"[^>]*data-ui="admin-pipeline-schedule-interval"/);
+  assert.doesNotMatch(scheduleEl.innerHTML, /data-ui="admin-pipeline-schedule-enabled"[^>]*disabled/);
+  assert.doesNotMatch(scheduleEl.innerHTML, /loading schedule/);
+});
+
 test("admin ops schedule route failure keeps disabled retrying controls", async () => {
   const refs = {
     adminOpsScheduleEl: createElement({ dataset: {} }),

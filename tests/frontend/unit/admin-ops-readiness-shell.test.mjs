@@ -114,6 +114,7 @@ test("admin ops first dashboard health wait shows neutral shell then real data",
   const loadPromise = controller.loadOpsHealthData();
   await flush();
   await flush();
+  await flush();
 
   assert.equal(refs.adminOpsTrendsEl.textContent, "No run trend data yet.");
   assert.equal(refs.adminOpsTrendsEl.textContent.includes("Loading operations health"), false);

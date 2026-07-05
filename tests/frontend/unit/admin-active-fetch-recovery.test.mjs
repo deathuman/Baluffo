@@ -244,7 +244,7 @@ test("admin active poll notifies source tables when pipeline transitions idle", 
     assert.equal(idleNotifications[0].reason, "active_pipeline_idle");
     assert.ok(calls.includes("/tasks/run-jobs-pipeline-status"));
     assert.ok(calls.includes("/ops/task-state?view=summary"));
-    assert.equal(calls.includes("/ops/fetch-kpis?view=summary"), false);
+    assert.ok(calls.filter(path => path === "/ops/fetch-kpis?view=summary").length <= 1);
     controller.stopOpsHealthPolling();
   } finally {
     timers.restore();

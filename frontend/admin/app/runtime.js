@@ -290,7 +290,8 @@ function bootAdminPage() {
     jobsFetcherCommand: JOBS_FETCHER_COMMAND,
     jobsFetcherTaskLabel: JOBS_FETCHER_TASK_LABEL,
     requestConfirmationDialog,
-    awaitBridgeReady: waitForAdminBridgeReady
+    awaitBridgeReady: waitForAdminBridgeReady,
+    activeHydrationPolicy: resolveDesktopRuntimeMode() ? "desktop" : "protected"
   }));
   fetcherController.applyFetcherPresetMetadata();
   bindAdminRuntimeEvents({

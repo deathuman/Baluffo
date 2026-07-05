@@ -55,6 +55,7 @@ const OPS_HEAVY_ROUTE_BACKOFF_MAX_MS = 30000;
 const OPS_HEAVY_ROUTE_DASHBOARD = "dashboard-health";
 const OPS_HEAVY_ROUTE_REGISTRY_CONFLICTS = "registry-conflicts";
 const OPS_HEAVY_ROUTE_TAB_COUNTS = "ops-tab-counts";
+const ACTIVE_IDLE_RECOVERY_COOLDOWN_MS = 1500;
 
 function maybeUnrefTimer(timer) {
   timer?.unref?.();
@@ -366,6 +367,7 @@ export function createOpsHealthController({
   onActivePipelineIdle,
   markAdminStep,
   measureAdminStep,
+  activeHydrationPolicy = "protected",
   getFrontendPerfCounters = () => {
     try {
       return globalThis.__baluffoSnapshotFrontendPerfCounters?.() || {};
@@ -382,14 +384,34 @@ export function createOpsHealthController({
   let dashboardHealthSummaryLoad = null;
   let fetchKpisLoad = null;
   let pipelineScheduleLoad = null;
+  let pipelineStatusLoad = null;
+  let taskStateSummaryLoad = null;
+  let taskStateSummaryLoadToken = 0;
   let opsTabCountsLoad = null;
   let opsHistoryLoad = null;
   let opsHistoryLoadLimit = 0;
+  let idleRecoveryHealthLoad = null;
   let opsIdleHeavyHydrationTimer = null;
   let opsIdleHeavyHydrationInFlight = false;
   let sourcePolicyDetailLoad = null;
   let registryConflictsDetailLoad = null;
   let dedupListsDetailLoad = null;
+
+  function canHydrateCompactDuringActiveRun() {
+    return String(activeHydrationPolicy || "protected").trim().toLowerCase() === "desktop";
+  }
+
+  function queueIdleRecoveryHealthLoad(options = { summary: true }) {
+    if (!idleRecoveryHealthLoad) {
+      idleRecoveryHealthLoad = Promise.resolve()
+        .then(() => loadOpsHealthData(options))
+        .catch(() => {})
+        .finally(() => {
+          idleRecoveryHealthLoad = null;
+        });
+    }
+    return idleRecoveryHealthLoad;
+  }
 
   function getOpsRouteBackoffs() {
     if (!state.opsRouteBackoffs || typeof state.opsRouteBackoffs !== "object" || Array.isArray(state.opsRouteBackoffs)) {
@@ -648,13 +670,23 @@ export function createOpsHealthController({
   }
 
   function hasKnownPipelineSchedule(schedule = state.pipelineScheduleModel) {
+    const pipeline = isPlainObject(schedule?.pipeline) ? schedule.pipeline : {};
+    const hasSavedConfig = Boolean(
+      Object.prototype.hasOwnProperty.call(pipeline, "enabled")
+      || Object.prototype.hasOwnProperty.call(pipeline, "intervalHours")
+    );
     return Boolean(
       isPlainObject(schedule)
-      && isPlainObject(schedule.pipeline)
-      && Object.keys(schedule.pipeline).length > 0
-      && schedule.pipeline.scheduleLoading !== true
-      && schedule.pipeline.scheduleAuthority !== "degraded"
-      && schedule.pipeline.scheduleDelayed !== true
+      && isPlainObject(pipeline)
+      && Object.keys(pipeline).length > 0
+      && pipeline.scheduleLoading !== true
+      && (
+        hasSavedConfig
+        || (
+          pipeline.scheduleAuthority !== "degraded"
+          && pipeline.scheduleDelayed !== true
+        )
+      )
     );
   }
 
@@ -1417,20 +1449,20 @@ export function createOpsHealthController({
 
   function renderDeferredOverviewDetails(renderToken = opsRenderToken) {
     if (renderToken !== opsRenderToken) return;
-    const historyPayload = getCachedHistoryPayload();
-    const historyRuns = Array.isArray(historyPayload?.runs) ? historyPayload.runs : [];
-    const taskStatePayload = state.latestOpsTaskStatePayload || { tasks: [] };
-    const runModel = deriveAdminRunsModel(
-      {
-        taskState: taskStatePayload || {},
-        historyRuns
-      },
-      Date.now()
-    );
     const fetcherMetricsPayload = buildFetcherMetricsPayload();
     rerenderOpsTabBadges();
     getRenderScheduler()(() => {
       if (renderToken !== opsRenderToken) return;
+      const historyPayload = getCachedHistoryPayload();
+      const historyRuns = Array.isArray(historyPayload?.runs) ? historyPayload.runs : [];
+      const taskStatePayload = state.latestOpsTaskStatePayload || { tasks: [] };
+      const runModel = deriveAdminRunsModel(
+        {
+          taskState: taskStatePayload || {},
+          historyRuns
+        },
+        Date.now()
+      );
       renderAdminOpsFetcherMetricsImpl(
         refs.adminOpsFetcherMetricsEl,
         fetcherMetricsPayload,
@@ -1468,18 +1500,18 @@ export function createOpsHealthController({
 
   function renderDeferredHistoryDetails(renderToken = null) {
     if (renderToken !== null && renderToken !== opsRenderToken) return;
-    const historyPayload = getCachedHistoryPayload();
-    const historyRuns = Array.isArray(historyPayload?.runs) ? historyPayload.runs : [];
-    const taskStatePayload = state.latestOpsTaskStatePayload || { tasks: [] };
-    const runModel = deriveAdminRunsModel(
-      {
-        taskState: taskStatePayload || {},
-        historyRuns
-      },
-      Date.now()
-    );
     getRenderScheduler()(() => {
       if (renderToken !== null && renderToken !== opsRenderToken) return;
+      const historyPayload = getCachedHistoryPayload();
+      const historyRuns = Array.isArray(historyPayload?.runs) ? historyPayload.runs : [];
+      const taskStatePayload = state.latestOpsTaskStatePayload || { tasks: [] };
+      const runModel = deriveAdminRunsModel(
+        {
+          taskState: taskStatePayload || {},
+          historyRuns
+        },
+        Date.now()
+      );
       renderAdminOpsHistoryImpl(getHistoryElement(), runModel, {
         onCopyRunDiagnostics: handleCopyRunDiagnostics,
         onAbortRun: handleAbortRun,
@@ -2077,7 +2109,16 @@ export function createOpsHealthController({
     return Date.now() < Number(state.opsDegradedActiveUntilMs || 0);
   }
 
+  function markActiveIdleRecoveryCooldown() {
+    state.opsActiveIdleRecoveryCooldownUntilMs = Date.now() + ACTIVE_IDLE_RECOVERY_COOLDOWN_MS;
+  }
+
+  function hasActiveIdleRecoveryCooldown() {
+    return Date.now() < Number(state.opsActiveIdleRecoveryCooldownUntilMs || 0);
+  }
+
   function hasPossiblePipelineOrFetchEvidence({ includeRecent = true } = {}) {
+    if (hasActiveIdleRecoveryCooldown()) return false;
     const busyState = state.adminBusyState || {};
     return Boolean(
       hasActivePipelineOrFetchRows(getCachedTaskStatePayload())
@@ -2093,6 +2134,7 @@ export function createOpsHealthController({
   }
 
   function hasPossibleActiveRunEvidence({ includeRecent = true } = {}) {
+    if (hasActiveIdleRecoveryCooldown()) return false;
     const busyState = state.adminBusyState || {};
     return Boolean(
       hasActiveAdminWorkRows(getCachedTaskStatePayload())
@@ -2337,6 +2379,10 @@ export function createOpsHealthController({
     if (renderDeferredPanels) {
       getRenderScheduler()(() => {
         if (renderToken !== opsRenderToken) return;
+        const deferredContext = deriveLiveRunContext(
+          getCachedTaskStatePayload(),
+          getCachedRegistryConflictsPayload()
+        );
         renderSourcePolicyReviewQueue(getCachedSourcePolicyPayload());
         renderRegistryConflictsQueue(getCachedRegistryConflictsPayload());
         renderAdminOpsFetcherMetricsImpl(
@@ -2352,13 +2398,13 @@ export function createOpsHealthController({
             onLoadDebugDiagnostics: handleLoadDebugDiagnostics,
             includeDebugDiagnostics: Boolean(state.opsDebugDiagnosticsLoaded),
             debugDiagnosticsLoading: Boolean(state.opsDebugDiagnosticsLoading),
-            runModel
+            runModel: deferredContext.runModel
           }
         );
         renderAdminOpsDedupListsImpl(refs.adminOpsDedupListsEl, fetcherMetricsPayload, {
           onDedupReviewAction: handleDedupReviewAction
         });
-        renderAdminOpsHistoryImpl(getHistoryElement(), runModel, {
+        renderAdminOpsHistoryImpl(getHistoryElement(), deferredContext.runModel, {
           ...historyRenderOptions
         });
       });
@@ -2433,7 +2479,7 @@ export function createOpsHealthController({
     state.latestOpsHealthCache = mergeOpsHealth(state.latestOpsHealthCache || {}, health, { summary: true });
     state.latestOpsTaskStatePayload = taskStatePayload;
     state.taskStateUnavailable = false;
-    if (hasActivePipelineOrFetchRows(taskStatePayload)) {
+    if (hasActivePipelineOrFetchRows(taskStatePayload) && !canHydrateCompactDuringActiveRun()) {
       markFetchKpisDeferredDuringActiveRun();
     }
     renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || health, {
@@ -2528,11 +2574,22 @@ export function createOpsHealthController({
   async function loadTaskStateSummaryData(renderToken, options = {}) {
     const previousTaskStatePayload = getCachedTaskStatePayload();
     try {
-      const payload = await measuredGetBridge(
-        OPS_TASK_STATE_SUMMARY_PATH,
-        "admin_ops_task_summary_fetch",
-        { enabled: !options?.fromPoll }
+      const canReuseTaskStateLoad = Boolean(
+        taskStateSummaryLoad
+        && (options?.fromPoll || taskStateSummaryLoadToken === renderToken)
       );
+      if (!canReuseTaskStateLoad) {
+        taskStateSummaryLoadToken = renderToken;
+        taskStateSummaryLoad = measuredGetBridge(
+          OPS_TASK_STATE_SUMMARY_PATH,
+          "admin_ops_task_summary_fetch",
+          { enabled: !options?.fromPoll }
+        ).finally(() => {
+          taskStateSummaryLoad = null;
+          taskStateSummaryLoadToken = 0;
+        });
+      }
+      const payload = await taskStateSummaryLoad;
       if (renderToken !== opsRenderToken) return null;
       const taskStatePayload = taskStateController.resolveTaskStatePayload({
         status: "fulfilled",
@@ -2634,7 +2691,11 @@ export function createOpsHealthController({
   }
 
   async function loadFetchKpisSummaryData(renderToken = opsRenderToken, options = {}) {
-    if (!options?.force && hasPossibleActiveRunEvidence({ includeRecent: false })) {
+    if (
+      !canHydrateCompactDuringActiveRun()
+      && !options?.force
+      && hasPossibleActiveRunEvidence({ includeRecent: false })
+    ) {
       markFetchKpisDeferredDuringActiveRun();
       if (renderToken === opsRenderToken) {
         renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || {}, {
@@ -2660,7 +2721,11 @@ export function createOpsHealthController({
     try {
       payload = await fetchKpisLoad;
     } catch (err) {
-      if (renderToken === opsRenderToken && hasPossibleActiveRunEvidence()) {
+      if (
+        !canHydrateCompactDuringActiveRun()
+        && renderToken === opsRenderToken
+        && hasPossibleActiveRunEvidence()
+      ) {
         markFetchKpisDeferredDuringActiveRun();
         renderOpsHealthSnapshot(renderToken, state.latestOpsHealthCache || {}, {
           taskStatePayload: getCachedTaskStatePayload(),
@@ -2746,11 +2811,16 @@ export function createOpsHealthController({
   async function loadPipelineStatusFallbackData(renderToken = opsRenderToken, options = {}) {
     const shouldScheduleNext = options?.scheduleNext !== false;
     try {
-      const payload = await measuredGetBridge(
-        JOBS_PIPELINE_STATUS_PATH,
-        "admin_jobs_pipeline_status_fallback_fetch",
-        { enabled: false }
-      );
+      if (!pipelineStatusLoad) {
+        pipelineStatusLoad = measuredGetBridge(
+          JOBS_PIPELINE_STATUS_PATH,
+          "admin_jobs_pipeline_status_fallback_fetch",
+          { enabled: false }
+        ).finally(() => {
+          pipelineStatusLoad = null;
+        });
+      }
+      const payload = await pipelineStatusLoad;
       const activeRenderToken = renderToken === opsRenderToken ? renderToken : opsRenderToken;
       const taskStatePayload = buildPipelineTaskStatePayload(payload);
       if (!taskStatePayload) {
@@ -2771,9 +2841,7 @@ export function createOpsHealthController({
             markOpsDegradedActive("pipeline_status_idle_task_state_unknown");
             schedulePipelineStatusPolling(getOpsPollIntervalMs(true));
           } else {
-            maybeUnrefTimer(setTimeout(() => {
-              loadOpsHealthData({ summary: true }).catch(() => {});
-            }, 0));
+            queueIdleRecoveryHealthLoad({ summary: true });
           }
         }
         return payload || null;
@@ -2788,7 +2856,7 @@ export function createOpsHealthController({
       state.latestOpsTaskStatePayload = taskStatePayload;
       state.taskStateUnavailable = false;
       state.waitingForTaskState = false;
-      if (hasActivePipelineOrFetchRows(taskStatePayload)) {
+      if (hasActivePipelineOrFetchRows(taskStatePayload) && !canHydrateCompactDuringActiveRun()) {
         markFetchKpisDeferredDuringActiveRun();
       }
       renderOpsHealthSnapshot(activeRenderToken, state.latestOpsHealthCache || {}, {
@@ -2889,6 +2957,7 @@ export function createOpsHealthController({
       clearAllPendingOpsAborts();
       state.opsActiveAdminWorkLastActive = false;
       state.opsActivePipelineOrFetchLastActive = false;
+      markActiveIdleRecoveryCooldown();
     } else if (degradedActive) {
       markOpsDegradedActive("active_summary_unresolved");
     }
@@ -2904,9 +2973,7 @@ export function createOpsHealthController({
       state.opsActivePipelineOrFetchLastActive = false;
       stopPipelineStatusPolling();
       if (!options?.summaryOnly) {
-        maybeUnrefTimer(setTimeout(() => {
-          loadOpsHealthData({ summary: true }).catch(() => {});
-        }, 0));
+        queueIdleRecoveryHealthLoad({ summary: true });
       }
     }
     if (options?.returnMeta) {
@@ -3049,7 +3116,7 @@ export function createOpsHealthController({
       state.opsActiveAdminWorkLastActive = true;
       state.opsActivePipelineOrFetchLastActive = true;
       loadPipelineScheduleData({ force: true, silent: true }).catch(() => {});
-      if (!hasFetchKpiValues(state.latestOpsHealthCache?.kpis || {})) {
+      if (canHydrateCompactDuringActiveRun() || !hasFetchKpiValues(state.latestOpsHealthCache?.kpis || {})) {
         loadFetchKpisSummaryData(renderToken, {
           force: true,
           silent: true,

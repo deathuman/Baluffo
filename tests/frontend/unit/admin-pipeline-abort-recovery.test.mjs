@@ -183,6 +183,7 @@ test("admin ops abort acceptance renders aborting row and keeps polling compact"
     assert.equal(state.latestOpsTaskStatePayload.tasks[0].stage, "aborting");
     assert.match(JSON.stringify(renderedCurrentRows.at(-1) || []), /aborting|Aborting/);
   } finally {
+    await flushBackground();
     controller.stopOpsHealthPolling();
     globalThis.confirm = previousConfirm;
   }
@@ -262,6 +263,7 @@ test("admin ops abort clears pending abort when compact status proves idle", asy
     globalThis.confirm = previousConfirm;
     globalThis.setTimeout = previousSetTimeout;
     globalThis.clearTimeout = previousClearTimeout;
+    await flushBackground();
   }
 });
 

@@ -39,6 +39,7 @@ export function createAdminOpsController({
   awaitBridgeReady,
   markAdminStep,
   measureAdminStep,
+  activeHydrationPolicy = "protected",
   renderScheduler = scheduleAdminRender
 }) {
   const bridgeStatusController = createOpsBridgeStatusController({
@@ -88,6 +89,7 @@ export function createAdminOpsController({
     onActivePipelineIdle,
     markAdminStep,
     measureAdminStep,
+    activeHydrationPolicy,
     renderScheduler
   });
 
