@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { request as playwrightRequest } from "@playwright/test";
@@ -19,6 +20,77 @@ const OUTPUT_DIR =
   process.env.PACKAGED_SMOKE_ARTIFACTS_DIR ||
   path.resolve(".tmp/packaged-desktop-smoke/task-abort-schedule-output");
 const ABORT_REASON = "packaged_task_abort_rehearsal";
+
+function runtimeDataDir() {
+  return path.resolve(OUTPUT_DIR, "..", "runtime-data");
+}
+
+function isoHoursAgo(hours) {
+  return new Date(Date.now() - Math.max(1, Number(hours) || 1) * 60 * 60 * 1000).toISOString();
+}
+
+function seedDuePipelineLifecycleRow() {
+  const dataDir = runtimeDataDir();
+  const dbPath = path.join(dataDir, "baluffo-runtime.db");
+  const finishedAt = isoHoursAgo(2);
+  const script = String.raw`
+import json
+import sqlite3
+import sys
+
+db_path, finished_at = sys.argv[1], sys.argv[2]
+started_at = finished_at
+summary = json.dumps(
+    {"status": "completed", "source": "packaged_schedule_due_seed"},
+    separators=(",", ":"),
+)
+with sqlite3.connect(db_path, timeout=15) as conn:
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO task_runs(
+            run_id, task_type, status, owner_pid, started_at, updated_at, finished_at,
+            progress_json, summary_json, error, schema_version, parent_run_id,
+            parent_task_type, stage, heartbeat_at, terminal_reason, owner_kind
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "pipeline_packaged_schedule_due_seed",
+            "pipeline",
+            "succeeded",
+            0,
+            started_at,
+            finished_at,
+            finished_at,
+            "{}",
+            summary,
+            "",
+            1,
+            "",
+            "",
+            "completed",
+            finished_at,
+            "completed",
+            "packaged_smoke",
+        ),
+    )
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO storage_authority_modes(surface, mode, reason, updated_at)
+        VALUES (?, ?, ?, ?)
+        """,
+        ("taskRuns", "sqlite", "packaged-schedule-due-seed", finished_at),
+    )
+`;
+  const result = spawnSync(process.env.PYTHON || "python", ["-c", script, dbPath, finishedAt], {
+    encoding: "utf8"
+  });
+  assert.equal(
+    result.status,
+    0,
+    `scheduled pipeline seed should write SQLite lifecycle row: ${result.stderr || result.stdout}`
+  );
+  return { dbPath, finishedAt };
+}
 
 function rowRunId(row) {
   return String(row?.runId || row?.id || "").trim();
@@ -179,6 +251,7 @@ async function runTaskAbortScenario(apiRequest) {
 
 async function runSchedulerScenario(apiRequest) {
   await waitForBridgeTasksIdle(apiRequest);
+  const seed = seedDuePipelineLifecycleRow();
   const enabled = await postBridgeJson(
     apiRequest,
     BRIDGE_BASE,
@@ -214,7 +287,11 @@ async function runSchedulerScenario(apiRequest) {
   assert.equal(Boolean(disabled?.savedConfig?.enabled), false, "schedule should save enabled=false");
   assert.equal(Boolean(disabled?.status?.pending), false, "disabled schedule should clear pending work");
 
-  return { runId: trigger.runId, terminalStage: String(terminalPayload?.stage || "") };
+  return {
+    runId: trigger.runId,
+    terminalStage: String(terminalPayload?.stage || ""),
+    seededFinishedAt: seed.finishedAt
+  };
 }
 
 async function writeReport(report) {
