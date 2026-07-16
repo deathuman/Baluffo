@@ -9,7 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 BRIDGE_API_PATH = Path("src/bridge/api.py")
-EXPECTED_BRIDGE_API_FIELD_COUNT = 91
+EXPECTED_BRIDGE_API_FIELD_COUNT = 94
 
 CATEGORIES = {
     "runtime-path",
@@ -40,7 +40,7 @@ RUNTIME_PATH_FIELDS = {
     "app_version",
 }
 
-SERVICE_HANDLE_FIELDS = {"registry", "sync", "pipeline", "discovery"}
+SERVICE_HANDLE_FIELDS = {"registry", "sync", "pipeline", "discovery", "availability"}
 BOOTSTRAP_FILES = {
     Path("src/bridge/bootstrap.py"),
     Path("src/bridge/admin_entrypoint_api.py"),

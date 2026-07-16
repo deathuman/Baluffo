@@ -40,6 +40,12 @@ class CanonicalJobSchema(BaseModel):
     removedAt: str = ""
     lifecycleEvent: str = ""
     lifecycleReason: str = ""
+    availabilityId: str = ""
+    availabilityStatus: Literal["available", "verification_overdue", "unavailable", ""] = ""
+    availabilityCheckedAt: str = ""
+    availabilityVerifiedAt: str = ""
+    availabilityUnavailableAt: str = ""
+    availabilityEvidence: dict[str, Any] = Field(default_factory=dict)
     dedupKey: str = ""
     qualityScore: int = 0
     focusScore: int = 0
@@ -101,6 +107,9 @@ class SavedJobSchema(BaseModel):
     attachments: int = 0
     signature: str = ""
     keySalt: str = ""
+    availabilityId: str = ""
+    availabilityAttention: dict[str, Any] = Field(default_factory=dict)
+    systemActivityAt: str = ""
 
 
 class LocalSavedJobRowSchema(BaseModel):
@@ -138,6 +147,9 @@ class LocalSavedJobRowSchema(BaseModel):
     trackingUpdatedAt: str = ""
     notesUpdatedAt: str = ""
     lastActivityAt: str = ""
+    availabilityId: str = ""
+    availabilityAttention: dict[str, Any] = Field(default_factory=dict)
+    systemActivityAt: str = ""
 
 
 class LocalDataActivityRowSchema(BaseModel):
@@ -214,8 +226,8 @@ class LocalDataBackupPayloadSchema(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    version: int = 3
-    schemaVersion: int = 3
+    version: int = 4
+    schemaVersion: int = 4
     exportedAt: str = ""
     includesFiles: bool = False
     counts: LocalDataBackupCountsSchema = Field(default_factory=LocalDataBackupCountsSchema)

@@ -79,3 +79,15 @@ test("lifecycle badges ignore missing or invalid lastSeenAt copy", () => {
     "Recently removed"
   );
 });
+
+test("availability badges take precedence over legacy lifecycle status", () => {
+  assert.equal(getLifecycleBadgeMeta({
+    status: "active",
+    availabilityStatus: "verification_overdue"
+  }).label, "Verification overdue");
+  assert.equal(getLifecycleBadgeMeta({
+    status: "likely_removed",
+    availabilityStatus: "unavailable",
+    availabilityUnavailableAt: "2026-03-07T00:00:00.000Z"
+  }).title, "Confirmed unavailable since Mar 7, 2026");
+});

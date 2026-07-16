@@ -153,6 +153,7 @@ def reset_admin_bridge_services(monkeypatch: Any) -> None:
     admin_bridge.BRIDGE_SERVICES.reset_registry_service()
     admin_bridge.BRIDGE_SERVICES.reset_discovery_service()
     admin_bridge.BRIDGE_SERVICES.reset_pipeline_service()
+    admin_bridge.BRIDGE_SERVICES.reset_availability_service()
 
 
 def write_admin_bridge_packaged_sync_config(paths: AdminBridgeTestPaths) -> None:

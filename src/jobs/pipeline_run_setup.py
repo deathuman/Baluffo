@@ -109,6 +109,7 @@ class PipelineRunSetup:
     stop_progress_reporter: Callable[[], None]
     stage_config: SourceExecutionStageConfig
     effective_seed_from_existing_output: bool
+    seeded_row_count: int
 
 
 def canonicalize_existing_output_row(
@@ -118,6 +119,24 @@ def canonicalize_existing_output_row(
     if not normalized:
         return None
     payload = normalized.to_dict()
+    for field_name in (
+        "fetchedAt",
+        "status",
+        "firstSeenAt",
+        "lastSeenAt",
+        "removedAt",
+        "lifecycleEvent",
+        "lifecycleReason",
+        "availabilityId",
+        "availabilityStatus",
+        "availabilityCheckedAt",
+        "availabilityVerifiedAt",
+        "availabilityUnavailableAt",
+        "availabilityEvidence",
+    ):
+        value = row.get(field_name)
+        if value not in (None, "", {}):
+            payload[field_name] = dict(value) if isinstance(value, dict) else value
     if clean_text(row.get("dedupKey")):
         payload["dedupKey"] = clean_text(row.get("dedupKey"))
     source_bundle = row.get("sourceBundle")
@@ -336,6 +355,7 @@ def prepare_pipeline_run(
             clean_text=clean_text,
         )
         canonical_rows.extend(CanonicalJob.from_mapping(row) for row in seeded_rows)
+    seeded_row_count = len(canonical_rows)
     prep_progress.emit(
         "seeding_existing_output",
         "Seeding existing output",
@@ -650,4 +670,5 @@ def prepare_pipeline_run(
         stop_progress_reporter=stop_progress_reporter,
         stage_config=stage_config,
         effective_seed_from_existing_output=effective_seed_from_existing_output,
+        seeded_row_count=seeded_row_count,
     )

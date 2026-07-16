@@ -2,11 +2,14 @@ export function setupJobsListDelegation({
   jobsList,
   jobRowSelector,
   saveJobBtnSelector,
+  availabilityCheckSelector = "[data-ui='job-availability-check-btn']",
+  originalLinkSelector = "[data-ui='job-original-link-btn']",
   sanitizeUrl,
   getJobById,
   onToggleSaveJob,
   onOpenJobLink,
-  onMarkJobSeen
+  onMarkJobSeen,
+  onCheckAvailability = async () => {}
 }) {
   if (!jobsList) return;
 
@@ -22,6 +25,30 @@ export function setupJobsListDelegation({
       const job = getJobById(jobId);
       if (job) {
         onToggleSaveJob(job).catch(() => {});
+      }
+      return;
+    }
+
+    const availabilityCheckBtn = target.closest(availabilityCheckSelector);
+    if (availabilityCheckBtn) {
+      event.preventDefault();
+      event.stopPropagation();
+      availabilityCheckBtn.disabled = true;
+      Promise.resolve(onCheckAvailability(availabilityCheckBtn.dataset.availabilityId || ""))
+        .finally(() => { availabilityCheckBtn.disabled = false; });
+      return;
+    }
+
+    const originalLinkBtn = target.closest(originalLinkSelector);
+    if (originalLinkBtn) {
+      event.preventDefault();
+      event.stopPropagation();
+      const openLink = sanitizeUrl(originalLinkBtn.dataset.jobLink || "");
+      const jobRow = originalLinkBtn.closest(jobRowSelector);
+      const jobKey = String(jobRow?.dataset.jobKey || "");
+      if (jobKey) onMarkJobSeen(jobKey);
+      if (openLink && typeof onOpenJobLink === "function") {
+        Promise.resolve(onOpenJobLink(openLink, jobRow)).catch(() => {});
       }
       return;
     }

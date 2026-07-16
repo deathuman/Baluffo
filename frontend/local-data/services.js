@@ -99,6 +99,38 @@ export const savedJobsService = {
     const api = getLocalDataApi();
     ensureApi(api, "subscribeSavedJobs");
     return api.subscribeSavedJobs(uid, callback);
+  },
+  async getAvailabilityAttention(uid) {
+    try {
+      const api = getLocalDataApi();
+      if (!api || typeof api.getAvailabilityAttention !== "function") {
+        return toResult({ count: 0, events: [] });
+      }
+      return toResult(await api.getAvailabilityAttention(uid));
+    } catch (err) {
+      return toResult(
+        { count: 0, events: [] },
+        err?.message || "Could not load availability attention."
+      );
+    }
+  },
+  async checkJobAvailability(availabilityId) {
+    try {
+      const api = getLocalDataApi();
+      ensureApi(api, "checkJobAvailability");
+      return toResult(await api.checkJobAvailability(availabilityId));
+    } catch (err) {
+      return toResult(null, err?.message || "Could not start availability check.");
+    }
+  },
+  async getJobAvailabilityCheckStatus(runId) {
+    try {
+      const api = getLocalDataApi();
+      ensureApi(api, "getJobAvailabilityCheckStatus");
+      return toResult(await api.getJobAvailabilityCheckStatus(runId));
+    } catch (err) {
+      return toResult(null, err?.message || "Could not read availability check status.");
+    }
   }
 };
 
@@ -174,6 +206,15 @@ export const adminService = {
       return toResult(data || { users: [], totals: {} });
     } catch (err) {
       return toResult({ users: [], totals: {} }, err?.message || "Could not load admin overview.");
+    }
+  },
+  async checkJobAvailability(availabilityId) {
+    try {
+      const api = getLocalDataApi();
+      ensureApi(api, "checkJobAvailability");
+      return toResult(await api.checkJobAvailability(availabilityId));
+    } catch (err) {
+      return toResult(null, err?.message || "Could not start availability check.");
     }
   },
   async wipeAccountAdmin(uid) {

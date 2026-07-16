@@ -298,9 +298,6 @@ def test_create_runtime_config_skips_jobs_cold_start_for_successful_local_feed()
         )
         (data_dir / "jobs-unified.json").write_text('[{"id":"job-1"}]', encoding="utf-8")
         (data_dir / "jobs-unified-light.json").write_text('[{"id":"job-1"}]', encoding="utf-8")
-        (data_dir / "jobs-unified.csv").write_text(
-            "id,title\njob-1,Tools Programmer\n", encoding="utf-8"
-        )
         args = argparse.Namespace(
             root=str(root),
             site_port=0,

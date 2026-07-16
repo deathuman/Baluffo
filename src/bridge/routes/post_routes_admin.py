@@ -117,6 +117,8 @@ class _AdminPostRouteApi(Protocol):
 
     def start_jobs_pipeline_task(self, payload: dict[str, Any]) -> dict[str, Any]: ...
 
+    def start_job_availability_check(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+
     def start_sync_task(self, action: str, *, reason: str, automatic: bool) -> dict[str, Any]: ...
 
     def summarize_state(self, state: dict[str, list[dict[str, Any]]]) -> dict[str, Any]: ...
@@ -597,6 +599,11 @@ def handle_post(
         result = api.start_jobs_pipeline_task(data)
         status_code = 200 if bool(result.get("started")) else 409
         handler.send_json(result, status=status_code)
+        return True
+
+    if path == "/tasks/job-availability-check":
+        result = api.start_job_availability_check(data)
+        handler.send_json(result, status=200 if bool(result.get("started")) else 400)
         return True
 
     if path == "/tasks/jobs-pipeline-schedule":

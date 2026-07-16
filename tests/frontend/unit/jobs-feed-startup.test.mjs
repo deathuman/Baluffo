@@ -748,12 +748,10 @@ test("canUseStartupPreviewFastPath only accepts the default first-page startup s
   );
 });
 
-test("startup preview sources prefer the packaged startup snapshot first", () => {
-  assert.deepEqual(STARTUP_PREVIEW_JSON_URLS.slice(0, 4), [
+test("startup preview sources use only supported public projections", () => {
+  assert.deepEqual(STARTUP_PREVIEW_JSON_URLS, [
     "data/jobs-unified-startup.json",
-    "data/jobs-unified-light.json",
-    "data/jobs-unified.json",
-    "jobs-unified-startup.json"
+    "data/jobs-unified-light.json"
   ]);
 });
 

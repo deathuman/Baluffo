@@ -18,6 +18,8 @@ class _PipelineTaskRouteApi(Protocol):
 
     def get_jobs_pipeline_status_payload(self) -> dict[str, Any]: ...
 
+    def get_job_availability_check_status(self, run_id: str) -> dict[str, Any]: ...
+
 
 def handle_pipeline_task_routes(
     handler: BridgeResponseWriter,
@@ -26,13 +28,18 @@ def handle_pipeline_task_routes(
     path: str,
     query: dict[str, list[str]],
 ) -> bool:
-    del query
     if path == "/tasks/jobs-pipeline-schedule":
         handler.send_json(api.get_jobs_pipeline_schedule_payload())
         return True
 
     if path == "/tasks/run-jobs-pipeline-status":
         handler.send_json(api.get_jobs_pipeline_status_payload())
+        return True
+
+    if path == "/tasks/job-availability-check-status":
+        run_id = str((query.get("runId") or [""])[0] or "").strip()
+        payload = api.get_job_availability_check_status(run_id)
+        handler.send_json(payload, status=200 if bool(payload.get("ok")) else 404)
         return True
 
     return False

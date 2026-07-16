@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from src import local_data_store_attachments as local_data_store_attachments_mod
+from src import local_data_store_availability as local_data_store_availability_mod
 from src import local_data_store_backup as local_data_store_backup_mod
 from src import local_data_store_profiles as local_data_store_profiles_mod
 from src import local_data_store_saved_jobs as local_data_store_saved_jobs_mod
@@ -96,6 +97,43 @@ class LocalDataStore:
 
     def list_activity_for_user(self, uid: str, limit: int = 300) -> list[dict[str, Any]]:
         return local_data_store_saved_jobs_mod.list_activity_for_user(self.paths, uid, limit)
+
+    def project_availability_transition(self, entry: dict[str, Any]) -> int:
+        return local_data_store_availability_mod.project_availability_transition(self.paths, entry)
+
+    def project_availability_transitions(self, entries: list[dict[str, Any]]) -> int:
+        return local_data_store_availability_mod.project_availability_transitions(
+            self.paths, entries
+        )
+
+    def get_availability_attention(self, uid: str) -> dict[str, Any]:
+        return local_data_store_availability_mod.availability_attention(self.paths, uid)
+
+    def get_availability_overlay(self, uid: str) -> dict[str, Any]:
+        return local_data_store_availability_mod.availability_overlay(self.paths, uid)
+
+    def acknowledge_availability_attention(
+        self, uid: str, *, transition_id: str = "", acknowledge_all: bool = False
+    ) -> int:
+        return local_data_store_availability_mod.acknowledge_availability(
+            self.paths,
+            uid,
+            transition_id=transition_id,
+            acknowledge_all=acknowledge_all,
+        )
+
+    def manage_availability_report(self, uid: str, job_key: str, *, action: str) -> dict[str, Any]:
+        return local_data_store_availability_mod.manage_availability_report(
+            self.paths, uid, job_key, action=action
+        )
+
+    def restore_reported_jobs_for_live(self, availability_id: str, *, checked_at: str) -> int:
+        return local_data_store_availability_mod.restore_reported_jobs_for_live(
+            self.paths, availability_id, checked_at=checked_at
+        )
+
+    def build_availability_priority_manifest(self) -> dict[str, Any]:
+        return local_data_store_availability_mod.build_availability_priority_manifest(self.paths)
 
     def list_attachments_for_job(self, uid: str, job_key: str) -> list[dict[str, Any]]:
         return local_data_store_attachments_mod.list_attachments_for_job(self.paths, uid, job_key)

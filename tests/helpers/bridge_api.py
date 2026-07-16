@@ -326,6 +326,7 @@ def build_admin_bridge_api(config: Any | None = None) -> BridgeApi:
         sync=admin_bridge._get_sync_service(),
         pipeline=admin_bridge._get_pipeline_service(),
         discovery=admin_bridge._get_discovery_service(),
+        availability=admin_bridge._get_job_availability_service(),
         normalize_fetch_report_contract=admin_bridge.normalize_fetch_report_contract,
         normalize_discovery_report_contract=admin_bridge.normalize_discovery_report_contract,
         discovery_report_path=admin_bridge.DISCOVERY_REPORT_PATH,

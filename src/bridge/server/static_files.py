@@ -34,10 +34,6 @@ ROOT_DATA_FILE_ALIASES = frozenset(
         "jobs-fetch-report.json",
         "jobs-lifecycle-state.json",
         "jobs-source-state.json",
-        "jobs-unified-startup.json",
-        "jobs-unified-light.json",
-        "jobs-unified.json",
-        "jobs-unified.csv",
         "source-discovery-candidates.json",
         "source-discovery-config.json",
         "source-discovery-report.json",
@@ -45,6 +41,14 @@ ROOT_DATA_FILE_ALIASES = frozenset(
         "source-registry-pending.json",
         "source-registry-rejected.json",
         "source-registry-tombstones.json",
+    }
+)
+PUBLIC_DATA_FILE_NAMES = frozenset(
+    {
+        *ROOT_DATA_FILE_ALIASES,
+        "jobs-availability-history.json",
+        "jobs-unified-startup.json",
+        "jobs-unified-light.json",
     }
 )
 
@@ -75,7 +79,6 @@ _STATIC_DATA_DIRECTORIES = frozenset({"contracts", "defaults"})
 _ROOT_DATA_READ_SURFACES = {
     "jobs-unified-light.json": "jobsFeed.staticLight",
     "jobs-unified-startup.json": "jobsFeed.staticStartup",
-    "jobs-unified.json": "jobsFeed.staticFull",
     "jobs-fetch-report.json": "fetchReport.static",
 }
 STARTUP_FEED_BACKFILL_LIMIT = 10
@@ -130,7 +133,7 @@ def _allowed_data_parts(parts: list[str]) -> list[str]:
         return []
     requested_name = parts[-1]
     requested_base = requested_name.removesuffix(".gz")
-    if len(parts) == 1 and requested_base in ROOT_DATA_FILE_ALIASES:
+    if len(parts) == 1 and requested_base in PUBLIC_DATA_FILE_NAMES:
         return parts
     if parts[0] in _STATIC_DATA_DIRECTORIES and requested_base.endswith(".json"):
         return parts

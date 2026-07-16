@@ -13,10 +13,11 @@ const { openJobLinkInDefaultBrowser } = await import("../../../frontend/jobs/app
 
 class FakeElement {}
 
-function createTarget({ row, saveButton }) {
+function createTarget({ row, saveButton, originalLinkButton = null }) {
   const target = Object.create(FakeElement.prototype);
   target.closest = selector => {
     if (selector === ".save-btn") return saveButton ? saveButton : null;
+    if (selector === "[data-ui='job-original-link-btn']") return originalLinkButton;
     if (selector === ".job-row[data-job-link]") return row ? row : null;
     return null;
   };
@@ -86,6 +87,49 @@ test("jobs list delegation opens rows once and protects save clicks", () => {
   } finally {
     global.Element = previousElement;
     global.window = previousWindow;
+  }
+});
+
+test("unavailable rows only open through the explicit original-link button", () => {
+  const previousElement = global.Element;
+  global.Element = FakeElement;
+  const external = [];
+  const marks = [];
+
+  try {
+    const jobsList = createJobsList();
+    const row = { dataset: { jobLink: "", jobKey: "job-closed" } };
+    const originalLinkButton = {
+      dataset: { jobLink: "https://example.com/jobs/closed" },
+      closest: selector => selector === ".job-row[data-job-link]" ? row : null
+    };
+
+    setupJobsListDelegationEvents({
+      jobsList,
+      jobRowSelector: ".job-row[data-job-link]",
+      saveJobBtnSelector: ".save-btn",
+      sanitizeUrl: value => value,
+      getJobById: () => null,
+      onToggleSaveJob: async () => {},
+      onOpenJobLink: async url => external.push(url),
+      onMarkJobSeen: jobKey => marks.push(jobKey)
+    });
+
+    jobsList.handlers.get("click")({
+      target: createTarget({ row, saveButton: null }),
+      preventDefault() {},
+      stopPropagation() {}
+    });
+    jobsList.handlers.get("click")({
+      target: createTarget({ row, saveButton: null, originalLinkButton }),
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    assert.deepEqual(external, ["https://example.com/jobs/closed"]);
+    assert.deepEqual(marks, ["job-closed"]);
+  } finally {
+    global.Element = previousElement;
   }
 });
 

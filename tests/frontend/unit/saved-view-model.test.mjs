@@ -6,6 +6,7 @@ import {
   SAVED_FILTER_HAS_ATTACHMENTS,
   SAVED_FILTER_INTERVIEWING,
   SAVED_FILTER_NEEDS_ACTION,
+  SAVED_FILTER_AVAILABILITY_ATTENTION,
   SORT_ACTIVITY,
   buildSavedJobViewModel,
   filterSavedJobViews,
@@ -27,6 +28,25 @@ function view(job, lifecycleOverlay = null) {
     currentUser: { uid: "u1" }
   });
 }
+
+test("saved availability attention is filterable and local reports hide rows", () => {
+  const attention = view({
+    jobKey: "job_attention",
+    availabilityAttention: {
+      events: [{ transitionId: "event_1", alert: true, acknowledgedAt: "" }]
+    }
+  });
+  assert.equal(attention.availabilityAttentionCount, 1);
+  assert.equal(attention.needsAction, true);
+  assert.deepEqual(filterSavedJobViews([attention], SAVED_FILTER_AVAILABILITY_ATTENTION), [attention]);
+
+  const hidden = view({
+    jobKey: "job_hidden",
+    availabilityAttention: { hiddenByReport: true, events: [] }
+  });
+  assert.deepEqual(filterSavedJobViews([hidden], "all"), []);
+  assert.deepEqual(filterSavedJobViews([hidden], SAVED_FILTER_AVAILABILITY_ATTENTION), [hidden]);
+});
 
 test("saved view model derives tracking, evidence-only needsAction, and buckets", () => {
   const activeRemoved = view({

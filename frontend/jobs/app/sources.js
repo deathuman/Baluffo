@@ -8,24 +8,15 @@ import { resolveContainerRuntimeMode } from "../../shared/local-data/runtime-con
 import { renderDataSourcesPanel } from "../render.js";
 
 const UNIFIED_JSON_SOURCES = [
-  { name: "Unified JSON light (local data)", url: "data/jobs-unified-light.json" },
-  { name: "Unified JSON (local data)", url: "data/jobs-unified.json" },
-  { name: "Unified JSON (root)", url: "jobs-unified.json" }
+  { name: "Unified JSON light (local data)", url: "data/jobs-unified-light.json" }
 ];
 
 export const STARTUP_PREVIEW_JSON_URLS = [
   "data/jobs-unified-startup.json",
-  "data/jobs-unified-light.json",
-  "data/jobs-unified.json",
-  "jobs-unified-startup.json",
-  "jobs-unified-light.json",
-  "jobs-unified.json"
+  "data/jobs-unified-light.json"
 ];
 
-const UNIFIED_CSV_SOURCES = [
-  { name: "Unified CSV (local data)", url: "data/jobs-unified.csv" },
-  { name: "Unified CSV (root)", url: "jobs-unified.csv" }
-];
+const UNIFIED_CSV_SOURCES = [];
 
 const SHEETS_FALLBACK_SOURCES = [
   { sheetId: "1ZOJpVS3CcnrkwhpRgkP7tzf3wc4OWQj-uoWFfv4oHZE", gid: "1560329579" },
@@ -43,6 +34,11 @@ const JOBS_FETCH_REPORT_URLS = [
   "jobs-fetch-report.json"
 ];
 export { JOBS_FETCH_REPORT_URLS };
+
+export const JOBS_AVAILABILITY_HISTORY_URLS = [
+  "data/jobs-availability-history.json",
+  "jobs-availability-history.json"
+];
 
 function isDesktopRuntimeMode() {
   const win = globalThis.window;

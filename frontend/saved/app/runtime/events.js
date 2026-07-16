@@ -27,7 +27,9 @@ export function bindSavedPageEvents({
   exportBackup,
   importBackup,
   setTimelineScope,
-  renderTimeline
+  renderTimeline,
+  showAvailabilityAttention = () => {},
+  acknowledgeAllAvailability = async () => {}
 }) {
   const {
     jobsPageBtnEl,
@@ -48,7 +50,9 @@ export function bindSavedPageEvents({
     exportBackupBtnEl,
     importBackupBtnEl,
     importBackupInputEl,
-    activityScopeBtnEls
+    activityScopeBtnEls,
+    availabilityAttentionFilterBtnEl,
+    availabilityAttentionAcknowledgeAllBtnEl
   } = dom;
 
   bindUi(jobsPageBtnEl, "click", () => {
@@ -122,6 +126,11 @@ export function bindSavedPageEvents({
   bindAsyncClick(signInBtnEl, signInUser);
   bindAsyncClick(signOutBtnEl, signOutUser);
   bindAsyncClick(exportBackupBtnEl, exportBackup);
+  bindUi(availabilityAttentionFilterBtnEl, "click", showAvailabilityAttention);
+  bindAsyncClick(
+    availabilityAttentionAcknowledgeAllBtnEl,
+    acknowledgeAllAvailability
+  );
 
   if (importBackupBtnEl && importBackupInputEl) {
     importBackupBtnEl.addEventListener("click", () => {
@@ -164,7 +173,10 @@ export function bindSavedJobsListDelegation({
   renderSavedJobs,
   queueNotesSave,
   flushNotesSave,
-  uploadAttachments
+  uploadAttachments,
+  checkAvailability = async () => {},
+  reportUnavailable = async () => {},
+  acknowledgeAvailability = async () => {}
 }) {
   const { savedJobsListEl } = dom;
   if (!savedJobsListEl) return;
@@ -179,6 +191,29 @@ export function bindSavedJobsListDelegation({
       const jobKey = removeBtn.dataset.jobKey || "";
       setSelectedJobKey(jobKey, { rerenderTimeline: false });
       removeSavedJob(jobKey).catch(() => {});
+      return;
+    }
+
+    const checkAvailabilityBtn = target.closest("[data-ui='saved-check-availability-btn']");
+    if (checkAvailabilityBtn) {
+      checkAvailabilityBtn.disabled = true;
+      Promise.resolve(checkAvailability(checkAvailabilityBtn.dataset.availabilityId || ""))
+        .finally(() => { checkAvailabilityBtn.disabled = false; });
+      return;
+    }
+
+    const reportUnavailableBtn = target.closest("[data-ui='saved-report-unavailable-btn']");
+    if (reportUnavailableBtn) {
+      reportUnavailable(
+        reportUnavailableBtn.dataset.jobKey || "",
+        reportUnavailableBtn.dataset.action || "report"
+      ).catch(() => {});
+      return;
+    }
+
+    const availabilityAttentionBtn = target.closest("[data-ui='saved-availability-attention-btn']");
+    if (availabilityAttentionBtn) {
+      acknowledgeAvailability(availabilityAttentionBtn.dataset.jobKey || "").catch(() => {});
       return;
     }
 

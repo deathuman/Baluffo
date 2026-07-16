@@ -16,7 +16,6 @@ from typing import Any
 
 from src.contracts import SCHEMA_VERSION
 from src.jobs.common.datetime_utils import parse_datetime, to_iso
-from src.jobs.dedup import dedup_secondary_key
 from src.jobs.models import CanonicalJob
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
 from src.pipeline_io import write_atomic_if_changed
@@ -28,6 +27,9 @@ from .common import url as common_url
 
 LIFECYCLE_REMOVE_TO_ARCHIVE_DAYS = common_config.LIFECYCLE_REMOVE_TO_ARCHIVE_DAYS
 LIFECYCLE_ARCHIVE_RETENTION_DAYS = common_config.LIFECYCLE_ARCHIVE_RETENTION_DAYS
+AVAILABILITY_OVERDUE_FAILURE_COUNT = common_config.AVAILABILITY_OVERDUE_FAILURE_COUNT
+AVAILABILITY_OVERDUE_DAYS = common_config.AVAILABILITY_OVERDUE_DAYS
+AVAILABILITY_HISTORY_DAYS = common_config.AVAILABILITY_HISTORY_DAYS
 fingerprint_url = common_url.fingerprint_url
 
 _BROKEN_ZERO_CLASSIFICATIONS = {
@@ -80,9 +82,32 @@ def normalize_job_lifecycle_payload(
                 "postedAt": to_iso(raw_entry.get("postedAt")),
                 "lifecycleEvent": clean_text(raw_entry.get("lifecycleEvent")),
                 "lifecycleReason": clean_text(raw_entry.get("lifecycleReason")),
+                "availabilityId": clean_text(raw_entry.get("availabilityId")),
+                "availabilityStatus": _normalize_availability_status(raw_entry),
+                "availabilityCheckedAt": clean_text(raw_entry.get("availabilityCheckedAt")),
+                "availabilityVerifiedAt": clean_text(raw_entry.get("availabilityVerifiedAt")),
+                "availabilityUnavailableAt": clean_text(
+                    raw_entry.get("availabilityUnavailableAt") or raw_entry.get("removedAt")
+                ),
+                "availabilityEvidence": _normalize_availability_evidence(
+                    raw_entry.get("availabilityEvidence")
+                ),
+                "availabilityAliases": _normalize_availability_aliases(
+                    raw_entry.get("availabilityAliases")
+                ),
+                "availabilityClosureOrigin": clean_text(raw_entry.get("availabilityClosureOrigin")),
+                "consecutiveAvailabilityFailures": max(
+                    0, int(raw_entry.get("consecutiveAvailabilityFailures") or 0)
+                ),
+                "availabilityTransitionId": clean_text(raw_entry.get("availabilityTransitionId")),
+                "availabilityPendingEvidence": _normalize_availability_evidence(
+                    raw_entry.get("availabilityPendingEvidence")
+                ),
             }
             out_jobs[key] = {
-                field: value for field, value in entry.items() if value not in {"", None}
+                field: value
+                for field, value in entry.items()
+                if value is not None and value != "" and value != {} and value != []
             }
     return {
         "schemaVersion": SCHEMA_VERSION,
@@ -134,6 +159,70 @@ def lifecycle_counts(rows: dict[str, dict[str, Any]]) -> dict[str, int]:
     return counts
 
 
+def build_availability_history_payload(
+    rows: dict[str, dict[str, Any]],
+    *,
+    finished_at: str,
+    history_days: int = AVAILABILITY_HISTORY_DAYS,
+) -> dict[str, Any]:
+    now_dt = parse_datetime(finished_at) or datetime.now(UTC)
+    history: list[dict[str, Any]] = []
+    for entry in rows.values():
+        status = _normalize_availability_status(entry)
+        if status not in {"unavailable", "verification_overdue"}:
+            continue
+        changed_at = clean_text(
+            entry.get("availabilityUnavailableAt")
+            or entry.get("availabilityCheckedAt")
+            or entry.get("removedAt")
+        )
+        changed_dt = parse_datetime(changed_at)
+        if changed_dt and (now_dt - changed_dt).total_seconds() > max(1, history_days) * 86400:
+            continue
+        history.append(
+            {
+                field: value
+                for field, value in {
+                    "availabilityId": clean_text(entry.get("availabilityId")),
+                    "availabilityStatus": status,
+                    "availabilityCheckedAt": clean_text(entry.get("availabilityCheckedAt")),
+                    "availabilityVerifiedAt": clean_text(entry.get("availabilityVerifiedAt")),
+                    "availabilityUnavailableAt": clean_text(entry.get("availabilityUnavailableAt")),
+                    "availabilityEvidence": _normalize_availability_evidence(
+                        entry.get("availabilityEvidence")
+                    ),
+                    "title": clean_text(entry.get("title")),
+                    "company": clean_text(entry.get("company")),
+                    "city": clean_text(entry.get("city")),
+                    "country": clean_text(entry.get("country")),
+                    "jobLink": normalize_url(entry.get("jobLink")),
+                    "source": clean_text(entry.get("source")),
+                    "sourceJobId": clean_text(entry.get("sourceJobId")),
+                    "postedAt": to_iso(entry.get("postedAt")),
+                    "status": clean_text(entry.get("status")),
+                    "firstSeenAt": clean_text(entry.get("firstSeenAt")),
+                    "lastSeenAt": clean_text(entry.get("lastSeenAt")),
+                    "removedAt": clean_text(entry.get("removedAt")),
+                    "lifecycleEvent": clean_text(entry.get("lifecycleEvent")),
+                    "lifecycleReason": clean_text(entry.get("lifecycleReason")),
+                }.items()
+                if value not in ("", None, {})
+            }
+        )
+    history.sort(
+        key=lambda row: clean_text(
+            row.get("availabilityUnavailableAt") or row.get("availabilityCheckedAt")
+        ),
+        reverse=True,
+    )
+    return {
+        "schemaVersion": SCHEMA_VERSION,
+        "updatedAt": finished_at,
+        "historyDays": max(1, int(history_days)),
+        "rows": history,
+    }
+
+
 def _empty_lifecycle_summary() -> dict[str, int]:
     return {
         "new": 0,
@@ -142,7 +231,46 @@ def _empty_lifecycle_summary() -> dict[str, int]:
         "preservedBecauseSourceSkipped": 0,
         "eligibleMissingSourceCount": 0,
         "ineligibleMissingSourceCount": 0,
+        "availabilityAvailable": 0,
+        "availabilityOverdue": 0,
+        "availabilityUnavailable": 0,
+        "availabilityTransitions": 0,
     }
+
+
+def _normalize_availability_status(row: dict[str, Any]) -> str:
+    value = norm_text(row.get("availabilityStatus"))
+    if value in {"available", "verification_overdue", "unavailable"}:
+        return value
+    return (
+        "unavailable"
+        if norm_text(row.get("status")) in {"likely_removed", "archived"}
+        else "available"
+    )
+
+
+def _normalize_availability_evidence(value: Any) -> dict[str, Any]:
+    source = value if isinstance(value, dict) else {}
+    evidence = {
+        "kind": clean_text(source.get("kind")),
+        "confidence": clean_text(source.get("confidence")),
+        "checkedAt": clean_text(source.get("checkedAt")),
+        "source": clean_text(source.get("source")),
+    }
+    status = source.get("httpStatus")
+    if isinstance(status, int) and 100 <= status <= 599:
+        evidence["httpStatus"] = status
+    return {key: value for key, value in evidence.items() if value not in {"", None}}
+
+
+def _normalize_availability_aliases(value: Any) -> list[str]:
+    rows = value if isinstance(value, list) else []
+    exact_prefixes = ("availability:", "source:", "url:")
+    return list(
+        dict.fromkeys(
+            clean_text(item) for item in rows if clean_text(item).startswith(exact_prefixes)
+        )
+    )[:24]
 
 
 def _source_key(value: Any) -> str:
@@ -220,17 +348,75 @@ def build_lifecycle_source_evidence(
     }
 
 
-def _job_identity_key(job: dict[str, Any]) -> str:
-    dedup = clean_text(job.get("dedupKey"))
-    if dedup:
-        return dedup
+def job_identity_aliases(job: dict[str, Any]) -> list[str]:
+    aliases: list[str] = []
+    availability_id = clean_text(job.get("availabilityId"))
+    if availability_id:
+        aliases.append(f"availability:{availability_id}")
+    source = clean_text(job.get("source"))
+    source_job_id = clean_text(job.get("sourceJobId"))
+    if source and source_job_id:
+        aliases.append(f"source:{source.casefold()}:{source_job_id.casefold()}")
     link_fp = fingerprint_url(job.get("jobLink"))
     if link_fp:
-        return f"url:{link_fp}"
-    secondary = dedup_secondary_key(job)
-    if secondary:
-        return f"secondary:{hashlib.sha1(secondary.encode('utf-8')).hexdigest()}"
-    return ""
+        aliases.append(f"url:{link_fp}")
+    return list(dict.fromkeys(aliases))
+
+
+def availability_id_for_job(job: dict[str, Any]) -> str:
+    existing = clean_text(job.get("availabilityId"))
+    if existing:
+        return existing
+    aliases = job_identity_aliases(job)
+    stable = next((item for item in aliases if item.startswith("source:")), "")
+    stable = stable or next((item for item in aliases if item.startswith("url:")), "")
+    # Dedup and title/company keys are neither canonical availability identity
+    # nor lifecycle aliases. Rows without an exact identity stay unmonitored.
+    # Rows without an exact source ID or canonical URL remain unmonitored.
+    return (
+        f"availability_{hashlib.sha256(stable.encode('utf-8')).hexdigest()[:32]}" if stable else ""
+    )
+
+
+def _job_identity_key(job: dict[str, Any]) -> str:
+    aliases = job_identity_aliases(job)
+    return aliases[0] if aliases else ""
+
+
+def _lifecycle_alias_index(rows: dict[str, dict[str, Any]]) -> dict[str, str]:
+    index: dict[str, str] = {}
+    conflicts: set[str] = set()
+    for key, entry in rows.items():
+        aliases = [
+            clean_text(key),
+            *_normalize_availability_aliases(entry.get("availabilityAliases")),
+            *job_identity_aliases(entry),
+        ]
+        availability_id = clean_text(entry.get("availabilityId"))
+        if availability_id:
+            aliases.append(f"availability:{availability_id}")
+        for alias in aliases:
+            if not alias:
+                continue
+            previous = index.get(alias)
+            if previous and previous != key:
+                conflicts.add(alias)
+                continue
+            index[alias] = key
+    for alias in conflicts:
+        index.pop(alias, None)
+    return index
+
+
+def _resolve_lifecycle_key(
+    job: dict[str, Any], rows: dict[str, dict[str, Any]], alias_index: dict[str, str]
+) -> str:
+    for alias in job_identity_aliases(job):
+        matched = alias_index.get(alias)
+        if matched:
+            return matched
+    key = _job_identity_key(job)
+    return key if key in rows or key else ""
 
 
 def _lifecycle_entry_from_active_job(
@@ -241,12 +427,74 @@ def _lifecycle_entry_from_active_job(
     first_seen_at = clean_text(previous.get("firstSeenAt")) or finished_at
     previous_status = norm_text(previous.get("status"))
     lifecycle_event = "reappeared" if previous_status in {"likely_removed", "archived"} else ""
+    previous_availability = _normalize_availability_status(previous)
+    availability_id = clean_text(previous.get("availabilityId")) or availability_id_for_job(row)
+    aliases = list(
+        dict.fromkeys(
+            [
+                *_normalize_availability_aliases(previous.get("availabilityAliases")),
+                *job_identity_aliases(row),
+                *([f"availability:{availability_id}"] if availability_id else []),
+            ]
+        )
+    )[:24]
+    transition_id = clean_text(previous.get("availabilityTransitionId"))
+    if (
+        previous_availability == "unavailable"
+        and norm_text(previous.get("availabilityClosureOrigin")) == "direct"
+    ):
+        row["status"] = "likely_removed"
+        row["firstSeenAt"] = first_seen_at
+        row["lastSeenAt"] = finished_at
+        row["removedAt"] = clean_text(previous.get("removedAt"))
+        row["lifecycleEvent"] = "preserved"
+        row["lifecycleReason"] = "direct_closure_overrides_source"
+        row["availabilityId"] = availability_id
+        row["availabilityStatus"] = "unavailable"
+        row["availabilityCheckedAt"] = clean_text(previous.get("availabilityCheckedAt"))
+        row["availabilityVerifiedAt"] = clean_text(previous.get("availabilityVerifiedAt"))
+        row["availabilityUnavailableAt"] = clean_text(previous.get("availabilityUnavailableAt"))
+        row["availabilityEvidence"] = _normalize_availability_evidence(
+            previous.get("availabilityEvidence")
+        )
+        return {
+            **previous,
+            "status": "likely_removed",
+            "firstSeenAt": first_seen_at,
+            "lastSeenAt": finished_at,
+            "title": clean_text(row.get("title")),
+            "company": clean_text(row.get("company")),
+            "city": clean_text(row.get("city")),
+            "country": clean_text(row.get("country")),
+            "jobLink": normalize_url(row.get("jobLink")),
+            "source": clean_text(row.get("source")),
+            "sourceJobId": clean_text(row.get("sourceJobId")),
+            "postedAt": to_iso(row.get("postedAt")),
+            "lifecycleEvent": "preserved",
+            "lifecycleReason": "direct_closure_overrides_source",
+            "availabilityId": availability_id,
+            "availabilityAliases": aliases,
+        }
+    if previous_availability in {"unavailable", "verification_overdue"}:
+        lifecycle_event = "reappeared"
+        transition_id = _availability_transition_id(availability_id, "available", finished_at)
     row["status"] = "active"
     row["firstSeenAt"] = first_seen_at
     row["lastSeenAt"] = finished_at
     row["removedAt"] = ""
     row["lifecycleEvent"] = lifecycle_event
     row["lifecycleReason"] = ""
+    row["availabilityId"] = availability_id
+    row["availabilityStatus"] = "available"
+    row["availabilityCheckedAt"] = finished_at
+    row["availabilityVerifiedAt"] = finished_at
+    row["availabilityUnavailableAt"] = ""
+    row["availabilityEvidence"] = {
+        "kind": "source_present",
+        "confidence": "definitive",
+        "checkedAt": finished_at,
+        "source": clean_text(row.get("source")),
+    }
     return {
         "status": "active",
         "firstSeenAt": first_seen_at,
@@ -260,7 +508,95 @@ def _lifecycle_entry_from_active_job(
         "sourceJobId": clean_text(row.get("sourceJobId")),
         "postedAt": to_iso(row.get("postedAt")),
         "lifecycleEvent": lifecycle_event,
+        "availabilityId": availability_id,
+        "availabilityStatus": "available",
+        "availabilityCheckedAt": finished_at,
+        "availabilityVerifiedAt": finished_at,
+        "availabilityEvidence": dict(row["availabilityEvidence"]),
+        "availabilityAliases": aliases,
+        "availabilityClosureOrigin": "",
+        "consecutiveAvailabilityFailures": 0,
+        "availabilityTransitionId": transition_id,
     }
+
+
+def _availability_transition_id(availability_id: str, status: str, at: str) -> str:
+    token = f"{availability_id}|{status}|{at}"
+    return f"availability_event_{hashlib.sha256(token.encode('utf-8')).hexdigest()[:24]}"
+
+
+def apply_direct_availability_evidence(
+    entry: dict[str, Any], evidence: dict[str, Any]
+) -> dict[str, Any]:
+    """Apply compact direct evidence with conservative conflict precedence."""
+
+    next_entry = dict(entry or {})
+    normalized = _normalize_availability_evidence(evidence)
+    checked_at = clean_text(normalized.get("checkedAt")) or now_iso()
+    kind = norm_text(normalized.get("kind"))
+    confidence = norm_text(normalized.get("confidence"))
+    availability_id = clean_text(next_entry.get("availabilityId")) or availability_id_for_job(
+        next_entry
+    )
+    next_entry["availabilityId"] = availability_id
+    next_entry["availabilityCheckedAt"] = checked_at
+    next_entry["availabilityEvidence"] = normalized
+
+    if kind == "direct_live" and confidence == "definitive":
+        previous_status = _normalize_availability_status(next_entry)
+        next_entry["availabilityStatus"] = "available"
+        next_entry["availabilityVerifiedAt"] = checked_at
+        next_entry["availabilityUnavailableAt"] = ""
+        next_entry["availabilityClosureOrigin"] = ""
+        next_entry["availabilityPendingEvidence"] = {}
+        next_entry["consecutiveAvailabilityFailures"] = 0
+        next_entry["status"] = "active"
+        next_entry["removedAt"] = ""
+        if previous_status != "available":
+            next_entry["lifecycleEvent"] = "reappeared"
+            next_entry["availabilityTransitionId"] = _availability_transition_id(
+                availability_id, "available", checked_at
+            )
+        return next_entry
+
+    should_close = kind == "direct_closed" and confidence == "definitive"
+    if kind == "direct_closed" and confidence == "ambiguous":
+        pending = _normalize_availability_evidence(next_entry.get("availabilityPendingEvidence"))
+        pending_at = parse_datetime(pending.get("checkedAt"))
+        checked_dt = parse_datetime(checked_at)
+        separated = bool(
+            pending_at and checked_dt and (checked_dt - pending_at).total_seconds() >= 24 * 60 * 60
+        )
+        should_close = norm_text(pending.get("kind")) == kind and separated
+        if not should_close:
+            next_entry["availabilityPendingEvidence"] = normalized
+
+    if should_close:
+        previous_status = _normalize_availability_status(next_entry)
+        next_entry["availabilityStatus"] = "unavailable"
+        next_entry["availabilityVerifiedAt"] = checked_at
+        next_entry["availabilityUnavailableAt"] = (
+            clean_text(next_entry.get("availabilityUnavailableAt")) or checked_at
+        )
+        next_entry["availabilityClosureOrigin"] = "direct"
+        next_entry["availabilityPendingEvidence"] = {}
+        next_entry["consecutiveAvailabilityFailures"] = 0
+        next_entry["status"] = "likely_removed"
+        next_entry["removedAt"] = clean_text(next_entry.get("removedAt")) or checked_at
+        if previous_status != "unavailable":
+            next_entry["availabilityTransitionId"] = _availability_transition_id(
+                availability_id, "unavailable", checked_at
+            )
+        return next_entry
+
+    if confidence == "unknown":
+        return _apply_unverified_availability_entry(
+            next_entry,
+            finished_at=checked_at,
+            reason=kind or "direct_unverified",
+            now_dt=parse_datetime(checked_at) or datetime.now(UTC),
+        )
+    return next_entry
 
 
 def _apply_active_lifecycle_rows(
@@ -270,8 +606,9 @@ def _apply_active_lifecycle_rows(
     summary: dict[str, int],
 ) -> set[str]:
     seen_keys: set[str] = set()
+    alias_index = _lifecycle_alias_index(next_rows)
     for row in payload_rows:
-        key = _job_identity_key(row)
+        key = _resolve_lifecycle_key(row, next_rows, alias_index)
         if not key:
             continue
         seen_keys.add(key)
@@ -282,6 +619,8 @@ def _apply_active_lifecycle_rows(
         elif previous_status in {"likely_removed", "archived"}:
             summary["reappeared"] += 1
         next_rows[key] = _lifecycle_entry_from_active_job(row, previous, finished_at)
+        for alias in _normalize_availability_aliases(next_rows[key].get("availabilityAliases")):
+            alias_index.setdefault(alias, key)
     return seen_keys
 
 
@@ -292,11 +631,26 @@ def _apply_missing_lifecycle_entry(
     finished_at: str,
     remove_to_archive_days: int,
 ) -> dict[str, Any]:
+    availability_id = clean_text(entry.get("availabilityId")) or availability_id_for_job(entry)
+    entry["availabilityId"] = availability_id
+    entry["availabilityAliases"] = list(
+        dict.fromkeys(
+            [
+                *_normalize_availability_aliases(entry.get("availabilityAliases")),
+                *job_identity_aliases(entry),
+                *([f"availability:{availability_id}"] if availability_id else []),
+            ]
+        )
+    )[:24]
     status = norm_text(entry.get("status")) or "active"
     removed_at = clean_text(entry.get("removedAt")) or finished_at
     if status == "active":
         entry["status"] = "likely_removed"
         entry["removedAt"] = finished_at
+        entry["availabilityUnavailableAt"] = finished_at
+        entry["availabilityTransitionId"] = _availability_transition_id(
+            clean_text(entry.get("availabilityId")), "unavailable", finished_at
+        )
         entry["lifecycleEvent"] = ""
         entry["lifecycleReason"] = ""
     elif status == "likely_removed":
@@ -308,6 +662,55 @@ def _apply_missing_lifecycle_entry(
             entry["removedAt"] = removed_at
         entry["lifecycleEvent"] = ""
         entry["lifecycleReason"] = ""
+    entry["availabilityStatus"] = "unavailable"
+    entry["availabilityCheckedAt"] = finished_at
+    entry["availabilityVerifiedAt"] = finished_at
+    entry["availabilityEvidence"] = {
+        "kind": "source_absent",
+        "confidence": "definitive",
+        "checkedAt": finished_at,
+        "source": clean_text(entry.get("source")),
+    }
+    entry["availabilityClosureOrigin"] = "source_absent"
+    entry["consecutiveAvailabilityFailures"] = 0
+    return entry
+
+
+def _apply_unverified_availability_entry(
+    entry: dict[str, Any], *, finished_at: str, reason: str, now_dt: datetime
+) -> dict[str, Any]:
+    if _normalize_availability_status(entry) == "unavailable":
+        return entry
+    availability_id = clean_text(entry.get("availabilityId")) or availability_id_for_job(entry)
+    entry["availabilityId"] = availability_id
+    entry["availabilityAliases"] = list(
+        dict.fromkeys(
+            [
+                *_normalize_availability_aliases(entry.get("availabilityAliases")),
+                *job_identity_aliases(entry),
+                *([f"availability:{availability_id}"] if availability_id else []),
+            ]
+        )
+    )[:24]
+    failures = max(0, int(entry.get("consecutiveAvailabilityFailures") or 0)) + 1
+    entry["consecutiveAvailabilityFailures"] = failures
+    entry["availabilityCheckedAt"] = finished_at
+    entry["availabilityEvidence"] = {
+        "kind": reason,
+        "confidence": "unknown",
+        "checkedAt": finished_at,
+        "source": clean_text(entry.get("source")),
+    }
+    verified_dt = parse_datetime(entry.get("availabilityVerifiedAt") or entry.get("lastSeenAt"))
+    age_days = int((now_dt - verified_dt).total_seconds() // (24 * 60 * 60)) if verified_dt else 0
+    if failures >= AVAILABILITY_OVERDUE_FAILURE_COUNT and age_days >= AVAILABILITY_OVERDUE_DAYS:
+        if _normalize_availability_status(entry) != "verification_overdue":
+            entry["availabilityTransitionId"] = _availability_transition_id(
+                clean_text(entry.get("availabilityId")), "verification_overdue", finished_at
+            )
+        entry["availabilityStatus"] = "verification_overdue"
+    else:
+        entry["availabilityStatus"] = "available"
     return entry
 
 
@@ -336,10 +739,22 @@ def _apply_missing_lifecycle_rows(
                     summary["preservedBecauseSourceFailed"] += 1
                     entry["lifecycleEvent"] = "preserved"
                     entry["lifecycleReason"] = "source_failed"
+                    _apply_unverified_availability_entry(
+                        entry,
+                        finished_at=finished_at,
+                        reason="source_failed",
+                        now_dt=now_dt,
+                    )
                 else:
                     summary["preservedBecauseSourceSkipped"] += 1
                     entry["lifecycleEvent"] = "preserved"
                     entry["lifecycleReason"] = "source_skipped"
+                    _apply_unverified_availability_entry(
+                        entry,
+                        finished_at=finished_at,
+                        reason="source_skipped",
+                        now_dt=now_dt,
+                    )
             continue
         next_rows[key] = _apply_missing_lifecycle_entry(
             entry,
@@ -371,6 +786,37 @@ def _prune_archived_lifecycle_rows(
             next_rows.pop(key, None)
 
 
+def _project_available_payload_rows(
+    payload_rows: list[dict[str, Any]], next_rows: dict[str, dict[str, Any]]
+) -> list[dict[str, Any]]:
+    alias_index = _lifecycle_alias_index(next_rows)
+    projected: list[dict[str, Any]] = []
+    for row in payload_rows:
+        key = _resolve_lifecycle_key(row, next_rows, alias_index)
+        entry = next_rows.get(key) if key else None
+        if not isinstance(entry, dict):
+            projected.append(row)
+            continue
+        availability_status = _normalize_availability_status(entry)
+        row["availabilityId"] = clean_text(entry.get("availabilityId"))
+        row["availabilityStatus"] = availability_status
+        row["availabilityCheckedAt"] = clean_text(entry.get("availabilityCheckedAt"))
+        row["availabilityVerifiedAt"] = clean_text(entry.get("availabilityVerifiedAt"))
+        row["availabilityUnavailableAt"] = clean_text(entry.get("availabilityUnavailableAt"))
+        row["availabilityEvidence"] = _normalize_availability_evidence(
+            entry.get("availabilityEvidence")
+        )
+        row["status"] = clean_text(entry.get("status")) or "active"
+        row["firstSeenAt"] = clean_text(entry.get("firstSeenAt"))
+        row["lastSeenAt"] = clean_text(entry.get("lastSeenAt"))
+        row["removedAt"] = clean_text(entry.get("removedAt"))
+        row["lifecycleEvent"] = clean_text(entry.get("lifecycleEvent"))
+        row["lifecycleReason"] = clean_text(entry.get("lifecycleReason"))
+        if availability_status == "available":
+            projected.append(row)
+    return projected
+
+
 def apply_job_lifecycle_state(
     *,
     deduped_rows: list[CanonicalJob],
@@ -381,6 +827,7 @@ def apply_job_lifecycle_state(
     source_evidence: dict[str, Any] | None = None,
     remove_to_archive_days: int = LIFECYCLE_REMOVE_TO_ARCHIVE_DAYS,
     archive_retention_days: int = LIFECYCLE_ARCHIVE_RETENTION_DAYS,
+    observed_rows: list[CanonicalJob] | None = None,
 ) -> tuple[
     list[CanonicalJob],
     dict[str, dict[str, Any]],
@@ -395,7 +842,10 @@ def apply_job_lifecycle_state(
     }
     archive_rows_by_year: dict[int, dict[str, dict[str, Any]]] = {}
     summary = _empty_lifecycle_summary()
-    seen_keys = _apply_active_lifecycle_rows(payload_rows, next_rows, finished_at, summary)
+    observed_payload_rows = [
+        row.to_dict() for row in (observed_rows if observed_rows is not None else deduped_rows)
+    ]
+    seen_keys = _apply_active_lifecycle_rows(observed_payload_rows, next_rows, finished_at, summary)
     eligible_sources = {
         clean_text(source_name)
         for source_name in (
@@ -436,9 +886,16 @@ def apply_job_lifecycle_state(
             archive_retention_days=archive_retention_days,
             archive_rows_by_year=archive_rows_by_year,
         )
+    projected_rows = _project_available_payload_rows(payload_rows, next_rows)
+    availability_counts = {"available": 0, "verification_overdue": 0, "unavailable": 0}
+    for entry in next_rows.values():
+        availability_counts[_normalize_availability_status(entry)] += 1
+    summary["availabilityAvailable"] = availability_counts["available"]
+    summary["availabilityOverdue"] = availability_counts["verification_overdue"]
+    summary["availabilityUnavailable"] = availability_counts["unavailable"]
     counts = {**lifecycle_counts(next_rows), **summary}
     return (
-        [CanonicalJob.from_mapping(row) for row in payload_rows],
+        [CanonicalJob.from_mapping(row) for row in projected_rows],
         next_rows,
         archive_rows_by_year,
         counts,

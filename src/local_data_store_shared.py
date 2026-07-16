@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import hashlib
+import ipaddress
 import json
 import os
 import re
@@ -14,6 +16,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from src.shared.utils import parse_iso
 
@@ -67,6 +70,55 @@ def sanitize_job_url(url: str) -> str:
     if text.lower().startswith(("http://", "https://")):
         return text
     return ""
+
+
+_TRACKING_QUERY_KEYS = {"fbclid", "gclid", "dclid", "msclkid", "mc_cid", "mc_eid"}
+
+
+def canonical_public_job_url(url: str) -> str:
+    """Return a stable public HTTP(S) identity URL without tracking noise."""
+
+    text = sanitize_job_url(url)
+    if not text:
+        return ""
+    try:
+        parsed = urlsplit(text)
+        host = (parsed.hostname or "").casefold().rstrip(".")
+        if not host or parsed.username or parsed.password:
+            return ""
+        if host in {"localhost", "localhost.localdomain"} or host.endswith(".local"):
+            return ""
+        try:
+            if not ipaddress.ip_address(host).is_global:
+                return ""
+        except ValueError:
+            pass
+        port = parsed.port
+    except ValueError:
+        return ""
+    scheme = parsed.scheme.casefold()
+    default_port = (scheme == "http" and port == 80) or (scheme == "https" and port == 443)
+    netloc = host if port is None or default_port else f"{host}:{port}"
+    path = parsed.path or "/"
+    if path != "/":
+        path = path.rstrip("/") or "/"
+    query = urlencode(
+        sorted(
+            (key, value)
+            for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+            if not key.casefold().startswith("utm_") and key.casefold() not in _TRACKING_QUERY_KEYS
+        ),
+        doseq=True,
+    )
+    return urlunsplit((scheme, netloc, path, query, ""))
+
+
+def custom_job_availability_id(url: str) -> str:
+    canonical = canonical_public_job_url(url)
+    if not canonical:
+        return ""
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:24]
+    return f"availability_custom_{digest}"
 
 
 def generate_job_key(job: dict[str, Any]) -> str:

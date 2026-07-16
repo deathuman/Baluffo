@@ -19,6 +19,7 @@ export const SAVED_FILTER_MISSING_LINK = "missing_link";
 export const SAVED_FILTER_LIKELY_REMOVED = "likely_removed";
 export const SAVED_FILTER_CUSTOM = "custom";
 export const SAVED_FILTER_IMPORTED = "imported";
+export const SAVED_FILTER_AVAILABILITY_ATTENTION = "availability_attention";
 
 export const SORT_UPDATED = "updated";
 export const SORT_SAVED = "saved";
@@ -44,7 +45,8 @@ const VALID_FILTERS = new Set([
   SAVED_FILTER_MISSING_LINK,
   SAVED_FILTER_LIKELY_REMOVED,
   SAVED_FILTER_CUSTOM,
-  SAVED_FILTER_IMPORTED
+  SAVED_FILTER_IMPORTED,
+  SAVED_FILTER_AVAILABILITY_ATTENTION
 ]);
 
 const VALID_SORTS = new Set([
@@ -160,6 +162,13 @@ export function buildSavedJobViewModel(job, options = {}) {
   const hasAttachments = Number(job?.attachmentsCount || 0) > 0;
   const missingLink = !String(job?.jobLink || "").trim();
   const custom = isCustomJob(job);
+  const availabilityEvents = Array.isArray(job?.availabilityAttention?.events)
+    ? job.availabilityAttention.events
+    : [];
+  const availabilityAttentionCount = availabilityEvents.filter(
+    event => event?.alert && !event?.acknowledgedAt
+  ).length;
+  const hiddenByAvailabilityReport = Boolean(job?.availabilityAttention?.hiddenByReport);
   const sourceNeedsAction = outcomeStatus === "active" && (
     sourceBucket === "likely_removed" || sourceBucket === "archived"
   );
@@ -170,7 +179,7 @@ export function buildSavedJobViewModel(job, options = {}) {
   ].filter(Boolean);
   const attentionReasons = needsActionReasons.map(attentionReason);
   const primaryAttentionReason = attentionReasons[0] || null;
-  const needsAction = attentionReasons.length > 0;
+  const needsAction = attentionReasons.length > 0 || availabilityAttentionCount > 0;
   const stageIndex = outcomeStatus === "active"
     ? PIPELINE_PHASES.indexOf(pipelinePhase)
     : PIPELINE_PHASES.length + Math.max(0, OUTCOME_STATUSES.indexOf(outcomeStatus));
@@ -198,6 +207,8 @@ export function buildSavedJobViewModel(job, options = {}) {
     attentionReasons,
     primaryAttentionReason,
     sourceNeedsAction,
+    availabilityAttentionCount,
+    hiddenByAvailabilityReport,
     activeAt,
     phaseEnteredAt,
     hasNotes,
@@ -244,6 +255,10 @@ export function normalizeSavedGroup(value) {
 }
 
 function matchesFilter(view, filter) {
+  if (filter === SAVED_FILTER_AVAILABILITY_ATTENTION) {
+    return view.availabilityAttentionCount > 0 || view.hiddenByAvailabilityReport;
+  }
+  if (view.hiddenByAvailabilityReport) return false;
   if (filter === SAVED_FILTER_CUSTOM) return view.isCustom;
   if (filter === SAVED_FILTER_IMPORTED) return view.isImported;
   if (filter === SAVED_FILTER_NEEDS_ACTION) return view.needsAction;

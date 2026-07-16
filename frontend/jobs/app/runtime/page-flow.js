@@ -98,6 +98,16 @@ export function createJobsPageFlow(deps) {
       totalJobs: deps.runtimeState.allJobs.length
     });
     deps.filtersController.syncStateFromFilters();
+    const availabilityFilter = String(deps.state.filters.lifecycleStatus || "active");
+    if (
+      ["unavailable", "verification_overdue", "all"].includes(availabilityFilter)
+      && !deps.runtimeState.availabilityHistoryLoaded
+      && !deps.runtimeState.availabilityHistoryPromise
+    ) {
+      deps.feedController.loadAvailabilityHistory()
+        .then(() => applyFiltersAndRender({ resetPage, emptyStateReason }))
+        .catch(error => deps.logJobsError("Availability history load failed", error));
+    }
     deps.runtimeState.filteredJobs = filterJobs(deps.runtimeState.allJobs, deps.state.filters, {
       currentUser: deps.userState.currentUser,
       seenJobKeys: deps.userState.seenJobKeys,
@@ -135,6 +145,7 @@ export function createJobsPageFlow(deps) {
       seenJobKeys: deps.userState.seenJobKeys,
       savedJobKeys: deps.userState.savedJobKeys,
       isJobsApiReady: deps.isJobsApiReady,
+      canManageAvailability: Boolean(deps.canManageAvailability?.()),
       getJobKeyForJob: deps.getJobKeyForJob,
       fullCountryName: deps.fullCountryName,
       goToPage,

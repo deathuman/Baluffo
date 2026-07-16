@@ -17,6 +17,7 @@ def build_bridge_api(config: Any, *, root_mod: Any) -> BridgeApi:
         sync=root_mod._get_sync_service(),
         pipeline=root_mod._get_pipeline_service(),
         discovery=root_mod._get_discovery_service(),
+        availability=root_mod._get_job_availability_service(),
         normalize_fetch_report_contract=root_mod.normalize_fetch_report_contract,
         normalize_discovery_report_contract=root_mod.normalize_discovery_report_contract,
         discovery_report_path=root_mod.DISCOVERY_REPORT_PATH,

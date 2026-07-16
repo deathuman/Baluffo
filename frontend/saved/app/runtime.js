@@ -1,5 +1,8 @@
 import { AdminConfig as adminConfig } from "../../shared/config/admin-config.js";
 import {
+  canManageAvailability as resolveCanManageAvailability
+} from "../../shared/local-data/runtime-context.js";
+import {
   activityTypeLabel as activityTypeLabelFromDomain,
   formatActivityDetail as formatActivityDetailFromDomain,
   normalizeCustomJobInput as normalizeCustomJobInputFromDomain,
@@ -87,6 +90,7 @@ const windowObject = typeof window === "undefined"
 const documentObject = typeof document === "undefined"
   ? (globalThis.document || null)
   : document;
+const canManageAvailability = () => resolveCanManageAvailability(windowObject.location?.href || "");
 
 let savedRuntime;
 let savedChrome;
@@ -105,6 +109,7 @@ savedRuntime = composeSavedRuntime({
   savedPageService,
   savedAuthService,
   isSavedApiReady,
+  canManageAvailability,
   savedActions: SAVED_ACTIONS,
   timelinePrefPrefix: TIMELINE_PREF_PREFIX,
   activityHighlightMs: ACTIVITY_HIGHLIGHT_MS,
@@ -243,6 +248,7 @@ savedBoot = createSavedBoot({
   viewState: savedRuntime.viewState,
   noteSaveState: savedRuntime.noteSaveState,
   savedPageService,
+  canManageAvailability,
   savedAuthController: savedRuntime.savedAuthController,
   applySavedAdminBridgeState: (...args) => savedRuntime.applySavedAdminBridgeState(...args),
   cssEscape: (...args) => savedChrome.cssEscape(...args),

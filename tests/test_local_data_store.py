@@ -150,7 +150,7 @@ def test_backup_export_import_roundtrip_preserves_business_fields() -> None:
         activity_before_len = len(store.list_activity_for_user(uid, 2000))
 
         payload_no_files = store.export_profile_data(uid, include_files=False)
-        assert payload_no_files.get("schemaVersion") == 3
+        assert payload_no_files.get("schemaVersion") == 4
         assert payload_no_files.get("includesFiles") is False
         assert payload_no_files.get("counts") == {
             "savedJobs": 2,
@@ -169,7 +169,7 @@ def test_backup_export_import_roundtrip_preserves_business_fields() -> None:
         )
 
         payload_with_files = store.export_profile_data(uid, include_files=True)
-        assert payload_with_files.get("schemaVersion") == 3
+        assert payload_with_files.get("schemaVersion") == 4
         assert payload_with_files.get("includesFiles") is True
         assert payload_with_files.get("counts") == {
             "savedJobs": 2,

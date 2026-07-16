@@ -87,6 +87,75 @@ export const savedPageService = {
       return toResult(null, err?.message || "Could not update notes.");
     }
   },
+  async acknowledgeAvailabilityAttention(uid, options = {}) {
+    try {
+      const api = getLocalDataApi();
+      if (!api || typeof api.acknowledgeAvailabilityAttention !== "function") {
+        throw new Error("Availability attention is only available in desktop or container mode.");
+      }
+      return toResult(await api.acknowledgeAvailabilityAttention(uid, options));
+    } catch (err) {
+      return toResult(null, err?.message || "Could not acknowledge availability update.");
+    }
+  },
+  async getAvailabilityAttention(uid) {
+    try {
+      const api = getLocalDataApi();
+      if (!api || typeof api.getAvailabilityAttention !== "function") {
+        return toResult({ count: 0, events: [] });
+      }
+      return toResult(await api.getAvailabilityAttention(uid));
+    } catch (err) {
+      return toResult(
+        { count: 0, events: [] },
+        err?.message || "Could not load availability attention."
+      );
+    }
+  },
+  async getAvailabilityOverlay(uid) {
+    try {
+      const api = getLocalDataApi();
+      if (!api || typeof api.getAvailabilityOverlay !== "function") {
+        return toResult({ rows: [] });
+      }
+      return toResult(await api.getAvailabilityOverlay(uid));
+    } catch (err) {
+      return toResult({ rows: [] }, err?.message || "Could not load availability status.");
+    }
+  },
+  async manageAvailabilityReport(uid, jobKey, action) {
+    try {
+      const api = getLocalDataApi();
+      if (!api || typeof api.manageAvailabilityReport !== "function") {
+        throw new Error("Availability reports are only available in desktop or container mode.");
+      }
+      return toResult(await api.manageAvailabilityReport(uid, jobKey, action));
+    } catch (err) {
+      return toResult(null, err?.message || "Could not update availability report.");
+    }
+  },
+  async checkJobAvailability(availabilityId) {
+    try {
+      const api = getLocalDataApi();
+      if (!api || typeof api.checkJobAvailability !== "function") {
+        throw new Error("Availability checks are only available in desktop or container mode.");
+      }
+      return toResult(await api.checkJobAvailability(availabilityId));
+    } catch (err) {
+      return toResult(null, err?.message || "Could not start availability check.");
+    }
+  },
+  async getJobAvailabilityCheckStatus(runId) {
+    try {
+      const api = getLocalDataApi();
+      if (!api || typeof api.getJobAvailabilityCheckStatus !== "function") {
+        throw new Error("Availability checks are only available in desktop or container mode.");
+      }
+      return toResult(await api.getJobAvailabilityCheckStatus(runId));
+    } catch (err) {
+      return toResult(null, err?.message || "Could not read availability check status.");
+    }
+  },
   async listAttachmentsForJob(uid, jobKey) {
     try {
       const api = getLocalDataApi();

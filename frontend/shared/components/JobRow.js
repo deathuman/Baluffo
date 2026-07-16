@@ -148,6 +148,7 @@ function renderJobRowContent(job, {
   jobKey,
   isSaved,
   isJobsApiReady,
+  canManageAvailability,
   isSeen,
   isNew,
   toContractClass,
@@ -157,6 +158,7 @@ function renderJobRowContent(job, {
   const workTypeLabel = formatWorkType(job.workType, capitalizeFirst);
   const newBadge = isNew ? '<span class="job-new-badge">New</span>' : "";
   const lifecycleBadge = renderLifecycleBadgeHtml(job);
+  const isUnavailable = String(job.availabilityStatus || "").toLowerCase() === "unavailable";
   const sectorLine = isUnknownValue(job.sector)
     ? ""
     : `<div class="job-sector-line">${escapeHtml(job.sector)}</div>`;
@@ -165,12 +167,12 @@ function renderJobRowContent(job, {
   const rowCity = escapeHtml(rowLocation.city);
   const rowClasses = [
     "job-row",
-    safeJobLink ? "job-row-link" : "",
+    safeJobLink && !isUnavailable ? "job-row-link" : "",
     isSeen ? "job-row-seen" : "",
     isNew ? "job-row-new" : ""
   ].filter(Boolean).join(" ");
   return `
-    <div class="${rowClasses}" data-job-link="${safeJobLink}" data-job-key="${escapeHtml(jobKey)}" data-ui="job-row">
+    <div class="${rowClasses}" data-job-link="${isUnavailable ? "" : safeJobLink}" data-job-key="${escapeHtml(jobKey)}" data-availability-status="${escapeHtml(job.availabilityStatus || "available")}" data-ui="job-row">
       <div class="col-title job-cell" data-label="Position">
         <div class="job-title-line">
           ${renderFreshnessCell(job)}
@@ -196,6 +198,8 @@ function renderJobRowContent(job, {
         <span class="job-tag ${job.workType.toLowerCase()}">${escapeHtml(workTypeLabel || "Unknown")}</span>
       </div>
       <div class="col-save job-cell" data-label="Save" aria-label="Job actions">
+        ${isUnavailable && safeJobLink ? `<button class="btn back-btn job-original-link-btn availability-warning" data-ui="job-original-link-btn" data-job-link="${safeJobLink}" title="Confirmed unavailable; open the original posting anyway" aria-label="Open original link for confirmed unavailable job">Open original link</button>` : ""}
+        ${canManageAvailability && job.availabilityId ? `<button class="job-availability-check-btn" data-ui="job-availability-check-btn" data-availability-id="${escapeHtml(job.availabilityId)}" title="Check availability now" aria-label="Check availability now">↻</button>` : ""}
         <button
           class="save-job-btn job-inline-save-btn ${isSaved ? "saved" : ""}"
           data-job-id="${job.id}"
@@ -221,6 +225,7 @@ export function renderJobRow(job, options = {}) {
     isSeen = false,
     isNew = false,
     isJobsApiReady,
+    canManageAvailability = false,
     toContractClass,
     capitalizeFirst
   } = options;
@@ -238,6 +243,7 @@ export function renderJobRow(job, options = {}) {
     jobKey,
     isSaved,
     isJobsApiReady,
+    canManageAvailability,
     isSeen,
     isNew,
     toContractClass,

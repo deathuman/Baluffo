@@ -10,6 +10,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused BridgeApi invent
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -346,6 +347,7 @@ class BridgeApi:
     sync: SyncService | None = None
     pipeline: PipelineService | None = None
     discovery: DiscoveryService | None = None
+    availability: Any | None = None
 
     # Report contract normalizers used by GET routes.
     normalize_discovery_report_contract: NormalizeReportContractFunc = _identity_report_contract
@@ -404,6 +406,11 @@ class BridgeApi:
     start_jobs_bootstrap_task: StartTaskFunc = _not_started_result
     start_fetcher_task: StartTaskFunc = _not_started_result
     start_jobs_pipeline_task: StartTaskFunc = _not_started_result
+    start_job_availability_check: StartTaskFunc = _not_started_result
+    get_job_availability_check_status: Callable[[str], JsonObject] = lambda _run_id: {
+        "ok": False,
+        "error": "not_implemented",
+    }
     abort_task: Callable[[JsonObject | None], tuple[int, JsonObject]] = _abort_not_available
     start_sync_task: StartSyncTaskFunc = _not_started_result
 
@@ -506,6 +513,26 @@ class BridgeApi:
         # Prefer typed services when provided, but only override behaviors that
         # were left at the default stubs.
         self._wire_registry_defaults()
+        if self.availability is None:
+            from src.bridge.job_availability_service import JobAvailabilityService
+
+            self.availability = JobAvailabilityService(
+                data_dir=self.JOBS_FETCH_REPORT_PATH.parent,
+                local_store_factory=self.desktop_local_data_store,
+                enforce_direct=os.environ.get("BALUFFO_AVAILABILITY_DIRECT_ENFORCE", "")
+                .strip()
+                .lower()
+                in {"1", "true", "yes", "on"},
+            )
+        if self._field_is_default("start_job_availability_check"):
+            self.start_job_availability_check = self.availability.start
+        if self._field_is_default("get_job_availability_check_status"):
+            self.get_job_availability_check_status = self.availability.status
+        if bool(getattr(self.runtime_config, "desktop_mode", False)):
+            try:
+                self.availability.start_overdue_catchup()
+            except (OSError, RuntimeError, TypeError, ValueError):
+                pass
         if self._field_is_default("compute_ops_health_ready") and not self._field_is_default(
             "compute_ops_health"
         ):
@@ -531,7 +558,17 @@ class BridgeApi:
             if self._field_is_default("get_jobs_pipeline_status_payload"):
                 self.get_jobs_pipeline_status_payload = self.pipeline.get_status_payload
             if self._field_is_default("start_jobs_pipeline_task"):
-                self.start_jobs_pipeline_task = self.pipeline.start_task
+
+                def _start_pipeline_with_availability_priority(
+                    payload: JsonObject | None = None,
+                ) -> JsonObject:
+                    try:
+                        self.availability.prepare_priority_manifest()
+                    except (OSError, RuntimeError, TypeError, ValueError):
+                        pass
+                    return self.pipeline.start_task(payload)
+
+                self.start_jobs_pipeline_task = _start_pipeline_with_availability_priority
         if self.discovery is not None:
             if self._field_is_default("trigger_discovery_task"):
                 self.trigger_discovery_task = self.discovery.trigger_discovery_task

@@ -80,6 +80,13 @@ export function resolveContainerRuntimeMode() {
   return resolveConfiguredRuntimeMode() === "container";
 }
 
+export function canManageAvailability(
+  href = window.location?.href || "",
+  options = {}
+) {
+  return new Set(["desktop", "container"]).has(resolveRuntimeMode(href, options));
+}
+
 export function resolveBridgeLocalDataMode(
   href = window.location?.href || "",
   { sessionStorageObject = window.sessionStorage, persist = true } = {}

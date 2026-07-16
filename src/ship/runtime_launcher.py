@@ -74,10 +74,17 @@ ROOT_DATA_FILE_ALIASES = frozenset(
         "jobs-fetch-report.json",
         "jobs-lifecycle-state.json",
         "jobs-source-state.json",
-        "jobs-unified-startup.json",
-        "jobs-unified-light.json",
+    }
+)
+PRIVATE_DATA_ARTIFACTS = frozenset(
+    {
         "jobs-unified.json",
         "jobs-unified.csv",
+        "jobs-availability-tombstones.json",
+        "jobs-availability-direct-checkpoints.json",
+        "jobs-availability-priority.json",
+        "jobs-availability-sweep-plan.json",
+        "jobs-availability-shadow-results.json",
     }
 )
 ROW_BEARING_JOBS_ARTIFACT_NAMES = frozenset(ROW_BEARING_JOBS_ARTIFACTS)
@@ -573,6 +580,11 @@ class ProbeAwareSimpleHTTPRequestHandler(QuietSimpleHTTPRequestHandler):
 
     def _resolve_static_data_path(self, normalized: str) -> str:
         self._serve_gzip_json = False
+        relative_data_path = normalized.removeprefix("data/")
+        data_parts = PurePosixPath(relative_data_path).parts
+        artifact_name = PurePosixPath(relative_data_path).name.removesuffix(".gz")
+        if artifact_name in PRIVATE_DATA_ARTIFACTS or data_parts[:1] == ("local-user-data",):
+            return str(Path(self.directory or ".") / ".baluffo-private-artifact")
         if normalized in ROOT_DATA_FILE_ALIASES:
             candidate = self._resolve_data_path([normalized])
             return candidate or super().translate_path(normalized)

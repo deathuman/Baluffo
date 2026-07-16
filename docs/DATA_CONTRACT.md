@@ -5,14 +5,14 @@
 > - **Canonical for:** data contracts between pipeline, bridge, frontend, and local user data flows
 > - **Not canonical for:** subsystem ownership or route wiring
 > - **Then inspect:** `src/core/schemas.py`, `src/core/contracts.py`, the owning `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py` modules, relevant tests, and the owning runtime docs
-> - **Last updated:** 2026-05-18
+> - **Last updated:** 2026-07-16
 > - **Also update when changing contract shape:** `src/core/schemas.py`, `src/core/contracts.py`, the owning `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py` modules, relevant tests, and any affected UI/runtime docs
 
 This document serves as the absolute boundary and source of truth for data structures passed between the Python pipeline (`src/jobs/`) and the Vanilla JS frontend (`frontend/`).
 
 **CRITICAL:** The frontend expects `camelCase` keys in all `data/*.json` files. The Python backend maps these explicitly through the owning `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py` modules.
 
-**Runtime source of truth:** jobs pipeline contract normalization is owned directly by `src/jobs/common/contracts_runtime.py`, `contracts_source_reports.py`, `contracts_task_state.py`, and `contracts_fetch_report.py`; the old `src/jobs/common/contracts.py` re-export shim is not a stable surface. `src/core/schemas.py` defines the Pydantic validation models used at pipeline, bridge, and local-data boundaries, including `CanonicalJobSchema`, `SavedJobSchema`, `LocalSavedJobRowSchema`, `LocalDataActivityRowSchema`, `LocalDataAttachmentRowSchema`, `LocalDataBackupPayloadSchema`, and `ManifestSchema`. `src/core/contracts.py` uses these schemas to validate pipeline payloads before writing `jobs-unified.json`. After the M5 runtime-storage cutover, bridge-managed terminal fetch closeout mirrors the same canonical rows into SQLite `jobs` / `job_sources` and regenerates `jobs-unified.json`, `jobs-unified-light.json`, and `jobs-unified.csv` as compatibility exports; the row contract remains unchanged. Bridge local-data routes keep save-input validation compatibility-lenient and validate persisted/output rows separately. New fields or contract changes require updating this doc and the Pydantic schemas in `src/core/schemas.py`.
+**Runtime source of truth:** jobs pipeline contract normalization is owned directly by `src/jobs/common/contracts_runtime.py`, `contracts_source_reports.py`, `contracts_task_state.py`, and `contracts_fetch_report.py`; the old `src/jobs/common/contracts.py` re-export shim is not a stable surface. `src/core/schemas.py` defines the Pydantic validation models used at pipeline, bridge, and local-data boundaries. SQLite `jobs` / `job_sources` is the bridge-managed feed authority. `jobs-unified-light.json` is the supported public Jobs projection and `jobs-unified-startup.json` is its bounded boot cache. `jobs-unified.json` remains a deprecated private pipeline/rollback handoff and is not publicly served; CSV has no output contract. Bridge local-data routes keep save-input validation compatibility-lenient and validate persisted/output rows separately. New fields or contract changes require updating this doc and the Pydantic schemas in `src/core/schemas.py`.
 
 ## 1. CanonicalJob
 Represents a single job posting retrieved from the external sources.
@@ -41,6 +41,12 @@ Represents a single job posting retrieved from the external sources.
 | `removedAt` | `string` (ISO 8601) | When the pipeline detected a 404 or removal. |
 | `lifecycleEvent` | `string` | Additive row-level lifecycle evidence: currently `reappeared`, `preserved`, or empty. |
 | `lifecycleReason` | `string` | Additive lifecycle reason when `lifecycleEvent` is present: currently `source_failed`, `source_skipped`, or empty. |
+| `availabilityId` | `string` | Stable lifecycle identity derived from an exact provider/source ID or canonical URL identity. Recorded aliases preserve it across dedup-winner and URL changes; fuzzy title/company recovery is forbidden. |
+| `availabilityStatus` | `string` | Canonical state: `available`, `verification_overdue`, or `unavailable`. First-party UI uses this field. |
+| `availabilityCheckedAt` | `string` (ISO 8601) | Latest attempted source or direct verification. |
+| `availabilityVerifiedAt` | `string` (ISO 8601) | Latest trustworthy live or closed confirmation. |
+| `availabilityUnavailableAt` | `string` (ISO 8601) | First timestamp for the current unavailable transition. |
+| `availabilityEvidence` | `Object` | Bounded `{kind, confidence, checkedAt, source, httpStatus?}` evidence. Raw HTML, response headers, authenticated state, and sensitive errors are forbidden. |
 | `dedupKey` | `string` | A unique content hash used for deduplication. |
 | `qualityScore` | `number` | The heuristic health of the job details [0-100]. |
 | `focusScore` | `number` | Deprecated/internal score [0-100]. |
@@ -51,17 +57,71 @@ Represents a single job posting retrieved from the external sources.
 | `adapter` | `string` | The Python adapter module used (e.g., `static`, `social`, `csv`). |
 | `studio` | `string` | The underlying pipeline configuration studio group. |
 
-`jobs-lifecycle-state.json` stores the lifecycle ledger keyed by dedup identity. Each row keeps the
+`jobs-lifecycle-state.json` stores the lifecycle ledger keyed by stable exact identity aliases. Each row keeps the
 same lifecycle fields (`status`, `firstSeenAt`, `lastSeenAt`, `removedAt`, `lifecycleEvent`,
 `lifecycleReason`) plus enough canonical identity to reconstruct a saved-job key for read-only
 Saved-page overlays: `title`, `company`, `city`, `country`, `jobLink`, `source`, `sourceJobId`,
-and `postedAt`. This ledger is runtime state, not a user-editable Saved-job contract.
+and `postedAt`, plus consecutive verification failures, closure origin, latest/pending evidence,
+aliases, and an idempotent transition identifier. This ledger is runtime state, not a user-editable
+Saved-job contract. Seeded previous-output rows are cache/dedup inputs only: they do not refresh
+`lastSeenAt` and do not count as current-run observations.
 
-The first read-only lifecycle UX slice exposes only conservative frontend filters/labels derived
-from these existing fields: `status="likely_removed"` as `Recently removed`,
-`lifecycleEvent="reappeared"` as `Reappeared`, and `lifecycleEvent="preserved"` with
-`lifecycleReason="source_failed"` as `Preserved because source failed`. `source_skipped`
-preservation remains operational-only and is not a user-facing first-slice filter.
+The supported public `jobs-unified-light.json` projection and its startup cache contain only
+`availabilityStatus="available"` rows. The deprecated private full JSON uses the same canonical row
+schema while it remains a pipeline handoff and rollback artifact.
+`jobs-availability-tombstones.json` is a private schema-v1 recovery artifact keyed only by exact
+`availabilityId`. It retains the complete canonical `OUTPUT_FIELDS` row while lifecycle state is
+unavailable or verification-overdue, is pruned on reappearance or lifecycle expiry, and is never
+served as public data or copied into public history. A direct reopening without a valid matching
+tombstone fails closed instead of publishing a partial canonical row.
+`jobs-availability-history.json` is the compact, lazily loaded 30-day projection for unavailable
+and verification-overdue rows. Compatibility `status` remains: available and overdue are `active`,
+while unavailable continues through `likely_removed` / `archived` retention.
+
+Saved rows persist `availabilityId`, profile-owned `availabilityAttention`, and `systemActivityAt`.
+They do not own canonical source status. Each distinct transition can create at most one unread alert
+per profile even when multiple Saved rows share its exact identity. Matching rows still receive their
+own bounded attention state, while the profile timeline records the transition once. Terminal outcomes
+get timeline/badge updates without an unread alert. Automated
+events never mutate application phase/outcome or `lastActivityAt`. Backup schema v4 carries attention,
+acknowledgements, reports, and system activity; import remains tolerant of schemas v1-v3.
+
+First-party Jobs and Saved surfaces use `availabilityStatus` and the bounded evidence fields above.
+Legacy lifecycle labels remain compatibility fallbacks only when an older published row has no
+availability projection.
+
+Availability task results may include additive `applied`. It is `false` in shadow mode and when a
+newer lifecycle check was committed while the direct request was in flight; stale evidence is
+returned for diagnostics but cannot overwrite newer state or auto-restore a profile-local report.
+Concurrent requests for the same `availabilityId` reuse the active task run.
+Canonical direct transitions hold one re-entrant, cross-process reconciliation transaction across
+SQLite or JSON feed publication, lifecycle, history, and tombstone writes. Pipeline finalization and
+bootstrap promotion use the same data-directory lock. Pipeline and direct writers reload lifecycle
+state after acquiring it; a direct writer also rechecks evidence freshness before applying a transition.
+Any failure restores all physical plain/gzip projections plus captured authority state before another
+publication may proceed; Saved projection and report restoration occur only after that commit. Lock
+contention waits for the active transaction instead of failing after a platform-specific retry limit.
+Missing private JSON authority is a task failure, never a successful lifecycle-only write.
+
+`jobs-availability-priority.json` schema v2 contains bridge-owned rows with
+`availabilityId`, canonical public `jobLink`, `priority`, and `scope`. `scope` is either
+`canonical` or `custom_saved`. Custom saved jobs derive an exact URL-backed identity after removing
+fragments and known tracking parameters; invalid, authenticated, local, or non-HTTP(S) URLs remain
+unmonitored. Their direct lifecycle is stored privately under `local-user-data` and is never joined
+into canonical feeds, public availability history, reconciliation, or public coverage metrics.
+Static browser mode can display published availability but does not render check/report mutations.
+
+`jobs-availability-direct-checkpoints.json` is a private schema-v1 rotation checkpoint containing
+only exact `availabilityId`, latest direct-check timestamp, classification kind, and confidence.
+It is capped at 20,000 identities, is never publicly served, and must not be treated as canonical
+lifecycle state. Sweep summaries may expose additive `directCheckedWithinSevenDaysCount`,
+`directCheckedWithinSevenDaysCoverage`, and `directHealthTargetMet` fields derived from it.
+
+`GET /desktop-local-data/availability-overlay?uid=` returns at most 2,000 Saved projections joined
+by exact `availabilityId`. Rows contain `jobKey`, `availabilityId`, current availability timestamps,
+status, and compact evidence. The response never exposes custom URLs or the private custom ledger.
+Saved lookup may use only an explicit persisted `jobKey` for legacy data; title/company key
+regeneration is forbidden.
 
 ### 1.1 Fetch report dedup evidence
 
@@ -789,11 +849,11 @@ Scheduled pipeline launches reuse the normal pipeline lifecycle with `taskType: 
 
 `summary.okCleanSources` and `summary.okWithWarningSources` are additive counters over source-report rows whose `status` remains `ok`. They distinguish clean successful sources from successful sources carrying warning/error diagnostic text without changing source status semantics.
 
-Source rows may include `loss.canonicalDropReasons` for rows rejected before canonical output. The stable reasons include structural drops (`missing_title`, `missing_company`, `missing_job_link`, `invalid_url`, `invalid_payload`) and sanitizer drops (`non_job_static_page`, `google_sheets_category_row`, `sector_gate_filtered`). The `sector_gate_filtered` reason is additive when the `BALUFFO_STRICT_GAME_ONLY=1` environment variable is set; it records rows dropped by the opt-in sector-gate output filter. All drop-reason diagnostics are additive report visibility only and do not add fields to `jobs-unified.json`, `jobs-unified-light.json`, or `jobs-unified.csv`.
+Source rows may include `loss.canonicalDropReasons` for rows rejected before canonical output. The stable reasons include structural drops (`missing_title`, `missing_company`, `missing_job_link`, `invalid_url`, `invalid_payload`) and sanitizer drops (`non_job_static_page`, `google_sheets_category_row`, `sector_gate_filtered`). The `sector_gate_filtered` reason is additive when the `BALUFFO_STRICT_GAME_ONLY=1` environment variable is set; it records rows dropped by the opt-in sector-gate output filter. All drop-reason diagnostics are additive report visibility only and do not add fields to canonical/private or supported light JSON rows.
 
 Google Sheets source detail stats may also include additive title-hydration diagnostics: `title_hydration_candidates`, `title_hydration_feed_fetches`, `title_hydration_cache_hits`, `title_hydration_repaired`, `title_hydration_missed`, `title_hydration_errors`, and `title_hydration_ms`. These describe provider-feed title repair attempts and do not add canonical job output fields.
 
-`summary.sizeGuardrails` is an additive output-size diagnostic. It does not change the output file contract: `jobs-unified.json`, `jobs-unified-light.json`, and `jobs-unified.csv` are still written with the same row fields. Unified JSON files are compact serialized; report/debug JSON remains pretty-printed.
+`summary.sizeGuardrails` is an additive output-size diagnostic. Unified JSON files are compact serialized; report/debug JSON remains pretty-printed. Readers must tolerate missing retired CSV size/output fields.
 
 | Field | Type | Description |
 |---|---|---|
@@ -803,10 +863,6 @@ Google Sheets source detail stats may also include additive title-hydration diag
 | `lightJson.bytes` | `number` | Current `jobs-unified-light.json` byte size. |
 | `lightJson.limitBytes` | `number` | Light JSON warning limit, currently `60_000_000`. |
 | `lightJson.exceeded` | `boolean` | True when the light JSON byte size is over its limit. |
-| `csv.bytes` | `number` | Current `jobs-unified.csv` byte size. |
-| `csv.limitBytes` | `number` | CSV warning limit, currently `50_000_000`. |
-| `csv.exceeded` | `boolean` | True when the CSV byte size is over its limit. |
-
 `summary.sizeGuardrailExceeded` remains the aggregate compatibility flag and is true when any `summary.sizeGuardrails.*.exceeded` value is true.
 
 `summary.coverageScope` and `runtime.coverageScope` are additive fetch-report metadata. The first-run bootstrap route writes `"bootstrap_sheets"` to both fields for sheet-limited output; normal full fetch/pipeline reports should omit the field or replace it with their own full-coverage scope. Bootstrap-scoped reports must not be used as full-fetch output-drop or reliability baselines.

@@ -539,11 +539,10 @@ def write_progress_report(
                 "sourceFamilies": [],
                 "outputs": {
                     "json": str(paths.json_path),
-                    "csv": str(paths.csv_path),
                     "lightJson": str(paths.light_json_path),
                     "report": str(paths.report_path),
                     "lifecycleState": str(paths.lifecycle_state_path),
-                    "changed": {"json": False, "csv": False, "lightJson": False},
+                    "changed": {"json": False, "lightJson": False},
                 },
             }
         )

@@ -259,3 +259,119 @@ def test_pipeline_preserves_missing_job_when_owning_source_fails() -> None:
             assert not str(entry.get("removedAt") or "")
     finally:
         jf.default_source_loaders = previous_default_loaders
+
+
+def test_seeded_row_is_not_observed_and_successful_source_absence_retires_it() -> None:
+    def one_job_loader(**_: object):
+        return [_active_job("seed_source").to_dict()]
+
+    def empty_loader(**_: object):
+        return []
+
+    previous_default_loaders = jf.default_source_loaders
+    try:
+        with workspace_tmpdir("jobs-fetcher-seed-not-observed") as tmp:
+            out = Path(tmp)
+            jf.default_source_loaders = lambda: [("seed_source", one_job_loader)]
+            first = jf.run_pipeline(
+                output_dir=out, preserve_previous_on_empty=False, force_refresh_all=True
+            )
+            first_row = read_json(out / "jobs-unified.json", [])[0]
+            first_seen = first_row["lastSeenAt"]
+
+            jf.default_source_loaders = lambda: [("seed_source", empty_loader)]
+            second = jf.run_pipeline(
+                output_dir=out,
+                preserve_previous_on_empty=False,
+                force_refresh_all=True,
+                seed_from_existing_output=True,
+            )
+
+            assert int(second["summary"].get("outputCount") or 0) == 0
+            lifecycle = read_json(out / "jobs-lifecycle-state.json", {})["jobs"]
+            entry = next(iter(lifecycle.values()))
+            assert entry["lastSeenAt"] == first_seen
+            assert entry["availabilityStatus"] == "unavailable"
+            assert entry["availabilityEvidence"]["kind"] == "source_absent"
+            history = read_json(out / "jobs-availability-history.json", {})
+            assert history["rows"][0]["availabilityId"] == entry["availabilityId"]
+            assert "canonicalRow" not in history["rows"][0]
+            tombstones = read_json(out / "jobs-availability-tombstones.json", {})["rows"]
+            assert (
+                tombstones[entry["availabilityId"]]["canonicalRow"]["workType"]
+                == first_row["workType"]
+            )
+    finally:
+        jf.default_source_loaders = previous_default_loaders
+
+
+def test_two_failed_attempts_and_seven_days_without_confirmation_marks_overdue() -> None:
+    entry = _previous_job("failed_source")
+    entry["availabilityId"] = "availability_failed"
+    entry["availabilityStatus"] = "available"
+    entry["availabilityVerifiedAt"] = "2026-04-20T09:00:00+00:00"
+    entry["consecutiveAvailabilityFailures"] = 1
+    evidence = build_lifecycle_source_evidence(
+        [{"name": "failed_source", "status": "error", "error": "timeout"}],
+        selected_source_names={"failed_source"},
+        allow_missing=True,
+    )
+    rows, lifecycle, _archive, summary = apply_job_lifecycle_state(
+        deduped_rows=[],
+        lifecycle_rows={"job-1": entry},
+        finished_at=FINISHED_AT,
+        allow_mark_missing=False,
+        source_evidence=evidence,
+    )
+
+    assert rows == []
+    assert lifecycle["job-1"]["status"] == "active"
+    assert lifecycle["job-1"]["availabilityStatus"] == "verification_overdue"
+    assert lifecycle["job-1"]["consecutiveAvailabilityFailures"] == 2
+    assert summary["availabilityOverdue"] == 1
+
+
+def test_identity_alias_retains_availability_id_when_dedup_winner_changes() -> None:
+    previous = _previous_job("source_a")
+    previous.update(
+        {
+            "availabilityId": "availability_stable",
+            "availabilityStatus": "available",
+            "availabilityAliases": [
+                "source:source_a:life-1",
+                "url:2f4cfd84a5f6d8dbe14b659f1024ec8b8e9bb56c8dba11f25e308ea31d76e258",
+            ],
+        }
+    )
+    current = CanonicalJob.from_mapping(
+        {**_active_job("source_a").to_dict(), "dedupKey": "new-winner-key"}
+    )
+    rows, lifecycle, _archive, _summary = apply_job_lifecycle_state(
+        deduped_rows=[current],
+        observed_rows=[current],
+        lifecycle_rows={"old-winner-key": previous},
+        finished_at=FINISHED_AT,
+        allow_mark_missing=False,
+    )
+
+    assert list(lifecycle) == ["old-winner-key"]
+    assert rows[0].availabilityId == "availability_stable"
+
+
+def test_lifecycle_identity_does_not_recover_by_fuzzy_title_company() -> None:
+    first = CanonicalJob.from_mapping(
+        {"title": "Designer", "company": "Studio", "dedupKey": "job-a"}
+    )
+    second = CanonicalJob.from_mapping(
+        {"title": "Designer", "company": "Studio", "dedupKey": "job-b"}
+    )
+    rows, lifecycle, _archive, _summary = apply_job_lifecycle_state(
+        deduped_rows=[second],
+        observed_rows=[second],
+        lifecycle_rows={"job-a": {"status": "active", **first.to_dict()}},
+        finished_at=FINISHED_AT,
+        allow_mark_missing=False,
+    )
+
+    assert set(lifecycle) == {"job-a"}
+    assert rows[0].availabilityId == ""

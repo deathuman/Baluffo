@@ -1,6 +1,6 @@
 from src.jobs.location_bucket_manifest import (
     build_unknown_country_bucket_manifest,
-    check_manifest_against_csv,
+    check_manifest_against_rows,
 )
 from src.jobs.text_utils import sanitize_location_text
 
@@ -42,7 +42,7 @@ def test_build_unknown_country_bucket_manifest_groups_and_classifies_rows() -> N
     assert manifest[2]["family"] == "city_blob"
 
 
-def test_check_manifest_against_csv_reports_resolution_status() -> None:
+def test_check_manifest_against_rows_reports_resolution_status() -> None:
     manifest = [
         {
             "city": "Hong Kong",
@@ -70,7 +70,7 @@ def test_check_manifest_against_csv_reports_resolution_status() -> None:
         },
     ]
 
-    results = check_manifest_against_csv(
+    results = check_manifest_against_rows(
         manifest,
         [
             {

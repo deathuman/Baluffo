@@ -92,8 +92,13 @@ export function jobMatchesLifecycleFilter(job, lifecycleFilter) {
   const status = String(job?.status || "active").toLowerCase() || "active";
   const lifecycleEvent = String(job?.lifecycleEvent || "").toLowerCase();
   const lifecycleReason = String(job?.lifecycleReason || "").toLowerCase();
+  const availabilityStatus = String(job?.availabilityStatus || "available").toLowerCase();
 
   if (filterValue === "all") return true;
+  if (filterValue === "active") return availabilityStatus === "available";
+  if (filterValue === "unavailable" || filterValue === "verification_overdue") {
+    return availabilityStatus === filterValue;
+  }
   if (filterValue === "reappeared") return lifecycleEvent === "reappeared";
   if (filterValue === "preserved_source_failed") {
     return lifecycleEvent === "preserved" && lifecycleReason === "source_failed";

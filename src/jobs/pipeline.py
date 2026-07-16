@@ -180,6 +180,7 @@ def run_pipeline(
             paths=setup.paths,
             source_reports=setup.source_reports,
             canonical_rows=setup.canonical_rows,
+            observed_rows=setup.canonical_rows[setup.seeded_row_count :],
             using_default_loaders=setup.using_default_loaders,
             selected_loaders=setup.selected_loaders,
             effective_seed_from_existing_output=setup.effective_seed_from_existing_output,

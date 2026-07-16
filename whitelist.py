@@ -29,6 +29,9 @@ _.do_OPTIONS  # unused method (src\bridge\server\handler.py:119)
 _.do_POST  # unused method (src\bridge\server\handler.py:155)
 _.do_PUT  # unused method (src\ship\packaged_smoke\rehearsal_sync.py:202)
 _.do_DELETE  # unused method (src\ship\packaged_smoke\rehearsal_sync.py:227)
+_.handle_starttag  # unused method (src\jobs\availability_validator.py) — HTMLParser callback
+_.handle_endtag  # unused method (src\jobs\availability_validator.py) — HTMLParser callback
+_.handle_data  # unused method (src\jobs\availability_validator.py) — HTMLParser callback
 _._data_dir  # unused attribute (src\bridge\sync_service.py:121)
 read_bridge_events  # unused function (src\bridge\diagnostic_events.py:128)
 LogEvent  # unused class (src\contracts.py:11)
@@ -209,15 +212,23 @@ __new__  # unused function (src\jobs\common\__init__.py:236)
 __new__  # unused function (src\jobs\common\__init__.py:308)
 calculate_health_score  # unused function (src\jobs\common\health.py:8)
 build_unknown_country_bucket_manifest  # unused function (src\jobs\location_bucket_manifest.py:60)
-load_rows_from_csv  # unused function (src\jobs\location_bucket_manifest.py:102)
+load_rows_from_json  # used by scripts/location_unknown_country_manifest.py
 load_manifest  # unused function (src\jobs\location_bucket_manifest.py:108)
-check_manifest_against_csv  # unused function (src\jobs\location_bucket_manifest.py:112)
+check_manifest_against_rows  # used by scripts/location_unknown_country_manifest.py
 enabledByDefault  # unused variable (src\jobs\models.py:18)
 fetchStrategy  # unused variable (src\jobs\models.py:19)
 cadenceMinutes  # unused variable (src\jobs\models.py:20)
 low_confidence_dropped  # unused variable (src\jobs\models.py:37)
 metadata  # unused variable (src\jobs\models.py:60)
 locationSummary  # unused variable (src\jobs\models.py:91)
+availabilityId  # public canonical and Saved contract field
+availabilityStatus  # public canonical contract field
+availabilityCheckedAt  # public canonical contract field
+availabilityVerifiedAt  # public canonical contract field
+availabilityUnavailableAt  # public canonical contract field
+availabilityEvidence  # public canonical contract field
+availabilityAttention  # profile-owned Saved contract field
+systemActivityAt  # profile-owned Saved contract field
 previous_state  # unused variable (src\jobs\interfaces.py:15)
 _.start_requests  # unused method (src\scrapers\spiders\generic_careers.py:25)
 _.LimitFlags  # unused attribute (src\ship\desktop_app\__init__.py:658)

@@ -7,7 +7,6 @@ from src.shared.json_io import existing_json_candidate, read_json
 RUNTIME_FEED_ARTIFACTS = (
     "jobs-unified-light.json",
     "jobs-unified.json",
-    "jobs-unified.csv",
 )
 
 ROW_BEARING_JOBS_ARTIFACTS = (

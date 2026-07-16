@@ -1,5 +1,8 @@
 import { AdminConfig as adminConfig } from "../../shared/config/admin-config.js?v=2";
-import { resolveContainerRuntimeMode } from "../../shared/local-data/runtime-context.js";
+import {
+  canManageAvailability as resolveCanManageAvailability,
+  resolveContainerRuntimeMode
+} from "../../shared/local-data/runtime-context.js";
 import { JobsStateModule as jobsStateModule } from "../state.js?v=4";
 import { postStartupMetricToBridge, resolveStartupProbeEnabled } from "../../../probes/startup-probe.js";
 import {
@@ -67,6 +70,7 @@ import {
 } from "./countries.js";
 import {
   JOBS_FETCH_REPORT_URLS,
+  JOBS_AVAILABILITY_HISTORY_URLS,
   getStartupPreviewJsonUrlsForRuntime,
   fetchUnifiedJobs as fetchUnifiedJobsFromSources,
   fetchJsonFromCandidates as fetchJsonFromCandidatesFromSources,
@@ -115,6 +119,7 @@ const windowObject = typeof window === "undefined"
 const documentObject = typeof document === "undefined"
   ? (globalThis.document || null)
   : document;
+const canManageAvailability = () => resolveCanManageAvailability(windowObject.location.href);
 
 let jobsPageFlow;
 let jobsBoot;
@@ -135,6 +140,7 @@ const jobsRuntime = composeJobsRuntime({
   jobsSavedJobsService,
   jobsPageService,
   isJobsApiReady,
+  canManageAvailability,
   buildFilterOptions,
   getJobLocationCities,
   getJobLocationCountries,
@@ -173,6 +179,7 @@ const jobsRuntime = composeJobsRuntime({
   jobsParsing,
   startupPreviewJsonUrls: getStartupPreviewJsonUrlsForRuntime(),
   jobsFetchReportUrls: JOBS_FETCH_REPORT_URLS,
+  availabilityHistoryUrls: JOBS_AVAILABILITY_HISTORY_URLS,
   parseUnifiedJobsPayload,
   openJobsCacheDbFromModule,
   readJobsCache,
@@ -219,6 +226,7 @@ jobsPageFlow = createJobsPageFlow({
   jobsUrlPersistence: jobsRuntime.jobsUrlPersistence,
   getJobKeyForJob: jobsRuntime.getJobKeyForJobWithService,
   isJobsApiReady,
+  canManageAvailability,
   renderJobRowHtml,
   showJobsError,
   emitDesktopStartupMetric: jobsRuntime.emitDesktopStartupMetric,

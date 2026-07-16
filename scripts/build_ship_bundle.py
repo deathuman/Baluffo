@@ -86,6 +86,7 @@ APP_RUNTIME_SCRIPTS = (
     "url_hosts.py",
     "storage_metrics.py",
     "local_data_store_attachments.py",
+    "local_data_store_availability.py",
     "local_data_store_backup.py",
     "local_data_store_profiles.py",
     "local_data_store_saved_jobs.py",

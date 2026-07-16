@@ -3,14 +3,12 @@
 
 from __future__ import annotations
 
-import csv
 import gzip
 import json
 import os
 import time
 import uuid
 from collections.abc import Callable, Sequence
-from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -73,21 +71,6 @@ def read_existing_output(
 def serialize_rows_for_json(rows: Sequence[RawJob], fields: Sequence[str]) -> str:
     payload = [{field: row.get(field, "") for field in fields} for row in rows]
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-
-
-def serialize_rows_for_csv(rows: Sequence[RawJob], fields: Sequence[str]) -> str:
-    buffer = StringIO()
-    writer = csv.DictWriter(buffer, fieldnames=list(fields))
-    writer.writeheader()
-    for row in rows:
-        payload: dict[str, Any] = {}
-        for field in fields:
-            value = row.get(field, "")
-            if isinstance(value, (list, dict)):
-                value = json.dumps(value, ensure_ascii=False)
-            payload[field] = value
-        writer.writerow(payload)
-    return buffer.getvalue()
 
 
 def write_text_if_changed(path: Path, text: str) -> bool:

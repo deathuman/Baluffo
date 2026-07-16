@@ -73,6 +73,14 @@ class _DesktopLocalDataPostStore(Protocol):
 
     def wipe_account_admin(self, uid: str) -> None: ...
 
+    def acknowledge_availability_attention(
+        self, uid: str, *, transition_id: str = "", acknowledge_all: bool = False
+    ) -> int: ...
+
+    def manage_availability_report(
+        self, uid: str, job_key: str, *, action: str
+    ) -> dict[str, Any]: ...
+
 
 class _LocalDataPostRouteApi(Protocol):
     runtime_config: Any
@@ -80,6 +88,8 @@ class _LocalDataPostRouteApi(Protocol):
     def append_startup_metric(self, event: str, payload: dict[str, Any]) -> None: ...
 
     def desktop_local_data_store(self) -> _DesktopLocalDataPostStore: ...
+
+    def start_job_availability_check(self, payload: dict[str, Any]) -> dict[str, Any]: ...
 
     def update_desktop_session_lifecycle(
         self,
@@ -322,6 +332,37 @@ def handle_post(
             path=path,
             payload_dict=payload_dict,
         )
+
+    if path == "/desktop-local-data/availability-attention/acknowledge":
+
+        def _payload() -> dict[str, Any]:
+            count = api.desktop_local_data_store().acknowledge_availability_attention(
+                str(payload_dict.get("uid") or ""),
+                transition_id=str(payload_dict.get("transitionId") or ""),
+                acknowledge_all=bool(payload_dict.get("allCurrent")),
+            )
+            return {"ok": True, "acknowledged": count}
+
+        send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
+        return True
+
+    if path == "/desktop-local-data/availability/report":
+
+        def _payload() -> dict[str, Any]:
+            result = api.desktop_local_data_store().manage_availability_report(
+                str(payload_dict.get("uid") or ""),
+                str(payload_dict.get("jobKey") or ""),
+                action=str(payload_dict.get("action") or ""),
+            )
+            check = {}
+            if result.get("queuedForCheck"):
+                check = api.start_job_availability_check(
+                    {"availabilityId": result.get("availabilityId")}
+                )
+            return {"ok": True, **result, "check": check}
+
+        send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
+        return True
 
     if path == "/desktop-local-data/attachments/add":
 

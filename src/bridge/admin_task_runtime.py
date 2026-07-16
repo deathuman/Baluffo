@@ -135,6 +135,7 @@ class _AdminTaskRuntimeRoot(Protocol):
     def _get_sync_state(self) -> _SyncStateLike: ...
     def _get_sync_service(self) -> _SyncServiceLike: ...
     def _get_pipeline_service(self) -> _PipelineServiceLike: ...
+    def _get_job_availability_service(self) -> Any: ...
     def _get_task_launch_api(self) -> _TaskLaunchApiLike: ...
 
 
@@ -465,4 +466,11 @@ def start_jobs_bootstrap_task(payload: JsonObject | None = None, *, root_mod: An
 
 
 def start_jobs_pipeline_task(payload: JsonObject | None = None, *, root_mod: Any) -> JsonObject:
-    return cast(_AdminTaskRuntimeRoot, root_mod)._get_pipeline_service().start_task(payload)
+    root_mod = cast(_AdminTaskRuntimeRoot, root_mod)
+    try:
+        root_mod._get_job_availability_service().prepare_priority_manifest()
+    except (AttributeError, OSError, RuntimeError, TypeError, ValueError) as exc:
+        root_mod.bridge_log(
+            "warn", "availability_priority_manifest_failed", error=type(exc).__name__
+        )
+    return root_mod._get_pipeline_service().start_task(payload)

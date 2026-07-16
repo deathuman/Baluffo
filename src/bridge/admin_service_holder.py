@@ -21,6 +21,9 @@ class BridgeServices:
     discovery_service_lock: Any = field(default_factory=threading.RLock)
     pipeline_service: Any | None = None
     pipeline_service_lock: Any = field(default_factory=threading.RLock)
+    availability_service: Any | None = None
+    availability_service_data_dir: Path | None = None
+    availability_service_lock: Any = field(default_factory=threading.RLock)
     desktop_update_service: Any | None = None
     desktop_update_service_data_dir: Path | None = None
     desktop_update_service_lock: Any = field(default_factory=threading.RLock)
@@ -48,3 +51,7 @@ class BridgeServices:
 
     def reset_pipeline_service(self) -> None:
         self.pipeline_service = None
+
+    def reset_availability_service(self) -> None:
+        self.availability_service = None
+        self.availability_service_data_dir = None

@@ -36,6 +36,12 @@ export function cacheSavedDom(doc = document) {
     savedCustomFilterBarEl: doc.querySelector(ui(t.customFilterBar)),
     savedCustomFilterCountEl: doc.querySelector(ui(t.customFilterCount)),
     savedCustomFilterBtnEls: Array.from(doc.querySelectorAll(ui(t.customFilterBtn))),
+    availabilityAttentionBannerEl: doc.querySelector(ui(t.availabilityAttentionBanner)),
+    availabilityAttentionCountEl: doc.querySelector(ui(t.availabilityAttentionCount)),
+    availabilityAttentionFilterBtnEl: doc.querySelector(ui(t.availabilityAttentionFilterBtn)),
+    availabilityAttentionAcknowledgeAllBtnEl: doc.querySelector(
+      ui(t.availabilityAttentionAcknowledgeAllBtn)
+    ),
     savedSortBarEl: doc.querySelector(ui(t.sortBar)),
     savedSortBtnEls: Array.from(doc.querySelectorAll(ui(t.sortBtn))),
     savedGroupBarEl: doc.querySelector(ui(t.groupBar)),

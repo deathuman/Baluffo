@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import sys
 from collections import Counter, defaultdict
@@ -33,20 +32,22 @@ from src.jobs.text_utils import (
 )
 
 
-def _resolve_csv_path(value: str) -> Path:
+def _resolve_json_path(value: str) -> Path:
     path = Path(value)
     if path.is_dir():
-        return path / "jobs-unified.csv"
+        return path / "jobs-unified.json"
     return path
 
 
 def _load_rows(value: str) -> list[dict[str, str]]:
-    path = _resolve_csv_path(value)
-    with path.open(encoding="utf-8", newline="") as handle:
-        return [dict(row) for row in csv.DictReader(handle)]
+    payload = json.loads(_resolve_json_path(value).read_text(encoding="utf-8"))
+    rows = payload.get("jobs") if isinstance(payload, dict) else payload
+    return [dict(row) for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
 
 
 def _parsed_bundle(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, list):
+        return [dict(item) for item in value if isinstance(item, dict)]
     if not clean_text(value):
         return []
     try:
@@ -314,7 +315,7 @@ def analyze_jobs_artifact(value: str) -> dict[str, Any]:
     return {
         "status": status,
         "ok": blocked == 0,
-        "artifactPath": str(_resolve_csv_path(value)),
+        "artifactPath": str(_resolve_json_path(value)),
         "counts": {
             "rows": len(rows),
             "exactCategoryTitleLeaks": len(exact_category_rows),
@@ -346,7 +347,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Validate jobs feed artifacts for shipped-title/company leaks."
     )
-    parser.add_argument("path", help="jobs-unified.csv file or directory containing it")
+    parser.add_argument("path", help="jobs-unified.json file or directory containing it")
     parser.add_argument("--json", action="store_true", help="Print full JSON output")
     args = parser.parse_args(argv)
 

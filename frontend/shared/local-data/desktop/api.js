@@ -101,6 +101,19 @@ async function requestJson(path, options = {}) {
   return payload;
 }
 
+async function requestBridgeJson(path, options = {}) {
+  const bridgeBase = BASE_URL.replace(/\/desktop-local-data\/?$/, "");
+  const response = await fetch(`${bridgeBase}${path}`, {
+    ...options,
+    headers: { "Content-Type": "application/json", ...(options.headers || {}) }
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload?.ok === false) {
+    throw new Error(String(payload?.error || response.statusText || "Request failed."));
+  }
+  return payload;
+}
+
 async function fetchAttachmentBlob(uid, jobKey, attachmentId) {
   const response = await fetch(buildAttachmentContentUrl(uid, jobKey, attachmentId));
   if (!response.ok) {
@@ -350,6 +363,43 @@ export function createDesktopLocalDataApi() {
         body: JSON.stringify({ uid, jobKey, notes, options })
       });
       await pollSavedSubscriptions();
+    },
+    async getAvailabilityAttention(uid) {
+      return requestJson(`/availability-attention?uid=${encodeURIComponent(String(uid || ""))}`);
+    },
+    async getAvailabilityOverlay(uid) {
+      return requestJson(`/availability-overlay?uid=${encodeURIComponent(String(uid || ""))}`);
+    },
+    async acknowledgeAvailabilityAttention(uid, options = {}) {
+      const payload = await requestJson("/availability-attention/acknowledge", {
+        method: "POST",
+        body: JSON.stringify({
+          uid,
+          transitionId: String(options.transitionId || ""),
+          allCurrent: Boolean(options.allCurrent)
+        })
+      });
+      await pollSavedSubscriptions();
+      return payload;
+    },
+    async manageAvailabilityReport(uid, jobKey, action) {
+      const payload = await requestJson("/availability/report", {
+        method: "POST",
+        body: JSON.stringify({ uid, jobKey, action })
+      });
+      await pollSavedSubscriptions();
+      return payload;
+    },
+    async checkJobAvailability(availabilityId) {
+      return requestBridgeJson("/tasks/job-availability-check", {
+        method: "POST",
+        body: JSON.stringify({ availabilityId })
+      });
+    },
+    async getJobAvailabilityCheckStatus(runId) {
+      return requestBridgeJson(
+        `/tasks/job-availability-check-status?runId=${encodeURIComponent(String(runId || ""))}`
+      );
     },
     async listAttachmentsForJob(uid, jobKey) {
       const payload = await requestJson(`/attachments?uid=${encodeURIComponent(String(uid || ""))}&jobKey=${encodeURIComponent(String(jobKey || ""))}`);

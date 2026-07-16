@@ -98,6 +98,7 @@ class PipelineService:
         attach_lifecycle_child: Callable[..., dict[str, Any] | None] | None = None,
         clear_task_state: Callable[[str], None] | None = None,
         pipeline_completion_notifier: Callable[[dict[str, Any]], Any] | None = None,
+        pipeline_post_publish_callback: Callable[[dict[str, Any]], Any] | None = None,
         control_data_dir: Path | None = None,
         container_mode: bool = False,
     ) -> None:
@@ -134,6 +135,8 @@ class PipelineService:
         self._attach_lifecycle_child = attach_lifecycle_child
         self._pipeline_completion_notifier = pipeline_completion_notifier
         self._completion_notification_run_id = ""
+        self._pipeline_post_publish_callback = pipeline_post_publish_callback
+        self._post_publish_run_id = ""
         self._control_data_dir = Path(control_data_dir) if control_data_dir is not None else None
         self._container_mode = bool(container_mode)
         self._control_status_last_write_monotonic = 0.0
@@ -676,6 +679,60 @@ class PipelineService:
                 error=str(exc),
             )
 
+    def _run_post_publish_callback(self, payload: dict[str, Any] | None) -> None:
+        if not payload or not callable(self._pipeline_post_publish_callback):
+            return
+        run_id = str(payload.get("runId") or "")
+        try:
+            result = self._pipeline_post_publish_callback(dict(payload))
+            sweep = result.get("sweep") if isinstance(result, dict) else {}
+            self._bridge_log(
+                "info",
+                "jobs_pipeline_post_publish_completed",
+                runId=run_id,
+                projected=int((result or {}).get("projected") or 0)
+                if isinstance(result, dict)
+                else 0,
+                sweepStarted=int((sweep or {}).get("started") or 0)
+                if isinstance(sweep, dict)
+                else 0,
+            )
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            self._bridge_log(
+                "warning",
+                "jobs_pipeline_post_publish_failed",
+                runId=run_id,
+                error=type(exc).__name__,
+            )
+
+    def _claim_post_publish_run(self, run_id: str, status: str) -> bool:
+        if not run_id or status not in {"ok", "warning"}:
+            return False
+        if run_id == self._post_publish_run_id:
+            return False
+        self._post_publish_run_id = run_id
+        return True
+
+    def _build_post_publish_payload(
+        self,
+        *,
+        run_id: str,
+        status: str,
+        started_at: str,
+        finished_at: str,
+        stage: str,
+        completed_with_warnings: bool,
+    ) -> dict[str, Any] | None:
+        if not self._claim_post_publish_run(run_id, status):
+            return None
+        return {
+            "runId": run_id,
+            "startedAt": started_at,
+            "finishedAt": finished_at,
+            "status": stage,
+            "completedWithWarnings": completed_with_warnings,
+        }
+
     def _set_completed(
         self,
         *,
@@ -686,6 +743,7 @@ class PipelineService:
         sync_warning: dict[str, Any] | None = None,
     ) -> None:
         completion_notification: dict[str, Any] | None = None
+        post_publish_payload: dict[str, Any] | None = None
         with self._lock:
             pending_run_id = str(self._status.get("runId") or "")
         if status == "canceled" and self._has_live_abortable_child(pending_run_id):
@@ -766,6 +824,14 @@ class PipelineService:
                     "syncWarning": clean_sync_warning,
                     "completedWithWarnings": bool(completed_with_warnings),
                 }
+            post_publish_payload = self._build_post_publish_payload(
+                run_id=run_id,
+                status=status,
+                started_at=started_at,
+                finished_at=finished_at,
+                stage=stage,
+                completed_with_warnings=completed_with_warnings,
+            )
             progress = self._pipeline_lifecycle_progress(dict(self._status))
             status_snapshot = dict(self._status)
             if run_id:
@@ -827,6 +893,7 @@ class PipelineService:
             clear_abort_request(self._control_data_dir, run_id)
         if status != "canceled":
             self._notify_pipeline_completion(completion_notification)
+        self._run_post_publish_callback(post_publish_payload)
 
     def _get_child_task_snapshot(self, task_type: str, run_id: str = "") -> Any:
         if not callable(self._get_projected_run_history):

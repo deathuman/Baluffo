@@ -23,13 +23,14 @@ export function areSavedRowsEquivalent(a, b) {
     "contractType", "jobLink", "profession", "isCustom", "customSourceLabel", "reminderAt",
     "contactedAt", "updatedBy", "pipelinePhase", "outcomeStatus", "applicationStatus", "notes",
     "attachmentsCount", "savedAt", "contentUpdatedAt", "trackingUpdatedAt", "notesUpdatedAt",
-    "lastActivityAt"
+    "lastActivityAt", "availabilityId", "systemActivityAt"
   ];
   for (const field of fields) {
     if (String(a[field] ?? "") !== String(b[field] ?? "")) return false;
   }
   return JSON.stringify(toPlainObject(a.phaseTimestamps)) === JSON.stringify(toPlainObject(b.phaseTimestamps))
-    && JSON.stringify(toPlainObject(a.outcomeTimestamps)) === JSON.stringify(toPlainObject(b.outcomeTimestamps));
+    && JSON.stringify(toPlainObject(a.outcomeTimestamps)) === JSON.stringify(toPlainObject(b.outcomeTimestamps))
+    && JSON.stringify(toPlainObject(a.availabilityAttention)) === JSON.stringify(toPlainObject(b.availabilityAttention));
 }
 
 export function parseBackupPayload(payload) {

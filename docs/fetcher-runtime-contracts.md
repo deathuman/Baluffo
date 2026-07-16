@@ -59,7 +59,7 @@ Bridge defaults:
 - The `uncapped` preset remains intentionally aggressive in container mode (`--max-workers 50`, `--max-per-domain 5`, `--adapter-http-concurrency 48`, and default static detail concurrency).
 - Bridge-started fetch runs include `--social-enabled` by default unless `socialEnabled: false` is passed.
 - Jobs page `Run Discovery + Fetch + Sync` uses the pipeline profile in container mode; Admin `Run Jobs Fetcher` uses the regular bridge defaults unless the request payload overrides them.
-- `POST /tasks/run-jobs-bootstrap` is not a normal fetch preset. It is a first-run/retry bootstrap route that runs only `google_sheets`, `google_sheets_1er2oaxo`, and `google_sheets_1mvqhxat` into a private staging directory with no existing-output seed, no preserve-on-empty, forced refresh, circuit breaker ignored, and social disabled. It promotes `jobs-unified.json`, `jobs-unified-light.json`, `jobs-unified.csv`, and the report only when at least one sheet succeeds and output count is non-zero.
+- `POST /tasks/run-jobs-bootstrap` is not a normal fetch preset. It is a first-run/retry bootstrap route that runs only `google_sheets`, `google_sheets_1er2oaxo`, and `google_sheets_1mvqhxat` into a private staging directory with no existing-output seed, no preserve-on-empty, forced refresh, circuit breaker ignored, and social disabled. It promotes private full JSON, public light/startup projections, and the report only when at least one sheet succeeds and output count is non-zero.
 
 Optional overrides:
 
@@ -106,7 +106,7 @@ Optional overrides:
   - archived lifecycle rows are moved into yearly transparent gzip-backed cold files (`jobs-lifecycle-archive-{year}.json.gz`) and loaded on demand only.
   - report/debug JSON remains pretty-printed for operator readability.
   - warning limits are `80_000_000` bytes for full JSON, `60_000_000` bytes for light JSON, and `50_000_000` bytes for CSV.
-  - package builds no longer seed row-bearing jobs artifacts (`jobs-unified*.json(.gz)`, `jobs-unified.csv`, or `jobs-unified-startup.json`). The desktop launcher quarantines stale row artifacts from upgraded installs only when they do not look like newer runtime-generated feed files, and can restore a previously false-quarantined runtime feed from the cleanup backup.
+  - package builds no longer seed row-bearing jobs artifacts (`jobs-unified*.json(.gz)` or `jobs-unified-startup.json`). The desktop launcher quarantines stale supported/private JSON row artifacts from upgraded installs only when they do not look like newer runtime-generated feed files, and can restore a previously false-quarantined runtime feed from the cleanup backup. Retired CSV files are not runtime-managed.
 - Static HTTP fetch policy:
   - static listing and detail fetches should go through the shared `fetch_html_cached` path so cache, per-domain throttling, and redirect handling stay consistent.
   - one redirect hop is allowed for 301/302/303/307/308 when the target is HTTP(S), contains no credentials, does not downgrade HTTPS to HTTP, and stays on the same host or a `www.`/bare-host alias.

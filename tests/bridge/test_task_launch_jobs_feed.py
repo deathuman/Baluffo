@@ -189,11 +189,7 @@ def test_fetch_lifecycle_close_writes_exports_when_jobs_feed_is_authoritative() 
             assert len(light_rows) == 12
             assert len(startup_rows) == 10
             assert startup_rows == light_rows[:10]
-            assert (
-                (data_dir / "jobs-unified.csv")
-                .read_text(encoding="utf-8")
-                .startswith("id,title,company")
-            )
+            assert not (data_dir / "jobs-unified.csv").exists()
             assert store.get_authority_modes()["jobsFeed"] == "sqlite"
             assert [row["code"] for row in diagnostics if row["surface"] == "jobsFeed"] == [
                 "jobs_feed_sqlite_export_written",

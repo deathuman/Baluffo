@@ -92,6 +92,12 @@ class CanonicalJob:
     removedAt: str = ""
     lifecycleEvent: str = ""
     lifecycleReason: str = ""
+    availabilityId: str = ""
+    availabilityStatus: str = ""
+    availabilityCheckedAt: str = ""
+    availabilityVerifiedAt: str = ""
+    availabilityUnavailableAt: str = ""
+    availabilityEvidence: dict[str, Any] = field(default_factory=dict)
     dedupKey: str = ""
     qualityScore: int = 0
     focusScore: int = 0
@@ -134,6 +140,16 @@ class CanonicalJob:
             removedAt=clean_text(data.get("removedAt")),
             lifecycleEvent=clean_text(data.get("lifecycleEvent")),
             lifecycleReason=clean_text(data.get("lifecycleReason")),
+            availabilityId=clean_text(data.get("availabilityId")),
+            availabilityStatus=clean_text(data.get("availabilityStatus")),
+            availabilityCheckedAt=clean_text(data.get("availabilityCheckedAt")),
+            availabilityVerifiedAt=clean_text(data.get("availabilityVerifiedAt")),
+            availabilityUnavailableAt=clean_text(data.get("availabilityUnavailableAt")),
+            availabilityEvidence=(
+                dict(data.get("availabilityEvidence") or {})
+                if isinstance(data.get("availabilityEvidence"), Mapping)
+                else {}
+            ),
             dedupKey=clean_text(data.get("dedupKey")),
             qualityScore=int(data.get("qualityScore") or 0),
             focusScore=int(data.get("focusScore") or 0),

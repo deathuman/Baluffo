@@ -134,7 +134,6 @@ def _install_terminal_harness(
             "excludedSources": 0,
             "outputCount": int(args[0].get("outputCount") or 0),
             "jsonBytes": kwargs["json_bytes"],
-            "csvBytes": kwargs["csv_bytes"],
             "lightJsonBytes": kwargs["light_json_bytes"],
             "preservedPrevious": bool(args[4]),
         },
@@ -263,13 +262,6 @@ def _install_terminal_harness(
     )
     monkeypatch.setattr(
         pipeline_finalize,
-        "serialize_rows_for_csv",
-        lambda rows_arg, _fields: (
-            "id,title\n" + "\n".join(f"{row.get('id')},{row.get('title')}" for row in rows_arg)
-        ),
-    )
-    monkeypatch.setattr(
-        pipeline_finalize,
         "write_success_cache",
         lambda path, reports: calls["success_cache"].append((path, reports)),
     )
@@ -365,7 +357,6 @@ def test_finalize_pipeline_run_writes_terminal_outputs_and_report_shape(
     ]
 
     assert report["outputs"]["json"] == str(paths.json_path)
-    assert report["outputs"]["csv"] == str(paths.csv_path)
     assert report["outputs"]["lightJson"] == str(paths.light_json_path)
     assert json.loads(paths.report_path.read_text(encoding="utf-8")) == report
 
@@ -375,7 +366,9 @@ def test_finalize_pipeline_run_writes_terminal_outputs_and_report_shape(
     assert report["runtime"]["existing"] == "runtime"
     assert report["runtime"]["lifecycle"]["owner"] == "fetch_report"
     assert report["summary"]["outputCount"] == 1
-    assert set(report["summary"]) >= {"jsonBytes", "csvBytes", "lightJsonBytes"}
+    assert set(report["summary"]) >= {"jsonBytes", "lightJsonBytes"}
+    assert "csvBytes" not in report["summary"]
+    assert "csv" not in report["outputs"]
     assert report["taskProgress"]["phaseKey"] == "completed"
     assert report["taskProgress"]["counts"]["outputCount"] == 1
     assert report["workItems"] == [{"id": "task-1"}]
@@ -388,7 +381,12 @@ def test_finalize_pipeline_run_writes_terminal_outputs_and_report_shape(
     assert sidecar["sources"][0]["name"] == "source_1"
     assert report["sourceFamilies"][0]["loss"]["finalOutput"] == 1
     assert report["sourceFamilies"][0]["loss"]["dedupMerged"] == 0
-    assert report["outputs"]["changed"] == {"json": True, "csv": True, "lightJson": True}
+    assert report["outputs"]["changed"] == {
+        "json": True,
+        "lightJson": True,
+        "availabilityHistory": True,
+        "availabilitySweepPlan": True,
+    }
     assert report["dedupReviewStateExport"] == {
         "status": "ok",
         "artifactPath": str(paths.dedup_review_state_path),

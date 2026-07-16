@@ -13,6 +13,7 @@ from .local_data_store_shared import (
     LOCK,
     LocalDataPaths,
     _normalize_iso,
+    custom_job_availability_id,
     ensure_user_dirs,
     generate_job_key,
     load_activity_rows,
@@ -63,6 +64,29 @@ def normalize_saved_job(
     is_custom = bool(
         source.get("isCustom") if source.get("isCustom") is not None else base.get("isCustom")
     )
+    job_link = sanitize_job_url(str(source.get("jobLink") or base.get("jobLink") or ""))
+    availability_id = (
+        custom_job_availability_id(job_link)
+        if is_custom
+        else str(source.get("availabilityId") or base.get("availabilityId") or "").strip()
+    )
+    previous_availability_id = str(
+        source.get("availabilityId") or base.get("availabilityId") or ""
+    ).strip()
+    identity_changed = bool(
+        is_custom and previous_availability_id and previous_availability_id != availability_id
+    )
+    availability_attention = (
+        {}
+        if identity_changed
+        else dict(
+            source.get("availabilityAttention")
+            if isinstance(source.get("availabilityAttention"), dict)
+            else base.get("availabilityAttention")
+            if isinstance(base.get("availabilityAttention"), dict)
+            else {}
+        )
+    )
     return {
         "profileId": uid,
         "jobKey": job_key,
@@ -82,7 +106,7 @@ def normalize_saved_job(
             source.get("contractType") or base.get("contractType") or "Unknown"
         ).strip()
         or "Unknown",
-        "jobLink": sanitize_job_url(str(source.get("jobLink") or base.get("jobLink") or "")),
+        "jobLink": job_link,
         "profession": str(source.get("profession") or base.get("profession") or "").strip(),
         "isCustom": is_custom,
         "customSourceLabel": str(
@@ -110,6 +134,11 @@ def normalize_saved_job(
         "trackingUpdatedAt": tracking["trackingUpdatedAt"],
         "notesUpdatedAt": tracking["notesUpdatedAt"],
         "lastActivityAt": tracking["lastActivityAt"],
+        "availabilityId": availability_id,
+        "availabilityAttention": availability_attention,
+        "systemActivityAt": _normalize_iso(
+            source.get("systemActivityAt") or base.get("systemActivityAt"), ""
+        ),
     }
 
 

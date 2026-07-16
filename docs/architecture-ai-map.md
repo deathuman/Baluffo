@@ -110,7 +110,8 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 | Discovery behavior | `src/source_discovery/orchestrator.py`, `orchestrator_{runtime,generation,probe,finalize}.py`, `runtime_metrics.py`, `stage_control.py`, `reporting_{progress,candidates,backlog}.py`, `gamesmap_{cache,parsing,candidates}.py`, `web_search_{fetch,extract,candidates}.py` | `src/source_discovery.py` only for CLI compatibility, and `gamesmap.py`, `reporting.py`, or `web_search.py` only for stable import-surface compatibility work |
 | Bridge sync | `src/bridge/sync_service.py`, `src/source_sync_{config,runtime,snapshot,crypto}.py` | `src/source_sync.py` only for root-surface compatibility work, plus `src/bridge/sync_state.py` |
 | Bridge registry | `src/bridge/registry_service.py`, `src/source_registry_{identity,io,state,canonicalize,policy,auto_approval}.py` | `src/source_registry.py` only for compatibility-surface changes, plus `src/bridge/registry_tombstones.py` |
-| Jobs pipeline / fetcher behavior | `src/jobs/pipeline.py`, `src/jobs/pipeline_{run_setup,execution_flow,finalize}.py`, `src/jobs/pipeline_{runtime_writers,runtime_summary}.py`, `src/jobs/pipeline_stage_source_execution.py`, `src/jobs/pipeline_source_{loop,results,progress}.py`, `src/jobs/pipeline_timing.py`, `src/jobs/state_{source_state,lifecycle,incremental}.py`, `src/jobs/state_source_{records,browser,migration}.py`, `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py`, `src/jobs/reporting_{summary,queues,breakdowns,social}.py`, `src/jobs/fetcher_compat_{exports,runtime}.py`, other `src/jobs/*` leaf modules | `src/jobs_fetcher.py` only for CLI/user-facing fetcher entry changes. Internal jobs-fetcher facades and package-shape shims are simplification candidates, not permanent compatibility surfaces. |
+| Jobs pipeline / fetcher behavior | `src/jobs/pipeline.py`, `src/jobs/pipeline_{run_setup,execution_flow,finalize}.py`, `src/jobs/pipeline_{runtime_writers,runtime_summary}.py`, `src/jobs/pipeline_stage_source_execution.py`, `src/jobs/pipeline_source_{loop,results,progress}.py`, `src/jobs/pipeline_timing.py`, `src/jobs/state_{source_state,lifecycle,incremental}.py`, `src/jobs/state_source_{records,browser,migration}.py`, `src/jobs/availability_{validator,schedule}.py`, `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py`, `src/jobs/reporting_{summary,queues,breakdowns,social}.py`, `src/jobs/fetcher_compat_{exports,runtime}.py`, other `src/jobs/*` leaf modules | `src/jobs_fetcher.py` only for CLI/user-facing fetcher entry changes. Internal jobs-fetcher facades and package-shape shims are simplification candidates, not permanent compatibility surfaces. |
+| Job availability checks and Saved attention | `src/bridge/job_availability_service.py`, `src/local_data_store_availability.py`, `src/bridge/routes/{get_pipeline_tasks,get_local_data,post_routes_local_data}.py`, `frontend/{jobs,saved}/**`, `frontend/shared/local-data/desktop/api.js` | Keep direct-link enforcement shadow-only until the documented promotion gate passes; do not import the local-data composition root into Jobs helpers. |
 | Jobs domain helpers | `frontend/jobs/domain/{query,feed,view}.js` | `frontend/jobs/domain.js` only for stable export-surface changes |
 | Static adapter behavior | `src/jobs/adapters/static_{runtime,listing,detail,sources}.py`, `src/jobs/adapters/static_{runtime_support,detail_heuristics}.py` | `src/jobs/adapters/static.py` for the current adapter entrypoint. The old `static_helpers.py` facade was deleted; use direct leaf imports. |
 | Local-data backend store | `src/local_data_store_{shared,profiles,saved_jobs,attachments,backup}.py` | `src/local_data_store.py` only for root-surface compatibility work |
@@ -148,6 +149,7 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 - `registry_tombstones.py` - local delete ledger and restore helpers
 - `discovery_service.py` - discovery task orchestration
 - `pipeline_service.py` - jobs pipeline task
+- `job_availability_service.py` - bounded direct-link checks, shadow/enforced projections, and sweep orchestration
 - `routes/get_routes.py`, `routes/post_routes.py` - public GET/POST delegators only; route-owned behavior lives in narrow `get_*.py` and `post_routes_*` leaves
 - `routes/get_{admin_bootstrap,admin_ops_tab_counts,app,discovery,fetch_report,local_data,ops_diagnostics,ops_status,pipeline_tasks,registry,registry_conflicts,source_policy,sync}.py` - GET route-family ownership behind the thin public delegator
 - `routes/post_routes_{admin,local_data,update}.py` - POST route-family ownership behind the thin registration root
@@ -221,8 +223,9 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 
 | File | Purpose |
 |------|---------|
-| `data/jobs-unified.json` | Primary aggregated feed |
-| `data/jobs-unified.csv` | CSV fallback |
+| `data/jobs-unified-light.json` | Supported public Jobs feed projection |
+| `data/jobs-unified-startup.json` | Bounded boot cache derived from the same published generation |
+| private `jobs-unified.json` | Deprecated pipeline/rollback handoff; never publicly served |
 | `data/jobs-fetch-report.json` | Last fetch diagnostics |
 | `data/defaults/source-registry-active.seed.json` | Tracked approved-source defaults |
 | `data/defaults/source-registry-pending.seed.json` | Tracked pending-source defaults |

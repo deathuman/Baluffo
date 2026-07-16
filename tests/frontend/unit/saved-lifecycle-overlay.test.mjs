@@ -2,9 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   buildSavedLifecycleOverlayByJobKey,
+  lifecycleOverlayForSavedJob,
   parseLifecycleStatePayload
 } from "../../../frontend/saved/app/runtime/lifecycle-overlay.js";
-import { generateJobKey } from "../../../frontend/local-data/job-utils.js";
 
 test("saved lifecycle overlay parses lifecycle-state rows from keyed payload", () => {
   const rows = parseLifecycleStatePayload({
@@ -16,11 +16,11 @@ test("saved lifecycle overlay parses lifecycle-state rows from keyed payload", (
   assert.equal(rows.length, 2);
 });
 
-test("saved lifecycle overlay prefers canonical rows and falls back to lifecycle rows", () => {
+test("saved lifecycle overlay resolves exact availability identities", () => {
   const overlay = buildSavedLifecycleOverlayByJobKey({
-    generateJobKeyForRow: row => generateJobKey(row),
     canonicalRows: [
       {
+        availabilityId: "availability_1",
         title: "Gameplay Engineer",
         company: "Studio",
         city: "Rome",
@@ -32,6 +32,7 @@ test("saved lifecycle overlay prefers canonical rows and falls back to lifecycle
     ],
     lifecycleRows: [
       {
+        availabilityId: "availability_1",
         title: "Gameplay Engineer",
         company: "Studio",
         city: "Rome",
@@ -41,6 +42,7 @@ test("saved lifecycle overlay prefers canonical rows and falls back to lifecycle
         removedAt: "2026-03-07T00:00:00.000Z"
       },
       {
+        availabilityId: "availability_2",
         title: "Build Engineer",
         company: "Studio",
         city: "Milan",
@@ -54,32 +56,40 @@ test("saved lifecycle overlay prefers canonical rows and falls back to lifecycle
   });
 
   assert.equal(overlay.size, 2);
-  const first = overlay.get(generateJobKey({
-    title: "Gameplay Engineer",
-    company: "Studio",
-    city: "Rome",
-    country: "Italy",
-    jobLink: "https://example.com/jobs/1"
-  }));
-  const second = overlay.get(generateJobKey({
-    title: "Build Engineer",
-    company: "Studio",
-    city: "Milan",
-    country: "Italy",
-    jobLink: "https://example.com/jobs/2"
-  }));
+  const first = lifecycleOverlayForSavedJob(overlay, { availabilityId: "availability_1" });
+  const second = lifecycleOverlayForSavedJob(overlay, { availabilityId: "availability_2" });
   assert.deepEqual(first, {
     status: "active",
     removedAt: "",
     lastSeenAt: "",
     lifecycleEvent: "reappeared",
-    lifecycleReason: ""
+    lifecycleReason: "",
+    availabilityId: "availability_1",
+    availabilityStatus: "",
+    availabilityCheckedAt: "",
+    availabilityVerifiedAt: "",
+    availabilityUnavailableAt: "",
+    availabilityEvidence: {}
   });
   assert.deepEqual(second, {
     status: "active",
     removedAt: "",
     lastSeenAt: "",
     lifecycleEvent: "preserved",
-    lifecycleReason: "source_failed"
+    lifecycleReason: "source_failed",
+    availabilityId: "availability_2",
+    availabilityStatus: "",
+    availabilityCheckedAt: "",
+    availabilityVerifiedAt: "",
+    availabilityUnavailableAt: "",
+    availabilityEvidence: {}
   });
+});
+
+test("saved lifecycle overlay does not regenerate fuzzy job keys", () => {
+  const overlay = buildSavedLifecycleOverlayByJobKey({
+    canonicalRows: [{ title: "Gameplay Engineer", company: "Studio" }],
+    lifecycleRows: [{ title: "Gameplay Engineer", company: "Studio" }]
+  });
+  assert.equal(overlay.size, 0);
 });

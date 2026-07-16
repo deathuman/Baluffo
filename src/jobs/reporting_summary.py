@@ -78,7 +78,6 @@ def build_pipeline_summary(
     newly_approved_since_last_run: int,
     *,
     json_bytes: int,
-    csv_bytes: int,
     light_json_bytes: int,
     lifecycle_counts_map: dict[str, int] | None = None,
     summary_source_rows: Sequence[dict[str, Any]] | None = None,
@@ -112,7 +111,6 @@ def build_pipeline_summary(
         "lightJson": _size_guardrail_row(
             light_json_bytes, OUTPUT_SIZE_GUARDRAIL_LIMITS["lightJson"]
         ),
-        "csv": _size_guardrail_row(csv_bytes, OUTPUT_SIZE_GUARDRAIL_LIMITS["csv"]),
     }
     return {
         **dedup_stats,
@@ -179,7 +177,6 @@ def build_pipeline_summary(
         "pendingSourceCount": pending_source_count,
         "newlyApprovedSinceLastRun": newly_approved_since_last_run,
         "jsonBytes": int(json_bytes),
-        "csvBytes": int(csv_bytes),
         "lightJsonBytes": int(light_json_bytes),
         "sizeGuardrails": size_guardrails,
         "sizeGuardrailExceeded": any(bool(row.get("exceeded")) for row in size_guardrails.values()),

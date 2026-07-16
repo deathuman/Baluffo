@@ -5,7 +5,7 @@
 > - **Canonical for:** target storage authority boundaries, SQLite connection and transaction discipline, migration safety, export and rollback behavior, and hot-path size budgets
 > - **Not canonical for:** current endpoint payload fields, current JSON artifact schemas, source-sync v2 schema details, or Jobs frontend row fields
 > - **Then inspect:** [`sync-contract.md`](sync-contract.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`admin-bridge-api.md`](admin-bridge-api.md), [`fetcher-runtime-contracts.md`](fetcher-runtime-contracts.md), [`LOCAL_SETUP.md`](LOCAL_SETUP.md), and archived rollout history in [`archive/runtime-storage-and-sync-architecture-plan.md`](archive/runtime-storage-and-sync-architecture-plan.md) only when historical provenance is needed
-> - **Last updated:** 2026-07-02
+> - **Last updated:** 2026-07-14
 
 This document defines the current runtime storage contract. The archived rollout plan records sequencing and closeout evidence; this active contract owns the invariants future code must preserve.
 
@@ -25,6 +25,17 @@ SQLite/WAL local runtime database for hot state
 ```
 
 The Jobs frontend boot path remains static JSON plus IndexedDB. Desktop local user data remains JSON-backed through the existing local-data contract. BaluffoSync remains source-registry sync, not a job feed and not a remote database.
+
+Availability runtime artifacts remain bounded filesystem compatibility/evidence state:
+
+- `jobs-lifecycle-state.json` owns exact identity aliases, verification counters, closure origin, and transition IDs.
+- `jobs-availability-history.json` is a compact 30-day UI projection, loaded only when history filters need it.
+- `jobs-availability-priority.json` schema v2 is bridge-written input containing only exact identity, canonical public link, priority, and `canonical` / `custom_saved` scope.
+- `jobs-availability-sweep-plan.json` is a bounded rotation plan; safe per-domain and total limits may defer work and report degraded coverage.
+- `jobs-availability-shadow-results.json` retains at most 500 compact classifications and never stores HTML, headers, authenticated state, or raw errors.
+- `jobs-availability-direct-checkpoints.json` privately retains at most 20,000 compact latest-check rows keyed by exact `availabilityId`. It advances saved-first/oldest-first rotation across scheduled runs and is not a public feed, lifecycle authority, or user-owned status store.
+- `local-user-data/jobs-custom-availability-state.json` is the private bridge-owned lifecycle ledger for monitored custom Saved URLs; it never publishes into canonical feeds, history, reconciliation, or public coverage.
+- Saved attention/reports remain profile-owned inside `local-user-data`; `systemActivityAt` is separate from user/application activity sorting.
 
 ## Authority Split
 
@@ -105,21 +116,22 @@ Milestone 3 cutover is complete for `taskRuns`, `taskEvents`, and `syncRuns`: ne
 
 Milestone 4 cutover is complete for `sourceRuns`: new stores seed `sourceRuns=sqlite`, terminal bridge-started fetch reports mirror source rows into `source_runs`, and source-run read/write/parity failures persistently roll the surface back to `json`.
 
-Milestone 5 cutover is complete for `jobsFeed`: new stores seed `jobsFeed=sqlite`, bridge-managed terminal fetch closeout mirrors canonical jobs rows into generation-scoped SQLite tables, and successful authoritative closeout regenerates `jobs-unified.json`, `jobs-unified-light.json`, and `jobs-unified.csv` as compatibility exports. Jobs-feed read/write/parity/export failures persistently roll the surface back to `json` while retaining SQLite generations for diagnosis.
+Milestone 5 cutover is complete for `jobsFeed`: new stores seed `jobsFeed=sqlite`, bridge-managed terminal fetch closeout and direct availability reconciliation publish canonical rows through generation-scoped SQLite tables, then regenerate the private full JSON plus public light/startup projections. Pipeline finalization, bootstrap promotion/rollback, and bridge reconciliation share a re-entrant cross-process data-directory lock. Writers wait through contention, reload lifecycle authority after acquiring the lock, and direct transitions recheck evidence freshness before mutation. Direct reconciliation restores the exact previous generation and both plain/gzip physical projections on lifecycle/export failure. Jobs-feed failures retain SQLite generations for diagnosis.
 
 Milestone 6 cutover is complete for `sourceRegistry`: new stores seed `sourceRegistry=sqlite`, registry active/pending/rejected rows and tombstones publish through generation-scoped SQLite tables, and successful authoritative publishes regenerate compatibility JSON/gzip exports. Source-registry read/write/parity/export failures, missing published generations, or direct JSON drift persistently roll the surface back to `json` while retaining SQLite generations and diagnostics.
 
 ## Compatibility Exports
 
-Compatibility JSON exports remain generated until the owning frontend/API surface is separately retired.
+Supported projections and temporary private JSON handoffs remain generated until their owning surfaces are separately retired.
 
 Rules:
 
 - Runtime evidence files are canonical JSON or gzip JSON artifacts, not journal-overlay artifacts.
 - Registry journaling is registry-only and bounded.
-- `jobs-unified-light.json` remains the permanent Jobs frontend boot export.
+- `jobs-unified-light.json` is the sole supported public Jobs feed; `jobs-unified-startup.json` is its bounded same-generation boot cache.
 - Do not add cache hashes inside `jobs-unified-light.json` rows. Use sidecar metadata or bridge metadata.
-- After M5, `jobs-unified.json`, `jobs-unified-light.json`, and `jobs-unified.csv` are generated from the published SQLite jobs-feed generation during bridge-managed terminal fetch closeout when `jobsFeed=sqlite`; direct CLI outputs remain JSON fallback until bridge postprocessing runs.
+- `jobs-unified.json` is deprecated/internal and must not be served or consumed by frontend code. It remains temporarily for pipeline-to-bridge ingestion, direct CLI output, and JSON fallback rollback. Delete it only after pipeline generations reach SQLite without a public-path handoff, direct CLI has an explicit alternative output, and rollback uses retained SQLite generations.
+- CSV generation, publication, launcher handling, and report size/output fields are removed; there is no on-demand replacement.
 - After M6, `source-registry-active.json`, `source-registry-pending.json`, `source-registry-rejected.json`, and `source-registry-tombstones.json` remain compatibility/debug exports. When `sourceRegistry=sqlite`, bridge-owned registry routes publish SQLite first, then regenerate those exports; direct CLI JSON writes are treated as JSON fallback/drift and trigger rollback rather than silently overwriting SQLite.
 - Full fetch/dedup/source evidence moves to filesystem-backed archives with a JSON manifest, not SQLite.
 - After M4, bridge-started terminal `jobs-fetch-report.json` is a compact compatibility/debug export with lean source rows and `sourceRuns.sourceDetailsArchive` refs; direct CLI or old full reports remain valid JSON fallback.

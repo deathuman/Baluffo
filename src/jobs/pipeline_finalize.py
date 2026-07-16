@@ -11,12 +11,20 @@ from __future__ import annotations
 import json
 import time
 from collections import Counter
+from functools import wraps
 from pathlib import Path
 from typing import Any
 
 from src.bridge.fetch_report_summary import write_fetch_report_summary_artifact
 from src.contracts import SCHEMA_VERSION
 from src.core.contracts import validate_canonical_jobs_payload
+from src.jobs.availability_schedule import build_availability_sweep_plan
+from src.jobs.availability_tombstones import (
+    TOMBSTONE_ARTIFACT_NAME,
+    read_availability_tombstones,
+    reconcile_availability_tombstones,
+    write_availability_tombstones,
+)
 from src.jobs.canonicalize import snapshot_sector_quality_audit
 from src.jobs.common.config import STRICT_GAME_ONLY_ENABLED
 from src.jobs.common.contracts_dedup_review_state import read_dedup_review_state_artifact
@@ -41,6 +49,7 @@ from src.jobs.common.contracts_static_suppression_policy import (
 )
 from src.jobs.contamination_audit import build_public_text_quality_report
 from src.jobs.dedup import CanonicalDeduplicator
+from src.jobs.feed_reconciliation_lock import jobs_feed_reconciliation_lock
 from src.jobs.models import CanonicalJob
 from src.jobs.pipeline_runtime_summary import (
     build_detailed_source_rows,
@@ -66,8 +75,10 @@ from src.jobs.reporting_social import (
 from src.jobs.reporting_summary import build_pipeline_summary
 from src.jobs.state_lifecycle import (
     apply_job_lifecycle_state,
+    build_availability_history_payload,
     build_lifecycle_source_evidence,
     lifecycle_archive_state_path,
+    read_job_lifecycle_state,
     write_job_lifecycle_archive_state,
     write_job_lifecycle_state,
 )
@@ -86,12 +97,12 @@ from src.jobs.text_utils import (
 )
 from src.pipeline_io import (
     read_existing_output,
-    serialize_rows_for_csv,
     serialize_rows_for_json,
     write_atomic_if_changed,
     write_hot_text_if_changed,
     write_text_if_changed,
 )
+from src.shared.json_io import existing_json_candidate
 from src.shared.json_shapes import as_json_list, json_object_rows
 from src.shared.utils import now_iso
 
@@ -359,7 +370,9 @@ def _lifecycle_missing_context(
     effective_seed_from_existing_output: bool,
 ) -> dict[str, Any]:
     selected_loader_names = {name for name, _ in selected_loaders}
-    may_mark_missing = using_default_loaders and not effective_seed_from_existing_output
+    # Existing-output seeding is a cache/dedup implementation detail. It must not
+    # suppress trustworthy per-source missing evidence.
+    may_mark_missing = using_default_loaders
     return build_lifecycle_source_evidence(
         source_reports,
         selected_source_names=selected_loader_names,
@@ -370,6 +383,7 @@ def _lifecycle_missing_context(
 def _apply_lifecycle_state(
     *,
     deduped_rows: list[CanonicalJob],
+    observed_rows: list[CanonicalJob],
     lifecycle_rows: dict[str, dict[str, Any]],
     source_reports: list[dict[str, Any]],
     selected_loaders: list[tuple[str, Any]],
@@ -390,6 +404,7 @@ def _apply_lifecycle_state(
     )
     return apply_job_lifecycle_state(
         deduped_rows=deduped_rows,
+        observed_rows=observed_rows,
         lifecycle_rows=lifecycle_rows,
         finished_at=lifecycle_finished_at,
         allow_mark_missing=False,
@@ -428,6 +443,11 @@ def _lifecycle_summary_payload(lifecycle_counts_map: dict[str, int]) -> dict[str
         ),
         "ineligibleMissingSourceCount": int(
             lifecycle_counts_map.get("ineligibleMissingSourceCount") or 0
+        ),
+        "availabilityAvailableCount": int(lifecycle_counts_map.get("availabilityAvailable") or 0),
+        "availabilityOverdueCount": int(lifecycle_counts_map.get("availabilityOverdue") or 0),
+        "availabilityUnavailableCount": int(
+            lifecycle_counts_map.get("availabilityUnavailable") or 0
         ),
     }
 
@@ -542,18 +562,12 @@ def _apply_final_output_loss_counts(
         loss["dedupMerged"] = max(0, canonical_kept - final_output)
 
 
-def _write_output_rows(
-    paths, deduped_payload_rows: list[dict[str, Any]]
-) -> tuple[bool, bool, bool]:
+def _write_output_rows(paths, deduped_payload_rows: list[dict[str, Any]]) -> tuple[bool, bool]:
     if deduped_payload_rows:
         validate_canonical_jobs_payload(deduped_payload_rows)
     wrote_json = write_atomic_if_changed(
         paths.json_path,
         serialize_rows_for_json(deduped_payload_rows, OUTPUT_FIELDS),
-    )
-    wrote_csv = write_atomic_if_changed(
-        paths.csv_path,
-        serialize_rows_for_csv(deduped_payload_rows, OUTPUT_FIELDS),
     )
     wrote_light_json = write_atomic_if_changed(
         paths.light_json_path,
@@ -562,9 +576,9 @@ def _write_output_rows(
     if hasattr(paths, "startup_json_path"):
         write_atomic_if_changed(
             paths.startup_json_path,
-            serialize_rows_for_json(deduped_payload_rows, LIGHTWEIGHT_OUTPUT_FIELDS),
+            serialize_rows_for_json(deduped_payload_rows[:10], LIGHTWEIGHT_OUTPUT_FIELDS),
         )
-    return wrote_json, wrote_csv, wrote_light_json
+    return wrote_json, wrote_light_json
 
 
 def _write_review_queue_artifacts(
@@ -699,10 +713,9 @@ def _update_runtime_timing_payload(
     return detailed_source_rows, timing_summary
 
 
-def _output_sizes(paths) -> tuple[int, int, int]:
+def _output_sizes(paths) -> tuple[int, int]:
     return (
         paths.json_path.stat().st_size if paths.json_path.exists() else 0,
-        paths.csv_path.stat().st_size if paths.csv_path.exists() else 0,
         paths.light_json_path.stat().st_size if paths.light_json_path.exists() else 0,
     )
 
@@ -824,6 +837,139 @@ def _export_source_policy_recommendations(
         }
 
 
+def _write_availability_artifacts(
+    *, paths: Any, lifecycle_rows: dict[str, dict[str, Any]], finished_at: str
+) -> dict[str, Any]:
+    history = build_availability_history_payload(lifecycle_rows, finished_at=finished_at)
+    wrote_history = write_atomic_if_changed(
+        paths.availability_history_path,
+        json.dumps(history, ensure_ascii=False, separators=(",", ":")),
+    )
+    priority_manifest: dict[str, Any] = {}
+    priority_path = paths.output_dir / "jobs-availability-priority.json"
+    if priority_path.exists():
+        try:
+            loaded = json.loads(priority_path.read_text(encoding="utf-8"))
+            priority_manifest = loaded if isinstance(loaded, dict) else {}
+        except (OSError, json.JSONDecodeError):
+            pass
+    shadow_payload: dict[str, Any] = {}
+    shadow_path = paths.output_dir / "jobs-availability-shadow-results.json"
+    if shadow_path.exists():
+        try:
+            loaded = json.loads(shadow_path.read_text(encoding="utf-8"))
+            shadow_payload = loaded if isinstance(loaded, dict) else {}
+        except (OSError, json.JSONDecodeError):
+            pass
+    direct_checkpoints: dict[str, Any] = {}
+    checkpoint_path = paths.output_dir / "jobs-availability-direct-checkpoints.json"
+    if checkpoint_path.exists():
+        try:
+            loaded = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+            direct_checkpoints = loaded if isinstance(loaded, dict) else {}
+        except (OSError, json.JSONDecodeError):
+            pass
+    sweep = build_availability_sweep_plan(
+        lifecycle_rows,
+        priority_manifest,
+        finished_at=finished_at,
+        direct_checkpoints=direct_checkpoints,
+    )
+    wrote_sweep = write_atomic_if_changed(
+        paths.availability_sweep_plan_path,
+        json.dumps(sweep, ensure_ascii=False, separators=(",", ":")),
+    )
+    shadow_rows = [row for row in shadow_payload.get("rows") or [] if isinstance(row, dict)]
+    counts = dict(Counter(clean_text(row.get("kind")) or "unknown" for row in shadow_rows))
+    lifecycle_by_id = {
+        clean_text(entry.get("availabilityId")): entry
+        for entry in lifecycle_rows.values()
+        if clean_text(entry.get("availabilityId"))
+    }
+    conflicts = []
+    for row in shadow_rows[-200:]:
+        availability_id = clean_text(row.get("availabilityId"))
+        source_status = clean_text(
+            (lifecycle_by_id.get(availability_id) or {}).get("availabilityStatus") or "available"
+        )
+        direct_kind = clean_text(row.get("kind"))
+        if (direct_kind, source_status) in {
+            ("direct_live", "unavailable"),
+            ("direct_closed", "available"),
+        }:
+            conflicts.append(
+                {
+                    "availabilityId": availability_id,
+                    "sourceStatus": source_status,
+                    "directKind": direct_kind,
+                    "checkedAt": clean_text(row.get("checkedAt")),
+                }
+            )
+    return {
+        "sweep": sweep,
+        "conflicts": conflicts,
+        "shadowCounts": counts,
+        "wroteHistory": wrote_history,
+        "wroteSweep": wrote_sweep,
+    }
+
+
+def _merge_concurrent_direct_live_rows(
+    canonical_rows: list[CanonicalJob],
+    current_rows: list[dict[str, Any]],
+    lifecycle_rows: dict[str, dict[str, Any]],
+) -> list[CanonicalJob]:
+    merged = list(canonical_rows)
+    known_availability_ids = {
+        clean_text(row.availabilityId) for row in merged if clean_text(row.availabilityId)
+    }
+    lifecycle_by_id = {
+        clean_text(entry.get("availabilityId")): entry
+        for entry in lifecycle_rows.values()
+        if isinstance(entry, dict) and clean_text(entry.get("availabilityId"))
+    }
+    for row in current_rows:
+        availability_id = clean_text(row.get("availabilityId"))
+        entry = lifecycle_by_id.get(availability_id) or {}
+        evidence = entry.get("availabilityEvidence")
+        direct_live = (
+            clean_text(entry.get("availabilityStatus")) == "available"
+            and isinstance(evidence, dict)
+            and clean_text(evidence.get("kind")) == "direct_live"
+            and clean_text(evidence.get("confidence")) == "definitive"
+        )
+        if availability_id and availability_id not in known_availability_ids and direct_live:
+            merged.append(CanonicalJob.from_mapping(row))
+            known_availability_ids.add(availability_id)
+    return merged
+
+
+def _serialize_jobs_feed_reconciliation(func):
+    @wraps(func)
+    def wrapped(*args, **kwargs):
+        paths = kwargs.get("paths")
+        if paths is None or not hasattr(paths, "output_dir"):
+            raise TypeError("finalize_pipeline_run requires paths with an output_dir")
+        with jobs_feed_reconciliation_lock(paths.output_dir):
+            if existing_json_candidate(paths.lifecycle_state_path) is not None:
+                kwargs = dict(kwargs)
+                latest_lifecycle = read_job_lifecycle_state(paths.lifecycle_state_path)
+                kwargs["lifecycle_rows"] = latest_lifecycle
+                current_rows = read_existing_output(
+                    paths.json_path,
+                    clean_text(kwargs.get("started_at")) or now_iso(),
+                    canonicalize_job=canonicalize_existing_output_row,
+                    clean_text=clean_text,
+                )
+                kwargs["canonical_rows"] = _merge_concurrent_direct_live_rows(
+                    list(kwargs.get("canonical_rows") or []), current_rows, latest_lifecycle
+                )
+            return func(*args, **kwargs)
+
+    return wrapped
+
+
+@_serialize_jobs_feed_reconciliation
 def finalize_pipeline_run(
     *,
     paths,
@@ -847,6 +993,7 @@ def finalize_pipeline_run(
     circuit_breaker_failures: int,
     circuit_breaker_cooldown_minutes: int,
     circuit_breaker_zero_kept: int,
+    observed_rows: list[CanonicalJob] | None = None,
     static_suppression_policy: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     deduped_rows, dedup_stats, preserved_previous = _deduplicate_or_preserve_previous(
@@ -856,9 +1003,11 @@ def finalize_pipeline_run(
         started_at=started_at,
     )
     lifecycle_finished_at = now_iso()
+    pre_lifecycle_payload_rows = [row.to_dict() for row in deduped_rows]
     deduped_rows, lifecycle_rows, lifecycle_archive_rows_by_year, lifecycle_counts_map = (
         _apply_lifecycle_state(
             deduped_rows=deduped_rows,
+            observed_rows=list(canonical_rows if observed_rows is None else observed_rows),
             lifecycle_rows=lifecycle_rows,
             source_reports=source_reports,
             selected_loaders=selected_loaders,
@@ -894,8 +1043,24 @@ def finalize_pipeline_run(
         )
     write_task_state(finished_at="", force=True)
     write_progress_report(force=True)
-    wrote_json, wrote_csv, wrote_light_json = _write_output_rows(paths, deduped_payload_rows)
-    json_bytes, csv_bytes, light_json_bytes = _output_sizes(paths)
+    tombstone_path = paths.output_dir / TOMBSTONE_ARTIFACT_NAME
+    tombstones = reconcile_availability_tombstones(
+        read_availability_tombstones(tombstone_path),
+        before_rows=pre_lifecycle_payload_rows,
+        after_rows=deduped_payload_rows,
+        lifecycle_rows=lifecycle_rows,
+    )
+    write_availability_tombstones(tombstone_path, tombstones, updated_at=lifecycle_finished_at)
+    wrote_json, wrote_light_json = _write_output_rows(paths, deduped_payload_rows)
+    availability = _write_availability_artifacts(
+        paths=paths, lifecycle_rows=lifecycle_rows, finished_at=lifecycle_finished_at
+    )
+    availability_sweep_plan = availability["sweep"]
+    source_direct_conflicts = availability["conflicts"]
+    shadow_classifier_counts = availability["shadowCounts"]
+    wrote_availability_history = availability["wroteHistory"]
+    wrote_availability_sweep_plan = availability["wroteSweep"]
+    json_bytes, light_json_bytes = _output_sizes(paths)
     _browser_fallback_queue_rows, parser_regression_queue_rows = _write_review_queue_artifacts(
         paths=paths,
         source_reports=source_reports,
@@ -925,7 +1090,6 @@ def finalize_pipeline_run(
         len(common_sources.load_registry_from_file(paths.pending_registry_path, [])),
         common_sources.read_approved_since_last_run(paths.approval_state_path),
         json_bytes=json_bytes,
-        csv_bytes=csv_bytes,
         light_json_bytes=light_json_bytes,
         lifecycle_counts_map=lifecycle_counts_map,
         summary_source_rows=final_source_rows,
@@ -967,6 +1131,32 @@ def finalize_pipeline_run(
             "summary": summary_payload,
             "dedupEvidence": dedup_evidence_payload,
             "lifecycleSummary": _lifecycle_summary_payload(lifecycle_counts_map),
+            "availabilitySummary": {
+                **_lifecycle_summary_payload(lifecycle_counts_map),
+                "sourceDirectConflictCount": len(source_direct_conflicts),
+                "shadowClassifierCounts": shadow_classifier_counts,
+            },
+            "availabilityHealth": {
+                "status": "healthy"
+                if bool(availability_sweep_plan.get("healthTargetMet"))
+                and not bool(availability_sweep_plan.get("degradedCoverage"))
+                else "degraded",
+                "overdueCount": int(lifecycle_counts_map.get("availabilityOverdue") or 0),
+                "verifiedWithinDaysTarget": 7,
+                "verifiedCoverageTarget": 0.95,
+                "verifiedWithinSevenDaysCoverage": float(
+                    availability_sweep_plan.get("verifiedWithinSevenDaysCoverage") or 0
+                ),
+                "sweepSelectedCount": int(availability_sweep_plan.get("selectedCount") or 0),
+                "sweepDeferredCount": int(availability_sweep_plan.get("deferredCount") or 0),
+                "degradedCoverage": bool(availability_sweep_plan.get("degradedCoverage")),
+                "shadowClassifier": True,
+            },
+            "sourceDirectConflicts": source_direct_conflicts[-100:],
+            "sweepCoverage": {
+                key: value for key, value in availability_sweep_plan.items() if key != "rows"
+            },
+            "shadowClassifierCounts": shadow_classifier_counts,
             "sources": final_source_rows,
             "sourceFamilies": source_reports,
             "contaminationAudit": contamination_report,
@@ -975,16 +1165,22 @@ def finalize_pipeline_run(
             "sectorQualityAudit": sector_quality_audit,
             "outputs": {
                 "json": str(paths.json_path),
-                "csv": str(paths.csv_path),
                 "lightJson": str(paths.light_json_path),
                 "report": str(paths.report_path),
                 "lifecycleState": str(paths.lifecycle_state_path),
+                "availabilityHistory": str(paths.availability_history_path),
+                "availabilitySweepPlan": str(paths.availability_sweep_plan_path),
                 "browserFallbackQueue": str(paths.browser_fallback_queue_path),
                 "parserRegressionQueue": str(paths.parser_regression_queue_path),
                 "sourcePolicyRecommendations": str(paths.source_policy_recommendations_path),
                 "sourcePolicyReviewState": str(paths.source_policy_review_state_path),
                 "dedupReviewState": str(paths.dedup_review_state_path),
-                "changed": {"json": wrote_json, "csv": wrote_csv, "lightJson": wrote_light_json},
+                "changed": {
+                    "json": wrote_json,
+                    "lightJson": wrote_light_json,
+                    "availabilityHistory": wrote_availability_history,
+                    "availabilitySweepPlan": wrote_availability_sweep_plan,
+                },
             },
         }
     )

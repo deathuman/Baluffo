@@ -5,7 +5,7 @@
 > - **Canonical for:** test commands, targeted test routing, and fixture references
 > - **Not canonical for:** runtime architecture or data contracts
 > - **Then inspect:** the nearest `tests/` module for the subsystem you changed
-> - **Last updated:** 2026-06-01
+> - **Last updated:** 2026-07-16
 
 This document owns the verification matrix for Baluffo. Keep build, test, and fixture guidance here instead of repeating command tables in routing docs.
 
@@ -16,6 +16,22 @@ uv pip compile requirements.txt -o requirements-lock.txt
 ```
 
 ## Python tests (pytest)
+
+Availability-focused development lane:
+
+```bash
+python -m pytest tests/test_job_availability_validator.py tests/test_job_availability_tombstones.py tests/test_job_availability_schedule.py tests/test_jobs_lifecycle_source_evidence.py tests/test_jobs_lifecycle_output.py tests/test_local_data_store.py tests/test_local_data_store_availability.py tests/bridge/test_job_availability_routes.py tests/bridge/test_job_availability_atomic.py -q
+npm run test:frontend:unit
+```
+
+This lane covers seed-vs-observation regression, source failure/absence semantics, overdue timing,
+direct classifier fixtures and conflicts, stable aliases, history publication, bounded scheduling,
+Saved idempotency/terminal behavior/reports, private custom-URL monitoring, backup v4 compatibility,
+duplicate/stale direct checks, SQLite/private-full/public-projection reconciliation, post-publication
+projection/sweep, atomic mirror interleaving, private canonical-tombstone reopening, fail-closed
+missing authority, runtime-gated unavailable-link actions, routes, and frontend attention state.
+Export-retirement changes also run task-launch jobs-feed, container/static-server, runtime-launcher,
+JSON quality-tool, and Saved lifecycle-overlay tests; public full JSON and CSV requests must be 404.
 
 Run the balanced developer Python lane:
 

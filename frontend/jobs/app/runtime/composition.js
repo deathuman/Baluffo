@@ -2,6 +2,11 @@ import { emitStartupMetric, logError, logInfo, markFirstInteractive } from "../.
 import { createAuthReadyPoller } from "../../../shared/auth-ready-poll.js";
 import { createPerfMarks } from "../../../shared/perf-marks.js";
 import { navigateDesktopPage } from "../../../shared/local-data/desktop-client.js";
+import {
+  availabilityCheckResultLabel,
+  availabilityCheckWasApplied,
+  runJobAvailabilityCheck
+} from "../../../shared/job-availability-check.js";
 import { bindAsyncClick, bindHandlersMap, bindUi, escapeHtml, setText, showToast } from "../../../shared/ui/index.js";
 import { UI_TOKENS, ui } from "../../../shared/ui/selectors.js";
 import { normalizeToken } from "../../../shared/text-utils.js";
@@ -210,7 +215,22 @@ export function composeJobsRuntime(deps) {
       getJobById: jobId => runtimeState.allJobs.find(job => String(job.id) === String(jobId || "")),
       onToggleSaveJob: job => authController.toggleSaveJob(job),
       onOpenJobLink: deps.openJobLinkInDefaultBrowser,
-      onMarkJobSeen: jobKey => authController.markJobSeenFromInteraction(jobKey)
+      onMarkJobSeen: jobKey => authController.markJobSeenFromInteraction(jobKey),
+      onCheckAvailability: async availabilityId => {
+        if (!deps.canManageAvailability?.()) return;
+        const result = await runJobAvailabilityCheck(
+          deps.jobsSavedJobsService,
+          availabilityId,
+          { onProgress: () => showToast("Checking availability…", "info") }
+        );
+        showToast(
+          result.ok ? availabilityCheckResultLabel(result.data) : result.error,
+          result.ok && result.data?.status !== "failed" ? "success" : "error"
+        );
+        if (result.ok && availabilityCheckWasApplied(result.data)) {
+          await feedController.refreshJobsNow({ manual: false });
+        }
+      }
     }),
     goToPage: (...args) => deps.goToPage(...args),
     windowObject: deps.windowObject,
@@ -252,6 +272,7 @@ export function composeJobsRuntime(deps) {
     fetchJsonFromCandidatesFromSources: deps.fetchJsonFromCandidatesFromSources,
     renderDataSourcesFromSources: deps.renderDataSourcesFromSources,
     jobsFetchReportUrls: deps.jobsFetchReportUrls,
+    availabilityHistoryUrls: deps.availabilityHistoryUrls,
     mapProfession: deps.mapProfession,
     normalizeSector: deps.normalizeSector,
     classifyCompanyType: deps.classifyCompanyType,

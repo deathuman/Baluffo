@@ -60,11 +60,6 @@ def _seed_jobs_pipeline_smoke_feed(data_dir: Path, *, finished_at: str) -> None:
     feed = f"{json.dumps([row], separators=(',', ':'))}\n"
     (data_dir / "jobs-unified-light.json").write_text(feed, encoding="utf-8")
     (data_dir / "jobs-unified.json").write_text(feed, encoding="utf-8")
-    (data_dir / "jobs-unified.csv").write_text(
-        "id,title,company,location,source\n"
-        "packaged-smoke-seed-job,Packaged Smoke Seed Job,Packaged Smoke Studio,Remote,packaged_smoke\n",
-        encoding="utf-8",
-    )
 
 
 def _seed_jobs_pipeline_smoke_feed_if_needed(

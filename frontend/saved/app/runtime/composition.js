@@ -119,7 +119,8 @@ export function composeSavedRuntime(deps) {
     formatPhaseTimestamp: deps.formatPhaseTimestamp,
     renderDetailsSummary: deps.renderDetailsSummary,
     activityTypeLabel: deps.activityTypeLabel,
-    formatActivityDetail: deps.formatActivityDetail
+    formatActivityDetail: deps.formatActivityDetail,
+    canManageAvailability: deps.canManageAvailability
   });
 
   const savedAuthReadyPoller = createAuthReadyPoller({
@@ -183,8 +184,15 @@ export function composeSavedRuntime(deps) {
     return deps.applySavedAdminBridgeStateFromModule({ ...params, viewState });
   }
 
-  function loadSavedLifecycleOverlay() {
-    return loadSavedLifecycleOverlayByJobKey();
+  async function loadSavedLifecycleOverlay() {
+    const uid = String(viewState.currentUser?.uid || viewState.currentUser?.id || "");
+    const runtimeResult = deps.canManageAvailability() && uid
+      ? await deps.savedPageService.getAvailabilityOverlay(uid)
+      : null;
+    const runtimeRows = Array.isArray(runtimeResult?.data?.rows)
+      ? runtimeResult.data.rows
+      : [];
+    return loadSavedLifecycleOverlayByJobKey({ runtimeRows });
   }
 
   return {

@@ -10,6 +10,8 @@ export function normalizeLifecycleStatus(value, fallback = "active") {
     || normalized === "archived"
     || normalized === "reappeared"
     || normalized === "preserved_source_failed"
+    || normalized === "unavailable"
+    || normalized === "verification_overdue"
   ) {
     return normalized;
   }
@@ -24,6 +26,8 @@ export function getLifecycleStatusLabel(value) {
   if (normalized === "archived") return "Archived";
   if (normalized === "reappeared") return "Reappeared";
   if (normalized === "preserved_source_failed") return "Preserved because source failed";
+  if (normalized === "unavailable") return "Unavailable (last 30 days)";
+  if (normalized === "verification_overdue") return "Verification overdue";
   return String(value || "").replace("_", " ");
 }
 

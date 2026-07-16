@@ -12,10 +12,22 @@ Discovery (source_discovery)
   -> pending registry / sync
 
 Pipeline (jobs/pipeline.py -> pipeline_run_setup.py -> pipeline_execution_flow.py -> pipeline_stage_source_execution.py -> pipeline_source_{loop,results,progress}.py -> pipeline_finalize.py)
+  -> keep seeded prior-output rows separate from rows observed in this run
   -> execute_loader per source (static, scrapy_static, provider APIs, etc.)
   -> Static adapter: listing fetch with optional try_playwright fallback (403/timeout or JS shell + no jobs)
   -> jobs-fetch-report.json, per-source classifications
   -> build_browser_fallback_queue -> jobs-browser-fallback-queue.json
+  -> apply source-scoped availability transitions and publish active-only feed + 30-day history
+  -> plan a saved-first/oldest-first direct-link sweep under fixed traffic limits
+
+Direct-link classification is conservative: `404` / `410` are definitive closure only for the checked
+posting identity, supported ATS detail pages require provider-specific visible or structured live
+evidence, and generic semantic closure requires two matching checks at least 24 hours apart. Redirects
+must preserve the exact provider posting identity and provider tenant before destination actions can
+prove the checked job live. Script/template text, unrelated visible closure copy, arbitrary `200`
+pages, career search/listing
+redirects, login/cookie pages, blocking, timeouts, and `5xx` responses never provide definitive live or
+closed evidence. Browser fallback uses the same classifier.
 
 Scrapy path (for scrapy_static sources from browser queue)
   -> registry_entries("scrapy_static") = _scrapy_static_registry_from_browser_queue()
@@ -67,18 +79,32 @@ Scrapy path (for scrapy_static sources from browser queue)
 
 All Playwright use is optional: discovery and pipeline run without Playwright if it is not installed.
 
+Direct job-link validation is a separate bounded path in `src/jobs/availability_validator.py`.
+It follows safe public redirects, never authenticates, paces each domain, and treats 403/429,
+anti-bot pages, timeouts, 5xx, and network failures as unknown. Definitive 404/410 or supported
+provider closure signals may close only after direct enforcement is promoted. Ambiguous semantic
+closure requires two matching checks at least 24 hours apart. A successful redirect or direct URL
+that lands on an exact generic root, `/careers`, or `/jobs` page is ambiguous rather than proof that
+the original detail posting is live. Provider/detail pages require a provider-family application
+action tied to the checked posting; global apply text and unrelated recommended-job actions are not
+live evidence. Bounded
+JSON-LD is parsed structurally: a `JobPosting` token alone is never live evidence, and structured
+evidence must match the checked posting by canonical URL or `@id` and be non-expired. Browser
+fallback uses the identical classifier. The default rollout is shadow mode;
+set `BALUFFO_AVAILABILITY_DIRECT_ENFORCE=1` only after the reviewed promotion gate is satisfied.
+
 ## 3) Before and after job count comparison
 
 To see how much the job count changed after scraping improvements:
 
-1. Total jobs: `data/jobs-unified.json` - count the top-level array length (or `keptCount` / output count from the pipeline summary).
+1. Total public jobs: `data/jobs-unified-light.json` - count the top-level array length (or `keptCount` / output count from the pipeline summary).
 2. Browser fallback queue size: `data/jobs-browser-fallback-queue.json` - number of entries (sources that were recommended for browser/Playwright).
 3. Per-source status: `data/jobs-fetch-report.json` - for each source: `status`, `fetchedCount`, `keptCount`, `classification`, `error`. Compare counts of `blocked_or_challenge`, `needs_review`, and `ok` / `ok_with_jobs` before and after.
 4. Discovery: `data/source-discovery-report.json` - `summary.lossAccounting`, probe failed / low_evidence_skipped; Playwright probe fallback aims to reduce those.
 
 Suggested comparison:
 
-- Before a run: note `len(jobs-unified.json)`, the size of `jobs-browser-fallback-queue.json`, and the number of sources with `classification` in `{blocked_or_challenge, anti_bot_or_challenge, rate_limited, needs_review}` in the last fetch report.
+- Before a run: note `len(jobs-unified-light.json)`, the size of `jobs-browser-fallback-queue.json`, and the number of sources with `classification` in `{blocked_or_challenge, anti_bot_or_challenge, rate_limited, needs_review}` in the last fetch report.
 - After a run (with Playwright fallbacks and Scrapy-Playwright enabled): compare the same metrics. Higher unified count, a smaller browser queue, and fewer blocked / needs_review sources indicate improvement.
 
 See also: `docs/DATA_CONTRACT.md` for report shapes and `docs/architecture-ai-map.md` for static adapter and Scrapy path. Saved jobs, local-user data, and active bridge/frontend payload fields remain compatibility boundaries. Internal jobs-fetcher shims such as `pipeline_runtime.py`, `state_source_state.py`, the deleted `static_helpers.py`, `src/jobs/common/contracts.py`, and `src/jobs/reporting.py` are not stable product surfaces; simplify, collapse, or delete them when a slice updates callers and keeps current fetch/report behavior covered by tests.

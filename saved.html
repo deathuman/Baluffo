@@ -79,10 +79,18 @@
           </div>
         </div>
         <div id="saved-custom-filter-bar" data-ui="saved-custom-filter-bar" class="saved-custom-filter-bar hidden" aria-hidden="true">
+          <div class="saved-availability-attention-banner hidden" data-ui="saved-availability-attention-banner" role="status">
+            <strong data-ui="saved-availability-attention-count">0 availability updates need attention.</strong>
+            <div class="saved-availability-attention-actions">
+              <button type="button" class="btn back-btn" data-ui="saved-availability-attention-filter-btn">Review updates</button>
+              <button type="button" class="btn back-btn" data-ui="saved-availability-attention-ack-all-btn">Acknowledge all current</button>
+            </div>
+          </div>
           <span class="saved-custom-filter-label">Show</span>
           <div class="saved-custom-filter-actions" role="group" aria-label="Saved jobs filters">
             <button type="button" class="btn back-btn saved-custom-filter-btn active" data-ui="custom-filter-btn" data-saved-filter="all">All</button>
             <button type="button" class="btn back-btn saved-custom-filter-btn" data-ui="custom-filter-btn" data-saved-filter="needs_action">Needs Action</button>
+            <button type="button" class="btn back-btn saved-custom-filter-btn" data-ui="custom-filter-btn" data-saved-filter="availability_attention">Availability attention</button>
             <button type="button" class="btn back-btn saved-custom-filter-btn" data-ui="custom-filter-btn" data-saved-filter="applied">Applied</button>
             <button type="button" class="btn back-btn saved-custom-filter-btn" data-ui="custom-filter-btn" data-saved-filter="interviewing">Interviewing</button>
             <button type="button" class="btn back-btn saved-custom-filter-btn" data-ui="custom-filter-btn" data-saved-filter="offer">Offer</button>

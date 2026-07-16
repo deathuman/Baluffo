@@ -95,11 +95,11 @@ def test_quarantine_ignores_newer_startup_artifact_when_runtime_feed_is_older() 
         result = rl.quarantine_stale_jobs_row_artifacts(data_dir)
 
         assert result["reason"] == "no_successful_runtime_jobs_report"
-        assert len(result["quarantined"]) == 4
+        assert len(result["quarantined"]) == 3
         assert not (data_dir / "jobs-unified-startup.json").exists()
         assert not (data_dir / "jobs-unified.json").exists()
         assert not (data_dir / "jobs-unified-light.json").exists()
-        assert not (data_dir / "jobs-unified.csv").exists()
+        assert (data_dir / "jobs-unified.csv").exists()
 
 
 def test_quarantine_restores_false_quarantined_runtime_rows_from_backup() -> None:
@@ -148,10 +148,11 @@ def test_quarantine_restores_false_quarantined_runtime_rows_from_backup() -> Non
         result = rl.quarantine_stale_jobs_row_artifacts(data_dir)
 
         assert result["skipped"] == "restored_false_quarantined_runtime_artifacts"
-        assert len(result["restored"]) == 3
+        assert len(result["restored"]) == 2
         assert (data_dir / "jobs-unified.json").exists()
         assert (data_dir / "jobs-unified-light.json").exists()
-        assert (data_dir / "jobs-unified.csv").exists()
+        assert not (data_dir / "jobs-unified.csv").exists()
+        assert (backup_dir / "jobs-unified.csv").exists()
         assert (backup_dir / "jobs-unified.json").exists()
         assert list((data_dir / "migration-reports").glob("stripped-packaged-jobs-restore-*.json"))
 

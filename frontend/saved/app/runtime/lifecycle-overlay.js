@@ -1,8 +1,5 @@
 export const SAVED_LIFECYCLE_JOBS_URLS = [
-  "data/jobs-unified-light.json",
-  "data/jobs-unified.json",
-  "jobs-unified-light.json",
-  "jobs-unified.json"
+  "data/jobs-unified-light.json"
 ];
 
 export const SAVED_LIFECYCLE_STATE_URLS = [
@@ -16,8 +13,25 @@ function toLifecycleOverlayRecord(row) {
     removedAt: String(row?.removedAt || "").trim(),
     lastSeenAt: String(row?.lastSeenAt || "").trim(),
     lifecycleEvent: String(row?.lifecycleEvent || "").trim().toLowerCase(),
-    lifecycleReason: String(row?.lifecycleReason || "").trim().toLowerCase()
+    lifecycleReason: String(row?.lifecycleReason || "").trim().toLowerCase(),
+    availabilityId: String(row?.availabilityId || "").trim(),
+    availabilityStatus: String(row?.availabilityStatus || "").trim().toLowerCase(),
+    availabilityCheckedAt: String(row?.availabilityCheckedAt || "").trim(),
+    availabilityVerifiedAt: String(row?.availabilityVerifiedAt || "").trim(),
+    availabilityUnavailableAt: String(row?.availabilityUnavailableAt || "").trim(),
+    availabilityEvidence: row?.availabilityEvidence && typeof row.availabilityEvidence === "object"
+      ? { ...row.availabilityEvidence }
+      : {}
   };
+}
+
+function overlayKeys(row) {
+  const keys = [];
+  const availabilityId = String(row?.availabilityId || "").trim().toLowerCase();
+  const jobKey = String(row?.jobKey || row?.dedupKey || "").trim().toLowerCase();
+  if (availabilityId) keys.push(`availability:${availabilityId}`);
+  if (jobKey) keys.push(`job:${jobKey}`);
+  return keys;
 }
 
 export function parseLifecycleStatePayload(payload) {
@@ -31,33 +45,57 @@ export function buildSavedLifecycleOverlayByJobKey(options = {}) {
   const {
     canonicalRows = [],
     lifecycleRows = [],
-    generateJobKeyForRow = () => ""
+    runtimeRows = []
   } = options;
   const overlayByJobKey = new Map();
 
   for (const row of canonicalRows) {
-    const jobKey = String(generateJobKeyForRow(row) || "").trim().toLowerCase();
-    if (!jobKey) continue;
-    overlayByJobKey.set(jobKey, toLifecycleOverlayRecord(row));
+    for (const key of overlayKeys(row)) {
+      overlayByJobKey.set(key, toLifecycleOverlayRecord(row));
+    }
   }
   for (const row of lifecycleRows) {
-    const jobKey = String(generateJobKeyForRow(row) || "").trim().toLowerCase();
-    if (!jobKey || overlayByJobKey.has(jobKey)) continue;
-    overlayByJobKey.set(jobKey, toLifecycleOverlayRecord(row));
+    for (const key of overlayKeys(row)) {
+      if (!overlayByJobKey.has(key)) {
+        overlayByJobKey.set(key, toLifecycleOverlayRecord(row));
+      }
+    }
+  }
+  for (const row of runtimeRows) {
+    for (const key of overlayKeys(row)) {
+      overlayByJobKey.set(key, toLifecycleOverlayRecord(row));
+    }
   }
   return overlayByJobKey;
 }
 
+async function fetchJsonFromCandidates(urls, options = {}) {
+  const timeoutMs = Number(options.timeoutMs) || 3000;
+  for (const url of urls || []) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, { cache: "no-store", signal: controller.signal });
+      if (response.ok) return await response.json();
+    } catch {
+      // Try the next supported projection.
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return null;
+}
+
 export async function loadSavedLifecycleOverlayByJobKey(options = {}) {
   const {
-    fetchJsonFromCandidatesFn = async () => null,
+    fetchJsonFromCandidatesFn = fetchJsonFromCandidates,
     parseUnifiedJobsPayloadFn = payload => {
       if (Array.isArray(payload)) return payload;
       if (payload && typeof payload === "object" && Array.isArray(payload.jobs)) return payload.jobs;
       return [];
     },
     normalizeJobsFn = rows => (Array.isArray(rows) ? rows : []),
-    generateJobKeyForRow = () => ""
+    runtimeRows = []
   } = options;
   const [canonicalPayload, lifecyclePayload] = await Promise.all([
     fetchJsonFromCandidatesFn(SAVED_LIFECYCLE_JOBS_URLS, { timeoutMs: 3000 }),
@@ -68,6 +106,15 @@ export async function loadSavedLifecycleOverlayByJobKey(options = {}) {
   return buildSavedLifecycleOverlayByJobKey({
     canonicalRows,
     lifecycleRows,
-    generateJobKeyForRow
+    runtimeRows
   });
+}
+
+export function lifecycleOverlayForSavedJob(overlay, job) {
+  if (!(overlay instanceof Map)) return null;
+  const availabilityId = String(job?.availabilityId || "").trim().toLowerCase();
+  const jobKey = String(job?.jobKey || "").trim().toLowerCase();
+  return (availabilityId && overlay.get(`availability:${availabilityId}`))
+    || (jobKey && overlay.get(`job:${jobKey}`))
+    || null;
 }

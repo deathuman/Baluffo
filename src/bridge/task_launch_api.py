@@ -71,6 +71,7 @@ from src.bridge.task_launch_fetcher_args import (
 )
 from src.bridge.task_launch_jobs_feed import (
     JobsFeedContext,
+    jobs_feed_reconciliation_transaction,
 )
 from src.bridge.task_launch_jobs_feed import (
     mirror_jobs_feed_rows as _mirror_jobs_feed_rows,
@@ -85,7 +86,6 @@ from src.jobs.common import config as jobs_common_config
 from src.jobs.state_lifecycle import read_job_lifecycle_state, write_job_lifecycle_state
 from src.jobs.state_source_records import read_source_state, write_source_state
 from src.pipeline_io import (
-    serialize_rows_for_csv,
     serialize_rows_for_json,
     write_atomic_if_changed,
 )
@@ -107,14 +107,12 @@ BOOTSTRAP_REQUIRED_ARTIFACTS = (
     "jobs-unified.json",
     "jobs-unified-light.json",
     "jobs-unified-startup.json",
-    "jobs-unified.csv",
     "jobs-fetch-report.json",
 )
 BOOTSTRAP_PROMOTED_ARTIFACTS = (
     "jobs-unified.json",
     "jobs-unified-light.json",
     "jobs-unified-startup.json",
-    "jobs-unified.csv",
 )
 BOOTSTRAP_TRANSACTION_ARTIFACTS = BOOTSTRAP_PROMOTED_ARTIFACTS + (
     "jobs-source-state.json",
@@ -388,11 +386,6 @@ class TaskLaunchApi:
         from src.bridge.task_launch_jobs_feed import _jobs_feed_light_path
 
         return _jobs_feed_light_path(self._paths.jobs_fetch_report)
-
-    def _jobs_feed_csv_path(self) -> Path:
-        from src.bridge.task_launch_jobs_feed import _jobs_feed_csv_path
-
-        return _jobs_feed_csv_path(self._paths.jobs_fetch_report)
 
     def _read_jobs_feed_rows(self) -> list[dict[str, Any]] | None:
         from src.bridge.task_launch_jobs_feed import _read_jobs_feed_rows
@@ -930,10 +923,6 @@ class TaskLaunchApi:
         write_atomic_if_changed(
             staging_dir / "jobs-unified-startup.json",
             serialize_rows_for_json(rows, jobs_common_config.LIGHTWEIGHT_OUTPUT_FIELDS),
-        )
-        write_atomic_if_changed(
-            staging_dir / "jobs-unified.csv",
-            serialize_rows_for_csv(rows, jobs_common_config.OUTPUT_FIELDS),
         )
         report = self._packaged_smoke_bootstrap_report(
             run_id=run_id,
@@ -1846,37 +1835,38 @@ class TaskLaunchApi:
                 fail_lifecycle_run=fail_lifecycle_run,
             )
             return True
-        snapshot = self._snapshot_bootstrap_transaction_targets()
-        storage_snapshot: dict[str, Any] = {}
-        try:
-            storage_snapshot = self._snapshot_bootstrap_storage_state(staged_report)
-            promoted_report = self._promote_bootstrap_output(
-                staging_dir=staging_dir,
-                report=staged_report,
-                normalize_fetch_report_contract=normalize_fetch_report_contract,
-                save_json_atomic=save_json_atomic,
-                rollback_snapshot=snapshot,
-            )
-            self._mirror_bootstrap_runtime_state(promoted_report)
-            finish_lifecycle_run(
-                run_id,
-                "fetch",
-                finished_at=str(promoted_report.get("finishedAt") or self._deps.now_iso()),
-                terminal_reason="completed",
-                summary=dict(promoted_report.get("summary") or {}),
-            )
-        except (RuntimeError, OSError, sqlite3.Error, ValueError, TypeError) as exc:
-            self._restore_bootstrap_storage_state(storage_snapshot)
-            self._restore_bootstrap_transaction_targets(snapshot)
-            self._write_bootstrap_failure(
-                run_id=run_id,
-                error=f"bootstrap promotion failed: {exc}",
-                report_shell=report_shell,
-                normalize_fetch_report_contract=normalize_fetch_report_contract,
-                save_json_atomic=save_json_atomic,
-                fail_lifecycle_run=fail_lifecycle_run,
-            )
-            return True
+        with jobs_feed_reconciliation_transaction(self._runtime.data_dir):
+            snapshot = self._snapshot_bootstrap_transaction_targets()
+            storage_snapshot: dict[str, Any] = {}
+            try:
+                storage_snapshot = self._snapshot_bootstrap_storage_state(staged_report)
+                promoted_report = self._promote_bootstrap_output(
+                    staging_dir=staging_dir,
+                    report=staged_report,
+                    normalize_fetch_report_contract=normalize_fetch_report_contract,
+                    save_json_atomic=save_json_atomic,
+                    rollback_snapshot=snapshot,
+                )
+                self._mirror_bootstrap_runtime_state(promoted_report)
+                finish_lifecycle_run(
+                    run_id,
+                    "fetch",
+                    finished_at=str(promoted_report.get("finishedAt") or self._deps.now_iso()),
+                    terminal_reason="completed",
+                    summary=dict(promoted_report.get("summary") or {}),
+                )
+            except (RuntimeError, OSError, sqlite3.Error, ValueError, TypeError) as exc:
+                self._restore_bootstrap_storage_state(storage_snapshot)
+                self._restore_bootstrap_transaction_targets(snapshot)
+                self._write_bootstrap_failure(
+                    run_id=run_id,
+                    error=f"bootstrap promotion failed: {exc}",
+                    report_shell=report_shell,
+                    normalize_fetch_report_contract=normalize_fetch_report_contract,
+                    save_json_atomic=save_json_atomic,
+                    fail_lifecycle_run=fail_lifecycle_run,
+                )
+                return True
         shutil.rmtree(staging_dir, ignore_errors=True)
         return True
 

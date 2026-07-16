@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import sys
 from collections import Counter
@@ -25,8 +24,9 @@ DEFAULT_SUSPICIOUS_TITLES = ("Account-management", "Administartive")
 
 
 def _read_rows(path: Path) -> list[dict[str, str]]:
-    with path.open("r", encoding="utf-8-sig", newline="") as handle:
-        return list(csv.DictReader(handle))
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    rows = payload.get("jobs") if isinstance(payload, dict) else payload
+    return [dict(row) for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
 
 
 def _canonical_drop_reasons(path: Path | None) -> Counter[str]:
@@ -89,12 +89,12 @@ def _print_repair_rows(title: str, rows: list[tuple[dict[str, str], str]], limit
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Summarize sanitizer-sensitive rows in jobs-unified.csv."
+        description="Summarize sanitizer-sensitive rows in private jobs-unified.json."
     )
     parser.add_argument(
-        "--input-csv",
-        default="_out/latest/build/portable/ship/data/jobs-unified.csv",
-        help="Path to jobs-unified.csv.",
+        "--input-json",
+        default="_out/latest/build/portable/ship/data/jobs-unified.json",
+        help="Path to the private jobs-unified.json pipeline artifact.",
     )
     parser.add_argument(
         "--report-json",
@@ -113,11 +113,11 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    input_csv = Path(args.input_csv)
+    input_json = Path(args.input_json)
     report_json = Path(args.report_json) if args.report_json else None
     suspicious_titles = tuple(args.suspicious_titles or DEFAULT_SUSPICIOUS_TITLES)
 
-    rows = _read_rows(input_csv)
+    rows = _read_rows(input_json)
     suspicious = [row for row in rows if row.get("title") in suspicious_titles]
     google_rows = [row for row in rows if (row.get("source") or "").startswith("google_sheets")]
     category_style = [row for row in google_rows if _category_style_title(row.get("title") or "")]
@@ -139,7 +139,7 @@ def main() -> int:
         if _google_sheets_provider_title_target(row.get("jobLink") or "") is not None
     ]
 
-    print(f"input_csv: {input_csv}")
+    print(f"input_json: {input_json}")
     print(f"total_rows: {len(rows)}")
     print(f"google_sheets_rows: {len(google_rows)}")
     print(f"google_sheets_category_style_titles: {len(category_style)}")

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import csv
 import json
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
@@ -99,10 +98,10 @@ def build_unknown_country_bucket_manifest(
     return manifest
 
 
-def load_rows_from_csv(path: Path) -> list[dict[str, str]]:
-    csv.field_size_limit(10_000_000)
-    with path.open("r", encoding="utf-8-sig", newline="") as handle:
-        return list(csv.DictReader(handle))
+def load_rows_from_json(path: Path) -> list[dict[str, Any]]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    rows = payload.get("jobs") if isinstance(payload, dict) else payload
+    return [dict(row) for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
 
 
 def load_manifest(path: Path) -> list[dict[str, Any]]:
@@ -112,7 +111,7 @@ def load_manifest(path: Path) -> list[dict[str, Any]]:
     return [item for item in payload if isinstance(item, dict)]
 
 
-def check_manifest_against_csv(
+def check_manifest_against_rows(
     manifest: Iterable[Mapping[str, Any]],
     rows: Iterable[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:

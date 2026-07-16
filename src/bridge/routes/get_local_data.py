@@ -41,6 +41,10 @@ class _DesktopLocalDataStore(Protocol):
 
     def get_saved_job_keys(self, uid: str) -> list[str]: ...
 
+    def get_availability_attention(self, uid: str) -> dict[str, Any]: ...
+
+    def get_availability_overlay(self, uid: str) -> dict[str, Any]: ...
+
     def list_activity_for_user(self, uid: str, limit: int) -> list[dict[str, Any]]: ...
 
     def list_attachments_for_job(self, uid: str, job_key: str) -> list[dict[str, Any]]: ...
@@ -235,6 +239,37 @@ def _handle_activity_route(
     return True
 
 
+def _handle_availability_attention_route(
+    handler: BridgeResponseWriter,
+    *,
+    api: _LocalDataGetRouteApi,
+    query: dict[str, list[str]],
+) -> bool:
+    def _payload() -> dict[str, Any]:
+        uid = (query.get("uid") or [""])[0]
+        return {
+            "ok": True,
+            **api.desktop_local_data_store().get_availability_attention(uid),
+        }
+
+    send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
+    return True
+
+
+def _handle_availability_overlay_route(
+    handler: BridgeResponseWriter,
+    *,
+    api: _LocalDataGetRouteApi,
+    query: dict[str, list[str]],
+) -> bool:
+    def _payload() -> dict[str, Any]:
+        uid = (query.get("uid") or [""])[0]
+        return {"ok": True, **api.desktop_local_data_store().get_availability_overlay(uid)}
+
+    send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
+    return True
+
+
 def _handle_startup_metrics_route(
     handler: BridgeResponseWriter,
     *,
@@ -253,7 +288,7 @@ def _handle_startup_metrics_route(
     return True
 
 
-def handle_local_data_get_routes(
+def _handle_profile_get_routes(
     handler: BridgeResponseWriter,
     *,
     api: _LocalDataGetRouteApi,
@@ -262,29 +297,46 @@ def handle_local_data_get_routes(
 ) -> bool:
     if path == "/desktop-local-data/session":
         return _handle_session_route(handler, api=api)
-
     if path == "/desktop-local-data/profiles":
         return _handle_profiles_route(handler, api=api)
-
     if path == "/desktop-local-data/saved-jobs":
         return _handle_saved_jobs_route(handler, api=api, query=query)
-
     if path == "/desktop-local-data/saved-job-keys":
         return _handle_saved_job_keys_route(handler, api=api, query=query)
+    if path == "/desktop-local-data/availability-attention":
+        return _handle_availability_attention_route(handler, api=api, query=query)
+    if path == "/desktop-local-data/availability-overlay":
+        return _handle_availability_overlay_route(handler, api=api, query=query)
+    return False
 
+
+def _handle_profile_file_get_routes(
+    handler: BridgeResponseWriter,
+    *,
+    api: _LocalDataGetRouteApi,
+    path: str,
+    query: dict[str, list[str]],
+) -> bool:
     if path == "/desktop-local-data/attachments":
         return _handle_attachments_route(handler, api=api, query=query)
-
     if path == "/desktop-local-data/attachments/content":
         return _handle_attachment_content_route(handler, api=api, query=query)
-
     if path == "/desktop-local-data/backup/export-file":
         return _handle_backup_export_file_route(handler, api=api, query=query)
-
     if path == "/desktop-local-data/activity":
         return _handle_activity_route(handler, api=api, query=query)
-
     if path == "/desktop-local-data/startup-metrics":
         return _handle_startup_metrics_route(handler, api=api, query=query)
-
     return False
+
+
+def handle_local_data_get_routes(
+    handler: BridgeResponseWriter,
+    *,
+    api: _LocalDataGetRouteApi,
+    path: str,
+    query: dict[str, list[str]],
+) -> bool:
+    if _handle_profile_get_routes(handler, api=api, path=path, query=query):
+        return True
+    return _handle_profile_file_get_routes(handler, api=api, path=path, query=query)

@@ -243,6 +243,9 @@ _get_discovery_service = _bind_admin_root(admin_entrypoint_services_mod.get_disc
 _get_task_launch_api = _bind_admin_root(admin_entrypoint_services_mod.get_task_launch_api)
 _get_ops_api = _bind_admin_root(admin_entrypoint_services_mod.get_ops_api)
 _get_pipeline_service = _bind_admin_root(admin_entrypoint_services_mod.get_pipeline_service)
+_get_job_availability_service = _bind_admin_root(
+    admin_entrypoint_services_mod.get_job_availability_service
+)
 _get_desktop_update_service = _bind_admin_root(
     admin_entrypoint_services_mod.get_desktop_update_service
 )

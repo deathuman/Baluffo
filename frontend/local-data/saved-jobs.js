@@ -79,7 +79,15 @@ export function createSavedJobsDomain(deps) {
       contentUpdatedAt: tracking.contentUpdatedAt,
       trackingUpdatedAt: tracking.trackingUpdatedAt,
       notesUpdatedAt: tracking.notesUpdatedAt,
-      lastActivityAt: tracking.lastActivityAt
+      lastActivityAt: tracking.lastActivityAt,
+      availabilityId: String(source.availabilityId ?? base.availabilityId ?? "").trim(),
+      availabilityAttention: toPlainObject(
+        source.availabilityAttention ?? base.availabilityAttention
+      ),
+      systemActivityAt: normalizeIsoOrNow(
+        source.systemActivityAt ?? base.systemActivityAt,
+        ""
+      )
     };
   }
 

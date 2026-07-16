@@ -5,7 +5,6 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
 from unittest import mock
 from urllib.error import HTTPError
 from urllib.request import urlopen
@@ -37,9 +36,9 @@ def test_quarantine_stale_jobs_row_artifacts_without_successful_report() -> None
 
         assert not (data_dir / "jobs-unified.json").exists()
         assert not (data_dir / "jobs-unified-light.json").exists()
-        assert not (data_dir / "jobs-unified.csv").exists()
+        assert (data_dir / "jobs-unified.csv").exists()
         assert not (data_dir / "jobs-unified-startup.json").exists()
-        assert len(result["quarantined"]) == 4
+        assert len(result["quarantined"]) == 3
         assert list((data_dir / "backups").glob("stripped-packaged-jobs-*"))
         assert list((data_dir / "migration-reports").glob("stripped-packaged-jobs-cleanup-*.json"))
 
@@ -98,10 +97,10 @@ def test_quarantine_treats_top_level_error_report_as_unsuccessful() -> None:
         result = rl.quarantine_stale_jobs_row_artifacts(data_dir)
 
         assert "skipped" not in result
-        assert len(result["quarantined"]) == 3
+        assert len(result["quarantined"]) == 2
         assert not (data_dir / "jobs-unified.json").exists()
         assert not (data_dir / "jobs-unified-light.json").exists()
-        assert not (data_dir / "jobs-unified.csv").exists()
+        assert (data_dir / "jobs-unified.csv").exists()
 
 
 @pytest.mark.parametrize(
@@ -131,8 +130,8 @@ def test_quarantine_stale_jobs_row_artifacts_keeps_running_when_one_move_fails(
             result = rl.quarantine_stale_jobs_row_artifacts(data_dir)
 
         assert (data_dir / "jobs-unified.json").exists()
-        assert not (data_dir / "jobs-unified.csv").exists()
-        assert len(result["quarantined"]) == 1
+        assert (data_dir / "jobs-unified.csv").exists()
+        assert result["quarantined"] == []
         assert result["failed"][0]["path"].endswith("jobs-unified.json")
         assert error_message in result["failed"][0]["error"]
         reports = list(
@@ -142,24 +141,15 @@ def test_quarantine_stale_jobs_row_artifacts_keeps_running_when_one_move_fails(
         assert report_payload["failed"][0]["path"].endswith("jobs-unified.json")
 
 
-def test_quarantine_stale_jobs_row_artifacts_returns_report_write_error() -> None:
+def test_quarantine_stale_jobs_row_artifacts_ignores_retired_csv() -> None:
     with workspace_tmpdir("runtime-launcher-quarantine-report-error") as tmp:
         data_dir = Path(tmp) / "data"
         _write(data_dir / "jobs-fetch-report.json", json.dumps({"summary": {"outputCount": 0}}))
         _write(data_dir / "jobs-unified.csv", "id,title\n")
-        original_write_text = Path.write_text
+        result = rl.quarantine_stale_jobs_row_artifacts(data_dir)
 
-        def write_text_with_report_error(path: Path, text: str, *args: Any, **kwargs: Any) -> int:
-            if path.name.startswith("stripped-packaged-jobs-cleanup-"):
-                raise OSError("report locked")
-            return int(original_write_text(path, text, *args, **kwargs))
-
-        with mock.patch.object(Path, "write_text", write_text_with_report_error):
-            result = rl.quarantine_stale_jobs_row_artifacts(data_dir)
-
-        assert not (data_dir / "jobs-unified.csv").exists()
-        assert result["quarantined"][0].endswith("jobs-unified.csv")
-        assert "report locked" in result["reportError"]
+        assert (data_dir / "jobs-unified.csv").exists()
+        assert result == {"quarantined": [], "failed": [], "skipped": "no_artifacts"}
 
 
 def test_append_startup_trace_writes_versioned_fields_row() -> None:
@@ -511,12 +501,20 @@ def test_build_site_request_handler_blocks_row_artifacts_during_jobs_cold_start(
         assert exc_info.value.code == 404
 
 
-def test_build_site_request_handler_serves_row_artifacts_for_returning_user() -> None:
+def test_build_site_request_handler_serves_only_supported_projection_for_returning_user() -> None:
     with workspace_tmpdir("runtime-launcher-returning-row-artifact") as tmp:
         root = Path(tmp) / "site"
         root.mkdir(parents=True, exist_ok=True)
         data_dir = Path(tmp) / "data"
-        _write(data_dir / "jobs-unified.json", '[{"id":"job-1"}]\n')
+        private_paths = (
+            "jobs-unified.json jobs-unified.csv jobs-availability-tombstones.json "
+            "jobs-availability-direct-checkpoints.json jobs-availability-priority.json "
+            "jobs-availability-sweep-plan.json jobs-availability-shadow-results.json "
+            "local-user-data/profiles.json"
+        ).split()
+        for private_path in private_paths:
+            _write(data_dir / private_path, "{}\n")
+        _write(data_dir / "jobs-unified-light.json", '[{"id":"job-1"}]\n')
 
         handler = rl.build_site_request_handler(
             root,
@@ -530,10 +528,17 @@ def test_build_site_request_handler_serves_row_artifacts_for_returning_user() ->
         thread.start()
         try:
             with urlopen(
-                f"http://127.0.0.1:{server.server_address[1]}/data/jobs-unified.json?t=1",
+                f"http://127.0.0.1:{server.server_address[1]}/data/jobs-unified-light.json?t=1",
                 timeout=2.0,
             ) as response:
                 payload = response.read().decode("utf-8")
+            for private_path in private_paths:
+                with pytest.raises(HTTPError) as exc_info:
+                    urlopen(
+                        f"http://127.0.0.1:{server.server_address[1]}/data/{private_path}?t=1",
+                        timeout=2.0,
+                    )
+                assert exc_info.value.code == 404
         finally:
             server.shutdown()
             server.server_close()

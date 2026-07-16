@@ -72,6 +72,12 @@ def test_container_handler_serves_static_data_and_runtime_config(tmp_path: Path)
     (root / "styles" / "jobs.css").write_text("body { color: black; }\n", encoding="utf-8")
     (root / "frontend-runtime-config.js").write_text("stale desktop config\n", encoding="utf-8")
     (data_dir / "jobs-fetch-report.json").write_text('{"from":"runtime"}\n', encoding="utf-8")
+    (data_dir / "jobs-availability-history.json").write_text(
+        '{"schemaVersion":1,"rows":[{"availabilityId":"history-1"}]}\n',
+        encoding="utf-8",
+    )
+    (data_dir / "jobs-unified.json").write_text('[{"private":true}]\n', encoding="utf-8")
+    (data_dir / "jobs-unified.csv").write_text("id,title\nprivate,Private\n", encoding="utf-8")
     (data_dir / "source-registry-active.json").write_text('{"active":true}\n', encoding="utf-8")
     (data_dir / "local-user-data").mkdir()
     (data_dir / "local-user-data" / "profiles.json").write_text(
@@ -84,6 +90,7 @@ def test_container_handler_serves_static_data_and_runtime_config(tmp_path: Path)
         css_response, _css_body = _read_url(base_url, "/styles/jobs.css")
         config_response, config_body = _read_url(base_url, "/frontend-runtime-config.js?v=1")
         data_response, data_body = _read_url(base_url, "/data/jobs-fetch-report.json")
+        history_response, history_body = _read_url(base_url, "/data/jobs-availability-history.json")
         root_data_response, root_data_body = _read_url(base_url, "/source-registry-active.json")
 
     assert b"<html>jobs</html>" in html_body
@@ -104,6 +111,9 @@ def test_container_handler_serves_static_data_and_runtime_config(tmp_path: Path)
     assert json.loads(data_body.decode("utf-8")) == {"from": "runtime"}
     assert data_response.headers["Cache-Control"].startswith("no-store")
     _assert_no_cors(data_response)
+    assert json.loads(history_body.decode("utf-8"))["rows"][0]["availabilityId"] == "history-1"
+    assert history_response.headers["Cache-Control"].startswith("no-store")
+    _assert_no_cors(history_response)
     assert json.loads(root_data_body.decode("utf-8")) == {"active": True}
     assert root_data_response.headers["Cache-Control"].startswith("no-store")
     _assert_no_cors(root_data_response)
@@ -116,6 +126,11 @@ def test_container_handler_serves_static_data_and_runtime_config(tmp_path: Path)
         else:  # pragma: no cover
             raise AssertionError("expected local user data to stay off static serving")
     assert private_response.code == 404
+    for retired_path in ("/data/jobs-unified.json", "/data/jobs-unified.csv"):
+        with _served(_make_container_handler(root, data_dir)) as base_url:
+            with pytest.raises(HTTPError) as exc_info:
+                _read_url(base_url, retired_path)
+        assert exc_info.value.code == 404
 
 
 def test_container_handler_backfills_missing_startup_feed_from_light_feed(

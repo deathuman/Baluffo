@@ -2,6 +2,7 @@ import { emitStartupMetric, markFirstInteractive } from "../../../shared/app-boo
 import { fetchJson } from "../../../shared/api-client.js";
 import { createAdminBridgeButtonWatcher } from "../../../shared/admin-bridge-button.js?v=2";
 import { awaitDesktopBootstrap, navigateDesktopPage } from "../../../shared/local-data/desktop-client.js";
+import { availabilityCheckResultLabel, runJobAvailabilityCheck } from "../../../shared/job-availability-check.js";
 import { createPerfMarks } from "../../../shared/perf-marks.js";
 import { set as stateHubSet } from "../../../shared/state-hub.js";
 import { bindAsyncClick, bindUi, showToast } from "../../../shared/ui/index.js";
@@ -13,6 +14,37 @@ import { bindSavedJobsListDelegation, bindSavedPageEvents } from "./events.js";
 
 export function createSavedBoot(deps) {
   const savedPerfMarks = createPerfMarks(deps.startupMetrics);
+
+  function renderAvailabilityAttention(summary = {}) {
+    const count = Math.max(0, Number(summary.count || 0));
+    deps.viewState.availabilityAttentionSummary = {
+      count,
+      events: Array.isArray(summary.events) ? summary.events : []
+    };
+    deps.dom.availabilityAttentionBannerEl?.classList.toggle("hidden", count === 0);
+    if (deps.dom.availabilityAttentionCountEl) {
+      deps.dom.availabilityAttentionCountEl.textContent = count === 1
+        ? "1 availability update needs attention."
+        : `${count} availability updates need attention.`;
+    }
+    const filterButton = Array.from(deps.dom.savedCustomFilterBtnEls || []).find(
+      button => button.dataset.savedFilter === "availability_attention"
+    );
+    if (filterButton) {
+      filterButton.textContent = count ? `Availability attention (${count})` : "Availability attention";
+    }
+  }
+
+  async function refreshAvailabilityAttention() {
+    const uid = deps.viewState.currentUser?.uid || "";
+    if (!uid) {
+      renderAvailabilityAttention({ count: 0, events: [] });
+      return { ok: true, data: { count: 0, events: [] } };
+    }
+    const result = await deps.savedPageService.getAvailabilityAttention(uid);
+    renderAvailabilityAttention(result.data || { count: 0, events: [] });
+    return result;
+  }
 
   function emitSavedStartupMetric(event, payload = {}) {
     emitStartupMetric(deps.startupMetrics, event, payload);
@@ -57,6 +89,7 @@ export function createSavedBoot(deps) {
             .map(job => [String(job?.jobKey || "").trim(), job])
             .filter(([jobKey]) => Boolean(jobKey))
         );
+        refreshAvailabilityAttention().catch(() => {});
         if (shouldDeferSavedJobsRerender({
           isEditingNotes,
           inFlightCount: deps.noteSaveState.inFlight.size,
@@ -153,7 +186,53 @@ export function createSavedBoot(deps) {
       renderSavedJobs: deps.renderSavedJobs,
       queueNotesSave: deps.queueNotesSave,
       flushNotesSave: deps.flushNotesSave,
-      uploadAttachments: deps.uploadAttachments
+      uploadAttachments: deps.uploadAttachments,
+      checkAvailability: async availabilityId => {
+        if (!deps.canManageAvailability?.()) return;
+        const result = await runJobAvailabilityCheck(
+          deps.savedPageService,
+          availabilityId,
+          { onProgress: () => showToast("Checking availability…", "info") }
+        );
+        showToast(
+          result.ok ? availabilityCheckResultLabel(result.data) : result.error,
+          result.ok && result.data?.status !== "failed" ? "success" : "error"
+        );
+        if (result.ok) {
+          const overlay = await deps.loadSavedLifecycleOverlay();
+          deps.viewState.savedLifecycleOverlayByJobKey = overlay instanceof Map
+            ? overlay
+            : new Map();
+          deps.renderSavedJobs(Array.from(deps.viewState.lastSavedJobsByKey.values()));
+        }
+      },
+      reportUnavailable: async (jobKey, action = "report") => {
+        if (!deps.canManageAvailability?.()) return;
+        if (!deps.viewState.currentUser) return;
+        const result = await deps.savedPageService.manageAvailabilityReport(
+          deps.viewState.currentUser.uid, jobKey, action
+        );
+        const queued = Boolean(result.data?.queuedForCheck);
+        const successMessage = action === "clear"
+          ? "Unavailable report cleared."
+          : queued
+            ? "Hidden for this profile; verification queued."
+            : "Hidden for this profile. You can clear the report from Availability attention.";
+        showToast(result.ok ? successMessage : result.error, result.ok ? "info" : "error");
+        if (result.ok) await refreshAvailabilityAttention();
+      },
+      acknowledgeAvailability: async jobKey => {
+        if (!deps.viewState.currentUser) return;
+        const job = deps.viewState.lastSavedJobsByKey.get(jobKey);
+        const events = Array.isArray(job?.availabilityAttention?.events) ? job.availabilityAttention.events : [];
+        const unread = events.find(event => event?.alert && !event?.acknowledgedAt);
+        if (!unread) return;
+        const result = await deps.savedPageService.acknowledgeAvailabilityAttention(
+          deps.viewState.currentUser.uid, { transitionId: unread.transitionId }
+        );
+        showToast(result.ok ? "Availability update acknowledged." : result.error, result.ok ? "info" : "error");
+        if (result.ok) await refreshAvailabilityAttention();
+      }
     });
     bindSavedPageEvents({
       dom: deps.dom,
@@ -182,7 +261,24 @@ export function createSavedBoot(deps) {
       exportBackup,
       importBackup,
       setTimelineScope: deps.setTimelineScope,
-      renderTimeline: deps.renderTimeline
+      renderTimeline: deps.renderTimeline,
+      showAvailabilityAttention: () => {
+        deps.setSavedFilter("availability_attention");
+        deps.renderSavedJobs(Array.from(deps.viewState.lastSavedJobsByKey.values()));
+      },
+      acknowledgeAllAvailability: async () => {
+        const uid = deps.viewState.currentUser?.uid || "";
+        if (!uid) return;
+        const result = await deps.savedPageService.acknowledgeAvailabilityAttention(
+          uid,
+          { allCurrent: true }
+        );
+        showToast(
+          result.ok ? "All current availability updates acknowledged." : result.error,
+          result.ok ? "success" : "error"
+        );
+        if (result.ok) await refreshAvailabilityAttention();
+      }
     });
     deps.savedAuthController.initSavedJobsPage();
     markSavedStep("saved_boot_end");
@@ -198,6 +294,7 @@ export function createSavedBoot(deps) {
     markSavedFirstInteractive,
     subscribeToSavedJobs,
     exportBackup,
-    importBackup
+    importBackup,
+    refreshAvailabilityAttention
   };
 }

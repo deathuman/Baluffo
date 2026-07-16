@@ -133,6 +133,8 @@ def configure_runtime_paths(config: Any, *, root_mod: Any) -> None:
         root_mod.BRIDGE_SERVICES.reset_discovery_service()
     with root_mod.BRIDGE_SERVICES.pipeline_service_lock:
         root_mod.BRIDGE_SERVICES.reset_pipeline_service()
+    with root_mod.BRIDGE_SERVICES.availability_service_lock:
+        root_mod.BRIDGE_SERVICES.reset_availability_service()
     with root_mod.BRIDGE_SERVICES.desktop_update_service_lock:
         root_mod.BRIDGE_SERVICES.reset_desktop_update_service()
 

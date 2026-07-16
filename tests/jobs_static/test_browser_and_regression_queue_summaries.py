@@ -103,7 +103,6 @@ def test_build_pipeline_summary_embeds_blank_residue_breakdown_without_affecting
         0,
         0,
         json_bytes=123,
-        csv_bytes=456,
         light_json_bytes=78,
         lifecycle_counts_map={"active": 0, "likelyRemoved": 0, "archived": 0, "totalTracked": 0},
     )
@@ -181,7 +180,6 @@ def test_build_pipeline_summary_embeds_needs_review_breakdown_without_affecting_
         0,
         0,
         json_bytes=123,
-        csv_bytes=456,
         light_json_bytes=78,
         lifecycle_counts_map={"active": 0, "likelyRemoved": 0, "archived": 0, "totalTracked": 0},
     )
@@ -251,7 +249,6 @@ def test_build_pipeline_summary_embeds_unknown_static_breakdown_without_affectin
         0,
         0,
         json_bytes=123,
-        csv_bytes=456,
         light_json_bytes=78,
         lifecycle_counts_map={"active": 0, "likelyRemoved": 0, "archived": 0, "totalTracked": 0},
     )

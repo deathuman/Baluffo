@@ -30,6 +30,7 @@ function renderJobRow(job, {
   seenJobKeys,
   savedJobKeys,
   isJobsApiReady,
+  canManageAvailability,
   getJobKeyForJob,
   fullCountryName,
   renderJobRowHtml
@@ -44,6 +45,7 @@ function renderJobRow(job, {
     isSeen,
     isNew: Boolean(currentUser && !isSeen),
     isJobsApiReady,
+    canManageAvailability,
     toContractClass,
     capitalizeFirst
   });
@@ -115,6 +117,7 @@ export function displayJobs(jobs, {
   seenJobKeys,
   savedJobKeys,
   isJobsApiReady,
+  canManageAvailability,
   getJobKeyForJob,
   fullCountryName,
   goToPage,
@@ -180,6 +183,7 @@ export function displayJobs(jobs, {
         seenJobKeys,
         savedJobKeys,
         isJobsApiReady,
+        canManageAvailability,
         getJobKeyForJob,
         fullCountryName,
         renderJobRowHtml

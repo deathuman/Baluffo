@@ -103,6 +103,12 @@ OPTIONAL_FIELDS = [
     "removedAt",
     "lifecycleEvent",
     "lifecycleReason",
+    "availabilityId",
+    "availabilityStatus",
+    "availabilityCheckedAt",
+    "availabilityVerifiedAt",
+    "availabilityUnavailableAt",
+    "availabilityEvidence",
     "dedupKey",
     "qualityScore",
     "focusScore",
@@ -133,6 +139,12 @@ LIGHTWEIGHT_OUTPUT_FIELDS = [
     "removedAt",
     "lifecycleEvent",
     "lifecycleReason",
+    "availabilityId",
+    "availabilityStatus",
+    "availabilityCheckedAt",
+    "availabilityVerifiedAt",
+    "availabilityUnavailableAt",
+    "availabilityEvidence",
     "qualityScore",
     "focusScore",
     "sourceBundleCount",
@@ -141,7 +153,6 @@ LIGHTWEIGHT_OUTPUT_FIELDS = [
 OUTPUT_SIZE_GUARDRAIL_LIMITS = {
     "json": 80_000_000,
     "lightJson": 60_000_000,
-    "csv": 50_000_000,
 }
 
 SUPPORTED_REDIRECT_HOSTS = {"gracklehq.com", "www.gracklehq.com"}
@@ -156,6 +167,9 @@ DEFAULT_REDIRECT_HEADERS = {
 
 LIFECYCLE_REMOVE_TO_ARCHIVE_DAYS = 14
 LIFECYCLE_ARCHIVE_RETENTION_DAYS = 120
+AVAILABILITY_OVERDUE_FAILURE_COUNT = 2
+AVAILABILITY_OVERDUE_DAYS = 7
+AVAILABILITY_HISTORY_DAYS = 30
 
 STRICT_GAME_ONLY_ENABLED = os.environ.get("BALUFFO_STRICT_GAME_ONLY", "").strip() in (
     "1",

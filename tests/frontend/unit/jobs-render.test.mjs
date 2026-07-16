@@ -296,3 +296,45 @@ test("jobs render marks unseen rows with New badge and seen rows with class", ()
   assert.match(seenHtml, /class="job-row[^"]*job-row-seen/);
   assert.doesNotMatch(seenHtml, />New<\/span>/);
 });
+
+test("confirmed unavailable rows require the explicit warned original-link action", () => {
+  const html = render({
+    id: "9",
+    title: "Rendering Engineer",
+    company: "Studio",
+    sector: "Game",
+    city: "Rome",
+    country: "Italy",
+    workType: "Remote",
+    contractType: "Full-time",
+    jobLink: "https://example.com/jobs/9",
+    availabilityStatus: "unavailable"
+  });
+
+  assert.match(html, /data-job-link=""/);
+  assert.doesNotMatch(html, /class="job-row[^\"]*job-row-link/);
+  assert.match(html, /data-ui="job-original-link-btn"/);
+  assert.match(html, />Open original link<\/button>/);
+  assert.match(html, /availability-warning/);
+});
+
+test("availability check action is rendered only for bridge-capable runtimes", () => {
+  const job = {
+    id: "availability-runtime",
+    title: "Engine Programmer",
+    company: "Studio",
+    sector: "Game",
+    city: "Rome",
+    country: "Italy",
+    workType: "Remote",
+    contractType: "Full-time",
+    jobLink: "https://example.com/jobs/runtime",
+    availabilityId: "availability_runtime"
+  };
+
+  assert.doesNotMatch(render(job), /data-ui="job-availability-check-btn"/);
+  assert.match(
+    render(job, { canManageAvailability: true }),
+    /data-ui="job-availability-check-btn"/
+  );
+});

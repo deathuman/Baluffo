@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -8,17 +9,7 @@ from scripts.jobs_artifact_quality_gate import analyze_jobs_artifact
 
 
 def _write_csv(path: Path, rows: list[dict[str, str]]) -> None:
-    lines = [
-        "id,title,company,city,country,workType,contractType,jobLink,sector,profession,companyType,description,source,sourceJobId,fetchedAt,postedAt,status,firstSeenAt,lastSeenAt,removedAt,lifecycleEvent,lifecycleReason,dedupKey,qualityScore,focusScore,sourceBundleCount,sourceBundle,locations,locationSummary"
-    ]
-    for row in rows:
-        values = [str(row.get(key, "")) for key in lines[0].split(",")]
-        escaped = [
-            '"' + value.replace('"', '""') + '"' if "," in value or '"' in value else value
-            for value in values
-        ]
-        lines.append(",".join(escaped))
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    path.write_text(json.dumps(rows), encoding="utf-8")
 
 
 @pytest.mark.parametrize(

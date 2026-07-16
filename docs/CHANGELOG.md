@@ -10,6 +10,19 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+### Added
+- Jobs now publish stable availability identities and canonical `available`, `verification_overdue`, and `unavailable` states, with a lazy 30-day history artifact and source-aware health summaries.
+- Saved jobs now receive idempotent availability attention, timeline events, acknowledgement controls, profile-local unavailable reports, and backup schema v4 coverage.
+- Desktop and container bridges expose bounded background availability checks; direct-link classification starts in shadow mode pending the documented seven-day promotion gate.
+- Jobs now expose only light/startup JSON projections publicly; CSV publication is removed and full JSON is retained only as a deprecated private pipeline/rollback handoff.
+- Saved availability badges now refresh through a bounded exact-identity overlay, including private custom monitoring without exposing custom URLs.
+
+### Fixed
+- Previously published seed rows no longer count as observations in later scans or refresh `lastSeenAt`, so trustworthy source absence can retire stale openings without network failures causing false closure.
+
+### Tests
+- Added lifecycle, identity, direct-validator, sweep-planning, bridge-route, local-data, backup, and frontend availability regressions.
+
 ## [0.2.119] - 2026-07-05
 
 ### Fixed

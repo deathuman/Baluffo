@@ -1,3 +1,4 @@
+import json
 import shutil
 import subprocess
 import sys
@@ -40,10 +41,20 @@ def test_dev_pipeline_targeted_npm_entrypoint_starts_without_relative_import_fai
 def test_location_unknown_country_manifest_script_runs_from_repo_root(
     repo_root: Path, tmp_path: Path
 ) -> None:
-    input_csv = tmp_path / "jobs-unified.csv"
-    input_csv.write_text(
-        "title,company,city,country,source,jobLink\n"
-        "Environment Artist,Studio,Hong Kong,Unknown,google_sheets,https://example.com/job\n",
+    input_json = tmp_path / "jobs-unified.json"
+    input_json.write_text(
+        json.dumps(
+            [
+                {
+                    "title": "Environment Artist",
+                    "company": "Studio",
+                    "city": "Hong Kong",
+                    "country": "Unknown",
+                    "source": "google_sheets",
+                    "jobLink": "https://example.com/job",
+                }
+            ]
+        ),
         encoding="utf-8",
     )
     output_json = tmp_path / "manifest.json"
@@ -52,8 +63,8 @@ def test_location_unknown_country_manifest_script_runs_from_repo_root(
             sys.executable,
             "scripts/location_unknown_country_manifest.py",
             "build",
-            "--input-csv",
-            str(input_csv),
+            "--input-json",
+            str(input_json),
             "--output-json",
             str(output_json),
         ],

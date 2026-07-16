@@ -224,8 +224,8 @@ def export_profile_data(
         activity = load_activity_rows(paths, uid)
         source_policy = _export_source_policy_artifacts(paths)
         return {
-            "version": 3,
-            "schemaVersion": 3,
+            "version": 4,
+            "schemaVersion": 4,
             "exportedAt": now_iso(),
             "includesFiles": bool(include_files),
             "counts": {

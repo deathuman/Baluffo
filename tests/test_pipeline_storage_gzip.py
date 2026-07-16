@@ -281,7 +281,9 @@ def test_runtime_launcher_serves_gzip_backed_pipeline_data() -> None:
         (root / "jobs.html").write_text("<html>jobs</html>\n", encoding="utf-8")
         data_dir = Path(tmp) / "data"
         data_dir.mkdir(parents=True, exist_ok=True)
-        with gzip.open(data_dir / "jobs-unified.json.gz", mode="wt", encoding="utf-8") as handle:
+        with gzip.open(
+            data_dir / "jobs-unified-light.json.gz", mode="wt", encoding="utf-8"
+        ) as handle:
             json.dump([{"title": "Compressed Runtime"}], handle)
 
         handler = rl.build_site_request_handler(
@@ -295,7 +297,7 @@ def test_runtime_launcher_serves_gzip_backed_pipeline_data() -> None:
         thread.start()
         try:
             with urlopen(
-                f"http://127.0.0.1:{server.server_address[1]}/data/jobs-unified.json",
+                f"http://127.0.0.1:{server.server_address[1]}/data/jobs-unified-light.json",
                 timeout=2.0,
             ) as response:
                 assert response.headers.get("Content-Encoding") == "gzip"
@@ -329,7 +331,9 @@ def test_runtime_launcher_serves_large_gzip_backed_pipeline_snapshot() -> None:
         (root / "jobs.html").write_text("<html>jobs</html>\n", encoding="utf-8")
         data_dir = Path(tmp) / "data"
         data_dir.mkdir(parents=True, exist_ok=True)
-        with gzip.open(data_dir / "jobs-unified.json.gz", mode="wt", encoding="utf-8") as handle:
+        with gzip.open(
+            data_dir / "jobs-unified-light.json.gz", mode="wt", encoding="utf-8"
+        ) as handle:
             json.dump(fixture_rows, handle)
 
         handler = rl.build_site_request_handler(
@@ -343,7 +347,7 @@ def test_runtime_launcher_serves_large_gzip_backed_pipeline_snapshot() -> None:
         thread.start()
         try:
             with urlopen(
-                f"http://127.0.0.1:{server.server_address[1]}/data/jobs-unified.json",
+                f"http://127.0.0.1:{server.server_address[1]}/data/jobs-unified-light.json",
                 timeout=5.0,
             ) as response:
                 assert response.headers.get("Content-Encoding") == "gzip"

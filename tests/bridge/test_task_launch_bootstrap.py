@@ -80,7 +80,6 @@ def _write_bootstrap_artifacts(staging_dir: Path) -> None:
     write_atomic_if_changed(staging_dir / "jobs-unified.json", json.dumps(rows))
     write_atomic_if_changed(staging_dir / "jobs-unified-light.json", json.dumps(rows))
     write_atomic_if_changed(staging_dir / "jobs-unified-startup.json", json.dumps(rows))
-    write_atomic_if_changed(staging_dir / "jobs-unified.csv", "id,title\njob-1,Tools Programmer\n")
     _save_json_atomic(staging_dir / "jobs-fetch-report.json", _successful_bootstrap_report())
 
 
@@ -359,7 +358,6 @@ def test_jobs_bootstrap_rejects_when_runtime_feed_artifacts_are_loadable() -> No
         _write_successful_runtime_feed_shell(data_dir)
         write_atomic_if_changed(data_dir / "jobs-unified.json", '[{"id":"job-1"}]')
         write_atomic_if_changed(data_dir / "jobs-unified-light.json", '[{"id":"job-1"}]')
-        write_atomic_if_changed(data_dir / "jobs-unified.csv", "id,title\njob-1,Tools Programmer\n")
         called = False
 
         def run_background_script(*_args: Any, **_kwargs: Any) -> int:
@@ -387,7 +385,6 @@ def test_jobs_bootstrap_first_run_force_does_not_bypass_successful_runtime_feed_
         _write_successful_runtime_feed_shell(data_dir)
         write_atomic_if_changed(data_dir / "jobs-unified.json", '[{"id":"job-1"}]')
         write_atomic_if_changed(data_dir / "jobs-unified-light.json", '[{"id":"job-1"}]')
-        write_atomic_if_changed(data_dir / "jobs-unified.csv", "id,title\njob-1,Tools Programmer\n")
         called = False
 
         def run_background_script(*_args: Any, **_kwargs: Any) -> int:
@@ -416,7 +413,6 @@ def test_jobs_bootstrap_internal_force_can_bypass_successful_runtime_feed_guard(
         _write_successful_runtime_feed_shell(data_dir)
         write_atomic_if_changed(data_dir / "jobs-unified.json", '[{"id":"job-1"}]')
         write_atomic_if_changed(data_dir / "jobs-unified-light.json", '[{"id":"job-1"}]')
-        write_atomic_if_changed(data_dir / "jobs-unified.csv", "id,title\njob-1,Tools Programmer\n")
         called = False
 
         def run_background_script(*_args: Any, **_kwargs: Any) -> int:
@@ -480,7 +476,6 @@ def test_jobs_bootstrap_allows_recovery_when_successful_report_has_corrupt_rows(
         _write_successful_runtime_feed_shell(data_dir)
         write_atomic_if_changed(data_dir / "jobs-unified.json", "{")
         write_atomic_if_changed(data_dir / "jobs-unified-light.json", '[{"id":"job-1"}]')
-        write_atomic_if_changed(data_dir / "jobs-unified.csv", "id,title\njob-1,Tools Programmer\n")
         called = False
 
         def run_background_script(*_args: Any, **_kwargs: Any) -> int:
@@ -573,7 +568,6 @@ def test_jobs_bootstrap_restores_existing_feed_when_state_merge_fails() -> None:
         staging_dir.mkdir(parents=True)
         _write_bootstrap_artifacts(staging_dir)
         write_atomic_if_changed(data_dir / "jobs-unified.json", '[{"id":"old-job"}]')
-        write_atomic_if_changed(data_dir / "jobs-unified.csv", "id,title\nold-job,Old Role\n")
         write_source_state(
             data_dir / "jobs-source-state.json",
             {"non_sheet": {"name": "non_sheet", "consecutiveFailures": 2}},
@@ -603,7 +597,6 @@ def test_jobs_bootstrap_restores_existing_feed_when_state_merge_fails() -> None:
 
         assert closed is True
         assert read_json(data_dir / "jobs-unified.json", [])[0]["id"] == "old-job"
-        assert "old-job" in (data_dir / "jobs-unified.csv").read_text(encoding="utf-8")
         assert existing_json_candidate(data_dir / "jobs-unified-light.json") is None
         assert (
             read_source_state(data_dir / "jobs-source-state.json")["non_sheet"][
@@ -624,7 +617,6 @@ def test_jobs_bootstrap_restores_existing_feed_when_report_write_fails() -> None
         staging_dir.mkdir(parents=True)
         _write_bootstrap_artifacts(staging_dir)
         write_atomic_if_changed(data_dir / "jobs-unified.json", '[{"id":"old-job"}]')
-        write_atomic_if_changed(data_dir / "jobs-unified.csv", "id,title\nold-job,Old Role\n")
 
         def fail_promoted_report(path: Path, payload: Any) -> None:
             summary = payload.get("summary") if isinstance(payload, dict) else {}
@@ -648,7 +640,6 @@ def test_jobs_bootstrap_restores_existing_feed_when_report_write_fails() -> None
 
         assert closed is True
         assert read_json(data_dir / "jobs-unified.json", [])[0]["id"] == "old-job"
-        assert "old-job" in (data_dir / "jobs-unified.csv").read_text(encoding="utf-8")
         assert existing_json_candidate(data_dir / "jobs-unified-light.json") is None
         report = read_json(data_dir / "jobs-fetch-report.json", {})
         assert report["summary"]["status"] == "error"
@@ -662,7 +653,6 @@ def test_jobs_bootstrap_restores_existing_feed_when_lifecycle_finish_fails() -> 
         staging_dir.mkdir(parents=True)
         _write_bootstrap_artifacts(staging_dir)
         write_atomic_if_changed(data_dir / "jobs-unified.json", '[{"id":"old-job"}]')
-        write_atomic_if_changed(data_dir / "jobs-unified.csv", "id,title\nold-job,Old Role\n")
         api._mirror_bootstrap_runtime_state = lambda _report: None  # type: ignore[method-assign]  # noqa: SLF001
         failed: list[dict[str, Any]] = []
 
@@ -687,7 +677,6 @@ def test_jobs_bootstrap_restores_existing_feed_when_lifecycle_finish_fails() -> 
 
         assert closed is True
         assert read_json(data_dir / "jobs-unified.json", [])[0]["id"] == "old-job"
-        assert "old-job" in (data_dir / "jobs-unified.csv").read_text(encoding="utf-8")
         assert existing_json_candidate(data_dir / "jobs-unified-light.json") is None
         report = read_json(data_dir / "jobs-fetch-report.json", {})
         assert report["summary"]["status"] == "error"
@@ -734,7 +723,6 @@ def test_jobs_bootstrap_restores_storage_mirror_when_lifecycle_finish_fails() ->
                 generation="previous-generation",
             )
             write_atomic_if_changed(data_dir / "jobs-unified.json", '[{"id":"old-job"}]')
-            write_atomic_if_changed(data_dir / "jobs-unified.csv", "id,title\nold-job,Old Role\n")
             diagnostics: list[dict[str, Any]] = []
             api = _task_launch_api(
                 data_dir,

@@ -158,6 +158,14 @@ export function normalizeJobs(rows, options = {}) {
     job.lifecycleEvent = String(job.lifecycleEvent || "").trim().toLowerCase();
     job.lifecycleReason = String(job.lifecycleReason || "").trim().toLowerCase();
     job.status = String(job.status || "active").trim().toLowerCase() || "active";
+    job.availabilityId = String(job.availabilityId || "").trim();
+    job.availabilityStatus = String(job.availabilityStatus || "available").trim().toLowerCase() || "available";
+    job.availabilityCheckedAt = normalizeTimestamp(job.availabilityCheckedAt);
+    job.availabilityVerifiedAt = normalizeTimestamp(job.availabilityVerifiedAt);
+    job.availabilityUnavailableAt = normalizeTimestamp(job.availabilityUnavailableAt);
+    job.availabilityEvidence = job.availabilityEvidence && typeof job.availabilityEvidence === "object"
+      ? { ...job.availabilityEvidence }
+      : {};
     const freshness = deriveFreshness(job, options);
     job.freshnessAgeDays = freshness.freshnessAgeDays;
     job.freshnessScore = freshness.freshnessScore;

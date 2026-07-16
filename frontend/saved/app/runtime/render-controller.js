@@ -12,6 +12,7 @@ import {
   isCustomJob,
   sortSavedJobViews
 } from "../view-state.js";
+import { lifecycleOverlayForSavedJob } from "./lifecycle-overlay.js";
 
 function captureActiveNotesContext(savedJobsListEl) {
   const active = document.activeElement;
@@ -72,7 +73,8 @@ export function createSavedRenderController({
   formatPhaseTimestamp,
   renderDetailsSummary,
   activityTypeLabel,
-  formatActivityDetail
+  formatActivityDetail,
+  canManageAvailability = () => false
 }) {
   function renderAuthRequired(message) {
     const { savedJobsListEl } = dom;
@@ -232,9 +234,9 @@ export function createSavedRenderController({
 
   function renderSavedJobBlock(viewOrJob) {
     const view = viewOrJob?.job ? viewOrJob : buildSavedJobViewModel(viewOrJob, {
-      lifecycleOverlay: viewState.savedLifecycleOverlayByJobKey.get(
-        String(viewOrJob?.jobKey || "").trim().toLowerCase()
-      ) || null,
+      lifecycleOverlay: lifecycleOverlayForSavedJob(
+        viewState.savedLifecycleOverlayByJobKey, viewOrJob
+      ),
       parseIsoDate,
       currentUser: viewState.currentUser
     });
@@ -264,6 +266,7 @@ export function createSavedRenderController({
         formatActivityDetail
       }),
       lifecycleOverlay,
+      canManageAvailability: Boolean(canManageAvailability()),
       jobView: view,
       renderWebIcon,
       phaseOptions,
@@ -322,9 +325,9 @@ export function createSavedRenderController({
     const renderContext = captureRenderContext();
     const allJobs = Array.isArray(jobs) ? jobs : [];
     const allViews = allJobs.map(job => buildSavedJobViewModel(job, {
-      lifecycleOverlay: viewState.savedLifecycleOverlayByJobKey.get(
-        String(job?.jobKey || "").trim().toLowerCase()
-      ) || null,
+      lifecycleOverlay: lifecycleOverlayForSavedJob(
+        viewState.savedLifecycleOverlayByJobKey, job
+      ),
       parseIsoDate,
       currentUser: viewState.currentUser
     }));

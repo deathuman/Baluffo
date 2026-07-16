@@ -470,8 +470,8 @@ def run_validation(data_dir: Path) -> dict[str, Any]:
     return {
         "generatedAt": now_iso(),
         "ok": overall_ok,
-        "schemaVersion": 3,
-        "backupSchemaVersion": 3,
+        "schemaVersion": 4,
+        "backupSchemaVersion": 4,
         "dataDir": str(data_dir),
         "scenarios": scenarios,
     }
@@ -503,8 +503,8 @@ def main() -> int:
         report = {
             "generatedAt": now_iso(),
             "ok": False,
-            "schemaVersion": 3,
-            "backupSchemaVersion": 3,
+            "schemaVersion": 4,
+            "backupSchemaVersion": 4,
             "dataDir": str(data_dir),
             "error": str(exc),
             "scenarios": [],

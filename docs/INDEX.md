@@ -51,6 +51,7 @@ Load these only when your task touches that subsystem.
 | [`scraping-pipeline.md`](scraping-pipeline.md) | Scraping/browser fallback flow | You are working on adapters, browser queue, Scrapy-Playwright, or extraction flow |
 | [`adapter-plugin-inventory.md`](adapter-plugin-inventory.md) | Source adapter inventory | You are adding/changing a source family, plugin, or loader path |
 | [`LOCAL_SETUP.md`](LOCAL_SETUP.md) | Local runtime/setup | You need browser-local vs desktop-local storage behavior, sign-in semantics, backup/restore, local-data code routing, or the smallest local command set |
+| [`plans/reliable-job-availability-plan.md`](plans/reliable-job-availability-plan.md) | Active rollout | You are reviewing availability lifecycle, Saved alerts, shadow classification, promotion, or reconciliation gates |
 | [`../tools/mcp/INDEX.md`](../tools/mcp/INDEX.md) | MCP tooling index | You need the landing page for repo MCP tooling, including required Serena, required Basic Memory, and the deprecated Playwright fallback |
 | [`WSL_SETUP.md`](WSL_SETUP.md) | WSL development environment | You are running Baluffo from WSL2, need available tooling, or want daily commands for the WSL workflow |
 

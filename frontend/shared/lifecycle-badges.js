@@ -31,6 +31,31 @@ export function getLifecycleBadgeMeta(record, options = {}) {
   const lifecycleEvent = String(record?.lifecycleEvent || "").trim().toLowerCase();
   const lifecycleReason = String(record?.lifecycleReason || "").trim().toLowerCase();
   const status = String(record?.status || "active").trim().toLowerCase() || "active";
+  const availabilityStatus = String(record?.availabilityStatus || "").trim().toLowerCase();
+
+  if (availabilityStatus === "unavailable") {
+    const unavailableDate = formatDateForStatus(record?.availabilityUnavailableAt || record?.removedAt);
+    return {
+      label: "Unavailable",
+      cssClass: "likely-removed",
+      title: appendLastSeenCopy(
+        unavailableDate ? `Confirmed unavailable since ${unavailableDate}` : "Confirmed unavailable",
+        record,
+        options
+      )
+    };
+  }
+  if (availabilityStatus === "verification_overdue") {
+    return {
+      label: "Verification overdue",
+      cssClass: "preserved",
+      title: appendLastSeenCopy(
+        "The listing could not be safely verified; closure has not been inferred",
+        record,
+        options
+      )
+    };
+  }
 
   if (lifecycleEvent === "reappeared") {
     return {

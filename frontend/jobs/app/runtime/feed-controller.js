@@ -33,6 +33,7 @@ export function createJobsFeedController({
   fetchJsonFromCandidatesFromSources,
   renderDataSourcesFromSources,
   jobsFetchReportUrls,
+  availabilityHistoryUrls = [],
   mapProfession,
   normalizeSector,
   classifyCompanyType,
@@ -122,6 +123,27 @@ export function createJobsFeedController({
     const report = await fetchJsonFromCandidates(jobsFetchReportUrls || [], { timeoutMs });
     runtimeState.jobsFetchReport = report && typeof report === "object" ? report : null;
     return runtimeState.jobsFetchReport;
+  }
+
+  async function loadAvailabilityHistory() {
+    if (runtimeState.availabilityHistoryLoaded) return runtimeState.availabilityHistoryRows || [];
+    if (runtimeState.availabilityHistoryPromise) return runtimeState.availabilityHistoryPromise;
+    runtimeState.availabilityHistoryPromise = fetchJsonFromCandidates(
+      availabilityHistoryUrls,
+      { timeoutMs: 2500 }
+    ).then(payload => {
+      const rawRows = Array.isArray(payload) ? payload : Array.isArray(payload?.rows) ? payload.rows : [];
+      const rows = normalizeJobs(rawRows, { professionLabels, sanitizeUrl });
+      const activeIds = new Set(runtimeState.allJobs.map(row => String(row?.availabilityId || "")));
+      runtimeState.availabilityHistoryRows = rows.filter(row => !activeIds.has(String(row?.availabilityId || "")));
+      runtimeState.allJobs = [...runtimeState.allJobs, ...runtimeState.availabilityHistoryRows];
+      runtimeState.availabilityHistoryLoaded = true;
+      filtersController.updateFilterOptions(runtimeState.allJobs);
+      return runtimeState.availabilityHistoryRows;
+    }).finally(() => {
+      runtimeState.availabilityHistoryPromise = null;
+    });
+    return runtimeState.availabilityHistoryPromise;
   }
 
   function getLatestJobsReportFinishedMs() {
@@ -268,6 +290,7 @@ export function createJobsFeedController({
     fetchUnifiedJobs,
     fetchJsonFromCandidates,
     renderDataSources,
+    loadAvailabilityHistory,
     setProgress,
     setSourceStatus
   };

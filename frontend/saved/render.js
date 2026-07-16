@@ -31,6 +31,7 @@ export function renderSavedJobBlockHtml(job, options = {}) {
     renderPhaseBar,
     renderApplicationTrackingControls = renderApplicationTrackingControlsFromModule,
     lifecycleOverlay,
+    canManageAvailability = false,
     jobView,
     currentUser,
     maxAttachmentsPerJob,
@@ -85,6 +86,15 @@ export function renderSavedJobBlockHtml(job, options = {}) {
     ? `<span class="saved-reminder-badge ${escapeHtml(reminderMeta.badgeClass || "scheduled")}"${reminderMeta.label ? tooltipAttrs(reminderMeta.label) : ""}>${escapeHtml(reminderMeta.badgeLabel || "Reminder set")}</span>`
     : "";
   const lifecycleBadge = renderLifecycleBadgeHtml(lifecycleOverlay, { includeLastSeenAt: true });
+  const availabilityEvents = Array.isArray(job?.availabilityAttention?.events)
+    ? job.availabilityAttention.events
+    : [];
+  const unreadAvailability = availabilityEvents.filter(event => event?.alert && !event?.acknowledgedAt);
+  const availabilityAttentionBadge = unreadAvailability.length
+    ? `<button class="saved-availability-attention-btn" data-ui="saved-availability-attention-btn" data-job-key="${jobKey}"${tooltipAttrs("Availability update needs acknowledgement")}>Availability update</button>`
+    : "";
+  const availabilityStatus = String(lifecycleOverlay?.availabilityStatus || "").toLowerCase();
+  const monitored = Boolean(String(job.availabilityId || "").trim()) && hasLink;
 
   return `
     <div class="saved-job-block ${isExpanded ? "expanded" : ""}" data-job-key="${jobKey}" data-ui="saved-job-block" data-selected="${isSelected ? "true" : "false"}">
@@ -100,6 +110,8 @@ export function renderSavedJobBlockHtml(job, options = {}) {
               ${isCustom ? `<span class="saved-custom-badge"${tooltipAttrs("Custom job source")}>${customSource}</span>` : ""}
               ${reminderBadge}
               ${lifecycleBadge}
+              ${availabilityAttentionBadge}
+              ${isCustom && !monitored ? `<span class="saved-custom-badge"${tooltipAttrs("A public application URL is required for monitoring")}>Not monitored</span>` : ""}
               ${missingChips}
             </div>
             ${updateHint}
@@ -127,7 +139,9 @@ export function renderSavedJobBlockHtml(job, options = {}) {
           <span class="job-tag ${safeWorkType.toLowerCase()}">${safeWorkType}</span>
         </div>
         <div class="col-link job-cell" data-label="Link">
-          ${hasLink ? `<a class="saved-open-link-icon" href="${safeLink}" target="_blank" rel="noopener noreferrer" aria-label="Open job link"${tooltipAttrs("Open job link")}>${renderWebIcon()}</a>` : `<span class="saved-no-link ${isCustom ? "saved-no-link-custom" : ""}">${isCustom ? "No link" : "N/A"}</span>`}
+          ${hasLink ? `<a class="saved-open-link-icon ${availabilityStatus === "unavailable" ? "availability-warning" : ""}" href="${safeLink}" target="_blank" rel="noopener noreferrer" aria-label="${availabilityStatus === "unavailable" ? "Open original link with warning" : "Open job link"}"${tooltipAttrs(availabilityStatus === "unavailable" ? "Confirmed unavailable; open the original link anyway" : "Open job link")}>${renderWebIcon()}</a>` : `<span class="saved-no-link ${isCustom ? "saved-no-link-custom" : ""}">${isCustom ? "No link" : "N/A"}</span>`}
+          ${canManageAvailability && monitored ? `<button class="btn back-btn saved-check-availability-btn" data-ui="saved-check-availability-btn" data-availability-id="${escapeHtml(job.availabilityId)}">Check now</button>` : ""}
+          ${canManageAvailability ? `<button class="btn back-btn saved-report-unavailable-btn" data-ui="saved-report-unavailable-btn" data-job-key="${jobKey}" data-action="${job?.availabilityAttention?.hiddenByReport ? "clear" : "report"}">${job?.availabilityAttention?.hiddenByReport ? "Clear unavailable report" : "Report unavailable"}</button>` : ""}
         </div>
       </div>
       ${renderApplicationTrackingControls(trackingJobView, {

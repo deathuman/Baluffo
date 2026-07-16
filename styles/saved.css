@@ -135,6 +135,25 @@
   background: linear-gradient(180deg, var(--surface-5), var(--surface-2));
 }
 
+.saved-availability-attention-banner {
+  display: flex;
+  flex: 1 0 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  padding: 0.58rem 0.68rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 60%, var(--surface-11));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent-soft-bg) 55%, var(--surface-3));
+  color: var(--text-primary);
+}
+
+.saved-availability-attention-actions {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
 .saved-sort-label,
 .saved-group-label {
   font-size: 0.78rem;

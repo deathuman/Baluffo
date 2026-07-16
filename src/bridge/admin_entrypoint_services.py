@@ -16,6 +16,7 @@ from typing import Any, Protocol, cast
 from src.bridge import run_history_api as _run_history_api
 from src.bridge.admin_service_holder import BridgeServices
 from src.bridge.desktop_attention import notify_pipeline_completion_attention
+from src.bridge.job_availability_service import JobAvailabilityService
 from src.bridge.pipeline_schedule_service import PipelineScheduleService
 from src.bridge.server import runtime_state as bridge_runtime_state
 from src.bridge.task_abort_service import TaskAbortDeps, TaskAbortPaths, TaskAbortService
@@ -106,6 +107,14 @@ class _PipelineServiceLike(Protocol):
     def request_abort(self, run_id: str, **kwargs: Any) -> JsonObject: ...
 
 
+class _JobAvailabilityServiceLike(Protocol):
+    def prepare_priority_manifest(self) -> JsonObject: ...
+    def post_pipeline_publication(self, completion: JsonObject) -> JsonObject: ...
+    def start(self, payload: JsonObject | None) -> JsonObject: ...
+    def status(self, run_id: str) -> JsonObject: ...
+    def start_overdue_catchup(self, *, limit: int = 10) -> JsonObject: ...
+
+
 class _PipelineScheduleServiceLike(Protocol):
     def get_payload(self) -> JsonObject: ...
 
@@ -123,6 +132,26 @@ _PIPELINE_SCHEDULE_SERVICE_LOCK = threading.RLock()
 
 class _DesktopUpdateServiceLike(Protocol):
     def get_status_payload(self) -> JsonObject: ...
+
+
+def get_job_availability_service(*, root_mod: Any) -> _JobAvailabilityServiceLike:
+    services = root_mod.BRIDGE_SERVICES
+    data_dir = Path(root_mod.RUNTIME_CONFIG.data_dir).resolve()
+    with services.availability_service_lock:
+        if (
+            services.availability_service is None
+            or services.availability_service_data_dir != data_dir
+        ):
+            services.availability_service = JobAvailabilityService(
+                data_dir=data_dir,
+                local_store_factory=root_mod.desktop_local_data_store,
+                enforce_direct=str(root_mod.os.getenv("BALUFFO_AVAILABILITY_DIRECT_ENFORCE") or "")
+                .strip()
+                .lower()
+                in {"1", "true", "yes", "on"},
+            )
+            services.availability_service_data_dir = data_dir
+        return cast(_JobAvailabilityServiceLike, services.availability_service)
 
 
 class _OpsApiLike(Protocol):
@@ -711,6 +740,11 @@ def get_pipeline_service(*, root_mod: Any) -> _PipelineServiceLike:
                     completion=payload,
                 )
 
+            def pipeline_post_publish_callback(payload: dict[str, Any]) -> dict[str, Any]:
+                return get_job_availability_service(root_mod=root_mod).post_pipeline_publication(
+                    payload
+                )
+
             def pipeline_abort_child_run(
                 task_type: str, run_id: str, reason: str
             ) -> dict[str, Any]:
@@ -753,6 +787,7 @@ def get_pipeline_service(*, root_mod: Any) -> _PipelineServiceLike:
                 attach_lifecycle_child=root_mod.attach_lifecycle_child,
                 clear_task_state=root_mod.clear_task_state,
                 pipeline_completion_notifier=pipeline_completion_notifier,
+                pipeline_post_publish_callback=pipeline_post_publish_callback,
                 control_data_dir=getattr(root_mod.RUNTIME_CONFIG, "data_dir", None),
                 container_mode=bool(getattr(root_mod.RUNTIME_CONFIG, "container_mode", False)),
             )

@@ -8,7 +8,6 @@ from pathlib import Path
 class PipelinePaths:
     output_dir: Path
     json_path: Path
-    csv_path: Path
     light_json_path: Path
     startup_json_path: Path
     report_path: Path
@@ -16,6 +15,8 @@ class PipelinePaths:
     success_cache_path: Path
     source_state_path: Path
     lifecycle_state_path: Path
+    availability_history_path: Path
+    availability_sweep_plan_path: Path
     browser_fallback_queue_path: Path
     parser_regression_queue_path: Path
     source_policy_recommendations_path: Path
@@ -32,7 +33,6 @@ def build_pipeline_paths(output_dir: Path) -> PipelinePaths:
     return PipelinePaths(
         output_dir=root,
         json_path=root / "jobs-unified.json",
-        csv_path=root / "jobs-unified.csv",
         light_json_path=root / "jobs-unified-light.json",
         startup_json_path=root / "jobs-unified-startup.json",
         report_path=root / "jobs-fetch-report.json",
@@ -40,6 +40,8 @@ def build_pipeline_paths(output_dir: Path) -> PipelinePaths:
         success_cache_path=root / "jobs-success-cache.json",
         source_state_path=root / "jobs-source-state.json",
         lifecycle_state_path=root / "jobs-lifecycle-state.json",
+        availability_history_path=root / "jobs-availability-history.json",
+        availability_sweep_plan_path=root / "jobs-availability-sweep-plan.json",
         browser_fallback_queue_path=root / "jobs-browser-fallback-queue.json",
         parser_regression_queue_path=root / "jobs-parser-regression-queue.json",
         source_policy_recommendations_path=root / "source-policy-recommendations.json",

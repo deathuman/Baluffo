@@ -88,12 +88,26 @@ export function createJobsAuthController({
     toggleAuthButtons(true);
 
     try {
-      const [savedKeysResult, loadedSeenJobKeys] = await Promise.all([
+      const [savedKeysResult, loadedSeenJobKeys, availabilityAttentionResult] = await Promise.all([
         jobsSavedJobsService.getSavedJobKeys(user.uid),
-        loadSeenJobKeys(user.uid)
+        loadSeenJobKeys(user.uid),
+        jobsSavedJobsService.getAvailabilityAttention(user.uid)
       ]);
       userState.savedJobKeys = new Set(savedKeysResult.data || []);
       userState.seenJobKeys = loadedSeenJobKeys;
+      const attentionCount = Math.max(0, Number(availabilityAttentionResult?.data?.count || 0));
+      if (refs.savedJobsBtn) {
+        refs.savedJobsBtn.textContent = attentionCount
+          ? `Saved Jobs (${attentionCount})`
+          : "Saved Jobs";
+        refs.savedJobsBtn.classList.toggle("needs-attention", attentionCount > 0);
+        refs.savedJobsBtn.setAttribute(
+          "aria-label",
+          attentionCount
+            ? `Go to saved jobs page; ${attentionCount} availability updates need attention`
+            : "Go to saved jobs page"
+        );
+      }
     } catch (err) {
       logJobsError("Failed to load saved jobs", err);
       showToast("Could not load profile job state.", "error");
