@@ -10,6 +10,8 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.120] - 2026-07-16
+
 ### Added
 - Jobs now publish stable availability identities and canonical `available`, `verification_overdue`, and `unavailable` states, with a lazy 30-day history artifact and source-aware health summaries.
 - Saved jobs now receive idempotent availability attention, timeline events, acknowledgement controls, profile-local unavailable reports, and backup schema v4 coverage.
@@ -22,6 +24,9 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ### Tests
 - Added lifecycle, identity, direct-validator, sweep-planning, bridge-route, local-data, backup, and frontend availability regressions.
+
+### Notes
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
 
 ## [0.2.119] - 2026-07-05
 
