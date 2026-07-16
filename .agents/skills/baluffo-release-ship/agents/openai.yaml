@@ -1,0 +1,4 @@
+interface:
+  display_name: "Baluffo Release Ship"
+  short_description: "Ship Baluffo releases with artifact and live evidence"
+  default_prompt: "Use $baluffo-release-ship to prepare, publish, verify, and close out a Baluffo desktop, container, Umbrel, or shared public release."

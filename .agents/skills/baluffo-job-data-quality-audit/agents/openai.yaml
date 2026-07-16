@@ -1,0 +1,4 @@
+interface:
+  display_name: "Baluffo Job Quality Audit"
+  short_description: "Audit jobs data quality safely"
+  default_prompt: "Use $baluffo-job-data-quality-audit to validate a Baluffo job data-quality cleanup."

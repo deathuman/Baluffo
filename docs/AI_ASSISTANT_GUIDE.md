@@ -5,7 +5,7 @@
 > - **Canonical for:** task routing, minimal read order, common repo misconceptions, and AI editing rules
 > - **Not canonical for:** data contracts, endpoint payloads, or deep subsystem ownership detail
 > - **Then inspect:** [`architecture-ai-map.md`](architecture-ai-map.md) for task-to-files routing, plus one matching contract or workflow doc
-> - **Last updated:** 2026-06-20
+> - **Last updated:** 2026-07-05
 
 Read this first. Then load only the smallest additional docs needed.
 
@@ -44,6 +44,8 @@ Canonical docs are authoritative only for the surface they declare. Use routing 
 If Serena memory and repo docs ever diverge, the repo docs stay canonical.
 
 After a long live-hotfix or release patch cycle, pause before continuing direct improvements. Check whether repo docs, Basic Memory, and local skills now encode the new workflow lessons; if the latest public desktop release is behind container/Umbrel-proven `main`, decide whether a desktop rollup release should be planned before more feature work. After a public shared desktop/Umbrel release, update stale `current-focus` memory, push the curated BaluffoMemory repo, and verify local release skills still point agents at the current release closeout checklist.
+
+Baluffo-specific Codex skills are project-scoped under `.agents/skills/`. Keep Baluffo workflow skills there so they travel with this repository instead of installing them as user-global skills.
 
 ## Common Wrong Assumptions
 

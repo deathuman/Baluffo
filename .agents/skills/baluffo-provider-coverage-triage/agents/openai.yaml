@@ -1,0 +1,4 @@
+interface:
+  display_name: "Baluffo Provider Coverage"
+  short_description: "Triage source-policy coverage gaps"
+  default_prompt: "Use $baluffo-provider-coverage-triage to inspect provider coverage gaps."

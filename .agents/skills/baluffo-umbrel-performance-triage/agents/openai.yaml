@@ -1,0 +1,4 @@
+interface:
+  display_name: "Baluffo Umbrel Performance Triage"
+  short_description: "Browser-first Umbrel perf and active-run triage"
+  default_prompt: "Use $baluffo-umbrel-performance-triage to diagnose Baluffo Umbrel Admin, Jobs, or active-run slowness from Codex Browser/Developer-mode and compact route evidence before proposing code changes."

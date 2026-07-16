@@ -1,0 +1,4 @@
+interface:
+  display_name: "Baluffo Desktop Triage"
+  short_description: "Diagnose packaged desktop runtime incidents"
+  default_prompt: "Use $baluffo-desktop-incident-triage to investigate Baluffo packaged desktop shutdown, first-run, sync, updater, build-cache, or runtime issues from preserved evidence."
