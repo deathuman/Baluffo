@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from unittest import mock
 
@@ -157,6 +158,88 @@ def test_fetch_report_summary_uses_bounded_task_artifact_before_large_report(
     assert payload["taskProgress"]["phaseKey"] == "writing_outputs"
     assert payload["summary"]["outputCount"] == 42
     assert "sources" not in payload
+
+
+def test_fetch_report_summary_prefers_newer_terminal_report_over_stale_running_sidecar(
+    tmp_path: Path,
+) -> None:
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
+    sidecar_path = tmp_path / "jobs-fetch-report-summary.json"
+    sidecar_path.write_text(
+        json.dumps(
+            {
+                "runId": "fetch_crashed",
+                "status": "running",
+                "startedAt": "2026-07-17T20:47:37Z",
+                "finishedAt": "",
+                "summary": {"outputCount": 44744},
+                "taskProgress": {"active": True, "phaseKey": "writing_outputs"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "jobs-fetch-tasks.json").write_text(
+        json.dumps(
+            {
+                "runId": "fetch_crashed",
+                "status": "running",
+                "active": True,
+                "startedAt": "2026-07-17T20:47:37Z",
+                "finishedAt": "",
+                "taskProgress": {"active": True, "phaseKey": "writing_outputs"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    api.JOBS_FETCH_REPORT_PATH.write_text(
+        json.dumps(
+            {
+                "runId": "fetch_crashed",
+                "status": "error",
+                "startedAt": "2026-07-17T20:47:37Z",
+                "finishedAt": "2026-07-17T21:11:03Z",
+                "summary": {
+                    "outputCount": 44634,
+                    "errorCode": "owner_inactive_without_terminal_report",
+                },
+                "taskProgress": {
+                    "active": False,
+                    "phaseKey": "failed",
+                    "phaseLabel": "Failed",
+                    "counts": {
+                        "outputCount": 44634,
+                        "errorCode": "owner_inactive_without_terminal_report",
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    # Make the ordering explicit so the test does not depend on filesystem timestamp
+    # resolution: the terminal full report was the last artifact written.
+    sidecar_stat = sidecar_path.stat()
+    task_stat = (tmp_path / "jobs-fetch-tasks.json").stat()
+    report_stat = api.JOBS_FETCH_REPORT_PATH.stat()
+    if report_stat.st_mtime_ns <= max(sidecar_stat.st_mtime_ns, task_stat.st_mtime_ns):
+        os.utime(
+            api.JOBS_FETCH_REPORT_PATH,
+            ns=(
+                report_stat.st_atime_ns,
+                max(sidecar_stat.st_mtime_ns, task_stat.st_mtime_ns) + 1_000_000,
+            ),
+        )
+
+    handler = FakeHandler()
+    result = handle_get(handler, api=api, path="/ops/fetch-report", query={"view": ["summary"]})
+
+    assert result is True
+    payload = handler.sent[-1]["payload"]
+    assert payload["status"] == "error"
+    assert payload["finishedAt"] == "2026-07-17T21:11:03Z"
+    assert payload["taskProgress"]["active"] is False
+    assert payload["source"] == "fetch-report-prefix-terminal"
+    assert payload["summary"]["outputCount"] == 44634
 
 
 def test_fetch_report_live_view_uses_summary_sidecar_and_caps_sources(tmp_path: Path) -> None:

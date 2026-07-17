@@ -269,7 +269,7 @@
 }
 
 .jobs-page .job-row-header {
-  grid-template-columns: minmax(19rem, 1.8fr) minmax(10rem, 0.86fr) minmax(11rem, 0.76fr) 7.4rem 6.4rem 2.4rem;
+  grid-template-columns: minmax(19rem, 1.8fr) minmax(10rem, 0.86fr) minmax(11rem, 0.76fr) 7.4rem 6.4rem 5.2rem;
   column-gap: 0.64rem;
   padding: 0.78rem 0.82rem 0.78rem 1rem;
   color: var(--text-subtle);
@@ -279,7 +279,7 @@
 
 .jobs-page .job-row,
 .jobs-page .job-row-link {
-  grid-template-columns: minmax(19rem, 1.8fr) minmax(10rem, 0.86fr) minmax(11rem, 0.76fr) 7.4rem 6.4rem 2.4rem;
+  grid-template-columns: minmax(19rem, 1.8fr) minmax(10rem, 0.86fr) minmax(11rem, 0.76fr) 7.4rem 6.4rem 5.2rem;
   column-gap: 0.64rem;
   min-height: 3.35rem;
   padding: 0.46rem 0.82rem 0.46rem 1rem;
@@ -457,7 +457,56 @@
   align-items: center;
   justify-content: center;
   flex-wrap: nowrap;
+  gap: 0.3rem;
+  overflow: visible;
   min-width: 0;
+}
+
+.jobs-page .job-availability-check-btn {
+  flex: 0 0 1.95rem;
+  width: 1.95rem;
+  min-width: 1.95rem;
+  height: 1.95rem;
+  min-height: 1.95rem;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--surface-20);
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--surface-6) 78%, transparent);
+  color: var(--text-secondary);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.jobs-page .job-availability-check-btn:hover:not(:disabled),
+.jobs-page .job-availability-check-btn:focus-visible {
+  border-color: var(--accent);
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--accent-soft-bg) 58%, var(--surface-6));
+}
+
+.jobs-page .job-availability-check-btn:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.jobs-page .job-availability-check-btn svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.jobs-page .job-original-link-btn {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 0.27rem 0.35rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.66rem;
 }
 
 .jobs-page .col-save .job-inline-save-btn {

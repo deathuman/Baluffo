@@ -10,6 +10,31 @@ import {
   renderPhaseBar as renderPhaseBarFromTrackingUi
 } from "./app/tracking-ui.js";
 
+function renderAvailabilityCheckIcon() {
+  return `
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M20 11a8 8 0 1 0 1.4 4.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      <path d="M20 5v6h-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  `;
+}
+
+function renderAvailabilityReportIcon(isClear) {
+  return isClear
+    ? `
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="m5 12 4.2 4.2L19 6.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    `
+    : `
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M12 4v9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        <path d="M12 17.5v.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+        <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/>
+      </svg>
+    `;
+}
+
 export function renderSavedJobBlockHtml(job, options = {}) {
   const {
     isCustomJob,
@@ -139,9 +164,11 @@ export function renderSavedJobBlockHtml(job, options = {}) {
           <span class="job-tag ${safeWorkType.toLowerCase()}">${safeWorkType}</span>
         </div>
         <div class="col-link job-cell" data-label="Link">
-          ${hasLink ? `<a class="saved-open-link-icon ${availabilityStatus === "unavailable" ? "availability-warning" : ""}" href="${safeLink}" target="_blank" rel="noopener noreferrer" aria-label="${availabilityStatus === "unavailable" ? "Open original link with warning" : "Open job link"}"${tooltipAttrs(availabilityStatus === "unavailable" ? "Confirmed unavailable; open the original link anyway" : "Open job link")}>${renderWebIcon()}</a>` : `<span class="saved-no-link ${isCustom ? "saved-no-link-custom" : ""}">${isCustom ? "No link" : "N/A"}</span>`}
-          ${canManageAvailability && monitored ? `<button class="btn back-btn saved-check-availability-btn" data-ui="saved-check-availability-btn" data-availability-id="${escapeHtml(job.availabilityId)}">Check now</button>` : ""}
-          ${canManageAvailability ? `<button class="btn back-btn saved-report-unavailable-btn" data-ui="saved-report-unavailable-btn" data-job-key="${jobKey}" data-action="${job?.availabilityAttention?.hiddenByReport ? "clear" : "report"}">${job?.availabilityAttention?.hiddenByReport ? "Clear unavailable report" : "Report unavailable"}</button>` : ""}
+          <div class="saved-link-actions" aria-label="Job link and availability actions">
+            ${hasLink ? `<a class="saved-open-link-icon ${availabilityStatus === "unavailable" ? "availability-warning" : ""}" href="${safeLink}" target="_blank" rel="noopener noreferrer" aria-label="${availabilityStatus === "unavailable" ? "Open original link with warning" : "Open job link"}"${tooltipAttrs(availabilityStatus === "unavailable" ? "Confirmed unavailable; open the original link anyway" : "Open job link")}>${renderWebIcon()}</a>` : `<span class="saved-no-link ${isCustom ? "saved-no-link-custom" : ""}">${isCustom ? "No link" : "N/A"}</span>`}
+            ${canManageAvailability && monitored ? `<button type="button" class="btn back-btn saved-availability-icon-btn saved-check-availability-btn" data-ui="saved-check-availability-btn" data-availability-id="${escapeHtml(job.availabilityId)}" title="Check availability now" aria-label="Check availability now"><span class="availability-action-icon" aria-hidden="true">${renderAvailabilityCheckIcon()}</span></button>` : ""}
+            ${canManageAvailability ? (() => { const isReportHidden = Boolean(job?.availabilityAttention?.hiddenByReport); const actionLabel = isReportHidden ? "Clear unavailable report" : "Report unavailable"; return `<button type="button" class="btn back-btn saved-availability-icon-btn saved-report-unavailable-btn" data-ui="saved-report-unavailable-btn" data-job-key="${jobKey}" data-action="${isReportHidden ? "clear" : "report"}" title="${actionLabel}" aria-label="${actionLabel}"><span class="availability-action-icon" aria-hidden="true">${renderAvailabilityReportIcon(isReportHidden)}</span></button>`; })() : ""}
+          </div>
         </div>
       </div>
       ${renderApplicationTrackingControls(trackingJobView, {

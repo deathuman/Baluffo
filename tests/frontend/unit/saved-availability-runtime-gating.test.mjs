@@ -52,4 +52,8 @@ test("Saved hides availability mutations in static mode and shows them with brid
   const managedHtml = render(true);
   assert.match(managedHtml, /data-ui="saved-check-availability-btn"/);
   assert.match(managedHtml, /data-ui="saved-report-unavailable-btn"/);
+  assert.match(managedHtml, /class="saved-link-actions"/);
+  assert.match(managedHtml, /saved-check-availability-btn[\s\S]*class="availability-action-icon"[\s\S]*<svg/);
+  assert.match(managedHtml, /saved-report-unavailable-btn[\s\S]*aria-label="Report unavailable"/);
+  assert.doesNotMatch(managedHtml, />Check now<\/button>/);
 });

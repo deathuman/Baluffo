@@ -10,6 +10,17 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.124] - 2026-07-18
+
+### Fixed
+- Fetch-report summary now recovers the newest terminal report when a stale active projection remains after a worker crash, keeping Admin status truthful.
+- Jobs and Saved availability actions now use compact accessible icon controls with stable layout sizing, preventing clipped or overlapping refresh, check, report, and link actions.
+
+### Notes
+- This is a container/Umbrel patch only. No `v0.2.124` desktop tag, GitHub desktop release, desktop update, or desktop assets are published.
+- Direct-link enforcement remains in shadow mode.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.123] - 2026-07-17
 
 ### Fixed

@@ -53,6 +53,15 @@ function renderFreshnessCell(job) {
   `;
 }
 
+function renderAvailabilityCheckIcon() {
+  return `
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M20 11a8 8 0 1 0 1.4 4.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      <path d="M20 5v6h-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  `;
+}
+
 function formatWorkType(value, capitalizeFirst) {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -198,9 +207,10 @@ function renderJobRowContent(job, {
         <span class="job-tag ${job.workType.toLowerCase()}">${escapeHtml(workTypeLabel || "Unknown")}</span>
       </div>
       <div class="col-save job-cell" data-label="Save" aria-label="Job actions">
-        ${isUnavailable && safeJobLink ? `<button class="btn back-btn job-original-link-btn availability-warning" data-ui="job-original-link-btn" data-job-link="${safeJobLink}" title="Confirmed unavailable; open the original posting anyway" aria-label="Open original link for confirmed unavailable job">Open original link</button>` : ""}
-        ${canManageAvailability && job.availabilityId ? `<button class="job-availability-check-btn" data-ui="job-availability-check-btn" data-availability-id="${escapeHtml(job.availabilityId)}" title="Check availability now" aria-label="Check availability now">↻</button>` : ""}
+        ${isUnavailable && safeJobLink ? `<button type="button" class="btn back-btn job-original-link-btn availability-warning" data-ui="job-original-link-btn" data-job-link="${safeJobLink}" title="Confirmed unavailable; open the original posting anyway" aria-label="Open original link for confirmed unavailable job">Open original link</button>` : ""}
+        ${canManageAvailability && job.availabilityId ? `<button type="button" class="job-availability-check-btn" data-ui="job-availability-check-btn" data-availability-id="${escapeHtml(job.availabilityId)}" title="Check availability now" aria-label="Check availability now"><span class="availability-action-icon" aria-hidden="true">${renderAvailabilityCheckIcon()}</span></button>` : ""}
         <button
+          type="button"
           class="save-job-btn job-inline-save-btn ${isSaved ? "saved" : ""}"
           data-job-id="${job.id}"
           data-job-key="${jobKey}"

@@ -312,7 +312,7 @@ test("confirmed unavailable rows require the explicit warned original-link actio
   });
 
   assert.match(html, /data-job-link=""/);
-  assert.doesNotMatch(html, /class="job-row[^\"]*job-row-link/);
+  assert.doesNotMatch(html, /class="job-row[^"]*job-row-link/);
   assert.match(html, /data-ui="job-original-link-btn"/);
   assert.match(html, />Open original link<\/button>/);
   assert.match(html, /availability-warning/);
@@ -337,4 +337,23 @@ test("availability check action is rendered only for bridge-capable runtimes", (
     render(job, { canManageAvailability: true }),
     /data-ui="job-availability-check-btn"/
   );
+});
+
+test("availability check action has a bounded icon button instead of a raw glyph", () => {
+  const html = render({
+    id: "availability-icon",
+    title: "Engine Programmer",
+    company: "Studio",
+    sector: "Game",
+    city: "Rome",
+    country: "Italy",
+    workType: "Remote",
+    contractType: "Full-time",
+    jobLink: "https://example.com/jobs/icon",
+    availabilityId: "availability_icon"
+  }, { canManageAvailability: true });
+
+  assert.match(html, /type="button"[^>]*class="job-availability-check-btn"/);
+  assert.match(html, /job-availability-check-btn[\s\S]*class="availability-action-icon"[\s\S]*<svg/);
+  assert.doesNotMatch(html, />↻<\/button>/);
 });
