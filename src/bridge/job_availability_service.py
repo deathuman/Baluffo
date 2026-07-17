@@ -243,7 +243,21 @@ class JobAvailabilityService:
 
     def post_pipeline_publication(self, completion: dict[str, Any] | None = None) -> dict[str, Any]:
         projected = 0
+        identity_migration_error = ""
         projection_error = ""
+        identity_migration: dict[str, int] = {"rebound": 0, "unmonitored": 0}
+        try:
+            store = self.local_store_factory()
+            migrator = getattr(store, "reconcile_repaired_availability_identities", None)
+            if callable(migrator):
+                result = migrator()
+                if isinstance(result, dict):
+                    identity_migration = {
+                        "rebound": int(result.get("rebound") or 0),
+                        "unmonitored": int(result.get("unmonitored") or 0),
+                    }
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            identity_migration_error = type(exc).__name__
         try:
             projected = self.project_published_transitions()
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
@@ -252,6 +266,12 @@ class JobAvailabilityService:
         return {
             "runId": str((completion or {}).get("runId") or ""),
             "projected": projected,
+            "identityMigration": identity_migration,
+            **(
+                {"identityMigrationError": identity_migration_error}
+                if identity_migration_error
+                else {}
+            ),
             **({"projectionError": projection_error} if projection_error else {}),
             "sweep": sweep,
         }

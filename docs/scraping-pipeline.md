@@ -93,6 +93,17 @@ evidence must match the checked posting by canonical URL or `@id` and be non-exp
 fallback uses the identical classifier. The default rollout is shadow mode;
 set `BALUFFO_AVAILABILITY_DIRECT_ENFORCE=1` only after the reviewed promotion gate is satisfied.
 
+Finalization now publishes five explicit indeterminate phases before starting their work:
+`deduplicating`, `reconciling_identities`, `applying_lifecycle`, `running_quality_audits`, and
+`writing_outputs`. A bounded heartbeat keeps active task evidence fresh during long synchronous
+phases, and completed reports retain per-phase elapsed milliseconds without fabricating progress or
+an ETA. The identity phase uses only exact current canonical URL fingerprints and unambiguous source
+IDs. Contaminated one-to-many legacy identities are split into URL-backed identities and recorded in
+the private bounded quarantine; their lifecycle evidence is not guessed onto replacements. Carried
+monitorable seed rows are initialized with unknown `carried_seed` evidence without refreshing their
+seen timestamps or counting as observations. The final feed-integrity gate rejects any monitorable
+row missing availability state/evidence or any identity spanning multiple URL fingerprints.
+
 ## 3) Before and after job count comparison
 
 To see how much the job count changed after scraping improvements:

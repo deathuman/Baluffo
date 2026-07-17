@@ -10,6 +10,24 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.121] - 2026-07-16
+
+### Fixed
+- Availability identity preflight now repairs reused source IDs across unrelated canonical URLs with collision-safe URL identities, quarantines ambiguous legacy evidence privately, and rejects incomplete or cross-URL publication.
+- Monitorable carried feed rows now receive lifecycle coverage without becoming observations or refreshing `lastSeenAt`; trustworthy source absence and conservative failed/skipped-source ageing continue to apply.
+- Non-custom Saved jobs affected by an identity repair now rebind only through an exact unique stored URL match, otherwise becoming unmonitored without changing application tracking or historical activity.
+- Fetch-report full and summary paths preserve bounded availability health, identity audit, source/direct conflict, sweep coverage, and shadow classifier evidence; obsolete normalized CSV output keys are removed.
+
+### Changed
+- Pipeline finalization now reports truthful indeterminate deduplication, identity reconciliation, lifecycle, quality-audit, and output phases with periodic heartbeats and completed elapsed timings.
+
+### Tests
+- Added exact identity/quarantine, carried-seed, Saved migration, report normalization, private-serving, and 5,000-row synthetic feed regressions.
+
+### Notes
+- This is a container/Umbrel patch. Direct-link enforcement remains in shadow mode, and no `v0.2.121` desktop tag, GitHub desktop release, or desktop assets are published.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.120] - 2026-07-16
 
 ### Added

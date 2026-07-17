@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 from typing import Any
 
+from src.jobs.availability_identity import (
+    IDENTITY_QUARANTINE_ARTIFACT_NAME,
+    read_identity_quarantine,
+)
+from src.jobs.common.url import fingerprint_url
 from src.jobs.state_lifecycle import read_job_lifecycle_state
+from src.shared.json_io import read_json
 from src.shared.utils import now_iso
 
 from .local_data_store_profiles import require_current_user
@@ -181,6 +188,100 @@ def project_availability_transitions(paths: LocalDataPaths, entries: list[dict[s
 
 def project_availability_transition(paths: LocalDataPaths, entry: dict[str, Any]) -> int:
     return project_availability_transitions(paths, [entry])
+
+
+def _record_replacement_identity(
+    identities_by_url: dict[str, set[str]], availability_id: str, url_fingerprint: str
+) -> None:
+    if availability_id and url_fingerprint:
+        identities_by_url.setdefault(url_fingerprint, set()).add(availability_id)
+
+
+def _replacement_identities_by_url(
+    data_dir: Path, quarantine: dict[str, dict[str, Any]]
+) -> dict[str, set[str]]:
+    identities_by_url: dict[str, set[str]] = {}
+    feed = read_json(data_dir / "jobs-unified.json", [])
+    for row in feed if isinstance(feed, list) else []:
+        if not isinstance(row, dict):
+            continue
+        url = canonical_public_job_url(sanitize_job_url(str(row.get("jobLink") or "")))
+        _record_replacement_identity(
+            identities_by_url,
+            str(row.get("availabilityId") or "").strip(),
+            fingerprint_url(url),
+        )
+    for entry in quarantine.values():
+        replacements = entry.get("replacementIdentities")
+        for replacement in replacements if isinstance(replacements, list) else []:
+            if not isinstance(replacement, dict):
+                continue
+            fingerprints = replacement.get("urlFingerprints")
+            for url_fingerprint in fingerprints if isinstance(fingerprints, list) else []:
+                _record_replacement_identity(
+                    identities_by_url,
+                    str(replacement.get("availabilityId") or "").strip(),
+                    str(url_fingerprint or "").strip(),
+                )
+    return identities_by_url
+
+
+def _migrate_repaired_saved_rows(
+    rows: list[dict[str, Any]],
+    *,
+    repaired_ids: set[str],
+    identities_by_url: dict[str, set[str]],
+) -> tuple[bool, int, int]:
+    changed = False
+    rebound = 0
+    unmonitored = 0
+    for row in rows:
+        old_id = str(row.get("availabilityId") or "").strip()
+        if bool(row.get("isCustom")) or old_id not in repaired_ids:
+            continue
+        url = canonical_public_job_url(sanitize_job_url(str(row.get("jobLink") or "")))
+        candidates = identities_by_url.get(fingerprint_url(url), set())
+        next_id = next(iter(candidates)) if len(candidates) == 1 else ""
+        row["availabilityId"] = next_id
+        attention = _attention(row)
+        attention["events"] = []
+        attention["localReport"] = {}
+        attention["hiddenByReport"] = False
+        row["availabilityAttention"] = attention
+        changed = True
+        rebound += int(bool(next_id))
+        unmonitored += int(not next_id)
+    return changed, rebound, unmonitored
+
+
+def reconcile_repaired_availability_identities(paths: LocalDataPaths) -> dict[str, int]:
+    """Rebind contaminated canonical Saved identities by exact committed URL only."""
+
+    data_dir = paths.root.parent
+    quarantine = read_identity_quarantine(data_dir / IDENTITY_QUARANTINE_ARTIFACT_NAME)
+    repaired_ids = set(quarantine)
+    if not repaired_ids:
+        return {"rebound": 0, "unmonitored": 0}
+    identities_by_url = _replacement_identities_by_url(data_dir, quarantine)
+    rebound = 0
+    unmonitored = 0
+    profiles = _read_json(paths.profiles, [])
+    with LOCK:
+        for profile in profiles if isinstance(profiles, list) else []:
+            uid = str(profile.get("id") or "") if isinstance(profile, dict) else ""
+            if not uid:
+                continue
+            rows = load_saved_job_rows(paths, uid)
+            changed, profile_rebound, profile_unmonitored = _migrate_repaired_saved_rows(
+                rows,
+                repaired_ids=repaired_ids,
+                identities_by_url=identities_by_url,
+            )
+            rebound += profile_rebound
+            unmonitored += profile_unmonitored
+            if changed:
+                save_saved_job_rows(paths, uid, rows)
+    return {"rebound": rebound, "unmonitored": unmonitored}
 
 
 def availability_attention(paths: LocalDataPaths, uid: str) -> dict[str, Any]:

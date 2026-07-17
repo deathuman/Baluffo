@@ -226,6 +226,7 @@ def build_availability_history_payload(
 def _empty_lifecycle_summary() -> dict[str, int]:
     return {
         "new": 0,
+        "carriedInitialized": 0,
         "reappeared": 0,
         "preservedBecauseSourceFailed": 0,
         "preservedBecauseSourceSkipped": 0,
@@ -411,6 +412,10 @@ def _lifecycle_alias_index(rows: dict[str, dict[str, Any]]) -> dict[str, str]:
 def _resolve_lifecycle_key(
     job: dict[str, Any], rows: dict[str, dict[str, Any]], alias_index: dict[str, str]
 ) -> str:
+    availability_id = clean_text(job.get("availabilityId"))
+    if availability_id:
+        availability_alias = f"availability:{availability_id}"
+        return alias_index.get(availability_alias) or availability_alias
     for alias in job_identity_aliases(job):
         matched = alias_index.get(alias)
         if matched:
@@ -622,6 +627,63 @@ def _apply_active_lifecycle_rows(
         for alias in _normalize_availability_aliases(next_rows[key].get("availabilityAliases")):
             alias_index.setdefault(alias, key)
     return seen_keys
+
+
+def _initialize_carried_lifecycle_rows(
+    payload_rows: list[dict[str, Any]],
+    next_rows: dict[str, dict[str, Any]],
+    *,
+    seen_keys: set[str],
+    finished_at: str,
+) -> int:
+    """Give exact-identity seed rows lifecycle state without observing them."""
+
+    initialized = 0
+    alias_index = _lifecycle_alias_index(next_rows)
+    for row in payload_rows:
+        availability_id = clean_text(row.get("availabilityId"))
+        if not availability_id:
+            continue
+        key = _resolve_lifecycle_key(row, next_rows, alias_index)
+        if not key or key in seen_keys or key in next_rows:
+            continue
+        aliases = list(
+            dict.fromkeys(
+                [
+                    *job_identity_aliases(row),
+                    f"availability:{availability_id}",
+                ]
+            )
+        )[:24]
+        first_seen_at = clean_text(row.get("firstSeenAt"))
+        last_seen_at = clean_text(row.get("lastSeenAt"))
+        next_rows[key] = {
+            "status": "active",
+            "firstSeenAt": first_seen_at,
+            "lastSeenAt": last_seen_at,
+            "title": clean_text(row.get("title")),
+            "company": clean_text(row.get("company")),
+            "city": clean_text(row.get("city")),
+            "country": clean_text(row.get("country")),
+            "jobLink": normalize_url(row.get("jobLink")),
+            "source": clean_text(row.get("source")),
+            "sourceJobId": clean_text(row.get("sourceJobId")),
+            "postedAt": to_iso(row.get("postedAt")),
+            "availabilityId": availability_id,
+            "availabilityStatus": "available",
+            "availabilityCheckedAt": finished_at,
+            "availabilityEvidence": {
+                "kind": "carried_seed",
+                "confidence": "unknown",
+                "checkedAt": finished_at,
+                "source": clean_text(row.get("source")),
+            },
+            "availabilityAliases": aliases,
+            "consecutiveAvailabilityFailures": 0,
+        }
+        alias_index = _lifecycle_alias_index(next_rows)
+        initialized += 1
+    return initialized
 
 
 def _apply_missing_lifecycle_entry(
@@ -846,6 +908,12 @@ def apply_job_lifecycle_state(
         row.to_dict() for row in (observed_rows if observed_rows is not None else deduped_rows)
     ]
     seen_keys = _apply_active_lifecycle_rows(observed_payload_rows, next_rows, finished_at, summary)
+    summary["carriedInitialized"] = _initialize_carried_lifecycle_rows(
+        payload_rows,
+        next_rows,
+        seen_keys=seen_keys,
+        finished_at=finished_at,
+    )
     eligible_sources = {
         clean_text(source_name)
         for source_name in (

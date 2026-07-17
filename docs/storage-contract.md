@@ -34,6 +34,7 @@ Availability runtime artifacts remain bounded filesystem compatibility/evidence 
 - `jobs-availability-sweep-plan.json` is a bounded rotation plan; safe per-domain and total limits may defer work and report degraded coverage.
 - `jobs-availability-shadow-results.json` retains at most 500 compact classifications and never stores HTML, headers, authenticated state, or raw errors.
 - `jobs-availability-direct-checkpoints.json` privately retains at most 20,000 compact latest-check rows keyed by exact `availabilityId`. It advances saved-first/oldest-first rotation across scheduled runs and is not a public feed, lifecycle authority, or user-owned status store.
+- `jobs-availability-identity-quarantine.json` schema v1 privately retains at most 2,000 contaminated legacy identities for 30 days. Rows contain compact lifecycle evidence, exact replacement IDs, and canonical URL fingerprints only. It is excluded from public feeds/history/bundles and must return 404 from static serving.
 - `local-user-data/jobs-custom-availability-state.json` is the private bridge-owned lifecycle ledger for monitored custom Saved URLs; it never publishes into canonical feeds, history, reconciliation, or public coverage.
 - Saved attention/reports remain profile-owned inside `local-user-data`; `systemActivityAt` is separate from user/application activity sorting.
 

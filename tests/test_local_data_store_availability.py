@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from src.jobs.availability_identity import write_identity_quarantine
+from src.jobs.common.url import fingerprint_url
 from src.local_data_store import LocalDataPaths, LocalDataStore
 from src.local_data_store_shared import custom_job_availability_id
 from tests.helpers.temp_paths import workspace_tmpdir
@@ -308,3 +310,69 @@ def test_availability_overlay_joins_canonical_and_private_custom_state_by_exact_
             "verification_overdue",
         }
         assert all("jobLink" not in row for row in overlay["rows"])
+
+
+def test_repaired_identity_migration_uses_exact_url_and_clears_current_attention() -> None:
+    with workspace_tmpdir("local-data-store-identity-repair") as tmp:
+        data_dir = Path(tmp) / "data"
+        store = LocalDataStore(LocalDataPaths.from_data_dir(data_dir))
+        uid = str(store.sign_in("Identity Repair")["uid"])
+        job_key = store.save_job_for_user(
+            uid,
+            {
+                "title": "Canonical Role",
+                "company": "Studio",
+                "jobLink": "https://jobs.example.com/openings/42",
+                "availabilityId": "availability_contaminated",
+            },
+        )
+        custom_key = store.save_job_for_user(
+            uid,
+            {
+                "title": "Custom Role",
+                "company": "Studio",
+                "jobLink": "https://jobs.example.com/custom/1",
+                "isCustom": True,
+            },
+        )
+        store.project_availability_transition(
+            {
+                "availabilityId": "availability_contaminated",
+                "availabilityStatus": "unavailable",
+                "availabilityCheckedAt": "2026-07-16T10:00:00+00:00",
+                "availabilityTransitionId": "availability_old_transition",
+            }
+        )
+        store.manage_availability_report(uid, job_key, action="report")
+        write_identity_quarantine(
+            data_dir / "jobs-availability-identity-quarantine.json",
+            {
+                "availability_contaminated": {
+                    "detectedAt": "2026-07-16T12:00:00+00:00",
+                    "reason": "cross_url_identity_collision",
+                    "replacementAvailabilityIds": ["availability_repaired"],
+                    "replacementIdentities": [
+                        {
+                            "availabilityId": "availability_repaired",
+                            "urlFingerprints": [
+                                fingerprint_url("https://jobs.example.com/openings/42")
+                            ],
+                        }
+                    ],
+                }
+            },
+            updated_at="2026-07-16T12:00:00+00:00",
+        )
+
+        result = store.reconcile_repaired_availability_identities()
+        rows = {row["jobKey"]: row for row in store.list_saved_jobs(uid)}
+
+        assert result == {"rebound": 1, "unmonitored": 0}
+        repaired = rows[job_key]
+        assert repaired["availabilityId"] == "availability_repaired"
+        assert repaired["availabilityAttention"]["events"] == []
+        assert repaired["availabilityAttention"]["localReport"] == {}
+        assert repaired["availabilityAttention"]["hiddenByReport"] is False
+        assert rows[custom_key]["availabilityId"] == custom_job_availability_id(
+            "https://jobs.example.com/custom/1"
+        )

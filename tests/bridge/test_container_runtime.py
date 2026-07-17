@@ -78,6 +78,9 @@ def test_container_handler_serves_static_data_and_runtime_config(tmp_path: Path)
     )
     (data_dir / "jobs-unified.json").write_text('[{"private":true}]\n', encoding="utf-8")
     (data_dir / "jobs-unified.csv").write_text("id,title\nprivate,Private\n", encoding="utf-8")
+    (data_dir / "jobs-availability-identity-quarantine.json").write_text(
+        '{"private":true}\n', encoding="utf-8"
+    )
     (data_dir / "source-registry-active.json").write_text('{"active":true}\n', encoding="utf-8")
     (data_dir / "local-user-data").mkdir()
     (data_dir / "local-user-data" / "profiles.json").write_text(
@@ -126,7 +129,11 @@ def test_container_handler_serves_static_data_and_runtime_config(tmp_path: Path)
         else:  # pragma: no cover
             raise AssertionError("expected local user data to stay off static serving")
     assert private_response.code == 404
-    for retired_path in ("/data/jobs-unified.json", "/data/jobs-unified.csv"):
+    for retired_path in (
+        "/data/jobs-unified.json",
+        "/data/jobs-unified.csv",
+        "/data/jobs-availability-identity-quarantine.json",
+    ):
         with _served(_make_container_handler(root, data_dir)) as base_url:
             with pytest.raises(HTTPError) as exc_info:
                 _read_url(base_url, retired_path)

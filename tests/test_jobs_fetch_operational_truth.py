@@ -2,6 +2,8 @@ from pathlib import Path
 
 import src.admin_bridge as admin_bridge
 from src import jobs_fetcher as jf
+from src.bridge.fetch_report_summary import compact_fetch_report_summary_payload
+from src.jobs.common.contracts_fetch_report import normalize_fetch_report_payload
 from src.shared.json_io import read_json
 from tests.helpers.temp_paths import workspace_tmpdir
 
@@ -32,6 +34,7 @@ def _assert_completed_fetch_report_truth(report: dict[str, object], output_dir: 
     output_count = int(summary.get("outputCount") or 0)
     source_health = report.get("sourceHealth") or {}
     lifecycle_summary = report.get("lifecycleSummary") or {}
+    finalization_timing = (report.get("runtime") or {}).get("finalizationTiming") or {}
 
     assert str(report.get("finishedAt") or "")
     assert progress.get("active") is False
@@ -54,6 +57,14 @@ def _assert_completed_fetch_report_truth(report: dict[str, object], output_dir: 
     assert int(lifecycle_summary.get("likelyRemovedCount") or 0) == int(
         summary.get("lifecycleLikelyRemovedCount") or 0
     )
+    assert set(finalization_timing) == {
+        "deduplicatingMs",
+        "reconciling_identitiesMs",
+        "applying_lifecycleMs",
+        "running_quality_auditsMs",
+        "writing_outputsMs",
+    }
+    assert all(int(value) >= 0 for value in finalization_timing.values())
 
 
 def test_completed_fetch_report_operational_truth_matches_sources_and_output() -> None:
@@ -213,3 +224,71 @@ def test_bridge_normalizer_unfinished_fetch_report_keeps_active_progress() -> No
     assert progress.get("active") is True
     assert progress.get("phaseKey") == "executing_sources"
     assert progress.get("phaseLabel") == "Executing sources"
+
+
+def test_availability_health_survives_bridge_and_summary_normalization() -> None:
+    payload = admin_bridge.normalize_fetch_report_contract(
+        {
+            "availabilitySummary": {
+                "monitorableRowCount": 12,
+                "repairedIdentityCount": 2,
+                "shadowClassifierCounts": {"direct_live": 3},
+            },
+            "availabilityHealth": {
+                "status": "degraded",
+                "degradedCoverage": True,
+                "identity": {"unresolvedIdentityConflictCount": 1},
+            },
+            "sourceDirectConflicts": [
+                {
+                    "availabilityId": f"availability_{index}",
+                    "sourceStatus": "available",
+                    "directKind": "direct_closed",
+                    "checkedAt": "2026-07-16T10:00:00+00:00",
+                }
+                for index in range(120)
+            ],
+            "sweepCoverage": {"selectedCount": 10, "rows": [{"private": True}]},
+            "shadowClassifierCounts": {"direct_closed": 4},
+            "runtime": {
+                "finalizationTiming": {
+                    "deduplicatingMs": 120,
+                    "reconciling_identitiesMs": 30,
+                    "unsupportedMs": 999,
+                }
+            },
+            "outputs": {"csv": "removed.csv", "changed": {"csv": True, "json": True}},
+        }
+    )
+    compact = compact_fetch_report_summary_payload(payload)
+
+    assert payload["availabilitySummary"]["monitorableRowCount"] == 12
+    assert payload["availabilityHealth"]["identity"]["unresolvedIdentityConflictCount"] == 1
+    assert len(payload["sourceDirectConflicts"]) == 100
+    assert "rows" not in payload["sweepCoverage"]
+    assert "csv" not in payload["outputs"]
+    assert "csv" not in payload["outputs"]["changed"]
+    assert compact["availabilitySummary"] == payload["availabilitySummary"]
+    assert compact["runtime"]["finalizationTiming"] == {
+        "deduplicatingMs": 120,
+        "reconciling_identitiesMs": 30,
+    }
+
+
+def test_jobs_normalizer_preserves_bounded_finalization_timings() -> None:
+    payload = normalize_fetch_report_payload(
+        {
+            "runtime": {
+                "finalizationTiming": {
+                    "deduplicatingMs": 120,
+                    "writing_outputsMs": 240,
+                    "unsupportedMs": 999,
+                }
+            }
+        }
+    )
+
+    assert payload["runtime"]["finalizationTiming"] == {
+        "deduplicatingMs": 120,
+        "writing_outputsMs": 240,
+    }

@@ -596,6 +596,36 @@ def test_post_pipeline_publication_still_starts_sweep_when_projection_fails(
     assert result["sweep"]["started"] == 1
 
 
+def test_post_pipeline_publication_projects_when_identity_migration_fails(
+    tmp_path: Path,
+) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    write_job_lifecycle_state(
+        data_dir / "jobs-lifecycle-state.json",
+        {
+            "job-1": {
+                "availabilityId": "availability_1",
+                "availabilityStatus": "available",
+            }
+        },
+    )
+    (data_dir / "jobs-availability-sweep-plan.json").write_text('{"rows":[]}', encoding="utf-8")
+
+    class Store:
+        def reconcile_repaired_availability_identities(self):
+            raise OSError("private quarantine unavailable")
+
+        def project_availability_transitions(self, _entries):
+            return 1
+
+    service = JobAvailabilityService(data_dir=data_dir, local_store_factory=Store)
+    result = service.post_pipeline_publication({"runId": "pipeline_1"})
+
+    assert result["identityMigrationError"] == "OSError"
+    assert result["projected"] == 1
+
+
 def test_custom_saved_check_uses_private_ledger_and_never_changes_public_artifacts(
     tmp_path: Path,
 ) -> None:

@@ -64,7 +64,24 @@ Saved-page overlays: `title`, `company`, `city`, `country`, `jobLink`, `source`,
 and `postedAt`, plus consecutive verification failures, closure origin, latest/pending evidence,
 aliases, and an idempotent transition identifier. This ledger is runtime state, not a user-editable
 Saved-job contract. Seeded previous-output rows are cache/dedup inputs only: they do not refresh
-`lastSeenAt` and do not count as current-run observations.
+`lastSeenAt` and do not count as current-run observations. A monitorable carried row without a prior
+exact lifecycle match receives an `available` lifecycle entry with bounded unknown `carried_seed`
+evidence while preserving its prior `firstSeenAt` and `lastSeenAt`; normal trustworthy source
+evidence is then applied without treating that initialization as verification.
+
+Before lifecycle projection, publication performs an exact identity preflight over the deduplicated
+rows. An existing identity is retained only for one current canonical URL fingerprint, and a
+`(source, sourceJobId)` alias is reusable only when it does not span multiple current URL
+fingerprints. Conflicts fall back to deterministic URL-backed identities. Title, company, location,
+and dedup keys are never recovery evidence. Every monitorable published row must have an identity,
+`available` status, and bounded evidence, and no identity may span multiple URL fingerprints.
+Violations abort publication before the feed or lifecycle artifacts are changed.
+
+`jobs-availability-identity-quarantine.json` is a private schema-v1 identity-repair artifact. It
+retains at most 2,000 contaminated legacy identities for 30 days with compact prior lifecycle
+evidence, candidate replacement identities, and URL fingerprints only; it never stores raw URLs.
+Quarantined status, closure evidence, tombstones, and transition IDs are not transferred across an
+ambiguous one-to-many repair, and the artifact is never publicly served or copied to history.
 
 The supported public `jobs-unified-light.json` projection and its startup cache contain only
 `availabilityStatus="available"` rows. The deprecated private full JSON uses the same canonical row
@@ -85,6 +102,11 @@ own bounded attention state, while the profile timeline records the transition o
 get timeline/badge updates without an unread alert. Automated
 events never mutate application phase/outcome or `lastActivityAt`. Backup schema v4 carries attention,
 acknowledgements, reports, and system activity; import remains tolerant of schemas v1-v3.
+After a committed identity repair, non-custom Saved rows are rebound only when their stored canonical
+URL fingerprint selects exactly one replacement. Otherwise the contaminated identity is cleared and
+the row becomes unmonitored. Current availability events and report-hidden state tied to the old ID
+are cleared, while application tracking and historical timeline activity are preserved. Custom Saved
+URL identities are not part of this migration.
 
 First-party Jobs and Saved surfaces use `availabilityStatus` and the bounded evidence fields above.
 Legacy lifecycle labels remain compatibility fallbacks only when an older published row has no
@@ -1387,6 +1409,7 @@ local user data, source registry rows, tombstones, sync state, or source-family 
 |---|---|---|
 | `activeCount` | `number` | Tracked lifecycle rows currently active after the run. |
 | `newCount` | `number` | Jobs first seen in this run. |
+| `carriedInitializedCount` | `number` | Monitorable carried seed rows initialized without being observed or verified. |
 | `reappearedCount` | `number` | Previously removed or archived jobs seen again and restored to active. |
 | `likelyRemovedCount` | `number` | Tracked lifecycle rows currently marked `likely_removed`. |
 | `archivedCount` | `number` | Tracked lifecycle rows currently archived. |
@@ -1394,6 +1417,20 @@ local user data, source registry rows, tombstones, sync state, or source-family 
 | `preservedBecauseSourceSkippedCount` | `number` | Missing jobs preserved because their source was skipped, excluded, not selected, or needed review/browser fallback. |
 | `eligibleMissingSourceCount` | `number` | Source rows with trustworthy missing-job evidence in the run. |
 | `ineligibleMissingSourceCount` | `number` | Source rows present but not eligible to mark jobs removed. |
+
+Fetch reports, both report normalizers, the compact fetch-report sidecar, and
+`/ops/fetch-report?view=summary` preserve the bounded top-level `availabilitySummary`,
+`availabilityHealth`, `sourceDirectConflicts` (at most 100 rows), row-free `sweepCoverage`, and
+`shadowClassifierCounts` fields. `availabilitySummary` includes `monitorableRowCount`,
+`repairedIdentityCount`, `quarantinedIdentityCount`, `unresolvedMissingIdentityCount`, and
+`unresolvedIdentityConflictCount`. Any unresolved identity violation degrades availability health.
+Normalized output metadata has no CSV or changed-CSV compatibility keys.
+
+Completed reports include `runtime.finalizationTiming` elapsed milliseconds for the truthful
+indeterminate phases `deduplicating`, `reconciling_identities`, `applying_lifecycle`,
+`running_quality_audits`, and `writing_outputs`. Active task state publishes each phase before work
+starts and refreshes a bounded heartbeat during long synchronous work; no finalization percentage or
+ETA is inferred.
 
 | Field | Type | Description |
 |---|---|---|

@@ -12,7 +12,10 @@ from typing import Any
 
 from src.jobs.common.numbers import _clamped_int
 from src.jobs.text_utils import clean_text
-from src.shared.fetch_report_normalization import normalize_fetch_report_timing_summary
+from src.shared.fetch_report_normalization import (
+    normalize_fetch_report_timing_summary,
+    normalize_finalization_timing,
+)
 from src.shared.json_shapes import as_json_list, as_json_object, json_object_rows
 
 
@@ -188,4 +191,7 @@ def normalize_runtime_payload(
     setup_timing_raw = as_json_object(src.get("setupTiming"))
     if setup_timing_raw:
         payload["setupTiming"] = _normalize_setup_timing(setup_timing_raw)
+    finalization_timing = normalize_finalization_timing(src.get("finalizationTiming"))
+    if finalization_timing:
+        payload["finalizationTiming"] = finalization_timing
     return payload

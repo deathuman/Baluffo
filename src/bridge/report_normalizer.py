@@ -22,6 +22,12 @@ from src.jobs.common.contracts_source_health import normalize_source_health_payl
 from src.jobs.common.contracts_static_suppression_policy import (
     normalize_static_suppression_policy_payload,
 )
+from src.shared.availability_report import (
+    normalize_availability_health,
+    normalize_availability_summary,
+    normalize_source_direct_conflicts,
+    normalize_sweep_coverage,
+)
 from src.shared.fetch_report_normalization import (
     coerce_fetch_report_detail_row as _coerce_fetch_report_detail_row,
 )
@@ -29,6 +35,7 @@ from src.shared.fetch_report_normalization import (
     normalize_bridge_fetch_report_source_row,
     normalize_fetch_report_social_summary,
     normalize_fetch_report_timing_summary,
+    normalize_finalization_timing,
 )
 from src.shared.fetch_report_progress import (
     derive_fetch_task_progress,
@@ -285,11 +292,18 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
             default_missing_labels=False,
             include_empty_shape=True,
         ),
+        "finalizationTiming": normalize_finalization_timing(runtime.get("finalizationTiming")),
     }
     task_progress = normalize_fetch_task_progress(
         src.get("taskProgress"),
         default_active_when_missing=not bool(str(src.get("finishedAt") or "").strip()),
     )
+    outputs = _as_dict(src.get("outputs"))
+    outputs.pop("csv", None)
+    changed = _as_dict(outputs.get("changed"))
+    changed.pop("csv", None)
+    if changed:
+        outputs["changed"] = changed
     normalized: JsonObject = {
         "schemaVersion": safe_schema_version(src.get("schemaVersion")),
         "runId": str(src.get("runId") or "").strip(),
@@ -308,7 +322,19 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
         "staticSuppressionPolicy": static_suppression_policy,
         "redundantStaticProposals": redundant_static_proposals,
         "sourcePolicyRecommendationExport": source_policy_recommendation_export,
-        "outputs": _as_dict(src.get("outputs")),
+        "lifecycleSummary": _as_dict(src.get("lifecycleSummary")),
+        "availabilitySummary": normalize_availability_summary(src.get("availabilitySummary")),
+        "availabilityHealth": normalize_availability_health(src.get("availabilityHealth")),
+        "sourceDirectConflicts": normalize_source_direct_conflicts(
+            src.get("sourceDirectConflicts")
+        ),
+        "sweepCoverage": normalize_sweep_coverage(src.get("sweepCoverage")),
+        "shadowClassifierCounts": {
+            str(key): safe_int(value, 0, 0, 1_000_000)
+            for key, value in _as_dict(src.get("shadowClassifierCounts")).items()
+            if str(key).strip()
+        },
+        "outputs": outputs,
         "sourceRuns": _as_dict(src.get("sourceRuns")),
     }
     finished_at = str(normalized.get("finishedAt") or "").strip()

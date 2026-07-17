@@ -20,7 +20,7 @@ uv pip compile requirements.txt -o requirements-lock.txt
 Availability-focused development lane:
 
 ```bash
-python -m pytest tests/test_job_availability_validator.py tests/test_job_availability_tombstones.py tests/test_job_availability_schedule.py tests/test_jobs_lifecycle_source_evidence.py tests/test_jobs_lifecycle_output.py tests/test_local_data_store.py tests/test_local_data_store_availability.py tests/bridge/test_job_availability_routes.py tests/bridge/test_job_availability_atomic.py -q
+python -m pytest tests/test_job_availability_identity.py tests/test_job_availability_identity_quarantine.py tests/test_job_availability_carried_seed.py tests/test_job_availability_validator.py tests/test_job_availability_tombstones.py tests/test_job_availability_schedule.py tests/test_jobs_lifecycle_source_evidence.py tests/test_jobs_lifecycle_output.py tests/test_local_data_store.py tests/test_local_data_store_availability.py tests/bridge/test_job_availability_routes.py tests/bridge/test_job_availability_atomic.py -q
 npm run test:frontend:unit
 ```
 
@@ -32,6 +32,9 @@ projection/sweep, atomic mirror interleaving, private canonical-tombstone reopen
 missing authority, runtime-gated unavailable-link actions, routes, and frontend attention state.
 Export-retirement changes also run task-launch jobs-feed, container/static-server, runtime-launcher,
 JSON quality-tool, and Saved lifecycle-overlay tests; public full JSON and CSV requests must be 404.
+Identity-repair changes additionally cover source-ID collisions across exact URLs, one-to-one URL
+changes, quarantine pruning/private serving, carried-seed initialization, exact Saved rebinding,
+fetch-report field preservation, and a 5,000-row synthetic collision/missing-identity regression.
 
 Run the balanced developer Python lane:
 

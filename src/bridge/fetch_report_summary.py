@@ -126,7 +126,7 @@ def compact_fetch_report_summary_payload(
     runtime = _as_dict(report.get("runtime"))
     runtime_payload = {
         key: runtime.get(key)
-        for key in ("setupTiming", "timingSummary", "lifecycle")
+        for key in ("setupTiming", "timingSummary", "finalizationTiming", "lifecycle")
         if key in runtime
     }
     result: dict[str, Any] = {
@@ -144,6 +144,23 @@ def compact_fetch_report_summary_payload(
         "sourceCount": source_count,
         "sourcesTruncated": False,
     }
+    for key in (
+        "lifecycleSummary",
+        "availabilitySummary",
+        "availabilityHealth",
+        "sweepCoverage",
+        "shadowClassifierCounts",
+    ):
+        value = _as_dict(report.get(key))
+        if value:
+            result[key] = value
+    source_direct_conflicts = [
+        dict(row)
+        for row in _as_list(report.get("sourceDirectConflicts"))[-100:]
+        if isinstance(row, dict)
+    ]
+    if source_direct_conflicts:
+        result["sourceDirectConflicts"] = source_direct_conflicts
     if source:
         result["source"] = source
     outputs = _as_dict(report.get("outputs"))

@@ -348,13 +348,18 @@ def test_finalize_pipeline_run_writes_terminal_outputs_and_report_shape(
     report, calls, paths, progress_phase = _run_finalize(tmp_path, monkeypatch)
 
     assert progress_phase == {"key": "writing_outputs", "label": "Writing outputs"}
-    assert calls["progress_reports"] == [
-        {"force": True, "phase": {"key": "writing_outputs", "label": "Writing outputs"}}
+    assert [row["phase"]["key"] for row in calls["progress_reports"]] == [
+        "deduplicating",
+        "reconciling_identities",
+        "applying_lifecycle",
+        "running_quality_audits",
+        "writing_outputs",
     ]
-    assert calls["task_states"] == [
-        {"finished_at": "", "force": True},
-        {"finished_at": "2026-06-21T10:00:00+00:00", "force": True},
-    ]
+    assert calls["task_states"][:-1] == [{"finished_at": "", "force": True}] * 5
+    assert calls["task_states"][-1] == {
+        "finished_at": "2026-06-21T10:00:00+00:00",
+        "force": True,
+    }
 
     assert report["outputs"]["json"] == str(paths.json_path)
     assert report["outputs"]["lightJson"] == str(paths.light_json_path)
@@ -364,6 +369,13 @@ def test_finalize_pipeline_run_writes_terminal_outputs_and_report_shape(
     assert report["runId"] == "fetch_1"
     assert report["finishedAt"] == "2026-06-21T10:00:00+00:00"
     assert report["runtime"]["existing"] == "runtime"
+    assert set(report["runtime"]["finalizationTiming"]) == {
+        "deduplicatingMs",
+        "reconciling_identitiesMs",
+        "applying_lifecycleMs",
+        "running_quality_auditsMs",
+        "writing_outputsMs",
+    }
     assert report["runtime"]["lifecycle"]["owner"] == "fetch_report"
     assert report["summary"]["outputCount"] == 1
     assert set(report["summary"]) >= {"jsonBytes", "lightJsonBytes"}

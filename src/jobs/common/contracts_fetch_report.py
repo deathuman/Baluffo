@@ -13,6 +13,12 @@ from typing import Any
 from src.contracts import SCHEMA_VERSION
 from src.jobs.common.numbers import _clamped_int
 from src.jobs.text_utils import clean_text
+from src.shared.availability_report import (
+    normalize_availability_health,
+    normalize_availability_summary,
+    normalize_source_direct_conflicts,
+    normalize_sweep_coverage,
+)
 from src.shared.fetch_report_normalization import normalize_fetch_report_social_summary
 from src.shared.fetch_report_progress import derive_fetch_task_progress
 from src.shared.json_shapes import as_json_object, copy_json_object, json_object_rows
@@ -132,7 +138,6 @@ def _normalize_outputs(payload: Any) -> dict[str, Any]:
     changed = as_json_object(outputs.get("changed"))
     return {
         "json": clean_text(outputs.get("json")),
-        "csv": clean_text(outputs.get("csv")),
         "lightJson": clean_text(outputs.get("lightJson")),
         "report": clean_text(outputs.get("report")),
         "lifecycleState": clean_text(outputs.get("lifecycleState")),
@@ -142,7 +147,6 @@ def _normalize_outputs(payload: Any) -> dict[str, Any]:
         "sourcePolicyReviewState": clean_text(outputs.get("sourcePolicyReviewState")),
         "changed": {
             "json": bool(changed.get("json")),
-            "csv": bool(changed.get("csv")),
             "lightJson": bool(changed.get("lightJson")),
         },
     }
@@ -169,6 +173,7 @@ def _normalize_lifecycle_summary(payload: Any, summary: dict[str, Any]) -> dict[
             src.get("activeCount"), _clamped_int(summary.get("lifecycleActiveCount"), 0, 0), 0
         ),
         "newCount": _clamped_int(src.get("newCount"), 0, 0),
+        "carriedInitializedCount": _clamped_int(src.get("carriedInitializedCount"), 0, 0),
         "reappearedCount": _clamped_int(src.get("reappearedCount"), 0, 0),
         "likelyRemovedCount": _clamped_int(
             src.get("likelyRemovedCount"),
@@ -275,6 +280,13 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
             src.get("sourcePolicyRecommendationExport")
         ),
         "lifecycleSummary": _normalize_lifecycle_summary(src.get("lifecycleSummary"), summary),
+        "availabilitySummary": normalize_availability_summary(src.get("availabilitySummary")),
+        "availabilityHealth": normalize_availability_health(src.get("availabilityHealth")),
+        "sourceDirectConflicts": normalize_source_direct_conflicts(
+            src.get("sourceDirectConflicts")
+        ),
+        "sweepCoverage": normalize_sweep_coverage(src.get("sweepCoverage")),
+        "shadowClassifierCounts": _normalize_count_map(src.get("shadowClassifierCounts")),
         "healthSummary": copy_json_object(src.get("healthSummary")),
         "outputs": _normalize_outputs(src.get("outputs")),
     }

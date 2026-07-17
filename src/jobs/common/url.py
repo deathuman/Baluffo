@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import re
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -57,6 +58,25 @@ def canonical_url_fingerprint_seed(url: Any) -> str:
 def fingerprint_url(url: Any) -> str:
     seed = canonical_url_fingerprint_seed(url)
     return hashlib.sha1(seed.encode("utf-8")).hexdigest() if seed else ""
+
+
+def is_public_job_url(url: Any) -> bool:
+    normalized = normalize_url(url)
+    if not normalized:
+        return False
+    try:
+        parsed = urlparse(normalized)
+        host = (parsed.hostname or "").casefold().rstrip(".")
+        if not host or parsed.username or parsed.password:
+            return False
+        if host in {"localhost", "localhost.localdomain"} or host.endswith(".local"):
+            return False
+        try:
+            return ipaddress.ip_address(host).is_global
+        except ValueError:
+            return True
+    except ValueError:
+        return False
 
 
 def is_supported_redirect_url(url: Any) -> bool:

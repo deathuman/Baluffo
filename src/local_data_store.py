@@ -106,6 +106,11 @@ class LocalDataStore:
             self.paths, entries
         )
 
+    def reconcile_repaired_availability_identities(self) -> dict[str, int]:
+        return local_data_store_availability_mod.reconcile_repaired_availability_identities(
+            self.paths
+        )
+
     def get_availability_attention(self, uid: str) -> dict[str, Any]:
         return local_data_store_availability_mod.availability_attention(self.paths, uid)
 

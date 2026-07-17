@@ -16,6 +16,14 @@ from typing import Any
 
 from src.shared.json_shapes import as_json_list, as_json_object, json_object_rows
 
+FINALIZATION_TIMING_KEYS = (
+    "deduplicatingMs",
+    "reconciling_identitiesMs",
+    "applying_lifecycleMs",
+    "running_quality_auditsMs",
+    "writing_outputsMs",
+)
+
 
 def _clean_text(value: Any) -> str:
     return str(value or "").strip()
@@ -32,6 +40,17 @@ def _clamped_int(
     except (TypeError, ValueError):
         parsed = int(default)
     return max(minimum, min(maximum, parsed))
+
+
+def normalize_finalization_timing(value: Any) -> dict[str, int]:
+    """Keep only bounded elapsed timings for the declared finalization phases."""
+
+    src = as_json_object(value)
+    return {
+        key: _clamped_int(src.get(key), 0, 0, 86_400_000)
+        for key in FINALIZATION_TIMING_KEYS
+        if key in src
+    }
 
 
 def _float_or_zero(value: Any) -> float:

@@ -9,8 +9,10 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused pipeline finaliz
 from __future__ import annotations
 
 import json
+import threading
 import time
 from collections import Counter
+from contextlib import contextmanager
 from functools import wraps
 from pathlib import Path
 from typing import Any
@@ -18,6 +20,14 @@ from typing import Any
 from src.bridge.fetch_report_summary import write_fetch_report_summary_artifact
 from src.contracts import SCHEMA_VERSION
 from src.core.contracts import validate_canonical_jobs_payload
+from src.jobs.availability_identity import (
+    IDENTITY_QUARANTINE_ARTIFACT_NAME,
+    prepare_availability_identities,
+    read_identity_quarantine,
+    reconcile_identity_quarantine,
+    validate_published_availability_rows,
+    write_identity_quarantine,
+)
 from src.jobs.availability_schedule import build_availability_sweep_plan
 from src.jobs.availability_tombstones import (
     TOMBSTONE_ARTIFACT_NAME,
@@ -429,6 +439,7 @@ def _lifecycle_summary_payload(lifecycle_counts_map: dict[str, int]) -> dict[str
     return {
         "activeCount": int(lifecycle_counts_map.get("active") or 0),
         "newCount": int(lifecycle_counts_map.get("new") or 0),
+        "carriedInitializedCount": int(lifecycle_counts_map.get("carriedInitialized") or 0),
         "reappearedCount": int(lifecycle_counts_map.get("reappeared") or 0),
         "likelyRemovedCount": int(lifecycle_counts_map.get("likelyRemoved") or 0),
         "archivedCount": int(lifecycle_counts_map.get("archived") or 0),
@@ -450,6 +461,45 @@ def _lifecycle_summary_payload(lifecycle_counts_map: dict[str, int]) -> dict[str
             lifecycle_counts_map.get("availabilityUnavailable") or 0
         ),
     }
+
+
+@contextmanager
+def _finalization_phase(
+    *,
+    key: str,
+    label: str,
+    progress_phase: dict[str, str],
+    task_runtime: Any,
+    write_progress_report: Any,
+    write_task_state: Any,
+    timings: dict[str, int],
+):
+    progress_phase["key"] = key
+    progress_phase["label"] = label
+    if hasattr(task_runtime, "task_lock"):
+        update_fetch_runtime_phase(task_runtime, phase_key=key, phase_label=label)
+    write_task_state(finished_at="", force=True)
+    write_progress_report(force=True)
+    stop = threading.Event()
+
+    def heartbeat() -> None:
+        while not stop.wait(30.0):
+            write_task_state(finished_at="", force=False)
+            write_progress_report(force=False)
+
+    thread = threading.Thread(
+        target=heartbeat,
+        daemon=True,
+        name=f"pipeline-finalize-{key}",
+    )
+    started = time.perf_counter()
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join(timeout=1.0)
+        timings[f"{key}Ms"] = max(0, int((time.perf_counter() - started) * 1000))
 
 
 def _merge_source_health_report_payload(
@@ -996,89 +1046,145 @@ def finalize_pipeline_run(
     observed_rows: list[CanonicalJob] | None = None,
     static_suppression_policy: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    deduped_rows, dedup_stats, preserved_previous = _deduplicate_or_preserve_previous(
-        paths=paths,
-        canonical_rows=canonical_rows,
-        preserve_previous_on_empty=preserve_previous_on_empty,
-        started_at=started_at,
-    )
+    finalization_timings: dict[str, int] = {}
+    with _finalization_phase(
+        key="deduplicating",
+        label="Deduplicating jobs",
+        progress_phase=progress_phase,
+        task_runtime=task_runtime,
+        write_progress_report=write_progress_report,
+        write_task_state=write_task_state,
+        timings=finalization_timings,
+    ):
+        deduped_rows, dedup_stats, preserved_previous = _deduplicate_or_preserve_previous(
+            paths=paths,
+            canonical_rows=canonical_rows,
+            preserve_previous_on_empty=preserve_previous_on_empty,
+            started_at=started_at,
+        )
+    observed_for_lifecycle = list(canonical_rows if observed_rows is None else observed_rows)
+    identity_detected_at = now_iso()
+    with _finalization_phase(
+        key="reconciling_identities",
+        label="Reconciling availability identities",
+        progress_phase=progress_phase,
+        task_runtime=task_runtime,
+        write_progress_report=write_progress_report,
+        write_task_state=write_task_state,
+        timings=finalization_timings,
+    ):
+        identity_preparation = prepare_availability_identities(
+            rows=deduped_rows,
+            observed_rows=observed_for_lifecycle,
+            lifecycle_rows=lifecycle_rows,
+            detected_at=identity_detected_at,
+        )
+        deduped_rows = identity_preparation.rows
+        observed_for_lifecycle = identity_preparation.observed_rows
+        lifecycle_rows = identity_preparation.lifecycle_rows
     lifecycle_finished_at = now_iso()
     pre_lifecycle_payload_rows = [row.to_dict() for row in deduped_rows]
-    deduped_rows, lifecycle_rows, lifecycle_archive_rows_by_year, lifecycle_counts_map = (
-        _apply_lifecycle_state(
-            deduped_rows=deduped_rows,
-            observed_rows=list(canonical_rows if observed_rows is None else observed_rows),
-            lifecycle_rows=lifecycle_rows,
-            source_reports=source_reports,
-            selected_loaders=selected_loaders,
-            using_default_loaders=using_default_loaders,
-            effective_seed_from_existing_output=effective_seed_from_existing_output,
-            lifecycle_finished_at=lifecycle_finished_at,
+    with _finalization_phase(
+        key="applying_lifecycle",
+        label="Applying job availability lifecycle",
+        progress_phase=progress_phase,
+        task_runtime=task_runtime,
+        write_progress_report=write_progress_report,
+        write_task_state=write_task_state,
+        timings=finalization_timings,
+    ):
+        deduped_rows, lifecycle_rows, lifecycle_archive_rows_by_year, lifecycle_counts_map = (
+            _apply_lifecycle_state(
+                deduped_rows=deduped_rows,
+                observed_rows=observed_for_lifecycle,
+                lifecycle_rows=lifecycle_rows,
+                source_reports=source_reports,
+                selected_loaders=selected_loaders,
+                using_default_loaders=using_default_loaders,
+                effective_seed_from_existing_output=effective_seed_from_existing_output,
+                lifecycle_finished_at=lifecycle_finished_at,
+            )
         )
-    )
 
     deduped_payload_rows = [row.to_dict() for row in deduped_rows]
-    deduped_payload_rows, _sector_gate_dropped = _apply_sector_gate(
-        deduped_payload_rows, source_reports
-    )
-    dedup_stats["outputCount"] = len(deduped_payload_rows)
-    if _sector_gate_dropped:
-        dedup_stats["sectorGateFiltered"] = _sector_gate_dropped
-    (
-        location_quality_audit,
-        sector_quality_audit,
-        contamination_report,
-        city_garbage_audit,
-    ) = _quality_reports(deduped_payload_rows)
-    _apply_final_output_loss_counts(source_reports, deduped_payload_rows)
-
-    progress_phase["key"] = "writing_outputs"
-    progress_phase["label"] = "Writing outputs"
-    if hasattr(task_runtime, "task_lock"):
-        update_fetch_runtime_phase(
-            task_runtime,
-            phase_key="writing_outputs",
-            phase_label="Writing outputs",
-            output_count=len(canonical_rows),
+    with _finalization_phase(
+        key="running_quality_audits",
+        label="Running quality audits",
+        progress_phase=progress_phase,
+        task_runtime=task_runtime,
+        write_progress_report=write_progress_report,
+        write_task_state=write_task_state,
+        timings=finalization_timings,
+    ):
+        deduped_payload_rows, _sector_gate_dropped = _apply_sector_gate(
+            deduped_payload_rows, source_reports
         )
-    write_task_state(finished_at="", force=True)
-    write_progress_report(force=True)
-    tombstone_path = paths.output_dir / TOMBSTONE_ARTIFACT_NAME
-    tombstones = reconcile_availability_tombstones(
-        read_availability_tombstones(tombstone_path),
-        before_rows=pre_lifecycle_payload_rows,
-        after_rows=deduped_payload_rows,
-        lifecycle_rows=lifecycle_rows,
-    )
-    write_availability_tombstones(tombstone_path, tombstones, updated_at=lifecycle_finished_at)
-    wrote_json, wrote_light_json = _write_output_rows(paths, deduped_payload_rows)
-    availability = _write_availability_artifacts(
-        paths=paths, lifecycle_rows=lifecycle_rows, finished_at=lifecycle_finished_at
-    )
-    availability_sweep_plan = availability["sweep"]
-    source_direct_conflicts = availability["conflicts"]
-    shadow_classifier_counts = availability["shadowCounts"]
-    wrote_availability_history = availability["wroteHistory"]
-    wrote_availability_sweep_plan = availability["wroteSweep"]
-    json_bytes, light_json_bytes = _output_sizes(paths)
-    _browser_fallback_queue_rows, parser_regression_queue_rows = _write_review_queue_artifacts(
-        paths=paths,
-        source_reports=source_reports,
-        lifecycle_finished_at=lifecycle_finished_at,
-        redirect_resolver=redirect_resolver,
-    )
-    social_review_payload, social_review_path = _write_social_review_artifact(
-        paths=paths,
-        deduped_rows=deduped_rows,
-        lifecycle_finished_at=lifecycle_finished_at,
-        started_at=started_at,
-    )
+        dedup_stats["outputCount"] = len(deduped_payload_rows)
+        if _sector_gate_dropped:
+            dedup_stats["sectorGateFiltered"] = _sector_gate_dropped
+        (
+            location_quality_audit,
+            sector_quality_audit,
+            contamination_report,
+            city_garbage_audit,
+        ) = _quality_reports(deduped_payload_rows)
+        _apply_final_output_loss_counts(source_reports, deduped_payload_rows)
+        validate_published_availability_rows(deduped_payload_rows)
+
+    with _finalization_phase(
+        key="writing_outputs",
+        label="Writing outputs",
+        progress_phase=progress_phase,
+        task_runtime=task_runtime,
+        write_progress_report=write_progress_report,
+        write_task_state=write_task_state,
+        timings=finalization_timings,
+    ):
+        tombstone_path = paths.output_dir / TOMBSTONE_ARTIFACT_NAME
+        tombstones = reconcile_availability_tombstones(
+            read_availability_tombstones(tombstone_path),
+            before_rows=pre_lifecycle_payload_rows,
+            after_rows=deduped_payload_rows,
+            lifecycle_rows=lifecycle_rows,
+        )
+        write_availability_tombstones(tombstone_path, tombstones, updated_at=lifecycle_finished_at)
+        quarantine_path = paths.output_dir / IDENTITY_QUARANTINE_ARTIFACT_NAME
+        identity_quarantine = reconcile_identity_quarantine(
+            read_identity_quarantine(quarantine_path),
+            identity_preparation.quarantine_additions,
+        )
+        write_identity_quarantine(
+            quarantine_path, identity_quarantine, updated_at=lifecycle_finished_at
+        )
+        wrote_json, wrote_light_json = _write_output_rows(paths, deduped_payload_rows)
+        availability = _write_availability_artifacts(
+            paths=paths, lifecycle_rows=lifecycle_rows, finished_at=lifecycle_finished_at
+        )
+        availability_sweep_plan = availability["sweep"]
+        source_direct_conflicts = availability["conflicts"]
+        shadow_classifier_counts = availability["shadowCounts"]
+        wrote_availability_history = availability["wroteHistory"]
+        wrote_availability_sweep_plan = availability["wroteSweep"]
+        json_bytes, light_json_bytes = _output_sizes(paths)
+        _browser_fallback_queue_rows, parser_regression_queue_rows = _write_review_queue_artifacts(
+            paths=paths,
+            source_reports=source_reports,
+            lifecycle_finished_at=lifecycle_finished_at,
+            redirect_resolver=redirect_resolver,
+        )
+        social_review_payload, social_review_path = _write_social_review_artifact(
+            paths=paths,
+            deduped_rows=deduped_rows,
+            lifecycle_finished_at=lifecycle_finished_at,
+            started_at=started_at,
+        )
     detailed_source_rows, _timing_summary = _update_runtime_timing_payload(
         runtime_payload=runtime_payload,
         task_runtime=task_runtime,
         source_reports=source_reports,
         run_started_mono=run_started_mono,
     )
+    runtime_payload["finalizationTiming"] = dict(finalization_timings)
     final_source_rows = _final_source_rows(detailed_source_rows, source_reports)
     summary_payload = build_pipeline_summary(
         dedup_stats,
@@ -1133,6 +1239,7 @@ def finalize_pipeline_run(
             "lifecycleSummary": _lifecycle_summary_payload(lifecycle_counts_map),
             "availabilitySummary": {
                 **_lifecycle_summary_payload(lifecycle_counts_map),
+                **identity_preparation.summary,
                 "sourceDirectConflictCount": len(source_direct_conflicts),
                 "shadowClassifierCounts": shadow_classifier_counts,
             },
@@ -1140,6 +1247,10 @@ def finalize_pipeline_run(
                 "status": "healthy"
                 if bool(availability_sweep_plan.get("healthTargetMet"))
                 and not bool(availability_sweep_plan.get("degradedCoverage"))
+                and not int(identity_preparation.summary.get("unresolvedMissingIdentityCount") or 0)
+                and not int(
+                    identity_preparation.summary.get("unresolvedIdentityConflictCount") or 0
+                )
                 else "degraded",
                 "overdueCount": int(lifecycle_counts_map.get("availabilityOverdue") or 0),
                 "verifiedWithinDaysTarget": 7,
@@ -1151,6 +1262,7 @@ def finalize_pipeline_run(
                 "sweepDeferredCount": int(availability_sweep_plan.get("deferredCount") or 0),
                 "degradedCoverage": bool(availability_sweep_plan.get("degradedCoverage")),
                 "shadowClassifier": True,
+                "identity": dict(identity_preparation.summary),
             },
             "sourceDirectConflicts": source_direct_conflicts[-100:],
             "sweepCoverage": {
