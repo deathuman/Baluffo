@@ -9,7 +9,9 @@ from typing import Any
 import pytest
 
 from src.jobs import pipeline_finalize
+from src.jobs.availability_identity import AvailabilityIdentityPreflightError
 from src.jobs.pipeline_bootstrap import build_pipeline_paths
+from src.jobs.pipeline_runtime_summary import PipelineTaskRuntime
 
 
 @dataclass(frozen=True)
@@ -415,6 +417,81 @@ def test_finalize_pipeline_run_writes_terminal_outputs_and_report_shape(
     ]
     assert calls["lifecycle_archive"][0]["archive_rows_by_year"] == {"2026": [{"id": "job-1"}]}
     assert calls["source_policy_exports"][0]["finished_at"] == report["finishedAt"]
+
+
+def test_failed_finalization_writes_terminal_report_and_bounded_identity_counts(
+    tmp_path: Path,
+) -> None:
+    paths = build_pipeline_paths(tmp_path)
+    task_runtime = PipelineTaskRuntime(
+        run_id="fetch_failed",
+        started_at="2026-07-17T08:00:00+00:00",
+        task_rows={
+            "source_1": {
+                "id": "source_1",
+                "name": "source_1",
+                "status": "ok",
+                "startedAt": "2026-07-17T08:00:00+00:00",
+                "finishedAt": "2026-07-17T08:01:00+00:00",
+            }
+        },
+        recent_events=[],
+    )
+    task_runtime.finalization_timings = {
+        "deduplicatingMs": 100,
+        "reconciling_identitiesMs": 20,
+    }
+    task_state_calls: list[dict[str, Any]] = []
+
+    report = pipeline_finalize.write_failed_pipeline_report(
+        paths=paths,
+        source_reports=[{"name": "source_1", "status": "ok", "keptCount": 4}],
+        canonical_rows=[],
+        runtime_payload={"selectedSourceCount": 1},
+        task_runtime=task_runtime,
+        write_task_state=lambda **kwargs: task_state_calls.append(kwargs),
+        started_at="2026-07-17T08:00:00+00:00",
+        run_id="fetch_failed",
+        error=AvailabilityIdentityPreflightError(
+            reason="post_filter_identity_invariant_failed",
+            summary={
+                "acceptedMonitorableRowCount": 10,
+                "rejectedRowCount": 2,
+                "rejectionReasonCounts": {"conflicting_source_alias_without_public_url": 2},
+                "unsafeDetail": "must not escape",
+            },
+        ),
+    )
+
+    assert report["status"] == "error"
+    assert report["finishedAt"]
+    assert report["taskProgress"]["active"] is False
+    assert report["taskProgress"]["phaseKey"] == "failed"
+    assert report["summary"]["errorCode"] == "availability_identity_preflight_failed"
+    assert report["summary"]["publishedOutputUnchanged"] is True
+    assert report["availabilitySummary"]["acceptedMonitorableRowCount"] == 10
+    assert report["availabilitySummary"]["rejectionReasonCounts"] == {
+        "conflicting_source_alias_without_public_url": 2
+    }
+    assert "unsafeDetail" not in report["availabilitySummary"]
+    assert report["runtime"]["finalizationTiming"]["deduplicatingMs"] == 100
+    assert json.loads(paths.report_path.read_text(encoding="utf-8")) == report
+    sidecar = json.loads(
+        paths.report_path.with_name("jobs-fetch-report-summary.json").read_text(encoding="utf-8")
+    )
+    assert sidecar["status"] == "error"
+    assert sidecar["summary"]["errorCode"] == "availability_identity_preflight_failed"
+    assert sidecar["availabilitySummary"]["rejectedRowCount"] == 2
+    assert task_state_calls == [
+        {
+            "finished_at": report["finishedAt"],
+            "force": True,
+            "terminal_error_code": "availability_identity_preflight_failed",
+            "terminal_summary": {
+                **report["summary"],
+            },
+        }
+    ]
 
 
 def test_finalize_pipeline_run_records_preserved_previous_and_sector_gate_drop(

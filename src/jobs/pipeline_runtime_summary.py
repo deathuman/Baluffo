@@ -414,6 +414,8 @@ def build_fetch_live_task_payload(
     runtime: PipelineTaskRuntime,
     report_path: str,
     finished_at: str = "",
+    terminal_error_code: str = "",
+    terminal_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     rows_snapshot = snapshot_task_rows(runtime.task_rows)
     summary = {
@@ -424,6 +426,34 @@ def build_fetch_live_task_payload(
         "excluded": sum(1 for row in rows_snapshot if row.get("status") == "excluded"),
         "outputCount": max(0, int(runtime.current_output_count or 0)),
     }
+    if terminal_summary:
+        summary.update(dict(terminal_summary))
+    error_code = str(terminal_error_code or "").strip()
+    task_progress = build_fetch_task_progress_payload(
+        phase_key="completed" if finished_at else runtime.current_phase_key,
+        phase_label="Completed" if finished_at else runtime.current_phase_label,
+        task_rows={
+            str(row.get("name") or ""): row
+            for row in rows_snapshot
+            if str(row.get("name") or "").strip()
+        },
+        output_count=runtime.current_output_count,
+        finished=bool(finished_at),
+    )
+    if finished_at and error_code:
+        terminal_output_count = max(0, int(summary.get("outputCount") or 0))
+        task_progress.update(
+            {
+                "active": False,
+                "phaseKey": "failed",
+                "phaseLabel": "Failed",
+                "counts": {
+                    **dict(task_progress.get("counts") or {}),
+                    "errorCode": error_code,
+                    "outputCount": terminal_output_count,
+                },
+            }
+        )
     return cast(
         dict[str, Any],
         build_live_task_payload(
@@ -433,17 +463,8 @@ def build_fetch_live_task_payload(
             started_at=runtime.started_at,
             finished_at=finished_at,
             heartbeat_at=now_iso(),
-            task_progress=build_fetch_task_progress_payload(
-                phase_key="completed" if finished_at else runtime.current_phase_key,
-                phase_label="Completed" if finished_at else runtime.current_phase_label,
-                task_rows={
-                    str(row.get("name") or ""): row
-                    for row in rows_snapshot
-                    if str(row.get("name") or "").strip()
-                },
-                output_count=runtime.current_output_count,
-                finished=bool(finished_at),
-            ),
+            status="error" if finished_at and error_code else ("ok" if finished_at else "running"),
+            task_progress=task_progress,
             summary=summary,
             work_items=rows_snapshot,
             recent_events=list(runtime.recent_events),

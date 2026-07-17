@@ -37,6 +37,7 @@ def normalize_availability_summary(value: Any) -> dict[str, Any]:
         if str(key).endswith("Count") and str(key) != "shadowClassifierCounts"
     }
     counts["shadowClassifierCounts"] = _count_map(source.get("shadowClassifierCounts"))
+    counts["rejectionReasonCounts"] = _count_map(source.get("rejectionReasonCounts"))
     return counts
 
 

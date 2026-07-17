@@ -1,6 +1,10 @@
+import json
+import time
+
 import pytest
 
 from src.jobs.availability_identity import (
+    AvailabilityIdentityPreflightError,
     prepare_availability_identities,
     validate_published_availability_rows,
 )
@@ -193,13 +197,110 @@ def test_large_exact_identity_preflight_has_no_cross_url_collisions() -> None:
     identities = [row.availabilityId for row in prepared.rows]
     assert all(identities)
     assert len(set(identities)) == len(rows)
-    assert prepared.summary == {
-        "monitorableRowCount": len(rows),
-        "repairedIdentityCount": 0,
-        "quarantinedIdentityCount": 0,
-        "unresolvedMissingIdentityCount": 0,
-        "unresolvedIdentityConflictCount": 0,
+    assert prepared.summary["monitorableRowCount"] == len(rows)
+    assert prepared.summary["acceptedMonitorableRowCount"] == len(rows)
+    assert prepared.summary["rejectedRowCount"] == 0
+    assert prepared.summary["rejectionReasonCounts"] == {}
+    assert prepared.summary["unresolvedMissingIdentityCount"] == 0
+    assert prepared.summary["unresolvedIdentityConflictCount"] == 0
+
+
+@pytest.mark.slow
+def test_live_scale_identity_preflight_partitions_one_unresolvable_candidate() -> None:
+    unique_count = 79_525
+    rows = [
+        CanonicalJob.from_mapping(
+            {
+                "title": f"Role {index}",
+                "company": "Synthetic Studio",
+                "source": "synthetic",
+                "sourceJobId": f"job-{index}",
+                "jobLink": f"https://jobs.example/opening/{index}",
+            }
+        )
+        for index in range(unique_count)
+    ]
+    rows.extend(
+        CanonicalJob.from_mapping(
+            {
+                "title": f"Conflicted role {index}",
+                "company": "Synthetic Studio",
+                "source": "synthetic",
+                "sourceJobId": "reused-live-scale-id",
+                "jobLink": url,
+            }
+        )
+        for index, url in enumerate(
+            (
+                "https://jobs.example/conflict/1",
+                "https://jobs.example/conflict/2",
+                "",
+            )
+        )
+    )
+
+    started = time.perf_counter()
+    prepared = prepare_availability_identities(
+        rows=rows,
+        observed_rows=rows,
+        lifecycle_rows={},
+        detected_at="2026-07-17T12:00:00+00:00",
+    )
+    elapsed = time.perf_counter() - started
+
+    assert len(rows) == 79_528
+    assert len(prepared.rows) == 79_527
+    assert len(prepared.observed_rows) == 79_527
+    assert prepared.summary["rejectedRowCount"] == 1
+    assert prepared.summary["postFilterUnresolvedMissingIdentityCount"] == 0
+    assert prepared.summary["postFilterUnresolvedIdentityConflictCount"] == 0
+    assert len(json.dumps(prepared.quarantine_additions)) < 16_384
+    assert elapsed < 120
+
+
+def test_conflicting_url_less_candidate_is_quarantined_and_excluded() -> None:
+    rows = [
+        CanonicalJob.from_mapping(
+            {
+                "title": title,
+                "company": "Studio",
+                "source": "sheet",
+                "sourceJobId": "reused-row-id",
+                "jobLink": url,
+            }
+        )
+        for title, url in (
+            ("Engineer", "https://jobs.example/opening/1"),
+            ("Artist", "https://jobs.example/opening/2"),
+            ("Unidentified", ""),
+        )
+    ]
+
+    prepared = prepare_availability_identities(
+        rows=rows,
+        observed_rows=rows,
+        lifecycle_rows={},
+        detected_at="2026-07-17T12:00:00+00:00",
+    )
+
+    assert len(prepared.rows) == 2
+    assert len(prepared.observed_rows) == 2
+    assert all(row.availabilityId for row in prepared.rows)
+    assert prepared.summary["candidateMonitorableRowCount"] == 3
+    assert prepared.summary["acceptedMonitorableRowCount"] == 2
+    assert prepared.summary["rejectedRowCount"] == 1
+    assert prepared.summary["rejectionReasonCounts"] == {
+        "conflicting_source_alias_without_public_url": 1
     }
+    unresolved = [
+        row
+        for row in prepared.quarantine_additions.values()
+        if row.get("kind") == "unresolved_candidate_group"
+    ]
+    assert len(unresolved) == 1
+    assert unresolved[0]["candidateCount"] == 1
+    assert unresolved[0]["relatedCandidateCount"] == 3
+    assert "reused-row-id" not in str(unresolved[0])
 
 
 def test_publication_invariant_rejects_one_identity_across_distinct_urls() -> None:
@@ -219,5 +320,6 @@ def test_publication_invariant_rejects_one_identity_across_distinct_urls() -> No
         for index in range(2)
     ]
 
-    with pytest.raises(ValueError, match="identity collision"):
+    with pytest.raises(AvailabilityIdentityPreflightError) as exc_info:
         validate_published_availability_rows(rows)
+    assert exc_info.value.reason == "availability_publication_identity_collision"

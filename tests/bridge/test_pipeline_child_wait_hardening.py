@@ -67,6 +67,24 @@ def test_wait_for_report_completion_fails_promptly_when_fetch_child_terminal_wit
     )
 
 
+def test_pipeline_propagates_terminal_fetch_report_error_code() -> None:
+    service = _make_pipeline_service()
+    service.wait_for_report_completion = lambda **_kwargs: {
+        "status": "error",
+        "finishedAt": "2026-07-17T08:03:00+00:00",
+        "summary": {
+            "error": "availability_identity_preflight_failed",
+            "errorCode": "availability_identity_preflight_failed",
+        },
+    }
+
+    with pytest.raises(
+        RuntimeError,
+        match="fetch_wait: availability_identity_preflight_failed",
+    ):
+        service._wait_for_child_report(phase="fetch_wait")
+
+
 def test_wait_for_report_completion_cancels_when_discovery_child_canceled_without_report(
     tmp_path: Path,
 ) -> None:

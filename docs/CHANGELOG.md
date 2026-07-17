@@ -10,6 +10,24 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.122] - 2026-07-17
+
+### Fixed
+- Availability identity preflight now quarantines and excludes candidates that cannot receive an exact collision-safe identity, allowing valid rows to publish atomically without fuzzy recovery or false lifecycle observations.
+- Finalization exceptions now write bounded terminal error reports, inactive failed task progress, phase timings, and stable error codes before worker exit, so parent pipelines receive the actual failure instead of orphan fallback diagnostics.
+
+### Changed
+- The private availability identity quarantine uses schema v2 with tolerant v1 reads, hashed unresolved-alias evidence, deterministic 30-day/2,000-entry retention, and explicit truncation counts.
+- Fetch-report full and summary projections now distinguish accepted, repaired, contaminated, rejected, quarantined, and post-filter identity counts; rejected candidates degrade coverage without becoming feed-integrity failures.
+
+### Tests
+- Added exact URL-backed repair and URL-less exclusion regressions, quarantine v1/v2 retention and truncation coverage, terminal failure propagation tests, and a 79,528-candidate synthetic identity audit.
+- A fresh full local pipeline published 40,586 monitorable rows with zero missing availability identities, zero cross-URL identity collisions, zero rejected rows, and direct-link classification still in shadow mode.
+
+### Notes
+- This is a container/Umbrel patch. No `v0.2.122` desktop tag, GitHub desktop release, desktop update, or desktop assets are published.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.121] - 2026-07-16
 
 ### Fixed

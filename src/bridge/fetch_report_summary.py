@@ -33,6 +33,10 @@ _SUMMARY_KEYS = (
     "ok",
     "error",
     "excluded",
+    "candidateCount",
+    "errorCode",
+    "errorReason",
+    "publishedOutputUnchanged",
 )
 
 _SOURCE_ROW_KEYS = (

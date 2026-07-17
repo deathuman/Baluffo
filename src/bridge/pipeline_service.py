@@ -1019,11 +1019,21 @@ class PipelineService:
 
     def _wait_for_child_report(self, *, phase: str, **kwargs: Any) -> dict[str, Any]:
         try:
-            return self.wait_for_report_completion(**kwargs)
+            report = self.wait_for_report_completion(**kwargs)
         except PipelineAbortRequested:
             raise
         except _EXPECTED_PIPELINE_CHILD_BOUNDARY_EXCEPTIONS as exc:
             raise RuntimeError(f"{phase}: {exc}") from exc
+        report_status = str(report.get("status") or "").strip().lower()
+        if report_status in {"error", "failed", "failure"}:
+            summary = report.get("summary")
+            if not isinstance(summary, dict):
+                summary = {}
+            error = str(
+                summary.get("errorCode") or summary.get("error") or "child_report_failed"
+            ).strip()
+            raise RuntimeError(f"{phase}: {error}")
+        return report
 
     @staticmethod
     def _report_wait_now() -> Any:

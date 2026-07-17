@@ -75,11 +75,16 @@ rows. An existing identity is retained only for one current canonical URL finger
 fingerprints. Conflicts fall back to deterministic URL-backed identities. Title, company, location,
 and dedup keys are never recovery evidence. Every monitorable published row must have an identity,
 `available` status, and bounded evidence, and no identity may span multiple URL fingerprints.
-Violations abort publication before the feed or lifecycle artifacts are changed.
+Candidates that still lack an exact identity after this repair—such as a reused source alias with no
+valid public URL—are excluded from both publication and the current-run observation set. They
+degrade availability health but do not block valid rows. Any remaining violation in the accepted set
+aborts publication before feed or lifecycle artifacts are changed.
 
-`jobs-availability-identity-quarantine.json` is a private schema-v1 identity-repair artifact. It
-retains at most 2,000 contaminated legacy identities for 30 days with compact prior lifecycle
-evidence, candidate replacement identities, and URL fingerprints only; it never stores raw URLs.
+`jobs-availability-identity-quarantine.json` is a private schema-v2 identity-repair artifact with
+tolerant schema-v1 reads. It retains at most 2,000 contaminated legacy identities or unresolved
+candidate groups for 30 days with compact prior lifecycle evidence, hashed source-alias evidence,
+candidate counts, replacement identities, and URL fingerprints only; it never stores raw URLs or
+job text. `rowCount` and `truncatedCount` expose bounded retention pressure.
 Quarantined status, closure evidence, tombstones, and transition IDs are not transferred across an
 ambiguous one-to-many repair, and the artifact is never publicly served or copied to history.
 
@@ -1421,16 +1426,20 @@ local user data, source registry rows, tombstones, sync state, or source-family 
 Fetch reports, both report normalizers, the compact fetch-report sidecar, and
 `/ops/fetch-report?view=summary` preserve the bounded top-level `availabilitySummary`,
 `availabilityHealth`, `sourceDirectConflicts` (at most 100 rows), row-free `sweepCoverage`, and
-`shadowClassifierCounts` fields. `availabilitySummary` includes `monitorableRowCount`,
-`repairedIdentityCount`, `quarantinedIdentityCount`, `unresolvedMissingIdentityCount`, and
-`unresolvedIdentityConflictCount`. Any unresolved identity violation degrades availability health.
+`shadowClassifierCounts` fields. `availabilitySummary` includes candidate and accepted monitorable
+counts, repaired and contaminated identity counts, rejected-row and rejection-reason counts,
+quarantine size/truncation counts, and post-filter unresolved identity counts. Rejected candidates
+degrade coverage; an unresolved accepted-set identity violation fails publication.
 Normalized output metadata has no CSV or changed-CSV compatibility keys.
 
 Completed reports include `runtime.finalizationTiming` elapsed milliseconds for the truthful
 indeterminate phases `deduplicating`, `reconciling_identities`, `applying_lifecycle`,
 `running_quality_audits`, and `writing_outputs`. Active task state publishes each phase before work
 starts and refreshes a bounded heartbeat during long synchronous work; no finalization percentage or
-ETA is inferred.
+ETA is inferred. A finalization exception writes a terminal `status="error"` report with
+`taskProgress.phaseKey="failed"`, a bounded stable `summary.errorCode`, available phase timings, and
+truthful `publishedOutputUnchanged` evidence; lifecycle cleanup's
+`owner_inactive_without_terminal_report` remains crash/corruption fallback only.
 
 | Field | Type | Description |
 |---|---|---|

@@ -306,6 +306,7 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
         outputs["changed"] = changed
     normalized: JsonObject = {
         "schemaVersion": safe_schema_version(src.get("schemaVersion")),
+        "status": str(src.get("status") or "").strip().lower(),
         "runId": str(src.get("runId") or "").strip(),
         "startedAt": str(src.get("startedAt") or "").strip(),
         "finishedAt": str(src.get("finishedAt") or "").strip(),

@@ -63,6 +63,45 @@ def test_jobs_completed_progress_preserves_summary_source_count_when_lower_than_
     assert jobs_counts["completedTasks"] == 2
 
 
+def test_bridge_and_jobs_normalizers_preserve_terminal_fetch_failure() -> None:
+    payload = {
+        "status": "error",
+        "runId": "fetch_failed",
+        "startedAt": "2026-07-17T08:00:00+00:00",
+        "finishedAt": "2026-07-17T08:03:00+00:00",
+        "summary": {
+            "sourceCount": 2,
+            "successfulSources": 2,
+            "failedSources": 0,
+            "excludedSources": 0,
+            "candidateCount": 100,
+            "outputCount": 0,
+            "error": "availability_identity_preflight_failed",
+            "errorCode": "availability_identity_preflight_failed",
+        },
+        "availabilitySummary": {
+            "rejectedRowCount": 3,
+            "rejectionReasonCounts": {"conflicting_source_alias_without_public_url": 3},
+        },
+    }
+
+    bridge = normalize_fetch_report_contract(payload)
+    jobs = normalize_fetch_report_payload(payload)
+
+    assert bridge["status"] == jobs["status"] == "error"
+    assert bridge["taskProgress"]["phaseKey"] == jobs["taskProgress"]["phaseKey"] == "failed"
+    assert bridge["taskProgress"]["active"] is jobs["taskProgress"]["active"] is False
+    assert (
+        bridge["taskProgress"]["counts"]["errorCode"]
+        == jobs["taskProgress"]["counts"]["errorCode"]
+        == "availability_identity_preflight_failed"
+    )
+    assert bridge["availabilitySummary"]["rejectionReasonCounts"] == {
+        "conflicting_source_alias_without_public_url": 3
+    }
+    assert jobs["availabilitySummary"] == bridge["availabilitySummary"]
+
+
 def test_bridge_fetch_report_keeps_empty_timing_summary_shape() -> None:
     bridge = normalize_fetch_report_contract({})
     jobs = normalize_fetch_report_payload({})

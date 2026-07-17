@@ -85,6 +85,9 @@ def derive_fetch_task_progress(
         resolved if source_count_default is None else source_count_default,
         maximum=1_000_000,
     )
+    terminal_status = clean_text(src.get("status")).lower()
+    error_code = clean_text(summary_obj.get("errorCode") or summary_obj.get("error"))
+    failed_terminal = bool(finished_at and (terminal_status in {"error", "failed"} or error_code))
     if finished_at:
         completed_source_count = (
             max(source_count, resolved)
@@ -109,11 +112,14 @@ def derive_fetch_task_progress(
             )
         return {
             "active": False,
-            "phaseKey": "completed",
-            "phaseLabel": "Completed",
+            "phaseKey": "failed" if failed_terminal else "completed",
+            "phaseLabel": "Failed" if failed_terminal else "Completed",
             "mode": "determinate",
             "ratio": 1.0,
-            "counts": counts,
+            "counts": {
+                **counts,
+                **({"errorCode": error_code} if failed_terminal and error_code else {}),
+            },
         }
     ratio = 0.0
     mode = "indeterminate"

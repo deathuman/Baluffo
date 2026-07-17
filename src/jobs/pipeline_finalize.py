@@ -22,6 +22,7 @@ from src.contracts import SCHEMA_VERSION
 from src.core.contracts import validate_canonical_jobs_payload
 from src.jobs.availability_identity import (
     IDENTITY_QUARANTINE_ARTIFACT_NAME,
+    AvailabilityIdentityPreflightError,
     prepare_availability_identities,
     read_identity_quarantine,
     reconcile_identity_quarantine,
@@ -62,6 +63,7 @@ from src.jobs.dedup import CanonicalDeduplicator
 from src.jobs.feed_reconciliation_lock import jobs_feed_reconciliation_lock
 from src.jobs.models import CanonicalJob
 from src.jobs.pipeline_runtime_summary import (
+    append_fetch_runtime_event,
     build_detailed_source_rows,
     snapshot_task_rows,
     update_fetch_runtime_phase,
@@ -476,6 +478,10 @@ def _finalization_phase(
 ):
     progress_phase["key"] = key
     progress_phase["label"] = label
+    try:
+        task_runtime.finalization_phase_key = key
+    except (AttributeError, TypeError):
+        pass
     if hasattr(task_runtime, "task_lock"):
         update_fetch_runtime_phase(task_runtime, phase_key=key, phase_label=label)
     write_task_state(finished_at="", force=True)
@@ -500,6 +506,10 @@ def _finalization_phase(
         stop.set()
         thread.join(timeout=1.0)
         timings[f"{key}Ms"] = max(0, int((time.perf_counter() - started) * 1000))
+        try:
+            task_runtime.finalization_timings = dict(timings)
+        except (AttributeError, TypeError):
+            pass
 
 
 def _merge_source_health_report_payload(
@@ -1019,6 +1029,154 @@ def _serialize_jobs_feed_reconciliation(func):
     return wrapped
 
 
+def _bounded_identity_failure_summary(exc: BaseException) -> tuple[str, str, dict[str, Any]]:
+    if isinstance(exc, AvailabilityIdentityPreflightError):
+        allowed_counts = {
+            clean_text(key): max(0, int(value or 0))
+            for key, value in exc.summary.items()
+            if clean_text(key).endswith("Count") and isinstance(value, (int, float))
+        }
+        reason_counts = {
+            clean_text(key): max(0, int(value or 0))
+            for key, value in (
+                exc.summary.get("rejectionReasonCounts")
+                if isinstance(exc.summary.get("rejectionReasonCounts"), dict)
+                else {}
+            ).items()
+            if clean_text(key) and isinstance(value, (int, float))
+        }
+        if reason_counts:
+            allowed_counts["rejectionReasonCounts"] = dict(list(sorted(reason_counts.items()))[:16])
+        return exc.error_code, exc.reason, allowed_counts
+    return "pipeline_finalization_failed", type(exc).__name__, {}
+
+
+def write_failed_pipeline_report(
+    *,
+    paths: Any,
+    source_reports: list[dict[str, Any]],
+    canonical_rows: list[CanonicalJob],
+    runtime_payload: dict[str, Any],
+    task_runtime: Any,
+    write_task_state: Any,
+    started_at: str,
+    run_id: str,
+    error: BaseException,
+) -> dict[str, Any]:
+    """Persist a bounded terminal failure without mutating feed authority."""
+
+    finished_at = now_iso()
+    error_code, error_reason, identity_summary = _bounded_identity_failure_summary(error)
+    finalization_timings = dict(getattr(task_runtime, "finalization_timings", {}) or {})
+    source_rows = _final_source_rows(
+        build_detailed_source_rows(task_runtime.task_rows, source_reports),
+        source_reports,
+    )
+    successful_sources = sum(
+        1 for row in source_rows if clean_text(row.get("status")).lower() == "ok"
+    )
+    failed_sources = sum(
+        1 for row in source_rows if clean_text(row.get("status")).lower() == "error"
+    )
+    excluded_sources = sum(
+        1 for row in source_rows if clean_text(row.get("status")).lower() == "excluded"
+    )
+    summary = {
+        "sourceCount": len(source_rows),
+        "successfulSources": successful_sources,
+        "failedSources": failed_sources,
+        "excludedSources": excluded_sources,
+        "candidateCount": len(canonical_rows),
+        "outputCount": 0,
+        "publishedOutputUnchanged": (
+            clean_text(getattr(task_runtime, "finalization_phase_key", "")) != "writing_outputs"
+        ),
+        "error": error_code,
+        "errorCode": error_code,
+        "errorReason": error_reason,
+    }
+    update_fetch_runtime_phase(
+        task_runtime,
+        phase_key="failed",
+        phase_label="Finalization failed",
+    )
+    append_fetch_runtime_event(
+        task_runtime,
+        level="error",
+        message=f"Finalization failed: {error_code}",
+        phase_key="failed",
+    )
+    write_task_state(
+        finished_at=finished_at,
+        force=True,
+        terminal_error_code=error_code,
+        terminal_summary=summary,
+    )
+    report_payload = normalize_fetch_report_payload(
+        {
+            "schemaVersion": SCHEMA_VERSION,
+            "taskType": "fetch",
+            "status": "error",
+            "active": False,
+            "runId": run_id,
+            "startedAt": started_at,
+            "finishedAt": finished_at,
+            "runtime": {
+                **dict(runtime_payload),
+                "finalizationTiming": finalization_timings,
+                "lifecycle": {
+                    "owner": "fetch_report",
+                    "heartbeatAt": finished_at,
+                },
+            },
+            "summary": summary,
+            "taskProgress": {
+                "active": False,
+                "phaseKey": "failed",
+                "phaseLabel": "Failed",
+                "mode": "determinate",
+                "ratio": 1.0,
+                "counts": {
+                    "sourceCount": len(source_rows),
+                    "resolvedSources": successful_sources + failed_sources + excluded_sources,
+                    "outputCount": 0,
+                    "failedSources": failed_sources,
+                    "excludedSources": excluded_sources,
+                    "errorCode": error_code,
+                },
+            },
+            "workItems": snapshot_task_rows(task_runtime.task_rows),
+            "recentEvents": list(task_runtime.recent_events),
+            "availabilitySummary": identity_summary,
+            "availabilityHealth": {
+                "status": "failed",
+                "degradedCoverage": True,
+                "shadowClassifier": True,
+                "identity": identity_summary,
+            },
+            "sources": source_rows,
+            "sourceFamilies": source_reports,
+            "outputs": {
+                "json": str(paths.json_path),
+                "lightJson": str(paths.light_json_path),
+                "report": str(paths.report_path),
+                "lifecycleState": str(paths.lifecycle_state_path),
+                "changed": {"json": False, "lightJson": False},
+            },
+        }
+    )
+    write_hot_text_if_changed(
+        paths.report_path, json.dumps(report_payload, indent=2, ensure_ascii=False)
+    )
+    write_fetch_report_summary_artifact(
+        paths.report_path,
+        report_payload,
+        write_text_if_changed=write_hot_text_if_changed,
+        include_sources=True,
+    )
+    return report_payload
+
+
 @_serialize_jobs_feed_reconciliation
 def finalize_pipeline_run(
     *,
@@ -1149,12 +1307,21 @@ def finalize_pipeline_run(
         )
         write_availability_tombstones(tombstone_path, tombstones, updated_at=lifecycle_finished_at)
         quarantine_path = paths.output_dir / IDENTITY_QUARANTINE_ARTIFACT_NAME
+        quarantine_stats: dict[str, int] = {}
         identity_quarantine = reconcile_identity_quarantine(
             read_identity_quarantine(quarantine_path),
             identity_preparation.quarantine_additions,
+            stats=quarantine_stats,
+        )
+        identity_preparation.summary["quarantineCount"] = len(identity_quarantine)
+        identity_preparation.summary["quarantineTruncatedCount"] = int(
+            quarantine_stats.get("quarantineTruncatedCount") or 0
         )
         write_identity_quarantine(
-            quarantine_path, identity_quarantine, updated_at=lifecycle_finished_at
+            quarantine_path,
+            identity_quarantine,
+            updated_at=lifecycle_finished_at,
+            truncated_count=int(quarantine_stats.get("quarantineTruncatedCount") or 0),
         )
         wrote_json, wrote_light_json = _write_output_rows(paths, deduped_payload_rows)
         availability = _write_availability_artifacts(
@@ -1247,6 +1414,7 @@ def finalize_pipeline_run(
                 "status": "healthy"
                 if bool(availability_sweep_plan.get("healthTargetMet"))
                 and not bool(availability_sweep_plan.get("degradedCoverage"))
+                and not int(identity_preparation.summary.get("rejectedRowCount") or 0)
                 and not int(identity_preparation.summary.get("unresolvedMissingIdentityCount") or 0)
                 and not int(
                     identity_preparation.summary.get("unresolvedIdentityConflictCount") or 0
@@ -1260,7 +1428,10 @@ def finalize_pipeline_run(
                 ),
                 "sweepSelectedCount": int(availability_sweep_plan.get("selectedCount") or 0),
                 "sweepDeferredCount": int(availability_sweep_plan.get("deferredCount") or 0),
-                "degradedCoverage": bool(availability_sweep_plan.get("degradedCoverage")),
+                "degradedCoverage": bool(
+                    availability_sweep_plan.get("degradedCoverage")
+                    or int(identity_preparation.summary.get("rejectedRowCount") or 0)
+                ),
                 "shadowClassifier": True,
                 "identity": dict(identity_preparation.summary),
             },

@@ -176,31 +176,53 @@ def run_pipeline(
         setup.progress_phase["label"] = "Merging results"
         setup.write_progress_report(force=True)
         setup.stop_progress_reporter()
-        return pipeline_finalize_pkg.finalize_pipeline_run(
-            paths=setup.paths,
-            source_reports=setup.source_reports,
-            canonical_rows=setup.canonical_rows,
-            observed_rows=setup.canonical_rows[setup.seeded_row_count :],
-            using_default_loaders=setup.using_default_loaders,
-            selected_loaders=setup.selected_loaders,
-            effective_seed_from_existing_output=setup.effective_seed_from_existing_output,
-            preserve_previous_on_empty=preserve_previous_on_empty,
-            source_state_rows=setup.source_state_rows,
-            lifecycle_rows=setup.lifecycle_rows,
-            runtime_payload=setup.runtime_payload,
-            redirect_resolver=setup.redirect_resolver,
-            task_runtime=setup.task_runtime,
-            progress_phase=setup.progress_phase,
-            write_progress_report=setup.write_progress_report,
-            write_task_state=setup.write_task_state,
-            started_at=setup.started_at,
-            run_started_mono=run_started_mono,
-            run_id=run_id,
-            circuit_breaker_failures=circuit_breaker_failures,
-            circuit_breaker_cooldown_minutes=circuit_breaker_cooldown_minutes,
-            circuit_breaker_zero_kept=circuit_breaker_zero_kept,
-            static_suppression_policy=setup.runtime_payload.get("staticSuppressionPolicy"),
-        )
+        try:
+            return pipeline_finalize_pkg.finalize_pipeline_run(
+                paths=setup.paths,
+                source_reports=setup.source_reports,
+                canonical_rows=setup.canonical_rows,
+                observed_rows=setup.canonical_rows[setup.seeded_row_count :],
+                using_default_loaders=setup.using_default_loaders,
+                selected_loaders=setup.selected_loaders,
+                effective_seed_from_existing_output=setup.effective_seed_from_existing_output,
+                preserve_previous_on_empty=preserve_previous_on_empty,
+                source_state_rows=setup.source_state_rows,
+                lifecycle_rows=setup.lifecycle_rows,
+                runtime_payload=setup.runtime_payload,
+                redirect_resolver=setup.redirect_resolver,
+                task_runtime=setup.task_runtime,
+                progress_phase=setup.progress_phase,
+                write_progress_report=setup.write_progress_report,
+                write_task_state=setup.write_task_state,
+                started_at=setup.started_at,
+                run_started_mono=run_started_mono,
+                run_id=run_id,
+                circuit_breaker_failures=circuit_breaker_failures,
+                circuit_breaker_cooldown_minutes=circuit_breaker_cooldown_minutes,
+                circuit_breaker_zero_kept=circuit_breaker_zero_kept,
+                static_suppression_policy=setup.runtime_payload.get("staticSuppressionPolicy"),
+            )
+        except Exception as exc:
+            try:
+                pipeline_finalize_pkg.write_failed_pipeline_report(
+                    paths=setup.paths,
+                    source_reports=setup.source_reports,
+                    canonical_rows=setup.canonical_rows,
+                    runtime_payload=setup.runtime_payload,
+                    task_runtime=setup.task_runtime,
+                    write_task_state=setup.write_task_state,
+                    started_at=setup.started_at,
+                    run_id=run_id,
+                    error=exc,
+                )
+            except Exception as report_exc:
+                print(
+                    "[jobs_fetcher] ERROR failed to persist finalization failure report: "
+                    f"{type(report_exc).__name__}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            raise
     finally:
         jobs_registry.restore_studio_source_registry(previous_studio_source_registry)
         jobs_registry.set_include_pending_provider_migration(previous_include_pending)

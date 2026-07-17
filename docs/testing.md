@@ -5,7 +5,7 @@
 > - **Canonical for:** test commands, targeted test routing, and fixture references
 > - **Not canonical for:** runtime architecture or data contracts
 > - **Then inspect:** the nearest `tests/` module for the subsystem you changed
-> - **Last updated:** 2026-07-16
+> - **Last updated:** 2026-07-17
 
 This document owns the verification matrix for Baluffo. Keep build, test, and fixture guidance here instead of repeating command tables in routing docs.
 
@@ -33,8 +33,11 @@ missing authority, runtime-gated unavailable-link actions, routes, and frontend 
 Export-retirement changes also run task-launch jobs-feed, container/static-server, runtime-launcher,
 JSON quality-tool, and Saved lifecycle-overlay tests; public full JSON and CSV requests must be 404.
 Identity-repair changes additionally cover source-ID collisions across exact URLs, one-to-one URL
-changes, quarantine pruning/private serving, carried-seed initialization, exact Saved rebinding,
-fetch-report field preservation, and a 5,000-row synthetic collision/missing-identity regression.
+changes, URL-less candidate exclusion from observations/publication, quarantine v1/v2
+pruning/truncation/private serving, carried-seed initialization, exact Saved rebinding, terminal
+finalization failure projection, parent error propagation, and fetch-report field preservation. The
+quick lane includes a 5,000-row collision regression; the slow/release lane includes a 79,528-row
+live-scale partition regression with a bounded quarantine projection.
 
 Run the balanced developer Python lane:
 

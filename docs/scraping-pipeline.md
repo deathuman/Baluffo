@@ -17,6 +17,7 @@ Pipeline (jobs/pipeline.py -> pipeline_run_setup.py -> pipeline_execution_flow.p
   -> Static adapter: listing fetch with optional try_playwright fallback (403/timeout or JS shell + no jobs)
   -> jobs-fetch-report.json, per-source classifications
   -> build_browser_fallback_queue -> jobs-browser-fallback-queue.json
+  -> exact identity preflight; URL-less conflicting candidates are privately quarantined and excluded
   -> apply source-scoped availability transitions and publish active-only feed + 30-day history
   -> plan a saved-first/oldest-first direct-link sweep under fixed traffic limits
 
@@ -28,6 +29,12 @@ prove the checked job live. Script/template text, unrelated visible closure copy
 pages, career search/listing
 redirects, login/cookie pages, blocking, timeouts, and `5xx` responses never provide definitive live or
 closed evidence. Browser fallback uses the same classifier.
+
+Identity exclusion is conservative and exact: a row is removed only when it has monitorable source
+or URL evidence but cannot receive a collision-safe identity after source-alias and canonical-URL
+repair. Excluded rows do not count as observations or lifecycle verification, never use fuzzy
+title/company recovery, and appear only as bounded hashed groups in the private quarantine. Valid
+rows continue to publication with degraded coverage reported.
 
 Scrapy path (for scrapy_static sources from browser queue)
   -> registry_entries("scrapy_static") = _scrapy_static_registry_from_browser_queue()

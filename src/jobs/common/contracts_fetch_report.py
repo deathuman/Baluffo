@@ -196,16 +196,6 @@ def _normalize_lifecycle_summary(payload: Any, summary: dict[str, Any]) -> dict[
     }
 
 
-def _completed_fetch_task_progress(summary: dict[str, Any]) -> dict[str, Any]:
-    return derive_fetch_task_progress(
-        {"finishedAt": "completed"},
-        summary,
-        include_task_counts=True,
-        max_completed_source_count_with_resolved=False,
-        source_count_default=0,
-    )
-
-
 def _apply_completed_fetch_report_truth(payload: dict[str, Any]) -> dict[str, Any]:
     if not clean_text(payload.get("finishedAt")):
         return payload
@@ -224,7 +214,13 @@ def _apply_completed_fetch_report_truth(payload: dict[str, Any]) -> dict[str, An
         )
     payload["active"] = False
     payload["summary"] = summary
-    payload["taskProgress"] = _completed_fetch_task_progress(summary)
+    payload["taskProgress"] = derive_fetch_task_progress(
+        payload,
+        summary,
+        include_task_counts=True,
+        max_completed_source_count_with_resolved=False,
+        source_count_default=0,
+    )
     return payload
 
 
@@ -248,6 +244,7 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
     normalized_payload = {
         "schemaVersion": SCHEMA_VERSION,
         "taskType": clean_text(src.get("taskType")) or "fetch",
+        "status": clean_text(src.get("status") or live_task_payload.get("status")),
         "active": bool(live_task_payload.get("active")),
         "runId": clean_text(src.get("runId")),
         "startedAt": clean_text(src.get("startedAt")),

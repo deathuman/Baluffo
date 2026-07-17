@@ -570,7 +570,13 @@ def make_task_state_writer(
     write_text_if_changed: Callable[[Any, str], Any],
     min_interval_s: float = ACTIVE_FETCH_TASK_STATE_MIN_INTERVAL_S,
 ) -> Callable[..., None]:
-    def write_task_state(finished_at: str = "", *, force: bool = False) -> None:
+    def write_task_state(
+        finished_at: str = "",
+        *,
+        force: bool = False,
+        terminal_error_code: str = "",
+        terminal_summary: dict[str, Any] | None = None,
+    ) -> None:
         with runtime.task_lock:
             now_mono = time.perf_counter()
             if (
@@ -586,6 +592,8 @@ def make_task_state_writer(
                     runtime=runtime,
                     report_path=str(report_path),
                     finished_at=finished_at,
+                    terminal_error_code=terminal_error_code,
+                    terminal_summary=terminal_summary,
                 ),
                 run_id=run_id,
                 started_at=started_at,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -19,7 +19,7 @@ from src.pipeline_io import write_atomic_if_changed
 from src.shared.json_io import read_json
 
 IDENTITY_QUARANTINE_ARTIFACT_NAME = "jobs-availability-identity-quarantine.json"
-IDENTITY_QUARANTINE_SCHEMA_VERSION = 1
+IDENTITY_QUARANTINE_SCHEMA_VERSION = 2
 IDENTITY_QUARANTINE_LIMIT = 2_000
 IDENTITY_QUARANTINE_DAYS = 30
 
@@ -44,7 +44,18 @@ class AvailabilityIdentityPreparation:
     observed_rows: list[CanonicalJob]
     lifecycle_rows: dict[str, dict[str, Any]]
     quarantine_additions: dict[str, dict[str, Any]]
-    summary: dict[str, int]
+    summary: dict[str, Any]
+
+
+class AvailabilityIdentityPreflightError(ValueError):
+    """Bounded identity-integrity failure safe to project into runtime reports."""
+
+    error_code = "availability_identity_preflight_failed"
+
+    def __init__(self, *, reason: str, summary: Mapping[str, Any] | None = None) -> None:
+        super().__init__(self.error_code)
+        self.reason = clean_text(reason) or "identity_invariant_failed"
+        self.summary = dict(summary or {})
 
 
 def _source_alias(row: Mapping[str, Any]) -> str:
@@ -221,6 +232,7 @@ def _build_quarantine_additions(
             if clean_text(entry.get("availabilityId")) == availability_id
         ]
         additions[availability_id] = {
+            "kind": "contaminated_identity",
             "detectedAt": clean_text(detected_at),
             "reason": "cross_url_identity_collision",
             "replacementAvailabilityIds": sorted(replacement_ids.get(availability_id, set())),
@@ -231,6 +243,90 @@ def _build_quarantine_additions(
                 )
             ],
             "lifecycle": entries[:4],
+        }
+    return additions
+
+
+def _private_fingerprint(value: str) -> str:
+    clean_value = clean_text(value)
+    if not clean_value:
+        return ""
+    return hashlib.sha256(clean_value.encode("utf-8")).hexdigest()[:24]
+
+
+def _rejection_reason(row: Mapping[str, Any], *, conflicting_source_aliases: set[str]) -> str:
+    source_alias = _source_alias(row)
+    if source_alias and source_alias in conflicting_source_aliases and not _url_alias(row):
+        return "conflicting_source_alias_without_public_url"
+    return "unresolved_exact_identity"
+
+
+def _partition_prepared_rows(
+    rows: Sequence[CanonicalJob],
+    *,
+    conflicting_source_aliases: set[str],
+) -> tuple[list[CanonicalJob], list[tuple[CanonicalJob, str]]]:
+    accepted: list[CanonicalJob] = []
+    rejected: list[tuple[CanonicalJob, str]] = []
+    for row in rows:
+        payload = row.to_dict()
+        if _row_identity_token(payload) and not clean_text(payload.get("availabilityId")):
+            rejected.append(
+                (
+                    row,
+                    _rejection_reason(
+                        payload,
+                        conflicting_source_aliases=conflicting_source_aliases,
+                    ),
+                )
+            )
+            continue
+        accepted.append(row)
+    return accepted, rejected
+
+
+def _build_rejected_quarantine_additions(
+    *,
+    prepared_rows: Sequence[CanonicalJob],
+    rejected_rows: Sequence[tuple[CanonicalJob, str]],
+    detected_at: str,
+) -> dict[str, dict[str, Any]]:
+    related_by_source: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in prepared_rows:
+        payload = row.to_dict()
+        source_alias = _source_alias(payload)
+        if source_alias:
+            related_by_source[source_alias].append(payload)
+
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for row, reason in rejected_rows:
+        payload = row.to_dict()
+        exact_alias = _source_alias(payload) or _row_identity_token(payload)
+        grouped[(reason, exact_alias)].append(payload)
+
+    additions: dict[str, dict[str, Any]] = {}
+    for (reason, exact_alias), rejected in sorted(grouped.items()):
+        related = related_by_source.get(exact_alias, rejected)
+        replacement_ids = sorted(
+            {
+                clean_text(row.get("availabilityId"))
+                for row in related
+                if clean_text(row.get("availabilityId"))
+            }
+        )
+        url_fingerprints = sorted(
+            {_url_alias(row).removeprefix("url:") for row in related if _url_alias(row)}
+        )
+        quarantine_id = f"unresolved_{_private_fingerprint(f'{reason}|{exact_alias}')}"
+        additions[quarantine_id] = {
+            "kind": "unresolved_candidate_group",
+            "detectedAt": clean_text(detected_at),
+            "reason": reason,
+            "sourceAliasFingerprint": _private_fingerprint(exact_alias),
+            "candidateCount": len(rejected),
+            "relatedCandidateCount": len(related),
+            "replacementAvailabilityIds": replacement_ids[:16],
+            "urlFingerprints": url_fingerprints[:16],
         }
     return additions
 
@@ -279,8 +375,16 @@ def prepare_availability_identities(
         identity_by_token=identity_by_token,
         conflicting_source_aliases=conflicting_source_aliases,
     )
-    prepared_rows = list(map(apply_identity, rows))
-    prepared_observed = list(map(apply_identity, observed_rows))
+    all_prepared_rows = list(map(apply_identity, rows))
+    all_prepared_observed = list(map(apply_identity, observed_rows))
+    prepared_rows, rejected_rows = _partition_prepared_rows(
+        all_prepared_rows,
+        conflicting_source_aliases=conflicting_source_aliases,
+    )
+    prepared_observed, _rejected_observed = _partition_prepared_rows(
+        all_prepared_observed,
+        conflicting_source_aliases=conflicting_source_aliases,
+    )
     sanitized_lifecycle = {
         clean_text(key): dict(entry)
         for key, entry in lifecycle_rows.items()
@@ -293,9 +397,30 @@ def prepare_availability_identities(
         replacement_urls=replacement_urls,
         detected_at=detected_at,
     )
+    quarantine.update(
+        _build_rejected_quarantine_additions(
+            prepared_rows=all_prepared_rows,
+            rejected_rows=rejected_rows,
+            detected_at=detected_at,
+        )
+    )
+    rejection_reason_counts = dict(Counter(reason for _row, reason in rejected_rows))
+    candidate_monitorable, _candidate_missing, _candidate_conflicts = _identity_audit(
+        all_prepared_rows
+    )
     monitorable, missing, conflicts = _identity_audit(prepared_rows)
     if missing or conflicts:
-        raise ValueError("availability identity preflight failed")
+        raise AvailabilityIdentityPreflightError(
+            reason="post_filter_identity_invariant_failed",
+            summary={
+                "candidateMonitorableRowCount": candidate_monitorable,
+                "acceptedMonitorableRowCount": monitorable,
+                "rejectedRowCount": len(rejected_rows),
+                "rejectionReasonCounts": rejection_reason_counts,
+                "postFilterUnresolvedMissingIdentityCount": missing,
+                "postFilterUnresolvedIdentityConflictCount": conflicts,
+            },
+        )
     return AvailabilityIdentityPreparation(
         rows=prepared_rows,
         observed_rows=prepared_observed,
@@ -303,10 +428,18 @@ def prepare_availability_identities(
         quarantine_additions=quarantine,
         summary={
             "monitorableRowCount": monitorable,
+            "candidateMonitorableRowCount": candidate_monitorable,
+            "acceptedMonitorableRowCount": monitorable,
             "repairedIdentityCount": repaired_count,
-            "quarantinedIdentityCount": len(quarantine),
+            "contaminatedIdentityCount": len(contaminated_ids),
+            "quarantinedIdentityCount": len(contaminated_ids),
+            "quarantineAdditionCount": len(quarantine),
+            "rejectedRowCount": len(rejected_rows),
+            "rejectionReasonCounts": rejection_reason_counts,
             "unresolvedMissingIdentityCount": missing,
             "unresolvedIdentityConflictCount": conflicts,
+            "postFilterUnresolvedMissingIdentityCount": missing,
+            "postFilterUnresolvedIdentityConflictCount": conflicts,
         },
     )
 
@@ -330,12 +463,18 @@ def validate_published_availability_rows(rows: Sequence[Mapping[str, Any]]) -> N
             or not clean_text(evidence.get("confidence"))
             or not clean_text(evidence.get("checkedAt"))
         ):
-            raise ValueError("availability publication invariant failed")
+            raise AvailabilityIdentityPreflightError(
+                reason="availability_publication_invariant_failed",
+                summary={"postFilterUnresolvedMissingIdentityCount": 1},
+            )
         url_alias = _url_alias(row)
         if url_alias:
             ids_to_urls[availability_id].add(url_alias)
     if any(len(urls) > 1 for urls in ids_to_urls.values()):
-        raise ValueError("availability publication identity collision")
+        raise AvailabilityIdentityPreflightError(
+            reason="availability_publication_identity_collision",
+            summary={"postFilterUnresolvedIdentityConflictCount": 1},
+        )
 
 
 def read_identity_quarantine(path: Path) -> dict[str, dict[str, Any]]:
@@ -355,6 +494,7 @@ def reconcile_identity_quarantine(
     additions: Mapping[str, Mapping[str, Any]],
     *,
     now: datetime | None = None,
+    stats: dict[str, int] | None = None,
 ) -> dict[str, dict[str, Any]]:
     cutoff = (now or datetime.now(UTC)) - timedelta(days=IDENTITY_QUARANTINE_DAYS)
     merged = {clean_text(key): dict(value) for key, value in existing.items() if clean_text(key)}
@@ -373,17 +513,28 @@ def reconcile_identity_quarantine(
             detected = detected.replace(tzinfo=UTC)
         if detected >= cutoff:
             retained.append((key, entry))
-    retained.sort(key=lambda item: clean_text(item[1].get("detectedAt")), reverse=True)
+    retained.sort(
+        key=lambda item: (clean_text(item[1].get("detectedAt")), item[0]),
+        reverse=True,
+    )
+    if stats is not None:
+        stats["quarantineTruncatedCount"] = max(0, len(retained) - IDENTITY_QUARANTINE_LIMIT)
     return dict(retained[:IDENTITY_QUARANTINE_LIMIT])
 
 
 def write_identity_quarantine(
-    path: Path, rows: Mapping[str, Mapping[str, Any]], *, updated_at: str
+    path: Path,
+    rows: Mapping[str, Mapping[str, Any]],
+    *,
+    updated_at: str,
+    truncated_count: int = 0,
 ) -> None:
     payload = {
         "schemaVersion": IDENTITY_QUARANTINE_SCHEMA_VERSION,
         "updatedAt": clean_text(updated_at),
         "retentionDays": IDENTITY_QUARANTINE_DAYS,
+        "rowCount": len(rows),
+        "truncatedCount": max(0, int(truncated_count or 0)),
         "rows": dict(rows),
     }
     write_atomic_if_changed(path, json.dumps(payload, indent=2, ensure_ascii=False))
@@ -391,6 +542,7 @@ def write_identity_quarantine(
 
 __all__ = [
     "IDENTITY_QUARANTINE_ARTIFACT_NAME",
+    "AvailabilityIdentityPreflightError",
     "AvailabilityIdentityPreparation",
     "prepare_availability_identities",
     "validate_published_availability_rows",
