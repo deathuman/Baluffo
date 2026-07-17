@@ -80,6 +80,11 @@ valid public URL—are excluded from both publication and the current-run observ
 degrade availability health but do not block valid rows. Any remaining violation in the accepted set
 aborts publication before feed or lifecycle artifacts are changed.
 
+Because deterministic assignments can reveal collisions that were not visible among pre-existing
+candidate IDs, preflight performs a second exact pass. URL-bearing members of a newly contaminated
+group receive URL-backed identities; URL-less members are quarantined and excluded from both
+publication and observations. The contaminated legacy ID and lifecycle evidence are never reused.
+
 `jobs-availability-identity-quarantine.json` is a private schema-v2 identity-repair artifact with
 tolerant schema-v1 reads. It retains at most 2,000 contaminated legacy identities or unresolved
 candidate groups for 30 days with compact prior lifecycle evidence, hashed source-alias evidence,

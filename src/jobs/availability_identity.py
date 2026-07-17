@@ -216,6 +216,47 @@ def _apply_prepared_identity(
     return CanonicalJob.from_mapping(payload)
 
 
+def _post_assignment_repair_plan(
+    rows: Sequence[CanonicalJob],
+) -> tuple[set[str], dict[str, str], dict[str, str]]:
+    ids_to_tokens: dict[str, set[str]] = defaultdict(set)
+    for canonical_row in rows:
+        row = canonical_row.to_dict()
+        availability_id = clean_text(row.get("availabilityId"))
+        token = _row_identity_token(row)
+        if availability_id and token:
+            ids_to_tokens[availability_id].add(token)
+    contaminated_ids = {
+        availability_id for availability_id, tokens in ids_to_tokens.items() if len(tokens) > 1
+    }
+    replacements: dict[str, str] = {}
+    rejected_tokens: dict[str, str] = {}
+    for canonical_row in rows:
+        row = canonical_row.to_dict()
+        if clean_text(row.get("availabilityId")) not in contaminated_ids:
+            continue
+        token = _row_identity_token(row)
+        url_alias = _url_alias(row)
+        if url_alias:
+            replacements[token] = _availability_id(url_alias)
+        elif token:
+            rejected_tokens[token] = "post_assignment_identity_conflict_without_public_url"
+    return contaminated_ids, replacements, rejected_tokens
+
+
+def _apply_post_assignment_repair(
+    row: CanonicalJob,
+    *,
+    contaminated_ids: set[str],
+    replacements: Mapping[str, str],
+) -> CanonicalJob:
+    payload = row.to_dict()
+    if clean_text(payload.get("availabilityId")) not in contaminated_ids:
+        return row
+    payload["availabilityId"] = replacements.get(_row_identity_token(payload), "")
+    return CanonicalJob.from_mapping(payload)
+
+
 def _build_quarantine_additions(
     *,
     contaminated_ids: set[str],
@@ -265,16 +306,19 @@ def _partition_prepared_rows(
     rows: Sequence[CanonicalJob],
     *,
     conflicting_source_aliases: set[str],
+    forced_rejection_reasons: Mapping[str, str] | None = None,
 ) -> tuple[list[CanonicalJob], list[tuple[CanonicalJob, str]]]:
     accepted: list[CanonicalJob] = []
     rejected: list[tuple[CanonicalJob, str]] = []
     for row in rows:
         payload = row.to_dict()
         if _row_identity_token(payload) and not clean_text(payload.get("availabilityId")):
+            token = _row_identity_token(payload)
             rejected.append(
                 (
                     row,
-                    _rejection_reason(
+                    clean_text((forced_rejection_reasons or {}).get(token))
+                    or _rejection_reason(
                         payload,
                         conflicting_source_aliases=conflicting_source_aliases,
                     ),
@@ -377,13 +421,40 @@ def prepare_availability_identities(
     )
     all_prepared_rows = list(map(apply_identity, rows))
     all_prepared_observed = list(map(apply_identity, observed_rows))
+    post_contaminated_ids, post_replacements, post_rejected_tokens = _post_assignment_repair_plan(
+        all_prepared_rows
+    )
+    if post_contaminated_ids:
+        apply_post_repair = partial(
+            _apply_post_assignment_repair,
+            contaminated_ids=post_contaminated_ids,
+            replacements=post_replacements,
+        )
+        for canonical_row in all_prepared_rows:
+            payload = canonical_row.to_dict()
+            prior_id = clean_text(payload.get("availabilityId"))
+            if prior_id not in post_contaminated_ids:
+                continue
+            replacement_id = post_replacements.get(_row_identity_token(payload), "")
+            if not replacement_id:
+                continue
+            replacement_ids[prior_id].add(replacement_id)
+            url_alias = _url_alias(payload)
+            if url_alias:
+                replacement_urls[prior_id][replacement_id].add(url_alias.removeprefix("url:"))
+            repaired_count += 1
+        all_prepared_rows = list(map(apply_post_repair, all_prepared_rows))
+        all_prepared_observed = list(map(apply_post_repair, all_prepared_observed))
+        contaminated_ids.update(post_contaminated_ids)
     prepared_rows, rejected_rows = _partition_prepared_rows(
         all_prepared_rows,
         conflicting_source_aliases=conflicting_source_aliases,
+        forced_rejection_reasons=post_rejected_tokens,
     )
     prepared_observed, _rejected_observed = _partition_prepared_rows(
         all_prepared_observed,
         conflicting_source_aliases=conflicting_source_aliases,
+        forced_rejection_reasons=post_rejected_tokens,
     )
     sanitized_lifecycle = {
         clean_text(key): dict(entry)

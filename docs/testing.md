@@ -33,7 +33,8 @@ missing authority, runtime-gated unavailable-link actions, routes, and frontend 
 Export-retirement changes also run task-launch jobs-feed, container/static-server, runtime-launcher,
 JSON quality-tool, and Saved lifecycle-overlay tests; public full JSON and CSV requests must be 404.
 Identity-repair changes additionally cover source-ID collisions across exact URLs, one-to-one URL
-changes, URL-less candidate exclusion from observations/publication, quarantine v1/v2
+changes, post-assignment collisions between legacy and generated source-backed IDs, URL-less
+candidate exclusion from observations/publication, quarantine v1/v2
 pruning/truncation/private serving, carried-seed initialization, exact Saved rebinding, terminal
 finalization failure projection, parent error propagation, and fetch-report field preservation. The
 quick lane includes a 5,000-row collision regression; the slow/release lane includes a 79,528-row

@@ -10,6 +10,19 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.123] - 2026-07-17
+
+### Fixed
+- Availability identity preflight now performs a second exact collision pass after deterministic assignments, repairing URL-bearing rows with URL-backed identities and quarantining/excluding only URL-less members of contaminated groups.
+- The production pattern where a legacy row ID collided with a newly generated source-backed ID no longer aborts publication through `post_filter_identity_invariant_failed`.
+
+### Tests
+- Added single-group and eight-group production collision regressions covering URL repair, URL-less observation exclusion, lifecycle evidence removal, quarantine, and zero post-filter conflicts.
+
+### Notes
+- This forward container/Umbrel patch supersedes the failed 0.2.122 live pipeline publication. Direct-link enforcement remains in shadow mode, and no `v0.2.123` desktop tag, GitHub desktop release, desktop update, or desktop assets are published.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.122] - 2026-07-17
 
 ### Fixed
