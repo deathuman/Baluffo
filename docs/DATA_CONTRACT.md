@@ -110,7 +110,11 @@ They do not own canonical source status. Each distinct transition can create at 
 per profile even when multiple Saved rows share its exact identity. Matching rows still receive their
 own bounded attention state, while the profile timeline records the transition once. Terminal outcomes
 get timeline/badge updates without an unread alert. Automated
-events never mutate application phase/outcome or `lastActivityAt`. Backup schema v4 carries attention,
+events never mutate application phase/outcome or `lastActivityAt`. A profile-local unavailable report is
+stored in `availabilityAttention.localReport` and mirrored to the legacy boolean `hiddenByReport` for
+compatibility. Reported rows remain visible in Saved `all` and availability-attention views so the user
+can see the `Reported unavailable` state, clear it, or use the confirmation Undo action; definitive live
+availability evidence may restore the report automatically. Backup schema v4 carries attention,
 acknowledgements, reports, and system activity; import remains tolerant of schemas v1-v3.
 After a committed identity repair, non-custom Saved rows are rebound only when their stored canonical
 URL fingerprint selects exactly one replacement. Otherwise the contaminated identity is cleared and

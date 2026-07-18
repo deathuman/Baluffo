@@ -168,7 +168,13 @@ export function buildSavedJobViewModel(job, options = {}) {
   const availabilityAttentionCount = availabilityEvents.filter(
     event => event?.alert && !event?.acknowledgedAt
   ).length;
-  const hiddenByAvailabilityReport = Boolean(job?.availabilityAttention?.hiddenByReport);
+  // `hiddenByReport` is the legacy persisted flag; `localReport.reportedAt`
+  // is the current profile-owned representation. Both mean the row was
+  // reported unavailable and must remain visible so it can be cleared.
+  const reportedUnavailable = Boolean(
+    job?.availabilityAttention?.hiddenByReport
+    || job?.availabilityAttention?.localReport?.reportedAt
+  );
   const sourceNeedsAction = outcomeStatus === "active" && (
     sourceBucket === "likely_removed" || sourceBucket === "archived"
   );
@@ -208,7 +214,8 @@ export function buildSavedJobViewModel(job, options = {}) {
     primaryAttentionReason,
     sourceNeedsAction,
     availabilityAttentionCount,
-    hiddenByAvailabilityReport,
+    hiddenByAvailabilityReport: reportedUnavailable,
+    reportedUnavailable,
     activeAt,
     phaseEnteredAt,
     hasNotes,
@@ -256,9 +263,8 @@ export function normalizeSavedGroup(value) {
 
 function matchesFilter(view, filter) {
   if (filter === SAVED_FILTER_AVAILABILITY_ATTENTION) {
-    return view.availabilityAttentionCount > 0 || view.hiddenByAvailabilityReport;
+    return view.availabilityAttentionCount > 0 || view.reportedUnavailable;
   }
-  if (view.hiddenByAvailabilityReport) return false;
   if (filter === SAVED_FILTER_CUSTOM) return view.isCustom;
   if (filter === SAVED_FILTER_IMPORTED) return view.isImported;
   if (filter === SAVED_FILTER_NEEDS_ACTION) return view.needsAction;

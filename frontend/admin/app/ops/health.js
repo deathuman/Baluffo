@@ -57,6 +57,52 @@ const OPS_HEAVY_ROUTE_REGISTRY_CONFLICTS = "registry-conflicts";
 const OPS_HEAVY_ROUTE_TAB_COUNTS = "ops-tab-counts";
 const ACTIVE_IDLE_RECOVERY_COOLDOWN_MS = 1500;
 
+function historyRunKey(row) {
+  if (!row || typeof row !== "object" || Array.isArray(row)) return "";
+  const direct = String(row.runId || row.id || "").trim();
+  if (direct) return direct;
+  const fallback = [row.type, row.taskId, row.startedAt, row.finishedAt]
+    .map(value => String(value || "").trim())
+    .join("|");
+  return fallback.replace(/^\|+|\|+$/g, "") || JSON.stringify(row);
+}
+
+/** Merge bounded history refreshes without discarding an already loaded full cache. */
+export function mergeOpsHistoryPayload(existing, incoming, limit = 80) {
+  const previous = existing && typeof existing === "object" && !Array.isArray(existing)
+    ? existing
+    : {};
+  const next = incoming && typeof incoming === "object" && !Array.isArray(incoming)
+    ? incoming
+    : {};
+  const cap = Math.max(1, Math.min(80, Number(limit) || 80));
+  const previousRows = Array.isArray(previous.runs) ? previous.runs : [];
+  const nextRows = Array.isArray(next.runs) ? next.runs : [];
+  const previousByKey = new Map(
+    previousRows
+      .filter(row => row && typeof row === "object" && !Array.isArray(row))
+      .map(row => [historyRunKey(row), row])
+  );
+  const seenKeys = new Set();
+  const refreshedRows = [];
+  nextRows.forEach(row => {
+    if (!row || typeof row !== "object" || Array.isArray(row)) return;
+    const key = historyRunKey(row);
+    if (!key || seenKeys.has(key)) return;
+    seenKeys.add(key);
+    refreshedRows.push({ ...(previousByKey.get(key) || {}), ...row });
+  });
+  // Newest payload rows lead the list; cached rows not present in the bounded
+  // refresh follow so older/open state survives the refresh.
+  const retainedRows = previousRows.filter(row => !seenKeys.has(historyRunKey(row)));
+  const rows = [...refreshedRows, ...retainedRows];
+  return {
+    ...previous,
+    ...next,
+    runs: rows.slice(0, cap)
+  };
+}
+
 function maybeUnrefTimer(timer) {
   timer?.unref?.();
   return timer;
@@ -1557,7 +1603,13 @@ export function createOpsHealthController({
     )
       .then(payload => {
         if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-          state.latestOpsHistoryPayload = payload;
+          const shouldMerge = Boolean(
+            state.opsHistoryFullLoaded
+            || requestedLimit >= 80
+          );
+          state.latestOpsHistoryPayload = shouldMerge
+            ? mergeOpsHistoryPayload(state.latestOpsHistoryPayload, payload, 80)
+            : payload;
           state.opsHistoryLoaded = true;
           if (requestedLimit >= 80) state.opsHistoryFullLoaded = true;
           state.opsHistoryLastError = "";

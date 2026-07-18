@@ -29,7 +29,7 @@ function view(job, lifecycleOverlay = null) {
   });
 }
 
-test("saved availability attention is filterable and local reports hide rows", () => {
+test("saved availability attention includes local reports without hiding rows", () => {
   const attention = view({
     jobKey: "job_attention",
     availabilityAttention: {
@@ -44,7 +44,8 @@ test("saved availability attention is filterable and local reports hide rows", (
     jobKey: "job_hidden",
     availabilityAttention: { hiddenByReport: true, events: [] }
   });
-  assert.deepEqual(filterSavedJobViews([hidden], "all"), []);
+  assert.equal(hidden.reportedUnavailable, true);
+  assert.deepEqual(filterSavedJobViews([hidden], "all"), [hidden]);
   assert.deepEqual(filterSavedJobViews([hidden], SAVED_FILTER_AVAILABILITY_ATTENTION), [hidden]);
 });
 

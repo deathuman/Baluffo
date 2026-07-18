@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { renderSavedJobBlockHtml } from "../../../frontend/saved/render.js";
 
-function render(canManageAvailability) {
+function render(canManageAvailability, overrides = {}) {
   return renderSavedJobBlockHtml({
     jobKey: "job_1",
     title: "Gameplay Engineer",
@@ -17,7 +17,8 @@ function render(canManageAvailability) {
     applicationStatus: "bookmark",
     phaseTimestamps: {},
     savedAt: "2026-03-08T09:00:00.000Z",
-    notes: ""
+    notes: "",
+    ...overrides
   }, {
     isCustomJob: () => false,
     customSourceLabel: "Custom",
@@ -55,5 +56,23 @@ test("Saved hides availability mutations in static mode and shows them with brid
   assert.match(managedHtml, /class="saved-link-actions"/);
   assert.match(managedHtml, /saved-check-availability-btn[\s\S]*class="availability-action-icon"[\s\S]*<svg/);
   assert.match(managedHtml, /saved-report-unavailable-btn[\s\S]*aria-label="Report unavailable"/);
+  assert.match(managedHtml, /saved-check-availability-btn[^>]*data-tooltip="Check availability now"/);
+  assert.match(managedHtml, /saved-report-unavailable-btn[^>]*data-tooltip="Report unavailable"/);
+  assert.doesNotMatch(managedHtml, /saved-(?:check-availability|report-unavailable)-btn[^>]*\stitle=/);
   assert.doesNotMatch(managedHtml, />Check now<\/button>/);
+});
+
+test("Saved keeps reported rows visible with a state badge and Clear action", () => {
+  const html = render(true, {
+    availabilityAttention: {
+      localReport: { reportedAt: "2026-07-18T10:00:00Z" },
+      hiddenByReport: true,
+      events: []
+    }
+  });
+
+  assert.match(html, />Reported unavailable<\/span>/);
+  assert.match(html, /data-action="clear"/);
+  assert.match(html, /aria-label="Clear unavailable report"/);
+  assert.match(html, /data-tooltip="Clear unavailable report"/);
 });

@@ -10,6 +10,18 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.125] - 2026-07-18
+
+### Fixed
+- Saved unavailable reports now remain visible with explicit confirmation, a reported-state badge, Clear/Undo recovery, and shared styled tooltips.
+- Availability checks now return a run identifier promptly while lifecycle resolution and validation continue asynchronously, with duplicate-run reuse and terminal cleanup on worker failures.
+- Admin older-run history now merges bounded refreshes without discarding the loaded history or disclosure state.
+
+### Notes
+- This is a container/Umbrel patch only. No `v0.2.125` desktop tag, GitHub desktop release, desktop update, or desktop assets are published.
+- Direct-link enforcement remains in shadow mode.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.124] - 2026-07-18
 
 ### Fixed

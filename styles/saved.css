@@ -656,6 +656,20 @@
   opacity: 0.6;
 }
 
+.saved-availability-report-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.16rem 0.42rem;
+  border: 1px solid color-mix(in srgb, var(--warning, #d29922) 48%, transparent);
+  border-radius: 999px;
+  color: var(--warning, #d29922);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
 .saved-job-row .col-contract,
 .saved-job-row .col-type {
   text-align: center;

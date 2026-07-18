@@ -43,6 +43,10 @@ class JobAvailabilityService:
         self.validator = validator or DirectLinkValidator()
         self.enforce_direct = bool(enforce_direct)
         self._lock = threading.RLock()
+        # File-backed evidence application is serialized independently from
+        # in-memory run bookkeeping so status/start remain responsive while a
+        # worker waits on a reconciliation transaction.
+        self._apply_lock = threading.Lock()
         self._runs: dict[str, dict[str, Any]] = {}
         self._active_by_availability_id: dict[str, str] = {}
         self._sweep_lock = threading.Lock()
@@ -344,10 +348,12 @@ class JobAvailabilityService:
                 ),
             )
 
-    def start(self, payload: dict[str, Any] | None) -> dict[str, Any]:
-        availability_id = str((payload or {}).get("availabilityId") or "").strip()
-        if not availability_id:
-            return {"started": False, "error": "availability_id_required"}
+    def _prepare_target(self, availability_id: str) -> tuple[str, str, Path, dict[str, Any]]:
+        """Resolve the lifecycle target inside the worker thread.
+
+        Lifecycle artifacts can be large (the canonical state is routinely tens
+        of megabytes), so this lookup must not block the bridge POST route.
+        """
         lifecycle = read_job_lifecycle_state(self.lifecycle_path)
         match = next(
             (
@@ -369,7 +375,7 @@ class JobAvailabilityService:
             except (OSError, RuntimeError, TypeError, ValueError):
                 custom = None
             if not custom:
-                return {"started": False, "error": "availability_id_not_found"}
+                raise ValueError("availability_id_not_found")
             scope = "custom_saved"
             state_path = self.custom_lifecycle_path
             lifecycle_key = availability_id
@@ -385,7 +391,13 @@ class JobAvailabilityService:
                 }
             )
         if not str(entry.get("jobLink") or "").strip():
-            return {"started": False, "error": "public_job_link_required"}
+            raise ValueError("public_job_link_required")
+        return lifecycle_key, scope, state_path, entry
+
+    def start(self, payload: dict[str, Any] | None) -> dict[str, Any]:
+        availability_id = str((payload or {}).get("availabilityId") or "").strip()
+        if not availability_id:
+            return {"started": False, "error": "availability_id_required"}
         with self._lock:
             active_run_id = self._active_by_availability_id.get(availability_id, "")
             active_row = self._runs.get(active_run_id) if active_run_id else None
@@ -412,7 +424,7 @@ class JobAvailabilityService:
                     self._runs.pop(stale_id, None)
         threading.Thread(
             target=self._run,
-            args=(run_id, lifecycle_key, scope, state_path, entry),
+            args=(run_id, availability_id),
             daemon=True,
             name=f"baluffo-availability-{run_id[-8:]}",
         ).start()
@@ -557,21 +569,24 @@ class JobAvailabilityService:
     def _run(
         self,
         run_id: str,
-        lifecycle_key: str,
-        scope: str,
-        state_path: Path,
-        initial_entry: dict[str, Any],
+        availability_id: str,
     ) -> None:
-        availability_id = ""
+        lifecycle_key = ""
+        scope = "canonical"
+        state_path = self.lifecycle_path
+        initial_entry: dict[str, Any] = {}
         try:
-            with self._lock:
-                lifecycle = read_job_lifecycle_state(state_path)
-                entry = dict(lifecycle.get(lifecycle_key) or initial_entry)
-                availability_id = str(entry.get("availabilityId") or "")
+            lifecycle_key, scope, state_path, initial_entry = self._prepare_target(availability_id)
+            # `_prepare_target` already captured the authoritative target. Do not
+            # re-read the large lifecycle artifact while holding the service lock;
+            # duplicate admission and status reads must stay prompt.
+            entry = dict(initial_entry)
+            availability_id = str(entry.get("availabilityId") or availability_id)
             evidence = self.validator.check(str(entry.get("jobLink") or ""))
-            with self._lock:
-                latest = read_job_lifecycle_state(state_path)
-                current_entry = dict(latest.get(lifecycle_key) or entry)
+            # Refresh outside the lock before the minimal synchronized mutation.
+            latest = read_job_lifecycle_state(state_path)
+            current_entry = dict(latest.get(lifecycle_key) or entry)
+            with self._apply_lock:
                 next_entry, applied = self._apply_checked_evidence(
                     lifecycle_key=lifecycle_key,
                     scope=scope,
@@ -592,7 +607,7 @@ class JobAvailabilityService:
                 "applied": applied,
             }
             status = "succeeded"
-        except (OSError, RuntimeError, TypeError, ValueError):
+        except Exception:  # Keep the run terminal and release duplicate-admission state.
             completed_at = now_iso()
             result = {
                 "availabilityStatus": "",

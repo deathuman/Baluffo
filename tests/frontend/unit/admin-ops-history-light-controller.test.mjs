@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createAdminOpsController } from "../../../frontend/admin/app/ops.js";
+import { mergeOpsHistoryPayload } from "../../../frontend/admin/app/ops/health.js";
 import {
   createClassList,
   createElement
@@ -241,4 +242,26 @@ test("admin older history request waits for smaller in-flight recent request", a
   await fullLoad;
 
   assert.deepEqual(calls, ["/ops/history?limit=2", "/ops/history?limit=80"]);
+});
+
+test("admin history merges a later recent refresh into the full cache", () => {
+  const existing = {
+    runs: Array.from({ length: 80 }, (_, index) => ({
+      runId: `run_${index}`,
+      status: index === 0 ? "running" : "completed",
+      open: index === 0
+    }))
+  };
+  const merged = mergeOpsHistoryPayload(existing, {
+    runs: [
+      { runId: "run_0", status: "completed" },
+      { runId: "run_new", status: "running", open: true }
+    ]
+  });
+
+  assert.equal(merged.runs.length, 80);
+  assert.equal(merged.runs[0].runId, "run_0");
+  assert.equal(merged.runs[0].status, "completed");
+  assert.equal(merged.runs.some(row => row.runId === "run_new"), true);
+  assert.equal(new Set(merged.runs.map(row => row.runId)).size, 80);
 });

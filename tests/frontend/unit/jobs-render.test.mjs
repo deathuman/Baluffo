@@ -316,6 +316,8 @@ test("confirmed unavailable rows require the explicit warned original-link actio
   assert.match(html, /data-ui="job-original-link-btn"/);
   assert.match(html, />Open original link<\/button>/);
   assert.match(html, /availability-warning/);
+  assert.match(html, /job-original-link-btn[^>]*data-tooltip="Confirmed unavailable; open the original posting anyway"/);
+  assert.doesNotMatch(html, /job-original-link-btn[^>]*\stitle=/);
 });
 
 test("availability check action is rendered only for bridge-capable runtimes", () => {
@@ -354,6 +356,8 @@ test("availability check action has a bounded icon button instead of a raw glyph
   }, { canManageAvailability: true });
 
   assert.match(html, /type="button"[^>]*class="job-availability-check-btn"/);
+  assert.match(html, /job-availability-check-btn[^>]*data-tooltip="Check availability now"/);
+  assert.doesNotMatch(html, /job-availability-check-btn[^>]*\stitle=/);
   assert.match(html, /job-availability-check-btn[\s\S]*class="availability-action-icon"[\s\S]*<svg/);
   assert.doesNotMatch(html, />↻<\/button>/);
 });

@@ -207,8 +207,8 @@ function renderJobRowContent(job, {
         <span class="job-tag ${job.workType.toLowerCase()}">${escapeHtml(workTypeLabel || "Unknown")}</span>
       </div>
       <div class="col-save job-cell" data-label="Save" aria-label="Job actions">
-        ${isUnavailable && safeJobLink ? `<button type="button" class="btn back-btn job-original-link-btn availability-warning" data-ui="job-original-link-btn" data-job-link="${safeJobLink}" title="Confirmed unavailable; open the original posting anyway" aria-label="Open original link for confirmed unavailable job">Open original link</button>` : ""}
-        ${canManageAvailability && job.availabilityId ? `<button type="button" class="job-availability-check-btn" data-ui="job-availability-check-btn" data-availability-id="${escapeHtml(job.availabilityId)}" title="Check availability now" aria-label="Check availability now"><span class="availability-action-icon" aria-hidden="true">${renderAvailabilityCheckIcon()}</span></button>` : ""}
+        ${isUnavailable && safeJobLink ? `<button type="button" class="btn back-btn job-original-link-btn availability-warning" data-ui="job-original-link-btn" data-job-link="${safeJobLink}"${tooltipAttrs("Confirmed unavailable; open the original posting anyway")} aria-label="Open original link for confirmed unavailable job">Open original link</button>` : ""}
+        ${canManageAvailability && job.availabilityId ? `<button type="button" class="job-availability-check-btn" data-ui="job-availability-check-btn" data-availability-id="${escapeHtml(job.availabilityId)}"${tooltipAttrs("Check availability now")} aria-label="Check availability now"><span class="availability-action-icon" aria-hidden="true">${renderAvailabilityCheckIcon()}</span></button>` : ""}
         <button
           type="button"
           class="save-job-btn job-inline-save-btn ${isSaved ? "saved" : ""}"

@@ -118,6 +118,13 @@ export function renderSavedJobBlockHtml(job, options = {}) {
   const availabilityAttentionBadge = unreadAvailability.length
     ? `<button class="saved-availability-attention-btn" data-ui="saved-availability-attention-btn" data-job-key="${jobKey}"${tooltipAttrs("Availability update needs acknowledgement")}>Availability update</button>`
     : "";
+  const reportedUnavailable = Boolean(
+    job?.availabilityAttention?.hiddenByReport
+    || job?.availabilityAttention?.localReport?.reportedAt
+  );
+  const reportedUnavailableBadge = reportedUnavailable
+    ? `<span class="saved-availability-report-badge availability-warning"${tooltipAttrs("Reported unavailable for this profile")}>Reported unavailable</span>`
+    : "";
   const availabilityStatus = String(lifecycleOverlay?.availabilityStatus || "").toLowerCase();
   const monitored = Boolean(String(job.availabilityId || "").trim()) && hasLink;
 
@@ -136,6 +143,7 @@ export function renderSavedJobBlockHtml(job, options = {}) {
               ${reminderBadge}
               ${lifecycleBadge}
               ${availabilityAttentionBadge}
+              ${reportedUnavailableBadge}
               ${isCustom && !monitored ? `<span class="saved-custom-badge"${tooltipAttrs("A public application URL is required for monitoring")}>Not monitored</span>` : ""}
               ${missingChips}
             </div>
@@ -166,8 +174,8 @@ export function renderSavedJobBlockHtml(job, options = {}) {
         <div class="col-link job-cell" data-label="Link">
           <div class="saved-link-actions" aria-label="Job link and availability actions">
             ${hasLink ? `<a class="saved-open-link-icon ${availabilityStatus === "unavailable" ? "availability-warning" : ""}" href="${safeLink}" target="_blank" rel="noopener noreferrer" aria-label="${availabilityStatus === "unavailable" ? "Open original link with warning" : "Open job link"}"${tooltipAttrs(availabilityStatus === "unavailable" ? "Confirmed unavailable; open the original link anyway" : "Open job link")}>${renderWebIcon()}</a>` : `<span class="saved-no-link ${isCustom ? "saved-no-link-custom" : ""}">${isCustom ? "No link" : "N/A"}</span>`}
-            ${canManageAvailability && monitored ? `<button type="button" class="btn back-btn saved-availability-icon-btn saved-check-availability-btn" data-ui="saved-check-availability-btn" data-availability-id="${escapeHtml(job.availabilityId)}" title="Check availability now" aria-label="Check availability now"><span class="availability-action-icon" aria-hidden="true">${renderAvailabilityCheckIcon()}</span></button>` : ""}
-            ${canManageAvailability ? (() => { const isReportHidden = Boolean(job?.availabilityAttention?.hiddenByReport); const actionLabel = isReportHidden ? "Clear unavailable report" : "Report unavailable"; return `<button type="button" class="btn back-btn saved-availability-icon-btn saved-report-unavailable-btn" data-ui="saved-report-unavailable-btn" data-job-key="${jobKey}" data-action="${isReportHidden ? "clear" : "report"}" title="${actionLabel}" aria-label="${actionLabel}"><span class="availability-action-icon" aria-hidden="true">${renderAvailabilityReportIcon(isReportHidden)}</span></button>`; })() : ""}
+            ${canManageAvailability && monitored ? `<button type="button" class="btn back-btn saved-availability-icon-btn saved-check-availability-btn" data-ui="saved-check-availability-btn" data-availability-id="${escapeHtml(job.availabilityId)}"${tooltipAttrs("Check availability now")} aria-label="Check availability now"><span class="availability-action-icon" aria-hidden="true">${renderAvailabilityCheckIcon()}</span></button>` : ""}
+            ${canManageAvailability ? (() => { const isReportHidden = Boolean(job?.availabilityAttention?.hiddenByReport || job?.availabilityAttention?.localReport?.reportedAt); const actionLabel = isReportHidden ? "Clear unavailable report" : "Report unavailable"; return `<button type="button" class="btn back-btn saved-availability-icon-btn saved-report-unavailable-btn" data-ui="saved-report-unavailable-btn" data-job-key="${jobKey}" data-action="${isReportHidden ? "clear" : "report"}"${tooltipAttrs(actionLabel)} aria-label="${actionLabel}"><span class="availability-action-icon" aria-hidden="true">${renderAvailabilityReportIcon(isReportHidden)}</span></button>`; })() : ""}
           </div>
         </div>
       </div>

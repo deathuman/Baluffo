@@ -12,6 +12,108 @@ import { isEditingNotesField, shouldDeferSavedJobsRerender } from "../notes.js";
 import { cacheSavedDomState } from "./state.js";
 import { bindSavedJobsListDelegation, bindSavedPageEvents } from "./events.js";
 
+export async function runSavedAvailabilityReport(
+  deps,
+  refreshAvailabilityAttention = async () => {},
+  jobKey,
+  action = "report"
+) {
+  if (!deps.canManageAvailability?.()) return;
+  const uid = String(deps.viewState.currentUser?.uid || "").trim();
+  if (!uid) return;
+  const notify = deps.showToast || showToast;
+  const safeJobKey = String(jobKey || "").trim();
+  const savedJob = deps.viewState.lastSavedJobsByKey.get(safeJobKey) || {};
+  const label = [String(savedJob.title || "").trim(), String(savedJob.company || "").trim()]
+    .filter(Boolean)
+    .join(" at ") || "this saved job";
+  const monitored = Boolean(
+    String(savedJob.availabilityId || "").trim()
+    && String(savedJob.jobLink || "").trim()
+  );
+  if (action === "report" && typeof deps.requestConfirmationDialog === "function") {
+    const confirmed = await deps.requestConfirmationDialog({
+      title: "Report job unavailable?",
+      description: monitored
+        ? `Report "${label}" as unavailable? It will remain visible in Saved jobs, and an independent availability check will be queued. You can clear the report any time.`
+        : `Report "${label}" as unavailable? It will remain visible in Saved jobs until you clear the report.`,
+      confirmLabel: "Report unavailable",
+      cancelLabel: "Cancel"
+    });
+    if (!confirmed) return;
+    if (String(deps.viewState.currentUser?.uid || "").trim() !== uid) {
+      notify("Profile changed; unavailable report was not updated.", "info");
+      return;
+    }
+  }
+  const result = await deps.savedPageService.manageAvailabilityReport(
+    uid, safeJobKey, action
+  );
+  const queued = Boolean(result.data?.queuedForCheck);
+  const successMessage = action === "clear"
+    ? "Unavailable report cleared."
+    : queued
+      ? "Reported unavailable; verification queued."
+      : "Reported unavailable for this profile. You can clear the report any time.";
+  if (!result.ok) {
+    notify(result.error, "error");
+    return;
+  }
+  // Keep the current row interactive while the subscription catches up.
+  if (
+    String(deps.viewState.currentUser?.uid || "").trim() === uid
+    && savedJob
+    && typeof savedJob === "object"
+  ) {
+    const attention = savedJob.availabilityAttention && typeof savedJob.availabilityAttention === "object"
+      ? { ...savedJob.availabilityAttention }
+      : {};
+    if (action === "clear") {
+      attention.localReport = {};
+      attention.hiddenByReport = false;
+    } else {
+      attention.localReport = {
+        reportedAt: String(result.data?.reportedAt || new Date().toISOString()),
+        availabilityId: String(savedJob.availabilityId || ""),
+        queuedForCheck: queued
+      };
+      attention.hiddenByReport = true;
+    }
+    savedJob.availabilityAttention = attention;
+    deps.viewState.lastSavedJobsByKey.set(safeJobKey, savedJob);
+    deps.renderSavedJobs(Array.from(deps.viewState.lastSavedJobsByKey.values()));
+  }
+  notify(successMessage, "info", action === "report" ? {
+    durationMs: 7000,
+    actionLabel: "Undo",
+    onAction: async () => {
+      const undo = await deps.savedPageService.manageAvailabilityReport(
+        uid, safeJobKey, "clear"
+      );
+      if (!undo.ok) {
+        notify(undo.error, "error");
+        return;
+      }
+      if (String(deps.viewState.currentUser?.uid || "").trim() === uid) {
+        const current = deps.viewState.lastSavedJobsByKey.get(safeJobKey);
+        if (current) {
+          current.availabilityAttention = {
+            ...(current.availabilityAttention || {}),
+            localReport: {},
+            hiddenByReport: false
+          };
+          deps.renderSavedJobs(Array.from(deps.viewState.lastSavedJobsByKey.values()));
+        }
+        await refreshAvailabilityAttention();
+      }
+      notify("Unavailable report cleared.", "success");
+    }
+  } : { durationMs: 3500 });
+  if (String(deps.viewState.currentUser?.uid || "").trim() === uid) {
+    await refreshAvailabilityAttention();
+  }
+}
+
 export function createSavedBoot(deps) {
   const savedPerfMarks = createPerfMarks(deps.startupMetrics);
 
@@ -206,21 +308,9 @@ export function createSavedBoot(deps) {
           deps.renderSavedJobs(Array.from(deps.viewState.lastSavedJobsByKey.values()));
         }
       },
-      reportUnavailable: async (jobKey, action = "report") => {
-        if (!deps.canManageAvailability?.()) return;
-        if (!deps.viewState.currentUser) return;
-        const result = await deps.savedPageService.manageAvailabilityReport(
-          deps.viewState.currentUser.uid, jobKey, action
-        );
-        const queued = Boolean(result.data?.queuedForCheck);
-        const successMessage = action === "clear"
-          ? "Unavailable report cleared."
-          : queued
-            ? "Hidden for this profile; verification queued."
-            : "Hidden for this profile. You can clear the report from Availability attention.";
-        showToast(result.ok ? successMessage : result.error, result.ok ? "info" : "error");
-        if (result.ok) await refreshAvailabilityAttention();
-      },
+      reportUnavailable: (jobKey, action = "report") => (
+        runSavedAvailabilityReport(deps, refreshAvailabilityAttention, jobKey, action)
+      ),
       acknowledgeAvailability: async jobKey => {
         if (!deps.viewState.currentUser) return;
         const job = deps.viewState.lastSavedJobsByKey.get(jobKey);

@@ -249,6 +249,7 @@ savedBoot = createSavedBoot({
   noteSaveState: savedRuntime.noteSaveState,
   savedPageService,
   canManageAvailability,
+  requestConfirmationDialog,
   savedAuthController: savedRuntime.savedAuthController,
   applySavedAdminBridgeState: (...args) => savedRuntime.applySavedAdminBridgeState(...args),
   cssEscape: (...args) => savedChrome.cssEscape(...args),
