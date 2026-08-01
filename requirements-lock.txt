@@ -103,7 +103,7 @@ protego==0.6.0
     # via scrapy
 psutil==7.0.0
     # via -r requirements.txt
-pyasn1==0.6.3
+pyasn1==0.6.4
     # via
     #   pyasn1-modules
     #   service-identity
