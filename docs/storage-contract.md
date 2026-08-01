@@ -180,7 +180,7 @@ Default policy:
 
 Compatibility exports such as `jobs-unified-light.json` are not debug archives.
 
-After M4, terminal source `details` for bridge-started fetches are written to gzip archives and referenced from both `source_runs.evidence_refs` and the compact fetch report. `/ops/fetch-report` and `/ops/fetch-report/sources` hydrate details from SQLite/archive while `sourceRuns=sqlite`; rollback to JSON leaves the compact or full report available for diagnosis.
+After M4, terminal source `details` for bridge-started fetches are written to gzip archives and referenced from both `source_runs.evidence_refs` and the compact fetch report. `/ops/fetch-report` hydrates details from SQLite/archive while `sourceRuns=sqlite`; rollback to JSON leaves the compact or full report available for diagnosis.
 
 ## Size Budgets
 

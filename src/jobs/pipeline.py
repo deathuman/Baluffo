@@ -17,7 +17,7 @@ from typing import Any, cast
 
 from src.jobs import registry as jobs_registry
 from src.jobs.adapters import community as community_adapter
-from src.jobs.adapters.api import default_source_loaders as adapters_default_source_loaders
+from src.jobs.adapters import default_source_loaders as adapters_default_source_loaders
 from src.jobs.common import config as common_config
 from src.jobs.interfaces import SourceLoader
 from src.jobs.transport import build_redirect_resolver as transport_build_redirect_resolver

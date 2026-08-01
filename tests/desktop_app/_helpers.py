@@ -3,6 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+from src.app_version import APP_VERSION
 from src.ship import desktop_app
 from src.ship.desktop_app import _windows as windows_desktop_app
 from tests.helpers.ports import ADMIN_BRIDGE_TEST_PORT
@@ -149,3 +150,29 @@ def _patch_windows_desktop_app(
         )
         stack.enter_context(mock.patch.object(desktop_app, "_STILL_ACTIVE", 259, create=True))
         yield fake_ctypes
+
+
+def isolate_desktop_startup_side_effects(request, monkeypatch) -> None:
+    """Stub desktop startup side effects shared by launcher orchestration tests."""
+    monkeypatch.setattr(
+        desktop_app, "_windows_create_kill_on_close_job", mock.Mock(return_value=None)
+    )
+    monkeypatch.setattr(desktop_app, "_windows_close_desktop_job", mock.Mock())
+    monkeypatch.setattr(desktop_app, "get_baluffo_bridge_health", mock.Mock(return_value={}))
+    monkeypatch.setattr(
+        desktop_app, "_load_active_critical_desktop_tasks", mock.Mock(return_value=[])
+    )
+    monkeypatch.setattr(desktop_app, "load_session_state", mock.Mock(return_value={}))
+    monkeypatch.setattr(
+        desktop_app,
+        "_reclaim_stale_instance_artifacts",
+        mock.Mock(side_effect=AssertionError("unexpected stale runtime reclaim")),
+    )
+    if request.node.name.startswith("test_publish_success_marker_when_ready_async"):
+        return
+    monkeypatch.setattr(
+        desktop_app,
+        "wait_for_desktop_startup_ready",
+        mock.Mock(return_value={"appVersion": APP_VERSION, "startupReady": True}),
+    )
+    monkeypatch.setattr(desktop_app, "publish_success_marker_when_ready_async", mock.Mock())

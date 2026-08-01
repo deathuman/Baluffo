@@ -8,10 +8,10 @@ from urllib.parse import quote
 from xml.etree import ElementTree as ET
 
 from src.exceptions import AdapterValidationError
-from src.jobs.adapters import social_parsers as _social_parsers
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.types import SimpleAdapterPlugin
 from src.jobs.adapters.recovery import run_recoverable_adapter_attempt
+from src.jobs.adapters.social_parser import reddit_parser as _social_parsers
 from src.jobs.common.config import DEFAULT_SOCIAL_MIN_CONFIDENCE, SOURCE_DIAGNOSTICS
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.models import RawJob

@@ -220,9 +220,7 @@ def test_delete_by_id(tmp_path: Path) -> None:
     assert handler.sent[-1]["status"] == 200
 
 
-def test_delete_creates_tombstone_and_restore_deleted_reinstates_row(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_delete_creates_tombstone(tmp_path: Path, monkeypatch) -> None:
     tombstone_path = tmp_path / "source-registry-tombstones.json"
     monkeypatch.setattr(registry_tombstones, "TOMBSTONES_PATH", tombstone_path)
 
@@ -242,18 +240,6 @@ def test_delete_creates_tombstone_and_restore_deleted_reinstates_row(
     assert api.load_state()["active"] == []
     tombstones = registry_tombstones.load_tombstones(tombstone_path)
     assert "src-1" in tombstones
-
-    restore_result = handle_post(
-        handler,
-        api=api,
-        path="/registry/restore-deleted",
-        payload={"ids": ["src-1"]},
-    )
-
-    assert restore_result is True
-    assert handler.sent[-1]["status"] == 200
-    assert api.load_state()["active"][-1]["id"] == "src-1"
-    assert registry_tombstones.load_tombstones(tombstone_path) == {}
 
 
 def test_delete_by_url(tmp_path: Path) -> None:
@@ -536,46 +522,9 @@ def test_registry_reject_and_restore_update_candidate_lifecycle(tmp_path: Path) 
     assert restored_row["quarantinedAt"] == ""
 
 
-def test_registry_rollback_resets_live_row_to_validated(tmp_path: Path) -> None:
-    store = FakeDesktopLocalDataStore()
-    api = make_stub_bridge_api(tmp_path, store)
-    handler = FakeHandler()
-
-    api.persist_state_and_auto_sync(
-        {
-            "active": [
-                {
-                    "id": "src-1",
-                    "adapter": "static",
-                    "name": "Active Source",
-                    "candidateState": "live",
-                    "approvedAt": "2023-12-31T00:00:00Z",
-                    "approvedBy": "registry_manual_approve",
-                    "liveAt": "2023-12-31T00:00:00Z",
-                }
-            ],
-            "pending": [],
-            "rejected": [],
-        }
-    )
-
-    result = handle_post(
-        handler,
-        api=api,
-        path="/registry/rollback",
-        payload={"ids": ["src-1"]},
-    )
-
-    assert result is True
-    pending_row = api.load_state()["pending"][0]
-    assert pending_row["candidateState"] == "validated"
-    assert pending_row["approvedAt"] == ""
-    assert pending_row["approvedBy"] == ""
-    assert pending_row["liveAt"] == ""
-
-
 def test_run_jobs_pipeline(tmp_path: Path) -> None:
     """Test triggering jobs pipeline."""
+
     store = FakeDesktopLocalDataStore()
     api = make_stub_bridge_api(tmp_path, store)
 

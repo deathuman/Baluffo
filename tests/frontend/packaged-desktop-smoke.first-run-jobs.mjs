@@ -12,9 +12,15 @@ import {
   setThemeAndViewport,
   waitUntil
 } from "./helpers/packaged-first-run-smoke-helpers.mjs";
+import {
+  buildGotoDesktop,
+  buildWriteReport,
+  BASE_URL,
+  BRIDGE_BASE,
+  BRIDGE_PORT,
+  BRIDGE_HOST
+} from "./helpers/packaged-smoke-shared.mjs";
 
-const BASE_URL = process.env.PACKAGED_DESKTOP_BASE_URL || "http://127.0.0.1:8080";
-const BRIDGE_BASE = process.env.PACKAGED_DESKTOP_BRIDGE_BASE || "http://127.0.0.1:8877";
 const REPORT_PATH =
   process.env.PACKAGED_SMOKE_REPORT_PATH ||
   process.env.PACKAGED_SMOKE_PLAYWRIGHT_REPORT ||
@@ -24,9 +30,6 @@ const OUTPUT_DIR =
   process.env.PACKAGED_SMOKE_ARTIFACTS_DIR ||
   path.resolve(".tmp/packaged-desktop-smoke/first-run-jobs-output");
 const HEADED = process.env.PACKAGED_SMOKE_HEADED === "1";
-const bridgeUrl = new URL(BRIDGE_BASE);
-const BRIDGE_PORT = bridgeUrl.port || "8877";
-const BRIDGE_HOST = bridgeUrl.hostname || "127.0.0.1";
 const FIRST_RUN_TITLE = "Packaged First-Run Technical Cinematic Animator";
 const FIRST_RUN_SMOKE_QUERY =
   "jobsColdStart=1&jobsFirstRunBootstrapTimeoutMs=3000&jobsFirstRunBootstrapProgressStaleMs=10000";
@@ -36,17 +39,8 @@ const VIEWPORTS = [
 ];
 const THEMES = ["light", "dark"];
 
-async function writeReport(report) {
-  await fs.mkdir(path.dirname(REPORT_PATH), { recursive: true });
-  await fs.writeFile(REPORT_PATH, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-}
-
-async function gotoDesktop(page, relativePath) {
-  const separator = relativePath.includes("?") ? "&" : "?";
-  await page.goto(
-    `${BASE_URL}/${relativePath}${separator}desktop=1&bridgePort=${encodeURIComponent(BRIDGE_PORT)}&bridgeHost=${encodeURIComponent(BRIDGE_HOST)}`
-  );
-}
+const writeReport = buildWriteReport(REPORT_PATH);
+const gotoDesktop = buildGotoDesktop();
 
 async function fetchBridgeJson(apiRequest, relativePath, label) {
   return fetchBridgeJsonWithBase(apiRequest, BRIDGE_BASE, relativePath, label);

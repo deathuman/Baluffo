@@ -3,9 +3,6 @@ const DEFAULT_CONFIG = {
   bridge: {
     host: "127.0.0.1",
     port: 8877
-  },
-  security: {
-    github_app_enabled_default: true
   }
 };
 
@@ -19,10 +16,6 @@ const BALUFFO_RUNTIME_CONFIG = {
   bridge: {
     ...DEFAULT_CONFIG.bridge,
     ...(BALUFFO_FRONTEND_RUNTIME_CONFIG?.bridge || {})
-  },
-  security: {
-    ...DEFAULT_CONFIG.security,
-    ...(BALUFFO_FRONTEND_RUNTIME_CONFIG?.security || {})
   }
 };
 
@@ -115,8 +108,5 @@ export const AdminConfig = {
   FETCH_REPORT_POLL_TIMEOUT_MS: 10 * 60 * 1000,
   ADMIN_BRIDGE_BASE: resolveRuntimeBridgeBase(),
   BRIDGE_STATUS_POLL_INTERVAL_MS: 10000,
-  DESKTOP_JOBS_COLD_START: resolveDesktopJobsColdStart(),
-  GITHUB_APP_ENABLED_DEFAULT: Boolean(
-    BALUFFO_FRONTEND_RUNTIME_CONFIG?.security?.github_app_enabled_default ?? true
-  )
+  DESKTOP_JOBS_COLD_START: resolveDesktopJobsColdStart()
 };

@@ -36,8 +36,7 @@ python scripts/ai_env_check.py --smoke --check-updates
 Install or update the required code-intelligence MCP:
 
 ```bash
-uv tool install -p 3.13 serena-agent@latest --prerelease=allow
-uv tool upgrade serena-agent --prerelease=allow
+uv tool install --force -p 3.13 "serena-agent==1.6.1"
 serena --version
 ```
 

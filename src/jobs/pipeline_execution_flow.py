@@ -6,7 +6,7 @@ from typing import Any
 
 from src.jobs.adapters import static_sources as static_sources_mod
 from src.jobs.pipeline_stage_source_execution import run_source_execution_stage
-from src.jobs.registry import registry_entries
+from src.jobs.registry import PROVIDER_REGISTRY_ADAPTERS, registry_entries
 from src.jobs.state_source_state import append_excluded_default_sources
 from src.jobs.text_utils import clean_text
 
@@ -21,22 +21,7 @@ _PROVIDER_METADATA_FIELDS = (
     "migrationConfidence",
     "migrationReasons",
 )
-_PROVIDER_REGISTRY_ADAPTERS = (
-    "greenhouse",
-    "lever",
-    "ashby",
-    "smartrecruiters",
-    "workable",
-    "recruitee",
-    "pinpoint",
-    "teamtailor",
-    "bamboohr",
-    "workday",
-    "personio",
-    "breezy",
-    "jazzhr",
-    "oracle_hcm",
-)
+_PROVIDER_REGISTRY_ADAPTERS = tuple(sorted(PROVIDER_REGISTRY_ADAPTERS))
 
 
 def _attach_static_source_provenance(source_reports: list[dict[str, Any]]) -> None:

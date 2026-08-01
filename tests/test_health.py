@@ -1,44 +1,11 @@
 """Tests for health scoring and source health utilities."""
 
 from src.jobs.common.health import (
-    calculate_health_score,
     get_quarantined_sources,
     get_top_failing_sources,
     get_top_slow_sources,
     get_top_zero_kept_sources,
 )
-
-
-class TestCalculateHealthScore:
-    def test_perfect_health_score(self):
-        score = calculate_health_score(0, 0)
-        assert score == 100
-
-    def test_failures_penalty(self):
-        score = calculate_health_score(3, 0)
-        assert score < 100
-        assert score > 0
-
-    def test_zero_kept_penalty(self):
-        score = calculate_health_score(0, 3)
-        assert score < 100
-        assert score > 0
-
-    def test_combined_penalty(self):
-        score_failures_only = calculate_health_score(3, 0)
-        score_zero_kept_only = calculate_health_score(0, 3)
-        score_combined = calculate_health_score(3, 3)
-        assert score_combined < score_failures_only
-        assert score_combined < score_zero_kept_only
-
-    def test_max_penalty(self):
-        score = calculate_health_score(10, 10, median_latency_ms=400000)
-        assert score == 0
-
-    def test_latency_penalty(self):
-        score_no_latency = calculate_health_score(0, 0, median_latency_ms=0)
-        score_high_latency = calculate_health_score(0, 0, median_latency_ms=400000)
-        assert score_high_latency < score_no_latency
 
 
 class TestGetTopFailingSources:

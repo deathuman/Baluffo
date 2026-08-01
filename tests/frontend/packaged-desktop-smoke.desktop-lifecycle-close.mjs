@@ -5,8 +5,8 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { chromium } from "@playwright/test";
 import { waitUntil } from "./helpers/packaged-first-run-smoke-helpers.mjs";
+import { buildWriteReport, BASE_URL } from "./helpers/packaged-smoke-shared.mjs";
 
-const BASE_URL = process.env.PACKAGED_DESKTOP_BASE_URL || "http://127.0.0.1:8080";
 const CDP_PORT = Number(process.env.BALUFFO_PACKAGED_SMOKE_CDP_PORT || 0);
 const BROWSER_PID = Number(process.env.BALUFFO_PACKAGED_SMOKE_BROWSER_PID || 0);
 const execFileAsync = promisify(execFile);
@@ -19,10 +19,7 @@ const OUTPUT_DIR =
   process.env.PACKAGED_SMOKE_ARTIFACTS_DIR ||
   path.resolve(".tmp/packaged-desktop-smoke/desktop-lifecycle-close-output");
 
-async function writeReport(report) {
-  await fs.mkdir(path.dirname(REPORT_PATH), { recursive: true });
-  await fs.writeFile(REPORT_PATH, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-}
+const writeReport = buildWriteReport(REPORT_PATH);
 
 function allPages(browser) {
   return browser.contexts().flatMap(context => context.pages());

@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.jobs.adapters.api import default_source_loaders
+from src.jobs.adapters import default_source_loaders
 from src.jobs.adapters.static_sources import static_source_name_for_registry_row
 from src.jobs.text_utils import clean_text
 from src.source_registry import source_identity, source_url_fingerprint

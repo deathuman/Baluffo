@@ -8,12 +8,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-RegistryState = dict[str, list[dict[str, Any]]]
-PersistStateFunc = Callable[[RegistryState], RegistryState]
-SyncGuardFunc = Callable[[], dict[str, Any] | None]
-SyncTaskRunningFunc = Callable[[], bool]
-StartSyncTaskFunc = Callable[..., dict[str, Any]]
-
 AUTO_SYNC_PUSH_REASONS = frozenset(
     {
         "manual_source",
@@ -24,7 +18,6 @@ AUTO_SYNC_PUSH_REASONS = frozenset(
         "registry_reject",
         "registry_rollback",
         "registry_restore_rejected",
-        "registry_restore_deleted",
         "fetch_empty_demote",
         "fetch_failure_demote",
     }
@@ -36,11 +29,10 @@ def should_trigger_auto_sync_push(reason: str) -> bool:
 
 
 def maybe_trigger_auto_sync_push(
-    *,
     reason: str,
-    sync_guard: SyncGuardFunc,
-    sync_task_running: SyncTaskRunningFunc,
-    start_sync_task: StartSyncTaskFunc,
+    sync_guard: Callable[[], dict[str, Any] | None],
+    sync_task_running: Callable[[], bool],
+    start_sync_task: Callable[..., dict[str, Any]],
 ) -> bool:
     if not should_trigger_auto_sync_push(reason):
         return False
@@ -54,12 +46,12 @@ def maybe_trigger_auto_sync_push(
 
 
 def persist_state_and_auto_sync(
-    state: RegistryState,
+    state: dict[str, list[dict[str, Any]]],
     *,
     reason: str,
-    persist_state: PersistStateFunc,
+    persist_state: Callable[[dict[str, list[dict[str, Any]]]], dict[str, list[dict[str, Any]]]],
     maybe_trigger_auto_sync_push: Callable[[str], bool],
-) -> RegistryState:
+) -> dict[str, list[dict[str, Any]]]:
     normalized = persist_state(state)
     maybe_trigger_auto_sync_push(reason)
     return normalized

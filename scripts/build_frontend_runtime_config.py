@@ -13,20 +13,16 @@ DEFAULT_OUTPUT_PATH = ROOT / "frontend-runtime-config.js"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.baluffo_config import get_bridge_defaults, get_security_defaults
+from src.baluffo_config import get_bridge_defaults
 from src.python_version_guard import ensure_required_python
 
 
 def build_frontend_runtime_config_payload() -> dict[str, dict[str, Any]]:
     bridge_defaults = get_bridge_defaults()
-    security_defaults = get_security_defaults()
     return {
         "bridge": {
             "host": str(bridge_defaults["host"]),
             "port": int(bridge_defaults["port"]),
-        },
-        "security": {
-            "github_app_enabled_default": bool(security_defaults["github_app_enabled_default"]),
         },
     }
 

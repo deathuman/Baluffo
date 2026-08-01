@@ -21,7 +21,7 @@ Follow Serena's official `uv`-managed install path rather than marketplace insta
 2. Install Serena:
 
 ```powershell
-uv tool install -p 3.13 serena-agent@latest --prerelease=allow
+uv tool install --force -p 3.13 "serena-agent==1.6.1"
 serena --help
 ```
 
@@ -32,7 +32,7 @@ For direct CLI use on Windows, the `uv`-managed executable is typically availabl
 Update Serena explicitly; normal repo checks should report stale installs, not auto-upgrade them:
 
 ```powershell
-uv tool upgrade serena-agent --prerelease=allow
+uv tool install --force -p 3.13 "serena-agent==1.6.1"
 serena --version
 ```
 
@@ -43,7 +43,7 @@ then restart or reconnect Codex/OpenCode so they open a fresh MCP stdio transpor
 
 This setup was validated on Windows with:
 
-- `serena-agent` 1.5.3+
+- `serena-agent` 1.6.1
 - Python 3.13
 - Language-server backend with `python` and `typescript`
 
@@ -95,7 +95,7 @@ Current repo launch shape:
   "mcp": {
     "serena": {
       "type": "local",
-      "command": ["serena", "start-mcp-server", "--context", "ide", "--project-from-cwd"],
+      "command": ["uvx", "-p", "3.13", "--from", "serena-agent==1.6.1", "serena", "start-mcp-server", "--context", "ide", "--project-from-cwd"],
       "enabled": true
     }
   }

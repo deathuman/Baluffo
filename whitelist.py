@@ -210,7 +210,6 @@ _.close_connection  # unused attribute (src\ship\runtime_launcher.py:65)
 _.protocol_version  # unused attribute (src\packaged_desktop_smoke.py:1035)
 __new__  # unused function (src\jobs\common\__init__.py:236)
 __new__  # unused function (src\jobs\common\__init__.py:308)
-calculate_health_score  # unused function (src\jobs\common\health.py:8)
 build_unknown_country_bucket_manifest  # unused function (src\jobs\location_bucket_manifest.py:60)
 load_rows_from_json  # used by scripts/location_unknown_country_manifest.py
 load_manifest  # unused function (src\jobs\location_bucket_manifest.py:108)

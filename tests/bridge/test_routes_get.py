@@ -157,9 +157,6 @@ def test_startup_metrics_endpoint_returns_versioned_rows(tmp_path: Path) -> None
 @pytest.mark.parametrize(
     "path,expected_key",
     [
-        pytest.param("/registry/active", "sources", id="active"),
-        pytest.param("/registry/pending", "sources", id="pending"),
-        pytest.param("/registry/rejected", "sources", id="rejected"),
         pytest.param("/registry/summary", "summary", id="summary"),
     ],
 )
@@ -618,7 +615,6 @@ def test_ops_fetch_report_live_view_omits_source_details(tmp_path: Path) -> None
     assert payload["summary"]["outputCount"] == 12
     assert payload["taskProgress"]["counts"]["resolvedSources"] == 1
     assert [payload[k] for k in ("sourceCount", "sources", "sourcesTruncated")] == [1, [], True]
-    assert payload["sourceDetailPath"] == "/ops/fetch-report/sources"
 
 
 def test_sync_status(tmp_path: Path) -> None:

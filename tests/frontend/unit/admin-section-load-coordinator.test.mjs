@@ -145,38 +145,6 @@ test("admin section loader loads recent history on ops focus and older history o
   ]);
 });
 
-test("admin section loader does not auto-observe Admin sections on boot", () => {
-  const observedIds = [];
-  const documentObject = {
-    getElementById(id) {
-      return { id };
-    },
-    querySelectorAll() {
-      return [];
-    }
-  };
-  const windowObject = {
-    location: { hash: "" },
-    addEventListener() {},
-    IntersectionObserver: class {
-      constructor() {}
-      observe(element) {
-        observedIds.push(element.id);
-      }
-    }
-  };
-  const coordinator = createAdminSectionLoadCoordinator({
-    state: { adminSectionLoadState: {} },
-    refs: {},
-    documentObject,
-    windowObject
-  });
-
-  coordinator.start();
-
-  assert.deepEqual(observedIds, []);
-});
-
 test("admin section loader loads deferred Fetcher section only from explicit navigation", async () => {
   const link = createLink("#admin-fetcher-section");
   const calls = [];

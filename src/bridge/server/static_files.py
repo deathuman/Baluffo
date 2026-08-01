@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from src.baluffo_config import get_security_defaults
 from src.bridge.performance_profile import record_operation_duration
 from src.jobs.common.config import LIGHTWEIGHT_OUTPUT_FIELDS
 from src.pipeline_io import serialize_rows_for_json, write_atomic_if_changed
@@ -93,13 +92,9 @@ def is_api_path(path: str) -> bool:
 
 
 def render_container_runtime_config_js() -> str:
-    security_defaults = get_security_defaults()
     payload = {
         "bridge": {
             "sameOrigin": True,
-        },
-        "security": {
-            "github_app_enabled_default": bool(security_defaults["github_app_enabled_default"]),
         },
         "runtime": {
             "mode": "container",

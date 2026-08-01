@@ -20,6 +20,9 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from src.shared.json_io import json_dumps
+from src.shared.text_utils import clean_text
+from src.shared.utils import now_iso as _shared_now_iso
 from src.shared.utils import parse_iso as parse_iso_from_utils
 
 MANIFEST_NAME = "evidence-archive-manifest.json"
@@ -30,11 +33,11 @@ EVIDENCE_SCHEMA_VERSION = 1
 
 
 def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
+    return _shared_now_iso()
 
 
 def _clean_text(value: Any) -> str:
-    return str(value or "").strip()
+    return clean_text(value)
 
 
 def _safe_segment(value: Any, *, fallback: str) -> str:
@@ -49,7 +52,7 @@ def _parse_iso(value: Any) -> datetime | None:
 
 
 def _json_dumps(payload: Any) -> str:
-    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return json_dumps(payload)
 
 
 def _load_json_object(path: Path, default: dict[str, Any]) -> dict[str, Any]:

@@ -5,8 +5,5 @@ globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG = Object.freeze({
   "bridge": {
     "host": "127.0.0.1",
     "port": 8877
-  },
-  "security": {
-    "github_app_enabled_default": true
   }
 });

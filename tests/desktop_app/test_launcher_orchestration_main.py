@@ -11,6 +11,7 @@ from src.app_version import APP_VERSION
 from src.ship import desktop_app
 from tests.desktop_app._helpers import (
     desktop_runtime_config,
+    isolate_desktop_startup_side_effects,
     launcher_session,
     stale_launcher_session,
 )
@@ -20,28 +21,7 @@ from tests.helpers.temp_paths import workspace_tmpdir
 
 @pytest.fixture(autouse=True)
 def _isolate_desktop_startup_side_effects(request, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        desktop_app, "_windows_create_kill_on_close_job", mock.Mock(return_value=None)
-    )
-    monkeypatch.setattr(desktop_app, "_windows_close_desktop_job", mock.Mock())
-    monkeypatch.setattr(desktop_app, "get_baluffo_bridge_health", mock.Mock(return_value={}))
-    monkeypatch.setattr(
-        desktop_app, "_load_active_critical_desktop_tasks", mock.Mock(return_value=[])
-    )
-    monkeypatch.setattr(desktop_app, "load_session_state", mock.Mock(return_value={}))
-    monkeypatch.setattr(
-        desktop_app,
-        "_reclaim_stale_instance_artifacts",
-        mock.Mock(side_effect=AssertionError("unexpected stale runtime reclaim")),
-    )
-    if request.node.name.startswith("test_publish_success_marker_when_ready_async"):
-        return
-    monkeypatch.setattr(
-        desktop_app,
-        "wait_for_desktop_startup_ready",
-        mock.Mock(return_value={"appVersion": APP_VERSION, "startupReady": True}),
-    )
-    monkeypatch.setattr(desktop_app, "publish_success_marker_when_ready_async", mock.Mock())
+    isolate_desktop_startup_side_effects(request, monkeypatch)
 
 
 def test_main_surfaces_native_error_without_installer_prompt() -> None:

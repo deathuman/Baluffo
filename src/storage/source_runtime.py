@@ -8,13 +8,14 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused source runtime s
 
 from __future__ import annotations
 
-import json
 import re
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
-from datetime import UTC, datetime
 from typing import Any
 
+from src.shared.json_io import json_dumps, loads_object
+from src.shared.text_utils import clean_text
+from src.shared.utils import now_iso as _shared_now_iso
 from src.storage.baluffo_store import DEFAULT_BATCH_SIZE, BaluffoStore
 
 SOURCE_RUN_SCHEMA_VERSION = 1
@@ -22,11 +23,11 @@ DEFAULT_SOURCE_RUN_LIMIT = 500
 
 
 def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
+    return _shared_now_iso()
 
 
 def _clean_text(value: Any) -> str:
-    return str(value or "").strip()
+    return clean_text(value)
 
 
 def _norm_token(value: Any) -> str:
@@ -45,17 +46,11 @@ def _json_object(value: Any) -> dict[str, Any]:
 
 
 def _json_dumps(value: Any) -> str:
-    return json.dumps(
-        value if isinstance(value, dict) else {}, sort_keys=True, separators=(",", ":")
-    )
+    return json_dumps(value)
 
 
 def _json_loads_object(value: Any) -> dict[str, Any]:
-    try:
-        loaded = json.loads(str(value or "{}"))
-    except (TypeError, json.JSONDecodeError):
-        return {}
-    return dict(loaded) if isinstance(loaded, dict) else {}
+    return loads_object(value)
 
 
 def _source_key(row: Mapping[str, Any], ordinal: int) -> str:

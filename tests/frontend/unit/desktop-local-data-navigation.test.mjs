@@ -329,9 +329,6 @@ test("approved desktop page navigation prefers active runtime config over stale 
       host: "127.0.0.1",
       port: 61236
     },
-    security: {
-      github_app_enabled_default: true
-    },
     runtime: {
       desktop: true
     }

@@ -2,12 +2,16 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { chromium, request as playwrightRequest } from "@playwright/test";
+import {
+  buildGotoDesktop,
+  buildWriteReport,
+  runScenario,
+  BASE_URL,
+  BRIDGE_BASE,
+  BRIDGE_PORT,
+  BRIDGE_HOST
+} from "./helpers/packaged-smoke-shared.mjs";
 
-const BASE_URL = process.env.PACKAGED_DESKTOP_BASE_URL || "http://127.0.0.1:8080";
-const BRIDGE_BASE = process.env.PACKAGED_DESKTOP_BRIDGE_BASE || "http://127.0.0.1:8877";
-const bridgeUrl = new URL(BRIDGE_BASE);
-const BRIDGE_PORT = bridgeUrl.port || "8877";
-const BRIDGE_HOST = bridgeUrl.hostname || "127.0.0.1";
 const REPORT_PATH =
   process.env.PACKAGED_SMOKE_REPORT_PATH ||
   process.env.PACKAGED_SMOKE_PLAYWRIGHT_REPORT ||
@@ -18,50 +22,8 @@ const OUTPUT_DIR =
   path.resolve(".tmp/packaged-desktop-smoke/admin-startup-output");
 const HEADED = process.env.PACKAGED_SMOKE_HEADED === "1";
 const PAUSE_ON_FAILURE = process.env.PACKAGED_SMOKE_PAUSE_ON_FAILURE === "1";
-
-function slugifyToken(value) {
-  return String(value || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "") || "scenario";
-}
-
-function createScenario(name) {
-  return {
-    name,
-    slug: slugifyToken(name),
-    status: "passed",
-    durationMs: 0,
-    error: ""
-  };
-}
-
-async function writeReport(report) {
-  await fs.mkdir(path.dirname(REPORT_PATH), { recursive: true });
-  await fs.writeFile(REPORT_PATH, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-}
-
-async function gotoDesktop(page, relativePath) {
-  const separator = relativePath.includes("?") ? "&" : "?";
-  await page.goto(
-    `${BASE_URL}/${relativePath}${separator}desktop=1&bridgePort=${encodeURIComponent(BRIDGE_PORT)}&bridgeHost=${encodeURIComponent(BRIDGE_HOST)}`
-  );
-}
-
-async function runScenario(name, callback, scenarios) {
-  const startedAt = Date.now();
-  const scenario = createScenario(name);
-  try {
-    await callback();
-  } catch (error) {
-    scenario.status = "failed";
-    scenario.error = error instanceof Error ? error.message : String(error);
-    throw error;
-  } finally {
-    scenario.durationMs = Date.now() - startedAt;
-    scenarios.push(scenario);
-  }
-}
+const writeReport = buildWriteReport(REPORT_PATH);
+const gotoDesktop = buildGotoDesktop();
 
 async function waitForDesktopAdapter(page) {
   await page.waitForFunction(() => Boolean(window.JobAppLocalData), null, { timeout: 30_000 });

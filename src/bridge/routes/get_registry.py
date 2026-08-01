@@ -159,13 +159,6 @@ def _include_hidden_registry_rows(query: dict[str, list[str]]) -> bool:
     }
 
 
-def _pending_registry_payload(
-    api: _RegistryRouteApi, query: dict[str, list[str]]
-) -> dict[str, Any]:
-    state = api.load_state()
-    return _pending_registry_payload_from_state(api, query, state)
-
-
 def _pending_registry_payload_from_state(
     api: _RegistryRouteApi,
     query: dict[str, list[str]],
@@ -451,48 +444,6 @@ def handle_registry_routes(
     path: str,
     query: dict[str, list[str]],
 ) -> bool:
-    if path == "/registry/active":
-        started_at = time.perf_counter()
-        state = api.load_state()
-        record_storage_read_metric(
-            api,
-            surface="registry.active",
-            artifact="source-registry",
-            storage_kind="normalized",
-            started_at=started_at,
-            row_count=len(state.get("active") or []),
-        )
-        handler.send_json({"sources": state["active"], "summary": api.summarize_state(state)})
-        return True
-
-    if path == "/registry/pending":
-        started_at = time.perf_counter()
-        payload = _pending_registry_payload(api, query)
-        record_storage_read_metric(
-            api,
-            surface="registry.pending",
-            artifact="source-registry",
-            storage_kind="normalized",
-            started_at=started_at,
-            row_count=len(_as_list(payload.get("sources"))),
-        )
-        handler.send_json(payload)
-        return True
-
-    if path == "/registry/rejected":
-        started_at = time.perf_counter()
-        state = api.load_state()
-        record_storage_read_metric(
-            api,
-            surface="registry.rejected",
-            artifact="source-registry",
-            storage_kind="normalized",
-            started_at=started_at,
-            row_count=len(state.get("rejected") or []),
-        )
-        handler.send_json({"sources": state["rejected"], "summary": api.summarize_state(state)})
-        return True
-
     if path == "/registry/sources":
         with time_operation("registry.sources"):
             status, payload = _registry_sources_payload(api, query)

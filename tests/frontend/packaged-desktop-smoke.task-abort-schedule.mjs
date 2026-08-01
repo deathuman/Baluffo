@@ -9,8 +9,8 @@ import {
   postBridgeJson,
   waitUntil
 } from "./helpers/packaged-first-run-smoke-helpers.mjs";
+import { buildWriteReport, BRIDGE_BASE } from "./helpers/packaged-smoke-shared.mjs";
 
-const BRIDGE_BASE = process.env.PACKAGED_DESKTOP_BRIDGE_BASE || "http://127.0.0.1:8877";
 const REPORT_PATH =
   process.env.PACKAGED_SMOKE_REPORT_PATH ||
   process.env.PACKAGED_SMOKE_PLAYWRIGHT_REPORT ||
@@ -294,11 +294,7 @@ async function runSchedulerScenario(apiRequest) {
   };
 }
 
-async function writeReport(report) {
-  await fs.mkdir(path.dirname(REPORT_PATH), { recursive: true });
-  await fs.mkdir(OUTPUT_DIR, { recursive: true });
-  await fs.writeFile(REPORT_PATH, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-}
+const writeReport = buildWriteReport(REPORT_PATH);
 
 async function main() {
   const report = {

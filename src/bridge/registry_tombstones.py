@@ -130,21 +130,3 @@ def add_tombstone(
         },
     )
     return records
-
-
-def remove_tombstone(
-    source_id: str, tombstones: dict[str, dict[str, Any]] | None = None
-) -> tuple[dict[str, dict[str, Any]], dict[str, Any] | None]:
-    records = dict(tombstones or load_tombstones())
-    source_key = str(source_id or "").strip().lower()
-    record = records.pop(source_key, None)
-    return records, record
-
-
-def tombstone_source_row(record: dict[str, Any] | None) -> dict[str, Any]:
-    if not isinstance(record, dict):
-        return {}
-    source = record.get("source")
-    if isinstance(source, dict):
-        return ensure_source_id(canonicalize_registry_row(source))
-    return {}

@@ -20,7 +20,6 @@ from src.bridge.fetch_report_summary import (
 )
 from src.bridge.routes.get_fetch_report_sources import (
     FetchReportRouteApi,
-    fetch_report_sources_payload,
     hydrate_fetch_report_sources_from_sqlite,
 )
 from src.bridge.routes.response_writer import BridgeResponseWriter
@@ -289,8 +288,6 @@ def _fetch_report_live_payload_from_file(path: Any) -> dict[str, Any]:
         "sources": [],
         "sourcesTruncated": source_count > 0,
     }
-    if source_count:
-        result["sourceDetailPath"] = "/ops/fetch-report/sources"
     return result
 
 
@@ -381,9 +378,5 @@ def handle_fetch_report_routes(
 
     if path == "/ops/fetch-report":
         return _handle_fetch_report_route(handler, api=api, query=query)
-
-    if path == "/ops/fetch-report/sources":
-        handler.send_json(fetch_report_sources_payload(api, query))
-        return True
 
     return False

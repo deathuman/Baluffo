@@ -2,9 +2,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { request as playwrightRequest } from "@playwright/test";
+import { buildWriteReport, BASE_URL, BRIDGE_BASE } from "./helpers/packaged-smoke-shared.mjs";
 
-const BASE_URL = process.env.PACKAGED_DESKTOP_BASE_URL || "http://127.0.0.1:8080";
-const BRIDGE_BASE = process.env.PACKAGED_DESKTOP_BRIDGE_BASE || "http://127.0.0.1:8877";
 const REPORT_PATH =
   process.env.PACKAGED_SMOKE_REPORT_PATH ||
   process.env.PACKAGED_SMOKE_PLAYWRIGHT_REPORT ||
@@ -21,10 +20,7 @@ async function writeJson(name, payload) {
   return target;
 }
 
-async function writeReport(report) {
-  await fs.mkdir(path.dirname(REPORT_PATH), { recursive: true });
-  await fs.writeFile(REPORT_PATH, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-}
+const writeReport = buildWriteReport(REPORT_PATH);
 
 async function fetchBridgeJson(apiRequest, relativePath, label) {
   const response = await apiRequest.get(`${BRIDGE_BASE}${relativePath}`);
@@ -95,11 +91,10 @@ async function main() {
       assert.match(runId, /^fetch_[a-f0-9]{10}$/i, "fetch evidence run id should look valid");
       const deterministic = startPayload?.smokeMode === "source-runs";
 
-      const fetchReport = await fetchBridgeJson(apiRequest, "/ops/fetch-report", "fetch report");
-      const sourcesPayload = await fetchBridgeJson(
+      const fetchReport = await fetchBridgeJson(
         apiRequest,
-        `/ops/fetch-report/sources?runId=${encodeURIComponent(runId)}&limit=10`,
-        "fetch report sources"
+        `/ops/fetch-report?runId=${encodeURIComponent(runId)}`,
+        "fetch report"
       );
       const registrySummary = await fetchBridgeJson(
         apiRequest,
@@ -125,7 +120,6 @@ async function main() {
       await writeJson("storage-health.post-fetch.json", storageHealth);
       await writeJson("storage-metrics.post-fetch.json", storageMetrics);
       await writeJson("fetch-report.post-fetch.json", fetchReport);
-      await writeJson("fetch-report-sources.post-fetch.json", sourcesPayload);
       await writeJson("registry-summary.post-fetch.json", registrySummary);
       await writeJson("jobs-unified-light.sample.json", staticJobsFeed);
 
@@ -134,7 +128,8 @@ async function main() {
       assert.equal(storageHealth?.storage?.authorityModes?.jobsFeed, "sqlite");
       assert.equal(storageHealth?.storage?.authorityModes?.sourceRegistry, "sqlite");
       assert.equal(fetchReport?.runId, runId, "fetch report should match fetch evidence run");
-      assert.equal(sourcesPayload?.source, "sqlite", "source detail query should read SQLite");
+      // The full /ops/fetch-report view does not expose a `source` field; SQLite
+      // authority is already pinned via storageHealth.authorityModes.sourceRuns above.
       assert.ok(registryJournalMetricsAreBounded(storageMetrics));
       assert.ok(
         hasPassingDiagnostic(storageHealth, "sourceRuns", [
@@ -159,7 +154,7 @@ async function main() {
         assert.equal(startPayload?.smokeMode, "source-runs");
         assert.equal(fetchReport?.sources?.[0]?.name, "Packaged Smoke Source");
         assert.equal(fetchReport?.sources?.[0]?.details?.[0]?.name, "Packaged Smoke Job");
-        assert.equal(sourcesPayload?.sources?.[0]?.details?.[0]?.name, "Packaged Smoke Job");
+        assert.equal(fetchReport?.sources?.[0]?.details?.[0]?.name, "Packaged Smoke Job");
         assert.equal(staticJobsFeed?.[0]?.title, "Packaged Smoke Job");
         assert.equal(staticJobsFeed?.[0]?.company, "Packaged Smoke Studio");
       }
@@ -176,7 +171,7 @@ async function main() {
           sourceRegistry: diagnosticsFor(storageHealth, "sourceRegistry")
         },
         compactFetchReportHydrated: Boolean(fetchReport?.sources?.[0]?.details?.length),
-        sourceDetailsQuerySource: sourcesPayload?.source || "",
+        sourceDetailsQuerySource: fetchReport?.source || "",
         staticJobsFeedCount: Array.isArray(staticJobsFeed) ? staticJobsFeed.length : 0,
         registrySummary: registrySummary?.summary || registrySummary || {},
         boundedRegistryJournalMetrics: registryJournalMetricsAreBounded(storageMetrics)

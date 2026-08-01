@@ -29,7 +29,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.app_version import get_app_version
-from src.baluffo_config import get_bridge_defaults, get_desktop_defaults, get_security_defaults
+from src.baluffo_config import get_bridge_defaults, get_desktop_defaults
 from src.shared.json_io import PIPELINE_GZIP_JSON_NAMES, existing_json_candidate
 from src.ship.jobs_first_run_state import (
     ROW_BEARING_JOBS_ARTIFACTS,
@@ -66,7 +66,6 @@ from src.ship.update_manager_validation import health_check_version as _health_c
 
 BRIDGE_DEFAULTS = get_bridge_defaults()
 DESKTOP_DEFAULTS = get_desktop_defaults()
-SECURITY_DEFAULTS = get_security_defaults()
 DESKTOP_BRIDGE_HOST_ENV = "BALUFFO_DESKTOP_BRIDGE_HOST"
 DESKTOP_BRIDGE_PORT_ENV = "BALUFFO_DESKTOP_BRIDGE_PORT"
 ROOT_DATA_FILE_ALIASES = frozenset(
@@ -502,9 +501,6 @@ def _render_frontend_runtime_config_js(
         "bridge": {
             "host": str(bridge_host),
             "port": int(bridge_port),
-        },
-        "security": {
-            "github_app_enabled_default": bool(SECURITY_DEFAULTS["github_app_enabled_default"]),
         },
         "runtime": {
             "desktop": True,

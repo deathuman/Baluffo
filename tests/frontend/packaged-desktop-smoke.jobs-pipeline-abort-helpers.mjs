@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
+import { BRIDGE_BASE } from "./helpers/packaged-smoke-shared.mjs";
 
-const BRIDGE_BASE = process.env.PACKAGED_DESKTOP_BRIDGE_BASE || "http://127.0.0.1:8877";
 const BRIDGE_REQUEST_RETRY_TIMEOUT_MS = 30_000;
 const BRIDGE_REQUEST_RETRY_INTERVAL_MS = 500;
 const JOBS_ABORT_LABEL = "Abort update";

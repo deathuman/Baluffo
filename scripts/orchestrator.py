@@ -340,7 +340,6 @@ def main():
     verify_parser.add_argument(
         "--force", action="store_true", help="Force build even if hash matches"
     )
-    verify_parser.add_argument("--full", action="store_true", help="Always run full smoke tests")
 
     args = parser.parse_args()
 

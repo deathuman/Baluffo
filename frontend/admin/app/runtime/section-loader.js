@@ -1,23 +1,19 @@
 const SECTION_DEFINITIONS = Object.freeze({
   ops: {
     hash: "#admin-ops-section",
-    elementId: "admin-ops-section",
-    observe: false
+    elementId: "admin-ops-section"
   },
   fetcher: {
     hash: "#admin-fetcher-section",
-    elementId: "admin-fetcher-section",
-    observe: false
+    elementId: "admin-fetcher-section"
   },
   discovery: {
     hash: "#admin-discovery-section",
-    elementId: "admin-discovery-section",
-    observe: false
+    elementId: "admin-discovery-section"
   },
   sync: {
     hash: "#admin-sync-section",
-    elementId: "admin-sync-section",
-    observe: false
+    elementId: "admin-sync-section"
   }
 });
 
@@ -174,16 +170,6 @@ export function createAdminSectionLoadCoordinator({
   function start() {
     if (started) return;
     started = true;
-    Object.entries(SECTION_DEFINITIONS).forEach(([key, definition]) => {
-      if (!definition.observe) return;
-      const sectionEl = documentObject?.getElementById?.(definition.elementId);
-      if (sectionEl && typeof windowObject?.IntersectionObserver === "function") {
-        const observer = new windowObject.IntersectionObserver(entries => {
-          if (entries.some(entry => entry?.isIntersecting)) enqueueSection(key);
-        }, { rootMargin: "120px 0px", threshold: 0.01 });
-        observer.observe(sectionEl);
-      }
-    });
     documentObject?.querySelectorAll?.('a[href^="#admin-"]')?.forEach?.(link => {
       link.addEventListener?.("click", () => {
         const key = sectionKeyFromHash(link.getAttribute?.("href") || "");

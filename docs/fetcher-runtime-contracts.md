@@ -97,9 +97,6 @@ Optional overrides:
   - keeps the current payload shape.
   - when `sourceRuns=sqlite`, terminal source rows are hydrated from SQLite/archive; `?view=live` remains compact and omits bulky `details`.
   - `GET /ops/fetch-report?view=summary` and `GET /ops/fetch-report?view=live` are hot-path compact views. They must use `jobs-fetch-report-summary.json`, `jobs-fetch-tasks.json`, or another bounded artifact before considering the full report; summary recovery may inspect only bounded top-level metadata from a newer terminal full report when an active sidecar was left stale by a worker crash, and `view=live` must cap source samples with truncation metadata.
-- `GET /ops/fetch-report/sources`
-  - additive bounded terminal-source query with `runId`, `limit`, `offset`, and optional `status`.
-  - falls back to `jobs-fetch-report.json` rows when `sourceRuns` is not authoritative.
 - Output size policy:
   - `jobs-unified.json`, `jobs-unified-light.json`, `jobs-source-state.json`, and `jobs-lifecycle-state.json` are stored through transparent gzip-backed paths while preserving their logical `.json` URLs and row fields.
   - `source-registry-active.json` and `source-registry-pending.json` store lean core rows with sparse metadata in `source-registry-metadata.json.gz`; readers reconstruct the full row shape on load, legacy monolithic registry files remain backward-compatible, and unchanged payloads now skip the rewrite path to reduce churn.

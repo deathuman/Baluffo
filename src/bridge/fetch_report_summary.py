@@ -177,7 +177,6 @@ def compact_fetch_report_summary_payload(
         result["sourcesTruncated"] = len(raw_sources) > bounded_limit or (
             source_count > len(result["sources"])
         )
-        result["sourceDetailPath"] = "/ops/fetch-report/sources"
     return result
 
 

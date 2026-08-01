@@ -19,8 +19,10 @@ from src.jobs.adapters import html_parsers as html_parsers_mod
 from src.jobs.adapters import provider_api as provider_api_mod
 from src.jobs.adapters import provider_parsers as provider_parsers_mod
 from src.jobs.adapters import social as social_mod
-from src.jobs.adapters import social_parsers as social_parsers_mod
 from src.jobs.adapters import static as static_mod
+from src.jobs.adapters.social_parser import mastodon_parser as social_parsers_mastodon_mod
+from src.jobs.adapters.social_parser import reddit_parser as social_parsers_reddit_mod
+from src.jobs.adapters.social_parser import x_parser as social_parsers_x_mod
 from src.jobs.common import config as common_config_mod
 from src.jobs.common import datetime_utils as common_datetime_utils_mod
 from src.jobs.common import diagnostics as common_diagnostics_mod
@@ -71,13 +73,23 @@ COMPAT_MODULE_EXPORTS.update(
         ),
     )
 )
+COMPAT_MODULE_EXPORTS["parse_mastodon_payload"] = (
+    social_parsers_mastodon_mod,
+    "parse_mastodon_payload",
+)
 COMPAT_MODULE_EXPORTS.update(
     _module_attr_exports(
-        social_parsers_mod,
+        social_parsers_reddit_mod,
         (
-            "parse_mastodon_payload",
             "parse_reddit_json_payload",
             "parse_reddit_rss_payload",
+        ),
+    )
+)
+COMPAT_MODULE_EXPORTS.update(
+    _module_attr_exports(
+        social_parsers_x_mod,
+        (
             "parse_x_payload",
             "parse_x_rss_payload",
         ),

@@ -78,18 +78,3 @@ def test_fetch_report_routes_accept_minimal_capability_object(tmp_path: Path) ->
     )
     assert report_handler.sent[-1]["payload"]["runId"] == "fetch_minimal_1"
     assert report_handler.sent[-1]["payload"]["sources"][0]["name"] == "studio_a"
-
-    sources_handler = FakeHandler()
-    assert (
-        handle_fetch_report_routes(
-            sources_handler,
-            api=api,
-            path="/ops/fetch-report/sources",
-            query={"status": ["error"], "limit": ["1"]},
-        )
-        is True
-    )
-    assert sources_handler.sent[-1]["payload"]["source"] == "json"
-    assert sources_handler.sent[-1]["payload"]["sources"] == [
-        {"name": "studio_b", "status": "error"}
-    ]

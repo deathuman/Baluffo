@@ -123,3 +123,26 @@ def read_json_object(
 ) -> dict[str, Any]:
     payload = read_json(path, dict(fallback or {}))
     return payload if isinstance(payload, dict) else dict(fallback or {})
+
+
+def json_dumps(value: Any) -> str:
+    """Serialize a JSON payload deterministically (sorted keys, compact, UTF-8).
+
+    Canonical storage serializer. ``ensure_ascii=False`` keeps non-ASCII as raw
+    UTF-8 bytes; ``json.loads`` round-trips identically, so read-back of rows
+    previously written with escaped ``\\uXXXX`` output is safe.
+    """
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def loads_object(value: Any, fallback: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Parse an in-memory JSON string into a dict, with a fallback.
+
+    Counterpart to ``read_json_object`` (which is Path-based and gzip-aware);
+    this parses a SQLite column or other in-memory string value.
+    """
+    try:
+        loaded = json.loads(str(value or "{}"))
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return dict(fallback or {})
+    return loaded if isinstance(loaded, dict) else dict(fallback or {})

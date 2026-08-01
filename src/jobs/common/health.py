@@ -3,39 +3,6 @@
 from datetime import UTC
 
 
-def calculate_health_score(
-    consecutive_failures: int,
-    consecutive_zero_kept: int,
-    median_latency_ms: int = 0,
-    latency_penalty_threshold_ms: int = 300000,
-) -> int:
-    """Calculate health score (0-100) based on source history.
-
-    Args:
-        consecutive_failures: Number of consecutive failed runs
-        consecutive_zero_kept: Number of consecutive zero-kept runs
-        median_latency_ms: Median latency for the source
-        latency_penalty_threshold_ms: Threshold above which latency penalizes score
-
-    Returns:
-        Health score between 0 (worst) and 100 (best)
-    """
-    base_score = 100
-
-    failure_penalty = min(consecutive_failures * 15, 50)
-
-    zero_kept_penalty = min(consecutive_zero_kept * 10, 40)
-
-    latency_penalty = 0
-    if median_latency_ms > latency_penalty_threshold_ms:
-        excess = median_latency_ms - latency_penalty_threshold_ms
-        latency_penalty = min(int(excess / 10000), 10)
-
-    score = base_score - failure_penalty - zero_kept_penalty - latency_penalty
-
-    return max(0, min(100, score))
-
-
 def get_top_failing_sources(
     source_states: dict[str, dict],
     limit: int = 10,

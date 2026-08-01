@@ -109,7 +109,7 @@ export function createJobsFeedController({
   }
 
   function setSourceStatus(text) {
-    setStatusText(setText, dom.sourceStatus, text);
+    setText(dom.sourceStatus, text);
   }
 
   function reportFinishedTimestamp(report) {

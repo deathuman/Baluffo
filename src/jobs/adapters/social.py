@@ -16,11 +16,12 @@ from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
 from src.exceptions import AdapterValidationError
-from src.jobs.adapters import social_parsers as _social_parsers
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.social.register import ensure_registered as ensure_social_plugins
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.adapters.recovery import run_recoverable_adapter_attempt
+from src.jobs.adapters.social_parser import mastodon_parser as _social_parsers_mastodon
+from src.jobs.adapters.social_parser import x_parser as _social_parsers_x
 from src.jobs.common.diagnostics import SOURCE_DIAGNOSTICS, set_source_diagnostics
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.models import RawJob
@@ -503,7 +504,7 @@ def run_social_x_source(
                 heartbeat_callback=heartbeat_callback,
             )
             if payload_kind == "rss":
-                parsed_rows, low_conf_query = _social_parsers.parse_x_rss_payload(
+                parsed_rows, low_conf_query = _social_parsers_x.parse_x_rss_payload(
                     str(payload),
                     query_label=query,
                     min_confidence=min_conf,
@@ -531,7 +532,7 @@ def run_social_x_source(
                 details.append(entry)
                 continue
 
-            parsed_rows, low_conf_query = _social_parsers.parse_x_payload(
+            parsed_rows, low_conf_query = _social_parsers_x.parse_x_payload(
                 payload,
                 query_label=query,
                 min_confidence=min_conf,
@@ -640,7 +641,7 @@ def run_social_mastodon_source(
                 _tick(heartbeat_callback)
                 text = fetch_with_retries(timeline_url, fetch_text, timeout_s, retries, backoff_s)
                 payload = json.loads(text)
-                parsed_rows, low_conf_tag = _social_parsers.parse_mastodon_payload(
+                parsed_rows, low_conf_tag = _social_parsers_mastodon.parse_mastodon_payload(
                     payload,
                     instance=instance,
                     tag=tag,

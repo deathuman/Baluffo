@@ -95,7 +95,7 @@ function createHydrationSmokeServer({ failAuthority = false } = {}) {
       requestEntry.elapsedMs = Date.now() - startedAt;
     });
     if (url.pathname === "/frontend-runtime-config.js") {
-      jsResponse(res, "globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG = Object.freeze({ bridge: { sameOrigin: true }, runtime: { mode: 'container', localDataMode: 'bridge' }, security: { github_app_enabled_default: true } });\n");
+      jsResponse(res, "globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG = Object.freeze({ bridge: { sameOrigin: true }, runtime: { mode: 'container', localDataMode: 'bridge' } });\n");
       return;
     }
     if (url.pathname === "/tasks/jobs-pipeline-schedule") {

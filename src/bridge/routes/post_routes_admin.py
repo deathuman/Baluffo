@@ -20,8 +20,6 @@ from src.bridge.registry_conflicts import (
 )
 from src.bridge.registry_tombstones import (
     add_tombstone,
-    remove_tombstone,
-    tombstone_source_row,
 )
 from src.bridge.routes.error_boundary import (
     run_route_boundary,
@@ -50,7 +48,6 @@ from src.source_registry import (
     REGISTRY_REASON_FETCH_EMPTY_DEMOTE,
     REGISTRY_REASON_FETCH_FAILURE_DEMOTE,
     REGISTRY_REASON_REJECT,
-    REGISTRY_REASON_RESTORE_DELETED,
     REGISTRY_REASON_RESTORE_REJECTED,
     REGISTRY_REASON_ROLLBACK,
     transition_registry_to_active,
@@ -334,30 +331,6 @@ def handle_post(
         handler.send_json({"rejected": len(moved), "summary": api.summarize_state(state)})
         return True
 
-    if path == "/registry/rollback":
-        ids = as_json_list(data.get("ids"))
-        selected = set(str(item) for item in ids)
-        moved = []
-        active_remaining = []
-        for row in state["active"]:
-            if api.source_identity(row) in selected:
-                moved.append(
-                    _transition_registry_row(
-                        api,
-                        row,
-                        candidate_state="validated",
-                        reason=REGISTRY_REASON_ROLLBACK,
-                        approved_by="registry_manual_rollback",
-                    )
-                )
-            else:
-                active_remaining.append(row)
-        state["active"] = active_remaining
-        state["pending"] = api.unique_sources([*state["pending"], *moved])
-        state = api.persist_state_and_auto_sync(state, reason=REGISTRY_REASON_ROLLBACK)
-        handler.send_json({"rolledBack": len(moved), "summary": api.summarize_state(state)})
-        return True
-
     if path == "/registry/demote-active":
         ids = as_json_list(data.get("ids"))
         selected = set(str(item) for item in ids)
@@ -453,65 +426,6 @@ def handle_post(
         state["pending"] = api.unique_sources([*state["pending"], *moved])
         state = api.persist_state_and_auto_sync(state, reason=REGISTRY_REASON_RESTORE_REJECTED)
         handler.send_json({"restored": len(moved), "summary": api.summarize_state(state)})
-        return True
-
-    if path == "/registry/restore-deleted":
-        ids = as_json_list(data.get("ids"))
-        urls = as_json_list(data.get("urls"))
-        selected = {str(item).strip().lower() for item in ids if str(item).strip()}
-        selected_urls = {
-            api.normalize_source_url(str(item))
-            for item in urls
-            if api.normalize_source_url(str(item))
-        }
-        tombstones = api.load_tombstones()
-        matched = []
-        for source_id, record in list(tombstones.items()):
-            if selected and source_id in selected:
-                matched.append((source_id, record))
-                continue
-            if selected_urls and str(record.get("sourceUrlFingerprint") or "") in selected_urls:
-                matched.append((source_id, record))
-        if not matched:
-            handler.send_json({"restored": 0, "summary": api.summarize_state(state)})
-            return True
-        for source_id, _record in matched:
-            row = tombstone_source_row(tombstones.get(source_id))
-            if not row:
-                continue
-            bucket = str(tombstones.get(source_id, {}).get("bucket") or "pending").strip().lower()
-            if bucket == "active":
-                restored = _transition_registry_row(
-                    api,
-                    row,
-                    candidate_state="live",
-                    reason=REGISTRY_REASON_RESTORE_DELETED,
-                    approved_by="registry_restore_deleted",
-                )
-                state["active"] = api.unique_sources([*state["active"], restored])
-            elif bucket == "rejected":
-                restored = _transition_registry_row(
-                    api,
-                    row,
-                    candidate_state="quarantined",
-                    reason=REGISTRY_REASON_RESTORE_DELETED,
-                    approved_by="registry_restore_deleted",
-                    quarantine_reason=REGISTRY_REASON_RESTORE_DELETED,
-                )
-                state["rejected"] = api.unique_sources([*state["rejected"], restored])
-            else:
-                restored = _transition_registry_row(
-                    api,
-                    row,
-                    candidate_state="validated",
-                    reason=REGISTRY_REASON_RESTORE_DELETED,
-                    approved_by="registry_restore_deleted",
-                )
-                state["pending"] = api.unique_sources([*state["pending"], restored])
-            tombstones, _removed = remove_tombstone(source_id, tombstones)
-        api.save_tombstones(tombstones)
-        state = api.persist_state_and_auto_sync(state, reason=REGISTRY_REASON_RESTORE_DELETED)
-        handler.send_json({"restored": len(matched), "summary": api.summarize_state(state)})
         return True
 
     if path == "/registry/delete":

@@ -8,13 +8,10 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused route helper tes
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 from typing import Any, Protocol
 
-from src.bridge.fetch_report_review_state import load_fetch_report_with_dedup_review_state
 from src.bridge.routes.route_storage_metrics import (
-    record_storage_read_metric,
     storage_metrics_data_dir,
 )
 from src.bridge.storage_health import get_storage_store, record_storage_diagnostic
@@ -180,70 +177,3 @@ def hydrate_fetch_report_sources_from_sqlite(
         )
         return hydrated
     return payload
-
-
-def fetch_report_sources_payload(
-    api: FetchReportRouteApi,
-    query: dict[str, list[str]],
-) -> dict[str, Any]:
-    started_at = time.perf_counter()
-    source = "json"
-    rows: list[dict[str, Any]] = []
-    failed = True
-    try:
-        report, warning = load_fetch_report_with_dedup_review_state(
-            normalize_fetch_report_contract=api.normalize_fetch_report_contract,
-            jobs_fetch_report_path=api.JOBS_FETCH_REPORT_PATH,
-            dedup_review_state_path=api.DEDUP_REVIEW_STATE_PATH,
-        )
-        run_id = _clean_text((query.get("runId") or [""])[0]) or _clean_text(report.get("runId"))
-        status = _clean_text((query.get("status") or [""])[0]).lower()
-        limit = max(1, min(500, _safe_int((query.get("limit") or ["100"])[0], 100)))
-        offset = max(0, _safe_int((query.get("offset") or ["0"])[0], 0))
-        runtime_store = _source_runtime_store(api, row_limit=limit)
-        if run_id and runtime_store is not None and _source_runs_mode(runtime_store) == "sqlite":
-            rows = runtime_store.source_runs(
-                run_id=run_id,
-                status=status,
-                limit=limit,
-                offset=offset,
-            )
-            if rows:
-                source = "sqlite"
-            else:
-                _rollback_source_runs_to_json(
-                    api,
-                    runtime_store,
-                    code="source_runs_read_empty",
-                    message="SQLite source_runs did not contain requested fetch source rows",
-                    details={"runId": run_id},
-                )
-        if not rows:
-            json_rows = [row for row in _as_list(report.get("sources")) if isinstance(row, dict)]
-            if status:
-                json_rows = [
-                    row for row in json_rows if _clean_text(row.get("status")).lower() == status
-                ]
-            rows = json_rows[offset : offset + limit]
-        payload = {
-            "ok": True,
-            "runId": run_id,
-            "sources": rows,
-            "count": len(rows),
-            "limit": limit,
-            "offset": offset,
-            "source": source,
-            "warning": warning,
-        }
-        failed = False
-        return payload
-    finally:
-        record_storage_read_metric(
-            api,
-            surface="sourceRuns.reportSources",
-            artifact="jobs-fetch-report.json",
-            storage_kind=source,
-            started_at=started_at,
-            row_count=len(rows),
-            failed=failed,
-        )

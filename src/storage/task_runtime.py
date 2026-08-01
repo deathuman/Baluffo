@@ -8,12 +8,15 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused task runtime sto
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable, Mapping
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
+from src.shared.json_io import json_dumps, loads_object
 from src.shared.live_task import normalize_live_task_event
+from src.shared.text_utils import clean_text
+from src.shared.utils import int_or_default
+from src.shared.utils import now_iso as _shared_now_iso
 from src.shared.utils import parse_iso as parse_iso_from_utils
 from src.storage.baluffo_store import BaluffoStore
 
@@ -27,18 +30,15 @@ DEFAULT_SYNC_ROW_LIMIT = 240
 
 
 def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
+    return _shared_now_iso()
 
 
 def _clean_text(value: Any) -> str:
-    return str(value or "").strip()
+    return clean_text(value)
 
 
 def _coerce_int(value: Any) -> int:
-    try:
-        return int(value or 0)
-    except (TypeError, ValueError):
-        return 0
+    return int_or_default(value)
 
 
 def _coerce_bool_int(value: Any) -> int:
@@ -50,17 +50,11 @@ def _json_object(value: Any) -> dict[str, Any]:
 
 
 def _json_dumps(value: Any) -> str:
-    return json.dumps(
-        value if isinstance(value, dict) else {}, sort_keys=True, separators=(",", ":")
-    )
+    return json_dumps(value)
 
 
 def _json_loads_object(value: Any) -> dict[str, Any]:
-    try:
-        payload = json.loads(str(value or "{}"))
-    except (TypeError, json.JSONDecodeError):
-        return {}
-    return dict(payload) if isinstance(payload, dict) else {}
+    return loads_object(value)
 
 
 def _parse_iso(value: Any) -> datetime | None:

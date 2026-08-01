@@ -43,7 +43,6 @@ def test_release_workflow_uses_canonical_test_entrypoints() -> None:
         "npm run sync:test-manifest",
         "scripts/sync_frontend_unit_manifest.mjs",
         'py -3.13 -m unittest discover -s tests -p "test_*.py" -v',
-        "scripts\\run_py_tests.cmd",
         "py -3.13 scripts/packaged_desktop_smoke.py",
         "python scripts/packaged_desktop_smoke.py",
         "py -3.13 scripts/build_ship_bundle.py",

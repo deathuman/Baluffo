@@ -1,5 +1,4 @@
 import { setText } from "../../../shared/ui/index.js";
-import { setElementText, setStatusText } from "./view.js";
 
 export function createSavedChrome(deps) {
   function cssEscape(value) {
@@ -71,11 +70,11 @@ export function createSavedChrome(deps) {
   }
 
   function setSourceStatus(text) {
-    setStatusText(setText, deps.dom.savedSourceStatusEl, text);
+    setText(deps.dom.savedSourceStatusEl, text);
   }
 
   function setActivityStatus(text) {
-    setElementText(deps.dom.activityPanelStatusEl, text);
+    setText(deps.dom.activityPanelStatusEl, text);
   }
 
   function setBackupButtonsEnabled(enabled) {

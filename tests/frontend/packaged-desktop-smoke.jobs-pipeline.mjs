@@ -7,11 +7,14 @@ import {
   runJobsMainButtonAbortScenario,
   waitForBridgeTasksIdleWithBootstrapCleanup
 } from "./packaged-desktop-smoke.jobs-pipeline-abort-helpers.mjs";
-const BASE_URL = process.env.PACKAGED_DESKTOP_BASE_URL || "http://127.0.0.1:8080";
-const BRIDGE_BASE = process.env.PACKAGED_DESKTOP_BRIDGE_BASE || "http://127.0.0.1:8877";
-const bridgeUrl = new URL(BRIDGE_BASE);
-const BRIDGE_PORT = bridgeUrl.port || "8877";
-const BRIDGE_HOST = bridgeUrl.hostname || "127.0.0.1";
+import {
+  buildGotoDesktop,
+  buildWriteReport,
+  BASE_URL,
+  BRIDGE_BASE,
+  BRIDGE_PORT,
+  BRIDGE_HOST
+} from "./helpers/packaged-smoke-shared.mjs";
 const REPORT_PATH =
   process.env.PACKAGED_SMOKE_REPORT_PATH ||
   process.env.PACKAGED_SMOKE_PLAYWRIGHT_REPORT ||
@@ -23,16 +26,8 @@ const OUTPUT_DIR =
 const BRIDGE_REQUEST_RETRY_TIMEOUT_MS = 30_000;
 const BRIDGE_REQUEST_RETRY_INTERVAL_MS = 500;
 
-async function writeReport(report) {
-  await fs.mkdir(path.dirname(REPORT_PATH), { recursive: true });
-  await fs.writeFile(REPORT_PATH, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-}
-async function gotoDesktop(page, relativePath) {
-  const separator = relativePath.includes("?") ? "&" : "?";
-  await page.goto(
-    `${BASE_URL}/${relativePath}${separator}desktop=1&bridgePort=${encodeURIComponent(BRIDGE_PORT)}&bridgeHost=${encodeURIComponent(BRIDGE_HOST)}`
-  );
-}
+const writeReport = buildWriteReport(REPORT_PATH);
+const gotoDesktop = buildGotoDesktop();
 
 async function waitForDesktopAdapter(page) {
   await page.waitForFunction(() => Boolean(window.JobAppLocalData), null, { timeout: 30_000 });
@@ -198,19 +193,6 @@ async function assertPackagedSourceRunsParity(apiRequest) {
     fetchReport?.sources?.[0]?.details?.[0]?.name,
     "Packaged Smoke Job",
     "fetch report should hydrate normalized source details from SQLite"
-  );
-
-  const sourcesPayload = await fetchBridgeJson(
-    apiRequest,
-    `/ops/fetch-report/sources?runId=${encodeURIComponent(runId)}&limit=10`,
-    "fetch report sources"
-  );
-  assert.equal(sourcesPayload?.source, "sqlite", "bounded source query should read SQLite");
-  assert.equal(sourcesPayload?.count, 1, "bounded source query should return one smoke source");
-  assert.equal(
-    sourcesPayload?.sources?.[0]?.details?.[0]?.name,
-    "Packaged Smoke Job",
-    "bounded source query should include hydrated normalized details"
   );
 
   const feedResponse = await apiRequest.get(

@@ -31,7 +31,7 @@ jobs:
           python -m pip install pytest pytest-cov pytest-xdist
 
       - name: Run Python tests with coverage
-        run: python -m pytest tests -q -m "not slow" --cov=src --cov-report=term-missing --color=no
+        run: python -m pytest tests -q -m "not slow" -n auto --dist=loadfile --cov=src --cov-report=term-missing --color=no
 
   test-frontend:
     name: Frontend Tests

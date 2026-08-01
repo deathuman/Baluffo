@@ -99,27 +99,6 @@ def test_registry_get_routes_accept_minimal_capability_object(tmp_path: Path) ->
     )
     assert exact_summary_handler.sent[-1]["payload"]["summary"]["summaryExact"] is True
 
-    active_handler = FakeHandler()
-    assert (
-        handle_registry_routes(active_handler, api=api, path="/registry/active", query={}) is True
-    )
-    assert active_handler.sent[-1]["payload"]["sources"][0]["id"] == "active-1"
-
-    pending_handler = FakeHandler()
-    assert (
-        handle_registry_routes(pending_handler, api=api, path="/registry/pending", query={}) is True
-    )
-    pending_payload = pending_handler.sent[-1]["payload"]
-    assert pending_payload["sources"][0]["id"] == "pending-1"
-    assert pending_payload["summary"]["hiddenPendingCount"] == 0
-
-    rejected_handler = FakeHandler()
-    assert (
-        handle_registry_routes(rejected_handler, api=api, path="/registry/rejected", query={})
-        is True
-    )
-    assert rejected_handler.sent[-1]["payload"]["sources"][0]["id"] == "rejected-1"
-
     full_sources_handler = FakeHandler()
     assert (
         handle_registry_routes(

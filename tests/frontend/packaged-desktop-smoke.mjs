@@ -3,11 +3,18 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, request as playwrightRequest } from "@playwright/test";
+import {
+  buildGotoDesktop,
+  buildWriteReport,
+  runScenario,
+  BASE_URL,
+  BRIDGE_BASE,
+  BRIDGE_PORT,
+  BRIDGE_HOST
+} from "./helpers/packaged-smoke-shared.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const BASE_URL = process.env.PACKAGED_DESKTOP_BASE_URL || "http://127.0.0.1:8080";
-const BRIDGE_BASE = process.env.PACKAGED_DESKTOP_BRIDGE_BASE || "http://127.0.0.1:8877";
 const DESKTOP_USER_NAME = "Packaged Smoke User";
 const ATTACHMENT_FIXTURE_PATH = path.resolve(__dirname, "fixtures", "attachment-smoke.txt");
 const REPORT_PATH =
@@ -20,38 +27,8 @@ const OUTPUT_DIR =
   path.resolve(".tmp/packaged-desktop-smoke/smoke-output");
 const HEADED = process.env.PACKAGED_SMOKE_HEADED === "1";
 const PAUSE_ON_FAILURE = process.env.PACKAGED_SMOKE_PAUSE_ON_FAILURE === "1";
-const bridgeUrl = new URL(BRIDGE_BASE);
-const BRIDGE_PORT = bridgeUrl.port || "8877";
-const BRIDGE_HOST = bridgeUrl.hostname || "127.0.0.1";
-
-function slugifyToken(value) {
-  return String(value || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "") || "scenario";
-}
-
-function createScenario(name) {
-  return {
-    name,
-    slug: slugifyToken(name),
-    status: "passed",
-    durationMs: 0,
-    error: ""
-  };
-}
-
-async function writeReport(report) {
-  await fs.mkdir(path.dirname(REPORT_PATH), { recursive: true });
-  await fs.writeFile(REPORT_PATH, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-}
-
-async function gotoDesktop(page, relativePath) {
-  const separator = relativePath.includes("?") ? "&" : "?";
-  await page.goto(
-    `${BASE_URL}/${relativePath}${separator}desktop=1&bridgePort=${encodeURIComponent(BRIDGE_PORT)}&bridgeHost=${encodeURIComponent(BRIDGE_HOST)}`
-  );
-}
+const writeReport = buildWriteReport(REPORT_PATH);
+const gotoDesktop = buildGotoDesktop();
 
 async function throwJobsReadinessTimeout(page, label, error) {
   const snapshot = await page.evaluate(() => {
@@ -255,21 +232,6 @@ async function assertAdminStartupSettled(page) {
   const bridgeBadgeText = await page.locator("#admin-bridge-status-badge").textContent();
   assert.match(String(bridgeBadgeText || ""), /Bridge Online/i);
   assert.doesNotMatch(String(bridgeBadgeText || ""), /Bridge Checking/i);
-}
-
-async function runScenario(name, callback, scenarios) {
-  const startedAt = Date.now();
-  const scenario = createScenario(name);
-  try {
-    await callback();
-  } catch (error) {
-    scenario.status = "failed";
-    scenario.error = error instanceof Error ? error.message : String(error);
-    throw error;
-  } finally {
-    scenario.durationMs = Date.now() - startedAt;
-    scenarios.push(scenario);
-  }
 }
 
 async function main() {
