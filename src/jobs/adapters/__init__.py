@@ -12,18 +12,12 @@ from collections.abc import Callable
 from typing import Any
 
 from src.jobs.adapters import community, provider_api, social, static
-from src.jobs.common.http import default_fetch_text as common_default_fetch_text
 from src.jobs.interfaces import SourceLoader
-from src.jobs.models import FetchContext, FetchResult, SourceDiagnostics
 from src.jobs.text_utils import clean_text
 from src.jobs_fetcher_registry import DEFAULT_SOURCE_LOADER_NAMES
 
 from ..common import config as common_config
 from ..common import social as common_social
-
-
-def _run_loader_fetch_text(url: str, timeout_s: int) -> str:
-    return common_default_fetch_text(url, timeout_s, headers={})
 
 
 def default_source_loaders(
@@ -170,27 +164,3 @@ EXTRACTED_ADAPTERS = {
     "static_studio_pages_j_r": static.run_static_studio_pages_j_r_source,
     "static_studio_pages_s_z": static.run_static_studio_pages_s_z_source,
 }
-
-
-def run_loader(name: str, loader: SourceLoader, ctx: FetchContext) -> FetchResult:
-    jobs = loader(
-        fetch_text=_run_loader_fetch_text,
-        timeout_s=ctx.request.timeout_s,
-        retries=ctx.retries,
-        backoff_s=ctx.backoff_s,
-    )
-    diagnostics_payload = common_config.SOURCE_DIAGNOSTICS.get(name)
-    diagnostics = None
-    if isinstance(diagnostics_payload, dict):
-        diagnostics = SourceDiagnostics(
-            adapter=str(diagnostics_payload.get("adapter") or "unknown"),
-            studio=str(diagnostics_payload.get("studio") or "multiple"),
-            details=[
-                dict(item)
-                for item in diagnostics_payload.get("details") or []
-                if isinstance(item, dict)
-            ],
-            partial_errors=[str(item) for item in diagnostics_payload.get("partialErrors") or []],
-            low_confidence_dropped=int(diagnostics_payload.get("lowConfidenceDropped") or 0),
-        )
-    return FetchResult(jobs=jobs, diagnostics=diagnostics)

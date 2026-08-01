@@ -219,6 +219,8 @@ fetchStrategy  # unused variable (src\jobs\models.py:19)
 cadenceMinutes  # unused variable (src\jobs\models.py:20)
 low_confidence_dropped  # unused variable (src\jobs\models.py:37)
 metadata  # unused variable (src\jobs\models.py:60)
+FetchContext  # public jobs contract type (kept for downstream type consumers)
+FetchResult  # public jobs contract type (kept for downstream type consumers)
 locationSummary  # unused variable (src\jobs\models.py:91)
 availabilityId  # public canonical and Saved contract field
 availabilityStatus  # public canonical contract field
