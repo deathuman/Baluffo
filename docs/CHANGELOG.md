@@ -10,6 +10,20 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.126] - 2026-08-01
+
+### Changed
+- Multi-wave dead-code and cleanup pass: removed dead bridge routes (`/ops/fetch-report/sources`, `/registry/{active,pending,rejected,rollback,restore-deleted}`), retired the `adapters/api.py` and `adapters/social_parsers.py` compat layers, dropped the orphaned `adapters.run_loader` helper, consolidated storage helpers onto `src.shared`, extracted the packaged-smoke scaffolding helper shared by 11 smoke scripts, and removed the unused IntersectionObserver branch plus dead frontend runtime `security.github_app_enabled_default` exposure.
+- CI Python lane now runs tests in parallel (`pytest -n auto --dist=loadfile`).
+
+### Security
+- Pinned `serena-agent==1.6.1` install path and bumped `pyasn1` to 0.6.4 plus `brace-expansion`/`js-yaml` via `npm audit fix`, clearing the Dependabot and pip-audit findings.
+
+### Notes
+- This is a container/Umbrel patch only. No `v0.2.126` desktop tag, GitHub desktop release, desktop update, or desktop assets are published.
+- Direct-link enforcement remains in shadow mode.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.125] - 2026-07-18
 
 ### Fixed
