@@ -20,6 +20,10 @@ from src.bridge.registry_conflicts import (
     summarize_registry_conflicts_payload,
     write_registry_conflicts_summary_cache,
 )
+from src.bridge.registry_conflicts_summary import (
+    load_registry_conflicts_full_cache,
+    write_registry_conflicts_full_cache,
+)
 from src.bridge.routes.response_writer import BridgeResponseWriter
 from src.bridge.routes.route_payload_helpers import (
     as_dict as _as_dict,
@@ -133,12 +137,27 @@ def handle_registry_conflict_routes(
         state = api.load_state()
         registry_summary = api.get_registry_summary_payload()
         registry_auto_heal = api.get_registry_auto_heal_report()
-        payload = load_registry_conflicts_payload(
-            load_state=lambda: state,
-            load_json_object=api.load_json_object,
+        cache_key = build_registry_conflicts_summary_cache_key(
+            registry_summary=registry_summary,
             source_state_path=source_state_path,
             adjudication_payload=adjudication,
         )
+        payload = load_registry_conflicts_full_cache(source_state_path, cache_key)
+        if payload is None:
+            payload = load_registry_conflicts_payload(
+                load_state=lambda: state,
+                load_json_object=api.load_json_object,
+                source_state_path=source_state_path,
+                adjudication_payload=adjudication,
+            )
+            try:
+                write_registry_conflicts_full_cache(
+                    source_state_path,
+                    cache_key,
+                    payload,
+                )
+            except OSError:
+                logger.debug("Could not write registry conflicts full cache", exc_info=True)
         payload = overlay_adjudication(payload, adjudication)
         payload["registrySummary"] = api.summarize_state(state)
         payload["registryAutoHeal"] = registry_auto_heal

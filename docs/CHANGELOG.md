@@ -10,6 +10,16 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.127] - 2026-08-01
+
+### Fixed
+- Admin Registry Conflicts detail page: the bridge now caches the expensive full-payload derivation and the container gateway no longer 504s after 8 s when recomputation is slow on large registries (≈2,300 active sources, 37 k jobs). First view computes; follow-up views return the cached payload immediately.
+
+### Notes
+- This is a container/Umbrel patch only. No `v0.2.127` desktop tag, GitHub desktop release, desktop update, or desktop assets are published.
+- Direct-link enforcement remains in shadow mode.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.126] - 2026-08-01
 
 ### Changed

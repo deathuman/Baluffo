@@ -166,6 +166,45 @@ def build_registry_conflicts_summary_cache_key(
     ).hexdigest()
 
 
+def _registry_conflicts_full_cache_path(source_state_path: Path) -> Path:
+    return Path(source_state_path).with_name("registry-conflicts-full.json")
+
+
+def load_registry_conflicts_full_cache(
+    source_state_path: Path,
+    cache_key: str,
+) -> dict[str, Any] | None:
+    """Read the cached full conflict payload (before adjudication overlay)."""
+    payload = read_pipeline_json_object(_registry_conflicts_full_cache_path(source_state_path), {})
+    if not isinstance(payload, dict) or payload.get("cacheKey") != cache_key:
+        return None
+    body = _as_dict(payload.get("payload"))
+    return body or None
+
+
+def write_registry_conflicts_full_cache(
+    source_state_path: Path,
+    cache_key: str,
+    payload: dict[str, Any],
+) -> None:
+    """Persist the expensive full conflict derivation; the route applies overlay on hit."""
+    cache_path = _registry_conflicts_full_cache_path(source_state_path)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = cache_path.with_suffix(f"{cache_path.suffix}.tmp")
+    tmp_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "cacheKey": cache_key,
+                "payload": payload,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    tmp_path.replace(cache_path)
+
+
 def load_cached_registry_conflicts_summary(
     *,
     source_state_path: Path,
