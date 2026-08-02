@@ -359,3 +359,27 @@ def test_gateway_degraded_admin_fallback_keeps_computed_pipeline_schedule(
     assert dashboard["schedule"]["pipeline"]["lastPipelineFinishedAt"] == finished_at
     assert dashboard["schedule"]["pipeline"]["nextRunAt"] == "2099-07-01T07:54:55+00:00"
     assert bootstrap["schedule"]["pipeline"]["nextRunAt"] == "2099-07-01T07:54:55+00:00"
+
+
+def test_proxy_timeout_for_covers_heavy_registry_and_dedup_routes() -> None:
+    heavy = container_gateway.HEAVY_ROUTE_PROXY_TIMEOUT_SECONDS
+    default = container_gateway.DEFAULT_PROXY_TIMEOUT_SECONDS
+
+    # GET
+    assert container_gateway._proxy_timeout_for("GET", "/registry/sources") == heavy
+    assert container_gateway._proxy_timeout_for("GET", "/registry/conflicts") == heavy
+    assert container_gateway._proxy_timeout_for("GET", "/registry/conflicts?view=summary") == heavy
+    assert container_gateway._proxy_timeout_for("GET", "/admin/ops-tab-counts") == heavy
+    # hot paths stay default
+    assert container_gateway._proxy_timeout_for("GET", "/app/ready") == default
+    assert container_gateway._proxy_timeout_for("GET", "/registry/summary") == default
+
+    # POST
+    assert container_gateway._proxy_timeout_for("POST", "/dedup/review-action") == heavy
+    assert (
+        container_gateway._proxy_timeout_for("POST", "/registry/conflicts/auto-demote-safe")
+        == heavy
+    )
+    assert container_gateway._proxy_timeout_for("POST", "/registry/approve") == heavy
+    # unknown control paths stay default
+    assert container_gateway._proxy_timeout_for("POST", "/tasks/abort") == default

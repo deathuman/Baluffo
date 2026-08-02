@@ -38,9 +38,61 @@ from src.runtime_seed import seed_runtime_data
 
 DEFAULT_INTERNAL_BRIDGE_PORT = 18080
 DEFAULT_PROXY_TIMEOUT_SECONDS = 8.0
+# Routes that legitimately do heavy work (multi-second registry/summary/scan jobs on
+# modest hardware) get a longer proxy budget than the default hot-path cutoff.
+HEAVY_ROUTE_PROXY_TIMEOUT_SECONDS = 60.0
 CONTROL_PROXY_TIMEOUT_SECONDS = 1.0
 SCHEDULE_BRIDGE_TIMEOUT_SECONDS = 2.5
 SYNC_SUMMARY_BRIDGE_TIMEOUT_SECONDS = 1.5
+
+
+# Heavy GET routes: exact path or prefix match. Sub-resource prefixes use a trailing
+# slash so they cannot accidentally match their parent.
+_HEAVY_GET_EXACT = frozenset(
+    {
+        "/admin/ops-tab-counts",
+        "/ops/dashboard-health",
+        "/registry/sources",
+    }
+)
+_HEAVY_GET_PREFIXES = ("/registry/conflicts",)
+
+# Heavy POST routes (mutations that scan/derive across large registries).
+_HEAVY_POST_EXACT = frozenset(
+    {
+        "/dedup/review-action",
+        "/dedup/clear-review-state",
+        "/dedup/merge-clusters",
+        "/registry/conflicts/auto-demote-safe",
+        "/registry/conflicts/check-sources",
+        "/sources/manual",
+        "/registry/approve",
+        "/registry/reject",
+        "/registry/delete",
+        "/registry/restore-rejected",
+        "/registry/demote-active",
+        "/sources/check",
+        "/discovery/check-source",
+        "/discovery/start",
+        "/tasks/run-fetcher",
+        "/tasks/run-jobs-pipeline",
+        "/tasks/run-jobs-bootstrap",
+    }
+)
+
+
+def _proxy_timeout_for(method: str, path: str) -> float:
+    normalised = str(path or "").strip() or "/"
+    if method.upper() == "GET":
+        if normalised in _HEAVY_GET_EXACT:
+            return HEAVY_ROUTE_PROXY_TIMEOUT_SECONDS
+        for prefix in _HEAVY_GET_PREFIXES:
+            if normalised.startswith(prefix):
+                return HEAVY_ROUTE_PROXY_TIMEOUT_SECONDS
+    elif method.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
+        if normalised in _HEAVY_POST_EXACT or normalised.startswith("/fetcher/"):
+            return HEAVY_ROUTE_PROXY_TIMEOUT_SECONDS
+    return DEFAULT_PROXY_TIMEOUT_SECONDS
 
 
 def _coerce_port(value: Any, default: int) -> int:
@@ -885,14 +937,14 @@ class _GatewayHandler(BaseHTTPRequestHandler):
             return
         if state.static_service.handle_get(self, path=path):
             return
-        self._proxy()
+        self._proxy(timeout=_proxy_timeout_for("GET", path))
 
     def do_POST(self) -> None:
         path = _route_path(self.path)
         if path == "/tasks/abort":
             self._handle_abort()
             return
-        self._proxy()
+        self._proxy(timeout=_proxy_timeout_for("POST", path))
 
     def do_OPTIONS(self) -> None:
         self.send_response(204)

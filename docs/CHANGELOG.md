@@ -10,6 +10,16 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.128] - 2026-08-01
+
+### Fixed
+- Container gateway no longer 504s on heavy Admin routes. Hot summary endpoints keep the 8 s fast-path cutoff; heavy detail/mutation routes (`/registry/sources`, `/registry/conflicts`, `/admin/ops-tab-counts`, `/dedup/review-action`, registry and discovery mutations, fetch/pipeline triggers, `/sources/check`, `/fetcher/*`) now proxy with a 60 s budget, which matches the observed p95 on this production dataset (~2,300 active sources, 37 k jobs).
+
+### Notes
+- This is a container/Umbrel patch only. No `v0.2.128` desktop tag, GitHub desktop release, desktop update, or desktop assets are published.
+- Direct-link enforcement remains in shadow mode.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, suppressed wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
+
 ## [0.2.127] - 2026-08-01
 
 ### Fixed
