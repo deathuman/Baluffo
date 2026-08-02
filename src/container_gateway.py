@@ -771,11 +771,16 @@ class _GatewayHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _proxy(self, *, timeout: float = DEFAULT_PROXY_TIMEOUT_SECONDS) -> None:
+    def _proxy(
+        self,
+        *,
+        timeout: float = DEFAULT_PROXY_TIMEOUT_SECONDS,
+        _cached_body: bytes | None = None,
+    ) -> None:
         state = self._state()
         target = f"{state.internal_base_url}{self.path}"
-        body: bytes | None = None
-        if self.command.upper() in {"POST", "PUT", "PATCH"}:
+        body: bytes | None = _cached_body
+        if self.command.upper() in {"POST", "PUT", "PATCH"} and body is None:
             length = int(self.headers.get("content-length") or 0)
             body = self.rfile.read(max(0, length))
         request = Request(
@@ -893,7 +898,7 @@ class _GatewayHandler(BaseHTTPRequestHandler):
                     status=202,
                 )
                 return
-        self._proxy(timeout=DEFAULT_PROXY_TIMEOUT_SECONDS)
+        self._proxy(timeout=DEFAULT_PROXY_TIMEOUT_SECONDS, _cached_body=raw)
 
     def _handle_gateway_control_get(self, path: str, view: str) -> bool:
         state = self._state()

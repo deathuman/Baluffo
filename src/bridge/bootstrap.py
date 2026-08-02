@@ -81,6 +81,7 @@ def build_bridge_api(
     compute_ops_fetch_kpis_summary: Callable[[], dict[str, Any]] | None = None,
     get_current_task_state_summary_payload: Callable[[], dict[str, Any]] | None = None,
     abort_task: Callable[[dict[str, Any] | None], tuple[int, dict[str, Any]]] | None = None,
+    abort_task_async: Callable[[dict[str, Any] | None], tuple[int, dict[str, Any]]] | None = None,
 ) -> BridgeApi:
     def _empty_fetch_kpis_summary() -> dict[str, Any]:
         return {
@@ -139,6 +140,13 @@ def build_bridge_api(
         update_jobs_pipeline_schedule=update_jobs_pipeline_schedule,
         abort_task=abort_task
         or (lambda _payload: (400, {"ok": False, "error": "task_abort_not_available"})),
+        abort_task_async=abort_task_async
+        or (
+            lambda _payload: (
+                400,
+                {"ok": False, "error": "task_abort_not_available"},
+            )
+        ),
         start_sync_task=start_sync_task,
         load_sync_runtime_state=load_sync_runtime_state,
         get_discovery_config_payload=get_discovery_config_payload,

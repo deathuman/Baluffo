@@ -412,6 +412,7 @@ class BridgeApi:
         "error": "not_implemented",
     }
     abort_task: Callable[[JsonObject | None], tuple[int, JsonObject]] = _abort_not_available
+    abort_task_async: Callable[[JsonObject | None], tuple[int, JsonObject]] = _abort_not_available
     start_sync_task: StartSyncTaskFunc = _not_started_result
 
     compute_ops_health: Callable[[], JsonObject] = _ok_payload

@@ -66,6 +66,9 @@ def build_bridge_api(config: Any, *, root_mod: Any) -> BridgeApi:
         abort_task=root_mod.admin_entrypoint_services_mod.get_task_abort_service(
             root_mod=root_mod
         ).abort_task,
+        abort_task_async=root_mod.admin_entrypoint_services_mod.get_task_abort_service(
+            root_mod=root_mod
+        ).abort_task_async,
         start_sync_task=root_mod.start_sync_task,
         load_sync_runtime_state=root_mod.load_sync_runtime_state,
         get_discovery_config_payload=root_mod.get_discovery_config_payload,
