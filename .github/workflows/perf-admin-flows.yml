@@ -1,0 +1,91 @@
+name: Performance - Admin Flows
+
+# Manual-only dispatch. Pulls a published GHCR image and a caller-supplied seed
+# artifact so we can profile Admin routes against a realistic production-sized
+# /data volume without committing any user payloads to the repo.
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: GHCR image to benchmark (e.g. ghcr.io/deathuman/baluffo:0.2.128)
+        required: true
+        type: string
+      profile:
+        description: Hardware profile to emulate on the runner
+        required: true
+        type: choice
+        default: pi4-tight
+        options:
+          - pi4-tight
+          - pi4-roomy
+      seed_artifact_name:
+        description: |
+          Name of an Actions artifact that holds the seed volume. The artifact
+          must be produced by a prior workflow that ran `perf_admin_seed.py`.
+          Leaving this empty runs the sweep against an empty volume.
+        required: false
+        type: string
+        default: ""
+      port:
+        description: Host port the container will listen on
+        required: false
+        type: number
+        default: 8878
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+
+jobs:
+  admin-flows:
+    name: "admin flows (${{ inputs.profile }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Prepare output directory
+        run: mkdir -p _out/perf-admin-flows
+
+      - name: Download seed artifact (optional)
+        if: ${{ inputs.seed_artifact_name != '' }}
+        uses: actions/download-artifact@v5
+        with:
+          name: ${{ inputs.seed_artifact_name }}
+          path: _out/perf-admin-flows/seed-data
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull benchmark image
+        run: docker pull ${{ inputs.image }}
+
+      - name: Run admin flow benchmark
+        run: |
+          python scripts/perf_admin_flows.py \
+            --image "${{ inputs.image }}" \
+            --profile "${{ inputs.profile }}" \
+            --data-volume "_out/perf-admin-flows/seed-data" \
+            --port "${{ inputs.port }}" \
+            --output "_out/perf-admin-flows/${{ github.run_id }}"
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: perf-admin-flows-${{ inputs.profile }}-${{ github.run_id }}
+          path: |
+            _out/perf-admin-flows/${{ github.run_id }}/**

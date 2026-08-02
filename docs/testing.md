@@ -109,6 +109,8 @@ Use the repo-native perf entrypoints before adding new benchmark tooling:
 | Isolated discovery sanity benchmark | `npm run perf:discovery:benchmark` | `_out/perf-sanity-discovery/` |
 | Packaged Jobs cold/warm startup probe | `npm run perf:startup:cold` / `npm run perf:startup:warm` | `.tmp/packaged-desktop-smoke/` and `data/packaged-desktop-smoke-report.json` |
 | Packaged Admin cold/warm startup probe | `npm run perf:startup:admin:cold` / `npm run perf:startup:admin:warm` | `.tmp/packaged-desktop-smoke/` and `data/packaged-desktop-smoke-report.json` |
+| Seed Admin benchmark volume from live `/data` | `python scripts/perf_admin_seed.py --from-volume-path <path>` | `_out/perf-admin-flows/seed-data/` |
+| Run Admin route + flow benchmark against seeded container | `npm run perf:admin:flows -- --image <img> --profile pi4-tight --data-volume <path>` | `_out/perf-admin-flows/<run-token>/` |
 
 Notes:
 - Prefer repo-local artifact roots such as `.tmp/` and `_out/` for new perf workflows; avoid `%LOCALAPPDATA%\\Temp` for benchmark or runtime-state outputs in this Windows-first repo.
@@ -121,6 +123,7 @@ Notes:
 - Use `/ops/performance-profile` directly for ad hoc route-level timing checks. It is in-memory and bounded; it reports aggregate route and backend operation timings only, with query strings and dynamic path segments redacted.
 - Current safe RAM tuning is scoped to Chromium app-mode startup flags. The packaged sync section remains a full-runtime no-browser rehearsal so its RAM numbers stay comparable with earlier complete benchmark reports.
 - `npm run perf:discovery:benchmark` is the default discovery perf entrypoint because it keeps artifacts under `_out/`; use `python scripts/benchmark_discovery_probe.py` separately when tuning discovery probe concurrency.
+- `npm run perf:admin:flows` starts a Docker container with Pi-class CPU/memory caps against a seeded Admin `/data` volume, then samples every Admin-facing GET route (cold + warm), runs a small set of reversible mutations with runtime-DB rollback, and drives composite flows (`admin.open.cold/warm`, `admin.sources`, `admin.conflicts.drill`, `admin.fetcher.trigger`, `admin.sync.ready`) including a 250 ms `/ops/task-live/fetch?view=summary` poll. Output includes `routes.json`, `flows.json`, `report.md`, and `meta.json`. Pair with `python scripts/perf_admin_seed.py --from-volume-path <path>` to refresh the volume from a live Umbrel host; seed data stays out of git.
 - Do not add `pytest-benchmark` or `py-spy` by default here. If dependency approval happens later, benchmark deterministic Python leaf logic first and keep desktop startup analysis on the existing startup-trace pipeline.
 
 ### Playwright perf traces

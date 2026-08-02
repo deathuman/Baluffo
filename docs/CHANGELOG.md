@@ -10,6 +10,9 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+### Tooling
+- Added `scripts/perf_admin_seed.py` + `scripts/perf_admin_flows.py` to benchmark every Admin-facing GET route and composite UI flow (bootstrap, sources drill, conflicts drill, fetcher trigger, sync ready) against a container started with Pi-class CPU/memory caps (`pi4-tight`/`pi4-roomy`) on a seeded local `/data` volume. Outputs `routes.json`, `flows.json`, `report.md`, and `meta.json` under `_out/perf-admin-flows/<run-token>/`. Wired `perf:admin:seed`, `perf:admin:flows`, and `perf:admin:flows:roomy` into `package.json`, and added a manual `.github/workflows/perf-admin-flows.yml` lane that accepts an optional seed artifact and a GHCR image. Seed data stays on the host and never lands in git.
+
 ## [0.2.128] - 2026-08-01
 
 ### Fixed
