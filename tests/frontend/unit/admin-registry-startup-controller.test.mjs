@@ -104,7 +104,7 @@ test("admin registry controller can refresh source tables without full discovery
 
   assert.deepEqual(calls, [
     "/tasks/run-jobs-pipeline-status",
-    "/registry/sources?view=table&buckets=pending,active,rejected&includeHiddenPending=0&limitPerBucket=250"
+    "/registry/sources?view=table&detail=summary&buckets=pending,active,rejected&includeHiddenPending=0&limitPerBucket=250"
   ]);
   assert.equal(refs.adminPendingSourcesEl.innerHTML, "Pending");
   assert.equal(refs.adminActiveSourcesEl.innerHTML, "Active");

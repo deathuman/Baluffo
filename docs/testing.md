@@ -383,7 +383,7 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
   - the bridge badge reaches `Bridge Online`,
   - `#admin-ops-trends` does not remain stuck on `Loading operations health...`,
   - `#admin-source-status` does not remain stuck on `Loading admin overview...`,
-  - startup requests use bounded routes, with the compact `/registry/sources?view=table&buckets=pending,active,rejected&includeHiddenPending=0&limitPerBucket=250` source-table request queued before schedule/history fallback and before `/ops/fetch-kpis?view=summary`, `/registry/conflicts?view=summary`, or `/admin/ops-tab-counts?view=summary`; full multi-MiB diagnostics and fixed startup-delay workarounds are not allowed.
+  - startup requests use bounded routes, with the compact `/registry/sources?view=table&detail=summary&buckets=pending,active,rejected&includeHiddenPending=0&limitPerBucket=250` source-table request queued before schedule/history fallback and before `/ops/fetch-kpis?view=summary`, `/registry/conflicts?view=summary`, or `/admin/ops-tab-counts?view=summary`; full multi-MiB diagnostics and fixed startup-delay workarounds are not allowed.
 - Use this lane for Admin startup, ops-summary payloads, desktop local-data overview, and packaged bridge availability changes.
 - For Umbrel page-load performance fixes, package/browser startup gates are supporting evidence only. Capture Chrome DevTools Performance traces for Admin cold/warm, Jobs cold/warm, and Jobs-to-Admin navigation before publishing; acceptance is based on Chrome-visible shell/useful-content timing, LCP element, request waterfall, long tasks, and absence of first-load full diagnostics.
 

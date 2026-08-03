@@ -50,6 +50,119 @@ def test_registry_sources_default_view_preserves_full_rows(tmp_path: Path) -> No
     assert active_row["detailPagesSample"] == ["https://active.example/detail"]
 
 
+def test_registry_sources_table_view_detail_summary_skips_pending_annotation(
+    tmp_path: Path,
+) -> None:
+    """detail=summary on ?view=table must skip annotate_pending_auto_approval_rows.
+
+    The expensive part of the table view on a seeded Umbrel volume is the
+    pending-side annotation scan: it re-reads the discovery candidates artifact
+    and walks the active alias set on every call. The cheap detail tier exists
+    so Admin's startup lane doesn't pay that cost just to populate badges.
+    """
+    api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    api.load_state = lambda: {  # type: ignore[assignment]
+        "active": [
+            {
+                "id": "static:listing_url:https://existing.example/jobs",
+                "name": "Existing",
+                "listing_url": "https://existing.example/jobs",
+                "registryState": "active",
+            }
+        ],
+        "pending": [
+            {
+                "id": "static:listing_url:https://eligible.example/jobs",
+                "name": "Eligible",
+                "listing_url": "https://eligible.example/jobs",
+                "jobsFound": 2,
+                "registryState": "pending",
+            }
+        ],
+        "rejected": [],
+    }
+    _install_empty_discovery_candidates(api, tmp_path)
+
+    handler = FakeHandler()
+    result = handle_get(
+        handler,
+        api=api,
+        path="/registry/sources",
+        query={
+            "view": ["table"],
+            "detail": ["summary"],
+            "buckets": ["pending,active,rejected"],
+        },
+    )
+
+    payload = handler.sent[-1]["payload"]
+    assert result is True
+    assert handler.sent[-1]["status"] == 200
+    assert payload["detailLevel"] == "table"
+    # Cheap lane aliases to activeCompact - the auto-approval annotation never ran.
+    # The compact payload builder doesn't stamp summary.detail because it never
+    # reaches _registry_sources_table_view_parts; load_state was bypassed.
+    assert "pendingApproval" not in payload["summary"]
+    assert "pendingAutoApprovalEligibleCount" not in payload["summary"]
+    # Rows still arrive in the activeCompact path (served from the compact payload,
+    # not from api.load_state).
+    assert payload["activeCompact"] is True
+
+
+def test_registry_sources_table_view_default_detail_still_annotates(
+    tmp_path: Path,
+) -> None:
+    """Default (no detail param) preserves legacy full-annotation behavior."""
+    api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    api.load_state = lambda: {  # type: ignore[assignment]
+        "active": [],
+        "pending": [
+            {
+                "id": "static:listing_url:https://eligible.example/jobs",
+                "name": "Eligible",
+                "listing_url": "https://eligible.example/jobs",
+                "jobsFound": 2,
+                "registryState": "pending",
+            }
+        ],
+        "rejected": [],
+    }
+    _install_empty_discovery_candidates(api, tmp_path)
+
+    handler = FakeHandler()
+    handle_get(
+        handler,
+        api=api,
+        path="/registry/sources",
+        query={"view": ["table"], "buckets": ["pending"]},
+    )
+
+    payload = handler.sent[-1]["payload"]
+    assert payload["summary"].get("detail") == "full"
+    assert "pendingApproval" in payload["summary"]
+
+
+def test_registry_sources_table_view_rejects_unknown_detail(tmp_path: Path) -> None:
+    api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    api.load_state = lambda: {"active": [], "pending": [], "rejected": []}  # type: ignore[assignment]
+    _install_empty_discovery_candidates(api, tmp_path)
+
+    handler = FakeHandler()
+    handle_get(
+        handler,
+        api=api,
+        path="/registry/sources",
+        query={
+            "view": ["table"],
+            "buckets": ["pending"],
+            "detail": ["kitchen-sink"],
+        },
+    )
+
+    assert handler.sent[-1]["status"] == 400
+    assert handler.sent[-1]["payload"]["error"] == "invalid registry sources table detail"
+
+
 def test_registry_sources_table_view_returns_compact_rows(tmp_path: Path) -> None:
     api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
     large_detail = "x" * 10_000
