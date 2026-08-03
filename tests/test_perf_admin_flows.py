@@ -47,7 +47,16 @@ def test_is_gateway_timeout_body_handles_malformed_inputs() -> None:
     )
 
 
-def test_derive_abort_body_prefers_running_task_run_id() -> None:
+def test_derive_abort_body_prefers_captured_live_run_id() -> None:
+    poll = {
+        "runId": "fetch_captured",
+        "finalParsed": {"tasks": [{"runId": "fetch_ignored"}]},
+    }
+    body = perf_admin_flows._derive_abort_body(poll)
+    assert body == {"taskType": "fetch", "runId": "fetch_captured"}
+
+
+def test_derive_abort_body_uses_final_parsed_when_no_capture() -> None:
     poll = {"finalParsed": {"tasks": [{"runId": "fetch_abc", "state": "running"}]}}
     body = perf_admin_flows._derive_abort_body(poll)
     assert body == {"taskType": "fetch", "runId": "fetch_abc"}

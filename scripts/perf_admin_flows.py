@@ -307,6 +307,12 @@ def _derive_abort_body(poll: dict[str, Any]) -> dict[str, Any]:
     ponytail: single-key fallback. If task-live response shape changes the abort
     will still fire with taskType only — bridge returns 400 + we see it.
     """
+    # Prefer the runId captured live on the first non-idle poll sample. Even if
+    # /ops/task-live/fetch later updates to an idle flat shape, we still hold the
+    # runId that the bridge actually handed out at trigger time.
+    live_run_id = poll.get("runId")
+    if isinstance(live_run_id, str) and live_run_id.strip():
+        return {"taskType": "fetch", "runId": live_run_id.strip()}
     final_parsed = poll.get("finalParsed")
     if not isinstance(final_parsed, dict):
         return {"taskType": "fetch"}
@@ -339,6 +345,7 @@ def _poll_task_live(base_url: str, task: str, timeout_s: float) -> dict[str, Any
     samples = 0
     last: dict[str, Any] = {}
     last_parsed: dict[str, Any] | None = None
+    first_run_id: str | None = None
     while time.monotonic() < deadline:
         sample, parsed = _fetch_live_bridge_request(
             base_url=base_url, endpoint=endpoint, timeout_s=5.0
@@ -349,6 +356,13 @@ def _poll_task_live(base_url: str, task: str, timeout_s: float) -> dict[str, Any
         last["parsedKeys"] = list(parsed.keys())[:20] if isinstance(parsed, dict) else []
         if isinstance(parsed, dict):
             last_parsed = parsed
+            if first_run_id is None and parsed.get("active") and parsed.get("runId"):
+                # First sample after trigger carries the live runId. Persist it so
+                # /tasks/abort can target a real run instead of submitting
+                # taskType-only and reading back a 400.
+                candidate = parsed.get("runId")
+                if isinstance(candidate, str) and candidate.strip():
+                    first_run_id = candidate.strip()
         samples += 1
         if last.get("ok"):
             parsed_keys = last.get("parsedKeys") or []
@@ -362,6 +376,7 @@ def _poll_task_live(base_url: str, task: str, timeout_s: float) -> dict[str, Any
         "samples": samples,
         "final": last,
         "finalParsed": last_parsed or {},
+        "runId": first_run_id,
         "timedOut": time.monotonic() >= deadline,
     }
 
