@@ -226,7 +226,7 @@ def _wait_ready(base_url: str, timeout_s: float = 60.0) -> None:
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         sample, _ = _fetch_live_bridge_request(
-            base_url=base_url, endpoint="/ops/health", timeout_s=2.0
+            base_url=base_url, endpoint="/app/ready", timeout_s=2.0
         )
         if sample.get("ok"):
             return
@@ -516,7 +516,7 @@ def main(argv: list[str] | None = None) -> int:
         "--memory-swap",
         memory,
         "-p",
-        f"{int(args.port)}:8000",
+        f"{int(args.port)}:8080",
         "-v",
         f"{str(data_volume)}:/data",
         str(args.image),

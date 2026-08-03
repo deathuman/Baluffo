@@ -10,6 +10,14 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+### Fixed
+- `/tasks/abort` no longer hangs while the kill + report-repair run. The route now returns `202 aborting` as soon as the lifecycle row flips and runs `process_registry.terminate`, `repair_fetch_canceled_evidence`, and pipeline propagation on a daemon thread. Terminal/canceled branches still answer synchronously (`aborted: true` preserved). Admin "Stop fetch" becomes usable on a running job.
+- Container gateway `_handle_abort` no longer double-reads the request body when forwarding non-pipeline aborts to the bridge. Previously the peek at the body + a second `rfile.read` inside `_proxy` made `/tasks/abort {taskType:"fetch",...}` block until the gateway timeout hit, masking genuine async work.
+
+### Added
+- Per-stage abort telemetry on `/ops/performance-profile.operationTimings.operations`: `abort.validate`, `abort.flip_lifecycle_row`, `abort.process_terminate`, `abort.cancel_evidence.fetch`, `abort.cancel_evidence.discovery`, `abort.finalize.pipeline`, `abort.finalize.process_run`, `abort.respond_async`. Captured via the existing `performance_profile.record_operation_duration` ring buffer; no schema change.
+- `/tasks/abort` HTTP route now calls `abort_task_async` (added to `BridgeApi`, exposed through `admin_entrypoint_api` + `bridge.bootstrap` with matching default not-implemented fallbacks). Pipeline-child aborts still go through the synchronous `abort_task` to keep serialization against `request_abort_run`.
+
 ### Tooling
 - Added `scripts/perf_admin_seed.py` + `scripts/perf_admin_flows.py` to benchmark every Admin-facing GET route and composite UI flow (bootstrap, sources drill, conflicts drill, fetcher trigger, sync ready) against a container started with Pi-class CPU/memory caps (`pi4-tight`/`pi4-roomy`) on a seeded local `/data` volume. Outputs `routes.json`, `flows.json`, `report.md`, and `meta.json` under `_out/perf-admin-flows/<run-token>/`. Wired `perf:admin:seed`, `perf:admin:flows`, and `perf:admin:flows:roomy` into `package.json`, and added a manual `.github/workflows/perf-admin-flows.yml` lane that accepts an optional seed artifact and a GHCR image. Seed data stays on the host and never lands in git.
 

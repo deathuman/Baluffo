@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from src.bridge.performance_profile import time_operation
 from src.bridge.task_abort_evidence import (
     ABORT_TERMINAL_REASON,
     repair_discovery_canceled_evidence,
@@ -172,11 +174,12 @@ class TaskAbortService:
     ) -> tuple[bool, bool, list[str]]:
         warnings: list[str] = []
         registry = self._deps.process_registry
-        terminate_result = (
-            registry.terminate(task_type, run_id, timeout_s=3.0)
-            if registry is not None
-            else {"ok": False, "exited": False, "warning": "process_registry_unavailable"}
-        )
+        with time_operation("abort.process_terminate"):
+            terminate_result = (
+                registry.terminate(task_type, run_id, timeout_s=3.0)
+                if registry is not None
+                else {"ok": False, "exited": False, "warning": "process_registry_unavailable"}
+            )
         warning = _clean_text(terminate_result.get("warning"))
         if warning:
             warnings.append(warning)
@@ -194,9 +197,11 @@ class TaskAbortService:
                 warnings.append("process_identity_not_verified")
         if exited:
             if task_type == "fetch":
-                self._cancel_fetch(run_id, reason=reason)
+                with time_operation("abort.cancel_evidence.fetch"):
+                    self._cancel_fetch(run_id, reason=reason)
             elif task_type == "discovery":
-                self._cancel_discovery(run_id, reason=reason)
+                with time_operation("abort.cancel_evidence.discovery"):
+                    self._cancel_discovery(run_id, reason=reason)
         return True, exited, warnings
 
     def _pipeline_service(self) -> Any | None:
@@ -413,42 +418,98 @@ class TaskAbortService:
         )
         return "canceled" if aborted else "aborting", aborted, warnings
 
+    def _finalize_abort(
+        self,
+        request: _AbortRequest,
+        *,
+        stage: str,
+    ) -> tuple[str, bool, list[str], bool]:
+        """Run the post-flip abort work. Returns (state, aborted, warnings, deferred)."""
+        if request.task_type == "pipeline":
+            with time_operation("abort.finalize.pipeline"):
+                state, deferred, warnings = self._abort_pipeline(request, stage=stage)
+            return state, False, warnings, deferred
+        with time_operation("abort.finalize.process_run"):
+            state, aborted, warnings = self._abort_process_run(request)
+        return state, aborted, warnings, False
+
+    def _prepare_abort(
+        self, payload: dict[str, Any] | None
+    ) -> tuple[
+        _AbortRequest | None,
+        tuple[int, dict[str, Any]] | None,
+        str,
+        dict[str, Any] | None,
+    ]:
+        """Validate + flip lifecycle row, instrumented. Shared by sync/async paths.
+
+        Returns (request, early_response, stage, lifecycle_abort_result).
+        Caller checks early_response first; non-None means respond with it.
+        On success lifecycle_abort_result contains the post-flip result so the
+        caller can decide synchronous vs async finalize.
+        """
+        with time_operation("abort.validate"):
+            request, early_response = self._validate_abort_request(payload)
+        if early_response is not None or request is None:
+            return request, early_response, "", None
+
+        stage = self._abort_stage(request)
+        with time_operation("abort.flip_lifecycle_row"):
+            abort_result = self._deps.request_abort_run(
+                request.run_id,
+                request.task_type,
+                requested_at=self._deps.now_iso(),
+                reason=request.reason,
+                stage=stage,
+            )
+        state = _clean_text(abort_result.get("state"))
+        lifecycle_response = self._lifecycle_abort_response(request, state)
+        if lifecycle_response is not None:
+            return request, lifecycle_response, stage, None
+
+        return request, None, stage, abort_result
+
+    def _log_abort(
+        self,
+        request: _AbortRequest,
+        *,
+        state: str,
+        aborted: bool,
+        deferred: bool,
+        warnings: list[str],
+        source: str,
+    ) -> None:
+        try:
+            self._deps.bridge_log(
+                "info",
+                "task_abort_requested",
+                taskType=request.task_type,
+                runId=request.run_id,
+                state=state,
+                aborted=aborted,
+                deferred=deferred,
+                warnings=warnings,
+                source=source,
+            )
+        except Exception:
+            # Logging must never break abort; the lifecycle row already shows it.
+            pass
+
     def abort_task(self, payload: dict[str, Any] | None) -> tuple[int, dict[str, Any]]:
-        request, early_response = self._validate_abort_request(payload)
+        request, early_response, stage, _ = self._prepare_abort(payload)
         if early_response is not None:
             return early_response
         if request is None:
             raise RuntimeError("validated abort request missing")
 
-        stage = self._abort_stage(request)
-        abort_result = self._deps.request_abort_run(
-            request.run_id,
-            request.task_type,
-            requested_at=self._deps.now_iso(),
-            reason=request.reason,
-            stage=stage,
-        )
-        state = _clean_text(abort_result.get("state"))
-        lifecycle_response = self._lifecycle_abort_response(request, state)
-        if lifecycle_response is not None:
-            return lifecycle_response
-
-        deferred = False
-        if request.task_type == "pipeline":
-            state, deferred, warnings = self._abort_pipeline(request, stage=stage)
-            aborted = False
-        else:
-            state, aborted, warnings = self._abort_process_run(request)
-
-        self._deps.bridge_log(
-            "info",
-            "task_abort_requested",
-            taskType=request.task_type,
-            runId=request.run_id,
+        state, aborted, warnings, deferred = self._finalize_abort(request, stage=stage)
+        self._log_abort(
+            request,
             state=state,
             aborted=aborted,
             deferred=deferred,
             warnings=warnings,
+            source="sync",
         )
         return 200, self._response(
             ok=True,
@@ -460,6 +521,48 @@ class TaskAbortService:
             deferred=deferred,
             warnings=warnings,
         )
+
+    def abort_task_async(self, payload: dict[str, Any] | None) -> tuple[int, dict[str, Any]]:
+        """Non-blocking variant used by the HTTP route.
+
+        Returns 202 as soon as the lifecycle row is flipped to `aborting`; the
+        process kill + report-repair run on a daemon thread. Internal callers
+        (e.g. pipeline parent aborting a child) still use `abort_task`.
+        """
+        request, early_response, stage, _ = self._prepare_abort(payload)
+        if early_response is not None:
+            return early_response
+        if request is None:
+            raise RuntimeError("validated abort request missing")
+
+        def _run() -> None:
+            state, aborted, warnings, deferred = self._finalize_abort(request, stage=stage)
+            self._log_abort(
+                request,
+                state=state,
+                aborted=aborted,
+                deferred=deferred,
+                warnings=warnings,
+                source="async",
+            )
+
+        thread = threading.Thread(
+            target=_run,
+            name=f"task-abort-{request.task_type}-{request.run_id[:16]}",
+            daemon=True,
+        )
+        thread.start()
+        with time_operation("abort.respond_async"):
+            return 202, self._response(
+                ok=True,
+                task_type=request.task_type,
+                run_id=request.run_id,
+                state="aborting",
+                abort_accepted=True,
+                aborted=False,
+                deferred=True,
+                warnings=[],
+            )
 
 
 __all__ = [

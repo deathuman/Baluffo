@@ -64,6 +64,8 @@ class _AdminPostRouteApi(Protocol):
 
     def abort_task(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]: ...
 
+    def abort_task_async(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]: ...
+
     def add_manual_source(self, url: str) -> dict[str, Any]: ...
 
     def bridge_log(self, level: str, event: str, **fields: Any) -> None: ...
@@ -534,7 +536,9 @@ def handle_post(
         return True
 
     if path == "/tasks/abort":
-        status_code, result = api.abort_task(data)
+        # Async variant: validate + flip the lifecycle row, then return 202 so
+        # the request thread never blocks on process-kill + report-repair.
+        status_code, result = api.abort_task_async(data)
         handler.send_json(result, status=int(status_code or 500))
         return True
 

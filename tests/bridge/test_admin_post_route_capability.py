@@ -26,6 +26,9 @@ class MinimalAdminPostRouteApi:
     def abort_task(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         return 202, {"ok": True, "abortPayload": payload}
 
+    def abort_task_async(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        return 202, {"ok": True, "abortPayload": payload, "async": True}
+
     def add_manual_source(self, url: str) -> dict[str, Any]:
         return {"ok": True, "url": url}
 
