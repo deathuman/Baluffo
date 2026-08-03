@@ -992,6 +992,52 @@ def _start_exit_monitor(process: subprocess.Popen[bytes]) -> None:
     thread.start()
 
 
+def _start_registry_conflicts_warmup(internal_base_url: str) -> None:
+    """Pre-warm the registry-conflicts full cache after the bridge is up.
+
+    First user click on Admin->Conflicts pays ~3 s on Pi-class hardware when the
+    mtime-keyed payload cache in ``registry-conflicts-full.json`` is missing or
+    stale. Firing one warm GET here means the first user click reads cache.
+
+    ponytail: single GET, single thread, no retry storm, no schedule. If the
+    bridge never comes up we exit silently — the user's click will just do the
+    work itself, no harm done.
+    """
+
+    warm_url = f"{internal_base_url.rstrip('/')}/registry/conflicts?view=full"
+    ready_url = f"{internal_base_url.rstrip('/')}/app/ready"
+
+    def _warm() -> None:
+        # Wait for the bridge to actually accept connections before we burn a
+        # 60s proxy timeout on a route that's not yet serving.
+        deadline = time.monotonic() + 30.0
+        while time.monotonic() < deadline:
+            try:
+                with urlopen(ready_url, timeout=2.0) as response:
+                    if response.status == 200:
+                        break
+            except (OSError, HTTPError, URLError):
+                time.sleep(0.5)
+        else:
+            # Bridge never got ready within the window; don't block startup.
+            return
+        try:
+            with urlopen(warm_url, timeout=60.0) as response:
+                # Read a few bytes so the request isn't aborted before the bridge
+                # finishes writing the cache; discarding the body is the point —
+                # we only care about the cache write side effect on the bridge.
+                response.read(1024)
+        except (OSError, HTTPError, URLError):
+            # Warming is opportunistic. Log to stderr for diagnosis and move on.
+            print(
+                "[container_gateway] registry-conflicts warmup failed (non-fatal)",
+                file=sys.stderr,
+            )
+
+    thread = threading.Thread(target=_warm, name="baluffo-registry-conflicts-warmup", daemon=True)
+    thread.start()
+
+
 def _terminate_bridge(process: subprocess.Popen[bytes]) -> None:
     if process.poll() is not None:
         return
@@ -1013,10 +1059,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     bridge = _spawn_bridge(config, internal_port=internal_port)
     _start_exit_monitor(bridge)
+    internal_base_url = f"http://127.0.0.1:{internal_port}"
+    _start_registry_conflicts_warmup(internal_base_url)
     state = _GatewayState(
         data_dir=Path(config.data_dir),
         static_root=Path(config.root),
-        internal_base_url=f"http://127.0.0.1:{internal_port}",
+        internal_base_url=internal_base_url,
         bridge_process=bridge,
     )
     handler_cls = _make_gateway_handler(state)

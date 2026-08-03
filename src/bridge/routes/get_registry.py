@@ -308,7 +308,17 @@ def _registry_sources_payload(
             "error": "invalid registry bucket",
             "invalidBuckets": invalid,
         }
-    if table_view and _active_compact_registry_sources(query):
+    # detail=summary on the table view implicitly selects the cheap path. We
+    # keep the activeCompact flag as an alias for backward compat with the
+    # existing Admin active-task lane.
+    table_detail = _registry_sources_table_detail(query)
+    if table_view and not table_detail:
+        return 400, {
+            "ok": False,
+            "error": "invalid registry sources table detail",
+            "allowedDetails": ["summary", "full"],
+        }
+    if table_view and (_active_compact_registry_sources(query) or table_detail == "summary"):
         return _active_compact_registry_sources_payload(
             api,
             query=query,
@@ -354,6 +364,7 @@ def _registry_sources_payload(
                 sources=sources,
                 summary=summary,
                 limit_per_bucket=table_limit_per_bucket,
+                detail_mode=table_detail,
             )
         row_count = sum(len(rows) for rows in sources.values())
         storage_kind = str(summary.get("authorityMode") or "normalized")
@@ -415,12 +426,17 @@ def _registry_sources_table_view_parts(
     sources: dict[str, list[dict[str, Any]]],
     summary: dict[str, Any],
     limit_per_bucket: int,
+    detail_mode: str = "full",
 ) -> tuple[dict[str, list[dict[str, Any]]], dict[str, Any]]:
     if limit_per_bucket:
         truncated_buckets = _apply_registry_table_limit(sources, limit_per_bucket)
         summary["tableLimitPerBucket"] = limit_per_bucket
         summary["tableTruncatedBuckets"] = truncated_buckets
-    if "pending" in sources:
+    # detail=summary skips the auto-approval annotation pass — that's the leg that
+    # re-reads the discovery report and walks active aliases on every call. The
+    # default detail=full keeps existing behavior; the cheap variant ships when
+    # the Admin startup lane asks for it via ?view=table&detail=summary.
+    if "pending" in sources and detail_mode == "full":
         annotated_pending, pending_approval_summary = annotate_pending_auto_approval_rows(
             sources.get("pending") or [],
             active_rows=[row for row in state.get("active") or [] if isinstance(row, dict)],
@@ -431,10 +447,20 @@ def _registry_sources_table_view_parts(
         summary["pendingAutoApprovalEligibleCount"] = int(
             pending_approval_summary.get("autoApprovalEligibleCount") or 0
         )
+    summary["detail"] = detail_mode
     return {
         bucket: [compact_registry_source_table_row(row) for row in rows]
         for bucket, rows in sources.items()
     }, summary
+
+
+def _registry_sources_table_detail(query: dict[str, list[str]]) -> str:
+    raw = str((query.get("detail") or [""])[0] or "").strip().lower()
+    if raw in {"", "full"}:
+        return "full"
+    if raw == "summary":
+        return "summary"
+    return ""  # unknown detail mode
 
 
 def handle_registry_routes(
