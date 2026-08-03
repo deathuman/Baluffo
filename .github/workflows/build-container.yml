@@ -93,17 +93,35 @@ jobs:
             type=ref,event=tag
             type=sha,prefix=sha-
 
-      - name: Build and publish
+      # Build-only smoke check on pull requests: no GHCR push, no sync secrets.
+      - name: Build (pull_request)
+        if: github.event_name == 'pull_request'
         uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
+          push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            BALUFFO_CONTAINER_REQUIRE_SYNC_CONFIG=${{ github.event_name != 'pull_request' }}
+            BALUFFO_CONTAINER_REQUIRE_SYNC_CONFIG=false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Publish to GHCR + embed sync config. Only runs on main/tags so repo secrets are wired.
+      - name: Build and publish (main / tags)
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            BALUFFO_CONTAINER_REQUIRE_SYNC_CONFIG=true
           secrets: |
             BALUFFO_SYNC_BUILD_APP_ID=${{ secrets.BALUFFO_SYNC_BUILD_APP_ID }}
             BALUFFO_SYNC_BUILD_INSTALLATION_ID=${{ secrets.BALUFFO_SYNC_BUILD_INSTALLATION_ID }}

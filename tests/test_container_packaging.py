@@ -71,24 +71,49 @@ def test_ghcr_workflow_builds_multi_arch_image_without_pr_push() -> None:
     assert "docker/metadata-action@v6" in content
     assert "docker/build-push-action@v7" in content
     assert "platforms: linux/amd64,linux/arm64" in content
-    assert "push: ${{ github.event_name != 'pull_request' }}" in content
     assert "type=raw,value=latest,enable={{is_default_branch}}" in content
-    assert (
-        "BALUFFO_CONTAINER_REQUIRE_SYNC_CONFIG=${{ github.event_name != 'pull_request' }}"
-        in content
-    )
     assert "Missing BALUFFO_SYNC_BUILD_PRIVATE_KEY_PEM secret for container publish." in content
     assert "secret-files:" in content
     assert (
         "BALUFFO_SYNC_BUILD_PRIVATE_KEY_PEM=${{ env.BALUFFO_CONTAINER_SYNC_PRIVATE_KEY_FILE }}"
         in content
     )
-    for secret_name in (
+
+
+def test_build_container_workflow_gates_secrets_to_non_pr_events() -> None:
+    content = _read(".github/workflows/build-container.yml")
+
+    pr_step = content.split("- name: Build (pull_request)", 1)[1].split(
+        "- name: Build and publish (main / tags)", 1
+    )[0]
+    publish_step = content.split("- name: Build and publish (main / tags)", 1)[1]
+
+    for name in (
         "BALUFFO_SYNC_BUILD_APP_ID",
         "BALUFFO_SYNC_BUILD_INSTALLATION_ID",
         "BALUFFO_SYNC_BUILD_REPO",
+        "BALUFFO_SYNC_BUILD_PRIVATE_KEY_PEM",
+        "BALUFFO_SYNC_BUILD_BRANCH",
+        "BALUFFO_SYNC_BUILD_PATH",
+        "BALUFFO_SYNC_BUILD_ALLOWED_REPO",
+        "BALUFFO_SYNC_BUILD_ALLOWED_BRANCH",
+        "BALUFFO_SYNC_BUILD_ALLOWED_PATH_PREFIX",
+        "BALUFFO_SYNC_BUILD_KEY_DERIVATION",
+        "BALUFFO_SYNC_BUILD_PASSPHRASE_ENV",
+        "BALUFFO_SYNC_BUILD_EMBEDDED_KEY_HINT",
+        "BALUFFO_SYNC_BUILD_EMBEDDED_KEY_VERSION",
+        "BALUFFO_SYNC_BUILD_KEY_SALT",
     ):
-        assert f"{secret_name}=${{{{ secrets.{secret_name} }}}}" in content
+        assert name not in pr_step, f"PR build step must not wire {name}"
+        assert name in publish_step, f"publish step must wire {name}"
+
+    assert "if: github.event_name == 'pull_request'" in pr_step
+    assert "push: false" in pr_step
+    assert "BALUFFO_CONTAINER_REQUIRE_SYNC_CONFIG=false" in pr_step
+
+    assert "if: github.event_name != 'pull_request'" in publish_step
+    assert "push: true" in publish_step
+    assert "BALUFFO_CONTAINER_REQUIRE_SYNC_CONFIG=true" in publish_step
 
 
 def test_container_frontend_bundle_script_uses_esbuild_dev_dependency() -> None:
