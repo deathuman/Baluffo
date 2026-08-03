@@ -107,3 +107,103 @@ def test_admin_ops_tab_counts_minimal_capability_rejects_unknown_view() -> None:
 
     assert handler.sent[-1]["status"] == 400
     assert "unsupported ops-tab-counts view" in handler.sent[-1]["payload"]["error"]
+
+
+def _open_counts_for(tmp_path: Path) -> tuple[MinimalAdminOpsTabCountsRouteApi, FakeHandler]:
+    api = MinimalAdminOpsTabCountsRouteApi(tmp_path)
+    _write_json(
+        api.DISCOVERY_REPORT_PATH,
+        {"summary": {"candidateCount": 2}, "candidateReview": {"totalCandidates": 2}},
+    )
+    _write_json(
+        api.SOURCE_POLICY_RECOMMENDATIONS_PATH,
+        {"schemaVersion": 1, "pairs": [{"staticSourceId": "static-1"}]},
+    )
+    _write_json(api.SOURCE_POLICY_REVIEW_STATE_PATH, {"schemaVersion": 1, "pairs": {}})
+    handler = FakeHandler()
+    assert (
+        handle_admin_ops_tab_counts_routes(
+            handler,
+            api=api,
+            path="/admin/ops-tab-counts",
+            query={"view": ["summary"]},
+        )
+        is True
+    )
+    return api, handler
+
+
+def test_admin_ops_tab_counts_serves_fresh_cache_when_inputs_unchanged(
+    tmp_path: Path,
+) -> None:
+    api, first_handler = _open_counts_for(tmp_path)
+    assert first_handler.sent[-1]["payload"]["badges"]["discovery"]["count"] == 2
+
+    # No input mutation. Second call within TTL + matching mtime key must serve
+    # cached payload without recomputing.
+    second_handler = FakeHandler()
+    assert (
+        handle_admin_ops_tab_counts_routes(
+            second_handler,
+            api=api,
+            path="/admin/ops-tab-counts",
+            query={"view": ["summary"]},
+        )
+        is True
+    )
+    second_payload = second_handler.sent[-1]["payload"]
+    assert second_payload.get("cachedResponse") is True
+    assert isinstance(second_payload.get("cachedAgeS"), (int, float))
+    # Cached payload still carries the original computed numbers.
+    assert second_payload["badges"]["discovery"]["count"] == 2
+
+
+def test_admin_ops_tab_counts_recomputes_when_inputs_move(tmp_path: Path) -> None:
+    api, first_handler = _open_counts_for(tmp_path)
+    assert first_handler.sent[-1]["payload"]["badges"]["discovery"]["count"] == 2
+
+    # Mutate one input file -> mtime key mismatch -> recompute, even within TTL.
+    _write_json(
+        api.DISCOVERY_REPORT_PATH,
+        {"summary": {"candidateCount": 7}, "candidateReview": {"totalCandidates": 7}},
+    )
+
+    second_handler = FakeHandler()
+    assert (
+        handle_admin_ops_tab_counts_routes(
+            second_handler,
+            api=api,
+            path="/admin/ops-tab-counts",
+            query={"view": ["summary"]},
+        )
+        is True
+    )
+    second_payload = second_handler.sent[-1]["payload"]
+    # No cachedResponse marker means the cache was bypassed and a fresh payload served.
+    assert "cachedResponse" not in second_payload
+    assert second_payload["badges"]["discovery"]["count"] == 7
+
+
+def test_admin_ops_tab_counts_drops_stale_envelope_after_ttl(tmp_path: Path) -> None:
+    api, _ = _open_counts_for(tmp_path)
+
+    # Force the cachedAt stamp into the past; mtime key still matches, but the
+    # safety-net TTL has expired -> must recompute.
+    cache_path = Path(api.JOBS_FETCH_REPORT_PATH).with_name("ops-tab-counts.json")
+    cache_doc = json.loads(cache_path.read_text(encoding="utf-8"))
+    cache_doc["cachedAtUnix"] = 1.0
+    cache_path.write_text(json.dumps(cache_doc), encoding="utf-8")
+
+    handler = FakeHandler()
+    assert (
+        handle_admin_ops_tab_counts_routes(
+            handler,
+            api=api,
+            path="/admin/ops-tab-counts",
+            query={"view": ["summary"]},
+        )
+        is True
+    )
+    payload = handler.sent[-1]["payload"]
+    assert "cachedResponse" not in payload
+    assert payload["badges"]["discovery"]["count"] == 2

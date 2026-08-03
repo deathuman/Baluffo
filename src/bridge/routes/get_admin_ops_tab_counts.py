@@ -9,6 +9,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused GET route tests.
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -36,6 +37,11 @@ from src.jobs.common.contracts_source_policy_recommendations import (
 from src.jobs.common.contracts_source_policy_review_state import (
     read_source_policy_review_state_artifact,
 )
+
+# ponytail: 30-second freshness window. Admin's own poll cadence is ~5 s; the
+# badge strip can be a hair stale without anyone noticing. The mtime key still
+# catches real file changes within the TTL on the next refresh.
+OPS_TAB_COUNTS_CACHE_TTL_S = 30.0
 
 
 class _AdminOpsTabCountsRouteApi(Protocol):
@@ -151,7 +157,88 @@ def _discovery_review_badge_from_report(api: _AdminOpsTabCountsRouteApi) -> dict
     )
 
 
+def _ops_tab_counts_cache_path(api: _AdminOpsTabCountsRouteApi) -> Path:
+    """Cache file sits alongside jobs-source-state.json (data dir, not _out/)."""
+    return Path(api.JOBS_FETCH_REPORT_PATH).with_name("ops-tab-counts.json")
+
+
+def _ops_tab_counts_cache_key(api: _AdminOpsTabCountsRouteApi) -> list[list[Any]]:
+    """mtime_ns for every file the badge computation reads.
+
+    Files that don't exist contribute `None`, which is fine — an absent file
+    is also a stable signal. Overview badge depends on `compute_ops_dashboard_health_summary`
+    which has no single backing file to mtime-check; the TTL bound absorbs that.
+    """
+    paths = (
+        Path(api.DISCOVERY_REPORT_PATH),
+        Path(api.SOURCE_POLICY_RECOMMENDATIONS_PATH),
+        Path(api.SOURCE_POLICY_REVIEW_STATE_PATH),
+        Path(api.JOBS_FETCH_REPORT_PATH).with_name("jobs-source-state.json"),
+        Path(api.JOBS_FETCH_REPORT_PATH).with_name("registry-conflict-adjudication.json"),
+    )
+    signature: list[list[Any]] = []
+    for path in paths:
+        try:
+            signature.append([str(path), path.stat().st_mtime_ns])
+        except OSError:
+            signature.append([str(path), None])
+    return signature
+
+
+def _read_ops_tab_counts_cache(path: Path, key: list[list[Any]]) -> dict[str, Any] | None:
+    try:
+        cached = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(cached, dict):
+        return None
+    cached_at = float(cached.get("cachedAtUnix") or 0.0)
+    if cached_at <= 0.0 or (time.time() - cached_at) > OPS_TAB_COUNTS_CACHE_TTL_S:
+        # Even with matching mtimes, refuse to serve a stale envelope. The TTL is a
+        # safety net for cases where a backing file gets rewritten without an mtime
+        # bump visible to us (network fs, copy truncation windows); 30s is short
+        # enough that badge drift stays invisible on admin.
+        return None
+    if cached.get("cacheKey") != key:
+        return None
+    payload = cached.get("payload")
+    if not isinstance(payload, dict) or not payload.get("ok"):
+        return None
+    # Stamp freshness for observability, not caching semantics.
+    payload["cachedResponse"] = True
+    payload["cachedAgeS"] = round(time.time() - cached_at, 2)
+    return payload
+
+
+def _write_ops_tab_counts_cache(path: Path, key: list[list[Any]], payload: dict[str, Any]) -> None:
+    envelope = {
+        "cacheKey": key,
+        "cachedAtUnix": time.time(),
+        "payload": payload,
+    }
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    try:
+        tmp_path.write_text(
+            json.dumps(envelope, separators=(",", ":"), sort_keys=True),
+            encoding="utf-8",
+        )
+        tmp_path.replace(path)
+    except OSError:
+        # Cache write failure is not user-visible; skip and pay full cost next time.
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def _admin_ops_tab_counts_summary(api: _AdminOpsTabCountsRouteApi) -> dict[str, Any]:
+    cache_path = _ops_tab_counts_cache_path(api)
+    cache_key = _ops_tab_counts_cache_key(api)
+    with time_operation("admin.ops_tab_counts.summary.cache_read"):
+        cached = _read_ops_tab_counts_cache(cache_path, cache_key)
+    if cached is not None:
+        return cached
+
     badges: dict[str, dict[str, Any]] = {}
 
     try:
@@ -210,13 +297,16 @@ def _admin_ops_tab_counts_summary(api: _AdminOpsTabCountsRouteApi) -> dict[str, 
         title="Dedup count loads with dedup diagnostics",
     )
 
-    return {
+    payload = {
         "ok": True,
         "summaryView": True,
         "detailLevel": "summary",
         "generatedAt": api.now_iso(),
         "badges": badges,
     }
+    with time_operation("admin.ops_tab_counts.summary.cache_write"):
+        _write_ops_tab_counts_cache(cache_path, cache_key, payload)
+    return payload
 
 
 def _safe_int(value: Any, default: int = 0) -> int:
