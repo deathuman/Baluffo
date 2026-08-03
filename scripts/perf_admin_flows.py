@@ -185,6 +185,7 @@ def _request(
             body=payload,
             headers={
                 "Content-Type": "application/json",
+                "Content-Length": str(len(payload)),
                 "Accept": "application/json",
                 "User-Agent": "BaluffoPerfAdminSampler/1",
             },
@@ -201,7 +202,7 @@ def _request(
             "durationMs": duration_ms,
             "timeoutS": timeout_s,
             "sizeBytes": len(raw),
-            "gatewayHit": status == 504,
+            "gatewayHit": status == 504 and _is_gateway_timeout_body(raw),
             "phase": "complete",
         }
     except Exception as exc:  # noqa: BLE001 -- record and report
@@ -220,6 +221,27 @@ def _request(
     finally:
         with contextlib.suppress(Exception):
             connection.close()
+
+
+def _is_gateway_timeout_body(raw: bytes) -> bool:
+    """Distinguish container-gateway-generated 504 from a real bridge 504.
+
+    The gateway emits a ``{ok: false, error: "bridge_degraded", gatewayReady: true}``
+    fallback when its proxy urlopen times out (see ``container_gateway._proxy``).
+    Bridge-generated 504s (unlikely, the bridge doesn't emit any) would not carry
+    that marker.
+    """
+    if not raw:
+        return False
+    try:
+        parsed = json.loads(raw.decode("utf-8", errors="replace"))
+    except (ValueError, UnicodeDecodeError):
+        return False
+    if not isinstance(parsed, dict):
+        return False
+    if parsed.get("gatewayReady") is True and parsed.get("error") == "bridge_degraded":
+        return True
+    return parsed.get("source") == "container_gateway"
 
 
 def _wait_ready(base_url: str, timeout_s: float = 60.0) -> None:
@@ -273,13 +295,60 @@ def _restore_volume(snapshot: Path, data_volume: Path) -> None:
     target.write_bytes(snapshot.read_bytes())
 
 
+def _derive_abort_body(poll: dict[str, Any]) -> dict[str, Any]:
+    """Build a well-formed `/tasks/abort` payload from the most recent task-live sample.
+
+    Pulls ``runId`` from the poller's final summary sample so we stop handing the
+    bridge a validation bucket (previous probe sent ``{}`` which the bridge
+    rejected 400 "missing runId"). Returns ``{"taskType": "fetch"}`` alone when
+    no runId is discoverable; the leg will still exercise the bridge, just via
+    its error path.
+
+    ponytail: single-key fallback. If task-live response shape changes the abort
+    will still fire with taskType only — bridge returns 400 + we see it.
+    """
+    final_parsed = poll.get("finalParsed")
+    if not isinstance(final_parsed, dict):
+        return {"taskType": "fetch"}
+    run_id = _extract_run_id(final_parsed)
+    if run_id:
+        return {"taskType": "fetch", "runId": run_id}
+    return {"taskType": "fetch"}
+
+
+def _extract_run_id(parsed: Any) -> str | None:
+    if not isinstance(parsed, dict):
+        return None
+    tasks = parsed.get("tasks")
+    if isinstance(tasks, list):
+        for entry in tasks:
+            if isinstance(entry, dict):
+                candidate = entry.get("runId") or entry.get("run_id")
+                if isinstance(candidate, str) and candidate.strip():
+                    return candidate.strip()
+    # Fallback: flat runId on the summary itself.
+    candidate = parsed.get("runId") or parsed.get("run_id")
+    if isinstance(candidate, str) and candidate.strip():
+        return candidate.strip()
+    return None
+
+
 def _poll_task_live(base_url: str, task: str, timeout_s: float) -> dict[str, Any]:
     endpoint = f"/ops/task-live/{task}?view=summary"
     deadline = time.monotonic() + timeout_s
     samples = 0
     last: dict[str, Any] = {}
+    last_parsed: dict[str, Any] | None = None
     while time.monotonic() < deadline:
-        last = _request(base_url, "GET", endpoint, timeout_s=5.0)
+        sample, parsed = _fetch_live_bridge_request(
+            base_url=base_url, endpoint=endpoint, timeout_s=5.0
+        )
+        last = dict(sample)
+        # Keep shape parity with the previous sampler rows so the report stays flat.
+        last.setdefault("gatewayHit", sample.get("status") == 504)
+        last["parsedKeys"] = list(parsed.keys())[:20] if isinstance(parsed, dict) else []
+        if isinstance(parsed, dict):
+            last_parsed = parsed
         samples += 1
         if last.get("ok"):
             parsed_keys = last.get("parsedKeys") or []
@@ -292,6 +361,7 @@ def _poll_task_live(base_url: str, task: str, timeout_s: float) -> dict[str, Any
         "endpoint": endpoint,
         "samples": samples,
         "final": last,
+        "finalParsed": last_parsed or {},
         "timedOut": time.monotonic() >= deadline,
     }
 
@@ -355,7 +425,8 @@ def _run_pass_c(base_url: str, timeout_s: float, cold_open: bool) -> list[dict[s
         base_url, "POST", "/tasks/run-fetcher", timeout_s, body={"preset": "retry_failed"}
     )
     poll = _poll_task_live(base_url, "fetch", POLL_TIMEOUT_S)
-    abort = _request(base_url, "POST", "/tasks/abort", timeout_s, body=None)
+    abort_body = _derive_abort_body(poll)
+    abort = _request(base_url, "POST", "/tasks/abort", timeout_s, body=abort_body)
     flows.append(
         {
             "flow": "admin.fetcher.trigger",
