@@ -72,7 +72,7 @@ GET_ROUTES: tuple[tuple[str, str], ...] = (
     ("ops_perf_counters", "/ops/perf-counters"),
     (
         "registry_sources_table",
-        "/registry/sources?view=table&buckets=pending,active,rejected",
+        "/registry/sources?view=table&detail=summary&buckets=pending,active,rejected",
     ),
     ("discovery_report", "/discovery/report"),
     ("discovery_candidates", "/discovery/candidates"),
@@ -112,7 +112,10 @@ FLOW_SPECS: dict[str, list[tuple[str, str]]] = {
         ("sync_status", "/sync/status"),
     ],
     "admin.sources": [
-        ("sources_table", "/registry/sources?view=table&buckets=pending,active,rejected"),
+        (
+            "sources_table",
+            "/registry/sources?view=table&detail=summary&buckets=pending,active,rejected",
+        ),
         ("sources_summary", "/registry/summary"),
     ],
     "admin.conflicts.drill": [
