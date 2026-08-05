@@ -315,10 +315,27 @@ def prepare_pipeline_run(
         timeout_s=timeout_s,
         max_connections=google_sheets_redirect_concurrency,
     )
+    # ponytail: sub-stage emits inside loading_state; bench instruments per-read
+    # cost without needing a profiler. Sibling emits above use setupStep=1 too.
+    prep_progress.emit(
+        "loading_state/read_source_state",
+        "Loading source state",
+        counts={"setupStep": 1},
+    )
     source_state_rows = read_source_state(paths.source_state_path)
+    prep_progress.emit(
+        "loading_state/seed_redirect_cache",
+        "Seeding redirect cache",
+        counts={"setupStep": 1, "sourceStateRows": len(source_state_rows)},
+    )
     _seed_redirect_cache_from_state(
         redirect_resolver=redirect_resolver,
         source_state_rows=source_state_rows,
+    )
+    prep_progress.emit(
+        "loading_state/read_lifecycle_state",
+        "Loading lifecycle state",
+        counts={"setupStep": 1, "sourceStateRows": len(source_state_rows)},
     )
     lifecycle_rows = read_job_lifecycle_state(paths.lifecycle_state_path)
     prep_progress.emit(

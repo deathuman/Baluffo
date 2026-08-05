@@ -274,6 +274,76 @@ def test_hot_lifecycle_reader_ignores_cold_archive_rows() -> None:
         assert "job-archive-1" not in hot_rows
 
 
+def test_lifecycle_reader_short_circuits_when_already_normalized(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Writer-produced files are normalized by construction; re-reading must skip
+    the per-row normalize pass (regression for the 35 MB seeded-state benchmark,
+    where reload+renormalize dominated fetch/loading_state at ~38 s / 770 MiB)."""
+    from src.jobs import state_lifecycle as sl
+
+    state_path = tmp_path / "jobs-lifecycle-state.json"
+    write_job_lifecycle_state(
+        state_path,
+        {"job-a": {"status": "active", "title": "Time Tracker"}},
+    )
+
+    called: list[str] = []
+    real_normalize = sl.normalize_job_lifecycle_payload
+
+    def tracking_normalize(payload, **kwargs):
+        called.append("hit")
+        return real_normalize(payload, **kwargs)
+
+    monkeypatch.setattr(sl, "normalize_job_lifecycle_payload", tracking_normalize)
+
+    rows = read_job_lifecycle_state(state_path)
+    assert rows["job-a"]["status"] == "active"
+    # Writer-normalized payload must NOT trigger re-normalize on read.
+    assert called == []
+
+
+def test_lifecycle_reader_falls_back_when_normalization_needed(tmp_path: Path, monkeypatch) -> None:
+    """Legacy/dirty shape (missing schemaVersion or non-list availabilityEvidence)
+    must still go through the full normalize path."""
+    from src.jobs import state_lifecycle as sl
+
+    state_path = tmp_path / "jobs-lifecycle-state.json"
+    # No schemaVersion marker, and availabilityAliases is wrong shape (string
+    # instead of list) so the short-circuit must ripple into full normalization.
+    state_path.write_text(
+        json.dumps(
+            {
+                "jobs": {
+                    "job-b": {
+                        "status": "active",
+                        "title": "Dirty",
+                        "availabilityAliases": "not-a-list",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    called: list[str] = []
+    real_normalize = sl.normalize_job_lifecycle_payload
+
+    def tracking_normalize(payload, **kwargs):
+        called.append("hit")
+        return real_normalize(payload, **kwargs)
+
+    monkeypatch.setattr(sl, "normalize_job_lifecycle_payload", tracking_normalize)
+
+    rows = read_job_lifecycle_state(state_path)
+    assert rows["job-b"]["status"] == "active"
+    assert called == ["hit"]
+    # Normalization strips empty values; legacy strings in aliases get dropped.
+    assert "availabilityAliases" not in rows["job-b"] or isinstance(
+        rows["job-b"]["availabilityAliases"], list
+    )
+
+
 def test_runtime_launcher_serves_gzip_backed_pipeline_data() -> None:
     with workspace_tmpdir("pipeline-runtime-gzip") as tmp:
         root = Path(tmp) / "site"

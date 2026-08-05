@@ -118,9 +118,75 @@ def normalize_job_lifecycle_payload(
 
 def read_job_lifecycle_state(state_path: Path) -> dict[str, dict[str, Any]]:
     payload = read_json_object(state_path, {})
-    normalized = normalize_job_lifecycle_payload(payload)
-    rows = normalized.get("jobs")
+    normalized = _payload_already_normalized(payload)
+    if normalized is not None:
+        return normalized
+    normalized_payload = normalize_job_lifecycle_payload(payload)
+    rows = normalized_payload.get("jobs")
     return rows if isinstance(rows, dict) else {}
+
+
+_LIFECYCLE_ALLOWED_STATUS = frozenset({"active", "likely_removed", "archived"})
+_LIFECYCLE_NORMALIZE_SPOT_CHECK_ROWS = 100
+_LIFECYCLE_ALIAS_LIST_KEYS = ("availabilityAliases",)
+_LIFECYCLE_EVIDENCE_DICT_KEYS = ("availabilityEvidence", "availabilityPendingEvidence")
+
+
+def _payload_already_normalized(payload: Any) -> dict[str, dict[str, Any]] | None:
+    """Return the row dict if payload already matches the writer's normalized shape.
+
+    Files written by `write_job_lifecycle_state` are normalized by construction, so a
+    second pass through `normalize_job_lifecycle_payload` is a pure no-op that costs
+    wall-clock on every read (the seeded 35 MB lifecycle file made this dominant in
+    the pipeline benchmark). Spot-check a bounded sample and trust the rest; any
+    drift falls back to full normalization.
+    """
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("schemaVersion") != SCHEMA_VERSION:
+        return None
+    jobs = payload.get("jobs")
+    if not isinstance(jobs, dict):
+        return None
+    if not isinstance(payload.get("updatedAt"), str):
+        return None
+    sample = list(jobs.items())[:_LIFECYCLE_NORMALIZE_SPOT_CHECK_ROWS]
+    if not all(_lifecycle_row_is_normalized(key, entry) for key, entry in sample):
+        return None
+    return jobs
+
+
+def _lifecycle_row_is_normalized(key: Any, entry: Any) -> bool:
+    if not isinstance(key, str) or not key:
+        return False
+    if not isinstance(entry, dict):
+        return False
+    if key != clean_text(key):
+        return False
+    if not all(isinstance(field, str) for field in entry):
+        return False
+    if not all(
+        isinstance(value, (str, int, list, dict, bool, type(None))) for value in entry.values()
+    ):
+        return False
+    status = entry.get("status")
+    if status is not None and status not in _LIFECYCLE_ALLOWED_STATUS:
+        return False
+    if not _lifecycle_shape_guards_hold(entry):
+        return False
+    return True
+
+
+def _lifecycle_shape_guards_hold(entry: dict[str, Any]) -> bool:
+    for list_key in _LIFECYCLE_ALIAS_LIST_KEYS:
+        value = entry.get(list_key)
+        if value is not None and not isinstance(value, list):
+            return False
+    for dict_key in _LIFECYCLE_EVIDENCE_DICT_KEYS:
+        value = entry.get(dict_key)
+        if value is not None and not isinstance(value, dict):
+            return False
+    return True
 
 
 def write_job_lifecycle_state(state_path: Path, rows: dict[str, dict[str, Any]]) -> None:
