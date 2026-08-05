@@ -111,6 +111,7 @@ Use the repo-native perf entrypoints before adding new benchmark tooling:
 | Packaged Admin cold/warm startup probe | `npm run perf:startup:admin:cold` / `npm run perf:startup:admin:warm` | `.tmp/packaged-desktop-smoke/` and `data/packaged-desktop-smoke-report.json` |
 | Seed Admin benchmark volume from live `/data` | `python scripts/perf_admin_seed.py --from-volume-path <path>` | `_out/perf-admin-flows/seed-data/` |
 | Run Admin route + flow benchmark against seeded container | `npm run perf:admin:flows -- --image <img> --profile pi4-tight --data-volume <path>` | `_out/perf-admin-flows/<run-token>/` |
+| Pipeline per-stage benchmark (RSS + CPU per stage) | `python scripts/perf_pipeline_stages.py --image <img> --data-volume <path> [--preset smoke] [--fresh]` | `_out/perf-pipeline/<run-token>/` with `stages.json`, `samples.ndjson`, `report.md`, `FINDINGS.md` |
 
 Notes:
 - Prefer repo-local artifact roots such as `.tmp/` and `_out/` for new perf workflows; avoid `%LOCALAPPDATA%\\Temp` for benchmark or runtime-state outputs in this Windows-first repo.

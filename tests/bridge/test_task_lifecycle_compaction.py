@@ -187,6 +187,62 @@ def test_lifecycle_generic_rows_drop_nested_hot_payloads_but_keep_scalar_evidenc
     }
 
 
+def test_lifecycle_keeps_stage_ledger_on_pipeline_terminal_row(tmp_path: Path) -> None:
+    lifecycle_path = tmp_path / "admin-task-lifecycle.json"
+    lifecycle_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "updatedAt": "2026-08-04T20:00:00+00:00",
+                "rows": [
+                    {
+                        "runId": "pipeline_ledger_row",
+                        "taskType": "pipeline",
+                        "status": "running",
+                        "stage": "fetch",
+                        "startedAt": "2026-08-04T20:00:00+00:00",
+                        "heartbeatAt": "2026-08-04T20:01:00+00:00",
+                        "finishedAt": "",
+                        "terminalReason": "",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    service = _service(tmp_path)
+
+    service.finish_run(
+        "pipeline_ledger_row",
+        "pipeline",
+        finished_at="2026-08-04T20:05:00+00:00",
+        terminal_reason="completed",
+        summary={
+            "baselineOutputCount": 0,
+            "jobsPageLoadedCount": 0,
+            "finalOutputCount": 12,
+            "updatesFound": True,
+            "stageLedger": [
+                {
+                    "stage": "starting",
+                    "enteredAt": "2026-08-04T20:00:00+00:00",
+                    "label": "Starting",
+                },
+                {"stage": "fetch", "enteredAt": "2026-08-04T20:01:00+00:00", "label": "Fetching"},
+                {"stage": "completed", "enteredAt": "2026-08-04T20:05:00+00:00", "label": ""},
+            ],
+        },
+    )
+
+    row = json.loads(lifecycle_path.read_text(encoding="utf-8"))["rows"][0]
+    assert row["terminalReason"] == "completed"
+    ledger = row["summary"].get("stageLedger") or []
+    assert [entry["stage"] for entry in ledger] == ["starting", "fetch", "completed"]
+    # All ledger keys are scalar so no entry is dropped by compaction
+    for entry in ledger:
+        assert set(entry.keys()) == {"stage", "enteredAt", "label"}
+
+
 def test_lifecycle_read_only_access_does_not_rewrite_historical_bloat(tmp_path: Path) -> None:
     lifecycle_path = tmp_path / "admin-task-lifecycle.json"
     payload = {

@@ -10,6 +10,13 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+### Added
+- Pipeline stage ledger: `PipelineService._mark_stage` now appends `{stage, enteredAt, label}` entries to an in-memory `_stageLedger` (hard cap 64 entries) and flushes the ledger into the persisted lifecycle row's `summary.stageLedger` on terminal status (completed / failed / canceled). `task_lifecycle._compact_lifecycle_summary` whitelists the new field so the ledger survives row compaction without a schema version bump.
+- Sub-stage observations: `wait_for_report_completion` now records child-process `taskProgress.phaseKey` transitions into the same ledger as `<taskType>/<phaseKey>` entries (e.g. `fetch/loading_state`, `discovery/probing_candidates`) during long-running discovery and fetch waits. Lets the benchmark and future diagnostics attribute wall clock + memory + CPU to sub-stages without a new thread or extra I/O.
+
+### Tooling
+- Added `scripts/perf_pipeline_stages.py`: drives `POST /tasks/run-jobs-pipeline` against a seeded container, samples container process memory + CPU from the host (`docker stats` on Windows hosts, direct `/proc/<pid>/stat` on Linux), then cross-references the captured samples against the persisted `stageLedger` to emit per-stage wall-clock durations, peak/average RSS, CPU seconds, and MiB/s rates. Outputs `stages.json`, `samples.ndjson`, `report.md`, `FINDINGS.md` under `_out/perf-pipeline/<run-token>/`. Supports `--profile pi4-tight` (1.5 CPU / 1 GiB), `--preset smoke` (default), `--fresh` to force container rebuild, and reuses a healthy container when one is already running. First findings: on the seeded volume, `fetch/loading_state` consumes 83% of pipeline wall-clock (38.6 s of 46.4 s) at 770 MiB peak RSS.
+
 ### Fixed
 - `/tasks/abort` no longer hangs while the kill + report-repair run. The route now returns `202 aborting` as soon as the lifecycle row flips and runs `process_registry.terminate`, `repair_fetch_canceled_evidence`, and pipeline propagation on a daemon thread. Terminal/canceled branches still answer synchronously (`aborted: true` preserved). Admin "Stop fetch" becomes usable on a running job.
 - Container gateway `_handle_abort` no longer double-reads the request body when forwarding non-pipeline aborts to the bridge. Previously the peek at the body + a second `rfile.read` inside `_proxy` made `/tasks/abort {taskType:"fetch",...}` block until the gateway timeout hit, masking genuine async work.

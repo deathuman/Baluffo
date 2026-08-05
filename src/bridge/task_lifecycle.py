@@ -263,6 +263,21 @@ def _compact_lifecycle_progress(task_type: str, progress: dict[str, Any]) -> dic
     return compact
 
 
+_NESTED_SCALAR_DICT_KEYS = frozenset(
+    {
+        "outputs",
+        "changed",
+        "cacheDecisionCounts",
+        "sizeGuardrails",
+        "shardHashes",
+        "timing",
+        "detailTiming",
+        "remoteTiming",
+    }
+)
+_NESTED_STRING_LIST_KEYS = frozenset({"warnings", "errors", "partialErrors"})
+
+
 def _compact_lifecycle_summary(task_type: str, summary: dict[str, Any]) -> dict[str, Any]:
     if _clean_text(task_type).lower() == "fetch":
         return _compact_fetch_summary(summary)
@@ -271,28 +286,36 @@ def _compact_lifecycle_summary(task_type: str, summary: dict[str, Any]) -> dict[
         clean_key = _clean_text(key)
         if not clean_key or clean_key in _LARGE_LIFECYCLE_PAYLOAD_KEYS:
             continue
-        if _is_scalar(value):
-            compact[clean_key] = value
-            continue
-        if isinstance(value, dict) and clean_key in {
-            "outputs",
-            "changed",
-            "cacheDecisionCounts",
-            "sizeGuardrails",
-            "shardHashes",
-            "timing",
-            "detailTiming",
-            "remoteTiming",
-        }:
-            nested = _compact_nested_scalar_dict(value)
-            if nested:
-                compact[clean_key] = nested
-            continue
-        if isinstance(value, list) and clean_key in {"warnings", "errors", "partialErrors"}:
-            nested_list = _compact_string_list(value)
-            if nested_list:
-                compact[clean_key] = nested_list
+        compacted = _compact_summary_entry(clean_key, value)
+        if compacted is not None:
+            compact[clean_key] = compacted
     return compact
+
+
+def _compact_summary_entry(clean_key: str, value: Any) -> Any:
+    if _is_scalar(value):
+        return value
+    if isinstance(value, dict) and clean_key in _NESTED_SCALAR_DICT_KEYS:
+        return _compact_nested_scalar_dict(value) or None
+    if isinstance(value, list) and clean_key in _NESTED_STRING_LIST_KEYS:
+        return _compact_string_list(value) or None
+    if isinstance(value, list) and clean_key == "stageLedger":
+        return _compact_stage_ledger(value) or None
+    return None
+
+
+def _compact_stage_ledger(value: list[Any]) -> list[dict[str, Any]]:
+    # ponytail: stage ledger is list[{stage,enteredAt,label}] — all
+    # scalar fields, so pass through with cap rather than routing via
+    # _compact_string_list (which would stringify dicts).
+    entries: list[dict[str, Any]] = []
+    for item in value[:64]:
+        if not isinstance(item, dict):
+            continue
+        compacted = _compact_scalar_dict(item, max_items=8)
+        if compacted:
+            entries.append(compacted)
+    return entries
 
 
 def _legacy_state_by_key(state: dict[str, Any]) -> dict[tuple[str, str], dict[str, Any]]:

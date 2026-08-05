@@ -344,6 +344,19 @@ class PipelineService:
             self._status["progress"] = self._pipeline_progress(current_step, total_steps, label)
             progress = self._pipeline_lifecycle_progress(dict(self._status))
             run_id = str(self._status.get("runId") or "")
+            entered_at = self._now_iso()
+            ledger = self._status.setdefault("_stageLedger", [])
+            # ponytail: hard cap, no config knob — see plan
+            if isinstance(ledger, list):
+                ledger.append(
+                    {
+                        "stage": str(stage or "unknown"),
+                        "enteredAt": entered_at,
+                        "label": str(label or ""),
+                    }
+                )
+                if len(ledger) > 64:
+                    del ledger[:-64]
             if error:
                 self._status["error"] = str(error)
             stage_child_type = self._child_stage_task_type(str(stage or ""))
@@ -733,6 +746,91 @@ class PipelineService:
             "completedWithWarnings": completed_with_warnings,
         }
 
+    def _append_terminal_stage_ledger_entry(self, finished_at: str) -> None:
+        terminal_stage = str(self._status.get("stage") or "")
+        ledger = self._status.get("_stageLedger")
+        if not isinstance(ledger, list) or not terminal_stage:
+            return
+        if ledger and str(ledger[-1].get("stage") or "") == terminal_stage:
+            return
+        ledger.append({"stage": terminal_stage, "enteredAt": finished_at, "label": ""})
+        if len(ledger) > 64:
+            del ledger[:-64]
+
+    def _snapshot_stage_ledger(self) -> list[dict[str, Any]]:
+        # ponytail: snapshot ledger once; shared by all 3 terminal summaries
+        return [
+            dict(entry)
+            for entry in list(self._status.get("_stageLedger") or [])
+            if isinstance(entry, dict)
+        ]
+
+    def _emit_terminal_lifecycle(
+        self,
+        *,
+        run_id: str,
+        status: str,
+        canceled: bool,
+        completed_with_warnings: bool,
+        finished_at: str,
+        baseline: int,
+        loaded: int,
+        final_output_count: int,
+        updates_found: bool,
+        error: str,
+        clean_warnings: list[dict[str, Any]],
+        clean_sync_warning: dict[str, Any],
+        stage_ledger: list[dict[str, Any]],
+        progress: Any,
+    ) -> None:
+        base_summary = {
+            "baselineOutputCount": baseline,
+            "jobsPageLoadedCount": loaded,
+            "finalOutputCount": final_output_count,
+            "updatesFound": updates_found,
+            "stageLedger": stage_ledger,
+        }
+        if callable(self._cancel_lifecycle_run) and canceled:
+            self._cancel_lifecycle_run(
+                run_id,
+                "pipeline",
+                finished_at=finished_at,
+                terminal_reason=ABORT_TERMINAL_REASON,
+                summary={
+                    "terminalReason": ABORT_TERMINAL_REASON,
+                    **base_summary,
+                    **self._abort_metadata(run_id),
+                },
+                progress=progress,
+            )
+            return
+        if callable(self._fail_lifecycle_run) and status == "error":
+            self._fail_lifecycle_run(
+                run_id,
+                "pipeline",
+                finished_at=finished_at,
+                terminal_reason="failed",
+                summary={"error": error, **base_summary},
+                progress=progress,
+            )
+            return
+        if callable(self._finish_lifecycle_run):
+            self._finish_lifecycle_run(
+                run_id,
+                "pipeline",
+                finished_at=finished_at,
+                terminal_reason=(
+                    "completed_with_warnings" if completed_with_warnings else "completed"
+                ),
+                summary={
+                    **base_summary,
+                    "warnings": clean_warnings,
+                    "syncWarning": clean_sync_warning,
+                    "completedWithWarnings": bool(completed_with_warnings),
+                },
+                progress=progress,
+            )
+
     def _set_completed(
         self,
         *,
@@ -824,6 +922,7 @@ class PipelineService:
                     "syncWarning": clean_sync_warning,
                     "completedWithWarnings": bool(completed_with_warnings),
                 }
+            self._append_terminal_stage_ledger_entry(finished_at)
             post_publish_payload = self._build_post_publish_payload(
                 run_id=run_id,
                 status=status,
@@ -833,58 +932,25 @@ class PipelineService:
                 completed_with_warnings=completed_with_warnings,
             )
             progress = self._pipeline_lifecycle_progress(dict(self._status))
+            stage_ledger = self._snapshot_stage_ledger()
             status_snapshot = dict(self._status)
             if run_id:
-                if callable(self._cancel_lifecycle_run) and canceled:
-                    self._cancel_lifecycle_run(
-                        run_id,
-                        "pipeline",
-                        finished_at=finished_at,
-                        terminal_reason=ABORT_TERMINAL_REASON,
-                        summary={
-                            "terminalReason": ABORT_TERMINAL_REASON,
-                            "baselineOutputCount": baseline,
-                            "jobsPageLoadedCount": loaded,
-                            "finalOutputCount": int(final_output_count or 0),
-                            "updatesFound": bool(updates_found),
-                            **self._abort_metadata(run_id),
-                        },
-                        progress=progress,
-                    )
-                elif callable(self._fail_lifecycle_run) and status == "error":
-                    self._fail_lifecycle_run(
-                        run_id,
-                        "pipeline",
-                        finished_at=finished_at,
-                        terminal_reason="failed",
-                        summary={
-                            "error": str(error or ""),
-                            "baselineOutputCount": baseline,
-                            "jobsPageLoadedCount": loaded,
-                            "finalOutputCount": int(final_output_count or 0),
-                            "updatesFound": bool(updates_found),
-                        },
-                        progress=progress,
-                    )
-                elif callable(self._finish_lifecycle_run):
-                    self._finish_lifecycle_run(
-                        run_id,
-                        "pipeline",
-                        finished_at=finished_at,
-                        terminal_reason=(
-                            "completed_with_warnings" if completed_with_warnings else "completed"
-                        ),
-                        summary={
-                            "baselineOutputCount": baseline,
-                            "jobsPageLoadedCount": loaded,
-                            "finalOutputCount": int(final_output_count or 0),
-                            "updatesFound": bool(updates_found),
-                            "warnings": clean_warnings,
-                            "syncWarning": clean_sync_warning,
-                            "completedWithWarnings": bool(completed_with_warnings),
-                        },
-                        progress=progress,
-                    )
+                self._emit_terminal_lifecycle(
+                    run_id=run_id,
+                    status=status,
+                    canceled=canceled,
+                    completed_with_warnings=completed_with_warnings,
+                    finished_at=finished_at,
+                    baseline=baseline,
+                    loaded=loaded,
+                    final_output_count=int(final_output_count or 0),
+                    updates_found=bool(updates_found),
+                    error=str(error or ""),
+                    clean_warnings=clean_warnings,
+                    clean_sync_warning=clean_sync_warning,
+                    stage_ledger=stage_ledger,
+                    progress=progress,
+                )
             self._runtime.active_run_id = ""
             if self._runtime.abort_requests is not None:
                 self._runtime.abort_requests.pop(run_id, None)
@@ -1775,7 +1841,43 @@ class PipelineService:
                     error=error,
                 )
                 raise TimeoutError(error)
+            # ponytail: piggyback child phase observations onto the existing
+            # wait loop so the ledger sees sub-stages (e.g. fetch/loading_state,
+            # fetch/scraping_adapter) without an extra thread or extra I/O —
+            # the report file was already loaded this iteration.
+            self._record_child_phase_observation(task_type, normalized_report)
             self._report_wait_sleep(1.0)
+
+    def _record_child_phase_observation(
+        self, task_type: str, report: dict[str, Any] | None
+    ) -> None:
+        """Append a sub-stage ledger entry when the child's taskProgress.phaseKey changes.
+
+        Reads report["taskProgress"]["phaseKey"] / phaseLabel. If the phaseKey
+        is unchanged from the ledger's last entry, no-op. The ledger entry's
+        ``stage`` field is "<task_type>/<phaseKey>" so downstream tooling can
+        split sub-stage from top-level stage by "/" without a schema change.
+        """
+        if not isinstance(report, dict):
+            return
+        progress = report.get("taskProgress")
+        if not isinstance(progress, dict):
+            return
+        phase_key = str(progress.get("phaseKey") or "").strip()
+        if not phase_key:
+            return
+        clean_task = str(task_type or "").strip().lower()
+        sub_stage = f"{clean_task}/{phase_key}" if clean_task else phase_key
+        label = str(progress.get("phaseLabel") or "").strip() or phase_key
+        with self._lock:
+            ledger = self._status.setdefault("_stageLedger", [])
+            if not isinstance(ledger, list):
+                return
+            if ledger and str(ledger[-1].get("stage") or "") == sub_stage:
+                return
+            ledger.append({"stage": sub_stage, "enteredAt": self._now_iso(), "label": label})
+            if len(ledger) > 64:
+                del ledger[:-64]
 
     def _run_worker(self, run_id: str) -> None:
         try:
@@ -1853,6 +1955,7 @@ class PipelineService:
                     "activeChildRunId": "",
                     "activeChildPhaseLabel": "",
                     "activeChildDisplayLabel": "",
+                    "_stageLedger": [],
                     "runRegistryConflictAdjudication": bool(
                         (payload or {}).get("runRegistryConflictAdjudication")
                     ),
