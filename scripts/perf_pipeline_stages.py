@@ -885,6 +885,42 @@ def _stop_samplers(
             pass
 
 
+def _apply_bench_overrides(data_volume: Path) -> dict[str, str]:
+    """Overlay bench-safe settings on top of the seed volume before starting.
+
+    Production-shaped seeds include config that slows the bench without
+    informing it (e.g. the 8 000-URL gamedevmap active-audit crawl blocks
+    discovery for 15+ min). Bench mode disables gamedevmap *and* other
+    long-running audit hooks so the pipeline reaches fetch quickly and the
+    A/B comparison focuses on loading_state.
+
+    Returns a mapping of ``{relative_path: original_text}`` so we can restore
+    the seed after the run. Caller MUST call :func:`_restore_bench_overrides`
+    regardless of outcome.
+    """
+    overrides: dict[str, str] = {}
+    # Disable gamedevmap active audit (dominates discovery when enabled).
+    src_discovery_path = data_volume / "source-discovery-config.json"
+    if src_discovery_path.exists():
+        original = src_discovery_path.read_text(encoding="utf-8")
+        try:
+            cfg = json.loads(original) if original.strip() else {}
+        except json.JSONDecodeError:
+            return overrides  # never clobber a malformed config
+        cfg.setdefault("gamedevmap", {})["enabled"] = False
+        src_discovery_path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+        overrides[str(src_discovery_path)] = original
+    return overrides
+
+
+def _restore_bench_overrides(overrides: dict[str, str]) -> None:
+    for path, original in overrides.items():
+        try:
+            Path(path).write_text(original, encoding="utf-8")
+        except OSError:
+            pass
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     data_volume = Path(str(args.data_volume)).expanduser().resolve()
@@ -902,6 +938,11 @@ def main(argv: list[str] | None = None) -> int:
 
     base_url = f"http://127.0.0.1:{int(args.port)}"
     container_name = str(args.container_name)
+
+    # ponytail: seed data ships production config; the harness should never let
+    # production-shaped discovery audits block the bench. Overlay bench-mode
+    # overrides before starting the container and restore after.
+    overrides_backups = _apply_bench_overrides(data_volume)
 
     if args.fresh or not _container_is_running(container_name):
         _stop_container(container_name)
@@ -1019,6 +1060,7 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         if starting_fresh:
             _stop_container(container_name)
+        _restore_bench_overrides(overrides_backups)
 
     # Wait for the bridge to flush the lifecycle row to disk. Cheap retry loop.
     # ponytail: accept either finished or running rows; if the bridge is still
