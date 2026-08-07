@@ -10,18 +10,30 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+(placeholder for next-cycle entries)
+
+## [0.2.129] - 2026-08-07
+
 ### Added
 - Pipeline stage ledger: `PipelineService._mark_stage` now appends `{stage, enteredAt, label}` entries to an in-memory `_stageLedger` (hard cap 64 entries) and flushes the ledger into the persisted lifecycle row's `summary.stageLedger` on terminal status (completed / failed / canceled). `task_lifecycle._compact_lifecycle_summary` whitelists the new field so the ledger survives row compaction without a schema version bump.
 - Sub-stage observations: `wait_for_report_completion` now records child-process `taskProgress.phaseKey` transitions into the same ledger as `<taskType>/<phaseKey>` entries (e.g. `fetch/loading_state`, `discovery/probing_candidates`) during long-running discovery and fetch waits. Lets the benchmark and future diagnostics attribute wall clock + memory + CPU to sub-stages without a new thread or extra I/O.
 - Fetch prep writer now emits three sub-phases inside `loading_state` — `loading_state/read_source_state`, `loading_state/seed_redirect_cache`, `loading_state/read_lifecycle_state`. The bench harness picks them up via the existing sub-stage ledger splice, exposing the exact read that dominates the stage (lifecycle JSON, on every refresh).
 
 ### Tooling
-- Added `scripts/perf_pipeline_stages.py`: drives `POST /tasks/run-jobs-pipeline` against a seeded container, samples container process memory + CPU from the host (`docker stats` on Windows hosts, direct `/proc/<pid>/stat` on Linux), then cross-references the captured samples against the persisted `stageLedger` to emit per-stage wall-clock durations, peak/average RSS, CPU seconds, and MiB/s rates. Outputs `stages.json`, `samples.ndjson`, `report.md`, `FINDINGS.md` under `_out/perf-pipeline/<run-token>/`. Supports `--profile pi4-tight` (1.5 CPU / 1 GiB), `--preset smoke` (default), `--fresh` to force container rebuild, and reuses a healthy container when one is already running. First findings: on the seeded volume, `fetch/loading_state` consumes 83% of pipeline wall-clock (38.6 s of 46.4 s) at 770 MiB peak RSS.
+- Added `scripts/perf_pipeline_stages.py`: drives `POST /tasks/run-jobs-pipeline` against a seeded container, samples container process memory + CPU from the host (`docker stats` on Windows hosts, direct `/proc/<pid>/stat` on Linux), then cross-references the captured samples against the persisted `stageLedger` to emit per-stage wall-clock durations, peak/average RSS, CPU seconds, and MiB/s rates. Outputs `stages.json`, `samples.ndjson`, `report.md`, `FINDINGS.md` under `_out/perf-pipeline/<run-token>/`. Supports `--profile pi4-tight` (1.5 CPU / 1.5 GiB — raised from 1 GiB so the production-shaped seed's fetch workload fits), `--preset smoke` (default), `--fresh` to force container rebuild, and reuses a healthy container when one is already running. First findings: on the seeded volume, `fetch/loading_state` consumed 83% of pipeline wall-clock (38.6 s of 46.4 s) at 770 MiB peak RSS before the normalize short-circuit landed; post-fix it sits at ~22 s and ~612 MiB.
 
 ### Performance
 - `read_job_lifecycle_state` short-circuits when the on-disk payload already matches the writer's normalized shape (schemaVersion marker + spot-check of up to 100 rows for status/list/dict field invariants). Files written by `write_job_lifecycle_state` are normalized by construction, so the previous normalize-on-read was a pure no-op costing the dominant 38 s of `fetch/loading_state` on the seeded dataset at ~770 MiB peak RSS. Legacy or drifted payloads still fall back to full normalization; no on-disk schema or call-site changes.
-- `canonicalize_existing_output_row` now returns `CanonicalJob` directly using `dataclasses.replace` to overlay raw-only fields, eliminating the `to_dict()` → `from_mapping()` double round trip during `seeding_existing_output`. On the seeded 5.87 MB `jobs-unified.json.gz` volume this drops the previous triple materialization (raw dict → canonical dict → CanonicalJob) and produces roughly -25 % peak RSS during fetch prep on a 30 k-row seed. `read_existing_output` duck-types both dict and CanonicalJob returns; `_merge_concurrent_direct_live_rows` accepts either shape unchanged.
+- `read_existing_output` skips `canonicalize_job` for rows already carrying `availabilityId`+`jobLink` — they're already canonicalized by a previous run, so re-running the normalizer is a pure no-op. On the seeded 5.87 MB `jobs-unified.json.gz` (~40 586 rows) this drops fetch prep cost on the host from ~97 s to ~4.2 s and removes two of the three materializations previously alive simultaneously.
+- `canonicalize_existing_output_row` returns `CanonicalJob` directly using `dataclasses.replace` to overlay raw-only fields, eliminating the `to_dict()` → `from_mapping()` double round trip. `read_existing_output` duck-types both dict and CanonicalJob returns; `_merge_concurrent_direct_live_rows` accepts either shape unchanged.
 
+### Changed
+- Bench `pi4-tight` container profile moved from `1g` to `1.5g` memory. Production-shaped fetch workloads peak around 1.2 GiB inside `executing_sources`; the previous 1 GiB cap SIGKILLed the fetch child without a terminal report (surfaced as `owner_inactive_without_terminal_report` in the bridge).
+
+### Notes
+- This is a container/Umbrel patch only. No `v0.2.129` desktop tag, GitHub desktop release, desktop update, or desktop assets are published.
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, and the private community app-store metadata contract.
+- wildcard browser CORS allow headers and desktop localhost bridge compatibility remain unchanged from `0.2.128`.
 
 ### Fixed
 - `/tasks/abort` no longer hangs while the kill + report-repair run. The route now returns `202 aborting` as soon as the lifecycle row flips and runs `process_registry.terminate`, `repair_fetch_canceled_evidence`, and pipeline propagation on a daemon thread. Terminal/canceled branches still answer synchronously (`aborted: true` preserved). Admin "Stop fetch" becomes usable on a running job.

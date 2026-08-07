@@ -53,8 +53,10 @@ DEFAULT_MEMORY_INTERVAL_S = 0.1
 DEFAULT_CPU_INTERVAL_S = 0.5
 
 PROFILES: dict[str, dict[str, str]] = {
-    # mirrors perf_admin_flows.pi4-tight
-    "pi4-tight": {"cpus": "1.5", "memory": "1g"},
+    # Pipeline workload peaks near ~1.2 GiB RSS during executing_sources
+    # against the production-shaped seed — 1 GiB OOMs the fetch child; 1.5 GiB
+    # lets the smoke bench complete and is still Pi-class.
+    "pi4-tight": {"cpus": "1.5", "memory": "1.5g"},
 }
 
 
