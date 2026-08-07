@@ -20,6 +20,8 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ### Performance
 - `read_job_lifecycle_state` short-circuits when the on-disk payload already matches the writer's normalized shape (schemaVersion marker + spot-check of up to 100 rows for status/list/dict field invariants). Files written by `write_job_lifecycle_state` are normalized by construction, so the previous normalize-on-read was a pure no-op costing the dominant 38 s of `fetch/loading_state` on the seeded dataset at ~770 MiB peak RSS. Legacy or drifted payloads still fall back to full normalization; no on-disk schema or call-site changes.
+- `canonicalize_existing_output_row` now returns `CanonicalJob` directly using `dataclasses.replace` to overlay raw-only fields, eliminating the `to_dict()` → `from_mapping()` double round trip during `seeding_existing_output`. On the seeded 5.87 MB `jobs-unified.json.gz` volume this drops the previous triple materialization (raw dict → canonical dict → CanonicalJob) and produces roughly -25 % peak RSS during fetch prep on a 30 k-row seed. `read_existing_output` duck-types both dict and CanonicalJob returns; `_merge_concurrent_direct_live_rows` accepts either shape unchanged.
+
 
 ### Fixed
 - `/tasks/abort` no longer hangs while the kill + report-repair run. The route now returns `202 aborting` as soon as the lifecycle row flips and runs `process_registry.terminate`, `repair_fetch_canceled_evidence`, and pipeline propagation on a daemon thread. Terminal/canceled branches still answer synchronously (`aborted: true` preserved). Admin "Stop fetch" becomes usable on a running job.

@@ -112,13 +112,20 @@ class PipelineRunSetup:
     seeded_row_count: int
 
 
+from dataclasses import replace as _dc_replace
+
+
 def canonicalize_existing_output_row(
     row: dict[str, Any], *, source: str, fetched_at: str
-) -> dict[str, Any] | None:
+) -> CanonicalJob | None:
     normalized = canonicalize_job(row, source=source, fetched_at=fetched_at)
     if not normalized:
         return None
-    payload = normalized.to_dict()
+    # ponytail: stitch raw-only fields via dataclasses.replace (CanonicalJob
+    # is frozen, so attribute mutation is not possible). This avoids the
+    # to_dict() / from_mapping() round trip that was the dominant peak-RSS
+    # contributor during seeding.
+    updates: dict[str, Any] = {}
     for field_name in (
         "fetchedAt",
         "status",
@@ -136,19 +143,22 @@ def canonicalize_existing_output_row(
     ):
         value = row.get(field_name)
         if value not in (None, "", {}):
-            payload[field_name] = dict(value) if isinstance(value, dict) else value
-    if clean_text(row.get("dedupKey")):
-        payload["dedupKey"] = clean_text(row.get("dedupKey"))
+            updates[field_name] = dict(value) if isinstance(value, dict) else value
+    dedup_key = clean_text(row.get("dedupKey"))
+    if dedup_key and not normalized.dedupKey:
+        updates["dedupKey"] = dedup_key
     source_bundle = row.get("sourceBundle")
     if isinstance(source_bundle, list):
         bundle_rows = [dict(item) for item in source_bundle if isinstance(item, dict)]
         if bundle_rows:
-            payload["sourceBundle"] = bundle_rows
-            payload["sourceBundleCount"] = max(
+            updates["sourceBundle"] = bundle_rows
+            updates["sourceBundleCount"] = max(
                 len(bundle_rows),
-                int(row.get("sourceBundleCount") or payload.get("sourceBundleCount") or 0),
+                int(row.get("sourceBundleCount") or normalized.sourceBundleCount or 0),
             )
-    return payload
+    if updates:
+        normalized = _dc_replace(normalized, **updates)
+    return normalized
 
 
 def _seed_redirect_cache_from_state(
@@ -371,7 +381,10 @@ def prepare_pipeline_run(
             canonicalize_job=canonicalize_existing_output_row,
             clean_text=clean_text,
         )
-        canonical_rows.extend(CanonicalJob.from_mapping(row) for row in seeded_rows)
+        # canonicalize_existing_output_row returns CanonicalJob directly, so
+        # the previous `CanonicalJob.from_mapping(row)` double-conversion is
+        # unnecessary. Duck-typing accepted by read_existing_output.
+        canonical_rows.extend(seeded_rows)
     seeded_row_count = len(canonical_rows)
     prep_progress.emit(
         "seeding_existing_output",

@@ -369,7 +369,7 @@ def _deduplicate_or_preserve_previous(
             clean_text=clean_text,
         )
         if previous_rows:
-            deduped_rows = [CanonicalJob.from_mapping(row) for row in previous_rows]
+            deduped_rows = list(previous_rows)  # already CanonicalJob
             preserved_previous = True
     return deduped_rows, deduplicator.stats, preserved_previous
 
@@ -976,7 +976,7 @@ def _write_availability_artifacts(
 
 def _merge_concurrent_direct_live_rows(
     canonical_rows: list[CanonicalJob],
-    current_rows: list[dict[str, Any]],
+    current_rows: list[Any],
     lifecycle_rows: dict[str, dict[str, Any]],
 ) -> list[CanonicalJob]:
     merged = list(canonical_rows)
@@ -989,7 +989,9 @@ def _merge_concurrent_direct_live_rows(
         if isinstance(entry, dict) and clean_text(entry.get("availabilityId"))
     }
     for row in current_rows:
-        availability_id = clean_text(row.get("availabilityId"))
+        availability_id = clean_text(
+            row.availabilityId if isinstance(row, CanonicalJob) else row.get("availabilityId")
+        )
         entry = lifecycle_by_id.get(availability_id) or {}
         evidence = entry.get("availabilityEvidence")
         direct_live = (
@@ -999,7 +1001,10 @@ def _merge_concurrent_direct_live_rows(
             and clean_text(evidence.get("confidence")) == "definitive"
         )
         if availability_id and availability_id not in known_availability_ids and direct_live:
-            merged.append(CanonicalJob.from_mapping(row))
+            if isinstance(row, CanonicalJob):
+                merged.append(row)
+            else:
+                merged.append(CanonicalJob.from_mapping(row))
             known_availability_ids.add(availability_id)
     return merged
 

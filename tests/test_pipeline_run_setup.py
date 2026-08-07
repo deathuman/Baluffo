@@ -31,13 +31,25 @@ def test_prepare_pipeline_run_writes_prep_progress_before_source_execution(
 
         report = json.loads(setup.paths.report_path.read_text(encoding="utf-8"))
         setup_timing = (report.get("runtime") or {}).get("setupTiming") or {}
-        assert setup_timing["phaseOrder"] == [
+        # ponytail: phaseOrder is append-only and may include interleaved
+        # sub-stage keys like "loading_state/read_source_state" that the bench
+        # uses to attribute inside-loading-state cost. Assert the anchor
+        # sequence is preserved as a subsequence rather than pinning an exact
+        # list, so new observability emits don't churn this test.
+        expected_anchors = [
             "loading_state",
             "seeding_existing_output",
             "selecting_sources",
             "applying_exclusions",
             "initializing_runtime",
         ]
+        phase_order = setup_timing["phaseOrder"]
+        cursor = 0
+        for anchor in expected_anchors:
+            while cursor < len(phase_order) and phase_order[cursor] != anchor:
+                cursor += 1
+            assert cursor < len(phase_order), f"missing anchor phase: {anchor}"
+            cursor += 1
         assert "totalSetupMs" in setup_timing
         assert setup_timing["counts"]["selectedSourceCount"] == 0
     finally:
