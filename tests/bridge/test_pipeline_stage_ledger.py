@@ -253,3 +253,112 @@ def test_record_child_phase_observation_caps_at_64() -> None:
     assert len(ledger) == 64
     assert ledger[0]["stage"] == "fetch/phase_6"
     assert ledger[-1]["stage"] == "fetch/phase_69"
+
+
+# --- G2: get_status_payload emits stageTransitions + stallInfo ---
+
+
+def test_status_payload_emits_stage_transitions() -> None:
+    ticks = [f"2026-08-04T00:00:{i:02d}Z" for i in range(10)]
+    svc = _make_service(now_iso=_now_iso_factory(ticks))
+    svc._status.update(
+        {"runId": "pipeline_g2a", "active": True, "_stageLedger": [], "_stageTransitions": []}
+    )
+
+    svc._mark_stage(stage="discovery", current_step=0, total_steps=1, label="Source discovery")
+    svc._mark_stage(stage="fetch", current_step=0, total_steps=3, label="Fetching job listings")
+
+    payload = svc.get_status_payload()
+    transitions = payload.get("stageTransitions")
+    assert isinstance(transitions, list)
+    assert len(transitions) == 2
+    assert transitions[0]["to"] == "discovery"
+    assert transitions[1]["to"] == "fetch"
+    assert all(set(e.keys()) == {"from", "to", "at"} for e in transitions)
+    # defensive copy — mutating payload must not touch internal state
+    transitions.append({"from": "x", "to": "y", "at": "z"})
+    assert len(svc._status["_stageTransitions"]) == 2
+
+
+def test_status_payload_emits_stall_info_when_heartbeat_stale() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    stale_heartbeat = (datetime.now(UTC) - timedelta(seconds=200)).isoformat()
+
+    svc = _make_service(parse_iso=_parse_iso)
+    svc._status.update(
+        {
+            "runId": "pipeline_g2b",
+            "active": True,
+            "stage": "fetch",
+            "activeChildTaskType": "fetch",
+            "heartbeatAt": stale_heartbeat,
+            "_stageLedger": [],
+            "_stageTransitions": [],
+        }
+    )
+
+    payload = svc.get_status_payload()
+    stall = payload.get("stallInfo")
+    assert stall is not None
+    assert stall["stalled"] is True
+    assert stall["inChild"] == "fetch"
+    assert stall["thresholdSeconds"] == 180.0
+    assert stall["silentSeconds"] >= 200.0
+
+
+def test_status_payload_omits_stall_info_when_not_stalled() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    fresh_heartbeat = (datetime.now(UTC) - timedelta(seconds=10)).isoformat()
+
+    svc = _make_service(parse_iso=_parse_iso)
+    svc._status.update(
+        {
+            "runId": "pipeline_g2c",
+            "active": True,
+            "stage": "fetch",
+            "activeChildTaskType": "fetch",
+            "heartbeatAt": fresh_heartbeat,
+            "_stageLedger": [],
+            "_stageTransitions": [],
+        }
+    )
+
+    payload = svc.get_status_payload()
+    assert "stallInfo" not in payload
+
+
+# --- G4: _stageTransitions resets between runs ---
+
+
+def test_start_task_initialises_empty_stage_transitions() -> None:
+    svc = _make_service()
+    svc._status["_stageTransitions"] = [{"from": "x", "to": "y", "at": "z"}]
+    # Simulate the start_task initializer reset (line ~1989)
+    svc._status.update(
+        {
+            "active": True,
+            "runId": "pipeline_new",
+            "stage": "starting",
+            "_stageLedger": [],
+            "_stageTransitions": [],
+        }
+    )
+    assert svc._status["_stageTransitions"] == []
+
+
+def test_stage_transitions_caps_at_16() -> None:
+    ticks = [f"2026-08-04T00:{i // 60:02d}:{i % 60:02d}Z" for i in range(40)]
+    svc = _make_service(now_iso=_now_iso_factory(ticks))
+    svc._status.update(
+        {"runId": "pipeline_g4b", "active": True, "_stageLedger": [], "_stageTransitions": []}
+    )
+
+    for i in range(20):
+        svc._mark_stage(stage="discovery", current_step=i, total_steps=20, label=f"Discovery {i}")
+        svc._mark_stage(stage="fetch", current_step=i, total_steps=20, label=f"Fetch {i}")
+
+    transitions = svc._status.get("_stageTransitions") or []
+    assert len(transitions) == 16
+    assert transitions[-1]["to"] == "fetch"

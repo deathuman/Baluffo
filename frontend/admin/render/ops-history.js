@@ -185,6 +185,9 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
   const olderCompletedRows = Array.isArray(model.olderCompletedRows) ? model.olderCompletedRows : [];
   const waitingForTaskState = Boolean(options?.waitingForTaskState);
   const taskStateUnavailable = Boolean(options?.taskStateUnavailable);
+  // ponytail: distinguish "bridge hiccup" from "no active tasks": if last fetch failed,
+  // we show "Task state temporarily unavailable" instead of the generic empty-state copy.
+  const taskStateError = String(options?.taskStateError || "").trim();
   const historyPending = Boolean(options?.historyPending);
   const historyLoaded = options?.historyLoaded !== false;
   const historyError = String(options?.historyError || "").trim();
@@ -199,7 +202,9 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
     historyEl.innerHTML = waitingForTaskState
       ? '<div class="admin-ops-loading">Waiting for task state...</div>'
       : taskStateUnavailable
-        ? '<div class="admin-ops-loading">Task state unavailable. Current runs may be stale.</div>'
+        ? (taskStateError
+          ? `<div class="admin-ops-loading">Task state temporarily unavailable${taskStateError ? ` (${escapeHtml(taskStateError)})` : ""}. Retrying.</div>`
+          : '<div class="admin-ops-loading">Task state unavailable. Current runs may be stale.</div>')
       : '<div class="no-results">No run history yet.</div>';
     if (canPatchInPlace) {
       delete historyEl.dataset.opsStructureSig;

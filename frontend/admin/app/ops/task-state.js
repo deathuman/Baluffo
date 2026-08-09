@@ -64,9 +64,13 @@ export function createOpsTaskStateController({
       || typeof taskStateResult.value !== "object"
       || Array.isArray(taskStateResult.value)
     ) {
-      const message = taskStateResult?.status === "rejected"
+      const isRejected = taskStateResult?.status === "rejected";
+      const message = isRejected
         ? String(taskStateResult.reason?.message || taskStateResult.reason || "Task state unavailable.")
         : "Task state unavailable.";
+      // ponytail: track failed task-state fetch separately from "empty list"
+      // so admin can show different placeholder for "bridge hiccup" vs "no active tasks".
+      state.lastTaskStateError = message;
       return rememberTaskStatePayload({
         tasks: [],
         count: 0,
@@ -74,6 +78,7 @@ export function createOpsTaskStateController({
         diagnostics: [{ code: "task_state_unavailable", message }]
       });
     }
+    state.lastTaskStateError = "";
     return acceptLifecycleTaskStatePayload(taskStateResult.value);
   }
 

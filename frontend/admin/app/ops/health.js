@@ -1533,6 +1533,9 @@ export function createOpsHealthController({
         onAbortRun: handleAbortRun,
         waitingForTaskState: Boolean(state.waitingForTaskState),
         taskStateUnavailable: Boolean(state.taskStateUnavailable),
+        // ponytail: pass task-state last error so renderer can distinguish
+        // "empty list" (server answered, no rows) from "bridge hiccup".
+        taskStateError: String(state.lastTaskStateError || "").trim(),
         historyPending: Boolean(state.opsHistoryLoadPending),
         historyLoaded: Boolean(state.opsHistoryLoaded),
         historyError: state.opsHistoryLastError,
@@ -1563,6 +1566,7 @@ export function createOpsHealthController({
         onAbortRun: handleAbortRun,
         waitingForTaskState: Boolean(state.waitingForTaskState),
         taskStateUnavailable: Boolean(state.taskStateUnavailable),
+        taskStateError: String(state.lastTaskStateError || "").trim(),
         historyPending: Boolean(state.opsHistoryLoadPending),
         historyLoaded: Boolean(state.opsHistoryLoaded),
         historyError: state.opsHistoryLastError,
@@ -2420,6 +2424,7 @@ export function createOpsHealthController({
       onAbortRun: handleAbortRun,
       waitingForTaskState: Boolean(state.waitingForTaskState),
       taskStateUnavailable: Boolean(state.taskStateUnavailable),
+      taskStateError: String(state.lastTaskStateError || "").trim(),
       historyPending: Boolean(state.opsHistoryLoadPending),
       historyLoaded: Boolean(state.opsHistoryLoaded),
       historyError: state.opsHistoryLastError,

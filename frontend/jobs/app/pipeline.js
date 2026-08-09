@@ -16,7 +16,10 @@ export const JOBS_UPDATE_COPY = Object.freeze({
   startedToast: "Job update started.",
   startFailed: "Could not start job update.",
   abortLabel: "Abort update",
-  abortingLabel: "Aborting..."
+  abortingLabel: "Aborting...",
+  // ponytail: separate from updatingLabel so stall copy can append "(no progress
+  // for 1m 30s)" without replacing the running label itself.
+  stalledSuffixLabel: "No progress"
 });
 
 export function getJobsUpdateUnavailableTooltip(error) {

@@ -31,6 +31,9 @@ export function createAdminRuntimeState() {
     latestRegistryConflictsPayload: null,
     latestTaskStatePayload: null,
     waitingForTaskState: false,
+    // ponytail: distinguish "server answered with empty task list" from
+    // "task-state fetch failed"; populated by ops/task-state.js controller.
+    lastTaskStateError: "",
     latestSyncStatusCache: null,
     latestDiscoveryConfigCache: null,
     syncConfigDirty: false,

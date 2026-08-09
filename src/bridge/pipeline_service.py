@@ -28,6 +28,7 @@ from src.bridge.pipeline_control_files import (
     read_abort_request,
     write_pipeline_status,
 )
+from src.bridge.pipeline_stall import compute_pipeline_stall_info
 from src.bridge.task_abort_evidence import ABORT_TERMINAL_REASON, row_abort_requested
 
 PIPELINE_COMPLETION_NOTIFICATION_MIN_SECONDS = 60.0
@@ -336,11 +337,16 @@ class PipelineService:
             status_snapshot = dict(self._status)
         self._write_control_status(status_snapshot)
 
+    # ponytail: keep this inline with the four user-visible stages, no config knob.
+    _TOP_LEVEL_STAGES = {"preflight", "discovery", "fetch", "sync_push", "completed"}
+
     def _mark_stage(
         self, *, stage: str, current_step: int, total_steps: int, label: str, error: str = ""
     ) -> None:
         with self._lock:
-            self._status["stage"] = str(stage or "unknown")
+            prev_stage = str(self._status.get("stage") or "").strip()
+            new_stage = str(stage or "unknown")
+            self._status["stage"] = new_stage
             self._status["progress"] = self._pipeline_progress(current_step, total_steps, label)
             progress = self._pipeline_lifecycle_progress(dict(self._status))
             run_id = str(self._status.get("runId") or "")
@@ -350,13 +356,31 @@ class PipelineService:
             if isinstance(ledger, list):
                 ledger.append(
                     {
-                        "stage": str(stage or "unknown"),
+                        "stage": new_stage,
                         "enteredAt": entered_at,
                         "label": str(label or ""),
                     }
                 )
                 if len(ledger) > 64:
                     del ledger[:-64]
+            # ponytail: track top-level user-visible transitions (separate from sub-stage
+            # ledger), used by the jobs CTA / admin to show "source discovery ->
+            # fetching" moments without parsing stageLedger each tick.
+            transitions = self._status.setdefault("_stageTransitions", [])
+            if (
+                isinstance(transitions, list)
+                and new_stage in self._TOP_LEVEL_STAGES
+                and new_stage != prev_stage
+            ):
+                transitions.append(
+                    {
+                        "from": prev_stage,
+                        "to": new_stage,
+                        "at": entered_at,
+                    }
+                )
+                if len(transitions) > 16:
+                    del transitions[:-16]
             if error:
                 self._status["error"] = str(error)
             stage_child_type = self._child_stage_task_type(str(stage or ""))
@@ -1213,6 +1237,10 @@ class PipelineService:
         self._recover_inactive_worker_after_terminal_child()
         with self._lock:
             payload = dict(self._status)
+            # ponytail: expose user-visible stage transitions for the jobs CTA; keep
+            # the raw _stageLedger internal, since pipeline_service flushes it via
+            # terminal lifecycle already.
+            payload["stageTransitions"] = list(self._status.get("_stageTransitions") or [])[:16]
             progress = payload.get("progress")
             payload["progress"] = (
                 dict(progress)
@@ -1221,6 +1249,12 @@ class PipelineService:
             )
             payload["active"] = bool(payload.get("active"))
             payload["appVersion"] = self._get_app_version()
+            # ponytail: stall detection lives in a pure helper module
+            # (src/bridge/pipeline_stall.py) so it can be tested without the
+            # circular-import risk that blocks pipeline_service itself.
+            stall = compute_pipeline_stall_info(payload, parse_iso=self._parse_iso)
+            if stall:
+                payload["stallInfo"] = stall
             return payload
 
     def _refresh_child_lifecycle_evidence(
@@ -1956,6 +1990,7 @@ class PipelineService:
                     "activeChildPhaseLabel": "",
                     "activeChildDisplayLabel": "",
                     "_stageLedger": [],
+                    "_stageTransitions": [],
                     "runRegistryConflictAdjudication": bool(
                         (payload or {}).get("runRegistryConflictAdjudication")
                     ),

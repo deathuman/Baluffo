@@ -17,6 +17,10 @@ const ABORT_REQUEST_VERIFY_GRACE_MS = 5000;
 const PIPELINE_START_TIMEOUT_MS = 18000;
 const PIPELINE_ACTIVE_STATUS_GRACE_MS = 45000;
 const IDLE_TASK_STATE_RECHECK_MS = 5000;
+// ponytail: while pipeline is already known active, do not hammer /ops/task-state;
+// 15 s cadence is enough to keep abort affordance visible without I/O pressure
+// during heavy fetch writes.
+const ACTIVE_TASK_STATE_MIN_GAP_MS = 15000;
 
 /**
  * @param {import("../../../shared/types.js").TaskStatePayload|null|undefined} payload
@@ -205,6 +209,39 @@ function clearRememberedActivePipeline(jobsPipelineUiState) {
   if (!jobsPipelineUiState) return;
   jobsPipelineUiState.lastActivePipelinePayload = null;
   jobsPipelineUiState.lastActivePipelineSeenAt = 0;
+  jobsPipelineUiState.stageTransitionSeenCount = 0;
+}
+
+// ponytail: surface stage-transition moments ("now fetching…", "now syncing…")
+// without parsing stageLedger each tick. Only toasts new transitions (append-only
+// source). Skips silent stages that don't change the user-visible CTA label.
+function maybeToastStageTransitions(jobsPipelineUiState, payload, showToast) {
+  if (!jobsPipelineUiState || !payload || typeof payload !== "object") return;
+  const transitions = Array.isArray(payload.stageTransitions) ? payload.stageTransitions : [];
+  const total = transitions.length;
+  if (!Number.isFinite(total) || total <= 0) return;
+  const prev = Number(jobsPipelineUiState.stageTransitionSeenCount || 0);
+  if (total <= prev) {
+    // Defensive: if backend shrank (restart/new run), snap seen count down.
+    jobsPipelineUiState.stageTransitionSeenCount = total;
+    return;
+  }
+  const news = transitions.slice(prev, total);
+  const latest = news[news.length - 1];
+  jobsPipelineUiState.stageTransitionSeenCount = total;
+  const to = String(latest?.to || "").trim().toLowerCase();
+  if (!to) return;
+  // ponytail: only the four main stages the user actually cares about;
+  // skip internal stages (aborting, pipeline_owned, registry_conflicts…).
+  const copy = ({
+    discovery: "Source discovery",
+    fetch: "Fetching job listings",
+    sync_push: "Syncing results",
+    sync: "Syncing results",
+    completed: "Finishing up"
+  })[to] || "";
+  if (!copy) return;
+  showToast(copy, "info");
 }
 
 function pipelineStartAttachedToast(message) {
@@ -256,20 +293,37 @@ export function createJobsPipelineController({
     if (!abortable || aborting) {
       jobsPipelineUiState.abortRevealActive = false;
     }
+    // ponytail: when stallInfo is present, surface it in the tooltip so the
+    // user sees "Updating... (no progress for 2m 15s)" instead of static
+    // "Updating jobs..." copy.
+    const stallInfo = pipelinePayload?.stallInfo && typeof pipelinePayload.stallInfo === "object"
+      ? pipelinePayload.stallInfo
+      : null;
+    const baseTooltip = getJobsUpdateTooltip({
+      bridgeError: jobsPipelineUiState.updateTooltipBridgeError,
+      firstRunBootstrapActive: Boolean(
+        firstRunBootstrapActive || jobsPipelineUiState.updateTooltipFirstRunBootstrapActive
+      ),
+      firstRun: jobsPipelineUiState.updateTooltipFirstRun,
+      firstRunKnown: jobsPipelineUiState.updateTooltipFirstRunKnown
+    });
+    let stallSuffix = "";
+    if (stallInfo && running && !jobsPipelineUiState.updateTooltipBridgeError) {
+      const silent = Number(stallInfo.silentSeconds || 0);
+      if (Number.isFinite(silent) && silent >= 1) {
+        // ponytail: compact "1m 30s" style duration; keeps tooltip readable
+        // without importing the admin fetcher-summary helper.
+        const totalMin = Math.max(1, Math.round(silent / 60));
+        stallSuffix = `\n${JOBS_UPDATE_COPY.stalledSuffixLabel} for ${totalMin}m.`;
+      }
+    }
     updateJobsPipelineUiFromModule(refs, {
       pipelinePayload,
       running,
       disabled,
       buttonLabel: aborting ? JOBS_UPDATE_COPY.abortingLabel : buttonLabel,
       progressLabel,
-      buttonTooltip: getJobsUpdateTooltip({
-        bridgeError: jobsPipelineUiState.updateTooltipBridgeError,
-        firstRunBootstrapActive: Boolean(
-          firstRunBootstrapActive || jobsPipelineUiState.updateTooltipFirstRunBootstrapActive
-        ),
-        firstRun: jobsPipelineUiState.updateTooltipFirstRun,
-        firstRunKnown: jobsPipelineUiState.updateTooltipFirstRunKnown
-      }),
+      buttonTooltip: baseTooltip + stallSuffix,
       isError,
       abortable,
       aborting
@@ -474,6 +528,10 @@ export function createJobsPipelineController({
     jobsPipelineUiState.runId = runId;
     jobsPipelineUiState.startedAt = startedAt;
     rememberActivePipelinePayload(jobsPipelineUiState, activePayload);
+    // ponytail: notice new stage transitions and toast them once per stage.
+    // Backend emits stageTransitions as an append-only list via
+    // /tasks/run-jobs-pipeline-status; we track how many we've already seen.
+    maybeToastStageTransitions(jobsPipelineUiState, activePayload, showToast);
     const childTaskType = normalizeTaskType(blockingTask);
     if (blockingTask && childTaskType && childTaskType !== "pipeline") {
       const firstRunBootstrapActive = isFirstRunBootstrapTask(blockingTask);
@@ -580,16 +638,20 @@ export function createJobsPipelineController({
       const active = Boolean(payload?.active);
       const runId = String(payload?.runId || "");
       const trackedRunId = String(jobsPipelineUiState.runId || "");
+      // ponytail: when pipeline is already known active and we have a fresh
+      // task-state snapshot, skip the poll -- UI already has stable context;
+      // re-polling during heavy fetch writes starves the bridge.
+      const activeTaskStateStale = !jobsPipelineUiState.lastTaskStateSummaryCheckedAt
+        || (Date.now() - jobsPipelineUiState.lastTaskStateSummaryCheckedAt) >= ACTIVE_TASK_STATE_MIN_GAP_MS;
       const shouldLoadTaskState = Boolean(
         !isContainerRuntimeMode?.()
         && (
-          active
-          || jobsPipelineUiState.active
-          || jobsPipelineUiState.pendingStart
-          || trackedRunId
-          || jobsPipelineUiState.abortRequested
-          || !jobsPipelineUiState.taskStateSummaryChecked
-          || shouldRecheckIdleTaskState(jobsPipelineUiState)
+          (active && activeTaskStateStale) // active pipeline: refresh every 15s, not every 1.5s
+          || jobsPipelineUiState.pendingStart // always fetch during pipeline startup
+          || (!active && (trackedRunId || jobsPipelineUiState.active)) // handle recently-finished pipelines
+          || jobsPipelineUiState.abortRequested  // always fetch during abort flow
+          || !jobsPipelineUiState.taskStateSummaryChecked // initial check
+          || (!active && shouldRecheckIdleTaskState(jobsPipelineUiState)) // periodic idle rechecks
         )
       );
       let taskStateKnown = false;
