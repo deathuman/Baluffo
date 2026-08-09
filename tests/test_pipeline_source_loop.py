@@ -122,3 +122,97 @@ def test_execute_loader_started_returns_fallback_report_for_expected_profiled_fa
         "started": ["source_a"],
         "finished": [report],
     }
+
+
+def test_run_selected_loaders_batches_futures_to_bound_live_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_run_selected_loaders must not submit all 2k+ loaders at once.
+
+    Regression: the fetch stage kept every queued future alive in one
+    ThreadPoolExecutor batch, pushing the 1.5 GiB container over its memory
+    cap before fetch could finish.
+    """
+    from concurrent.futures import Future
+
+    live_peak = 0
+    live_now = 0
+    lock = Lock()
+
+    class _TrackingExecutor:
+        def __init__(self, max_workers: int = 1):
+            self.max_workers = max_workers
+
+        def __enter__(self) -> _TrackingExecutor:
+            return self
+
+        def __exit__(self, *_args: Any) -> bool:
+            return False
+
+        def submit(self, fn: Any, source_name: str, loader: Any) -> Future:
+            nonlocal live_peak, live_now
+            future: Future = Future()
+            with lock:
+                live_now += 1
+                live_peak = max(live_peak, live_now)
+            try:
+                result = fn(source_name, loader)
+                future.set_result(result)
+            finally:
+                with lock:
+                    live_now -= 1
+            return future
+
+    monkeypatch.setattr(pipeline_source_loop, "ThreadPoolExecutor", _TrackingExecutor)
+
+    rows: list[Any] = []
+    reports: list[dict[str, Any]] = []
+
+    def fake_execute(source_name: str, loader: Any) -> tuple[dict[str, Any], list[Any]]:
+        return ({"name": source_name}, [source_name])
+
+    loaders = [(f"src_{i:04d}", i) for i in range(30)]
+    pipeline_source_loop._run_selected_loaders(
+        selected_loaders=loaders,
+        max_workers=2,  # window = max(8, 2*4) = 8
+        execute_loader_started=fake_execute,
+        canonical_rows=rows,
+        source_reports=reports,
+    )
+
+    assert len(rows) == 30
+    assert len(reports) == 30
+    # The peak live set for windowed batching must never exceed the window size;
+    # before this change it would be the full 30 futures submitted up-front.
+    assert live_peak <= 8, f"live futures peaked at {live_peak}, window is 8"
+
+
+def test_run_selected_loaders_sequential_path_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """max_workers <= 1 must keep the original sequential loop untouched."""
+    submitted: list[str] = []
+
+    class _NoopExecutor:
+        def __init__(self, max_workers: int = 1):
+            raise AssertionError("ThreadPoolExecutor must not be created in sequential path")
+
+    monkeypatch.setattr(pipeline_source_loop, "ThreadPoolExecutor", _NoopExecutor)
+
+    rows: list[Any] = []
+    reports: list[dict[str, Any]] = []
+
+    def fake_execute(source_name: str, loader: Any) -> tuple[dict[str, Any], list[Any]]:
+        submitted.append(source_name)
+        return ({"name": source_name}, [])
+
+    pipeline_source_loop._run_selected_loaders(
+        selected_loaders=[("a", 1), ("b", 2)],
+        max_workers=1,
+        execute_loader_started=fake_execute,
+        canonical_rows=rows,
+        source_reports=reports,
+    )
+
+    assert submitted == ["a", "b"]
+    assert len(reports) == 2

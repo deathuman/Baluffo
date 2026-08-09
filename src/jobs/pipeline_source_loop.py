@@ -263,14 +263,19 @@ def _run_selected_loaders(
             )
         return
 
+    # ponytail: bound the live future set. Submitting all 2k loaders at once pins
+    # every queued adapter/future in memory and can push the fetch container over
+    # the 1.5 GiB cap before fetch finishes.
+    window = max(8, max_workers * 4)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {
-            executor.submit(execute_loader_started, source_name, loader): source_name
-            for source_name, loader in selected_loaders
-        }
-        for future in as_completed(futures):
-            _append_loader_result(
-                future.result(),
-                canonical_rows=canonical_rows,
-                source_reports=source_reports,
-            )
+        for start in range(0, len(selected_loaders), window):
+            futures = {
+                executor.submit(execute_loader_started, source_name, loader): source_name
+                for source_name, loader in selected_loaders[start : start + window]
+            }
+            for future in as_completed(futures):
+                _append_loader_result(
+                    future.result(),
+                    canonical_rows=canonical_rows,
+                    source_reports=source_reports,
+                )
