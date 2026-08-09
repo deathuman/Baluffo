@@ -219,24 +219,35 @@ def _apply_prepared_identity(
 def _post_assignment_repair_plan(
     rows: Sequence[CanonicalJob],
 ) -> tuple[set[str], dict[str, str], dict[str, str]]:
+    # ponytail: materialize only (availability_id, token, url_alias) per row —
+    # the full row.to_dict() per pass was keeping 40k+ dicts alive across the
+    # repair phase. Two small dicts + a set fit comfortably in memory at peak.
     ids_to_tokens: dict[str, set[str]] = defaultdict(set)
-    for canonical_row in rows:
+    url_alias_by_token: dict[str, str] = {}
+    token_by_row: dict[int, str] = {}
+    for idx, canonical_row in enumerate(rows):
+        payload_availability_id = clean_text(getattr(canonical_row, "availabilityId", ""))
+        if not payload_availability_id:
+            continue
         row = canonical_row.to_dict()
-        availability_id = clean_text(row.get("availabilityId"))
         token = _row_identity_token(row)
-        if availability_id and token:
-            ids_to_tokens[availability_id].add(token)
+        if token:
+            ids_to_tokens[payload_availability_id].add(token)
+            url_alias = _url_alias(row)
+            if token and url_alias:
+                url_alias_by_token[token] = url_alias
+        token_by_row[idx] = token
     contaminated_ids = {
         availability_id for availability_id, tokens in ids_to_tokens.items() if len(tokens) > 1
     }
     replacements: dict[str, str] = {}
     rejected_tokens: dict[str, str] = {}
-    for canonical_row in rows:
-        row = canonical_row.to_dict()
-        if clean_text(row.get("availabilityId")) not in contaminated_ids:
+    for idx, canonical_row in enumerate(rows):
+        payload_availability_id = clean_text(getattr(canonical_row, "availabilityId", ""))
+        if payload_availability_id not in contaminated_ids:
             continue
-        token = _row_identity_token(row)
-        url_alias = _url_alias(row)
+        token = token_by_row.get(idx, "")
+        url_alias = url_alias_by_token.get(token, "")
         if url_alias:
             replacements[token] = _availability_id(url_alias)
         elif token:

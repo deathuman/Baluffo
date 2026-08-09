@@ -12,6 +12,7 @@ import json
 import threading
 import time
 from collections import Counter
+from collections.abc import Callable
 from contextlib import contextmanager
 from functools import wraps
 from pathlib import Path
@@ -1010,6 +1011,37 @@ def _merge_concurrent_direct_live_rows(
     return merged
 
 
+def _direct_live_row_predicate(
+    lifecycle_rows: dict[str, dict[str, Any]],
+) -> Callable[[dict[str, Any]], bool]:
+    """Build a filter that only accepts rows matching the direct-live merge test.
+
+    Lets `_serialize_jobs_feed_reconciliation` skip CanonicalJob conversion for
+    the 40k+ pre-existing jobs that aren't direct-live — that conversion alone
+    was the single biggest memory allocation during finalize.
+    """
+    lifecycle_by_id = {
+        clean_text(entry.get("availabilityId")): entry
+        for entry in lifecycle_rows.values()
+        if isinstance(entry, dict) and clean_text(entry.get("availabilityId"))
+    }
+
+    def _matches(row: dict[str, Any]) -> bool:
+        availability_id = clean_text(row.get("availabilityId"))
+        if not availability_id:
+            return False
+        entry = lifecycle_by_id.get(availability_id) or {}
+        evidence = entry.get("availabilityEvidence")
+        return (
+            clean_text(entry.get("availabilityStatus")) == "available"
+            and isinstance(evidence, dict)
+            and clean_text(evidence.get("kind")) == "direct_live"
+            and clean_text(evidence.get("confidence")) == "definitive"
+        )
+
+    return _matches
+
+
 def _serialize_jobs_feed_reconciliation(func):
     @wraps(func)
     def wrapped(*args, **kwargs):
@@ -1021,12 +1053,15 @@ def _serialize_jobs_feed_reconciliation(func):
                 kwargs = dict(kwargs)
                 latest_lifecycle = read_job_lifecycle_state(paths.lifecycle_state_path)
                 kwargs["lifecycle_rows"] = latest_lifecycle
+                # ponytail: only convert direct-live rows to CanonicalJob; skip
+                # the 40k+ pre-existing rows that will be filtered out anyway.
                 current_rows = read_existing_output(
                     paths.json_path,
                     clean_text(kwargs.get("started_at")) or now_iso(),
                     canonicalize_job=canonicalize_existing_output_row,
                     clean_text=clean_text,
                     canonical_job_cls=CanonicalJob,
+                    row_predicate=_direct_live_row_predicate(latest_lifecycle),
                 )
                 kwargs["canonical_rows"] = _merge_concurrent_direct_live_rows(
                     list(kwargs.get("canonical_rows") or []), current_rows, latest_lifecycle

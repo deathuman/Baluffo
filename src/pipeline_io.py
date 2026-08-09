@@ -43,6 +43,7 @@ def read_existing_output(
     canonicalize_job: Callable[..., Any],
     clean_text: Callable[[Any], str],
     canonical_job_cls: type | None = None,
+    row_predicate: Callable[[dict[str, Any]], bool] | None = None,
 ) -> list[Any]:
     payload = read_json(Path(json_path), None)
     if payload is None:
@@ -54,6 +55,9 @@ def read_existing_output(
         rows = [row for row in payload["jobs"] if isinstance(row, dict)]
     else:
         return []
+
+    if row_predicate is not None:
+        rows = [row for row in rows if row_predicate(row)]
 
     # ponytail: rows already canonicalized are the common case; only truly raw
     # rows go through canonicalize_job. On the seeded 40k-row bench volume this
