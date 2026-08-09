@@ -12,7 +12,6 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
-from src.jobs.models import CanonicalJob
 from src.shared.json_io import gzip_backed_json_storage_path, read_json
 from src.storage_json_metrics import record_json_text_write
 
@@ -43,6 +42,7 @@ def read_existing_output(
     *,
     canonicalize_job: Callable[..., Any],
     clean_text: Callable[[Any], str],
+    canonical_job_cls: type | None = None,
 ) -> list[Any]:
     payload = read_json(Path(json_path), None)
     if payload is None:
@@ -66,6 +66,7 @@ def read_existing_output(
             fetched_at=fetched_at,
             canonicalize_job=canonicalize_job,
             clean_text=clean_text,
+            canonical_job_cls=canonical_job_cls,
         )
         if candidate is not None:
             restored.append(candidate)
@@ -78,12 +79,13 @@ def _existing_output_row_to_canonical(
     fetched_at: str,
     canonicalize_job: Callable[..., Any],
     clean_text: Callable[[Any], str],
+    canonical_job_cls: type | None = None,
 ) -> Any:
     dedup_key = clean_text(row.get("dedupKey"))
-    if row.get("availabilityId") and row.get("jobLink"):
-        candidate = CanonicalJob.from_mapping(row)
+    if canonical_job_cls is not None and row.get("availabilityId") and row.get("jobLink"):
+        candidate = canonical_job_cls.from_mapping(row)
         if dedup_key and not candidate.dedupKey:
-            candidate = CanonicalJob.from_mapping({**row, "dedupKey": dedup_key})
+            candidate = canonical_job_cls.from_mapping({**row, "dedupKey": dedup_key})
         return candidate
     normalized = canonicalize_job(
         row,
@@ -92,15 +94,19 @@ def _existing_output_row_to_canonical(
     )
     if not normalized:
         return None
-    if isinstance(normalized, CanonicalJob):
+    if canonical_job_cls is not None and isinstance(normalized, canonical_job_cls):
         if dedup_key and not normalized.dedupKey:
-            normalized = CanonicalJob.from_mapping({**normalized.to_dict(), "dedupKey": dedup_key})
+            normalized = canonical_job_cls.from_mapping(
+                {**normalized.to_dict(), "dedupKey": dedup_key}
+            )
         return normalized
     if isinstance(normalized, dict):
         if dedup_key:
             normalized["dedupKey"] = dedup_key
         return normalized
-    return None
+    # ponytail: duck-typed fallback — accept non-dict objects (e.g. CanonicalJob
+    # when canonical_job_cls was not provided) instead of silently dropping them.
+    return normalized
 
 
 def serialize_rows_for_json(rows: Sequence[RawJob], fields: Sequence[str]) -> str:

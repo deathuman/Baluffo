@@ -380,6 +380,7 @@ def prepare_pipeline_run(
             started_at,
             canonicalize_job=canonicalize_existing_output_row,
             clean_text=clean_text,
+            canonical_job_cls=CanonicalJob,
         )
         # canonicalize_existing_output_row returns CanonicalJob directly, so
         # the previous `CanonicalJob.from_mapping(row)` double-conversion is

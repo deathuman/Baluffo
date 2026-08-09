@@ -367,6 +367,7 @@ def _deduplicate_or_preserve_previous(
             started_at,
             canonicalize_job=canonicalize_existing_output_row,
             clean_text=clean_text,
+            canonical_job_cls=CanonicalJob,
         )
         if previous_rows:
             deduped_rows = list(previous_rows)  # already CanonicalJob
@@ -1025,6 +1026,7 @@ def _serialize_jobs_feed_reconciliation(func):
                     clean_text(kwargs.get("started_at")) or now_iso(),
                     canonicalize_job=canonicalize_existing_output_row,
                     clean_text=clean_text,
+                    canonical_job_cls=CanonicalJob,
                 )
                 kwargs["canonical_rows"] = _merge_concurrent_direct_live_rows(
                     list(kwargs.get("canonical_rows") or []), current_rows, latest_lifecycle
