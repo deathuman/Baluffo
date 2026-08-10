@@ -19,7 +19,7 @@ from src.jobs.common.datetime_utils import parse_datetime, to_iso
 from src.jobs.models import CanonicalJob
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
 from src.pipeline_io import write_atomic_if_changed
-from src.shared.json_io import read_json_object
+from src.shared.json_io import existing_json_candidate, read_json_object
 from src.shared.utils import now_iso
 
 from .common import config as common_config
@@ -114,6 +114,25 @@ def normalize_job_lifecycle_payload(
         "updatedAt": clean_text(src.get("updatedAt")) or clean_text(updated_at) or now_iso(),
         "jobs": out_jobs,
     }
+
+
+def lifecycle_state_fingerprint(path: Path) -> tuple[int, int] | None:
+    """Return ``(mtime_ns, size)`` for change detection. ``None`` if path is missing.
+
+    Resolves through ``existing_json_candidate`` so gzip-backed paths match
+    what ``read_job_lifecycle_state`` actually loads.
+
+    ponytail: mtime+size is good enough on local fs; a content hash would cost
+    more than a re-read for the concurrent-write case it's guarding against.
+    """
+    candidate = existing_json_candidate(path)
+    if candidate is None:
+        return None
+    try:
+        st = candidate.stat()
+    except OSError:
+        return None
+    return (int(st.st_mtime_ns), int(st.st_size))
 
 
 def read_job_lifecycle_state(state_path: Path) -> dict[str, dict[str, Any]]:

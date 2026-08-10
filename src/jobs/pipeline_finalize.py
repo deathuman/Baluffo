@@ -91,6 +91,7 @@ from src.jobs.state_lifecycle import (
     build_availability_history_payload,
     build_lifecycle_source_evidence,
     lifecycle_archive_state_path,
+    lifecycle_state_fingerprint,
     read_job_lifecycle_state,
     write_job_lifecycle_archive_state,
     write_job_lifecycle_state,
@@ -1051,7 +1052,16 @@ def _serialize_jobs_feed_reconciliation(func):
         with jobs_feed_reconciliation_lock(paths.output_dir):
             if existing_json_candidate(paths.lifecycle_state_path) is not None:
                 kwargs = dict(kwargs)
-                latest_lifecycle = read_job_lifecycle_state(paths.lifecycle_state_path)
+                # ponytail: skip the 300+ MB re-parse of jobs-lifecycle-state.json
+                # when the file hasn't changed since setup loaded it. mtime+size
+                # is the cheapest change signal that still catches an external
+                # writer between setup and finalize.
+                fingerprint_at_setup = kwargs.get("lifecycle_state_fingerprint")
+                current_fingerprint = lifecycle_state_fingerprint(paths.lifecycle_state_path)
+                if fingerprint_at_setup is not None and current_fingerprint == fingerprint_at_setup:
+                    latest_lifecycle = kwargs.get("lifecycle_rows") or {}
+                else:
+                    latest_lifecycle = read_job_lifecycle_state(paths.lifecycle_state_path)
                 kwargs["lifecycle_rows"] = latest_lifecycle
                 # ponytail: only convert direct-live rows to CanonicalJob; skip
                 # the 40k+ pre-existing rows that will be filtered out anyway.
@@ -1245,6 +1255,7 @@ def finalize_pipeline_run(
     circuit_breaker_zero_kept: int,
     observed_rows: list[CanonicalJob] | None = None,
     static_suppression_policy: dict[str, Any] | None = None,
+    lifecycle_state_fingerprint: tuple[int, int] | None = None,
 ) -> dict[str, Any]:
     finalization_timings: dict[str, int] = {}
     with _finalization_phase(

@@ -66,7 +66,11 @@ from src.jobs.state_incremental import (
     get_incremental_cache_decision,
     should_skip_source_by_cadence,
 )
-from src.jobs.state_lifecycle import lifecycle_counts, read_job_lifecycle_state
+from src.jobs.state_lifecycle import (
+    lifecycle_counts,
+    lifecycle_state_fingerprint,
+    read_job_lifecycle_state,
+)
 from src.jobs.state_source_state import (
     apply_circuit_breaker_exclusions,
     read_source_state,
@@ -96,6 +100,7 @@ class PipelineRunSetup:
     using_default_loaders: bool
     source_state_rows: dict[str, dict[str, Any]]
     lifecycle_rows: dict[str, dict[str, Any]]
+    lifecycle_state_fingerprint: tuple[int, int] | None
     runtime_payload: dict[str, Any]
     async_fetcher: Any
     redirect_resolver: Any
@@ -348,6 +353,7 @@ def prepare_pipeline_run(
         counts={"setupStep": 1, "sourceStateRows": len(source_state_rows)},
     )
     lifecycle_rows = read_job_lifecycle_state(paths.lifecycle_state_path)
+    lifecycle_state_fingerprint_ = lifecycle_state_fingerprint(paths.lifecycle_state_path)
     prep_progress.emit(
         "loading_state",
         "Loading fetch state",
@@ -688,6 +694,7 @@ def prepare_pipeline_run(
         using_default_loaders=using_default_loaders,
         source_state_rows=source_state_rows,
         lifecycle_rows=lifecycle_rows,
+        lifecycle_state_fingerprint=lifecycle_state_fingerprint_,
         runtime_payload=runtime_payload,
         async_fetcher=async_fetcher,
         redirect_resolver=redirect_resolver,

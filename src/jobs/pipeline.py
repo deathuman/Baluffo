@@ -206,6 +206,7 @@ def run_pipeline(
                 circuit_breaker_cooldown_minutes=circuit_breaker_cooldown_minutes,
                 circuit_breaker_zero_kept=circuit_breaker_zero_kept,
                 static_suppression_policy=setup.runtime_payload.get("staticSuppressionPolicy"),
+                lifecycle_state_fingerprint=setup.lifecycle_state_fingerprint,
             )
         except Exception as exc:
             try:
