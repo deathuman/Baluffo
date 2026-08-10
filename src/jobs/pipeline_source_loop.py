@@ -15,7 +15,7 @@ from typing import Any, Protocol, cast
 
 from src.jobs.browser_fallback import BrowserFallbackCircuitBreaker
 from src.jobs.models import CanonicalJob
-from src.shared.profile_utils import run_profiled
+from src.shared.profile_utils import run_profiled, run_profiled_alloc
 
 from .pipeline_runtime_summary import PipelineTaskRuntime
 from .pipeline_source_progress import (
@@ -200,8 +200,9 @@ def _execute_loader_started(
         write_task_state=write_task_state,
         show_progress=show_progress,
     )
-    try:
-        report, canonical_batch = run_profiled(
+
+    def _invoke_run_profiled():
+        return run_profiled(
             execute_loader,
             name=source_name,
             loader=loader,
@@ -218,6 +219,15 @@ def _execute_loader_started(
             write_task_state=write_task_state,
             guarded_try_playwright=guarded_try_playwright,
             profile_name=f"adapter_{source_name}",
+        )
+
+    try:
+        # ponytail: alloc profiling wraps cprofile (outermost) so per-source
+        # peak-RSS capture includes any overhead of the cprofile shim itself.
+        report, canonical_batch = run_profiled_alloc(
+            _invoke_run_profiled,
+            profile_name=f"adapter_alloc_{source_name}",
+            source_name=source_name,
         )
     except _EXPECTED_PROFILED_SOURCE_FAILURES as exc:
         report = fallback_error_report(source_name, exc)

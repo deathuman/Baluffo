@@ -114,6 +114,7 @@ from src.pipeline_io import (
     serialize_rows_for_json,
     write_atomic_if_changed,
     write_hot_text_if_changed,
+    write_pipeline_rows_sidecar,
     write_text_if_changed,
 )
 from src.shared.json_io import existing_json_candidate
@@ -641,6 +642,13 @@ def _write_output_rows(paths, deduped_payload_rows: list[dict[str, Any]]) -> tup
             paths.startup_json_path,
             serialize_rows_for_json(deduped_payload_rows[:10], LIGHTWEIGHT_OUTPUT_FIELDS),
         )
+    # ponytail: write the row-per-line sidecar whenever the main payload changed.
+    # Read side tries the sidecar first to avoid the ~3x json.loads parse peak.
+    if wrote_json:
+        try:
+            write_pipeline_rows_sidecar(paths.json_path, deduped_payload_rows)
+        except OSError:
+            pass  # sidecar loss is non-fatal; fallback path re-parses the blob
     return wrote_json, wrote_light_json
 
 

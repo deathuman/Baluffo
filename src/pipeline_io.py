@@ -8,7 +8,7 @@ import json
 import os
 import time
 import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +45,25 @@ def read_existing_output(
     canonical_job_cls: type | None = None,
     row_predicate: Callable[[dict[str, Any]], bool] | None = None,
 ) -> list[Any]:
+    # ponytail: try the streaming sidecar first — avoids the ~3x parse peak of
+    # json.loads on the 60+ MB jobs-unified.json.gz blob.
+    sidecar_rows = read_pipeline_rows_sidecar(Path(json_path))
+    if sidecar_rows is not None:
+        restored_stream: list[Any] = []
+        for row in sidecar_rows:
+            if row_predicate is not None and not row_predicate(row):
+                continue
+            candidate = _existing_output_row_to_canonical(
+                row,
+                fetched_at=fetched_at,
+                canonicalize_job=canonicalize_job,
+                clean_text=clean_text,
+                canonical_job_cls=canonical_job_cls,
+            )
+            if candidate is not None:
+                restored_stream.append(candidate)
+        return restored_stream
+
     payload = read_json(Path(json_path), None)
     if payload is None:
         return []
@@ -116,6 +135,61 @@ def _existing_output_row_to_canonical(
 def serialize_rows_for_json(rows: Sequence[RawJob], fields: Sequence[str]) -> str:
     payload = [{field: row.get(field, "") for field in fields} for row in rows]
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
+_PIPELINE_ROWS_SIDECAR_SUFFIX = ".rows.jsonl.gz"
+
+
+def _pipeline_rows_sidecar_path(path: Path) -> Path:
+    path = _trusted_local_path(path)
+    return path.with_name(path.name + _PIPELINE_ROWS_SIDECAR_SUFFIX)
+
+
+def write_pipeline_rows_sidecar(path: Path, rows: Sequence[RawJob]) -> None:
+    """Write ``<path>.rows.jsonl.gz`` — one row dict per line, gzip-wrapped.
+
+    The sidecar lets ``read_existing_output`` stream rows one at a time instead
+    of ``json.loads``-ing a 60+ MB blob and holding Python's parse tree in memory.
+    """
+
+    target = _pipeline_rows_sidecar_path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = target.with_name(f"{target.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    try:
+        # codeql[py/path-injection] Sidecar lives beside a trusted pipeline artifact.
+        with gzip.open(tmp_path, mode="wt", encoding="utf-8", newline="\n") as handle:
+            for row in rows:
+                handle.write(json.dumps(row, ensure_ascii=False, separators=(",", ":")))
+                handle.write("\n")
+        os.replace(tmp_path, target)
+    finally:
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def read_pipeline_rows_sidecar(path: Path) -> Iterator[dict[str, Any]] | None:
+    """Yield row dicts from the sidecar if present, else ``None``.
+
+    Caller consumes lazily; keeps peak RSS at max-single-row instead of file size.
+    """
+
+    target = _pipeline_rows_sidecar_path(path)
+    if not target.exists():
+        return None
+
+    def _iter() -> Iterator[dict[str, Any]]:
+        # codeql[py/path-injection] Sidecar lives beside a trusted pipeline artifact.
+        with gzip.open(target, mode="rt", encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                row = json.loads(line)
+                if isinstance(row, dict):
+                    yield row
+
+    return _iter()
 
 
 def write_text_if_changed(path: Path, text: str) -> bool:
