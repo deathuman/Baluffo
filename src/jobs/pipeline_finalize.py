@@ -1347,6 +1347,9 @@ def finalize_pipeline_run(
             after_rows=deduped_payload_rows,
             lifecycle_rows=lifecycle_rows,
         )
+        # ponytail: free the before_rows snapshot right after reconciliation —
+        # this list holds one dict per job and is not needed after tombstones.
+        del pre_lifecycle_payload_rows
         write_availability_tombstones(tombstone_path, tombstones, updated_at=lifecycle_finished_at)
         quarantine_path = paths.output_dir / IDENTITY_QUARANTINE_ARTIFACT_NAME
         quarantine_stats: dict[str, int] = {}

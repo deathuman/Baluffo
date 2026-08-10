@@ -176,12 +176,17 @@ def run_pipeline(
         setup.progress_phase["label"] = "Merging results"
         setup.write_progress_report(force=True)
         setup.stop_progress_reporter()
+        # ponytail: hand over ownership of canonical_rows to finalize; clear
+        # the setup reference so the fetch loop's accumulator is dropped from
+        # the setup frame before dedup+lifecycle materialize their own copies.
+        canonical_rows_for_finalize = setup.canonical_rows
+        setup.canonical_rows = []
         try:
             return pipeline_finalize_pkg.finalize_pipeline_run(
                 paths=setup.paths,
                 source_reports=setup.source_reports,
-                canonical_rows=setup.canonical_rows,
-                observed_rows=setup.canonical_rows[setup.seeded_row_count :],
+                canonical_rows=canonical_rows_for_finalize,
+                observed_rows=canonical_rows_for_finalize[setup.seeded_row_count :],
                 using_default_loaders=setup.using_default_loaders,
                 selected_loaders=setup.selected_loaders,
                 effective_seed_from_existing_output=setup.effective_seed_from_existing_output,
@@ -207,7 +212,7 @@ def run_pipeline(
                 pipeline_finalize_pkg.write_failed_pipeline_report(
                     paths=setup.paths,
                     source_reports=setup.source_reports,
-                    canonical_rows=setup.canonical_rows,
+                    canonical_rows=canonical_rows_for_finalize,
                     runtime_payload=setup.runtime_payload,
                     task_runtime=setup.task_runtime,
                     write_task_state=setup.write_task_state,
