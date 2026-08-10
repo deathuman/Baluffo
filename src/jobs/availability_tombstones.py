@@ -118,11 +118,32 @@ def restore_availability_tombstone(
     return restored
 
 
+def _row_availability_id(row: Any) -> str:
+    """Cheap ``availabilityId`` accessor that avoids ``to_dict()`` on CanonicalJob.
+
+    ponytail: ``deduped_rows`` passes 40k+ CanonicalJob objects through here, but
+    only a tiny subset actually needs full dict materialization for tombstone
+    capture. Duck-type the id lookup so the rest of the pipeline doesn't pay
+    a per-row ``to_dict()`` just for the reconciliation scan.
+    """
+    if isinstance(row, Mapping):
+        return _clean_text(row.get("availabilityId"))
+    return _clean_text(getattr(row, "availabilityId", ""))
+
+
+def _row_to_canonical_payload(row: Any) -> Mapping[str, Any]:
+    """Materialize a Mapping for ``capture_availability_tombstone``."""
+    if isinstance(row, Mapping):
+        return row
+    to_dict = getattr(row, "to_dict", None)
+    return to_dict() if callable(to_dict) else {}
+
+
 def reconcile_availability_tombstones(
     existing: Mapping[str, Mapping[str, Any]],
     *,
-    before_rows: Sequence[Mapping[str, Any]],
-    after_rows: Sequence[Mapping[str, Any]],
+    before_rows: Sequence[Any],
+    after_rows: Sequence[Any],
     lifecycle_rows: Mapping[str, Mapping[str, Any]],
 ) -> dict[str, dict[str, Any]]:
     rows = normalize_availability_tombstones({"rows": dict(existing)})
@@ -131,21 +152,23 @@ def reconcile_availability_tombstones(
         for entry in lifecycle_rows.values()
         if isinstance(entry, Mapping) and _clean_text(entry.get("availabilityId"))
     }
-    before_by_id = {
-        _clean_text(row.get("availabilityId")): row
-        for row in before_rows
-        if isinstance(row, Mapping) and _clean_text(row.get("availabilityId"))
-    }
+    before_by_id: dict[str, Any] = {}
+    for row in before_rows:
+        availability_id = _row_availability_id(row)
+        if availability_id:
+            before_by_id[availability_id] = row
     after_ids = {
-        _clean_text(row.get("availabilityId"))
-        for row in after_rows
-        if isinstance(row, Mapping) and _clean_text(row.get("availabilityId"))
+        availability_id
+        for availability_id in (_row_availability_id(row) for row in after_rows)
+        if availability_id
     }
     for availability_id, canonical_row in before_by_id.items():
         entry = lifecycle_by_id.get(availability_id)
         status = _clean_text((entry or {}).get("availabilityStatus"))
         if availability_id not in after_ids and status in {"unavailable", "verification_overdue"}:
-            capture_availability_tombstone(rows, canonical_row, entry or {})
+            capture_availability_tombstone(
+                rows, _row_to_canonical_payload(canonical_row), entry or {}
+            )
     for availability_id, entry in lifecycle_by_id.items():
         if (
             availability_id in after_ids

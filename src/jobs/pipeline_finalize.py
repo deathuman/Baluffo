@@ -1294,7 +1294,9 @@ def finalize_pipeline_run(
         observed_for_lifecycle = identity_preparation.observed_rows
         lifecycle_rows = identity_preparation.lifecycle_rows
     lifecycle_finished_at = now_iso()
-    pre_lifecycle_payload_rows = [row.to_dict() for row in deduped_rows]
+    # ponytail: keep the pre-lifecycle CanonicalJob list so tombstone
+    # reconciliation can index it without a full 40k+ to_dict() snapshot.
+    pre_lifecycle_rows = deduped_rows
     with _finalization_phase(
         key="applying_lifecycle",
         label="Applying job availability lifecycle",
@@ -1354,13 +1356,11 @@ def finalize_pipeline_run(
         tombstone_path = paths.output_dir / TOMBSTONE_ARTIFACT_NAME
         tombstones = reconcile_availability_tombstones(
             read_availability_tombstones(tombstone_path),
-            before_rows=pre_lifecycle_payload_rows,
+            before_rows=pre_lifecycle_rows,
             after_rows=deduped_payload_rows,
             lifecycle_rows=lifecycle_rows,
         )
-        # ponytail: free the before_rows snapshot right after reconciliation —
-        # this list holds one dict per job and is not needed after tombstones.
-        del pre_lifecycle_payload_rows
+        # ponytail: pre_lifecycle_rows is a reference, not a copy — nothing to free.
         write_availability_tombstones(tombstone_path, tombstones, updated_at=lifecycle_finished_at)
         quarantine_path = paths.output_dir / IDENTITY_QUARANTINE_ARTIFACT_NAME
         quarantine_stats: dict[str, int] = {}
