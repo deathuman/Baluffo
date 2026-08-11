@@ -494,6 +494,33 @@ def _lifecycle_alias_index(rows: dict[str, dict[str, Any]]) -> dict[str, str]:
     return index
 
 
+def _index_lifecycle_entry_aliases(
+    alias_index: dict[str, str], key: str, entry: dict[str, Any]
+) -> None:
+    """Incrementally index one appended lifecycle entry.
+
+    Same semantics as ``_lifecycle_alias_index`` for a last-appended entry:
+    conflict-drop is immediate because the entry is always appended last, so
+    no later entry in a full rebuild could re-add a dropped alias.
+    """
+    aliases = [
+        clean_text(key),
+        *_normalize_availability_aliases(entry.get("availabilityAliases")),
+        *job_identity_aliases(entry),
+    ]
+    availability_id = clean_text(entry.get("availabilityId"))
+    if availability_id:
+        aliases.append(f"availability:{availability_id}")
+    for alias in aliases:
+        if not alias:
+            continue
+        previous = alias_index.get(alias)
+        if previous and previous != key:
+            alias_index.pop(alias, None)
+            continue
+        alias_index[alias] = key
+
+
 def _resolve_lifecycle_key(
     job: dict[str, Any], rows: dict[str, dict[str, Any]], alias_index: dict[str, str]
 ) -> str:
@@ -766,7 +793,10 @@ def _initialize_carried_lifecycle_rows(
             "availabilityAliases": aliases,
             "consecutiveAvailabilityFailures": 0,
         }
-        alias_index = _lifecycle_alias_index(next_rows)
+        # ponytail: incremental index update — a full rebuild per row was
+        # O(N·K) (~2 s each over the 71k-entry lifecycle) and stalled finalize
+        # for ~36 min on ~1000 fresh-identity rows.
+        _index_lifecycle_entry_aliases(alias_index, key, next_rows[key])
         initialized += 1
     return initialized
 

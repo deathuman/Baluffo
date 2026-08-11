@@ -15,7 +15,7 @@ Three phases landed plus a per-source tracemalloc profiler. Together they move R
 
 ## Landed Commits
 
-- `564d18d2` (P1) lifecycle fingerprint, `07999b8e` (P2) drop to_dict snapshot, `32794f97` (P3) sidecar + alloc profiling, `8a6e26ee` docs plan + INDEX, `1624944b` bench knobs + H1 finding, `6e3d9800` H2 finding, `025b4522` browser fallback pool (H3).
+- `564d18d2` (P1) lifecycle fingerprint, `07999b8e` (P2) drop to_dict snapshot, `32794f97` (P3) sidecar + alloc profiling, `8a6e26ee` docs plan + INDEX, `1624944b` bench knobs + H1 finding, `6e3d9800` H2 finding, `025b4522` browser fallback pool (H3), `<lifecycle-fix-sha>` O(N·K) carried-initialization index fix.
 
 | Hash | Subject | What it does |
 |------|---------|--------------|
@@ -85,9 +85,19 @@ Browser fallback pool shipped (`025b4522`; see [`browser-fallback-pool-plan.md`]
 - Fetch stage wall: 7.5 min for 50 sources; memory stable **1.00 GiB (66.9%)**, 0 OOM.
 - Artifacts: `_out/perf-pipeline/subset50-pool/SUMMARY_POOL.md`.
 
-### Finalize-phase grind (open, separate from the pool)
+### Finalize-phase grind — root-caused and fixed (2026-08-11)
 
-`fetch/applying_lifecycle` runs CPU-hot (≈1.2 cores, fresh heartbeats) for 20+ min after fetch without completing — on this seed the phase has *never* completed (H1 `terminalReason: failed` post-fetch; H2 no stages.json; H3 still grinding). The lifecycle functions are O(n)/O(1) dict-indexed over 42k payload rows × 71k lifecycle entries, so the hot loop is unexplained by the visible code. Needs its own investigation; blocks end-to-end bench attribution but not the memory findings above.
+The `fetch/applying_lifecycle` CPU grind (never completing on the bench seed) was an **O(N·K) alias-index rebuild** in `_initialize_carried_lifecycle_rows` (`src/jobs/state_lifecycle.py`): a full `_lifecycle_alias_index` rebuild over all ~71k lifecycle entries ran after **every** carried-row initialization. Fresh fetch rows with new availabilityIds (dedup-assigned) triggered ~1000 initializations; at ~2 s/rebuild that was ~36 min of pure CPU (zero syscalls — pure dict work — which is why it read as a hang).
+
+Evidence (host replica of the exact call with the real seed): K=0 initializable rows → 35 s total; K=10 → 37.6 s; K=40 → 108.9 s (linear). The stuck child burned 2204 core-seconds ≈ 25 s + K × ~2.1 s.
+
+Fix: incremental index update (`_index_lifecycle_entry_aliases`) — behavior-identical (new entries append last, so immediate conflict-drop == the rebuild's deferred drop), per-insert cost O(≤24 aliases) instead of O(71k). K=1000 → **11.9 s vs ~36 min**. Outputs byte-identical to the old path across all 111,779 rows in the equivalence probe. Regression guards: bounded-time test (300 fresh rows × 8k entries < 15 s; old code ~90 s+) + index-equivalence + alias-freshness tests in `tests/test_jobs_lifecycle_output.py`.
+
+### Subset-50 pool bench with lifecycle fix (2026-08-11, `subset50-pool-fixed`)
+
+Same subset-50/mw=4 config, rerun after the fix: **pipeline now runs end-to-end through finalize** — `fetch/applying_lifecycle` **12.7 s** (was ∞), dedup 44 s, reconciling 17-19 s, quality audits 10 s, `writing_outputs` 2.1 s started. Pool again: 42 acquisitions / one browser / 507 ms startup / 0 relaunches.
+
+**New cap-pressure finding:** the child was **silently killed at the 1.5 GiB cap during `writing_outputs`** (silent death + no traceback + `jobs_pipeline_child_terminal_without_terminal_report` + `jobs-unified.json` never written; fetch/dedup sampler peak was 1262.6 MiB). The finalize pass over 42k deduped rows × 111k lifecycle entries + report assembly pushes the pi4-tight seat past its ceiling at this seed volume — the next memory lever is finalize-side peak reduction (report/deduped-payload construction and the 111k-entry lifecycle-state serialization). H1's `owner_inactive_without_terminal_report` was likely the same class of death post-fetch.
 
 ## Fetch-Side Signals (still open)
 
@@ -128,7 +138,7 @@ Container memory ceiling reads live in `scripts/perf_pipeline_stages.py`. The se
 1. ~~Full-seed Docker bench (2159 sources) to capture a final cgroup `memory.peak` after the three landed phases.~~ **Validated 2026-08-11:** pi4-tight profile cannot host default fetch concurrency (maxWorkers=10) on the subset-500 bench; 7 OOM kills at 293/500. Subset-500 with `BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS=4` holds peak at 1.5 GiB and clears the workload (see "Subset-500 pi4-tight bench" above).
 2. If the final peak stays under ~1.4 GiB in production: consider removing the legacy gzip `read_json` fallback path in `src/pipeline_io.py` once one full production cycle has run end-to-end with the sidecar.
 3. Fetch-side response-body cap (httpx `max_bytes` knob) is the next lever if per-source peak pressure emerges — it was the next-largest consumer in the allocation profile (`httpx/_models.py` 63 MiB cumulative).
-4. **Investigate the finalize-phase grind** (`fetch/applying_lifecycle` never completes on the seed; see above) — the blocker for end-to-end bench attribution and the current holder of the "next perf lever" seat.
+4. **Finalize-side peak reduction at `writing_outputs`** — the child OOMs at the 1.5 GiB cap during finalize writes at 42k rows × 111k lifecycle entries (subset-50 bench, 2026-08-11); the lifecycle grind blocker is fixed, this is now the end-to-end bench blocker. Suspects: report/deduped-payload construction and 111k-entry lifecycle-state serialization.
 
 ## Sidecar Rollout Notes (post-ship checklist)
 
