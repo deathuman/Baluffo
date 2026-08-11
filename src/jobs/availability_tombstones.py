@@ -9,7 +9,7 @@ from typing import Any
 
 from src.core.schemas import CanonicalJobSchema
 from src.jobs.common.config import OUTPUT_FIELDS, REQUIRED_FIELDS
-from src.pipeline_io import write_atomic_if_changed
+from src.pipeline_io import write_streamed_text_if_changed
 from src.shared.json_io import read_json
 
 TOMBSTONE_SCHEMA_VERSION = 1
@@ -76,13 +76,38 @@ def read_availability_tombstones(path: Path) -> dict[str, dict[str, Any]]:
 def write_availability_tombstones(
     path: Path, rows: Mapping[str, Mapping[str, Any]], *, updated_at: str
 ) -> None:
-    normalized = normalize_availability_tombstones({"rows": dict(rows)})
-    payload = {
-        "schemaVersion": TOMBSTONE_SCHEMA_VERSION,
-        "updatedAt": _clean_text(updated_at),
-        "rows": normalized,
-    }
-    write_atomic_if_changed(path, json.dumps(payload, indent=2, ensure_ascii=False))
+    # ponytail: no re-normalization here — every producer validates each
+    # tombstone at capture time (_canonical_row), and re-running that pydantic
+    # validation over 40k tombstones here cost ~745 MiB of churn (OOM'd the
+    # pi4-tight seat). Stream the write so the JSON string never materializes.
+    def stream(handle) -> None:
+        handle.write('{"schemaVersion":')
+        json.dump(TOMBSTONE_SCHEMA_VERSION, handle)
+        handle.write(',"updatedAt":')
+        json.dump(_clean_text(updated_at), handle, ensure_ascii=False)
+        handle.write(',"rows":{')
+        first = True
+        for raw_id, raw_entry in rows.items():
+            availability_id = _clean_text(raw_id)
+            if not availability_id or not isinstance(raw_entry, Mapping):
+                continue
+            if not first:
+                handle.write(",")
+            first = False
+            json.dump(availability_id, handle, ensure_ascii=False)
+            handle.write(":")
+            json.dump(
+                {
+                    "canonicalRow": dict(raw_entry.get("canonicalRow") or {}),
+                    "retiredAt": _clean_text(raw_entry.get("retiredAt")),
+                    "reason": _clean_text(raw_entry.get("reason")),
+                },
+                handle,
+                ensure_ascii=False,
+            )
+        handle.write("}}")
+
+    write_streamed_text_if_changed(path, stream)
 
 
 def capture_availability_tombstone(

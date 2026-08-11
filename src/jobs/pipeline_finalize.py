@@ -8,6 +8,8 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused pipeline finaliz
 
 from __future__ import annotations
 
+import ctypes
+import gc
 import json
 import threading
 import time
@@ -24,6 +26,7 @@ from src.core.contracts import validate_canonical_jobs_payload
 from src.jobs.availability_identity import (
     IDENTITY_QUARANTINE_ARTIFACT_NAME,
     AvailabilityIdentityPreflightError,
+    AvailabilityIdentityPreparation,
     prepare_availability_identities,
     read_identity_quarantine,
     reconcile_identity_quarantine,
@@ -430,6 +433,23 @@ def _apply_lifecycle_state(
     )
 
 
+def _return_freed_memory_to_os() -> None:
+    """Run gc and glibc ``malloc_trim`` so freed Python-heap memory returns to
+    the OS instead of staying in the process freelists.
+
+    Without this, the ~500-700 MiB freed after the identity/lifecycle phases
+    keeps counting against the container RSS high-water mark, leaving the
+    write-heavy phases no headroom on the pi4-tight seat.
+    """
+    gc.collect()
+    try:
+        malloc_trim = getattr(ctypes.CDLL(None), "malloc_trim", None)
+        if malloc_trim is not None:
+            malloc_trim(0)
+    except (AttributeError, OSError, TypeError):
+        pass  # non-glibc platforms have no malloc_trim; nothing to return
+
+
 def _write_lifecycle_archive_rows(
     *,
     lifecycle_state_path: Path,
@@ -470,6 +490,21 @@ def _lifecycle_summary_payload(lifecycle_counts_map: dict[str, int]) -> dict[str
     }
 
 
+def _process_rss_mib() -> int:
+    try:
+        with open("/proc/self/status", encoding="utf-8") as handle:
+            for line in handle:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) // 1024
+    except (OSError, ValueError, IndexError):
+        pass
+    return 0
+
+
+def _log_rss(marker: str) -> None:
+    print(f"[jobs_fetcher] INFO rssMiB={_process_rss_mib()} {marker}", flush=True)
+
+
 @contextmanager
 def _finalization_phase(
     *,
@@ -505,12 +540,14 @@ def _finalization_phase(
     )
     started = time.perf_counter()
     thread.start()
+    _log_rss(f"phase_enter {key}")
     try:
         yield
     finally:
         stop.set()
         thread.join(timeout=1.0)
         timings[f"{key}Ms"] = max(0, int((time.perf_counter() - started) * 1000))
+        _log_rss(f"phase_exit {key}")
         try:
             task_runtime.finalization_timings = dict(timings)
         except (AttributeError, TypeError):
@@ -1343,6 +1380,22 @@ def finalize_pipeline_run(
             )
         )
 
+    # ponytail: ~500-700 MiB of dead references die here so the write-heavy
+    # phases stay under the pi4-tight cap: identity_preparation's row and
+    # lifecycle copies, the observed list, and canonical_rows (only its count
+    # is still needed) are no longer used past this point.
+    canonical_rows_count = len(canonical_rows)
+    identity_preparation = AvailabilityIdentityPreparation(
+        rows=[],
+        observed_rows=[],
+        lifecycle_rows={},
+        quarantine_additions=identity_preparation.quarantine_additions,
+        summary=identity_preparation.summary,
+    )
+    del observed_for_lifecycle
+    del canonical_rows
+    _return_freed_memory_to_os()
+
     deduped_payload_rows = [row.to_dict() for row in deduped_rows]
     with _finalization_phase(
         key="running_quality_audits",
@@ -1377,6 +1430,13 @@ def finalize_pipeline_run(
         write_task_state=write_task_state,
         timings=finalization_timings,
     ):
+        print(
+            "[jobs_fetcher] INFO finalizeInputs "
+            f"lifecycleRows={len(lifecycle_rows)} "
+            f"dedupedPayloadRows={len(deduped_payload_rows)} "
+            f"preLifecycleRows={len(pre_lifecycle_rows)}",
+            flush=True,
+        )
         tombstone_path = paths.output_dir / TOMBSTONE_ARTIFACT_NAME
         tombstones = reconcile_availability_tombstones(
             read_availability_tombstones(tombstone_path),
@@ -1386,6 +1446,7 @@ def finalize_pipeline_run(
         )
         # ponytail: pre_lifecycle_rows is a reference, not a copy — nothing to free.
         write_availability_tombstones(tombstone_path, tombstones, updated_at=lifecycle_finished_at)
+        _log_rss("after tombstones")
         quarantine_path = paths.output_dir / IDENTITY_QUARANTINE_ARTIFACT_NAME
         quarantine_stats: dict[str, int] = {}
         identity_quarantine = reconcile_identity_quarantine(
@@ -1404,6 +1465,7 @@ def finalize_pipeline_run(
             truncated_count=int(quarantine_stats.get("quarantineTruncatedCount") or 0),
         )
         wrote_json, wrote_light_json = _write_output_rows(paths, deduped_payload_rows)
+        _log_rss("after output rows")
         availability = _write_availability_artifacts(
             paths=paths, lifecycle_rows=lifecycle_rows, finished_at=lifecycle_finished_at
         )
@@ -1412,6 +1474,7 @@ def finalize_pipeline_run(
         shadow_classifier_counts = availability["shadowCounts"]
         wrote_availability_history = availability["wroteHistory"]
         wrote_availability_sweep_plan = availability["wroteSweep"]
+        _log_rss("after availability artifacts")
         json_bytes, light_json_bytes = _output_sizes(paths)
         _browser_fallback_queue_rows, parser_regression_queue_rows = _write_review_queue_artifacts(
             paths=paths,
@@ -1419,6 +1482,7 @@ def finalize_pipeline_run(
             lifecycle_finished_at=lifecycle_finished_at,
             redirect_resolver=redirect_resolver,
         )
+        _log_rss("after review queues")
         social_review_payload, social_review_path = _write_social_review_artifact(
             paths=paths,
             deduped_rows=deduped_rows,
@@ -1437,7 +1501,7 @@ def finalize_pipeline_run(
         dedup_stats,
         deduped_rows,
         source_reports,
-        len(canonical_rows),
+        canonical_rows_count,
         preserved_previous,
         len([row for row in STUDIO_SOURCE_REGISTRY if bool(row.get("enabledByDefault", True))]),
         len(common_sources.load_registry_from_file(paths.pending_registry_path, [])),
@@ -1630,9 +1694,14 @@ def finalize_pipeline_run(
         "siteChangedMissingOldUrlCount": count_site_changed_missing_old_url_sources(source_reports),
         "parserRegressionQueueCount": len(parser_regression_queue_rows),
     }
+    # ponytail: the 40k+ row dict list is dead once the report payload is
+    # assembled; drop it before the report write to keep peak RSS down.
+    del deduped_payload_rows
+    _log_rss("before report write")
     write_hot_text_if_changed(
         paths.report_path, json.dumps(report_payload, indent=2, ensure_ascii=False)
     )
+    _log_rss("after report write")
     write_task_state(finished_at=finished_at, force=True)
     write_fetch_report_summary_artifact(
         paths.report_path,
@@ -1643,8 +1712,10 @@ def finalize_pipeline_run(
     write_success_cache(paths.success_cache_path, source_reports)
     write_source_state(paths.source_state_path, source_state_rows)
     write_job_lifecycle_state(paths.lifecycle_state_path, lifecycle_rows)
+    _log_rss("after lifecycle state write")
     _write_lifecycle_archive_rows(
         lifecycle_state_path=paths.lifecycle_state_path,
         archive_rows_by_year=lifecycle_archive_rows_by_year,
     )
+    _log_rss("finalize done")
     return report_payload
