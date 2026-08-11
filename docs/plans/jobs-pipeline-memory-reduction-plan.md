@@ -15,7 +15,7 @@ Three phases landed plus a per-source tracemalloc profiler. Together they move R
 
 ## Landed Commits
 
-- `564d18d2` (P1) lifecycle fingerprint, `07999b8e` (P2) drop to_dict snapshot, `32794f97` (P3) sidecar + alloc profiling, `8a6e26ee` docs plan + INDEX, `1624944b` bench knobs + H1 finding, `6e3d9800` H2 finding, `025b4522` browser fallback pool (H3), `c6149db5` O(N·K) carried-initialization index fix.
+- `564d18d2` (P1) lifecycle fingerprint, `07999b8e` (P2) drop to_dict snapshot, `32794f97` (P3) sidecar + alloc profiling, `8a6e26ee` docs plan + INDEX, `1624944b` bench knobs + H1 finding, `6e3d9800` H2 finding, `025b4522` browser fallback pool (H3), `c6149db5` O(N·K) carried-initialization index fix, `20b49837` streamed finalize writes, `c31b7689` tombstone-write OOM fix + dead-ref trim.
 
 | Hash | Subject | What it does |
 |------|---------|--------------|
@@ -97,7 +97,19 @@ Fix: incremental index update (`_index_lifecycle_entry_aliases`) — behavior-id
 
 Same subset-50/mw=4 config, rerun after the fix: **pipeline now runs end-to-end through finalize** — `fetch/applying_lifecycle` **12.7 s** (was ∞), dedup 44 s, reconciling 17-19 s, quality audits 10 s, `writing_outputs` 2.1 s started. Pool again: 42 acquisitions / one browser / 507 ms startup / 0 relaunches.
 
-**New cap-pressure finding:** the child was **silently killed at the 1.5 GiB cap during `writing_outputs`** (silent death + no traceback + `jobs_pipeline_child_terminal_without_terminal_report` + `jobs-unified.json` never written; fetch/dedup sampler peak was 1262.6 MiB). The finalize pass over 42k deduped rows × 111k lifecycle entries + report assembly pushes the pi4-tight seat past its ceiling at this seed volume — the next memory lever is finalize-side peak reduction (report/deduped-payload construction and the 111k-entry lifecycle-state serialization). H1's `owner_inactive_without_terminal_report` was likely the same class of death post-fetch.
+### Finalize OOM — root-caused and fixed (2026-08-11)
+
+Three stacked peaks were killing the child at the 1.5 GiB cap during finalize (cgroup `oom_kill=1`, silent death, `jobs_unified` never written):
+
+1. **Unified/light/lifecycle writes built full JSON strings + filtered copies** — `serialize_rows_for_json` peaked ~355 MiB (full) + ~255 MiB (light) at 40k rows; lifecycle dumps ~178 MiB + a full normalized copy. Fixed with `write_streamed_text_if_changed` (atomic, size-gated, gzip-aware): **0 MiB / 1 MiB measured**. Unified output byte-identical; lifecycle went indent=2 → compact (same shape, JSON-compatible).
+2. **Dead references held through the write-heavy phases** — `AvailabilityIdentityPreparation` retained 2×42k CanonicalJob lists + a 111k lifecycle copy; `canonical_rows`/`observed_for_lifecycle` no longer needed after the lifecycle phase. Freed + `gc.collect()`/`malloc_trim`: RSS 937 → 793 MiB at the audits phase.
+3. **`write_availability_tombstones` re-validated every tombstone via full pydantic `model_validate`** — with ~40k legitimate tombstones that re-validation churned **~745 MiB** (producers already validate at capture; write-side re-validation was pure waste). Now streams compact JSON: **0 MiB peak**, round-trip identical, restore path unchanged.
+
+Bench result (`subset50-pool-fixed9`): pipeline **completes end-to-end** — writing_outputs peak 831 MiB, finalize done at 916 MiB, all artifacts written, `terminalReason: completed`.
+
+### Re-run lifecycle-identity mismatch (open, separate)
+
+Re-runs collapse the output: the run's deduped rows resolve to *unavailable* lifecycle entries (identity/key mismatch introduced by re-canonicalization on re-fetch), projecting only ~1.2k of 41.6k rows as available and generating ~40k tombstones. Not a memory bug — a lifecycle/dedup identity question on re-runs (host replica with the seed state projects all 41.4k rows available; the fetch-child deltas change resolution). Next investigation.
 
 ## Fetch-Side Signals (still open)
 
@@ -138,7 +150,7 @@ Container memory ceiling reads live in `scripts/perf_pipeline_stages.py`. The se
 1. ~~Full-seed Docker bench (2159 sources) to capture a final cgroup `memory.peak` after the three landed phases.~~ **Validated 2026-08-11:** pi4-tight profile cannot host default fetch concurrency (maxWorkers=10) on the subset-500 bench; 7 OOM kills at 293/500. Subset-500 with `BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS=4` holds peak at 1.5 GiB and clears the workload (see "Subset-500 pi4-tight bench" above).
 2. If the final peak stays under ~1.4 GiB in production: consider removing the legacy gzip `read_json` fallback path in `src/pipeline_io.py` once one full production cycle has run end-to-end with the sidecar.
 3. Fetch-side response-body cap (httpx `max_bytes` knob) is the next lever if per-source peak pressure emerges — it was the next-largest consumer in the allocation profile (`httpx/_models.py` 63 MiB cumulative).
-4. **Finalize-side peak reduction at `writing_outputs`** — the child OOMs at the 1.5 GiB cap during finalize writes at 42k rows × 111k lifecycle entries (subset-50 bench, 2026-08-11); the lifecycle grind blocker is fixed, this is now the end-to-end bench blocker. Suspects: report/deduped-payload construction and 111k-entry lifecycle-state serialization.
+4. **Re-run lifecycle-identity mismatch** — the end-to-end bench completes but re-runs collapse the output to ~1.2k rows via unavailable-entry resolution (see above). Investigate why the fetch child's re-canonicalized rows resolve to unavailable lifecycle entries on re-runs (dedup id assignment vs lifecycle keys).
 
 ## Sidecar Rollout Notes (post-ship checklist)
 
