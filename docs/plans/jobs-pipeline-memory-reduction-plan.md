@@ -1,6 +1,6 @@
 # Jobs Pipeline Memory Reduction Plan
 
-> - **Status:** Completed (P1–P3 + profiling) 2026-08-09; full-seed validation bench pending
+> - **Status:** Completed (P1–P3 + profiling) 2026-08-09; validated 2026-08-11 with subset-500 pi4-tight bench — pi4-tight requires `BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS=4` to stay under the 1.5 GiB cap
 > - **Use this when:** revisiting jobs-pipeline peak-RSS pressure, evaluating the next fetch-side lever, or running the alloc profiler
 > - **Canonical for:** measured peaks, landed phases, bench methodology, and deferred next steps
 > - **Not canonical for:** runtime contract changes — data formats, payload keys, and API surfaces are in [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md)
@@ -31,6 +31,25 @@ Three phases landed plus a per-source tracemalloc profiler. Together they move R
 | pi4-tight (1.5 GiB cap), full run | RSS 1.4–1.49 GiB, OOM risk | RSS 1.17–1.33 GiB over 30 min, no OOM | subset of 209 sources profiled during scripted bench |
 
 The final subset-of-113 bench did the alloc-profile recording. Full-seed bench (2159 sources) was not re-run after landing — see "Next Moves".
+
+### Subset-500 pi4-tight bench (2026-08-11)
+
+500-source subset (first 500 work items from the 40k-row seed) against the pi4-tight profile (1.5 GiB / 1.5 CPU):
+
+| Configuration | Result | Notes |
+|---|---|---|
+| Default (maxWorkers=10) | OOM at 293/500, `oom_kill=7` | peak pegged at 1.536 GiB (over cap) |
+| `BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS=4` | Completed fetching; pipeline wait-timeout at 60 s | peak 1.5 GiB, 0 `oom_kill`, avg RSS 1.11 GiB |
+
+Bench artifacts: `_out/perf-pipeline/subset500-mw4/` — `stages.json`, `samples.ndjson`, `report.md`, `SUMMARY_H1.md`.
+
+Two carry-over notes:
+- `fetch/seeding_existing_output` stage used the rows sidecar (1.6s, 846 MB peak) — the new path is doing its job.
+- `fetch/loading_state/read_lifecycle_state` showed only one 0.6s read — fingerprint skip is engaged.
+
+Bench runner knobs added during validation:
+- `scripts/perf_pipeline_stages.py --only-sources-file <path>` and `--fetch-max-workers-env <N>` stage `BALUFFO_CONTAINER_PIPELINE_ONLY_SOURCES` + `BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS` via `--env-file` to dodge the Windows CreateProcess 32k cap.
+- `src/bridge/pipeline_service.py` gained `BALUFFO_CONTAINER_PIPELINE_ONLY_SOURCES`, forwarded as `onlySources` on the fetch child payload. Empty default = pass-through.
 
 ## Fetch-Side Signals (still open)
 
@@ -68,9 +87,9 @@ Container memory ceiling reads live in `scripts/perf_pipeline_stages.py`. The se
 
 ## Next Moves
 
-1. Full-seed Docker bench (2159 sources) to capture a final cgroup `memory.peak` after the three landed phases. Skipped during initial closeout because Docker Desktop was unresponsive.
-2. If the final peak stays under ~1.4 GiB: done here; consider removing the legacy gzip `read_json` fallback path in `src/pipeline_io.py` once one full production cycle has run end-to-end with the sidecar.
-3. If the final peak approaches the 1.5 GiB cap: address fetch-side response-body cap (httpx `max_bytes` knob).
+1. ~~Full-seed Docker bench (2159 sources) to capture a final cgroup `memory.peak` after the three landed phases.~~ **Validated 2026-08-11:** pi4-tight profile cannot host default fetch concurrency (maxWorkers=10) on the subset-500 bench; 7 OOM kills at 293/500. Subset-500 with `BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS=4` holds peak at 1.5 GiB and clears the workload (see "Subset-500 pi4-tight bench" above).
+2. If the final peak stays under ~1.4 GiB in production: consider removing the legacy gzip `read_json` fallback path in `src/pipeline_io.py` once one full production cycle has run end-to-end with the sidecar.
+3. Fetch-side response-body cap (httpx `max_bytes` knob) is the next lever if per-source peak pressure emerges — it was the next-largest consumer in the allocation profile (`httpx/_models.py` 63 MiB cumulative).
 
 ## Sidecar Rollout Notes (post-ship checklist)
 

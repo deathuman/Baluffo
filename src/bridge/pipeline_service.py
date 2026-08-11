@@ -39,6 +39,11 @@ PIPELINE_CONTAINER_FETCH_MAX_WORKERS_ENV = "BALUFFO_CONTAINER_PIPELINE_FETCH_MAX
 PIPELINE_CONTAINER_BROWSER_FALLBACK_MAX_WORKERS_ENV = (
     "BALUFFO_CONTAINER_PIPELINE_BROWSER_FALLBACK_MAX_WORKERS"
 )
+# ponytail: bench-only knob to bound the fetch workload under a fixed seed volume.
+# Empty (default) = pass-through, identical production behavior. Used by
+# scripts/perf_pipeline_stages.py to reduce the seed from ~2159 sources to a
+# representative subset without touching the registry files.
+PIPELINE_BENCH_ONLY_SOURCES_ENV = "BALUFFO_CONTAINER_PIPELINE_ONLY_SOURCES"
 PIPELINE_CONTAINER_FETCH_DEFAULT_MAX_WORKERS = 10
 PIPELINE_CONTAINER_FETCH_MAX_WORKERS_CAP = 12
 PIPELINE_CONTAINER_BROWSER_FALLBACK_DEFAULT_MAX_WORKERS = 4
@@ -1188,6 +1193,10 @@ class PipelineService:
                 "browserFallbackMaxWorkers": browser_fallback_max_workers,
             }
         )
+        only_sources_raw = os.environ.get(PIPELINE_BENCH_ONLY_SOURCES_ENV) or ""
+        only_sources = [name.strip() for name in only_sources_raw.split(",") if name.strip()]
+        if only_sources:
+            payload["onlySources"] = only_sources
         return payload
 
     def _start_fetch_child(self) -> dict[str, Any]:

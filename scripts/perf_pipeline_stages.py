@@ -862,6 +862,26 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="",
         help=f"Output directory (default: {DEFAULT_OUTPUT_ROOT}/<run-token>).",
     )
+    parser.add_argument(
+        "--only-sources-file",
+        default="",
+        help=(
+            "Optional path to a newline-separated list of source names. When set, "
+            "the bench stages an env file under --output and passes it to "
+            "docker run via --env-file so the pipeline fetch child runs only that "
+            "subset. Bench-only knob for trimming a large seed data volume without "
+            "editing registry files."
+        ),
+    )
+    parser.add_argument(
+        "--fetch-max-workers-env",
+        default="",
+        help=(
+            "Optional bench override for BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS "
+            "forwarded via --env-file alongside the only-sources list. Used to test "
+            "H1 (fetch concurrency drives pi4-tight pressure) vs H2 (per-source peak)."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -948,7 +968,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.fresh or not _container_is_running(container_name):
         _stop_container(container_name)
-        _docker(
+        docker_args = [
             "run",
             "-d",
             "--rm",
@@ -964,8 +984,34 @@ def main(argv: list[str] | None = None) -> int:
             f"{int(args.port)}:8080",
             "-v",
             f"{str(data_volume)}:/data",
-            str(args.image),
-        )
+        ]
+        if str(args.only_sources_file or "").strip():
+            only_sources_path = Path(str(args.only_sources_file)).expanduser().resolve()
+            only_sources = [
+                name.strip()
+                for name in only_sources_path.read_text(encoding="utf-8").splitlines()
+                if name.strip()
+            ]
+            if only_sources:
+                # ponytail: env-file staging avoids the Windows CreateProcess 32k
+                # command-line cap — a 500-name only-sources list is ~36 KB.
+                env_file = output_dir / "bench-only-sources.env"
+                env_lines = [
+                    "BALUFFO_CONTAINER_PIPELINE_ONLY_SOURCES=" + ",".join(only_sources),
+                ]
+                if str(args.fetch_max_workers_env or "").strip():
+                    env_lines.append(
+                        "BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS="
+                        + str(args.fetch_max_workers_env).strip()
+                    )
+                env_file.write_text("\n".join(env_lines) + "\n", encoding="utf-8")
+                docker_args.extend(["--env-file", str(env_file)])
+                print(
+                    f"[bench] only-sources env file: {env_file} ({len(only_sources)} names)",
+                    flush=True,
+                )
+        docker_args.append(str(args.image))
+        _docker(*docker_args)
         starting_fresh = True
     else:
         starting_fresh = False
