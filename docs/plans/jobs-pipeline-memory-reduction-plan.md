@@ -15,11 +15,14 @@ Three phases landed plus a per-source tracemalloc profiler. Together they move R
 
 ## Landed Commits
 
+- `564d18d2` (P1) lifecycle fingerprint, `07999b8e` (P2) drop to_dict snapshot, `32794f97` (P3) sidecar + alloc profiling, `8a6e26ee` docs plan + INDEX, `1624944b` bench knobs + H1 finding, `6e3d9800` H2 finding, `025b4522` browser fallback pool (H3).
+
 | Hash | Subject | What it does |
 |------|---------|--------------|
 | `564d18d2` | `perf(finalize): skip lifecycle state re-read when file unchanged` | `lifecycle_state_fingerprint` (`mtime_ns`, `size`, gzip-aware via `existing_json_candidate`) captured at `PipelineRunSetup.lifecycle_state_fingerprint`; `_serialize_jobs_feed_reconciliation` reuses in-memory `lifecycle_rows` if fingerprint matches. Saves ~67 MB re-read on the 40k-row seed. |
 | `07999b8e` | `perf(finalize): drop to_dict() snapshot from tombstone reconciliation` | `_row_to_canonical_payload` duck-types CanonicalJob vs Mapping; finalize drops the duplicate `pre_lifecycle_payload_rows` snapshot. 86 MB → 5 MB peak in finalize; identical output. |
 | `32794f97` | `perf(pipeline): stream seed reads + per-source alloc profiling` | `write_pipeline_rows_sidecar` emits `<path>.rows.jsonl.gz`; `read_existing_output` streams rows. 560 MB → 154 MB parse peak. Also adds `run_profiled_alloc` + `BALUFFO_PROFILE_ALLOC=1` and `scripts/perf_alloc_top.py`. |
+| `025b4522` | `perf(fetch): pool Chromium for browser fallbacks (one launch per run)` | `BrowserFallbackPool`: one lazy Chromium on an asyncio dispatcher thread, fresh `BrowserContext` per call. 43 fallback acquisitions on one browser (559 ms startup) vs 43 launches (~90–215 s overhead) in the subset-50 bench. Kill switch `BALUFFO_BROWSER_POOL=0`. |
 
 ## Measured Effects
 
@@ -74,6 +77,18 @@ H2 (per-source peak driving cap-pressure) is **not supported**. Memory scales wi
 
 Artifacts: `_out/perf-pipeline/subset50-alloc/SUMMARY_H2.md`, full JSONL at `_out/perf-admin-flows/seed-data/perf-profiles/allocations.jsonl`.
 
+### Subset-50 pool bench (H3, 2026-08-11)
+
+Browser fallback pool shipped (`025b4522`; see [`browser-fallback-pool-plan.md`](browser-fallback-pool-plan.md)): one lazy Chromium per fetch stage, fresh `BrowserContext` per call, `BALUFFO_BROWSER_POOL=0` kill switch.
+
+- Same 50 sources, mw=4, no alloc profiling: 44 fallback triggers → **43 pool acquisitions on one browser** (startup 559 ms, 0 relaunches) vs 43 legacy launches (~90–215 s of launch overhead removed).
+- Fetch stage wall: 7.5 min for 50 sources; memory stable **1.00 GiB (66.9%)**, 0 OOM.
+- Artifacts: `_out/perf-pipeline/subset50-pool/SUMMARY_POOL.md`.
+
+### Finalize-phase grind (open, separate from the pool)
+
+`fetch/applying_lifecycle` runs CPU-hot (≈1.2 cores, fresh heartbeats) for 20+ min after fetch without completing — on this seed the phase has *never* completed (H1 `terminalReason: failed` post-fetch; H2 no stages.json; H3 still grinding). The lifecycle functions are O(n)/O(1) dict-indexed over 42k payload rows × 71k lifecycle entries, so the hot loop is unexplained by the visible code. Needs its own investigation; blocks end-to-end bench attribution but not the memory findings above.
+
 ## Fetch-Side Signals (still open)
 
 From `scripts/perf_alloc_top.py` on the bench alloc log:
@@ -113,6 +128,7 @@ Container memory ceiling reads live in `scripts/perf_pipeline_stages.py`. The se
 1. ~~Full-seed Docker bench (2159 sources) to capture a final cgroup `memory.peak` after the three landed phases.~~ **Validated 2026-08-11:** pi4-tight profile cannot host default fetch concurrency (maxWorkers=10) on the subset-500 bench; 7 OOM kills at 293/500. Subset-500 with `BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS=4` holds peak at 1.5 GiB and clears the workload (see "Subset-500 pi4-tight bench" above).
 2. If the final peak stays under ~1.4 GiB in production: consider removing the legacy gzip `read_json` fallback path in `src/pipeline_io.py` once one full production cycle has run end-to-end with the sidecar.
 3. Fetch-side response-body cap (httpx `max_bytes` knob) is the next lever if per-source peak pressure emerges — it was the next-largest consumer in the allocation profile (`httpx/_models.py` 63 MiB cumulative).
+4. **Investigate the finalize-phase grind** (`fetch/applying_lifecycle` never completes on the seed; see above) — the blocker for end-to-end bench attribution and the current holder of the "next perf lever" seat.
 
 ## Sidecar Rollout Notes (post-ship checklist)
 
