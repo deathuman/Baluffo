@@ -56,9 +56,10 @@ def test_browser_fallback_runtime_uses_dedicated_cap_when_helper_exists() -> Non
         def resolve_fetch_browser_fallback_helper(self):
             return lambda _url, _timeout: ("", "")
 
-        def _build_capped_try_playwright(self, try_playwright, *, max_concurrent: int):
+        def _build_capped_try_playwright(self, try_playwright, *, max_concurrent: int, pool=None):
             calls["try_playwright"] = try_playwright
             calls["max_concurrent"] = max_concurrent
+            calls["pool"] = pool
             return try_playwright
 
     _guard, guarded_try_playwright = pipeline_source_loop._browser_fallback_runtime(

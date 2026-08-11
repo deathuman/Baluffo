@@ -14,6 +14,7 @@ from threading import Lock
 from typing import Any, Protocol, cast
 
 from src.jobs.browser_fallback import BrowserFallbackCircuitBreaker
+from src.jobs.browser_fallback_pool import BrowserFallbackPool, browser_pool_enabled
 from src.jobs.models import CanonicalJob
 from src.shared.profile_utils import run_profiled, run_profiled_alloc
 
@@ -37,6 +38,7 @@ class _RootLike(Protocol):
         try_playwright: Callable[[str, int], tuple[str, str]],
         *,
         max_concurrent: int,
+        pool: Any = None,
     ) -> Callable[[str, int], tuple[str, str]]: ...
 
     def set_browser_fallback_state(
@@ -87,44 +89,58 @@ def run_source_execution_stage(
             show_progress=bool(config.show_progress),
         )
     root_mod = _root_module()
-    browser_fallback_guard, guarded_try_playwright = _browser_fallback_runtime(
-        root_mod,
-        source_state_rows,
-        cooldown_minutes=config.browser_fallback_cooldown_minutes,
-        max_workers=config.max_workers,
-        browser_fallback_max_workers=getattr(config, "browser_fallback_max_workers", -1),
-    )
-    _emit_browser_fallback_status(bool(config.show_progress), guarded_try_playwright, config)
-
-    def execute_started(source_name, loader):
-        return _execute_loader_started(
-            source_name=source_name,
-            loader=loader,
-            config=config,
-            fetch_text_limited=fetch_text_limited,
-            fetch_text_static_limited=fetch_text_static_limited,
-            static_listing_async_fetch=static_listing_async_fetch,
-            source_state_rows=source_state_rows,
-            redirect_resolver=redirect_resolver,
-            task_runtime=task_runtime,
-            task_rows=task_rows,
-            task_lock=task_lock,
-            thread_local=thread_local,
-            write_task_state=write_task_state,
-            write_progress_report=write_progress_report,
-            guarded_try_playwright=guarded_try_playwright,
-            show_progress=bool(config.show_progress),
+    pool: BrowserFallbackPool | None = BrowserFallbackPool() if browser_pool_enabled() else None
+    try:
+        browser_fallback_guard, guarded_try_playwright = _browser_fallback_runtime(
+            root_mod,
+            source_state_rows,
+            cooldown_minutes=config.browser_fallback_cooldown_minutes,
+            max_workers=config.max_workers,
+            browser_fallback_max_workers=getattr(config, "browser_fallback_max_workers", -1),
+            pool=pool,
         )
+        _emit_browser_fallback_status(bool(config.show_progress), guarded_try_playwright, config)
 
-    write_progress_report(force=True)
-    write_task_state(force=True)
-    _run_selected_loaders(
-        selected_loaders=selected_loaders,
-        max_workers=config.max_workers,
-        execute_loader_started=execute_started,
-        canonical_rows=canonical_rows,
-        source_reports=source_reports,
-    )
+        def execute_started(source_name, loader):
+            return _execute_loader_started(
+                source_name=source_name,
+                loader=loader,
+                config=config,
+                fetch_text_limited=fetch_text_limited,
+                fetch_text_static_limited=fetch_text_static_limited,
+                static_listing_async_fetch=static_listing_async_fetch,
+                source_state_rows=source_state_rows,
+                redirect_resolver=redirect_resolver,
+                task_runtime=task_runtime,
+                task_rows=task_rows,
+                task_lock=task_lock,
+                thread_local=thread_local,
+                write_task_state=write_task_state,
+                write_progress_report=write_progress_report,
+                guarded_try_playwright=guarded_try_playwright,
+                show_progress=bool(config.show_progress),
+            )
+
+        write_progress_report(force=True)
+        write_task_state(force=True)
+        _run_selected_loaders(
+            selected_loaders=selected_loaders,
+            max_workers=config.max_workers,
+            execute_loader_started=execute_started,
+            canonical_rows=canonical_rows,
+            source_reports=source_reports,
+        )
+        if pool is not None and bool(config.show_progress):
+            metrics = pool.metrics.snapshot()
+            emit_progress_line(
+                "[jobs_fetcher] INFO browserPool "
+                f"acquisitions={metrics['pool_acquisitions']} "
+                f"startupMs={metrics['pool_startup_ms']} "
+                f"relaunchCount={metrics['pool_relaunch_count']}"
+            )
+    finally:
+        if pool is not None:
+            pool.close()
     root_mod.set_browser_fallback_state(source_state_rows, browser_fallback_guard.to_state_row())
 
 
@@ -135,6 +151,7 @@ def _browser_fallback_runtime(
     cooldown_minutes: int,
     max_workers: int,
     browser_fallback_max_workers: int = -1,
+    pool: BrowserFallbackPool | None = None,
 ) -> tuple[BrowserFallbackCircuitBreaker, Callable[[str, int], tuple[str, str]] | None]:
     try_playwright = root_mod.resolve_fetch_browser_fallback_helper()
     browser_fallback_guard = BrowserFallbackCircuitBreaker.from_state(
@@ -151,6 +168,7 @@ def _browser_fallback_runtime(
     capped_try_playwright = root_mod._build_capped_try_playwright(
         try_playwright,
         max_concurrent=max(1, min(fallback_cap, int(max_workers or 1))),
+        pool=pool,
     )
     return browser_fallback_guard, browser_fallback_guard.wrap(capped_try_playwright)
 

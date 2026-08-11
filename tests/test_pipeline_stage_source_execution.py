@@ -4,6 +4,9 @@ import io
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
+import pytest
+
+from src.jobs import pipeline_source_loop as _loop_mod
 from src.jobs import pipeline_stage_source_execution as stage_mod
 from src.jobs.browser_fallback import BROWSER_FALLBACK_STATE_KEY
 from src.jobs.pipeline_stage_source_execution import (
@@ -15,6 +18,14 @@ from tests.helpers.concurrency import BlockingActiveCounter
 
 class _ThreadLocal:
     source_name = ""
+
+
+@pytest.fixture(autouse=True)
+def _no_browser_pool(monkeypatch):
+    # Stage tests stub the playwright helper; a real pool here both mutates the
+    # stubbed callable and leaks a Chromium. Pool behavior is covered in
+    # tests/test_browser_fallback_pool.py.
+    monkeypatch.setattr(_loop_mod, "browser_pool_enabled", lambda: False)
 
 
 def test_stage_progress_logging_is_windows_console_safe(monkeypatch) -> None:

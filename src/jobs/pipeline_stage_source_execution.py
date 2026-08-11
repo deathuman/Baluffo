@@ -62,8 +62,11 @@ def _build_capped_try_playwright(
     try_playwright: TryPlaywrightFn,
     *,
     max_concurrent: int,
+    pool: Any = None,
 ) -> TryPlaywrightFn:
     gate = BoundedSemaphore(max(1, int(max_concurrent or 1)))
+    if pool is not None:
+        try_playwright = pool.fetch
 
     def capped_try_playwright(url: str, timeout_s: int) -> tuple[str, str]:
         gate.acquire()
