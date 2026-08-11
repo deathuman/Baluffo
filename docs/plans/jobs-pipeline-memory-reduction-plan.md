@@ -15,7 +15,7 @@ Three phases landed plus a per-source tracemalloc profiler. Together they move R
 
 ## Landed Commits
 
-- `564d18d2` (P1) lifecycle fingerprint, `07999b8e` (P2) drop to_dict snapshot, `32794f97` (P3) sidecar + alloc profiling, `8a6e26ee` docs plan + INDEX, `1624944b` bench knobs + H1 finding, `6e3d9800` H2 finding, `025b4522` browser fallback pool (H3), `<lifecycle-fix-sha>` O(N·K) carried-initialization index fix.
+- `564d18d2` (P1) lifecycle fingerprint, `07999b8e` (P2) drop to_dict snapshot, `32794f97` (P3) sidecar + alloc profiling, `8a6e26ee` docs plan + INDEX, `1624944b` bench knobs + H1 finding, `6e3d9800` H2 finding, `025b4522` browser fallback pool (H3), `c6149db5` O(N·K) carried-initialization index fix.
 
 | Hash | Subject | What it does |
 |------|---------|--------------|
