@@ -16,11 +16,13 @@ def record_json_text_write(
     target: Path,
     text: str,
     write_started_at: float,
+    uncompressed_size_bytes: int | None = None,
 ) -> None:
     if not records_json_storage_metrics(target):
         return
     target = Path(target).expanduser()
-    uncompressed_size_bytes = len(text.encode("utf-8"))
+    if uncompressed_size_bytes is None:
+        uncompressed_size_bytes = len(text.encode("utf-8"))
     try:
         # codeql[py/path-injection] Storage metrics inspect trusted local runtime artifacts.
         compressed_size_bytes = target.stat().st_size

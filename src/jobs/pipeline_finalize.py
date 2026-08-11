@@ -12,7 +12,7 @@ import json
 import threading
 import time
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import contextmanager
 from functools import wraps
 from pathlib import Path
@@ -115,6 +115,7 @@ from src.pipeline_io import (
     write_atomic_if_changed,
     write_hot_text_if_changed,
     write_pipeline_rows_sidecar,
+    write_streamed_text_if_changed,
     write_text_if_changed,
 )
 from src.shared.json_io import existing_json_candidate
@@ -629,13 +630,28 @@ def _apply_final_output_loss_counts(
 def _write_output_rows(paths, deduped_payload_rows: list[dict[str, Any]]) -> tuple[bool, bool]:
     if deduped_payload_rows:
         validate_canonical_jobs_payload(deduped_payload_rows)
-    wrote_json = write_atomic_if_changed(
-        paths.json_path,
-        serialize_rows_for_json(deduped_payload_rows, OUTPUT_FIELDS),
-    )
-    wrote_light_json = write_atomic_if_changed(
-        paths.light_json_path,
-        serialize_rows_for_json(deduped_payload_rows, LIGHTWEIGHT_OUTPUT_FIELDS),
+
+    def stream_rows(fields: Sequence[str]):
+        def _stream(handle) -> None:
+            handle.write("[")
+            for index, row in enumerate(deduped_payload_rows):
+                if index:
+                    handle.write(",")
+                json.dump(
+                    {field: row.get(field, "") for field in fields},
+                    handle,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+            handle.write("]")
+
+        return _stream
+
+    # ponytail: stream instead of serialize_rows_for_json — the full-string +
+    # filtered-list peak was ~355 MiB at 40k rows and OOM'd the 1.5 GiB seat.
+    wrote_json = write_streamed_text_if_changed(paths.json_path, stream_rows(OUTPUT_FIELDS))
+    wrote_light_json = write_streamed_text_if_changed(
+        paths.light_json_path, stream_rows(LIGHTWEIGHT_OUTPUT_FIELDS)
     )
     if hasattr(paths, "startup_json_path"):
         write_atomic_if_changed(

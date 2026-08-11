@@ -18,7 +18,7 @@ from src.contracts import SCHEMA_VERSION
 from src.jobs.common.datetime_utils import parse_datetime, to_iso
 from src.jobs.models import CanonicalJob
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
-from src.pipeline_io import write_atomic_if_changed
+from src.pipeline_io import write_atomic_if_changed, write_streamed_text_if_changed
 from src.shared.json_io import existing_json_candidate, read_json_object
 from src.shared.utils import now_iso
 
@@ -52,6 +52,55 @@ _BROKEN_ZERO_FAILURE_BUCKETS = {
 }
 
 
+def _normalize_lifecycle_entry(raw_entry: dict[str, Any]) -> dict[str, Any]:
+    status = norm_text(raw_entry.get("status")) or "active"
+    if status not in {"active", "likely_removed", "archived"}:
+        status = "active"
+    entry = {
+        "status": status,
+        "firstSeenAt": clean_text(raw_entry.get("firstSeenAt")),
+        "lastSeenAt": clean_text(raw_entry.get("lastSeenAt")),
+        "removedAt": clean_text(raw_entry.get("removedAt")),
+        "archivedAt": clean_text(raw_entry.get("archivedAt")),
+        "title": clean_text(raw_entry.get("title")),
+        "company": clean_text(raw_entry.get("company")),
+        "city": clean_text(raw_entry.get("city")),
+        "country": clean_text(raw_entry.get("country")),
+        "jobLink": normalize_url(raw_entry.get("jobLink")),
+        "source": clean_text(raw_entry.get("source")),
+        "sourceJobId": clean_text(raw_entry.get("sourceJobId")),
+        "postedAt": to_iso(raw_entry.get("postedAt")),
+        "lifecycleEvent": clean_text(raw_entry.get("lifecycleEvent")),
+        "lifecycleReason": clean_text(raw_entry.get("lifecycleReason")),
+        "availabilityId": clean_text(raw_entry.get("availabilityId")),
+        "availabilityStatus": _normalize_availability_status(raw_entry),
+        "availabilityCheckedAt": clean_text(raw_entry.get("availabilityCheckedAt")),
+        "availabilityVerifiedAt": clean_text(raw_entry.get("availabilityVerifiedAt")),
+        "availabilityUnavailableAt": clean_text(
+            raw_entry.get("availabilityUnavailableAt") or raw_entry.get("removedAt")
+        ),
+        "availabilityEvidence": _normalize_availability_evidence(
+            raw_entry.get("availabilityEvidence")
+        ),
+        "availabilityAliases": _normalize_availability_aliases(
+            raw_entry.get("availabilityAliases")
+        ),
+        "availabilityClosureOrigin": clean_text(raw_entry.get("availabilityClosureOrigin")),
+        "consecutiveAvailabilityFailures": max(
+            0, int(raw_entry.get("consecutiveAvailabilityFailures") or 0)
+        ),
+        "availabilityTransitionId": clean_text(raw_entry.get("availabilityTransitionId")),
+        "availabilityPendingEvidence": _normalize_availability_evidence(
+            raw_entry.get("availabilityPendingEvidence")
+        ),
+    }
+    return {
+        field: value
+        for field, value in entry.items()
+        if value is not None and value != "" and value != {} and value != []
+    }
+
+
 def normalize_job_lifecycle_payload(
     payload: dict[str, Any], *, updated_at: str = ""
 ) -> dict[str, Any]:
@@ -63,52 +112,7 @@ def normalize_job_lifecycle_payload(
             key = clean_text(raw_key)
             if not key or not isinstance(raw_entry, dict):
                 continue
-            status = norm_text(raw_entry.get("status")) or "active"
-            if status not in {"active", "likely_removed", "archived"}:
-                status = "active"
-            entry = {
-                "status": status,
-                "firstSeenAt": clean_text(raw_entry.get("firstSeenAt")),
-                "lastSeenAt": clean_text(raw_entry.get("lastSeenAt")),
-                "removedAt": clean_text(raw_entry.get("removedAt")),
-                "archivedAt": clean_text(raw_entry.get("archivedAt")),
-                "title": clean_text(raw_entry.get("title")),
-                "company": clean_text(raw_entry.get("company")),
-                "city": clean_text(raw_entry.get("city")),
-                "country": clean_text(raw_entry.get("country")),
-                "jobLink": normalize_url(raw_entry.get("jobLink")),
-                "source": clean_text(raw_entry.get("source")),
-                "sourceJobId": clean_text(raw_entry.get("sourceJobId")),
-                "postedAt": to_iso(raw_entry.get("postedAt")),
-                "lifecycleEvent": clean_text(raw_entry.get("lifecycleEvent")),
-                "lifecycleReason": clean_text(raw_entry.get("lifecycleReason")),
-                "availabilityId": clean_text(raw_entry.get("availabilityId")),
-                "availabilityStatus": _normalize_availability_status(raw_entry),
-                "availabilityCheckedAt": clean_text(raw_entry.get("availabilityCheckedAt")),
-                "availabilityVerifiedAt": clean_text(raw_entry.get("availabilityVerifiedAt")),
-                "availabilityUnavailableAt": clean_text(
-                    raw_entry.get("availabilityUnavailableAt") or raw_entry.get("removedAt")
-                ),
-                "availabilityEvidence": _normalize_availability_evidence(
-                    raw_entry.get("availabilityEvidence")
-                ),
-                "availabilityAliases": _normalize_availability_aliases(
-                    raw_entry.get("availabilityAliases")
-                ),
-                "availabilityClosureOrigin": clean_text(raw_entry.get("availabilityClosureOrigin")),
-                "consecutiveAvailabilityFailures": max(
-                    0, int(raw_entry.get("consecutiveAvailabilityFailures") or 0)
-                ),
-                "availabilityTransitionId": clean_text(raw_entry.get("availabilityTransitionId")),
-                "availabilityPendingEvidence": _normalize_availability_evidence(
-                    raw_entry.get("availabilityPendingEvidence")
-                ),
-            }
-            out_jobs[key] = {
-                field: value
-                for field, value in entry.items()
-                if value is not None and value != "" and value != {} and value != []
-            }
+            out_jobs[key] = _normalize_lifecycle_entry(raw_entry)
     return {
         "schemaVersion": SCHEMA_VERSION,
         "updatedAt": clean_text(src.get("updatedAt")) or clean_text(updated_at) or now_iso(),
@@ -209,8 +213,38 @@ def _lifecycle_shape_guards_hold(entry: dict[str, Any]) -> bool:
 
 
 def write_job_lifecycle_state(state_path: Path, rows: dict[str, dict[str, Any]]) -> None:
-    payload = normalize_job_lifecycle_payload({"jobs": rows}, updated_at=now_iso())
-    write_atomic_if_changed(state_path, json.dumps(payload, indent=2, ensure_ascii=False))
+    """Persist lifecycle rows atomically, streaming entries to keep peak memory flat.
+
+    The old ``json.dumps(indent=2)`` path peaked ~178 MiB at 111k entries (plus
+    the full normalized copy); the streamed write normalizes and dumps one
+    entry at a time. Output is compact JSON (same shape, JSON-parse-compatible).
+    """
+
+    updated_at = now_iso()
+
+    def stream(handle) -> None:
+        handle.write('{"schemaVersion":')
+        json.dump(SCHEMA_VERSION, handle)
+        handle.write(',"updatedAt":')
+        json.dump(updated_at, handle, ensure_ascii=False)
+        handle.write(',"jobs":{')
+        first = True
+        for raw_key, raw_entry in rows.items():
+            key = clean_text(raw_key)
+            if not key or not isinstance(raw_entry, dict):
+                continue
+            entry = _normalize_lifecycle_entry(raw_entry)
+            if not entry:
+                continue
+            if not first:
+                handle.write(",")
+            first = False
+            json.dump(key, handle, ensure_ascii=False)
+            handle.write(":")
+            json.dump(entry, handle, ensure_ascii=False)
+        handle.write("}}")
+
+    write_streamed_text_if_changed(state_path, stream)
 
 
 def lifecycle_archive_state_path(state_path: Path, archive_year: int) -> Path:

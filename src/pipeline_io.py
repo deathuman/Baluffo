@@ -137,6 +137,76 @@ def serialize_rows_for_json(rows: Sequence[RawJob], fields: Sequence[str]) -> st
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
+def write_streamed_text_if_changed(path: Path, stream_fn: Callable[[Any], None]) -> bool:
+    """Atomically write content produced by ``stream_fn(handle)`` to path.
+
+    ``stream_fn`` writes text to the handle; the temp result is compared with
+    the existing file (size gate first) and only replaced when different.
+    Gzip-backed targets (``.gz`` storage mapping) are compressed like the
+    regular text writers. Keeps peak memory flat for large artifacts (no
+    full-text string, no serialized copy) — the equivalent
+    ``write_text_if_changed`` path peaked at ~355 MiB for the 40k-row unified
+    output.
+    """
+    target = _storage_target_path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = target.with_name(f"{target.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    try:
+        write_count = 0
+
+        class _Counting:
+            def __init__(self, inner: Any) -> None:
+                self._inner = inner
+
+            def write(self, text: str) -> int:
+                nonlocal write_count
+                write_count += len(text)
+                return self._inner.write(text)
+
+            def flush(self) -> None:
+                self._inner.flush()
+
+        if target.suffix == ".gz":
+            with gzip.open(tmp_path, mode="wt", encoding="utf-8", newline="") as handle:
+                stream_fn(_Counting(handle))
+        else:
+            with open(tmp_path, "w", encoding="utf-8", newline="") as handle:
+                stream_fn(_Counting(handle))
+        existing_size: int = -1
+        try:
+            existing_size = target.stat().st_size
+        except OSError:
+            pass
+        if tmp_path.stat().st_size == existing_size:
+            try:
+                existing_text = _read_text_path(target)
+            except OSError:
+                existing_text = None
+            if existing_text is not None:
+                if target.suffix == ".gz":
+                    with gzip.open(tmp_path, mode="rt", encoding="utf-8") as handle:
+                        tmp_text = handle.read()
+                else:
+                    tmp_text = tmp_path.read_text(encoding="utf-8")
+                if existing_text == tmp_text:
+                    return False
+        write_started_at = time.perf_counter()
+        os.replace(tmp_path, target)
+        record_json_text_write(
+            path=path,
+            target=target,
+            text="",
+            write_started_at=write_started_at,
+            uncompressed_size_bytes=write_count,
+        )
+        return True
+    finally:
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 _PIPELINE_ROWS_SIDECAR_SUFFIX = ".rows.jsonl.gz"
 
 
