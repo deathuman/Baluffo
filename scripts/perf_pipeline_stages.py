@@ -882,6 +882,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "H1 (fetch concurrency drives pi4-tight pressure) vs H2 (per-source peak)."
         ),
     )
+    parser.add_argument(
+        "--profile-alloc",
+        action="store_true",
+        help=(
+            "Set BALUFFO_PROFILE_ALLOC=1 in the staged env file. Per-source "
+            "tracemalloc capture writes <data>/perf-profiles/allocations.jsonl; "
+            "aggregate with scripts/perf_alloc_top.py. Lock-serializes sources: "
+            "diagnostic only, wall-clock is not meaningful."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -1004,10 +1014,14 @@ def main(argv: list[str] | None = None) -> int:
                         "BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS="
                         + str(args.fetch_max_workers_env).strip()
                     )
+                if bool(args.profile_alloc):
+                    env_lines.append("BALUFFO_PROFILE_ALLOC=1")
                 env_file.write_text("\n".join(env_lines) + "\n", encoding="utf-8")
                 docker_args.extend(["--env-file", str(env_file)])
                 print(
-                    f"[bench] only-sources env file: {env_file} ({len(only_sources)} names)",
+                    f"[bench] only-sources env file: {env_file} ({len(only_sources)} names), "
+                    f"alloc_profile={bool(args.profile_alloc)}, "
+                    f"maxWorkers={str(args.fetch_max_workers_env or '-')}",
                     flush=True,
                 )
         docker_args.append(str(args.image))

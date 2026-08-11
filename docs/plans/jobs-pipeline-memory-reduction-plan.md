@@ -49,7 +49,30 @@ Two carry-over notes:
 
 Bench runner knobs added during validation:
 - `scripts/perf_pipeline_stages.py --only-sources-file <path>` and `--fetch-max-workers-env <N>` stage `BALUFFO_CONTAINER_PIPELINE_ONLY_SOURCES` + `BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS` via `--env-file` to dodge the Windows CreateProcess 32k cap.
+- `--profile-alloc` appends `BALUFFO_PROFILE_ALLOC=1` to the same env file for diagnostics.
 - `src/bridge/pipeline_service.py` gained `BALUFFO_CONTAINER_PIPELINE_ONLY_SOURCES`, forwarded as `onlySources` on the fetch child payload. Empty default = pass-through.
+
+### Subset-50 alloc-profile bench (H2, 2026-08-11)
+
+50-source subset under the same pi4-tight profile with `BALUFFO_PROFILE_ALLOC=1`:
+
+- 50/50 completed, **peak 948.5 MiB**, 0 OOM events.
+- 263 profiled invocations.
+
+Top alloc frames (cumulative MiB across all sources):
+
+| Rank | Cumulative | Hits | Frame |
+|---|---:|---:|---|
+| 1 | 119.7 MiB | 187 | `httpx/_models.py` |
+| 2 | 39.0 MiB | 163 | `json/decoder.py` |
+| 3 | 14.6 MiB | 261 | `src/shared/live_task.py` |
+| 4 | 14.5 MiB | 157 | `src/jobs/adapters/static_listing.py` |
+
+Top per-source peak: **36.9 MiB** (playsimple static listing).
+
+H2 (per-source peak driving cap-pressure) is **not supported**. Memory scales with fetch worker count, not body size. The previous 1.5 GiB cap hit at mw=10 is the 10 concurrent httpx/playwright bodies + base container, not any single adapter misbehaving.
+
+Artifacts: `_out/perf-pipeline/subset50-alloc/SUMMARY_H2.md`, full JSONL at `_out/perf-admin-flows/seed-data/perf-profiles/allocations.jsonl`.
 
 ## Fetch-Side Signals (still open)
 
