@@ -85,6 +85,16 @@ python scripts/precommit_gate.py --mode changed
 3. Browser-eligible recovery is capped at 23 now — expand after measuring the pool recovery rate?
 4. Track 2 link apply is one-at-a-time by runbook; confirm the 15-link backlog is worth the manual pass.
 
+## Applied 2026-08-12 (operator-approved, Track 2)
+
+Evidence snapshot: `docs/snapshots/provider-coverage-closure-2026-08-12.md`.
+
+- **Migration links applied (2, high-confidence 0.95):** Xsolla → `lever:account:xsolla`; CD PROJEKT RED → `smartrecruiters:company_id:cdprojektred`. `alreadyLinkedCount` 3 → 5; reviewCandidates now 0.
+- **Provider rows approved active (9, repeated validation evidence):** bamboo `activategames`, `blazinggriffin`, `catface`, `flyingbark`, `relicentertainment`, `streamlinestudios`; breezy `fugo-games`, `flowplay-llc`, `warhorsestudios`. Active 2268 → 2277.
+- **Dead provider rows rejected (3):** `bamboohr:lemonskystudios` (board redirects to BambooHR marketing page) provider + static rows, and `oracle_hcm:glass-egg` (DNS dead). Rejected 0 → 3.
+- **Triage findings:** Beamdog / Eleventh Hour / Expression bamboo boards return `[]` (genuinely empty — correct behavior); IllFonic breezy `/json` returns `[]` (empty); reforged/wolcen bamboo have 1 job each (recovery on refresh); workday SSL failures (Aristocrat/Intel/SciPlay/Light & Wonder) are upstream expired certs — transient; Glass Egg static `glassegg.com/careers/` is live (kept — only the oracle host is dead).
+- **Validated provider count** 20 → 15 after refresh (workday SSL + empty boards reclassified); next action `resolve_link_ambiguity` (Ubisoft, 6 static candidates, 0.65 confidence — blocked below the 0.75 apply threshold by design).
+
 ## Out of Scope
 
 - Apify / external crawlers; new Python/Node deps; broad `google_sheets` removal; parser rewrites beyond leaf fixes; any auto-promote/suppress/delete behavior.
