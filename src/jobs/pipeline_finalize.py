@@ -1334,6 +1334,9 @@ def finalize_pipeline_run(
             preserve_previous_on_empty=preserve_previous_on_empty,
             started_at=started_at,
         )
+    # ponytail: observe the freshly-fetched evidence only. Re-observing the
+    # seeded/carried rows would suppress the retirement of jobs whose sources
+    # successfully returned nothing (the lifecycle's missing-detection).
     observed_for_lifecycle = list(canonical_rows if observed_rows is None else observed_rows)
     identity_detected_at = now_iso()
     with _finalization_phase(

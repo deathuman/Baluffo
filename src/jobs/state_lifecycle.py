@@ -960,12 +960,14 @@ def _apply_missing_lifecycle_rows(
                     summary["preservedBecauseSourceSkipped"] += 1
                     entry["lifecycleEvent"] = "preserved"
                     entry["lifecycleReason"] = "source_skipped"
-                    _apply_unverified_availability_entry(
-                        entry,
-                        finished_at=finished_at,
-                        reason="source_skipped",
-                        now_dt=now_dt,
-                    )
+                    # ponytail: a skipped source provides NO availability
+                    # evidence — it was simply not run this cycle (cadence,
+                    # subset, or exclusion). Do not treat that as a failure:
+                    # the old call to _apply_unverified_availability_entry
+                    # incremented the failure count and eventually marked the
+                    # job verification_overdue, hiding live jobs whose sources
+                    # just weren't selected. Failed sources still decay via
+                    # the branch above; skipped entries keep their status.
             continue
         next_rows[key] = _apply_missing_lifecycle_entry(
             entry,
