@@ -25,6 +25,7 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 - Per-stage RSS logging (`[jobs_fetcher] INFO rssMiB=... phase_enter/exit ...`) in finalize phases plus a `finalizeInputs` size line aid future bench diagnostics.
 - `BrowserFallbackPool` close now cancels lingering asyncio tasks (playwright driver `Connection.run`) before stopping its event loop, removing the `Task was destroyed but it is pending!` teardown warning while staying idempotent and join-bounded.
 - Atomic writers in `src/pipeline_io.py` sweep same-target `*.tmp` siblings older than one hour before writing, so SIGKILL-interrupted writes (70 MB leftover in the bench seed, 1.3 MB on the live Umbrel volume) no longer accumulate on disk.
+- `read_existing_output` is sidecar-only: the legacy `json.loads` fallback on the 60+ MB feed blob is removed (it existed to cover a missing `.rows.jsonl.gz` but re-introduced the ~3x parse peak it was meant to avoid). A missing sidecar cold-seeds the run; the feed rebuilds from the lifecycle carry (the source of truth). Deleting a sidecar is safe but cold-seeds the next run.
 
 ### Changed
 

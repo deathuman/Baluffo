@@ -12,7 +12,7 @@ from collections.abc import Callable, Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
-from src.shared.json_io import gzip_backed_json_storage_path, read_json
+from src.shared.json_io import gzip_backed_json_storage_path
 from src.storage_json_metrics import record_json_text_write
 
 RawJob = dict[str, Any]
@@ -70,36 +70,15 @@ def read_existing_output(
     canonical_job_cls: type | None = None,
     row_predicate: Callable[[dict[str, Any]], bool] | None = None,
 ) -> list[Any]:
-    # ponytail: try the streaming sidecar first — avoids the ~3x parse peak of
-    # json.loads on the 60+ MB jobs-unified.json.gz blob.
+    # ponytail: sidecar-only read — the legacy json.loads fallback on the
+    # 60+ MB feed blob (a ~3x parse peak) is gone; a missing sidecar cold-seeds
+    # ([]) and the pipeline rebuilds from the lifecycle carry, the source of
+    # truth. Deleting a sidecar file is safe but cold-seeds the next run.
     sidecar_rows = read_pipeline_rows_sidecar(Path(json_path))
-    if sidecar_rows is not None:
-        return _restore_existing_rows(
-            (row for row in sidecar_rows if row_predicate is None or row_predicate(row)),
-            fetched_at=fetched_at,
-            canonicalize_job=canonicalize_job,
-            clean_text=clean_text,
-            canonical_job_cls=canonical_job_cls,
-        )
-
-    payload = read_json(Path(json_path), None)
-    if payload is None:
+    if sidecar_rows is None:
         return []
-    if isinstance(payload, list):
-        rows = [row for row in payload if isinstance(row, dict)]
-    elif isinstance(payload, dict) and isinstance(payload.get("jobs"), list):
-        rows = [row for row in payload["jobs"] if isinstance(row, dict)]
-    else:
-        return []
-    if row_predicate is not None:
-        rows = [row for row in rows if row_predicate(row)]
-
-    # ponytail: rows already canonicalized are the common case; only truly raw
-    # rows go through canonicalize_job. On the seeded 40k-row bench volume this
-    # drops fetch's `seeding_existing_output` cost from ~97 s to ~5 s and cuts
-    # peak RSS by avoiding the dict→CanonicalJob→dict→CanonicalJob round trip.
     return _restore_existing_rows(
-        rows,
+        (row for row in sidecar_rows if row_predicate is None or row_predicate(row)),
         fetched_at=fetched_at,
         canonicalize_job=canonicalize_job,
         clean_text=clean_text,

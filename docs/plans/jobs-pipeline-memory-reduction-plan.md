@@ -163,7 +163,7 @@ Container memory ceiling reads live in `scripts/perf_pipeline_stages.py`. The se
 ## Next Moves
 
 1. ~~Full-seed Docker bench (2159 sources) to capture a final cgroup `memory.peak` after the three landed phases.~~ **Validated 2026-08-11:** pi4-tight profile cannot host default fetch concurrency (maxWorkers=10) on the subset-500 bench; 7 OOM kills at 293/500. Subset-500 with `BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS=4` holds peak at 1.5 GiB and clears the workload (see "Subset-500 pi4-tight bench" above).
-2. If the final peak stays under ~1.4 GiB in production: consider removing the legacy gzip `read_json` fallback path in `src/pipeline_io.py` once one full production cycle has run end-to-end with the sidecar.
+2. ~~If the final peak stays under ~1.4 GiB in production: consider removing the legacy gzip `read_json` fallback path in `src/pipeline_io.py` once one full production cycle has run end-to-end with the sidecar.~~ **Landed 2026-08-12:** the fallback is removed (sidecar-only read; missing sidecar cold-seeds); device-side verification follows the next release's first Umbrel cycle (the device is still on 0.2.129, pre-sidecar).
 3. ~~Fetch-side response-body cap~~ **Landed 2026-08-12:** `BALUFFO_FETCH_MAX_BYTES` (default 20 MiB, 1 MiB floor) caps both the urllib and httpx async reads in `src/jobs/common/http.py` / `src/jobs/transport.py`; truncated pages parse fewer rows and retry next run.
 4. ~~Duplicate-availabilityId hygiene~~ **Closed 2026-08-12 (T2 trend):** the 08/05-era 24.4k dup cluster was legacy ambiguity; the identity-prep repair is stable — bench-era lifecycle has zero real duplicate ids (23.9k unique; the rest unassigned), production today has 47 dup ids / 229 rows (0.4%), absorbed by the designed quarantine.
 
@@ -189,6 +189,6 @@ Key findings:
 
 ## Sidecar Rollout Notes (post-ship checklist)
 
-- The first production run after `32794f97` ships will write `.rows.jsonl.gz` alongside the legacy blob. From that point forward `read_existing_output` prefers the sidecar; the blob is only parsed when the sidecar is missing.
+- The first production run after `32794f97` ships will write `.rows.jsonl.gz` alongside the legacy blob. From that point forward `read_existing_output` reads the sidecar only.
 - Disk overhead: roughly `sizeof(blob) + sizeof(blob) ≈ 2×` per artifact. Consider pruning the blob write after two successful full cycles if disk pressure matters (not required for memory).
-- Deleting the sidecar file is always safe — the reader falls back to the blob path silently.
+- **2026-08-12: the legacy blob read fallback was removed** (`read_existing_output` cold-seeds `[]` when the sidecar is missing; the module no longer imports `read_json`). Deleting a sidecar is now safe but **cold-seeds the next run** — the feed rebuilds from the lifecycle carry (the source of truth). Gate note: the deployed Umbrel image (0.2.129, 2026-08-07) predates the sidecar (`32794f97`, 2026-08-10) — the device has no sidecar yet; the sidecar-only read ships in the same release as the fix batch, and the first device cycle on the new image is the production verification (bench evidence: the sidecar path is exercised by every fresh-seed bench run, `seeding_existing_output` 0.8 s at 500 keys).

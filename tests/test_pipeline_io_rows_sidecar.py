@@ -59,7 +59,7 @@ def test_sidecar_roundtrip_streams_rows(tmp_path: Path) -> None:
     assert all(isinstance(r, CanonicalJob) for r in got)
 
 
-def test_sidecar_falls_back_to_blob_when_missing(tmp_path: Path) -> None:
+def test_sidecar_missing_cold_seeds_without_blob_parse(tmp_path: Path) -> None:
     logical = tmp_path / "jobs-unified.json"
     rows = _sample_rows()
 
@@ -69,6 +69,12 @@ def test_sidecar_falls_back_to_blob_when_missing(tmp_path: Path) -> None:
     write_atomic_if_changed(logical, _json.dumps(rows))
     assert not _pipeline_rows_sidecar_path(logical).exists()
 
+    # The legacy blob fallback is removed: the module no longer even imports
+    # read_json, and a missing sidecar must cold-seed ([]).
+    import src.pipeline_io as pipeline_io_mod
+
+    assert not hasattr(pipeline_io_mod, "read_json")
+
     got = read_existing_output(
         logical,
         "now",
@@ -76,7 +82,7 @@ def test_sidecar_falls_back_to_blob_when_missing(tmp_path: Path) -> None:
         clean_text=clean_text,
         canonical_job_cls=CanonicalJob,
     )
-    assert len(got) == len(rows)
+    assert got == []
 
 
 def test_sidecar_row_predicate_applies(tmp_path: Path) -> None:
