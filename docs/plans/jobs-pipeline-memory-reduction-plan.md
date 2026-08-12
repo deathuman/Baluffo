@@ -152,14 +152,20 @@ Bench preset `smoke` runs against `/tasks/run-jobs-pipeline` on `baluffo:pipelin
 python scripts/perf_admin_seed.py --from-volume-path <live-data-dir> -o _out/perf-admin-flows/seed-data
 ```
 
+Gaps in the seed tool (2026-08-12, live-volume regen):
+
+- The tool copies only its 15 named artifacts and **silently skips missing ones**; it never cleans the output dir, so stale leftovers persist. A fresh seed therefore needs manual follow-up: (1) if the live volume keeps `jobs-lifecycle-state.json.gz` / `jobs-source-state.json.gz` only (no plain names — UmbrelOS v2 app data does this), decompress both into the seed dir as plain `jobs-lifecycle-state.json` / `jobs-source-state.json`; (2) refresh the registry artifacts (`source-registry-active.jsonl`/`.gz`, `source-registry-pending.*`, `source-registry-metadata.json.gz`) from the live volume; (3) if the live `jobs-unified.json.gz` is a zero-filled in-flight placeholder (observed on the device), seed the last valid snapshot from `.jobs-bootstrap-staging/` instead. Verify row counts match the live source before benching.
+- `--only-sources-file` takes **loader keys**, not registry ids: statics as `static_source::<registry id>` (e.g. `static_source::static:listing_url:<url>`), ATS entries as their aggregate loader names (`greenhouse_boards`, `breezy_sources`, `workable_sources`, …). Registry ids alone match nothing and fail the fetch child with "No requested --only-sources entries matched available loaders".
+- `--browser-fallback-max-workers-env` forwards the fallback-concurrency knob (service caps it at 6); `--timeout` defaults to one hour.
+
 Container memory ceiling reads live in `scripts/perf_pipeline_stages.py`. The seed-overlay helper resets state rows so the run doesn't re-processed previously-fetched items.
 
 ## Next Moves
 
 1. ~~Full-seed Docker bench (2159 sources) to capture a final cgroup `memory.peak` after the three landed phases.~~ **Validated 2026-08-11:** pi4-tight profile cannot host default fetch concurrency (maxWorkers=10) on the subset-500 bench; 7 OOM kills at 293/500. Subset-500 with `BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS=4` holds peak at 1.5 GiB and clears the workload (see "Subset-500 pi4-tight bench" above).
 2. If the final peak stays under ~1.4 GiB in production: consider removing the legacy gzip `read_json` fallback path in `src/pipeline_io.py` once one full production cycle has run end-to-end with the sidecar.
-3. Fetch-side response-body cap (httpx `max_bytes` knob) is the next lever if per-source peak pressure emerges — it was the next-largest consumer in the allocation profile (`httpx/_models.py` 63 MiB cumulative).
-4. **Duplicate-availabilityId hygiene** — the lifecycle accumulates shared availabilityIds across url-keyed entries (24.4k of 71.5k id-bearing entries duplicated), which the identity prep flags as contamination and repairs at scale each run. Not the collapse driver (fixed above) but worth revisiting for state hygiene.
+3. ~~Fetch-side response-body cap~~ **Landed 2026-08-12:** `BALUFFO_FETCH_MAX_BYTES` (default 20 MiB, 1 MiB floor) caps both the urllib and httpx async reads in `src/jobs/common/http.py` / `src/jobs/transport.py`; truncated pages parse fewer rows and retry next run.
+4. ~~Duplicate-availabilityId hygiene~~ **Closed 2026-08-12 (T2 trend):** the 08/05-era 24.4k dup cluster was legacy ambiguity; the identity-prep repair is stable — bench-era lifecycle has zero real duplicate ids (23.9k unique; the rest unassigned), production today has 47 dup ids / 229 rows (0.4%), absorbed by the designed quarantine.
 
 ## Sidecar Rollout Notes (post-ship checklist)
 

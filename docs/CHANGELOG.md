@@ -17,15 +17,18 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 - Fixed an O(N·K) alias-index rebuild in carried lifecycle initialization: `_initialize_carried_lifecycle_rows` rebuilt the full ~71k-entry index after every initialized row (~2 s each), stalling `applying_lifecycle` for ~36 min on ~1,000 fresh-identity rows; incremental index updates make it ~12 s end-to-end with identical output.
 - Fetch stage bounds the live future set during source execution (windowed submission instead of all 2k+ loaders at once) and adds stall detection with task-state throttling for long-running child stages.
 - `BALUFFO_PROFILE_ALLOC=1` gates per-source tracemalloc capture (`run_profiled_alloc`, `scripts/perf_alloc_top.py`) for allocation-profile diagnostics; findings recorded in `docs/plans/jobs-pipeline-memory-reduction-plan.md` (H1: fetch concurrency count, not per-source body size, drives pi4-tight pressure; mw=10 OOMs at 293/500 sources, mw=4 holds peak).
+- Fetch response bodies are now capped at `BALUFFO_FETCH_MAX_BYTES` (default 20 MiB, 1 MiB floor) on both transport paths — urllib read and the httpx async stream — instead of fully materializing unbounded pages. Bounds the H2-class amplification measured for the ~37 MiB playsimple-class peak (`httpx/_models.py` 119.7 MiB cumulative in the allocation profile); a truncated page simply parses fewer rows and is retried on the next run.
 
 ### Fixed
 
 - `source_skipped` lifecycle preservation no longer accrues availability failures: the skipped-preserve path called `_apply_unverified_availability_entry`, which incremented `consecutiveAvailabilityFailures` and, after `AVAILABILITY_OVERDUE_FAILURE_COUNT=2` + 7 days, marked jobs `verification_overdue` and hid them from the output — even though their sources were simply not run that cycle (cadence, subset filter, or exclusion). A skipped source provides no availability evidence; only failed sources decay, and eligible-missing retirement is unchanged. Previously collapsed re-run outputs (41k → ~1.2k rows) now project 100%.
 - Per-stage RSS logging (`[jobs_fetcher] INFO rssMiB=... phase_enter/exit ...`) in finalize phases plus a `finalizeInputs` size line aid future bench diagnostics.
+- `BrowserFallbackPool` close now cancels lingering asyncio tasks (playwright driver `Connection.run`) before stopping its event loop, removing the `Task was destroyed but it is pending!` teardown warning while staying idempotent and join-bounded.
+- Atomic writers in `src/pipeline_io.py` sweep same-target `*.tmp` siblings older than one hour before writing, so SIGKILL-interrupted writes (70 MB leftover in the bench seed, 1.3 MB on the live Umbrel volume) no longer accumulate on disk.
 
 ### Changed
 
-- Bench harness `scripts/perf_pipeline_stages.py` gains `--only-sources-file` (env-file staged `BALUFFO_CONTAINER_PIPELINE_ONLY_SOURCES` to avoid the Windows 32k command-line cap), `--fetch-max-workers-env` (`BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS`), and `--profile-alloc`. Bench evidence and root-cause write-ups live in `docs/plans/jobs-pipeline-memory-reduction-plan.md` and `docs/plans/browser-fallback-pool-plan.md`.
+- Bench harness `scripts/perf_pipeline_stages.py` gains `--only-sources-file` (env-file staged `BALUFFO_CONTAINER_PIPELINE_ONLY_SOURCES` to avoid the Windows 32k command-line cap), `--fetch-max-workers-env` (`BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS`), `--browser-fallback-max-workers-env` (`BALUFFO_CONTAINER_PIPELINE_BROWSER_FALLBACK_MAX_WORKERS`, service-capped at 6), and `--profile-alloc`; the pipeline completion timeout default rises to one hour for full-seed runs. Bench evidence and root-cause write-ups live in `docs/plans/jobs-pipeline-memory-reduction-plan.md` and `docs/plans/browser-fallback-pool-plan.md`.
 
 ### Tooling
 
