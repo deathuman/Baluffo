@@ -195,6 +195,9 @@ class BrowserFallbackPool:
                 await self._playwright.stop()
             except BaseException:
                 pass
+        for task in list(asyncio.all_tasks()):
+            if task is not asyncio.current_task():
+                task.cancel()
 
     def _atexit_close(self) -> None:
         try:

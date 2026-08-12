@@ -17,6 +17,8 @@ from src.storage_json_metrics import record_json_text_write
 
 RawJob = dict[str, Any]
 
+_STALE_TMP_AGE_SECONDS = 60 * 60
+
 
 def _trusted_local_path(path: Path | str) -> Path:
     return Path(path).expanduser()
@@ -177,6 +179,25 @@ def _write_streamed_tmp(tmp_path: Path, target: Path, stream_fn: Callable[[Any],
     return write_count
 
 
+def _sweep_stale_tmp(target: Path) -> None:
+    """Remove `target.*.tmp` siblings left by interrupted (e.g. SIGKILLed) writes.
+
+    Age-gated so a live concurrent writer's temp is never touched; the pipeline
+    lock serializes writers of the same artifact anyway. ponytail: directory
+    scan per write is cheap next to the multi-MB payloads involved.
+    """
+    try:
+        now = time.time()
+        for leftover in target.parent.glob(f"{target.name}.*.tmp"):
+            try:
+                if now - leftover.stat().st_mtime > _STALE_TMP_AGE_SECONDS:
+                    leftover.unlink()
+            except OSError:
+                pass
+    except OSError:
+        pass
+
+
 def write_streamed_text_if_changed(path: Path, stream_fn: Callable[[Any], None]) -> bool:
     """Atomically write content produced by ``stream_fn(handle)`` to path.
 
@@ -191,6 +212,7 @@ def write_streamed_text_if_changed(path: Path, stream_fn: Callable[[Any], None])
     target = _storage_target_path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = target.with_name(f"{target.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    _sweep_stale_tmp(target)
     try:
         write_count = _write_streamed_tmp(tmp_path, target, stream_fn)
         existing_size: int = -1
@@ -240,6 +262,7 @@ def write_pipeline_rows_sidecar(path: Path, rows: Sequence[RawJob]) -> None:
     target = _pipeline_rows_sidecar_path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = target.with_name(f"{target.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    _sweep_stale_tmp(target)
     try:
         # codeql[py/path-injection] Sidecar lives beside a trusted pipeline artifact.
         with gzip.open(tmp_path, mode="wt", encoding="utf-8", newline="\n") as handle:
@@ -326,6 +349,7 @@ def _write_atomic_text(
     # codeql[py/path-injection] Pipeline IO only creates trusted local runtime artifact parents.
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    _sweep_stale_tmp(path)
     try:
         if path.suffix == ".gz":
             # codeql[py/path-injection] Pipeline IO temp files stay next to trusted artifacts.

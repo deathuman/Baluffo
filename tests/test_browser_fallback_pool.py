@@ -8,7 +8,9 @@ against a stdlib http.server on localhost.
 
 from __future__ import annotations
 
+import gc
 import threading
+import warnings
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
@@ -130,7 +132,10 @@ def test_pool_double_close_is_idempotent(http_server) -> None:
         html, _ = pool.fetch(f"{http_server}/x", 15)
         assert html
     finally:
-        pool.close()
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", RuntimeWarning)
+            pool.close()
+            gc.collect()  # force Task.__del__: pending tasks warn here
     pool.close()  # second call must not raise
     assert pool._loop is None
     assert pool._thread is None
