@@ -36,6 +36,8 @@ data/*.csv
 data/*.log
 data/*.md
 data/*.jsonl
+data/*.jsonl.gz
+data/*.lock
 data/*.db
 data/*.db-*
 data/*.json.gz
