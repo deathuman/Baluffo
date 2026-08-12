@@ -10,6 +10,7 @@ from src.jobs.pipeline_runtime_summary import PipelineTaskRuntime
 from src.jobs.pipeline_runtime_writers import make_task_state_writer
 from src.jobs.pipeline_source_results import _classify_report_outcome
 from src.jobs.pipeline_stage_source_execution import _failure_bucket_from_zero_extract_context
+from src.pipeline_io import write_pipeline_rows_sidecar
 from src.shared.json_io import read_json
 from tests.helpers.concurrency import BlockingActiveCounter
 from tests.helpers.job_fixtures import _fixture_json
@@ -345,6 +346,7 @@ def test_pipeline_preserves_previous_output_when_current_is_empty() -> None:
     with workspace_tmpdir("jobs-fetcher") as tmp:
         out = Path(tmp)
         (out / "jobs-unified.json").write_text(json.dumps(existing), encoding="utf-8")
+        write_pipeline_rows_sidecar(out / "jobs-unified.json", existing)
         report = jf.run_pipeline(output_dir=out, source_loaders=[("empty", empty_loader)])
 
         output = read_json(out / "jobs-unified.json", [])
@@ -413,6 +415,7 @@ def test_pipeline_reads_previous_output_in_packaged_layout_with_shared_contract_
         versioned_module_path.parent.mkdir(parents=True, exist_ok=True)
         versioned_module_path.write_text("# test stub\n", encoding="utf-8")
         (output_dir / "jobs-unified.json").write_text(json.dumps(existing), encoding="utf-8")
+        write_pipeline_rows_sidecar(output_dir / "jobs-unified.json", existing)
 
         monkeypatch.setattr(jobs_text_utils, "__file__", str(versioned_module_path))
         jobs_text_utils.load_city_noise_contract.cache_clear()

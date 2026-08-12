@@ -10,6 +10,7 @@ from src import jobs_fetcher as jf
 from src.jobs import pipeline as pipeline_mod
 from src.jobs import pipeline_cli as pipeline_cli_mod
 from src.jobs.adapters import static_sources as static_sources_mod
+from src.pipeline_io import write_pipeline_rows_sidecar
 from src.shared.json_io import read_json
 from src.storage.baluffo_store import BaluffoStore
 from src.storage.source_registry_runtime import SourceRegistryRuntimeStore
@@ -139,6 +140,7 @@ def test_run_pipeline_does_not_treat_source_check_only_state_as_fresh() -> None:
             json.dumps([_stale_qloc_sheet_job()]),
             encoding="utf-8",
         )
+        write_pipeline_rows_sidecar(out / "jobs-unified.json", [_stale_qloc_sheet_job()])
         _write_source_check_only_qloc_state(out)
 
         report = jf.run_pipeline(
@@ -175,19 +177,14 @@ def test_run_pipeline_default_loaders_use_output_dir_active_registry(monkeypatch
     with workspace_tmpdir("jobs-fetcher-output-dir-registry-static-loader") as tmp:
         out = Path(tmp)
         _write_qloc_active_registry(out)
-        (out / "jobs-unified.json").write_text(
-            json.dumps(
-                [
-                    {
-                        "title": "Legacy Producer",
-                        "company": "Other Studio",
-                        "jobLink": "https://example.com/jobs/legacy-producer",
-                        "source": "google_sheets",
-                    }
-                ]
-            ),
-            encoding="utf-8",
-        )
+        legacy_row = {
+            "title": "Legacy Producer",
+            "company": "Other Studio",
+            "jobLink": "https://example.com/jobs/legacy-producer",
+            "source": "google_sheets",
+        }
+        (out / "jobs-unified.json").write_text(json.dumps([legacy_row]), encoding="utf-8")
+        write_pipeline_rows_sidecar(out / "jobs-unified.json", [legacy_row])
         _write_source_check_only_qloc_state(out)
 
         report = jf.run_pipeline(output_dir=out, show_progress=False)
@@ -321,19 +318,14 @@ def test_run_pipeline_refreshes_fresh_static_source_missing_from_published_feed(
 
     with workspace_tmpdir("jobs-fetcher-fresh-static-unpublished") as tmp:
         out = Path(tmp)
-        (out / "jobs-unified.json").write_text(
-            json.dumps(
-                [
-                    {
-                        "title": "Legacy Producer",
-                        "company": "Other Studio",
-                        "jobLink": "https://example.com/jobs/legacy-producer",
-                        "source": "google_sheets",
-                    }
-                ]
-            ),
-            encoding="utf-8",
-        )
+        legacy_row = {
+            "title": "Legacy Producer",
+            "company": "Other Studio",
+            "jobLink": "https://example.com/jobs/legacy-producer",
+            "source": "google_sheets",
+        }
+        (out / "jobs-unified.json").write_text(json.dumps([legacy_row]), encoding="utf-8")
+        write_pipeline_rows_sidecar(out / "jobs-unified.json", [legacy_row])
         _write_fresh_qloc_source_state(out)
 
         report = jf.run_pipeline(
@@ -358,6 +350,7 @@ def test_run_pipeline_still_skips_fresh_static_source_present_in_published_feed(
     with workspace_tmpdir("jobs-fetcher-fresh-static-published") as tmp:
         out = Path(tmp)
         (out / "jobs-unified.json").write_text(json.dumps([_qloc_job()]), encoding="utf-8")
+        write_pipeline_rows_sidecar(out / "jobs-unified.json", [_qloc_job()])
         _write_fresh_qloc_source_state(out)
 
         report = jf.run_pipeline(

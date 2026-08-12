@@ -3,6 +3,7 @@ from pathlib import Path
 from unittest import mock
 
 from src import jobs_fetcher as jf
+from src.pipeline_io import write_pipeline_rows_sidecar
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -40,6 +41,7 @@ def test_seeded_existing_output_marks_dedup_bundle_collisions_as_carried() -> No
     with workspace_tmpdir("jobs-fetcher-carried-dedup-evidence") as tmp:
         out = Path(tmp)
         (out / "jobs-unified.json").write_text(json.dumps(existing), encoding="utf-8")
+        write_pipeline_rows_sidecar(out / "jobs-unified.json", existing)
         with mock.patch.dict(
             "os.environ", {"BALUFFO_FETCH_SEED_EXISTING_OUTPUT": "1"}, clear=False
         ):
