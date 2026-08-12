@@ -10,6 +10,14 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+## [0.2.130] - 2026-08-12
+
+> Desktop rollup: the public desktop line moves from v0.2.119 straight to
+> v0.2.130, folding in the container/Umbrel 0.2.120-0.2.129 patch cycle plus
+> the jobs-pipeline memory/stability batch below. Shared fixes (pipeline
+> memory, browser-fallback pool, lifecycle preservation, fetch transport)
+> apply to desktop and container alike.
+
 ### Performance
 
 - Jobs pipeline peak-RSS reduction (pi4-tight seat, 1.5 GiB cap): the finalize pass now runs end-to-end at ~916 MiB peak instead of OOM-killing the fetch child. Three stacked peaks were removed: (1) `read_existing_output` streams rows from a `.rows.jsonl.gz` sidecar instead of `json.loads`-ing the 60+ MB blob (560 → 154 MB parse peak); (2) finalize drops the duplicate `to_dict()` snapshot from tombstone reconciliation and skips the lifecycle-state re-read when the on-disk fingerprint is unchanged; (3) `writing_outputs` streams the unified/light/lifecycle-state/tombstone JSON writes one row at a time (the equivalent `json.dumps` paths peaked 355 + 255 + 178 + ~745 MiB at 40k rows / 111k lifecycle entries), frees ~500-700 MiB of dead identity-preparation references after the lifecycle phase (`gc` + `malloc_trim`), and drops the duplicate pydantic re-validation of every tombstone at write time.
@@ -34,6 +42,10 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 ### Tooling
 
 - `scripts/perf_alloc_top.py` aggregates the per-source tracemalloc JSONL (`<data>/perf-profiles/allocations.jsonl`) by cumulative MiB and per-source peak.
+
+### Notes
+
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
 
 ## [0.2.129] - 2026-08-07
 
