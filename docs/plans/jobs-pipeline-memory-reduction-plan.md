@@ -167,6 +167,26 @@ Container memory ceiling reads live in `scripts/perf_pipeline_stages.py`. The se
 3. ~~Fetch-side response-body cap~~ **Landed 2026-08-12:** `BALUFFO_FETCH_MAX_BYTES` (default 20 MiB, 1 MiB floor) caps both the urllib and httpx async reads in `src/jobs/common/http.py` / `src/jobs/transport.py`; truncated pages parse fewer rows and retry next run.
 4. ~~Duplicate-availabilityId hygiene~~ **Closed 2026-08-12 (T2 trend):** the 08/05-era 24.4k dup cluster was legacy ambiguity; the identity-prep repair is stable — bench-era lifecycle has zero real duplicate ids (23.9k unique; the rest unassigned), production today has 47 dup ids / 229 rows (0.4%), absorbed by the designed quarantine.
 
+## Fresh-Seed Bench Results (2026-08-12, live Umbrel volume regen)
+
+The seed was regenerated from the live Umbrel volume (UmbrelOS v2 app data, 2,317 active registry sources, schema-v2 lifecycle with 55,596 jobs). Bench runs on `baluffo:pipeline-bench`, preset `smoke`:
+
+| Run | Seat | Keys | mw | fb | Outcome | Fetch wall / peak |
+| --- | --- | --- | --- | --- | --- | --- |
+| subset1000-fb4 | pi4-tight 1.5g | 903 | 4 | 4 | **failed — OOM** | 2,429 s / 1535 MiB (cgroup ceiling; playwright Node driver crash) |
+| subset500-fb4 | pi4-tight 1.5g | 500 | 4 | 4 | **failed — OOM** | 1,739 s / 1535 MiB (ceiling) |
+| subset500-mw2 | pi4-tight 1.5g | 500 | 2 | 4 | **failed — OOM** | 1,739 s / 1536 MiB (ceiling; Node crash in fetcher log) |
+| subset500-roomy-fb4 | pi4-roomy 2.5g | 500 | 4 | 4 | **completed** | 2,733 s / 2403 MiB; output 25,884 rows; finalize phases fast (dedup 18.7 s, reconciling 14.6 s, applying_lifecycle 8.6 s, writing_outputs 17.8 s, sync_push 2.2 s) |
+| subset500-roomy-fb6 | pi4-roomy 2.5g | 500 | 4 | 6 | **completed** | 3,379 s / 2559 MiB (+24% wall, +53% CPU vs fb=4 — extra fallback workers contend on the single pooled browser and ride the ceiling; default 4 confirmed) |
+
+Key findings:
+
+- **The pi4-tight 1.5 GiB seat cannot host the current production-shaped fetch** at any subset ≥500 keys / mw ≥2: memory climbs with the run's retained rows + browser-fallback driver and pins at the cgroup ceiling, then the playwright Node driver OOM-crashes. The earlier subset-500 "holds 1.5 GiB" evidence was against the lighter 08/05-era seed. Production is **not** capped (the Umbrel compose sets no `mem_limit`), so this is a bench-seat/Pi-sizing finding, not a production blocker: a 4 GB Pi hosting the container uncapped has ~2.5-3 GiB of practical headroom — tight for full-coverage fetch (projected ~4+ GiB at 2,317 keys).
+- **Full-scale fetch memory scales with retained rows, not worker count** (mw=2 peaked like mw=4). The concurrency lever (H1) stops helping once the retained-row set dominates; the remaining memory lever for a 1.5 GiB seat would be row-streaming the fetch child's retained set (not attempted — production is uncapped).
+- **The 500-key fresh-seed run completed end-to-end** — the first clean full-pipeline completion on production-shaped data: the fixed phases hold (no 36-min lifecycle grind, no collapse; output 25,884 rows vs the 1.2k collapse-era projection).
+- Fallback concurrency 6 is not beneficial (see table) — keep the default 4.
+- Bench tool: `--profile pi4-roomy` (2.5g/2cpus) added for fresh-seed benches; `--browser-fallback-max-workers-env` forwards the fallback knob.
+
 ## Sidecar Rollout Notes (post-ship checklist)
 
 - The first production run after `32794f97` ships will write `.rows.jsonl.gz` alongside the legacy blob. From that point forward `read_existing_output` prefers the sidecar; the blob is only parsed when the sidecar is missing.
