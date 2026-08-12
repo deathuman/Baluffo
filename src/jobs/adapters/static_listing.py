@@ -51,7 +51,11 @@ from src.jobs.adapters.static_runtime_support import (
 from src.jobs.common.exact_category_titles import has_static_container_artifact_evidence
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.common.http import HttpStatusError
-from src.jobs.page_gating import classify_job_page, looks_like_job_title_candidate
+from src.jobs.page_gating import (
+    classify_job_page,
+    looks_like_job_title_candidate,
+    looks_like_static_parser_noise_title,
+)
 from src.jobs.state_source_state import should_skip_static_source_for_structured_migration
 from src.jobs.text_utils import clean_text, normalize_url, sanitize_location_text
 from src.jobs.transport import conditional_revalidate_url
@@ -632,6 +636,8 @@ def _append_repaired_plugin_rows(
     for raw_row in rows:
         if not isinstance(raw_row, dict) or _is_provisional_static_artifact_row(raw_row):
             continue
+        if looks_like_static_parser_noise_title(clean_text(raw_row.get("title"))):
+            continue
         row = dict(raw_row)
         link = normalize_url(row.get("jobLink"))
         if link:
@@ -804,6 +810,8 @@ def _append_parsed_listing_rows(
                     parent_url=page_url,
                 )
             continue
+        if looks_like_static_parser_noise_title(clean_text(row.get("title"))):
+            continue
         if not link or link in ctx.seen_links:
             continue
         ctx.seen_links.add(link)
@@ -875,6 +883,8 @@ def _append_rendered_row(
     title = clean_text(row.get("title"))
     link = normalize_url(row.get("jobLink"))
     location_hint = clean_text(row.pop("_locationHint", ""))
+    if looks_like_static_parser_noise_title(title):
+        return 0, False, 0
     if _is_provisional_static_artifact_row(row):
         if link:
             _append_detail_candidate(

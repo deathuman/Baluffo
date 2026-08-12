@@ -23,6 +23,7 @@ from src.jobs.common.exact_category_titles import (
     looks_like_static_container_url,
 )
 from src.jobs.job_link_company import company_from_job_link
+from src.jobs.page_gating import looks_like_static_parser_noise_title
 from src.jobs.text_utils import (
     classify_city_filter_rejection,
     clean_text,
@@ -216,6 +217,7 @@ def analyze_jobs_artifact(value: str) -> dict[str, Any]:
     rows = _load_rows(value)
     exact_category_examples: list[dict[str, str]] = []
     static_container_examples: list[dict[str, str]] = []
+    parser_noise_examples: list[dict[str, str]] = []
     gracklehq_known_company_by_url: dict[str, set[str]] = defaultdict(set)
 
     for row in rows:
@@ -230,6 +232,11 @@ def analyze_jobs_artifact(value: str) -> dict[str, Any]:
     static_container_rows = [row for row in rows if _has_static_container_artifact_evidence(row)]
     for row in static_container_rows[:20]:
         static_container_examples.append(_example(row, evidence="static_container_artifact_title"))
+    parser_noise_rows = [
+        row for row in rows if looks_like_static_parser_noise_title(clean_text(row.get("title")))
+    ]
+    for row in parser_noise_rows[:20]:
+        parser_noise_examples.append(_example(row, evidence="static_parser_noise_title"))
     city_filter_rows: list[tuple[dict[str, str], list[dict[str, str]]]] = []
     city_filter_warning_rows: list[tuple[dict[str, str], list[dict[str, str]]]] = []
     city_filter_reason_counts: Counter[str] = Counter()
@@ -306,6 +313,7 @@ def analyze_jobs_artifact(value: str) -> dict[str, Any]:
     blocked = (
         len(exact_category_rows)
         + len(static_container_rows)
+        + len(parser_noise_rows)
         + len(strong_unknown_examples)
         + len(city_filter_rows)
     )
@@ -320,6 +328,7 @@ def analyze_jobs_artifact(value: str) -> dict[str, Any]:
             "rows": len(rows),
             "exactCategoryTitleLeaks": len(exact_category_rows),
             "staticContainerTitleLeaks": len(static_container_rows),
+            "parserNoiseTitleLeaks": len(parser_noise_rows),
             "cityFilterCandidateLeaks": len(city_filter_rows),
             "cityFilterCompoundWarnings": len(city_filter_warning_rows),
             "unknownCompanyStrongEvidenceLeaks": len(strong_unknown_examples),
@@ -332,6 +341,7 @@ def analyze_jobs_artifact(value: str) -> dict[str, Any]:
         "blocked": {
             "exactCategoryTitleExamples": exact_category_examples,
             "staticContainerTitleExamples": static_container_examples,
+            "parserNoiseTitleExamples": parser_noise_examples,
             "cityFilterCandidateExamples": city_filter_examples,
             "unknownCompanyExamples": strong_unknown_examples[:20],
         },
@@ -359,6 +369,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             "status={status} rows={rows} exactCategoryTitleLeaks={titles} "
             "staticContainerTitleLeaks={containers} "
+            "parserNoiseTitleLeaks={noise} "
             "cityFilterCandidateLeaks={city_filter} "
             "cityFilterCompoundWarnings={city_compound} "
             "unknownCompanyStrongEvidenceLeaks={strong} "
@@ -367,6 +378,7 @@ def main(argv: list[str] | None = None) -> int:
                 rows=counts["rows"],
                 titles=counts["exactCategoryTitleLeaks"],
                 containers=counts["staticContainerTitleLeaks"],
+                noise=counts["parserNoiseTitleLeaks"],
                 city_filter=counts["cityFilterCandidateLeaks"],
                 city_compound=counts["cityFilterCompoundWarnings"],
                 strong=counts["unknownCompanyStrongEvidenceLeaks"],

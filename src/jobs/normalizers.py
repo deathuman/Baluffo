@@ -34,6 +34,40 @@ COUNTRY_NAME_TO_CODE = {
     "remote": "Remote",
 }
 
+# US state abbreviations that are NOT valid ISO 3166-1 alpha-2 country codes.
+# States like CA/CO/GA/IL/IN/ID/AL/AR/DE/LA/MA/MD/ME/MN/MO/MT/NE/AZ/PA/SC/TN/VA/NC
+# are excluded on purpose: those codes are real countries and must not be remapped.
+US_STATE_CODE_TO_COUNTRY = {
+    "AK": "US",
+    "CT": "US",
+    "DC": "US",
+    "FL": "US",
+    "HI": "US",
+    "IA": "US",
+    "KS": "US",
+    "KY": "US",
+    "MI": "US",
+    "MS": "US",
+    "ND": "US",
+    "NH": "US",
+    "NJ": "US",
+    "NM": "US",
+    "NV": "US",
+    "NY": "US",
+    "OH": "US",
+    "OK": "US",
+    "OR": "US",
+    "RI": "US",
+    "SD": "US",
+    "TX": "US",
+    "UT": "US",
+    "VT": "US",
+    "WA": "US",
+    "WI": "US",
+    "WV": "US",
+    "WY": "US",
+}
+
 
 # These are private duplicates of clean_text / norm_text in text_utils.py.
 # Cannot import from text_utils.py because it imports COUNTRY_NAME_TO_CODE and
@@ -62,10 +96,19 @@ def normalize_country(value: Any) -> str:
         return "Unknown"
     if text == "Remote":
         return "Remote"
-    if len(text) == 2 and text.isalpha():
-        return text.upper()
+    if len(text) == 2 and text.isalpha() and text.isascii():
+        return US_STATE_CODE_TO_COUNTRY.get(text.upper(), text.upper())
+    if _is_non_script_garbage_country(text):
+        return "Unknown"
     lower = text.lower()
     return COUNTRY_NAME_TO_CODE.get(lower, text)
+
+
+def _is_non_script_garbage_country(text: str) -> bool:
+    """True for values with no Latin letters, e.g. CJK UI noise in a country field."""
+    if not any(char.isalpha() for char in text):
+        return False
+    return not any("a" <= char.lower() <= "z" for char in text)
 
 
 def normalize_work_type(value: Any, title: Any = None) -> str:

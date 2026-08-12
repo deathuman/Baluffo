@@ -1,13 +1,88 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
+from scripts.jobs_artifact_quality_gate import analyze_jobs_artifact
 from src.jobs.adapters.static_detail_heuristics import (
     is_known_non_job_detail_url,
     process_detail_html,
 )
 from src.jobs.adapters.static_scrapy import _normalize_job
 from src.jobs.page_gating import looks_like_static_parser_noise_title
+
+
+def _write_json(path: object, rows: list[dict[str, str]]) -> None:
+    with open(str(path), "w", encoding="utf-8") as handle:
+        json.dump(rows, handle, ensure_ascii=False)
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        ".css-ttson6{font-family:Roboto}",
+        'const t="undefined"!=typeof HTMLImageElement',
+        "REQUIREMENTS",
+        "On-site",
+        "Odpowiedz na ofertę",
+        "Register",
+        "홈",
+        "重置",
+    ],
+)
+def test_jobs_artifact_quality_gate_blocks_static_parser_noise_titles(
+    tmp_path: object, title: str
+) -> None:
+    artifact = str(tmp_path) + "/jobs-unified.json"
+    _write_json(
+        artifact,
+        [
+            {
+                "id": "1",
+                "title": title,
+                "company": "Example Games",
+                "jobLink": "https://example.com/jobs/1",
+                "source": "static_source::static:listing_url:https://example.com/careers",
+                "sourceJobId": "static:example:1",
+            }
+        ],
+    )
+
+    report = analyze_jobs_artifact(artifact)
+
+    assert report["status"] == "blocked"
+    assert report["counts"]["parserNoiseTitleLeaks"] == 1
+    assert report["blocked"]["parserNoiseTitleExamples"][0]["title"] == title
+
+
+def test_jobs_artifact_quality_gate_keeps_real_static_titles(tmp_path: object) -> None:
+    artifact = str(tmp_path) + "/jobs-unified.json"
+    _write_json(
+        artifact,
+        [
+            {
+                "id": "1",
+                "title": "Senior Game Designer",
+                "company": "Example Games",
+                "jobLink": "https://example.com/jobs/senior-game-designer",
+                "source": "static_source::static:listing_url:https://example.com/careers",
+                "sourceJobId": "static:example:1",
+            },
+            {
+                "id": "2",
+                "title": "Chef d'équipe, Artiste technique",
+                "company": "Example Studio",
+                "jobLink": "https://example.com/jobs/lead-technical-artist",
+                "source": "static_source::static:listing_url:https://example.com/careers",
+                "sourceJobId": "static:example:2",
+            },
+        ],
+    )
+
+    report = analyze_jobs_artifact(artifact)
+
+    assert report["counts"]["parserNoiseTitleLeaks"] == 0
 
 
 @pytest.mark.parametrize(
@@ -26,6 +101,69 @@ from src.jobs.page_gating import looks_like_static_parser_noise_title
     ],
 )
 def test_static_parser_noise_titles_are_classified_as_noise(title: str) -> None:
+    assert looks_like_static_parser_noise_title(title)
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        '.css-ttson6{font-family:"Roboto","Helvetica","Arial",sans-serif;font-weight:500}',
+        ".sendgrid-subscription-widget input { padding: .5em .5em .55em; }",
+        'const t="undefined"!=typeof HTMLImageElement&&"loading"in HTMLImageElement.prototype',
+        "#nprogress{pointer-events:none}#nprogress .bar{background:#FFCE27;position:fixed}",
+        "REQUIREMENTS",
+        "On-site",
+        "Odpowiedz na ofertę",
+        "Join the Community",
+        "Register",
+        "Login",
+        "Home",
+        "FAQ",
+        "Recruit",
+        "Read more",
+        "홈",
+        "重置",
+        "首頁",
+        "또는",
+        "搜索",
+    ],
+)
+def test_static_parser_code_and_ui_noise_titles_are_classified_as_noise(title: str) -> None:
+    assert looks_like_static_parser_noise_title(title)
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Senior Game Designer",
+        "Chef d'équipe, Artiste technique",
+        "営業",
+        "企画",
+        "Technical Artist",
+        "QA Analyst",
+        "UI/UX Designer",
+        "3D Environment Artist",
+        "Level Designer (m/f/d)",
+    ],
+)
+def test_static_parser_noise_classifier_keeps_real_titles(title: str) -> None:
+    assert not looks_like_static_parser_noise_title(title)
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        ".css-ttson6{font-family:Roboto}",
+        'const t="undefined"!=typeof HTMLImageElement',
+        "REQUIREMENTS",
+        "On-site",
+        "Odpowiedz na ofertę",
+        "Register",
+        "홈",
+        "重置",
+    ],
+)
+def test_static_parser_noise_classifier_flags_audit_evidence_titles(title: str) -> None:
     assert looks_like_static_parser_noise_title(title)
 
 

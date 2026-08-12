@@ -475,8 +475,8 @@ def sanitize_country_text(value: Any) -> tuple[str, str]:
         return "", ""
     if text == "Remote":
         return "Remote", ""
-    if len(text) == 2 and text.isalpha() and text == text.upper():
-        return text, ""
+    if len(text) == 2 and text.isascii() and text.isalpha() and text == text.upper():
+        return normalize_country(text), ""
     resolved = resolve_country_acceptance_value(text)
     if resolved:
         resolved_normalized = normalize_country(resolved)

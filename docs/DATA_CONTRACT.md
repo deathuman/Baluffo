@@ -23,8 +23,7 @@ Represents a single job posting retrieved from the external sources.
 | `title` | `string` | The title of the job opening. |
 | `company` | `string` | The studio or employer name. |
 | `city` | `string` | The geographic city or empty if purely remote. |
-| `country` | `string` | The localized or ISO country name; `Unknown` is a missing-country placeholder, not contamination. |
-| `workType` | `string` | One of `Remote`, `Hybrid`, `Onsite`. |
+| `country` | `string` | The localized or ISO country name; `Unknown` is a missing-country placeholder, not contamination. || `workType` | `string` | One of `Remote`, `Hybrid`, `Onsite`. |
 | `contractType` | `string` | One of `Full-time`, `Internship`, `Temporary`, `Unknown`. |
 | `jobLink` | `string` | The canonical URL to apply for the job. |
 | `sector` | `string` | The industry sector, e.g., `Game` or `Tech`. |
@@ -56,6 +55,13 @@ Represents a single job posting retrieved from the external sources.
 | `locationSummary` | `string` | Human-readable summary derived from `locations` or legacy city/country fields. |
 | `adapter` | `string` | The Python adapter module used (e.g., `static`, `social`, `csv`). |
 | `studio` | `string` | The underlying pipeline configuration studio group. |
+
+Country values are normalized through `src/jobs/normalizers.py` (`normalize_country`): US state
+abbreviations that are not also ISO 3166-1 alpha-2 codes (e.g. `WA`, `TX`, `NY`) resolve to `US`,
+while non-Latin UI noise in the country field (e.g. `東京`, `首頁`) resolves to `Unknown`. Country
+acceptance is governed by `data/contracts/country_acceptance.json` (currently version 3), which
+lists accepted exact labels and alias-to-canonical mappings; values outside the contract are
+treated as unaccepted for filter/validation purposes without changing persisted row semantics.
 
 `jobs-lifecycle-state.json` stores the lifecycle ledger keyed by stable exact identity aliases. Each row keeps the
 same lifecycle fields (`status`, `firstSeenAt`, `lastSeenAt`, `removedAt`, `lifecycleEvent`,

@@ -253,7 +253,9 @@ def looks_like_static_parser_noise_title(text: str) -> bool:
         return True
     if lowered in {"reply", "vacancies"}:
         return True
-    return any(
+    if _looks_like_parser_code_payload(text):
+        return True
+    if any(
         fragment in lowered
         for fragment in (
             "browser does not support",
@@ -265,7 +267,103 @@ def looks_like_static_parser_noise_title(text: str) -> bool:
             "welcome to talentnetwork",
             ".css-",
         )
+    ):
+        return True
+    if _looks_like_nav_or_ui_title(lowered):
+        return True
+    return _looks_like_invalid_short_title(text)
+
+
+def _looks_like_parser_code_payload(text: str) -> bool:
+    raw = str(text or "")
+    if not raw:
+        return False
+    if len(raw) > 300:
+        return True
+    if re.search(
+        r"(?is)(\.css-[a-z0-9_]+|nprogress|font-family|\.sendgrid|const t=|function\s+\w+\s*\(|@media)",
+        raw,
+    ):
+        return True
+    if "{" in raw and "}" in raw and (";" in raw or ":" in raw):
+        return True
+    return False
+
+
+_NAV_OR_UI_TITLE_TOKENS = frozenset(
+    {
+        "about",
+        "about us",
+        "blog",
+        "career",
+        "careers",
+        "contact",
+        "contact us",
+        "faq",
+        "home",
+        "jobs",
+        "join us",
+        "learn more",
+        "login",
+        "news",
+        "on-site",
+        "privacy",
+        "read more",
+        "recruit",
+        "register",
+        "requirements",
+        "sign in",
+        "sign up",
+        "support",
+        "terms",
+        "homepage",
+        "startseite",
+        "odpowiedz na ofertę",
+        "weiterlesen",
+        "联系我们",
+        "首頁",
+        "首页",
+        "重置",
+        "홈",
+        "또는",
+        "搜索",
+        "応募する",
+        "給与",
+        "時給",
+    }
+)
+
+
+def _looks_like_nav_or_ui_title(lowered: str) -> bool:
+    if lowered in _NAV_OR_UI_TITLE_TOKENS:
+        return True
+    return any(
+        token in lowered
+        for token in (
+            "odpowiedz na ofertę",
+            "weiterlesen",
+            "wczytaj więcej",
+        )
     )
+
+
+def _looks_like_invalid_short_title(text: str) -> bool:
+    raw = str(text or "")
+    if not raw:
+        return False
+    if any(
+        ord(ch) < 0x20 or 0x200B <= ord(ch) <= 0x200F or 0xE000 <= ord(ch) <= 0xF8FF for ch in raw
+    ):
+        return True
+    lowered = raw.strip().lower()
+    if len(lowered) != 2 or not lowered.isalpha():
+        return False
+    return lowered in _COUNTRY_CODE_AS_TITLE_TOKENS
+
+
+_COUNTRY_CODE_AS_TITLE_TOKENS = frozenset(
+    {"ua", "nl", "mx", "kr", "jp", "cn", "gb", "de", "fr", "es"}
+)
 
 
 def _source_specific_words(text: str) -> set[str]:
