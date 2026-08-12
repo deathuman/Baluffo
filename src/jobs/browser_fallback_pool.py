@@ -1,9 +1,15 @@
-"""Shared Chromium pool for browser fetch fallbacks.
+"""Shared browser pool for fetch fallbacks.
 
-One lazy Chromium per fetch stage, running on a dedicated dispatcher thread
+One lazy browser per fetch stage, running on a dedicated dispatcher thread
 with an asyncio loop. Callers submit fetches from any worker thread via the
 synchronous ``fetch()``; each fetch gets a fresh BrowserContext so cookies/
 localStorage never bleed across servers (same isolation as launch-per-call).
+
+Backends: ``chromium`` (default) launches a pooled headless Chromium via
+Playwright; ``obscura`` (spike, dev-only) connects over CDP to an
+``obscura serve`` subprocess (Rust engine, ~30 MB). The obscura binary is
+not bundled yet — set ``BALUFFO_OBSCURA_BIN`` for the spike; missing binary
+surfaces as a fetch error and the circuit breaker owns retries.
 
 Why a dispatcher thread: Playwright's sync API is greenlet-bound to the
 thread that starts it, so a pool-of-one cannot be shared across the fetch
@@ -14,7 +20,7 @@ Crash handling: a dead browser marks the pool unavailable; the resulting
 error string matches is_browser_fallback_environment_error tokens, so the
 existing BrowserFallbackCircuitBreaker owns the 30-min cooldown.
 
-AI boundary owns: pooled Chromium lifetime and per-call context acquisition.
+AI boundary owns: pooled browser lifetime and per-call context acquisition.
 AI boundary implement in: this file for pool mechanics; fallback gating stays in browser_fallback.py.
 AI boundary search before contracts: pipeline source loop, source execution stage, source_check_http.
 AI boundary verify: `npm run lint:repo-guardrails` plus tests/test_browser_fallback_pool.py.
@@ -25,6 +31,9 @@ from __future__ import annotations
 import asyncio
 import atexit
 import os
+import random
+import shlex
+import subprocess
 import threading
 import time
 from typing import Any
@@ -35,14 +44,24 @@ _BROWSER_POOL_DISABLE_VALUES = {"0", "false", "no", "off"}
 _POOL_THREAD_NAME = "baluffo-browser-pool"
 _POOL_THREAD_JOIN_TIMEOUT_S = 5.0
 
+_BACKEND_CHROMIUM = "chromium"
+_BACKEND_OBSCURA = "obscura"
+_BACKEND_ENV = "BALUFFO_BROWSER_FALLBACK_BACKEND"
+_OBSCURA_BIN_ENV = "BALUFFO_OBSCURA_BIN"
+_OBSCURA_EXTRA_ARGS_ENV = "BALUFFO_OBSCURA_EXTRA_ARGS"
+_OBSCURA_CONNECT_TIMEOUT_S = 20.0
+_OBSCURA_PORT_MIN = 42000
+_OBSCURA_PORT_MAX = 49000
+
 
 class _PoolMetrics:
-    def __init__(self) -> None:
+    def __init__(self, *, backend: str = _BACKEND_CHROMIUM) -> None:
         self._lock = threading.Lock()
         self.values: dict[str, Any] = {
             "pool_startup_ms": 0,
             "pool_acquisitions": 0,
             "pool_relaunch_count": 0,
+            "backend": backend,
         }
 
     def incr(self, key: str, delta: int = 1) -> None:
@@ -60,6 +79,12 @@ def browser_pool_enabled(env: dict[str, str] | None = None) -> bool:
     return raw not in _BROWSER_POOL_DISABLE_VALUES
 
 
+def browser_fallback_backend(env: dict[str, str] | None = None) -> str:
+    values = os.environ if env is None else env
+    raw = str(values.get(_BACKEND_ENV) or "").strip().lower()
+    return raw if raw in {_BACKEND_CHROMIUM, _BACKEND_OBSCURA} else _BACKEND_CHROMIUM
+
+
 class BrowserFallbackPool:
     """Lazy single-browser pool; fresh BrowserContext per fetch call."""
 
@@ -68,9 +93,11 @@ class BrowserFallbackPool:
         self._thread: threading.Thread | None = None
         self._playwright = None
         self._browser = None
+        self._backend = browser_fallback_backend()
+        self._obscura_proc: subprocess.Popen | None = None
         self._available = True
         self._start_lock = threading.Lock()
-        self.metrics = _PoolMetrics()
+        self.metrics = _PoolMetrics(backend=self._backend)
         atexit.register(self._atexit_close)
 
     def _ensure_started(self) -> None:
@@ -101,7 +128,49 @@ class BrowserFallbackPool:
         from playwright.async_api import async_playwright
 
         self._playwright = await async_playwright().start()
+        if self._backend == _BACKEND_OBSCURA:
+            self._browser = await self._connect_obscura()
+            return
         self._browser = await self._playwright.chromium.launch(headless=True)
+
+    async def _connect_obscura(self) -> Any:
+        """Connect to a subprocess ``obscura serve`` over CDP (spike, dev-only)."""
+        binary = str(os.environ.get(_OBSCURA_BIN_ENV) or "").strip()
+        if not binary:
+            raise RuntimeError(
+                f"browser fallback backend 'obscura' requires the {_OBSCURA_BIN_ENV} env var"
+            )
+        extra_args = shlex.split(str(os.environ.get(_OBSCURA_EXTRA_ARGS_ENV) or "").strip())
+        last_error: BaseException | None = None
+        for _attempt in range(2):
+            port = random.randint(_OBSCURA_PORT_MIN, _OBSCURA_PORT_MAX)
+            proc = subprocess.Popen(
+                [binary, "serve", "--port", str(port), *extra_args],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            self._obscura_proc = proc
+            endpoint = f"ws://127.0.0.1:{port}/devtools/browser"
+            try:
+                deadline = time.monotonic() + _OBSCURA_CONNECT_TIMEOUT_S
+                while time.monotonic() < deadline:
+                    if proc.poll() is not None:
+                        last_error = RuntimeError(
+                            "obscura serve exited before accepting connections (port busy?)"
+                        )
+                        break
+                    try:
+                        return await self._playwright.chromium.connect_over_cdp(endpoint)
+                    except BaseException as exc:
+                        last_error = exc
+                        await asyncio.sleep(0.25)
+            except BaseException:
+                proc.terminate()
+                self._obscura_proc = None
+                raise
+            proc.terminate()
+            self._obscura_proc = None
+        raise last_error or RuntimeError("obscura serve failed to start")
 
     async def _fetch(self, url: str, timeout_s: int) -> str:
         context = await self._browser.new_context()
@@ -140,6 +209,8 @@ class BrowserFallbackPool:
                 "target closed",
                 "browser closed",
                 "crashed",
+                "connection closed",
+                "connection lost",
             )
         )
 
@@ -195,6 +266,13 @@ class BrowserFallbackPool:
                 await self._playwright.stop()
             except BaseException:
                 pass
+        proc = self._obscura_proc
+        self._obscura_proc = None
+        if proc is not None:
+            try:
+                proc.terminate()
+            except BaseException:
+                pass
         for task in list(asyncio.all_tasks()):
             if task is not asyncio.current_task():
                 task.cancel()
@@ -206,4 +284,4 @@ class BrowserFallbackPool:
             pass
 
 
-__all__ = ["BrowserFallbackPool", "browser_pool_enabled"]
+__all__ = ["BrowserFallbackPool", "browser_fallback_backend", "browser_pool_enabled"]

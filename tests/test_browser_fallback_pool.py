@@ -9,6 +9,7 @@ against a stdlib http.server on localhost.
 from __future__ import annotations
 
 import gc
+import os
 import threading
 import warnings
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -19,7 +20,11 @@ from src.jobs.browser_fallback import (
     BrowserFallbackCircuitBreaker,
     is_browser_fallback_environment_error,
 )
-from src.jobs.browser_fallback_pool import BrowserFallbackPool, browser_pool_enabled
+from src.jobs.browser_fallback_pool import (
+    BrowserFallbackPool,
+    browser_fallback_backend,
+    browser_pool_enabled,
+)
 
 
 class _FixtureServer(BaseHTTPRequestHandler):
@@ -71,6 +76,51 @@ def test_browser_pool_enabled_defaults_on_and_respects_kill_switch():
     assert not browser_pool_enabled({"BALUFFO_BROWSER_POOL": "0"})
     assert not browser_pool_enabled({"BALUFFO_BROWSER_POOL": "false"})
     assert browser_pool_enabled({"BALUFFO_BROWSER_POOL": "1"})
+
+
+def test_browser_fallback_backend_parsing():
+    assert browser_fallback_backend() == "chromium"
+    assert browser_fallback_backend({"BALUFFO_BROWSER_FALLBACK_BACKEND": "obscura"}) == "obscura"
+    assert browser_fallback_backend({"BALUFFO_BROWSER_FALLBACK_BACKEND": "OBSCURA"}) == "obscura"
+    assert browser_fallback_backend({"BALUFFO_BROWSER_FALLBACK_BACKEND": "weird"}) == "chromium"
+    assert browser_fallback_backend({"BALUFFO_BROWSER_FALLBACK_BACKEND": ""}) == "chromium"
+
+
+def test_pool_obscura_backend_without_binary_returns_error(http_server, monkeypatch):
+    monkeypatch.setenv("BALUFFO_BROWSER_FALLBACK_BACKEND", "obscura")
+    monkeypatch.delenv("BALUFFO_OBSCURA_BIN", raising=False)
+    pool = BrowserFallbackPool()
+    try:
+        html, error = pool.fetch(f"{http_server}/landing", 15)
+        assert html == ""
+        assert "BALUFFO_OBSCURA_BIN" in error
+    finally:
+        pool.close()
+    assert pool._loop is None
+    assert pool._thread is None
+    assert pool._obscura_proc is None
+
+
+@pytest.mark.slow  # launches a real obscura serve subprocess; requires BALUFFO_OBSCURA_BIN
+def test_pool_fetch_with_obscura_backend(http_server, monkeypatch):
+    obscura_bin = os.environ.get("BALUFFO_OBSCURA_BIN") or ""
+    if not obscura_bin:
+        pytest.skip("BALUFFO_OBSCURA_BIN not set")
+    monkeypatch.setenv("BALUFFO_BROWSER_FALLBACK_BACKEND", "obscura")
+    # obscura blocks private-IP navigation by default (SSRF fix); the localhost
+    # fixture needs the dev-only override, inherited by the serve subprocess.
+    monkeypatch.setenv("OBSCURA_ALLOW_PRIVATE_NETWORK", "1")
+    pool = BrowserFallbackPool()
+    try:
+        html, error = pool.fetch(f"{http_server}/landing", 15)
+        assert error == ""
+        assert "page:/landing" in html
+        metrics = pool.metrics.snapshot()
+        assert metrics["backend"] == "obscura"
+        assert metrics["pool_acquisitions"] == 1
+    finally:
+        pool.close()
+    assert pool._obscura_proc is None
 
 
 @pytest.mark.slow  # launches a real headless Chromium; excluded from CI/quick runs
