@@ -1,6 +1,6 @@
 # Static Regression Triage — 2026-08-12 (Track 1, site_changed)
 
-> - **Status:** Evidence report; actions pending operator decision (source-policy runbook authority)
+> - **Status:** Evidence report; **19 dead/absorbed sources demoted to pending on 2026-08-12 via the admin bridge** (operator-approved); ATS-migrated staging still pending
 > - **Basis:** 2026-07-17 `data/jobs-source-state.json.gz`; live HTTP probes on 2026-08-12; bounded pipeline runs (`_out`-style temp dirs) on the same day
 > - **Canonical for:** classification of the 53 `site_changed` static regressions; not canonical for registry mutations
 > - **Then inspect:** `docs/plans/jobs-coverage-improvement-plan.md`, `docs/source-policy-runbook.md`, `docs/snapshots/jobs-entry-validation-audit-2026-08-12.md`
@@ -79,6 +79,17 @@ ahoiii, strangebeat, bossfight, miniclip, digitalbros (×2), reflector→dayforc
    - inverge: detail-link validation (skip 404 detail candidates) — candidate for a small leaf fix + regression test.
 5. **Redirect careers alias (15)**: re-run pipeline once after other fixes; reclassify survivors.
 6. **Down 521 (1)**: pixowl — re-probe later; no action now.
+
+## Applied 2026-08-12 (operator-approved demotions)
+
+19 active static sources were demoted to pending via `POST /registry/demote-active` on the local admin bridge (127.0.0.1:8877), each verified dead/absorbed by live probe on the same day:
+
+- Dead-404 (14): hasbro, darkartssoftware, dedalord, frogdice, htxlabs, penrosestudios, aurorapunks, bamtang, blastworksinc, expertia.ai/flyingcaps, gsc-game, masongames, probablymonsters, tigerrollstudios.
+- Redirect-to-non-careers (5): larvagamestudios → radientgamestudio (rebrand), saigondragonstudios → about-us, tripleogames → homepage, winnipeg.ubisoft.com → Ubisoft global, everyweargames.com/careers → metacoregames (already covered by 2 active Metacore rows).
+
+Result: bridge reported `{"demoted": 19}`, registry summary active 2268 / pending 897 / rejected 0; all 19 present in `data/source-registry-pending.json.gz` with `pendingReason: fetch_failure_demote`, zero remaining in the active export. Source-sync unaffected (pull-only, no push, no conflicts). Registry exports are gitignored runtime artifacts; no repo files changed by the demotion.
+
+Not demoted: 5 already-pending rows (andarion, reply.com/careers, poncle, shortgun, hangar13 — no action needed) and the 2 rows missing from the registry (athenaworlds, everyweargames root — the everyweargames.com/careers row was demoted instead).
 
 ## Verification
 
