@@ -107,9 +107,18 @@ Three stacked peaks were killing the child at the 1.5 GiB cap during finalize (c
 
 Bench result (`subset50-pool-fixed9`): pipeline **completes end-to-end** — writing_outputs peak 831 MiB, finalize done at 916 MiB, all artifacts written, `terminalReason: completed`.
 
-### Re-run lifecycle-identity mismatch (open, separate)
+### Re-run collapse — root-caused and fixed (2026-08-11)
 
-Re-runs collapse the output: the run's deduped rows resolve to *unavailable* lifecycle entries (identity/key mismatch introduced by re-canonicalization on re-fetch), projecting only ~1.2k of 41.6k rows as available and generating ~40k tombstones. Not a memory bug — a lifecycle/dedup identity question on re-runs (host replica with the seed state projects all 41.4k rows available; the fetch-child deltas change resolution). Next investigation.
+Re-runs collapsed the output (41k → ~1.2k rows) and spawned ~40k tombstones. The chain, proven end-to-end:
+
+1. The lifecycle observes only freshly-fetched evidence (`observed_rows = canonical[seeded:]` — by design; re-observing carried rows would suppress legitimate retirement).
+2. Unobserved entries took the `source_skipped` preserve path, which called `_apply_unverified_availability_entry` — **incrementing `consecutiveAvailabilityFailures` every run**.
+3. With `AVAILABILITY_OVERDUE_FAILURE_COUNT=2` + 7-day age, any source skipped twice (cadence, subset filter, or exclusion) had its jobs marked `verification_overdue` → **hidden from the output**.
+4. In the bench (50 of ~1,450 sources), this compounded across runs into the collapse + tombstone flood. Production cadence-skipped sources would hit the same bug.
+
+Fix (`269058db`): the `source_skipped` branch no longer mutates availability fields — a skipped source provides no evidence; only **failed** sources decay, and eligible-missing retirement is unchanged. Bench on a pristine seed: output 23,750 rows (100% of deduped projected, was ~1,190), `terminalReason: completed`. The pre-existing poisoned state (70k overdue entries) heals as sources re-run successfully.
+
+Note: the duplicate-availabilityId lifecycle structure (24.4k shared ids across url-keyed entries, flagged as contamination by the identity prep) remains a hygiene issue to revisit, but it is not the collapse driver.
 
 ## Fetch-Side Signals (still open)
 
@@ -150,7 +159,7 @@ Container memory ceiling reads live in `scripts/perf_pipeline_stages.py`. The se
 1. ~~Full-seed Docker bench (2159 sources) to capture a final cgroup `memory.peak` after the three landed phases.~~ **Validated 2026-08-11:** pi4-tight profile cannot host default fetch concurrency (maxWorkers=10) on the subset-500 bench; 7 OOM kills at 293/500. Subset-500 with `BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS=4` holds peak at 1.5 GiB and clears the workload (see "Subset-500 pi4-tight bench" above).
 2. If the final peak stays under ~1.4 GiB in production: consider removing the legacy gzip `read_json` fallback path in `src/pipeline_io.py` once one full production cycle has run end-to-end with the sidecar.
 3. Fetch-side response-body cap (httpx `max_bytes` knob) is the next lever if per-source peak pressure emerges — it was the next-largest consumer in the allocation profile (`httpx/_models.py` 63 MiB cumulative).
-4. **Re-run lifecycle-identity mismatch** — the end-to-end bench completes but re-runs collapse the output to ~1.2k rows via unavailable-entry resolution (see above). Investigate why the fetch child's re-canonicalized rows resolve to unavailable lifecycle entries on re-runs (dedup id assignment vs lifecycle keys).
+4. **Duplicate-availabilityId hygiene** — the lifecycle accumulates shared availabilityIds across url-keyed entries (24.4k of 71.5k id-bearing entries duplicated), which the identity prep flags as contamination and repairs at scale each run. Not the collapse driver (fixed above) but worth revisiting for state hygiene.
 
 ## Sidecar Rollout Notes (post-ship checklist)
 
