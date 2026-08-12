@@ -47,7 +47,7 @@ DEFAULT_OUTPUT_ROOT = REPO_ROOT / "_out" / "perf-pipeline"
 DEFAULT_CONTAINER_NAME = "baluffo-perf-pipeline"
 DEFAULT_PORT = 8879
 DEFAULT_PRESET = "smoke"
-DEFAULT_TIMEOUT_S = 600.0
+DEFAULT_TIMEOUT_S = 3600.0
 DEFAULT_POLL_INTERVAL_S = 0.25
 DEFAULT_MEMORY_INTERVAL_S = 0.1
 DEFAULT_CPU_INTERVAL_S = 0.5
@@ -883,6 +883,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--browser-fallback-max-workers-env",
+        default="",
+        help=(
+            "Optional bench override for "
+            "BALUFFO_CONTAINER_PIPELINE_BROWSER_FALLBACK_MAX_WORKERS forwarded via "
+            "--env-file alongside the only-sources list (capped at 6 by the service)."
+        ),
+    )
+    parser.add_argument(
         "--profile-alloc",
         action="store_true",
         help=(
@@ -1013,6 +1022,11 @@ def main(argv: list[str] | None = None) -> int:
                     env_lines.append(
                         "BALUFFO_CONTAINER_PIPELINE_FETCH_MAX_WORKERS="
                         + str(args.fetch_max_workers_env).strip()
+                    )
+                if str(args.browser_fallback_max_workers_env or "").strip():
+                    env_lines.append(
+                        "BALUFFO_CONTAINER_PIPELINE_BROWSER_FALLBACK_MAX_WORKERS="
+                        + str(args.browser_fallback_max_workers_env).strip()
                     )
                 if bool(args.profile_alloc):
                     env_lines.append("BALUFFO_PROFILE_ALLOC=1")

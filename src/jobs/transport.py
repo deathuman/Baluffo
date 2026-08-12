@@ -18,6 +18,7 @@ from src.jobs.adapters import community
 from src.jobs.common.fetch import fetch_with_retries as common_fetch_with_retries
 from src.jobs.common.http import HttpStatusError
 from src.jobs.common.http import default_fetch_text as common_default_fetch_text
+from src.jobs.common.http import fetch_max_bytes as common_fetch_max_bytes
 from src.jobs.models import RequestConfig
 from src.jobs.text_utils import norm_text
 from src.jobs.text_utils import normalize_url as normalize_url_impl
@@ -301,7 +302,14 @@ async def async_fetch_text_httpx(
         headers = build_headers(request or default_request_config(timeout_s=timeout_s))
         response = await client.get(url, timeout=timeout, headers=headers)
         response.raise_for_status()
-        return str(response.text)
+        max_bytes = common_fetch_max_bytes()
+        content = bytearray()
+        # ponytail: streamed read-at-most cap; see common.http.fetch_max_bytes.
+        async for chunk in response.aiter_bytes():
+            if len(content) >= max_bytes:
+                break
+            content.extend(chunk[: max(0, max_bytes - len(content))])
+        return bytes(content).decode("utf-8", errors="replace")
     except httpx.HTTPStatusError as exc:
         code = int(getattr(exc.response, "status_code", 0) or 0)
         location = str(exc.response.headers.get("Location") or "")
