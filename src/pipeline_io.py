@@ -8,7 +8,7 @@ import json
 import os
 import time
 import uuid
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +36,29 @@ def _read_text_path(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _restore_existing_rows(
+    rows: Iterable[dict[str, Any]],
+    *,
+    fetched_at: str,
+    canonicalize_job: Callable[..., Any],
+    clean_text: Callable[[Any], str],
+    canonical_job_cls: type | None = None,
+) -> list[Any]:
+    """Restore canonical jobs from raw/dict rows (shared by sidecar + blob paths)."""
+    restored: list[Any] = []
+    for row in rows:
+        candidate = _existing_output_row_to_canonical(
+            row,
+            fetched_at=fetched_at,
+            canonicalize_job=canonicalize_job,
+            clean_text=clean_text,
+            canonical_job_cls=canonical_job_cls,
+        )
+        if candidate is not None:
+            restored.append(candidate)
+    return restored
+
+
 def read_existing_output(
     json_path: Path,
     fetched_at: str,
@@ -49,32 +72,23 @@ def read_existing_output(
     # json.loads on the 60+ MB jobs-unified.json.gz blob.
     sidecar_rows = read_pipeline_rows_sidecar(Path(json_path))
     if sidecar_rows is not None:
-        restored_stream: list[Any] = []
-        for row in sidecar_rows:
-            if row_predicate is not None and not row_predicate(row):
-                continue
-            candidate = _existing_output_row_to_canonical(
-                row,
-                fetched_at=fetched_at,
-                canonicalize_job=canonicalize_job,
-                clean_text=clean_text,
-                canonical_job_cls=canonical_job_cls,
-            )
-            if candidate is not None:
-                restored_stream.append(candidate)
-        return restored_stream
+        return _restore_existing_rows(
+            (row for row in sidecar_rows if row_predicate is None or row_predicate(row)),
+            fetched_at=fetched_at,
+            canonicalize_job=canonicalize_job,
+            clean_text=clean_text,
+            canonical_job_cls=canonical_job_cls,
+        )
 
     payload = read_json(Path(json_path), None)
     if payload is None:
         return []
-
     if isinstance(payload, list):
         rows = [row for row in payload if isinstance(row, dict)]
     elif isinstance(payload, dict) and isinstance(payload.get("jobs"), list):
         rows = [row for row in payload["jobs"] if isinstance(row, dict)]
     else:
         return []
-
     if row_predicate is not None:
         rows = [row for row in rows if row_predicate(row)]
 
@@ -82,18 +96,13 @@ def read_existing_output(
     # rows go through canonicalize_job. On the seeded 40k-row bench volume this
     # drops fetch's `seeding_existing_output` cost from ~97 s to ~5 s and cuts
     # peak RSS by avoiding the dict→CanonicalJob→dict→CanonicalJob round trip.
-    restored: list[Any] = []
-    for row in rows:
-        candidate = _existing_output_row_to_canonical(
-            row,
-            fetched_at=fetched_at,
-            canonicalize_job=canonicalize_job,
-            clean_text=clean_text,
-            canonical_job_cls=canonical_job_cls,
-        )
-        if candidate is not None:
-            restored.append(candidate)
-    return restored
+    return _restore_existing_rows(
+        rows,
+        fetched_at=fetched_at,
+        canonicalize_job=canonicalize_job,
+        clean_text=clean_text,
+        canonical_job_cls=canonical_job_cls,
+    )
 
 
 def _existing_output_row_to_canonical(
@@ -137,6 +146,37 @@ def serialize_rows_for_json(rows: Sequence[RawJob], fields: Sequence[str]) -> st
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
+def _read_streamed_text(tmp_path: Path, target: Path) -> str:
+    if target.suffix == ".gz":
+        with gzip.open(tmp_path, mode="rt", encoding="utf-8") as handle:
+            return handle.read()
+    return tmp_path.read_text(encoding="utf-8")
+
+
+def _write_streamed_tmp(tmp_path: Path, target: Path, stream_fn: Callable[[Any], None]) -> int:
+    write_count = 0
+
+    class _Counting:
+        def __init__(self, inner: Any) -> None:
+            self._inner = inner
+
+        def write(self, text: str) -> int:
+            nonlocal write_count
+            write_count += len(text)
+            return self._inner.write(text)
+
+        def flush(self) -> None:
+            self._inner.flush()
+
+    if target.suffix == ".gz":
+        with gzip.open(tmp_path, mode="wt", encoding="utf-8", newline="") as handle:
+            stream_fn(_Counting(handle))
+    else:
+        with open(tmp_path, "w", encoding="utf-8", newline="") as handle:
+            stream_fn(_Counting(handle))
+    return write_count
+
+
 def write_streamed_text_if_changed(path: Path, stream_fn: Callable[[Any], None]) -> bool:
     """Atomically write content produced by ``stream_fn(handle)`` to path.
 
@@ -152,26 +192,7 @@ def write_streamed_text_if_changed(path: Path, stream_fn: Callable[[Any], None])
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = target.with_name(f"{target.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
     try:
-        write_count = 0
-
-        class _Counting:
-            def __init__(self, inner: Any) -> None:
-                self._inner = inner
-
-            def write(self, text: str) -> int:
-                nonlocal write_count
-                write_count += len(text)
-                return self._inner.write(text)
-
-            def flush(self) -> None:
-                self._inner.flush()
-
-        if target.suffix == ".gz":
-            with gzip.open(tmp_path, mode="wt", encoding="utf-8", newline="") as handle:
-                stream_fn(_Counting(handle))
-        else:
-            with open(tmp_path, "w", encoding="utf-8", newline="") as handle:
-                stream_fn(_Counting(handle))
+        write_count = _write_streamed_tmp(tmp_path, target, stream_fn)
         existing_size: int = -1
         try:
             existing_size = target.stat().st_size
@@ -182,14 +203,8 @@ def write_streamed_text_if_changed(path: Path, stream_fn: Callable[[Any], None])
                 existing_text = _read_text_path(target)
             except OSError:
                 existing_text = None
-            if existing_text is not None:
-                if target.suffix == ".gz":
-                    with gzip.open(tmp_path, mode="rt", encoding="utf-8") as handle:
-                        tmp_text = handle.read()
-                else:
-                    tmp_text = tmp_path.read_text(encoding="utf-8")
-                if existing_text == tmp_text:
-                    return False
+            if existing_text is not None and existing_text == _read_streamed_text(tmp_path, target):
+                return False
         write_started_at = time.perf_counter()
         os.replace(tmp_path, target)
         record_json_text_write(
