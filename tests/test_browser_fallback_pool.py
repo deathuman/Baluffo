@@ -71,6 +71,7 @@ def test_browser_pool_enabled_defaults_on_and_respects_kill_switch():
     assert browser_pool_enabled({"BALUFFO_BROWSER_POOL": "1"})
 
 
+@pytest.mark.slow  # launches a real headless Chromium; excluded from CI/quick runs
 def test_pool_fetch_returns_html_and_counts_acquisition(http_server) -> None:
     pool = BrowserFallbackPool()
     try:
@@ -84,6 +85,7 @@ def test_pool_fetch_returns_html_and_counts_acquisition(http_server) -> None:
         pool.close()
 
 
+@pytest.mark.slow  # launches a real headless Chromium; excluded from CI/quick runs
 def test_pool_concurrent_fetches_from_worker_threads(http_server) -> None:
     pool = BrowserFallbackPool()
     results: dict[str, tuple[str, str]] = {}
@@ -106,6 +108,7 @@ def test_pool_concurrent_fetches_from_worker_threads(http_server) -> None:
         pool.close()
 
 
+@pytest.mark.slow  # launches a real headless Chromium; excluded from CI/quick runs
 def test_pool_context_isolation_no_cookie_bleed(http_server) -> None:
     pool = BrowserFallbackPool()
     try:
@@ -120,6 +123,7 @@ def test_pool_context_isolation_no_cookie_bleed(http_server) -> None:
         pool.close()
 
 
+@pytest.mark.slow  # launches a real headless Chromium; excluded from CI/quick runs
 def test_pool_double_close_is_idempotent(http_server) -> None:
     pool = BrowserFallbackPool()
     try:
@@ -132,6 +136,7 @@ def test_pool_double_close_is_idempotent(http_server) -> None:
     assert pool._thread is None
 
 
+@pytest.mark.slow  # launches a real headless Chromium; excluded from CI/quick runs
 def test_pool_error_strings_match_circuit_breaker_tokens(http_server) -> None:
     # Browser-death errors normalize to a circuit-breaker-recognized token.
     assert is_browser_fallback_environment_error(
@@ -154,6 +159,7 @@ def test_pool_error_strings_match_circuit_breaker_tokens(http_server) -> None:
         pool.close()
 
 
+@pytest.mark.slow  # launches a real headless Chromium; excluded from CI/quick runs
 def test_pool_fetch_bad_url_returns_error_not_raise(http_server) -> None:
     pool = BrowserFallbackPool()
     try:
