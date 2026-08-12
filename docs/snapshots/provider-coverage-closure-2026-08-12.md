@@ -1,9 +1,21 @@
 # Provider Coverage Closure — 2026-08-12 (Track 2)
 
-> - **Status:** Evidence snapshot; registry mutations applied 2026-08-12 (operator-approved)
+> - **Status:** Evidence snapshot; registry mutations applied 2026-08-12 (operator-approved). **ATS-migration staging added 2026-08-12 (Nintendo greenhouse).**
 > - **Basis:** fresh soak report (generated 2026-08-12 after provider staging refresh + provider-only pipeline run with `--include-pending-provider-migration`), live probes on 2026-08-12
 > - **Canonical for:** Track 2 closure evidence of `docs/plans/jobs-coverage-improvement-plan.md`
 > - **Then inspect:** `docs/source-policy-runbook.md`, `_out/source-policy-soak-report.json`, `docs/snapshots/static-regression-triage-2026-08-12.md`
+
+## ATS-migration staging (Track 1 leftover, 2026-08-12)
+
+| Studio | Board | Outcome |
+|---|---|---|
+| **Nintendo** | `boards.greenhouse.io/nintendo` (greenhouse API, 51 jobs live) | **Added + approved active** `greenhouse:slug:nintendo`; bounded run verified **51 rows fetched/kept** |
+| Coffee Stain | `jobs.coffeestain.com` (teamtailor custom domain, 2 raw-HTML links) | Not provider-stageable via inference (custom domain); static variant rejected; defer to browser-fallback track |
+| Bulkhead / Yodo1 / Lion Game Lion / Sandsoft | teamtailor **widget-only** pages (no raw-HTML `/jobs/` links; liongamelion subdomain 404s) | Not provider rows — need browser fallback (Track 3); liongamelion provider row added then rejected (dead board) |
+| Fenris (CCP) | `careers.fenriscreations.com` custom site + jobs.rss | Not provider-supported; static coverage only |
+| Welevel | `welevel.jobs.personio.de/xml` | **personio row already active** — only its stale static twin remains |
+
+Nintendo static rows (`careers.nintendo.com/job-openings/`, `careers.nintendo.com/jobs`) remain active alongside the provider row — `staticStillActiveDespiteValidatedProvider` warning pattern, acceptable; migration-link apply deferred (not a high-confidence backfill candidate).
 
 ## Mutations applied (via local admin bridge, 127.0.0.1:8877)
 
