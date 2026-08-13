@@ -95,6 +95,15 @@ Evidence snapshot: `docs/snapshots/provider-coverage-closure-2026-08-12.md`.
 - **Triage findings:** Beamdog / Eleventh Hour / Expression bamboo boards return `[]` (genuinely empty — correct behavior); IllFonic breezy `/json` returns `[]` (empty); reforged/wolcen bamboo have 1 job each (recovery on refresh); workday SSL failures (Aristocrat/Intel/SciPlay/Light & Wonder) are upstream expired certs — transient; Glass Egg static `glassegg.com/careers/` is live (kept — only the oracle host is dead).
 - **Validated provider count** 20 → 15 after refresh (workday SSL + empty boards reclassified); next action `resolve_link_ambiguity` (Ubisoft, 6 static candidates, 0.65 confidence — blocked below the 0.75 apply threshold by design).
 
+## Applied 2026-08-13 (operator-approved: Ubisoft link, bulkhead demote, fold-in official Track 3)
+
+Evidence snapshot: `docs/snapshots/widget-board-recovery-2026-08-13.md`.
+
+- **Ubisoft link ambiguity resolved:** `smartrecruiters:company_id:ubisoft2` → `static:listing_url:https://www.ubisoft.com/en-us/company/careers/` @ 0.8 (operator decision; canonical EN careers entry, board API verified 271 postings). Bogus `www.ubisoft.com/careers` row rejected (redirects to homepage). Links 5 → 6; next-action `resolve_link_ambiguity` should clear on refresh.
+- **Widget-board recovery:** Coffee Stain teamtailor row added + approved (**2 jobs kept**); sandsoft URL fixed to `sandsoft.com/careers/`; bulkhead demoted+rejected (DNS dead).
+- **Browser-fallback measurement (0/3):** konami/sandsoft classify `dead_listing_page` → browser escalation hard-disabled (jQuery-era JS shells missed by `detect_js_shell`); yodo1 fires the pool but is a teamtailor widget with a dead CDN. Do NOT scale browser eligibility; classifier gap noted.
+- **Provider zero-yield triage (official Track 3):** ashby 8 boards promoted (k-ID slug fixed `kid`→`k-id`; 90 fetched/87 kept), 5 dead slugs + 5 `/jobs` duplicates rejected, 2 genuinely-empty kept pending; personio — Yager genuinely empty (kept), Welevel 429 transient, InnoGames/Travian pending re-probe after 429 clears; oracle already closed.
+
 ## Out of Scope
 
 - Apify / external crawlers; new Python/Node deps; broad `google_sheets` removal; parser rewrites beyond leaf fixes; any auto-promote/suppress/delete behavior.
