@@ -194,7 +194,6 @@
     "MA",
     "MM",
     "MU",
-    "NA",
     "NG",
     "NP",
     "OM",
@@ -426,7 +425,17 @@
     "Worldwide",
     "Global",
     "Anywhere",
-    "England"
+    "England",
+    "Anguilla",
+    "Bermuda",
+    "European Union",
+    "Gibraltar",
+    "Greenland",
+    "Hong Kong",
+    "Isle of Man",
+    "Macau",
+    "Montserrat",
+    "Puerto Rico"
   ],
   "normalizeAliasesToValue": {
     "usa": "US",
