@@ -79,6 +79,7 @@ def default_source_loaders(
     available: dict[str, SourceLoader] = {
         **google_sheet_loaders,
         "remote_ok": community.run_remote_ok_source,
+        "remotive": community.run_remotive_source,
         "gamesindustry": community.run_gamesindustry_source,
         "gamejobs": community.run_gamejobs_source,
         "workwithindies": community.run_workwithindies_source,
@@ -134,6 +135,7 @@ def default_source_loaders(
 EXTRACTED_ADAPTERS = {
     "google_sheets": community.run_google_sheets_source,
     "remote_ok": community.run_remote_ok_source,
+    "remotive": community.run_remotive_source,
     "gamesindustry": community.run_gamesindustry_source,
     "gamejobs": community.run_gamejobs_source,
     "workwithindies": community.run_workwithindies_source,

@@ -211,7 +211,7 @@ def _load_web_search_audit_rows(
     if artifact is None:
         artifact, _cache_hit = orchestrator.run_web_search_directory_audit(
             deps.timeout_s,
-            studio_seeds=list(discovery_config_module.STUDIO_SEEDS),
+            studio_seeds=list(discovery_config_module.studio_seeds_with_feed_recheck()),
             include_seed_careers=stage_enabled["seedCareersScan"],
             include_web_search=bool(deps.include_web_search and stage_enabled["webSearch"]),
             config=deps.effective_config,
@@ -433,7 +433,7 @@ def _run_provider_patterns_stage(
     orchestrator.emit_log("Generating provider-pattern candidates from the studio seed catalog.")
     stage_started = time.perf_counter()
     provider_pattern_candidates = orchestrator.build_pattern_candidates(
-        list(discovery_config_module.STUDIO_SEEDS)
+        list(discovery_config_module.studio_seeds_with_feed_recheck())
     )
     stage_duration_ms = _record_stage_timing(
         state.stage_timings_ms, "providerPatterns", stage_started

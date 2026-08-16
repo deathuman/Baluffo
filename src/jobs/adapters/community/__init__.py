@@ -27,11 +27,17 @@ from src.jobs.common.config import (
     EPIC_CAREERS_API_URL,
     GAMES_INDUSTRY_URLS,
     REMOTE_OK_URLS,
+    REMOTIVE_API_URLS,
     WELLFOUND_URLS,
 )
 from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.common.fetch import fetch_with_retries
-from src.jobs.common.parsing import parse_remote_ok_payload as _parse_remote_ok_payload
+from src.jobs.common.parsing import (
+    parse_remote_ok_payload as _parse_remote_ok_payload,
+)
+from src.jobs.common.parsing import (
+    parse_remotive_payload as _parse_remotive_payload,
+)
 from src.jobs.game_detection import looks_like_game_job
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text
@@ -190,6 +196,39 @@ def run_remote_ok_source(
         AdapterValidationError.from_errors(errors)
         if errors
         else AdapterValidationError("Remote OK source failed")
+    )
+
+
+def run_remotive_source(
+    *, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float
+) -> list[RawJob]:
+    errors: list[str] = []
+    for url in REMOTIVE_API_URLS:
+        valid_empty = False
+
+        def _attempt(url: str = url) -> list[RawJob]:
+            nonlocal valid_empty
+            text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
+            payload = json.loads(text)
+            parsed = _parse_remotive_payload(payload, looks_like_game_job=looks_like_game_job)
+            if parsed:
+                return parsed
+            if isinstance(payload, dict) and isinstance(payload.get("jobs"), list):
+                valid_empty = True
+                return []
+            errors.append(f"{url}: empty/invalid payload")
+            return []
+
+        def _record_error(exc: Exception, url: str = url) -> None:
+            errors.append(f"{url}: {exc}")
+
+        parsed = run_recoverable_adapter_attempt(_attempt, _record_error)
+        if parsed or valid_empty:
+            return parsed
+    raise (
+        AdapterValidationError.from_errors(errors)
+        if errors
+        else AdapterValidationError("Remotive source failed")
     )
 
 

@@ -29,6 +29,7 @@ from src.jobs.common import diagnostics as common_diagnostics_mod
 from src.jobs.common import fetch as common_fetch_mod
 from src.jobs.common import url as common_url_mod
 from src.jobs.common.parsing import parse_remote_ok_payload as _parse_remote_ok_payload
+from src.jobs.common.parsing import parse_remotive_payload as _parse_remotive_payload
 from src.jobs.game_detection import looks_like_game_job as _looks_like_game_job
 
 
@@ -38,6 +39,10 @@ def _module_attr_exports(module: object, names: tuple[str, ...]) -> dict[str, tu
 
 def _parse_remote_ok_payload_compat(payload: Any) -> list:
     return _parse_remote_ok_payload(payload, looks_like_game_job=_looks_like_game_job)
+
+
+def _parse_remotive_payload_compat(payload: Any) -> list:
+    return _parse_remotive_payload(payload, looks_like_game_job=_looks_like_game_job)
 
 
 COMPAT_MODULE_EXPORTS: dict[str, tuple[object, str]] = {}
@@ -98,6 +103,10 @@ COMPAT_MODULE_EXPORTS.update(
 COMPAT_MODULE_EXPORTS["parse_remote_ok_payload"] = (
     sys.modules[__name__],
     "_parse_remote_ok_payload_compat",
+)
+COMPAT_MODULE_EXPORTS["parse_remotive_payload"] = (
+    sys.modules[__name__],
+    "_parse_remotive_payload_compat",
 )
 COMPAT_MODULE_EXPORTS.update(
     _module_attr_exports(
@@ -170,6 +179,7 @@ COMPAT_MODULE_EXPORTS.update(
             "run_google_sheets_source",
             "run_gracklehq_source",
             "run_remote_ok_source",
+            "run_remotive_source",
             "run_wellfound_source",
             "run_workwithindies_source",
         ),

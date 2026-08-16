@@ -164,6 +164,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Manual-only mode: include Gamesmap homepage-only candidates in this run.",
     )
     parser.add_argument(
+        "--gamesmap-enabled",
+        action="store_true",
+        help="Enable Gamesmap directory scanning.",
+    )
+    parser.add_argument(
         "--gamesmap-max-detail-pages",
         type=int,
         default=0,

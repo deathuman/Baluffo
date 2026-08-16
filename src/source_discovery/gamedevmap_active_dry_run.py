@@ -72,6 +72,18 @@ from .probe_runtime import (
     probe_candidates_async as shared_probe_candidates_async,
 )
 from .provider_inference_filters import split_bad_provider_inferences
+from .recovery_escalation import (
+    enqueue_rejected_for_web_search as recovery_escalation_enqueue,
+)
+from .recovery_escalation import (
+    escalate_rejected_rows as recovery_escalation_escalate,
+)
+from .recovery_escalation import (
+    set_escalation_config as recovery_escalation_helpers_set_config,
+)
+from .recovery_escalation import (
+    set_recheck_queue_path as recovery_escalation_helpers_set_recheck_queue_path,
+)
 from .reporting import emit_log
 from .static_candidates import build_known_careers_url_candidate
 from .web_search import (
@@ -1481,6 +1493,9 @@ def _apply_gamedevmap_active_recovery(
             else None
         ),
     )
+    escalated_rows, recovery_rejected_rows = recovery_escalation_escalate(recovery_rejected_rows)
+    recovery_escalation_enqueue(recovery_rejected_rows)
+    recovery_provider_rows = unique_sources([*recovery_provider_rows, *escalated_rows])
     return active_audit_runtime.ActiveAuditRecoveryApplicationResult(
         provider_candidates=recovery_provider_rows,
         static_candidates=recovery_static_rows,
@@ -1754,6 +1769,10 @@ def run_gamedevmap_active_source_dry_run(
         ),
     )
     output_path = output_path or gamedevmap_active_dry_run_path()
+    recovery_escalation_helpers_set_recheck_queue_path(
+        output_path.parent / "discovery-feed-recheck-queue.json"
+    )
+    recovery_escalation_helpers_set_config(cfg)
 
     emit_log("GameDevMap active-source dry run: fetching CSV.")
     csv_text = fetcher(csv_url, timeout_s)

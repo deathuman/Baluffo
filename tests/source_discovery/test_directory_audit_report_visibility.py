@@ -4,6 +4,7 @@ import json
 
 from ._helpers import (
     _gamesmap_next_payload_html,
+    discovery_config_module,
     discovery_orchestrator,
     mock,
     override_discovery_runtime,
@@ -168,8 +169,10 @@ def test_run_discovery_reports_gamesmap_directory_audit_cache_hit() -> None:
             assert "indexFetchParseMs" in summary["timingTotalsMs"]
 
 
-def test_run_discovery_keeps_gamesmap_adapter_disabled_by_default() -> None:
-    with workspace_tmpdir("directory-audit-report-gamesmap-disabled-default") as root:
+def test_run_discovery_gamesmap_enabled_by_default_and_respects_stage_toggle() -> None:
+    assert bool(discovery_config_module.DEFAULT_DISCOVERY_CONFIG["gamesmap"].get("enabled")) is True
+
+    with workspace_tmpdir("directory-audit-report-gamesmap-toggle") as root:
         with override_discovery_runtime(root, studio_seeds=[], static_candidates=[]):
             config = {
                 "stageToggles": {
@@ -177,11 +180,12 @@ def test_run_discovery_keeps_gamesmap_adapter_disabled_by_default() -> None:
                     "sheetDirectory": False,
                     "providerPatterns": False,
                     "seedCareersScan": False,
-                    "gamesmap": True,
+                    "gamesmap": False,
                     "gameprog": False,
                     "gamedevmap": False,
                     "webSearch": False,
                 },
+                "gamesmap": {"enabled": True},
                 "gameprog": {"enabled": False},
                 "gamedevmap": {"enabled": False},
             }
@@ -193,7 +197,7 @@ def test_run_discovery_keeps_gamesmap_adapter_disabled_by_default() -> None:
                 include_web_search=False,
                 discovery_config=config,
                 fetcher=lambda *_args: (_ for _ in ()).throw(
-                    AssertionError("disabled Gamesmap adapter should not fetch")
+                    AssertionError("toggle-disabled Gamesmap adapter should not fetch")
                 ),
             )
 

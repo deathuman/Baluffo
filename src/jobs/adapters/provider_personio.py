@@ -8,6 +8,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused Personio provide
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -19,13 +20,47 @@ from src.jobs.adapters.plugins.provider_api.source_errors import (
     EXPECTED_PROVIDER_API_SOURCE_EXCEPTIONS,
     reraise_unexpected_provider_api_source_exception,
 )
+from src.jobs.common import config as common_config
 from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.registry import registry_entries as jobs_registry_entries
 from src.jobs.text_utils import clean_text
-from src.shared.utils import parse_iso
+from src.shared.utils import now_iso, parse_iso
 
 RawJob = dict[str, Any]
+
+DISCOVERY_FEED_RECHECK_QUEUE_PATH = (
+    common_config.DEFAULT_OUTPUT_DIR / "discovery-feed-recheck-queue.json"
+)
+FEED_RECHECK_QUEUE_LIMIT = 100
+
+
+def _append_feed_recheck_queue(*, studio: str, name: str, feed_url: str) -> None:
+    """Best-effort, bounded append of a dead/migrated feed for discovery re-staging."""
+    try:
+        existing: list[dict[str, Any]] = []
+        if DISCOVERY_FEED_RECHECK_QUEUE_PATH.exists():
+            payload = json.loads(DISCOVERY_FEED_RECHECK_QUEUE_PATH.read_text(encoding="utf-8"))
+            if isinstance(payload, list):
+                existing = [row for row in payload if isinstance(row, dict)]
+        seen = {str(row.get("feed_url") or "") for row in existing}
+        if feed_url in seen:
+            return
+        existing.append(
+            {
+                "studio": studio,
+                "name": name,
+                "feed_url": feed_url,
+                "detectedAt": now_iso(),
+            }
+        )
+        DISCOVERY_FEED_RECHECK_QUEUE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        DISCOVERY_FEED_RECHECK_QUEUE_PATH.write_text(
+            json.dumps(existing[-FEED_RECHECK_QUEUE_LIMIT:], ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except (OSError, ValueError, TypeError):
+        pass
 
 
 def _personio_classification_from_error(error_text: str) -> str:
@@ -112,13 +147,19 @@ def _run_personio_registry_source(
             )
             entry_report.update(
                 status="error",
-                classification="dead_listing_page" if is_marketing else "parser_stale",
+                classification="site_changed" if is_marketing else "parser_stale",
                 error=(
                     "personio feed redirected to marketing site"
                     if is_marketing
                     else "no jobs parsed from personio feed"
                 ),
             )
+            if is_marketing:
+                _append_feed_recheck_queue(
+                    studio=studio,
+                    name=source_name,
+                    feed_url=feed_url,
+                )
         for row in parsed:
             row["adapter"] = "personio"
             row["studio"] = studio

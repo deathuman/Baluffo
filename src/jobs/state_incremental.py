@@ -25,6 +25,9 @@ DEFAULT_INCREMENTAL_STATIC_LISTING_MINUTES = (
     common_config.DEFAULT_INCREMENTAL_STATIC_LISTING_MINUTES
 )
 DEFAULT_INCREMENTAL_EMPTY_SOURCE_MINUTES = common_config.DEFAULT_INCREMENTAL_EMPTY_SOURCE_MINUTES
+DEFAULT_INCREMENTAL_EMPTY_SOURCE_MIN_ZERO_RUNS = int(
+    common_config.DEFAULT_INCREMENTAL_EMPTY_SOURCE_MIN_ZERO_RUNS
+)
 DEFAULT_INCREMENTAL_DEAD_SOURCE_MINUTES = common_config.DEFAULT_INCREMENTAL_DEAD_SOURCE_MINUTES
 
 _STATIC_DEAD_SOURCE_TOKENS = (
@@ -37,6 +40,14 @@ _STATIC_DEAD_SOURCE_TOKENS = (
     "empty_confirmed",
     "needs_review",
 )
+
+
+def _zero_kept_streak(entry: dict[str, Any]) -> int:
+    return max(
+        int(entry.get("zeroJobStreak") or 0),
+        int(entry.get("consecutiveZeroKept") or 0),
+        int(entry.get("zeroKeptStreak") or 0),
+    )
 
 
 def should_skip_source_by_ttl(
@@ -212,7 +223,11 @@ def _static_cache_decision(entry: dict[str, Any], age_seconds: float) -> dict[st
             "cacheDecision": "skip_fresh",
             "cacheDecisionReason": "static_dead_or_stale_fresh",
         }
-    if last_kept <= 0 and age_seconds < float(DEFAULT_INCREMENTAL_EMPTY_SOURCE_MINUTES * 60):
+    if (
+        last_kept <= 0
+        and age_seconds < float(DEFAULT_INCREMENTAL_EMPTY_SOURCE_MINUTES * 60)
+        and _zero_kept_streak(entry) >= DEFAULT_INCREMENTAL_EMPTY_SOURCE_MIN_ZERO_RUNS
+    ):
         return {"cacheDecision": "skip_fresh", "cacheDecisionReason": "static_empty_fresh"}
     return {"cacheDecision": "run_now", "cacheDecisionReason": "static_refresh_due"}
 
@@ -226,7 +241,11 @@ def _provider_cache_decision(
     has_validators = bool(
         clean_text(entry.get("lastHttpEtag")) or clean_text(entry.get("lastHttpLastModified"))
     )
-    if last_kept <= 0 and age_seconds < float(DEFAULT_INCREMENTAL_EMPTY_SOURCE_MINUTES * 60):
+    if (
+        last_kept <= 0
+        and age_seconds < float(DEFAULT_INCREMENTAL_EMPTY_SOURCE_MINUTES * 60)
+        and _zero_kept_streak(entry) >= DEFAULT_INCREMENTAL_EMPTY_SOURCE_MIN_ZERO_RUNS
+    ):
         return {"cacheDecision": "skip_fresh", "cacheDecisionReason": "empty_source_fresh"}
     changed_at = parse_datetime(entry.get("lastChangedAt"))
     if changed_at:

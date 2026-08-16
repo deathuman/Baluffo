@@ -80,7 +80,7 @@ def test_gamedevmap_active_dry_run_resumes_until_complete() -> None:
 
         first = sd.run_gamedevmap_active_source_dry_run(
             timeout_s=5,
-            config=_config(),
+            config=_config(activeAuditRecoveryEscalationEnabled=False),
             fetcher=_fetcher(payloads),
             output_path=output_path,
             batch_size=2,
@@ -89,7 +89,7 @@ def test_gamedevmap_active_dry_run_resumes_until_complete() -> None:
         )
         second = sd.run_gamedevmap_active_source_dry_run(
             timeout_s=5,
-            config=_config(),
+            config=_config(activeAuditRecoveryEscalationEnabled=False),
             fetcher=_fetcher(payloads),
             output_path=output_path,
             batch_size=2,
@@ -453,7 +453,7 @@ def test_gamedevmap_no_careers_records_specific_unrecovered_detail() -> None:
     with workspace_tmpdir("gamedevmap-active-dry-run-recovery-empty") as root:
         output = sd.run_gamedevmap_active_source_dry_run(
             timeout_s=5,
-            config=_config(allowed_categories=["Developer"]),
+            config=_config(activeAuditRecoveryEscalationEnabled=False),
             fetcher=_fetcher(payloads),
             output_path=root / "dry-run.json",
             batch_size=10,
@@ -528,7 +528,7 @@ def test_gamedevmap_dry_run_rerun_reasons_select_prior_rejections() -> None:
         output_path = root / "dry-run.json"
         sd.run_gamedevmap_active_source_dry_run(
             timeout_s=5,
-            config=_config(allowed_categories=["Developer"]),
+            config=_config(activeAuditRecoveryEscalationEnabled=False),
             fetcher=_fetcher(first_payloads),
             output_path=output_path,
             batch_size=10,
@@ -537,7 +537,7 @@ def test_gamedevmap_dry_run_rerun_reasons_select_prior_rejections() -> None:
         calls: list[str] = []
         output = sd.run_gamedevmap_active_source_dry_run(
             timeout_s=5,
-            config=_config(allowed_categories=["Developer"]),
+            config=_config(activeAuditRecoveryEscalationEnabled=False),
             fetcher=_fetcher(second_payloads, calls),
             output_path=output_path,
             batch_size=10,

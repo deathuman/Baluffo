@@ -8,6 +8,10 @@ def apply_discovery_cli_args_to_config(
     discovery_config: dict[str, Any], args: argparse.Namespace
 ) -> dict[str, Any]:
     cfg = dict(discovery_config)
+    if bool(getattr(args, "gamesmap_enabled", False)):
+        gamesmap_cfg = dict(cfg.get("gamesmap") or {})
+        gamesmap_cfg["enabled"] = True
+        cfg["gamesmap"] = gamesmap_cfg
     if bool(getattr(args, "gamesmap_website_only_fallback", False)):
         gamesmap_cfg = dict(cfg.get("gamesmap") or {})
         gamesmap_cfg["websiteOnlyFallback"] = True

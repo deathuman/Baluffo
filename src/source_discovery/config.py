@@ -308,15 +308,16 @@ DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
         "perHostConcurrency": 3,
     },
     "gamesmap": {
-        "enabled": False,
+        "enabled": True,
         "activeAuditRecoveryEnabled": True,
         "activeAuditRecoveryUrlLimit": 6,
+        "activeAuditTtlMinutes": 360,
         "baseUrl": "https://www.gamesmap.de",
         "indexUrls": [
             "https://www.gamesmap.de/en",
         ],
         "preferEnglish": True,
-        "websiteOnlyFallback": False,
+        "websiteOnlyFallback": True,
         "maxDetailPages": 60,
         "allowedCategoryTokens": [
             "developer",
@@ -374,6 +375,9 @@ DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
         "activeAuditBrowserRecoveryConcurrency": 2,
         "activeAuditBrowserRecoveryTimeoutSeconds": 15,
         "activeAuditBrowserRecoveryLimit": 0,
+        "activeAuditRecoveryEscalationEnabled": True,
+        "activeAuditRecoveryEscalationMaxRows": 200,
+        "activeAuditRecoveryEscalationPatternLimit": 4,
         "promoteValidatedStatic": True,
         "validatedStaticQueueCap": 500,
         "validatedStaticDomainCap": 8,
@@ -494,6 +498,53 @@ def load_studio_seeds() -> list[dict[str, Any]]:
     except (OSError, json.JSONDecodeError):
         pass
     return list(DEFAULT_STUDIO_SEEDS)
+
+
+DISCOVERY_FEED_RECHECK_QUEUE_PATH = (
+    _STORAGE_DEFAULTS.get("data_dir", Path("data")) / "discovery-feed-recheck-queue.json"
+)
+
+
+def load_feed_recheck_seeds() -> list[dict[str, Any]]:
+    """Load dead/migrated provider-feed studios queued for re-discovery.
+
+    The jobs pipeline appends rows here (e.g. a Personio feed URL that now
+    redirects to the vendor marketing homepage), so the next discovery run
+    re-stages the studio instead of letting the broken feed error forever.
+    """
+    try:
+        payload = json.loads(DISCOVERY_FEED_RECHECK_QUEUE_PATH.read_text(encoding="utf-8"))
+        if not isinstance(payload, list):
+            return []
+    except (OSError, json.JSONDecodeError):
+        return []
+    seeds: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in payload:
+        if not isinstance(row, dict):
+            continue
+        studio = str(row.get("studio") or "").strip()
+        if not studio or studio.lower() in seen:
+            continue
+        seen.add(studio.lower())
+        seeds.append(
+            {
+                "name": str(row.get("name") or studio),
+                "studio": studio,
+                "nlPriority": False,
+            }
+        )
+    return seeds
+
+
+def studio_seeds_with_feed_recheck() -> list[dict[str, Any]]:
+    seeds = list(STUDIO_SEEDS)
+    recheck = load_feed_recheck_seeds()
+    known = {str(seed.get("studio") or "").strip().lower() for seed in seeds}
+    for seed in recheck:
+        if str(seed.get("studio") or "").strip().lower() not in known:
+            seeds.append(seed)
+    return seeds
 
 
 def load_discovery_config(config_path: Path | str | None = None) -> dict[str, Any]:

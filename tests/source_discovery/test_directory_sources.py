@@ -26,7 +26,6 @@ from ._helpers import (
     sd,
     sr,
     sys,
-    threading,
     time,
     workspace_tmpdir,
 )
@@ -132,6 +131,7 @@ def test_discover_gameprog_candidates_directory_scenarios(
         "gameprog": {
             "enabled": True,
             "activeAuditTtlMinutes": 0,
+            "activeAuditPath": str(Path(".tmp") / "gameprog-directory-scenarios-audit.json"),
             "teamsUrl": "https://gameprog.it/teams.json",
             "websiteOnlyFallback": True,
             "maxStudios": 10,

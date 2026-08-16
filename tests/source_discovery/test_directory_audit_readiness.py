@@ -57,6 +57,8 @@ def test_gamesmap_audit_readiness_caps_entries_before_website_fetch_jobs() -> No
             "maxDetailPages": 2,
             "allowedCategoryTokens": ["developer"],
             "blockedCategoryTokens": [],
+            "activeAuditPath": str(Path(".tmp") / "gamesmap-readiness-caps-audit.json"),
+            "activeAuditTtlMinutes": 0,
         }
     }
     parsed_entries = [
@@ -114,6 +116,7 @@ def test_directory_audit_readiness_website_fetch_failures_stay_in_failure_channe
         "gameprog": {
             "enabled": True,
             "activeAuditTtlMinutes": 0,
+            "activeAuditPath": str(Path(".tmp") / "gameprog-readiness-failure-audit.json"),
             "teamsUrl": "https://gameprog.it/teams.json",
             "websiteOnlyFallback": False,
             "maxStudios": 1,
@@ -149,6 +152,8 @@ def test_directory_audit_readiness_website_fetch_failures_stay_in_failure_channe
             "maxDetailPages": 1,
             "allowedCategoryTokens": ["developer"],
             "blockedCategoryTokens": [],
+            "activeAuditPath": str(Path(".tmp") / "gamesmap-readiness-failure-audit.json"),
+            "activeAuditTtlMinutes": 0,
         }
     }
     gamesmap_entries = [

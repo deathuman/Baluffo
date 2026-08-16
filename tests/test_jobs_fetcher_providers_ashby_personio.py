@@ -1,5 +1,6 @@
 """Tests for jobs fetcher providers Ashby and Personio runtime behavior."""
 
+import json
 from unittest import mock
 
 import pytest
@@ -119,6 +120,8 @@ def test_run_ashby_sources_source_normalizes_stale_jobs_url_to_board_root() -> N
 
 
 def test_run_personio_sources_source_classifies_dead_marketing_redirect() -> None:
+    from src.jobs.adapters import provider_personio as personio_module
+
     source_rows = [
         {
             "name": "InnoGames (Personio)",
@@ -128,7 +131,15 @@ def test_run_personio_sources_source_classifies_dead_marketing_redirect() -> Non
             "enabledByDefault": True,
         }
     ]
-    with mock.patch("src.jobs.adapters.provider_api.registry_entries", return_value=source_rows):
+    with (
+        mock.patch("src.jobs.adapters.provider_api.registry_entries", return_value=source_rows),
+        mock.patch.object(
+            personio_module,
+            "DISCOVERY_FEED_RECHECK_QUEUE_PATH",
+            mock.MagicMock(),
+        ) as queue_path,
+        mock.patch.object(personio_module, "_append_feed_recheck_queue") as append_queue,
+    ):
         jf.SOURCE_DIAGNOSTICS.clear()
         rows = jf.run_personio_sources_source(
             fetch_text=lambda _url, _timeout: (
@@ -140,7 +151,42 @@ def test_run_personio_sources_source_classifies_dead_marketing_redirect() -> Non
         )
         assert rows == []
         detail = ((jf.SOURCE_DIAGNOSTICS.get("personio_sources") or {}).get("details") or [{}])[0]
-        assert str(detail.get("classification") or "") == "dead_listing_page"
+        assert str(detail.get("classification") or "") == "site_changed"
+        append_queue.assert_called_once_with(
+            studio="InnoGames",
+            name="InnoGames (Personio)",
+            feed_url="https://innogames.jobs.personio.de/xml",
+        )
+        queue_path.exists.assert_not_called()
+
+
+def test_personio_append_feed_recheck_queue_is_bounded_and_failure_tolerant(tmp_path) -> None:
+    from src.jobs.adapters import provider_personio as personio_module
+
+    queue_path = tmp_path / "discovery-feed-recheck-queue.json"
+    with mock.patch.object(personio_module, "DISCOVERY_FEED_RECHECK_QUEUE_PATH", queue_path):
+        personio_module._append_feed_recheck_queue(
+            studio="Welevel",
+            name="Welevel (Personio)",
+            feed_url="https://welevel.jobs.personio.de/xml",
+        )
+        personio_module._append_feed_recheck_queue(
+            studio="Welevel",
+            name="Welevel (Personio)",
+            feed_url="https://welevel.jobs.personio.de/xml",
+        )
+        personio_module._append_feed_recheck_queue(
+            studio="Other", name="Other (Personio)", feed_url="https://other.jobs.personio.de/xml"
+        )
+        payload = json.loads(queue_path.read_text(encoding="utf-8"))
+        assert [row["studio"] for row in payload] == ["Welevel", "Other"]
+
+    # non-list / missing file is tolerated
+    queue_path.write_text("not-json", encoding="utf-8")
+    with mock.patch.object(personio_module, "DISCOVERY_FEED_RECHECK_QUEUE_PATH", queue_path):
+        personio_module._append_feed_recheck_queue(
+            studio="X", name="X", feed_url="https://x.jobs.personio.de/xml"
+        )
 
 
 def test_run_personio_sources_source_classifies_rate_limited_errors() -> None:

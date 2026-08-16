@@ -90,3 +90,50 @@ def parse_remote_ok_payload(payload: Any, *, looks_like_game_job) -> list[RawJob
             }
         )
     return jobs
+
+
+def parse_remotive_payload(payload: Any, *, looks_like_game_job) -> list[RawJob]:
+    """
+    Parse Remotive API responses into RawJob rows.
+
+    `looks_like_game_job` is injected to avoid reintroducing a root-package symbol barrel
+    (and to prevent adapter cycles).
+    """
+
+    rows = payload.get("jobs") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        return []
+
+    jobs: list[RawJob] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        title = clean_text(row.get("title"))
+        company = clean_text(row.get("company_name"))
+        tags = row.get("tags") or []
+        tags_text = (
+            " ".join(str(tag) for tag in tags) if isinstance(tags, list) else clean_text(tags)
+        )
+        if not title or not company:
+            continue
+        if _looks_like_remote_ok_generic_non_job_title(title):
+            continue
+        if not looks_like_game_job(title, company, tags_text):
+            continue
+        location = clean_text(row.get("candidate_required_location") or "Remote")
+        remote = "remote" in norm_text(location)
+        jobs.append(
+            {
+                "sourceJobId": clean_text(row.get("id")),
+                "title": title,
+                "company": company,
+                "city": "Remote" if remote else "",
+                "country": "Remote" if remote else location,
+                "workType": "Remote" if remote else location,
+                "contractType": clean_text(row.get("job_type")),
+                "jobLink": clean_text(row.get("url")),
+                "sector": clean_text(row.get("category") or ""),
+                "postedAt": clean_text(row.get("publication_date")),
+            }
+        )
+    return jobs

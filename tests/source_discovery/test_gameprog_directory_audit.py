@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -106,6 +107,7 @@ def test_gameprog_teams_fetch_failure_stays_in_failure_channel() -> None:
         "gameprog": {
             "enabled": True,
             "activeAuditTtlMinutes": 0,
+            "activeAuditPath": str(Path(".tmp") / "gameprog-teams-fetch-failure-audit.json"),
             "teamsUrl": "https://gameprog.it/teams.json",
             "websiteOnlyFallback": True,
             "maxStudios": 1,
@@ -133,6 +135,7 @@ def test_gameprog_teams_fetch_propagates_unexpected_runtime_failure() -> None:
         "gameprog": {
             "enabled": True,
             "activeAuditTtlMinutes": 0,
+            "activeAuditPath": str(Path(".tmp") / "gameprog-teams-propagate-audit.json"),
             "teamsUrl": "https://gameprog.it/teams.json",
             "websiteOnlyFallback": True,
             "maxStudios": 1,

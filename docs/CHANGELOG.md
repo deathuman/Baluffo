@@ -10,6 +10,39 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
+> Jobs/discovery coverage rollup: remote aggregator support, discovery recovery
+> escalation, static empty-source cache hardening, provider feed liveness
+> re-discovery, and Gamesmap default-on.
+
+### Added
+
+- Remotive community-board loader (`remotive` source) with a game-job filter,
+  mirroring the Remote OK loader; registered in the default source loaders and
+  compat exports. Live-verified to fetch remote game roles (e.g. Mythwright
+  Senior Technical Artist) that were previously missed.
+- Discovery recovery escalation for directory rows that fail same-party careers
+  recovery: bounded provider-pattern candidates (Workable/Greenhouse/Teamtailor
+  etc.) are emitted from the studio name before rejection, and remaining
+  `no_careers_evidence` rows are queued for web-search re-staging. Gated by
+  `gamedevmap.activeAuditRecoveryEscalation*` settings.
+- Personio feed liveness: feed URLs that redirect to the Personio marketing
+  homepage now classify as `site_changed` and append the studio to
+  `data/discovery-feed-recheck-queue.json` so the next discovery run re-stages
+  the studio instead of erroring forever.
+- Gamesmap directory adapter is enabled by default (`gamesmap.enabled=true`,
+  `websiteOnlyFallback=true`, `activeAuditTtlMinutes=360`) with a new
+  `--gamesmap-enabled` CLI flag.
+
+### Fixed
+
+- Static/provider empty-source cache decisions require 2 consecutive zero-kept
+  runs before skipping a source (`DEFAULT_INCREMENTAL_EMPTY_SOURCE_MIN_ZERO_RUNS`),
+  so a single transient bad run no longer parks a parseable source.
+- Source-discovery audit tests no longer write fixture artifacts into `data/`
+  (all gamesmap/gameprog tests now pin `activeAuditPath` to temp locations);
+  polluted `data/gameprog-`/`data/gamesmap-discovery-audit.json` artifacts were
+  removed.
+
 ## [0.2.131] - 2026-08-15
 
 > Jobs-quality rollup: the Track A fixes from the 2026-08-12 entry-validation
