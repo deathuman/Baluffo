@@ -547,6 +547,21 @@ def studio_seeds_with_feed_recheck() -> list[dict[str, Any]]:
     return seeds
 
 
+def studio_seeds_with_feed_recheck_priority() -> list[dict[str, Any]]:
+    """Recheck-queue seeds first so the bounded web-search budget reaches them.
+
+    The web-search stage caps queries at `maxQueries`; the curated seed catalog
+    alone can consume that budget, starving dead/migrated-feed studios queued for
+    re-discovery. Returning recheck seeds first guarantees they get searched.
+    """
+    recheck = load_feed_recheck_seeds()
+    known = {str(seed.get("studio") or "").strip().lower() for seed in recheck}
+    seeds = [
+        seed for seed in STUDIO_SEEDS if str(seed.get("studio") or "").strip().lower() not in known
+    ]
+    return [*recheck, *seeds]
+
+
 def load_discovery_config(config_path: Path | str | None = None) -> dict[str, Any]:
     path = Path(config_path) if config_path is not None else Path(DISCOVERY_CONFIG_PATH)
     payload = {

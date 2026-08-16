@@ -211,7 +211,7 @@ def _load_web_search_audit_rows(
     if artifact is None:
         artifact, _cache_hit = orchestrator.run_web_search_directory_audit(
             deps.timeout_s,
-            studio_seeds=list(discovery_config_module.studio_seeds_with_feed_recheck()),
+            studio_seeds=list(discovery_config_module.studio_seeds_with_feed_recheck_priority()),
             include_seed_careers=stage_enabled["seedCareersScan"],
             include_web_search=bool(deps.include_web_search and stage_enabled["webSearch"]),
             config=deps.effective_config,
