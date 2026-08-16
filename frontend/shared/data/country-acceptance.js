@@ -65,9 +65,14 @@ export function resolveCountryAcceptanceValue(value) {
   const token = normalizeCountryAcceptanceToken(value);
   if (!token) return "";
   const raw = String(value || "").trim();
-  return COUNTRY_ACCEPTANCE.aliasToCanonical.get(token)
+  const resolved = COUNTRY_ACCEPTANCE.aliasToCanonical.get(token)
     || COUNTRY_ACCEPTANCE.exactLabelMap.get(token)
     || COUNTRY_ACCEPTANCE.countryNameByCode[raw]
     || COUNTRY_ACCEPTANCE.countryNameByCode[raw.toUpperCase()]
     || "";
+  if (resolved) return resolved;
+  for (const name of Object.values(COUNTRY_ACCEPTANCE.countryNameByCode)) {
+    if (normalizeCountryAcceptanceToken(name) === token) return name;
+  }
+  return "";
 }

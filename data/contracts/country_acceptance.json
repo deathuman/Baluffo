@@ -425,17 +425,7 @@
     "Worldwide",
     "Global",
     "Anywhere",
-    "England",
-    "Anguilla",
-    "Bermuda",
-    "European Union",
-    "Gibraltar",
-    "Greenland",
-    "Hong Kong",
-    "Isle of Man",
-    "Macau",
-    "Montserrat",
-    "Puerto Rico"
+    "England"
   ],
   "normalizeAliasesToValue": {
     "usa": "US",
