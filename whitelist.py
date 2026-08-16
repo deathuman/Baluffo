@@ -454,3 +454,4 @@ sourceBundleCollisionCount  # unused variable (src\jobs\common\contracts_dedup_e
 workItemId  # unused variable (src\shared\live_task.py)
 parse_jobposting_locations  # unused function (src\jobs\adapters\html_parsers.py:147) — retained API compatibility symbol, was re-exported through parsers.py
 _parse_remote_ok_payload_compat  # unused function (src\jobs\fetcher_compat_exports.py:37) — false positive: accessed via sys.modules[__name__] dynamic ref
+_parse_remotive_payload_compat  # unused function (src\jobs\fetcher_compat_exports.py:44) — false positive: accessed via sys.modules[__name__] dynamic ref

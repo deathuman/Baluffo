@@ -85,6 +85,7 @@
     "src/ship/runtime_launcher.py::quarantine_stale_jobs_row_artifacts": 14,
     "src/ship/startup_profile.py::summarize_startup_metrics": 25,
     "src/source_audit_sweep.py::_classify_source": 13,
+    "src/source_discovery/stage_control.py::apply_discovery_cli_args_to_config": 11,
     "src/source_registry_auto_approval.py::apply_discovery_auto_approval": 14,
     "src/source_sync_config.py::config_status": 12,
     "src/source_sync_config.py::load_packaged_sync_config": 16,
