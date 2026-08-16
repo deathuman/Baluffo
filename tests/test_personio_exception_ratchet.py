@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -18,7 +19,14 @@ def test_personio_expected_source_failure_remains_adapter_error() -> None:
         }
     ]
 
-    with pytest.raises(provider_personio.AdapterValidationError):
+    with (
+        mock.patch.object(
+            provider_personio,
+            "DISCOVERY_FEED_RECHECK_QUEUE_PATH",
+            Path(".tmp") / "personio-exception-ratchet-queue.json",
+        ),
+        pytest.raises(provider_personio.AdapterValidationError),
+    ):
         provider_personio.run_personio_sources_source(
             fetch_text=lambda _url, _timeout: (_ for _ in ()).throw(
                 RuntimeError("HTTP 429 for https://innogames.jobs.personio.de/xml")
