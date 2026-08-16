@@ -29,5 +29,7 @@
   {"studio": "Gameloft", "aliases": ["gameloft"], "nlPriority": false, "remoteFriendly": true, "likelyProviders": ["smartrecruiters"], "careersUrl": "https://jobs.smartrecruiters.com/Gameloft"},
   {"studio": "CD PROJEKT RED", "aliases": ["cdprojektred", "cd-projekt-red"], "nlPriority": false, "remoteFriendly": true, "likelyProviders": ["smartrecruiters"], "careersUrl": "https://jobs.smartrecruiters.com/CDPROJEKTRED"},
   {"studio": "Sandbox VR", "aliases": ["sandboxvr", "sandbox-vr"], "nlPriority": false, "remoteFriendly": true, "likelyProviders": ["lever"], "careersUrl": "https://jobs.lever.co/sandboxvr"},
-  {"studio": "Voodoo", "aliases": ["voodoo"], "nlPriority": false, "remoteFriendly": true, "likelyProviders": ["lever"], "careersUrl": "https://jobs.lever.co/voodoo"}
+  {"studio": "Voodoo", "aliases": ["voodoo"], "nlPriority": false, "remoteFriendly": true, "likelyProviders": ["lever"], "careersUrl": "https://jobs.lever.co/voodoo"},
+  {"studio": "NeoBards", "aliases": ["neobards", "neo-bards"], "nlPriority": false, "remoteFriendly": false, "likelyProviders": ["static"], "careersUrl": "https://neobards.com/careers/"},
+  {"studio": "Evolve Benchmark", "aliases": ["evolvebenchmark", "evolve-benchmark"], "nlPriority": false, "remoteFriendly": true, "likelyProviders": ["teamtailor"], "careersUrl": "https://careers.evolvebenchmark.com/jobs"}
 ]

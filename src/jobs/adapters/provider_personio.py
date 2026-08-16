@@ -68,6 +68,33 @@ def _personio_classification_from_error(error_text: str) -> str:
     return "rate_limited" if "429" in text or "rate limit" in text else "error"
 
 
+def _personio_429_recheck_stale_minutes() -> int:
+    try:
+        return max(1, int(os.getenv("BALUFFO_PERSONIO_429_RECHECK_STALE_MINUTES") or 7 * 24 * 60))
+    except ValueError:
+        return 7 * 24 * 60
+
+
+def _should_recheck_stale_personio_source(
+    state_row: dict[str, Any] | None, *, now_dt: datetime
+) -> bool:
+    """Queue a rate-limited feed for re-discovery when it has no recent success.
+
+    A persistent 429 on a feed that previously served jobs (or never did) means
+    the feed URL is likely dead/migrated; the state failure counters are not a
+    reliable signal here, so last-success age is used instead.
+    """
+    if not isinstance(state_row, dict):
+        return True
+    last_success = _parse_state_timestamp(state_row.get("lastSuccessAt")) or _parse_state_timestamp(
+        state_row.get("lastNonEmptyAt")
+    )
+    if last_success is None:
+        return True
+    stale_minutes = _personio_429_recheck_stale_minutes()
+    return (now_dt - last_success).total_seconds() > float(stale_minutes * 60)
+
+
 def _parse_state_timestamp(value: object) -> datetime | None:
     text = clean_text(value)
     return parse_iso(text)
@@ -129,6 +156,14 @@ def _run_personio_registry_source(
             error="skipped_rate_limited_cooldown",
             classification="rate_limited",
         )
+        if _should_recheck_stale_personio_source(
+            (source_state_rows or {}).get(source_name), now_dt=datetime.now(UTC)
+        ):
+            _append_feed_recheck_queue(
+                studio=studio,
+                name=source_name,
+                feed_url=feed_url,
+            )
         return [], "", entry_report
     try:
         text = fetch_with_retries(feed_url, fetch_text, timeout_s, retries, backoff_s)
@@ -171,6 +206,16 @@ def _run_personio_registry_source(
             error=str(exc),
             classification=_personio_classification_from_error(str(exc)),
         )
+        if _personio_classification_from_error(str(exc)) == "rate_limited" and (
+            _should_recheck_stale_personio_source(
+                (source_state_rows or {}).get(source_name), now_dt=datetime.now(UTC)
+            )
+        ):
+            _append_feed_recheck_queue(
+                studio=studio,
+                name=source_name,
+                feed_url=feed_url,
+            )
         return [], f"personio:{source_name}: {exc}", entry_report
 
 

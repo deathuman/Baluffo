@@ -144,6 +144,13 @@ def override_discovery_runtime(
                 paths.url_patch_manifest_path,
             )
         )
+        stack.enter_context(
+            mock.patch.object(
+                discovery_config_module,
+                "DISCOVERY_FEED_RECHECK_QUEUE_PATH",
+                root / "discovery-feed-recheck-queue.json",
+            )
+        )
         if include_m5_backlog:
             stack.enter_context(
                 mock.patch.object(

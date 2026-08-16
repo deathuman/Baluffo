@@ -290,6 +290,40 @@ def test_run_static_studio_pages_source_amber_jobvite_listing_only() -> None:
     assert rows[0]["jobLink"] == "https://jobs.jobvite.com/amberstudiocareers/job/oSIbufwZ"
 
 
+def test_run_static_studio_pages_source_neobards_plugin_keeps_only_job_anchors() -> None:
+    html = """
+        <a href="https://neobards.com/career/" title="Switch to English">English</a>
+        <a href="https://neobards.com/zh-hant/career/" title="Switch to 繁中">繁中</a>
+        <a href="https://neobards.com/ja/career/" title="Switch to 日本語">日本語</a>
+        <a href="https://neobards.com/careers/" itemprop="url" tabindex="0">Careers</a>
+        <a href="https://neobards.com/senior-technical-artist/" title="Link to: Senior Technical Artist [Taipei – Taiwan]">
+          Senior Technical Artist [Taipei – Taiwan]
+        </a>
+        <a href="https://neobards.com/game-designer_uiux_en/" title="Link to: (Senior) Game Designer (UI/UX Design) [Taipei – Taiwan]">
+          (Senior) Game Designer (UI/UX Design) [Taipei – Taiwan]
+        </a>
+        """
+    rows = jf.run_static_studio_pages_source(
+        fetch_text=lambda _url, _timeout: html,
+        timeout_s=5,
+        retries=0,
+        backoff_s=0,
+        sources=[
+            {
+                "name": "NeoBards",
+                "studio": "NeoBards",
+                "company": "NeoBards",
+                "pages": ["https://neobards.com/career/"],
+                "id": "static:listing_url:https://neobards.com/career/",
+            }
+        ],
+    )
+    assert len(rows) == 2
+    assert rows[0]["jobLink"] == "https://neobards.com/senior-technical-artist/"
+    assert rows[0]["title"] == "Senior Technical Artist [Taipei – Taiwan]"
+    assert rows[1]["jobLink"] == "https://neobards.com/game-designer_uiux_en/"
+
+
 def test_run_static_studio_pages_source_amanotes_plugin_extracts_next_data_positions() -> None:
     html = """
         <script id="__NEXT_DATA__" type="application/json">

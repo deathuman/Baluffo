@@ -1,6 +1,7 @@
 """Tests for jobs fetcher providers Ashby and Personio runtime behavior."""
 
 import json
+from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -190,6 +191,8 @@ def test_personio_append_feed_recheck_queue_is_bounded_and_failure_tolerant(tmp_
 
 
 def test_run_personio_sources_source_classifies_rate_limited_errors() -> None:
+    from src.jobs.adapters import provider_personio as personio_module
+
     source_rows = [
         {
             "name": "InnoGames (Personio)",
@@ -199,7 +202,14 @@ def test_run_personio_sources_source_classifies_rate_limited_errors() -> None:
             "enabledByDefault": True,
         }
     ]
-    with mock.patch("src.jobs.adapters.provider_api.registry_entries", return_value=source_rows):
+    with (
+        mock.patch("src.jobs.adapters.provider_api.registry_entries", return_value=source_rows),
+        mock.patch.object(
+            personio_module,
+            "DISCOVERY_FEED_RECHECK_QUEUE_PATH",
+            Path(".tmp") / "personio-rate-limited-queue.json",
+        ),
+    ):
         jf.SOURCE_DIAGNOSTICS.clear()
         with pytest.raises(AdapterValidationError):
             jf.run_personio_sources_source(
@@ -216,6 +226,7 @@ def test_run_personio_sources_source_classifies_rate_limited_errors() -> None:
 
 def test_personio_adapter_skips_recent_rate_limited_source_only() -> None:
     from src.jobs.adapters import provider_api
+    from src.jobs.adapters import provider_personio as personio_module
 
     now = jf.datetime.now(jf.timezone.utc).isoformat()
     registry_rows = [
@@ -236,7 +247,14 @@ def test_personio_adapter_skips_recent_rate_limited_source_only() -> None:
             return """<?xml version="1.0"?><workzag-jobs><position><id>1</id><name>Engine Programmer</name><office>Remote</office><employmentType>Full-time</employmentType><url>https://example.com/jobs/1</url></position></workzag-jobs>"""
         raise AssertionError(f"unexpected fetch for {url}")
 
-    with mock.patch.object(provider_api, "registry_entries", return_value=registry_rows):
+    with (
+        mock.patch.object(provider_api, "registry_entries", return_value=registry_rows),
+        mock.patch.object(
+            personio_module,
+            "DISCOVERY_FEED_RECHECK_QUEUE_PATH",
+            Path(".tmp") / "personio-rate-limited-queue.json",
+        ),
+    ):
         rows = provider_api.run_personio_sources_source(
             fetch_text=fake_fetch,
             timeout_s=10,
@@ -263,3 +281,119 @@ def test_personio_rate_limit_cooldown_can_be_configured() -> None:
         cutoff = provider_api._personio_rate_limit_cutoff()
     delta_minutes = (jf.datetime.now(jf.timezone.utc) - cutoff).total_seconds() / 60
     assert 14 <= delta_minutes <= 16
+
+
+def test_personio_429_with_stale_success_queues_feed_recheck() -> None:
+    from src.jobs.adapters import provider_api
+    from src.jobs.adapters import provider_personio as personio_module
+
+    source_rows = [
+        {
+            "name": "Welevel (Personio)",
+            "studio": "Welevel",
+            "adapter": "personio",
+            "feed_url": "https://welevel.jobs.personio.de/xml",
+            "enabledByDefault": True,
+        }
+    ]
+    stale = (jf.datetime.now(jf.timezone.utc) - jf.timedelta(days=30)).isoformat()
+    with (
+        mock.patch.object(provider_api, "registry_entries", return_value=source_rows),
+        mock.patch.object(personio_module, "_append_feed_recheck_queue") as append_queue,
+    ):
+        jf.SOURCE_DIAGNOSTICS.clear()
+        with pytest.raises(AdapterValidationError):
+            jf.run_personio_sources_source(
+                fetch_text=lambda _url, _timeout: (_ for _ in ()).throw(
+                    RuntimeError("HTTP 429 for https://welevel.jobs.personio.de/xml")
+                ),
+                timeout_s=5,
+                retries=0,
+                backoff_s=0,
+                source_state_rows={
+                    "Welevel (Personio)": {"lastSuccessAt": stale, "lastNonEmptyAt": stale}
+                },
+            )
+        append_queue.assert_called_once_with(
+            studio="Welevel",
+            name="Welevel (Personio)",
+            feed_url="https://welevel.jobs.personio.de/xml",
+        )
+
+
+def test_personio_429_with_recent_success_does_not_queue() -> None:
+    from src.jobs.adapters import provider_api
+    from src.jobs.adapters import provider_personio as personio_module
+
+    source_rows = [
+        {
+            "name": "Healthy Studio (Personio)",
+            "studio": "Healthy Studio",
+            "adapter": "personio",
+            "feed_url": "https://healthy.jobs.personio.de/xml",
+            "enabledByDefault": True,
+        }
+    ]
+    recent = jf.datetime.now(jf.timezone.utc).isoformat()
+    with (
+        mock.patch.object(provider_api, "registry_entries", return_value=source_rows),
+        mock.patch.object(personio_module, "_append_feed_recheck_queue") as append_queue,
+    ):
+        jf.SOURCE_DIAGNOSTICS.clear()
+        with pytest.raises(AdapterValidationError):
+            jf.run_personio_sources_source(
+                fetch_text=lambda _url, _timeout: (_ for _ in ()).throw(
+                    RuntimeError("HTTP 429 for https://healthy.jobs.personio.de/xml")
+                ),
+                timeout_s=5,
+                retries=0,
+                backoff_s=0,
+                source_state_rows={
+                    "Healthy Studio (Personio)": {"lastSuccessAt": recent, "lastNonEmptyAt": recent}
+                },
+            )
+        append_queue.assert_not_called()
+
+
+def test_personio_429_cooldown_skip_queues_stale_feed() -> None:
+    from src.jobs.adapters import provider_api
+    from src.jobs.adapters import provider_personio as personio_module
+
+    now = jf.datetime.now(jf.timezone.utc)
+    source_rows = [
+        {
+            "name": "Welevel (Personio)",
+            "studio": "Welevel",
+            "adapter": "personio",
+            "feed_url": "https://welevel.jobs.personio.de/xml",
+            "enabledByDefault": True,
+        }
+    ]
+    stale = (now - jf.timedelta(days=30)).isoformat()
+    with (
+        mock.patch.object(provider_api, "registry_entries", return_value=source_rows),
+        mock.patch.object(personio_module, "_append_feed_recheck_queue") as append_queue,
+    ):
+        jf.SOURCE_DIAGNOSTICS.clear()
+        rows = jf.run_personio_sources_source(
+            fetch_text=lambda _url, _timeout: (_ for _ in ()).throw(
+                AssertionError("cooldown skip should bypass fetch")
+            ),
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+            source_state_rows={
+                "Welevel (Personio)": {
+                    "lastError": "HTTP 429 Too Many Requests",
+                    "lastFailureAt": now.isoformat(),
+                    "lastSuccessAt": stale,
+                    "lastNonEmptyAt": stale,
+                }
+            },
+        )
+        assert rows == []
+        append_queue.assert_called_once_with(
+            studio="Welevel",
+            name="Welevel (Personio)",
+            feed_url="https://welevel.jobs.personio.de/xml",
+        )
