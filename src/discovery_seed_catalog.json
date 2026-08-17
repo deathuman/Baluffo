@@ -31,5 +31,6 @@
   {"studio": "Sandbox VR", "aliases": ["sandboxvr", "sandbox-vr"], "nlPriority": false, "remoteFriendly": true, "likelyProviders": ["lever"], "careersUrl": "https://jobs.lever.co/sandboxvr"},
   {"studio": "Voodoo", "aliases": ["voodoo"], "nlPriority": false, "remoteFriendly": true, "likelyProviders": ["lever"], "careersUrl": "https://jobs.lever.co/voodoo"},
   {"studio": "NeoBards", "aliases": ["neobards", "neo-bards"], "nlPriority": false, "remoteFriendly": false, "likelyProviders": ["static"], "careersUrl": "https://neobards.com/careers/"},
-  {"studio": "Evolve Benchmark", "aliases": ["evolvebenchmark", "evolve-benchmark"], "nlPriority": false, "remoteFriendly": true, "likelyProviders": ["teamtailor"], "careersUrl": "https://careers.evolvebenchmark.com/jobs"}
+  {"studio": "Evolve Benchmark", "aliases": ["evolvebenchmark", "evolve-benchmark"], "nlPriority": false, "remoteFriendly": true, "likelyProviders": ["teamtailor"], "careersUrl": "https://careers.evolvebenchmark.com/jobs"},
+  {"studio": "Crater Studios", "aliases": ["craterstudios", "crater-studios", "craterstudiosgames"], "nlPriority": false, "remoteFriendly": true, "likelyProviders": ["static"], "careersUrl": "https://craterstudiosgames.com/careers"}
 ]

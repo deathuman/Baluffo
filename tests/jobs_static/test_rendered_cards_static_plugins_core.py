@@ -324,6 +324,39 @@ def test_run_static_studio_pages_source_neobards_plugin_keeps_only_job_anchors()
     assert rows[1]["jobLink"] == "https://neobards.com/game-designer_uiux_en/"
 
 
+def test_run_static_studio_pages_source_crater_plugin_renders_job_titles_from_slugs() -> None:
+    shell = '<html><body><div id="root"></div><script type="module">react</script></body></html>'
+    rendered = """
+        <a href="/careers/marketing-specialist">View Job</a>
+        <a href="/careers/technical-artist">View Job</a>
+        <a href="/careers/ux-ui-designer">View Job</a>
+    """
+
+    rows = jf.run_static_studio_pages_source(
+        fetch_text=lambda _url, _timeout: shell,
+        timeout_s=5,
+        retries=0,
+        backoff_s=0,
+        try_playwright=lambda _url, _timeout: (rendered, ""),
+        sources=[
+            {
+                "name": "Crater Studios (Seed)",
+                "studio": "Crater Studios",
+                "company": "Crater Studios",
+                "pages": ["https://craterstudiosgames.com/careers"],
+                "id": "static:listing_url:https://craterstudiosgames.com/careers",
+            }
+        ],
+    )
+
+    assert [row["title"] for row in rows] == [
+        "Marketing Specialist",
+        "Technical Artist",
+        "UX UI Designer",
+    ]
+    assert rows[1]["jobLink"] == "https://craterstudiosgames.com/careers/technical-artist"
+
+
 def test_run_static_studio_pages_source_amanotes_plugin_extracts_next_data_positions() -> None:
     html = """
         <script id="__NEXT_DATA__" type="application/json">

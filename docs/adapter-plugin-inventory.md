@@ -135,6 +135,7 @@ provider/static pair; there is no force-suppress action and no adapter registry 
 | blizzard | careers.blizzard.com, www.careers.blizzard.com | Blizzard Entertainment careers (HTML-first; browser escalation when needed) |
 | cdprojektred | cdprojektred.com, www.cdprojektred.com | CD Projekt RED careers (HTML-first; Playwright fallback when JS shell detected) |
 | climax | www.climaxstudios.com | Climax Studios careers |
+| crater | craterstudiosgames.com | Crater Studios careers (rendered JavaScript listing) |
 | embark | careers.embark-studios.com | Embark Studios careers |
 | frontier | frontier.co.uk, www.frontier.co.uk | Frontier careers |
 | globalstep | globalstep.com | GlobalStep careers |
