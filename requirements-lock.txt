@@ -12,6 +12,8 @@ attrs==26.1.0
     #   twisted
 automat==25.4.16
     # via twisted
+backports-tarfile==1.2.0
+    # via jaraco-context
 certifi==2026.4.22
     # via
     #   httpcore
@@ -54,6 +56,8 @@ idna==3.15
     #   hyperlink
     #   requests
     #   tldextract
+importlib-metadata==9.0.0
+    # via keyring
 incremental==24.11.0
     # via twisted
 itemadapter==0.13.1
@@ -78,6 +82,8 @@ jmespath==1.1.0
     #   parsel
 keyring==25.7.0
     # via -r requirements.txt
+librt==0.15.0
+    # via mypy
 lxml==6.1.0
     # via
     #   parsel
@@ -86,6 +92,10 @@ more-itertools==11.1.0
     # via
     #   jaraco-classes
     #   jaraco-functools
+mypy==1.20.2
+    # via -r requirements.txt
+mypy-extensions==1.1.0
+    # via mypy
 packaging==26.1
     # via
     #   incremental
@@ -97,6 +107,8 @@ parsel==1.11.0
     # via
     #   itemloaders
     #   scrapy
+pathspec==1.1.1
+    # via mypy
 playwright==1.58.0
     # via scrapy-playwright
 protego==0.6.0
@@ -159,9 +171,12 @@ twisted==26.4.0
     #   scrapy
 typing-extensions==4.15.0
     # via
+    #   anyio
+    #   mypy
     #   pydantic
     #   pydantic-core
     #   pyee
+    #   pyopenssl
     #   twisted
     #   typing-inspection
 typing-inspection==0.4.2
@@ -172,6 +187,8 @@ w3lib==2.4.1
     # via
     #   parsel
     #   scrapy
+zipp==4.1.0
+    # via importlib-metadata
 zope-interface==8.3
     # via
     #   scrapy

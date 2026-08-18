@@ -120,7 +120,7 @@ python -m mypy --config-file mypy.ini
 
 ```bash
 # Linux (WSL, from ~/code/Baluffo with the project venv activated)
-pip install mypy==1.20.2        # one-time, if not already in the venv
+pip install -r requirements-lock.txt   # mypy is pinned in the lock file
 python -m mypy --config-file mypy.ini
 ```
 

@@ -82,7 +82,7 @@ jobs:
         run: npm run lint:py
 
       - name: Typecheck
-        run: npm run typecheck:py 2>/dev/null || echo "Typecheck skipped (not configured)"
+        run: npm run typecheck:py
 
       - name: Run Linux Python tests
         run: npm run test:py:linux
