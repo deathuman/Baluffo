@@ -6,13 +6,16 @@ cannot see the inactive platform module and the frozen EXE crashes at startup
 with ModuleNotFoundError (fixed in commit c1d3a2ff after `npm run verify`
 caught the gap in the packaged smoke test).
 
-These tests pin the two collection surfaces that guard that gap:
+The portable build now validates the frozen PYZ as part of
+`build_or_reuse_portable` so `npm run verify` aborts at the PortableEXE stage.
+These tests pin the same contract from three angles:
 
   * the PyInstaller module graph for the real desktop entrypoint (hermetic,
-    always runs), and
+    always runs),
   * the frozen PYZ archive inside an actually built portable EXE (ground truth;
     skips when no build artifact exists, e.g. a plain `npm run test:py:extended`
-    without a preceding portable build).
+    without a preceding portable build), and
+  * the build-time validator's failure behavior (missing modules / missing PYZ).
 """
 
 from __future__ import annotations
@@ -109,16 +112,15 @@ def _newest_built_portable_exe() -> Path | None:
     return max(candidates, key=lambda path: path.stat().st_mtime)
 
 
-def test_frozen_portable_exe_pyz_contains_both_desktop_platform_modules(
-    tmp_path: Path,
-) -> None:
-    """An actually built portable EXE embeds both platform modules in its PYZ.
+def test_frozen_portable_exe_pyz_contains_both_desktop_platform_modules() -> None:
+    """An actually built portable EXE passes the build-time frozen-bundle check.
 
-    Ground-truth check on the frozen artifact: PyInstaller 6.x (pinned in
-    requirements.txt) embeds the pure-Python module archive inside the onedir
-    bootloader executable. Skips when no built EXE exists.
+    Ground-truth check on the frozen artifact via the shared validator used by
+    `build_or_reuse_portable`; PyInstaller 6.x (pinned in requirements.txt)
+    embeds the pure-Python module archive inside the onedir bootloader
+    executable. Skips when no built EXE exists.
     """
-    from PyInstaller.archive.readers import CArchiveReader, ZlibArchiveReader
+    from scripts.build_portable_exe import validate_frozen_desktop_platform_modules
 
     exe_path = _newest_built_portable_exe()
     if exe_path is None:
@@ -127,17 +129,35 @@ def test_frozen_portable_exe_pyz_contains_both_desktop_platform_modules(
             "`npm run verify` or scripts/build_portable_exe.py) first"
         )
 
-    archive = CArchiveReader(str(exe_path))
-    if "PYZ.pyz" not in archive.toc:
-        pytest.fail(
-            f"bundled executable {exe_path} has no PYZ.pyz entry; "
-            "PyInstaller archive layout may have changed"
-        )
-    pyz_path = tmp_path / "Baluffo.pyz"
-    pyz_path.write_bytes(archive.extract("PYZ.pyz"))
-    frozen_modules = set(ZlibArchiveReader(str(pyz_path)).toc)
+    validate_frozen_desktop_platform_modules(exe_path)
 
-    missing = [name for name in PLATFORM_MODULES if name not in frozen_modules]
-    assert not missing, (
-        f"frozen EXE bundle {exe_path} is missing desktop platform modules: {missing}"
+
+def test_validate_frozen_desktop_platform_modules_reports_missing_modules(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The build-time validator fails loudly when a platform module is absent."""
+    from scripts.build_portable_exe import validate_frozen_desktop_platform_modules
+
+    monkeypatch.setattr(
+        "scripts.build_portable_exe.read_frozen_pyz_modules",
+        lambda exe_path: {"src.ship.desktop_app"},
     )
+    with pytest.raises(RuntimeError, match="src.ship.desktop_app._windows"):
+        validate_frozen_desktop_platform_modules(Path("fake.exe"))
+
+
+def test_read_frozen_pyz_modules_rejects_archive_without_pyz_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A built EXE whose archive layout lost the PYZ is reported, not skipped."""
+    from scripts.build_portable_exe import read_frozen_pyz_modules
+
+    class _FakeArchiveWithoutPyz:
+        toc: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "PyInstaller.archive.readers.CArchiveReader",
+        lambda *args, **kwargs: _FakeArchiveWithoutPyz(),
+    )
+    with pytest.raises(RuntimeError, match="PYZ.pyz"):
+        read_frozen_pyz_modules(Path("fake.exe"))

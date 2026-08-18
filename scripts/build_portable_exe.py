@@ -12,6 +12,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -235,6 +236,14 @@ UPDATER_HELPER_HIDDEN_IMPORTS = (
     "tkinter.ttk",
 )
 UPDATER_HELPER_COLLECT_DATA_PACKAGES = OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES
+# The desktop_app facade statically imports both platform modules; PyInstaller
+# must bundle them or the packaged EXE crashes at startup. Kept as a build-time
+# constant so the frozen-bundle validation below and the regression tests share
+# one contract.
+REQUIRED_FROZEN_DESKTOP_MODULES = (
+    "src.ship.desktop_app._windows",
+    "src.ship.desktop_app._linux",
+)
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -864,6 +873,59 @@ def run_pyinstaller(
     return exe_path
 
 
+def read_frozen_pyz_modules(exe_path: Path) -> set[str]:
+    """Return the pure-Python module names embedded in a PyInstaller EXE's PYZ.
+
+    PyInstaller 6.x onedir builds embed the module archive inside the bootloader
+    executable itself rather than as a separate ``.pkg``/``.pyz`` file; the
+    layout is pinned by requirements.txt.
+    """
+    from PyInstaller.archive.readers import CArchiveReader, ZlibArchiveReader
+
+    resolved = Path(exe_path).expanduser().resolve()
+    archive = CArchiveReader(str(resolved))
+    if "PYZ.pyz" not in archive.toc:
+        raise RuntimeError(
+            f"Bundled executable {resolved} has no PYZ.pyz entry; "
+            "PyInstaller archive layout may have changed."
+        )
+    pyz_data = archive.extract("PYZ.pyz")
+    fd, temp_name = tempfile.mkstemp(prefix="baluffo-frozen-", suffix=".pyz")
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(pyz_data)
+        return set(ZlibArchiveReader(temp_name).toc)
+    finally:
+        try:
+            os.unlink(temp_name)
+        except OSError:
+            pass
+
+
+def validate_frozen_desktop_platform_modules(exe_path: Path) -> None:
+    """Fail fast when a frozen EXE bundle is missing desktop platform modules.
+
+    The desktop_app facade statically imports both platform modules; if that
+    contract regresses to a dynamic importlib dispatch, PyInstaller cannot see
+    the inactive module and the packaged EXE crashes at startup with
+    ModuleNotFoundError. The portable build calls this right after PyInstaller
+    (and on cache hits) so ``npm run verify`` aborts at the PortableEXE stage
+    instead of after the long test suites.
+    """
+    frozen_modules = read_frozen_pyz_modules(exe_path)
+    missing = [
+        module_name
+        for module_name in REQUIRED_FROZEN_DESKTOP_MODULES
+        if module_name not in frozen_modules
+    ]
+    if missing:
+        raise RuntimeError(
+            "Frozen EXE bundle is missing required desktop platform modules: "
+            f"{missing}. The desktop_app facade must statically import both "
+            "_windows and _linux so PyInstaller bundles them."
+        )
+
+
 def run_helper_pyinstaller(output_dir: Path, *, icon_path: Path) -> Path:
     helper_dist = output_dir.parent / ".pyinstaller-helper-dist"
     helper_work = output_dir.parent / ".pyinstaller-helper-work"
@@ -999,7 +1061,9 @@ def build_or_reuse_portable(
         )
         if removed_entries:
             print(f"Portable build cache pruned: {len(removed_entries)} old entrie(s)")
-        return output_dir / f"{exe_name}.exe", output_dir / "BaluffoUpdater.exe", provenance
+        exe_path = output_dir / f"{exe_name}.exe"
+        validate_frozen_desktop_platform_modules(exe_path)
+        return exe_path, output_dir / "BaluffoUpdater.exe", provenance
 
     portable_root = build_portable_layout(output_dir, version)
     exe_path = run_pyinstaller(
@@ -1008,6 +1072,7 @@ def build_or_reuse_portable(
         icon_path=icon_path,
         bundle_version=version,
     )
+    validate_frozen_desktop_platform_modules(exe_path)
     helper_path = run_helper_pyinstaller(portable_root, icon_path=icon_path)
     provenance = _write_portable_build_provenance(
         portable_root,

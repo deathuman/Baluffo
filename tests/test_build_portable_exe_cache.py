@@ -74,6 +74,9 @@ def test_build_or_reuse_portable_materializes_cache_hit_without_rebuilding() -> 
                 return_value={"fingerprint": "abc123", "inputs": {}},
             ),
             mock.patch("scripts.build_portable_exe.validate_playwright_browser_payload"),
+            mock.patch(
+                "scripts.build_portable_exe.validate_frozen_desktop_platform_modules"
+            ) as validator_mock,
             mock.patch("scripts.build_portable_exe.build_portable_layout") as layout_mock,
             mock.patch("scripts.build_portable_exe.run_pyinstaller") as pyinstaller_mock,
             mock.patch("scripts.build_portable_exe.run_helper_pyinstaller") as helper_mock,
@@ -92,6 +95,7 @@ def test_build_or_reuse_portable_materializes_cache_hit_without_rebuilding() -> 
         assert (output_dir / "ship").is_dir()
         assert provenance["cacheStatus"] == "hit"
         assert read_portable_build_provenance(output_dir)["fingerprint"] == "abc123"
+        validator_mock.assert_called_once_with(output_dir / "Baluffo.exe")
         layout_mock.assert_not_called()
         pyinstaller_mock.assert_not_called()
         helper_mock.assert_not_called()
@@ -114,6 +118,7 @@ def test_build_or_reuse_portable_stores_cache_on_miss() -> None:
                 return_value={"fingerprint": "miss123", "inputs": {"fixture": True}},
             ),
             mock.patch("scripts.build_portable_exe.validate_playwright_browser_payload"),
+            mock.patch("scripts.build_portable_exe.validate_frozen_desktop_platform_modules"),
             mock.patch(
                 "scripts.build_portable_exe.build_portable_layout",
                 side_effect=fake_build_layout,
@@ -166,6 +171,7 @@ def test_build_or_reuse_portable_prunes_old_cache_entries_on_miss() -> None:
                 return_value={"fingerprint": "c" * 64, "inputs": {"fixture": True}},
             ),
             mock.patch("scripts.build_portable_exe.validate_playwright_browser_payload"),
+            mock.patch("scripts.build_portable_exe.validate_frozen_desktop_platform_modules"),
             mock.patch(
                 "scripts.build_portable_exe.build_portable_layout", side_effect=fake_build_layout
             ),
@@ -208,6 +214,7 @@ def test_build_or_reuse_portable_prunes_old_cache_entries_on_hit() -> None:
                 return_value={"fingerprint": hit, "inputs": {}},
             ),
             mock.patch("scripts.build_portable_exe.validate_playwright_browser_payload"),
+            mock.patch("scripts.build_portable_exe.validate_frozen_desktop_platform_modules"),
         ):
             build_or_reuse_portable(
                 output_dir=output_dir,
@@ -237,6 +244,7 @@ def test_store_cache_entry_falls_back_when_windows_directory_replace_is_locked()
 
         with (
             mock.patch("scripts.build_portable_exe.validate_playwright_browser_payload"),
+            mock.patch("scripts.build_portable_exe.validate_frozen_desktop_platform_modules"),
             mock.patch(
                 "scripts.build_portable_exe.Path.replace",
                 autospec=True,
