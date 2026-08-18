@@ -172,33 +172,55 @@ Add to User Settings JSON (`Ctrl+Shift+P`, `Preferences: Open User Settings (JSO
 
 ## Memory Vault Layout
 
-The recommended vault is a private Git-backed Markdown repo named `BaluffoMemory`, cloned
-alongside the main Baluffo repo:
+The vault is a private Git-backed Markdown repo named `BaluffoMemory`, cloned alongside the
+main Baluffo repo. Notes live under `baluffo/` or in a small set of root-level topic dirs.
+The frontmatter `permalink` is the routing key — never create a filesystem directory named
+`baluffo-memory/`; that prefix is the permalink namespace, not a path (a stray nested
+`baluffo-memory/` directory created that way was relocated into the normal layout on
+2026-08-17).
 
 ```
 BaluffoMemory/
   README.md
   MEMORY_POLICY.md
   .gitignore
-  baluffo/
+  baluffo/                    # primary namespace; one subdir per topic
     current-focus.md
     stale-memory-corrections.md
     decisions/
-      Three-Layer Local-First Desktop Architecture.md
-      Thin Composition Roots Pattern.md
-      data-ui Attribute Selector Convention.md
-      Dynamic Redundant-Static Source Suppression.md
-      External Memory MCP Policy - Implemented.md
     gotchas/
-      Frontend is Vanilla JS, Not React-Vue.md
-      Never Import from src-jobs-common-__init__.py.md
-      _runtime.facade() Pattern is Retired.md
-      CamelCase Data Contracts are Mandatory.md
-      Bridge and Route Signature Changes are Compatibility Work.md
-      repo-truth-vs-memory.md
     handoffs/
-      2026-05-10-setup-complete.md
+    p0/                       # P0 ratchets + progress tracker
+    provider-discovery/
+    releases/
+    ...                       # audits/, ci/, cleanup/, deployments/, evidence/,
+                              # operations/, performance/, provider-coverage/, umbrel/
+  gotchas/                    # root-level cross-cutting gotchas
+  releases/                   # root-level release notes
+  handoffs/
+    jobs/                     # jobs-family handoffs (plans, audits, remediations)
+    baluffo/                  # Baluffo release-prep handoffs
+  spikes/                     # spike verdicts
 ```
+
+Both `baluffo/<topic>/...` and the root-level topic dirs above are committed conventions
+(verified 2026-08-17). Add each note where its topic family already lives — match the
+existing directory, do not create a parallel one.
+
+Permalink convention: `baluffo-memory/` + the note's vault-relative path, with the
+filename stem slugified (lowercase, spaces/dashes collapse to `-`):
+
+| Note path | permalink |
+|-----------|-----------|
+| `baluffo/p0/Baluffo P0 Adapter Recovery Ratchet 2026-06-19.md` | `baluffo-memory/baluffo/p0/baluffo-p0-adapter-recovery-ratchet-2026-06-19` |
+| `baluffo/gotchas/<Name>.md` | `baluffo-memory/baluffo/gotchas/<slug>` |
+| `baluffo/releases/<Name>.md` | `baluffo-memory/baluffo/releases/<slug>` |
+| `gotchas/<Name>.md` | `baluffo-memory/gotchas/<slug>` |
+| `releases/<Name>.md` | `baluffo-memory/releases/<slug>` |
+| `handoffs/jobs/<Name>.md` | `baluffo-memory/handoffs/jobs/<slug>` |
+| `handoffs/baluffo/<Name>.md` | `baluffo-memory/handoffs/baluffo/<slug>` |
+
+Keep the permalink in sync whenever a note is moved or renamed.
 
 ## .gitignore
 
@@ -314,6 +336,8 @@ cmd /c "chcp 65001>nul&& set PYTHONIOENCODING=utf-8&& set NO_COLOR=1&& basic-mem
 
 Plain `basic-memory doctor` can fail in Windows console hosts because Rich output and the
 legacy console renderer disagree. Use the UTF-8/no-color `cmd /c` form above for reliable checks.
+The plain `status` command can also hang in Git Bash / legacy console hosts; use `--json` for a
+reliable machine-readable status (verified 2026-08-17 on basic-memory 0.22.1 with running MCP instances).
 
 If `basic-memory doctor --local` reports inconsistencies, run the search-only reindex command above.
 

@@ -5,7 +5,7 @@
 > - **Canonical for:** AI-coder environment checks, local toolbelt setup, and setup drift triage
 > - **Not canonical for:** runtime storage contracts, release sequencing, or subsystem implementation behavior
 > - **Then inspect:** [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`WSL_SETUP.md`](WSL_SETUP.md), [`LOCAL_SETUP.md`](LOCAL_SETUP.md), and [`testing.md`](testing.md) as needed
-> - **Last updated:** 2026-06-01
+> - **Last updated:** 2026-08-17 (Serena install unpinned to latest release)
 
 This repo keeps AI-coder tooling contributor-local. These tools are not Baluffo runtime, packaging, CI, Python, Node, or pre-commit dependencies.
 
@@ -36,7 +36,7 @@ python scripts/ai_env_check.py --smoke --check-updates
 Install or update the required code-intelligence MCP:
 
 ```bash
-uv tool install --force -p 3.13 "serena-agent==1.6.1"
+uv tool install --force -p 3.13 "serena-agent"
 serena --version
 ```
 

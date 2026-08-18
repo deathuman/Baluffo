@@ -251,13 +251,10 @@ def test_serena_tooling_is_first_class_for_codex_and_opencode(repo_root: Path) -
     assert "OpenCode" in serena_text
     assert "repo docs stay canonical" in serena_text
     assert ".serena/" in serena_text
-    assert "serena setup codex" in serena_text
-    assert (
-        "codex mcp add serena -- serena start-mcp-server "
-        "--context=codex --project-from-cwd" in serena_text
-    )
-    assert 'uv tool install --force -p 3.13 "serena-agent==' in serena_text
-    assert "`serena-agent` 1.6" in serena_text
+    assert "codex --profile baluffo" in serena_text
+    assert 'uv tool install --force -p 3.13 "serena-agent"' in serena_text
+    assert "latest `serena-agent` release" in serena_text
+    assert '"--from", "serena-agent"' in serena_text
     assert "serena project create --language python --language typescript" in serena_text
     assert "There is no separate JavaScript Serena language key; use `typescript`" in serena_text
     assert "Node.js and npm" in serena_text
@@ -287,7 +284,7 @@ def test_serena_tooling_is_first_class_for_codex_and_opencode(repo_root: Path) -
         "-p",
         "3.13",
         "--from",
-        "serena-agent==1.6.1",
+        "serena-agent",
         "serena",
         "start-mcp-server",
         "--context",
@@ -511,6 +508,7 @@ def test_index_routes_current_process_docs_only(repo_root: Path) -> None:
     assert archive_files == [
         "docs/archive/0.2.0-deferred-desktop-ux-polish-plan.md",
         "docs/archive/0.2.0-release-readiness-plan.md",
+        "docs/archive/PLAN-abort-telemetry.md",
         "docs/archive/README.md",
         "docs/archive/admin-health-dashboard-console-closeout.md",
         "docs/archive/ai-modification-safety-improvements-plan.md",

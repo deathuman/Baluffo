@@ -21,7 +21,7 @@ Follow Serena's official `uv`-managed install path rather than marketplace insta
 2. Install Serena:
 
 ```powershell
-uv tool install --force -p 3.13 "serena-agent==1.6.1"
+uv tool install --force -p 3.13 "serena-agent"
 serena --help
 ```
 
@@ -32,7 +32,7 @@ For direct CLI use on Windows, the `uv`-managed executable is typically availabl
 Update Serena explicitly; normal repo checks should report stale installs, not auto-upgrade them:
 
 ```powershell
-uv tool install --force -p 3.13 "serena-agent==1.6.1"
+uv tool install --force -p 3.13 "serena-agent"
 serena --version
 ```
 
@@ -43,7 +43,7 @@ then restart or reconnect Codex/OpenCode so they open a fresh MCP stdio transpor
 
 This setup was validated on Windows with:
 
-- `serena-agent` 1.6.1
+- latest `serena-agent` release resolved at setup time
 - Python 3.13
 - Language-server backend with `python` and `typescript`
 
@@ -56,31 +56,21 @@ Upstream references:
 
 ### Codex CLI
 
-Codex is a first-class client for this repo. Prefer Codex's MCP command flow instead of hand-editing config files:
+Codex is a first-class client for this repo through a Baluffo-specific profile. The base Codex configuration intentionally has no Serena entry, so Serena does not start in unrelated workspaces.
 
 ```powershell
-serena setup codex
-codex mcp list
-codex mcp get serena
+codex --profile baluffo
 ```
 
-Manual fallback if `serena setup codex` cannot update the client config:
+The profile lives at `$env:CODEX_HOME\baluffo.config.toml` and resolves the latest Serena release from `uvx`:
 
-```powershell
-codex mcp add serena -- serena start-mcp-server --context=codex --project-from-cwd
+```toml
+[mcp_servers.serena]
+command = "uvx"
+args = ["-p", "3.13", "--from", "serena-agent", "serena", "start-mcp-server", "--context", "ide", "--project-from-cwd"]
 ```
 
-`codex mcp add` writes the user-global Codex MCP config for you. Keep that config user-local rather than committing a repo-managed Codex config file.
-Codex should launch the stable `uv tool` installation rather than a GitHub `main` snapshot. A working `codex mcp get serena`
-registration should report:
-
-- `enabled: true`
-- `transport: stdio`
-- `command: serena` or another user-local Serena executable path
-- `args: start-mcp-server --context=codex --project-from-cwd`
-
-That means Codex starts the same installed Serena version as OpenCode and activates the current
-workspace instead of relying on a stale registered project or an unpinned Git checkout.
+Do not run `codex mcp add serena` from this repo: that command writes the user-global Codex configuration and would restore unwanted startup in other workspaces. Starting Codex with `--profile baluffo` loads this profile's Serena registration, while the unpinned package reference resolves the latest available Serena release. The profile must contain the `mcp_servers.serena` block above and use `--project-from-cwd`, so Codex and OpenCode both activate the current workspace instead of relying on a stale registered project.
 
 ### OpenCode
 
@@ -95,7 +85,7 @@ Current repo launch shape:
   "mcp": {
     "serena": {
       "type": "local",
-      "command": ["uvx", "-p", "3.13", "--from", "serena-agent==1.6.1", "serena", "start-mcp-server", "--context", "ide", "--project-from-cwd"],
+      "command": ["uvx", "-p", "3.13", "--from", "serena-agent", "serena", "start-mcp-server", "--context", "ide", "--project-from-cwd"],
       "enabled": true
     }
   }
@@ -132,7 +122,7 @@ Use this section to verify the current clone and client session after installing
 
 ### Expected Codex Session State
 
-- Serena MCP tools loaded successfully after rebooting the Codex session.
+- Serena MCP tools loaded successfully after starting Codex with the `baluffo` profile.
 - The Serena project was visible as `Baluffo`, but the session still needed an explicit project activation on first use.
 - One-time Serena onboarding had not been completed yet for this clone; after onboarding, `check_onboarding_performed` reported 5 project memories.
 
@@ -141,18 +131,18 @@ Use this section to verify the current clone and client session after installing
 Use these checks when you want to confirm the local Serena setup is actually working:
 
 ```powershell
-codex mcp get serena
-& "$env:USERPROFILE\.local\bin\serena.exe" project health-check
+Get-Content "$env:CODEX_HOME\baluffo.config.toml"
+uvx -p 3.13 --from serena-agent serena project health-check
 ```
 
 Expected working results in this repo:
 
-- `codex mcp get serena` shows a live stdio MCP registration using a user-local Serena executable, typically `$env:USERPROFILE\.local\bin\serena.exe`.
-- `serena.exe project health-check` passed successfully.
+- The profile contains a live Serena MCP registration using the unpinned `uvx` command.
+- `serena project health-check` passes successfully.
 - The health check started both configured language servers:
   - Python via Pyright
   - TypeScript via `typescript-language-server`
-- Serena reported version `1.5.3` from the active MCP session (or a newer compatible release).
+- Serena reports the version resolved by the current unpinned package reference.
 - The repo-local Serena health-check log was written under `.serena/logs/health-checks/`.
 
 ### Verified Repo-Local Project State
@@ -206,13 +196,13 @@ Use the same command and args:
 
 ## Fresh Session Bootstrap (No Guesswork)
 
-When a Codex/OpenCode session is restarted, Serena MCP tools can load without an active Baluffo project.
+When a Codex/OpenCode session is restarted, start Codex with the `baluffo` profile and run OpenCode from the Baluffo repo root so Serena can activate the current project.
 Use this exact sequence once per new session:
 
-1. Confirm the MCP client still points to a valid Serena registration:
+1. Start Codex with the Baluffo profile so its project-level Serena registration is loaded:
 
 ```powershell
-codex mcp get serena
+codex --profile baluffo
 ```
 
 2. In the Serena toolset, confirm active project state:
