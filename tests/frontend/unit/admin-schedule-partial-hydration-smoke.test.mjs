@@ -9,7 +9,10 @@ import { promisify } from "node:util";
 import { chromium } from "@playwright/test";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
-const OUT_ROOT = path.join(REPO_ROOT, "_out", "container-hydration-smoke");
+// Distinct out-dir from admin-authoritative-hydration-smoke.test.mjs so the two
+// hydration-smoke tests can build the container bundle concurrently (vitest runs
+// files in parallel) without racing on rm()/rebuild of the same directory.
+const OUT_ROOT = path.join(REPO_ROOT, "_out", "container-hydration-smoke-partial");
 const execFileAsync = promisify(execFile);
 let bundleBuild = null;
 const STARTUP_HEAVY_ROUTES = [

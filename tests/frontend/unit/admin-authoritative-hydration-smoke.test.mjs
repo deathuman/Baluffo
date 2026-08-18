@@ -9,7 +9,8 @@ import { promisify } from "node:util";
 import { chromium } from "@playwright/test";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
-const CONTAINER_SMOKE_ROOT = path.join(REPO_ROOT, "_out", "container-hydration-smoke");
+// Distinct out-dir from admin-schedule-partial-hydration-smoke.test.mjs to avoid racing its bundle build.
+const CONTAINER_SMOKE_ROOT = path.join(REPO_ROOT, "_out", "container-hydration-smoke-authoritative");
 const execFileAsync = promisify(execFile);
 let containerBundleBuild = null;
 function jsonResponse(res, payload, status = 200) {
