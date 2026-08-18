@@ -5,7 +5,7 @@
 > - **Canonical for:** system boundaries, task routing, compatibility-surface detail, and the expanded verification matrix
 > - **Not canonical for:** endpoint payloads or data schema details
 > - **Then inspect:** the minimal source files listed in the task table, plus the matching contract doc if shape changes are involved
-> - **Last updated:** 2026-06-20
+> - **Last updated:** 2026-08-17 (state.py entry corrected to removed)
 >
 > Start with [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) first. Retired boundary-charter detail now lives in git history; this map is the current routing source.
 > For any file described below as a stable thin surface, compatibility surface, or monkeypatch surface, preserve the root-level exported names that tests or leaf modules patch through that root unless the matching contract tests and docs are updated in the same change.
@@ -282,7 +282,7 @@ See [`testing.md`](testing.md) for more commands.
 - `src/jobs/pipeline.py` - current package entrypoint; keep CLI/task launch behavior covered, but internal runtime, source-execution, and report modules may be rewired or collapsed when the replacement is simpler
 - `frontend/jobs/app/desktop-update.js` - stable Jobs desktop-update export surface; keep implementation in `frontend/jobs/app/desktop-update-{model,dom,controller}.js`
 - `src/jobs/adapters/static.py` - current static adapter entrypoint; generic listing/detail/runtime modules may be collapsed when the replacement is simpler and covered by adapter tests
-- `src/jobs/state.py` - removable jobs source-state facade over current leaf implementations; preserve persisted source-state meaning when removing it, not the facade/leaf split
+- `src/jobs/state.py` - removed source-state facade; persisted source-state meaning now lives in the `src/jobs/state_source_state.py` leaf — preserve that meaning, not the old facade/leaf split
 - `src/bridge/routes/post_routes.py` - stable POST registration surface; keep route-family logic in `src/bridge/routes/post_routes_{admin,local_data,update}.py`
 - `src/bridge/routes/get_routes.py` - stable GET delegator surface; keep GET route-family logic in `src/bridge/routes/get_*.py`
 - `frontend/jobs/domain.js` - stable Jobs domain export surface; keep query/feed/view ownership in `frontend/jobs/domain/{query,feed,view}.js`

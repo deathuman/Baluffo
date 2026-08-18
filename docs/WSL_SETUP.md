@@ -5,7 +5,7 @@
 > - **Canonical for:** WSL environment setup, available tooling, and daily workflow
 > - **Not canonical for:** local storage model, release sequencing, or the full verification matrix
 > - **Then inspect:** [`LOCAL_SETUP.md`](LOCAL_SETUP.md) for local-first commands, [`testing.md`](testing.md) for test lanes, and [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) for AI agent context
-> - **Last updated:** 2026-05-25
+> - **Last updated:** 2026-08-18 (cross-platform mypy gate documented)
 
 ## Why WSL
 
@@ -98,11 +98,33 @@ All commands run inside WSL after `cd`-ing to the project root.
 | Python tests (Linux) | `npm run test:py:linux` (excludes Windows-only tests) |
 | Frontend tests (Linux) | `npm run test:frontend:linux` (requires `PLAYWRIGHT_SYSTEM_CHROMIUM=1`) |
 | Python lint | `npm run lint:py` |
-| Python type check | `npm run typecheck:py` |
-| Frontend lint | `npm run lint:frontend` |
+| Python type check (Linux) | `python -m mypy --config-file mypy.ini` — Linux side of the cross-platform type-check gate; passes clean (478 source files, zero suppressions) — see below |
+| Frontend lint | `npm run lint:js` |
 | Update locked Python deps | `uv pip compile requirements.txt -o requirements-lock.txt` |
 | Install locked Python deps | `pip install -r requirements-lock.txt` |
 | Install npm deps (clean) | `npm ci` |
+
+### Cross-platform type check (mypy gate)
+
+The mypy gate must pass on **both** platforms. Windows and Linux typesheds have mirror-image blind spots:
+
+- **Windows** cannot see POSIX-only attributes (`fcntl`, `os.killpg`, `pwd`, `os.sysconf`, …)
+- **Linux** cannot see Windows-only attributes (`ctypes.windll`, `msvcrt`, …)
+
+So the gate is the same command run in each environment. `mypy.ini` sets `warn_unused_ignores = True` and the tree carries **zero** `type: ignore`/`noqa` suppressions — a suppression that's needed on one platform is *unused* on the other, so any suppression you add is a portability bug that fails the gate on one side. Both runs must report `Success: no issues found in 478 source files`:
+
+```powershell
+# Windows (PowerShell, from the repo root)
+python -m mypy --config-file mypy.ini
+```
+
+```bash
+# Linux (WSL, from ~/code/Baluffo with the project venv activated)
+pip install mypy==1.20.2        # one-time, if not already in the venv
+python -m mypy --config-file mypy.ini
+```
+
+Windows-only code paths live behind `os.name`/`sys.platform` checks (e.g. `src/ship/desktop_app/_windows.py`, `src/shared/process_memory.py`, `src/source_sync_runtime.py`, `src/jobs/feed_reconciliation_lock.py`, `src/ship/desktop_update_shared.py`); mypy checks both branches, so a change to either side must pass on both platforms.
 
 ## Project structure
 
@@ -183,6 +205,7 @@ As of May 2026, the Linux compatibility plan (see [`docs/archive/linux-compatibi
 | `npm run test:frontend:linux` | Opt-in | Requires system `chromium-browser`; set `PLAYWRIGHT_SYSTEM_CHROMIUM=1` |
 | `npm run dev:bridge` | Works | No changes needed |
 | `npm run dev:pipeline` | Works | No changes needed |
+| `python -m mypy --config-file mypy.ini` | Passes (478 source files) | Cross-platform gate — run the same command on Windows too; see Daily commands |
 
 ### New capabilities
 

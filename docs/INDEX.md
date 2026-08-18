@@ -5,7 +5,7 @@
 > - **Canonical for:** wiki routing, doc discovery, and the default AI read path
 > - **Not canonical for:** payload details, route contracts, or subsystem implementation behavior
 > - **Then inspect:** [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`architecture-ai-map.md`](architecture-ai-map.md), and one matching contract or workflow doc
-> - **Last updated:** 2026-06-04 (Umbrel raw-LAN release and troubleshooting guidance)
+> - **Last updated:** 2026-08-17 (archive move + plans/snapshots index completeness)
 
 Use this page as the wiki home. Start here, load the minimum active docs you need, and use git history for old cleanup/refactor details unless the task explicitly needs historical provenance.
 
@@ -76,6 +76,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`plans/jobs-coverage-improvement-plan.md`](plans/jobs-coverage-improvement-plan.md) | Plans / Follow-Ups | You are improving jobs feed coverage — zero-kept static recovery, provider coverage closure, provider adapter zero-yield triage, or sheet-dominance rebalancing |
 | [`plans/post-0.2.0-desktop-runtime-ram-reduction-plan.md`](plans/post-0.2.0-desktop-runtime-ram-reduction-plan.md) | Plans / Follow-Ups | You are revisiting desktop runtime RAM reduction, packaged startup memory, or static site process consolidation after v0.2.0 |
 | [`plans/jobs-pipeline-memory-reduction-plan.md`](plans/jobs-pipeline-memory-reduction-plan.md) | Plans / Closeout | You are revisiting jobs-pipeline peak-RSS pressure, evaluating the next fetch-side lever, or running the alloc profiler |
+| [`plans/cross-cutting-tech-debt-reduction-plan.md`](plans/cross-cutting-tech-debt-reduction-plan.md) | Plans / Closeout | You are checking what closed after the June 2026 P0 refactor pass, or current cleanup priorities and non-goals |
 | [`plans/browser-fallback-pool-plan.md`](plans/browser-fallback-pool-plan.md) | Implemented Plan / Performance | You are touching pooled Chromium browser fallback, the `BALUFFO_BROWSER_POOL=0` kill switch, or bench evidence for fetch-stage speed |
 | [`plans/optional-playwright-browser-download-plan.md`](plans/optional-playwright-browser-download-plan.md) | Plans / Follow-Ups | You are moving Playwright browser binaries out of the portable ZIP or making packaged browser fallback an optional first-start download |
 | [`plans/cloakbrowser-enhanced-browser-fallback-ab-test-plan.md`](plans/cloakbrowser-enhanced-browser-fallback-ab-test-plan.md) | Plans / Follow-Ups | You are evaluating CloakBrowser as an optional enhanced browser fallback or measuring blocked/challenged career-page recovery |
@@ -83,7 +84,10 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`snapshots/non-game-employer-evidence-2026-08-12.md`](snapshots/non-game-employer-evidence-2026-08-12.md) | Snapshots / Evidence | You are deciding whether to drop or gate the 19 non-game employers (1,364 rows) shipped via the default Google Sheets source |
 | [`snapshots/static-regression-triage-2026-08-12.md`](snapshots/static-regression-triage-2026-08-12.md) | Snapshots / Evidence | You are triaging the 53 `site_changed` static regressions — ATS-migrated, dead-404, live-layout-change, or redirect sources |
 | [`snapshots/provider-coverage-closure-2026-08-12.md`](snapshots/provider-coverage-closure-2026-08-12.md) | Snapshots / Evidence | You are checking Track 2 provider coverage closure — migration links applied, provider rows approved, dead provider rows rejected |
+| [`snapshots/widget-board-recovery-2026-08-13.md`](snapshots/widget-board-recovery-2026-08-13.md) | Snapshots / Evidence | You are checking Track 3 browser-fallback/widget-board recovery, Ubisoft link ambiguity, or provider zero-yield triage |
 | [`snapshots/jobs-source-family-evidence-2026-04-30.md`](snapshots/jobs-source-family-evidence-2026-04-30.md) | Snapshots / Evidence | You are choosing the next deletion-first jobs fetcher source-family slice |
+| [`snapshots/jobs-dead-source-evidence-2026-04-29.md`](snapshots/jobs-dead-source-evidence-2026-04-29.md) | Snapshots / Evidence | You are auditing the 2026-04-29 first physical deletion batch for dead or unsupported jobs sources |
+| [`snapshots/admin-health-dashboard-console-closeout-2026-05-04.md`](snapshots/admin-health-dashboard-console-closeout-2026-05-04.md) | Snapshots / Evidence | You are checking why the Admin health dashboard tracker was retired and how overview signals split from detailed task evidence |
 | [`snapshots/dedup-lifecycle-readiness-closure-2026-05-03.md`](snapshots/dedup-lifecycle-readiness-closure-2026-05-03.md) | Snapshots / Evidence | You are checking why the broad dedup lifecycle readiness plan closed without starting lifecycle UX |
 | [`snapshots/dedup-current-run-blocker-triage-closure-2026-05-03.md`](snapshots/dedup-current-run-blocker-triage-closure-2026-05-03.md) | Snapshots / Evidence | You are checking why current-run blocker review closed into Google Sheets role-bucket audit |
 | [`snapshots/dedup-google-sheets-role-bucket-audit-closure-2026-05-03.md`](snapshots/dedup-google-sheets-role-bucket-audit-closure-2026-05-03.md) | Snapshots / Evidence | You are checking why Google Sheets role-bucket audit closed without starting fresh |
@@ -123,6 +127,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`archive/task-lifecycle-ledger-plan.md`](archive/task-lifecycle-ledger-plan.md) | Archived closeout | Completed Admin task lifecycle authority, task progress projection, runtime evidence IO, pipeline child ownership, and packaged lifecycle smoke closeout |
 | [`archive/bridge-route-inventory-guardrail-plan.md`](archive/bridge-route-inventory-guardrail-plan.md) | Archived plan with closeout | Completed bridge route inventory and repo-health guardrail implementation |
 | [`archive/task_lifecycle_ledger_closeout_plan.md`](archive/task_lifecycle_ledger_closeout_plan.md) | Archived superseded pointer | Old underscore-named lifecycle closeout note; use [`archive/task-lifecycle-ledger-plan.md`](archive/task-lifecycle-ledger-plan.md) instead |
+| [`archive/PLAN-abort-telemetry.md`](archive/PLAN-abort-telemetry.md) | Archived superseded pointer | Precursor `/tasks/abort` non-blocking + telemetry plan; use [`plans/task-abort-control-plan.md`](plans/task-abort-control-plan.md) instead |
 | [`archive/static-outlier-source-conflict-decisions.md`](archive/static-outlier-source-conflict-decisions.md) | Archived operator record | Historical Super Lucky and Koei static-outlier source conflict decisions |
 | [`archive/static-scope-conflict-dry-run-decisions.md`](archive/static-scope-conflict-dry-run-decisions.md) | Archived operator record | Historical static scope conflict dry-run decisions and Arrowhead apply-safe evidence |
 | [`archive/source-discovery-adapter-follow-ups-closeout.md`](archive/source-discovery-adapter-follow-ups-closeout.md) | Archived closeout | Closed source-discovery adapter follow-ups tracker |

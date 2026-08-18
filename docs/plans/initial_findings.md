@@ -5,7 +5,7 @@
 > - **Canonical for:** the 2026-05-17 initial refactoring target inventory, known analyzer false positives, and suggested sequencing for behavior-preserving cleanup
 > - **Not canonical for:** current runtime contracts, payload shapes, source registry policy, bridge route contracts, or implementation state after any later refactor lands
 > - **Then inspect:** [`../AI_ASSISTANT_GUIDE.md`](../AI_ASSISTANT_GUIDE.md), [`../architecture-ai-map.md`](../architecture-ai-map.md), [`refactor-charter-template.md`](refactor-charter-template.md), and [`../testing.md`](../testing.md)
-> - **Last updated:** 2026-05-29 — Phase 1 loophole audit completed; consumer counts corrected; effort estimates revised upward
+> - **Last updated:** 2026-08-17 — Phase 1 facade removal (`state.py`/`parsers.py`) noted as shipped in `f7376c87`; remaining items still advisory
 
 ## Summary
 
@@ -13,7 +13,7 @@ This plan records the initial 7-pass refactoring analysis completed on 2026-05-1
 
 Highest-value jobs/fetcher targets:
 
-- Remove two thin facades: `src/jobs/state.py` and `src/jobs/parsers.py`.
+- Remove two thin facades: `src/jobs/state.py` and `src/jobs/parsers.py` — **done**: both facades were removed in `f7376c87` (Phase 1); consumers now import leaf modules directly. The 1A/1B sections below remain as the historical inventory of that removal.
 - Merge two compatibility helper modules into their owning facade: `src/jobs/fetcher_compat_exports.py` and `src/jobs/fetcher_compat_runtime.py`.
 - Consolidate small duplicated jobs JSON-shape helpers only where semantics are identical.
 - Treat jobs root injection as compatibility debt and avoid expanding it.

@@ -5,14 +5,14 @@
 > - **Canonical for:** data contracts between pipeline, bridge, frontend, and local user data flows
 > - **Not canonical for:** subsystem ownership or route wiring
 > - **Then inspect:** `src/core/schemas.py`, `src/core/contracts.py`, the owning `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py` modules, relevant tests, and the owning runtime docs
-> - **Last updated:** 2026-07-16
+> - **Last updated:** 2026-08-17 (removed shim references corrected)
 > - **Also update when changing contract shape:** `src/core/schemas.py`, `src/core/contracts.py`, the owning `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py` modules, relevant tests, and any affected UI/runtime docs
 
 This document serves as the absolute boundary and source of truth for data structures passed between the Python pipeline (`src/jobs/`) and the Vanilla JS frontend (`frontend/`).
 
 **CRITICAL:** The frontend expects `camelCase` keys in all `data/*.json` files. The Python backend maps these explicitly through the owning `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py` modules.
 
-**Runtime source of truth:** jobs pipeline contract normalization is owned directly by `src/jobs/common/contracts_runtime.py`, `contracts_source_reports.py`, `contracts_task_state.py`, and `contracts_fetch_report.py`; the old `src/jobs/common/contracts.py` re-export shim is not a stable surface. `src/core/schemas.py` defines the Pydantic validation models used at pipeline, bridge, and local-data boundaries. SQLite `jobs` / `job_sources` is the bridge-managed feed authority. `jobs-unified-light.json` is the supported public Jobs projection and `jobs-unified-startup.json` is its bounded boot cache. `jobs-unified.json` remains a deprecated private pipeline/rollback handoff and is not publicly served; CSV has no output contract. Bridge local-data routes keep save-input validation compatibility-lenient and validate persisted/output rows separately. New fields or contract changes require updating this doc and the Pydantic schemas in `src/core/schemas.py`.
+**Runtime source of truth:** jobs pipeline contract normalization is owned directly by `src/jobs/common/contracts_runtime.py`, `contracts_source_reports.py`, `contracts_task_state.py`, and `contracts_fetch_report.py`; the removed `src/jobs/common/contracts.py` re-export shim is not a stable surface. `src/core/schemas.py` defines the Pydantic validation models used at pipeline, bridge, and local-data boundaries. SQLite `jobs` / `job_sources` is the bridge-managed feed authority. `jobs-unified-light.json` is the supported public Jobs projection and `jobs-unified-startup.json` is its bounded boot cache. `jobs-unified.json` remains a deprecated private pipeline/rollback handoff and is not publicly served; CSV has no output contract. Bridge local-data routes keep save-input validation compatibility-lenient and validate persisted/output rows separately. New fields or contract changes require updating this doc and the Pydantic schemas in `src/core/schemas.py`.
 
 ## 1. CanonicalJob
 Represents a single job posting retrieved from the external sources.

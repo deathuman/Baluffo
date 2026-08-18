@@ -5,7 +5,7 @@
 > - **Canonical for:** discovery/fetch/soak/Admin migration-link validation steps and release-readiness checks
 > - **Not canonical for:** payload schemas, bridge route contracts, loader internals, or suppression thresholds
 > - **Then inspect:** [`archive/read-only-lifecycle-ux-closeout.md`](archive/read-only-lifecycle-ux-closeout.md), [`scraping-pipeline.md`](scraping-pipeline.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`admin-bridge-api.md`](admin-bridge-api.md)
-> - **Last updated:** 2026-05-10
+> - **Last updated:** 2026-08-17 (complexity gate aligned to baseline check)
 
 This runbook is the operator checklist for the provider/static source-policy workflow. It explains how to gather runtime evidence, review migration link candidates, apply or clear one explicit link, validate provider coverage, and confirm source-sync cleanliness.
 
@@ -407,8 +407,7 @@ python -m pytest -q tests/test_jobs_provider_coverage.py tests/test_jobs_dynamic
 python -m pytest -q tests/test_source_policy_soak_report.py tests/test_source_policy_soak_report_backfill.py tests/test_source_policy_soak_report_suppression_selection.py
 python -m pytest -q tests/admin tests/source_discovery
 cmd /c npm run test:frontend:unit
-python -m ruff check --select C901 src/jobs --output-format concise
-python -m ruff check --select C901 src/jobs/adapters --output-format concise
+python scripts/check_complexity_baseline.py
 cmd /c npm run lint:precommit
 ```
 

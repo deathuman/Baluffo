@@ -554,6 +554,10 @@ Equivalent direct command:
 python -m pytest tests -q -m "not slow" --cov=src --cov-report=term-missing --color=no
 ```
 
+## Type Check
+
+The mypy gate is **cross-platform**: `python -m mypy --config-file mypy.ini` must pass on both Windows and Linux (WSL). Each platform's typeshed has mirror-image blind spots — Windows lacks POSIX-only attributes (`fcntl`, `os.killpg`, `pwd`, `os.sysconf`, …), Linux lacks Windows-only ones (`ctypes.windll`, `msvcrt`, …) — so run the command in **both** environments after touching platform-conditional code. `mypy.ini` sets `warn_unused_ignores = True` and the tree carries **zero** suppressions, so any `type: ignore`/`noqa` you add is flagged as unused on one of the two platforms. Both runs must report `Success: no issues found in 478 source files`. See [`WSL_SETUP.md`](WSL_SETUP.md) (Cross-platform type check) for the WSL command and one-time `pip install mypy==1.20.2` setup.
+
 ## Refactor Guard
 
 Run the path-aware refactor lane when you change compatibility roots, archive/doc routing, or hook workflow wiring:
