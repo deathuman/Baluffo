@@ -369,10 +369,10 @@ def pid_is_running(pid: int | None, *, root_mod: Any) -> bool:
         except (OSError, TypeError, ValueError, AttributeError):
             return False
     try:
-        root_mod.os.kill(int(pid), 0)
+        root_mod.os.kill(int(pid or 0), 0)
     except OSError:
         return False
-    return not _posix_pid_is_zombie(int(pid))
+    return not _posix_pid_is_zombie(int(pid or 0))
 
 
 def desktop_local_data_store() -> LocalDataStore:
