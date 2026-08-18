@@ -5,7 +5,7 @@
 > - **Canonical for:** data contracts between pipeline, bridge, frontend, and local user data flows
 > - **Not canonical for:** subsystem ownership or route wiring
 > - **Then inspect:** `src/core/schemas.py`, `src/core/contracts.py`, the owning `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py` modules, relevant tests, and the owning runtime docs
-> - **Last updated:** 2026-08-17 (removed shim references corrected)
+> - **Last updated:** 2026-08-18 (backup v4, v3-only sync writes, route/ownership verification)
 > - **Also update when changing contract shape:** `src/core/schemas.py`, `src/core/contracts.py`, the owning `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py` modules, relevant tests, and any affected UI/runtime docs
 
 This document serves as the absolute boundary and source of truth for data structures passed between the Python pipeline (`src/jobs/`) and the Vanilla JS frontend (`frontend/`).
@@ -121,7 +121,7 @@ stored in `availabilityAttention.localReport` and mirrored to the legacy boolean
 compatibility. Reported rows remain visible in Saved `all` and availability-attention views so the user
 can see the `Reported unavailable` state, clear it, or use the confirmation Undo action; definitive live
 availability evidence may restore the report automatically. Backup schema v4 carries attention,
-acknowledgements, reports, and system activity; import remains tolerant of schemas v1-v3.
+acknowledgements, reports, and system activity; import remains tolerant of schemas v1-v4.
 After a committed identity repair, non-custom Saved rows are rebound only when their stored canonical
 URL fingerprint selects exactly one replacement. Otherwise the contaminated identity is cleared and
 the row becomes unmonitored. Current availability events and report-hidden state tied to the old ID
@@ -492,14 +492,14 @@ same `jobKey`, so any preserved attachment rows become visible again after Undo.
 metadata cleanup must go through the explicit attachment delete surface, not saved-job
 remove.
 
-### 2.4 Backup export/import payload v3
+### 2.4 Backup export/import payload v4
 
-Desktop backup export writes schema version `3` and remains profile-scoped. Importers accept v1, v2, and v3 payloads; legacy saved-job rows are normalized into split `pipelinePhase`/`outcomeStatus` tracking on import.
+Desktop backup export writes schema version `4` and remains profile-scoped. Importers accept v1, v2, v3, and v4 payloads; legacy saved-job rows are normalized into split `pipelinePhase`/`outcomeStatus` tracking on import. Schema v4 carries availability attention, acknowledgements, reports, and system activity.
 
 | Field | Type | Description |
 |---|---|---|
-| `version` | `number` | Always `3` for the current writer. |
-| `schemaVersion` | `number` | Always `3` for the current writer. |
+| `version` | `number` | Always `4` for the current writer. |
+| `schemaVersion` | `number` | Always `4` for the current writer. |
 | `exportedAt` | `string` (ISO 8601) | Export timestamp. |
 | `includesFiles` | `boolean` | Whether attachment file contents were embedded. |
 | `counts.savedJobs` | `number` | Count of exported saved-job rows. |
@@ -653,19 +653,21 @@ the current family/source being checked, `lastProgressAt`, and a capped
 include full `families`; running progress must not drive winner overrides,
 safe automation, demotion, sync, or registry row mutation.
 
-### Sync snapshot v2
+### Sync snapshot (v3 sharded writes; v2 monolith read fallback)
 
-Remote sync snapshots now use schema version `2` and are built from canonical per-source rows.
+Remote sync snapshot writes are now v3-only: a schema-v3 committed manifest plus immutable gzip shards for `active` and `pending` rows. The v2 monolith remains a read-only fallback when no trusted committed v3 manifest exists. The canonical snapshot row shape is documented in [`sync-contract.md`](sync-contract.md).
+
+The legacy v2 monolith shape is retained only for reading older snapshots:
 
 | Field | Type | Description |
 |---|---|---|
-| `schemaVersion` | `number` | Always `2` for the current writer |
+| `schemaVersion` | `number` | `2` for legacy v2 monolith payloads; `3` for the committed manifest |
 | `generatedAt` | `string` (ISO 8601) | Snapshot build time |
 | `source` | `object` | Snapshot origin metadata |
 | `active` | `Array<Object>` | Active registry rows |
 | `pending` | `Array<Object>` | Pending registry rows |
 
-`rejected` rows are intentionally excluded from remote snapshots. Snapshot readers still accept legacy v1 input and infer the transition metadata needed to merge into the canonical model. Tombstones are never included in remote snapshots.
+`rejected` rows are intentionally excluded from remote snapshot writes: only `active` and `pending` rows are sharded, so rejected rows stay local-only. Snapshot readers still accept legacy v1 input and infer the transition metadata needed to merge into the canonical model. Tombstones are never included in remote snapshots.
 
 ### Admin/Ops registry sync confidence
 

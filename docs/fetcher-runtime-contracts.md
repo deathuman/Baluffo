@@ -5,7 +5,7 @@
 > - **Canonical for:** fetcher runtime options, admin preset wiring, and fetch-run artifacts consumed by admin flows
 > - **Not canonical for:** full jobs pipeline ownership or broad testing strategy
 > - **Then inspect:** `src/jobs_fetcher.py`, `src/jobs/fetcher_compat_{exports,runtime}.py`, `src/jobs/pipeline*.py`, `src/jobs/state*.py`, and [`testing.md`](testing.md)
-> - **Last updated:** 2026-07-02
+> - **Last updated:** 2026-08-18
 
 ## CLI runtime options
 
@@ -21,7 +21,12 @@
 - `--cold-source-cadence-minutes` (default `60`): cadence for stable sources.
 - `--only-sources`: comma-separated list of source loader names to run.
 - `--no-seed-existing-output`: for targeted `--only-sources` runs, prevents carrying existing output into the new feed. This is required for first-run sheet bootstrap staging.
+- `--no-preserve-previous-on-empty`: do not preserve previous output if the current run yields no jobs.
+- `--force-refresh-all`: bypass incremental freshness skips and source revalidation so all sources run fully.
+- `--google-sheets-redirect-concurrency`: max concurrent redirect resolutions for supported Google Sheets redirect links.
 - `--circuit-breaker-failures` (default `3`): consecutive failures to trigger quarantine.
+- `--circuit-breaker-zero-kept` (default `3`): consecutive zero-kept runs required before a source is temporarily quarantined.
+- `--browser-fallback-max-workers`: max concurrent browser fallback workers; defaults to `--max-workers` when omitted, and `0` disables the Playwright browser fallback pool entirely.
 - `--circuit-breaker-cooldown-minutes` (default `180`): quarantine duration.
 - `--browser-fallback-cooldown-minutes` (default `30`): short-lived cooldown applied after an environment-level Playwright/browser failure.
 - `--ignore-circuit-breaker`: force run quarantined sources.
@@ -33,10 +38,12 @@
 ## Admin presets (`/tasks/run-fetcher`)
 
 - `default`: full run with explicit runtime defaults.
-- `incremental`: enables `--skip-successful-sources`, sets TTL, quiet mode.
-- `retry_failed`: resolves failed sources from latest report, keeps deterministic ordering, filters unknown source names, runs with `--ignore-circuit-breaker --quiet`.
-- `force_full`: full run with `--ignore-circuit-breaker --quiet`.
+- `incremental`: enables `--skip-successful-sources` and sets the TTL window.
+- `retry_failed`: resolves failed sources from latest report, keeps deterministic ordering, filters unknown source names, and runs with `--ignore-circuit-breaker` plus `--only-sources` when the report has failed sources.
+- `force_full`: full run with `--ignore-circuit-breaker`.
 - `uncapped`: aggressive admin run that bypasses freshness skips, cadence skips, and circuit-breaker quarantine and avoids admin-imposed source/concurrency narrowing while still keeping hard transport safety.
+
+Quiet mode is never implicit in a preset: `--quiet` is passed only when the request payload sets `quiet: true`.
 
 Bridge defaults:
 
@@ -77,8 +84,8 @@ Optional overrides:
 - `skipSuccessfulSources`
 - `ignoreCircuitBreaker`
 - `socialEnabled`
-- `socialConfigPath`
-- `socialLookbackMinutes`
+- `browserFallbackMaxWorkers`
+- `browserFallbackCooldownMinutes`
 - `quiet`
 - `onlySources` (array)
 
@@ -91,8 +98,8 @@ Optional overrides:
   - `runtime.setupTiming` is an additive compact diagnostic for the pre-source setup window. It includes `totalSetupMs`, `phaseTimingsMs`, `phaseOrder`, and bounded scalar `counts` such as seeded output rows, selected sources, exclusions, and setup elapsed time. It exists to explain fetch preparation latency without adding full diagnostics or extra polling.
   - `summary.okCleanSources` and `summary.okWithWarningSources` are additive success diagnostics; source rows still use `status: "ok"` for both.
   - `summary.needsReviewBreakdown` includes both shaped static diagnostic counts and raw comparison counters: `rawMarkerCount` and `includedCount`.
-  - `summary.sizeGuardrails` reports per-artifact byte counts and limits for `json`, `lightJson`, and `csv`; `summary.sizeGuardrailExceeded` remains the aggregate compatibility flag.
-  - after M4, bridge-started terminal reports are compact compatibility/debug exports when `sourceRuns=sqlite`: lean `sources` rows remain, bulky per-source `details` move to SQLite-backed source rows plus gzip evidence archives, and `sourceRuns.sourceDetailsArchive` references the archive. Direct CLI and old full reports remain valid JSON fallback.
+  - `summary.sizeGuardrails` reports per-artifact byte counts and limits for `json` and `lightJson`; `summary.sizeGuardrailExceeded` remains the aggregate compatibility flag. CSV output was retired, so there is no CSV guardrail.
+  - after M4, bridge-started terminal reports are compact compatibility/debug exports when `sourceRuns=sqlite`: lean `sources` rows remain, bulky per-source `details` move to SQLite-backed source rows plus gzip evidence archives, and `sourceRuns.evidenceRefs.sourceDetailsArchive` references the archive. Direct CLI and old full reports remain valid JSON fallback.
 - `GET /ops/fetch-report`
   - keeps the current payload shape.
   - when `sourceRuns=sqlite`, terminal source rows are hydrated from SQLite/archive; `?view=live` remains compact and omits bulky `details`.
@@ -102,7 +109,7 @@ Optional overrides:
   - `source-registry-active.json` and `source-registry-pending.json` store lean core rows with sparse metadata in `source-registry-metadata.json.gz`; readers reconstruct the full row shape on load, legacy monolithic registry files remain backward-compatible, and unchanged payloads now skip the rewrite path to reduce churn.
   - archived lifecycle rows are moved into yearly transparent gzip-backed cold files (`jobs-lifecycle-archive-{year}.json.gz`) and loaded on demand only.
   - report/debug JSON remains pretty-printed for operator readability.
-  - warning limits are `80_000_000` bytes for full JSON, `60_000_000` bytes for light JSON, and `50_000_000` bytes for CSV.
+  - warning limits are `80_000_000` bytes for full JSON and `60_000_000` bytes for light JSON.
   - package builds no longer seed row-bearing jobs artifacts (`jobs-unified*.json(.gz)` or `jobs-unified-startup.json`). The desktop launcher quarantines stale supported/private JSON row artifacts from upgraded installs only when they do not look like newer runtime-generated feed files, and can restore a previously false-quarantined runtime feed from the cleanup backup. Retired CSV files are not runtime-managed.
 - Static HTTP fetch policy:
   - static listing and detail fetches should go through the shared `fetch_html_cached` path so cache, per-domain throttling, and redirect handling stay consistent.

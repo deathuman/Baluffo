@@ -5,7 +5,7 @@
 > - **Canonical for:** target storage authority boundaries, SQLite connection and transaction discipline, migration safety, export and rollback behavior, and hot-path size budgets
 > - **Not canonical for:** current endpoint payload fields, current JSON artifact schemas, source-sync v2 schema details, or Jobs frontend row fields
 > - **Then inspect:** [`sync-contract.md`](sync-contract.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`admin-bridge-api.md`](admin-bridge-api.md), [`fetcher-runtime-contracts.md`](fetcher-runtime-contracts.md), [`LOCAL_SETUP.md`](LOCAL_SETUP.md), and archived rollout history in [`archive/runtime-storage-and-sync-architecture-plan.md`](archive/runtime-storage-and-sync-architecture-plan.md) only when historical provenance is needed
-> - **Last updated:** 2026-07-14
+> - **Last updated:** 2026-08-18
 
 This document defines the current runtime storage contract. The archived rollout plan records sequencing and closeout evidence; this active contract owns the invariants future code must preserve.
 
@@ -158,7 +158,7 @@ Pull protocol contract:
 - Validate schema, content hash, shard list, and per-shard SHA-256.
 - Fall back to v2 monolithic `source-sync.json` only when v3 is absent.
 
-Sync result, task-summary, timing-history, and `storageMetrics` payloads keep legacy size fields for compatibility and add authoritative v3 pressure fields: `snapshotFormat`, `shardCount`, `changedShardCount`, `shardsPushedBytes`, `manifestSizeBytes`, `shardCapBytes`, and `shardHashes`.
+Sync result, task-summary, timing-history, and `storageMetrics` payloads keep legacy size fields for compatibility and add authoritative v3 pressure fields: `snapshotFormat`, `shardCount`, `changedShardCount`, `shardsPushedBytes`, `shardsReadBytes`, `totalShardBytes`, `manifestSizeBytes`, `shardCapBytes`, and `shardHashes`.
 
 Source sync must not include jobs, fetch reports, local source-policy review state, or evidence archives.
 
@@ -180,7 +180,7 @@ Default policy:
 
 Compatibility exports such as `jobs-unified-light.json` are not debug archives.
 
-After M4, terminal source `details` for bridge-started fetches are written to gzip archives and referenced from both `source_runs.evidence_refs` and the compact fetch report. `/ops/fetch-report` hydrates details from SQLite/archive while `sourceRuns=sqlite`; rollback to JSON leaves the compact or full report available for diagnosis.
+After M4, terminal source `details` for bridge-started fetches are written to gzip archives and referenced from both `source_runs.evidence_ref_json` (surfaced as `evidenceRefs` in source-run JSON rows) and the compact fetch report. `/ops/fetch-report` hydrates details from SQLite/archive while `sourceRuns=sqlite`; rollback to JSON leaves the compact or full report available for diagnosis.
 
 ## Size Budgets
 

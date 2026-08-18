@@ -11,6 +11,7 @@ The canonical remote snapshot is intentionally narrow:
 - `source`
 - `active`
 - `pending`
+- `rejected` (valid top-level key of the remote snapshot read/merge shape — the validator accepts it and legacy monoliths may carry it — but v3 writes never shard or push rejected rows; rejected stays local-only)
 
 That shape is enforced by the source-sync schema validator and should remain the normal apply/input contract for production writes.
 
