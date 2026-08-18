@@ -10,9 +10,13 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 
 ## [Unreleased]
 
-> Jobs/discovery coverage rollup: remote aggregator support, discovery recovery
-> escalation, static empty-source cache hardening, provider feed liveness
-> re-discovery, and Gamesmap default-on.
+## [0.2.132] - 2026-08-18
+
+> Desktop rollup: the jobs/discovery coverage batch (remote aggregator,
+> discovery recovery escalation, provider feed liveness, Gamesmap default-on,
+> and new seed coverage) plus the packaged portable EXE fix that restores the
+> desktop platform modules the v0.2.131 frozen bundle was missing, and the
+> tests/ mypy remediation that turns the type gate on for the whole tree.
 
 ### Added
 
@@ -32,6 +36,10 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 - Gamesmap directory adapter is enabled by default (`gamesmap.enabled=true`,
   `websiteOnlyFallback=true`, `activeAuditTtlMinutes=360`) with a new
   `--gamesmap-enabled` CLI flag.
+- Seed-catalog coverage for NeoBards and Evolve (neobards static plugin), the
+  Crater Studios JS-shell careers site (static plugin deriving titles from URL
+  slugs), and a personio 429 recheck path that re-stages rate-limited sources
+  on the next discovery run.
 
 ### Fixed
 
@@ -42,6 +50,29 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
   (all gamesmap/gameprog tests now pin `activeAuditPath` to temp locations);
   polluted `data/gameprog-`/`data/gamesmap-discovery-audit.json` artifacts were
   removed.
+- Packaged portable EXE: PyInstaller now statically imports the desktop
+  platform modules (`src.ship.desktop_app._windows` / `_linux`) so the frozen
+  PYZ bundles them — the v0.2.131 bundle omitted them. Release verify fails
+  fast when a required module is missing from the built EXE, and a regression
+  test asserts both platform modules are present.
+- `BrowserFallbackPool.close()` now captures the live browser/playwright
+  handles before dropping pool references and closes the pool event loop, so
+  playwright's subprocess pipe transports shut down through asyncio's own
+  path instead of emitting unclosed-transport ResourceWarnings at GC time.
+
+### Tooling
+
+- The mypy gate now also type-checks `tests/`: 1,841 errors across 292 files
+  remediated with honest annotations/casts and zero new suppressions
+  (`files = src, tests` in `mypy.ini`), and the Linux CI typecheck step runs
+  this gate for real.
+- Native MCP stdio server config (`.agents/mcp.json`) registers Serena and
+  Basic Memory with the same commands as `opencode.json`, loaded natively by
+  the Freebuff CLI.
+
+### Notes
+
+- Release compatibility remains aligned with the same-origin Linux container for Umbrel raw-LAN installs, GHCR multi-arch image publishing, private community app-store metadata, wildcard browser CORS allow headers, and desktop localhost bridge compatibility.
 
 ## [0.2.131] - 2026-08-15
 
